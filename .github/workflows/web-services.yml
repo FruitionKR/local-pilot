@@ -1,0 +1,29 @@
+name: Web Services
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  docker-compose:
+    name: Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Compose config
+        run: docker compose --env-file .env.example -f docker-compose.dev.yml config
+
+      - name: Start web service dependencies
+        run: docker compose --env-file .env.example -f docker-compose.dev.yml up -d
+
+      - name: Check service status
+        run: docker compose -f docker-compose.dev.yml ps
+
+      - name: Stop web service dependencies
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v
