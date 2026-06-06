@@ -112,3 +112,7 @@ MVP는 Spring Boot 백엔드, PostgreSQL AppDB, S3 호환 Object Storage, MarkIt
 현재 로컬 개발 인프라는 PostgreSQL과 MinIO를 기준으로 시작합니다. PDF 변환은 별도 MarkItDown converter 서비스로 분리할 수 있으며, MVP에서는 `markitdown[pdf]`만 사용하고 DOCX/PPTX/XLSX 등은 데모 필요에 따라 확장합니다.
 
 상세 아키텍처와 ERD는 [Fruition_MVP_Architecture.md](./Fruition_MVP_Architecture.md)를 기준으로 관리합니다.
+
+## 저작권
+
+Copyright (c) 2026 Fruition KR
