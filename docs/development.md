@@ -14,6 +14,7 @@ PostgreSQL은 AppDB 역할을 맡고, S3 호환 객체 스토리지는 원본 �
 | PostgreSQL | `localhost:5432` | 문서, Wiki page, 연결 관계, 채팅 로그를 저장하는 AppDB |
 | MinIO API | `http://localhost:9000` | `sources/`와 `wiki/`를 보관하는 S3 호환 객체 스토리지 |
 | MinIO Console | `http://localhost:9001` | 로컬 객체 스토리지 확인용 콘솔 |
+| PDF Converter | `http://localhost:8010` | PDF 진단, OCR, Markdown 변환을 컨테이너 안에서 처리하는 워커 API |
 
 앱 컨테이너는 아직 정의하지 않습니다. 현재 저장소에는 백엔드나 프론트엔드
 코드가 없으므로 placeholder 앱 이미지를 추가하면 개발 환경의 정확도가
@@ -55,6 +56,44 @@ sources/documents/{document_id}/extracted.txt
 wiki/sources/{document_slug}.md
 wiki/concepts/{concept_slug}.md
 ```
+
+PDF 변환 워커를 함께 띄울 때는 별도 compose 파일을 추가합니다.
+
+```sh
+docker compose \
+  --env-file infra/.env \
+  -f infra/docker-compose.dev.yml \
+  -f infra/docker-compose.converter.yml \
+  up -d
+```
+
+converter는 PDF를 Spring 프로세스 안에서 직접 파싱하지 않고, 별도 컨테이너의
+`/convert` API에서 임시 작업 디렉터리를 만들어 처리합니다. 처리 순서는 아래와
+같습니다.
+
+```text
+input.pdf
+  -> pdfinfo / pdffonts 진단
+  -> ocrmypdf -l kor+eng --force-ocr --deskew --clean
+  -> markitdown fixed.pdf -o output.md
+```
+
+컨테이너 안에서 생성되는 작업 파일은 `input.pdf`, `info.txt`, `fonts.txt`,
+`fixed.pdf`, `output.md`, `process.log`입니다. 요청 처리가 끝나면 임시
+디렉터리는 삭제되고, API 응답에는 `markdown`, `pdfinfo`, `pdffonts`,
+`process_log`가 포함됩니다.
+
+```sh
+curl -F "file=@sample.pdf" http://localhost:8010/convert
+```
+
+converter 이미지는 `poppler-utils`, `ocrmypdf`, `tesseract-ocr`,
+`tesseract-ocr-kor`, `tesseract-ocr-eng`, `ghostscript`, `unpaper`,
+`markitdown[pdf]`를 포함합니다.
+
+PDF 입력은 신뢰할 수 없는 파일로 보고 converter 컨테이너 안에서만 처리합니다.
+compose 설정은 root filesystem을 read-only로 두고, Linux capability를 제거하며,
+작업 파일은 `/tmp` tmpfs에만 생성합니다.
 
 ## 중지
 
