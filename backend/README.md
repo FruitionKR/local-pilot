@@ -23,10 +23,11 @@ Spring Boot 기반 문서 업로드 및 처리 백엔드 서버입니다.
 
 ### 2. 인프라 실행 (PostgreSQL + MinIO)
 
-프로젝트 루트에서 실행합니다.
+`infra/` 디렉토리에서 실행합니다. `.env` 파일이 해당 위치에 있어야 합니다.
 
 ```bash
-docker compose -f infra/docker-compose.dev.yml up -d
+cd infra
+docker compose -f docker-compose.dev.yml up -d
 ```
 
 컨테이너가 정상 기동되면 다음 서비스가 활성화됩니다.
@@ -51,20 +52,29 @@ cd backend
 ### 4. 인프라 종료
 
 ```bash
-docker compose -f infra/docker-compose.dev.yml down
+# infra/ 디렉토리에서 실행
+docker compose -f docker-compose.dev.yml down
 ```
 
 볼륨까지 초기화하려면:
 
 ```bash
-docker compose -f infra/docker-compose.dev.yml down -v
+docker compose -f docker-compose.dev.yml down -v
 ```
 
 ---
 
 ## 환경 변수
 
-`application.properties`에서 환경 변수로 오버라이드 가능합니다. 로컬 개발 시 기본값이 적용되므로 별도 설정 없이 실행됩니다.
+환경 변수는 `infra/.env` 파일에서 관리합니다.
+처음 세팅할 때 `infra/.env.example`을 복사해서 사용하세요.
+
+```bash
+cp infra/.env.example infra/.env
+```
+
+`./gradlew bootRun` 실행 시 `infra/.env`를 자동으로 읽어 환경변수를 주입합니다.
+Docker Compose 인프라 기동 시에도 동일한 파일을 사용하므로 값을 한 곳에서만 관리하면 됩니다.
 
 | 환경 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -77,8 +87,9 @@ docker compose -f infra/docker-compose.dev.yml down -v
 | `S3_ACCESS_KEY` | `fruition` | MinIO 액세스 키 |
 | `S3_SECRET_KEY` | `fruition_dev_secret` | MinIO 시크릿 키 |
 | `S3_BUCKET` | `fruition-storage` | 오브젝트 스토리지 버킷명 |
-
-프로젝트 루트에 `.env` 파일을 두면 자동으로 로드됩니다 (`spring-dotenv` 적용).
+| `OPENAI_API_KEY` | (없음) | OpenAI API 키 — LLM 기능 사용 시 필요 |
+| `LLM_PROVIDER` | `openai` | LLM 프로바이더 |
+| `LLM_MODEL` | `gpt-4.1-mini` | 사용할 LLM 모델명 |
 
 ---
 

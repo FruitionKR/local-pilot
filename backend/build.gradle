@@ -50,3 +50,17 @@ dependencyManagement {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+tasks.named('bootRun') {
+	doFirst {
+		def envFile = rootProject.file('infra/.env')
+		if (envFile.exists()) {
+			envFile.readLines().each { line ->
+				if (line && !line.startsWith('#') && line.contains('=')) {
+					def parts = line.split('=', 2)
+					environment(parts[0].trim(), parts[1].trim())
+				}
+			}
+		}
+	}
+}
