@@ -1,7 +1,12 @@
-package fruition.poc.backend.document;
+package fruition.poc.backend.document.application;
 
 import fruition.poc.backend.config.StorageProperties;
+import fruition.poc.backend.document.domain.Document;
+import fruition.poc.backend.document.domain.DocumentUploadException;
+import fruition.poc.backend.document.domain.DuplicateDocumentException;
 import fruition.poc.backend.document.dto.DocumentUploadResponse;
+import fruition.poc.backend.document.infra.DocumentProcessingRequester;
+import fruition.poc.backend.document.infra.DocumentRepository;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import org.springframework.stereotype.Service;

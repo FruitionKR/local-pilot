@@ -1,4 +1,4 @@
-package fruition.poc.backend.document;
+package fruition.poc.backend.document.domain;
 
 public enum DocumentStatus {
     uploaded,

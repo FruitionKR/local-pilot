@@ -1,7 +1,7 @@
 package fruition.poc.backend.common;
 
-import fruition.poc.backend.document.DuplicateDocumentException;
-import fruition.poc.backend.document.DocumentUploadException;
+import fruition.poc.backend.document.domain.DuplicateDocumentException;
+import fruition.poc.backend.document.domain.DocumentUploadException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

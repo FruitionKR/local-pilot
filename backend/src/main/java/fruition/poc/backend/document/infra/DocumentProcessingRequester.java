@@ -1,4 +1,4 @@
-package fruition.poc.backend.document;
+package fruition.poc.backend.document.infra;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -1,7 +1,7 @@
 package fruition.poc.backend.document.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import fruition.poc.backend.document.DocumentStatus;
+import fruition.poc.backend.document.domain.DocumentStatus;
 
 import java.time.Instant;
 

@@ -1,6 +1,7 @@
-package fruition.poc.backend.document;
+package fruition.poc.backend.document.api;
 
 import fruition.poc.backend.common.ErrorResponse;
+import fruition.poc.backend.document.application.DocumentService;
 import fruition.poc.backend.document.dto.DocumentUploadResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;

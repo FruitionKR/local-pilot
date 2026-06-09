@@ -1,4 +1,4 @@
-package fruition.poc.backend.document;
+package fruition.poc.backend.document.domain;
 
 import jakarta.persistence.*;
 import java.time.Instant;
