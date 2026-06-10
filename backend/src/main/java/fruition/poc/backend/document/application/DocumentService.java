@@ -2,9 +2,13 @@ package fruition.poc.backend.document.application;
 
 import fruition.poc.backend.config.StorageProperties;
 import fruition.poc.backend.document.domain.Document;
+import fruition.poc.backend.document.domain.DocumentNotFoundException;
 import fruition.poc.backend.document.domain.DocumentUploadException;
 import fruition.poc.backend.document.domain.DuplicateDocumentException;
+import fruition.poc.backend.document.dto.DocumentDetailResponse;
+import fruition.poc.backend.document.dto.DocumentListResponse;
 import fruition.poc.backend.document.dto.DocumentUploadResponse;
+import fruition.poc.backend.document.dto.DocumentWikiPageRef;
 import fruition.poc.backend.document.infra.DocumentProcessingRequester;
 import fruition.poc.backend.document.infra.DocumentRepository;
 import io.minio.MinioClient;
@@ -16,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -108,6 +113,44 @@ public class DocumentService {
             return "text/markdown";
         }
         return contentType != null ? contentType : "application/octet-stream";
+    }
+
+    public DocumentListResponse findAll() {
+        List<DocumentListResponse.DocumentItem> items = documentRepository.findAll().stream()
+                .map(doc -> new DocumentListResponse.DocumentItem(
+                        doc.getId(),
+                        doc.getFilename(),
+                        doc.getMimeType(),
+                        doc.getByteSize(),
+                        doc.getStatus(),
+                        doc.getSourceUri(),
+                        doc.getExtractedTextUri(),
+                        doc.getUploadedAt(),
+                        doc.getProcessedAt(),
+                        doc.getErrorMessage()
+                ))
+                .toList();
+        return new DocumentListResponse(items);
+    }
+
+    public DocumentDetailResponse findById(String documentId) {
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        // wiki_pages: DocumentWikiLink 구현 전 빈 목록 반환
+        List<DocumentWikiPageRef> wikiPages = List.of();
+        return new DocumentDetailResponse(
+                doc.getId(),
+                doc.getFilename(),
+                doc.getMimeType(),
+                doc.getByteSize(),
+                doc.getStatus(),
+                doc.getSourceUri(),
+                doc.getExtractedTextUri(),
+                doc.getUploadedAt(),
+                doc.getProcessedAt(),
+                doc.getErrorMessage(),
+                wikiPages
+        );
     }
 
     private String sha256(byte[] data) {
