@@ -3,3 +3,9 @@
 .env.*.local
 
 !.env.example
+
+# 로컬 입력 데이터
+input-data/
+
+# macOS
+.DS_Store
