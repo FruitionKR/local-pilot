@@ -7,6 +7,7 @@ import fruition.poc.backend.document.domain.DocumentUploadException;
 import fruition.poc.backend.document.domain.DuplicateDocumentException;
 import fruition.poc.backend.document.dto.DocumentDetailResponse;
 import fruition.poc.backend.document.dto.DocumentListResponse;
+import fruition.poc.backend.document.dto.DocumentStatusUpdateRequest;
 import fruition.poc.backend.document.dto.DocumentUploadResponse;
 import fruition.poc.backend.document.dto.DocumentWikiPageRef;
 import fruition.poc.backend.document.infra.DocumentProcessingRequester;
@@ -81,7 +82,7 @@ public class DocumentService {
 
             // 4. 백그라운드 처리 요청 (실패해도 응답에 영향 없음)
             try {
-                processingRequester.request(documentId);
+                processingRequester.request(documentId, objectPath);
             } catch (Exception e) {
                 // 백그라운드 처리 실패는 업로드 응답 실패로 보지 않음
             }
@@ -131,6 +132,18 @@ public class DocumentService {
                 ))
                 .toList();
         return new DocumentListResponse(items);
+    }
+
+    @Transactional
+    public void updateStatus(String documentId, DocumentStatusUpdateRequest request) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        document.updateStatus(
+                request.status(),
+                request.extractedTextUri(),
+                request.processedAt(),
+                request.errorMessage()
+        );
     }
 
     public DocumentDetailResponse findById(String documentId) {

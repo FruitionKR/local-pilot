@@ -55,6 +55,14 @@ public class Document {
         this.uploadedAt = Instant.now();
     }
 
+    public void updateStatus(DocumentStatus status, String extractedTextUri,
+                             Instant processedAt, String errorMessage) {
+        this.status = status;
+        this.extractedTextUri = extractedTextUri;
+        this.processedAt = processedAt;
+        this.errorMessage = errorMessage;
+    }
+
     public String getId() { return id; }
     public String getFilename() { return filename; }
     public String getMimeType() { return mimeType; }

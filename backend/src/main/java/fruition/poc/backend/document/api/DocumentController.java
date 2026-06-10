@@ -4,6 +4,7 @@ import fruition.poc.backend.common.ErrorResponse;
 import fruition.poc.backend.document.application.DocumentService;
 import fruition.poc.backend.document.dto.DocumentDetailResponse;
 import fruition.poc.backend.document.dto.DocumentListResponse;
+import fruition.poc.backend.document.dto.DocumentStatusUpdateRequest;
 import fruition.poc.backend.document.dto.DocumentUploadResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -82,6 +84,24 @@ public class DocumentController {
     @GetMapping
     public ResponseEntity<DocumentListResponse> list() {
         return ResponseEntity.ok(documentService.findAll());
+    }
+
+    @Operation(summary = "문서 처리 상태 업데이트",
+        description = "FastAPI 파이프라인이 문서 처리 단계마다 호출하는 콜백 엔드포인트입니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "상태 업데이트 성공"),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/{document_id}/status")
+    public ResponseEntity<Void> updateStatus(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId,
+            @Valid @RequestBody DocumentStatusUpdateRequest request) {
+        documentService.updateStatus(documentId, request);
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "문서 상세 조회", description = "특정 문서의 상세 정보를 반환합니다. 연결된 Wiki 페이지 목록이 포함됩니다.")
