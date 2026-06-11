@@ -1,6 +1,6 @@
-# Changelog
+# Changelog — Backend
 
-Fruition MVP 개발 이력입니다. 날짜 역순으로 기록합니다.
+Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니다.
 
 ---
 
@@ -72,8 +72,6 @@ Content-Type: application/json
 - `Document` JPA 엔티티 — `id`, `filename`, `mime_type`, `byte_size`, `status`, `source_uri`, `extracted_text_uri`, `content_hash`, `uploaded_at`, `processed_at`, `error_message` 필드
 - `DocumentStatus` enum — `processing`, `completed`, `failed`
 - `GlobalExceptionHandler` — `DuplicateDocumentException` (409), `DocumentUploadException` (500) 처리
-- MinIO / PostgreSQL 로컬 개발 인프라 (`infra/docker-compose.dev.yml`)
-- `infra/.env` 자동 로드 (`bootRun` 태스크 연동)
 
 ---
 
@@ -90,12 +88,4 @@ Content-Type: application/json
 
 ---
 
-## 2026-06-05 이전
-
-### feat: 옵시디언 스타일 그래프 UI 구현 (`95e26ff`)
-
-프론트엔드 Wiki 그래프 화면 초기 구현 (React, D3 기반).
-
----
-
-*이 파일은 주요 변경 단위(커밋 그룹)를 날짜 기준으로 요약합니다. 커밋 단위 이력은 `git log`로 확인하세요.*
+*커밋 단위 이력은 `git log` 로 확인하세요.*
