@@ -1,4 +1,4 @@
-package fruition.poc.backend;
+package fruition.poc;
 
 import fruition.BackendApplication;
 import org.springframework.boot.SpringApplication;

@@ -159,9 +159,9 @@ def resolve_endpoint(args: argparse.Namespace) -> str:
 def load_api_client(args: argparse.Namespace) -> ChatCompletionsJsonClient:
     api_key = args.api_key or os.environ.get(args.api_key_env)
     if not api_key:
-        raise SystemExit(f"Missing API key. Set {args.api_key_env}=... or pass --api-key")
+        raise RuntimeError(f"ERROR: Missing API key. Set {args.api_key_env}=... or pass --api-key")
     if not args.model:
-        raise SystemExit("Missing model. Pass --model or set LLM_MODEL")
+        raise RuntimeError("ERROR: Missing model. Pass --model or set LLM_MODEL")
     return ChatCompletionsJsonClient(
         ChatClientConfig(
             endpoint=resolve_endpoint(args),

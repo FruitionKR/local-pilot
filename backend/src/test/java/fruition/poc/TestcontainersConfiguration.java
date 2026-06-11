@@ -1,4 +1,4 @@
-package fruition.poc.backend;
+package fruition.poc;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
