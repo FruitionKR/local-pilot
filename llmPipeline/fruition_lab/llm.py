@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, Protocol, Sequence
 
 from .models import SemanticPacket, SourceBlock
-from .prompt_io import render_concept_page_user_prompt, render_semantic_user_prompt
+from .prompt_io import (
+    render_concept_page_user_prompt,
+    render_concept_resolution_user_prompt,
+    render_section_polish_user_prompt,
+    render_semantic_user_prompt,
+)
 
 JsonDict = Dict[str, Any]
 
@@ -23,8 +28,29 @@ class ConceptPageGenerator(Protocol):
         ...
 
 
+class ConceptResolver(Protocol):
+    def resolve(
+        self,
+        incoming_concepts: list[JsonDict],
+        existing_concepts: list[JsonDict],
+        missing_related_hints: list[JsonDict] | None = None,
+    ) -> JsonDict:
+        ...
+
+
+class SectionPolisher(Protocol):
+    def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
+        ...
+
+
 class JsonParseError(RuntimeError):
     pass
+
+
+class SectionPolishParseError(JsonParseError):
+    def __init__(self, message: str, raw_content: str) -> None:
+        super().__init__(message)
+        self.raw_content = raw_content
 
 
 def strip_json_fence(content: str) -> str:
@@ -50,6 +76,86 @@ def parse_json_object(content: str) -> JsonDict:
     return value
 
 
+def parse_section_polish_object(content: str) -> JsonDict:
+    cleaned = strip_json_fence(content)
+    candidates = [cleaned]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(cleaned[start : end + 1])
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        for repaired in _section_polish_repair_candidates(candidate):
+            try:
+                value = json.loads(repaired)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if not isinstance(value, dict):
+                last_error = JsonParseError("SectionPolish output must be a JSON object")
+                continue
+            return _normalize_section_polish_schema(value)
+    raise SectionPolishParseError(f"SectionPolish output is not repairable JSON: {last_error}", content)
+
+
+def _section_polish_repair_candidates(text: str) -> list[str]:
+    out = []
+    current = text.strip()
+    out.append(current)
+    current = re.sub(r",\s*([}\]])", r"\1", current)
+    out.append(current)
+    current = current.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    out.append(current)
+    return out
+
+
+def _normalize_section_polish_schema(value: JsonDict) -> JsonDict:
+    items = value.get("items", [])
+    if isinstance(items, dict):
+        items = [items]
+    if not isinstance(items, list):
+        items = []
+
+    normalized_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        normalized_items.append(
+            {
+                "text": str(item.get("text", "")),
+                "anchor_block_ids": _as_string_list(item.get("anchor_block_ids", [])),
+            }
+        )
+
+    return {
+        "section": str(value.get("section", "")),
+        "title": str(value.get("title", "")),
+        "text": str(value.get("text", "")),
+        "anchor_block_ids": _as_string_list(value.get("anchor_block_ids", [])),
+        "items": normalized_items,
+        "related_concept_hints": _as_string_list(value.get("related_concept_hints", [])),
+        "confidence": _as_float(value.get("confidence", 0.0)),
+    }
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
+
+
+def _as_float(value: Any) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
 @dataclass
 class ChatClientConfig:
     endpoint: str
@@ -67,7 +173,7 @@ class ChatCompletionsJsonClient:
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
+    def complete_text(self, system_prompt: str, user_prompt: str) -> str:
         body: JsonDict = {
             "model": self.config.model,
             "messages": [
@@ -103,7 +209,10 @@ class ChatCompletionsJsonClient:
             content = payload["choices"][0]["message"]["content"]
         except Exception as e:
             raise RuntimeError(f"Unexpected chat-completions response: {payload}") from e
-        return parse_json_object(content)
+        return content
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
+        return parse_json_object(self.complete_text(system_prompt, user_prompt))
 
 
 class GenericChatCompletionsExtractor:
@@ -127,6 +236,38 @@ class GenericChatCompletionsConceptPageGenerator:
         )
 
 
+class GenericChatCompletionsConceptResolver:
+    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+        self.client = client
+        self.system_prompt = system_prompt
+
+    def resolve(
+        self,
+        incoming_concepts: list[JsonDict],
+        existing_concepts: list[JsonDict],
+        missing_related_hints: list[JsonDict] | None = None,
+    ) -> JsonDict:
+        return self.client.complete_json(
+            self.system_prompt,
+            render_concept_resolution_user_prompt(incoming_concepts, existing_concepts, missing_related_hints),
+        )
+
+
+class GenericChatCompletionsSectionPolisher:
+    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+        self.client = client
+        self.system_prompt = system_prompt
+
+    def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
+        content = self.client.complete_text(
+            self.system_prompt,
+            render_section_polish_user_prompt(payload, source_blocks),
+        )
+        return parse_section_polish_object(content)
+
+
 # Backwards-compatible aliases.
 ApiSemanticExtractor = GenericChatCompletionsExtractor
 ApiConceptPageGenerator = GenericChatCompletionsConceptPageGenerator
+ApiConceptResolver = GenericChatCompletionsConceptResolver
+ApiSectionPolisher = GenericChatCompletionsSectionPolisher

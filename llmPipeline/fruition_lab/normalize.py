@@ -46,13 +46,26 @@ class SemanticNormalizer:
                 evidence_rows.append(row)
 
         # Attach evidence to concepts.
+        missing_related_hints: dict[str, dict[str, Any]] = {}
         for ev in evidence_rows:
             for slug in ev.related_concept_slugs:
                 if slug in concepts_by_slug:
                     concepts_by_slug[slug].evidence_claim_ids.append(ev.evidence_id)
                     concepts_by_slug[slug].importance_score += 2 * max(0.0, min(1.0, ev.confidence))
                 else:
-                    warnings.append(f"evidence {ev.evidence_id} references missing concept slug: {slug}")
+                    item = missing_related_hints.setdefault(
+                        slug,
+                        {
+                            "slug": slug,
+                            "evidence_ids": [],
+                            "sample_claims": [],
+                            "max_confidence": 0.0,
+                        },
+                    )
+                    item["evidence_ids"].append(ev.evidence_id)
+                    if len(item["sample_claims"]) < 2:
+                        item["sample_claims"].append(ev.claim)
+                    item["max_confidence"] = max(item["max_confidence"], ev.confidence)
 
         # Backend expands direct mentions from all blocks by title/aliases.
         for concept in concepts_by_slug.values():
@@ -68,6 +81,7 @@ class SemanticNormalizer:
             "semantic_notes": normalized_notes,
             "concept_ledger": [asdict(c) for c in sorted(concepts_by_slug.values(), key=lambda c: (-c.importance_score, c.slug))],
             "evidence_units": [asdict(e) for e in evidence_rows],
+            "missing_related_concept_hints": sorted(missing_related_hints.values(), key=lambda x: (-x["max_confidence"], x["slug"])),
             "warnings": warnings,
         }
 
@@ -78,7 +92,7 @@ class SemanticNormalizer:
                 if bid not in self.by_block_id:
                     warnings.append(f"unknown anchor_block_id: {bid}")
                     continue
-                out.append(self.by_block_id[bid].source_reference_id)
+                out.append(bid)
                 if len(out) >= limit:
                     break
             return unique_keep_order(out)
@@ -120,7 +134,7 @@ class SemanticNormalizer:
             if bid not in self.by_block_id:
                 warnings.append(f"unknown anchor_block_id: {bid}")
                 continue
-            refs.append(self.by_block_id[bid].source_reference_id)
+            refs.append(bid)
             if len(refs) >= limit:
                 break
         return unique_keep_order(refs)
@@ -173,7 +187,7 @@ class SemanticNormalizer:
         refs = []
         for b in self.blocks:
             if any(self._direct_mention(b.text, n) for n in needles):
-                refs.append(b.source_reference_id)
+                refs.append(b.block_id)
         return unique_keep_order(refs)
 
     def _direct_mention(self, text: str, needle: str) -> bool:
