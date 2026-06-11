@@ -258,3 +258,249 @@ Spring도 compose 내부 서비스이면:
   "log_callback_url": "http://spring-service-name:8080/internal/pipeline/logs"
 }
 ```
+
+---
+## 코드 파일 역할
+
+### `run_lab.py`
+
+CLI 엔트리포인트이자 파이프라인 오케스트레이터입니다.
+
+- CLI 인자 파싱
+- `.env` 파일 로드
+- LLM API 설정 해석
+- 단계별 파이프라인 실행
+- `pipeline.log` 기록
+- `log_callback_url` 이벤트 POST
+- `manifest.json` 저장
+
+### `api.py`
+
+FastAPI 서버입니다.
+
+- `POST /admin/init-db`: PostgreSQL 테이블 생성
+- `GET /documents/{document_id}`: 문서 조회
+- `POST /pipeline/runs`: 파이프라인 백그라운드 실행
+- `GET /pipeline/runs/{run_id}`: 실행 상태 조회
+- `GET /pipeline/runs/{run_id}/logs`: 로컬 로그 조회
+
+### `fruition_lab/database.py`
+
+PostgreSQL 접근 계층입니다.
+
+- `documents` 테이블 관리
+- `pipeline_runs` 실행 이력 생성
+- 성공/실패 상태 업데이트
+- manifest 조회
+
+### `fruition_lab/extract.py`
+
+Markdown 문서를 backend가 다룰 수 있는 구조로 분리합니다.
+
+- `SourceDocument` 생성
+- `SourceBlock` 생성
+- `[B0001]` 같은 짧은 block anchor 생성
+- `ref_xxx_md_b0001` 같은 긴 `source_reference_id` 생성
+
+### `fruition_lab/packet.py`
+
+block 목록을 LLM 입력 packet으로 나눕니다.
+
+- packet 크기 제한 적용
+- block overlap 적용
+- LLM에는 짧은 `[B0001]` anchor만 포함
+
+### `fruition_lab/llm.py`
+
+OpenAI-compatible chat completions API 클라이언트입니다.
+
+- Upstage Solar Pro 2 호출
+- generic OpenAI-compatible provider 호출
+- JSON 응답 파싱
+- semantic extraction 요청
+- concept page generation 요청
+
+### `fruition_lab/prompt_io.py`
+
+LLM에 전달할 user prompt를 만듭니다.
+
+- semantic extraction prompt 렌더링
+- concept page generation prompt 렌더링
+- concept별 관련 source block 수집
+
+### `fruition_lab/normalize.py`
+
+LLM 결과를 backend 데이터 구조로 정규화합니다.
+
+- `anchor_block_ids`를 `source_reference_id`로 복원
+- concept slug 정규화
+- concept 후보 병합
+- mention count 계산
+- evidence unit 생성
+
+### `fruition_lab/assemble.py`
+
+최종 wiki 파일을 조립합니다.
+
+- source page markdown 생성
+- concept page markdown 생성
+- LLM concept page 결과 검증/정규화
+- `wiki/links.json` 생성
+- `review_report.md` 생성
+
+### `fruition_lab/models.py`
+
+파이프라인에서 공유하는 dataclass 모델입니다.
+
+- `SourceDocument`
+- `SourceBlock`
+- `SemanticPacket`
+- `NormalizedConcept`
+- `NormalizedEvidence`
+
+### `fruition_lab/io_utils.py`
+
+파일 입출력 유틸리티입니다.
+
+- 디렉터리 생성
+- JSON 저장/읽기
+- 텍스트 저장
+- 로그 append
+
+### `fruition_lab/text_utils.py`
+
+문자열 처리 유틸리티입니다.
+
+- slug 생성
+- SHA1 생성
+- 공백 정규화
+- 중복 제거
+
+### `fruition_lab/api_client.py`
+
+기존/호환용 API client 유틸입니다. 현재 주 파이프라인은 `fruition_lab/llm.py`의 client를 사용합니다.
+
+## 코드 플로우
+
+### 1. 입력 결정
+
+CLI는 `--input` markdown 파일을 사용합니다. FastAPI는 `document_id`, `input_markdown`, `input_path` 중 하나를 받아 입력 파일 경로를 준비합니다.
+
+생성:
+
+- FastAPI DB 입력이면 `runs/_api_inputs/{run_id}/...md`
+- `pipeline.log` 시작 로그
+
+전달:
+
+- `input_path`
+
+### 2. Markdown block extraction
+
+`MarkdownBlockExtractor.extract(input_path)`가 문서를 읽고 `document`, `blocks`를 만듭니다.
+
+생성:
+
+- `document.json`
+- `block_map.json`
+
+전달:
+
+- `document`
+- `blocks`
+
+### 3. Semantic packet build
+
+`SemanticPacketBuilder.build(document_id, blocks)`가 LLM 입력 packet을 만듭니다.
+
+생성:
+
+- `packets/{chunk_id}.md`
+
+전달:
+
+- `packets`
+
+### 4. Semantic extraction
+
+`ApiSemanticExtractor.extract(packet)`가 Solar Pro 2 또는 OpenAI-compatible API를 호출합니다.
+
+생성:
+
+- `raw_llm_outputs/semantic_extraction/{chunk_id}.json`
+
+전달:
+
+- `notes`
+
+### 5. Normalize
+
+`SemanticNormalizer.normalize_notes(notes)`가 LLM 결과를 backend 구조로 정규화합니다.
+
+생성:
+
+- `normalized.json`
+
+전달:
+
+- `normalized`
+
+### 6. Concept source block collect
+
+`collect_concept_source_blocks(...)`가 concept page generation에 필요한 source block을 concept별로 모읍니다.
+
+전달:
+
+- `concept_source_blocks_by_slug`
+
+### 7. Source page assembly
+
+`SourcePageAssembler.assemble(normalized, out)`가 source page markdown을 만듭니다.
+
+생성:
+
+- `wiki/sources/{document_id}.md`
+
+전달:
+
+- `source_page`
+
+### 8. Concept page generation
+
+`concept_page_mode`가 `api`이면 `ApiConceptPageGenerator`가 LLM을 호출하고, `GeneratedConceptPageAssembler`가 결과를 검증해 markdown으로 조립합니다.
+
+`concept_page_mode`가 `skeleton`이면 backend가 정규화 결과만으로 concept page 초안을 만듭니다.
+
+생성:
+
+- `raw_llm_outputs/concept_page_generation/{concept_slug}.json`
+- `wiki/concepts/{concept_slug}.md`
+
+전달:
+
+- `concept_pages`
+- `generated_concept_pages`
+
+### 9. Link and review
+
+`LinkBuilder`와 `ReviewReport`가 link graph와 리뷰 파일을 만듭니다.
+
+생성:
+
+- `wiki/links.json`
+- `review_report.md`
+
+전달:
+
+- `links`
+- `report`
+
+### 10. Manifest
+
+실행 결과 요약을 `manifest.json`에 저장합니다. FastAPI 실행이면 PostgreSQL `pipeline_runs`도 갱신합니다.
+
+생성:
+
+- `manifest.json`
+- PostgreSQL `pipeline_runs.manifest`
+---
