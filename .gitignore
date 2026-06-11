@@ -4,6 +4,12 @@
 
 !.env.example
 
+# IDE/editor local settings
+.vscode/
+
+# Local GitHub metadata
+.github/
+
 # 로컬 입력 데이터
 input-data/
 
@@ -44,3 +50,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# LLM pipeline generated outputs
+pipeline_api/runs/
+llmPipeline/runs/
