@@ -1,4 +1,4 @@
-package fruition.poc.backend;
+package fruition;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
