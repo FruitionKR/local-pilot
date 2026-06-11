@@ -120,8 +120,8 @@ http://localhost:8080/swagger-ui.html
 
 | 메서드 | 경로 | 설명 | 상태 |
 |---|---|---|---|
-| `GET` | `/api/wiki/graph` | Wiki 그래프 전체 조회 | 스텁 (빈 목록 반환) |
-| `GET` | `/api/wiki/pages/{wiki_page_id}` | Wiki 페이지 상세 조회 | 스텁 (501) |
+| `GET` | `/api/wiki/graph` | Wiki 그래프 전체 조회 | 구현 완료 |
+| `GET` | `/api/wiki/pages/{wiki_page_id}` | Wiki 페이지 상세 조회 | 구현 완료 |
 
 #### Query
 
@@ -287,14 +287,30 @@ backend/src/main/java/fruition/poc/backend/
 │       └── DocumentRepository.java           # JPA Repository
 ├── wiki/
 │   ├── api/
-│   │   └── WikiController.java          # Wiki 엔드포인트 스텁
-│   └── dto/
-│       ├── WikiGraphEdge.java
-│       ├── WikiGraphNode.java
-│       ├── WikiGraphResponse.java
-│       ├── WikiPageDetailResponse.java
-│       ├── WikiPageSourceDoc.java
-│       └── WikiRelatedPage.java
+│   │   └── WikiController.java          # Wiki REST 엔드포인트 (2개)
+│   ├── application/
+│   │   └── WikiService.java             # 그래프 조회 / 페이지 상세 조회 로직
+│   ├── domain/
+│   │   ├── DocumentWikiLink.java        # 문서 ↔ Wiki 페이지 연결 JPA 엔티티
+│   │   ├── DocumentWikiLinkId.java      # 복합키 클래스
+│   │   ├── DocumentWikiRelationType.java # enum: primary_source / supporting / referenced
+│   │   ├── WikiPage.java                # Wiki 페이지 JPA 엔티티
+│   │   ├── WikiPageLink.java            # Wiki 페이지 간 링크 JPA 엔티티
+│   │   ├── WikiPageLinkId.java          # 복합키 클래스
+│   │   ├── WikiPageNotFoundException.java
+│   │   ├── WikiPageStatus.java          # enum: active / draft / archived
+│   │   └── WikiPageType.java            # enum: CONCEPT / PROCESS / ENTITY / OVERVIEW
+│   ├── dto/
+│   │   ├── WikiGraphEdge.java
+│   │   ├── WikiGraphNode.java
+│   │   ├── WikiGraphResponse.java
+│   │   ├── WikiPageDetailResponse.java
+│   │   ├── WikiPageSourceDoc.java
+│   │   └── WikiRelatedPage.java
+│   └── infra/
+│       ├── DocumentWikiLinkRepository.java  # findAllByIdWikiPageId 포함
+│       ├── WikiPageLinkRepository.java      # findAllByIdFromPageId 포함
+│       └── WikiPageRepository.java          # Spring Data JPA Repository
 ├── query/
 │   ├── api/
 │   │   └── QueryController.java         # Query 엔드포인트 스텁

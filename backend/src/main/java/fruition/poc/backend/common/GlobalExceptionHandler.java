@@ -3,6 +3,7 @@ package fruition.poc.backend.common;
 import fruition.poc.backend.document.domain.DocumentNotFoundException;
 import fruition.poc.backend.document.domain.DocumentUploadException;
 import fruition.poc.backend.document.domain.DuplicateDocumentException;
+import fruition.poc.backend.wiki.domain.WikiPageNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -37,6 +38,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(WikiPageNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWikiPageNotFound(WikiPageNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WIKI_PAGE_NOT_FOUND", "Wiki 페이지를 찾을 수 없습니다."));
     }
 
     @ExceptionHandler(DuplicateDocumentException.class)

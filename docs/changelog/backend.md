@@ -10,6 +10,39 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-11
+
+### feat: Wiki 도메인 서비스 구현
+
+**배경**
+
+Wiki 그래프 조회 및 페이지 상세 조회 엔드포인트가 스텁으로 노출되어 있었습니다. Wiki 도메인 모델·Repository·Service를 구현해 실제 데이터를 반환하도록 교체했습니다.
+
+**추가된 것**
+
+- `wiki/domain/WikiPage` — Wiki 페이지 JPA 엔티티 (`id`, `title`, `slug`, `summary`, `markdownUri`, `pageType`, `status`, `createdAt`, `updatedAt`)
+- `wiki/domain/WikiPageType` — enum: `CONCEPT`, `PROCESS`, `ENTITY`, `OVERVIEW`
+- `wiki/domain/WikiPageStatus` — enum: `active`, `draft`, `archived`
+- `wiki/domain/WikiPageNotFoundException` — 도메인 예외 (404)
+- `wiki/domain/WikiPageLink` — Wiki 페이지 간 링크 JPA 엔티티 (복합키: `fromPageId` + `toPageId`)
+- `wiki/domain/WikiPageLinkId` — 복합키 클래스
+- `wiki/domain/DocumentWikiLink` — 문서 ↔ Wiki 페이지 연결 JPA 엔티티 (복합키: `documentId` + `wikiPageId`)
+- `wiki/domain/DocumentWikiLinkId` — 복합키 클래스
+- `wiki/domain/DocumentWikiRelationType` — enum: `primary_source`, `supporting`, `referenced`
+- `wiki/infra/WikiPageRepository` — Spring Data JPA Repository
+- `wiki/infra/WikiPageLinkRepository` — `findAllByIdFromPageId` 포함
+- `wiki/infra/DocumentWikiLinkRepository` — `findAllByIdWikiPageId` 포함
+- `wiki/application/WikiService` — `findGraph()` / `findById()` 구현
+  - `findGraph()`: 전체 WikiPage + WikiPageLink를 nodes/edges로 변환
+  - `findById()`: 페이지 조회 → 연결 문서(`source_documents`) + 연결 페이지(`related_pages`) 조합
+
+**변경된 것**
+
+- `WikiController` — 스텁 제거, `WikiService` 주입 및 실제 서비스 호출로 교체
+- `GlobalExceptionHandler` — `WikiPageNotFoundException` 핸들러 추가 (404 `WIKI_PAGE_NOT_FOUND`)
+
+---
+
 ## 2026-06-10
 
 ### feat: FastAPI 콜백 패턴 기반 문서 처리 상태 업데이트 (`0595937`)
