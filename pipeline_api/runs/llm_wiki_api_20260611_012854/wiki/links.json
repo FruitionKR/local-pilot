@@ -1,0 +1,128 @@
+[
+  {
+    "source": "source:codex-test-llm-wiki-api-20260611_012854",
+    "target": "concept:persistent-wiki",
+    "relation": "source_mentions_concept",
+    "decided_by": "backend"
+  },
+  {
+    "source": "source:codex-test-llm-wiki-api-20260611_012854",
+    "target": "concept:llm-wiki",
+    "relation": "source_mentions_concept",
+    "decided_by": "backend"
+  },
+  {
+    "source": "source:codex-test-llm-wiki-api-20260611_012854",
+    "target": "concept:wiki-architecture",
+    "relation": "source_mentions_concept",
+    "decided_by": "backend"
+  },
+  {
+    "source": "source:codex-test-llm-wiki-api-20260611_012854",
+    "target": "concept:wiki-operations",
+    "relation": "source_mentions_concept",
+    "decided_by": "backend"
+  },
+  {
+    "source": "source:codex-test-llm-wiki-api-20260611_012854",
+    "target": "concept:wiki-indexing-logging",
+    "relation": "source_mentions_concept",
+    "decided_by": "backend"
+  },
+  {
+    "source": "concept:persistent-wiki",
+    "target": "concept:rag-retrieval-augmented-generation",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:persistent-wiki",
+    "target": "concept:지식-베이스-유지-관리",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:persistent-wiki",
+    "target": "concept:llm-기반-지식-통합",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:llm-wiki",
+    "target": "concept:지속적-지식-베이스",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:llm-wiki",
+    "target": "concept:위키-기반-지식-관리",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:llm-wiki",
+    "target": "concept:llm-기반-정보-통합",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-architecture",
+    "target": "concept:raw-sources",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-architecture",
+    "target": "concept:llm-generated-wiki",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-architecture",
+    "target": "concept:schema-configuration",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-operations",
+    "target": "concept:지식-관리-시스템",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-operations",
+    "target": "concept:위키-유지보수",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-operations",
+    "target": "concept:llm-기반-문서-처리",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-indexing-logging",
+    "target": "concept:embedding-based-rag",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-indexing-logging",
+    "target": "concept:llm-query-processing",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-indexing-logging",
+    "target": "concept:wiki-categorization",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  },
+  {
+    "source": "concept:wiki-indexing-logging",
+    "target": "concept:append-only-logging",
+    "relation": "concept_related_to",
+    "decided_by": "llm_hint_backend_normalized"
+  }
+]

@@ -7,5 +7,11 @@
 # 로컬 입력 데이터
 input-data/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # macOS
 .DS_Store

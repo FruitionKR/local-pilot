@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+import argparse
+import re
+import uuid
+from pathlib import Path
+from typing import Any, Literal
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field, model_validator
+
+from fruition_lab import database
+from fruition_lab.io_utils import ensure_dir, write_text
+from fruition_lab.storage import read_text_object
+from run_lab import run_pipeline
+
+
+app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+
+
+def _safe_name(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._")
+    return cleaned or "document"
+
+
+class PipelineRunIn(BaseModel):
+    document_id: str | None = None
+    input_markdown: str | None = None
+    input_path: str | None = None
+    out: str | None = None
+    mode: Literal["api", "generic-chat"] = "api"
+    provider: Literal["upstage", "generic"] = "upstage"
+    env_file: str | None = None
+    concept_page_mode: Literal["auto", "api", "skeleton"] = "auto"
+    max_packet_chars: int = 7000
+    overlap_blocks: int = 1
+    endpoint: str | None = None
+    api_base_url: str | None = None
+    api_key_env: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+    max_tokens: int | None = None
+    json_mode: bool = False
+    system_prompt: str = "prompts/semantic_extraction.system.md"
+    concept_system_prompt: str = "prompts/concept_page_generation.system.md"
+    log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
+    wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
+
+    @model_validator(mode="after")
+    def exactly_one_input(self) -> "PipelineRunIn":
+        sources = [self.document_id, self.input_markdown, self.input_path]
+        if sum(1 for source in sources if source) != 1:
+            raise ValueError("Pass exactly one of document_id, input_markdown, or input_path")
+        return self
+
+
+class PipelineRunOut(BaseModel):
+    run_id: str
+    status: str
+    manifest: dict[str, Any] | None = None
+    output_dir: str
+    log_path: str
+
+
+def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, out: Path, log_path: Path) -> argparse.Namespace:
+    return argparse.Namespace(
+        run_id=run_id,
+        source_document_id=payload.document_id,
+        input=str(input_path),
+        out=str(out),
+        mode=payload.mode,
+        provider=payload.provider,
+        env_file=payload.env_file,
+        concept_page_mode=payload.concept_page_mode,
+        max_packet_chars=payload.max_packet_chars,
+        overlap_blocks=payload.overlap_blocks,
+        endpoint=payload.endpoint,
+        api_base_url=payload.api_base_url,
+        api_key_env=payload.api_key_env,
+        api_key=payload.api_key,
+        model=payload.model,
+        temperature=payload.temperature,
+        timeout_seconds=payload.timeout_seconds,
+        max_tokens=payload.max_tokens,
+        json_mode=payload.json_mode,
+        system_prompt=payload.system_prompt,
+        concept_system_prompt=payload.concept_system_prompt,
+        log_path=str(log_path),
+        log_callback_url=payload.log_callback_url,
+    )
+
+
+def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
+    try:
+        manifest = run_pipeline(args)
+        database.finish_pipeline_run(run_id, manifest)
+    except Exception as exc:
+        database.fail_pipeline_run(run_id, str(exc))
+        raise
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/admin/init-db")
+def init_db() -> dict[str, str]:
+    try:
+        database.init_db()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "initialized"}
+
+
+@app.get("/documents/{document_id}")
+def get_document(document_id: str) -> dict:
+    try:
+        document = database.get_document(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return document
+
+
+def _materialize_document_input(document: dict, run_id: str) -> tuple[Path, str]:
+    source_uri = document.get("source_uri")
+    extracted_text_uri = document.get("extracted_text_uri")
+    mime_type = (document.get("mime_type") or "").lower()
+
+    if extracted_text_uri:
+        object_uri = extracted_text_uri
+    elif mime_type in {"text/markdown", "text/x-markdown", "text/plain"} or str(document.get("filename", "")).lower().endswith(".md"):
+        object_uri = source_uri
+    else:
+        raise HTTPException(
+            status_code=409,
+            detail="Document needs extracted_text_uri before pipeline processing. Convert the source file to Markdown/text first.",
+        )
+
+    if not object_uri:
+        raise HTTPException(status_code=409, detail="Document has no source_uri or extracted_text_uri")
+
+    try:
+        markdown = read_text_object(object_uri)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to read document object from storage: {exc}") from exc
+
+    input_dir = ensure_dir(Path("runs") / "_api_inputs" / run_id)
+    input_path = input_dir / f"{_safe_name(document['id'])}.md"
+    write_text(input_path, markdown)
+    return input_path, object_uri
+
+
+@app.post("/pipeline/runs", response_model=PipelineRunOut)
+def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTasks) -> PipelineRunOut:
+    run_id = str(uuid.uuid4())
+    out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
+    log_path = out / "pipeline.log"
+    input_source = ""
+    document_id = payload.document_id
+
+    if payload.document_id:
+        try:
+            document = database.get_document(payload.document_id)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        input_path, object_uri = _materialize_document_input(document, run_id)
+        input_source = f"storage:{object_uri}"
+    elif payload.input_markdown:
+        input_dir = ensure_dir(Path("runs") / "_api_inputs" / run_id)
+        input_path = input_dir / "inline.md"
+        write_text(input_path, payload.input_markdown)
+        input_source = "inline"
+    else:
+        input_path = Path(payload.input_path or "")
+        if not input_path.exists():
+            raise HTTPException(status_code=404, detail=f"Input file not found: {input_path}")
+        input_source = str(input_path)
+
+    try:
+        database.create_pipeline_run(run_id, document_id, input_source, str(out), payload.mode)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    args = _build_pipeline_args(payload, run_id, input_path, out, log_path)
+
+    if not payload.wait:
+        background_tasks.add_task(_execute_pipeline_run, run_id, args)
+        return PipelineRunOut(run_id=run_id, status="running", manifest=None, output_dir=str(out), log_path=str(log_path))
+
+    try:
+        manifest = run_pipeline(args)
+        database.finish_pipeline_run(run_id, manifest)
+    except Exception as exc:
+        database.fail_pipeline_run(run_id, str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return PipelineRunOut(run_id=run_id, status="succeeded", manifest=manifest, output_dir=str(out), log_path=str(log_path))
+
+
+@app.get("/pipeline/runs/{run_id}")
+def get_pipeline_run(run_id: str) -> dict:
+    try:
+        row = database.get_pipeline_run(run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    return row
+
+
+@app.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
+def get_pipeline_logs(run_id: str) -> str:
+    try:
+        row = database.get_pipeline_run(run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+
+    manifest = row.get("manifest") or {}
+    log_path = manifest.get("pipeline_log") or str(Path(row["output_dir"]) / "pipeline.log")
+    path = Path(log_path)
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
