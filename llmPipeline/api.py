@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from run_lab import run_pipeline
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+logger = logging.getLogger("fruition.pipeline")
 
 
 def _safe_name(value: str) -> str:
@@ -99,7 +101,7 @@ def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
         database.finish_pipeline_run(run_id, manifest)
     except Exception as exc:
         database.fail_pipeline_run(run_id, str(exc))
-        raise
+        logger.error("ERROR: pipeline run failed run_id=%s error=%s", run_id, exc)
 
 
 @app.get("/health")

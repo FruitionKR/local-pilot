@@ -150,6 +150,7 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
+    error_message = _truncate_error(error)
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         if row and row["document_id"]:
@@ -159,7 +160,7 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
                 SET status = 'failed', processed_at = now(), error_message = %s
                 WHERE id = %s
                 """,
-                (error, row["document_id"]),
+                (error_message, row["document_id"]),
             )
         conn.execute(
             """
@@ -167,7 +168,7 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
             SET status = 'failed', error = %s, finished_at = now()
             WHERE id = %s
             """,
-            (error, run_id),
+            (error_message, run_id),
         )
 
 
@@ -277,8 +278,8 @@ def _upsert_wiki_page(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO wiki_pages (id, page_type, title, slug, summary, markdown_uri, status)
-        VALUES (%s, %s, %s, %s, %s, %s, 'active')
+        INSERT INTO wiki_pages (id, page_type, title, slug, summary, markdown_uri, status, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, 'active', now(), now())
         ON CONFLICT (id) DO UPDATE SET
             page_type = EXCLUDED.page_type,
             title = EXCLUDED.title,
@@ -292,6 +293,13 @@ def _upsert_wiki_page(
     )
 
 
+def _truncate_error(error: str, limit: int = 240) -> str:
+    text = str(error)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
 def _upsert_document_wiki_link(
     conn: psycopg.Connection,
     document_id: str,
@@ -301,8 +309,8 @@ def _upsert_document_wiki_link(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO document_wiki_links (document_id, wiki_page_id, relation_type, confidence)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO document_wiki_links (document_id, wiki_page_id, relation_type, confidence, created_at)
+        VALUES (%s, %s, %s, %s, now())
         ON CONFLICT (document_id, wiki_page_id, relation_type) DO UPDATE SET
             confidence = EXCLUDED.confidence
         """,
@@ -320,8 +328,8 @@ def _upsert_wiki_page_link(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO wiki_page_links (from_page_id, to_page_id, link_type, label, confidence)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO wiki_page_links (from_page_id, to_page_id, link_type, label, confidence, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, now(), now())
         ON CONFLICT (from_page_id, to_page_id, link_type) DO UPDATE SET
             label = EXCLUDED.label,
             confidence = EXCLUDED.confidence,
