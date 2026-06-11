@@ -1,0 +1,27 @@
+---
+type: concept
+slug: wiki-operations
+sources: codex-test-llm-wiki-api-20260611_012854
+mention_count: 3
+importance_score: 8.55
+generated_by: llm_concept_page_generation
+confidence: 0.9
+---
+
+# Wiki Operations
+
+## Definition
+위키 운영은 자료 수집(Ingest), 질의 응답(Query), 위키 검증(Lint)의 세 가지 핵심 운영 방식으로 구성됩니다. [B0017, B0018, B0019]
+
+## Key Points
+- Ingest는 새로운 자료를 수집하고 처리하여 위키 페이지에 통합하는 과정입니다. 단일 자료가 10-15개의 위키 페이지에 영향을 미칠 수 있습니다. [B0017]
+- Query는 위키에 저장된 정보를 기반으로 질문에 답변하고, 생성된 답변을 새로운 페이지로 저장할 수 있습니다. [B0018]
+- Lint는 위키의 건강 상태를 점검하는 과정으로, 모순된 내용, 오래된 정보, 연결되지 않은 페이지 등을 식별합니다. [B0019]
+
+## Evidence
+- 위키 운영은 Ingest, Query, Lint 세 가지 방식으로 이루어집니다. [B0017, B0018, B0019]
+
+## Related Concepts
+- [[지식-관리-시스템|지식 관리 시스템]]
+- [[위키-유지보수|위키 유지보수]]
+- [[llm-기반-문서-처리|LLM 기반 문서 처리]]

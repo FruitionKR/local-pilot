@@ -1,0 +1,31 @@
+{
+  "input": "runs\\_api_inputs\\da8956d9-7253-4a4c-8920-9c1c5d979a29\\codex-test-llm-wiki-api-20260611_012854.md",
+  "out": "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854",
+  "mode": "api",
+  "concept_page_mode": "api",
+  "document_id": "codex-test-llm-wiki-api-20260611_012854",
+  "source_document_id": "codex-test-llm-wiki-api-20260611_012854",
+  "block_count": 33,
+  "packet_count": 1,
+  "semantic_note_count": 1,
+  "concept_count": 5,
+  "evidence_count": 6,
+  "generated_concept_page_count": 5,
+  "source_page": "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\sources\\codex-test-llm-wiki-api-20260611_012854.md",
+  "concept_pages": [
+    "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\concepts\\persistent-wiki.md",
+    "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\concepts\\llm-wiki.md",
+    "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\concepts\\wiki-architecture.md",
+    "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\concepts\\wiki-operations.md",
+    "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\concepts\\wiki-indexing-logging.md"
+  ],
+  "links": "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\wiki\\links.json",
+  "review_report": "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\review_report.md",
+  "pipeline_log": "C:\\Users\\a\\Documents\\local-pilot\\pipeline_api\\runs\\llm_wiki_api_20260611_012854\\pipeline.log",
+  "log_callback_url": null,
+  "warnings": [
+    "evidence ev_0001 references missing concept slug: rag-comparison",
+    "evidence ev_0005 references missing concept slug: tool-integration",
+    "evidence ev_0006 references missing concept slug: memex-connection"
+  ]
+}
