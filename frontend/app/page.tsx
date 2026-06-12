@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  ChangeEvent as ReactChangeEvent,
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  FilePlus2,
   Menu,
   Plus,
   Search
@@ -33,7 +35,10 @@ import userCircleIcon from "../svg/UserCircle.svg";
 type TreeItem = {
   id: string;
   label: string;
-  type?: "folder" | "file";
+  type?: "folder" | "file" | "wiki";
+  wikiKind?: "source" | "concept";
+  generated?: boolean;
+  customLabel?: boolean;
   status?: "uploading" | DocumentStatus;
   errorMessage?: string;
   documentId?: string;
@@ -61,18 +66,23 @@ type DropTarget = {
 
 type ContextMenuState = {
   projectId: string;
-  itemId: string;
+  itemId: string | null;
   x: number;
   y: number;
 };
 
 type EditingState = {
   projectId: string;
-  itemId: string;
+  itemId: string | null;
   label: string;
 };
 
 type FileDropTarget = {
+  projectId: string;
+  folderId: string | null;
+};
+
+type UploadPickerTarget = {
   projectId: string;
   folderId: string | null;
 };
@@ -559,6 +569,18 @@ function isFileItem(item: TreeItem) {
   return item.type === "file";
 }
 
+function isWikiItem(item: TreeItem) {
+  return item.type === "wiki";
+}
+
+function canDragTreeItem(item: TreeItem) {
+  return !item.generated && !isWikiItem(item);
+}
+
+function isGeneratedGroup(item: TreeItem, groupId: string) {
+  return item.generated && item.id === groupId;
+}
+
 function isSupportedUploadFile(file: File) {
   const name = file.name.toLowerCase();
   return name.endsWith(".pdf") || name.endsWith(".md");
@@ -604,6 +626,14 @@ function removeTreeItem(items: TreeItem[], itemId: string): { items: TreeItem[];
   return { items: nextItems, removed };
 }
 
+function replaceTreeItem(items: TreeItem[], itemId: string, replacement: TreeItem): TreeItem[] {
+  return items.map((item) => {
+    if (item.id === itemId) return replacement;
+    if (item.children?.length) return { ...item, children: replaceTreeItem(item.children, itemId, replacement) };
+    return item;
+  });
+}
+
 function insertTreeItem(items: TreeItem[], movedItem: TreeItem, target: DropTarget): TreeItem[] {
   return items.flatMap((item) => {
     if (item.id === target.targetId) {
@@ -627,9 +657,27 @@ function moveTreeItem(items: TreeItem[], itemId: string, target: DropTarget): Tr
   return insertTreeItem(result.items, result.removed, target);
 }
 
+function mergeTreeItemsIntoFolder(items: TreeItem[], draggedId: string, targetId: string): TreeItem[] {
+  const draggedItem = findTreeItem(items, draggedId);
+  const targetItem = findTreeItem(items, targetId);
+  if (!draggedItem || !targetItem || !isFileItem(draggedItem) || !isFileItem(targetItem)) return items;
+
+  const result = removeTreeItem(items, draggedId);
+  if (!result.removed) return items;
+
+  const folder: TreeItem = {
+    id: createClientId("merged-folder"),
+    label: "새 문서 묶음",
+    type: "folder",
+    children: [targetItem, result.removed]
+  };
+
+  return replaceTreeItem(result.items, targetId, folder);
+}
+
 function updateTreeItemLabel(items: TreeItem[], itemId: string, label: string): TreeItem[] {
   return items.map((item) => {
-    if (item.id === itemId) return { ...item, label };
+    if (item.id === itemId) return { ...item, label, customLabel: true };
     if (item.children?.length) return { ...item, children: updateTreeItemLabel(item.children, itemId, label) };
     return item;
   });
@@ -654,6 +702,10 @@ function appendItemsToFolder(items: TreeItem[], folderId: string | null, nextIte
     if (item.children?.length) return { ...item, children: appendItemsToFolder(item.children, folderId, nextItems) };
     return item;
   });
+}
+
+function appendFolderToFolder(items: TreeItem[], folderId: string | null, folder: TreeItem): TreeItem[] {
+  return appendItemsToFolder(items, folderId, [folder]);
 }
 
 function updateTreeItemStatus(items: TreeItem[], itemId: string, status: TreeItem["status"], errorMessage?: string): TreeItem[] {
@@ -682,6 +734,55 @@ function applyUploadedDocument(items: TreeItem[], itemId: string, document: Docu
     if (item.children?.length) return { ...item, children: applyUploadedDocument(item.children, itemId, document) };
     return item;
   });
+}
+
+function removeGeneratedWikiGroups(items: TreeItem[]): TreeItem[] {
+  return items
+    .filter((item) => !isGeneratedGroup(item, "wiki-source-pages") && !isGeneratedGroup(item, "wiki-concept-pages"))
+    .map((item) => item.children?.length ? { ...item, children: removeGeneratedWikiGroups(item.children) } : item);
+}
+
+function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
+  const sourceItems = (graph.nodes ?? [])
+    .filter((node) => node.page_type === "source")
+    .map((node) => ({
+      id: `wiki-item-${node.id}`,
+      label: node.title || node.slug || node.id,
+      type: "wiki" as const,
+      wikiKind: "source" as const,
+      generated: true
+    }));
+
+  const conceptItems = (graph.nodes ?? [])
+    .filter((node) => node.page_type === "concept")
+    .map((node) => ({
+      id: `wiki-item-${node.id}`,
+      label: node.title || node.slug || node.id,
+      type: "wiki" as const,
+      wikiKind: "concept" as const,
+      generated: true
+    }));
+
+  const groups: TreeItem[] = [];
+  if (sourceItems.length > 0) {
+    groups.push({
+      id: "wiki-source-pages",
+      label: "Source 문서",
+      type: "folder",
+      generated: true,
+      children: sourceItems
+    });
+  }
+  if (conceptItems.length > 0) {
+    groups.push({
+      id: "wiki-concept-pages",
+      label: "Concept 문서",
+      type: "folder",
+      generated: true,
+      children: conceptItems
+    });
+  }
+  return groups;
 }
 
 async function uploadDocumentFile(file: File) {
@@ -745,12 +846,12 @@ function buildGraphFromBackend(documents: DocumentItemResponse[], graph: WikiGra
   const documentNodes = documents
     .filter((document) => !sourceDocumentIds.has(document.id))
     .map((document) => {
-      const progress = document.status === "completed" ? 100 : document.status === "failed" ? 0 : 58;
       return {
         id: `document:${document.id}`,
         label: document.filename,
-        kind: document.status === "failed" ? "raw" as const : "progress" as const,
-        progress
+        kind: document.status === "processing" || document.status === "uploaded" || document.status === "completed"
+          ? "progress" as const
+          : "raw" as const
       };
     })
     .filter((node) => !graphNodeIds.has(node.id));
@@ -767,7 +868,7 @@ function syncDocumentItems(items: TreeItem[], documents: DocumentItemResponse[])
     const document = item.documentId ? documentById.get(item.documentId) : null;
     const nextItem = document ? {
       ...item,
-      label: document.filename,
+      label: item.customLabel ? item.label : document.filename,
       status: document.status,
       errorMessage: document.error_message,
       mimeType: document.mime_type,
@@ -788,13 +889,9 @@ function collectDocumentIds(items: TreeItem[], ids = new Set<string>()) {
   return ids;
 }
 
-function mergeBackendDocumentsIntoProjects(projects: Project[], documents: DocumentItemResponse[]) {
+function mergeBackendDataIntoProjects(projects: Project[], documents: DocumentItemResponse[], graph: WikiGraphResponse) {
   const knownDocumentIds = collectDocumentIds(projects.flatMap((project) => project.items));
   const missingDocuments = documents.filter((document) => !knownDocumentIds.has(document.id));
-  if (missingDocuments.length === 0) {
-    return projects.map((project) => ({ ...project, items: syncDocumentItems(project.items, documents) }));
-  }
-
   const backendItems = missingDocuments.map((document) => ({
     id: `document-file-${document.id}`,
     label: document.filename,
@@ -807,11 +904,12 @@ function mergeBackendDocumentsIntoProjects(projects: Project[], documents: Docum
     uploadedAt: document.uploaded_at,
     errorMessage: document.error_message
   }));
+  const wikiGroups = buildWikiTreeGroups(graph);
 
   return projects.map((project, index) => {
-    const syncedItems = syncDocumentItems(project.items, documents);
+    const syncedItems = syncDocumentItems(removeGeneratedWikiGroups(project.items), documents);
     if (index !== 0) return { ...project, items: syncedItems };
-    return { ...project, items: [...syncedItems, ...backendItems] };
+    return { ...project, items: [...syncedItems, ...backendItems, ...wikiGroups] };
   });
 }
 
@@ -874,6 +972,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
   const isFileDropTarget = fileDropTarget?.projectId === projectId && fileDropTarget.folderId === item.id;
   const isEditing = editing?.projectId === projectId && editing.itemId === item.id;
   const canNestChildren = !isFileItem(item);
+  const canDrag = canDragTreeItem(item);
 
   function handleEditingKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") onCommitEditing();
@@ -894,9 +993,9 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
         style={{ paddingLeft: 10 + depth * 17 }}
         title={item.errorMessage ?? item.sourceUri}
         aria-expanded={hasChildren ? isOpen : undefined}
-        draggable={!isEditing && !isFileItem(item)}
+        draggable={!isEditing && canDrag}
         onDragStart={(event) => {
-          if (isFileItem(item)) return;
+          if (!canDrag) return;
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", item.id);
           setLightDragPreview(event);
@@ -905,12 +1004,12 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
         onDragOver={(event) => {
           event.preventDefault();
           event.dataTransfer.dropEffect = hasDroppedFiles(event) ? "copy" : "move";
-          if (hasDroppedFiles(event) && !isFileItem(item)) {
+          if (hasDroppedFiles(event) && !isFileItem(item) && !isWikiItem(item)) {
             event.stopPropagation();
             onFileDragOver({ projectId, folderId: item.id });
             return;
           }
-          if (isFileItem(item)) return;
+          if (isWikiItem(item) || item.generated) return;
           const position = resolveDropPosition(event);
           onDragOverItem({ projectId, targetId: item.id, position });
         }}
@@ -926,10 +1025,10 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
           if (hasDroppedFiles(event)) {
             event.stopPropagation();
             onFileDragLeave();
-            onDropFiles(projectId, canNestChildren ? item.id : null, getDroppedFiles(event));
-            return;
+          onDropFiles(projectId, canNestChildren && !isWikiItem(item) ? item.id : null, getDroppedFiles(event));
+          return;
           }
-          if (!isFileItem(item)) {
+          if (!isWikiItem(item) && !item.generated) {
             onDropItem({ projectId, targetId: item.id, position: resolveDropPosition(event) });
           }
         }}
@@ -941,6 +1040,10 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
       >
         {isFileItem(item) ? (
           <SvgIcon src={fileIcon} className="tree-asset" />
+        ) : item.wikiKind === "source" ? (
+          <SvgIcon src={sourcePageIcon} className="tree-asset" />
+        ) : item.wikiKind === "concept" ? (
+          <SvgIcon src={conceptPageIcon} className="tree-asset" />
         ) : hasChildren ? (
           <Icon size={14} />
         ) : (
@@ -960,7 +1063,12 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
           <>
             <span>{item.label}</span>
             {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
-            {item.status && <small className={`tree-status ${item.status}`}>{item.status}</small>}
+            {item.status && (
+              <small className={`tree-status ${item.status}`}>
+                {(item.status === "processing" || item.status === "uploading" || item.status === "uploaded") && <i />}
+                {item.status === "processing" || item.status === "uploading" || item.status === "uploaded" ? "" : item.status}
+              </small>
+            )}
           </>
         )}
       </button>
@@ -1064,36 +1172,38 @@ function SidebarTree({ items, projectId, draggedItemId, dropTarget, fileDropTarg
 
 function ProjectSection({
   project,
-  onAddFolder,
   draggedItemId,
   dropTarget,
   fileDropTarget,
   editing,
   onMoveItem,
   onDropFiles,
+  onOpenUploadPicker,
   onDragStart,
   onDragOverItem,
   onFileDragOver,
   onFileDragLeave,
   onDragEnd,
+  onContextMenuProject,
   onContextMenuItem,
   onEditingChange,
   onCommitEditing,
   onCancelEditing
 }: {
   project: Project;
-  onAddFolder: (projectId: string) => void;
   draggedItemId: string | null;
   dropTarget: DropTarget | null;
   fileDropTarget: FileDropTarget | null;
   editing: EditingState | null;
   onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
+  onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
   onDragStart: (projectId: string, itemId: string) => void;
   onDragOverItem: (target: DropTarget) => void;
   onFileDragOver: (target: FileDropTarget) => void;
   onFileDragLeave: () => void;
   onDragEnd: () => void;
+  onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
@@ -1101,10 +1211,17 @@ function ProjectSection({
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const isRootFileDropTarget = fileDropTarget?.projectId === project.id && fileDropTarget.folderId === null;
+  const isProjectEditing = editing?.projectId === project.id && editing.itemId === null;
+
+  function handleEditingKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") onCommitEditing();
+    if (event.key === "Escape") onCancelEditing();
+  }
 
   return (
     <section
       className={`project-section ${isRootFileDropTarget ? "is-file-drop-target" : ""}`}
+      onContextMenu={(event) => onContextMenuProject(event, project.id)}
       onDragOver={(event) => {
         if (!hasDroppedFiles(event)) return;
         event.preventDefault();
@@ -1131,16 +1248,30 @@ function ProjectSection({
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
         >
-          <span>{project.title}</span>
-          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          {isProjectEditing ? (
+            <input
+              className="tree-edit-input"
+              value={editing.label}
+              autoFocus
+              onChange={(event) => onEditingChange(event.target.value)}
+              onBlur={onCommitEditing}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={handleEditingKeyDown}
+            />
+          ) : (
+            <>
+              <span>{project.title}</span>
+              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </>
+          )}
         </button>
         <button
           type="button"
           className="project-add-folder"
-          aria-label={`${project.title}에 폴더 추가`}
-          onClick={() => onAddFolder(project.id)}
+          aria-label={`${project.title}에 문서 업로드`}
+          onClick={() => onOpenUploadPicker(project.id, null)}
         >
-          <Plus size={14} />
+          <FilePlus2 size={14} />
         </button>
       </div>
       {isOpen && (
@@ -1738,21 +1869,17 @@ function Graph({ nodes = [], links = [], loading = false }: {
         context.stroke();
         context.setLineDash([]);
       } else if (node.kind === "progress") {
+        const spin = performance.now() / 720;
         context.fillStyle = "#fff";
         context.fill();
-        context.strokeStyle = "#ffc117";
-        context.lineWidth = 5;
-        context.stroke();
-        context.strokeStyle = "#99a4b3";
+        context.strokeStyle = "rgba(255, 193, 23, 0.24)";
         context.lineWidth = 2;
-        context.setLineDash([5, 4]);
         context.stroke();
-        context.setLineDash([]);
-        context.fillStyle = "#38414d";
-        context.font = "900 10px Inter, sans-serif";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.fillText(`${node.progress}%`, screenPosition.x, screenPosition.y);
+        context.strokeStyle = "#ffc117";
+        context.lineWidth = 4;
+        context.beginPath();
+        context.arc(screenPosition.x, screenPosition.y, radius - 3, spin, spin + Math.PI * 1.35);
+        context.stroke();
       } else {
         context.fillStyle = "#303844";
         context.fill();
@@ -2104,6 +2231,8 @@ export default function HomePage() {
   const [isGraphLoading, setIsGraphLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const editingCancelRef = useRef(false);
+  const uploadPickerTargetRef = useRef<UploadPickerTarget | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const isHomeView = activeView === "home";
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasProcessingDocuments = documents.some((document) => document.status === "processing" || document.status === "uploaded");
@@ -2113,7 +2242,7 @@ export default function HomePage() {
       const nextData = await fetchBackendData();
       setDocuments(nextData.documents);
       setWikiGraph(nextData.graph);
-      setProjects((current) => mergeBackendDocumentsIntoProjects(current, nextData.documents));
+      setProjects((current) => mergeBackendDataIntoProjects(current, nextData.documents, nextData.graph));
       setApiError(null);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : "백엔드 데이터를 불러오지 못했습니다.");
@@ -2167,21 +2296,40 @@ export default function HomePage() {
     });
   }
 
-  function addFolder(projectId: string) {
+  function updateProjectTitle(projectId: string, title: string) {
+    setProjects((current) => current.map((project) => (
+      project.id === projectId ? { ...project, title } : project
+    )));
+  }
+
+  function addFolder(projectId: string, folderId: string | null = null) {
     setProjects((current) => current.map((project) => {
       if (project.id !== projectId) return project;
-      const nextIndex = project.items.length + 1;
+      const parent = folderId ? findTreeItem(project.items, folderId) : null;
+      const siblingCount = parent?.children?.length ?? project.items.length;
+      const nextFolder = {
+        id: `${project.id}-folder-${Date.now()}`,
+        label: `새 폴더 ${siblingCount + 1}`,
+        type: "folder" as const
+      };
       return {
         ...project,
-        items: [
-          ...project.items,
-          {
-            id: `${project.id}-folder-${Date.now()}`,
-            label: `새 폴더 ${nextIndex}`
-          }
-        ]
+        items: appendFolderToFolder(project.items, folderId, nextFolder)
       };
     }));
+  }
+
+  function openUploadPicker(projectId: string, folderId: string | null) {
+    uploadPickerTargetRef.current = { projectId, folderId };
+    uploadInputRef.current?.click();
+  }
+
+  function handleUploadPickerChange(event: ReactChangeEvent<HTMLInputElement>) {
+    const target = uploadPickerTargetRef.current;
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!target || files.length === 0) return;
+    dropUploadFiles(target.projectId, target.folderId, files);
   }
 
   function dropUploadFiles(projectId: string, folderId: string | null, files: File[]) {
@@ -2224,7 +2372,7 @@ export default function HomePage() {
     });
   }
 
-  function moveFolder(projectId: string, itemId: string, target: DropTarget) {
+  function moveTreeEntry(projectId: string, itemId: string, target: DropTarget) {
     if (draggedItem?.projectId !== projectId || draggedItem.projectId !== target.projectId) {
       setDropTarget(null);
       return;
@@ -2232,7 +2380,15 @@ export default function HomePage() {
 
     setProjects((current) => current.map((project) => {
       if (project.id !== projectId) return project;
-      return { ...project, items: moveTreeItem(project.items, itemId, target) };
+      const dragged = findTreeItem(project.items, itemId);
+      const targetItem = findTreeItem(project.items, target.targetId);
+      if (target.position === "inside" && dragged && targetItem && isFileItem(dragged) && isFileItem(targetItem)) {
+        return { ...project, items: mergeTreeItemsIntoFolder(project.items, itemId, target.targetId) };
+      }
+      const normalizedTarget = target.position === "inside" && targetItem && isFileItem(targetItem)
+        ? { ...target, position: "after" as const }
+        : target;
+      return { ...project, items: moveTreeItem(project.items, itemId, normalizedTarget) };
     }));
     setDropTarget(null);
     setDraggedItem(null);
@@ -2240,24 +2396,44 @@ export default function HomePage() {
 
   function openFolderMenu(event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) {
     event.preventDefault();
+    event.stopPropagation();
     setContextMenu({ projectId, itemId, x: event.clientX, y: event.clientY });
   }
 
-  function renameContextFolder() {
+  function openProjectMenu(event: ReactMouseEvent<HTMLElement>, projectId: string) {
+    event.preventDefault();
+    setContextMenu({ projectId, itemId: null, x: event.clientX, y: event.clientY });
+  }
+
+  function renameContextTarget() {
     if (!contextMenu) return;
     const project = projects.find((candidate) => candidate.id === contextMenu.projectId);
-    const item = project ? findTreeItem(project.items, contextMenu.itemId) : null;
-    if (!item) return;
+    if (!project) return;
     editingCancelRef.current = false;
-    setEditing({ projectId: contextMenu.projectId, itemId: contextMenu.itemId, label: item.label });
+    if (contextMenu.itemId === null) {
+      setEditing({ projectId: contextMenu.projectId, itemId: null, label: project.title });
+    } else {
+      const item = findTreeItem(project.items, contextMenu.itemId);
+      if (!item || item.generated) return;
+      setEditing({ projectId: contextMenu.projectId, itemId: contextMenu.itemId, label: item.label });
+    }
     setContextMenu(null);
   }
 
-  function deleteContextFolder() {
+  function addFolderFromContext() {
     if (!contextMenu) return;
+    const project = projects.find((candidate) => candidate.id === contextMenu.projectId);
+    const item = contextMenu.itemId && project ? findTreeItem(project.items, contextMenu.itemId) : null;
+    addFolder(contextMenu.projectId, item && !isFileItem(item) && !isWikiItem(item) ? item.id : null);
+    setContextMenu(null);
+  }
+
+  function deleteContextTarget() {
+    if (!contextMenu || contextMenu.itemId === null) return;
+    const itemId = contextMenu.itemId;
     setProjects((current) => current.map((project) => {
       if (project.id !== contextMenu.projectId) return project;
-      return { ...project, items: removeTreeItem(project.items, contextMenu.itemId).items };
+      return { ...project, items: removeTreeItem(project.items, itemId).items };
     }));
     setContextMenu(null);
   }
@@ -2271,10 +2447,15 @@ export default function HomePage() {
     if (!editing) return;
     const nextLabel = editing.label.trim();
     if (nextLabel) {
-      setProjects((current) => current.map((project) => {
-        if (project.id !== editing.projectId) return project;
-        return { ...project, items: updateTreeItemLabel(project.items, editing.itemId, nextLabel) };
-      }));
+      if (editing.itemId === null) {
+        updateProjectTitle(editing.projectId, nextLabel);
+      } else {
+        const itemId = editing.itemId;
+        setProjects((current) => current.map((project) => {
+          if (project.id !== editing.projectId) return project;
+          return { ...project, items: updateTreeItemLabel(project.items, itemId, nextLabel) };
+        }));
+      }
     }
     setEditing(null);
   }
@@ -2324,18 +2505,26 @@ export default function HomePage() {
           <aside className="sidebar">
             <h1>자료 관리</h1>
             <button className="create-project" onClick={createProject}>프로젝트 만들기 <Plus size={16} /></button>
+            <input
+              ref={uploadInputRef}
+              className="upload-picker"
+              type="file"
+              accept=".pdf,.md,application/pdf,text/markdown,text/plain"
+              multiple
+              onChange={handleUploadPickerChange}
+            />
 
             {projects.map((project) => (
               <ProjectSection
                 key={project.id}
                 project={project}
-                onAddFolder={addFolder}
                 draggedItemId={draggedItem?.itemId ?? null}
                 dropTarget={dropTarget}
                 fileDropTarget={fileDropTarget}
                 editing={editing}
-                onMoveItem={moveFolder}
+                onMoveItem={moveTreeEntry}
                 onDropFiles={dropUploadFiles}
+                onOpenUploadPicker={openUploadPicker}
                 onDragStart={(projectId, itemId) => {
                   setDraggedItem({ projectId, itemId });
                   setContextMenu(null);
@@ -2350,6 +2539,7 @@ export default function HomePage() {
                   setDropTarget(null);
                   setFileDropTarget(null);
                 }}
+                onContextMenuProject={openProjectMenu}
                 onContextMenuItem={openFolderMenu}
                 onEditingChange={(label) => {
                   setEditing((current) => current ? { ...current, label } : current);
@@ -2364,8 +2554,9 @@ export default function HomePage() {
                 style={{ left: contextMenu.x, top: contextMenu.y }}
                 onClick={(event) => event.stopPropagation()}
               >
-                <button type="button" onClick={renameContextFolder}>이름 변경</button>
-                <button type="button" className="danger" onClick={deleteContextFolder}>삭제</button>
+                <button type="button" onClick={renameContextTarget}>이름 변경</button>
+                <button type="button" onClick={addFolderFromContext}>새 폴더</button>
+                {contextMenu.itemId !== null && <button type="button" className="danger" onClick={deleteContextTarget}>삭제</button>}
               </div>
             )}
           </aside>

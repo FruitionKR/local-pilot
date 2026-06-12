@@ -276,6 +276,10 @@ button {
   border-radius: 4px;
 }
 
+.upload-picker {
+  display: none;
+}
+
 .tree-section {
   margin-top: 18px;
 }
@@ -460,6 +464,11 @@ button {
 
 .tree-status {
   flex: 0 0 auto;
+  min-width: 16px;
+  min-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 5px;
   color: #687386;
   background: #eef2f7;
@@ -485,6 +494,7 @@ button {
   background: rgba(255, 193, 23, 0.22);
 }
 
+.tree-status.uploading,
 .tree-status.processing {
   color: #4f6587;
   background: #e6edf7;
@@ -495,6 +505,17 @@ button {
   background: #edf0f5;
 }
 
+.tree-status.uploading i,
+.tree-status.processing i,
+.tree-status.uploaded i {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 193, 23, 0.28);
+  border-top-color: #ffc117;
+  border-radius: 999px;
+  animation: processing-spin 0.78s linear infinite;
+}
+
 .tree-status.completed {
   color: #3f7d55;
   background: #e3f2e8;
@@ -503,6 +524,12 @@ button {
 .tree-status.failed {
   color: #c2372f;
   background: #fae6e4;
+}
+
+@keyframes processing-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tree-edit-input {
