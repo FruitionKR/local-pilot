@@ -1,4 +1,4 @@
-# Agent 작업 지침
+# Codex 작업 지침
 
 ## 작업 승인
 
@@ -13,6 +13,15 @@
 - Conventional Commits 접두사, 브랜치명, 명령어, 파일명, API 이름처럼 원문 유지가 필요한 값은 영어를 그대로 사용한다.
 - 제목은 간결하게 작성하고, 한 커밋이 담는 변경 범위를 한글로 명확히 표현한다.
 - 예: `feat: 로컬 Docker 개발 환경 추가`
+
+## 커밋 전 changelog 갱신
+
+- 커밋을 진행하기 전에는 현재까지의 변경 사항을 `docs/changelog/` 아래의 관련 changelog에 먼저 기록한다.
+- Java/Spring 백엔드 변경은 `docs/changelog/backend.md`에 기록한다.
+- 프론트엔드 변경은 `docs/changelog/frontend.md`에 기록한다.
+- 인프라, DevOps, Docker, 배포 환경 변경은 `docs/changelog/infra.md`에 기록한다.
+- 여러 영역에 걸친 변경은 해당하는 changelog를 모두 갱신한다.
+- changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
 
 ## 브랜치와 PR 흐름
 

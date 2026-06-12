@@ -14,6 +14,15 @@
 - 제목은 간결하게 작성하고, 한 커밋이 담는 변경 범위를 한글로 명확히 표현한다.
 - 예: `feat: 로컬 Docker 개발 환경 추가`
 
+## 커밋 전 changelog 갱신
+
+- 커밋을 진행하기 전에는 현재까지의 변경 사항을 `docs/changelog/` 아래의 관련 changelog에 먼저 기록한다.
+- Java/Spring 백엔드 변경은 `docs/changelog/backend.md`에 기록한다.
+- 프론트엔드 변경은 `docs/changelog/frontend.md`에 기록한다.
+- 인프라, DevOps, Docker, 배포 환경 변경은 `docs/changelog/infra.md`에 기록한다.
+- 여러 영역에 걸친 변경은 해당하는 changelog를 모두 갱신한다.
+- changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
+
 ## 브랜치와 PR 흐름
 
 - 기능 개발이나 수정 작업은 `dev`에서 직접 진행하지 않고, 작업 목적이 드러나는 별도 브랜치를 생성해 진행한다.

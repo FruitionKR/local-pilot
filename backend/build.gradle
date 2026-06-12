@@ -1,0 +1,66 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.14'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'fruition'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	set('springAiVersion', "1.1.7")
+}
+
+dependencies {
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'io.minio:minio:8.5.7'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
+	// implementation 'org.springframework.ai:spring-ai-pdf-document-reader'
+	// implementation 'org.springframework.ai:spring-ai-starter-model-openai-sdk'
+	implementation 'org.springframework.session:spring-session-jdbc'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'org.postgresql:postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+tasks.named('bootRun') {
+	doFirst {
+		def envFile = rootProject.file('infra/.env')
+		if (envFile.exists()) {
+			envFile.readLines().each { line ->
+				if (line && !line.startsWith('#') && line.contains('=')) {
+					def parts = line.split('=', 2)
+					environment(parts[0].trim(), parts[1].trim())
+				}
+			}
+		}
+	}
+}
