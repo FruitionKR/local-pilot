@@ -6,6 +6,25 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-12
 
+### fix: 원본 raw 카운트 기준 수정
+
+**변경 배경**
+
+- DB에는 업로드 문서가 7개 있지만 프론트 graph 상단의 `원본 raw`가 실패 문서 1개만 표시하고 있었다.
+- 기존 계산은 graph node의 `kind=raw`만 세고 있어, 업로드 원본 수가 아니라 source page로 승격되지 않은 failed node 수를 보여주는 문제가 있었다.
+
+**변경된 내용**
+
+- graph 상단의 `원본 raw` 카운트를 `GET /api/documents`로 받은 전체 업로드 문서 수 기준으로 표시하도록 변경했다.
+- `processing` 카운트도 graph node 종류가 아니라 실제 문서 상태가 `processing` 또는 `uploaded`인 문서 수 기준으로 표시하도록 변경했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+
+---
+
 ### fix: Source 문서 색상 표시 보정
 
 **변경 배경**

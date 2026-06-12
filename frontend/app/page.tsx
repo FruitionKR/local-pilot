@@ -1303,9 +1303,11 @@ function ProjectSection({
   );
 }
 
-function Graph({ nodes = [], links = [], loading = false }: {
+function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCount, loading = false }: {
   nodes: GraphNode[];
   links: GraphLink[];
+  rawDocumentCount: number;
+  processingDocumentCount: number;
   loading?: boolean;
 }) {
   const graphSignature = useMemo(
@@ -2176,18 +2178,16 @@ function Graph({ nodes = [], links = [], loading = false }: {
     stopPanning(event.pointerId);
   }
 
-  const rawNodeCount = nodes.filter((node) => node.kind === "raw").length;
   const sourceNodeCount = nodes.filter((node) => node.kind === "source").length;
-  const progressNodeCount = nodes.filter((node) => node.kind === "progress").length;
   const conceptNodeCount = nodes.filter((node) => !node.kind || node.kind === "concept").length;
 
   return (
     <section className="graph-stage" aria-label="자료 관계 그래프">
       <div className="filter-chips">
-        <span><SvgIcon src={rawPageIcon} className="chip-icon raw" />원본 raw {rawNodeCount}</span>
+        <span><SvgIcon src={rawPageIcon} className="chip-icon raw" />원본 raw {rawDocumentCount}</span>
         <span><SvgIcon src={sourcePageIcon} className="chip-icon source" />source page {sourceNodeCount}</span>
         <span><SvgIcon src={conceptPageIcon} className="chip-icon concept" />concept page {conceptNodeCount}</span>
-        {progressNodeCount > 0 && <span><SvgIcon src={lightningIcon} className="chip-icon source" />processing {progressNodeCount}</span>}
+        {processingDocumentCount > 0 && <span><SvgIcon src={lightningIcon} className="chip-icon source" />processing {processingDocumentCount}</span>}
       </div>
 
       <div
@@ -2236,6 +2236,7 @@ export default function HomePage() {
   const isHomeView = activeView === "home";
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasProcessingDocuments = documents.some((document) => document.status === "processing" || document.status === "uploaded");
+  const processingDocumentCount = documents.filter((document) => document.status === "processing" || document.status === "uploaded").length;
 
   const refreshBackendData = useCallback(async () => {
     try {
@@ -2562,7 +2563,13 @@ export default function HomePage() {
           </aside>
 
           {apiError && <div className="api-error-banner">{apiError}</div>}
-          <Graph nodes={graphData.nodes} links={graphData.links} loading={isGraphLoading} />
+          <Graph
+            nodes={graphData.nodes}
+            links={graphData.links}
+            rawDocumentCount={documents.length}
+            processingDocumentCount={processingDocumentCount}
+            loading={isGraphLoading}
+          />
 
           {!isAgentPanelOpen && (
             <button className="agent-restore" aria-label="Agent 패널 보이기" onClick={() => setIsAgentPanelOpen(true)}>
