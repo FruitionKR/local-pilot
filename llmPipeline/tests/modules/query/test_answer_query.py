@@ -20,6 +20,22 @@ class EmptyTextSearch:
         return [0.0 for _ in documents]
 
 
+class FakeMarkdownReader:
+    def __init__(self, markdown_by_uri: dict[str, str]) -> None:
+        self._markdown_by_uri = markdown_by_uri
+
+    def read_markdown(self, markdown_uri: str) -> str:
+        return self._markdown_by_uri[markdown_uri]
+
+
+class RecordingEventPublisher:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
+        self.events.append((stage, message, data))
+
+
 class RecordingAnswerGenerator:
     def __init__(self) -> None:
         self.last_context: QueryContext | None = None
@@ -36,6 +52,7 @@ def source_page(page_id: str, title: str) -> WikiPage:
         title=title,
         slug=title.lower().replace(" ", "-"),
         summary=f"{title} 요약",
+        markdown_uri=f"s3://test/{page_id}.md",
     )
 
 
@@ -46,6 +63,7 @@ def concept_page(page_id: str, title: str) -> WikiPage:
         title=title,
         slug=title.lower().replace(" ", "-"),
         summary=f"{title} 정의",
+        markdown_uri=f"s3://test/{page_id}.md",
     )
 
 
@@ -65,6 +83,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             )
         ]
         answer_generator = RecordingAnswerGenerator()
+        event_publisher = RecordingEventPublisher()
         use_case = AnswerQueryUseCase(
             wiki_repository=InMemoryWikiRepository(pages, links),
             embedding_search=ScoreSearch(
@@ -76,7 +95,15 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
             text_search=EmptyTextSearch(),
             answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:attention.md": "Self-attention computes relationships between tokens in one sequence.",
+                    "s3://test/source:unrelated.md": "Unrelated source body.",
+                    "s3://test/concept:self-attention.md": "입력 토큰들이 서로를 참조해 중요도를 계산하는 Transformer 메커니즘.",
+                }
+            ),
             source_candidate_limit=1,
+            event_publisher=event_publisher,
             traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
         )
 
@@ -90,6 +117,36 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             any("source:attention" in path.nodes and "concept:self-attention" in path.nodes for path in result.traversal_paths)
         )
         self.assertIsNotNone(answer_generator.last_context)
+        self.assertIn("# User Question", answer_generator.last_context.answer_context)
+        self.assertIn("# Evidence Snippets By Relevance", answer_generator.last_context.answer_context)
+        self.assertIn("Answer in Korean.", answer_generator.last_context.answer_context)
+        self.assertIn("Do not create examples, analogies, or fictional cases", answer_generator.last_context.answer_context)
+        self.assertIn("Self-attention computes relationships between tokens", answer_generator.last_context.answer_context)
+        self.assertIn("입력 토큰들이 서로를 참조", answer_generator.last_context.answer_context)
+        self.assertIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
+        self.assertIn("source:attention -> concept:self-attention", answer_generator.last_context.answer_context)
+        self.assertGreaterEqual(len(result.evidence_snippets), 2)
+        self.assertEqual(result.evidence_snippets[0].rank, 1)
+        self.assertEqual(result.evidence_snippets[0].page_url, f"/api/wiki/pages/{result.evidence_snippets[0].page_id}")
+        self.assertIn("토큰", result.evidence_snippets[0].text)
+        self.assertNotIn("Unrelated", result.evidence_snippets[0].text)
+        self.assertEqual(result.evidence_snippets, sorted(result.evidence_snippets, key=lambda snippet: snippet.score, reverse=True))
+        self.assertNotIn("# User Question", result.answer.content)
+        event_stages = [event[0] for event in event_publisher.events]
+        self.assertEqual(
+            event_stages,
+            [
+                "query_started",
+                "wiki_loaded",
+                "retrieval_markdown_loaded",
+                "retrieval_scored",
+                "seeds_selected",
+                "graph_traversed",
+                "markdown_loaded",
+                "context_built",
+                "answer_generated",
+            ],
+        )
 
     def test_traverses_source_related_to_edges(self) -> None:
         pages = [

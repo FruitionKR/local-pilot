@@ -11,6 +11,11 @@ class WikiRepositoryPort(Protocol):
         ...
 
 
+class WikiMarkdownReaderPort(Protocol):
+    def read_markdown(self, markdown_uri: str) -> str:
+        ...
+
+
 class EmbeddingSearchPort(Protocol):
     def score(self, query: str, documents: list[str]) -> list[float]:
         ...
@@ -23,5 +28,10 @@ class TextSearchPort(Protocol):
 
 class AnswerGeneratorPort(Protocol):
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
+        ...
+
+
+class QueryEventPublisherPort(Protocol):
+    def publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
         ...
 

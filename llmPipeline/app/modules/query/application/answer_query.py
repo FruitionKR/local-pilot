@@ -1,7 +1,16 @@
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
-from app.modules.query.application.ports import AnswerGeneratorPort, EmbeddingSearchPort, TextSearchPort, WikiRepositoryPort
+from dataclasses import replace
+
+from app.modules.query.application.ports import (
+    AnswerGeneratorPort,
+    EmbeddingSearchPort,
+    QueryEventPublisherPort,
+    TextSearchPort,
+    WikiMarkdownReaderPort,
+    WikiRepositoryPort,
+)
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
-from app.modules.query.domain.entities import QueryAnswer, RetrievalSummary, WikiPage
+from app.modules.query.domain.entities import GraphContext, QueryAnswer, RetrievedPage, RetrievalSummary, WikiPage, WikiPageLink
 from app.modules.query.domain.scoring import hybrid_score
 from app.modules.query.domain.value_objects import Question
 
@@ -13,6 +22,8 @@ class AnswerQueryUseCase:
         embedding_search: EmbeddingSearchPort,
         text_search: TextSearchPort,
         answer_generator: AnswerGeneratorPort,
+        markdown_reader: WikiMarkdownReaderPort | None = None,
+        event_publisher: QueryEventPublisherPort | None = None,
         traverse_wiki_graph: TraverseWikiGraphUseCase | None = None,
         build_query_context: BuildQueryContextUseCase | None = None,
         source_candidate_limit: int = 15,
@@ -23,6 +34,8 @@ class AnswerQueryUseCase:
         self._embedding_search = embedding_search
         self._text_search = text_search
         self._answer_generator = answer_generator
+        self._markdown_reader = markdown_reader
+        self._event_publisher = event_publisher
         self._traverse_wiki_graph = traverse_wiki_graph or TraverseWikiGraphUseCase()
         self._build_query_context = build_query_context or BuildQueryContextUseCase()
         self._source_candidate_limit = source_candidate_limit
@@ -31,19 +44,42 @@ class AnswerQueryUseCase:
 
     def execute(self, question: str) -> QueryAnswer:
         query = Question(question)
+        self._publish("query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
         pages = self._wiki_repository.list_active_pages()
         links = self._wiki_repository.list_active_links()
+        self._publish("wiki_loaded", "활성 Wiki page/link를 로드했습니다.", {"page_count": len(pages), "link_count": len(links)})
+        pages = self._load_markdown_for_scoring(pages)
+        self._publish(
+            "retrieval_markdown_loaded",
+            "검색용 Wiki Markdown 본문을 로드했습니다.",
+            {"loaded_markdown_count": len([page for page in pages if page.markdown])},
+        )
         pages_by_id = {page.id: page for page in pages}
         source_pages = [page for page in pages if page.is_source]
         concept_pages = [page for page in pages if page.is_concept]
 
         source_scores = self._score_pages(query.normalized, source_pages, embedding_weight=0.8)
         concept_scores = self._score_pages(query.normalized, concept_pages, embedding_weight=0.8)
+        self._publish(
+            "retrieval_scored",
+            "source/concept 후보 점수를 계산했습니다.",
+            {
+                "source_count": len(source_scores),
+                "concept_count": len(concept_scores),
+                "top_source_id": self._top_id(source_scores),
+                "top_concept_id": self._top_id(concept_scores),
+            },
+        )
         node_scores = {**source_scores, **concept_scores}
 
         seed_source_ids = self._select_seed_sources(source_pages, source_scores)
         focus_concept_ids = self._select_focus_concepts(concept_pages, concept_scores)
         seed_source_ids = self._add_sources_connected_to_focus_concepts(seed_source_ids, focus_concept_ids, links)
+        self._publish(
+            "seeds_selected",
+            "탐색 시작 source와 focus concept hint를 선택했습니다.",
+            {"seed_source_ids": seed_source_ids, "focus_concept_ids": focus_concept_ids},
+        )
 
         graph_context, traversal_paths, stop_reason = self._traverse_wiki_graph.execute(
             pages_by_id=pages_by_id,
@@ -51,14 +87,31 @@ class AnswerQueryUseCase:
             seed_source_ids=seed_source_ids,
             node_scores=node_scores,
         )
-        related_pages = graph_context.nodes
+        self._publish(
+            "graph_traversed",
+            "Wiki graph traversal을 완료했습니다.",
+            {"visited_node_count": len(graph_context.nodes), "path_count": len(traversal_paths), "stop_reason": stop_reason},
+        )
+        related_pages = self._load_markdown_for_related_pages(graph_context.nodes)
+        graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
+        self._publish(
+            "markdown_loaded",
+            "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
+            {"loaded_markdown_count": len([item for item in related_pages if item.page.markdown])},
+        )
         query_context = self._build_query_context.execute(
             question=query.normalized,
             related_pages=related_pages,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
         )
+        self._publish(
+            "context_built",
+            "LLM 답변 입력 context를 구성했습니다.",
+            {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
+        )
         answer = self._answer_generator.generate_answer(query_context)
+        self._publish("answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
 
         used_source_count = len([item for item in related_pages if item.page.is_source])
         used_concept_count = len([item for item in related_pages if item.page.is_concept])
@@ -75,6 +128,7 @@ class AnswerQueryUseCase:
         return QueryAnswer(
             answer=answer,
             related_pages=related_pages,
+            evidence_snippets=query_context.evidence_snippets,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
             retrieval_summary=summary,
@@ -88,6 +142,11 @@ class AnswerQueryUseCase:
             page.id: hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight)
             for page, embedding_score, text_score in zip(pages, embedding_scores, text_scores)
         }
+
+    def _top_id(self, scores: dict[str, float]) -> str | None:
+        if not scores:
+            return None
+        return max(scores, key=scores.get)
 
     def _representation(self, page: WikiPage) -> str:
         markdown = page.markdown or ""
@@ -106,7 +165,7 @@ class AnswerQueryUseCase:
         self,
         seed_source_ids: list[str],
         focus_concept_ids: list[str],
-        links: list,
+        links: list[WikiPageLink],
     ) -> list[str]:
         seeds = list(dict.fromkeys(seed_source_ids))
         focus_set = set(focus_concept_ids)
@@ -118,4 +177,45 @@ class AnswerQueryUseCase:
             elif link.from_page_id in focus_set and link.to_page_id not in seeds:
                 seeds.append(link.to_page_id)
         return seeds
+
+    def _load_markdown_for_related_pages(self, related_pages: list[RetrievedPage]) -> list[RetrievedPage]:
+        if self._markdown_reader is None:
+            return related_pages
+
+        loaded: list[RetrievedPage] = []
+        for item in related_pages:
+            page = item.page
+            if page.markdown or not page.markdown_uri:
+                loaded.append(item)
+                continue
+            try:
+                markdown = self._markdown_reader.read_markdown(page.markdown_uri)
+            except Exception:
+                loaded.append(item)
+                continue
+            loaded.append(replace(item, page=replace(page, markdown=markdown)))
+        return loaded
+
+    def _load_markdown_for_scoring(self, pages: list[WikiPage]) -> list[WikiPage]:
+        if self._markdown_reader is None:
+            return pages
+
+        loaded: list[WikiPage] = []
+        for page in pages:
+            if page.markdown or not page.markdown_uri:
+                loaded.append(page)
+                continue
+            try:
+                loaded.append(replace(page, markdown=self._markdown_reader.read_markdown(page.markdown_uri)))
+            except Exception:
+                loaded.append(page)
+        return loaded
+
+    def _publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
+        if self._event_publisher is None:
+            return
+        try:
+            self._event_publisher.publish(stage, message, data)
+        except Exception:
+            return
 

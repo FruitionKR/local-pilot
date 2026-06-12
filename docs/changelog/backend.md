@@ -80,6 +80,9 @@ Wiki 그래프 조회 및 페이지 상세 조회 엔드포인트가 스텁으�
 - `POST /query` FastAPI route와 PostgreSQL wiki repository adapter 연결
 - query engine 설계 문서 `docs/spec/query-engine.md` 추가
 - fake port 기반 유닛 테스트로 concept hint backtracking, source-source traversal, depth limit, 빈 질문 검증 확인
+- `BgeM3EmbeddingSearch`와 `Bm25Searcher`를 추가해 BGE-M3 vector similarity + BM25 lexical score 기반 hybrid retrieval 경로 구성
+- query 단계별 Spring 콜백 로그(`QUERY_LOG_CALLBACK_URL`)와 Wiki Markdown 본문 기반 evidence context 구성 추가
+- 답변 본문에서 context 밖 예시/비유를 만들지 않도록 query prompt 정책을 보강하고, `evidence_snippets`에 `page_slug`/`page_url`을 추가해 근거 문장별 Wiki page 링크 표시를 지원
 
 **검증**
 

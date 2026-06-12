@@ -49,9 +49,22 @@ class RetrievalSummaryResponse(BaseModel):
     stop_reason: str
 
 
+class EvidenceSnippetResponse(BaseModel):
+    page_id: str
+    page_type: str
+    page_title: str
+    page_slug: str
+    page_url: str
+    page_role: str
+    text: str
+    score: float
+    rank: int
+
+
 class QueryResponse(BaseModel):
     answer: str
     related_pages: list[RelatedPageResponse]
+    evidence_snippets: list[EvidenceSnippetResponse]
     graph_context: GraphContextResponse
     traversal_paths: list[TraversalPathResponse]
     retrieval_summary: RetrievalSummaryResponse

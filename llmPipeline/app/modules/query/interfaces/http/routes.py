@@ -6,6 +6,7 @@ from app.modules.query.domain.entities import QueryAnswer
 from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
 from app.modules.query.interfaces.http.schemas import (
     GraphContextResponse,
+    EvidenceSnippetResponse,
     QueryRequest,
     QueryResponse,
     RelatedPageResponse,
@@ -46,6 +47,20 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
                 depth=item.depth,
             )
             for item in result.related_pages
+        ],
+        evidence_snippets=[
+            EvidenceSnippetResponse(
+                page_id=snippet.page_id,
+                page_type=snippet.page_type,
+                page_title=snippet.page_title,
+                page_slug=snippet.page_slug,
+                page_url=snippet.page_url,
+                page_role=snippet.page_role,
+                text=snippet.text,
+                score=snippet.score,
+                rank=snippet.rank,
+            )
+            for snippet in result.evidence_snippets
         ],
         graph_context=GraphContextResponse(
             nodes=[

@@ -76,11 +76,26 @@ class RetrievalSummary:
 
 
 @dataclass(frozen=True)
+class EvidenceSnippet:
+    page_id: str
+    page_type: str
+    page_title: str
+    page_slug: str
+    page_url: str
+    page_role: str
+    text: str
+    score: float
+    rank: int
+
+
+@dataclass(frozen=True)
 class QueryContext:
     question: str
     graph_context: GraphContext
     traversal_paths: list[TraversalPath]
     related_pages: list[RetrievedPage]
+    evidence_snippets: list[EvidenceSnippet]
+    answer_context: str
 
 
 @dataclass(frozen=True)
@@ -92,6 +107,7 @@ class GeneratedAnswer:
 class QueryAnswer:
     answer: GeneratedAnswer
     related_pages: list[RetrievedPage]
+    evidence_snippets: list[EvidenceSnippet]
     graph_context: GraphContext
     traversal_paths: list[TraversalPath]
     retrieval_summary: RetrievalSummary
