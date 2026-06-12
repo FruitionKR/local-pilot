@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-12
 
+### refactor: 프론트 미사용 목업 자산 정리
+
+**변경 배경**
+
+- 백엔드 API 기반 graph로 전환된 뒤에도 이전 정적 graph 목업 데이터와 계산 helper가 `frontend/app/page.tsx`에 남아 있었다.
+- 사용되지 않는 `mvp main.png` 시안 이미지가 프론트 디렉터리에 남아 있었다.
+- `.gitignore`에서 `.github/` 전체를 무시해 추후 workflow 추가가 누락될 수 있었다.
+
+**변경된 내용**
+
+- `frontend/app/page.tsx`의 미사용 정적 graph 목업 node/link 데이터와 전용 전역 계산 helper를 제거했다.
+- 참조되지 않는 `frontend/mvp main.png` 파일을 삭제했다.
+- `.gitignore`에서 `.github/` ignore 규칙을 제거했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+
+---
+
 ### feat: 문서 선택 유지와 rename API 계약 정리
 
 **변경 배경**
