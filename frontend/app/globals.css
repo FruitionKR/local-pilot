@@ -573,6 +573,10 @@ button {
   height: 16px;
 }
 
+.tree-asset.source {
+  color: #ffc117;
+}
+
 .folder-context-menu {
   position: fixed;
   z-index: 30;

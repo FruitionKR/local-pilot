@@ -1041,7 +1041,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
         {isFileItem(item) ? (
           <SvgIcon src={fileIcon} className="tree-asset" />
         ) : item.wikiKind === "source" ? (
-          <SvgIcon src={sourcePageIcon} className="tree-asset" />
+          <SvgIcon src={sourcePageIcon} className="tree-asset source" />
         ) : item.wikiKind === "concept" ? (
           <SvgIcon src={conceptPageIcon} className="tree-asset" />
         ) : hasChildren ? (
