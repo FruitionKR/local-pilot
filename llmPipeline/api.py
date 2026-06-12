@@ -34,7 +34,11 @@ class PipelineRunIn(BaseModel):
     mode: Literal["api", "generic-chat"] = "api"
     provider: Literal["upstage", "generic"] = "upstage"
     env_file: str | None = None
-    concept_page_mode: Literal["auto", "api", "skeleton"] = "auto"
+    source_page_mode: Literal["auto", "skeleton", "section-polish"] = "auto"
+    concept_page_mode: Literal["auto", "api", "full-llm", "skeleton", "section-polish"] = Field(
+        default="auto",
+        description="auto는 backend skeleton concept page만 생성합니다. section-polish를 명시하면 concept별 LLM polish를 수행합니다.",
+    )
     max_packet_chars: int = 7000
     overlap_blocks: int = 1
     endpoint: str | None = None
@@ -48,6 +52,10 @@ class PipelineRunIn(BaseModel):
     json_mode: bool = False
     system_prompt: str = "prompts/semantic_extraction.system.md"
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
+    concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
+    section_polish_system_prompt: str = "prompts/section_polish.system.md"
+    existing_wiki_dir: str | None = None
+    save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
     wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
 
@@ -76,6 +84,7 @@ def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, 
         mode=payload.mode,
         provider=payload.provider,
         env_file=payload.env_file,
+        source_page_mode=payload.source_page_mode,
         concept_page_mode=payload.concept_page_mode,
         max_packet_chars=payload.max_packet_chars,
         overlap_blocks=payload.overlap_blocks,
@@ -90,6 +99,10 @@ def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, 
         json_mode=payload.json_mode,
         system_prompt=payload.system_prompt,
         concept_system_prompt=payload.concept_system_prompt,
+        concept_resolution_system_prompt=payload.concept_resolution_system_prompt,
+        section_polish_system_prompt=payload.section_polish_system_prompt,
+        existing_wiki_dir=payload.existing_wiki_dir,
+        save_debug_json=payload.save_debug_json,
         log_path=str(log_path),
         log_callback_url=payload.log_callback_url,
     )

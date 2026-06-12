@@ -192,7 +192,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
 
     source_page_id = f"source:{document_id}"
     source_slug = document_id
-    source_title = normalized["document"].get("title") or document_id
+    source_title = _markdown_title(Path(manifest["source_page"])) or normalized["document"].get("title") or document_id
     source_summary = _source_summary(normalized)
     _upsert_wiki_page(
         conn,
@@ -244,6 +244,15 @@ def _source_summary(normalized: dict[str, Any]) -> str:
         if summary:
             return summary
     return normalized.get("document", {}).get("title", "")
+
+
+def _markdown_title(path: Path) -> str:
+    if not path.exists():
+        return ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
 
 
 def _resolve_page_id(value: str | None, source_page_id: str, concept_id_by_slug: dict[str, str]) -> str | None:

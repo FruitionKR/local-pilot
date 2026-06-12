@@ -22,27 +22,37 @@ def cite_refs(refs: list[str]) -> str:
 
 
 class SourcePageAssembler:
-    def assemble(self, normalized: dict[str, Any], out_dir: str | Path) -> str:
+    def assemble(self, normalized: dict[str, Any], out_dir: str | Path, polish: dict[str, Any] | None = None) -> str:
         doc = normalized["document"]
         notes = normalized["semantic_notes"]
         ledger = normalized["concept_ledger"]
-        title = doc["title"]
+        polish = polish or {}
+        title = str(polish.get("title") or doc.get("title") or doc["document_id"]).strip()
 
         summary_parts = [n.get("semantic_summary", "") for n in notes if n.get("semantic_summary")]
         summary = "\n\n".join(summary_parts[:4]) or "요약 없음."
+        if polish.get("summary", {}).get("text"):
+            summary = polish["summary"]["text"]
 
         key_points = []
         seen = set()
-        for n in notes:
-            for kp in n.get("key_points", []):
+        polished_key_points = polish.get("key_points", {}).get("items", [])
+        if polished_key_points:
+            for kp in polished_key_points:
                 text = kp.get("text", "").strip()
-                if not text or text in seen:
-                    continue
-                seen.add(text)
-                key_points.append(f"- {text}{cite_refs(kp.get('anchor_reference_ids', []))}")
+                if text:
+                    key_points.append(f"- {text}{cite_refs(kp.get('anchor_reference_ids', []))}")
+        else:
+            for n in notes:
+                for kp in n.get("key_points", []):
+                    text = kp.get("text", "").strip()
+                    if not text or text in seen:
+                        continue
+                    seen.add(text)
+                    key_points.append(f"- {text}{cite_refs(kp.get('anchor_reference_ids', []))}")
 
         concept_lines = []
-        for c in ledger[:12]:
+        for c in ledger:
             concept_lines.append(f"- [[{c['slug']}|{c['title']}]]{cite_refs(c.get('display_reference_ids', []))}")
 
         md = f"""---
@@ -62,24 +72,75 @@ source_file: {doc['source_path']}
 ## Extracted Concepts
 {chr(10).join(concept_lines) if concept_lines else '- 추출된 concept 없음'}
 """
-        out_path = Path(out_dir) / "wiki" / "sources" / f"{doc['document_id']}.md"
+        filename_slug = slugify(title)
+        if filename_slug == "untitled":
+            filename_slug = doc["document_id"]
+        out_path = _unique_source_path(Path(out_dir) / "wiki" / "sources", filename_slug)
         write_text(out_path, md)
         return str(out_path)
 
 
+def _unique_source_path(source_dir: Path, filename_slug: str) -> Path:
+    candidate = source_dir / f"{filename_slug}.md"
+    if not candidate.exists():
+        return candidate
+    i = 2
+    while True:
+        candidate = source_dir / f"{filename_slug}-{i}.md"
+        if not candidate.exists():
+            return candidate
+        i += 1
+
+
 class ConceptPageAssembler:
-    def assemble_top(self, normalized: dict[str, Any], out_dir: str | Path, top_n: int = 6) -> list[str]:
+    def assemble_top(
+        self,
+        normalized: dict[str, Any],
+        out_dir: str | Path,
+        top_n: int | None = 6,
+        polish_by_slug: dict[str, Any] | None = None,
+        source_key_points: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
         """Deterministic skeleton concept pages.
 
         This is useful when concept page LLM generation is disabled.
         """
         out_paths = []
         evidence = normalized["evidence_units"]
-        for c in normalized["concept_ledger"][:top_n]:
-            related_evidence = [ev for ev in evidence if c["slug"] in ev.get("related_concept_slugs", [])]
+        polish_by_slug = polish_by_slug or {}
+        concepts = normalized["concept_ledger"] if top_n is None else normalized["concept_ledger"][:top_n]
+        ledger_by_slug = {concept["slug"]: concept for concept in normalized["concept_ledger"]}
+        source_key_points = source_key_points or _collect_source_key_points(normalized)
+        for c in concepts:
+            polish = polish_by_slug.get(c["slug"], {})
+            related_evidence = _concept_evidence(c, evidence)
             ev_lines = []
-            for ev in related_evidence[:8]:
+            for ev in related_evidence:
                 ev_lines.append(f"- {ev['claim']}{cite_refs(ev.get('anchor_reference_ids', []))}")
+            definition_text = c.get("definition") or "정의 초안 없음."
+            definition_refs = c.get("display_reference_ids", [])
+            if polish.get("definition", {}).get("text"):
+                definition_text = polish["definition"]["text"]
+                definition_refs = polish["definition"].get("anchor_reference_ids", definition_refs)
+            if not ev_lines and c.get("definition"):
+                ev_lines.append(f"- {c['definition']}{cite_refs(definition_refs)}")
+            key_point_lines = []
+            for item in polish.get("key_points", {}).get("items", []):
+                text = item.get("text", "").strip()
+                if text:
+                    key_point_lines.append(f"- {text}{cite_refs(item.get('anchor_reference_ids', []))}")
+            if not key_point_lines:
+                key_point_lines = _concept_key_points_from_source(c, related_evidence, source_key_points)
+            if not key_point_lines and c.get("definition"):
+                key_point_lines.append(f"- {c['definition']}{cite_refs(definition_refs)}")
+            related_lines = []
+            for target_slug in polish.get("related_concept_hints", []):
+                target_slug = slugify(str(target_slug))
+                target = ledger_by_slug.get(target_slug)
+                if target and target_slug != c["slug"]:
+                    related_lines.append(f"- [[{target_slug}|{target.get('title') or target_slug}]]")
+            if not related_lines:
+                related_lines = _concept_related_lines(c["slug"], normalized, ledger_by_slug, source_key_points)
             aliases = ", ".join(c.get("aliases", []))
             md = f"""---
 type: concept
@@ -93,16 +154,22 @@ generated_by: backend_skeleton
 # {c['title']}
 
 ## Definition
-{c.get('definition') or '정의 초안 없음.'}{cite_refs(c.get('display_reference_ids', []))}
+{definition_text}{cite_refs(definition_refs)}
 
 ## Why It Matters
 {c.get('why_page_worthy') or '중요도 설명 없음.'}
+
+## Key Points
+{chr(10).join(key_point_lines) if key_point_lines else '- 핵심 포인트 없음'}
 
 ## Aliases
 {aliases or '-'}
 
 ## Evidence
 {chr(10).join(ev_lines) if ev_lines else '- 아직 연결된 evidence claim 없음'}
+
+## Related Concepts
+{chr(10).join(related_lines) if related_lines else '- 관련 개념 없음'}
 
 ## Reference Summary
 - display refs: {', '.join(ref_label(r) for r in c.get('display_reference_ids', [])) or '-'}
@@ -114,11 +181,166 @@ generated_by: backend_skeleton
         return out_paths
 
 
+def _collect_source_key_points(normalized: dict[str, Any]) -> list[dict[str, Any]]:
+    key_points = []
+    seen = set()
+    for note in normalized.get("semantic_notes", []):
+        for item in note.get("key_points", []):
+            text = str(item.get("text", "")).strip()
+            refs = _item_refs(item)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            key_points.append({"text": text, "anchor_reference_ids": refs})
+    return key_points
+
+
+def _item_refs(item: dict[str, Any]) -> list[str]:
+    return unique_keep_order(item.get("anchor_reference_ids", []) or item.get("anchor_block_ids", []))
+
+
+def _concept_refs(concept: dict[str, Any], related_evidence: list[dict[str, Any]]) -> set[str]:
+    refs: list[str] = []
+    refs.extend(concept.get("display_reference_ids", []))
+    refs.extend(concept.get("anchor_reference_ids", []))
+    refs.extend(concept.get("mention_reference_ids", []))
+    for ev in related_evidence:
+        refs.extend(ev.get("anchor_reference_ids", []))
+    return set(unique_keep_order(refs))
+
+
+def _concept_base_refs(concept: dict[str, Any]) -> set[str]:
+    refs: list[str] = []
+    refs.extend(concept.get("display_reference_ids", []))
+    refs.extend(concept.get("anchor_reference_ids", []))
+    refs.extend(concept.get("mention_reference_ids", []))
+    return set(unique_keep_order(refs))
+
+
+def _concept_evidence(concept: dict[str, Any], evidence_units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    slug = concept.get("slug")
+    direct = [ev for ev in evidence_units if slug and slug in ev.get("related_concept_slugs", [])]
+    if direct:
+        return direct
+    concept_refs = _concept_base_refs(concept)
+    if not concept_refs:
+        return []
+    fallback = []
+    for ev in evidence_units:
+        ev_refs = set(ev.get("anchor_reference_ids", []))
+        if concept_refs.intersection(ev_refs):
+            fallback.append(ev)
+    return fallback
+
+
+def _concept_key_points_from_source(
+    concept: dict[str, Any],
+    related_evidence: list[dict[str, Any]],
+    source_key_points: list[dict[str, Any]],
+) -> list[str]:
+    concept_refs = _concept_refs(concept, related_evidence)
+    lines = []
+    seen = set()
+    used_refs: set[str] = set()
+    for item in source_key_points:
+        refs = _item_refs(item)
+        text = str(item.get("text", "")).strip()
+        if not text or text in seen:
+            continue
+        if concept_refs and not concept_refs.intersection(refs):
+            continue
+        if refs and used_refs.intersection(refs):
+            continue
+        seen.add(text)
+        used_refs.update(refs)
+        lines.append(f"- {text}{cite_refs(refs)}")
+    return lines
+
+
+def _concept_related_lines(
+    slug: str,
+    normalized: dict[str, Any],
+    ledger_by_slug: dict[str, dict[str, Any]],
+    source_key_points: list[dict[str, Any]] | None = None,
+) -> list[str]:
+    related_slugs: list[str] = []
+    for ev in normalized.get("evidence_units", []):
+        ev_slugs = [s for s in ev.get("related_concept_slugs", []) if s in ledger_by_slug]
+        if slug in ev_slugs:
+            related_slugs.extend([s for s in ev_slugs if s != slug])
+
+    related_slugs.extend(
+        target
+        for source, target, _reason in _shared_key_point_pairs(normalized, ledger_by_slug, source_key_points or [])
+        if source == slug
+    )
+    related_slugs.extend(
+        source
+        for source, target, _reason in _shared_key_point_pairs(normalized, ledger_by_slug, source_key_points or [])
+        if target == slug
+    )
+
+    for resolution in normalized.get("concept_resolutions", []):
+        source_slug = resolution.get("canonical_slug") or resolution.get("incoming_slug")
+        targets = [target for target in resolution.get("link_targets", []) if target in ledger_by_slug]
+        if source_slug == slug:
+            related_slugs.extend(targets)
+        elif slug in targets and source_slug in ledger_by_slug:
+            related_slugs.append(source_slug)
+
+    for resolution in normalized.get("hint_resolutions", []):
+        source_slug = resolution.get("canonical_slug")
+        targets = [target for target in resolution.get("link_targets", []) if target in ledger_by_slug]
+        if source_slug == slug:
+            related_slugs.extend(targets)
+        elif slug in targets and source_slug in ledger_by_slug:
+            related_slugs.append(source_slug)
+
+    lines = []
+    for target_slug in unique_keep_order([s for s in related_slugs if s and s != slug]):
+        target = ledger_by_slug.get(target_slug)
+        if target:
+            lines.append(f"- [[{target_slug}|{target.get('title') or target_slug}]]")
+    return lines
+
+
+def _shared_key_point_pairs(
+    normalized: dict[str, Any],
+    ledger_by_slug: dict[str, dict[str, Any]],
+    source_key_points: list[dict[str, Any]],
+) -> list[tuple[str, str, str]]:
+    concepts = list(ledger_by_slug.values())
+    evidence = normalized.get("evidence_units", [])
+    concept_refs_by_slug = {
+        concept["slug"]: _concept_refs(concept, _concept_evidence(concept, evidence))
+        for concept in concepts
+    }
+    pairs: list[tuple[str, str, str]] = []
+    seen = set()
+    for item in source_key_points or _collect_source_key_points(normalized):
+        refs = set(_item_refs(item))
+        if not refs:
+            continue
+        matched_slugs = sorted(
+            slug
+            for slug, concept_refs in concept_refs_by_slug.items()
+            if concept_refs.intersection(refs)
+        )
+        for i, source_slug in enumerate(matched_slugs):
+            for target_slug in matched_slugs[i + 1 :]:
+                pair = (source_slug, target_slug)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                pairs.append((source_slug, target_slug, "shared_source_key_point"))
+    return pairs
+
+
 class GeneratedConceptPageAssembler:
     """Assemble concept pages from ConceptPageGeneration API outputs."""
 
     def _map_block_ids(self, anchor_block_ids: list[str], source_blocks: list[SourceBlock], warnings: list[str], context: str) -> list[str]:
-        by_bid = {b.block_id: b.source_reference_id for b in source_blocks}
+        by_bid = {b.block_id: b.block_id for b in source_blocks}
         refs = []
         for bid in anchor_block_ids or []:
             if bid not in by_bid:
@@ -188,7 +410,7 @@ class GeneratedConceptPageAssembler:
                 if ev.get("text")
             ]
             rel_lines = []
-            for hint in page.get("related_concept_hints", [])[:12]:
+            for hint in page.get("related_concept_hints", []):
                 rel_lines.append(f"- [[{slugify(str(hint))}|{hint}]]")
             md = f"""---
 type: concept
@@ -300,30 +522,71 @@ class LinkBuilder:
                     "decided_by": "backend",
                 }
             )
-        slugs = {c["slug"] for c in ledger}
-        if "source-page" in slugs and "concept-page" in slugs:
-            links.append(
-                {
-                    "source": "concept:source-page",
-                    "target": "concept:concept-page",
-                    "relation": "concept_related_to",
-                    "decided_by": "backend_rule",
-                }
-            )
-        if "wiki-graph" in slugs:
-            for s in ["source-page", "concept-page"]:
-                if s in slugs:
+        ledger_slugs = {c["slug"] for c in ledger}
+        ledger_by_slug = {c["slug"]: c for c in ledger}
+        seen_evidence_pairs = set()
+        for ev in normalized.get("evidence_units", []):
+            ev_slugs = sorted({slug for slug in ev.get("related_concept_slugs", []) if slug in ledger_slugs})
+            for i, source_slug in enumerate(ev_slugs):
+                for target_slug in ev_slugs[i + 1 :]:
+                    pair = (source_slug, target_slug, ev.get("evidence_id"))
+                    if pair in seen_evidence_pairs:
+                        continue
+                    seen_evidence_pairs.add(pair)
                     links.append(
                         {
-                            "source": "concept:wiki-graph",
-                            "target": f"concept:{s}",
+                            "source": f"concept:{source_slug}",
+                            "target": f"concept:{target_slug}",
                             "relation": "concept_related_to",
-                            "decided_by": "backend_rule",
+                            "decided_by": "backend_shared_evidence",
+                            "evidence_id": ev.get("evidence_id"),
+                        }
+                    )
+        seen_key_point_pairs = set()
+        for source_slug, target_slug, reason in _shared_key_point_pairs(normalized, ledger_by_slug, _collect_source_key_points(normalized)):
+            pair = (source_slug, target_slug)
+            if pair in seen_key_point_pairs:
+                continue
+            seen_key_point_pairs.add(pair)
+            links.append(
+                {
+                    "source": f"concept:{source_slug}",
+                    "target": f"concept:{target_slug}",
+                    "relation": "concept_related_to",
+                    "decided_by": f"backend_{reason}",
+                }
+            )
+        for resolution in normalized.get("concept_resolutions", []):
+            source_slug = resolution.get("canonical_slug") or resolution.get("incoming_slug")
+            for target_slug in resolution.get("link_targets", []):
+                if source_slug and target_slug and source_slug != target_slug:
+                    links.append(
+                        {
+                            "source": f"concept:{source_slug}",
+                            "target": f"concept:{target_slug}",
+                            "relation": "concept_related_to",
+                            "decided_by": "llm_concept_resolution",
+                            "confidence": resolution.get("confidence"),
+                            "label": resolution.get("reason"),
+                        }
+                    )
+        for hint_resolution in normalized.get("hint_resolutions", []):
+            source_slug = hint_resolution.get("canonical_slug")
+            for target_slug in hint_resolution.get("link_targets", []):
+                if source_slug and target_slug and source_slug != target_slug:
+                    links.append(
+                        {
+                            "source": f"concept:{source_slug}",
+                            "target": f"concept:{target_slug}",
+                            "relation": "concept_related_to",
+                            "decided_by": "llm_hint_resolution",
+                            "confidence": hint_resolution.get("confidence"),
+                            "label": hint_resolution.get("reason"),
                         }
                     )
         if generated_concept_pages:
             for page in generated_concept_pages:
-                for hint in page.get("related_concept_hints", [])[:12]:
+                for hint in page.get("related_concept_hints", []):
                     target_slug = slugify(str(hint))
                     if target_slug and target_slug != page["slug"]:
                         links.append(
@@ -349,6 +612,8 @@ class ReviewReport:
             f"- concepts: {len(ledger)}",
             f"- evidence claims: {len(ev)}",
             f"- generated concept pages: {len(generated_concept_pages or [])}",
+            f"- hint resolutions: {len(normalized.get('hint_resolutions', []))}",
+            f"- unresolved related hints: {len(normalized.get('unresolved_related_concept_hints', []))}",
             f"- warnings: {len(warnings)}",
             "",
             "## Top Concepts",
@@ -359,6 +624,17 @@ class ReviewReport:
             lines += ["", "## LLM Generated Concept Pages"]
             for p in generated_concept_pages:
                 lines.append(f"- {p.get('title')} (`{p.get('slug')}`), confidence={p.get('confidence')}")
+        if normalized.get("hint_resolutions"):
+            lines += ["", "## Hint Resolutions"]
+            for item in normalized.get("hint_resolutions", []):
+                lines.append(
+                    f"- {item.get('hint_slug')} -> {item.get('canonical_slug') or '-'} "
+                    f"({item.get('decision')}), confidence={item.get('confidence')}"
+                )
+        if normalized.get("unresolved_related_concept_hints"):
+            lines += ["", "## Unresolved Related Hints"]
+            for item in normalized.get("unresolved_related_concept_hints", []):
+                lines.append(f"- {item.get('slug')}: evidence={', '.join(item.get('evidence_ids', []))}")
         lines += ["", "## Warnings"]
         lines.extend([f"- {w}" for w in warnings] or ["- none"])
         path = Path(out_dir) / "review_report.md"

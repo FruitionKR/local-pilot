@@ -9,8 +9,7 @@ from .models import SemanticPacket, SourceBlock
 def render_semantic_user_prompt(packet: SemanticPacket) -> str:
     """User message for ChunkSemanticExtraction.
 
-    The model sees only short local anchors such as [B0001]. The backend keeps
-    the long source_reference_id map separately in block_map.json.
+    The model sees and returns only short local anchors such as [B0001].
     """
     return f"""Stage input: ChunkSemanticExtraction
 
@@ -31,6 +30,113 @@ def build_messages(system_prompt: str, user_prompt: str) -> list[dict[str, str]]
     ]
 
 
+def render_concept_resolution_user_prompt(
+    incoming_concepts: list[dict[str, Any]],
+    existing_concepts: list[dict[str, Any]],
+    missing_related_hints: list[dict[str, Any]] | None = None,
+) -> str:
+    incoming_json = json.dumps(
+        [
+            {
+                "slug": concept.get("slug"),
+                "title": concept.get("title"),
+                "aliases": concept.get("aliases", []),
+                "definition": concept.get("definition"),
+                "why_page_worthy": concept.get("why_page_worthy"),
+            }
+            for concept in incoming_concepts
+        ],
+        ensure_ascii=False,
+        indent=2,
+    )
+    existing_json = json.dumps(
+        [
+            {
+                "slug": concept.get("slug"),
+                "title": concept.get("title"),
+                "aliases": concept.get("aliases", []),
+                "summary": concept.get("summary"),
+                "path": concept.get("path"),
+            }
+            for concept in existing_concepts
+        ],
+        ensure_ascii=False,
+        indent=2,
+    )
+    hints_json = json.dumps(
+        [
+            {
+                "slug": hint.get("slug"),
+                "evidence_count": len(hint.get("evidence_ids", [])),
+                "sample_claims": hint.get("sample_claims", [])[:2],
+                "max_confidence": hint.get("max_confidence", 0.0),
+            }
+            for hint in (missing_related_hints or [])
+        ],
+        ensure_ascii=False,
+        indent=2,
+    )
+    return f"""Stage input: ConceptResolution
+
+Resolve each incoming concept against the existing wiki concept index.
+Also resolve missing related concept hints from evidence claims. Missing hints
+are not necessarily page-worthy, but they may be synonyms of current concepts,
+existing wiki concepts, or related-only link targets.
+
+INCOMING CONCEPTS:
+{incoming_json}
+
+EXISTING CONCEPT INDEX:
+{existing_json}
+
+MISSING RELATED CONCEPT HINTS:
+{hints_json}
+""".rstrip() + "\n"
+
+
+def render_section_polish_user_prompt(payload: dict[str, Any], source_blocks: Sequence[SourceBlock]) -> str:
+    evidence_json = json.dumps(
+        [
+            {
+                "claim": ev.get("claim"),
+                "anchor_block_ids": ev.get("anchor_reference_ids", []),
+                "confidence": ev.get("confidence"),
+            }
+            for ev in payload.get("evidence", [])
+        ],
+        ensure_ascii=False,
+        indent=2,
+    )
+    draft_json = json.dumps(payload.get("draft", {}), ensure_ascii=False, indent=2)
+    context_json = json.dumps(payload.get("context", {}), ensure_ascii=False, indent=2)
+    block_lines = "\n".join(b.to_llm_line() for b in source_blocks)
+    return f"""Stage input: SectionPolish
+
+Polish only the requested section. Return JSON only.
+If PAGE TYPE is source, also return a concise human-readable title that
+summarizes the source topic. If PAGE TYPE is concept, keep title empty unless a
+title is already supplied in CONTEXT.
+
+SECTION:
+{payload.get("section")}
+
+PAGE TYPE:
+{payload.get("page_type")}
+
+CONTEXT:
+{context_json}
+
+DRAFT:
+{draft_json}
+
+EVIDENCE CLAIMS:
+{evidence_json}
+
+SOURCE BLOCKS:
+{block_lines}
+""".rstrip() + "\n"
+
+
 def _unique(items: Iterable[str]) -> list[str]:
     seen = set()
     out = []
@@ -42,19 +148,18 @@ def _unique(items: Iterable[str]) -> list[str]:
     return out
 
 
-def _all_ref_to_block_id_map(blocks: Sequence[SourceBlock]) -> dict[str, str]:
-    return {b.source_reference_id: b.block_id for b in blocks}
-
-
 def _blocks_by_ref_map(blocks: Sequence[SourceBlock]) -> dict[str, SourceBlock]:
-    return {b.source_reference_id: b for b in blocks}
+    by_ref = {b.block_id: b for b in blocks}
+    by_ref.update({b.source_reference_id: b for b in blocks})
+    return by_ref
 
 
-def collect_concept_source_blocks(concept: dict[str, Any], evidence_units: list[dict[str, Any]], blocks: Sequence[SourceBlock], max_blocks: int = 12) -> list[SourceBlock]:
+def collect_concept_source_blocks(concept: dict[str, Any], evidence_units: list[dict[str, Any]], blocks: Sequence[SourceBlock], max_blocks: int | None = None) -> list[SourceBlock]:
     """Select blocks for optional ConceptPageGeneration prompt.
 
-    This is deterministic and conservative: use display/anchor refs and linked
-    evidence refs first, then a few mention refs. The prompt remains small.
+    This is deterministic: use display/anchor refs and linked evidence refs
+    first, then mention refs. max_blocks can be set by callers that need a
+    temporary prompt budget, but the default keeps every matched block.
     """
     by_ref = _blocks_by_ref_map(blocks)
     slug = concept.get("slug")
@@ -64,29 +169,28 @@ def collect_concept_source_blocks(concept: dict[str, Any], evidence_units: list[
     for ev in evidence_units:
         if slug and slug in ev.get("related_concept_slugs", []):
             refs.extend(ev.get("anchor_reference_ids", []))
-    refs.extend(concept.get("mention_reference_ids", [])[: max(0, max_blocks - len(refs))])
+    refs.extend(concept.get("mention_reference_ids", []))
 
     selected = []
     for ref in _unique(refs):
         block = by_ref.get(ref)
         if block is not None:
             selected.append(block)
-        if len(selected) >= max_blocks:
+        if max_blocks is not None and len(selected) >= max_blocks:
             break
     return selected
 
 
 def render_concept_page_user_prompt(concept: dict[str, Any], evidence_units: list[dict[str, Any]], source_blocks: Sequence[SourceBlock]) -> str:
-    ref_to_bid = _all_ref_to_block_id_map(source_blocks)
     related_evidence = [ev for ev in evidence_units if concept.get("slug") in ev.get("related_concept_slugs", [])]
     evidence_json = json.dumps(
         [
             {
                 "claim": ev.get("claim"),
-                "anchor_block_ids": [ref_to_bid.get(ref, ref) for ref in ev.get("anchor_reference_ids", [])],
+                "anchor_block_ids": ev.get("anchor_reference_ids", []),
                 "confidence": ev.get("confidence"),
             }
-            for ev in related_evidence[:10]
+            for ev in related_evidence
         ],
         ensure_ascii=False,
         indent=2,
@@ -99,7 +203,7 @@ def render_concept_page_user_prompt(concept: dict[str, Any], evidence_units: lis
             "aliases": concept.get("aliases", []),
             "definition_draft": concept.get("definition"),
             "why_page_worthy": concept.get("why_page_worthy"),
-            "display_block_ids": [ref_to_bid.get(ref, ref) for ref in concept.get("display_reference_ids", [])],
+            "display_block_ids": concept.get("display_reference_ids", []),
             "required_output_note": "definition must be {text, anchor_block_ids}; do not embed [B-id] citations in text fields",
         },
         ensure_ascii=False,
