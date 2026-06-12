@@ -557,6 +557,17 @@ button {
   background: #f3f5f9;
 }
 
+.tree-row.is-selected {
+  color: #2f3744;
+  background: rgba(255, 193, 23, 0.18);
+  outline: 1px solid rgba(255, 193, 23, 0.62);
+}
+
+.tree-row.is-selected .tree-asset,
+.tree-row.is-selected svg {
+  color: #d99a00;
+}
+
 .tree-row:focus-visible {
   outline: 2px solid rgba(90, 118, 160, 0.28);
   outline-offset: 1px;

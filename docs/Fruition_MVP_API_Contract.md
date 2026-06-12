@@ -221,8 +221,10 @@ wiki/concepts/{concept_slug}.md
 POST   /documents
 GET    /documents
 GET    /documents/{document_id}
+PATCH  /documents/{document_id}/rename
 GET    /wiki/graph
 GET    /wiki/pages/{wiki_page_id}
+PATCH  /wiki/pages/{wiki_page_id}/rename
 POST   /query
 GET    /chat/messages
 ```
@@ -350,6 +352,82 @@ Response:
 }
 ```
 
+### 5.4 문서 이름 변경
+
+```http
+PATCH /api/documents/{document_id}/rename
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "filename": "lecture_01_renamed.pdf",
+  "sync_source_title": false
+}
+```
+
+Request fields:
+
+| field | type | required | description |
+| --- | --- | --- | --- |
+| `filename` | string | O | 사용자가 지정한 문서 표시명. 원본 파일 확장자를 유지하는 것을 권장한다. |
+| `sync_source_title` | boolean | X | 대응되는 source page가 있을 때 source page `title`도 함께 변경할지 여부. 기본값은 `false`다. |
+
+Response:
+
+```json
+{
+  "id": "doc_123",
+  "filename": "lecture_01_renamed.pdf",
+  "previous_filename": "lecture_01.pdf",
+  "source_uri": "sources/documents/doc_123/original",
+  "status": "completed",
+  "renamed_at": "2026-06-04T10:20:00Z",
+  "source_page": {
+    "id": "source:doc_123",
+    "title": "lecture_01",
+    "renamed": false
+  }
+}
+```
+
+처리 규칙:
+
+- 이 API는 `documents.filename`만 변경한다.
+- MinIO 원본 객체 경로인 `source_uri`와 content hash는 변경하지 않는다.
+- 문서 처리 상태가 `processing`, `completed`, `failed`여도 이름 변경은 허용한다.
+- `sync_source_title=true`이고 `source:{document_id}` page가 존재하면 source page `title`도 같은 표시명 기반으로 변경한다.
+- `sync_source_title=true`인데 source page가 아직 없으면 문서 이름만 변경하고 `source_page`는 `null`로 반환한다.
+- 처리 중인 문서의 source page가 이후 생성될 때 source title을 변경된 `documents.filename` 기준으로 만들지는 백엔드 정책으로 명시해야 한다. MVP 기본 정책은 생성 시점의 최신 `documents.filename`을 사용한다.
+
+검증 규칙:
+
+- `filename`은 trim 후 1자 이상이어야 한다.
+- `filename`은 255자를 넘지 않는다.
+- `/`, `\`, NULL 문자 등 object key 또는 path로 오인될 수 있는 문자는 거부한다.
+- 같은 workspace 또는 같은 사용자 범위에서 중복 이름을 허용할지 여부는 백엔드 정책으로 정한다. MVP 기본 정책은 중복 허용이다.
+
+Error response:
+
+```json
+{
+  "error": {
+    "code": "INVALID_DOCUMENT_FILENAME",
+    "message": "문서 이름은 1자 이상 255자 이하여야 합니다."
+  }
+}
+```
+
+주요 error code:
+
+| code | HTTP status | description |
+| --- | --- | --- |
+| `DOCUMENT_NOT_FOUND` | 404 | 문서 ID가 존재하지 않는다. |
+| `INVALID_DOCUMENT_FILENAME` | 400 | 이름이 비어 있거나 허용되지 않는 문자를 포함한다. |
+| `DOCUMENT_RENAME_CONFLICT` | 409 | 백엔드가 중복 이름을 금지하는 정책일 때 같은 이름이 이미 존재한다. |
+
 ## 6. Wiki API
 
 ### 6.1 Wiki graph 조회
@@ -445,6 +523,79 @@ Response:
 ```
 
 source page 상세의 경우 `source_documents`에는 대응되는 원본 문서 1개가 들어간다.
+
+### 6.3 Wiki page 이름 변경
+
+```http
+PATCH /api/wiki/pages/{wiki_page_id}/rename
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "title": "Self-Attention 개념 정리",
+  "update_slug": false
+}
+```
+
+Request fields:
+
+| field | type | required | description |
+| --- | --- | --- | --- |
+| `title` | string | O | 사용자가 지정한 Wiki page 표시명. |
+| `update_slug` | boolean | X | title 변경에 맞춰 slug도 재생성할지 여부. 기본값은 `false`다. |
+
+Response:
+
+```json
+{
+  "id": "page_concept_456",
+  "page_type": "concept",
+  "title": "Self-Attention 개념 정리",
+  "previous_title": "Self-Attention",
+  "slug": "self-attention",
+  "previous_slug": "self-attention",
+  "slug_updated": false,
+  "updated_at": "2026-06-04T10:25:00Z"
+}
+```
+
+처리 규칙:
+
+- 이 API는 `wiki_pages.title`을 변경한다.
+- `update_slug=false`이면 기존 slug와 markdown URI를 유지한다.
+- `update_slug=true`이면 title 기반으로 slug를 재생성한다.
+- slug를 변경하더라도 page id는 유지한다.
+- slug 변경 시 `wiki_pages.slug` 중복을 검증한다.
+- markdown 파일 경로(`markdown_uri`)까지 변경할지는 별도 migration이 필요하므로 MVP 기본 정책은 변경하지 않는다.
+- source page 이름 변경은 원본 문서 이름 변경과 독립적으로 허용한다. 원본 문서 이름까지 함께 변경하려면 `PATCH /api/documents/{document_id}/rename`의 `sync_source_title` 정책을 사용한다.
+
+검증 규칙:
+
+- `title`은 trim 후 1자 이상이어야 한다.
+- `title`은 255자를 넘지 않는다.
+- `page_type`이 `source`, `concept` 모두 rename 가능하다.
+
+Error response:
+
+```json
+{
+  "error": {
+    "code": "INVALID_WIKI_PAGE_TITLE",
+    "message": "Wiki page 제목은 1자 이상 255자 이하여야 합니다."
+  }
+}
+```
+
+주요 error code:
+
+| code | HTTP status | description |
+| --- | --- | --- |
+| `WIKI_PAGE_NOT_FOUND` | 404 | Wiki page ID가 존재하지 않는다. |
+| `INVALID_WIKI_PAGE_TITLE` | 400 | 제목이 비어 있거나 너무 길다. |
+| `WIKI_PAGE_SLUG_CONFLICT` | 409 | `update_slug=true`이고 재생성된 slug가 이미 존재한다. |
 
 ## 7. Query API
 
@@ -586,6 +737,7 @@ Response:
 ```text
 GET /api/documents
 POST /api/documents
+PATCH /api/documents/{document_id}/rename
 ```
 
 표시 데이터:
@@ -603,6 +755,7 @@ error_message
 ```text
 GET /api/wiki/graph
 GET /api/wiki/pages/{wiki_page_id}
+PATCH /api/wiki/pages/{wiki_page_id}/rename
 ```
 
 표시 데이터:
