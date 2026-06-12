@@ -6,6 +6,26 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-12
 
+### docs: rename API 이슈 문서 분리
+
+**변경 배경**
+
+- 2026-06-11 이슈 문서에 남아 있던 rename API 이슈를 실제 정리 일자인 2026-06-12 문서로 분리할 필요가 있었다.
+- API 계약 문서에서 rename 관련 계약이 어느 위치에 남아 있는지 이슈 문서만 보고 추적할 수 있어야 했다.
+
+**변경된 내용**
+
+- `docs/issue/2026-06-12.md`를 추가하고 문서와 Wiki page rename API 필요성, 원인, 해결 방향을 옮겼다.
+- `docs/issue/2026-06-11.md`에는 새 문서로 이동했다는 안내 링크만 남겼다.
+- `docs/issue/2026-06-12.md`에 `docs/Fruition_MVP_API_Contract.md`의 rename API 목록, 상세 계약, 정책, 화면 매핑 위치를 기록했다.
+
+**검증 결과**
+
+- `rg -n "rename|rename API" docs/issue docs/Fruition_MVP_API_Contract.md docs/changelog/frontend.md`로 문서 위치를 확인했다.
+- 문서 변경만 포함되어 별도 코드 테스트는 실행하지 않았다.
+
+---
+
 ### refactor: 프론트 미사용 목업 자산 정리
 
 **변경 배경**
