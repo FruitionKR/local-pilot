@@ -103,6 +103,28 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wiki_page_embeddings (
+                page_id TEXT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+                embedding_model TEXT NOT NULL,
+                representation_hash TEXT NOT NULL,
+                embedding_vector DOUBLE PRECISION[] NOT NULL,
+                embedding_dimension INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'completed',
+                error TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (page_id, embedding_model)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wiki_page_embeddings_model_hash
+            ON wiki_page_embeddings (embedding_model, representation_hash)
+            """
+        )
 
 
 def get_document(document_id: str) -> dict | None:
@@ -130,12 +152,13 @@ def create_pipeline_run(run_id: str, document_id: str | None, input_source: str,
         )
 
 
-def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
+def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
+    embedded_page_ids: list[str] = []
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         document_id = row["document_id"] if row else None
         if document_id:
-            _persist_wiki_outputs(conn, document_id, manifest)
+            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
             conn.execute(
                 """
                 UPDATE documents
@@ -152,6 +175,7 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
             """,
             (Json(manifest), run_id),
         )
+    return embedded_page_ids
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
@@ -190,10 +214,11 @@ def get_pipeline_run(run_id: str) -> dict | None:
         return dict(row) if row else None
 
 
-def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> None:
+def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> list[str]:
     out_dir = Path(manifest["out"])
     normalized = json.loads((out_dir / "normalized.json").read_text(encoding="utf-8"))
     links = json.loads(Path(manifest["links"]).read_text(encoding="utf-8"))
+    persisted_page_ids: list[str] = []
 
     source_page_id = f"source:{document_id}"
     source_slug = document_id
@@ -210,6 +235,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
         source_summary,
         source_markdown_uri,
     )
+    persisted_page_ids.append(source_page_id)
     _upsert_document_wiki_link(conn, document_id, source_page_id, "source_of", 1.0)
 
     generated_concept_slugs = {Path(path).stem for path in manifest.get("concept_pages", [])}
@@ -231,6 +257,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
             concept.get("definition") or concept.get("why_page_worthy") or "",
             concept_markdown_uri,
         )
+        persisted_page_ids.append(page_id)
         _upsert_document_wiki_link(conn, document_id, page_id, "extracted_concept", concept.get("importance_score"))
 
     for link in links:
@@ -246,6 +273,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
                 link.get("confidence"),
             )
     _refresh_source_related_links(conn)
+    return persisted_page_ids
 
 
 def _upload_wiki_markdown(path: Path, object_name: str) -> str:
