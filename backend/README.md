@@ -88,7 +88,7 @@ Docker Compose 인프라 기동 시에도 동일한 파일을 사용하므로 �
 | `S3_ACCESS_KEY` | `fruition` | MinIO 액세스 키 |
 | `S3_SECRET_KEY` | `fruition_dev_secret` | MinIO 시크릿 키 |
 | `S3_BUCKET` | `fruition-storage` | 오브젝트 스토리지 버킷명 |
-| `PROCESSING_ENDPOINT` | `http://localhost:8001/process` | FastAPI 문서 처리 파이프라인 엔드포인트 |
+| `PROCESSING_ENDPOINT` | `http://localhost:8000/pipeline/runs` | FastAPI 문서 처리 파이프라인 실행 엔드포인트 |
 | `OPENAI_API_KEY` | (없음) | OpenAI API 키 — LLM 기능 사용 시 필요 |
 | `LLM_PROVIDER` | `openai` | LLM 프로바이더 |
 | `LLM_MODEL` | `gpt-4.1-mini` | 사용할 LLM 모델명 |
@@ -243,12 +243,12 @@ Content-Type: application/json
   → documents 레코드 생성 (status=processing)
   → 사용자에게 201 응답
   → [비동기] FastAPI에 POST {PROCESSING_ENDPOINT}
-        body: { "document_id": "...", "source_uri": "..." }
+        body: { "document_id": "..." }
 
-[FastAPI] MinIO에서 파일 직접 fetch → 처리 단계마다:
-  → [Spring] PATCH /api/documents/{id}/status
-        body: { "status": "...", "extracted_text_uri": "...", ... }
-  → documents 레코드 상태 업데이트 (JPA dirty checking)
+[FastAPI] documents row 조회 → MinIO에서 Markdown/text 입력 fetch
+  → Wiki Markdown / graph 결과 생성
+  → wiki_pages / document_wiki_links / wiki_page_links 저장
+  → documents.status, pipeline_runs 상태 업데이트
 ```
 
 ---
@@ -353,5 +353,5 @@ docker logs fruition-minio-init-dev
 
 **FastAPI 처리 요청 실패**
 
-`PROCESSING_ENDPOINT`에 FastAPI 서버가 실행 중이지 않아도 업로드 응답(201)은 정상 반환됩니다.
-실패 시 서버 로그에 `[처리 요청 실패]` 경고가 기록됩니다.
+`PROCESSING_ENDPOINT`에 FastAPI Pipeline 서버가 실행 중이지 않아도 업로드 응답(201)은 정상 반환됩니다.
+실패 시 서버 로그에 `[파이프라인 실행 요청 실패]` 경고가 기록됩니다.

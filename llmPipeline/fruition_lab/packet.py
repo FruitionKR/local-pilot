@@ -9,7 +9,7 @@ class SemanticPacketBuilder:
     """Builds LLM reading packets with short [B0001] anchors.
 
     The model gets enough context to understand meaning, but not long ref ids or
-    locator JSON. Long source refs stay in backend block_map.json.
+    locator data. Normalized pipeline refs use short block ids such as B0001.
     """
 
     def __init__(self, max_chars: int = 7000, overlap_blocks: int = 1) -> None:

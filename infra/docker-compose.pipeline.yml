@@ -1,7 +1,7 @@
 services:
   pipeline-api:
     build:
-      context: ../pipeline_api
+      context: ../llmPipeline
     container_name: fruition-pipeline-api-dev
     restart: unless-stopped
     environment:

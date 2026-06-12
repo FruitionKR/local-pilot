@@ -16,6 +16,8 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -80,12 +82,8 @@ public class DocumentService {
             );
             documentRepository.save(document);
 
-            // 4. 백그라운드 처리 요청 (실패해도 응답에 영향 없음)
-            try {
-                processingRequester.request(documentId, objectPath);
-            } catch (Exception e) {
-                // 백그라운드 처리 실패는 업로드 응답 실패로 보지 않음
-            }
+            // 4. DB 커밋 이후 백그라운드 처리 요청 (실패해도 업로드 응답에 영향 없음)
+            requestProcessingAfterCommit(documentId);
 
             return new DocumentUploadResponse(
                     document.getId(),
@@ -114,6 +112,19 @@ public class DocumentService {
             return "text/markdown";
         }
         return contentType != null ? contentType : "application/octet-stream";
+    }
+
+    private void requestProcessingAfterCommit(String documentId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            processingRequester.request(documentId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                processingRequester.request(documentId);
+            }
+        });
     }
 
     public DocumentListResponse findAll() {
