@@ -141,7 +141,7 @@ type GraphNode = {
   label: string;
   size?: number;
   kind?: "source" | "concept" | "raw" | "progress";
-  progress?: number;
+  loading?: boolean;
 };
 
 type GraphLink = {
@@ -337,7 +337,7 @@ const nodes: GraphNode[] = [
   { id: "emotion", label: "정서 발달 보고서", size: 26, kind: "source" },
   { id: "family", label: "가족 지원 프로그램", size: 26, kind: "source" },
   { id: "teacher", label: "교사 인식 설문", size: 26, kind: "source" },
-  { id: "case", label: "학습지원 사례집", size: 31, kind: "progress", progress: 58 },
+  { id: "case", label: "학습지원 사례집", size: 31, kind: "progress", loading: true },
   { id: "raw1", label: "또래관계_연구.pdf", kind: "raw" },
   { id: "raw2", label: "정서발달_보고서.pdf", kind: "raw" },
   { id: "raw3", label: "통합교육_효과분석.docx", kind: "raw" },
@@ -823,42 +823,49 @@ async function fetchBackendData(): Promise<BackendData> {
 }
 
 function buildGraphFromBackend(documents: DocumentItemResponse[], graph: WikiGraphResponse) {
-  const graphNodes: GraphNode[] = (graph.nodes ?? []).map((node) => ({
-    id: node.id,
-    label: node.title || node.slug || node.id,
-    kind: node.page_type === "source" ? "source" : "concept",
-    size: node.page_type === "source" ? 32 : undefined
+  const backendSourceByDocumentId = new Map(
+    (graph.nodes ?? [])
+      .filter((node) => node.page_type === "source" && node.id.startsWith("source:"))
+      .map((node) => [node.id.replace("source:", ""), node])
+  );
+  const rawNodes: GraphNode[] = documents.map((document) => ({
+    id: `raw:${document.id}`,
+    label: document.filename,
+    kind: "raw" as const,
+    loading: document.status === "processing" || document.status === "uploaded"
   }));
+  const sourceNodes: GraphNode[] = documents.map((document) => {
+    const backendSource = backendSourceByDocumentId.get(document.id);
+    return {
+      id: `source:${document.id}`,
+      label: backendSource?.title || document.filename,
+      kind: "source" as const,
+      size: 32,
+      loading: document.status === "processing" || document.status === "uploaded" || document.status === "failed"
+    };
+  });
+  const conceptNodes: GraphNode[] = (graph.nodes ?? [])
+    .filter((node) => node.page_type !== "source")
+    .map((node) => ({
+      id: node.id,
+      label: node.title || node.slug || node.id,
+      kind: "concept" as const
+    }));
 
+  const rawSourceLinks: GraphLink[] = documents.map((document) => ({
+    from: `raw:${document.id}`,
+    to: `source:${document.id}`,
+    dashed: document.status !== "completed"
+  }));
   const graphLinks: GraphLink[] = (graph.edges ?? []).map((edge) => ({
     from: edge.from_page_id,
     to: edge.to_page_id,
     active: edge.link_type === "source_mentions_concept"
   }));
 
-  const graphNodeIds = new Set(graphNodes.map((node) => node.id));
-  const sourceDocumentIds = new Set(
-    graphNodes
-      .filter((node) => node.kind === "source" && node.id.startsWith("source:"))
-      .map((node) => node.id.replace("source:", ""))
-  );
-
-  const documentNodes = documents
-    .filter((document) => !sourceDocumentIds.has(document.id))
-    .map((document) => {
-      return {
-        id: `document:${document.id}`,
-        label: document.filename,
-        kind: document.status === "processing" || document.status === "uploaded" || document.status === "completed"
-          ? "progress" as const
-          : "raw" as const
-      };
-    })
-    .filter((node) => !graphNodeIds.has(node.id));
-
   return {
-    nodes: [...graphNodes, ...documentNodes],
-    links: graphLinks
+    nodes: [...rawNodes, ...sourceNodes, ...conceptNodes],
+    links: [...rawSourceLinks, ...graphLinks]
   };
 }
 
@@ -1852,7 +1859,7 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
         context.beginPath();
         context.arc(screenPosition.x, screenPosition.y, radius + 26, 0, Math.PI * 2);
         context.fill();
-        context.fillStyle = node.kind === "source" || node.kind === "progress" ? "rgba(255, 193, 23, 0.28)" : "rgba(48, 56, 68, 0.18)";
+        context.fillStyle = node.kind === "source" || node.loading ? "rgba(255, 193, 23, 0.28)" : "rgba(48, 56, 68, 0.18)";
         context.beginPath();
         context.arc(screenPosition.x, screenPosition.y, radius + 12, 0, Math.PI * 2);
         context.fill();
@@ -1864,12 +1871,28 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
       if (node.kind === "source") {
         context.fillStyle = "#ffc117";
         context.fill();
+        if (node.loading) {
+          const spin = performance.now() / 720;
+          context.strokeStyle = "rgba(255, 255, 255, 0.58)";
+          context.lineWidth = 3;
+          context.beginPath();
+          context.arc(screenPosition.x, screenPosition.y, radius - 5, spin, spin + Math.PI * 1.35);
+          context.stroke();
+        }
       } else if (node.kind === "raw") {
         context.strokeStyle = "#98a4b5";
         context.lineWidth = 1.2;
         context.setLineDash([4, 4]);
         context.stroke();
         context.setLineDash([]);
+        if (node.loading) {
+          const spin = performance.now() / 720;
+          context.strokeStyle = "#ffc117";
+          context.lineWidth = 2.4;
+          context.beginPath();
+          context.arc(screenPosition.x, screenPosition.y, radius - 2, spin, spin + Math.PI * 1.35);
+          context.stroke();
+        }
       } else if (node.kind === "progress") {
         const spin = performance.now() / 720;
         context.fillStyle = "#fff";
