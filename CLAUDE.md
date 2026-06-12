@@ -16,12 +16,21 @@
 
 ## 커밋 전 changelog 갱신
 
-- 커밋을 진행하기 전에는 현재까지의 변경 사항을 `docs/changelog/` 아래의 관련 changelog에 먼저 기록한다.
-- Java/Spring 백엔드 변경은 `docs/changelog/backend.md`에 기록한다.
-- 프론트엔드 변경은 `docs/changelog/frontend.md`에 기록한다.
-- 인프라, DevOps, Docker, 배포 환경 변경은 `docs/changelog/infra.md`에 기록한다.
-- 여러 영역에 걸친 변경은 해당하는 changelog를 모두 갱신한다.
+- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 발생한 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
+- Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
+- 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
+- AI/pipeline 기능 코드 변경은 해당 영역 changelog가 있을 때 그 문서에 기록한다.
+- 인프라, DevOps, Docker, 배포 환경 코드 또는 설정 변경은 `docs/changelog/infra.md`에 기록한다.
+- 여러 기능 영역에 걸친 코드 변경은 해당하는 changelog를 모두 갱신한다.
+- 이슈 문서 정리, 작업 지침 변경, 단순 문서 이동처럼 기능 코드 변경이 없는 커밋은 changelog를 갱신하지 않는다.
 - changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
+
+## 이슈 문서 관리
+
+- 이슈 문서는 항상 작업 당일 날짜 기준의 `docs/issue/YYYY-MM-DD.md`에 작성하거나 갱신한다.
+- 지난 날짜의 이슈 문서에 남아 있는 내용을 새 날짜 기준으로 다시 관리해야 하면, 새 날짜 문서로 내용을 옮기고 기존 문서에는 이동 안내와 링크만 남긴다.
+- 이슈 해결을 위해 다른 문서에 API 계약, 설계, 절차, 정책 같은 구체적인 내용을 적었다면, 이슈 문서에도 해당 문서 경로와 확인 가능한 위치(섹션명 또는 line 위치)를 함께 기록한다.
+- 다른 문서의 위치를 기록할 때는 추후 검색과 검토가 쉽도록 파일 경로, 섹션 제목, 핵심 endpoint/API 이름을 가능한 한 함께 남긴다.
 
 ## 브랜치와 PR 흐름
 
