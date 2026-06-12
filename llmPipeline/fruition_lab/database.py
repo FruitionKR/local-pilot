@@ -9,6 +9,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from .storage import write_text_object
+
 
 def database_url() -> str:
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_DSN")
@@ -192,7 +194,9 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
 
     source_page_id = f"source:{document_id}"
     source_slug = document_id
-    source_title = _markdown_title(Path(manifest["source_page"])) or normalized["document"].get("title") or document_id
+    source_page_path = Path(manifest["source_page"])
+    source_markdown_uri = _upload_wiki_markdown(source_page_path, f"wiki/sources/{source_slug}.md")
+    source_title = _markdown_title(source_page_path) or normalized["document"].get("title") or document_id
     source_summary = _source_summary(normalized)
     _upsert_wiki_page(
         conn,
@@ -201,7 +205,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
         source_title,
         source_slug,
         source_summary,
-        manifest["source_page"],
+        source_markdown_uri,
     )
     _upsert_document_wiki_link(conn, document_id, source_page_id, "source_of", 1.0)
 
@@ -213,6 +217,8 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
             continue
         page_id = f"concept:{slug}"
         concept_id_by_slug[slug] = page_id
+        concept_page_path = out_dir / "wiki" / "concepts" / f"{slug}.md"
+        concept_markdown_uri = _upload_wiki_markdown(concept_page_path, f"wiki/concepts/{slug}.md")
         _upsert_wiki_page(
             conn,
             page_id,
@@ -220,7 +226,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
             concept.get("title") or slug,
             slug,
             concept.get("definition") or concept.get("why_page_worthy") or "",
-            str(out_dir / "wiki" / "concepts" / f"{slug}.md"),
+            concept_markdown_uri,
         )
         _upsert_document_wiki_link(conn, document_id, page_id, "extracted_concept", concept.get("importance_score"))
 
@@ -236,6 +242,10 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
                 link.get("label"),
                 link.get("confidence"),
             )
+
+
+def _upload_wiki_markdown(path: Path, object_name: str) -> str:
+    return write_text_object(object_name, path.read_text(encoding="utf-8"))
 
 
 def _source_summary(normalized: dict[str, Any]) -> str:
