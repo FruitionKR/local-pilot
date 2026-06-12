@@ -46,6 +46,7 @@ type TreeItem = {
   byteSize?: number;
   sourceUri?: string;
   uploadedAt?: string;
+  graphNodeId?: string;
   active?: boolean;
   children?: TreeItem[];
 };
@@ -725,6 +726,7 @@ function applyUploadedDocument(items: TreeItem[], itemId: string, document: Docu
         status: document.status,
         errorMessage: undefined,
         documentId: document.id,
+        graphNodeId: `raw:${document.id}`,
         mimeType: document.mime_type,
         byteSize: document.byte_size,
         sourceUri: document.source_uri,
@@ -750,6 +752,7 @@ function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
       label: node.title || node.slug || node.id,
       type: "wiki" as const,
       wikiKind: "source" as const,
+      graphNodeId: node.id,
       generated: true
     }));
 
@@ -760,6 +763,7 @@ function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
       label: node.title || node.slug || node.id,
       type: "wiki" as const,
       wikiKind: "concept" as const,
+      graphNodeId: node.id,
       generated: true
     }));
 
@@ -905,6 +909,7 @@ function mergeBackendDataIntoProjects(projects: Project[], documents: DocumentIt
     type: "file" as const,
     status: document.status,
     documentId: document.id,
+    graphNodeId: `raw:${document.id}`,
     mimeType: document.mime_type,
     byteSize: document.byte_size,
     sourceUri: document.source_uri,
@@ -950,7 +955,7 @@ function setLightDragPreview(event: ReactDragEvent<HTMLButtonElement>) {
   window.setTimeout(() => preview.remove(), 0);
 }
 
-function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dropTarget, fileDropTarget, editing, onDragStart, onDragOverItem, onFileDragOver, onFileDragLeave, onDropItem, onDropFiles, onDragEnd, onContextMenuItem, onEditingChange, onCommitEditing, onCancelEditing }: {
+function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dropTarget, fileDropTarget, editing, onDragStart, onDragOverItem, onFileDragOver, onFileDragLeave, onDropItem, onDropFiles, onDragEnd, onContextMenuItem, onSelectGraphNode, onEditingChange, onCommitEditing, onCancelEditing }: {
   item: TreeItem;
   depth: number;
   openIds: Set<string>;
@@ -968,6 +973,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
   onDragEnd: () => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
+  onSelectGraphNode: (nodeId: string) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
   onCancelEditing: () => void;
@@ -1042,6 +1048,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
         onDragEnd={onDragEnd}
         onContextMenu={(event) => onContextMenuItem(event, projectId, item.id)}
         onClick={() => {
+          if (!isEditing && item.graphNodeId) onSelectGraphNode(item.graphNodeId);
           if (!isEditing && hasChildren) onToggle(item.id);
         }}
       >
@@ -1099,6 +1106,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
           onDropFiles={onDropFiles}
           onDragEnd={onDragEnd}
           onContextMenuItem={onContextMenuItem}
+          onSelectGraphNode={onSelectGraphNode}
           onEditingChange={onEditingChange}
           onCommitEditing={onCommitEditing}
           onCancelEditing={onCancelEditing}
@@ -1108,7 +1116,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, dr
   );
 }
 
-function SidebarTree({ items, projectId, draggedItemId, dropTarget, fileDropTarget, editing, onMoveItem, onDropFiles, onDragStart, onDragOverItem, onFileDragOver, onFileDragLeave, onDragEnd, onContextMenuItem, onEditingChange, onCommitEditing, onCancelEditing, defaultOpenIds = [] }: {
+function SidebarTree({ items, projectId, draggedItemId, dropTarget, fileDropTarget, editing, onMoveItem, onDropFiles, onDragStart, onDragOverItem, onFileDragOver, onFileDragLeave, onDragEnd, onContextMenuItem, onSelectGraphNode, onEditingChange, onCommitEditing, onCancelEditing, defaultOpenIds = [] }: {
   items: TreeItem[];
   projectId: string;
   draggedItemId: string | null;
@@ -1123,12 +1131,26 @@ function SidebarTree({ items, projectId, draggedItemId, dropTarget, fileDropTarg
   onFileDragLeave: () => void;
   onDragEnd: () => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
+  onSelectGraphNode: (nodeId: string) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
   onCancelEditing: () => void;
   defaultOpenIds?: string[];
 }) {
   const [openIds, setOpenIds] = useState(() => new Set(defaultOpenIds));
+  const generatedFolderIds = useMemo(
+    () => items.filter((item) => item.generated && item.children?.length).map((item) => item.id),
+    [items]
+  );
+
+  useEffect(() => {
+    if (generatedFolderIds.length === 0) return;
+    setOpenIds((current) => {
+      const next = new Set(current);
+      generatedFolderIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [generatedFolderIds]);
 
   function toggleNode(id: string) {
     setOpenIds((current) => {
@@ -1168,6 +1190,7 @@ function SidebarTree({ items, projectId, draggedItemId, dropTarget, fileDropTarg
           onDropFiles={onDropFiles}
           onDragEnd={onDragEnd}
           onContextMenuItem={onContextMenuItem}
+          onSelectGraphNode={onSelectGraphNode}
           onEditingChange={onEditingChange}
           onCommitEditing={onCommitEditing}
           onCancelEditing={onCancelEditing}
@@ -1193,6 +1216,7 @@ function ProjectSection({
   onDragEnd,
   onContextMenuProject,
   onContextMenuItem,
+  onSelectGraphNode,
   onEditingChange,
   onCommitEditing,
   onCancelEditing
@@ -1212,6 +1236,7 @@ function ProjectSection({
   onDragEnd: () => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
+  onSelectGraphNode: (nodeId: string) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
   onCancelEditing: () => void;
@@ -1299,6 +1324,7 @@ function ProjectSection({
               onFileDragLeave={onFileDragLeave}
               onDragEnd={onDragEnd}
               onContextMenuItem={onContextMenuItem}
+              onSelectGraphNode={onSelectGraphNode}
               onEditingChange={onEditingChange}
               onCommitEditing={onCommitEditing}
               onCancelEditing={onCancelEditing}
@@ -1310,11 +1336,12 @@ function ProjectSection({
   );
 }
 
-function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCount, loading = false }: {
+function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCount, focusedNodeId, loading = false }: {
   nodes: GraphNode[];
   links: GraphLink[];
   rawDocumentCount: number;
   processingDocumentCount: number;
+  focusedNodeId: string | null;
   loading?: boolean;
 }) {
   const graphSignature = useMemo(
@@ -1603,6 +1630,12 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
     setSelectedNodeId(nodeId);
     drawGraphRef.current();
   }, []);
+
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    if (!nodeById.has(focusedNodeId)) return;
+    setFocusedNode(focusedNodeId);
+  }, [focusedNodeId, nodeById, setFocusedNode]);
 
   const stopDragging = useCallback((pointerId?: number) => {
     if (pointerId !== undefined && activePointerIdRef.current !== pointerId) return;
@@ -2253,6 +2286,7 @@ export default function HomePage() {
   const [wikiGraph, setWikiGraph] = useState<WikiGraphResponse>({ nodes: [], edges: [] });
   const [isGraphLoading, setIsGraphLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [focusedGraphNodeId, setFocusedGraphNodeId] = useState<string | null>(null);
   const editingCancelRef = useRef(false);
   const uploadPickerTargetRef = useRef<UploadPickerTarget | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -2565,6 +2599,7 @@ export default function HomePage() {
                 }}
                 onContextMenuProject={openProjectMenu}
                 onContextMenuItem={openFolderMenu}
+                onSelectGraphNode={setFocusedGraphNodeId}
                 onEditingChange={(label) => {
                   setEditing((current) => current ? { ...current, label } : current);
                 }}
@@ -2591,6 +2626,7 @@ export default function HomePage() {
             links={graphData.links}
             rawDocumentCount={documents.length}
             processingDocumentCount={processingDocumentCount}
+            focusedNodeId={focusedGraphNodeId}
             loading={isGraphLoading}
           />
 

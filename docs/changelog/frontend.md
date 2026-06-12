@@ -6,6 +6,26 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-12
 
+### feat: 문서 트리 클릭 시 graph node 포커스
+
+**변경 배경**
+
+- 왼쪽 문서 트리에서 특정 문서를 클릭했을 때 graph canvas에서 대응되는 raw/source/concept node를 바로 확인할 수 있어야 했다.
+
+**추가 및 변경된 내용**
+
+- 업로드 문서 트리 항목에 `raw:{document_id}` graph node id를 연결했다.
+- `Source 문서`, `Concept 문서` 가상 항목에는 백엔드 Wiki graph node id를 연결했다.
+- 트리 항목 클릭 시 Graph 컴포넌트가 해당 node를 선택/포커스하도록 외부 focus state를 추가했다.
+- source/concept 가상 폴더는 백엔드 graph 데이터가 들어오면 자동으로 펼쳐지도록 변경했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+
+---
+
 ### fix: raw와 source graph node 1:1 매핑
 
 **변경 배경**
