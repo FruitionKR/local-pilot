@@ -197,6 +197,7 @@ failed
 source_mentions_concept
 concept_related_to
 concept_contrasts_with
+source_related_to
 ```
 
 #### document wiki relation type

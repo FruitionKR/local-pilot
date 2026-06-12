@@ -11,6 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
+from app.modules.query.interfaces.http.routes import router as query_router
 from fruition_lab import database
 from fruition_lab.io_utils import ensure_dir, write_text
 from fruition_lab.storage import read_text_object
@@ -18,6 +19,7 @@ from run_lab import run_pipeline
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+app.include_router(query_router)
 logger = logging.getLogger("fruition.pipeline")
 
 

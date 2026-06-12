@@ -43,6 +43,30 @@ Wiki 그래프 조회 및 페이지 상세 조회 엔드포인트가 스텁으�
 
 ---
 
+## 2026-06-12
+
+### feat: Wiki graph query engine 기반 추가
+
+**배경**
+
+기존 자연어 질의 응답은 단일 `highlighted_paths` 형태만으로는 source page, concept page, source-source 관계를 경로 단위로 표현하기 어렵습니다. Wiki graph를 질의 컨텍스트로 사용하기 위해 Python `llmPipeline`에 query bounded context를 먼저 구성했습니다.
+
+**추가된 것**
+
+- `llmPipeline/app/modules/query/` — domain/application/infrastructure/interfaces/http 레이어 기반 query 모듈 추가
+- source-first retrieval, concept focus hint, `source_related_to` traversal 정책을 use case로 구현
+- `POST /query` FastAPI route와 PostgreSQL wiki repository adapter 연결
+- query engine 설계 문서 `docs/spec/query-engine.md` 추가
+- fake port 기반 유닛 테스트로 concept hint backtracking, source-source traversal, depth limit, 빈 질문 검증 확인
+
+**검증**
+
+- `python -m unittest discover -s llmPipeline\tests`
+- `python -m compileall llmPipeline\api.py llmPipeline\app llmPipeline\tests`
+- `api` import 후 `/query` route 등록 확인
+
+---
+
 ## 2026-06-10
 
 ### feat: FastAPI 콜백 패턴 기반 문서 처리 상태 업데이트 (`0595937`)
