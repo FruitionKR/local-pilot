@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Dict, Iterable, List
 
-from .models import SourceBlock, SourceDocument, NormalizedConcept, NormalizedEvidence
-from .text_utils import slugify, unique_keep_order, contains_ci
+from app.modules.wiki_generation.domain.entities import NormalizedConcept, NormalizedEvidence, SourceBlock, SourceDocument
+from app.modules.wiki_generation.domain.text_utils import contains_ci, slugify, unique_keep_order
 
 
 class PipelineValidationError(Exception):

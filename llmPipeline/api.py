@@ -12,9 +12,9 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
 from app.modules.query.interfaces.http.routes import router as query_router
-from fruition_lab import database
-from fruition_lab.io_utils import ensure_dir, write_text
-from fruition_lab.storage import read_text_object
+from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_text
+from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from run_lab import run_pipeline
 
 

@@ -9,7 +9,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-from .storage import write_text_object
+from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
 
 
 SOURCE_RELATED_THRESHOLD = 0.75

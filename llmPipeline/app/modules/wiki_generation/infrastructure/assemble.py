@@ -4,9 +4,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .io_utils import write_text
-from .models import SourceBlock
-from .text_utils import slugify, unique_keep_order
+from app.modules.wiki_ingestion.infrastructure.file_io import write_text
+from app.modules.wiki_generation.domain.entities import SourceBlock
+from app.modules.wiki_generation.domain.text_utils import slugify, unique_keep_order
 
 
 def ref_label(ref_id: str) -> str:

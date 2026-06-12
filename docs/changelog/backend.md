@@ -45,6 +45,28 @@ Wiki 그래프 조회 및 페이지 상세 조회 엔드포인트가 스텁으�
 
 ## 2026-06-12
 
+### refactor: llmPipeline 모듈 구조 정리
+
+**배경**
+
+기존 `fruition_lab` 패키지는 추출, 정규화, LLM 호출, DB 저장, Object Storage 접근이 flat package에 섞여 있어 `docs/python_convention.md`의 bounded context 구조와 맞지 않았습니다. Query Engine 확장 전에 Wiki 생성/수집 책임을 기능 단위 모듈로 분리했습니다.
+
+**변경된 것**
+
+- `app/modules/wiki_generation/` — source/concept page 생성, 정규화, LLM adapter, prompt 렌더링 책임으로 분리
+- `app/modules/wiki_ingestion/` — PostgreSQL persistence, MinIO/S3 object storage, file IO 책임으로 분리
+- `fruition_lab/` flat package 제거, 내부 import를 `app/modules/*` 경로로 일원화
+- `run_lab.py`, `api.py`, query repository import를 새 bounded context 경로로 갱신
+- `llmPipeline/README.md`의 모듈 설명을 새 구조 기준으로 갱신
+
+**검증**
+
+- `python -m unittest discover -s llmPipeline\tests`
+- `python -m compileall llmPipeline\api.py llmPipeline\run_lab.py llmPipeline\app llmPipeline\tests`
+- `api`, `run_lab` import 및 `/query`, `/health`, `/pipeline/runs` route 등록 확인
+
+---
+
 ### feat: Wiki graph query engine 기반 추가
 
 **배경**

@@ -1,6 +1,6 @@
 from app.modules.query.application.ports import WikiRepositoryPort
 from app.modules.query.domain.entities import WikiPage, WikiPageLink
-from fruition_lab import database
+from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
 class PostgresWikiRepository(WikiRepositoryPort):
