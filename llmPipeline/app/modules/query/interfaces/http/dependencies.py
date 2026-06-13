@@ -4,8 +4,8 @@ from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
 from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWikiMarkdownReader
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
+from app.modules.query.infrastructure.query_chat_answer_generator import build_query_chat_answer_generator
 from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
-from app.modules.query.infrastructure.static_answer_generator import StaticAnswerGenerator
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 
 
@@ -17,5 +17,5 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
         event_publisher=build_query_event_publisher(),
         embedding_search=StoredWikiPageEmbeddingSearch(),
         text_search=Bm25Searcher(),
-        answer_generator=StaticAnswerGenerator(),
+        answer_generator=build_query_chat_answer_generator(),
     )
