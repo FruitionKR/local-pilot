@@ -34,6 +34,7 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertEqual(answer.content, "한국어 답변입니다.")
         self.assertEqual(client.calls[0][1], "# User Question\n질문")
         self.assertIn("Answer in Korean.", client.calls[0][0])
+        self.assertIn("citation markers like [1]", client.calls[0][0])
         self.assertEqual(client.calls[0][0], QUERY_ANSWER_SYSTEM_PROMPT)
 
 

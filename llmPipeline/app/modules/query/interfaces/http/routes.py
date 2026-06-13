@@ -59,6 +59,8 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
                 text=snippet.text,
                 score=snippet.score,
                 rank=snippet.rank,
+                paragraph_index=snippet.paragraph_index,
+                sentence_index=snippet.sentence_index,
             )
             for snippet in result.evidence_snippets
         ],

@@ -42,7 +42,7 @@ class RecordingAnswerGenerator:
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         self.last_context = context
-        return GeneratedAnswer(content="테스트 답변")
+        return GeneratedAnswer(content="테스트 답변입니다. [1]")
 
 
 def source_page(page_id: str, title: str) -> WikiPage:
@@ -68,7 +68,7 @@ def concept_page(page_id: str, title: str) -> WikiPage:
 
 
 class AnswerQueryUseCaseTest(unittest.TestCase):
-    def test_adds_source_seed_from_strong_concept_hint(self) -> None:
+    def test_starts_from_top_source_and_cites_evidence_context(self) -> None:
         pages = [
             source_page("source:attention", "Lecture Attention"),
             source_page("source:unrelated", "Unrelated Source"),
@@ -88,8 +88,8 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             wiki_repository=InMemoryWikiRepository(pages, links),
             embedding_search=ScoreSearch(
                 {
-                    "Lecture Attention": 0.10,
-                    "Unrelated Source": 0.90,
+                    "Lecture Attention": 0.90,
+                    "Unrelated Source": 0.10,
                     "Self Attention": 0.95,
                 }
             ),
@@ -111,7 +111,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         related_ids = {item.page.id for item in result.related_pages}
         self.assertIn("source:attention", related_ids)
-        self.assertIn("source:unrelated", related_ids)
+        self.assertNotIn("source:unrelated", related_ids)
         self.assertIn("concept:self-attention", related_ids)
         self.assertTrue(
             any("source:attention" in path.nodes and "concept:self-attention" in path.nodes for path in result.traversal_paths)
@@ -123,14 +123,19 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("Do not create examples, analogies, or fictional cases", answer_generator.last_context.answer_context)
         self.assertIn("Self-attention computes relationships between tokens", answer_generator.last_context.answer_context)
         self.assertIn("입력 토큰들이 서로를 참조", answer_generator.last_context.answer_context)
-        self.assertIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
-        self.assertIn("source:attention -> concept:self-attention", answer_generator.last_context.answer_context)
+        self.assertIn("citation markers like [1]", answer_generator.last_context.answer_context)
+        self.assertNotIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
+        self.assertIn("Lecture Attention -> Self Attention", answer_generator.last_context.answer_context)
         self.assertGreaterEqual(len(result.evidence_snippets), 2)
         self.assertEqual(result.evidence_snippets[0].rank, 1)
         self.assertEqual(result.evidence_snippets[0].page_url, f"/api/wiki/pages/{result.evidence_snippets[0].page_id}")
+        self.assertIsNotNone(result.evidence_snippets[0].paragraph_index)
+        self.assertIsNotNone(result.evidence_snippets[0].sentence_index)
         self.assertIn("토큰", result.evidence_snippets[0].text)
         self.assertNotIn("Unrelated", result.evidence_snippets[0].text)
         self.assertEqual(result.evidence_snippets, sorted(result.evidence_snippets, key=lambda snippet: snippet.score, reverse=True))
+        self.assertIn("[1]", result.answer.content)
+        self.assertEqual(result.retrieval_summary.max_depth, 0)
         self.assertNotIn("# User Question", result.answer.content)
         event_stages = [event[0] for event in event_publisher.events]
         self.assertEqual(
@@ -173,7 +178,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             embedding_search=ScoreSearch(
                 {
                     "RAG Overview": 0.95,
-                    "Wiki Graph Notes": 0.60,
+                    "Wiki Graph Notes": 0.94,
                     "RAG": 0.20,
                 }
             ),
@@ -190,7 +195,97 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("source:b", related_ids)
         self.assertIn("source_related_to", edge_types)
 
-    def test_stops_at_configured_max_depth(self) -> None:
+    def test_excludes_nodes_below_five_percent_from_best_observed_score(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:near", "Near Concept"),
+            concept_page("concept:far", "Far Concept"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:near", "source_mentions_concept", confidence=0.99),
+            WikiPageLink("source:seed", "concept:far", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 1.00,
+                    "Near Concept": 0.96,
+                    "Far Concept": 0.94,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("상대 점수 제한 확인")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertIn("concept:near", related_ids)
+        self.assertNotIn("concept:far", related_ids)
+
+    def test_returns_only_selected_answer_paths(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+            concept_page("concept:two", "Concept Two"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:one", "source_mentions_concept", confidence=0.99),
+            WikiPageLink("source:seed", "concept:two", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 1.00,
+                    "Concept One": 0.99,
+                    "Concept Two": 0.98,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+            returned_path_limit=1,
+        )
+
+        result = use_case.execute("path 반환 제한 확인")
+
+        self.assertEqual(len(result.traversal_paths), 1)
+        self.assertEqual(result.traversal_paths[0].role, "primary_answer_path")
+
+    def test_does_not_expand_graph_when_top_source_score_is_zero(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:connected", "Connected Concept"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:connected", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.0,
+                    "Connected Concept": 0.0,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("관련 없는 질문")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertEqual(related_ids, {"source:seed"})
+        self.assertEqual(result.traversal_paths, [])
+        self.assertEqual(result.retrieval_summary.stop_reason, "no_relevant_seed")
+        self.assertIn("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.", result.answer.content)
+        self.assertNotIn("Transformer", result.answer.content)
+
+    def test_traverses_without_configured_max_depth_limit(self) -> None:
         pages = [
             source_page("source:seed", "Seed Source"),
             concept_page("concept:one", "Concept One"),
@@ -221,12 +316,13 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             traverse_wiki_graph=TraverseWikiGraphUseCase(max_depth=2, min_node_score=0.10),
         )
 
-        result = use_case.execute("깊이 제한 확인")
+        result = use_case.execute("깊이 제한 해제 확인")
 
         related_ids = {item.page.id for item in result.related_pages}
         self.assertIn("concept:two", related_ids)
-        self.assertNotIn("concept:three", related_ids)
-        self.assertNotIn("concept:four", related_ids)
+        self.assertIn("concept:three", related_ids)
+        self.assertIn("concept:four", related_ids)
+        self.assertEqual(result.retrieval_summary.max_depth, 0)
 
     def test_rejects_blank_question(self) -> None:
         use_case = AnswerQueryUseCase(

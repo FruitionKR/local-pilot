@@ -48,9 +48,14 @@ class BuildQueryContextUseCase:
             "# Assistant Output Policy",
             "- Answer in Korean.",
             "- Write only the conversational answer body that should be shown to the user.",
-            "- Do not expose evidence lists, scores, path ids, or page ids in the answer body.",
+            "- Mark the evidence used for each supported sentence with citation markers like [1] or [2].",
+            "- Use only the evidence rank numbers listed below as citation markers.",
+            "- Every sentence that contains factual content from evidence must end with at least one citation marker.",
+            "- Do not write uncited factual sentences.",
+            "- Do not expose evidence lists, scores, path ids, page ids, or page URLs in the answer body.",
             "- If the evidence directly answers the question, answer naturally from that evidence.",
-            "- If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported, then explain only the related information found in the evidence.",
+            "- If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported.",
+            "- For unsupported questions, do not explain the answer from general knowledge; mention only that the provided evidence does not support it and, if useful, name the closest related evidence topic.",
             "- Do not create examples, analogies, or fictional cases that are not present in the context.",
             "- If an example is needed, use only entities or cases that appear in the evidence.",
             "- Do not add information from outside the context.",
@@ -75,7 +80,6 @@ class BuildQueryContextUseCase:
                 [
                     f"## Evidence {snippet.rank}",
                     f"- page: {snippet.page_title}",
-                    f"- page_url: {snippet.page_url}",
                     f"- page_type: {snippet.page_type}",
                     f"- page_role: {snippet.page_role}",
                     f"- evidence_score: {snippet.score:.3f}",
@@ -88,15 +92,9 @@ class BuildQueryContextUseCase:
         lines.extend(["", "# Traversal Paths"])
         for path in traversal_paths[: self._max_paths]:
             path_titles = [pages_by_id[node_id].page.title if node_id in pages_by_id else node_id for node_id in path.nodes]
-            edge_labels = [edge.link_type for edge in path.edges]
             lines.extend(
                 [
-                    f"- path_id: {path.path_id}",
-                    f"  role: {path.role}",
-                    f"  score: {path.score:.3f}",
-                    f"  nodes: {' -> '.join(path.nodes)}",
-                    f"  titles: {' -> '.join(path_titles)}",
-                    f"  edges: {' -> '.join(edge_labels)}",
+                    f"- titles: {' -> '.join(path_titles)}",
                 ]
             )
         return "\n".join(lines).strip()
@@ -104,7 +102,7 @@ class BuildQueryContextUseCase:
     def _build_evidence_snippets(self, question: str, related_pages: list[RetrievedPage]) -> list[EvidenceSnippet]:
         candidates = []
         for item in related_pages[: self._max_related_pages]:
-            for paragraph_score, paragraph, _ in self._score_evidence_paragraphs(question, item):
+            for sentence_score, sentence, paragraph_index, sentence_index in self._score_evidence_sentences(question, item):
                 candidates.append(
                     EvidenceSnippet(
                         page_id=item.page.id,
@@ -113,9 +111,11 @@ class BuildQueryContextUseCase:
                         page_slug=item.page.slug,
                         page_url=self._page_url(item.page.id),
                         page_role=item.role,
-                        text=paragraph,
-                        score=paragraph_score,
+                        text=sentence,
+                        score=sentence_score,
                         rank=0,
+                        paragraph_index=paragraph_index,
+                        sentence_index=sentence_index,
                     )
                 )
 
@@ -131,6 +131,8 @@ class BuildQueryContextUseCase:
                 text=snippet.text,
                 score=snippet.score,
                 rank=index,
+                paragraph_index=snippet.paragraph_index,
+                sentence_index=snippet.sentence_index,
             )
             for index, snippet in enumerate(candidates, start=1)
         ]
@@ -171,6 +173,32 @@ class BuildQueryContextUseCase:
         scored.sort(key=lambda value: (-value[0], value[2]))
         return scored[: self._max_paragraphs_per_page]
 
+    def _score_evidence_sentences(self, question: str, item: RetrievedPage) -> list[tuple[float, str, int, int]]:
+        content = item.page.markdown or item.page.summary
+        paragraphs = self._split_paragraphs(content)
+        if not paragraphs:
+            return []
+
+        query_terms = set(self._tokens(question))
+        scored = []
+        for paragraph_index, paragraph in enumerate(paragraphs):
+            for sentence_index, sentence in enumerate(self._split_sentences(paragraph)):
+                sentence_terms = set(self._tokens(sentence))
+                overlap = len(query_terms & sentence_terms)
+                score = overlap * 2.0 + item.score
+                if item.role == "focus_concept":
+                    score += 0.5
+                elif overlap > 0 and item.role == "seed_source":
+                    score += 0.5
+                if overlap > 0 and paragraph_index == 0:
+                    score += 0.15
+                if overlap == 0:
+                    score -= 0.75
+                scored.append((score, sentence, paragraph_index, sentence_index))
+
+        scored.sort(key=lambda value: (-value[0], value[2], value[3]))
+        return scored[: self._max_paragraphs_per_page]
+
     def _split_paragraphs(self, text: str | None) -> list[str]:
         if not text:
             return []
@@ -178,12 +206,37 @@ class BuildQueryContextUseCase:
         return [
             chunk.strip()
             for chunk in re.split(r"\n\s*\n", normalized)
-            if chunk.strip() and not self._is_heading_only(chunk)
+            if chunk.strip() and not self._is_heading_only(chunk) and not self._is_frontmatter(chunk)
         ]
 
     def _is_heading_only(self, text: str) -> bool:
         lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
         return bool(lines) and all(line.startswith("#") for line in lines)
+
+    def _is_frontmatter(self, text: str) -> bool:
+        lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+        return len(lines) >= 2 and lines[0] == "---" and lines[-1] == "---"
+
+    def _split_sentences(self, paragraph: str) -> list[str]:
+        normalized = " ".join(line.strip() for line in paragraph.strip().splitlines() if line.strip())
+        if not normalized:
+            return []
+        sentences = [
+            self._clean_sentence(chunk)
+            for chunk in re.split(r"(?<=[.!?。！？])\s+|(?<=[다요죠니다까])\.\s*", normalized)
+            if self._clean_sentence(chunk)
+        ]
+        return sentences or [self._clean_sentence(normalized)]
+
+    def _clean_sentence(self, sentence: str) -> str:
+        cleaned = sentence.strip()
+        cleaned = re.sub(r"^#+\s*[^-–—:：]*\s*[-–—:：]\s*", "", cleaned)
+        cleaned = re.sub(r"^#+\s*", "", cleaned)
+        cleaned = re.sub(r"^[-*]\s+", "", cleaned)
+        cleaned = re.sub(r"^(Summary|Definition|Why It Matters|Key Points|Evidence)\s+", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^(?:\[[A-Za-z0-9_,\s-]+\]\s*)+", "", cleaned)
+        cleaned = re.sub(r"^[-*]\s+", "", cleaned)
+        return cleaned.strip()
 
     def _tokens(self, text: str) -> list[str]:
         return re.findall(r"[A-Za-z0-9가-힣_.-]+", text.lower())

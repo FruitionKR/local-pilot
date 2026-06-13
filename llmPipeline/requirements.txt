@@ -4,4 +4,3 @@ fastapi>=0.110
 uvicorn[standard]>=0.27
 psycopg[binary]>=3.1
 minio>=7.2
-sentence-transformers>=3.0

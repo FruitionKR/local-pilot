@@ -59,6 +59,8 @@ class EvidenceSnippetResponse(BaseModel):
     text: str
     score: float
     rank: int
+    paragraph_index: int | None = None
+    sentence_index: int | None = None
 
 
 class QueryResponse(BaseModel):

@@ -8,13 +8,12 @@ class TraverseWikiGraphUseCase:
     def __init__(
         self,
         max_depth: int = 3,
-        min_node_score: float = 0.40,
-        relevance_decay_margin: float = 0.18,
+        relative_score_floor: float = 0.95,
         frontier_limit: int = 8,
+        min_node_score: float | None = None,
     ) -> None:
         self._max_depth = max_depth
-        self._min_node_score = min_node_score
-        self._relevance_decay_margin = relevance_decay_margin
+        self._relative_score_floor = relative_score_floor
         self._frontier_limit = frontier_limit
 
     def execute(
@@ -29,49 +28,55 @@ class TraverseWikiGraphUseCase:
         edges_by_key: dict[tuple[str, str, str], TraversalEdge] = {}
         traversal_paths: list[TraversalPath] = []
         frontier = deque((seed_id, [seed_id], [], node_scores.get(seed_id, 0.0), 0) for seed_id in seed_source_ids)
+        best_observed_score = max((node_scores.get(seed_id, 0.0) for seed_id in seed_source_ids), default=0.0)
 
         for seed_id in seed_source_ids:
             page = pages_by_id.get(seed_id)
             if page:
                 visited[seed_id] = RetrievedPage(page=page, score=node_scores.get(seed_id, 0.0), role="seed_source", depth=0)
 
+        if best_observed_score <= 0:
+            related_pages = sorted(visited.values(), key=lambda item: item.score, reverse=True)
+            return GraphContext(nodes=related_pages), [], "no_relevant_seed"
+
         stop_reason = "max_depth"
         while frontier:
             current_id, path_nodes, path_edges, base_score, depth = frontier.popleft()
-            if depth >= self._max_depth:
-                continue
 
             next_candidates = []
+            next_floor = best_observed_score * self._relative_score_floor
             for link in adjacency.get(current_id, []):
                 target_id = link.to_page_id if link.from_page_id == current_id else link.from_page_id
                 if target_id in path_nodes or target_id not in pages_by_id:
                     continue
+                target_score = node_scores.get(target_id, 0.0)
+                if target_score < next_floor:
+                    continue
                 next_score = traversal_score(
                     base_score=base_score,
-                    node_score=node_scores.get(target_id, 0.0),
+                    node_score=target_score,
                     edge_score=link.confidence,
                     depth=depth + 1,
                 )
-                if next_score < self._min_node_score:
-                    continue
-                next_candidates.append((next_score, target_id, link))
+                next_candidates.append((target_score, next_score, target_id, link))
 
             next_candidates.sort(key=lambda item: item[0], reverse=True)
             if not next_candidates and depth == 0:
                 stop_reason = "no_frontier"
 
             expanded = 0
-            best_next_score = next_candidates[0][0] if next_candidates else 0.0
-            if next_candidates and best_next_score < base_score - self._relevance_decay_margin:
-                stop_reason = "relevance_decay"
-                continue
+            if next_candidates:
+                best_observed_score = max(best_observed_score, next_candidates[0][0])
 
-            for next_score, target_id, link in next_candidates[: self._frontier_limit]:
+            for target_score, next_score, target_id, link in next_candidates[: self._frontier_limit]:
+                if target_score < best_observed_score * self._relative_score_floor:
+                    continue
                 target = pages_by_id[target_id]
                 role = self._node_role(target, depth + 1)
                 previous = visited.get(target_id)
-                if previous is None or next_score > previous.score:
-                    visited[target_id] = RetrievedPage(page=target, score=next_score, role=role, depth=depth + 1)
+                if previous is not None and previous.score >= target_score:
+                    continue
+                visited[target_id] = RetrievedPage(page=target, score=target_score, role=role, depth=depth + 1)
 
                 traversal_edge = TraversalEdge(
                     from_page_id=link.from_page_id,
@@ -91,14 +96,16 @@ class TraverseWikiGraphUseCase:
                         role="primary_answer_path" if len(traversal_paths) == 0 else "candidate_path",
                         nodes=next_path_nodes,
                         edges=next_path_edges,
-                        score=next_score,
+                        score=target_score,
                     )
                 )
                 frontier.append((target_id, next_path_nodes, next_path_edges, next_score, depth + 1))
                 expanded += 1
 
             if expanded:
-                stop_reason = "max_depth"
+                stop_reason = "no_frontier"
+            elif next_candidates:
+                stop_reason = "relative_score_floor"
 
         related_pages = sorted(visited.values(), key=lambda item: item.score, reverse=True)
         graph_context = GraphContext(nodes=related_pages, edges=list(edges_by_key.values()))

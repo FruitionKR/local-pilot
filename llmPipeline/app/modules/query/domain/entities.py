@@ -86,6 +86,8 @@ class EvidenceSnippet:
     text: str
     score: float
     rank: int
+    paragraph_index: int | None = None
+    sentence_index: int | None = None
 
 
 @dataclass(frozen=True)

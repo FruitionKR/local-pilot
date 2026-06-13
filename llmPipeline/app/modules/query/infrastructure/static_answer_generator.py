@@ -12,8 +12,8 @@ class StaticAnswerGenerator(AnswerGeneratorPort):
             return GeneratedAnswer(
                 content=(
                     "문서에 질문을 정확히 정의한 근거는 충분하지 않아요. "
-                    f"다만 관련해서 {top.page_title}에서 {top.text.strip()} 라는 내용이 언급됩니다."
+                    f"다만 관련해서 {top.page_title}에서 {top.text.strip()} 라는 내용이 언급됩니다. [{top.rank}]"
                 )
             )
-        return GeneratedAnswer(content=f"문서 기준으로는 {top.text.strip()}")
+        return GeneratedAnswer(content=f"문서 기준으로는 {top.text.strip()} [{top.rank}]")
 
