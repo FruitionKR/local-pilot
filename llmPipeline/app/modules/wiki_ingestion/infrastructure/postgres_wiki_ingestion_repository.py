@@ -9,7 +9,10 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-from .storage import write_text_object
+from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
+
+
+SOURCE_RELATED_THRESHOLD = 0.75
 
 
 def database_url() -> str:
@@ -100,6 +103,28 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS wiki_page_embeddings (
+                page_id TEXT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+                embedding_model TEXT NOT NULL,
+                representation_hash TEXT NOT NULL,
+                embedding_vector DOUBLE PRECISION[] NOT NULL,
+                embedding_dimension INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'completed',
+                error TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (page_id, embedding_model)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wiki_page_embeddings_model_hash
+            ON wiki_page_embeddings (embedding_model, representation_hash)
+            """
+        )
 
 
 def get_document(document_id: str) -> dict | None:
@@ -127,12 +152,13 @@ def create_pipeline_run(run_id: str, document_id: str | None, input_source: str,
         )
 
 
-def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
+def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
+    embedded_page_ids: list[str] = []
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         document_id = row["document_id"] if row else None
         if document_id:
-            _persist_wiki_outputs(conn, document_id, manifest)
+            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
             conn.execute(
                 """
                 UPDATE documents
@@ -149,6 +175,7 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> None:
             """,
             (Json(manifest), run_id),
         )
+    return embedded_page_ids
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
@@ -187,10 +214,11 @@ def get_pipeline_run(run_id: str) -> dict | None:
         return dict(row) if row else None
 
 
-def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> None:
+def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> list[str]:
     out_dir = Path(manifest["out"])
     normalized = json.loads((out_dir / "normalized.json").read_text(encoding="utf-8"))
     links = json.loads(Path(manifest["links"]).read_text(encoding="utf-8"))
+    persisted_page_ids: list[str] = []
 
     source_page_id = f"source:{document_id}"
     source_slug = document_id
@@ -207,6 +235,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
         source_summary,
         source_markdown_uri,
     )
+    persisted_page_ids.append(source_page_id)
     _upsert_document_wiki_link(conn, document_id, source_page_id, "source_of", 1.0)
 
     generated_concept_slugs = {Path(path).stem for path in manifest.get("concept_pages", [])}
@@ -228,6 +257,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
             concept.get("definition") or concept.get("why_page_worthy") or "",
             concept_markdown_uri,
         )
+        persisted_page_ids.append(page_id)
         _upsert_document_wiki_link(conn, document_id, page_id, "extracted_concept", concept.get("importance_score"))
 
     for link in links:
@@ -242,10 +272,71 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
                 link.get("label"),
                 link.get("confidence"),
             )
+    _refresh_source_related_links(conn)
+    return persisted_page_ids
 
 
 def _upload_wiki_markdown(path: Path, object_name: str) -> str:
     return write_text_object(object_name, path.read_text(encoding="utf-8"))
+
+
+def _refresh_source_related_links(conn: psycopg.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT l.from_page_id AS source_id, l.to_page_id AS concept_id, c.title AS concept_title
+        FROM wiki_page_links l
+        JOIN wiki_pages s ON s.id = l.from_page_id
+        JOIN wiki_pages c ON c.id = l.to_page_id
+        WHERE l.link_type = 'source_mentions_concept'
+          AND s.page_type = 'source'
+          AND c.page_type = 'concept'
+          AND s.status = 'active'
+          AND c.status = 'active'
+        """
+    ).fetchall()
+
+    conn.execute("DELETE FROM wiki_page_links WHERE link_type = 'source_related_to'")
+    source_concepts: dict[str, dict[str, str]] = {}
+    concept_source_counts: dict[str, int] = {}
+    for row in rows:
+        source_id = row["source_id"]
+        concept_id = row["concept_id"]
+        source_concepts.setdefault(source_id, {})[concept_id] = row["concept_title"] or concept_id
+
+    for concepts in source_concepts.values():
+        for concept_id in concepts:
+            concept_source_counts[concept_id] = concept_source_counts.get(concept_id, 0) + 1
+
+    def concept_weight(concept_id: str) -> float:
+        return 1.0 / max(1, concept_source_counts.get(concept_id, 1))
+
+    source_ids = sorted(source_concepts)
+    for i, source_a in enumerate(source_ids):
+        concepts_a = source_concepts[source_a]
+        total_a = sum(concept_weight(concept_id) ** 2 for concept_id in concepts_a)
+        if total_a <= 0:
+            continue
+        for source_b in source_ids[i + 1 :]:
+            concepts_b = source_concepts[source_b]
+            shared_concepts = sorted(set(concepts_a).intersection(concepts_b))
+            if not shared_concepts:
+                continue
+            total_b = sum(concept_weight(concept_id) ** 2 for concept_id in concepts_b)
+            if total_b <= 0:
+                continue
+            shared_weight = sum(concept_weight(concept_id) ** 2 for concept_id in shared_concepts)
+            score = shared_weight / ((total_a * total_b) ** 0.5)
+            if score < SOURCE_RELATED_THRESHOLD:
+                continue
+            label = _source_related_label(shared_concepts, concepts_a)
+            _upsert_wiki_page_link(conn, source_a, source_b, "source_related_to", label, score)
+
+
+def _source_related_label(shared_concepts: list[str], concept_titles: dict[str, str]) -> str:
+    titles = [concept_titles.get(concept_id, concept_id) for concept_id in shared_concepts]
+    visible_titles = titles[:5]
+    suffix = f" 외 {len(titles) - len(visible_titles)}개" if len(titles) > len(visible_titles) else ""
+    return f"공유 concept: {', '.join(visible_titles)}{suffix}"
 
 
 def _source_summary(normalized: dict[str, Any]) -> str:

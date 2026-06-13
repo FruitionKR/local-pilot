@@ -4,6 +4,29 @@
 
 ---
 
+## [Unreleased] — feat/wiki-graph-query-engine
+
+### fix: llmPipeline Dockerfile 모듈 경로 갱신
+
+**배경**
+
+`llmPipeline` 코드가 `fruition_lab` flat package에서 `app/modules/*` bounded context 구조로 변경됐지만, Dockerfile은 여전히 삭제된 `fruition_lab` 디렉터리를 이미지에 복사하고 있었습니다. 이 때문에 WSL Docker에서 `pipeline-api` 이미지를 rebuild할 때 `COPY fruition_lab` 단계에서 실패했습니다.
+
+**변경된 것**
+
+- `llmPipeline/Dockerfile`에서 `COPY fruition_lab ./fruition_lab`를 제거했습니다.
+- 현재 FastAPI와 query 모듈이 사용하는 `app/` 디렉터리를 이미지에 복사하도록 변경했습니다.
+- `sentence-transformers` 계열 큰 wheel 다운로드 중 pip read timeout이 발생하지 않도록 `PIP_DEFAULT_TIMEOUT=300`을 설정했습니다.
+- 기본 `requirements.txt`에서 `sentence-transformers`를 제거하고, BGE-M3 embedding 실행용 의존성은 `requirements-embedding.txt`로 분리했습니다.
+- 로컬 compose의 `pipeline-api` 기본값을 `QUERY_EMBEDDING_MODE=text-only`로 설정해 가벼운 query 플로우 테스트가 가능하도록 했습니다.
+
+**검증**
+
+- WSL Docker에서 `docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build pipeline-api` 통과.
+- rebuild 후 `GET /health`와 OpenAPI `/query` route 등록을 확인했습니다.
+
+---
+
 ## 2026-06-11
 
 ### docs: changelog 및 이슈 추적 규칙 추가

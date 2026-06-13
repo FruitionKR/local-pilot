@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .models import SourceBlock, SemanticPacket
+from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock
 
 
 class SemanticPacketBuilder:

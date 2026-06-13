@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable, Sequence
 
-from .models import SemanticPacket, SourceBlock
+from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock
 
 
 def render_semantic_user_prompt(packet: SemanticPacket) -> str:

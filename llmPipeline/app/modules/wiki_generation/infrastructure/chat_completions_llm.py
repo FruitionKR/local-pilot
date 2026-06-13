@@ -5,10 +5,16 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, Protocol, Sequence
+from typing import Any, Dict, Sequence
 
-from .models import SemanticPacket, SourceBlock
-from .prompt_io import (
+from app.modules.wiki_generation.application.ports import (
+    ConceptPageGenerator,
+    ConceptResolver,
+    SectionPolisher,
+    SemanticExtractor,
+)
+from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock
+from app.modules.wiki_generation.infrastructure.prompt_io import (
     render_concept_page_user_prompt,
     render_concept_resolution_user_prompt,
     render_section_polish_user_prompt,
@@ -16,31 +22,6 @@ from .prompt_io import (
 )
 
 JsonDict = Dict[str, Any]
-
-
-class SemanticExtractor(Protocol):
-    def extract(self, packet: SemanticPacket) -> JsonDict:
-        ...
-
-
-class ConceptPageGenerator(Protocol):
-    def generate(self, concept: JsonDict, evidence_units: list[JsonDict], source_blocks: Sequence[SourceBlock]) -> JsonDict:
-        ...
-
-
-class ConceptResolver(Protocol):
-    def resolve(
-        self,
-        incoming_concepts: list[JsonDict],
-        existing_concepts: list[JsonDict],
-        missing_related_hints: list[JsonDict] | None = None,
-    ) -> JsonDict:
-        ...
-
-
-class SectionPolisher(Protocol):
-    def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
-        ...
 
 
 class JsonParseError(RuntimeError):

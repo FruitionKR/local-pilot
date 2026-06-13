@@ -688,7 +688,7 @@ Wiki page끼리의 의미 연결을 저장하는 테이블. 화면 그래프에�
 |---|---|
 | `from_page_id` | 링크가 시작되는 Wiki page ID. `wiki_pages.id` 참조 |
 | `to_page_id` | 링크가 향하는 Wiki page ID. `wiki_pages.id` 참조 |
-| `link_type` | 두 Wiki page 사이의 관계. 예: `source_mentions_concept`, `concept_related_to`, `concept_contrasts_with` |
+| `link_type` | 두 Wiki page 사이의 관계. 예: `source_mentions_concept`, `concept_related_to`, `source_related_to`, `concept_contrasts_with` |
 | `label` | 그래프 edge에 표시할 짧은 라벨 |
 | `confidence` | LLM이 이 관계를 판단한 신뢰도 |
 | `created_at` | 연결 생성 시각 |
@@ -1060,7 +1060,7 @@ MVP DB에는 본문 전체를 구조화해서 넣지 않고, 아래 값만 관�
 - `wiki_pages.page_type = concept`
 - `wiki_pages.title`, `slug`, `summary`, `markdown_uri`, `status`
 - `document_wiki_links.relation_type = extracted_concept` (concept을 추출한 문서마다 한 줄, N:M)
-- `wiki_page_links.link_type = source_mentions_concept` 또는 `concept_related_to`
+- `wiki_page_links.link_type = source_mentions_concept`, `concept_related_to`, `source_related_to`
 - `chat_message_references.document_id`, `page_number`, `paragraph_index`, `quote`
 
 이렇게 하면 데모에서 사용자가 concept node를 클릭했을 때 개념 설명을 읽을 수 있고, 채팅 답변 후에는 어떤 concept page와 source page를 근거로 답했는지 graph에서 하이라이트할 수 있음.
