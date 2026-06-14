@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple
 
-from .models import SourceBlock, SourceDocument
-from .text_utils import sha1_short, normalize_space
+from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocument
+from app.modules.wiki_generation.domain.text_utils import normalize_space, sha1_short
 
 
 def _guess_title(markdown: str, fallback: str) -> str:

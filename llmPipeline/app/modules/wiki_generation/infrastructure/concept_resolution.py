@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .text_utils import slugify, unique_keep_order
+from app.modules.wiki_generation.domain.text_utils import slugify, unique_keep_order
 
 
 VALID_DECISIONS = {"merge_into", "link_to", "create_new"}
