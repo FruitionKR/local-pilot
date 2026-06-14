@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Literal
@@ -11,13 +12,19 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
-from fruition_lab import database
-from fruition_lab.io_utils import ensure_dir, write_text
-from fruition_lab.storage import read_text_object
+from app.modules.query.interfaces.http.routes import router as query_router
+from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase
+from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
+from app.modules.wiki_embedding.infrastructure.minio_markdown_reader import MinioMarkdownReader
+from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import PostgresWikiPageEmbeddingRepository
+from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_text
+from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from run_lab import run_pipeline
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+app.include_router(query_router)
 logger = logging.getLogger("fruition.pipeline")
 
 
@@ -111,10 +118,36 @@ def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, 
 def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
     try:
         manifest = run_pipeline(args)
-        database.finish_pipeline_run(run_id, manifest)
+        page_ids = database.finish_pipeline_run(run_id, manifest)
+        _start_embedding_job(run_id, page_ids)
     except Exception as exc:
         database.fail_pipeline_run(run_id, str(exc))
         logger.error("ERROR: pipeline run failed run_id=%s error=%s", run_id, exc)
+
+
+def _start_embedding_job(run_id: str, page_ids: list[str]) -> None:
+    if not page_ids:
+        return
+    thread = threading.Thread(
+        target=_execute_embedding_job,
+        args=(run_id, page_ids),
+        name=f"wiki-page-embedding-{run_id}",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _execute_embedding_job(run_id: str, page_ids: list[str]) -> None:
+    try:
+        use_case = BuildWikiPageEmbeddingsUseCase(
+            repository=PostgresWikiPageEmbeddingRepository(),
+            embedding_model=BgeM3EmbeddingModel(),
+            markdown_reader=MinioMarkdownReader(),
+        )
+        result = use_case.execute(page_ids)
+        logger.info("wiki page embedding job completed run_id=%s result=%s", run_id, result)
+    except Exception as exc:
+        logger.error("wiki page embedding job failed run_id=%s error=%s", run_id, exc)
 
 
 @app.get("/health")
@@ -212,7 +245,8 @@ def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTa
 
     try:
         manifest = run_pipeline(args)
-        database.finish_pipeline_run(run_id, manifest)
+        page_ids = database.finish_pipeline_run(run_id, manifest)
+        _start_embedding_job(run_id, page_ids)
     except Exception as exc:
         database.fail_pipeline_run(run_id, str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc

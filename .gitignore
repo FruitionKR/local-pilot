@@ -7,9 +7,6 @@
 # IDE/editor local settings
 .vscode/
 
-# Local GitHub metadata
-.github/
-
 # 로컬 입력 데이터
 input-data/
 
@@ -17,6 +14,7 @@ input-data/
 __pycache__/
 *.py[cod]
 .venv/
+**/.venv*/
 venv/
 .tmp
 
