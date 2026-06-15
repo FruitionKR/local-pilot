@@ -56,6 +56,28 @@ FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본�
 
 ---
 
+### feat: Wiki graph source doc 참조 및 Wiki page 이름 변경 API 구현
+
+**배경**
+Wiki graph 조회 시 source 타입 노드에 원본 문서 참조가 표시되지 않는 이슈가 있었습니다. 또한 `docs/Fruition_MVP_API_Contract.md` 명세의 Wiki page 이름 변경 API가 구현되지 않았습니다.
+
+**추가/변경된 것**
+- `DocumentWikiLinkRepository.findAllByIdWikiPageIdIn()` — graph 조회 시 source 페이지 일괄 조회 (N+1 방지)
+- `WikiService.buildSourceDocRefs()` — source 타입 WikiPage에 연결된 원본 문서 참조를 WikiGraphNode에 포함
+- `wiki/dto/WikiPageRenameRequest` — `title`, `update_slug` 요청 DTO
+- `wiki/dto/WikiPageRenameResponse` — 이전 제목/slug, slug 업데이트 여부 포함 응답 DTO
+- `wiki/exception/InvalidWikiPageTitleException` — 제목 검증 실패 예외 (400)
+- `wiki/exception/WikiPageSlugConflictException` — slug 중복 예외 (409)
+- `WikiPage.renameTitle()`, `WikiPage.updateSlug()` — 제목/slug 변경 도메인 메서드 추가
+- `WikiService.rename()` — 제목 검증, slug 재생성(`update_slug=true` 시), `page_type+slug` 중복 검사
+- `WikiController` — `PATCH /pages/{wiki_page_id}/rename` 엔드포인트 추가
+- `GlobalExceptionHandler` — `PipelineQueryException`, `InvalidDocumentFilenameException`, `InvalidWikiPageTitleException`, `WikiPageSlugConflictException` 핸들러 추가
+
+**주의사항**
+slug 재생성 시 소문자 변환, 공백→하이픈, 한글 유지, 연속 하이픈 정리를 적용합니다. 같은 `page_type+slug` 조합이 이미 존재하면 409로 응답합니다.
+
+---
+
 ## [Unreleased] — feat/backend-api
 
 현재 작업 중인 브랜치입니다.

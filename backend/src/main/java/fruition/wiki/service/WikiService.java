@@ -5,7 +5,10 @@ import fruition.document.repository.DocumentRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
+import fruition.wiki.domain.WikiPageType;
+import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
+import fruition.wiki.exception.WikiPageSlugConflictException;
 import fruition.wiki.dto.*;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageLinkRepository;
@@ -14,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -40,6 +44,8 @@ public class WikiService {
         List<WikiPage> pages = wikiPageRepository.findAll();
         List<WikiPageLink> links = wikiPageLinkRepository.findAll();
 
+        Map<String, WikiGraphNode.SourceDocRef> sourceDocByWikiPageId = buildSourceDocRefs(pages);
+
         List<WikiGraphNode> nodes = pages.stream()
                 .map(p -> new WikiGraphNode(
                         p.getId(),
@@ -48,7 +54,7 @@ public class WikiService {
                         p.getSlug(),
                         p.getSummary(),
                         p.getStatus().name(),
-                        null))
+                        sourceDocByWikiPageId.get(p.getId())))
                 .toList();
 
         List<WikiGraphEdge> edges = links.stream()
@@ -61,6 +67,37 @@ public class WikiService {
                 .toList();
 
         return new WikiGraphResponse(nodes, edges);
+    }
+
+    private Map<String, WikiGraphNode.SourceDocRef> buildSourceDocRefs(List<WikiPage> pages) {
+        List<String> sourcePageIds = pages.stream()
+                .filter(p -> p.getPageType() == WikiPageType.source)
+                .map(WikiPage::getId)
+                .toList();
+
+        if (sourcePageIds.isEmpty()) return Map.of();
+
+        List<DocumentWikiLink> docLinks = documentWikiLinkRepository.findAllByIdWikiPageIdIn(sourcePageIds);
+        if (docLinks.isEmpty()) return Map.of();
+
+        List<String> documentIds = docLinks.stream()
+                .map(DocumentWikiLink::getDocumentId)
+                .distinct()
+                .toList();
+        Map<String, Document> docMap = documentRepository.findAllById(documentIds).stream()
+                .collect(Collectors.toMap(Document::getId, d -> d));
+
+        return docLinks.stream()
+                .collect(Collectors.toMap(
+                        DocumentWikiLink::getWikiPageId,
+                        link -> {
+                            Document doc = docMap.get(link.getDocumentId());
+                            return new WikiGraphNode.SourceDocRef(
+                                    link.getDocumentId(),
+                                    doc != null ? doc.getFilename() : null);
+                        },
+                        (a, b) -> a
+                ));
     }
 
     public WikiPageDetailResponse findById(String id) {
@@ -106,6 +143,69 @@ public class WikiService {
                             link.getConfidence() != null ? link.getConfidence() : 0.0);
                 })
                 .toList();
+    }
+
+    @Transactional
+    public WikiPageRenameResponse rename(String wikiPageId, WikiPageRenameRequest request) {
+        validateTitle(request.title());
+
+        WikiPage page = wikiPageRepository.findById(wikiPageId)
+                .orElseThrow(() -> new WikiPageNotFoundException(wikiPageId));
+
+        String previousTitle = page.getTitle();
+        String previousSlug = page.getSlug();
+        String newTitle = request.title().trim();
+        boolean updateSlug = Boolean.TRUE.equals(request.updateSlug());
+
+        page.renameTitle(newTitle);
+
+        String currentSlug = previousSlug;
+        boolean slugUpdated = false;
+
+        if (updateSlug) {
+            String newSlug = generateSlug(newTitle);
+            if (!newSlug.equals(previousSlug)) {
+                boolean conflict = wikiPageRepository.findByPageTypeAndSlug(page.getPageType(), newSlug)
+                        .filter(existing -> !existing.getId().equals(page.getId()))
+                        .isPresent();
+                if (conflict) {
+                    throw new WikiPageSlugConflictException(newSlug);
+                }
+                page.updateSlug(newSlug);
+                currentSlug = newSlug;
+                slugUpdated = true;
+            }
+        }
+
+        return new WikiPageRenameResponse(
+                page.getId(),
+                page.getPageType().name(),
+                page.getTitle(),
+                previousTitle,
+                currentSlug,
+                previousSlug,
+                slugUpdated,
+                page.getUpdatedAt()
+        );
+    }
+
+    private void validateTitle(String title) {
+        if (title == null) {
+            throw new InvalidWikiPageTitleException("Wiki page 제목은 1자 이상 255자 이하여야 합니다.");
+        }
+        String trimmed = title.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 255) {
+            throw new InvalidWikiPageTitleException("Wiki page 제목은 1자 이상 255자 이하여야 합니다.");
+        }
+    }
+
+    private String generateSlug(String title) {
+        return title.trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[\\s]+", "-")
+                .replaceAll("[^a-z0-9가-힣-]", "")
+                .replaceAll("-{2,}", "-")
+                .replaceAll("^-|-$", "");
     }
 
     private List<WikiRelatedPage> buildRelatedPages(String fromPageId) {
