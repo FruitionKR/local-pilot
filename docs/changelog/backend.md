@@ -41,6 +41,21 @@ FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본�
 
 ---
 
+### feat: 문서 이름 변경 API 구현 (PATCH /api/documents/{document_id}/rename)
+
+**배경**
+`docs/Fruition_MVP_API_Contract.md` 명세에 정의된 문서 이름 변경 API가 구현되지 않았습니다. `sync_source_title=true`이면 연결된 source WikiPage 제목도 함께 동기화합니다.
+
+**추가/변경된 것**
+- `document/dto/DocumentRenameRequest` — `filename`, `sync_source_title` 요청 DTO
+- `document/dto/DocumentRenameResponse` — 이전 파일명, source page ref(`id`, `title`, `renamed`) 포함 응답 DTO
+- `document/exception/InvalidDocumentFilenameException` — 파일명 검증 실패 예외 (400)
+- `Document.rename()` — 파일명 변경 도메인 메서드 추가
+- `DocumentService.rename()` — 파일명 검증(1~255자, 경로 구분자 금지), source_of 링크 탐색 후 WikiPage 제목 동기화, 응답 생성
+- `DocumentController` — `PATCH /{document_id}/rename` 엔드포인트 추가
+
+---
+
 ## [Unreleased] — feat/backend-api
 
 현재 작업 중인 브랜치입니다.
