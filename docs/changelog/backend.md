@@ -26,6 +26,21 @@ FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본�
 
 ---
 
+### feat: Chat 기록 조회 API 구현 (GET /api/chat/messages)
+
+**배경**
+채팅 메시지 목록 API가 스텁으로 빈 배열을 반환하고 있었습니다. ChatMessage와 ChatMessageReference 도메인 모델을 구현해 실제 대화 이력을 반환하도록 교체했습니다.
+
+**추가/변경된 것**
+- `chat/domain/ChatMessage` — 채팅 메시지 JPA 엔티티
+- `chat/domain/ChatMessageReference` — 메시지별 근거 참조 JPA 엔티티
+- `chat/repository/ChatMessageRepository` — Spring Data JPA, 세션별 메시지 조회
+- `chat/repository/ChatMessageReferenceRepository` — 메시지 ID 목록 기준 일괄 조회 (N+1 방지)
+- `ChatController` — `ChatMessageRepository` / `ChatMessageReferenceRepository` 주입, 실제 데이터 반환
+- `ChatMessageReference` DTO — `pageRole`, `rank`, `sentenceIndex` 필드 추가
+
+---
+
 ## [Unreleased] — feat/backend-api
 
 현재 작업 중인 브랜치입니다.
