@@ -4,6 +4,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-16
+
+### feat: Spring 백엔드 Query API 구현 (POST /api/query)
+
+**배경**
+FastAPI 파이프라인이 제공하는 그래프 기반 자연어 질의응답을 Spring 백엔드에서 중계해야 했습니다. 기존 `QueryController`는 스텁이었으며, `QueryResponse` DTO가 pipeline 출력 형식과 불일치했습니다.
+
+**추가/변경된 것**
+- `query/service/QueryService` — FastAPI pipeline에 질의를 전달하고 응답을 변환하는 서비스 추가
+- `query/repository/PipelineQueryRequester` — FastAPI `/query` 엔드포인트 HTTP 클라이언트
+- `query/repository/PipelineQueryResponse` — pipeline 응답 역직렬화 DTO
+- `query/exception/PipelineQueryException` — pipeline 오류 전파용 도메인 예외
+- `QueryController` — `QueryService` 주입 및 스텁 제거
+- `QueryResponse` — pipeline 출력 형식으로 재구성 (`HighlightedPath`, `QueryRelatedPage`, `SourceReference` DTO 제거)
+- `application.properties` — `app.query.endpoint`, `app.query.timeout-seconds` 환경변수 추가
+- `docs/spec/backend-query-api.md` — Query API 스펙 문서 추가
+
+**주의사항**
+FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본값은 `http://localhost:8000/query`입니다.
+
+---
+
 ## [Unreleased] — feat/backend-api
 
 현재 작업 중인 브랜치입니다.

@@ -1,9 +1,0 @@
-package fruition.query.dto;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-public record HighlightedPath(
-        @JsonProperty("from_page_id") String fromPageId,
-        @JsonProperty("to_page_id") String toPageId,
-        @JsonProperty("link_type") String linkType
-) {}
