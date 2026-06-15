@@ -10,7 +10,6 @@ from app.modules.query.interfaces.http.schemas import (
     QueryRequest,
     QueryResponse,
     RelatedPageResponse,
-    RetrievalSummaryResponse,
     TraversalEdgeResponse,
     TraversalPathResponse,
 )
@@ -109,14 +108,4 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
             )
             for path in result.traversal_paths
         ],
-        retrieval_summary=RetrievalSummaryResponse(
-            source_candidate_count=result.retrieval_summary.source_candidate_count,
-            concept_candidate_count=result.retrieval_summary.concept_candidate_count,
-            visited_node_count=result.retrieval_summary.visited_node_count,
-            returned_node_count=result.retrieval_summary.returned_node_count,
-            used_source_count=result.retrieval_summary.used_source_count,
-            used_concept_count=result.retrieval_summary.used_concept_count,
-            max_depth=result.retrieval_summary.max_depth,
-            stop_reason=result.retrieval_summary.stop_reason,
-        ),
     )

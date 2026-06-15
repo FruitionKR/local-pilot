@@ -38,17 +38,6 @@ class TraversalPathResponse(BaseModel):
     edges: list[TraversalEdgeResponse]
 
 
-class RetrievalSummaryResponse(BaseModel):
-    source_candidate_count: int
-    concept_candidate_count: int
-    visited_node_count: int
-    returned_node_count: int
-    used_source_count: int
-    used_concept_count: int
-    max_depth: int
-    stop_reason: str
-
-
 class EvidenceSnippetResponse(BaseModel):
     page_id: str
     page_type: str
@@ -69,5 +58,4 @@ class QueryResponse(BaseModel):
     evidence_snippets: list[EvidenceSnippetResponse]
     graph_context: GraphContextResponse
     traversal_paths: list[TraversalPathResponse]
-    retrieval_summary: RetrievalSummaryResponse
 
