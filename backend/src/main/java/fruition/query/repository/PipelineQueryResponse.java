@@ -9,8 +9,7 @@ public record PipelineQueryResponse(
         @JsonProperty("related_pages") List<RelatedPage> relatedPages,
         @JsonProperty("evidence_snippets") List<EvidenceSnippet> evidenceSnippets,
         @JsonProperty("graph_context") GraphContext graphContext,
-        @JsonProperty("traversal_paths") List<TraversalPath> traversalPaths,
-        @JsonProperty("retrieval_summary") RetrievalSummary retrievalSummary
+        @JsonProperty("traversal_paths") List<TraversalPath> traversalPaths
 ) {
     public record RelatedPage(
             String id,
@@ -57,16 +56,5 @@ public record PipelineQueryResponse(
             @JsonProperty("stop_reason") String stopReason,
             List<String> nodes,
             List<GraphEdge> edges
-    ) {}
-
-    public record RetrievalSummary(
-            @JsonProperty("source_candidate_count") int sourceCandidateCount,
-            @JsonProperty("concept_candidate_count") int conceptCandidateCount,
-            @JsonProperty("visited_node_count") int visitedNodeCount,
-            @JsonProperty("returned_node_count") int returnedNodeCount,
-            @JsonProperty("used_source_count") int usedSourceCount,
-            @JsonProperty("used_concept_count") int usedConceptCount,
-            @JsonProperty("max_depth") int maxDepth,
-            @JsonProperty("stop_reason") String stopReason
     ) {}
 }
