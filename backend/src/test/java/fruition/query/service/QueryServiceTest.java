@@ -144,7 +144,7 @@ class QueryServiceTest {
 
         return new PipelineQueryResponse(
                 "Index.md는 위키 내 모든 페이지를 카테고리별로 정리한 카탈로그 파일 역할을 합니다. [1]",
-                relatedPages, evidenceSnippets, graphContext, List.of(traversalPath), null
+                relatedPages, evidenceSnippets, graphContext, List.of(traversalPath)
         );
     }
 }
