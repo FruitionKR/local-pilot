@@ -31,6 +31,7 @@ import sourcePageIcon from "../svg/source_page.svg";
 import sparkleIcon from "../svg/icon.svg";
 import settingIcon from "../svg/uil_setting.svg";
 import switchIcon from "../svg/switch.svg";
+import toggleIcon from "../svg/toggle.svg";
 import userCircleIcon from "../svg/UserCircle.svg";
 
 type TreeItem = {
@@ -990,7 +991,6 @@ function ProjectSection({
   editing,
   onMoveItem,
   onDropFiles,
-  onOpenUploadPicker,
   onDragStart,
   onDragOverItem,
   onFileDragOver,
@@ -1011,7 +1011,6 @@ function ProjectSection({
   editing: EditingState | null;
   onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
-  onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
   onDragStart: (projectId: string, itemId: string) => void;
   onDragOverItem: (target: DropTarget) => void;
   onFileDragOver: (target: FileDropTarget) => void;
@@ -1079,14 +1078,6 @@ function ProjectSection({
               <SvgIcon src={arrowIcon} className={`project-arrow ${isOpen ? "is-open" : ""}`} />
             </>
           )}
-        </button>
-        <button
-          type="button"
-          className="project-add-folder"
-          aria-label={`${project.title}에 문서 업로드`}
-          onClick={() => onOpenUploadPicker(project.id, null)}
-        >
-          <SvgIcon src={switchIcon} className="project-add-icon" />
         </button>
       </div>
       {isOpen && (
@@ -2333,7 +2324,7 @@ export default function HomePage() {
       <header className="topbar">
         <div className="brand">
           <button className="app-button" aria-label="메뉴"><Menu size={19} /></button>
-          <button className="school">부산대학교 <ChevronDown size={15} /></button>
+          <button className="school">부산대학교 <SvgIcon src={toggleIcon} className="school-toggle-icon" /></button>
         </div>
         <label className="search-box">
           <Search size={20} />
@@ -2366,8 +2357,21 @@ export default function HomePage() {
       {isHomeView ? (
         <>
           <aside className="sidebar">
-            <h1>자료 관리</h1>
-            <button className="create-project" onClick={createProject}>프로젝트 만들기 <Plus size={16} /></button>
+            <div className="sidebar-header">
+              <h1>자료 관리</h1>
+              <button
+                type="button"
+                className="sidebar-upload-button"
+                aria-label="문서 업로드"
+                disabled={!projects[0]}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (projects[0]) openUploadPicker(projects[0].id, null);
+                }}
+              >
+                <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
+              </button>
+            </div>
             <input
               ref={uploadInputRef}
               className="upload-picker"
@@ -2388,7 +2392,6 @@ export default function HomePage() {
                 editing={editing}
                 onMoveItem={moveTreeEntry}
                 onDropFiles={dropUploadFiles}
-                onOpenUploadPicker={openUploadPicker}
                 onDragStart={(projectId, itemId) => {
                   setDraggedItem({ projectId, itemId });
                   setContextMenu(null);

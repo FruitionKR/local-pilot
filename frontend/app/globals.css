@@ -1328,6 +1328,11 @@ input {
   font-weight: 600;
 }
 
+.school-toggle-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .search-box {
   width: min(520px, calc(100vw - 520px));
   height: 36px;
@@ -1430,13 +1435,59 @@ input {
   border-color: #1e1e1e;
 }
 
-.sidebar h1 {
+.sidebar-header {
   height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
   margin: 0;
-  padding: 12px 30px 12px 8px;
+  padding: 0 0 0 8px;
+  border-bottom: 1px solid #4f4f4f;
+}
+
+.sidebar h1 {
+  min-width: 0;
+  margin: 0;
   color: #f0f0f0;
   font-size: 20px;
   font-weight: 600;
+  line-height: 1.2;
+}
+
+.sidebar-upload-button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #a7a7a7;
+  background: transparent;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.sidebar-header:hover .sidebar-upload-button,
+.sidebar-header:focus-within .sidebar-upload-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-upload-button:hover,
+.sidebar-upload-button:focus-visible {
+  background: #323232;
+}
+
+.sidebar-upload-button:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-upload-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .create-project {
@@ -1491,19 +1542,7 @@ input {
 }
 
 .project-add-folder {
-  width: 28px;
-  height: 28px;
-  color: #a7a7a7;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease, background 120ms ease;
-}
-
-.project-title:hover .project-add-folder,
-.project-title:focus-within .project-add-folder {
-  opacity: 1;
-  pointer-events: auto;
+  display: none;
 }
 
 .project-add-folder:hover,
