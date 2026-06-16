@@ -4,6 +4,101 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-16
+
+### feat: 그래프 원본문서 패널 상호작용 보강
+
+**변경 배경**
+
+- Figma `v1`의 다크 워크스페이스 기준으로 graph node 선택 표시, filter chip 위치, 원본문서 overlay 패널 동작을 맞출 필요가 있었다.
+- 원본문서 패널이 graph 영역을 덮으면서도 패널 폭 조절에 따라 graph canvas가 남은 영역 기준으로 다시 scale되어야 했다.
+
+**변경된 내용**
+
+- graph canvas node 더블클릭 시 왼쪽 자료 트리 클릭과 동일하게 원본문서 미리보기 패널이 열리도록 연결했다.
+- 원본문서 패널 오른쪽 resize handle을 추가하고, 패널 폭 변경 시 graph canvas 영역이 자동으로 재계산되도록 구성했다.
+- graph node 선택 marker를 Figma `select.svg` 기준의 radial highlight 표현으로 보정했다.
+- graph filter chip을 canvas 오른쪽 위에 배치하고 `processing` chip을 제거했다.
+- graph scale, pan clamp, layout cache 버전을 조정해 node가 화면 밖으로 사라지거나 과도하게 뭉쳐 보이는 문제를 완화했다.
+
+**검증 결과**
+
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3001` 응답 `200 OK` 확인.
+- 백엔드가 실행되지 않은 상태에서는 Next proxy가 `localhost:8080` 연결 실패를 기록한다.
+
+### refactor: 홈 화면 렌더링 컴포넌트 분리
+
+**변경 배경**
+
+- `frontend/app/page.tsx`에 topbar, rail, Agent panel, source preview, SVG 렌더링 코드가 함께 있어 화면 단위 수정과 Figma 비교 작업의 변경 범위가 커지고 있었다.
+
+**변경된 내용**
+
+- `frontend/app/_components/` 폴더를 추가하고 `TopBar`, `RailNavigation`, `AgentPanel`, `SourcePreviewPanel`, `SvgIcon`을 분리했다.
+- `page.tsx`는 홈 화면 상태 관리와 문서 트리/graph 흐름을 중심으로 남기고, 정적 UI 조각은 개별 컴포넌트 파일에서 관리하도록 정리했다.
+- rail 항목과 SVG asset export를 컴포넌트 폴더로 옮겨 sidebar/agent/graph에서 같은 아이콘 렌더러를 재사용하도록 구성했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+
+### fix: Agent 패널 상태 표시와 입력창 여백 보정
+
+**변경 배경**
+
+- Figma 오른쪽 채팅 sidebar와 비교했을 때 명령 실행 상태 마커의 완료/진행중/추후 실행 표현이 다르게 보였다.
+- Agent 메시지 입력창이 패널 하단 여백 없이 붙어 보여 Figma 기준의 composer 위치와 맞지 않았다.
+- `page.tsx`의 홈 화면 JSX가 한 함수에 몰려 있어 Agent/sidebar 영역을 추후 분리하기 어렵게 되어 있었다.
+
+**변경된 내용**
+
+- Agent 상태 목록의 완료 마커를 10px 노란 원형으로, 진행중 마커를 노란 테두리와 어두운 배경의 10px 원형으로 보정했다.
+- 추후 실행 상태는 `frontend/svg/Ellipse.svg` 자산을 사용하도록 연결하고, 어두운 sidebar 배경에 맞게 SVG 색상을 조정했다.
+- Agent composer 하단 row와 margin을 조정해 입력창 아래 16px 여백을 확보했다.
+- 홈 화면 JSX를 `TopBar`, `RailNavigation`, `DocumentSidebar`, `AgentPanel` 등 내부 렌더링 컴포넌트로 1차 분리했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+
+### feat: Figma 다크 워크스페이스 화면 반영
+
+**변경 배경**
+
+- Figma `v1`의 홈 그래프 화면과 원본문서 패널이 열린 화면을 기준으로 현재 프론트 화면의 테마, 패널 배치, 그래프/Agent UI를 맞출 필요가 있었다.
+- SVG 신규 추출은 후속 작업으로 미루고, 현재 코드와 기존 SVG 자산만으로 수정 가능한 화면 요소를 먼저 반영했다.
+
+**변경된 내용**
+
+- topbar, 좌측 rail, 자료 관리 sidebar, graph canvas, filter chip, Agent panel을 Figma 기준의 다크 테마로 조정했다.
+- 좌측 트리 항목 선택 시 Figma의 원본문서 패널 상태처럼 graph 왼쪽에 원본문서 미리보기 패널이 열리도록 추가했다.
+- graph canvas 내부 node label, edge, raw/source/progress 색상을 다크 배경에 맞게 보정했다.
+- 새 `arrow.svg`를 프로젝트/폴더 접기 아이콘에 적용하고, 변경된 `Frame.svg`가 채팅 전송 버튼에 반영되도록 조정했다.
+- 문서 추가 버튼은 프로젝트 제목 영역에 hover 또는 focus가 있을 때만 `switch.svg`로 표시되도록 변경했다.
+- 문서 추가 `switch.svg`를 `자료 관리` 헤더 영역으로 옮기고, 헤더 hover 또는 focus 시에만 표시되도록 변경했다.
+- `자료 관리` 헤더와 프로젝트 목록 사이 divider를 추가하고, 학교 선택 토글을 새 `toggle.svg`로 교체했다.
+- Figma 1920x1080 frame 기준으로 topbar 높이, sidebar divider/list offset, 원본문서 패널 폭과 padding, graph/chip 배치를 보정했다.
+- `자료 관리` 헤더 hover 또는 focus 시 표시되는 `switch.svg` 버튼으로 문서 업로드를 실행하도록 정리했다.
+- `.project-toggle`과 `.section-title` hover 배경이 사이드바 행 폭을 채우도록 보정했다.
+- topbar의 메뉴 아이콘 버튼을 `부산대학교` 프로젝트 약칭인 `부` 배지로 교체했다.
+- Figma `workspace` 노드 기준으로 topbar 프로젝트 배지 간격과 `부` 배지 typography를 보정했다.
+- 백엔드 API 오류가 발생하면 graph 빈 상태 위치에 오류 메시지를 표시하도록 변경했다.
+- graph API 오류 메시지를 실패 상태와 구분되도록 빨간색 계열로 표시했다.
+- Figma `legend`와 chat composer 기준으로 filter chip 위치와 Agent 입력창 패딩을 보정했다.
+- Figma `process` 노드 기준으로 Agent 상태 목록의 제목, step, 시간 표시 간격을 보정했다.
+- Agent 상태 목록 완료 아이콘을 `chat_check.svg`로 교체하고 step 사이 세로 점선을 추가했다.
+- Figma chat frame 기준으로 Agent 패널 header/body/composer row 위치를 다시 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+
+---
+
 ## 2026-06-12
 
 ### refactor: 프론트 미사용 목업 자산 정리
