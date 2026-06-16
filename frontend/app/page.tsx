@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Folder,
-  Menu,
   Plus,
   Search
 } from "lucide-react";
@@ -1111,13 +1110,14 @@ function ProjectSection({
   );
 }
 
-function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCount, focusedNodeId, loading = false }: {
+function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCount, focusedNodeId, loading = false, errorMessage = null }: {
   nodes: GraphNode[];
   links: GraphLink[];
   rawDocumentCount: number;
   processingDocumentCount: number;
   focusedNodeId: string | null;
   loading?: boolean;
+  errorMessage?: string | null;
 }) {
   const graphSignature = useMemo(
     () => `api-layout-v1:${nodes.map((node) => node.id).sort().join("|")}`,
@@ -2040,7 +2040,9 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
       >
         <canvas ref={canvasRef} className="graph-surface" aria-label="자료 관계 그래프 캔버스" />
         {nodes.length === 0 && (
-          <div className="graph-empty">{loading ? "그래프를 불러오는 중입니다." : "표시할 Wiki node가 없습니다."}</div>
+          <div className={`graph-empty ${errorMessage ? "is-error" : ""}`}>
+            {errorMessage ?? (loading ? "그래프를 불러오는 중입니다." : "표시할 Wiki node가 없습니다.")}
+          </div>
         )}
       </div>
     </section>
@@ -2323,7 +2325,7 @@ export default function HomePage() {
     >
       <header className="topbar">
         <div className="brand">
-          <button className="app-button" aria-label="메뉴"><Menu size={19} /></button>
+          <div className="workspace-mark" aria-label="부산대학교">부</div>
           <button className="school">부산대학교 <SvgIcon src={toggleIcon} className="school-toggle-icon" /></button>
         </div>
         <label className="search-box">
@@ -2363,7 +2365,6 @@ export default function HomePage() {
                 type="button"
                 className="sidebar-upload-button"
                 aria-label="문서 업로드"
-                disabled={!projects[0]}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (projects[0]) openUploadPicker(projects[0].id, null);
@@ -2440,7 +2441,6 @@ export default function HomePage() {
             </section>
           )}
 
-          {apiError && <div className="api-error-banner">{apiError}</div>}
           <Graph
             nodes={graphData.nodes}
             links={graphData.links}
@@ -2448,6 +2448,7 @@ export default function HomePage() {
             processingDocumentCount={processingDocumentCount}
             focusedNodeId={focusedGraphNodeId}
             loading={isGraphLoading}
+            errorMessage={apiError}
           />
 
           {!isAgentPanelOpen && (

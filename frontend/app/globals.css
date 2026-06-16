@@ -68,25 +68,21 @@ button {
 .brand {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 24px;
 }
 
-.app-button {
+.workspace-mark {
   width: 36px;
   height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 0;
   color: #fff;
   background: var(--dark);
   border-radius: 7px;
-}
-
-.app-button .svg-icon {
-  width: 20px;
-  height: 20px;
-  filter: brightness(0) invert(1);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .school {
@@ -1309,10 +1305,10 @@ input {
 }
 
 .brand {
-  gap: 22px;
+  gap: 24px;
 }
 
-.app-button {
+.workspace-mark {
   width: 36px;
   height: 36px;
   color: #fff;
@@ -1490,11 +1486,6 @@ input {
   background: #323232;
 }
 
-.sidebar-upload-button:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
-
 .sidebar-upload-icon {
   width: 28px;
   height: 28px;
@@ -1515,7 +1506,7 @@ input {
 
 .project-title {
   height: 36px;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .project-arrow,
@@ -1534,12 +1525,20 @@ input {
 
 .project-toggle,
 .section-title {
+  width: 100%;
+  box-sizing: border-box;
   height: 34px;
+  display: flex;
+  align-items: center;
   padding: 0 8px;
   color: #8a8a8a;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.project-toggle {
+  justify-content: space-between;
 }
 
 .project-toggle:hover,
@@ -1712,6 +1711,14 @@ input {
   background: #1e1e1e;
   border-color: #4f4f4f;
   box-shadow: none;
+}
+
+.graph-empty.is-error {
+  max-width: min(520px, calc(100% - 48px));
+  border-radius: 8px;
+  color: #f0f0f0;
+  text-align: center;
+  white-space: normal;
 }
 
 .filter-chips {
