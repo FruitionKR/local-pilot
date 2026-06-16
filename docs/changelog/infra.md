@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-06-16
+
+### chore: Discord PR 알림 설정 문서화
+
+**배경**
+
+팀이 새 PR을 Discord에서 바로 확인할 수 있도록 GitHub Webhook 기반 알림 설정
+절차를 문서화했습니다.
+
+**추가된 것**
+
+- `docs/development.md` — GitHub repository webhook과 Discord Webhook `/github` endpoint 설정 절차 문서화
+- `docs/development.md` — GitHub Webhook 방식의 이벤트 및 대상 브랜치 필터 제한과 Webhook URL 보안 주의사항 문서화
+
+**검증**
+
+- GitHub와 Discord 공식 문서의 repository webhook 설정 절차 확인
+- 애플리케이션 기능 코드 변경 없음
+
+---
+
 ## 2026-06-13
 
 ### docs: 로컬 실행 가이드와 실행 스크립트 추가

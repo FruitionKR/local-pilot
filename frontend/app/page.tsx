@@ -8,17 +8,17 @@ import type {
   PointerEvent as ReactPointerEvent
 } from "react";
 import type { StaticImageData } from "next/image";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
-  ChevronRight,
   Folder,
-  FilePlus2,
   Menu,
   Plus,
   Search
 } from "lucide-react";
 import archiveIcon from "../svg/Archive.svg";
+import arrowIcon from "../svg/arrow.svg";
 import collectionIcon from "../svg/Collection.svg";
 import conceptPageIcon from "../svg/conceptpage.svg";
 import fileIcon from "../svg/file.svg";
@@ -30,6 +30,7 @@ import sideboxIcon from "../svg/sidebox.svg";
 import sourcePageIcon from "../svg/source_page.svg";
 import sparkleIcon from "../svg/icon.svg";
 import settingIcon from "../svg/uil_setting.svg";
+import switchIcon from "../svg/switch.svg";
 import userCircleIcon from "../svg/UserCircle.svg";
 
 type TreeItem = {
@@ -236,14 +237,6 @@ function SvgIcon({ src, className }: { src: SvgAsset; className?: string }) {
     );
   }
 
-  if (src === frameIcon) {
-    return (
-      <svg aria-hidden className={iconClassName} viewBox="0 0 18 18" fill="none">
-        <path d="M9 13V5M13 9L9 5L5 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-
   if (src === lightningIcon) {
     return (
       <svg aria-hidden className={iconClassName} viewBox="0 0 23 23" fill="none">
@@ -321,7 +314,7 @@ function SvgIcon({ src, className }: { src: SvgAsset; className?: string }) {
     );
   }
 
-  return null;
+  return <Image alt="" aria-hidden className={iconClassName} src={src} />;
 }
 
 const initialProjects: Project[] = [
@@ -764,7 +757,6 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, se
 }) {
   const hasChildren = Boolean(item.children?.length);
   const isOpen = openIds.has(item.id);
-  const Icon = hasChildren ? (isOpen ? ChevronDown : ChevronRight) : Folder;
   const isDropTarget = dropTarget?.projectId === projectId && dropTarget.targetId === item.id;
   const isFileDropTarget = fileDropTarget?.projectId === projectId && fileDropTarget.folderId === item.id;
   const isEditing = editing?.projectId === projectId && editing.itemId === item.id;
@@ -845,7 +837,7 @@ function TreeNode({ item, depth, openIds, onToggle, projectId, draggedItemId, se
         ) : item.wikiKind === "concept" ? (
           <SvgIcon src={conceptPageIcon} className="tree-asset" />
         ) : hasChildren ? (
-          <Icon size={14} />
+          <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />
         ) : (
           <SvgIcon src={archiveIcon} className="tree-asset" />
         )}
@@ -1084,7 +1076,7 @@ function ProjectSection({
           ) : (
             <>
               <span>{project.title}</span>
-              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <SvgIcon src={arrowIcon} className={`project-arrow ${isOpen ? "is-open" : ""}`} />
             </>
           )}
         </button>
@@ -1094,7 +1086,7 @@ function ProjectSection({
           aria-label={`${project.title}에 문서 업로드`}
           onClick={() => onOpenUploadPicker(project.id, null)}
         >
-          <FilePlus2 size={14} />
+          <SvgIcon src={switchIcon} className="project-add-icon" />
         </button>
       </div>
       {isOpen && (
@@ -1542,32 +1534,18 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
   }
 
   function drawNodeLabel(context: CanvasRenderingContext2D, node: GraphNode, x: number, y: number, radius: number) {
-    const labelY = y + radius + 18;
-    context.font = node.kind === "source" ? "600 14px Inter, sans-serif" : "12px Inter, sans-serif";
+    const labelY = y + radius + 16;
+    context.font = node.kind === "source" ? "600 12px Inter, sans-serif" : "11px Inter, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
 
     if (node.kind === "source") {
-      const textWidth = context.measureText(node.label).width;
-      const pillWidth = textWidth + 34;
-      const pillHeight = 30;
-      const pillX = x - pillWidth / 2;
-      const pillY = labelY - pillHeight / 2;
-
-      context.fillStyle = "#fff";
-      context.shadowColor = "rgba(43, 52, 66, 0.12)";
-      context.shadowBlur = 8;
-      context.shadowOffsetY = 2;
-      context.beginPath();
-      context.roundRect(pillX, pillY, pillWidth, pillHeight, 15);
-      context.fill();
-      context.shadowColor = "transparent";
-      context.fillStyle = "#39414d";
+      context.fillStyle = "#f0f0f0";
       context.fillText(node.label, x, labelY);
       return;
     }
 
-    context.fillStyle = "#627085";
+    context.fillStyle = "#8a8a8a";
     context.fillText(node.label, x, labelY);
   }
 
@@ -1647,8 +1625,8 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
       const rawSourceLink = isRawSourceLink(link);
       const focusAmount = linkFocusAmount(link);
       const highlightAmount = linkHighlightAmount(link);
-      const baseAlpha = rawSourceLink ? 0.68 : 0.56;
-      const fadedAlpha = rawSourceLink ? 0.16 : 0.1;
+      const baseAlpha = rawSourceLink ? 0.68 : 0.5;
+      const fadedAlpha = rawSourceLink ? 0.14 : 0.08;
 
       context.save();
       context.globalAlpha = fadedAlpha + (baseAlpha - fadedAlpha) * focusAmount;
@@ -1657,7 +1635,7 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
       context.lineTo(toScreen.x, toScreen.y);
       context.setLineDash(link.dashed ? [4, 4] : []);
       context.lineWidth = rawSourceLink ? 1.25 : 1.15;
-      context.strokeStyle = rawSourceLink ? "#aeb7c5" : "#9faaba";
+      context.strokeStyle = rawSourceLink ? "#5a5a5a" : "#4f4f4f";
       context.stroke();
 
       if (highlightAmount > 0.01) {
@@ -1687,12 +1665,12 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
       context.globalAlpha = 0.16 + 0.84 * focusAmount;
 
       if (selectedAmount > 0.01) {
-        context.fillStyle = node.kind === "raw" ? "rgba(152, 164, 181, 0.14)" : "rgba(48, 56, 68, 0.08)";
+        context.fillStyle = node.kind === "raw" ? "rgba(138, 138, 138, 0.14)" : "rgba(255, 193, 23, 0.08)";
         context.globalAlpha = selectedAmount;
         context.beginPath();
         context.arc(screenPosition.x, screenPosition.y, radius + 26, 0, Math.PI * 2);
         context.fill();
-        context.fillStyle = node.kind === "source" || node.loading ? "rgba(255, 193, 23, 0.28)" : "rgba(48, 56, 68, 0.18)";
+        context.fillStyle = node.kind === "source" || node.loading ? "rgba(255, 193, 23, 0.28)" : "rgba(138, 138, 138, 0.18)";
         context.beginPath();
         context.arc(screenPosition.x, screenPosition.y, radius + 12, 0, Math.PI * 2);
         context.fill();
@@ -1713,7 +1691,7 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
           context.stroke();
         }
       } else if (node.kind === "raw") {
-        context.strokeStyle = "#98a4b5";
+        context.strokeStyle = "#6c6c6c";
         context.lineWidth = 1.2;
         context.setLineDash([4, 4]);
         context.stroke();
@@ -1728,7 +1706,7 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
         }
       } else if (node.kind === "progress") {
         const spin = performance.now() / 720;
-        context.fillStyle = "#fff";
+        context.fillStyle = "#1e1e1e";
         context.fill();
         context.strokeStyle = "rgba(255, 193, 23, 0.24)";
         context.lineWidth = 2;
@@ -1739,7 +1717,7 @@ function Graph({ nodes = [], links = [], rawDocumentCount, processingDocumentCou
         context.arc(screenPosition.x, screenPosition.y, radius - 3, spin, spin + Math.PI * 1.35);
         context.stroke();
       } else {
-        context.fillStyle = "#303844";
+        context.fillStyle = "#646464";
         context.fill();
       }
 
@@ -2100,6 +2078,14 @@ export default function HomePage() {
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasProcessingDocuments = documents.some((document) => document.status === "processing" || document.status === "uploaded");
   const processingDocumentCount = documents.filter((document) => document.status === "processing" || document.status === "uploaded").length;
+  const selectedDocumentTitle = useMemo(() => {
+    if (!selectedTreeItemId) return null;
+    for (const project of projects) {
+      const item = findTreeItem(project.items, selectedTreeItemId);
+      if (item) return item.label;
+    }
+    return null;
+  }, [projects, selectedTreeItemId]);
 
   const refreshBackendData = useCallback(async () => {
     try {
@@ -2341,7 +2327,7 @@ export default function HomePage() {
 
   return (
     <main
-      className={`workspace ${isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : ""}`}
+      className={`workspace ${isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : ""} ${selectedDocumentTitle ? "has-source-preview" : ""}`}
       onClick={clearTreeGraphSelection}
     >
       <header className="topbar">
@@ -2439,6 +2425,17 @@ export default function HomePage() {
               </div>
             )}
           </aside>
+
+          {selectedDocumentTitle && (
+            <section className="source-preview-panel" aria-label="원본문서 미리보기" onClick={(event) => event.stopPropagation()}>
+              <header>
+                <h2>{selectedDocumentTitle} - 원본문서</h2>
+              </header>
+              <div className="source-preview-content">
+                <strong>내용 내용 내용</strong>
+              </div>
+            </section>
+          )}
 
           {apiError && <div className="api-error-banner">{apiError}</div>}
           <Graph
