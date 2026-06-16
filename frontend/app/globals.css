@@ -1716,14 +1716,34 @@ input {
 .source-preview-panel {
   position: absolute;
   inset: 61px auto 0 320px;
-  z-index: 6;
-  width: 400px;
+  z-index: 8;
   padding: 32px;
   overflow: hidden;
   color: #f0f0f0;
   background: #1e1e1e;
   border-right: 1px solid #4f4f4f;
   border-top-right-radius: 14px;
+}
+
+.source-preview-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  width: 10px;
+  padding: 0;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.source-preview-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 0;
+  width: 1px;
+  background: #4f4f4f;
 }
 
 .source-preview-panel header {
@@ -1759,13 +1779,13 @@ input {
 }
 
 .graph-stage {
-  inset: 61px 380px 0 320px;
+  inset: 61px 400px 0 320px;
   background: #0a0a0a;
 }
 
 .workspace.has-source-preview .graph-stage {
-  left: 720px;
-  right: 428px;
+  left: 320px;
+  right: 400px;
 }
 
 .workspace.is-agent-collapsed .graph-stage {
@@ -1774,6 +1794,10 @@ input {
 
 .graph-canvas {
   inset: 20px;
+}
+
+.workspace.has-source-preview .graph-canvas {
+  left: calc(var(--source-preview-width, 400px) + 20px);
 }
 
 .graph-empty {
@@ -1795,8 +1819,8 @@ input {
 
 .filter-chips {
   top: 28px;
-  right: auto;
-  left: 394px;
+  right: 28px;
+  left: auto;
   gap: 12px;
 }
 
@@ -2027,11 +2051,11 @@ input {
   }
 
   .graph-stage {
-    right: 354px;
+    right: 342px;
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: 540px;
+    left: 320px;
   }
 
   .source-preview-panel {
@@ -2052,11 +2076,11 @@ input {
   }
 
   .graph-stage {
-    right: 320px;
+    right: 310px;
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: 500px;
+    left: 320px;
   }
 
   .source-preview-panel {

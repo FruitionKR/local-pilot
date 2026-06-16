@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-16
 
+### feat: 그래프 원본문서 패널 상호작용 보강
+
+**변경 배경**
+
+- Figma `v1`의 다크 워크스페이스 기준으로 graph node 선택 표시, filter chip 위치, 원본문서 overlay 패널 동작을 맞출 필요가 있었다.
+- 원본문서 패널이 graph 영역을 덮으면서도 패널 폭 조절에 따라 graph canvas가 남은 영역 기준으로 다시 scale되어야 했다.
+
+**변경된 내용**
+
+- graph canvas node 더블클릭 시 왼쪽 자료 트리 클릭과 동일하게 원본문서 미리보기 패널이 열리도록 연결했다.
+- 원본문서 패널 오른쪽 resize handle을 추가하고, 패널 폭 변경 시 graph canvas 영역이 자동으로 재계산되도록 구성했다.
+- graph node 선택 marker를 Figma `select.svg` 기준의 radial highlight 표현으로 보정했다.
+- graph filter chip을 canvas 오른쪽 위에 배치하고 `processing` chip을 제거했다.
+- graph scale, pan clamp, layout cache 버전을 조정해 node가 화면 밖으로 사라지거나 과도하게 뭉쳐 보이는 문제를 완화했다.
+
+**검증 결과**
+
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3001` 응답 `200 OK` 확인.
+- 백엔드가 실행되지 않은 상태에서는 Next proxy가 `localhost:8080` 연결 실패를 기록한다.
+
 ### refactor: 홈 화면 렌더링 컴포넌트 분리
 
 **변경 배경**

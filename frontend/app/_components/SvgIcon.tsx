@@ -62,14 +62,6 @@ export function SvgIcon({ src, className }: { src: SvgAsset; className?: string 
     );
   }
 
-  if (src === rawPageIcon) {
-    return (
-      <svg aria-hidden className={iconClassName} viewBox="0 0 10 10" fill="none">
-        <circle cx="5" cy="5" r="4.5" fill="currentColor" opacity="0.12" stroke="currentColor" strokeDasharray="2 1.67" />
-      </svg>
-    );
-  }
-
   if (src === lightningIcon) {
     return (
       <svg aria-hidden className={iconClassName} viewBox="0 0 23 23" fill="none">
