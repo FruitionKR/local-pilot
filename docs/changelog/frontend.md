@@ -28,6 +28,11 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - topbar의 메뉴 아이콘 버튼을 `부산대학교` 프로젝트 약칭인 `부` 배지로 교체했다.
 - Figma `workspace` 노드 기준으로 topbar 프로젝트 배지 간격과 `부` 배지 typography를 보정했다.
 - 백엔드 API 오류가 발생하면 graph 빈 상태 위치에 오류 메시지를 표시하도록 변경했다.
+- graph API 오류 메시지를 실패 상태와 구분되도록 빨간색 계열로 표시했다.
+- Figma `legend`와 chat composer 기준으로 filter chip 위치와 Agent 입력창 패딩을 보정했다.
+- Figma `process` 노드 기준으로 Agent 상태 목록의 제목, step, 시간 표시 간격을 보정했다.
+- Agent 상태 목록 완료 아이콘을 `chat_check.svg`로 교체하고 step 사이 세로 점선을 추가했다.
+- Figma chat frame 기준으로 Agent 패널 header/body/composer row 위치를 다시 보정했다.
 
 **검증 결과**
 

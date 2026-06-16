@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import archiveIcon from "../svg/Archive.svg";
 import arrowIcon from "../svg/arrow.svg";
+import chatCheckIcon from "../svg/chat_check.svg";
 import collectionIcon from "../svg/Collection.svg";
 import conceptPageIcon from "../svg/conceptpage.svg";
 import fileIcon from "../svg/file.svg";
@@ -2527,15 +2528,17 @@ function StatusList({ title, timed = false }: { title: string; timed?: boolean }
   ];
 
   return (
-    <div className="status-list">
+    <div className={`status-list ${timed ? "is-timed" : ""}`}>
       <button>{title} <ChevronDown size={14} /></button>
-      {steps.map(([label, state, time]) => (
-        <div className={`status-row ${state}`} key={`${title}-${label}`}>
-          <span />
-          <p>{label}</p>
-          {time && <time>{time}</time>}
-        </div>
-      ))}
+      <div className="status-steps">
+        {steps.map(([label, state, time]) => (
+          <div className={`status-row ${state}`} key={`${title}-${label}`}>
+            <span>{state === "done" && <SvgIcon src={chatCheckIcon} />}</span>
+            <p>{label}</p>
+            {time && <time>{time}</time>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
