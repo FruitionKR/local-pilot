@@ -4,6 +4,8 @@ import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentRenameRequest;
+import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
 import fruition.document.dto.DocumentUploadResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -118,5 +120,22 @@ public class DocumentController {
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId) {
         return ResponseEntity.ok(documentService.findById(documentId));
+    }
+
+    @Operation(summary = "문서 이름 변경", description = "문서 표시명을 변경합니다. sync_source_title=true이면 연결된 source Wiki 페이지 제목도 함께 변경됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "이름 변경 성공",
+            content = @Content(schema = @Schema(implementation = DocumentRenameResponse.class))),
+        @ApiResponse(responseCode = "400", description = "유효하지 않은 파일명",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/{document_id}/rename")
+    public ResponseEntity<DocumentRenameResponse> rename(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId,
+            @RequestBody DocumentRenameRequest request) {
+        return ResponseEntity.ok(documentService.rename(documentId, request));
     }
 }

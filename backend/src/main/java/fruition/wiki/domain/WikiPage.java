@@ -74,6 +74,16 @@ public class WikiPage {
         this.updatedAt = Instant.now();
     }
 
+    public void renameTitle(String title) {
+        this.title = title;
+        this.updatedAt = Instant.now();
+    }
+
+    public void updateSlug(String slug) {
+        this.slug = slug;
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public WikiPageType getPageType() { return pageType; }
     public String getTitle() { return title; }

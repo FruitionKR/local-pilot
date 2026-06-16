@@ -63,6 +63,10 @@ public class Document {
         this.errorMessage = errorMessage;
     }
 
+    public void rename(String filename) {
+        this.filename = filename;
+    }
+
     public String getId() { return id; }
     public String getFilename() { return filename; }
     public String getMimeType() { return mimeType; }
