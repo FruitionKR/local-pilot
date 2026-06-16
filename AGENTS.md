@@ -16,12 +16,30 @@
 
 ## 커밋 전 changelog 갱신
 
-- 커밋을 진행하기 전에는 현재까지의 변경 사항을 `docs/changelog/` 아래의 관련 changelog에 먼저 기록한다.
-- Java/Spring 백엔드 변경은 `docs/changelog/backend.md`에 기록한다.
-- 프론트엔드 변경은 `docs/changelog/frontend.md`에 기록한다.
-- 인프라, DevOps, Docker, 배포 환경 변경은 `docs/changelog/infra.md`에 기록한다.
-- 여러 영역에 걸친 변경은 해당하는 changelog를 모두 갱신한다.
+- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 발생한 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
+- Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
+- 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
+- AI/pipeline 기능 코드 변경은 해당 영역 changelog가 있을 때 그 문서에 기록한다.
+- 인프라, DevOps, Docker, 배포 환경 코드 또는 설정 변경은 `docs/changelog/infra.md`에 기록한다.
+- 여러 기능 영역에 걸친 코드 변경은 해당하는 changelog를 모두 갱신한다.
+- 이슈 문서 정리, 작업 지침 변경, 단순 문서 이동처럼 기능 코드 변경이 없는 커밋은 changelog를 갱신하지 않는다.
 - changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
+
+## 커밋/PR 전 보안 점검
+
+- 커밋 생성 전과 PR 생성 전에는 항상 변경분과 추적 대상 파일에 실제 비밀값이 포함되어 있지 않은지 점검한다.
+- 점검 대상에는 API key, access key, secret key, token, password, private key, credential, 인증서/keystore, 실제 `.env` 파일, 운영 endpoint나 계정 정보가 포함된다.
+- `git status --short`, `git diff --cached`, `git diff`, `git ls-files`와 검색 도구를 활용해 커밋에 포함될 파일과 PR 변경분을 확인한다.
+- `.env.example`, 문서, 테스트 fixture에 있는 예시값과 placeholder는 실제 비밀값과 구분하되, 실제 값처럼 보이거나 혼동 가능성이 있으면 사용자에게 확인한다.
+- 비밀값 또는 공개하면 안 되는 정보가 발견되면 커밋이나 PR 생성을 중단하고, 어떤 파일과 항목이 문제인지 사용자에게 보고한 뒤 제거 또는 교체가 완료된 경우에만 진행한다.
+- 외부 코드 리뷰 도구나 public repo에 PR을 올리기 전에는 저장소 전체가 외부 시스템에 노출되어도 되는지 확인하고, 문제가 없을 때만 진행한다.
+
+## 이슈 문서 관리
+
+- 이슈 문서는 항상 작업 당일 날짜 기준의 `docs/issue/YYYY-MM-DD.md`에 작성하거나 갱신한다.
+- 지난 날짜의 이슈 문서에 남아 있는 내용을 새 날짜 기준으로 다시 관리해야 하면, 새 날짜 문서로 내용을 옮기고 기존 문서에는 이동 안내와 링크만 남긴다.
+- 이슈 해결을 위해 다른 문서에 API 계약, 설계, 절차, 정책 같은 구체적인 내용을 적었다면, 이슈 문서에도 해당 문서 경로와 확인 가능한 위치(섹션명 또는 line 위치)를 함께 기록한다.
+- 다른 문서의 위치를 기록할 때는 추후 검색과 검토가 쉽도록 파일 경로, 섹션 제목, 핵심 endpoint/API 이름을 가능한 한 함께 남긴다.
 
 ## 브랜치와 PR 흐름
 

@@ -4,6 +4,80 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-16
+
+### feat: Spring 백엔드 Query API 구현 (POST /api/query)
+
+**배경**
+FastAPI 파이프라인이 제공하는 그래프 기반 자연어 질의응답을 Spring 백엔드에서 중계해야 했습니다. 기존 `QueryController`는 스텁이었으며, `QueryResponse` DTO가 pipeline 출력 형식과 불일치했습니다.
+
+**추가/변경된 것**
+- `query/service/QueryService` — FastAPI pipeline에 질의를 전달하고 응답을 변환하는 서비스 추가
+- `query/repository/PipelineQueryRequester` — FastAPI `/query` 엔드포인트 HTTP 클라이언트
+- `query/repository/PipelineQueryResponse` — pipeline 응답 역직렬화 DTO
+- `query/exception/PipelineQueryException` — pipeline 오류 전파용 도메인 예외
+- `QueryController` — `QueryService` 주입 및 스텁 제거
+- `QueryResponse` — pipeline 출력 형식으로 재구성 (`HighlightedPath`, `QueryRelatedPage`, `SourceReference` DTO 제거)
+- `application.properties` — `app.query.endpoint`, `app.query.timeout-seconds` 환경변수 추가
+- `docs/spec/backend-query-api.md` — Query API 스펙 문서 추가
+
+**주의사항**
+FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본값은 `http://localhost:8000/query`입니다.
+
+---
+
+### feat: Chat 기록 조회 API 구현 (GET /api/chat/messages)
+
+**배경**
+채팅 메시지 목록 API가 스텁으로 빈 배열을 반환하고 있었습니다. ChatMessage와 ChatMessageReference 도메인 모델을 구현해 실제 대화 이력을 반환하도록 교체했습니다.
+
+**추가/변경된 것**
+- `chat/domain/ChatMessage` — 채팅 메시지 JPA 엔티티
+- `chat/domain/ChatMessageReference` — 메시지별 근거 참조 JPA 엔티티
+- `chat/repository/ChatMessageRepository` — Spring Data JPA, 세션별 메시지 조회
+- `chat/repository/ChatMessageReferenceRepository` — 메시지 ID 목록 기준 일괄 조회 (N+1 방지)
+- `ChatController` — `ChatMessageRepository` / `ChatMessageReferenceRepository` 주입, 실제 데이터 반환
+- `ChatMessageReference` DTO — `pageRole`, `rank`, `sentenceIndex` 필드 추가
+
+---
+
+### feat: 문서 이름 변경 API 구현 (PATCH /api/documents/{document_id}/rename)
+
+**배경**
+`docs/Fruition_MVP_API_Contract.md` 명세에 정의된 문서 이름 변경 API가 구현되지 않았습니다. `sync_source_title=true`이면 연결된 source WikiPage 제목도 함께 동기화합니다.
+
+**추가/변경된 것**
+- `document/dto/DocumentRenameRequest` — `filename`, `sync_source_title` 요청 DTO
+- `document/dto/DocumentRenameResponse` — 이전 파일명, source page ref(`id`, `title`, `renamed`) 포함 응답 DTO
+- `document/exception/InvalidDocumentFilenameException` — 파일명 검증 실패 예외 (400)
+- `Document.rename()` — 파일명 변경 도메인 메서드 추가
+- `DocumentService.rename()` — 파일명 검증(1~255자, 경로 구분자 금지), source_of 링크 탐색 후 WikiPage 제목 동기화, 응답 생성
+- `DocumentController` — `PATCH /{document_id}/rename` 엔드포인트 추가
+
+---
+
+### feat: Wiki graph source doc 참조 및 Wiki page 이름 변경 API 구현
+
+**배경**
+Wiki graph 조회 시 source 타입 노드에 원본 문서 참조가 표시되지 않는 이슈가 있었습니다. 또한 `docs/Fruition_MVP_API_Contract.md` 명세의 Wiki page 이름 변경 API가 구현되지 않았습니다.
+
+**추가/변경된 것**
+- `DocumentWikiLinkRepository.findAllByIdWikiPageIdIn()` — graph 조회 시 source 페이지 일괄 조회 (N+1 방지)
+- `WikiService.buildSourceDocRefs()` — source 타입 WikiPage에 연결된 원본 문서 참조를 WikiGraphNode에 포함
+- `wiki/dto/WikiPageRenameRequest` — `title`, `update_slug` 요청 DTO
+- `wiki/dto/WikiPageRenameResponse` — 이전 제목/slug, slug 업데이트 여부 포함 응답 DTO
+- `wiki/exception/InvalidWikiPageTitleException` — 제목 검증 실패 예외 (400)
+- `wiki/exception/WikiPageSlugConflictException` — slug 중복 예외 (409)
+- `WikiPage.renameTitle()`, `WikiPage.updateSlug()` — 제목/slug 변경 도메인 메서드 추가
+- `WikiService.rename()` — 제목 검증, slug 재생성(`update_slug=true` 시), `page_type+slug` 중복 검사
+- `WikiController` — `PATCH /pages/{wiki_page_id}/rename` 엔드포인트 추가
+- `GlobalExceptionHandler` — `PipelineQueryException`, `InvalidDocumentFilenameException`, `InvalidWikiPageTitleException`, `WikiPageSlugConflictException` 핸들러 추가
+
+**주의사항**
+slug 재생성 시 소문자 변환, 공백→하이픈, 한글 유지, 연속 하이픈 정리를 적용합니다. 같은 `page_type+slug` 조합이 이미 존재하면 409로 응답합니다.
+
+---
+
 ## [Unreleased] — feat/backend-api
 
 현재 작업 중인 브랜치입니다.

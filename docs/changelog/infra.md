@@ -4,46 +4,26 @@
 
 ---
 
-## [Unreleased] — feat/wiki-graph-query-engine
+## 2026-06-13
 
-### chore: Query 웹 검색 fallback 환경변수 예시 추가
-
-**배경**
-
-내부 Wiki 근거가 부족할 때 Tavily 웹 검색 fallback을 활성화하려면 별도 검색 API 설정이 필요합니다. 로컬/배포 환경에서 필요한 값을 빠뜨리지 않도록 `.env.example`에 placeholder를 추가했습니다.
-
-**변경된 것**
-
-- `QUERY_WEB_SEARCH_MODE`
-- `TAVILY_API_KEY`
-- `QUERY_WEB_SEARCH_MAX_RESULTS`
-- `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`
-- `QUERY_MIN_INTERNAL_RELEVANCE_SCORE`
-
-**검증**
-
-- 기본값은 `QUERY_WEB_SEARCH_MODE=disabled`로 유지되어 기존 실행에는 영향이 없습니다.
-
----
-
-### fix: llmPipeline Dockerfile 모듈 경로 갱신
+### docs: 로컬 실행 가이드와 실행 스크립트 추가
 
 **배경**
 
-`llmPipeline` 코드가 `fruition_lab` flat package에서 `app/modules/*` bounded context 구조로 변경됐지만, Dockerfile은 여전히 삭제된 `fruition_lab` 디렉터리를 이미지에 복사하고 있었습니다. 이 때문에 WSL Docker에서 `pipeline-api` 이미지를 rebuild할 때 `COPY fruition_lab` 단계에서 실패했습니다.
+새 환경에서도 프론트엔드, 백엔드, 로컬 인프라를 같은 순서로 실행하고 확인할 수 있도록 요구사항과 절차를 한곳에 정리했습니다.
 
-**변경된 것**
+**추가된 것**
 
-- `llmPipeline/Dockerfile`에서 `COPY fruition_lab ./fruition_lab`를 제거했습니다.
-- 현재 FastAPI와 query 모듈이 사용하는 `app/` 디렉터리를 이미지에 복사하도록 변경했습니다.
-- `sentence-transformers` 계열 큰 wheel 다운로드 중 pip read timeout이 발생하지 않도록 `PIP_DEFAULT_TIMEOUT=300`을 설정했습니다.
-- 기본 `requirements.txt`에서 `sentence-transformers`를 제거하고, BGE-M3 embedding 실행용 의존성은 `requirements-embedding.txt`로 분리했습니다.
-- 로컬 compose의 `pipeline-api` 기본값을 `QUERY_EMBEDDING_MODE=text-only`로 설정해 가벼운 query 플로우 테스트가 가능하도록 했습니다.
+- `docs/local-runbook.md` — Docker, Java 21, Node.js 요구사항과 수동/자동 실행 순서 문서화
+- `scripts/dev-up.sh` — `infra/.env` 준비, PostgreSQL/MinIO 기동, 백엔드/프론트엔드 실행, HTTP 응답 확인 자동화
+- `scripts/dev-down.sh` — 프론트엔드/백엔드 프로세스와 로컬 인프라 컨테이너 전체 종료 자동화
 
 **검증**
 
-- WSL Docker에서 `docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build pipeline-api` 통과.
-- rebuild 후 `GET /health`와 OpenAPI `/query` route 등록을 확인했습니다.
+- `bash -n scripts/dev-up.sh`
+- `bash -n scripts/dev-down.sh`
+- `./scripts/dev-up.sh`로 PostgreSQL/MinIO, 백엔드, 프론트엔드 기동 및 HTTP 응답 확인
+- `./scripts/dev-down.sh`로 앱 프로세스와 PostgreSQL/MinIO 컨테이너 종료 확인
 
 ---
 

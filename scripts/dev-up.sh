@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INFRA_DIR="$ROOT_DIR/infra"
+BACKEND_DIR="$ROOT_DIR/backend"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+ENV_FILE="$INFRA_DIR/.env"
+ENV_EXAMPLE="$INFRA_DIR/.env.example"
+COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
+
+BACKEND_PID=""
+FRONTEND_PID=""
+
+log() {
+  printf '[dev-up] %s\n' "$*"
+}
+
+fail() {
+  printf '[dev-up] ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/local-runbook.md의 요구사항을 확인하세요."
+}
+
+cleanup() {
+  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
+    kill "$FRONTEND_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup INT TERM EXIT
+
+ensure_env_file() {
+  if [[ -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  [[ -f "$ENV_EXAMPLE" ]] || fail "환경변수 예시 파일이 없습니다: $ENV_EXAMPLE"
+  cp "$ENV_EXAMPLE" "$ENV_FILE"
+  log "infra/.env가 없어 infra/.env.example에서 복사했습니다. LLM 기능을 쓰려면 API 키를 채워야 합니다."
+}
+
+ensure_docker() {
+  need_cmd docker
+
+  if docker info >/dev/null 2>&1; then
+    return
+  fi
+
+  local colima_socket="$HOME/.colima/default/docker.sock"
+  if [[ -S "$colima_socket" ]]; then
+    export DOCKER_HOST="unix://$colima_socket"
+    if docker info >/dev/null 2>&1; then
+      log "Colima Docker socket을 사용합니다: $colima_socket"
+      return
+    fi
+  fi
+
+  if command -v colima >/dev/null 2>&1; then
+    log "Docker daemon에 연결할 수 없어 Colima를 시작합니다."
+    colima start
+  fi
+
+  if docker info >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ -S "$colima_socket" ]]; then
+    export DOCKER_HOST="unix://$colima_socket"
+  fi
+
+  docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다. Docker Desktop 또는 Colima가 실행 중인지 확인하세요."
+}
+
+java_home_version() {
+  local home="$1"
+  [[ -x "$home/bin/java" ]] || return 1
+  "$home/bin/java" -version 2>&1 | head -n 1 | grep -Eq 'version "21\.|openjdk version "21\.'
+}
+
+find_java21_home() {
+  local candidate
+
+  for candidate in "${JAVA_HOME_21:-}" "${JAVA_HOME:-}"; do
+    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+    candidate="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+    if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  local common_paths=(
+    "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+    "/usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+    "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+    "/usr/lib/jvm/temurin-21-jdk-amd64"
+    "/usr/lib/jvm/java-21-openjdk"
+    "/usr/lib/jvm/java-21-openjdk-amd64"
+  )
+
+  for candidate in "${common_paths[@]}"; do
+    if [[ -d "$candidate" ]] && java_home_version "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+wait_for_url() {
+  local url="$1"
+  local label="$2"
+  local attempts="${3:-60}"
+
+  for _ in $(seq 1 "$attempts"); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      log "$label 응답 확인: $url"
+      return 0
+    fi
+    sleep 1
+  done
+
+  fail "$label 응답을 확인하지 못했습니다: $url"
+}
+
+wait_for_postgres() {
+  local status
+
+  for _ in $(seq 1 60); do
+    status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' fruition-postgresql-dev 2>/dev/null || true)"
+    if [[ "$status" == "healthy" || "$status" == "running" ]]; then
+      log "PostgreSQL 컨테이너 상태 확인: $status"
+      return 0
+    fi
+    sleep 1
+  done
+
+  fail "PostgreSQL 컨테이너가 준비되지 않았습니다."
+}
+
+start_infra() {
+  log "PostgreSQL과 MinIO를 시작합니다."
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+  wait_for_postgres
+}
+
+start_backend() {
+  local java21_home="$1"
+
+  log "백엔드를 시작합니다. Java 21: $java21_home"
+  (
+    cd "$BACKEND_DIR"
+    ./gradlew bootRun -Porg.gradle.java.installations.paths="$java21_home"
+  ) &
+  BACKEND_PID="$!"
+
+  wait_for_url "http://localhost:8080/api/documents" "백엔드"
+}
+
+start_frontend() {
+  need_cmd node
+  need_cmd npm
+
+  if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
+    log "프론트엔드 의존성이 없어 npm install을 실행합니다."
+    (cd "$FRONTEND_DIR" && npm install)
+  fi
+
+  log "프론트엔드를 시작합니다."
+  (
+    cd "$FRONTEND_DIR"
+    npm run dev
+  ) &
+  FRONTEND_PID="$!"
+
+  wait_for_url "http://localhost:3000" "프론트엔드"
+}
+
+main() {
+  need_cmd curl
+  ensure_env_file
+  ensure_docker
+
+  local java21_home
+  java21_home="$(find_java21_home)" || fail "Java 21을 찾지 못했습니다. JAVA_HOME_21을 지정하거나 JDK 21을 설치하세요."
+
+  start_infra
+  start_backend "$java21_home"
+  start_frontend
+
+  cat <<'INFO'
+
+[dev-up] 로컬 개발 서버가 실행 중입니다.
+  - Frontend: http://localhost:3000
+  - Backend:  http://localhost:8080
+  - Swagger:  http://localhost:8080/swagger-ui.html
+  - MinIO:    http://localhost:9001
+
+[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO 컨테이너는 유지됩니다.
+INFO
+
+  wait "$BACKEND_PID" "$FRONTEND_PID"
+}
+
+main "$@"
