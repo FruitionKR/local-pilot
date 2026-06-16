@@ -6,6 +6,26 @@
 
 ## [Unreleased] — feat/wiki-graph-query-engine
 
+### chore: Query 웹 검색 fallback 환경변수 예시 추가
+
+**배경**
+
+내부 Wiki 근거가 부족할 때 Tavily 웹 검색 fallback을 활성화하려면 별도 검색 API 설정이 필요합니다. 로컬/배포 환경에서 필요한 값을 빠뜨리지 않도록 `.env.example`에 placeholder를 추가했습니다.
+
+**변경된 것**
+
+- `QUERY_WEB_SEARCH_MODE`
+- `TAVILY_API_KEY`
+- `QUERY_WEB_SEARCH_MAX_RESULTS`
+- `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`
+- `QUERY_MIN_INTERNAL_RELEVANCE_SCORE`
+
+**검증**
+
+- 기본값은 `QUERY_WEB_SEARCH_MODE=disabled`로 유지되어 기존 실행에는 영향이 없습니다.
+
+---
+
 ### fix: llmPipeline Dockerfile 모듈 경로 갱신
 
 **배경**

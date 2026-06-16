@@ -30,6 +30,22 @@ class WikiPageLink:
 
 
 @dataclass(frozen=True)
+class QueryRewrite:
+    original_question: str
+    retrieval_query: str
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class WebSearchResult:
+    title: str
+    url: str
+    snippet: str
+    content: str | None = None
+    score: float = 1.0
+
+
+@dataclass(frozen=True)
 class RetrievedPage:
     page: WikiPage
     score: float
