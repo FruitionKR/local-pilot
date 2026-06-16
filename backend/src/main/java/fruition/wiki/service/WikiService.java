@@ -2,6 +2,7 @@ package fruition.wiki.service;
 
 import fruition.document.domain.Document;
 import fruition.document.repository.DocumentRepository;
+import fruition.util.StorageProperties;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
@@ -13,9 +14,12 @@ import fruition.wiki.dto.*;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
+import io.minio.GetObjectArgs;
+import io.minio.MinioClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,15 +33,21 @@ public class WikiService {
     private final WikiPageLinkRepository wikiPageLinkRepository;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final DocumentRepository documentRepository;
+    private final MinioClient minioClient;
+    private final StorageProperties storageProperties;
 
     public WikiService(WikiPageRepository wikiPageRepository,
                        WikiPageLinkRepository wikiPageLinkRepository,
                        DocumentWikiLinkRepository documentWikiLinkRepository,
-                       DocumentRepository documentRepository) {
+                       DocumentRepository documentRepository,
+                       MinioClient minioClient,
+                       StorageProperties storageProperties) {
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.documentRepository = documentRepository;
+        this.minioClient = minioClient;
+        this.storageProperties = storageProperties;
     }
 
     public WikiGraphResponse findGraph() {
@@ -114,12 +124,39 @@ public class WikiService {
                 page.getSlug(),
                 page.getSummary(),
                 page.getMarkdownUri(),
-                null,
+                readMarkdown(page.getMarkdownUri()),
                 page.getStatus().name(),
                 page.getCreatedAt(),
                 page.getUpdatedAt(),
                 sourceDocuments,
                 relatedPages);
+    }
+
+    private String readMarkdown(String markdownUri) {
+        if (markdownUri == null || markdownUri.isBlank()) return null;
+
+        String objectName = normalizeObjectName(markdownUri);
+        try (var stream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(storageProperties.getBucket())
+                        .object(objectName)
+                        .build())) {
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String normalizeObjectName(String markdownUri) {
+        String bucketPrefix = "s3://" + storageProperties.getBucket() + "/";
+        if (markdownUri.startsWith(bucketPrefix)) {
+            return markdownUri.substring(bucketPrefix.length());
+        }
+        if (markdownUri.startsWith("s3://")) {
+            int objectStart = markdownUri.indexOf('/', "s3://".length());
+            return objectStart >= 0 ? markdownUri.substring(objectStart + 1) : markdownUri;
+        }
+        return markdownUri;
     }
 
     private List<WikiPageSourceDoc> buildSourceDocs(String wikiPageId) {

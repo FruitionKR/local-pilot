@@ -223,7 +223,6 @@ button {
   padding: 27px 16px;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: #c9d1dc transparent;
   background: #fff;
@@ -995,6 +994,21 @@ button {
   padding: 84px 20px 20px;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-color: #b7c0cc transparent;
+}
+
+.agent-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-body::-webkit-scrollbar-thumb {
+  background: #b7c0cc;
+  border: 2px solid #fff;
+  border-radius: 999px;
 }
 
 .question-bubble {
@@ -1076,7 +1090,7 @@ button {
 
 .status-row {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(0, 1fr);
   align-items: center;
   column-gap: 12px;
   min-height: 14px;
@@ -1161,6 +1175,30 @@ button {
   color: #7e8898;
   min-width: 47px;
   text-align: right;
+}
+
+.agent-answer {
+  margin-top: 18px;
+  padding: 14px 15px;
+  color: #303846;
+  background: #f7f8fb;
+  border: 1px solid #e2e6ee;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.agent-answer p,
+.query-error {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.query-error {
+  margin-top: 16px;
+  color: #c53b3b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .results {
@@ -1489,11 +1527,33 @@ input {
 
 .sidebar {
   inset: 61px auto 0 60px;
-  width: 260px;
+  width: var(--sidebar-width, 260px);
   padding: 16px 0 0;
   background: #1e1e1e;
-  border-right-color: #4f4f4f;
+  border-right-color: transparent;
   scrollbar-color: #4f4f4f transparent;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 8px;
+  padding: 0;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: #4f4f4f;
 }
 
 .sidebar::-webkit-scrollbar-thumb {
@@ -1715,22 +1775,26 @@ input {
 
 .source-preview-panel {
   position: absolute;
-  inset: 61px auto 0 320px;
+  inset: 61px auto 0 calc(60px + var(--sidebar-width, 260px));
   z-index: 8;
-  padding: 32px;
+  padding: 28px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   color: #f0f0f0;
   background: #1e1e1e;
-  border-right: 1px solid #4f4f4f;
-  border-top-right-radius: 14px;
+  border-right: 1px solid transparent;
+  border-left: 0;
+  border-top-right-radius: 0;
 }
 
 .source-preview-resize-handle {
   position: absolute;
   top: 0;
-  right: -5px;
+  right: 0;
   bottom: 0;
-  width: 10px;
+  z-index: 5;
+  width: 8px;
   padding: 0;
   cursor: col-resize;
   background: transparent;
@@ -1740,14 +1804,17 @@ input {
   content: "";
   position: absolute;
   top: 0;
-  right: 4px;
+  right: 0;
   bottom: 0;
   width: 1px;
   background: #4f4f4f;
 }
 
 .source-preview-panel header {
-  margin-bottom: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 .source-preview-panel h2 {
@@ -1758,15 +1825,176 @@ input {
   line-height: 1.2;
 }
 
+.source-preview-panel header span {
+  width: fit-content;
+  padding: 4px 9px;
+  color: #0a0a0a;
+  background: #ffc117;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .source-preview-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 10px;
   color: #f0f0f0;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1.6;
+  scrollbar-color: #4f4f4f transparent;
+}
+
+.source-preview-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.source-preview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.source-preview-content::-webkit-scrollbar-thumb {
+  background: #4f4f4f;
+  border: 2px solid #1e1e1e;
+  border-radius: 999px;
 }
 
 .source-preview-content strong {
   display: block;
   font-weight: 700;
+}
+
+.source-preview-content p {
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+
+.source-preview-content pre {
+  margin: 0;
+  padding: 0 0 24px;
+  overflow: visible;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+}
+
+.markdown-viewer {
+  color: #d0d7de;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.markdown-viewer h1,
+.markdown-viewer h2,
+.markdown-viewer h3 {
+  margin: 24px 0 12px;
+  color: #f0f0f0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-viewer h1:first-child,
+.markdown-viewer h2:first-child,
+.markdown-viewer h3:first-child {
+  margin-top: 0;
+}
+
+.markdown-viewer h1 {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #4f4f4f;
+  font-size: 24px;
+}
+
+.markdown-viewer h2 {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #3a3a3a;
+  font-size: 19px;
+}
+
+.markdown-viewer h3 {
+  font-size: 16px;
+}
+
+.markdown-viewer p {
+  margin: 0 0 14px;
+}
+
+.markdown-viewer ul,
+.markdown-viewer ol {
+  margin: 0 0 16px;
+  padding-left: 24px;
+}
+
+.markdown-viewer li {
+  margin: 4px 0;
+}
+
+.markdown-viewer code {
+  padding: 2px 5px;
+  color: #f0f0f0;
+  background: #323232;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.markdown-codeblock,
+.markdown-frontmatter pre {
+  margin: 0 0 16px;
+  padding: 14px;
+  overflow-x: auto;
+  color: #d0d7de;
+  background: #0a0a0a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.markdown-codeblock code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.markdown-frontmatter {
+  margin: 0 0 18px;
+  color: #a7a7a7;
+}
+
+.markdown-frontmatter summary {
+  width: fit-content;
+  margin-bottom: 8px;
+  cursor: pointer;
+  color: #a7a7a7;
+  font-size: 12px;
+}
+
+.markdown-viewer hr {
+  height: 1px;
+  margin: 24px 0;
+  background: #4f4f4f;
+  border: 0;
+}
+
+.markdown-wikilink {
+  color: #58a6ff;
+}
+
+.source-preview-meta {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #4f4f4f;
+}
+
+.source-preview-meta span {
+  color: #a7a7a7;
+  font-size: 12px;
 }
 
 .api-error-banner {
@@ -1779,12 +2007,12 @@ input {
 }
 
 .graph-stage {
-  inset: 61px 400px 0 320px;
+  inset: 61px 400px 0 calc(60px + var(--sidebar-width, 260px));
   background: #0a0a0a;
 }
 
 .workspace.has-source-preview .graph-stage {
-  left: 320px;
+  left: calc(60px + var(--sidebar-width, 260px));
   right: 400px;
 }
 
@@ -1797,7 +2025,7 @@ input {
 }
 
 .workspace.has-source-preview .graph-canvas {
-  left: calc(var(--source-preview-width, 400px) + 20px);
+  left: var(--source-preview-width, 400px);
 }
 
 .graph-empty {
@@ -1911,6 +2139,12 @@ input {
 
 .agent-body {
   padding: 54px 22px 0;
+  scrollbar-color: #4f4f4f transparent;
+}
+
+.agent-body::-webkit-scrollbar-thumb {
+  background: #4f4f4f;
+  border-color: #1e1e1e;
 }
 
 .question-bubble {
@@ -1980,6 +2214,44 @@ input {
 .results > p,
 .typing {
   color: #a7a7a7;
+}
+
+.agent-answer {
+  color: #f0f0f0;
+  background: #1e1e1e;
+  border-color: #4f4f4f;
+}
+
+.agent-answer .markdown-viewer {
+  color: #f0f0f0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.agent-answer .markdown-viewer h1,
+.agent-answer .markdown-viewer h2,
+.agent-answer .markdown-viewer h3 {
+  color: #f0f0f0;
+}
+
+.agent-answer .markdown-viewer h1 {
+  font-size: 18px;
+}
+
+.agent-answer .markdown-viewer h2 {
+  font-size: 15px;
+}
+
+.agent-answer .markdown-viewer h3 {
+  font-size: 13px;
+}
+
+.agent-answer .markdown-viewer p {
+  margin: 0 0 12px;
+}
+
+.agent-answer .markdown-viewer p:last-child {
+  margin-bottom: 0;
 }
 
 .result-card {
@@ -2055,12 +2327,11 @@ input {
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: 320px;
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 
   .source-preview-panel {
-    width: 220px;
-    left: 320px;
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 }
 
@@ -2080,10 +2351,10 @@ input {
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: 320px;
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 
   .source-preview-panel {
-    width: 180px;
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 }

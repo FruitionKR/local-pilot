@@ -2,18 +2,17 @@ import { ChevronDown } from "lucide-react";
 import { chatCheckIcon, rawPageIcon, SvgIcon } from "../SvgIcon";
 import { buildStatusSteps } from "./agentData";
 
-export function StatusList({ title, timed = false }: { title: string; timed?: boolean }) {
-  const steps = buildStatusSteps(timed);
+export function StatusList({ title, isLoading, hasResponse }: { title: string; isLoading: boolean; hasResponse: boolean }) {
+  const steps = buildStatusSteps(isLoading, hasResponse);
 
   return (
-    <div className={`status-list ${timed ? "is-timed" : ""}`}>
+    <div className="status-list">
       <button>{title} <ChevronDown size={14} /></button>
       <div className="status-steps">
-        {steps.map(([label, state, time]) => (
+        {steps.map(([label, state]) => (
           <div className={`status-row ${state}`} key={`${title}-${label}`}>
             <span>{state === "done" && <SvgIcon src={chatCheckIcon} />}{state === "pending" && <SvgIcon src={rawPageIcon} />}</span>
             <p>{label}</p>
-            {time && <time>{time}</time>}
           </div>
         ))}
       </div>

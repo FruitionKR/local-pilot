@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-16
 
+### feat: Query Agent 채팅과 원문 viewer 연동
+
+**변경 배경**
+
+- 로컬 테스트에서 질문 입력 후 Query API 응답, 이전 채팅 기록, 근거 자료 클릭, source/concept 원문 확인 흐름을 한 화면에서 검증할 수 있어야 했다.
+- Agent 패널의 정적 목업 상태와 중복 실행 상태 표시가 실제 query 흐름과 맞지 않았다.
+
+**변경된 내용**
+
+- Agent 입력창이 `POST /api/query`를 호출하고, `GET /api/chat/messages`로 이전 질문/답변 기록을 유지해 표시하도록 연결했다.
+- assistant 답변을 markdown viewer로 렌더링하고, 문장 단위 가독성을 위해 마침표 뒤 줄바꿈을 보정했다.
+- 근거 자료 card 클릭 시 `wiki_page_id` 또는 `document_id` 기반 source page를 원문 viewer로 열도록 연결했다.
+- source/concept 원문 preview 패널이 Wiki page 상세 API의 markdown을 GitHub markdown viewer에 가까운 형태로 표시하도록 조정했다.
+- 자료 관리 sidebar와 원문 viewer resize handle, 채팅 영역 scrollbar를 다크 워크스페이스 기준으로 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+
 ### feat: 그래프 원본문서 패널 상호작용 보강
 
 **변경 배경**

@@ -1,3 +1,11 @@
+# 이전 자료
+
+이 문서는 Spring Query API 구현 전 단계의 백로그 스펙입니다.
+현재 구현과 최신 API 계약은 `docs/backend-llmpipeline-integration.md`와
+`docs/Fruition_MVP_API_Contract.md`를 기준으로 확인합니다.
+
+---
+
 # Spring Boot 백엔드 Query API 구현 Spec
 
 ## 1. 목적

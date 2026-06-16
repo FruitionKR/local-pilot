@@ -87,7 +87,7 @@ export function TreeNode({
         onContextMenu={(event) => onContextMenuItem(event, projectId, item.id)}
         onClick={(event) => {
           event.stopPropagation();
-          if (!isEditing && item.graphNodeId) onSelectGraphNode(item.graphNodeId, item.id);
+          if (!isEditing && (item.graphNodeId || item.documentId)) onSelectGraphNode(item);
           if (!isEditing && hasChildren) onToggle(item.id);
         }}
       >

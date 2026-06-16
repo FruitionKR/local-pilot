@@ -404,32 +404,48 @@ FastAPI route는 이 use case만 호출한다.
       "role": "focus_concept"
     }
   ],
-  "source_references": [
+  "evidence_snippets": [
     {
-      "document_id": "doc_123",
-      "filename": "llm_wiki.md",
-      "reference_type": "source_page",
-      "quote": "LLM Wiki는 문서를 미리 source page와 concept page로 컴파일한다."
+      "page_id": "source:doc_123",
+      "page_type": "source",
+      "page_title": "LLM Wiki와 RAG 비교",
+      "page_slug": "llm-wiki-rag",
+      "page_url": "/api/wiki/pages/source:doc_123",
+      "page_role": "seed_source",
+      "score": 0.91,
+      "rank": 1,
+      "paragraph_index": 2,
+      "sentence_index": 0,
+      "text": "LLM Wiki는 문서를 미리 source page와 concept page로 컴파일한다."
     }
   ],
   "graph_context": {
     "nodes": [
       {
-        "page_id": "source:doc_123",
+        "id": "source:doc_123",
+        "page_type": "source",
+        "title": "LLM Wiki와 RAG 비교",
+        "slug": "llm-wiki-rag",
+        "relevance_score": 0.92,
         "role": "seed_source",
-        "score": 0.92,
         "depth": 0
       },
       {
-        "page_id": "concept:rag",
+        "id": "concept:rag",
+        "page_type": "concept",
+        "title": "RAG",
+        "slug": "rag",
+        "relevance_score": 0.88,
         "role": "focus_concept",
-        "score": 0.88,
         "depth": 1
       },
       {
-        "page_id": "concept:llm-wiki",
+        "id": "concept:llm-wiki",
+        "page_type": "concept",
+        "title": "LLM Wiki",
+        "slug": "llm-wiki",
+        "relevance_score": 0.91,
         "role": "focus_concept",
-        "score": 0.91,
         "depth": 1
       }
     ],

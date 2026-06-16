@@ -1,4 +1,4 @@
-import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, RefObject } from "react";
+import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
 import { switchIcon, SvgIcon } from "../SvgIcon";
 import { ContextMenu } from "./ContextMenu";
@@ -14,6 +14,7 @@ export function DocumentSidebar({
   contextMenu,
   uploadInputRef,
   onOpenUploadPicker,
+  onResizeStart,
   onUploadPickerChange,
   onMoveItem,
   onDropFiles,
@@ -41,6 +42,7 @@ export function DocumentSidebar({
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement>;
   onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
@@ -51,7 +53,7 @@ export function DocumentSidebar({
   onDragEnd: () => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
-  onSelectGraphNode: (nodeId: string, itemId: string) => void;
+  onSelectGraphNode: (item: { id: string; label: string; documentId?: string; graphNodeId?: string }) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
   onCancelEditing: () => void;
@@ -116,6 +118,12 @@ export function DocumentSidebar({
           onDeleteContextTarget={onDeleteContextTarget}
         />
       )}
+      <button
+        type="button"
+        className="sidebar-resize-handle"
+        aria-label="자료 관리 사이드바 폭 조절"
+        onPointerDown={onResizeStart}
+      />
     </aside>
   );
 }
