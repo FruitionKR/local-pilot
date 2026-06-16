@@ -1302,7 +1302,7 @@ input {
 }
 
 .topbar {
-  height: 56px;
+  height: 61px;
   padding: 0 12px;
   background: #1e1e1e;
   border-bottom-color: #4f4f4f;
@@ -1372,7 +1372,7 @@ input {
 }
 
 .rail {
-  inset: 56px auto 0 0;
+  inset: 61px auto 0 0;
   width: 60px;
   padding: 22px 12px 24px;
   background: #1e1e1e;
@@ -1417,14 +1417,14 @@ input {
 }
 
 .blank-view {
-  inset: 56px 0 0 60px;
+  inset: 61px 0 0 60px;
   background: #0a0a0a;
 }
 
 .sidebar {
-  inset: 56px auto 0 60px;
+  inset: 61px auto 0 60px;
   width: 260px;
-  padding: 16px 10px;
+  padding: 16px 0 0;
   background: #1e1e1e;
   border-right-color: #4f4f4f;
   scrollbar-color: #4f4f4f transparent;
@@ -1436,13 +1436,23 @@ input {
 }
 
 .sidebar-header {
+  position: relative;
   height: 48px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
-  margin: 0;
-  padding: 0 0 0 8px;
-  border-bottom: 1px solid #4f4f4f;
+  margin: 0 0 8px;
+  padding: 0 12px 0 18px;
+}
+
+.sidebar-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 8px;
+  border-top: 1px solid #4f4f4f;
 }
 
 .sidebar h1 {
@@ -1500,7 +1510,7 @@ input {
 }
 
 .project-section {
-  padding: 0 0 10px;
+  padding: 12px 10px 10px;
 }
 
 .project-title {
@@ -1636,10 +1646,10 @@ input {
 
 .source-preview-panel {
   position: absolute;
-  inset: 56px auto 0 320px;
+  inset: 61px auto 0 320px;
   z-index: 6;
-  width: 260px;
-  padding: 22px 20px;
+  width: 400px;
+  padding: 32px;
   overflow: hidden;
   color: #f0f0f0;
   background: #1e1e1e;
@@ -1654,14 +1664,14 @@ input {
 .source-preview-panel h2 {
   margin: 0;
   color: #8a8a8a;
-  font-size: 20px;
+  font-size: 28px;
   font-weight: 500;
   line-height: 1.2;
 }
 
 .source-preview-content {
   color: #f0f0f0;
-  font-size: 12px;
+  font-size: 18px;
   line-height: 1.6;
 }
 
@@ -1671,7 +1681,7 @@ input {
 }
 
 .api-error-banner {
-  top: 72px;
+  top: 77px;
   left: 340px;
   right: 430px;
   color: #ffb6ae;
@@ -1680,12 +1690,13 @@ input {
 }
 
 .graph-stage {
-  inset: 56px 420px 0 320px;
+  inset: 61px 380px 0 320px;
   background: #0a0a0a;
 }
 
 .workspace.has-source-preview .graph-stage {
-  left: 580px;
+  left: 720px;
+  right: 428px;
 }
 
 .workspace.is-agent-collapsed .graph-stage {
@@ -1704,15 +1715,15 @@ input {
 }
 
 .filter-chips {
-  top: 23px;
+  top: 28px;
   right: 24px;
-  gap: 8px;
+  gap: 12px;
 }
 
 .filter-chips span {
-  height: 24px;
+  height: 30px;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 12px;
   color: #e2e2e2;
   background: #1e1e1e;
   border-color: #4f4f4f;
@@ -1730,7 +1741,7 @@ input {
 }
 
 .agent-panel {
-  inset: 80px 20px 24px auto;
+  inset: 85px 20px 28px auto;
   width: 380px;
   grid-template-rows: 74px 1fr 62px;
   color: #f0f0f0;
