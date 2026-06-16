@@ -1094,10 +1094,13 @@ button {
   width: 10px;
   height: 10px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
   border: 1px dashed #b7c0cc;
-  border-radius: 50%;
+  border-radius: 100px;
 }
 
 .status-row:not(:last-child) span::before {
@@ -1116,9 +1119,15 @@ button {
 }
 
 .status-row.done span,
-.status-row.active span {
+.status-row.done span {
   border: 0;
   background: var(--yellow);
+}
+
+.status-row.active span {
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--yellow);
+  background: #1e1e1e;
 }
 
 .status-row.done span .svg-icon {
@@ -1126,6 +1135,18 @@ button {
   z-index: 1;
   width: 6px;
   height: 4px;
+}
+
+.status-row.pending span {
+  border: 0;
+  background: transparent;
+}
+
+.status-row.pending span .svg-icon {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
 }
 
 .status-row p {
@@ -1802,7 +1823,7 @@ input {
 .agent-panel {
   inset: 89px 20px 28px auto;
   width: 380px;
-  grid-template-rows: 83px 1fr 61px;
+  grid-template-rows: 83px 1fr 77px;
   color: #f0f0f0;
   background: #1e1e1e;
   border-color: #4f4f4f;
@@ -1912,9 +1933,18 @@ input {
   background: repeating-linear-gradient(to bottom, #8a8a8a 0 2px, transparent 2px 4px);
 }
 
-.status-row.done span,
-.status-row.active span {
+.status-row.done span {
   background: #ffc117;
+}
+
+.status-row.active span {
+  border: 1px solid #ffc117;
+  background: #1e1e1e;
+}
+
+.status-row.pending span {
+  border: 0;
+  background: transparent;
 }
 
 .status-row.active p,
@@ -1955,7 +1985,7 @@ input {
 .composer {
   grid-template-columns: 16px minmax(0, 1fr) 24px;
   height: 44px;
-  margin: 17px 22px 0;
+  margin: 17px 22px 16px;
   padding: 0 8px 0 12px;
   background: #4f4f4f;
   border-color: #1e1e1e;

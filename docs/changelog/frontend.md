@@ -6,6 +6,26 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-16
 
+### fix: Agent 패널 상태 표시와 입력창 여백 보정
+
+**변경 배경**
+
+- Figma 오른쪽 채팅 sidebar와 비교했을 때 명령 실행 상태 마커의 완료/진행중/추후 실행 표현이 다르게 보였다.
+- Agent 메시지 입력창이 패널 하단 여백 없이 붙어 보여 Figma 기준의 composer 위치와 맞지 않았다.
+- `page.tsx`의 홈 화면 JSX가 한 함수에 몰려 있어 Agent/sidebar 영역을 추후 분리하기 어렵게 되어 있었다.
+
+**변경된 내용**
+
+- Agent 상태 목록의 완료 마커를 10px 노란 원형으로, 진행중 마커를 노란 테두리와 어두운 배경의 10px 원형으로 보정했다.
+- 추후 실행 상태는 `frontend/svg/Ellipse.svg` 자산을 사용하도록 연결하고, 어두운 sidebar 배경에 맞게 SVG 색상을 조정했다.
+- Agent composer 하단 row와 margin을 조정해 입력창 아래 16px 여백을 확보했다.
+- 홈 화면 JSX를 `TopBar`, `RailNavigation`, `DocumentSidebar`, `AgentPanel` 등 내부 렌더링 컴포넌트로 1차 분리했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+
 ### feat: Figma 다크 워크스페이스 화면 반영
 
 **변경 배경**

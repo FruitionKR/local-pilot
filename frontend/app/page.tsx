@@ -5,7 +5,8 @@ import type {
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent
+  PointerEvent as ReactPointerEvent,
+  RefObject
 } from "react";
 import type { StaticImageData } from "next/image";
 import Image from "next/image";
@@ -164,6 +165,8 @@ type GraphCache = {
   pan: NodePosition;
   zoom: number;
 };
+type StatusStepState = "done" | "active" | "pending";
+type StatusStep = [label: string, state: StatusStepState, time: string];
 
 const GRAPH_WIDTH = 746;
 const GRAPH_HEIGHT = 568;
@@ -177,6 +180,10 @@ const railItems: { id: RailView; label: string; icon: SvgAsset }[] = [
   { id: "logs", label: "로그", icon: collectionIcon },
   { id: "settings", label: "설정", icon: settingIcon }
 ];
+const agentResults = [
+  ["또래 관계 연구.pdf", "p.14-17 · 정서 발달 상관관계 분석"],
+  ["정서 발달 보고서.pdf", "p.3, p.21 · 사회적 상호작용 사례"]
+] as const;
 const GRAPH_CENTER = { x: GRAPH_WIDTH / 2, y: GRAPH_HEIGHT / 2 };
 const GRAPH_ZOOM = {
   min: 0.62,
@@ -2324,123 +2331,52 @@ export default function HomePage() {
       className={`workspace ${isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : ""} ${selectedDocumentTitle ? "has-source-preview" : ""}`}
       onClick={clearTreeGraphSelection}
     >
-      <header className="topbar">
-        <div className="brand">
-          <div className="workspace-mark" aria-label="부산대학교">부</div>
-          <button className="school">부산대학교 <SvgIcon src={toggleIcon} className="school-toggle-icon" /></button>
-        </div>
-        <label className="search-box">
-          <Search size={20} />
-          <input placeholder="자료명, 관련 내용 검색" />
-        </label>
-        <div className="profile">
-          <div>
-            <strong>메타몽</strong>
-            <span>온라인</span>
-          </div>
-          <SvgIcon src={userCircleIcon} className="profile-icon" />
-        </div>
-      </header>
-
-      <aside className="rail">
-        {railItems.map((item) => (
-          <button
-            key={item.id}
-            className={`rail-item ${activeView === item.id ? "is-active" : ""}`}
-            aria-label={item.label}
-            aria-pressed={activeView === item.id}
-            onClick={() => setActiveView(item.id)}
-          >
-            <span className="rail-icon"><SvgIcon src={item.icon} /></span>
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </aside>
+      <TopBar />
+      <RailNavigation activeView={activeView} onViewChange={setActiveView} />
 
       {isHomeView ? (
         <>
-          <aside className="sidebar">
-            <div className="sidebar-header">
-              <h1>자료 관리</h1>
-              <button
-                type="button"
-                className="sidebar-upload-button"
-                aria-label="문서 업로드"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (projects[0]) openUploadPicker(projects[0].id, null);
-                }}
-              >
-                <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
-              </button>
-            </div>
-            <input
-              ref={uploadInputRef}
-              className="upload-picker"
-              type="file"
-              accept=".pdf,.md,application/pdf,text/markdown,text/plain"
-              multiple
-              onChange={handleUploadPickerChange}
-            />
+          <DocumentSidebar
+            projects={projects}
+            draggedItemId={draggedItem?.itemId ?? null}
+            selectedItemId={selectedTreeItemId}
+            dropTarget={dropTarget}
+            fileDropTarget={fileDropTarget}
+            editing={editing}
+            contextMenu={contextMenu}
+            uploadInputRef={uploadInputRef}
+            onOpenUploadPicker={openUploadPicker}
+            onUploadPickerChange={handleUploadPickerChange}
+            onMoveItem={moveTreeEntry}
+            onDropFiles={dropUploadFiles}
+            onDragStart={(projectId, itemId) => {
+              setDraggedItem({ projectId, itemId });
+              setContextMenu(null);
+            }}
+            onDragOverItem={(target) => {
+              if (draggedItem?.projectId === target.projectId) setDropTarget(target);
+            }}
+            onFileDragOver={setFileDropTarget}
+            onFileDragLeave={() => setFileDropTarget(null)}
+            onDragEnd={() => {
+              setDraggedItem(null);
+              setDropTarget(null);
+              setFileDropTarget(null);
+            }}
+            onContextMenuProject={openProjectMenu}
+            onContextMenuItem={openFolderMenu}
+            onSelectGraphNode={(nodeId, itemId) => selectTreeGraphNode(itemId, nodeId)}
+            onEditingChange={(label) => {
+              setEditing((current) => current ? { ...current, label } : current);
+            }}
+            onCommitEditing={commitEditing}
+            onCancelEditing={cancelEditing}
+            onRenameContextTarget={renameContextTarget}
+            onAddFolderFromContext={addFolderFromContext}
+            onDeleteContextTarget={deleteContextTarget}
+          />
 
-            {projects.map((project) => (
-              <ProjectSection
-                key={project.id}
-                project={project}
-                draggedItemId={draggedItem?.itemId ?? null}
-                selectedItemId={selectedTreeItemId}
-                dropTarget={dropTarget}
-                fileDropTarget={fileDropTarget}
-                editing={editing}
-                onMoveItem={moveTreeEntry}
-                onDropFiles={dropUploadFiles}
-                onDragStart={(projectId, itemId) => {
-                  setDraggedItem({ projectId, itemId });
-                  setContextMenu(null);
-                }}
-                onDragOverItem={(target) => {
-                  if (draggedItem?.projectId === target.projectId) setDropTarget(target);
-                }}
-                onFileDragOver={setFileDropTarget}
-                onFileDragLeave={() => setFileDropTarget(null)}
-                onDragEnd={() => {
-                  setDraggedItem(null);
-                  setDropTarget(null);
-                  setFileDropTarget(null);
-                }}
-                onContextMenuProject={openProjectMenu}
-                onContextMenuItem={openFolderMenu}
-                onSelectGraphNode={(nodeId, itemId) => selectTreeGraphNode(itemId, nodeId)}
-                onEditingChange={(label) => {
-                  setEditing((current) => current ? { ...current, label } : current);
-                }}
-                onCommitEditing={commitEditing}
-                onCancelEditing={cancelEditing}
-              />
-            ))}
-            {contextMenu && (
-              <div
-                className="folder-context-menu"
-                style={{ left: contextMenu.x, top: contextMenu.y }}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button type="button" onClick={renameContextTarget}>이름 변경</button>
-                <button type="button" onClick={addFolderFromContext}>새 폴더</button>
-                {contextMenu.itemId !== null && <button type="button" className="danger" onClick={deleteContextTarget}>삭제</button>}
-              </div>
-            )}
-          </aside>
-
-          {selectedDocumentTitle && (
-            <section className="source-preview-panel" aria-label="원본문서 미리보기" onClick={(event) => event.stopPropagation()}>
-              <header>
-                <h2>{selectedDocumentTitle} - 원본문서</h2>
-              </header>
-              <div className="source-preview-content">
-                <strong>내용 내용 내용</strong>
-              </div>
-            </section>
-          )}
+          {selectedDocumentTitle && <SourcePreviewPanel title={selectedDocumentTitle} />}
 
           <Graph
             nodes={graphData.nodes}
@@ -2458,59 +2394,7 @@ export default function HomePage() {
             </button>
           )}
 
-          {isAgentPanelOpen && (
-            <aside className="agent-panel">
-              <div className="agent-header">
-                <div className="agent-mark"><SvgIcon src={sparkleIcon} /></div>
-                <div>
-                  <h2>Fruition Agent</h2>
-                  <p>자료 검색 에이전트 · 부산대 워크스페이스</p>
-                </div>
-                <button className="panel-action" aria-label="Agent 패널 숨기기" onClick={() => setIsAgentPanelOpen(false)}>
-                  <SvgIcon src={sideboxIcon} />
-                </button>
-              </div>
-
-              <div className="agent-body">
-                <div className="question-bubble">
-                  이번 학기 &apos;장애 아동 통합 교육&apos; 수업 발표를 준비 중이야. 또래 관계가 정서 발달에 미치는 영향에 관한 수업 자료랑 관련 논문 좀 찾아줄 수 있을까?
-                </div>
-
-                <div className="agent-message">
-                  <div className="mini-mark"><SvgIcon src={sparkleIcon} /></div>
-                  <div>
-                    <strong>Fruition Agent</strong>
-                    <p>요청을 분석하고 자료를 검색하고 있어요</p>
-                  </div>
-                </div>
-
-                <StatusList title="서치 명령 실행 중" />
-                <StatusList title="서치 명령 실행 중" timed />
-
-                <div className="results">
-                  <p>찾은 자료 2건</p>
-                  {[
-                    ["또래 관계 연구.pdf", "p.14-17 · 정서 발달 상관관계 분석"],
-                    ["정서 발달 보고서.pdf", "p.3, p.21 · 사회적 상호작용 사례"]
-                  ].map(([title, meta]) => (
-                    <button className="result-card" key={title}>
-                      <span className="file-box"><SvgIcon src={fileIcon} /></span>
-                      <span><strong>{title}</strong><small>{meta}</small></span>
-                      <b>Source</b>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="typing"><i /><i /><i /> 답변을 작성하고 있어요...</div>
-              </div>
-
-              <div className="composer">
-                <Plus size={18} />
-                <input placeholder="메시지를 입력하세요..." />
-                <button aria-label="전송"><SvgIcon src={frameIcon} /></button>
-              </div>
-            </aside>
-          )}
+          {isAgentPanelOpen && <AgentPanel onClose={() => setIsAgentPanelOpen(false)} />}
         </>
       ) : (
         <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
@@ -2519,8 +2403,256 @@ export default function HomePage() {
   );
 }
 
+function TopBar() {
+  return (
+    <header className="topbar">
+      <div className="brand">
+        <div className="workspace-mark" aria-label="부산대학교">부</div>
+        <button className="school">부산대학교 <SvgIcon src={toggleIcon} className="school-toggle-icon" /></button>
+      </div>
+      <label className="search-box">
+        <Search size={20} />
+        <input placeholder="자료명, 관련 내용 검색" />
+      </label>
+      <div className="profile">
+        <div>
+          <strong>메타몽</strong>
+          <span>온라인</span>
+        </div>
+        <SvgIcon src={userCircleIcon} className="profile-icon" />
+      </div>
+    </header>
+  );
+}
+
+function RailNavigation({ activeView, onViewChange }: { activeView: RailView; onViewChange: (view: RailView) => void }) {
+  return (
+    <aside className="rail">
+      {railItems.map((item) => (
+        <button
+          key={item.id}
+          className={`rail-item ${activeView === item.id ? "is-active" : ""}`}
+          aria-label={item.label}
+          aria-pressed={activeView === item.id}
+          onClick={() => onViewChange(item.id)}
+        >
+          <span className="rail-icon"><SvgIcon src={item.icon} /></span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </aside>
+  );
+}
+
+function DocumentSidebar({
+  projects,
+  draggedItemId,
+  selectedItemId,
+  dropTarget,
+  fileDropTarget,
+  editing,
+  contextMenu,
+  uploadInputRef,
+  onOpenUploadPicker,
+  onUploadPickerChange,
+  onMoveItem,
+  onDropFiles,
+  onDragStart,
+  onDragOverItem,
+  onFileDragOver,
+  onFileDragLeave,
+  onDragEnd,
+  onContextMenuProject,
+  onContextMenuItem,
+  onSelectGraphNode,
+  onEditingChange,
+  onCommitEditing,
+  onCancelEditing,
+  onRenameContextTarget,
+  onAddFolderFromContext,
+  onDeleteContextTarget
+}: {
+  projects: Project[];
+  draggedItemId: string | null;
+  selectedItemId: string | null;
+  dropTarget: DropTarget | null;
+  fileDropTarget: FileDropTarget | null;
+  editing: EditingState | null;
+  contextMenu: ContextMenuState | null;
+  uploadInputRef: RefObject<HTMLInputElement>;
+  onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
+  onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
+  onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
+  onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
+  onDragStart: (projectId: string, itemId: string) => void;
+  onDragOverItem: (target: DropTarget) => void;
+  onFileDragOver: (target: FileDropTarget) => void;
+  onFileDragLeave: () => void;
+  onDragEnd: () => void;
+  onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
+  onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
+  onSelectGraphNode: (nodeId: string, itemId: string) => void;
+  onEditingChange: (label: string) => void;
+  onCommitEditing: () => void;
+  onCancelEditing: () => void;
+  onRenameContextTarget: () => void;
+  onAddFolderFromContext: () => void;
+  onDeleteContextTarget: () => void;
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <h1>자료 관리</h1>
+        <button
+          type="button"
+          className="sidebar-upload-button"
+          aria-label="문서 업로드"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (projects[0]) onOpenUploadPicker(projects[0].id, null);
+          }}
+        >
+          <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
+        </button>
+      </div>
+      <input
+        ref={uploadInputRef}
+        className="upload-picker"
+        type="file"
+        accept=".pdf,.md,application/pdf,text/markdown,text/plain"
+        multiple
+        onChange={onUploadPickerChange}
+      />
+
+      {projects.map((project) => (
+        <ProjectSection
+          key={project.id}
+          project={project}
+          draggedItemId={draggedItemId}
+          selectedItemId={selectedItemId}
+          dropTarget={dropTarget}
+          fileDropTarget={fileDropTarget}
+          editing={editing}
+          onMoveItem={onMoveItem}
+          onDropFiles={onDropFiles}
+          onDragStart={onDragStart}
+          onDragOverItem={onDragOverItem}
+          onFileDragOver={onFileDragOver}
+          onFileDragLeave={onFileDragLeave}
+          onDragEnd={onDragEnd}
+          onContextMenuProject={onContextMenuProject}
+          onContextMenuItem={onContextMenuItem}
+          onSelectGraphNode={onSelectGraphNode}
+          onEditingChange={onEditingChange}
+          onCommitEditing={onCommitEditing}
+          onCancelEditing={onCancelEditing}
+        />
+      ))}
+      {contextMenu && (
+        <div
+          className="folder-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
+          <button type="button" onClick={onAddFolderFromContext}>새 폴더</button>
+          {contextMenu.itemId !== null && <button type="button" className="danger" onClick={onDeleteContextTarget}>삭제</button>}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function SourcePreviewPanel({ title }: { title: string }) {
+  return (
+    <section className="source-preview-panel" aria-label="원본문서 미리보기" onClick={(event) => event.stopPropagation()}>
+      <header>
+        <h2>{title} - 원본문서</h2>
+      </header>
+      <div className="source-preview-content">
+        <strong>내용 내용 내용</strong>
+      </div>
+    </section>
+  );
+}
+
+function AgentPanel({ onClose }: { onClose: () => void }) {
+  return (
+    <aside className="agent-panel">
+      <AgentHeader onClose={onClose} />
+      <AgentBody />
+      <AgentComposer />
+    </aside>
+  );
+}
+
+function AgentHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="agent-header">
+      <div className="agent-mark"><SvgIcon src={sparkleIcon} /></div>
+      <div>
+        <h2>Fruition Agent</h2>
+        <p>자료 검색 에이전트 · 부산대 워크스페이스</p>
+      </div>
+      <button className="panel-action" aria-label="Agent 패널 숨기기" onClick={onClose}>
+        <SvgIcon src={sideboxIcon} />
+      </button>
+    </div>
+  );
+}
+
+function AgentBody() {
+  return (
+    <div className="agent-body">
+      <div className="question-bubble">
+        이번 학기 &apos;장애 아동 통합 교육&apos; 수업 발표를 준비 중이야. 또래 관계가 정서 발달에 미치는 영향에 관한 수업 자료랑 관련 논문 좀 찾아줄 수 있을까?
+      </div>
+
+      <div className="agent-message">
+        <div className="mini-mark"><SvgIcon src={sparkleIcon} /></div>
+        <div>
+          <strong>Fruition Agent</strong>
+          <p>요청을 분석하고 자료를 검색하고 있어요</p>
+        </div>
+      </div>
+
+      <StatusList title="서치 명령 실행 중" />
+      <StatusList title="서치 명령 실행 중" timed />
+
+      <div className="results">
+        <p>찾은 자료 2건</p>
+        {agentResults.map(([title, meta]) => (
+          <AgentResultCard key={title} title={title} meta={meta} />
+        ))}
+      </div>
+
+      <div className="typing"><i /><i /><i /> 답변을 작성하고 있어요...</div>
+    </div>
+  );
+}
+
+function AgentResultCard({ title, meta }: { title: string; meta: string }) {
+  return (
+    <button className="result-card">
+      <span className="file-box"><SvgIcon src={fileIcon} /></span>
+      <span><strong>{title}</strong><small>{meta}</small></span>
+      <b>Source</b>
+    </button>
+  );
+}
+
+function AgentComposer() {
+  return (
+    <div className="composer">
+      <Plus size={18} />
+      <input placeholder="메시지를 입력하세요..." />
+      <button aria-label="전송"><SvgIcon src={frameIcon} /></button>
+    </div>
+  );
+}
+
 function StatusList({ title, timed = false }: { title: string; timed?: boolean }) {
-  const steps = [
+  const steps: StatusStep[] = [
     ["업로드된 문서 12건 스캔 완료", "done", timed ? "14:22:24" : ""],
     ["'또래 관계' 관련 페이지 8건 추출", "done", timed ? "14:24:04" : ""],
     ["정서 발달 연관 논문 분석 중", "active", timed ? "14:24:58" : ""],
@@ -2533,7 +2665,7 @@ function StatusList({ title, timed = false }: { title: string; timed?: boolean }
       <div className="status-steps">
         {steps.map(([label, state, time]) => (
           <div className={`status-row ${state}`} key={`${title}-${label}`}>
-            <span>{state === "done" && <SvgIcon src={chatCheckIcon} />}</span>
+            <span>{state === "done" && <SvgIcon src={chatCheckIcon} />}{state === "pending" && <SvgIcon src={rawPageIcon} />}</span>
             <p>{label}</p>
             {time && <time>{time}</time>}
           </div>
