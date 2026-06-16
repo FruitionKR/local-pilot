@@ -17,7 +17,9 @@ import { buildGraphFromBackend } from "../../_lib/graph";
 export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
+  const [sidebarWidth, setSidebarWidth] = useState(260);
   const [sourcePreviewWidth, setSourcePreviewWidth] = useState(400);
+  const sidebarResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const sourcePreviewResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const projectTree = useProjectTree();
   const {
@@ -39,6 +41,17 @@ export function HomeWorkspace() {
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
 
+  function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sidebarResizeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: sidebarWidth
+    };
+  }
+
   function startSourcePreviewResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -51,13 +64,27 @@ export function HomeWorkspace() {
   }
 
   function updateSourcePreviewResize(event: ReactPointerEvent<HTMLElement>) {
-    const resize = sourcePreviewResizeRef.current;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-    const nextWidth = Math.min(640, Math.max(300, resize.startWidth + event.clientX - resize.startX));
+    const sidebarResize = sidebarResizeRef.current;
+    if (sidebarResize && sidebarResize.pointerId === event.pointerId) {
+      const nextWidth = Math.min(460, Math.max(220, sidebarResize.startWidth + event.clientX - sidebarResize.startX));
+      setSidebarWidth(nextWidth);
+      return;
+    }
+
+    const sourceResize = sourcePreviewResizeRef.current;
+    if (!sourceResize || sourceResize.pointerId !== event.pointerId) return;
+    const maxWidth = Math.max(360, window.innerWidth - sidebarWidth - (isAgentPanelOpen ? 430 : 24) - 120);
+    const nextWidth = Math.min(maxWidth, Math.max(300, sourceResize.startWidth + event.clientX - sourceResize.startX));
     setSourcePreviewWidth(nextWidth);
   }
 
   function stopSourcePreviewResize(event: ReactPointerEvent<HTMLElement>) {
+    const sidebarResize = sidebarResizeRef.current;
+    if (sidebarResize?.pointerId === event.pointerId) {
+      sidebarResizeRef.current = null;
+      return;
+    }
+
     const resize = sourcePreviewResizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
     sourcePreviewResizeRef.current = null;
@@ -66,7 +93,10 @@ export function HomeWorkspace() {
   return (
     <main
       className={`workspace ${isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : ""} ${hasSourcePreview ? "has-source-preview" : ""}`}
-      style={{ "--source-preview-width": `${sourcePreviewWidth}px` } as CSSProperties}
+      style={{
+        "--sidebar-width": `${sidebarWidth}px`,
+        "--source-preview-width": `${sourcePreviewWidth}px`
+      } as CSSProperties}
       onClick={selection.clearTreeGraphSelection}
       onPointerMove={updateSourcePreviewResize}
       onPointerUp={stopSourcePreviewResize}
@@ -87,6 +117,7 @@ export function HomeWorkspace() {
             contextMenu={projectTree.contextMenu}
             uploadInputRef={upload.uploadInputRef}
             onOpenUploadPicker={upload.openUploadPicker}
+            onResizeStart={startSidebarResize}
             onUploadPickerChange={upload.handleUploadPickerChange}
             onMoveItem={projectTree.moveTreeEntry}
             onDropFiles={upload.dropUploadFiles}
@@ -97,7 +128,7 @@ export function HomeWorkspace() {
             onDragEnd={projectTree.onDragEnd}
             onContextMenuProject={projectTree.openProjectMenu}
             onContextMenuItem={projectTree.openFolderMenu}
-            onSelectGraphNode={(nodeId, itemId) => selection.selectTreeGraphNode(itemId, nodeId)}
+            onSelectGraphNode={selection.selectTreeGraphNode}
             onEditingChange={projectTree.onEditingChange}
             onCommitEditing={projectTree.commitEditing}
             onCancelEditing={projectTree.cancelEditing}
@@ -109,6 +140,8 @@ export function HomeWorkspace() {
           {selection.selectedDocumentTitle && (
             <SourcePreviewPanel
               title={selection.selectedDocumentTitle}
+              pageId={selection.selectedPreviewTarget?.pageId ?? null}
+              pageType={selection.selectedPreviewTarget?.pageType ?? null}
               width={sourcePreviewWidth}
               onResizeStart={startSourcePreviewResize}
             />
@@ -130,7 +163,12 @@ export function HomeWorkspace() {
             </button>
           )}
 
-          {isAgentPanelOpen && <AgentPanel onClose={() => setIsAgentPanelOpen(false)} />}
+          {isAgentPanelOpen && (
+            <AgentPanel
+              onClose={() => setIsAgentPanelOpen(false)}
+              onOpenWikiPage={selection.openWikiPagePreview}
+            />
+          )}
         </>
       ) : (
         <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />

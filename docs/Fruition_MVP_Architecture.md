@@ -414,7 +414,7 @@ sequenceDiagram
 7. Wiki Builder는 반환 결과를 객체 스토리지의 `wiki/` prefix에 Markdown 파일로 저장.
 8. `AppDB`에 문서와 생성된 Wiki 페이지의 연결 관계(`document_wiki_links`), 처리 성공/실패(`documents.status`), 오류 메시지(`documents.error_message`)를 저장.
 
-PDF 파싱과 LLM 호출은 수십 초 이상 걸릴 수 있어서, 업로드 API는 원본 저장과 `documents` 레코드 생성까지만 처리하고 즉시 `status = processing` 응답을 돌려줘요(위 시퀀스의 `업로드 완료 / 처리 시작 응답`). 실제 Wiki 생성은 Spring `@Async`로 백그라운드에서 진행하고, 웹 클라이언트는 `documents.status`를 polling해서 완료/실패를 확인해요. 별도 작업 큐(`jobs`)는 MVP에서 도입하지 않고, 재시도가 필요해지면 전체 시스템 확장의 `processing_jobs`로 분리해요.
+PDF 파싱과 LLM 호출은 수십 초 이상 걸릴 수 있어서, 업로드 API는 원본 저장과 `documents` 레코드 생성까지만 처리하고 즉시 `status = processing` 응답을 돌려줘요(위 시퀀스의 `업로드 완료 / 처리 시작 응답`). 실제 Wiki 생성은 Spring이 FastAPI pipeline에 처리 요청을 보내고, pipeline이 백그라운드에서 진행해 DB 상태를 갱신하는 방식으로 처리해요. 웹 클라이언트는 `documents.status`를 polling해서 완료/실패를 확인해요. 별도 작업 큐(`jobs`)는 MVP에서 도입하지 않고, 재시도가 필요해지면 전체 시스템 확장의 `processing_jobs`로 분리해요.
 
 ## 5. Wiki 기반 자연어 질의 흐름
 
@@ -464,11 +464,13 @@ sequenceDiagram
     "wiki/sources/karpathy-llm-wiki.md",
     "wiki/concepts/llm-wiki.md"
   ],
-  "source_references": [
+  "evidence_snippets": [
     {
-      "document_id": "doc_123",
-      "page": 3,
-      "paragraph": 2
+      "page_id": "source:doc_123",
+      "page_type": "source",
+      "rank": 1,
+      "paragraph_index": 2,
+      "text": "원본 근거 문장"
     }
   ]
 }

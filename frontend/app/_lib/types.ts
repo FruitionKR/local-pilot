@@ -103,6 +103,98 @@ export type BackendData = {
   graph: WikiGraphResponse;
 };
 
+export type QueryRelatedPageResponse = {
+  id: string;
+  page_type: string;
+  title: string;
+  slug: string;
+  relevance_score: number;
+  role: string;
+  depth: number;
+};
+
+export type QueryEvidenceSnippetResponse = {
+  page_id: string;
+  page_type: string;
+  page_title: string;
+  page_slug: string;
+  page_url: string;
+  page_role: string;
+  text: string;
+  score: number;
+  rank: number;
+  paragraph_index: number;
+  sentence_index: number;
+};
+
+export type QueryMessageSummary = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: string;
+  created_at: string;
+};
+
+export type QueryResponse = {
+  user_message: QueryMessageSummary;
+  assistant_message: QueryMessageSummary;
+  related_pages: QueryRelatedPageResponse[];
+  evidence_snippets: QueryEvidenceSnippetResponse[];
+};
+
+export type ChatMessageReferenceResponse = {
+  id: number;
+  reference_type: string;
+  wiki_page_id?: string;
+  document_id?: string;
+  page_role?: string;
+  relevance_score: number;
+  rank?: number;
+  page_number?: number;
+  paragraph_index?: number;
+  sentence_index?: number;
+  quote?: string;
+};
+
+export type ChatMessageResponse = QueryMessageSummary & {
+  references: ChatMessageReferenceResponse[];
+};
+
+export type ChatMessagesResponse = {
+  messages: ChatMessageResponse[];
+};
+
+export type WikiPageSourceDocument = {
+  id: string;
+  filename: string;
+  source_uri: string;
+  relation_type: string;
+  confidence: number;
+};
+
+export type WikiPageRelatedPage = {
+  id: string;
+  page_type: string;
+  title: string;
+  slug: string;
+  link_type: string;
+  label?: string | null;
+  confidence: number;
+};
+
+export type WikiPageDetailResponse = {
+  id: string;
+  page_type: string;
+  title: string;
+  slug: string;
+  summary?: string;
+  markdown_uri?: string;
+  markdown?: string;
+  status: string;
+  source_documents: WikiPageSourceDocument[];
+  related_pages: WikiPageRelatedPage[];
+};
+
 export type GraphNode = {
   id: string;
   label: string;

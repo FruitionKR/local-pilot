@@ -95,6 +95,36 @@ PDF 입력은 신뢰할 수 없는 파일로 보고 converter 컨테이너 안�
 compose 설정은 root filesystem을 read-only로 두고, Linux capability를 제거하며,
 작업 파일은 `/tmp` tmpfs에만 생성합니다.
 
+## GitHub Webhook 알림
+
+Discord의 GitHub Webhook 연동을 사용하면 별도 workflow 없이 저장소 이벤트를
+Discord 채널로 보낼 수 있습니다. 이 저장소에서는 Pull Request 이벤트를
+Discord로 받을 수 있도록 GitHub repository webhook을 설정합니다.
+
+설정 절차:
+
+1. Discord에서 알림을 받을 채널의 `Edit Channel` > `Integrations` > `Webhooks`로 이동합니다.
+2. 새 Webhook을 만들고 Webhook URL을 복사합니다.
+3. GitHub 저장소의 `Settings` > `Webhooks`로 이동합니다.
+4. `Add webhook`을 선택합니다.
+5. `Payload URL`에 Discord Webhook URL 끝에 `/github`을 붙여 입력합니다.
+6. `Content type`은 `application/json`을 선택합니다.
+7. `Secret`은 비워둡니다. Discord의 GitHub Webhook endpoint는 GitHub 서명 검증 secret을 따로 처리하지 않습니다.
+8. `Which events would you like to trigger this webhook?`에서 `Let me select individual events`를 선택합니다.
+9. `Pull requests`만 선택하고 `Active`를 켠 뒤 `Add webhook`으로 저장합니다.
+
+GitHub Webhook 설정은 모든 Pull Request 이벤트를 Discord로 전달합니다.
+GitHub repository webhook과 Discord의 기본 GitHub 연동만으로는 GitHub Actions처럼
+`opened`, `reopened`, `ready_for_review` 또는 대상 브랜치가 `dev`/`main`인지까지
+저장소 코드에서 세밀하게 제한할 수 없습니다. 알림량을 줄이려면 Discord 채널을
+별도로 두거나, 더 세밀한 필터가 필요할 때 GitHub Actions 또는 중간 Webhook
+receiver를 사용합니다.
+
+Webhook URL은 해당 Discord 채널에 메시지를 보낼 수 있는 비밀값입니다. 저장소에는
+URL을 커밋하지 않고 GitHub repository webhook 설정에만 저장합니다. URL 교체가
+필요하면 Discord에서 기존 Webhook을 삭제하거나 재생성한 뒤 GitHub Webhook의
+`Payload URL`을 갱신합니다.
+
 ## 중지
 
 ```sh

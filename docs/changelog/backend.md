@@ -6,6 +6,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-16
 
+### feat: Wiki page 상세 응답에 markdown 본문 포함
+
+**배경**
+
+프론트 원문 viewer에서 source/concept Wiki page의 실제 markdown 본문을 바로 렌더링해야 했습니다. 기존 상세 API는 `markdown_uri`만 제공해 프론트가 원문 내용을 표시할 수 없었습니다.
+
+**추가/변경된 것**
+
+- `WikiService.findById()` — `markdown_uri`가 가리키는 MinIO object를 읽어 `markdown` 필드로 함께 반환
+- `s3://{bucket}/...` 형식과 object key 형식을 모두 처리하도록 object path 정규화 추가
+- markdown 읽기 실패 시 상세 조회 자체는 유지하고 `markdown`만 비워두도록 처리
+
+**검증**
+
+- `./gradlew test` 통과.
+- 로컬 API에서 `GET /api/wiki/pages/{wiki_page_id}` 응답에 source/concept markdown이 포함되는 것을 확인.
+
 ### feat: Spring 백엔드 Query API 구현 (POST /api/query)
 
 **배경**
@@ -19,7 +36,7 @@ FastAPI 파이프라인이 제공하는 그래프 기반 자연어 질의응답�
 - `QueryController` — `QueryService` 주입 및 스텁 제거
 - `QueryResponse` — pipeline 출력 형식으로 재구성 (`HighlightedPath`, `QueryRelatedPage`, `SourceReference` DTO 제거)
 - `application.properties` — `app.query.endpoint`, `app.query.timeout-seconds` 환경변수 추가
-- `docs/spec/backend-query-api.md` — Query API 스펙 문서 추가
+- `docs/backlog/backend-query-api.md` — Query API 구현 전 스펙 문서 추가
 
 **주의사항**
 FastAPI pipeline 주소는 `QUERY_ENDPOINT` 환경변수로 주입하며 기본값은 `http://localhost:8000/query`입니다.
