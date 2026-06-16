@@ -1,0 +1,26 @@
+import type { TreeItem } from "../../_lib/types";
+import { isFileItem } from "../../_lib/tree";
+import {
+  archiveIcon,
+  arrowIcon,
+  conceptPageIcon,
+  fileIcon,
+  sourcePageIcon,
+  SvgIcon
+} from "../SvgIcon";
+
+export function TreeNodeIcon({
+  item,
+  hasChildren,
+  isOpen
+}: {
+  item: TreeItem;
+  hasChildren: boolean;
+  isOpen: boolean;
+}) {
+  if (isFileItem(item)) return <SvgIcon src={fileIcon} className="tree-asset" />;
+  if (item.wikiKind === "source") return <SvgIcon src={sourcePageIcon} className="tree-asset source" />;
+  if (item.wikiKind === "concept") return <SvgIcon src={conceptPageIcon} className="tree-asset" />;
+  if (hasChildren) return <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />;
+  return <SvgIcon src={archiveIcon} className="tree-asset" />;
+}
