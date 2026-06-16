@@ -6,6 +6,23 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-16
 
+### refactor: 홈 화면 렌더링 컴포넌트 분리
+
+**변경 배경**
+
+- `frontend/app/page.tsx`에 topbar, rail, Agent panel, source preview, SVG 렌더링 코드가 함께 있어 화면 단위 수정과 Figma 비교 작업의 변경 범위가 커지고 있었다.
+
+**변경된 내용**
+
+- `frontend/app/_components/` 폴더를 추가하고 `TopBar`, `RailNavigation`, `AgentPanel`, `SourcePreviewPanel`, `SvgIcon`을 분리했다.
+- `page.tsx`는 홈 화면 상태 관리와 문서 트리/graph 흐름을 중심으로 남기고, 정적 UI 조각은 개별 컴포넌트 파일에서 관리하도록 정리했다.
+- rail 항목과 SVG asset export를 컴포넌트 폴더로 옮겨 sidebar/agent/graph에서 같은 아이콘 렌더러를 재사용하도록 구성했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+
 ### fix: Agent 패널 상태 표시와 입력창 여백 보정
 
 **변경 배경**
