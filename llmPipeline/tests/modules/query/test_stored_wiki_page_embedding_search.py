@@ -89,7 +89,56 @@ class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
         self.assertEqual(scores, [0.25])
         self.assertEqual(fallback.calls, [("query", ["Missing document"])])
 
+    def test_falls_back_for_invalid_stored_vector(self) -> None:
+        document = "Broken vector document"
+        document_hash = hashlib.sha256(document.encode("utf-8")).hexdigest()
+        fallback = FakeFallbackSearch()
+        search = StoredWikiPageEmbeddingSearch(
+            embedding_model=FakeEmbeddingModel(),
+            fallback_search=fallback,
+        )
+
+        with patch(
+            "app.modules.query.infrastructure.stored_wiki_page_embedding_search.database.connect",
+            return_value=FakeConnection(
+                [
+                    {
+                        "representation_hash": document_hash,
+                        "embedding_vector": "-",
+                    }
+                ]
+            ),
+        ):
+            scores = search.score("query", [document])
+
+        self.assertEqual(scores, [0.25])
+        self.assertEqual(fallback.calls, [("query", [document])])
+
+    def test_clamps_negative_similarity_to_zero(self) -> None:
+        document = "Opposite vector document"
+        document_hash = hashlib.sha256(document.encode("utf-8")).hexdigest()
+        fallback = FakeFallbackSearch()
+        search = StoredWikiPageEmbeddingSearch(
+            embedding_model=FakeEmbeddingModel(),
+            fallback_search=fallback,
+        )
+
+        with patch(
+            "app.modules.query.infrastructure.stored_wiki_page_embedding_search.database.connect",
+            return_value=FakeConnection(
+                [
+                    {
+                        "representation_hash": document_hash,
+                        "embedding_vector": [-1.0, 0.0],
+                    }
+                ]
+            ),
+        ):
+            scores = search.score("query", [document])
+
+        self.assertEqual(scores, [0.0])
+        self.assertEqual(fallback.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()
-

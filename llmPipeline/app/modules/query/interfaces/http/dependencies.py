@@ -7,7 +7,9 @@ from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWik
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
 from app.modules.query.infrastructure.query_chat_answer_generator import build_query_chat_answer_generator
 from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
+from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
+from app.modules.query.infrastructure.web_search import build_web_search
 
 
 @lru_cache(maxsize=1)
@@ -20,6 +22,9 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
         embedding_search=_build_embedding_search(text_search),
         text_search=text_search,
         answer_generator=build_query_chat_answer_generator(),
+        query_rewriter=RuleBasedQueryRewriter(),
+        web_search=build_web_search(),
+        min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
     )
 
 
@@ -28,3 +33,10 @@ def _build_embedding_search(text_search: Bm25Searcher):
     if mode in {"text-only", "bm25", "lexical"}:
         return text_search
     return StoredWikiPageEmbeddingSearch()
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default

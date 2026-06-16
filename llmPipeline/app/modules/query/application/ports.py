@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
 
 
 class WikiRepositoryPort(Protocol):
@@ -23,6 +23,16 @@ class EmbeddingSearchPort(Protocol):
 
 class TextSearchPort(Protocol):
     def score(self, query: str, documents: list[str]) -> list[float]:
+        ...
+
+
+class QueryRewritePort(Protocol):
+    def rewrite(self, question: str) -> QueryRewrite:
+        ...
+
+
+class WebSearchPort(Protocol):
+    def search(self, query: str) -> list[WebSearchResult]:
         ...
 
 
