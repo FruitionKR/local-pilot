@@ -30,7 +30,7 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         query_vector = self._embedding_model.embed([query])[0]
         for index, document_hash in enumerate(document_hashes):
             document_vector = stored_vectors.get(document_hash)
-            if document_vector is None:
+            if document_vector is None or len(document_vector) != len(query_vector):
                 missing_indexes.append(index)
                 missing_documents.append(documents[index])
                 continue
@@ -61,7 +61,29 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
                 """,
                 (self._embedding_model.model_name, unique_hashes),
             ).fetchall()
-        return {row["representation_hash"]: [float(value) for value in row["embedding_vector"]] for row in rows}
+        vectors = {}
+        for row in rows:
+            vector = self._parse_vector(row["embedding_vector"])
+            if vector:
+                vectors[row["representation_hash"]] = vector
+        return vectors
+
+    def _parse_vector(self, value) -> list[float]:
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if cleaned.startswith("[") and cleaned.endswith("]"):
+                cleaned = cleaned[1:-1]
+            parts = [part.strip() for part in cleaned.split(",") if part.strip()]
+        else:
+            parts = list(value or [])
+
+        vector = []
+        for part in parts:
+            try:
+                vector.append(float(part))
+            except (TypeError, ValueError):
+                return []
+        return vector
 
     def _hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -69,4 +91,3 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
     def _dot(self, left: list[float], right: list[float]) -> float:
         value = float(sum(a * b for a, b in zip(left, right)))
         return max(0.0, min(1.0, value))
-

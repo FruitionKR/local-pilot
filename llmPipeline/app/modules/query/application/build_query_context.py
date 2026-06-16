@@ -109,7 +109,7 @@ class BuildQueryContextUseCase:
                         page_type=item.page.page_type,
                         page_title=item.page.title,
                         page_slug=item.page.slug,
-                        page_url=self._page_url(item.page.id),
+                        page_url=self._page_url(item.page),
                         page_role=item.role,
                         text=sentence,
                         score=sentence_score,
@@ -251,6 +251,8 @@ class BuildQueryContextUseCase:
         prefix = " " * spaces
         return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
 
-    def _page_url(self, page_id: str) -> str:
-        return f"/api/wiki/pages/{page_id}"
+    def _page_url(self, page) -> str:
+        if page.page_type == "web" and page.markdown_uri:
+            return page.markdown_uri
+        return f"/api/wiki/pages/{page.id}"
 

@@ -2,7 +2,7 @@ import unittest
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
-from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
 from app.modules.query.domain.exceptions import InvalidQuestionError
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
 
@@ -13,6 +13,16 @@ class ScoreSearch:
 
     def score(self, query: str, documents: list[str]) -> list[float]:
         return [self._scores_by_title.get(document.splitlines()[0], 0.0) for document in documents]
+
+
+class RecordingScoreSearch(ScoreSearch):
+    def __init__(self, scores_by_title: dict[str, float]) -> None:
+        super().__init__(scores_by_title)
+        self.queries: list[str] = []
+
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        self.queries.append(query)
+        return super().score(query, documents)
 
 
 class EmptyTextSearch:
@@ -43,6 +53,24 @@ class RecordingAnswerGenerator:
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         self.last_context = context
         return GeneratedAnswer(content="테스트 답변입니다. [1]")
+
+
+class FixedQueryRewriter:
+    def __init__(self, rewritten_query: str) -> None:
+        self.rewritten_query = rewritten_query
+
+    def rewrite(self, question: str) -> QueryRewrite:
+        return QueryRewrite(original_question=question, retrieval_query=self.rewritten_query, keywords=self.rewritten_query.split())
+
+
+class FakeWebSearch:
+    def __init__(self, results: list[WebSearchResult]) -> None:
+        self.results = results
+        self.queries: list[str] = []
+
+    def search(self, query: str) -> list[WebSearchResult]:
+        self.queries.append(query)
+        return self.results
 
 
 def source_page(page_id: str, title: str) -> WikiPage:
@@ -284,6 +312,108 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.retrieval_summary.stop_reason, "no_relevant_seed")
         self.assertIn("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.", result.answer.content)
         self.assertNotIn("Transformer", result.answer.content)
+
+    def test_uses_rewritten_query_for_retrieval(self) -> None:
+        pages = [
+            source_page("source:attention", "Lecture Attention"),
+            concept_page("concept:self-attention", "Self Attention"),
+        ]
+        embedding_search = RecordingScoreSearch(
+            {
+                "Lecture Attention": 0.90,
+                "Self Attention": 0.95,
+            }
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=embedding_search,
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("self attention token"),
+        )
+
+        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
+
+        self.assertTrue(embedding_search.queries)
+        self.assertTrue(all(query == "self attention token" for query in embedding_search.queries))
+
+    def test_falls_back_to_web_search_when_internal_relevance_is_low(self) -> None:
+        pages = [source_page("source:seed", "Seed Source")]
+        web_search = FakeWebSearch(
+            [
+                WebSearchResult(
+                    title="External RAG Reference",
+                    url="https://example.com/rag",
+                    snippet="RAG retrieves external knowledge and uses it to ground generated answers.",
+                    score=0.91,
+                )
+            ]
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Seed Source": 0.10}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("rag external knowledge"),
+            web_search=web_search,
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("RAG가 뭐야?")
+
+        self.assertEqual(web_search.queries, ["rag external knowledge"])
+        self.assertEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
+        self.assertEqual(result.traversal_paths, [])
+        self.assertEqual(result.related_pages[0].page.page_type, "web")
+        self.assertEqual(result.related_pages[0].page.markdown_uri, "https://example.com/rag")
+        self.assertEqual(result.evidence_snippets[0].page_url, "https://example.com/rag")
+        self.assertIn("[1]", result.answer.content)
+
+    def test_direct_concept_name_match_can_answer_without_relevant_source_seed(self) -> None:
+        pages = [
+            source_page("source:solar-system", "Solar System Source"),
+            concept_page("concept:sun", "태양"),
+            concept_page("concept:solar-system", "태양계"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:solar-system",
+                to_page_id="concept:sun",
+                link_type="source_mentions_concept",
+                confidence=0.97,
+            )
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Solar System Source": 0.0,
+                    "태양": 0.20,
+                    "태양계": 0.30,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:solar-system.md": "태양계는 태양과 행성으로 구성됩니다.",
+                    "s3://test/concept:sun.md": "태양은 태양계의 중심에 있는 별입니다.",
+                    "s3://test/concept:solar-system.md": "태양계는 태양, 행성, 위성 등으로 이루어진 천체 체계입니다.",
+                }
+            ),
+            query_rewriter=FixedQueryRewriter("태양"),
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("태양이 뭐야?")
+
+        self.assertEqual(result.retrieval_summary.stop_reason, "concept_direct_match")
+        self.assertIn("concept:sun", {item.page.id for item in result.related_pages})
+        self.assertIn("source_mentions_concept", {edge.link_type for edge in result.graph_context.edges})
+        self.assertEqual(result.traversal_paths[0].stop_reason, "concept_direct_match")
+        self.assertEqual(result.traversal_paths[0].nodes, ["source:solar-system", "concept:sun"])
+        self.assertIn("태양은 태양계의 중심", result.evidence_snippets[0].text)
+        self.assertIn("[1]", result.answer.content)
 
     def test_traverses_without_configured_max_depth_limit(self) -> None:
         pages = [
