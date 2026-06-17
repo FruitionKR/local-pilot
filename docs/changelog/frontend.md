@@ -6,6 +6,22 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-17
 
+### fix: 접힌 Agent 패널 복원 버튼을 graph legend에 통합
+
+**변경 배경**
+
+- 오른쪽 Agent 패널을 접었을 때 복원 버튼이 graph filter chip과 분리되어 Figma `v1`의 축소 sidebar legend 구조와 달랐다.
+
+**변경된 내용**
+
+- Agent 패널이 접힌 상태에서는 `원본 raw`, `source page`, `concept page` chip 뒤에 패널 복원 아이콘 버튼이 같은 legend 그룹으로 표시되도록 변경했다.
+- graph filter chip과 복원 아이콘 버튼의 간격, 크기, dark theme 색상을 Figma 구조에 맞춰 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+
 ### fix: 자료관리 프로젝트 추가 버튼 동작 수정
 
 **변경 배경**

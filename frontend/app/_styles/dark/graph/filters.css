@@ -6,16 +6,34 @@
   gap: 12px;
 }
 
-.filter-chips span {
+.filter-chips span,
+.filter-chip-action {
   min-height: 36px;
-  gap: 6px;
-  padding: 10px 14px;
   color: #e2e2e2;
   background: #1e1e1e;
   border-color: #4f4f4f;
   border-radius: 32px;
   box-shadow: none;
+}
+
+.filter-chips span {
+  gap: 6px;
+  padding: 10px 14px;
   font-size: 12px;
+}
+
+.filter-chip-action {
+  width: 44px;
+}
+
+.filter-chip-action:hover,
+.filter-chip-action:focus-visible {
+  background: #323232;
+}
+
+.filter-chip-action .svg-icon {
+  width: 28px;
+  height: 28px;
 }
 
 .chip-icon.raw,
