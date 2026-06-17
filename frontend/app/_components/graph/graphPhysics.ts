@@ -1,5 +1,5 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH, graphNodeKind, randomBetween } from "../../_lib/graph";
+import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH, graphNodeKind } from "../../_lib/graph";
 
 export type GraphLinkForce = GraphLink & {
   idealDistance: number;
@@ -14,37 +14,32 @@ export type GraphPairForce = {
   minDistance: number;
 };
 
-export function buildNodeSizes(nodes: GraphNode[], nodeDegrees: Record<string, number>) {
-  return nodes.reduce<Record<string, number>>((sizes, node) => {
-    const degree = nodeDegrees[node.id] ?? 0;
-    if (node.kind === "raw") sizes[node.id] = Math.min(26, 16 + degree * 4);
-    else if (node.kind === "source") sizes[node.id] = Math.min(44, 22 + degree * 3.2);
-    else if (node.kind === "progress") sizes[node.id] = Math.min(38, 22 + degree * 4);
-    else sizes[node.id] = Math.min(32, 15 + degree * 3.5);
-    return sizes;
-  }, {});
-}
+const FIXED_NODE_SIZE = {
+  concept: 14,
+  raw: 14,
+  source: 14
+} as const;
 
-export function buildNodeDegrees(nodes: GraphNode[], links: GraphLink[]) {
-  return nodes.reduce<Record<string, number>>((degrees, node) => {
-    degrees[node.id] = links.filter((link) => link.from === node.id || link.to === node.id).length;
-    return degrees;
+export function buildNodeSizes(nodes: GraphNode[]) {
+  return nodes.reduce<Record<string, number>>((sizes, node) => {
+    if (node.kind === "raw") sizes[node.id] = FIXED_NODE_SIZE.raw;
+    else if (node.kind === "source") sizes[node.id] = FIXED_NODE_SIZE.source;
+    else sizes[node.id] = FIXED_NODE_SIZE.concept;
+    return sizes;
   }, {});
 }
 
 export function buildLinkForces({
   links,
-  nodes,
-  nodeDegrees
+  nodes
 }: {
   links: GraphLink[];
   nodes: GraphNode[];
-  nodeDegrees: Record<string, number>;
 }) {
   return links.map((link) => ({
     ...link,
     idealDistance: idealLinkDistanceValue(link, nodes),
-    weight: 1 + Math.min(0.85, ((nodeDegrees[link.from] ?? 0) + (nodeDegrees[link.to] ?? 0)) * 0.035)
+    weight: 1
   }));
 }
 
@@ -73,31 +68,92 @@ export function buildPairForces({
   );
 }
 
-export function createRandomNodePositions(nodes: GraphNode[]) {
-  const outerRadiusX = GRAPH_WIDTH * 0.32;
-  const outerRadiusY = GRAPH_HEIGHT * 0.29;
-  const innerRadiusX = GRAPH_WIDTH * 0.16;
-  const innerRadiusY = GRAPH_HEIGHT * 0.14;
-  const primaryNodeId = nodes.find((node) => node.kind === "source")?.id ?? nodes[0]?.id;
+export function createSourceCenteredNodePositions(nodes: GraphNode[], links: GraphLink[]) {
+  const sourceNodes = nodes.filter((node) => node.kind === "source");
+  if (sourceNodes.length === 0) return createFallbackCirclePositions(nodes);
 
+  const sourcePositions = buildSourcePositions(sourceNodes);
+  const sourceIds = new Set(sourceNodes.map((node) => node.id));
+  const groupedNodes = new Map(sourceNodes.map((source) => [source.id, [] as GraphNode[]]));
+
+  nodes
+    .filter((node) => node.kind !== "source")
+    .forEach((node) => {
+      const sourceId = nearestSourceId(node.id, sourceIds, groupedNodes, links) ?? sourceNodes[0].id;
+      groupedNodes.get(sourceId)?.push(node);
+    });
+
+  const positions: NodePositionMap = { ...sourcePositions };
+
+  sourceNodes.forEach((source, sourceIndex) => {
+    const center = sourcePositions[source.id] ?? GRAPH_CENTER;
+    const grouped = groupedNodes.get(source.id) ?? [];
+    const rawNodes = grouped.filter((node) => node.kind === "raw");
+    const relatedNodes = grouped.filter((node) => node.kind !== "raw");
+    const baseAngle = -Math.PI / 2 + (sourceIndex * Math.PI) / Math.max(2, sourceNodes.length);
+
+    rawNodes.forEach((node, index) => {
+      positions[node.id] = circlePosition(center, 52, index, rawNodes.length, baseAngle + Math.PI / 6);
+    });
+
+    relatedNodes.forEach((node, index) => {
+      positions[node.id] = circlePosition(center, 126, index, relatedNodes.length, baseAngle);
+    });
+  });
+
+  return Object.fromEntries(nodes.map((node) => [node.id, positions[node.id] ?? GRAPH_CENTER]));
+}
+
+function buildSourcePositions(sourceNodes: GraphNode[]) {
+  if (sourceNodes.length === 1) return { [sourceNodes[0].id]: GRAPH_CENTER };
+
+  const radius = Math.min(150, Math.max(76, sourceNodes.length * 18));
   return Object.fromEntries(
-    nodes.map((node) => {
-      if (node.id === primaryNodeId) return [node.id, GRAPH_CENTER];
-
-      const isPrimaryNode = node.kind === "source" || node.kind === "progress";
-      const angle = randomBetween(0, Math.PI * 2);
-      const ringIndex = isPrimaryNode || Math.random() > 0.58 ? 0 : 1;
-      const radiusX = ringIndex === 0 ? outerRadiusX : innerRadiusX;
-      const radiusY = ringIndex === 0 ? outerRadiusY : innerRadiusY;
-      const jitterX = randomBetween(-38, 38);
-      const jitterY = randomBetween(-30, 30);
-
-      return [node.id, {
-        x: GRAPH_CENTER.x + Math.cos(angle) * radiusX + jitterX,
-        y: GRAPH_CENTER.y + Math.sin(angle) * radiusY + jitterY
-      }];
-    })
+    sourceNodes.map((source, index) => [
+      source.id,
+      circlePosition(GRAPH_CENTER, radius, index, sourceNodes.length, -Math.PI / 2)
+    ])
   );
+}
+
+function nearestSourceId(
+  nodeId: string,
+  sourceIds: Set<string>,
+  groupedNodes: Map<string, GraphNode[]>,
+  links: GraphLink[]
+) {
+  const candidates = Array.from(new Set(
+    links
+      .map((link) => {
+        if (link.from === nodeId && sourceIds.has(link.to)) return link.to;
+        if (link.to === nodeId && sourceIds.has(link.from)) return link.from;
+        return null;
+      })
+      .filter((sourceId): sourceId is string => Boolean(sourceId))
+  ));
+
+  if (candidates.length === 0) return null;
+  return candidates.sort((sourceA, sourceB) =>
+    (groupedNodes.get(sourceA)?.length ?? 0) - (groupedNodes.get(sourceB)?.length ?? 0)
+  )[0];
+}
+
+function createFallbackCirclePositions(nodes: GraphNode[]) {
+  if (nodes.length === 1) return { [nodes[0].id]: GRAPH_CENTER };
+  return Object.fromEntries(
+    nodes.map((node, index) => [
+      node.id,
+      circlePosition(GRAPH_CENTER, 126, index, nodes.length, -Math.PI / 2)
+    ])
+  );
+}
+
+function circlePosition(center: NodePosition, radius: number, index: number, total: number, offset = 0) {
+  const angle = offset + (Math.PI * 2 * index) / Math.max(1, total);
+  return {
+    x: Math.min(GRAPH_WIDTH, Math.max(0, center.x + Math.cos(angle) * radius)),
+    y: Math.min(GRAPH_HEIGHT, Math.max(0, center.y + Math.sin(angle) * radius))
+  };
 }
 
 export function getGraphDistances(links: GraphLink[], sourceId: string) {
@@ -296,7 +352,6 @@ function idealLinkDistanceValue(link: GraphLink, nodes: GraphNode[]) {
   let distance = GRAPH_PHYSICS.linkDistance.concept;
   if (kinds.every((kind) => kind === "source")) distance = GRAPH_PHYSICS.linkDistance.source;
   else if (kinds.includes("raw")) distance = GRAPH_PHYSICS.linkDistance.raw;
-  else if (kinds.includes("progress")) distance = GRAPH_PHYSICS.linkDistance.progress;
   else if (kinds.includes("source") && kinds.includes("concept")) distance = GRAPH_PHYSICS.linkDistance.sourceConcept;
   return distance * GRAPH_PHYSICS.linkDistanceMultiplier;
 }

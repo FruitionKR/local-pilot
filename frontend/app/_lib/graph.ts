@@ -2,8 +2,7 @@ import type { DocumentItemResponse, GraphLink, GraphNode, WikiGraphResponse } fr
 
 export const GRAPH_WIDTH = 746;
 export const GRAPH_HEIGHT = 568;
-export const GRAPH_CACHE_KEY = "fruition.graph.layout.v5";
-export const FOCUS_TRANSITION_MS = 500;
+export const GRAPH_CACHE_KEY = "fruition.graph.layout.v7";
 export const GRAPH_CENTER = { x: GRAPH_WIDTH / 2, y: GRAPH_HEIGHT / 2 };
 export const GRAPH_ZOOM = {
   min: 0.62,
@@ -17,7 +16,7 @@ export const GRAPH_PHYSICS = {
   revealCenterBoost: 1.7,
   revealLinkBoost: 2.8,
   revealDamping: 0.72,
-  originStrength: 0,
+  originStrength: 0.008,
   repulsionStrength: 0.006,
   repulsionRange: 260,
   collisionRadiusMultiplier: 0.32,
@@ -28,7 +27,6 @@ export const GRAPH_PHYSICS = {
   linkDistance: {
     source: 178,
     raw: 92,
-    progress: 132,
     sourceConcept: 88,
     concept: 98,
     fallback: 118
@@ -43,10 +41,6 @@ export function graphNodeKind(node: GraphNode) {
   return node.kind ?? "concept";
 }
 
-export function randomBetween(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
-
 export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: WikiGraphResponse) {
   const backendSourceByDocumentId = new Map(
     (graph.nodes ?? [])
@@ -56,17 +50,14 @@ export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: 
   const rawNodes: GraphNode[] = documents.map((document) => ({
     id: `raw:${document.id}`,
     label: document.filename,
-    kind: "raw" as const,
-    loading: document.status === "processing" || document.status === "uploaded"
+    kind: "raw" as const
   }));
   const sourceNodes: GraphNode[] = documents.map((document) => {
     const backendSource = backendSourceByDocumentId.get(document.id);
     return {
       id: `source:${document.id}`,
       label: backendSource?.title || document.filename,
-      kind: "source" as const,
-      size: 32,
-      loading: document.status === "processing" || document.status === "uploaded" || document.status === "failed"
+      kind: "source" as const
     };
   });
   const conceptNodes: GraphNode[] = (graph.nodes ?? [])

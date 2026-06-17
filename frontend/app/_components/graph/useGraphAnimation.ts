@@ -4,12 +4,14 @@ import type { NodePositionMap } from "../../_lib/types";
 
 export function useGraphAnimation({
   tickGraphRef,
+  advanceHoverAnimationRef,
   nodePositionsRef,
   draggingNodeIdRef,
   drawGraphRef,
   scheduleGraphCacheWrite
 }: {
   tickGraphRef: MutableRefObject<(positions: NodePositionMap, anchorId: string | null) => NodePositionMap>;
+  advanceHoverAnimationRef: MutableRefObject<(deltaMs: number) => boolean>;
   nodePositionsRef: MutableRefObject<NodePositionMap>;
   draggingNodeIdRef: MutableRefObject<string | null>;
   drawGraphRef: MutableRefObject<() => void>;
@@ -18,8 +20,13 @@ export function useGraphAnimation({
   useEffect(() => {
     let frameId = 0;
     let lastFrame = 0;
+    let lastHoverFrame = 0;
 
     const animate = (time: number) => {
+      const hoverDelta = lastHoverFrame > 0 ? time - lastHoverFrame : 16;
+      lastHoverFrame = time;
+      const hoverChanged = advanceHoverAnimationRef.current(hoverDelta);
+
       if (time - lastFrame > 32) {
         lastFrame = time;
         const anchorId = draggingNodeIdRef.current;
@@ -29,6 +36,8 @@ export function useGraphAnimation({
           scheduleGraphCacheWrite();
         }
         drawGraphRef.current();
+      } else if (hoverChanged) {
+        drawGraphRef.current();
       }
 
       frameId = requestAnimationFrame(animate);
@@ -36,5 +45,5 @@ export function useGraphAnimation({
 
     frameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId);
-  }, [draggingNodeIdRef, drawGraphRef, nodePositionsRef, scheduleGraphCacheWrite, tickGraphRef]);
+  }, [advanceHoverAnimationRef, draggingNodeIdRef, drawGraphRef, nodePositionsRef, scheduleGraphCacheWrite, tickGraphRef]);
 }

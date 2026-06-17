@@ -6,16 +6,18 @@ import { drawGraphFrame } from "./graphDrawing";
 import { clampGraphPan, clampGraphPosition, clampGraphZoom, graphToCanvasPosition } from "./graphGeometry";
 import {
   buildLinkForces,
-  buildNodeDegrees,
   buildNodeSizes,
   buildPairForces,
-  createRandomNodePositions,
+  createSourceCenteredNodePositions,
   getGraphDistances,
   resolveGraphCollisions,
   tickGraphPositions
 } from "./graphPhysics";
 import { useGraphAnimation } from "./useGraphAnimation";
 import { useGraphPointer } from "./useGraphPointer";
+
+const HOVER_SMOOTHING_MS = 320;
+const HOVER_SETTLE_THRESHOLD = 0.002;
 
 export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
   nodes: GraphNode[];
@@ -24,12 +26,15 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   onOpenNodePreview: (node: GraphNode) => void;
 }) {
   const graphSignature = useMemo(
-    () => `api-layout-v1:${nodes.map((node) => node.id).sort().join("|")}`,
-    [nodes]
+    () => {
+      const nodeSignature = nodes.map((node) => node.id).sort().join("|");
+      const linkSignature = links.map((link) => linkKey(link.from, link.to)).sort().join("|");
+      return `api-layout-v3:${nodeSignature}:${linkSignature}`;
+    },
+    [links, nodes]
   );
   const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-  const nodeDegrees = useMemo(() => buildNodeDegrees(nodes, links), [links, nodes]);
-  const nodeSizes = useMemo(() => buildNodeSizes(nodes, nodeDegrees), [nodeDegrees, nodes]);
+  const nodeSizes = useMemo(() => buildNodeSizes(nodes), [nodes]);
   const linkedNodePairs = useMemo(() => new Set(links.map((link) => linkKey(link.from, link.to))), [links]);
 
   function isRawSourceLink(link: GraphLink) {
@@ -40,10 +45,10 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   }
 
   function nodeSize(node: GraphNode) {
-    return nodeSizes[node.id] ?? 20;
+    return nodeSizes[node.id] ?? 14;
   }
 
-  const linkForces = useMemo(() => buildLinkForces({ links, nodes, nodeDegrees }), [links, nodeDegrees, nodes]);
+  const linkForces = useMemo(() => buildLinkForces({ links, nodes }), [links, nodes]);
   const pairForces = useMemo(
     () => buildPairForces({ nodes, linkedNodePairs, nodeSize, linkKey }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,7 +56,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   );
 
   const initialNodePositions = useMemo(
-    () => createRandomNodePositions(nodes),
+    () => createSourceCenteredNodePositions(nodes, links),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [graphSignature]
   );
@@ -72,25 +77,26 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     return readGraphCacheForCurrentGraph()?.zoom ?? 1;
   }
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [visibleNodeCount, setVisibleNodeCount] = useState(0);
   const [graphZoom, setGraphZoom] = useState(cachedOrInitialZoomForCurrentGraph);
   const [graphPan, setGraphPan] = useState<NodePosition>(cachedOrInitialPanForCurrentGraph);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const nodePositionsRef = useRef<NodePositionMap>(cachedOrInitialPositionsForCurrentGraph());
-  const selectedNodeIdRef = useRef(selectedNodeId);
+  const selectedNodeIdRef = useRef<string | null>(null);
+  const hoveredNodeIdRef = useRef<string | null>(null);
+  const nodeHoverAmountsRef = useRef<Record<string, number>>({});
   const externalFocusedNodeIdRef = useRef<string | null>(focusedNodeId);
   const draggingNodeIdRef = useRef(draggingNodeId);
   const visibleNodeCountRef = useRef(visibleNodeCount);
   const graphZoomRef = useRef(graphZoom);
   const graphPanRef = useRef(graphPan);
   const panDragRef = useRef<{ pointerId: number; button: number; startX: number; startY: number; startPan: NodePosition } | null>(null);
-  const focusTransitionRef = useRef<{ from: string | null; to: string | null; startedAt: number }>({ from: null, to: null, startedAt: 0 });
   const isPointerHeldRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const cacheWriteRef = useRef<number | null>(null);
   const tickGraphRef = useRef<(positions: NodePositionMap, anchorId: string | null) => NodePositionMap>((positions) => positions);
+  const advanceHoverAnimationRef = useRef<(deltaMs: number) => boolean>(() => false);
   const drawGraphRef = useRef<() => void>(() => {});
   const isRevealingGraph = visibleNodeCount < nodes.length;
 
@@ -110,15 +116,12 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     setGraphPan(nextPan);
     setGraphZoom(nextZoom);
     setVisibleNodeCount(nodes.length);
-    setSelectedNodeId(null);
     selectedNodeIdRef.current = null;
+    hoveredNodeIdRef.current = null;
+    nodeHoverAmountsRef.current = {};
     drawGraphRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphSignature, initialNodePositions]);
-
-  useEffect(() => {
-    selectedNodeIdRef.current = selectedNodeId;
-  }, [selectedNodeId]);
 
   useEffect(() => {
     externalFocusedNodeIdRef.current = focusedNodeId;
@@ -131,7 +134,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   useEffect(() => {
     visibleNodeCountRef.current = visibleNodeCount;
     drawGraphRef.current();
-  }, [visibleNodeCount, selectedNodeId]);
+  }, [visibleNodeCount]);
 
   useEffect(() => {
     graphZoomRef.current = graphZoom;
@@ -208,13 +211,8 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
 
   const setFocusedNode = useCallback((nodeId: string | null) => {
     if (selectedNodeIdRef.current === nodeId) return;
-    focusTransitionRef.current = {
-      from: selectedNodeIdRef.current,
-      to: nodeId,
-      startedAt: performance.now()
-    };
     selectedNodeIdRef.current = nodeId;
-    setSelectedNodeId(nodeId);
+    hoveredNodeIdRef.current = nodeId;
     drawGraphRef.current();
   }, []);
 
@@ -276,7 +274,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
       visibleNodeCount: visibleNodeCountRef.current,
       positions: nodePositionsRef.current,
       initialNodePositions,
-      focusTransition: focusTransitionRef.current,
+      nodeHoverAmounts: nodeHoverAmountsRef.current,
       graphToCanvas,
       nodeSize,
       isRawSourceLink
@@ -284,6 +282,41 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   }
 
   drawGraphRef.current = drawGraph;
+
+  function advanceHoverAnimation(deltaMs: number) {
+    const targetNodeId = hoveredNodeIdRef.current;
+    const amounts = nodeHoverAmountsRef.current;
+    const smoothing = 1 - Math.exp(-deltaMs / HOVER_SMOOTHING_MS);
+    let changed = false;
+
+    Object.keys(amounts).forEach((nodeId) => {
+      if (nodeById.has(nodeId)) return;
+      delete amounts[nodeId];
+      changed = true;
+    });
+
+    nodes.forEach((node) => {
+      const target = node.id === targetNodeId ? 1 : 0;
+      const current = amounts[node.id] ?? 0;
+      const next = current + (target - current) * smoothing;
+      const settled = Math.abs(next - target) <= HOVER_SETTLE_THRESHOLD ? target : next;
+
+      if (Math.abs(settled - current) > HOVER_SETTLE_THRESHOLD) changed = true;
+      if (settled <= HOVER_SETTLE_THRESHOLD && target === 0) {
+        if (amounts[node.id] !== undefined) {
+          delete amounts[node.id];
+          changed = true;
+        }
+        return;
+      }
+
+      amounts[node.id] = settled;
+    });
+
+    return changed;
+  }
+
+  advanceHoverAnimationRef.current = advanceHoverAnimation;
 
   function clampZoom(nextZoom: number) {
     return clampGraphZoom(nextZoom);
@@ -321,6 +354,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
 
   useGraphAnimation({
     tickGraphRef,
+    advanceHoverAnimationRef,
     nodePositionsRef,
     draggingNodeIdRef,
     drawGraphRef,

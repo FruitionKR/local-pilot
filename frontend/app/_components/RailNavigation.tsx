@@ -27,7 +27,7 @@ export function RailNavigation({ activeView, onViewChange }: { activeView: RailV
           aria-pressed={activeView === item.id}
           onClick={() => onViewChange(item.id)}
         >
-          <span className="rail-icon"><SvgIcon src={item.icon} /></span>
+          <span className={`rail-icon ${item.id === "logs" ? "is-collection" : ""}`}><SvgIcon src={item.icon} /></span>
           <span>{item.label}</span>
         </button>
       ))}
