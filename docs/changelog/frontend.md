@@ -19,6 +19,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - 새 프로젝트 추가 직후 프로젝트 이름 편집 상태로 진입하도록 했다.
 - 자료관리 scroll 영역에 scrollbar gutter를 예약해 scrollbar 표시 여부와 관계없이 기존 padding 위치가 유지되도록 했다.
 - Agent 채팅 기록 최초 로딩 후 가장 최근 메시지가 보이도록 scroll 위치를 하단으로 맞췄다.
+- Graph filter의 `source page` chip 아이콘을 `source_page.svg` 자산으로 변경했다.
 
 **검증 결과**
 
