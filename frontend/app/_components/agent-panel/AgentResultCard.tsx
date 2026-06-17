@@ -1,4 +1,4 @@
-import { fileIcon, SvgIcon } from "../SvgIcon";
+import { fileIcon, sourceIcon, SvgIcon } from "../SvgIcon";
 
 export function AgentResultCard({
   title,
@@ -15,10 +15,11 @@ export function AgentResultCard({
     ? pageType.toLowerCase()
     : "source";
   const label = normalizedPageType.slice(0, 1).toUpperCase() + normalizedPageType.slice(1);
+  const icon = normalizedPageType === "source" ? sourceIcon : fileIcon;
 
   return (
     <button className={`result-card ${normalizedPageType}`} type="button" onClick={onClick}>
-      <span className={`file-box ${normalizedPageType}`}><SvgIcon src={fileIcon} /></span>
+      <span className={`file-box ${normalizedPageType}`}><SvgIcon src={icon} /></span>
       <span><strong>{title}</strong><small>{meta}</small></span>
       <b className={normalizedPageType}>{label}</b>
     </button>

@@ -263,6 +263,30 @@ function collectDocumentIds(items: TreeItem[], ids = new Set<string>()) {
   return ids;
 }
 
+function areTreeItemsEqual(left: TreeItem[], right: TreeItem[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((leftItem, index) => areTreeItemsShallowEqual(leftItem, right[index]));
+}
+
+function areTreeItemsShallowEqual(left: TreeItem, right: TreeItem): boolean {
+  return left.id === right.id
+    && left.label === right.label
+    && left.type === right.type
+    && left.wikiKind === right.wikiKind
+    && left.generated === right.generated
+    && left.customLabel === right.customLabel
+    && left.status === right.status
+    && left.errorMessage === right.errorMessage
+    && left.documentId === right.documentId
+    && left.mimeType === right.mimeType
+    && left.byteSize === right.byteSize
+    && left.sourceUri === right.sourceUri
+    && left.uploadedAt === right.uploadedAt
+    && left.graphNodeId === right.graphNodeId
+    && left.active === right.active
+    && areTreeItemsEqual(left.children ?? [], right.children ?? []);
+}
+
 export function mergeBackendDataIntoProjects(projects: Project[], documents: DocumentItemResponse[], graph: WikiGraphResponse) {
   const knownDocumentIds = collectDocumentIds(projects.flatMap((project) => project.items));
   const missingDocuments = documents.filter((document) => !knownDocumentIds.has(document.id));
@@ -281,9 +305,12 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
   }));
   const wikiGroups = buildWikiTreeGroups(graph);
 
-  return projects.map((project, index) => {
+  const nextProjects = projects.map((project, index) => {
     const syncedItems = syncDocumentItems(removeGeneratedWikiGroups(project.items), documents);
-    if (index !== 0) return { ...project, items: syncedItems };
-    return { ...project, items: [...syncedItems, ...backendItems, ...wikiGroups] };
+    const nextItems = index === 0 ? [...syncedItems, ...backendItems, ...wikiGroups] : syncedItems;
+    if (areTreeItemsEqual(project.items, nextItems)) return project;
+    return { ...project, items: nextItems };
   });
+
+  return nextProjects.every((project, index) => project === projects[index]) ? projects : nextProjects;
 }

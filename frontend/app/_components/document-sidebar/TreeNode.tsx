@@ -1,7 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { DropTarget, TreeItem } from "../../_lib/types";
 import { TreeNodeIcon } from "./TreeNodeIcon";
-import { TreeNodeStatus } from "./TreeNodeStatus";
 import type { TreeInteractionProps } from "./types";
 import { useTreeNodeDragDrop } from "./useTreeNodeDragDrop";
 
@@ -106,7 +105,6 @@ export function TreeNode({
           <>
             <span>{item.label}</span>
             {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
-            <TreeNodeStatus status={item.status} />
           </>
         )}
       </button>

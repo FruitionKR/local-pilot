@@ -13,7 +13,7 @@ export function DocumentSidebar({
   editing,
   contextMenu,
   uploadInputRef,
-  onCollapseWorkspace,
+  onOpenUploadPicker,
   onResizeStart,
   onUploadPickerChange,
   onMoveItem,
@@ -41,7 +41,7 @@ export function DocumentSidebar({
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement>;
-  onCollapseWorkspace: () => void;
+  onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
@@ -68,10 +68,10 @@ export function DocumentSidebar({
         <button
           type="button"
           className="sidebar-upload-button"
-          aria-label="자료 관리 접고 워크스페이스 넓히기"
+          aria-label="자료 추가"
           onClick={(event) => {
             event.stopPropagation();
-            onCollapseWorkspace();
+            if (projects[0]) onOpenUploadPicker(projects[0].id, null);
           }}
         >
           <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
@@ -86,38 +86,40 @@ export function DocumentSidebar({
         onChange={onUploadPickerChange}
       />
 
-      {projects.map((project) => (
-        <ProjectSection
-          key={project.id}
-          project={project}
-          draggedItemId={draggedItemId}
-          selectedItemId={selectedItemId}
-          dropTarget={dropTarget}
-          fileDropTarget={fileDropTarget}
-          editing={editing}
-          onMoveItem={onMoveItem}
-          onDropFiles={onDropFiles}
-          onDragStart={onDragStart}
-          onDragOverItem={onDragOverItem}
-          onFileDragOver={onFileDragOver}
-          onFileDragLeave={onFileDragLeave}
-          onDragEnd={onDragEnd}
-          onContextMenuProject={onContextMenuProject}
-          onContextMenuItem={onContextMenuItem}
-          onSelectGraphNode={onSelectGraphNode}
-          onEditingChange={onEditingChange}
-          onCommitEditing={onCommitEditing}
-          onCancelEditing={onCancelEditing}
-        />
-      ))}
-      {contextMenu && (
-        <ContextMenu
-          contextMenu={contextMenu}
-          onRenameContextTarget={onRenameContextTarget}
-          onAddFolderFromContext={onAddFolderFromContext}
-          onDeleteContextTarget={onDeleteContextTarget}
-        />
-      )}
+      <div className="sidebar-content">
+        {projects.map((project) => (
+          <ProjectSection
+            key={project.id}
+            project={project}
+            draggedItemId={draggedItemId}
+            selectedItemId={selectedItemId}
+            dropTarget={dropTarget}
+            fileDropTarget={fileDropTarget}
+            editing={editing}
+            onMoveItem={onMoveItem}
+            onDropFiles={onDropFiles}
+            onDragStart={onDragStart}
+            onDragOverItem={onDragOverItem}
+            onFileDragOver={onFileDragOver}
+            onFileDragLeave={onFileDragLeave}
+            onDragEnd={onDragEnd}
+            onContextMenuProject={onContextMenuProject}
+            onContextMenuItem={onContextMenuItem}
+            onSelectGraphNode={onSelectGraphNode}
+            onEditingChange={onEditingChange}
+            onCommitEditing={onCommitEditing}
+            onCancelEditing={onCancelEditing}
+          />
+        ))}
+        {contextMenu && (
+          <ContextMenu
+            contextMenu={contextMenu}
+            onRenameContextTarget={onRenameContextTarget}
+            onAddFolderFromContext={onAddFolderFromContext}
+            onDeleteContextTarget={onDeleteContextTarget}
+          />
+        )}
+      </div>
       <button
         type="button"
         className="sidebar-resize-handle"

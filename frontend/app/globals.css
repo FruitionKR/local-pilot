@@ -220,24 +220,32 @@ button {
   inset: 60px auto 0 68px;
   z-index: 7;
   width: 260px;
+  display: flex;
+  flex-direction: column;
   padding: 27px 16px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #c9d1dc transparent;
+  overflow: hidden;
   background: #fff;
   border-right: 1px solid var(--line);
 }
 
-.sidebar::-webkit-scrollbar {
+.sidebar-content {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c9d1dc transparent;
+}
+
+.sidebar-content::-webkit-scrollbar {
   width: 8px;
 }
 
-.sidebar::-webkit-scrollbar-track {
+.sidebar-content::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+.sidebar-content::-webkit-scrollbar-thumb {
   background: #c9d1dc;
   border: 2px solid #fff;
   border-radius: 999px;
@@ -245,9 +253,13 @@ button {
 
 .sidebar h1 {
   margin: 0 0 34px;
+  color: var(--secondary-050, #f0f0f0);
+  font-family: Pretendard;
   font-size: 20px;
+  font-style: normal;
   font-weight: 600;
-  line-height: 1;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .create-project {
@@ -700,7 +712,7 @@ button {
 .filter-chips {
   position: absolute;
   top: 29px;
-  right: 25px;
+  right: 0;
   z-index: 4;
   display: flex;
   gap: 14px;
@@ -1608,11 +1620,11 @@ input {
 }
 
 .rail-icon .svg-icon {
-  width: 22px;
-  height: 22px;
+  width: 23px;
+  height: 23px;
 }
 
-.rail-icon.is-collection .svg-icon {
+.rail-icon.is-large .svg-icon {
   width: 36px;
   height: 36px;
 }
@@ -1636,10 +1648,18 @@ input {
 .sidebar {
   inset: 65px auto 0 60px;
   width: var(--sidebar-width, 260px);
+  display: flex;
+  flex-direction: column;
   padding: 16px 0 0;
+  overflow: hidden;
   background: #1e1e1e;
-  border-right-color: transparent;
-  scrollbar-color: #4f4f4f transparent;
+  border-top: 1px solid #4f4f4f;
+  border-right-color: #4f4f4f;
+  border-top-right-radius: 24px;
+}
+
+.workspace.has-source-preview .sidebar {
+  border-top-right-radius: 0;
 }
 
 .sidebar-resize-handle {
@@ -1661,10 +1681,19 @@ input {
   right: 0;
   bottom: 0;
   width: 1px;
-  background: #4f4f4f;
+  background: transparent;
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+.sidebar-content {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4f4f4f transparent;
+}
+
+.sidebar-content::-webkit-scrollbar-thumb {
   background: #4f4f4f;
   border-color: #1e1e1e;
 }
@@ -1692,10 +1721,13 @@ input {
 .sidebar h1 {
   min-width: 0;
   margin: 0;
-  color: #f0f0f0;
+  color: var(--secondary-050, #f0f0f0);
+  font-family: Pretendard;
   font-size: 20px;
+  font-style: normal;
   font-weight: 600;
   line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .sidebar-upload-button {
@@ -1721,6 +1753,8 @@ input {
 .sidebar-upload-icon {
   width: 28px;
   height: 28px;
+  display: block;
+  object-fit: contain;
 }
 
 .sidebar-restore {
@@ -1855,6 +1889,11 @@ input {
   color: #8a8a8a;
 }
 
+.tree-asset {
+  width: 18px;
+  height: 18px;
+}
+
 .tree-asset.raw,
 .tree-row.is-selected .tree-asset.raw {
   color: #c4c4c4;
@@ -1923,9 +1962,10 @@ input {
   flex-direction: column;
   color: #f0f0f0;
   background: #1e1e1e;
-  border-right: 1px solid transparent;
+  border-top: 1px solid #4f4f4f;
+  border-right: 1px solid #4f4f4f;
   border-left: 0;
-  border-top-right-radius: 0;
+  border-top-right-radius: 24px;
 }
 
 .workspace.is-sidebar-collapsed .source-preview-panel {
@@ -1951,7 +1991,7 @@ input {
   right: 0;
   bottom: 0;
   width: 1px;
-  background: #4f4f4f;
+  background: transparent;
 }
 
 .source-preview-panel header {
@@ -2203,20 +2243,21 @@ input {
 
 .filter-chips {
   top: 28px;
-  right: 28px;
+  right: 0;
   left: auto;
   gap: 12px;
 }
 
 .filter-chips span {
-  height: 30px;
+  min-height: 36px;
   gap: 6px;
-  padding: 0 12px;
+  padding: 10px 14px;
   color: #e2e2e2;
   background: #1e1e1e;
   border-color: #4f4f4f;
+  border-radius: 32px;
   box-shadow: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .chip-icon.raw,
@@ -2229,7 +2270,7 @@ input {
 }
 
 .agent-panel {
-  inset: 93px 24px 24px auto;
+  inset: 93px 24px 28px auto;
   width: 380px;
   grid-template-rows: 83px 1fr 77px;
   color: #f0f0f0;
@@ -2258,6 +2299,11 @@ input {
   padding: 6px;
 }
 
+.agent-mark .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .agent-header h2 {
   color: #f0f0f0;
   font-size: 16px;
@@ -2280,8 +2326,8 @@ input {
 }
 
 .panel-action .svg-icon {
-  width: 14px;
-  height: 13px;
+  width: 28px;
+  height: 28px;
 }
 
 .agent-restore {
@@ -2294,7 +2340,7 @@ input {
 }
 
 .agent-body {
-  padding: 20px 22px 0;
+  padding: 31px 22px 0;
   scrollbar-color: #4f4f4f transparent;
 }
 
@@ -2332,6 +2378,11 @@ input {
   width: 28px;
   height: 28px;
   padding: 6px;
+}
+
+.mini-mark .svg-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .status-list {
@@ -2439,11 +2490,11 @@ input {
 }
 
 .file-box.source {
-  color: var(--source-page);
+  color: #c4c4c4;
 }
 
 .file-box.concept {
-  color: var(--concept-page);
+  color: #c4c4c4;
 }
 
 .result-card small {
@@ -2461,13 +2512,13 @@ input {
 }
 
 .result-card b.source {
-  color: #0a0a0a;
-  background: var(--source-page);
+  color: #f0f0f0;
+  background: #323232;
 }
 
 .result-card b.concept {
-  color: #0a0a0a;
-  background: var(--concept-page);
+  color: #f0f0f0;
+  background: #323232;
 }
 
 .typing i {

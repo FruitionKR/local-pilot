@@ -11,6 +11,7 @@ import lightningIcon from "../../svg/LightningBoltOutline.svg";
 import rawPageIcon from "../../svg/raw.svg";
 import searchIcon from "../../svg/search.svg";
 import sideboxIcon from "../../svg/sidebox.svg";
+import sourceIcon from "../../svg/source.svg";
 import sourcePageIcon from "../../svg/source_page.svg";
 import sparkleIcon from "../../svg/icon.svg";
 import settingIcon from "../../svg/uil_setting.svg";
@@ -35,6 +36,7 @@ export {
   rawPageIcon,
   searchIcon,
   sideboxIcon,
+  sourceIcon,
   sourcePageIcon,
   sparkleIcon,
   settingIcon,
@@ -63,16 +65,6 @@ export function SvgIcon({ src, className }: { src: SvgAsset; className?: string 
         <path fillRule="evenodd" clipRule="evenodd" d="M27.7667 13.8833C27.7667 17.5654 26.304 21.0967 23.7003 23.7003C21.0967 26.304 17.5654 27.7667 13.8833 27.7667C10.2012 27.7667 6.66996 26.304 4.06633 23.7003C1.4627 21.0967 0 17.5654 0 13.8833C0 10.2012 1.4627 6.66996 4.06633 4.06633C6.66996 1.4627 10.2012 0 13.8833 0C17.5654 0 21.0967 1.4627 23.7003 4.06633C26.304 6.66996 27.7667 10.2012 27.7667 13.8833Z" fill="currentColor" opacity="0.55" />
         <path d="M16.999 13.2058C17.7679 12.4369 18.1999 11.394 18.1999 10.3067C18.1999 9.21926 17.7679 8.17641 16.999 7.40751C16.2301 6.63861 15.1873 6.20665 14.0999 6.20665C13.0125 6.20665 11.9696 6.63861 11.2007 7.40751C10.4318 8.17641 9.99988 9.21926 9.99988 10.3067C9.99988 11.394 10.4318 12.4369 11.2007 13.2058C11.9696 13.9747 13.0125 14.4067 14.0999 14.4067C15.1873 14.4067 16.2301 13.9747 16.999 13.2058Z" fill="currentColor" />
         <path d="M8.65361 18.0829C10.249 17.049 12.1047 16.4997 14.0001 16.5001C15.8955 16.4997 17.7512 17.049 19.3466 18.0829C20.5706 18.876 21.602 19.6344 22.3726 20.7306C22.8182 21.3644 22.6896 22.2199 22.1277 22.7533C21.1937 23.6397 20.1216 24.3692 18.9516 24.911C17.3982 25.6304 15.709 26.0019 14.0001 26C12.2912 26.0019 10.6021 25.6304 9.04863 24.911C7.87868 24.3692 6.80652 23.6397 5.87259 22.7533C5.3106 22.2199 5.18207 21.3644 5.62768 20.7306C6.39828 19.6344 7.4296 18.876 8.65361 18.0829Z" fill="currentColor" />
-      </svg>
-    );
-  }
-
-  if (src === fileIcon) {
-    return (
-      <svg aria-hidden className={iconClassName} viewBox="0 0 18 18" fill="none">
-        <path d="M10.09 2.33L14.42 6.65L14.6 6.83V14C14.6 14.49 14.41 14.96 14.06 15.31C13.71 15.66 13.24 15.85 12.75 15.85H5.25C4.76 15.85 4.29 15.66 3.94 15.31C3.59 14.96 3.4 14.49 3.4 14V4C3.4 3.51 3.59 3.04 3.94 2.69C4.29 2.34 4.76 2.15 5.25 2.15H9.91L10.09 2.33Z" fill="currentColor" opacity="0.3" />
-        <path d="M10.47 2.5L14.22 6.25H10.47V2.5Z" fill="currentColor" opacity="0.85" />
-        <path d="M10.09 2.33L14.42 6.65L14.6 6.83V14C14.6 14.49 14.41 14.96 14.06 15.31C13.71 15.66 13.24 15.85 12.75 15.85H5.25C4.76 15.85 4.29 15.66 3.94 15.31C3.59 14.96 3.4 14.49 3.4 14V4C3.4 3.51 3.59 3.04 3.94 2.69C4.29 2.34 4.76 2.15 5.25 2.15H9.91L10.09 2.33Z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
