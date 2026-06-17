@@ -20,10 +20,10 @@ export function AgentComposer({
 
   return (
     <form className="composer" onSubmit={submitComposer}>
-      <Plus size={18} />
+      <Plus size={16} />
       <input
         value={value}
-        placeholder="메시지를 입력하세요..."
+        placeholder="메시지를 입력하세요…"
         disabled={isLoading}
         onChange={(event) => onChange(event.target.value)}
       />

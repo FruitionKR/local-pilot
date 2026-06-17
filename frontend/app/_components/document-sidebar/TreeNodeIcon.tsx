@@ -3,9 +3,8 @@ import { isFileItem } from "../../_lib/tree";
 import {
   archiveIcon,
   arrowIcon,
-  conceptPageIcon,
   fileIcon,
-  sourcePageIcon,
+  sourceIcon,
   SvgIcon
 } from "../SvgIcon";
 
@@ -18,9 +17,9 @@ export function TreeNodeIcon({
   hasChildren: boolean;
   isOpen: boolean;
 }) {
-  if (isFileItem(item)) return <SvgIcon src={fileIcon} className="tree-asset" />;
-  if (item.wikiKind === "source") return <SvgIcon src={sourcePageIcon} className="tree-asset source" />;
-  if (item.wikiKind === "concept") return <SvgIcon src={conceptPageIcon} className="tree-asset" />;
+  if (isFileItem(item)) return <SvgIcon src={fileIcon} className="tree-asset raw" />;
+  if (item.wikiKind === "source") return <SvgIcon src={sourceIcon} className="tree-asset source" />;
+  if (item.wikiKind === "concept") return <SvgIcon src={fileIcon} className="tree-asset concept" />;
   if (hasChildren) return <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />;
   return <SvgIcon src={archiveIcon} className="tree-asset" />;
 }

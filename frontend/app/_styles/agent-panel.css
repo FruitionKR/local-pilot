@@ -1,0 +1,6 @@
+@import "./agent-panel/shell.css";
+@import "./agent-panel/conversation.css";
+@import "./agent-panel/status.css";
+@import "./agent-panel/answer.css";
+@import "./agent-panel/results.css";
+@import "./agent-panel/composer.css";

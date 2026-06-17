@@ -4,6 +4,129 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-17
+
+### refactor: CSS 영역별 세부 파일 분리
+
+**변경 배경**
+
+- `document-sidebar`, `agent-panel`, `graph` CSS가 영역 단위 파일로는 여전히 커서 세부 컴포넌트별 스타일 위치를 찾기 어려웠다.
+- Figma 기준 보정이 반복되는 영역을 shell, 상태, 결과, tree, node 등 실제 UI 역할 단위로 더 좁혀 관리할 필요가 있었다.
+
+**변경된 내용**
+
+- `frontend/app/_styles/document-sidebar/` 아래로 shell, project section, tree row, context menu 스타일을 분리했다.
+- `frontend/app/_styles/agent-panel/` 아래로 shell, conversation, status, answer, results, composer 스타일을 분리했다.
+- `frontend/app/_styles/graph/` 아래로 stage, filters, lines, nodes 스타일을 분리했다.
+- dark override도 요청 범위에 맞춰 `dark/document-sidebar/`, `dark/agent-panel/`, `dark/graph/` 하위 파일로 세분화했다.
+- 기존 `document-sidebar.css`, `agent-panel.css`, `graph.css`와 dark entry 파일은 import entry로 유지해 cascade 순서를 보존했다.
+
+**검증 결과**
+
+- 분리된 CSS 파일을 순서대로 합친 결과가 직전 entry 파일 내용과 동일함을 확인했다.
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+
+### refactor: CSS 파일 구조 분리
+
+**변경 배경**
+
+- `frontend/app/globals.css` 한 파일에 base, workspace, sidebar, graph, Agent panel, dark override 스타일이 모두 들어 있어 Figma 보정 시 변경 범위를 파악하기 어려웠다.
+
+**변경된 내용**
+
+- 전역 CSS entry를 `frontend/app/_styles/globals.css`로 이동하고, `layout.tsx`의 import 경로를 갱신했다.
+- 기존 CSS 내용을 base/workspace/rail/document-sidebar/graph/agent-panel/responsive 영역과 dark override 영역으로 분리했다.
+- 분리 과정에서 기존 cascade 순서와 CSS 내용을 유지하도록 파일 import 순서를 구성했다.
+
+**검증 결과**
+
+- 분리된 CSS 파일을 순서대로 합친 결과가 기존 `frontend/app/globals.css`와 동일함을 확인했다.
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+
+### fix: Agent 패널 Figma 보정과 sidebar tree 안정화
+
+**변경 배경**
+
+- backend polling 시 sidebar tree가 실제 데이터 변경 없이도 새 객체로 교체되어 채팅 답변 표시와 겹칠 때 새로고침처럼 보일 수 있었다.
+- Figma `v1`의 Agent 패널 node와 비교했을 때 결과 card badge 색상, body 상단 여백, 패널 하단 간격이 일부 어긋나 있었다.
+- 자료 관리 header와 Agent sidebar의 접기/추가 아이콘이 Figma 기준보다 작게 표시됐다.
+- 원본문서 preview 유무에 따라 자료 관리 sidebar와 원본문서 패널의 우상단 곡률과 border가 Figma 기준과 어긋나 있었다.
+
+**변경된 내용**
+
+- backend 데이터 merge 결과가 기존 sidebar tree와 같으면 기존 project/tree 참조를 유지하도록 비교 로직을 추가했다.
+- Agent 패널의 body 상단 여백, 하단 inset, 결과 card의 file icon과 badge 색상을 Figma dark panel 기준으로 보정했다.
+- 자료 관리 header 오른쪽 버튼과 Agent sidebar collapse 버튼 내부 아이콘 크기를 28px 기준으로 보정했다.
+- 원본문서 preview가 없을 때는 자료 관리 sidebar 우상단을 둥글게, preview가 있을 때는 원본문서 패널 우상단을 둥글게 표시하도록 보정했다.
+- 둥근 모서리 영역의 상단/우측 border가 끊기지 않도록 sidebar와 원본문서 패널 border를 보정했다.
+- file icon 렌더링을 inline SVG override 대신 `frontend/svg/file.svg` 자산을 그대로 사용하도록 변경했다.
+- Query Agent의 `Source` 결과 card는 `frontend/svg/source.svg` 자산을 사용하도록 분기했다.
+- 자료 관리 sidebar의 source 항목도 `frontend/svg/source.svg` 자산을 사용하도록 변경했다.
+- 자료 관리 tree에서 `failed`, `completed`, 로딩 상태 chip 표기를 제거했다.
+- 자료 관리 heading typography를 Figma 기준의 Pretendard 20px, 600 weight, 120% line-height로 보정했다.
+- 자료 관리 sidebar header는 고정하고 tree 영역만 sidebar 내부에서 scroll되도록 구조를 분리했다.
+- 자료 관리 header 오른쪽 버튼은 sidebar collapse 대신 기존 자료 추가 picker를 열도록 되돌렸다.
+- 자료 관리 header 오른쪽 버튼 내부 아이콘을 버튼 영역과 동일한 28px × 28px로 보정했다.
+- graph filter chip padding과 typography를 Figma legend 기준으로 보정했다.
+- graph filter의 `source page` chip 아이콘도 `source.svg` 자산을 사용하도록 변경했다.
+- graph filter chip 그룹이 graph-stage 오른쪽 끝에 붙도록 위치를 보정했다.
+- Agent sidebar collapse 버튼 내부 아이콘을 28px × 28px로 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3001` 응답 `200 OK` 확인.
+- 변경 파일 기준 secret 후보 검색에서 실제 비밀값 없음.
+
+### feat: Agent 응답 연출과 그래프 아이콘 보정
+
+**변경 배경**
+
+- Query Agent 답변이 한 번에 표시되어 Figma 기준의 단계적 응답 흐름과 차이가 있었다.
+- raw/source/concept 자료가 sidebar, 결과 card, graph에서 서로 다른 아이콘과 색상 체계로 보여 식별성이 떨어졌다.
+- 자료 관리 sidebar를 접고 graph workspace를 넓혀 보는 동작이 필요했다.
+
+**변경된 내용**
+
+- 새 assistant 응답을 상태 목록, 근거 자료, 답변 본문 순서로 단계적으로 노출하고 최신 메시지로 부드럽게 scroll되도록 조정했다.
+- raw/source/concept 항목의 file icon 색상과 결과 badge 색상을 통일하고, raw graph node에 `raw.svg` 자산을 적용했다.
+- 자료 관리 sidebar 접기/복원 버튼을 추가하고 sidebar 접힘 상태에서 graph와 원문 preview 위치가 남은 workspace를 사용하도록 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- 변경 파일 기준 secret 후보 검색에서 실제 비밀값 없음.
+
+### fix: Figma 기준 그래프와 Agent UI 보정
+
+**변경 배경**
+
+- Figma `v1` 화면과 비교했을 때 중앙 검색 바, 왼쪽 rail 아이콘, 오른쪽 Agent 패널, graph node 색상과 hover 전환이 실제 화면과 어긋나 있었다.
+- graph hover 시 화면 dimming과 링크 강조가 즉시 바뀌어 마우스를 빠르게 움직이면 화면이 버벅이는 것처럼 보였다.
+- Query Agent 채팅 기록 로딩 실패와 질의 처리 실패 상태가 같은 UI로 표시되어 실제 오류 원인을 구분하기 어려웠다.
+
+**변경된 내용**
+
+- Figma 값 기준으로 topbar 검색창, Agent 패널, 좌측 rail 아이콘, source/concept/raw node 색상과 크기를 보정했다.
+- `search.svg`, `CollectionOutLine.svg` 등 교체된 SVG 자산을 실제 UI 렌더링 경로에 연결했다.
+- Query Agent 답변 UI를 상태 목록, 검색 결과, 답변 본문 영역으로 나누고 채팅 기록 로딩 실패와 질의 실패 표시를 분리했다.
+- graph loading node 표현과 연결 수 기반 node 크기 확대를 제거하고, source page를 기준으로 관련 node가 원형 배치되도록 변경했다.
+- graph hover 시 node 색상, 화면 dimming, 링크 강조가 노드별 보간값을 따라 천천히 fade in/out 되도록 조정했다.
+
+**검증 결과**
+
+- `npm run build` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+- `/api/wiki/graph` 정상 응답 확인.
+
+---
+
 ## 2026-06-16
 
 ### feat: Query Agent 채팅과 원문 viewer 연동

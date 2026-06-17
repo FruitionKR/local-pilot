@@ -1,11 +1,12 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { FOCUS_TRANSITION_MS } from "../../_lib/graph";
+import rawNodeIcon from "../../../svg/raw.svg";
 
-type FocusTransition = {
-  from: string | null;
-  to: string | null;
-  startedAt: number;
-};
+const SOURCE_PAGE_COLOR = "#bbcf6c";
+const CONCEPT_PAGE_COLOR = "#fffdf0";
+const HOVER_NODE_COLOR = "#ffc117";
+const RAW_NODE_ICON_SRC = rawNodeIcon.src;
+
+let rawNodeImage: HTMLImageElement | null = null;
 
 export function drawGraphFrame({
   canvas,
@@ -14,7 +15,7 @@ export function drawGraphFrame({
   visibleNodeCount,
   positions,
   initialNodePositions,
-  focusTransition,
+  nodeHoverAmounts,
   graphToCanvas,
   nodeSize,
   isRawSourceLink
@@ -25,7 +26,7 @@ export function drawGraphFrame({
   visibleNodeCount: number;
   positions: NodePositionMap;
   initialNodePositions: NodePositionMap;
-  focusTransition: FocusTransition;
+  nodeHoverAmounts: Record<string, number>;
   graphToCanvas: (position: NodePosition, canvas: HTMLCanvasElement) => NodePosition;
   nodeSize: (node: GraphNode) => number;
   isRawSourceLink: (link: GraphLink) => boolean;
@@ -47,49 +48,32 @@ export function drawGraphFrame({
   context.clearRect(0, 0, cssWidth, cssHeight);
   const drawableNodeCount = Math.min(visibleNodeCount, nodes.length);
   const visibleNodeIds = new Set(nodes.slice(0, drawableNodeCount).map((node) => node.id));
-  const rawProgress = Math.min(1, Math.max(0, (performance.now() - focusTransition.startedAt) / FOCUS_TRANSITION_MS));
-  const transitionProgress = rawProgress * rawProgress * (3 - rawProgress * 2);
+  const linkedHoverAmounts = new Map<string, number>();
+  let activeHoverAmount = 0;
 
-  function directNodeIds(focusNodeId: string | null) {
-    const focusedNodeIds = new Set<string>();
-    if (!focusNodeId || !visibleNodeIds.has(focusNodeId)) return focusedNodeIds;
-    focusedNodeIds.add(focusNodeId);
-    for (const link of links) {
-      if (!visibleNodeIds.has(link.from) || !visibleNodeIds.has(link.to)) continue;
-      if (link.from !== focusNodeId && link.to !== focusNodeId) continue;
-      focusedNodeIds.add(link.from === focusNodeId ? link.to : link.from);
-    }
-    return focusedNodeIds;
-  }
+  nodes.slice(0, drawableNodeCount).forEach((node) => {
+    const hoverAmount = nodeHoverAmounts[node.id] ?? 0;
+    linkedHoverAmounts.set(node.id, hoverAmount);
+    activeHoverAmount = Math.max(activeHoverAmount, hoverAmount);
+  });
 
-  const previousFocusedNodeIds = directNodeIds(focusTransition.from);
-  const nextFocusedNodeIds = directNodeIds(focusTransition.to);
+  links.forEach((link) => {
+    if (!visibleNodeIds.has(link.from) || !visibleNodeIds.has(link.to)) return;
+    const fromHoverAmount = nodeHoverAmounts[link.from] ?? 0;
+    const toHoverAmount = nodeHoverAmounts[link.to] ?? 0;
 
-  function mix(previous: number, next: number) {
-    return previous + (next - previous) * transitionProgress;
-  }
-
-  function nodeFocusAmount(nodeId: string) {
-    const previous = focusTransition.from ? (previousFocusedNodeIds.has(nodeId) ? 1 : 0) : 1;
-    const next = focusTransition.to ? (nextFocusedNodeIds.has(nodeId) ? 1 : 0) : 1;
-    return mix(previous, next);
-  }
-
-  function nodeSelectedAmount(nodeId: string) {
-    return mix(focusTransition.from === nodeId ? 1 : 0, focusTransition.to === nodeId ? 1 : 0);
-  }
-
-  function linkFocusAmount(link: GraphLink) {
-    const previous = focusTransition.from ? (link.from === focusTransition.from || link.to === focusTransition.from ? 1 : 0) : 1;
-    const next = focusTransition.to ? (link.from === focusTransition.to || link.to === focusTransition.to ? 1 : 0) : 1;
-    return mix(previous, next);
-  }
-
-  function linkHighlightAmount(link: GraphLink) {
-    return mix(
-      focusTransition.from && (link.from === focusTransition.from || link.to === focusTransition.from) ? 1 : 0,
-      focusTransition.to && (link.from === focusTransition.to || link.to === focusTransition.to) ? 1 : 0
+    linkedHoverAmounts.set(
+      link.from,
+      Math.max(linkedHoverAmounts.get(link.from) ?? 0, fromHoverAmount, toHoverAmount)
     );
+    linkedHoverAmounts.set(
+      link.to,
+      Math.max(linkedHoverAmounts.get(link.to) ?? 0, fromHoverAmount, toHoverAmount)
+    );
+  });
+
+  function focusAmountFromHover(hoverAmount: number) {
+    return Math.min(1, Math.max(0, 1 - activeHoverAmount + hoverAmount));
   }
 
   for (const link of links) {
@@ -99,10 +83,10 @@ export function drawGraphFrame({
     const fromScreen = graphToCanvas(from, canvas);
     const toScreen = graphToCanvas(to, canvas);
     const rawSourceLink = isRawSourceLink(link);
-    const focusAmount = linkFocusAmount(link);
-    const highlightAmount = linkHighlightAmount(link);
     const baseAlpha = rawSourceLink ? 0.68 : 0.5;
     const fadedAlpha = rawSourceLink ? 0.14 : 0.08;
+    const linkHoverAmount = Math.max(nodeHoverAmounts[link.from] ?? 0, nodeHoverAmounts[link.to] ?? 0);
+    const focusAmount = focusAmountFromHover(linkHoverAmount);
 
     context.save();
     context.globalAlpha = fadedAlpha + (baseAlpha - fadedAlpha) * focusAmount;
@@ -114,8 +98,8 @@ export function drawGraphFrame({
     context.strokeStyle = rawSourceLink ? "#5a5a5a" : "#4f4f4f";
     context.stroke();
 
-    if (highlightAmount > 0.01) {
-      context.globalAlpha = 0.98 * highlightAmount;
+    if (linkHoverAmount > 0.01) {
+      context.globalAlpha = 0.98 * linkHoverAmount;
       context.setLineDash([]);
       context.lineWidth = 2.6;
       context.strokeStyle = "#ffc117";
@@ -134,58 +118,44 @@ export function drawGraphFrame({
     const position = positions[node.id] ?? initialNodePositions[node.id];
     const screenPosition = graphToCanvas(position, canvas);
     const radius = nodeSize(node) / 2;
-    const selectedAmount = nodeSelectedAmount(node.id);
-    const focusAmount = nodeFocusAmount(node.id);
+    const hoverAmount = nodeHoverAmounts[node.id] ?? 0;
+    const focusAmount = focusAmountFromHover(linkedHoverAmounts.get(node.id) ?? 0);
+    const nodeAlpha = 0.16 + 0.84 * focusAmount;
 
     context.save();
-    context.globalAlpha = 0.16 + 0.84 * focusAmount;
+    context.globalAlpha = nodeAlpha;
 
-    if (selectedAmount > 0.01) {
-      drawSelectedNodeMarker(context, screenPosition.x, screenPosition.y, selectedAmount);
-      context.globalAlpha = 0.16 + 0.84 * focusAmount;
+    if (hoverAmount > 0.01) {
+      drawSelectedNodeMarker(context, screenPosition.x, screenPosition.y, hoverAmount);
+      context.globalAlpha = nodeAlpha;
     }
 
     context.beginPath();
     context.arc(screenPosition.x, screenPosition.y, radius, 0, Math.PI * 2);
     if (node.kind === "source") {
-      context.fillStyle = "#ffc117";
+      context.fillStyle = mixHexColor(SOURCE_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
       context.fill();
-      if (node.loading) {
-        const spin = performance.now() / 720;
-        context.strokeStyle = "rgba(255, 255, 255, 0.58)";
-        context.lineWidth = 3;
-        context.beginPath();
-        context.arc(screenPosition.x, screenPosition.y, radius - 5, spin, spin + Math.PI * 1.35);
-        context.stroke();
-      }
     } else if (node.kind === "raw") {
-      context.strokeStyle = "#6c6c6c";
-      context.lineWidth = 1.2;
-      context.setLineDash([4, 4]);
-      context.stroke();
-      context.setLineDash([]);
-      if (node.loading) {
-        const spin = performance.now() / 720;
-        context.strokeStyle = "#ffc117";
-        context.lineWidth = 2.4;
-        context.beginPath();
-        context.arc(screenPosition.x, screenPosition.y, radius - 2, spin, spin + Math.PI * 1.35);
+      const rawImage = getRawNodeImage();
+      if (rawImage) {
+        const imageSize = Math.max(12, radius * 2);
+        context.drawImage(rawImage, screenPosition.x - imageSize / 2, screenPosition.y - imageSize / 2, imageSize, imageSize);
+      } else {
+        context.fillStyle = "#4f4f4f";
+        context.fill();
+        context.strokeStyle = "#a7a7a7";
+        context.lineWidth = 1.2;
+        context.setLineDash([3, 2.5]);
         context.stroke();
+        context.setLineDash([]);
       }
-    } else if (node.kind === "progress") {
-      const spin = performance.now() / 720;
-      context.fillStyle = "#1e1e1e";
+
+      context.fillStyle = HOVER_NODE_COLOR;
+      context.globalAlpha = nodeAlpha * hoverAmount;
       context.fill();
-      context.strokeStyle = "rgba(255, 193, 23, 0.24)";
-      context.lineWidth = 2;
-      context.stroke();
-      context.strokeStyle = "#ffc117";
-      context.lineWidth = 4;
-      context.beginPath();
-      context.arc(screenPosition.x, screenPosition.y, radius - 3, spin, spin + Math.PI * 1.35);
-      context.stroke();
+      context.globalAlpha = nodeAlpha;
     } else {
-      context.fillStyle = "#646464";
+      context.fillStyle = mixHexColor(CONCEPT_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
       context.fill();
     }
 
@@ -228,4 +198,32 @@ function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y:
   context.beginPath();
   context.arc(x, y, innerRadius, 0, Math.PI * 2);
   context.fill();
+}
+
+function getRawNodeImage() {
+  if (typeof window === "undefined") return null;
+  if (!rawNodeImage) {
+    rawNodeImage = new window.Image();
+    rawNodeImage.src = RAW_NODE_ICON_SRC;
+  }
+
+  return rawNodeImage.complete ? rawNodeImage : null;
+}
+
+function mixHexColor(from: string, to: string, amount: number) {
+  const fromRgb = hexToRgb(from);
+  const toRgb = hexToRgb(to);
+  const red = Math.round(fromRgb[0] + (toRgb[0] - fromRgb[0]) * amount);
+  const green = Math.round(fromRgb[1] + (toRgb[1] - fromRgb[1]) * amount);
+  const blue = Math.round(fromRgb[2] + (toRgb[2] - fromRgb[2]) * amount);
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = hex.replace("#", "");
+  return [
+    parseInt(normalized.slice(0, 2), 16),
+    parseInt(normalized.slice(2, 4), 16),
+    parseInt(normalized.slice(4, 6), 16)
+  ];
 }

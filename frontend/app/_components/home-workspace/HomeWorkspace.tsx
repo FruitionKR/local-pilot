@@ -16,6 +16,7 @@ import { buildGraphFromBackend } from "../../_lib/graph";
 
 export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
+  const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [sourcePreviewWidth, setSourcePreviewWidth] = useState(400);
@@ -92,7 +93,12 @@ export function HomeWorkspace() {
 
   return (
     <main
-      className={`workspace ${isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : ""} ${hasSourcePreview ? "has-source-preview" : ""}`}
+      className={[
+        "workspace",
+        isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : "",
+        isHomeView && !isDocumentSidebarOpen ? "is-sidebar-collapsed" : "",
+        hasSourcePreview ? "has-source-preview" : ""
+      ].filter(Boolean).join(" ")}
       style={{
         "--sidebar-width": `${sidebarWidth}px`,
         "--source-preview-width": `${sourcePreviewWidth}px`
@@ -107,35 +113,49 @@ export function HomeWorkspace() {
 
       {isHomeView ? (
         <>
-          <DocumentSidebar
-            projects={projectTree.projects}
-            draggedItemId={projectTree.draggedItem?.itemId ?? null}
-            selectedItemId={selection.selectedTreeItemId}
-            dropTarget={projectTree.dropTarget}
-            fileDropTarget={projectTree.fileDropTarget}
-            editing={projectTree.editing}
-            contextMenu={projectTree.contextMenu}
-            uploadInputRef={upload.uploadInputRef}
-            onOpenUploadPicker={upload.openUploadPicker}
-            onResizeStart={startSidebarResize}
-            onUploadPickerChange={upload.handleUploadPickerChange}
-            onMoveItem={projectTree.moveTreeEntry}
-            onDropFiles={upload.dropUploadFiles}
-            onDragStart={projectTree.onDragStart}
-            onDragOverItem={projectTree.onDragOverItem}
-            onFileDragOver={projectTree.setFileDropTarget}
-            onFileDragLeave={projectTree.onFileDragLeave}
-            onDragEnd={projectTree.onDragEnd}
-            onContextMenuProject={projectTree.openProjectMenu}
-            onContextMenuItem={projectTree.openFolderMenu}
-            onSelectGraphNode={selection.selectTreeGraphNode}
-            onEditingChange={projectTree.onEditingChange}
-            onCommitEditing={projectTree.commitEditing}
-            onCancelEditing={projectTree.cancelEditing}
-            onRenameContextTarget={projectTree.renameContextTarget}
-            onAddFolderFromContext={projectTree.addFolderFromContext}
-            onDeleteContextTarget={projectTree.deleteContextTarget}
-          />
+          {isDocumentSidebarOpen ? (
+            <DocumentSidebar
+              projects={projectTree.projects}
+              draggedItemId={projectTree.draggedItem?.itemId ?? null}
+              selectedItemId={selection.selectedTreeItemId}
+              dropTarget={projectTree.dropTarget}
+              fileDropTarget={projectTree.fileDropTarget}
+              editing={projectTree.editing}
+              contextMenu={projectTree.contextMenu}
+              uploadInputRef={upload.uploadInputRef}
+              onOpenUploadPicker={upload.openUploadPicker}
+              onResizeStart={startSidebarResize}
+              onUploadPickerChange={upload.handleUploadPickerChange}
+              onMoveItem={projectTree.moveTreeEntry}
+              onDropFiles={upload.dropUploadFiles}
+              onDragStart={projectTree.onDragStart}
+              onDragOverItem={projectTree.onDragOverItem}
+              onFileDragOver={projectTree.setFileDropTarget}
+              onFileDragLeave={projectTree.onFileDragLeave}
+              onDragEnd={projectTree.onDragEnd}
+              onContextMenuProject={projectTree.openProjectMenu}
+              onContextMenuItem={projectTree.openFolderMenu}
+              onSelectGraphNode={selection.selectTreeGraphNode}
+              onEditingChange={projectTree.onEditingChange}
+              onCommitEditing={projectTree.commitEditing}
+              onCancelEditing={projectTree.cancelEditing}
+              onRenameContextTarget={projectTree.renameContextTarget}
+              onAddFolderFromContext={projectTree.addFolderFromContext}
+              onDeleteContextTarget={projectTree.deleteContextTarget}
+            />
+          ) : (
+            <button
+              type="button"
+              className="sidebar-restore"
+              aria-label="자료 관리 보이기"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsDocumentSidebarOpen(true);
+              }}
+            >
+              <SvgIcon src={sideboxIcon} />
+            </button>
+          )}
 
           {selection.selectedDocumentTitle && (
             <SourcePreviewPanel

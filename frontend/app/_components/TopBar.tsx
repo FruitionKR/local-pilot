@@ -1,5 +1,4 @@
-import { Search } from "lucide-react";
-import { SvgIcon, toggleIcon, userCircleIcon } from "./SvgIcon";
+import { searchIcon, SvgIcon, toggleIcon, userCircleIcon } from "./SvgIcon";
 
 export function TopBar() {
   return (
@@ -9,7 +8,7 @@ export function TopBar() {
         <button className="school">부산대학교 <SvgIcon src={toggleIcon} className="school-toggle-icon" /></button>
       </div>
       <label className="search-box">
-        <Search size={20} />
+        <SvgIcon src={searchIcon} className="search-icon" />
         <input placeholder="자료명, 관련 내용 검색" />
       </label>
       <div className="profile">

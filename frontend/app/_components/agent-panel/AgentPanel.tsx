@@ -16,17 +16,22 @@ export function AgentPanel({
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [messages, setMessages] = useState<ChatMessageResponse[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [queryErrorMessage, setQueryErrorMessage] = useState<string | null>(null);
+  const [chatLoadErrorMessage, setChatLoadErrorMessage] = useState<string | null>(null);
+  const [animatedAssistantMessageId, setAnimatedAssistantMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   async function refreshMessages() {
     const response = await fetchChatMessages();
-    setMessages(response.messages ?? []);
+    const nextMessages = response.messages ?? [];
+    setMessages(nextMessages);
+    setChatLoadErrorMessage(null);
+    return nextMessages;
   }
 
   useEffect(() => {
     void refreshMessages().catch(() => {
-      setErrorMessage("채팅 기록을 불러오지 못했습니다.");
+      setChatLoadErrorMessage("채팅 기록을 불러오지 못했습니다.");
     });
   }, []);
 
@@ -35,17 +40,32 @@ export function AgentPanel({
     if (!nextQuestion || isLoading) return;
 
     setComposerValue("");
-    setErrorMessage(null);
+    setQueryErrorMessage(null);
+    setAnimatedAssistantMessageId(null);
     setIsLoading(true);
+    const previousAssistantMessageIds = new Set(
+      messages.filter((message) => message.role !== "user").map((message) => message.id)
+    );
 
+    let querySucceeded = false;
     try {
       await queryWiki(nextQuestion);
-      await refreshMessages();
+      querySucceeded = true;
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "질의에 실패했습니다.");
+      setQueryErrorMessage(error instanceof Error ? error.message : "질의에 실패했습니다.");
     } finally {
       setIsLoading(false);
     }
+
+    if (!querySucceeded) return;
+    await refreshMessages().then((nextMessages) => {
+      const nextAssistantMessage = [...nextMessages]
+        .reverse()
+        .find((message) => message.role !== "user" && !previousAssistantMessageIds.has(message.id));
+      setAnimatedAssistantMessageId(nextAssistantMessage?.id ?? null);
+    }).catch(() => {
+      setChatLoadErrorMessage("채팅 기록을 불러오지 못했습니다.");
+    });
   }
 
   return (
@@ -54,7 +74,9 @@ export function AgentPanel({
       <AgentBody
         messages={messages}
         isLoading={isLoading}
-        errorMessage={errorMessage}
+        queryErrorMessage={queryErrorMessage}
+        chatLoadErrorMessage={chatLoadErrorMessage}
+        animatedMessageId={animatedAssistantMessageId}
         onOpenWikiPage={onOpenWikiPage}
       />
       <AgentComposer value={composerValue} isLoading={isLoading} onChange={setComposerValue} onSubmit={submitQuery} />

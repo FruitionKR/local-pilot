@@ -66,13 +66,17 @@ export function useGraphPointer({
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
+    const rect = canvas.getBoundingClientRect();
+    const pointerX = clientX - rect.left;
+    const pointerY = clientY - rect.top;
+
     for (let index = visibleNodeCountRef.current - 1; index >= 0; index -= 1) {
       const node = nodes[index];
       const position = nodePositionsRef.current[node.id] ?? initialNodePositions[node.id];
       const screenPosition = graphToCanvas(position, canvas);
       const radius = nodeSize(node) / 2;
-      const distance = Math.hypot(clientX - canvas.getBoundingClientRect().left - screenPosition.x, clientY - canvas.getBoundingClientRect().top - screenPosition.y);
-      if (distance <= Math.max(12, radius + 6)) return node;
+      const distance = Math.hypot(pointerX - screenPosition.x, pointerY - screenPosition.y);
+      if (distance <= radius + 2) return node;
     }
 
     return null;

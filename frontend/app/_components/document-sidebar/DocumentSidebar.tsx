@@ -68,7 +68,7 @@ export function DocumentSidebar({
         <button
           type="button"
           className="sidebar-upload-button"
-          aria-label="문서 업로드"
+          aria-label="자료 추가"
           onClick={(event) => {
             event.stopPropagation();
             if (projects[0]) onOpenUploadPicker(projects[0].id, null);
@@ -86,38 +86,40 @@ export function DocumentSidebar({
         onChange={onUploadPickerChange}
       />
 
-      {projects.map((project) => (
-        <ProjectSection
-          key={project.id}
-          project={project}
-          draggedItemId={draggedItemId}
-          selectedItemId={selectedItemId}
-          dropTarget={dropTarget}
-          fileDropTarget={fileDropTarget}
-          editing={editing}
-          onMoveItem={onMoveItem}
-          onDropFiles={onDropFiles}
-          onDragStart={onDragStart}
-          onDragOverItem={onDragOverItem}
-          onFileDragOver={onFileDragOver}
-          onFileDragLeave={onFileDragLeave}
-          onDragEnd={onDragEnd}
-          onContextMenuProject={onContextMenuProject}
-          onContextMenuItem={onContextMenuItem}
-          onSelectGraphNode={onSelectGraphNode}
-          onEditingChange={onEditingChange}
-          onCommitEditing={onCommitEditing}
-          onCancelEditing={onCancelEditing}
-        />
-      ))}
-      {contextMenu && (
-        <ContextMenu
-          contextMenu={contextMenu}
-          onRenameContextTarget={onRenameContextTarget}
-          onAddFolderFromContext={onAddFolderFromContext}
-          onDeleteContextTarget={onDeleteContextTarget}
-        />
-      )}
+      <div className="sidebar-content">
+        {projects.map((project) => (
+          <ProjectSection
+            key={project.id}
+            project={project}
+            draggedItemId={draggedItemId}
+            selectedItemId={selectedItemId}
+            dropTarget={dropTarget}
+            fileDropTarget={fileDropTarget}
+            editing={editing}
+            onMoveItem={onMoveItem}
+            onDropFiles={onDropFiles}
+            onDragStart={onDragStart}
+            onDragOverItem={onDragOverItem}
+            onFileDragOver={onFileDragOver}
+            onFileDragLeave={onFileDragLeave}
+            onDragEnd={onDragEnd}
+            onContextMenuProject={onContextMenuProject}
+            onContextMenuItem={onContextMenuItem}
+            onSelectGraphNode={onSelectGraphNode}
+            onEditingChange={onEditingChange}
+            onCommitEditing={onCommitEditing}
+            onCancelEditing={onCancelEditing}
+          />
+        ))}
+        {contextMenu && (
+          <ContextMenu
+            contextMenu={contextMenu}
+            onRenameContextTarget={onRenameContextTarget}
+            onAddFolderFromContext={onAddFolderFromContext}
+            onDeleteContextTarget={onDeleteContextTarget}
+          />
+        )}
+      </div>
       <button
         type="button"
         className="sidebar-resize-handle"

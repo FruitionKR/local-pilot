@@ -1,0 +1,23 @@
+
+.graph-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.graph-lines line {
+  stroke: #9da8b8;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.graph-lines line.is-dashed {
+  stroke-dasharray: 4 3;
+  stroke: #aeb7c5;
+}
+
+.graph-lines line.is-active {
+  stroke: #e7a400;
+  stroke-width: 1.8;
+}

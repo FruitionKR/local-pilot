@@ -198,9 +198,7 @@ export type WikiPageDetailResponse = {
 export type GraphNode = {
   id: string;
   label: string;
-  size?: number;
-  kind?: "source" | "concept" | "raw" | "progress";
-  loading?: boolean;
+  kind?: "source" | "concept" | "raw";
 };
 
 export type GraphLink = {
