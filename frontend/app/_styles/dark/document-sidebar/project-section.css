@@ -1,0 +1,78 @@
+
+.create-project {
+  display: none;
+}
+
+.tree-section,
+.project-section {
+  margin-top: 0;
+}
+
+.project-section {
+  padding: 12px 10px 10px;
+}
+
+.project-title {
+  height: 36px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.project-arrow,
+.tree-arrow {
+  width: 5px;
+  height: 8px;
+  flex: 0 0 5px;
+  transform-origin: center;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.project-arrow.is-open,
+.tree-arrow.is-open {
+  transform: rotate(90deg);
+}
+
+.project-toggle,
+.section-title {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #8a8a8a;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-toggle {
+  justify-content: space-between;
+}
+
+.project-toggle:hover,
+.project-toggle:focus-visible,
+.section-title:hover,
+.section-title:focus-visible,
+.section-title.muted {
+  color: #e2e2e2;
+  background: #4f4f4f;
+}
+
+.project-add-folder {
+  display: none;
+}
+
+.project-add-folder:hover,
+.project-add-folder:focus-visible {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.project-add-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.project-empty {
+  color: #8a8a8a;
+}

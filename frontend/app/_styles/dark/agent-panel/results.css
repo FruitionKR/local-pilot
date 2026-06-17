@@ -1,0 +1,51 @@
+
+.result-card {
+  height: 56px;
+  color: #f0f0f0;
+  background: #1e1e1e;
+  border-color: #4f4f4f;
+}
+
+.file-box {
+  background: #323232;
+}
+
+.file-box.raw {
+  color: #c4c4c4;
+}
+
+.file-box.source {
+  color: #c4c4c4;
+}
+
+.file-box.concept {
+  color: #c4c4c4;
+}
+
+.result-card small {
+  color: #a7a7a7;
+}
+
+.result-card b {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.result-card b.raw {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.result-card b.source {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.result-card b.concept {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.typing i {
+  background: #a7a7a7;
+}
