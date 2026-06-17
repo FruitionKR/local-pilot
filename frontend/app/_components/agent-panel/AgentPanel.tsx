@@ -18,12 +18,15 @@ export function AgentPanel({
   const [messages, setMessages] = useState<ChatMessageResponse[]>([]);
   const [queryErrorMessage, setQueryErrorMessage] = useState<string | null>(null);
   const [chatLoadErrorMessage, setChatLoadErrorMessage] = useState<string | null>(null);
+  const [animatedAssistantMessageId, setAnimatedAssistantMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   async function refreshMessages() {
     const response = await fetchChatMessages();
-    setMessages(response.messages ?? []);
+    const nextMessages = response.messages ?? [];
+    setMessages(nextMessages);
     setChatLoadErrorMessage(null);
+    return nextMessages;
   }
 
   useEffect(() => {
@@ -38,7 +41,11 @@ export function AgentPanel({
 
     setComposerValue("");
     setQueryErrorMessage(null);
+    setAnimatedAssistantMessageId(null);
     setIsLoading(true);
+    const previousAssistantMessageIds = new Set(
+      messages.filter((message) => message.role !== "user").map((message) => message.id)
+    );
 
     let querySucceeded = false;
     try {
@@ -51,7 +58,12 @@ export function AgentPanel({
     }
 
     if (!querySucceeded) return;
-    await refreshMessages().catch(() => {
+    await refreshMessages().then((nextMessages) => {
+      const nextAssistantMessage = [...nextMessages]
+        .reverse()
+        .find((message) => message.role !== "user" && !previousAssistantMessageIds.has(message.id));
+      setAnimatedAssistantMessageId(nextAssistantMessage?.id ?? null);
+    }).catch(() => {
       setChatLoadErrorMessage("채팅 기록을 불러오지 못했습니다.");
     });
   }
@@ -64,6 +76,7 @@ export function AgentPanel({
         isLoading={isLoading}
         queryErrorMessage={queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
+        animatedMessageId={animatedAssistantMessageId}
         onOpenWikiPage={onOpenWikiPage}
       />
       <AgentComposer value={composerValue} isLoading={isLoading} onChange={setComposerValue} onSubmit={submitQuery} />

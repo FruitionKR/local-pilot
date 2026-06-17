@@ -6,6 +6,26 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-17
 
+### feat: Agent 응답 연출과 그래프 아이콘 보정
+
+**변경 배경**
+
+- Query Agent 답변이 한 번에 표시되어 Figma 기준의 단계적 응답 흐름과 차이가 있었다.
+- raw/source/concept 자료가 sidebar, 결과 card, graph에서 서로 다른 아이콘과 색상 체계로 보여 식별성이 떨어졌다.
+- 자료 관리 sidebar를 접고 graph workspace를 넓혀 보는 동작이 필요했다.
+
+**변경된 내용**
+
+- 새 assistant 응답을 상태 목록, 근거 자료, 답변 본문 순서로 단계적으로 노출하고 최신 메시지로 부드럽게 scroll되도록 조정했다.
+- raw/source/concept 항목의 file icon 색상과 결과 badge 색상을 통일하고, raw graph node에 `raw.svg` 자산을 적용했다.
+- 자료 관리 sidebar 접기/복원 버튼을 추가하고 sidebar 접힘 상태에서 graph와 원문 preview 위치가 남은 workspace를 사용하도록 보정했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- 변경 파일 기준 secret 후보 검색에서 실제 비밀값 없음.
+
 ### fix: Figma 기준 그래프와 Agent UI 보정
 
 **변경 배경**

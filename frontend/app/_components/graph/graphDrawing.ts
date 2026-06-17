@@ -1,8 +1,12 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
+import rawNodeIcon from "../../../svg/raw.svg";
 
 const SOURCE_PAGE_COLOR = "#bbcf6c";
 const CONCEPT_PAGE_COLOR = "#fffdf0";
 const HOVER_NODE_COLOR = "#ffc117";
+const RAW_NODE_ICON_SRC = rawNodeIcon.src;
+
+let rawNodeImage: HTMLImageElement | null = null;
 
 export function drawGraphFrame({
   canvas,
@@ -132,15 +136,24 @@ export function drawGraphFrame({
       context.fillStyle = mixHexColor(SOURCE_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
       context.fill();
     } else if (node.kind === "raw") {
+      const rawImage = getRawNodeImage();
+      if (rawImage) {
+        const imageSize = Math.max(12, radius * 2);
+        context.drawImage(rawImage, screenPosition.x - imageSize / 2, screenPosition.y - imageSize / 2, imageSize, imageSize);
+      } else {
+        context.fillStyle = "#4f4f4f";
+        context.fill();
+        context.strokeStyle = "#a7a7a7";
+        context.lineWidth = 1.2;
+        context.setLineDash([3, 2.5]);
+        context.stroke();
+        context.setLineDash([]);
+      }
+
       context.fillStyle = HOVER_NODE_COLOR;
       context.globalAlpha = nodeAlpha * hoverAmount;
       context.fill();
       context.globalAlpha = nodeAlpha;
-      context.strokeStyle = "#6c6c6c";
-      context.lineWidth = 1.2;
-      context.setLineDash([4, 4]);
-      context.stroke();
-      context.setLineDash([]);
     } else {
       context.fillStyle = mixHexColor(CONCEPT_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
       context.fill();
@@ -185,6 +198,16 @@ function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y:
   context.beginPath();
   context.arc(x, y, innerRadius, 0, Math.PI * 2);
   context.fill();
+}
+
+function getRawNodeImage() {
+  if (typeof window === "undefined") return null;
+  if (!rawNodeImage) {
+    rawNodeImage = new window.Image();
+    rawNodeImage.src = RAW_NODE_ICON_SRC;
+  }
+
+  return rawNodeImage.complete ? rawNodeImage : null;
 }
 
 function mixHexColor(from: string, to: string, amount: number) {

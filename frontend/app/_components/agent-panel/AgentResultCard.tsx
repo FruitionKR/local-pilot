@@ -11,13 +11,16 @@ export function AgentResultCard({
   pageType: string;
   onClick?: () => void;
 }) {
-  const label = pageType.toLowerCase() === "concept" ? "Concept" : "Source";
+  const normalizedPageType = ["raw", "source", "concept"].includes(pageType.toLowerCase())
+    ? pageType.toLowerCase()
+    : "source";
+  const label = normalizedPageType.slice(0, 1).toUpperCase() + normalizedPageType.slice(1);
 
   return (
-    <button className="result-card" type="button" onClick={onClick}>
-      <span className="file-box"><SvgIcon src={fileIcon} /></span>
+    <button className={`result-card ${normalizedPageType}`} type="button" onClick={onClick}>
+      <span className={`file-box ${normalizedPageType}`}><SvgIcon src={fileIcon} /></span>
       <span><strong>{title}</strong><small>{meta}</small></span>
-      <b>{label}</b>
+      <b className={normalizedPageType}>{label}</b>
     </button>
   );
 }

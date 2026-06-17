@@ -579,8 +579,28 @@ button {
   height: 16px;
 }
 
+.tree-asset.raw {
+  color: #c4c4c4;
+}
+
 .tree-asset.source {
-  color: #ffc117;
+  color: #bbcf6c;
+}
+
+.tree-asset.concept {
+  color: #fff3b0;
+}
+
+.tree-row.is-selected .tree-asset.raw {
+  color: #c4c4c4;
+}
+
+.tree-row.is-selected .tree-asset.source {
+  color: #bbcf6c;
+}
+
+.tree-row.is-selected .tree-asset.concept {
+  color: #fff3b0;
 }
 
 .folder-context-menu {
@@ -1036,6 +1056,22 @@ button {
   margin-top: 0;
 }
 
+.agent-stage {
+  animation: agent-stage-rise 560ms cubic-bezier(0.2, 0.72, 0.16, 1) both;
+}
+
+@keyframes agent-stage-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .agent-message {
   min-width: 0;
   display: flex;
@@ -1267,6 +1303,18 @@ button {
   border-radius: 8px;
 }
 
+.file-box.raw {
+  color: #c4c4c4;
+}
+
+.file-box.source {
+  color: #bbcf6c;
+}
+
+.file-box.concept {
+  color: #fff3b0;
+}
+
 .file-box .svg-icon {
   width: 18px;
   height: 18px;
@@ -1301,6 +1349,20 @@ button {
   background: #f0f2f6;
   border-radius: 999px;
   font-size: 10px;
+}
+
+.result-card b.raw {
+  color: #505967;
+}
+
+.result-card b.source {
+  color: #3f521c;
+  background: rgba(187, 207, 108, 0.28);
+}
+
+.result-card b.concept {
+  color: #755a00;
+  background: rgba(255, 243, 176, 0.36);
 }
 
 .typing {
@@ -1646,15 +1708,9 @@ input {
   color: #a7a7a7;
   background: transparent;
   border-radius: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease, background 120ms ease;
-}
-
-.sidebar-header:hover .sidebar-upload-button,
-.sidebar-header:focus-within .sidebar-upload-button {
   opacity: 1;
   pointer-events: auto;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .sidebar-upload-button:hover,
@@ -1665,6 +1721,34 @@ input {
 .sidebar-upload-icon {
   width: 28px;
   height: 28px;
+}
+
+.sidebar-restore {
+  position: absolute;
+  top: 81px;
+  left: 72px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #a7a7a7;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
+  border-radius: 8px;
+}
+
+.sidebar-restore:hover,
+.sidebar-restore:focus-visible {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.sidebar-restore .svg-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .create-project {
@@ -1771,9 +1855,19 @@ input {
   color: #8a8a8a;
 }
 
+.tree-asset.raw,
+.tree-row.is-selected .tree-asset.raw {
+  color: #c4c4c4;
+}
+
 .tree-asset.source,
 .tree-row.is-selected .tree-asset.source {
   color: var(--source-page);
+}
+
+.tree-asset.concept,
+.tree-row.is-selected .tree-asset.concept {
+  color: var(--concept-page);
 }
 
 .tree-status {
@@ -1832,6 +1926,10 @@ input {
   border-right: 1px solid transparent;
   border-left: 0;
   border-top-right-radius: 0;
+}
+
+.workspace.is-sidebar-collapsed .source-preview-panel {
+  left: 60px;
 }
 
 .source-preview-resize-handle {
@@ -2052,14 +2150,26 @@ input {
   border-color: #6f2d29;
 }
 
+.workspace.is-sidebar-collapsed .api-error-banner {
+  left: 80px;
+}
+
 .graph-stage {
   inset: 65px 428px 0 calc(60px + var(--sidebar-width, 260px));
   background: #0a0a0a;
 }
 
+.workspace.is-sidebar-collapsed .graph-stage {
+  left: 60px;
+}
+
 .workspace.has-source-preview .graph-stage {
   left: calc(60px + var(--sidebar-width, 260px));
   right: 428px;
+}
+
+.workspace.is-sidebar-collapsed.has-source-preview .graph-stage {
+  left: 60px;
 }
 
 .workspace.is-agent-collapsed .graph-stage {
@@ -2324,6 +2434,18 @@ input {
   background: #323232;
 }
 
+.file-box.raw {
+  color: #c4c4c4;
+}
+
+.file-box.source {
+  color: var(--source-page);
+}
+
+.file-box.concept {
+  color: var(--concept-page);
+}
+
 .result-card small {
   color: #a7a7a7;
 }
@@ -2331,6 +2453,21 @@ input {
 .result-card b {
   color: #f0f0f0;
   background: #323232;
+}
+
+.result-card b.raw {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.result-card b.source {
+  color: #0a0a0a;
+  background: var(--source-page);
+}
+
+.result-card b.concept {
+  color: #0a0a0a;
+  background: var(--concept-page);
 }
 
 .typing i {
