@@ -47,6 +47,21 @@ export function useProjectTree() {
     )));
   }
 
+  function addProject() {
+    const projectId = `project-${Date.now()}`;
+    setProjects((current) => [
+      ...current,
+      {
+        id: projectId,
+        title: `새 프로젝트 ${current.length + 1}`,
+        items: []
+      }
+    ]);
+    editingCancelRef.current = false;
+    setContextMenu(null);
+    setEditing({ projectId, itemId: null, label: `새 프로젝트 ${projects.length + 1}` });
+  }
+
   function addFolder(projectId: string, folderId: string | null = null) {
     setProjects((current) => current.map((project) => {
       if (project.id !== projectId) return project;
@@ -166,6 +181,7 @@ export function useProjectTree() {
     contextMenu,
     editing,
     setFileDropTarget,
+    addProject,
     moveTreeEntry,
     openFolderMenu,
     openProjectMenu,

@@ -123,7 +123,7 @@ export function HomeWorkspace() {
               editing={projectTree.editing}
               contextMenu={projectTree.contextMenu}
               uploadInputRef={upload.uploadInputRef}
-              onOpenUploadPicker={upload.openUploadPicker}
+              onAddProject={projectTree.addProject}
               onResizeStart={startSidebarResize}
               onUploadPickerChange={upload.handleUploadPickerChange}
               onMoveItem={projectTree.moveTreeEntry}
