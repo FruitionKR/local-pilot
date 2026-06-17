@@ -5,21 +5,42 @@
   right: 0;
   z-index: 4;
   display: flex;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.filter-chips span {
+.filter-chips span,
+.filter-chip-action {
   height: 30px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 14px;
+  justify-content: center;
   color: #515a68;
   background: #fff;
   border: 1px solid #dfe4ec;
   border-radius: 999px;
   box-shadow: 0 2px 7px rgba(30, 42, 60, 0.08);
+}
+
+.filter-chips span {
+  gap: 7px;
+  padding: 0 14px;
   font-size: 12px;
+}
+
+.filter-chip-action {
+  width: 44px;
+  padding: 0;
+}
+
+.filter-chip-action:hover,
+.filter-chip-action:focus-visible {
+  background: #f1f4f8;
+}
+
+.filter-chip-action .svg-icon {
+  width: 24px;
+  height: 24px;
 }
 
 .chip-icon {

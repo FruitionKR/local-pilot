@@ -173,15 +173,10 @@ export function HomeWorkspace() {
             rawDocumentCount={documents.length}
             focusedNodeId={selection.focusedGraphNodeId}
             onOpenNodePreview={(node) => selection.openGraphNodePreview(node.id, node.label)}
+            onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
             loading={isGraphLoading}
             errorMessage={apiError}
           />
-
-          {!isAgentPanelOpen && (
-            <button className="agent-restore" aria-label="Agent 패널 보이기" onClick={() => setIsAgentPanelOpen(true)}>
-              <SvgIcon src={sideboxIcon} />
-            </button>
-          )}
 
           {isAgentPanelOpen && (
             <AgentPanel
