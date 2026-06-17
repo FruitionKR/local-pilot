@@ -6,6 +6,25 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-17
 
+### refactor: CSS 파일 구조 분리
+
+**변경 배경**
+
+- `frontend/app/globals.css` 한 파일에 base, workspace, sidebar, graph, Agent panel, dark override 스타일이 모두 들어 있어 Figma 보정 시 변경 범위를 파악하기 어려웠다.
+
+**변경된 내용**
+
+- 전역 CSS entry를 `frontend/app/_styles/globals.css`로 이동하고, `layout.tsx`의 import 경로를 갱신했다.
+- 기존 CSS 내용을 base/workspace/rail/document-sidebar/graph/agent-panel/responsive 영역과 dark override 영역으로 분리했다.
+- 분리 과정에서 기존 cascade 순서와 CSS 내용을 유지하도록 파일 import 순서를 구성했다.
+
+**검증 결과**
+
+- 분리된 CSS 파일을 순서대로 합친 결과가 기존 `frontend/app/globals.css`와 동일함을 확인했다.
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `http://localhost:3000` 응답 `200 OK` 확인.
+
 ### fix: Agent 패널 Figma 보정과 sidebar tree 안정화
 
 **변경 배경**

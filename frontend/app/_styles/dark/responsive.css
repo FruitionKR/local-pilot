@@ -1,0 +1,43 @@
+
+@media (max-width: 1300px) {
+  .agent-panel {
+    right: 12px;
+    width: 330px;
+  }
+
+  .graph-stage {
+    right: 342px;
+  }
+
+  .workspace.has-source-preview .graph-stage {
+    left: calc(60px + var(--sidebar-width, 260px));
+  }
+
+  .source-preview-panel {
+    left: calc(60px + var(--sidebar-width, 260px));
+  }
+}
+
+@media (max-width: 1080px) {
+  .search-box {
+    left: 54%;
+    width: min(360px, calc(100vw - 480px));
+  }
+
+  .agent-panel {
+    right: 10px;
+    width: 300px;
+  }
+
+  .graph-stage {
+    right: 310px;
+  }
+
+  .workspace.has-source-preview .graph-stage {
+    left: calc(60px + var(--sidebar-width, 260px));
+  }
+
+  .source-preview-panel {
+    left: calc(60px + var(--sidebar-width, 260px));
+  }
+}
