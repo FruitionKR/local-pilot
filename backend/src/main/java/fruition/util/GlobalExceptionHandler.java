@@ -3,7 +3,11 @@ package fruition.util;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DuplicateDocumentException;
+import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.query.exception.PipelineQueryException;
+import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
+import fruition.wiki.exception.WikiPageSlugConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -40,11 +44,32 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
     }
 
+    @ExceptionHandler(InvalidDocumentFilenameException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDocumentFilename(InvalidDocumentFilenameException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_DOCUMENT_FILENAME", e.getMessage()));
+    }
+
     @ExceptionHandler(WikiPageNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleWikiPageNotFound(WikiPageNotFoundException e) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WIKI_PAGE_NOT_FOUND", "Wiki 페이지를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(InvalidWikiPageTitleException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidWikiPageTitle(InvalidWikiPageTitleException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_WIKI_PAGE_TITLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(WikiPageSlugConflictException.class)
+    public ResponseEntity<ErrorResponse> handleWikiPageSlugConflict(WikiPageSlugConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("WIKI_PAGE_SLUG_CONFLICT", e.getMessage()));
     }
 
     @ExceptionHandler(DuplicateDocumentException.class)
@@ -59,5 +84,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of("INTERNAL_SERVER_ERROR", "서버 처리 중 오류가 발생했습니다."));
+    }
+
+    @ExceptionHandler(PipelineQueryException.class)
+    public ResponseEntity<ErrorResponse> handlePipelineQuery(PipelineQueryException e) {
+        return ResponseEntity
+                .status(e.getHttpStatus())
+                .body(ErrorResponse.of(e.getErrorCode(), e.getMessage()));
     }
 }

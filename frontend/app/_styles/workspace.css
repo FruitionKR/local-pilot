@@ -1,0 +1,104 @@
+
+.workspace {
+  position: relative;
+  width: 100vw;
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #f2f4f8;
+}
+
+.topbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 10;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.workspace-mark {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--dark);
+  border-radius: 7px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.school {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 600;
+  background: transparent;
+}
+
+.search-box {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 520px));
+  min-width: 260px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 15px;
+  color: #8490a3;
+  background: #f2f4f9;
+  border-radius: 11px;
+}
+
+.search-box input {
+  width: 100%;
+  color: #455060;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.profile {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: #a5adba;
+}
+
+.profile div {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+}
+
+.profile strong {
+  color: #0b182b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.profile span {
+  font-size: 10px;
+}
+
+.profile-icon {
+  width: 28px;
+  height: 28px;
+}

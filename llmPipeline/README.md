@@ -89,7 +89,7 @@ CLI 엔트리포인트이자 파이프라인 오케스트레이터입니다.
 - `pipeline.log`, `normalized.json`, `manifest.json`, `wiki/links.json`, `review_report.md` 생성
 - `--save-debug-json`이 켜진 경우에만 raw LLM output과 packet/debug JSON 저장
 
-### `fruition_lab/extract.py`
+### `app/modules/wiki_generation/infrastructure/extract.py`
 
 Markdown 문서를 `SourceDocument`와 `SourceBlock` 목록으로 분해합니다.
 
@@ -97,7 +97,7 @@ Markdown 문서를 `SourceDocument`와 `SourceBlock` 목록으로 분해합니�
 - `B0001` 같은 짧은 block id 생성
 - DB/export용 `source_reference_id` 유지
 
-### `fruition_lab/packet.py`
+### `app/modules/wiki_generation/infrastructure/packet.py`
 
 block 목록을 LLM 입력 packet으로 나눕니다.
 
@@ -105,7 +105,7 @@ block 목록을 LLM 입력 packet으로 나눕니다.
 - `overlap_blocks` 적용
 - LLM에는 짧은 `[B0001]` anchor만 전달
 
-### `fruition_lab/llm.py`
+### `app/modules/wiki_generation/infrastructure/chat_completions_llm.py`
 
 OpenAI-compatible chat completions client와 LLM stage wrapper입니다.
 
@@ -115,7 +115,7 @@ OpenAI-compatible chat completions client와 LLM stage wrapper입니다.
 - legacy full concept page generation
 - JSON/section polish output 파싱과 부분 복구
 
-### `fruition_lab/prompt_io.py`
+### `app/modules/wiki_generation/infrastructure/prompt_io.py`
 
 LLM user prompt를 만듭니다.
 
@@ -125,7 +125,7 @@ LLM user prompt를 만듭니다.
 - legacy concept page prompt
 - concept별 관련 source block 수집
 
-### `fruition_lab/normalize.py`
+### `app/modules/wiki_generation/infrastructure/normalize.py`
 
 LLM semantic extraction 결과를 backend 구조로 정규화합니다.
 
@@ -135,7 +135,7 @@ LLM semantic extraction 결과를 backend 구조로 정규화합니다.
 - missing related hint 수집
 - refs를 짧은 `B0001` 형태로 검증/유지
 
-### `fruition_lab/concept_resolution.py`
+### `app/modules/wiki_generation/infrastructure/concept_resolution.py`
 
 concept 후보의 의미적 병합/링킹을 정규화하고 적용합니다.
 
@@ -144,7 +144,7 @@ concept 후보의 의미적 병합/링킹을 정규화하고 적용합니다.
 - missing related hint를 current/existing concept로 매핑
 - evidence related slug 재매핑
 
-### `fruition_lab/assemble.py`
+### `app/modules/wiki_generation/infrastructure/assemble.py`
 
 최종 wiki markdown과 graph/review 파일을 조립합니다.
 
@@ -155,7 +155,7 @@ concept 후보의 의미적 병합/링킹을 정규화하고 적용합니다.
 - 같은 evidence/source key point/LLM resolution 기반 related concept 생성
 - `wiki/links.json`, `review_report.md` 생성
 
-### `fruition_lab/database.py`
+### `app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py`
 
 PostgreSQL persistence 계층입니다.
 
@@ -163,21 +163,22 @@ PostgreSQL persistence 계층입니다.
 - 성공 시 wiki page와 graph edge upsert
 - 실패 시 document/pipeline status와 error 저장
 
-### `fruition_lab/storage.py`
+### `app/modules/wiki_ingestion/infrastructure/object_storage.py`
 
 MinIO/S3 compatible object storage에서 텍스트 객체를 읽습니다.
 
-### `fruition_lab/models.py`
+### `app/modules/wiki_generation/domain/entities.py`
 
 파이프라인 공용 dataclass 모델입니다.
 
-### `fruition_lab/io_utils.py`
+### `app/modules/wiki_ingestion/infrastructure/file_io.py`
 
 파일/JSON/log 입출력 유틸리티입니다.
 
-### `fruition_lab/text_utils.py`
+### `app/modules/wiki_generation/domain/text_utils.py`
 
 slug, SHA1, 공백 정규화, 중복 제거 같은 문자열 유틸리티입니다.
+
 
 ### `prompts/*.system.md`
 

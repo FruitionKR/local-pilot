@@ -197,6 +197,7 @@ failed
 source_mentions_concept
 concept_related_to
 concept_contrasts_with
+source_related_to
 ```
 
 #### document wiki relation type
@@ -628,7 +629,7 @@ Response:
   "assistant_message": {
     "id": "chat_assistant_456",
     "role": "assistant",
-    "content": "Self-Attention은 입력 토큰들이 서로 어떤 관계를 갖는지 계산하는 Transformer의 핵심 메커니즘이에요.",
+    "content": "Self-Attention은 입력 토큰들이 서로 어떤 관계를 갖는지 계산하는 Transformer의 핵심 메커니즘이에요. [1]",
     "status": "completed",
     "created_at": "2026-06-04T10:05:03Z"
   },
@@ -638,41 +639,97 @@ Response:
       "page_type": "concept",
       "title": "Self-Attention",
       "slug": "self-attention",
-      "relevance_score": 0.95
+      "relevance_score": 0.95,
+      "role": "concept",
+      "depth": 1
     },
     {
       "id": "page_source_123",
       "page_type": "source",
       "title": "lecture_01",
       "slug": "lecture-01",
-      "relevance_score": 0.87
+      "relevance_score": 0.87,
+      "role": "source",
+      "depth": 0
     }
   ],
-  "source_references": [
+  "evidence_snippets": [
     {
-      "document_id": "doc_123",
-      "filename": "lecture_01.pdf",
-      "page_number": 3,
+      "page_id": "page_source_123",
+      "page_type": "source",
+      "page_title": "lecture_01",
+      "page_slug": "lecture-01",
+      "page_url": "wiki/sources/lecture-01.md",
+      "page_role": "source",
+      "text": "Self-attention computes relationships between tokens.",
+      "score": 0.91,
+      "rank": 1,
       "paragraph_index": 2,
-      "quote": "Self-attention computes relationships between tokens."
+      "sentence_index": 0
     }
   ],
-  "highlighted_paths": [
+  "graph_context": {
+    "nodes": [
+      {
+        "id": "page_source_123",
+        "page_type": "source",
+        "title": "lecture_01",
+        "slug": "lecture-01",
+        "relevance_score": 0.87,
+        "role": "source",
+        "depth": 0
+      }
+    ],
+    "edges": [
+      {
+        "from_page_id": "page_source_123",
+        "to_page_id": "page_concept_456",
+        "link_type": "source_mentions_concept",
+        "role": "forward",
+        "score": 0.88
+      }
+    ]
+  },
+  "traversal_paths": [
     {
-      "from_page_id": "page_source_123",
-      "to_page_id": "page_concept_456",
-      "link_type": "source_mentions_concept"
+      "path_id": "path_01",
+      "role": "primary",
+      "used_for_answer": true,
+      "score": 0.91,
+      "stop_reason": "relative_score_cutoff",
+      "nodes": ["page_source_123", "page_concept_456"],
+      "edges": [
+        {
+          "from_page_id": "page_source_123",
+          "to_page_id": "page_concept_456",
+          "link_type": "source_mentions_concept",
+          "role": "forward",
+          "score": 0.88
+        }
+      ]
     }
   ]
 }
 ```
 
+Response fields:
+
+| field | description |
+| --- | --- |
+| `user_message` | 저장된 사용자 메시지 요약 |
+| `assistant_message` | 저장된 어시스턴트 메시지 요약. 답변 본문에는 `[1]`, `[2]` 형태의 evidence rank 표식이 포함될 수 있다. |
+| `related_pages` | 탐색에 사용된 Wiki page 목록. `role`은 탐색 중 page의 역할(`source`/`concept`), `depth`는 그래프 탐색 깊이 |
+| `evidence_snippets` | 답변 근거로 사용된 문장 단위 snippet. `rank`는 답변 본문의 `[N]` 표식과 대응한다. |
+| `graph_context` | 탐색 중 방문한 nodes와 edges. 그래프 하이라이트 렌더링에 사용한다. |
+| `traversal_paths` | 탐색 경로 목록. `used_for_answer=true`인 path가 실제 답변 생성에 사용된 경로다. |
+
 처리 규칙:
 
-- QueryEngine은 먼저 `wiki_pages.title`과 `wiki_pages.summary`에서 후보 Wiki page를 검색한다.
-- 후보 Wiki page의 Markdown만 Object Storage에서 읽는다.
-- LLM은 Wiki page와 필요한 원본 근거를 바탕으로 답변한다.
-- 응답에는 답변, 관련 Wiki page, 원본 출처, 그래프 highlight 대상을 함께 포함한다.
+- QueryEngine은 먼저 `wiki_pages`에서 질문과 유사도가 높은 source page를 탐색 시작점으로 선택한다.
+- 탐색 중 관측된 최고 유사도 기준 95% 미만 후보는 제외한다.
+- LLM은 Wiki page와 evidence snippet을 바탕으로 답변을 생성한다. 근거가 없으면 unsupported 고정 응답을 반환한다.
+- 답변 본문의 `[N]` 표식은 `evidence_snippets[].rank`와 대응한다.
+- 응답에는 답변 메시지, 관련 Wiki page, evidence snippet, 그래프 탐색 경로를 함께 포함한다.
 
 ## 8. Chat API
 
@@ -706,15 +763,20 @@ Response:
           "id": 1,
           "reference_type": "wiki_page",
           "wiki_page_id": "page_concept_456",
-          "relevance_score": 0.95
+          "page_role": "concept",
+          "relevance_score": 0.95,
+          "rank": 1
         },
         {
           "id": 2,
           "reference_type": "source_quote",
           "document_id": "doc_123",
+          "page_role": "source",
           "relevance_score": 0.87,
+          "rank": 2,
           "page_number": 3,
           "paragraph_index": 2,
+          "sentence_index": 0,
           "quote": "Self-attention computes relationships between tokens."
         }
       ]
@@ -779,10 +841,11 @@ GET /api/chat/messages
 
 ```text
 question
-answer
+answer (with [N] evidence markers)
 related_pages
-source_references
-highlighted_paths
+evidence_snippets
+graph_context (그래프 하이라이트용)
+traversal_paths
 ```
 
 ## 10. MVP 제외

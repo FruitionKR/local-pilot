@@ -1,0 +1,131 @@
+import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
+import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
+import { switchIcon, SvgIcon } from "../SvgIcon";
+import { ContextMenu } from "./ContextMenu";
+import { ProjectSection } from "./ProjectSection";
+
+export function DocumentSidebar({
+  projects,
+  draggedItemId,
+  selectedItemId,
+  dropTarget,
+  fileDropTarget,
+  editing,
+  contextMenu,
+  uploadInputRef,
+  onAddProject,
+  onResizeStart,
+  onUploadPickerChange,
+  onMoveItem,
+  onDropFiles,
+  onDragStart,
+  onDragOverItem,
+  onFileDragOver,
+  onFileDragLeave,
+  onDragEnd,
+  onContextMenuProject,
+  onContextMenuItem,
+  onSelectGraphNode,
+  onEditingChange,
+  onCommitEditing,
+  onCancelEditing,
+  onRenameContextTarget,
+  onAddFolderFromContext,
+  onDeleteContextTarget
+}: {
+  projects: Project[];
+  draggedItemId: string | null;
+  selectedItemId: string | null;
+  dropTarget: DropTarget | null;
+  fileDropTarget: FileDropTarget | null;
+  editing: EditingState | null;
+  contextMenu: ContextMenuState | null;
+  uploadInputRef: RefObject<HTMLInputElement>;
+  onAddProject: () => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
+  onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
+  onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
+  onDragStart: (projectId: string, itemId: string) => void;
+  onDragOverItem: (target: DropTarget) => void;
+  onFileDragOver: (target: FileDropTarget) => void;
+  onFileDragLeave: () => void;
+  onDragEnd: () => void;
+  onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
+  onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
+  onSelectGraphNode: (item: { id: string; label: string; documentId?: string; graphNodeId?: string }) => void;
+  onEditingChange: (label: string) => void;
+  onCommitEditing: () => void;
+  onCancelEditing: () => void;
+  onRenameContextTarget: () => void;
+  onAddFolderFromContext: () => void;
+  onDeleteContextTarget: () => void;
+}) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <h1>자료 관리</h1>
+        <button
+          type="button"
+          className="sidebar-upload-button"
+          aria-label="프로젝트 추가"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddProject();
+          }}
+        >
+          <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
+        </button>
+      </div>
+      <input
+        ref={uploadInputRef}
+        className="upload-picker"
+        type="file"
+        accept=".pdf,.md,application/pdf,text/markdown,text/plain"
+        multiple
+        onChange={onUploadPickerChange}
+      />
+
+      <div className="sidebar-content">
+        {projects.map((project) => (
+          <ProjectSection
+            key={project.id}
+            project={project}
+            draggedItemId={draggedItemId}
+            selectedItemId={selectedItemId}
+            dropTarget={dropTarget}
+            fileDropTarget={fileDropTarget}
+            editing={editing}
+            onMoveItem={onMoveItem}
+            onDropFiles={onDropFiles}
+            onDragStart={onDragStart}
+            onDragOverItem={onDragOverItem}
+            onFileDragOver={onFileDragOver}
+            onFileDragLeave={onFileDragLeave}
+            onDragEnd={onDragEnd}
+            onContextMenuProject={onContextMenuProject}
+            onContextMenuItem={onContextMenuItem}
+            onSelectGraphNode={onSelectGraphNode}
+            onEditingChange={onEditingChange}
+            onCommitEditing={onCommitEditing}
+            onCancelEditing={onCancelEditing}
+          />
+        ))}
+        {contextMenu && (
+          <ContextMenu
+            contextMenu={contextMenu}
+            onRenameContextTarget={onRenameContextTarget}
+            onAddFolderFromContext={onAddFolderFromContext}
+            onDeleteContextTarget={onDeleteContextTarget}
+          />
+        )}
+      </div>
+      <button
+        type="button"
+        className="sidebar-resize-handle"
+        aria-label="자료 관리 사이드바 폭 조절"
+        onPointerDown={onResizeStart}
+      />
+    </aside>
+  );
+}

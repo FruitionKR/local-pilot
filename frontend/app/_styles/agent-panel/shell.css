@@ -1,0 +1,124 @@
+
+.agent-panel {
+  position: absolute;
+  inset: 89px clamp(16px, 3vw, 40px) 29px auto;
+  z-index: 7;
+  width: clamp(320px, 30vw, 380px);
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 75px 1fr 76px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dbe1ea;
+  border-radius: 28px;
+  box-shadow: 0 7px 24px rgba(35, 47, 66, 0.12);
+}
+
+.agent-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 31px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 11px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-mark,
+.mini-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  color: #fff;
+  background: #303640;
+  border-radius: 50%;
+}
+
+.agent-mark {
+  width: 31px;
+  height: 31px;
+  padding: 7px;
+}
+
+.agent-header h2 {
+  margin: 0;
+  color: #222833;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-header p,
+.agent-message p {
+  margin: 3px 0 0;
+  color: #8b94a3;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.panel-action {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a1abb9;
+  background: transparent;
+  border-radius: 8px;
+}
+
+.panel-action:hover,
+.agent-restore:hover {
+  background: #f1f4f8;
+}
+
+.panel-action .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.agent-restore {
+  position: absolute;
+  top: 104px;
+  right: 40px;
+  z-index: 7;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6a7484;
+  background: #fff;
+  border: 1px solid #dbe1ea;
+  border-radius: 10px;
+  box-shadow: 0 5px 18px rgba(35, 47, 66, 0.12);
+}
+
+.agent-restore .svg-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.agent-body {
+  min-width: 0;
+  padding: 84px 20px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: #b7c0cc transparent;
+}
+
+.agent-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-body::-webkit-scrollbar-thumb {
+  background: #b7c0cc;
+  border: 2px solid #fff;
+  border-radius: 999px;
+}

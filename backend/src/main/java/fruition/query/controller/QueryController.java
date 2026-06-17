@@ -1,8 +1,9 @@
 package fruition.query.controller;
 
-import fruition.util.ErrorResponse;
 import fruition.query.dto.QueryRequest;
 import fruition.query.dto.QueryResponse;
+import fruition.query.service.QueryService;
+import fruition.util.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -10,7 +11,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,6 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Query", description = "Wiki 기반 자연어 질의 API")
 public class QueryController {
 
+    private final QueryService queryService;
+
+    public QueryController(QueryService queryService) {
+        this.queryService = queryService;
+    }
+
     @Operation(
         summary = "Wiki 기반 자연어 질의",
         description = "질문을 받아 Wiki 페이지를 검색하고 LLM으로 답변을 생성합니다. " +
@@ -32,13 +38,15 @@ public class QueryController {
             content = @Content(schema = @Schema(implementation = QueryResponse.class))),
         @ApiResponse(responseCode = "400", description = "잘못된 요청 (질문이 비어 있는 경우)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "502", description = "파이프라인 요청 거부",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "파이프라인 타임아웃 또는 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "500", description = "서버 내부 오류",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping
-    public ResponseEntity<?> query(@Valid @RequestBody QueryRequest request) {
-        return ResponseEntity
-                .status(HttpStatus.NOT_IMPLEMENTED)
-                .body(ErrorResponse.of("NOT_IMPLEMENTED", "준비 중입니다."));
+    public ResponseEntity<QueryResponse> query(@Valid @RequestBody QueryRequest request) {
+        return ResponseEntity.ok(queryService.query(request.question()));
     }
 }

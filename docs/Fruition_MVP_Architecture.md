@@ -414,7 +414,7 @@ sequenceDiagram
 7. Wiki Builder는 반환 결과를 객체 스토리지의 `wiki/` prefix에 Markdown 파일로 저장.
 8. `AppDB`에 문서와 생성된 Wiki 페이지의 연결 관계(`document_wiki_links`), 처리 성공/실패(`documents.status`), 오류 메시지(`documents.error_message`)를 저장.
 
-PDF 파싱과 LLM 호출은 수십 초 이상 걸릴 수 있어서, 업로드 API는 원본 저장과 `documents` 레코드 생성까지만 처리하고 즉시 `status = processing` 응답을 돌려줘요(위 시퀀스의 `업로드 완료 / 처리 시작 응답`). 실제 Wiki 생성은 Spring `@Async`로 백그라운드에서 진행하고, 웹 클라이언트는 `documents.status`를 polling해서 완료/실패를 확인해요. 별도 작업 큐(`jobs`)는 MVP에서 도입하지 않고, 재시도가 필요해지면 전체 시스템 확장의 `processing_jobs`로 분리해요.
+PDF 파싱과 LLM 호출은 수십 초 이상 걸릴 수 있어서, 업로드 API는 원본 저장과 `documents` 레코드 생성까지만 처리하고 즉시 `status = processing` 응답을 돌려줘요(위 시퀀스의 `업로드 완료 / 처리 시작 응답`). 실제 Wiki 생성은 Spring이 FastAPI pipeline에 처리 요청을 보내고, pipeline이 백그라운드에서 진행해 DB 상태를 갱신하는 방식으로 처리해요. 웹 클라이언트는 `documents.status`를 polling해서 완료/실패를 확인해요. 별도 작업 큐(`jobs`)는 MVP에서 도입하지 않고, 재시도가 필요해지면 전체 시스템 확장의 `processing_jobs`로 분리해요.
 
 ## 5. Wiki 기반 자연어 질의 흐름
 
@@ -464,11 +464,13 @@ sequenceDiagram
     "wiki/sources/karpathy-llm-wiki.md",
     "wiki/concepts/llm-wiki.md"
   ],
-  "source_references": [
+  "evidence_snippets": [
     {
-      "document_id": "doc_123",
-      "page": 3,
-      "paragraph": 2
+      "page_id": "source:doc_123",
+      "page_type": "source",
+      "rank": 1,
+      "paragraph_index": 2,
+      "text": "원본 근거 문장"
     }
   ]
 }
@@ -688,7 +690,7 @@ Wiki page끼리의 의미 연결을 저장하는 테이블. 화면 그래프에�
 |---|---|
 | `from_page_id` | 링크가 시작되는 Wiki page ID. `wiki_pages.id` 참조 |
 | `to_page_id` | 링크가 향하는 Wiki page ID. `wiki_pages.id` 참조 |
-| `link_type` | 두 Wiki page 사이의 관계. 예: `source_mentions_concept`, `concept_related_to`, `concept_contrasts_with` |
+| `link_type` | 두 Wiki page 사이의 관계. 예: `source_mentions_concept`, `concept_related_to`, `source_related_to`, `concept_contrasts_with` |
 | `label` | 그래프 edge에 표시할 짧은 라벨 |
 | `confidence` | LLM이 이 관계를 판단한 신뢰도 |
 | `created_at` | 연결 생성 시각 |
@@ -1060,7 +1062,7 @@ MVP DB에는 본문 전체를 구조화해서 넣지 않고, 아래 값만 관�
 - `wiki_pages.page_type = concept`
 - `wiki_pages.title`, `slug`, `summary`, `markdown_uri`, `status`
 - `document_wiki_links.relation_type = extracted_concept` (concept을 추출한 문서마다 한 줄, N:M)
-- `wiki_page_links.link_type = source_mentions_concept` 또는 `concept_related_to`
+- `wiki_page_links.link_type = source_mentions_concept`, `concept_related_to`, `source_related_to`
 - `chat_message_references.document_id`, `page_number`, `paragraph_index`, `quote`
 
 이렇게 하면 데모에서 사용자가 concept node를 클릭했을 때 개념 설명을 읽을 수 있고, 채팅 답변 후에는 어떤 concept page와 source page를 근거로 답했는지 graph에서 하이라이트할 수 있음.

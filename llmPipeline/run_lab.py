@@ -13,16 +13,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fruition_lab.assemble import (
+from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
     GeneratedConceptPageAssembler,
     LinkBuilder,
     ReviewReport,
     SourcePageAssembler,
 )
-from fruition_lab.extract import MarkdownBlockExtractor
-from fruition_lab.io_utils import append_text, ensure_dir, write_json, write_text
-from fruition_lab.llm import (
+from app.modules.wiki_generation.infrastructure.extract import MarkdownBlockExtractor
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ApiConceptResolver,
     ApiConceptPageGenerator,
     ApiSectionPolisher,
@@ -31,15 +30,16 @@ from fruition_lab.llm import (
     ChatCompletionsJsonClient,
     SectionPolishParseError,
 )
-from fruition_lab.concept_resolution import (
+from app.modules.wiki_generation.infrastructure.concept_resolution import (
     apply_concept_resolutions,
     load_existing_concept_index,
     normalize_hint_resolution_output,
     normalize_resolution_output,
 )
-from fruition_lab.normalize import SemanticNormalizer
-from fruition_lab.packet import SemanticPacketBuilder
-from fruition_lab.prompt_io import collect_concept_source_blocks
+from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
+from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuilder
+from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
+from app.modules.wiki_ingestion.infrastructure.file_io import append_text, ensure_dir, write_json, write_text
 
 
 class PipelineLog:

@@ -1,0 +1,47 @@
+
+.status-list {
+  margin-top: 16px;
+  padding: 12px 0;
+}
+
+.status-list button {
+  color: #a7a7a7;
+}
+
+.status-row {
+  color: #a7a7a7;
+  font-size: 12px;
+}
+
+.status-row span {
+  border-color: #8a8a8a;
+}
+
+.status-row:not(:last-child) span::before {
+  background: repeating-linear-gradient(to bottom, #8a8a8a 0 2px, transparent 2px 4px);
+}
+
+.status-row.done span {
+  background: #ffc117;
+}
+
+.status-row.active span {
+  border: 1px solid #ffc117;
+  background: #1e1e1e;
+}
+
+.status-row.pending span {
+  border: 0;
+  background: transparent;
+}
+
+.status-row.active p,
+.status-row.pending p {
+  color: #f0f0f0;
+}
+
+.status-row time,
+.results > p,
+.typing {
+  color: #a7a7a7;
+}

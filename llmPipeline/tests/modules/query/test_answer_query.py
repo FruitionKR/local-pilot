@@ -1,0 +1,470 @@
+import unittest
+
+from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
+from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
+from app.modules.query.domain.exceptions import InvalidQuestionError
+from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
+
+
+class ScoreSearch:
+    def __init__(self, scores_by_title: dict[str, float]) -> None:
+        self._scores_by_title = scores_by_title
+
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        return [self._scores_by_title.get(document.splitlines()[0], 0.0) for document in documents]
+
+
+class RecordingScoreSearch(ScoreSearch):
+    def __init__(self, scores_by_title: dict[str, float]) -> None:
+        super().__init__(scores_by_title)
+        self.queries: list[str] = []
+
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        self.queries.append(query)
+        return super().score(query, documents)
+
+
+class EmptyTextSearch:
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        return [0.0 for _ in documents]
+
+
+class FakeMarkdownReader:
+    def __init__(self, markdown_by_uri: dict[str, str]) -> None:
+        self._markdown_by_uri = markdown_by_uri
+
+    def read_markdown(self, markdown_uri: str) -> str:
+        return self._markdown_by_uri[markdown_uri]
+
+
+class RecordingEventPublisher:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
+        self.events.append((stage, message, data))
+
+
+class RecordingAnswerGenerator:
+    def __init__(self) -> None:
+        self.last_context: QueryContext | None = None
+
+    def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
+        self.last_context = context
+        return GeneratedAnswer(content="테스트 답변입니다. [1]")
+
+
+class FixedQueryRewriter:
+    def __init__(self, rewritten_query: str) -> None:
+        self.rewritten_query = rewritten_query
+
+    def rewrite(self, question: str) -> QueryRewrite:
+        return QueryRewrite(original_question=question, retrieval_query=self.rewritten_query, keywords=self.rewritten_query.split())
+
+
+class FakeWebSearch:
+    def __init__(self, results: list[WebSearchResult]) -> None:
+        self.results = results
+        self.queries: list[str] = []
+
+    def search(self, query: str) -> list[WebSearchResult]:
+        self.queries.append(query)
+        return self.results
+
+
+def source_page(page_id: str, title: str) -> WikiPage:
+    return WikiPage(
+        id=page_id,
+        page_type="source",
+        title=title,
+        slug=title.lower().replace(" ", "-"),
+        summary=f"{title} 요약",
+        markdown_uri=f"s3://test/{page_id}.md",
+    )
+
+
+def concept_page(page_id: str, title: str) -> WikiPage:
+    return WikiPage(
+        id=page_id,
+        page_type="concept",
+        title=title,
+        slug=title.lower().replace(" ", "-"),
+        summary=f"{title} 정의",
+        markdown_uri=f"s3://test/{page_id}.md",
+    )
+
+
+class AnswerQueryUseCaseTest(unittest.TestCase):
+    def test_starts_from_top_source_and_cites_evidence_context(self) -> None:
+        pages = [
+            source_page("source:attention", "Lecture Attention"),
+            source_page("source:unrelated", "Unrelated Source"),
+            concept_page("concept:self-attention", "Self Attention"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:attention",
+                to_page_id="concept:self-attention",
+                link_type="source_mentions_concept",
+                confidence=0.95,
+            )
+        ]
+        answer_generator = RecordingAnswerGenerator()
+        event_publisher = RecordingEventPublisher()
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Lecture Attention": 0.90,
+                    "Unrelated Source": 0.10,
+                    "Self Attention": 0.95,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:attention.md": "Self-attention computes relationships between tokens in one sequence.",
+                    "s3://test/source:unrelated.md": "Unrelated source body.",
+                    "s3://test/concept:self-attention.md": "입력 토큰들이 서로를 참조해 중요도를 계산하는 Transformer 메커니즘.",
+                }
+            ),
+            source_candidate_limit=1,
+            event_publisher=event_publisher,
+            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+        )
+
+        result = use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertIn("source:attention", related_ids)
+        self.assertNotIn("source:unrelated", related_ids)
+        self.assertIn("concept:self-attention", related_ids)
+        self.assertTrue(
+            any("source:attention" in path.nodes and "concept:self-attention" in path.nodes for path in result.traversal_paths)
+        )
+        self.assertIsNotNone(answer_generator.last_context)
+        self.assertIn("# User Question", answer_generator.last_context.answer_context)
+        self.assertIn("# Evidence Snippets By Relevance", answer_generator.last_context.answer_context)
+        self.assertIn("Answer in Korean.", answer_generator.last_context.answer_context)
+        self.assertIn("Do not create examples, analogies, or fictional cases", answer_generator.last_context.answer_context)
+        self.assertIn("Self-attention computes relationships between tokens", answer_generator.last_context.answer_context)
+        self.assertIn("입력 토큰들이 서로를 참조", answer_generator.last_context.answer_context)
+        self.assertIn("citation markers like [1]", answer_generator.last_context.answer_context)
+        self.assertNotIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
+        self.assertIn("Lecture Attention -> Self Attention", answer_generator.last_context.answer_context)
+        self.assertGreaterEqual(len(result.evidence_snippets), 2)
+        self.assertEqual(result.evidence_snippets[0].rank, 1)
+        self.assertEqual(result.evidence_snippets[0].page_url, f"/api/wiki/pages/{result.evidence_snippets[0].page_id}")
+        self.assertIsNotNone(result.evidence_snippets[0].paragraph_index)
+        self.assertIsNotNone(result.evidence_snippets[0].sentence_index)
+        self.assertIn("토큰", result.evidence_snippets[0].text)
+        self.assertNotIn("Unrelated", result.evidence_snippets[0].text)
+        self.assertEqual(result.evidence_snippets, sorted(result.evidence_snippets, key=lambda snippet: snippet.score, reverse=True))
+        self.assertIn("[1]", result.answer.content)
+        self.assertEqual(result.retrieval_summary.max_depth, 0)
+        self.assertNotIn("# User Question", result.answer.content)
+        event_stages = [event[0] for event in event_publisher.events]
+        self.assertEqual(
+            event_stages,
+            [
+                "query_started",
+                "wiki_loaded",
+                "retrieval_markdown_loaded",
+                "retrieval_scored",
+                "seeds_selected",
+                "graph_traversed",
+                "markdown_loaded",
+                "context_built",
+                "answer_generated",
+            ],
+        )
+
+    def test_traverses_source_related_to_edges(self) -> None:
+        pages = [
+            source_page("source:a", "RAG Overview"),
+            source_page("source:b", "Wiki Graph Notes"),
+            concept_page("concept:rag", "RAG"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:a",
+                to_page_id="source:b",
+                link_type="source_related_to",
+                confidence=0.92,
+            ),
+            WikiPageLink(
+                from_page_id="source:b",
+                to_page_id="concept:rag",
+                link_type="source_mentions_concept",
+                confidence=0.91,
+            ),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "RAG Overview": 0.95,
+                    "Wiki Graph Notes": 0.94,
+                    "RAG": 0.20,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+        )
+
+        result = use_case.execute("RAG랑 위키 그래프가 어떻게 이어져?")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        edge_types = {edge.link_type for edge in result.graph_context.edges}
+        self.assertIn("source:b", related_ids)
+        self.assertIn("source_related_to", edge_types)
+
+    def test_excludes_nodes_below_five_percent_from_best_observed_score(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:near", "Near Concept"),
+            concept_page("concept:far", "Far Concept"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:near", "source_mentions_concept", confidence=0.99),
+            WikiPageLink("source:seed", "concept:far", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 1.00,
+                    "Near Concept": 0.96,
+                    "Far Concept": 0.94,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("상대 점수 제한 확인")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertIn("concept:near", related_ids)
+        self.assertNotIn("concept:far", related_ids)
+
+    def test_returns_only_selected_answer_paths(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+            concept_page("concept:two", "Concept Two"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:one", "source_mentions_concept", confidence=0.99),
+            WikiPageLink("source:seed", "concept:two", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 1.00,
+                    "Concept One": 0.99,
+                    "Concept Two": 0.98,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+            returned_path_limit=1,
+        )
+
+        result = use_case.execute("path 반환 제한 확인")
+
+        self.assertEqual(len(result.traversal_paths), 1)
+        self.assertEqual(result.traversal_paths[0].role, "primary_answer_path")
+
+    def test_does_not_expand_graph_when_top_source_score_is_zero(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:connected", "Connected Concept"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:connected", "source_mentions_concept", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.0,
+                    "Connected Concept": 0.0,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("관련 없는 질문")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertEqual(related_ids, {"source:seed"})
+        self.assertEqual(result.traversal_paths, [])
+        self.assertEqual(result.retrieval_summary.stop_reason, "no_relevant_seed")
+        self.assertIn("제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.", result.answer.content)
+        self.assertNotIn("Transformer", result.answer.content)
+
+    def test_uses_rewritten_query_for_retrieval(self) -> None:
+        pages = [
+            source_page("source:attention", "Lecture Attention"),
+            concept_page("concept:self-attention", "Self Attention"),
+        ]
+        embedding_search = RecordingScoreSearch(
+            {
+                "Lecture Attention": 0.90,
+                "Self Attention": 0.95,
+            }
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=embedding_search,
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("self attention token"),
+        )
+
+        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
+
+        self.assertTrue(embedding_search.queries)
+        self.assertTrue(all(query == "self attention token" for query in embedding_search.queries))
+
+    def test_falls_back_to_web_search_when_internal_relevance_is_low(self) -> None:
+        pages = [source_page("source:seed", "Seed Source")]
+        web_search = FakeWebSearch(
+            [
+                WebSearchResult(
+                    title="External RAG Reference",
+                    url="https://example.com/rag",
+                    snippet="RAG retrieves external knowledge and uses it to ground generated answers.",
+                    score=0.91,
+                )
+            ]
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Seed Source": 0.10}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("rag external knowledge"),
+            web_search=web_search,
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("RAG가 뭐야?")
+
+        self.assertEqual(web_search.queries, ["rag external knowledge"])
+        self.assertEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
+        self.assertEqual(result.traversal_paths, [])
+        self.assertEqual(result.related_pages[0].page.page_type, "web")
+        self.assertEqual(result.related_pages[0].page.markdown_uri, "https://example.com/rag")
+        self.assertEqual(result.evidence_snippets[0].page_url, "https://example.com/rag")
+        self.assertIn("[1]", result.answer.content)
+
+    def test_direct_concept_name_match_can_answer_without_relevant_source_seed(self) -> None:
+        pages = [
+            source_page("source:solar-system", "Solar System Source"),
+            concept_page("concept:sun", "태양"),
+            concept_page("concept:solar-system", "태양계"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:solar-system",
+                to_page_id="concept:sun",
+                link_type="source_mentions_concept",
+                confidence=0.97,
+            )
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Solar System Source": 0.0,
+                    "태양": 0.20,
+                    "태양계": 0.30,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:solar-system.md": "태양계는 태양과 행성으로 구성됩니다.",
+                    "s3://test/concept:sun.md": "태양은 태양계의 중심에 있는 별입니다.",
+                    "s3://test/concept:solar-system.md": "태양계는 태양, 행성, 위성 등으로 이루어진 천체 체계입니다.",
+                }
+            ),
+            query_rewriter=FixedQueryRewriter("태양"),
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("태양이 뭐야?")
+
+        self.assertEqual(result.retrieval_summary.stop_reason, "concept_direct_match")
+        self.assertIn("concept:sun", {item.page.id for item in result.related_pages})
+        self.assertIn("source_mentions_concept", {edge.link_type for edge in result.graph_context.edges})
+        self.assertEqual(result.traversal_paths[0].stop_reason, "concept_direct_match")
+        self.assertEqual(result.traversal_paths[0].nodes, ["source:solar-system", "concept:sun"])
+        self.assertIn("태양은 태양계의 중심", result.evidence_snippets[0].text)
+        self.assertIn("[1]", result.answer.content)
+
+    def test_traverses_without_configured_max_depth_limit(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+            concept_page("concept:two", "Concept Two"),
+            concept_page("concept:three", "Concept Three"),
+            concept_page("concept:four", "Concept Four"),
+        ]
+        links = [
+            WikiPageLink("source:seed", "concept:one", "source_mentions_concept", confidence=0.99),
+            WikiPageLink("concept:one", "concept:two", "concept_related_to", confidence=0.99),
+            WikiPageLink("concept:two", "concept:three", "concept_related_to", confidence=0.99),
+            WikiPageLink("concept:three", "concept:four", "concept_related_to", confidence=0.99),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, links),
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.95,
+                    "Concept One": 0.95,
+                    "Concept Two": 0.95,
+                    "Concept Three": 0.95,
+                    "Concept Four": 0.95,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            source_candidate_limit=1,
+            traverse_wiki_graph=TraverseWikiGraphUseCase(max_depth=2, min_node_score=0.10),
+        )
+
+        result = use_case.execute("깊이 제한 해제 확인")
+
+        related_ids = {item.page.id for item in result.related_pages}
+        self.assertIn("concept:two", related_ids)
+        self.assertIn("concept:three", related_ids)
+        self.assertIn("concept:four", related_ids)
+        self.assertEqual(result.retrieval_summary.max_depth, 0)
+
+    def test_rejects_blank_question(self) -> None:
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([], []),
+            embedding_search=ScoreSearch({}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+        )
+
+        with self.assertRaises(InvalidQuestionError):
+            use_case.execute("   ")
+
+
+if __name__ == "__main__":
+    unittest.main()
