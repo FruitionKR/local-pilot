@@ -13,7 +13,7 @@ export function DocumentSidebar({
   editing,
   contextMenu,
   uploadInputRef,
-  onOpenUploadPicker,
+  onAddProject,
   onResizeStart,
   onUploadPickerChange,
   onMoveItem,
@@ -41,7 +41,7 @@ export function DocumentSidebar({
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement>;
-  onOpenUploadPicker: (projectId: string, folderId: string | null) => void;
+  onAddProject: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
@@ -68,10 +68,10 @@ export function DocumentSidebar({
         <button
           type="button"
           className="sidebar-upload-button"
-          aria-label="자료 추가"
+          aria-label="프로젝트 추가"
           onClick={(event) => {
             event.stopPropagation();
-            if (projects[0]) onOpenUploadPicker(projects[0].id, null);
+            onAddProject();
           }}
         >
           <SvgIcon src={switchIcon} className="sidebar-upload-icon" />

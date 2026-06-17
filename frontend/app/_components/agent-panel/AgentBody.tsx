@@ -23,9 +23,10 @@ export function AgentBody({
   const showAgentStatus = isLoading;
   const [visibleAnswerStage, setVisibleAnswerStage] = useState(3);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const hasScrolledInitialMessagesRef = useRef(false);
   const scrollAnimationRef = useRef<number | null>(null);
 
-  function scrollToLatestMessage() {
+  function scrollToLatestMessage({ immediate = false } = {}) {
     const body = bodyRef.current;
     if (!body) return;
     const scrollBody = body;
@@ -39,6 +40,10 @@ export function AgentBody({
     const distance = targetTop - startTop;
 
     if (distance <= 1) return;
+    if (immediate) {
+      scrollBody.scrollTop = targetTop;
+      return;
+    }
 
     const duration = 1100;
     const startTime = performance.now();
@@ -81,9 +86,18 @@ export function AgentBody({
   useEffect(() => {
     if (!animatedMessageId && !isLoading && !queryErrorMessage) return;
 
-    const frameId = window.requestAnimationFrame(scrollToLatestMessage);
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage());
     return () => window.cancelAnimationFrame(frameId);
   }, [animatedMessageId, visibleAnswerStage, isLoading, queryErrorMessage]);
+
+  useEffect(() => {
+    if (messages.length === 0 || animatedMessageId || isLoading || queryErrorMessage) return;
+    if (hasScrolledInitialMessagesRef.current) return;
+
+    hasScrolledInitialMessagesRef.current = true;
+    const frameId = window.requestAnimationFrame(() => scrollToLatestMessage({ immediate: true }));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [messages.length, animatedMessageId, isLoading, queryErrorMessage]);
 
   useEffect(() => () => {
     if (scrollAnimationRef.current !== null) {
