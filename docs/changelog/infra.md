@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-06-18
+
+### chore: dev-up pipeline API 포함
+
+**배경**
+
+채팅 질의와 문서 업로드 후 처리는 Spring 백엔드가 `localhost:8000`의 pipeline API를 호출해야 합니다. 기존 `scripts/dev-up.sh`는 PostgreSQL, MinIO, 백엔드, 프론트엔드만 실행해 `POST /api/query`가 503으로 실패하고 업로드 문서가 `processing`에 머물 수 있었습니다.
+
+또한 `infra/docker-compose.pipeline.yml`로 실행했던 `pipeline-api` 컨테이너가 중지 상태로 남으면, 기본 `scripts/dev-up.sh` 실행 시 Docker Compose가 orphan container 경고를 출력했습니다.
+
+**변경된 것**
+
+- `scripts/dev-up.sh` — `infra/docker-compose.dev.yml`와 `infra/docker-compose.pipeline.yml`을 함께 실행하고 `http://localhost:8000/health`까지 확인하도록 변경
+- `scripts/dev-up.sh` — `fruition-mvp-dev` project의 중지된 `pipeline-api` 컨테이너만 `docker compose up` 전에 정리하도록 추가
+- `scripts/dev-down.sh` — pipeline API compose 파일과 `8000` 포트 종료를 포함하도록 변경
+- `docs/local-runbook.md` — 자동 실행/종료 스크립트가 pipeline API를 포함한다는 내용으로 갱신
+
+**검증**
+
+- `bash -n scripts/dev-up.sh`
+- `bash -n scripts/dev-down.sh`
+- `./scripts/dev-up.sh` 실행 시 orphan container 경고 없이 PostgreSQL/MinIO, pipeline API, 백엔드, 프론트엔드 기동 확인
+- `./scripts/dev-down.sh`로 앱 프로세스와 PostgreSQL/MinIO/pipeline API 컨테이너 종료 확인
+
+---
+
 ## 2026-06-16
 
 ### chore: Discord PR 알림 설정 문서화

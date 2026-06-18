@@ -8,6 +8,7 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
+PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
 
 BACKEND_PID=""
 FRONTEND_PID=""
@@ -152,10 +153,30 @@ wait_for_postgres() {
   fail "PostgreSQL 컨테이너가 준비되지 않았습니다."
 }
 
+cleanup_stale_pipeline_orphans() {
+  local container_ids
+
+  container_ids="$(docker ps -aq \
+    --filter "label=com.docker.compose.project=fruition-mvp-dev" \
+    --filter "label=com.docker.compose.service=pipeline-api" \
+    --filter "status=created" \
+    --filter "status=exited" \
+    --filter "status=dead")"
+
+  if [[ -z "$container_ids" ]]; then
+    return
+  fi
+
+  log "중지된 pipeline-api 컨테이너를 정리합니다."
+  docker rm $container_ids >/dev/null
+}
+
 start_infra() {
-  log "PostgreSQL과 MinIO를 시작합니다."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+  log "PostgreSQL, MinIO, pipeline API를 시작합니다."
+  cleanup_stale_pipeline_orphans
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build
   wait_for_postgres
+  wait_for_url "http://localhost:8000/health" "Pipeline API" 120
 }
 
 start_backend() {
@@ -207,10 +228,11 @@ main() {
 [dev-up] 로컬 개발 서버가 실행 중입니다.
   - Frontend: http://localhost:3000
   - Backend:  http://localhost:8080
+  - Pipeline: http://localhost:8000
   - Swagger:  http://localhost:8080/swagger-ui.html
   - MinIO:    http://localhost:9001
 
-[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO 컨테이너는 유지됩니다.
+[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
 INFO
 
   wait "$BACKEND_PID" "$FRONTEND_PID"
