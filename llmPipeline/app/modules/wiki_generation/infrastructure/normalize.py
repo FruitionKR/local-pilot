@@ -25,13 +25,26 @@ class SemanticNormalizer:
         normalized_notes = []
         concepts_by_slug: dict[str, NormalizedConcept] = {}
         evidence_rows: list[NormalizedEvidence] = []
+        categories_by_name: dict[str, dict[str, Any]] = {}
+        section_candidates_by_slug: dict[str, dict[str, Any]] = {}
+        mentions_by_slug: dict[str, dict[str, Any]] = {}
 
         for note_idx, note in enumerate(notes):
             chunk_id = note.get("chunk_id") or f"chunk_{note_idx + 1:04d}"
             normalized_note = self._normalize_single_note(note, warnings)
             normalized_notes.append(normalized_note)
 
-            for rank, c in enumerate(note.get("concept_candidates", []), start=1):
+            for category in normalized_note.get("categories", []):
+                self._merge_source_item(categories_by_name, category, key="term")
+
+            for section in normalized_note.get("section_candidates", []):
+                self._merge_source_item(section_candidates_by_slug, section, key="slug")
+
+            for mention in normalized_note.get("mentions", []):
+                self._merge_source_item(mentions_by_slug, mention, key="slug")
+
+            concept_inputs = note.get("core_concepts") or note.get("concept_candidates", [])
+            for rank, c in enumerate(concept_inputs, start=1):
                 concept = self._normalize_concept(c, warnings)
                 if concept.slug not in concepts_by_slug:
                     concept.importance_score += max(0, 10 - rank)
@@ -80,6 +93,9 @@ class SemanticNormalizer:
             "document": asdict(self.document),
             "semantic_notes": normalized_notes,
             "concept_ledger": [asdict(c) for c in sorted(concepts_by_slug.values(), key=lambda c: (-c.importance_score, c.slug))],
+            "categories": sorted(categories_by_name.values(), key=lambda x: x.get("name", "")),
+            "section_candidates": sorted(section_candidates_by_slug.values(), key=lambda x: x.get("slug", "")),
+            "mentions": sorted(mentions_by_slug.values(), key=lambda x: x.get("slug", "")),
             "evidence_units": [asdict(e) for e in evidence_rows],
             "missing_related_concept_hints": sorted(missing_related_hints.values(), key=lambda x: (-x["max_confidence"], x["slug"])),
             "warnings": warnings,
@@ -107,13 +123,54 @@ class SemanticNormalizer:
                 }
                 for kp in note.get("key_points", [])
             ],
+            "categories": [
+                {
+                    "term": str(item.get("name", "")).strip(),
+                    "name": str(item.get("name", "")).strip(),
+                    "slug": slugify(item.get("slug_hint") or item.get("name", "")),
+                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                }
+                for item in note.get("categories", [])
+                if str(item.get("name", "")).strip()
+            ],
+            "core_concepts": [
+                {
+                    "term": c.get("title", ""),
+                    "title": c.get("title", ""),
+                    "slug": slugify(c.get("slug_hint") or c.get("title", "")),
+                    "anchor_reference_ids": map_anchor_ids(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), limit=3),
+                }
+                for c in (note.get("core_concepts") or note.get("concept_candidates", []))
+            ],
+            "section_candidates": [
+                {
+                    "term": item.get("title", ""),
+                    "title": item.get("title", ""),
+                    "slug": slugify(item.get("slug_hint") or item.get("title", "")),
+                    "context": item.get("context") or item.get("summary", ""),
+                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                }
+                for item in note.get("section_candidates", [])
+                if item.get("title") or item.get("slug_hint")
+            ],
+            "mentions": [
+                {
+                    "term": item.get("name", ""),
+                    "name": item.get("name", ""),
+                    "slug": slugify(item.get("slug_hint") or item.get("name", "")),
+                    "context": item.get("context", ""),
+                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                }
+                for item in note.get("mentions", [])
+                if item.get("name") or item.get("slug_hint")
+            ],
             "concept_candidates": [
                 {
                     "title": c.get("title", ""),
                     "slug": slugify(c.get("slug_hint") or c.get("title", "")),
-                    "anchor_reference_ids": map_anchor_ids(c.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": map_anchor_ids(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), limit=3),
                 }
-                for c in note.get("concept_candidates", [])
+                for c in (note.get("core_concepts") or note.get("concept_candidates", []))
             ],
             "evidence_claims": [
                 {
@@ -127,6 +184,19 @@ class SemanticNormalizer:
             "needs_neighbor_context": bool(note.get("needs_neighbor_context", False)),
             "context_problem": note.get("context_problem"),
         }
+
+    def _merge_source_item(self, bucket: dict[str, dict[str, Any]], item: dict[str, Any], key: str) -> None:
+        raw_key = str(item.get(key, "")).strip()
+        if not raw_key:
+            return
+        merge_key = raw_key.lower() if key in {"name", "term"} else raw_key
+        existing = bucket.setdefault(merge_key, {**item, "anchor_reference_ids": []})
+        existing["anchor_reference_ids"] = unique_keep_order(
+            existing.get("anchor_reference_ids", []) + item.get("anchor_reference_ids", [])
+        )
+        for field in ("context", "definition", "why_page_worthy"):
+            if item.get(field) and len(str(item.get(field))) > len(str(existing.get(field, ""))):
+                existing[field] = item[field]
 
     def _anchor_refs(self, anchor_block_ids: Iterable[str], warnings: list[str], limit: int = 3) -> list[str]:
         refs = []
@@ -143,7 +213,7 @@ class SemanticNormalizer:
         title = c.get("title") or "Untitled Concept"
         slug = slugify(c.get("slug_hint") or title)
         aliases = unique_keep_order([str(a) for a in c.get("aliases", []) if a] + [title])
-        anchor_refs = self._anchor_refs(c.get("anchor_block_ids", []), warnings, limit=3)
+        anchor_refs = self._anchor_refs(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), warnings, limit=3)
         return NormalizedConcept(
             slug=slug,
             title=title,

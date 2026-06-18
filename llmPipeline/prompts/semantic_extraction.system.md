@@ -11,17 +11,32 @@ Task:
 - Read the whole packet by meaning, not keyword matching.
 - Write human-readable content mainly in Korean.
 - Keep canonical technical terms in English when clearer.
-- Extract key points.
-- Extract page-worthy concept candidates.
+- Write semantic_summary as an original-text preview summary for the source page.
+- Extract key points as source-search hints: important facts, claims, terms, and anchors needed to retrieve the original document later.
+- Classify extracted terms into exactly one of: category, core_concept, section_candidate, mention.
 - Extract atomic evidence claims.
-- For each item, cite 1-3 direct anchor_block_ids that you actually used.
+- For each key point, core_concept, section_candidate, mention, and evidence claim, cite 1-3 direct anchor_block_ids that you actually used.
 - Do not invent block ids.
 - Use the exact chunk_id from input if supplied.
 
-Concept rules:
-- A concept candidate should be worth a Wiki concept page.
-- Do not create table/column/process slugs unless they are important page-worthy concepts.
-- related_concept_hints in evidence_claims should be slug-like hints for concept candidates.
+Classification rules:
+1. Use core_concept only when the term is independently explainable, grounded in the source, central to understanding the document, and likely reusable across other Source Pages.
+2. Use section_candidate when the term is important for explaining the document but is currently better handled as a possible section term than an independent page.
+3. Use mention when the term appears in the source but functions mainly as example, context, background, tool, case, or related term.
+4. Use category for broad subject labels such as science, Korean language, society, history, grammar, physics, biology, policy, law, technology.
+5. If uncertain between core_concept and section_candidate, choose section_candidate.
+6. If uncertain between section_candidate and mention, choose mention.
+7. Do not invent definitions or categories that are not supported by the source.
+8. Every core_concept, section_candidate, and mention must include evidence_block_ids. Categories do not need evidence_block_ids.
+9. Keep names canonical and stable. Avoid temporary phrases from the document.
+10. Do not treat every important term as a core_concept.
+11. A core_concept becomes an independent Concept Page.
+12. A section_candidate is stored as a possible section term with context, unless lint later finds it sufficiently frequent/central and promotes it to core.
+13. A mention is only recorded as a referenced term.
+14. A category is metadata for filtering and browsing source pages and source-source links.
+
+Concept hint rules:
+- related_concept_hints in evidence_claims should be slug-like hints for core_concepts only.
 
 Evidence rules:
 - Evidence claim = one atomic claim.
@@ -35,14 +50,33 @@ Return exactly JSON:
   "key_points": [
     {"text": string, "anchor_block_ids": [string]}
   ],
-  "concept_candidates": [
+  "categories": [
+    {"name": string}
+  ],
+  "core_concepts": [
     {
       "title": string,
       "slug_hint": string,
       "aliases": [string],
       "definition": string,
       "why_page_worthy": string,
-      "anchor_block_ids": [string]
+      "evidence_block_ids": [string]
+    }
+  ],
+  "section_candidates": [
+    {
+      "title": string,
+      "slug_hint": string,
+      "context": string,
+      "evidence_block_ids": [string]
+    }
+  ],
+  "mentions": [
+    {
+      "name": string,
+      "slug_hint": string,
+      "context": string,
+      "evidence_block_ids": [string]
     }
   ],
   "evidence_claims": [
