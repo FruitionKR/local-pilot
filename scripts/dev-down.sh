@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/infra/docker-compose.dev.yml"
+PIPELINE_COMPOSE_FILE="$ROOT_DIR/infra/docker-compose.pipeline.yml"
 
 REMOVE_VOLUMES="false"
 
@@ -20,7 +21,7 @@ usage() {
 Usage: scripts/dev-down.sh [--volumes]
 
 Options:
-  --volumes   PostgreSQL, MinIO 로컬 볼륨까지 삭제합니다.
+  --volumes   PostgreSQL, MinIO, pipeline 로컬 볼륨까지 삭제합니다.
   -h, --help  도움말을 출력합니다.
 USAGE
 }
@@ -79,14 +80,14 @@ stop_port_processes() {
 }
 
 down_infra() {
-  local args=(-f "$COMPOSE_FILE" down)
+  local args=(-f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" down)
 
   if [[ "$REMOVE_VOLUMES" == "true" ]]; then
     args+=(-v)
   fi
 
   if docker info >/dev/null 2>&1; then
-    log "PostgreSQL과 MinIO 컨테이너를 종료합니다."
+    log "PostgreSQL, MinIO, pipeline API 컨테이너를 종료합니다."
     docker compose "${args[@]}"
   else
     log "Docker daemon에 연결할 수 없어 인프라 종료는 건너뜁니다."

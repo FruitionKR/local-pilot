@@ -28,7 +28,7 @@ macOS에서 Docker Desktop 대신 Colima를 쓸 수 있습니다. 이 경우 `co
 | `9000` | MinIO API |
 | `9001` | MinIO Console |
 
-LLM pipeline까지 함께 실행하는 경우 `8000`도 필요합니다. 기본 프론트엔드 설정은 백엔드를 `http://localhost:8080`으로 호출합니다.
+기본 실행 스크립트가 pipeline API까지 함께 실행하므로 `8000`도 필요합니다. 기본 프론트엔드 설정은 백엔드를 `http://localhost:8080`으로 호출합니다.
 
 ## 환경변수
 
@@ -54,7 +54,7 @@ export JAVA_HOME_21=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Ho
 
 ## 한 번에 실행
 
-실행 스크립트를 사용하면 인프라, 백엔드, 프론트엔드를 순서대로 시작하고 HTTP 응답까지 확인합니다.
+실행 스크립트를 사용하면 인프라, pipeline API, 백엔드, 프론트엔드를 순서대로 시작하고 HTTP 응답까지 확인합니다.
 
 ```sh
 chmod +x scripts/dev-up.sh
@@ -65,13 +65,14 @@ chmod +x scripts/dev-up.sh
 
 1. `infra/.env`가 없으면 `infra/.env.example`에서 복사
 2. Docker daemon 확인, 가능한 경우 Colima 시작
-3. `infra/docker-compose.dev.yml`로 PostgreSQL과 MinIO 시작
-4. Java 21 경로 탐색 후 `backend/./gradlew bootRun` 실행
-5. `frontend/node_modules`가 없으면 `npm install` 실행
-6. `frontend/npm run dev` 실행
-7. `http://localhost:8080/api/documents`, `http://localhost:3000` 응답 확인
+3. `infra/docker-compose.dev.yml`와 `infra/docker-compose.pipeline.yml`로 PostgreSQL, MinIO, pipeline API 시작
+4. `http://localhost:8000/health` 응답 확인
+5. Java 21 경로 탐색 후 `backend/./gradlew bootRun` 실행
+6. `frontend/node_modules`가 없으면 `npm install` 실행
+7. `frontend/npm run dev` 실행
+8. `http://localhost:8080/api/documents`, `http://localhost:3000` 응답 확인
 
-스크립트를 종료하려면 터미널에서 `Ctrl-C`를 누릅니다. 이때 백엔드와 프론트엔드 프로세스는 종료되지만 PostgreSQL과 MinIO 컨테이너는 유지됩니다.
+스크립트를 종료하려면 터미널에서 `Ctrl-C`를 누릅니다. 이때 백엔드와 프론트엔드 프로세스는 종료되지만 PostgreSQL, MinIO, pipeline API 컨테이너는 유지됩니다.
 
 ## 수동 실행 순서
 
@@ -157,7 +158,7 @@ docker compose -f infra/docker-compose.dev.yml down -v
 
 ## 전체 종료 스크립트
 
-앱 프로세스와 로컬 인프라를 한 번에 종료하려면 아래 스크립트를 사용합니다.
+앱 프로세스와 로컬 인프라, pipeline API를 한 번에 종료하려면 아래 스크립트를 사용합니다.
 
 ```sh
 ./scripts/dev-down.sh
@@ -167,7 +168,7 @@ docker compose -f infra/docker-compose.dev.yml down -v
 
 1. `3000` 포트의 Next.js 프로세스 종료
 2. `8080` 포트의 Spring Boot 프로세스 종료
-3. `infra/docker-compose.dev.yml`의 PostgreSQL, MinIO 컨테이너 종료
+3. `8000` 포트 사용 프로세스와 `infra/docker-compose.dev.yml`, `infra/docker-compose.pipeline.yml`의 PostgreSQL, MinIO, pipeline API 컨테이너 종료
 
 로컬 데이터베이스와 객체 스토리지 볼륨까지 삭제하려면 `--volumes` 옵션을 사용합니다.
 
@@ -175,7 +176,7 @@ docker compose -f infra/docker-compose.dev.yml down -v
 ./scripts/dev-down.sh --volumes
 ```
 
-`--volumes`는 업로드 문서, Wiki page, DB 레코드 등 로컬 개발 데이터를 삭제하므로 재현 환경 초기화가 필요한 경우에만 사용합니다.
+`--volumes`는 업로드 문서, Wiki page, DB 레코드, pipeline 실행 산출물 등 로컬 개발 데이터를 삭제하므로 재현 환경 초기화가 필요한 경우에만 사용합니다.
 
 ## 문제 해결
 
@@ -234,4 +235,4 @@ export NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
 
 ### 업로드 후 문서 처리가 계속 processing 상태임
 
-기본 실행은 PostgreSQL, MinIO, 백엔드, 프론트엔드만 포함합니다. 실제 문서 처리 pipeline이 필요하면 `infra/docker-compose.pipeline.yml` 또는 관련 pipeline 서비스를 추가로 실행하고, `infra/.env`의 `PROCESSING_ENDPOINT`, `OPENAI_API_KEY`, `UPSTAGE_API_KEY` 값을 확인해야 합니다.
+기본 실행은 pipeline API까지 포함합니다. 문서 처리가 계속 `processing` 상태라면 `http://localhost:8000/health` 응답과 `infra/.env`의 `PROCESSING_ENDPOINT`, `OPENAI_API_KEY`, `UPSTAGE_API_KEY` 값을 확인해야 합니다.
