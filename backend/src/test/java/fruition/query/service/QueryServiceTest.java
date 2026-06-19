@@ -5,8 +5,13 @@ import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.query.dto.QueryResponse;
+import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
 import fruition.query.repository.PipelineQueryResponse;
+import fruition.wiki.domain.WikiPage;
+import fruition.wiki.domain.WikiPageType;
+import fruition.wiki.repository.DocumentWikiLinkRepository;
+import fruition.wiki.repository.WikiPageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,8 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-
-import fruition.query.exception.PipelineQueryException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,14 +36,27 @@ class QueryServiceTest {
     @Mock PipelineQueryRequester pipelineQueryRequester;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
+    @Mock WikiPageRepository wikiPageRepository;
+    @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
 
     QueryService queryService;
 
+    private static final String SOURCE_ID = "source:codex-container-llm-wiki-api-20260611_013043";
+    private static final String CONCEPT_ID = "concept:index-md";
+
     @BeforeEach
     void setUp() {
-        queryService = new QueryService(pipelineQueryRequester, chatMessageRepository, referenceRepository);
+        queryService = new QueryService(
+                pipelineQueryRequester, chatMessageRepository, referenceRepository,
+                wikiPageRepository, documentWikiLinkRepository);
         when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+
+        WikiPage sourcePage = new WikiPage(SOURCE_ID, WikiPageType.source, "LLM Wiki",
+                "codex-container-llm-wiki-api-20260611_013043", null, "wiki/sources/llm-wiki.md");
+        WikiPage conceptPage = new WikiPage(CONCEPT_ID, WikiPageType.concept, "Index.md",
+                "index-md", null, "wiki/concepts/index-md.md");
+        lenient().when(wikiPageRepository.findAllById(anyList())).thenReturn(List.of(sourcePage, conceptPage));
     }
 
     @Test
@@ -130,8 +146,8 @@ class QueryServiceTest {
     }
 
     private PipelineQueryResponse samplePipelineResponse() {
-        String sourceId = "source:codex-container-llm-wiki-api-20260611_013043";
-        String conceptId = "concept:index-md";
+        String sourceId = SOURCE_ID;
+        String conceptId = CONCEPT_ID;
 
         List<PipelineQueryResponse.RelatedPage> relatedPages = List.of(
                 new PipelineQueryResponse.RelatedPage(sourceId, "source", "LLM Wiki",

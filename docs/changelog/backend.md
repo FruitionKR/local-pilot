@@ -6,6 +6,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-19
 
+### fix: buildReferences() 저장 전 reference 유효성 검증 추가
+
+**배경**
+
+`QueryService.buildReferences()`가 `pageId != null`인 evidence snippet을 조건 없이 저장했습니다.
+이 때문에 DB에 없는 wiki_page를 참조하거나 원문 viewer에서 열 수 없는 항목이 "근거 자료"로 표시됐습니다.
+
+**추가/변경된 것**
+
+- `buildReferences()`에 3단계 필터 추가
+  - `quote` 비공백: `snippet.text()`가 null이거나 blank면 제외
+  - `wiki_pages` 존재: `WikiPageRepository.findAllById()` batch 조회 후 DB에 없는 pageId 제외
+  - 원문 viewer 접근 가능: `markdownUri != null` 또는 `document_wiki_links` 연결이 있는 page만 저장
+- `WikiPageRepository`, `DocumentWikiLinkRepository` 의존성 추가
+- `QueryServiceTest` — 신규 의존성 Mock 추가 및 wiki page 스텁 설정
+
+**검증**
+
+- `./gradlew test --tests "fruition.query.service.QueryServiceTest"` 통과
+
+---
+
 ### feat: 원본 문서 조회 API 구현 (GET /api/documents/{document_id}/original)
 
 **배경**
