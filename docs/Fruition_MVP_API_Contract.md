@@ -222,6 +222,7 @@ wiki/concepts/{concept_slug}.md
 POST   /documents
 GET    /documents
 GET    /documents/{document_id}
+GET    /documents/{document_id}/original
 PATCH  /documents/{document_id}/rename
 GET    /wiki/graph
 GET    /wiki/pages/{wiki_page_id}
@@ -353,7 +354,33 @@ Response:
 }
 ```
 
-### 5.4 문서 이름 변경
+### 5.4 원본 파일 스트리밍
+
+```http
+GET /api/documents/{document_id}/original
+```
+
+Response: 원본 파일 바이너리 스트림
+
+```text
+Content-Type: application/pdf
+Content-Disposition: inline; filename="lecture_01.pdf"
+```
+
+처리 규칙:
+
+- `documents.source_uri`를 기준으로 MinIO에서 원본 파일을 스트리밍한다.
+- `Content-Type`은 `documents.mime_type` 기준이다.
+- PDF·text/* 계열은 `Content-Disposition: inline`, 그 외는 `attachment`로 반환한다.
+
+주요 error code:
+
+| code | HTTP status | description |
+| --- | --- | --- |
+| `DOCUMENT_NOT_FOUND` | 404 | 문서 ID가 존재하지 않는다. |
+| `DOCUMENT_ORIGINAL_NOT_FOUND` | 404 | DB에 문서 레코드는 있으나 MinIO 원본 객체가 없다. |
+
+### 5.5 문서 이름 변경
 
 ```http
 PATCH /api/documents/{document_id}/rename
@@ -750,31 +777,45 @@ Response:
       "content": "Self-Attention이 뭐야?",
       "status": "completed",
       "created_at": "2026-06-04T10:05:00Z",
+      "related_pages": [],
       "references": []
     },
     {
       "id": "chat_assistant_456",
       "role": "assistant",
-      "content": "Self-Attention은 입력 토큰들이 서로 어떤 관계를 갖는지 계산하는 Transformer의 핵심 메커니즘이에요.",
+      "content": "Self-Attention은 입력 토큰들이 서로 어떤 관계를 갖는지 계산하는 Transformer의 핵심 메커니즘이에요. [1]",
       "status": "completed",
       "created_at": "2026-06-04T10:05:03Z",
-      "references": [
+      "related_pages": [
         {
-          "id": 1,
-          "reference_type": "wiki_page",
-          "wiki_page_id": "page_concept_456",
-          "page_role": "concept",
+          "wiki_page_id": "source:lecture-01",
+          "page_type": "source",
+          "title": "lecture_01",
+          "slug": "lecture-01",
           "relevance_score": 0.95,
+          "role": "seed_source",
+          "depth": 0,
           "rank": 1
         },
         {
-          "id": 2,
-          "reference_type": "source_quote",
-          "document_id": "doc_123",
-          "page_role": "source",
-          "relevance_score": 0.87,
-          "rank": 2,
-          "page_number": 3,
+          "wiki_page_id": "concept:self-attention",
+          "page_type": "concept",
+          "title": "Self-Attention",
+          "slug": "self-attention",
+          "relevance_score": 0.88,
+          "role": "focus_concept",
+          "depth": 1,
+          "rank": 2
+        }
+      ],
+      "references": [
+        {
+          "id": 1,
+          "reference_type": "source",
+          "wiki_page_id": "source:lecture-01",
+          "page_role": "seed_source",
+          "relevance_score": 0.91,
+          "rank": 1,
           "paragraph_index": 2,
           "sentence_index": 0,
           "quote": "Self-attention computes relationships between tokens."
@@ -785,10 +826,18 @@ Response:
 }
 ```
 
+Response fields:
+
+| field | description |
+| --- | --- |
+| `related_pages` | pipeline `related_pages` 기준 탐색된 Wiki page 목록. 프론트 "찾은 자료" 카드 기준. |
+| `references` | pipeline `evidence_snippets` 기준 인용 근거. 답변 본문 `[N]` citation과 대응. |
+
 사용처:
 
 - 오른쪽 채팅 영역의 이전 질문/답변 표시
-- 답변에 사용된 Wiki page와 원본 출처 표시
+- "찾은 자료" 카드 목록 (`related_pages` 기준)
+- 답변 citation 근거 표시 (`references` 기준)
 
 ## 9. 프론트 화면 매핑
 
@@ -799,6 +848,7 @@ Response:
 ```text
 GET /api/documents
 POST /api/documents
+GET /api/documents/{document_id}/original
 PATCH /api/documents/{document_id}/rename
 ```
 
