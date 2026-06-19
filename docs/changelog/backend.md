@@ -6,6 +6,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-19
 
+### feat: related_pages 별도 테이블 저장 및 채팅 조회 API 반영
+
+**배경**
+
+`chat_message_references`에 `related_pages`를 `reference_type`으로 섞어 저장하면 "근거 스니펫(quote)"과 "탐색된 Wiki 페이지 목록"이 하나의 테이블에 혼재됩니다. 두 개념은 쓰임새가 다르므로(`evidence_snippets` = 인용 근거, `related_pages` = "찾은 자료" 카드) 별도 테이블로 분리했습니다.
+
+**추가/변경된 것**
+
+- `ChatMessageRelatedPage` 엔티티 추가 (`chat_message_related_pages` 테이블)
+- `ChatMessageRelatedPageRepository` 추가 (`findAllByChatMessageIdIn()` 배치 조회)
+- `ChatMessageRelatedPageResponse` DTO 추가 (`wiki_page_id`, `page_type`, `title`, `slug`, `relevance_score`, `role`, `depth`, `rank`)
+- `QueryService` — `relatedPageRepository` 주입, `buildRelatedPages()` 추가, `query()` 내 `relatedPageRepository.saveAll()` 호출
+- `ChatMessageResponse` — `related_pages` 필드 추가 (`references` 앞)
+- `ChatController` — `relatedPageRepository` 주입, `GET /api/chat/messages` 응답에 `related_pages` 포함 (배치 조회로 N+1 방지)
+- `backend-mvp-erd.md` — `chat_message_related_pages` 테이블 및 관계 추가
+- `QueryServiceTest` — `relatedPageRepository` mock 추가, `buildRelatedPages()` 저장 검증 추가
+
+**검증**
+
+- `./gradlew test --tests "fruition.query.service.QueryServiceTest"` 통과
+
+---
+
 ### fix: buildReferences() 저장 전 reference 유효성 검증 추가
 
 **배경**

@@ -76,7 +76,21 @@ erDiagram
     wiki_pages ||--o{ document_wiki_links : "wiki_page_id"
     wiki_pages ||--o{ wiki_page_links : "from_page_id"
     wiki_pages ||--o{ wiki_page_links : "to_page_id"
+    chat_message_related_pages {
+        BIGINT  id PK
+        VARCHAR chat_message_id FK
+        VARCHAR wiki_page_id
+        VARCHAR page_type
+        VARCHAR title
+        VARCHAR slug
+        DOUBLE  relevance_score
+        VARCHAR role
+        INTEGER depth
+        INTEGER rank
+    }
+
     chat_messages ||--o{ chat_message_references : "chat_message_id"
+    chat_messages ||--o{ chat_message_related_pages : "chat_message_id"
 ```
 
 ---
@@ -191,7 +205,26 @@ assistant 메시지의 근거 스니펫(evidence_snippets) 저장. pipeline 응�
 | `sentence_index` | INTEGER | NULL 허용 | 문장 인덱스 |
 | `quote` | TEXT | NULL 허용 | 인용 텍스트 (pipeline `text`) |
 
-**미결 이슈**: `related_pages`(탐색된 Wiki 페이지 목록)를 이 테이블에 `reference_type`으로 구분하여 같이 저장할지, 별도 테이블로 분리할지 미확정. → `docs/issue/2026-06-16.md` #1 참조
+---
+
+### chat_message_related_pages
+
+assistant 메시지와 연결된 탐색된 Wiki 페이지 목록. pipeline 응답의 `related_pages`를 저장한다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT | 자동 생성 식별자 |
+| `chat_message_id` | VARCHAR | NOT NULL, FK → chat_messages.id | 연결된 assistant 메시지 |
+| `wiki_page_id` | VARCHAR | NULL 허용 | 탐색된 Wiki 페이지 ID |
+| `page_type` | VARCHAR | NULL 허용 | `source` 또는 `concept` |
+| `title` | VARCHAR | NULL 허용 | 페이지 제목 |
+| `slug` | VARCHAR | NULL 허용 | URL용 슬러그 |
+| `relevance_score` | DOUBLE | NULL 허용 | 관련성 점수 |
+| `role` | VARCHAR | NULL 허용 | pipeline `role` (e.g. `seed_source`, `focus_concept`) |
+| `depth` | INTEGER | NULL 허용 | 그래프 탐색 깊이 (0 = 시드 노드) |
+| `rank` | INTEGER | NULL 허용 | 목록 내 순위 (1부터 시작) |
+
+`wiki_page_id`는 논리적 참조이며, DB 레벨 FK 제약은 없다.
 
 ---
 
@@ -239,5 +272,6 @@ assistant 메시지의 근거 스니펫(evidence_snippets) 저장. pipeline 응�
 | `wiki_pages` → `wiki_page_links` (from) | 1:N, 하나의 페이지에서 여러 페이지로 링크 |
 | `wiki_pages` → `wiki_page_links` (to) | 1:N, 하나의 페이지가 여러 링크의 대상 |
 | `chat_messages` → `chat_message_references` | 1:N, 하나의 assistant 메시지가 여러 근거 참조 보유 |
+| `chat_messages` → `chat_message_related_pages` | 1:N, 하나의 assistant 메시지가 여러 탐색 Wiki 페이지 보유 |
 
-`chat_message_references.wiki_page_id` / `document_id`는 논리적 참조이며, DB 레벨 FK 제약은 없다.
+`chat_message_references.wiki_page_id` / `document_id` 및 `chat_message_related_pages.wiki_page_id`는 논리적 참조이며, DB 레벨 FK 제약은 없다.

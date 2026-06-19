@@ -2,7 +2,9 @@ package fruition.query.service;
 
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
+import fruition.chat.domain.ChatMessageRelatedPage;
 import fruition.chat.repository.ChatMessageReferenceRepository;
+import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.query.dto.QueryResponse;
 import fruition.query.exception.PipelineQueryException;
@@ -36,6 +38,7 @@ class QueryServiceTest {
     @Mock PipelineQueryRequester pipelineQueryRequester;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
+    @Mock ChatMessageRelatedPageRepository relatedPageRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
 
@@ -48,9 +51,10 @@ class QueryServiceTest {
     void setUp() {
         queryService = new QueryService(
                 pipelineQueryRequester, chatMessageRepository, referenceRepository,
-                wikiPageRepository, documentWikiLinkRepository);
+                relatedPageRepository, wikiPageRepository, documentWikiLinkRepository);
         when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
 
         WikiPage sourcePage = new WikiPage(SOURCE_ID, WikiPageType.source, "LLM Wiki",
                 "codex-container-llm-wiki-api-20260611_013043", null, "wiki/sources/llm-wiki.md");
@@ -99,6 +103,18 @@ class QueryServiceTest {
         long conceptRefs = savedRefs.stream().filter(r -> "concept".equals(r.getReferenceType())).count();
         assertThat(sourceRefs).isEqualTo(3);
         assertThat(conceptRefs).isEqualTo(3);
+
+        // chat_message_related_pages 저장 검증
+        ArgumentCaptor<List<ChatMessageRelatedPage>> rpCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(rpCaptor.capture());
+        List<ChatMessageRelatedPage> savedRelatedPages = rpCaptor.getValue();
+        assertThat(savedRelatedPages).hasSize(2);
+        assertThat(savedRelatedPages.get(0).getWikiPageId()).isEqualTo(SOURCE_ID);
+        assertThat(savedRelatedPages.get(0).getRole()).isEqualTo("seed_source");
+        assertThat(savedRelatedPages.get(0).getDepth()).isEqualTo(0);
+        assertThat(savedRelatedPages.get(0).getRank()).isEqualTo(1);
+        assertThat(savedRelatedPages.get(1).getWikiPageId()).isEqualTo(CONCEPT_ID);
+        assertThat(savedRelatedPages.get(1).getRank()).isEqualTo(2);
 
         // source ref: wiki_page_id = 전체 page_id, rank·sentence_index 저장 검증
         ChatMessageReference sourceRef = savedRefs.stream()

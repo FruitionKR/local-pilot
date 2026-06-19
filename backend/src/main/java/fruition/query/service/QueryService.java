@@ -2,7 +2,9 @@ package fruition.query.service;
 
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
+import fruition.chat.domain.ChatMessageRelatedPage;
 import fruition.chat.repository.ChatMessageReferenceRepository;
+import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
@@ -28,17 +30,20 @@ public class QueryService {
     private final PipelineQueryRequester pipelineQueryClient;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatMessageReferenceRepository referenceRepository;
+    private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final WikiPageRepository wikiPageRepository;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
 
     public QueryService(PipelineQueryRequester pipelineQueryClient,
                         ChatMessageRepository chatMessageRepository,
                         ChatMessageReferenceRepository referenceRepository,
+                        ChatMessageRelatedPageRepository relatedPageRepository,
                         WikiPageRepository wikiPageRepository,
                         DocumentWikiLinkRepository documentWikiLinkRepository) {
         this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
         this.referenceRepository = referenceRepository;
+        this.relatedPageRepository = relatedPageRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
     }
@@ -72,6 +77,7 @@ public class QueryService {
         ));
 
         referenceRepository.saveAll(buildReferences(assistantMessageId, pipelineResponse));
+        relatedPageRepository.saveAll(buildRelatedPages(assistantMessageId, pipelineResponse));
 
         return new QueryResponse(
                 new QueryResponse.MessageSummary(userMessageId, "user", question, "completed", userCreatedAt),
@@ -81,6 +87,22 @@ public class QueryService {
                 pipelineResponse.graphContext(),
                 pipelineResponse.traversalPaths()
         );
+    }
+
+    private List<ChatMessageRelatedPage> buildRelatedPages(String assistantMessageId,
+                                                              PipelineQueryResponse pipelineResponse) {
+        if (pipelineResponse.relatedPages() == null) return List.of();
+
+        List<ChatMessageRelatedPage> pages = new ArrayList<>();
+        List<PipelineQueryResponse.RelatedPage> relatedPages = pipelineResponse.relatedPages();
+        for (int i = 0; i < relatedPages.size(); i++) {
+            PipelineQueryResponse.RelatedPage rp = relatedPages.get(i);
+            pages.add(new ChatMessageRelatedPage(
+                    assistantMessageId, rp.id(), rp.pageType(), rp.title(), rp.slug(),
+                    rp.relevanceScore(), rp.role(), rp.depth(), i + 1
+            ));
+        }
+        return pages;
     }
 
     private List<ChatMessageReference> buildReferences(String assistantMessageId,

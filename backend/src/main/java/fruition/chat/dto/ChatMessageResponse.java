@@ -12,6 +12,7 @@ public record ChatMessageResponse(
         String content,
         String status,
         @JsonProperty("created_at") Instant createdAt,
+        @JsonProperty("related_pages") List<ChatMessageRelatedPageResponse> relatedPages,
         List<ChatMessageReference> references,
         @JsonInclude(JsonInclude.Include.NON_NULL)
         @JsonProperty("error_message") String errorMessage
