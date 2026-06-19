@@ -1,5 +1,6 @@
 package fruition.chat.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
@@ -11,5 +12,8 @@ public record ChatMessageResponse(
         String content,
         String status,
         @JsonProperty("created_at") Instant createdAt,
-        List<ChatMessageReference> references
+        @JsonProperty("related_pages") List<ChatMessageRelatedPageResponse> relatedPages,
+        List<ChatMessageReference> references,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @JsonProperty("error_message") String errorMessage
 ) {}

@@ -42,14 +42,15 @@ public class PipelineQueryRequester {
                     .body(PipelineQueryResponse.class);
         } catch (ResourceAccessException e) {
             log.warn("[쿼리 파이프라인 타임아웃] question={} error={}", question, e.getMessage());
-            throw new PipelineQueryException("PIPELINE_TIMEOUT", "쿼리 파이프라인 응답 시간이 초과되었습니다.", 503);
+            throw new PipelineQueryException("PIPELINE_TIMEOUT", "쿼리 파이프라인 응답 시간이 초과되었습니다.", 503, null);
         } catch (RestClientResponseException e) {
+            String body = e.getResponseBodyAsString();
             log.warn("[쿼리 파이프라인 오류] question={} httpStatus={} body={}",
-                    question, e.getStatusCode(), e.getResponseBodyAsString());
+                    question, e.getStatusCode(), body);
             if (e.getStatusCode().value() >= 500) {
-                throw new PipelineQueryException("PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503);
+                throw new PipelineQueryException("PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, body);
             }
-            throw new PipelineQueryException("PIPELINE_ERROR", "쿼리 파이프라인 요청이 거부되었습니다.", 502);
+            throw new PipelineQueryException("PIPELINE_ERROR", "쿼리 파이프라인 요청이 거부되었습니다.", 502, body);
         }
     }
 

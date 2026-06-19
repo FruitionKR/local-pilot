@@ -4,6 +4,74 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-19
+
+### feat: related_pages 별도 테이블 저장 및 채팅 조회 API 반영
+
+**배경**
+
+`chat_message_references`에 `related_pages`를 `reference_type`으로 섞어 저장하면 "근거 스니펫(quote)"과 "탐색된 Wiki 페이지 목록"이 하나의 테이블에 혼재됩니다. 두 개념은 쓰임새가 다르므로(`evidence_snippets` = 인용 근거, `related_pages` = "찾은 자료" 카드) 별도 테이블로 분리했습니다.
+
+**추가/변경된 것**
+
+- `ChatMessageRelatedPage` 엔티티 추가 (`chat_message_related_pages` 테이블)
+- `ChatMessageRelatedPageRepository` 추가 (`findAllByChatMessageIdIn()` 배치 조회)
+- `ChatMessageRelatedPageResponse` DTO 추가 (`wiki_page_id`, `page_type`, `title`, `slug`, `relevance_score`, `role`, `depth`, `rank`)
+- `QueryService` — `relatedPageRepository` 주입, `buildRelatedPages()` 추가, `query()` 내 `relatedPageRepository.saveAll()` 호출
+- `ChatMessageResponse` — `related_pages` 필드 추가 (`references` 앞)
+- `ChatController` — `relatedPageRepository` 주입, `GET /api/chat/messages` 응답에 `related_pages` 포함 (배치 조회로 N+1 방지)
+- `backend-mvp-erd.md` — `chat_message_related_pages` 테이블 및 관계 추가
+- `QueryServiceTest` — `relatedPageRepository` mock 추가, `buildRelatedPages()` 저장 검증 추가
+
+**검증**
+
+- `./gradlew test --tests "fruition.query.service.QueryServiceTest"` 통과
+
+---
+
+### fix: buildReferences() 저장 전 reference 유효성 검증 추가
+
+**배경**
+
+`QueryService.buildReferences()`가 `pageId != null`인 evidence snippet을 조건 없이 저장했습니다.
+이 때문에 DB에 없는 wiki_page를 참조하거나 원문 viewer에서 열 수 없는 항목이 "근거 자료"로 표시됐습니다.
+
+**추가/변경된 것**
+
+- `buildReferences()`에 3단계 필터 추가
+  - `quote` 비공백: `snippet.text()`가 null이거나 blank면 제외
+  - `wiki_pages` 존재: `WikiPageRepository.findAllById()` batch 조회 후 DB에 없는 pageId 제외
+  - 원문 viewer 접근 가능: `markdownUri != null` 또는 `document_wiki_links` 연결이 있는 page만 저장
+- `WikiPageRepository`, `DocumentWikiLinkRepository` 의존성 추가
+- `QueryServiceTest` — 신규 의존성 Mock 추가 및 wiki page 스텁 설정
+
+**검증**
+
+- `./gradlew test --tests "fruition.query.service.QueryServiceTest"` 통과
+
+---
+
+### feat: 원본 문서 조회 API 구현 (GET /api/documents/{document_id}/original)
+
+**배경**
+
+프론트엔드에서 원본 문서를 클릭하면 MinIO에 저장된 raw 원본 파일이 아니라 source Wiki page를 열고 있었습니다. DB의 `documents.source_uri`를 기준으로 MinIO 객체를 스트리밍하는 엔드포인트가 없어 원본 파일을 직접 조회할 수 없었습니다.
+
+**추가/변경된 것**
+
+- `document/exception/DocumentOriginalNotFoundException` — document는 DB에 있지만 MinIO 객체가 없는 경우 전용 예외 추가. `DOCUMENT_NOT_FOUND`와 구분되는 `DOCUMENT_ORIGINAL_NOT_FOUND` 에러코드 반환
+- `document/dto/DocumentOriginalResult` — service → controller 사이 전달용 record (`mimeType`, `filename`, `inputStream`)
+- `DocumentService.getOriginal()` — `documents.source_uri`로 MinIO `getObject()` 호출 후 스트림 반환. `s3://` 형식과 plain object key 형식 모두 처리하는 `normalizeObjectKey()` 추가
+- `DocumentController` — `GET /{document_id}/original` 엔드포인트 추가. `Content-Type`은 `document.mimeType` 기준, PDF/text는 `inline`, 그 외 `attachment`로 `Content-Disposition` 설정
+- `GlobalExceptionHandler` — `DocumentOriginalNotFoundException` 핸들러 추가 (404, `DOCUMENT_ORIGINAL_NOT_FOUND`)
+
+**검증**
+
+- `./gradlew compileJava` 통과
+- `QueryServiceTest` 통과
+
+---
+
 ## 2026-06-16
 
 ### feat: Wiki page 상세 응답에 markdown 본문 포함
@@ -22,6 +90,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - `./gradlew test` 통과.
 - 로컬 API에서 `GET /api/wiki/pages/{wiki_page_id}` 응답에 source/concept markdown이 포함되는 것을 확인.
+
+---
+
+### feat: chat_messages 테이블에 error_message 컬럼 추가
+
+**배경**
+채팅 메시지 생성 시 발생하는 오류를 DB에서 직접 확인할 수 없었습니다.
+
+**추가/변경된 것**
+- `ChatMessage` 엔티티 — `error_message VARCHAR(255)` 필드 추가, 생성자에 `errorMessage` 파라미터 추가
+- `ChatMessageResponse` DTO — `error_message` 응답 필드 추가 (null 시 응답에서 생략)
+- `ChatController` — `ChatMessageResponse` 생성 시 `errorMessage` 매핑 추가
+- `QueryService` — `ChatMessage` 생성 시 정상 흐름에서 `errorMessage=null` 전달
+- `docs/spec/backend-mvp-erd.md` — `chat_messages` 테이블에 `error_message` 컬럼 반영
+
+**검증 결과**
+- 정상 흐름에서 `error_message`는 `null`로 저장되며 응답에서 생략됨
 
 ### feat: Spring 백엔드 Query API 구현 (POST /api/query)
 

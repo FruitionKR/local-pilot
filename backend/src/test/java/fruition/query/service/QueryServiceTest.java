@@ -2,11 +2,18 @@ package fruition.query.service;
 
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
+import fruition.chat.domain.ChatMessageRelatedPage;
 import fruition.chat.repository.ChatMessageReferenceRepository;
+import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.query.dto.QueryResponse;
+import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
 import fruition.query.repository.PipelineQueryResponse;
+import fruition.wiki.domain.WikiPage;
+import fruition.wiki.domain.WikiPageType;
+import fruition.wiki.repository.DocumentWikiLinkRepository;
+import fruition.wiki.repository.WikiPageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +25,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,14 +38,29 @@ class QueryServiceTest {
     @Mock PipelineQueryRequester pipelineQueryRequester;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
+    @Mock ChatMessageRelatedPageRepository relatedPageRepository;
+    @Mock WikiPageRepository wikiPageRepository;
+    @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
 
     QueryService queryService;
 
+    private static final String SOURCE_ID = "source:codex-container-llm-wiki-api-20260611_013043";
+    private static final String CONCEPT_ID = "concept:index-md";
+
     @BeforeEach
     void setUp() {
-        queryService = new QueryService(pipelineQueryRequester, chatMessageRepository, referenceRepository);
+        queryService = new QueryService(
+                pipelineQueryRequester, chatMessageRepository, referenceRepository,
+                relatedPageRepository, wikiPageRepository, documentWikiLinkRepository);
         when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
-        when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+
+        WikiPage sourcePage = new WikiPage(SOURCE_ID, WikiPageType.source, "LLM Wiki",
+                "codex-container-llm-wiki-api-20260611_013043", null, "wiki/sources/llm-wiki.md");
+        WikiPage conceptPage = new WikiPage(CONCEPT_ID, WikiPageType.concept, "Index.md",
+                "index-md", null, "wiki/concepts/index-md.md");
+        lenient().when(wikiPageRepository.findAllById(anyList())).thenReturn(List.of(sourcePage, conceptPage));
     }
 
     @Test
@@ -79,6 +104,18 @@ class QueryServiceTest {
         assertThat(sourceRefs).isEqualTo(3);
         assertThat(conceptRefs).isEqualTo(3);
 
+        // chat_message_related_pages 저장 검증
+        ArgumentCaptor<List<ChatMessageRelatedPage>> rpCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(rpCaptor.capture());
+        List<ChatMessageRelatedPage> savedRelatedPages = rpCaptor.getValue();
+        assertThat(savedRelatedPages).hasSize(2);
+        assertThat(savedRelatedPages.get(0).getWikiPageId()).isEqualTo(SOURCE_ID);
+        assertThat(savedRelatedPages.get(0).getRole()).isEqualTo("seed_source");
+        assertThat(savedRelatedPages.get(0).getDepth()).isEqualTo(0);
+        assertThat(savedRelatedPages.get(0).getRank()).isEqualTo(1);
+        assertThat(savedRelatedPages.get(1).getWikiPageId()).isEqualTo(CONCEPT_ID);
+        assertThat(savedRelatedPages.get(1).getRank()).isEqualTo(2);
+
         // source ref: wiki_page_id = 전체 page_id, rank·sentence_index 저장 검증
         ChatMessageReference sourceRef = savedRefs.stream()
                 .filter(r -> "source".equals(r.getReferenceType()) && r.getRank() == 1)
@@ -98,9 +135,35 @@ class QueryServiceTest {
         assertThat(conceptRef.getQuote()).isNotBlank();
     }
 
+    @Test
+    @DisplayName("파이프라인 실패 시 user/assistant 메시지가 failed 상태와 error_message로 저장되고 예외가 전파된다")
+    void query_pipelineFailure_savesFailedMessagesAndRethrows() {
+        PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
+        when(pipelineQueryRequester.query(anyString())).thenThrow(pipelineError);
+
+        assertThatThrownBy(() -> queryService.query("Self-Attention이 뭐야?"))
+                .isInstanceOf(PipelineQueryException.class);
+
+        ArgumentCaptor<List<ChatMessage>> msgCaptor = ArgumentCaptor.forClass(List.class);
+        verify(chatMessageRepository).saveAll(msgCaptor.capture());
+
+        List<ChatMessage> savedMessages = msgCaptor.getValue();
+        assertThat(savedMessages).hasSize(2);
+
+        ChatMessage userMsg = savedMessages.get(0);
+        assertThat(userMsg.getRole()).isEqualTo("user");
+        assertThat(userMsg.getStatus()).isEqualTo("failed");
+        assertThat(userMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+
+        ChatMessage assistantMsg = savedMessages.get(1);
+        assertThat(assistantMsg.getRole()).isEqualTo("assistant");
+        assertThat(assistantMsg.getStatus()).isEqualTo("failed");
+        assertThat(assistantMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+    }
+
     private PipelineQueryResponse samplePipelineResponse() {
-        String sourceId = "source:codex-container-llm-wiki-api-20260611_013043";
-        String conceptId = "concept:index-md";
+        String sourceId = SOURCE_ID;
+        String conceptId = CONCEPT_ID;
 
         List<PipelineQueryResponse.RelatedPage> relatedPages = List.of(
                 new PipelineQueryResponse.RelatedPage(sourceId, "source", "LLM Wiki",
