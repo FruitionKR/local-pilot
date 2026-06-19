@@ -54,6 +54,7 @@ erDiagram
         TEXT    content
         VARCHAR status
         TIMESTAMPTZ created_at
+        VARCHAR error_message
     }
 
     chat_message_references {
@@ -167,6 +168,7 @@ Wiki 페이지 간 방향성 있는 링크. 복합 PK.
 | `content` | TEXT | NOT NULL | 메시지 본문 |
 | `status` | VARCHAR | NOT NULL | `completed` 또는 `failed` |
 | `created_at` | TIMESTAMPTZ | NOT NULL | 메시지 생성 시각 |
+| `error_message` | VARCHAR(255) | NULL 허용 | 메시지 생성 시 발생한 오류 내용 |
 
 ---
 

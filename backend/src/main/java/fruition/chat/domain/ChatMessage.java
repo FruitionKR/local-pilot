@@ -26,14 +26,18 @@ public class ChatMessage {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "error_message", length = 255)
+    private String errorMessage;
+
     protected ChatMessage() {}
 
-    public ChatMessage(String id, String role, String content, String status, Instant createdAt) {
+    public ChatMessage(String id, String role, String content, String status, Instant createdAt, String errorMessage) {
         this.id = id;
         this.role = role;
         this.content = content;
         this.status = status;
         this.createdAt = createdAt;
+        this.errorMessage = errorMessage;
     }
 
     public String getId() { return id; }
@@ -41,4 +45,5 @@ public class ChatMessage {
     public String getContent() { return content; }
     public String getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getErrorMessage() { return errorMessage; }
 }

@@ -17,8 +17,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import fruition.query.exception.PipelineQueryException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,7 +40,7 @@ class QueryServiceTest {
     void setUp() {
         queryService = new QueryService(pipelineQueryRequester, chatMessageRepository, referenceRepository);
         when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
-        when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
     }
 
     @Test
@@ -96,6 +101,32 @@ class QueryServiceTest {
         assertThat(conceptRef.getWikiPageId()).isEqualTo("concept:index-md");
         assertThat(conceptRef.getRank()).isEqualTo(2);
         assertThat(conceptRef.getQuote()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("파이프라인 실패 시 user/assistant 메시지가 failed 상태와 error_message로 저장되고 예외가 전파된다")
+    void query_pipelineFailure_savesFailedMessagesAndRethrows() {
+        PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
+        when(pipelineQueryRequester.query(anyString())).thenThrow(pipelineError);
+
+        assertThatThrownBy(() -> queryService.query("Self-Attention이 뭐야?"))
+                .isInstanceOf(PipelineQueryException.class);
+
+        ArgumentCaptor<List<ChatMessage>> msgCaptor = ArgumentCaptor.forClass(List.class);
+        verify(chatMessageRepository).saveAll(msgCaptor.capture());
+
+        List<ChatMessage> savedMessages = msgCaptor.getValue();
+        assertThat(savedMessages).hasSize(2);
+
+        ChatMessage userMsg = savedMessages.get(0);
+        assertThat(userMsg.getRole()).isEqualTo("user");
+        assertThat(userMsg.getStatus()).isEqualTo("failed");
+        assertThat(userMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+
+        ChatMessage assistantMsg = savedMessages.get(1);
+        assertThat(assistantMsg.getRole()).isEqualTo("assistant");
+        assertThat(assistantMsg.getStatus()).isEqualTo("failed");
+        assertThat(assistantMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
     }
 
     private PipelineQueryResponse samplePipelineResponse() {

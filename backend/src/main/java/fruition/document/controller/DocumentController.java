@@ -4,6 +4,7 @@ import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
@@ -16,6 +17,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -120,6 +123,32 @@ public class DocumentController {
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId) {
         return ResponseEntity.ok(documentService.findById(documentId));
+    }
+
+    @Operation(summary = "원본 문서 조회", description = "MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 외는 attachment로 반환됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "원본 파일 반환"),
+        @ApiResponse(responseCode = "404", description = "문서 없음 또는 원본 파일 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/original")
+    public ResponseEntity<InputStreamResource> getOriginal(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId) {
+        DocumentOriginalResult result = documentService.getOriginal(documentId);
+
+        String disposition = isInlineable(result.mimeType())
+                ? "inline; filename=\"" + result.filename() + "\""
+                : "attachment; filename=\"" + result.filename() + "\"";
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(result.mimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
+                .body(new InputStreamResource(result.inputStream()));
+    }
+
+    private boolean isInlineable(String mimeType) {
+        return mimeType != null && (mimeType.startsWith("text/") || mimeType.equals("application/pdf"));
     }
 
     @Operation(summary = "문서 이름 변경", description = "문서 표시명을 변경합니다. sync_source_title=true이면 연결된 source Wiki 페이지 제목도 함께 변경됩니다.")

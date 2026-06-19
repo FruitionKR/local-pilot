@@ -4,6 +4,7 @@ import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
 import fruition.query.repository.PipelineQueryResponse;
 import fruition.query.dto.QueryResponse;
@@ -31,18 +32,31 @@ public class QueryService {
     }
 
     public QueryResponse query(String question) {
-        // 파이프라인 호출 전후로 타임스탬프를 각각 찍어 실제 처리 시간을 반영한다.
         Instant userCreatedAt = Instant.now();
-        PipelineQueryResponse pipelineResponse = pipelineQueryClient.query(question);
-        Instant assistantCreatedAt = Instant.now();
 
         String userMessageId = "chat_user_" + UUID.randomUUID();
         String assistantMessageId = "chat_assistant_" + UUID.randomUUID();
 
-        // saveAll로 두 메시지를 하나의 트랜잭션에서 저장한다.
+        PipelineQueryResponse pipelineResponse;
+        try {
+            pipelineResponse = pipelineQueryClient.query(question);
+        } catch (PipelineQueryException e) {
+            String errorBody = e.getPipelineErrorBody();
+            String errorMessage = errorBody != null
+                    ? errorBody.substring(0, Math.min(errorBody.length(), 255))
+                    : e.getMessage();
+            chatMessageRepository.saveAll(List.of(
+                    new ChatMessage(userMessageId, "user", question, "failed", userCreatedAt, errorMessage),
+                    new ChatMessage(assistantMessageId, "assistant", "", "failed", Instant.now(), errorMessage)
+            ));
+            throw e;
+        }
+
+        Instant assistantCreatedAt = Instant.now();
+
         chatMessageRepository.saveAll(List.of(
-                new ChatMessage(userMessageId, "user", question, "completed", userCreatedAt),
-                new ChatMessage(assistantMessageId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt)
+                new ChatMessage(userMessageId, "user", question, "completed", userCreatedAt, null),
+                new ChatMessage(assistantMessageId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt, null)
         ));
 
         referenceRepository.saveAll(buildReferences(assistantMessageId, pipelineResponse));

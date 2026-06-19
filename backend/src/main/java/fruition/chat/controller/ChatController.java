@@ -65,7 +65,7 @@ public class ChatController {
                                     r.getQuote()
                             ))
                             .toList();
-                    return new ChatMessageResponse(m.getId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(), refs);
+                    return new ChatMessageResponse(m.getId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(), refs, m.getErrorMessage());
                 })
                 .toList();
 

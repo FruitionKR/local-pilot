@@ -3,11 +3,13 @@ package fruition.document.service;
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
@@ -20,6 +22,7 @@ import fruition.wiki.domain.DocumentWikiRelationType;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import org.springframework.stereotype.Service;
@@ -269,6 +272,35 @@ public class DocumentService {
         }
 
         return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
+    }
+
+    public DocumentOriginalResult getOriginal(String documentId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        String objectKey = normalizeObjectKey(document.getSourceUri());
+        try {
+            InputStream stream = minioClient.getObject(
+                    GetObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectKey)
+                            .build());
+            return new DocumentOriginalResult(document.getMimeType(), document.getFilename(), stream);
+        } catch (Exception e) {
+            throw new DocumentOriginalNotFoundException(documentId);
+        }
+    }
+
+    private String normalizeObjectKey(String sourceUri) {
+        String bucketPrefix = "s3://" + storageProps.getBucket() + "/";
+        if (sourceUri.startsWith(bucketPrefix)) {
+            return sourceUri.substring(bucketPrefix.length());
+        }
+        if (sourceUri.startsWith("s3://")) {
+            int objectStart = sourceUri.indexOf('/', "s3://".length());
+            return objectStart >= 0 ? sourceUri.substring(objectStart + 1) : sourceUri;
+        }
+        return sourceUri;
     }
 
     private void validateFilename(String filename) {
