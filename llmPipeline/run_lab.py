@@ -356,7 +356,8 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             {
                 "패킷": p.chunk_id,
                 "핵심 포인트 수": len(note.get("key_points", [])),
-                "후보 개념 수": len(note.get("concept_candidates", [])),
+                "core concept 수": len(note.get("core_concepts") or note.get("concept_candidates", [])),
+                "section/mention/category 수": f"{len(note.get('section_candidates', []))}/{len(note.get('mentions', []))}/{len(note.get('categories', []))}",
                 "근거 주장 수": len(note.get("evidence_claims", [])),
             },
         )
@@ -369,7 +370,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "4. 정규화",
         "의미 노트를 concept ledger와 evidence unit으로 정규화했습니다.",
         {
-            "개념 수": len(normalized["concept_ledger"]),
+            "core concept 수": len(normalized["concept_ledger"]),
+            "section candidate 수": len(normalized.get("section_candidates", [])),
+            "mention 수": len(normalized.get("mentions", [])),
+            "category 수": len(normalized.get("categories", [])),
             "근거 수": len(normalized["evidence_units"]),
             "경고 수": len(normalized.get("warnings", [])),
         },
@@ -472,7 +476,12 @@ def run_pipeline(args: argparse.Namespace) -> dict:
                 {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
             )
     source_page = SourcePageAssembler().assemble(normalized, out, polish=source_polish)
-    log.emit("5. Source Page 생성", "백엔드 조립 방식으로 source page markdown을 생성했습니다.", {"파일": source_page, "mode": sp_mode})
+    source_artifact = normalized.get("source_extraction_artifact")
+    log.emit(
+        "5. Source Page 생성",
+        "백엔드 조립 방식으로 source page markdown과 source extraction JSON을 생성했습니다.",
+        {"파일": source_page, "source_json": source_artifact, "mode": sp_mode},
+    )
     generated_concept_pages = []
     concept_polish_by_slug: dict[str, Any] = {}
     raw_concept_dir = ensure_dir(out / "raw_llm_outputs" / "concept_page_generation") if args.save_debug_json else None
@@ -598,6 +607,9 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "packet_count": len(packets),
         "semantic_note_count": len(notes),
         "concept_count": len(normalized["concept_ledger"]),
+        "section_candidate_count": len(normalized.get("section_candidates", [])),
+        "mention_count": len(normalized.get("mentions", [])),
+        "category_count": len(normalized.get("categories", [])),
         "existing_concept_count": len(normalized.get("existing_concept_index", [])),
         "concept_resolution_count": len(normalized.get("concept_resolutions", [])),
         "hint_resolution_count": len(normalized.get("hint_resolutions", [])),
@@ -605,6 +617,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "evidence_count": len(normalized["evidence_units"]),
         "generated_concept_page_count": len(generated_concept_pages),
         "source_page": source_page,
+        "source_extraction_artifact": normalized.get("source_extraction_artifact"),
         "concept_pages": concept_pages,
         "links": str(out / "wiki" / "links.json"),
         "review_report": report,
@@ -619,7 +632,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "파이프라인 실행이 완료되었습니다.",
         {
             "문서 ID": document.document_id,
-            "개념 수": len(normalized["concept_ledger"]),
+            "core concept 수": len(normalized["concept_ledger"]),
+            "section candidate 수": len(normalized.get("section_candidates", [])),
+            "mention 수": len(normalized.get("mentions", [])),
+            "category 수": len(normalized.get("categories", [])),
             "근거 수": len(normalized["evidence_units"]),
             "manifest": out / "manifest.json",
         },

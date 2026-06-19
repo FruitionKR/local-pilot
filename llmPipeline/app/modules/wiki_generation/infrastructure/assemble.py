@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.modules.wiki_ingestion.infrastructure.file_io import write_text
+from app.modules.wiki_ingestion.infrastructure.file_io import write_json, write_text
 from app.modules.wiki_generation.domain.entities import SourceBlock
 from app.modules.wiki_generation.domain.text_utils import slugify, unique_keep_order
 
@@ -55,10 +55,27 @@ class SourcePageAssembler:
         for c in ledger:
             concept_lines.append(f"- [[{c['slug']}|{c['title']}]]{cite_refs(c.get('display_reference_ids', []))}")
 
+        category_lines = [
+            f"- {item.get('name')}"
+            for item in normalized.get("categories", [])
+            if item.get("name")
+        ]
+        section_lines = [
+            _source_section_line(item)
+            for item in normalized.get("section_candidates", [])
+            if item.get("title") or item.get("slug")
+        ]
+        mention_lines = [
+            _source_mention_line(item)
+            for item in normalized.get("mentions", [])
+            if item.get("name") or item.get("slug")
+        ]
+
         md = f"""---
 type: source
 document_id: {doc['document_id']}
 source_file: {doc['source_path']}
+categories: {', '.join(item.get('name', '') for item in normalized.get('categories', []) if item.get('name')) or '-'}
 ---
 
 # {title}
@@ -69,15 +86,91 @@ source_file: {doc['source_path']}
 ## Key Points
 {chr(10).join(key_points) if key_points else '- 핵심 포인트 없음'}
 
-## Extracted Concepts
-{chr(10).join(concept_lines) if concept_lines else '- 추출된 concept 없음'}
+## Categories
+{chr(10).join(category_lines) if category_lines else '- 카테고리 없음'}
+
+## Core Concepts
+{chr(10).join(concept_lines) if concept_lines else '- core concept 없음'}
+
+## Section Candidates
+{chr(10).join(section_lines) if section_lines else '- section candidate 없음'}
+
+## Mentions
+{chr(10).join(mention_lines) if mention_lines else '- mention 없음'}
 """
         filename_slug = slugify(title)
         if filename_slug == "untitled":
             filename_slug = doc["document_id"]
         out_path = _unique_source_path(Path(out_dir) / "wiki" / "sources", filename_slug)
         write_text(out_path, md)
+        artifact_path = out_path.with_suffix(".json")
+        write_json(artifact_path, _source_extraction_artifact(normalized, title, summary, str(out_path)))
+        normalized["source_extraction_artifact"] = str(artifact_path)
         return str(out_path)
+
+
+def _term_record(item: dict[str, Any]) -> dict[str, Any]:
+    term = item.get("term") or item.get("title") or item.get("name") or item.get("slug") or ""
+    refs = unique_keep_order(item.get("anchor_reference_ids", []) or item.get("evidence_block_ids", []) or [])
+    record = {
+        "term": term,
+        "slug": item.get("slug") or slugify(str(term)),
+    }
+    context = item.get("context") or item.get("definition") or ""
+    if context:
+        record["context"] = context
+    if refs:
+        record["evidence_block_ids"] = refs
+    if item.get("aliases"):
+        record["aliases"] = item.get("aliases")
+    return record
+
+
+def _source_extraction_artifact(
+    normalized: dict[str, Any],
+    title: str,
+    summary: str,
+    markdown_path: str,
+) -> dict[str, Any]:
+    doc = normalized["document"]
+    core_concepts = [_term_record({**concept, "term": concept.get("title")}) for concept in normalized.get("concept_ledger", [])]
+    section_candidates = [_term_record(item) for item in normalized.get("section_candidates", [])]
+    mentions = [_term_record(item) for item in normalized.get("mentions", [])]
+    categories = [item.get("slug") or slugify(str(item.get("name") or item.get("term") or "")) for item in normalized.get("categories", [])]
+    categories = unique_keep_order([category for category in categories if category and category != "untitled"])
+    return {
+        "schema_version": "source-extraction.v1",
+        "document_id": doc.get("document_id"),
+        "title": title,
+        "source_file": doc.get("source_path"),
+        "markdown_path": markdown_path,
+        "summary": summary,
+        "key_points": [
+            {"text": item.get("text", ""), "evidence_block_ids": _item_refs(item)}
+            for note in normalized.get("semantic_notes", [])
+            for item in note.get("key_points", [])
+            if item.get("text")
+        ],
+        "categories": categories,
+        "core_concepts": core_concepts,
+        "section_candidates": section_candidates,
+        "mentions": mentions,
+        "evidence_claims": normalized.get("evidence_units", []),
+    }
+
+
+def _source_section_line(item: dict[str, Any]) -> str:
+    title = item.get("title") or item.get("slug") or "section"
+    context = item.get("context") or ""
+    suffix = f" - {context}" if context else ""
+    return f"- {title}{suffix}{cite_refs(item.get('anchor_reference_ids', []))}"
+
+
+def _source_mention_line(item: dict[str, Any]) -> str:
+    name = item.get("name") or item.get("slug") or "mention"
+    context = item.get("context") or ""
+    suffix = f" - {context}" if context else ""
+    return f"- {name}{suffix}{cite_refs(item.get('anchor_reference_ids', []))}"
 
 
 def _unique_source_path(source_dir: Path, filename_slug: str) -> Path:
@@ -378,6 +471,8 @@ class GeneratedConceptPageAssembler:
             "source_document_ids": concept.get("source_document_ids", []),
             "mention_count": concept.get("mention_count", 0),
             "importance_score": concept.get("importance_score", 0),
+            "aliases": concept.get("aliases", []),
+            "display_reference_ids": concept.get("display_reference_ids", []),
         }
         for i, kp in enumerate(raw_page.get("key_points", []) or [], start=1):
             normalized["key_points"].append(
@@ -430,11 +525,18 @@ confidence: {page.get('confidence', 0.0)}
 ## Key Points
 {chr(10).join(kp_lines) if kp_lines else '- 핵심 포인트 없음'}
 
+## Aliases
+{', '.join(page.get('aliases', [])) or '-'}
+
 ## Evidence
 {chr(10).join(ev_lines) if ev_lines else '- 근거 없음'}
 
 ## Related Concepts
 {chr(10).join(rel_lines) if rel_lines else '- 관련 개념 없음'}
+
+## Reference Summary
+- display refs: {', '.join(ref_label(r) for r in page.get('display_reference_ids', [])) or '-'}
+- mention_count: {page.get('mention_count', 0)}
 """
             out_path = Path(out_dir) / "wiki" / "concepts" / f"{page['slug']}.md"
             write_text(out_path, md)
