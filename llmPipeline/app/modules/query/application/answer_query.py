@@ -70,21 +70,24 @@ class AnswerQueryUseCase:
         self._returned_path_limit = returned_path_limit
         self._min_internal_relevance_score = min_internal_relevance_score
 
-    def execute(self, question: str) -> QueryAnswer:
+    def execute(self, question: str, event_publisher: QueryEventPublisherPort | None = None) -> QueryAnswer:
+        event_publisher = event_publisher or self._event_publisher
         query = Question(question)
-        self._publish("query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
+        self._publish(event_publisher, "query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
         query_rewrite = self._rewrite_query(query.normalized)
         if query_rewrite.retrieval_query != query.normalized:
             self._publish(
+                event_publisher,
                 "query_rewritten",
                 "검색용 질의를 정제했습니다.",
                 {"retrieval_query": query_rewrite.retrieval_query, "keywords": query_rewrite.keywords},
             )
         pages = self._wiki_repository.list_active_pages()
         links = self._wiki_repository.list_active_links()
-        self._publish("wiki_loaded", "활성 Wiki page/link를 로드했습니다.", {"page_count": len(pages), "link_count": len(links)})
+        self._publish(event_publisher, "wiki_loaded", "활성 Wiki page/link를 로드했습니다.", {"page_count": len(pages), "link_count": len(links)})
         pages = self._load_markdown_for_scoring(pages)
         self._publish(
+            event_publisher,
             "retrieval_markdown_loaded",
             "검색용 Wiki Markdown 본문을 로드했습니다.",
             {"loaded_markdown_count": len([page for page in pages if page.markdown])},
@@ -96,6 +99,7 @@ class AnswerQueryUseCase:
         source_scores = self._score_pages(query_rewrite, source_pages, embedding_weight=0.8)
         concept_scores = self._score_pages(query_rewrite, concept_pages, embedding_weight=0.8)
         self._publish(
+            event_publisher,
             "retrieval_scored",
             "source/concept 후보 점수를 계산했습니다.",
             {
@@ -111,7 +115,7 @@ class AnswerQueryUseCase:
         direct_concept_ids = self._select_direct_match_concepts(query_rewrite, concept_pages)
 
         if self._should_use_web_fallback(source_scores, concept_scores):
-            fallback_answer = self._answer_from_web_search(query.normalized, query_rewrite)
+            fallback_answer = self._answer_from_web_search(query.normalized, query_rewrite, event_publisher)
             if fallback_answer is not None:
                 return fallback_answer
 
@@ -120,6 +124,7 @@ class AnswerQueryUseCase:
         if direct_concept_ids and max(source_scores.values(), default=0.0) < self._focus_concept_threshold:
             seed_source_ids = self._add_sources_connected_to_focus_concepts(seed_source_ids, direct_concept_ids, links)
         self._publish(
+            event_publisher,
             "seeds_selected",
             "탐색 시작 source와 focus concept hint를 선택했습니다.",
             {"seed_source_ids": seed_source_ids, "focus_concept_ids": focus_concept_ids, "direct_concept_ids": direct_concept_ids},
@@ -132,6 +137,7 @@ class AnswerQueryUseCase:
             node_scores=node_scores,
         )
         self._publish(
+            event_publisher,
             "graph_traversed",
             "Wiki graph traversal을 완료했습니다.",
             {"visited_node_count": len(graph_context.nodes), "path_count": len(traversal_paths), "stop_reason": stop_reason},
@@ -151,6 +157,7 @@ class AnswerQueryUseCase:
         related_pages = self._load_markdown_for_related_pages(related_pages)
         graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
         self._publish(
+            event_publisher,
             "markdown_loaded",
             "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
             {"loaded_markdown_count": len([item for item in related_pages if item.page.markdown])},
@@ -162,6 +169,7 @@ class AnswerQueryUseCase:
             traversal_paths=traversal_paths,
         )
         self._publish(
+            event_publisher,
             "context_built",
             "LLM 답변 입력 context를 구성했습니다.",
             {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
@@ -176,7 +184,7 @@ class AnswerQueryUseCase:
                     query_context.evidence_snippets[0].rank if query_context.evidence_snippets else None,
                 )
             )
-        self._publish("answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
+        self._publish(event_publisher, "answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
 
         used_source_count = len([item for item in related_pages if item.page.is_source])
         used_concept_count = len([item for item in related_pages if item.page.is_concept])
@@ -216,10 +224,16 @@ class AnswerQueryUseCase:
         best_score = max([*source_scores.values(), *concept_scores.values(), 0.0])
         return best_score < self._min_internal_relevance_score
 
-    def _answer_from_web_search(self, question: str, query_rewrite: QueryRewrite) -> QueryAnswer | None:
+    def _answer_from_web_search(
+        self,
+        question: str,
+        query_rewrite: QueryRewrite,
+        event_publisher: QueryEventPublisherPort | None,
+    ) -> QueryAnswer | None:
         if self._web_search is None:
             return None
         self._publish(
+            event_publisher,
             "web_search_started",
             "내부 Wiki 근거가 부족해 웹 검색 fallback을 시작했습니다.",
             {"retrieval_query": query_rewrite.retrieval_query},
@@ -227,11 +241,11 @@ class AnswerQueryUseCase:
         try:
             web_results = self._web_search.search(query_rewrite.retrieval_query)
         except Exception as exc:
-            self._publish("web_search_failed", "웹 검색 fallback이 실패했습니다.", {"error": str(exc)})
+            self._publish(event_publisher, "web_search_failed", "웹 검색 fallback이 실패했습니다.", {"error": str(exc)})
             return None
         related_pages = self._web_results_to_related_pages(web_results)
         if not related_pages:
-            self._publish("web_search_empty", "웹 검색 fallback 결과가 없습니다.", None)
+            self._publish(event_publisher, "web_search_empty", "웹 검색 fallback 결과가 없습니다.", None)
             return None
 
         graph_context = GraphContext(nodes=related_pages, edges=[])
@@ -249,6 +263,7 @@ class AnswerQueryUseCase:
             )
         )
         self._publish(
+            event_publisher,
             "web_search_answer_generated",
             "웹 검색 근거로 답변 생성을 완료했습니다.",
             {"result_count": len(web_results), "answer_chars": len(answer.content)},
@@ -587,11 +602,16 @@ class AnswerQueryUseCase:
         slug = re.sub(r"[^A-Za-z0-9가-힣_.-]+", "-", text.lower()).strip("-._")
         return slug[:80]
 
-    def _publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
-        if self._event_publisher is None:
+    def _publish(
+        self,
+        event_publisher: QueryEventPublisherPort | None,
+        stage: str,
+        message: str,
+        data: dict[str, object] | None = None,
+    ) -> None:
+        if event_publisher is None:
             return
         try:
-            self._event_publisher.publish(stage, message, data)
+            event_publisher.publish(stage, message, data)
         except Exception:
             return
-

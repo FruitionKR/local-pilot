@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
+    request_id: str | None = None
+    log_callback_url: str | None = None
 
 
 class RelatedPageResponse(BaseModel):
@@ -58,4 +60,3 @@ class QueryResponse(BaseModel):
     evidence_snippets: list[EvidenceSnippetResponse]
     graph_context: GraphContextResponse
     traversal_paths: list[TraversalPathResponse]
-
