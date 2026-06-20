@@ -156,7 +156,19 @@ export type ChatMessageReferenceResponse = {
   quote?: string;
 };
 
+export type ChatMessageRelatedPageResponse = {
+  wiki_page_id: string;
+  page_type: string;
+  title: string;
+  slug: string;
+  relevance_score: number;
+  role: string;
+  depth: number;
+  rank: number;
+};
+
 export type ChatMessageResponse = QueryMessageSummary & {
+  related_pages?: ChatMessageRelatedPageResponse[];
   references: ChatMessageReferenceResponse[];
 };
 

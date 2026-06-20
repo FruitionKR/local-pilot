@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { makeSourceId, nodeIdToPageType } from "../_lib/graph";
+import { makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
 import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
 import type { Project } from "../_lib/types";
 
@@ -24,43 +24,52 @@ export function useTreeSelection(projects: Project[]) {
     return null;
   }, [projects, selectedPreviewTarget, selectedTreeItemId]);
 
+  function findTreeItemIdByGraphNodeId(nodeId: string) {
+    for (const project of projects) {
+      const found = findTreeItemByGraphNodeId(project.items, nodeId);
+      if (found) return found.id;
+    }
+    return null;
+  }
+
+  function openPreviewTarget({
+    nodeId,
+    title,
+    treeItemId,
+    documentId = null
+  }: {
+    nodeId: string;
+    title: string;
+    treeItemId?: string | null;
+    documentId?: string | null;
+  }) {
+    const rawDocumentId = rawNodeIdToDocumentId(nodeId) ?? documentId;
+    const pageType = nodeIdToPageType(nodeId);
+    const resolvedTreeItemId = treeItemId ?? findTreeItemIdByGraphNodeId(nodeId);
+
+    setSelectedTreeItemId(resolvedTreeItemId);
+    setSelectedPreviewTarget({ pageId: pageType ? nodeId : null, title, pageType });
+    setFocusedGraphNodeId(nodeId);
+    setSelectedDocumentId(pageType ? null : rawDocumentId);
+  }
+
   function selectTreeGraphNode(item: { id: string; label: string; documentId?: string; graphNodeId?: string }) {
-    const isRawNode = item.graphNodeId?.startsWith("raw:");
-    const pageId = isRawNode
-      ? null
-      : (item.documentId ? makeSourceId(item.documentId) : null) || (nodeIdToPageType(item.graphNodeId ?? "") !== null ? item.graphNodeId ?? null : null);
-    setSelectedTreeItemId(item.id);
-    setSelectedPreviewTarget(pageId ? {
-      pageId,
+    const nodeId = item.graphNodeId ?? (item.documentId ? makeSourceId(item.documentId) : null);
+    if (!nodeId) return;
+    openPreviewTarget({
+      nodeId,
       title: item.label,
-      pageType: nodeIdToPageType(pageId) ?? "source"
-    } : null);
-    setFocusedGraphNodeId(pageId || item.graphNodeId || null);
-    setSelectedDocumentId(isRawNode ? (item.documentId ?? null) : null);
+      treeItemId: item.id,
+      documentId: item.documentId ?? null
+    });
   }
 
   function openGraphNodePreview(nodeId: string, title: string) {
-    const pageType = nodeIdToPageType(nodeId);
-    setSelectedTreeItemId(null);
-    setSelectedPreviewTarget({
-      pageId: pageType !== null ? nodeId : null,
-      title,
-      pageType
-    });
-    setFocusedGraphNodeId(nodeId);
-    setSelectedDocumentId(null);
+    openPreviewTarget({ nodeId, title });
   }
 
   function openWikiPagePreview(pageId: string, title: string, pageType: string) {
-    let treeItemId: string | null = null;
-    for (const project of projects) {
-      const found = findTreeItemByGraphNodeId(project.items, pageId);
-      if (found) { treeItemId = found.id; break; }
-    }
-    setSelectedTreeItemId(treeItemId);
-    setSelectedPreviewTarget({ pageId, title, pageType });
-    setFocusedGraphNodeId(pageId);
-    setSelectedDocumentId(null);
+    openPreviewTarget({ nodeId: pageId, title, treeItemId: findTreeItemIdByGraphNodeId(pageId) });
   }
 
   function clearTreeGraphSelection() {
