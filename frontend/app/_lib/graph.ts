@@ -24,6 +24,14 @@ export function makeSourceId(documentId: string): string {
   return `${NODE_PREFIX.source}${documentId}`;
 }
 
+/**
+ * raw 노드 ID에서 documentId를 복원합니다.
+ */
+export function rawNodeIdToDocumentId(nodeId: string): string | null {
+  if (!nodeId.startsWith(NODE_PREFIX.raw)) return null;
+  return nodeId.slice(NODE_PREFIX.raw.length) || null;
+}
+
 export const GRAPH_WIDTH = 746;
 export const GRAPH_HEIGHT = 568;
 export const GRAPH_CACHE_KEY = "fruition.graph.layout.v7";

@@ -23,6 +23,7 @@ export function isWikiItem(item: TreeItem) {
 }
 
 export function canDragTreeItem(item: TreeItem) {
+  if (isWikiItem(item) && item.wikiKind) return true;
   return !item.generated && !isWikiItem(item);
 }
 
@@ -141,6 +142,15 @@ export function findTreeItem(items: TreeItem[], itemId: string): TreeItem | null
   return null;
 }
 
+export function findTreeItemByGraphNodeId(items: TreeItem[], graphNodeId: string): TreeItem | null {
+  for (const item of items) {
+    if (item.graphNodeId === graphNodeId) return item;
+    const found = item.children ? findTreeItemByGraphNodeId(item.children, graphNodeId) : null;
+    if (found) return found;
+  }
+  return null;
+}
+
 export function appendItemsToFolder(items: TreeItem[], folderId: string | null, nextItems: TreeItem[]): TreeItem[] {
   if (!folderId) return [...items, ...nextItems];
 
@@ -192,7 +202,7 @@ function removeGeneratedWikiGroups(items: TreeItem[]): TreeItem[] {
     .map((item) => item.children?.length ? { ...item, children: removeGeneratedWikiGroups(item.children) } : item);
 }
 
-function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
+function buildWikiTreeGroups(graph: WikiGraphResponse, existingItems?: TreeItem[]): TreeItem[] {
   const sourceItems = (graph.nodes ?? [])
     .filter((node) => node.page_type === "source")
     .map((node) => ({
@@ -215,6 +225,19 @@ function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
       generated: true
     }));
 
+  const sortByExistingOrder = (items: TreeItem[], existingGroup?: TreeItem): TreeItem[] => {
+    if (!existingGroup?.children?.length) return items;
+    const orderMap = new Map(existingGroup.children.map((child, idx) => [child.graphNodeId ?? child.id, idx]));
+    return [...items].sort((a, b) => {
+      const aIdx = orderMap.get(a.graphNodeId ?? a.id) ?? Infinity;
+      const bIdx = orderMap.get(b.graphNodeId ?? b.id) ?? Infinity;
+      return aIdx - bIdx;
+    });
+  };
+
+  const existingSourceGroup = existingItems?.find((i) => i.id === "wiki-source-pages");
+  const existingConceptGroup = existingItems?.find((i) => i.id === "wiki-concept-pages");
+
   const groups: TreeItem[] = [];
   if (sourceItems.length > 0) {
     groups.push({
@@ -222,7 +245,7 @@ function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
       label: "Source 문서",
       type: "folder",
       generated: true,
-      children: sourceItems
+      children: sortByExistingOrder(sourceItems, existingSourceGroup)
     });
   }
   if (conceptItems.length > 0) {
@@ -231,7 +254,7 @@ function buildWikiTreeGroups(graph: WikiGraphResponse): TreeItem[] {
       label: "Concept 문서",
       type: "folder",
       generated: true,
-      children: conceptItems
+      children: sortByExistingOrder(conceptItems, existingConceptGroup)
     });
   }
   return groups;
@@ -303,9 +326,8 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     uploadedAt: document.uploaded_at,
     errorMessage: document.error_message
   }));
-  const wikiGroups = buildWikiTreeGroups(graph);
-
   const nextProjects = projects.map((project, index) => {
+    const wikiGroups = buildWikiTreeGroups(graph, project.items);
     const syncedItems = syncDocumentItems(removeGeneratedWikiGroups(project.items), documents);
     const nextItems = index === 0 ? [...syncedItems, ...backendItems, ...wikiGroups] : syncedItems;
     if (areTreeItemsEqual(project.items, nextItems)) return project;

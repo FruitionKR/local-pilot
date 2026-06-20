@@ -82,9 +82,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 제목은 간결하게 작성하고, 한 커밋이 담는 변경 범위를 한글로 명확히 표현한다.
 - 예: `feat: 로컬 Docker 개발 환경 추가`
 
-## 8. 커밋 전 changelog 갱신
+## 8. 커밋 시 changelog 갱신
 
-- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 발생한 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
+- changelog는 파일 수정 직후가 아니라 커밋을 준비하거나 생성할 때 갱신한다.
+- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 포함된 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
 - Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
 - 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
 - AI/pipeline 기능 코드 변경은 해당 영역 changelog가 있을 때 그 문서에 기록한다.

@@ -39,7 +39,7 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
       continue;
     }
 
-    if (trimmed === "---") {
+    if (trimmed === "---" && blocks.length === 0) {
       const frontmatter = [];
       index += 1;
       while (index < lines.length && lines[index].trim() !== "---") {
@@ -63,6 +63,7 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
         code.push(lines[index]);
         index += 1;
       }
+      while (code.length > 0 && code[code.length - 1].trim() === "") code.pop();
       index += 1;
       blocks.push(<pre className="markdown-codeblock" key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
       continue;

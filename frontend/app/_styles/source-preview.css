@@ -71,7 +71,8 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding-right: 10px;
+  margin-right: -32px;
+  padding-right: 32px;
   color: #f0f0f0;
   font-size: 14px;
   line-height: 1.6;
@@ -149,7 +150,7 @@
 }
 
 .markdown-viewer p {
-  margin: 0 0 14px;
+  margin: 0 0 8px;
 }
 
 .markdown-viewer ul,
@@ -174,7 +175,6 @@
 .markdown-codeblock,
 .markdown-frontmatter pre {
   margin: 0 0 16px;
-  padding: 14px;
   overflow-x: auto;
   color: #d0d7de;
   background: #0a0a0a;
@@ -183,12 +183,30 @@
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown-codeblock,
+.source-preview-content .markdown-codeblock {
+  padding: 2px 2px 2px 6px;
+}
+
+.markdown-viewer p + .markdown-codeblock {
+  margin-top: -4px;
+}
+
+.source-preview-content .markdown-frontmatter pre {
+  padding: 12px 14px;
 }
 
 .markdown-codeblock code {
+  display: block;
+  margin: 0;
   padding: 0;
   background: transparent;
   border-radius: 0;
+  line-height: inherit;
 }
 
 .markdown-frontmatter {

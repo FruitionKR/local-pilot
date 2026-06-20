@@ -6,7 +6,7 @@ import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse } from "../../_lib/types";
+import type { ChatMessageReferenceResponse, ChatMessageResponse, GraphNode } from "../../_lib/types";
 import { useSmoothScroll } from "./useSmoothScroll";
 
 const SCROLL_OFFSET_PX = 20;
@@ -21,7 +21,8 @@ export function AgentBody({
   queryErrorMessage,
   chatLoadErrorMessage,
   animatedMessageId,
-  onOpenWikiPage
+  onOpenWikiPage,
+  nodes
 }: {
   messages: ChatMessageResponse[];
   isLoading: boolean;
@@ -30,6 +31,7 @@ export function AgentBody({
   chatLoadErrorMessage: string | null;
   animatedMessageId: string | null;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
+  nodes?: GraphNode[];
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
   const [visibleAnswerStage, setVisibleAnswerStage] = useState(3);
@@ -109,6 +111,10 @@ export function AgentBody({
 
   function formatWikiPageTitle(pageId?: string, fallback = "근거") {
     if (!pageId) return fallback;
+    if (nodes) {
+      const node = nodes.find((n) => n.id === pageId);
+      if (node?.label) return node.label;
+    }
     const [, slug = pageId] = pageId.split(":");
     return slug
       .split("-")
@@ -128,6 +134,51 @@ export function AgentBody({
     return [pageLabel, description].filter(Boolean).join(" · ") || "관련 근거";
   }
 
+  function findGraphNode(pageId: string) {
+    return nodes?.find((node) => node.id === pageId);
+  }
+
+  function isKnownPage(pageId: string) {
+    return !nodes || !!findGraphNode(pageId);
+  }
+
+  function buildRelatedPageCards(message: ChatMessageResponse) {
+    const relatedPages = message.related_pages ?? [];
+    if (relatedPages.length > 0) {
+      return relatedPages
+        .filter((page) => isKnownPage(page.wiki_page_id))
+        .slice(0, MAX_RESULT_CARDS)
+        .map((page) => ({
+          key: `related-${page.wiki_page_id}`,
+          pageId: page.wiki_page_id,
+          pageType: page.page_type,
+          title: findGraphNode(page.wiki_page_id)?.label ?? page.title,
+          meta: page.role || "관련 자료"
+        }));
+    }
+
+    const seenPageIds = new Set<string>();
+    return message.references
+      .filter((reference) => {
+        const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
+        if (!pageId || seenPageIds.has(pageId) || !isKnownPage(pageId)) return false;
+        seenPageIds.add(pageId);
+        return true;
+      })
+      .slice(0, MAX_RESULT_CARDS)
+      .map((reference) => {
+        const pageId = reference.wiki_page_id || makeSourceId(reference.document_id ?? "");
+        const pageType = nodeIdToPageType(pageId) ?? "source";
+        return {
+          key: `reference-${reference.id}`,
+          pageId,
+          pageType,
+          title: formatWikiPageTitle(pageId, reference.document_id || "근거"),
+          meta: formatReferenceMeta(reference)
+        };
+      });
+  }
+
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
   const animatedQuestionId = animatedMessageIndex > 0
     ? findLastUserMessage(messages.slice(0, animatedMessageIndex))?.id ?? null
@@ -139,6 +190,8 @@ export function AgentBody({
     : messages;
 
   function renderAssistantThread(message: ChatMessageResponse, isAnimated: boolean, threadKey?: string) {
+    const resultCards = buildRelatedPageCards(message);
+
     return (
       <div className="agent-thread" key={threadKey}>
         {(!isAnimated || visibleAnswerStage >= 1) && (
@@ -147,24 +200,18 @@ export function AgentBody({
           </div>
         )}
 
-        {message.references?.length > 0 && (!isAnimated || visibleAnswerStage >= 2) && (
+        {resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= 2) && (
           <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
-            <p>찾은 자료 {message.references.length}건</p>
-            {message.references.slice(0, MAX_RESULT_CARDS).map((reference) => {
-              const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
-              const pageType = pageId ? (nodeIdToPageType(pageId) ?? "source") : "source";
-              const title = formatWikiPageTitle(pageId ?? undefined, reference.document_id || "근거");
-
-              return (
-                <AgentResultCard
-                  key={reference.id}
-                  title={title}
-                  meta={formatReferenceMeta(reference)}
-                  pageType={pageType}
-                  onClick={pageId ? () => onOpenWikiPage(pageId, title, pageType) : undefined}
-                />
-              );
-            })}
+            <p>찾은 자료 {resultCards.length}건</p>
+            {resultCards.map((card) => (
+              <AgentResultCard
+                key={card.key}
+                title={card.title}
+                meta={card.meta}
+                pageType={card.pageType}
+                onClick={() => onOpenWikiPage(card.pageId, card.title, card.pageType)}
+              />
+            ))}
           </div>
         )}
 

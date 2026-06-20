@@ -82,9 +82,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 제목은 간결하게 작성하고, 한 커밋이 담는 변경 범위를 한글로 명확히 표현한다.
 - 예: `feat: 로컬 Docker 개발 환경 추가`
 
-## 8. 커밋 전 changelog 갱신
+## 8. 커밋 시 changelog 갱신
 
-- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 발생한 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
+- changelog는 파일 수정 직후가 아니라 커밋을 준비하거나 생성할 때 갱신한다.
+- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 포함된 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
 - Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
 - 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
 - AI/pipeline 기능 코드 변경은 해당 영역 changelog가 있을 때 그 문서에 기록한다.
@@ -130,3 +131,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 사용자에게 전달하는 설명은 한글로 작성한다.
 - 코드 주석과 문서 설명도 특별한 이유가 없으면 한글로 작성한다.
 - 외부 표준, API 이름, 설정 키, 명령어는 원문을 유지한다.
+
+## 13. 하위 디렉터리 CLAUDE.md 확인
+
+**Before starting work in a subdirectory, check for and read its CLAUDE.md.**
+
+- 특정 폴더 내부 파일을 작업 대상으로 받으면, 해당 폴더에 `CLAUDE.md`가 있는지 먼저 확인한다.
+- `CLAUDE.md`가 존재하면 반드시 읽은 뒤 작업을 시작한다.
+- 폴더별 `CLAUDE.md`의 지침은 루트 `CLAUDE.md`보다 우선 적용한다.

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { makeSourceId, nodeIdToPageType } from "../_lib/graph";
-import { findTreeItem } from "../_lib/tree";
+import { makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
+import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
 import type { Project } from "../_lib/types";
 
 export type PreviewTarget = {
@@ -13,6 +13,7 @@ export function useTreeSelection(projects: Project[]) {
   const [focusedGraphNodeId, setFocusedGraphNodeId] = useState<string | null>(null);
   const [selectedTreeItemId, setSelectedTreeItemId] = useState<string | null>(null);
   const [selectedPreviewTarget, setSelectedPreviewTarget] = useState<PreviewTarget | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const selectedDocumentTitle = useMemo(() => {
     if (selectedPreviewTarget) return selectedPreviewTarget.title;
     if (!selectedTreeItemId) return null;
@@ -23,39 +24,59 @@ export function useTreeSelection(projects: Project[]) {
     return null;
   }, [projects, selectedPreviewTarget, selectedTreeItemId]);
 
+  function findTreeItemIdByGraphNodeId(nodeId: string) {
+    for (const project of projects) {
+      const found = findTreeItemByGraphNodeId(project.items, nodeId);
+      if (found) return found.id;
+    }
+    return null;
+  }
+
+  function openPreviewTarget({
+    nodeId,
+    title,
+    treeItemId,
+    documentId = null
+  }: {
+    nodeId: string;
+    title: string;
+    treeItemId?: string | null;
+    documentId?: string | null;
+  }) {
+    const rawDocumentId = rawNodeIdToDocumentId(nodeId) ?? documentId;
+    const pageType = nodeIdToPageType(nodeId);
+    const resolvedTreeItemId = treeItemId ?? findTreeItemIdByGraphNodeId(nodeId);
+
+    setSelectedTreeItemId(resolvedTreeItemId);
+    setSelectedPreviewTarget({ pageId: pageType ? nodeId : null, title, pageType });
+    setFocusedGraphNodeId(nodeId);
+    setSelectedDocumentId(pageType ? null : rawDocumentId);
+  }
+
   function selectTreeGraphNode(item: { id: string; label: string; documentId?: string; graphNodeId?: string }) {
-    const sourcePageId = item.documentId ? makeSourceId(item.documentId) : null;
-    const pageId = sourcePageId || (nodeIdToPageType(item.graphNodeId ?? "") !== null ? item.graphNodeId ?? null : null);
-    setSelectedTreeItemId(item.id);
-    setSelectedPreviewTarget(pageId ? {
-      pageId,
+    const nodeId = item.graphNodeId ?? (item.documentId ? makeSourceId(item.documentId) : null);
+    if (!nodeId) return;
+    openPreviewTarget({
+      nodeId,
       title: item.label,
-      pageType: nodeIdToPageType(pageId) ?? "source"
-    } : null);
-    setFocusedGraphNodeId(pageId || item.graphNodeId || null);
+      treeItemId: item.id,
+      documentId: item.documentId ?? null
+    });
   }
 
   function openGraphNodePreview(nodeId: string, title: string) {
-    const pageType = nodeIdToPageType(nodeId);
-    setSelectedTreeItemId(null);
-    setSelectedPreviewTarget({
-      pageId: pageType !== null ? nodeId : null,
-      title,
-      pageType
-    });
-    setFocusedGraphNodeId(nodeId);
+    openPreviewTarget({ nodeId, title });
   }
 
   function openWikiPagePreview(pageId: string, title: string, pageType: string) {
-    setSelectedTreeItemId(null);
-    setSelectedPreviewTarget({ pageId, title, pageType });
-    setFocusedGraphNodeId(pageId);
+    openPreviewTarget({ nodeId: pageId, title, treeItemId: findTreeItemIdByGraphNodeId(pageId) });
   }
 
   function clearTreeGraphSelection() {
     setSelectedTreeItemId(null);
     setSelectedPreviewTarget(null);
     setFocusedGraphNodeId(null);
+    setSelectedDocumentId(null);
   }
 
   return {
@@ -63,6 +84,7 @@ export function useTreeSelection(projects: Project[]) {
     selectedTreeItemId,
     selectedDocumentTitle,
     selectedPreviewTarget,
+    selectedDocumentId,
     selectTreeGraphNode,
     openGraphNodePreview,
     openWikiPagePreview,

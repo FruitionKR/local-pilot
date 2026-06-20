@@ -172,6 +172,7 @@ export function HomeWorkspace() {
               title={selection.selectedDocumentTitle}
               pageId={selection.selectedPreviewTarget?.pageId ?? null}
               pageType={selection.selectedPreviewTarget?.pageType ?? null}
+              documentId={selection.selectedDocumentId}
               width={sourcePreviewWidth}
               onResizeStart={startSourcePreviewResize}
             />
@@ -192,6 +193,7 @@ export function HomeWorkspace() {
             <AgentPanel
               onClose={() => setIsAgentPanelOpen(false)}
               onOpenWikiPage={selection.openWikiPagePreview}
+              nodes={graphData.nodes}
             />
           )}
         </>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchChatMessages, queryWiki } from "../../_lib/api";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageResponse } from "../../_lib/types";
+import type { ChatMessageReferenceResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
 
 export type ActiveAgentTurn = {
   question: string;
@@ -48,9 +48,11 @@ export function useChatThread() {
     );
 
     let querySucceeded = false;
+    let queryRelatedPages: QueryRelatedPageResponse[] = [];
     try {
-      await queryWiki(question);
+      const queryResponse = await queryWiki(question);
       querySucceeded = true;
+      queryRelatedPages = queryResponse.related_pages ?? [];
     } catch (error) {
       setQueryErrorMessage(error instanceof Error ? error.message : "질의에 실패했습니다.");
       setActiveTurn(null);
@@ -69,11 +71,26 @@ export function useChatThread() {
       const nextUserMessage = nextAssistantMessageIndex > 0
         ? findLastUserMessage(nextMessages.slice(0, nextAssistantMessageIndex))
         : undefined;
-      setAnimatedMessageId(nextAssistantMessage?.id ?? null);
+
+      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.references?.length && queryRelatedPages.length
+        ? {
+            ...nextAssistantMessage,
+            references: queryRelatedPages.map((page, idx): ChatMessageReferenceResponse => ({
+              id: -(idx + 1),
+              reference_type: page.page_type,
+              wiki_page_id: page.id,
+              page_role: page.role,
+              relevance_score: page.relevance_score,
+              rank: idx + 1
+            }))
+          }
+        : nextAssistantMessage;
+
+      setAnimatedMessageId(assistantMessage?.id ?? null);
       setActiveTurn({
         question: nextUserMessage?.content ?? question,
         userMessageId: nextUserMessage?.id,
-        assistantMessage: nextAssistantMessage
+        assistantMessage
       });
     }).catch((error: unknown) => {
       setChatLoadErrorMessage(error instanceof Error ? error.message : "채팅 기록을 불러오지 못했습니다.");

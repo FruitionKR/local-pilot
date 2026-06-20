@@ -4,6 +4,32 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-20
+
+### fix: 그래프 노드 선택 표시와 Markdown code block 여백 조정
+
+**변경 배경**
+
+- 그래프 노드를 드래그한 뒤 시간이 지나면 클릭/선택 이펙트가 사라져 현재 선택 상태를 구분하기 어려웠다.
+- Markdown fenced code block의 텍스트가 검은색 블럭의 위쪽과 왼쪽에 너무 붙어 보여 가독성이 떨어졌다.
+
+**변경된 내용**
+
+- 그래프 canvas 내부의 hover 상태와 selected 상태를 분리해, 노드 클릭 또는 드래그 후 선택 마커가 유지되도록 조정했다.
+- 외부 `focusedNodeId`가 `null`로 바뀌어도 그래프 내부 선택 상태를 강제로 지우지 않게 했다.
+- Markdown code block의 내부 여백과 줄바꿈 스타일을 조정해 텍스트 시작 위치가 자연스럽게 보이도록 했다.
+- Markdown code block 끝의 불필요한 빈 줄을 제거하고, 왼쪽 여백을 추가로 보정했다.
+- Agent의 "찾은 자료" 카드를 `related_pages` 우선으로 렌더링하고, 현재 graph에 있는 page만 표시하도록 했다.
+- 자료 관리 raw 문서 클릭과 graph raw 노드 더블 클릭이 같은 preview open 경로를 사용하도록 통합했다.
+- 원본 문서 preview의 세로 스크롤바가 패널 오른쪽 테두리에 붙어 보이도록 조정했다.
+- graph 노드 클릭 선택 이펙트가 hover 이펙트와 같은 렌더링 경로를 사용하도록 정리했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `npm run build` 통과.
+- `.next` 캐시 삭제 후 `npm run dev`로 `http://localhost:3001` 기동 확인.
+
 ## 2026-06-17
 
 ### fix: Agent 새 질문 기준 scroll 동작 조정
