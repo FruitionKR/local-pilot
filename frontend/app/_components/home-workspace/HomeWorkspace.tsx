@@ -14,12 +14,22 @@ import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend } from "../../_lib/graph";
 
+const SIDEBAR_DEFAULT_WIDTH = 260;
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 460;
+const SOURCE_PREVIEW_DEFAULT_WIDTH = 400;
+const SOURCE_PREVIEW_MIN_WIDTH = 300;
+const SOURCE_PREVIEW_MAX_FLOOR = 360;
+const AGENT_PANEL_WIDTH = 430;
+const AGENT_PANEL_COLLAPSED_WIDTH = 24;
+const RESIZE_SAFETY_MARGIN = 120;
+
 export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [sourcePreviewWidth, setSourcePreviewWidth] = useState(400);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [sourcePreviewWidth, setSourcePreviewWidth] = useState(SOURCE_PREVIEW_DEFAULT_WIDTH);
   const sidebarResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const sourcePreviewResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const projectTree = useProjectTree();
@@ -67,15 +77,15 @@ export function HomeWorkspace() {
   function updateSourcePreviewResize(event: ReactPointerEvent<HTMLElement>) {
     const sidebarResize = sidebarResizeRef.current;
     if (sidebarResize && sidebarResize.pointerId === event.pointerId) {
-      const nextWidth = Math.min(460, Math.max(220, sidebarResize.startWidth + event.clientX - sidebarResize.startX));
+      const nextWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, sidebarResize.startWidth + event.clientX - sidebarResize.startX));
       setSidebarWidth(nextWidth);
       return;
     }
 
     const sourceResize = sourcePreviewResizeRef.current;
     if (!sourceResize || sourceResize.pointerId !== event.pointerId) return;
-    const maxWidth = Math.max(360, window.innerWidth - sidebarWidth - (isAgentPanelOpen ? 430 : 24) - 120);
-    const nextWidth = Math.min(maxWidth, Math.max(300, sourceResize.startWidth + event.clientX - sourceResize.startX));
+    const maxWidth = Math.max(SOURCE_PREVIEW_MAX_FLOOR, window.innerWidth - sidebarWidth - (isAgentPanelOpen ? AGENT_PANEL_WIDTH : AGENT_PANEL_COLLAPSED_WIDTH) - RESIZE_SAFETY_MARGIN);
+    const nextWidth = Math.min(maxWidth, Math.max(SOURCE_PREVIEW_MIN_WIDTH, sourceResize.startWidth + event.clientX - sourceResize.startX));
     setSourcePreviewWidth(nextWidth);
   }
 

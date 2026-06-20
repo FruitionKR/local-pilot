@@ -1,34 +1,33 @@
 
 .rail {
   position: absolute;
-  inset: 60px auto 0 0;
+  inset: 65px auto 0 0;
   z-index: 8;
-  width: 68px;
-  padding-top: 28px;
-  background: #fff;
-  border-right: 1px solid var(--line);
+  width: 60px;
+  padding: 22px 12px 24px;
+  background: #1e1e1e;
+  border-right: 1px solid #4f4f4f;
 }
 
 .rail-item {
-  width: 66px;
-  height: 66px;
-  margin: 0 auto;
-  padding: 6px 0;
+  width: 36px;
+  height: 36px;
+  margin: 0 0 8px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  color: #a6afbd;
+  justify-content: center;
+  gap: 0;
+  color: #a7a7a7;
   background: transparent;
   text-align: center;
   line-height: 0;
+  border-radius: 6px;
 }
 
 .rail-item > span:last-child {
-  color: #626d7e;
-  font-size: 11px;
-  line-height: 1.2;
+  display: none;
 }
 
 .rail-icon {
@@ -47,22 +46,25 @@
   height: 23px;
 }
 
+.rail-icon.is-large .svg-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.rail-item.is-active,
+.rail-item:hover,
+.rail-item:focus-visible {
+  color: #f0f0f0;
+  background: #323232;
+}
+
 .rail-item.is-active .rail-icon {
-  background: #cfd5e0;
-}
-
-.rail-item.is-active {
-  color: #303844;
-}
-
-.rail-item.is-active > span:last-child {
-  color: #303844;
-  font-weight: 700;
+  background: transparent;
 }
 
 .blank-view {
   position: absolute;
-  inset: 60px 0 0 68px;
+  inset: 65px 0 0 60px;
   z-index: 1;
-  background: #f2f4f8;
+  background: #0a0a0a;
 }

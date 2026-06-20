@@ -4,7 +4,15 @@ import { MarkdownViewer } from "../MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
 import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
+import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
+import { findLastUserMessage } from "../../_lib/messages";
 import type { ChatMessageReferenceResponse, ChatMessageResponse } from "../../_lib/types";
+import { useSmoothScroll } from "./useSmoothScroll";
+
+const SCROLL_OFFSET_PX = 20;
+const REVEAL_RESULTS_DELAY_MS = 1000;
+const REVEAL_ANSWER_DELAY_MS = 2000;
+const MAX_RESULT_CARDS = 3;
 
 export function AgentBody({
   messages,
@@ -29,49 +37,7 @@ export function AgentBody({
   const activeQuestionRef = useRef<HTMLDivElement | null>(null);
   const animatedQuestionRef = useRef<HTMLDivElement | null>(null);
   const hasScrolledInitialMessagesRef = useRef(false);
-  const scrollAnimationRef = useRef<number | null>(null);
-
-  const scrollToPosition = useCallback((targetTop: number, { immediate = false } = {}) => {
-    const body = bodyRef.current;
-    if (!body) return;
-    const scrollBody = body;
-
-    if (scrollAnimationRef.current !== null) {
-      window.cancelAnimationFrame(scrollAnimationRef.current);
-    }
-
-    const maxTop = Math.max(scrollBody.scrollHeight - scrollBody.clientHeight, 0);
-    const nextTop = Math.max(0, Math.min(targetTop, maxTop));
-    const startTop = scrollBody.scrollTop;
-    const distance = nextTop - startTop;
-
-    if (Math.abs(distance) <= 1) return;
-    if (immediate) {
-      scrollBody.scrollTop = nextTop;
-      return;
-    }
-
-    const duration = 1100;
-    const startTime = performance.now();
-
-    function animateScroll(now: number) {
-      const elapsed = Math.min((now - startTime) / duration, 1);
-      const eased = elapsed < 0.5
-        ? 4 * elapsed * elapsed * elapsed
-        : 1 - Math.pow(-2 * elapsed + 2, 3) / 2;
-
-      scrollBody.scrollTop = startTop + distance * eased;
-
-      if (elapsed < 1) {
-        scrollAnimationRef.current = window.requestAnimationFrame(animateScroll);
-        return;
-      }
-
-      scrollAnimationRef.current = null;
-    }
-
-    scrollAnimationRef.current = window.requestAnimationFrame(animateScroll);
-  }, []);
+  const { scrollToPosition } = useSmoothScroll(bodyRef);
 
   const scrollToLatestMessage = useCallback(({ immediate = false } = {}) => {
     const body = bodyRef.current;
@@ -86,7 +52,7 @@ export function AgentBody({
 
     const bodyRect = body.getBoundingClientRect();
     const questionRect = questionElement.getBoundingClientRect();
-    const targetTop = body.scrollTop + questionRect.top - bodyRect.top - 20;
+    const targetTop = body.scrollTop + questionRect.top - bodyRect.top - SCROLL_OFFSET_PX;
     scrollToPosition(targetTop, { immediate });
   }, [scrollToPosition]);
 
@@ -97,8 +63,8 @@ export function AgentBody({
     }
 
     setVisibleAnswerStage(1);
-    const revealResults = window.setTimeout(() => setVisibleAnswerStage(2), 1000);
-    const revealAnswer = window.setTimeout(() => setVisibleAnswerStage(3), 2000);
+    const revealResults = window.setTimeout(() => setVisibleAnswerStage(2), REVEAL_RESULTS_DELAY_MS);
+    const revealAnswer = window.setTimeout(() => setVisibleAnswerStage(3), REVEAL_ANSWER_DELAY_MS);
 
     return () => {
       window.clearTimeout(revealResults);
@@ -141,12 +107,6 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [messages.length, animatedMessageId, isLoading, queryErrorMessage, scrollToLatestMessage]);
 
-  useEffect(() => () => {
-    if (scrollAnimationRef.current !== null) {
-      window.cancelAnimationFrame(scrollAnimationRef.current);
-    }
-  }, []);
-
   function formatWikiPageTitle(pageId?: string, fallback = "근거") {
     if (!pageId) return fallback;
     const [, slug = pageId] = pageId.split(":");
@@ -170,7 +130,7 @@ export function AgentBody({
 
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
   const animatedQuestionId = animatedMessageIndex > 0
-    ? [...messages.slice(0, animatedMessageIndex)].reverse().find((message) => message.role === "user")?.id ?? null
+    ? findLastUserMessage(messages.slice(0, animatedMessageIndex))?.id ?? null
     : null;
   const activeAssistantMessage = activeTurn?.assistantMessage;
   const shouldReserveScrollSpace = activeTurn !== null && (!activeAssistantMessage || visibleAnswerStage < 3);
@@ -190,9 +150,9 @@ export function AgentBody({
         {message.references?.length > 0 && (!isAnimated || visibleAnswerStage >= 2) && (
           <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
             <p>찾은 자료 {message.references.length}건</p>
-            {message.references.slice(0, 3).map((reference) => {
-              const pageId = reference.wiki_page_id || (reference.document_id ? `source:${reference.document_id}` : null);
-              const pageType = pageId?.startsWith("concept:") ? "concept" : "source";
+            {message.references.slice(0, MAX_RESULT_CARDS).map((reference) => {
+              const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
+              const pageType = pageId ? (nodeIdToPageType(pageId) ?? "source") : "source";
               const title = formatWikiPageTitle(pageId ?? undefined, reference.document_id || "근거");
 
               return (

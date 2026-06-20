@@ -1,9 +1,7 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
+import { GRAPH_COLORS } from "./graphColors";
 import rawNodeIcon from "../../../svg/raw.svg";
 
-const SOURCE_PAGE_COLOR = "#bbcf6c";
-const CONCEPT_PAGE_COLOR = "#fffdf0";
-const HOVER_NODE_COLOR = "#ffc117";
 const RAW_NODE_ICON_SRC = rawNodeIcon.src;
 
 let rawNodeImage: HTMLImageElement | null = null;
@@ -95,14 +93,14 @@ export function drawGraphFrame({
     context.lineTo(toScreen.x, toScreen.y);
     context.setLineDash(link.dashed ? [4, 4] : []);
     context.lineWidth = rawSourceLink ? 1.25 : 1.15;
-    context.strokeStyle = rawSourceLink ? "#5a5a5a" : "#4f4f4f";
+    context.strokeStyle = rawSourceLink ? GRAPH_COLORS.rawSourceLink : GRAPH_COLORS.baseLink;
     context.stroke();
 
     if (linkHoverAmount > 0.01) {
       context.globalAlpha = 0.98 * linkHoverAmount;
       context.setLineDash([]);
       context.lineWidth = 2.6;
-      context.strokeStyle = "#ffc117";
+      context.strokeStyle = GRAPH_COLORS.hoverLink;
       context.beginPath();
       context.moveTo(fromScreen.x, fromScreen.y);
       context.lineTo(toScreen.x, toScreen.y);
@@ -133,7 +131,7 @@ export function drawGraphFrame({
     context.beginPath();
     context.arc(screenPosition.x, screenPosition.y, radius, 0, Math.PI * 2);
     if (node.kind === "source") {
-      context.fillStyle = mixHexColor(SOURCE_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
+      context.fillStyle = mixHexColor(GRAPH_COLORS.sourcePage, GRAPH_COLORS.hoverNode, hoverAmount);
       context.fill();
     } else if (node.kind === "raw") {
       const rawImage = getRawNodeImage();
@@ -141,21 +139,21 @@ export function drawGraphFrame({
         const imageSize = Math.max(12, radius * 2);
         context.drawImage(rawImage, screenPosition.x - imageSize / 2, screenPosition.y - imageSize / 2, imageSize, imageSize);
       } else {
-        context.fillStyle = "#4f4f4f";
+        context.fillStyle = GRAPH_COLORS.rawNodeFill;
         context.fill();
-        context.strokeStyle = "#a7a7a7";
+        context.strokeStyle = GRAPH_COLORS.rawNodeStroke;
         context.lineWidth = 1.2;
         context.setLineDash([3, 2.5]);
         context.stroke();
         context.setLineDash([]);
       }
 
-      context.fillStyle = HOVER_NODE_COLOR;
+      context.fillStyle = GRAPH_COLORS.hoverNode;
       context.globalAlpha = nodeAlpha * hoverAmount;
       context.fill();
       context.globalAlpha = nodeAlpha;
     } else {
-      context.fillStyle = mixHexColor(CONCEPT_PAGE_COLOR, HOVER_NODE_COLOR, hoverAmount);
+      context.fillStyle = mixHexColor(GRAPH_COLORS.conceptPage, GRAPH_COLORS.hoverNode, hoverAmount);
       context.fill();
     }
 
@@ -171,12 +169,12 @@ export function drawNodeLabel(context: CanvasRenderingContext2D, node: GraphNode
   context.textBaseline = "middle";
 
   if (node.kind === "source") {
-    context.fillStyle = "#f0f0f0";
+    context.fillStyle = GRAPH_COLORS.sourceLabelInk;
     context.fillText(node.label, x, labelY);
     return;
   }
 
-  context.fillStyle = "#8a8a8a";
+  context.fillStyle = GRAPH_COLORS.conceptLabelMuted;
   context.fillText(node.label, x, labelY);
 }
 
@@ -185,7 +183,7 @@ function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y:
   const innerRadius = 6.5134;
   const gradient = context.createRadialGradient(x, y, outerRadius * 0.350403, x, y, outerRadius);
 
-  gradient.addColorStop(0, "rgba(255, 193, 23, 0.24)");
+  gradient.addColorStop(0, "rgba(255, 193, 23, 0.24)"); // GRAPH_COLORS.hoverNode = #ffc117
   gradient.addColorStop(1, "rgba(255, 193, 23, 0)");
 
   context.globalAlpha = opacity;
@@ -194,7 +192,7 @@ function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y:
   context.arc(x, y, outerRadius, 0, Math.PI * 2);
   context.fill();
 
-  context.fillStyle = "#ffc117";
+  context.fillStyle = GRAPH_COLORS.hoverNode;
   context.beginPath();
   context.arc(x, y, innerRadius, 0, Math.PI * 2);
   context.fill();

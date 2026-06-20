@@ -18,6 +18,7 @@ import { useGraphPointer } from "./useGraphPointer";
 
 const HOVER_SMOOTHING_MS = 320;
 const HOVER_SETTLE_THRESHOLD = 0.002;
+const GRAPH_CACHE_DEBOUNCE_MS = 700;
 
 export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
   nodes: GraphNode[];
@@ -202,7 +203,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
         zoom: graphZoomRef.current
       });
       cacheWriteRef.current = null;
-    }, 700);
+    }, GRAPH_CACHE_DEBOUNCE_MS);
   }
 
   useEffect(() => () => {

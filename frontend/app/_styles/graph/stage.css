@@ -1,27 +1,45 @@
 
 .api-error-banner {
   position: absolute;
-  top: 76px;
-  left: 352px;
-  right: 440px;
+  top: 81px;
+  left: 340px;
+  right: 430px;
   z-index: 9;
   padding: 9px 12px;
-  color: #9b332d;
-  background: #fff0ef;
-  border: 1px solid #f2c8c5;
+  color: #ffb6ae;
+  background: #2a1614;
+  border: 1px solid #6f2d29;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
 }
 
+.workspace.is-sidebar-collapsed .api-error-banner {
+  left: 80px;
+}
+
 .graph-stage {
   position: absolute;
-  inset: 60px 420px 0 328px;
+  inset: 65px 428px 0 calc(60px + var(--sidebar-width, 260px));
   overflow: hidden;
+  background: #0a0a0a;
+}
+
+.workspace.is-sidebar-collapsed .graph-stage {
+  left: 60px;
+}
+
+.workspace.has-source-preview .graph-stage {
+  left: calc(60px + var(--sidebar-width, 260px));
+  right: 428px;
+}
+
+.workspace.is-sidebar-collapsed.has-source-preview .graph-stage {
+  left: 60px;
 }
 
 .workspace.is-agent-collapsed .graph-stage {
-  right: 40px;
+  right: 24px;
 }
 
 .graph-canvas {
@@ -31,6 +49,10 @@
   cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+.workspace.has-source-preview .graph-canvas {
+  left: var(--source-preview-width, 400px);
 }
 
 .graph-canvas:active {
@@ -51,12 +73,22 @@
   top: 50%;
   transform: translate(-50%, -50%);
   padding: 10px 14px;
-  color: #6f7989;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid #dfe4ec;
+  color: #a7a7a7;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
   border-radius: 999px;
-  box-shadow: 0 4px 14px rgba(35, 47, 66, 0.08);
+  box-shadow: none;
   font-size: 12px;
   font-weight: 700;
   pointer-events: none;
+}
+
+.graph-empty.is-error {
+  max-width: min(520px, calc(100% - 48px));
+  border-radius: 8px;
+  color: #ff8f87;
+  background: #3a1f1d;
+  border-color: #6f2d29;
+  text-align: center;
+  white-space: normal;
 }

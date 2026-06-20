@@ -2,10 +2,16 @@
 .agent-answer {
   margin-top: 0;
   padding: 8px 0;
-  color: #303846;
+  color: #f0f0f0;
   background: transparent;
   border: 0;
   border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.agent-answer .markdown-viewer {
+  color: #e2e2e2;
   font-size: 12px;
   line-height: 1.6;
 }
@@ -15,7 +21,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  color: #616b7b;
+  color: #a7a7a7;
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
@@ -24,6 +30,32 @@
 .answer-section-title svg {
   width: 8px;
   height: 8px;
+}
+
+.agent-answer .markdown-viewer h1,
+.agent-answer .markdown-viewer h2,
+.agent-answer .markdown-viewer h3 {
+  color: #f0f0f0;
+}
+
+.agent-answer .markdown-viewer h1 {
+  font-size: 18px;
+}
+
+.agent-answer .markdown-viewer h2 {
+  font-size: 15px;
+}
+
+.agent-answer .markdown-viewer h3 {
+  font-size: 13px;
+}
+
+.agent-answer .markdown-viewer p {
+  margin: 0;
+}
+
+.agent-answer .markdown-viewer p:last-child {
+  margin-bottom: 0;
 }
 
 .agent-answer p,

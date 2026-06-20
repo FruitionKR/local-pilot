@@ -1,5 +1,29 @@
 import type { DocumentItemResponse, GraphLink, GraphNode, WikiGraphResponse } from "./types";
 
+// 노드 ID 접두사 상수
+export const NODE_PREFIX = {
+  source: "source:",
+  concept: "concept:",
+  raw: "raw:"
+} as const;
+
+/**
+ * 노드 ID에서 pageType을 반환합니다.
+ * source:/concept: 접두사 판정 규칙을 한 곳에서 관리합니다.
+ */
+export function nodeIdToPageType(nodeId: string): "source" | "concept" | null {
+  if (nodeId.startsWith(NODE_PREFIX.source)) return "source";
+  if (nodeId.startsWith(NODE_PREFIX.concept)) return "concept";
+  return null;
+}
+
+/**
+ * documentId로 source 노드 ID를 생성합니다.
+ */
+export function makeSourceId(documentId: string): string {
+  return `${NODE_PREFIX.source}${documentId}`;
+}
+
 export const GRAPH_WIDTH = 746;
 export const GRAPH_HEIGHT = 568;
 export const GRAPH_CACHE_KEY = "fruition.graph.layout.v7";

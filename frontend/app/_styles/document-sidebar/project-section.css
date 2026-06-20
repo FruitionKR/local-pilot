@@ -1,12 +1,12 @@
 
-.tree-section {
-  margin-top: 18px;
+.tree-section,
+.project-section {
+  margin-top: 0;
 }
 
 .project-section {
   position: relative;
-  margin-top: 10px;
-  padding: 10px 0 12px;
+  padding: 12px 10px 10px;
   border-radius: 7px;
 }
 
@@ -39,25 +39,46 @@
 
 .project-title {
   width: 100%;
-  height: 35px;
+  height: 36px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 26px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 4px;
 }
 
-.project-toggle {
-  min-width: 0;
-  height: 35px;
+.project-arrow,
+.tree-arrow {
+  width: 5px;
+  height: 8px;
+  flex: 0 0 5px;
+  transform-origin: center;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.project-arrow.is-open,
+.tree-arrow.is-open {
+  transform: rotate(90deg);
+}
+
+.project-toggle,
+.section-title {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
   display: flex;
   align-items: center;
-  gap: 4px;
   padding: 0 8px;
-  color: #7d8798;
+  color: #8a8a8a;
   background: transparent;
-  border-radius: 5px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.project-toggle {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 4px;
   text-align: left;
 }
 
@@ -68,22 +89,13 @@
   white-space: nowrap;
 }
 
-.project-add-folder {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #5e6878;
-  background: #f3f5f9;
-  border-radius: 5px;
-}
-
 .project-toggle:hover,
 .project-toggle:focus-visible,
-.project-add-folder:hover,
-.project-add-folder:focus-visible {
-  background: #edf1f7;
+.section-title:hover,
+.section-title:focus-visible,
+.section-title.muted {
+  color: #e2e2e2;
+  background: #4f4f4f;
 }
 
 .project-toggle:focus-visible,
@@ -92,30 +104,31 @@
   outline-offset: 1px;
 }
 
+.project-add-folder {
+  display: none;
+}
+
+.project-add-folder:hover,
+.project-add-folder:focus-visible {
+  color: #f0f0f0;
+  background: #323232;
+}
+
+.project-add-icon {
+  width: 28px;
+  height: 28px;
+}
+
 .project-empty {
   margin: 4px 0 0;
   padding: 8px 10px;
-  color: #8b94a3;
+  color: #8a8a8a;
   font-size: 12px;
 }
 
 .section-title {
   width: 100%;
-  height: 35px;
-  display: flex;
-  align-items: center;
   gap: 4px;
-  padding: 0 8px;
-  color: #7d8798;
-  background: transparent;
-  border-radius: 5px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.section-title.muted {
-  justify-content: flex-start;
-  background: #f3f5f9;
 }
 
 .section-title.muted svg:last-child {

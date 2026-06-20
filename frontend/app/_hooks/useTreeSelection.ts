@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { makeSourceId, nodeIdToPageType } from "../_lib/graph";
 import { findTreeItem } from "../_lib/tree";
 import type { Project } from "../_lib/types";
 
@@ -23,23 +24,24 @@ export function useTreeSelection(projects: Project[]) {
   }, [projects, selectedPreviewTarget, selectedTreeItemId]);
 
   function selectTreeGraphNode(item: { id: string; label: string; documentId?: string; graphNodeId?: string }) {
-    const sourcePageId = item.documentId ? `source:${item.documentId}` : null;
-    const pageId = sourcePageId || (item.graphNodeId?.startsWith("source:") || item.graphNodeId?.startsWith("concept:") ? item.graphNodeId : null);
+    const sourcePageId = item.documentId ? makeSourceId(item.documentId) : null;
+    const pageId = sourcePageId || (nodeIdToPageType(item.graphNodeId ?? "") !== null ? item.graphNodeId ?? null : null);
     setSelectedTreeItemId(item.id);
     setSelectedPreviewTarget(pageId ? {
       pageId,
       title: item.label,
-      pageType: pageId.startsWith("concept:") ? "concept" : "source"
+      pageType: nodeIdToPageType(pageId) ?? "source"
     } : null);
     setFocusedGraphNodeId(pageId || item.graphNodeId || null);
   }
 
   function openGraphNodePreview(nodeId: string, title: string) {
+    const pageType = nodeIdToPageType(nodeId);
     setSelectedTreeItemId(null);
     setSelectedPreviewTarget({
-      pageId: nodeId.startsWith("source:") || nodeId.startsWith("concept:") ? nodeId : null,
+      pageId: pageType !== null ? nodeId : null,
       title,
-      pageType: nodeId.startsWith("concept:") ? "concept" : nodeId.startsWith("source:") ? "source" : null
+      pageType
     });
     setFocusedGraphNodeId(nodeId);
   }

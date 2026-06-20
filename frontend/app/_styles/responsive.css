@@ -1,27 +1,27 @@
 
 @media (max-width: 1300px) {
   .agent-panel {
-    right: 20px;
-    width: clamp(310px, 34vw, 350px);
+    right: 12px;
+    width: 330px;
   }
 
   .graph-stage {
-    right: calc(clamp(310px, 34vw, 350px) + 40px);
+    right: 342px;
   }
 
-  .workspace.is-agent-collapsed .graph-stage {
-    right: 20px;
+  .workspace.has-source-preview .graph-stage {
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 
-  .agent-restore {
-    right: 20px;
+  .source-preview-panel {
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 }
 
 @media (max-width: 1080px) {
   .search-box {
-    left: 58%;
-    width: min(360px, calc(100vw - 540px));
+    left: 54%;
+    width: min(360px, calc(100vw - 480px));
   }
 
   .profile div {
@@ -29,12 +29,20 @@
   }
 
   .agent-panel {
-    right: 12px;
+    right: 10px;
     width: 300px;
   }
 
   .graph-stage {
-    right: 324px;
+    right: 310px;
+  }
+
+  .workspace.has-source-preview .graph-stage {
+    left: calc(60px + var(--sidebar-width, 260px));
+  }
+
+  .source-preview-panel {
+    left: calc(60px + var(--sidebar-width, 260px));
   }
 }
 

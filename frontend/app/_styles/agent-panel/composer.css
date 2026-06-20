@@ -2,17 +2,21 @@
 .composer {
   min-width: 0;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 26px;
+  grid-template-columns: 16px minmax(0, 1fr) 24px;
   align-items: center;
+  height: 44px;
   gap: 8px;
-  margin: 17px 20px;
-  padding: 0 11px;
-  border: 1px solid #dce2eb;
-  border-radius: 19px;
+  margin: 17px 22px 16px;
+  padding: 0 8px 0 12px;
+  background: #4f4f4f;
+  border: 1px solid #1e1e1e;
+  border-radius: 100px;
 }
 
 .composer svg {
-  color: #7c8798;
+  width: 16px;
+  height: 16px;
+  color: #f0f0f0;
 }
 
 .composer input {
@@ -20,18 +24,24 @@
   width: 100%;
   border: 0;
   outline: 0;
-  color: #455061;
+  color: #f0f0f0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.composer input::placeholder {
+  color: #f0f0f0;
 }
 
 .composer button {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
-  color: #fff;
-  background: #252b34;
+  color: #0a0a0a;
+  background: #fff;
   border-radius: 50%;
 }
 

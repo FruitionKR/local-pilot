@@ -4,17 +4,17 @@
   z-index: 30;
   width: 132px;
   padding: 5px;
-  background: #fff;
-  border: 1px solid #dbe1ea;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
   border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(35, 47, 66, 0.16);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.38);
 }
 
 .folder-context-menu button {
   width: 100%;
   height: 31px;
   padding: 0 9px;
-  color: #39414d;
+  color: #f0f0f0;
   background: transparent;
   border-radius: 5px;
   font-size: 12px;
@@ -24,7 +24,7 @@
 
 .folder-context-menu button:hover,
 .folder-context-menu button:focus-visible {
-  background: #f3f5f9;
+  background: #323232;
 }
 
 .folder-context-menu button.danger {

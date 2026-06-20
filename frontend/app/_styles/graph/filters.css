@@ -1,8 +1,9 @@
 
 .filter-chips {
   position: absolute;
-  top: 29px;
+  top: 28px;
   right: 0;
+  left: auto;
   z-index: 4;
   display: flex;
   align-items: flex-start;
@@ -11,20 +12,20 @@
 
 .filter-chips span,
 .filter-chip-action {
-  height: 30px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #515a68;
-  background: #fff;
-  border: 1px solid #dfe4ec;
-  border-radius: 999px;
-  box-shadow: 0 2px 7px rgba(30, 42, 60, 0.08);
+  color: #e2e2e2;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
+  border-radius: 32px;
+  box-shadow: none;
 }
 
 .filter-chips span {
-  gap: 7px;
-  padding: 0 14px;
+  gap: 6px;
+  padding: 10px 14px;
   font-size: 12px;
 }
 
@@ -35,12 +36,12 @@
 
 .filter-chip-action:hover,
 .filter-chip-action:focus-visible {
-  background: #f1f4f8;
+  background: #323232;
 }
 
 .filter-chip-action .svg-icon {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 .chip-icon {
@@ -48,14 +49,11 @@
   height: 10px;
 }
 
-.chip-icon.raw {
-  color: #858c9a;
+.chip-icon.raw,
+.chip-icon.concept {
+  color: #a7a7a7;
 }
 
 .chip-icon.source {
-  color: var(--yellow);
-}
-
-.chip-icon.concept {
-  color: #202832;
+  color: var(--source-page);
 }

@@ -4,9 +4,9 @@
   max-width: 100%;
   margin-left: auto;
   padding: 15px 16px;
-  color: #303846;
-  background: #f2f4f8;
-  border-radius: 11px 11px 0 11px;
+  color: #f0f0f0;
+  background: #0a0a0a;
+  border-radius: 12px 12px 0 12px;
   font-size: 12px;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -17,7 +17,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  margin-top: 24px;
+  margin-top: 20px;
 }
 
 .agent-thread:first-child {
@@ -61,14 +61,19 @@
   min-width: 0;
   display: flex;
   gap: 12px;
-  margin-top: 48px;
+  margin-top: 24px;
 }
 
 .mini-mark {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
   flex: 0 0 auto;
-  padding: 5px;
+  padding: 6px;
+}
+
+.mini-mark .svg-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .agent-message strong {
@@ -77,5 +82,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #f0f0f0;
   font-size: 12px;
 }
