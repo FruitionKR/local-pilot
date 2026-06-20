@@ -1,5 +1,5 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { DropTarget, TreeItem } from "../../_lib/types";
+import { InlineEditInput } from "./InlineEditInput";
 import { TreeNodeIcon } from "./TreeNodeIcon";
 import type { TreeInteractionProps } from "./types";
 import { useTreeNodeDragDrop } from "./useTreeNodeDragDrop";
@@ -57,11 +57,6 @@ export function TreeNode({
     onDropFiles
   });
 
-  function handleEditingKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") onCommitEditing();
-    if (event.key === "Escape") onCancelEditing();
-  }
-
   return (
     <>
       <button
@@ -92,14 +87,11 @@ export function TreeNode({
       >
         <TreeNodeIcon item={item} hasChildren={hasChildren} isOpen={isOpen} />
         {isEditing ? (
-          <input
-            className="tree-edit-input"
+          <InlineEditInput
             value={editing.label}
-            autoFocus
-            onChange={(event) => onEditingChange(event.target.value)}
-            onBlur={onCommitEditing}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={handleEditingKeyDown}
+            onChange={onEditingChange}
+            onCommit={onCommitEditing}
+            onCancel={onCancelEditing}
           />
         ) : (
           <>

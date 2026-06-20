@@ -1,5 +1,22 @@
 import type { BackendData, ChatMessagesResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "./types";
 
+// 공통 에러 메시지 상수
+const ERROR_MESSAGES = {
+  uploadFailed: "문서 업로드에 실패했습니다.",
+  queryFailed: "질의에 실패했습니다.",
+  chatLoadFailed: "채팅 기록을 불러오지 못했습니다."
+} as const;
+
+// HTTP 응답에서 에러 메시지를 추출하는 공통 헬퍼
+async function parseErrorResponse(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json() as { error?: { message?: string }; detail?: string } | undefined;
+    return body?.error?.message || body?.detail || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function uploadDocumentFile(file: File) {
   const formData = new FormData();
   formData.append("file", file);
@@ -10,14 +27,7 @@ export async function uploadDocumentFile(file: File) {
   });
 
   if (!response.ok) {
-    let message = "문서 업로드에 실패했습니다.";
-    try {
-      const body = await response.json();
-      message = body?.error?.message || message;
-    } catch {
-      // JSON 오류 본문이 없으면 기본 메시지를 유지합니다.
-    }
-    throw new Error(message);
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.uploadFailed));
   }
 
   return response.json() as Promise<DocumentUploadResponse>;
@@ -45,14 +55,7 @@ export async function queryWiki(question: string): Promise<QueryResponse> {
   });
 
   if (!response.ok) {
-    let message = "질의에 실패했습니다.";
-    try {
-      const body = await response.json();
-      message = body?.error?.message || body?.detail || message;
-    } catch {
-      // JSON 오류 본문이 없으면 기본 메시지를 유지합니다.
-    }
-    throw new Error(message);
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.queryFailed));
   }
 
   return response.json() as Promise<QueryResponse>;
@@ -72,7 +75,7 @@ export async function fetchChatMessages(): Promise<ChatMessagesResponse> {
   const response = await fetch("/api/chat/messages", { cache: "no-store" });
 
   if (!response.ok) {
-    throw new Error("채팅 기록을 불러오지 못했습니다.");
+    throw new Error(ERROR_MESSAGES.chatLoadFailed);
   }
 
   return response.json() as Promise<ChatMessagesResponse>;

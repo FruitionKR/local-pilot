@@ -5,7 +5,7 @@
 
 .results > p {
   margin: 0 0 8px;
-  color: #616b7b;
+  color: #a7a7a7;
   font-size: 12px;
 }
 
@@ -19,9 +19,9 @@
   gap: 10px;
   margin-top: 6px;
   padding: 0 11px;
-  color: #2e3643;
-  background: #fff;
-  border: 1px solid #e2e6ee;
+  color: #f0f0f0;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
   border-radius: 12px;
   text-align: left;
 }
@@ -33,20 +33,14 @@
   align-items: center;
   justify-content: center;
   line-height: 0;
-  background: #f1f3f7;
+  background: #323232;
   border-radius: 8px;
 }
 
-.file-box.raw {
-  color: #c4c4c4;
-}
-
-.file-box.source {
-  color: #bbcf6c;
-}
-
+.file-box.raw,
+.file-box.source,
 .file-box.concept {
-  color: #fff3b0;
+  color: #c4c4c4;
 }
 
 .file-box .svg-icon {
@@ -73,30 +67,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #697386;
+  color: #a7a7a7;
   font-size: 10px;
 }
 
 .result-card b {
   padding: 4px 8px;
-  color: #505967;
-  background: #f0f2f6;
+  color: #f0f0f0;
+  background: #323232;
   border-radius: 999px;
   font-size: 10px;
 }
 
-.result-card b.raw {
-  color: #505967;
-}
-
-.result-card b.source {
-  color: #3f521c;
-  background: rgba(187, 207, 108, 0.28);
-}
-
+.result-card b.raw,
+.result-card b.source,
 .result-card b.concept {
-  color: #755a00;
-  background: rgba(255, 243, 176, 0.36);
+  color: #f0f0f0;
+  background: #323232;
 }
 
 .typing {
@@ -105,7 +92,7 @@
   align-items: center;
   gap: 4px;
   margin-top: 36px;
-  color: #8a94a5;
+  color: #a7a7a7;
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -113,6 +100,6 @@
 .typing i {
   width: 5px;
   height: 5px;
-  background: #aeb6c4;
+  background: #a7a7a7;
   border-radius: 50%;
 }

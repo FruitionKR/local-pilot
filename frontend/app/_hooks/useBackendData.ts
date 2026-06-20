@@ -3,6 +3,8 @@ import { fetchBackendData } from "../_lib/api";
 import { mergeBackendDataIntoProjects } from "../_lib/tree";
 import type { DocumentItemResponse, Project, WikiGraphResponse } from "../_lib/types";
 
+const PROCESSING_POLL_INTERVAL_MS = 3000;
+
 export function useBackendData({
   setProjects
 }: {
@@ -36,7 +38,7 @@ export function useBackendData({
     if (!hasProcessingDocuments) return;
     const intervalId = window.setInterval(() => {
       void refreshBackendData();
-    }, 3000);
+    }, PROCESSING_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
   }, [hasProcessingDocuments, refreshBackendData]);
 

@@ -1,9 +1,10 @@
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useState } from "react";
 import type { Project } from "../../_lib/types";
-import { getDroppedFiles, hasDroppedFiles } from "../../_lib/tree";
 import { arrowIcon, SvgIcon } from "../SvgIcon";
+import { InlineEditInput } from "./InlineEditInput";
 import { SidebarTree } from "./SidebarTree";
+import { useFileDropZone } from "./useFileDropZone";
 import type { TreeInteractionProps } from "./types";
 
 export function ProjectSection({
@@ -33,34 +34,21 @@ export function ProjectSection({
   const [isOpen, setIsOpen] = useState(true);
   const isRootFileDropTarget = fileDropTarget?.projectId === project.id && fileDropTarget.folderId === null;
   const isProjectEditing = editing?.projectId === project.id && editing.itemId === null;
-
-  function handleEditingKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") onCommitEditing();
-    if (event.key === "Escape") onCancelEditing();
-  }
+  const { handleDragOver, handleDragLeave, handleDrop } = useFileDropZone({
+    projectId: project.id,
+    folderId: null,
+    onFileDragOver,
+    onFileDragLeave,
+    onDropFiles
+  });
 
   return (
     <section
       className={`project-section ${isRootFileDropTarget ? "is-file-drop-target" : ""}`}
       onContextMenu={(event) => onContextMenuProject(event, project.id)}
-      onDragOver={(event) => {
-        if (!hasDroppedFiles(event)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-        onFileDragOver({ projectId: project.id, folderId: null });
-      }}
-      onDragLeave={(event) => {
-        if (!hasDroppedFiles(event)) return;
-        const nextTarget = event.relatedTarget;
-        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-        onFileDragLeave();
-      }}
-      onDrop={(event) => {
-        if (!hasDroppedFiles(event)) return;
-        event.preventDefault();
-        onFileDragLeave();
-        onDropFiles(project.id, null, getDroppedFiles(event));
-      }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="project-title">
         <button
@@ -70,14 +58,11 @@ export function ProjectSection({
           onClick={() => setIsOpen((open) => !open)}
         >
           {isProjectEditing ? (
-            <input
-              className="tree-edit-input"
+            <InlineEditInput
               value={editing.label}
-              autoFocus
-              onChange={(event) => onEditingChange(event.target.value)}
-              onBlur={onCommitEditing}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={handleEditingKeyDown}
+              onChange={onEditingChange}
+              onCommit={onCommitEditing}
+              onCancel={onCancelEditing}
             />
           ) : (
             <>

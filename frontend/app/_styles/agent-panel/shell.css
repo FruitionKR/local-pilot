@@ -1,27 +1,28 @@
 
 .agent-panel {
   position: absolute;
-  inset: 89px clamp(16px, 3vw, 40px) 29px auto;
+  inset: 93px 24px 28px auto;
   z-index: 7;
-  width: clamp(320px, 30vw, 380px);
+  width: 380px;
   min-width: 0;
   display: grid;
-  grid-template-rows: 75px 1fr 76px;
+  grid-template-rows: 83px 1fr 77px;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #dbe1ea;
-  border-radius: 28px;
-  box-shadow: 0 7px 24px rgba(35, 47, 66, 0.12);
+  color: #f0f0f0;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
+  border-radius: 32px;
+  box-shadow: none;
 }
 
 .agent-header {
   min-width: 0;
   display: grid;
-  grid-template-columns: 31px minmax(0, 1fr) 32px;
+  grid-template-columns: 30px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: 11px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--line);
+  gap: 12px;
+  padding: 24px 18px 24px 22px;
+  border-bottom: 1px solid #4f4f4f;
 }
 
 .agent-mark,
@@ -31,19 +32,24 @@
   justify-content: center;
   line-height: 0;
   color: #fff;
-  background: #303640;
+  background: #0a0a0a;
   border-radius: 50%;
 }
 
 .agent-mark {
-  width: 31px;
-  height: 31px;
-  padding: 7px;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+}
+
+.agent-mark .svg-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .agent-header h2 {
   margin: 0;
-  color: #222833;
+  color: #f0f0f0;
   font-size: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -53,47 +59,47 @@
 .agent-header p,
 .agent-message p {
   margin: 3px 0 0;
-  color: #8b94a3;
+  color: #a7a7a7;
   font-size: 10px;
   overflow-wrap: anywhere;
 }
 
 .panel-action {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #a1abb9;
+  color: #a7a7a7;
   background: transparent;
   border-radius: 8px;
 }
 
 .panel-action:hover,
 .agent-restore:hover {
-  background: #f1f4f8;
+  background: #323232;
 }
 
 .panel-action .svg-icon {
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
 }
 
 .agent-restore {
   position: absolute;
-  top: 104px;
-  right: 40px;
+  top: 80px;
+  right: 20px;
   z-index: 7;
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6a7484;
-  background: #fff;
-  border: 1px solid #dbe1ea;
+  color: #f0f0f0;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
   border-radius: 10px;
-  box-shadow: 0 5px 18px rgba(35, 47, 66, 0.12);
+  box-shadow: none;
 }
 
 .agent-restore .svg-icon {
@@ -103,10 +109,10 @@
 
 .agent-body {
   min-width: 0;
-  padding: 84px 20px 20px;
+  padding: 31px 22px 0;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-color: #b7c0cc transparent;
+  scrollbar-color: #4f4f4f transparent;
 }
 
 .agent-body::-webkit-scrollbar {
@@ -118,7 +124,7 @@
 }
 
 .agent-body::-webkit-scrollbar-thumb {
-  background: #b7c0cc;
-  border: 2px solid #fff;
+  background: #4f4f4f;
+  border: 2px solid #1e1e1e;
   border-radius: 999px;
 }
