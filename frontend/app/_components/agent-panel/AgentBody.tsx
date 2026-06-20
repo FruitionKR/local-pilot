@@ -6,7 +6,7 @@ import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse } from "../../_lib/types";
+import type { ChatMessageReferenceResponse, ChatMessageResponse, GraphNode } from "../../_lib/types";
 import { useSmoothScroll } from "./useSmoothScroll";
 
 const SCROLL_OFFSET_PX = 20;
@@ -21,7 +21,8 @@ export function AgentBody({
   queryErrorMessage,
   chatLoadErrorMessage,
   animatedMessageId,
-  onOpenWikiPage
+  onOpenWikiPage,
+  nodes
 }: {
   messages: ChatMessageResponse[];
   isLoading: boolean;
@@ -30,6 +31,7 @@ export function AgentBody({
   chatLoadErrorMessage: string | null;
   animatedMessageId: string | null;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
+  nodes?: GraphNode[];
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
   const [visibleAnswerStage, setVisibleAnswerStage] = useState(3);
@@ -109,6 +111,10 @@ export function AgentBody({
 
   function formatWikiPageTitle(pageId?: string, fallback = "근거") {
     if (!pageId) return fallback;
+    if (nodes) {
+      const node = nodes.find((n) => n.id === pageId);
+      if (node?.label) return node.label;
+    }
     const [, slug = pageId] = pageId.split(":");
     return slug
       .split("-")
@@ -150,21 +156,32 @@ export function AgentBody({
         {message.references?.length > 0 && (!isAnimated || visibleAnswerStage >= 2) && (
           <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
             <p>찾은 자료 {message.references.length}건</p>
-            {message.references.slice(0, MAX_RESULT_CARDS).map((reference) => {
-              const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
-              const pageType = pageId ? (nodeIdToPageType(pageId) ?? "source") : "source";
-              const title = formatWikiPageTitle(pageId ?? undefined, reference.document_id || "근거");
+            {(() => {
+              const seenPageIds = new Set<string>();
+              return message.references
+                .filter((reference) => {
+                  const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
+                  if (!pageId || seenPageIds.has(pageId)) return false;
+                  seenPageIds.add(pageId);
+                  return true;
+                })
+                .slice(0, MAX_RESULT_CARDS)
+                .map((reference) => {
+                  const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
+                  const pageType = pageId ? (nodeIdToPageType(pageId) ?? "source") : "source";
+                  const title = formatWikiPageTitle(pageId ?? undefined, reference.document_id || "근거");
 
-              return (
-                <AgentResultCard
-                  key={reference.id}
-                  title={title}
-                  meta={formatReferenceMeta(reference)}
-                  pageType={pageType}
-                  onClick={pageId ? () => onOpenWikiPage(pageId, title, pageType) : undefined}
-                />
-              );
-            })}
+                  return (
+                    <AgentResultCard
+                      key={reference.id}
+                      title={title}
+                      meta={formatReferenceMeta(reference)}
+                      pageType={pageType}
+                      onClick={pageId ? () => onOpenWikiPage(pageId, title, pageType) : undefined}
+                    />
+                  );
+                });
+            })()}
           </div>
         )}
 

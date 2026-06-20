@@ -7,21 +7,27 @@ export function SourcePreviewPanel({
   title,
   pageId,
   pageType,
+  documentId,
   width,
   onResizeStart
 }: {
   title: string;
   pageId: string | null;
   pageType: string | null;
+  documentId?: string | null;
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
   const [page, setPage] = useState<WikiPageDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
   const sourceDocuments = page?.source_documents ?? [];
+  const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
+  const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
+  const rawDocumentUrl = documentId ? `/api/documents/${documentId}/original` : null;
 
   useEffect(() => {
     if (!pageId) {
@@ -50,6 +56,36 @@ export function SourcePreviewPanel({
     };
   }, [pageId]);
 
+  useEffect(() => {
+    if (!isMarkdownFile || !rawDocumentUrl) {
+      setRawMarkdown(null);
+      return;
+    }
+
+    let ignore = false;
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    fetch(rawDocumentUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`문서를 불러오지 못했습니다. (${res.status})`);
+        return res.text();
+      })
+      .then((text) => {
+        if (!ignore) setRawMarkdown(text);
+      })
+      .catch((error: unknown) => {
+        if (!ignore) setErrorMessage(error instanceof Error ? error.message : "문서를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (!ignore) setIsLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [isMarkdownFile, rawDocumentUrl]);
+
   return (
     <section
       className="source-preview-panel"
@@ -59,17 +95,30 @@ export function SourcePreviewPanel({
     >
       <header>
         <h2>{title}</h2>
-        <span>{pageTypeLabel}</span>
+        <span>{pageId ? pageTypeLabel : "Raw"}</span>
       </header>
       <div className="source-preview-content">
-        {isLoading && <p>본문을 불러오는 중입니다.</p>}
-        {errorMessage && <p>{errorMessage}</p>}
-        {!isLoading && !errorMessage && page?.markdown && <MarkdownViewer markdown={page.markdown} />}
-        {!isLoading && !errorMessage && !page?.markdown && page?.summary && <p>{page.summary}</p>}
-        {!isLoading && !errorMessage && page && !page.markdown && (
+        {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
+        {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && (
+          <MarkdownViewer markdown={rawMarkdown} />
+        )}
+        {isPdfOrOther && rawDocumentUrl && (
+          <iframe
+            src={rawDocumentUrl}
+            title={title}
+            className="source-preview-iframe"
+            style={{ width: "100%", height: "100%", border: "none" }}
+          />
+        )}
+        {pageId && isLoading && <p>본문을 불러오는 중입니다.</p>}
+        {pageId && errorMessage && <p>{errorMessage}</p>}
+        {pageId && !isLoading && !errorMessage && page?.markdown && <MarkdownViewer markdown={page.markdown} />}
+        {pageId && !isLoading && !errorMessage && !page?.markdown && page?.summary && <p>{page.summary}</p>}
+        {pageId && !isLoading && !errorMessage && page && !page.markdown && (
           <p>본문 markdown을 찾지 못했습니다. 연결된 원본 문서 정보만 표시합니다.</p>
         )}
-        {!isLoading && !errorMessage && sourceDocuments.length > 0 && (
+        {pageId && !isLoading && !errorMessage && sourceDocuments.length > 0 && (
           <div className="source-preview-meta">
             <strong>원본 문서</strong>
             {sourceDocuments.map((document) => (
@@ -77,7 +126,7 @@ export function SourcePreviewPanel({
             ))}
           </div>
         )}
-        {!pageId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
+        {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
       </div>
       <button
         type="button"

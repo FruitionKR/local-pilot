@@ -5,16 +5,19 @@ import { AgentBody } from "./AgentBody";
 import { AgentComposer } from "./AgentComposer";
 import { AgentHeader } from "./AgentHeader";
 import { useChatThread } from "./useChatThread";
+import type { GraphNode } from "../../_lib/types";
 
 // AgentBody 등이 이 파일에서 ActiveAgentTurn을 import하므로 re-export 유지
 export type { ActiveAgentTurn } from "./useChatThread";
 
 export function AgentPanel({
   onClose,
-  onOpenWikiPage
+  onOpenWikiPage,
+  nodes
 }: {
   onClose: () => void;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
+  nodes?: GraphNode[];
 }) {
   const [composerValue, setComposerValue] = useState("");
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
@@ -37,6 +40,7 @@ export function AgentPanel({
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
         onOpenWikiPage={onOpenWikiPage}
+        nodes={nodes}
       />
       <AgentComposer value={composerValue} isLoading={isLoading} onChange={setComposerValue} onSubmit={handleSubmit} />
     </aside>

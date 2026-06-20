@@ -18,7 +18,7 @@ export function AgentResultCard({
   const icon = normalizedPageType === "source" ? sourceIcon : fileIcon;
 
   return (
-    <button className={`result-card ${normalizedPageType}`} type="button" onClick={onClick}>
+    <button className={`result-card ${normalizedPageType}`} type="button" onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}>
       <span className={`file-box ${normalizedPageType}`}><SvgIcon src={icon} /></span>
       <span><strong>{title}</strong><small>{meta}</small></span>
       <b className={normalizedPageType}>{label}</b>

@@ -25,10 +25,13 @@ export function useTreeNodeDragDrop({
   const canDrag = canDragTreeItem(item);
   const canNestChildren = !isFileItem(item);
 
+  const wikiKindMimeType = item.wikiKind ? `application/x-wiki-kind-${item.wikiKind}` : null;
+
   function handleDragStart(event: ReactDragEvent<HTMLButtonElement>) {
     if (!canDrag) return;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", item.id);
+    if (wikiKindMimeType) event.dataTransfer.setData(wikiKindMimeType, item.id);
     setLightDragPreview(event);
     onDragStart(projectId, item.id);
   }
@@ -41,7 +44,16 @@ export function useTreeNodeDragDrop({
       onFileDragOver({ projectId, folderId: item.id });
       return;
     }
-    if (isWikiItem(item) || item.generated) return;
+    if (isWikiItem(item)) {
+      const isSameKind = wikiKindMimeType && event.dataTransfer.types.includes(wikiKindMimeType);
+      if (isSameKind) {
+        const rawPosition = resolveDropPosition(event);
+        const position = rawPosition === "inside" ? "after" : rawPosition;
+        onDragOverItem({ projectId, targetId: item.id, position });
+      }
+      return;
+    }
+    if (item.generated) return;
     const position = resolveDropPosition(event);
     onDragOverItem({ projectId, targetId: item.id, position });
   }
@@ -62,7 +74,16 @@ export function useTreeNodeDragDrop({
       onDropFiles(projectId, canNestChildren && !isWikiItem(item) ? item.id : null, getDroppedFiles(event));
       return;
     }
-    if (!isWikiItem(item) && !item.generated) {
+    if (isWikiItem(item)) {
+      const isSameKind = wikiKindMimeType && event.dataTransfer.types.includes(wikiKindMimeType);
+      if (isSameKind) {
+        const rawPosition = resolveDropPosition(event);
+        const position = rawPosition === "inside" ? "after" : rawPosition;
+        onDropItem({ projectId, targetId: item.id, position });
+      }
+      return;
+    }
+    if (!item.generated) {
       onDropItem({ projectId, targetId: item.id, position: resolveDropPosition(event) });
     }
   }

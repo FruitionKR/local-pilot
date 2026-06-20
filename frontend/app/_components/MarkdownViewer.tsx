@@ -39,7 +39,7 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
       continue;
     }
 
-    if (trimmed === "---") {
+    if (trimmed === "---" && blocks.length === 0) {
       const frontmatter = [];
       index += 1;
       while (index < lines.length && lines[index].trim() !== "---") {
