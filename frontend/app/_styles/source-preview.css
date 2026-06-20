@@ -149,7 +149,7 @@
 }
 
 .markdown-viewer p {
-  margin: 0 0 14px;
+  margin: 0 0 8px;
 }
 
 .markdown-viewer ul,
@@ -186,11 +186,16 @@
   overflow-wrap: break-word;
 }
 
-.markdown-codeblock {
-  padding: 22px 24px;
+.markdown-codeblock,
+.source-preview-content .markdown-codeblock {
+  padding: 2px 2px 2px 6px;
 }
 
-.markdown-frontmatter pre {
+.markdown-viewer p + .markdown-codeblock {
+  margin-top: -4px;
+}
+
+.source-preview-content .markdown-frontmatter pre {
   padding: 12px 14px;
 }
 
