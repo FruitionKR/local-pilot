@@ -1,5 +1,6 @@
 package fruition.query.repository;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import fruition.query.exception.PipelineQueryException;
 import org.slf4j.Logger;
@@ -33,20 +34,28 @@ public class PipelineQueryRequester {
     }
 
     public PipelineQueryResponse query(String question) {
+        return executeQuery(new QueryPayload(question, null, null));
+    }
+
+    public PipelineQueryResponse query(String question, String requestId, String logCallbackUrl) {
+        return executeQuery(new QueryPayload(question, requestId, logCallbackUrl));
+    }
+
+    private PipelineQueryResponse executeQuery(QueryPayload payload) {
         try {
             return restClient.post()
                     .uri(queryEndpoint)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(new QueryPayload(question))
+                    .body(payload)
                     .retrieve()
                     .body(PipelineQueryResponse.class);
         } catch (ResourceAccessException e) {
-            log.warn("[쿼리 파이프라인 타임아웃] question={} error={}", question, e.getMessage());
+            log.warn("[쿼리 파이프라인 타임아웃] question={} error={}", payload.question(), e.getMessage());
             throw new PipelineQueryException("PIPELINE_TIMEOUT", "쿼리 파이프라인 응답 시간이 초과되었습니다.", 503, null);
         } catch (RestClientResponseException e) {
             String body = e.getResponseBodyAsString();
             log.warn("[쿼리 파이프라인 오류] question={} httpStatus={} body={}",
-                    question, e.getStatusCode(), body);
+                    payload.question(), e.getStatusCode(), body);
             if (e.getStatusCode().value() >= 500) {
                 throw new PipelineQueryException("PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, body);
             }
@@ -54,5 +63,9 @@ public class PipelineQueryRequester {
         }
     }
 
-    private record QueryPayload(@JsonProperty("question") String question) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private record QueryPayload(
+            @JsonProperty("question") String question,
+            @JsonProperty("request_id") String requestId,
+            @JsonProperty("log_callback_url") String logCallbackUrl) {}
 }

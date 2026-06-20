@@ -4,6 +4,40 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-20
+
+### feat: Query run 비동기 처리 및 SSE 진행상황 중계 (POST /api/query/runs)
+
+**배경**
+
+기존 `POST /api/query`는 pipeline 처리가 끝날 때까지 응답을 기다리는 동기 방식이라, 사용자가 질의 처리 중 실제 진행 상황(`query_started`, `retrieval_scored` 등)을 확인할 수 없었습니다. `dev`에 먼저 병합된 pipeline 커밋이 `request_id`/`log_callback_url`을 받아 요청별로 동적 callback publisher를 생성하도록 지원하면서, 백엔드도 이 callback을 수신해 SSE로 중계할 구조가 필요했습니다.
+
+**추가/변경된 것**
+
+- `POST /api/query/runs` — query run 생성, 비동기로 pipeline 호출을 시작하고 즉시 `{request_id, status}` 반환 (202)
+- `GET /api/query/runs/{requestId}/events` — SSE 구독. callback으로 들어온 event를 `sequence`/`received_at`과 함께 중계, heartbeat 전송
+- `POST /api/query/runs/{requestId}/events/callback` — pipeline → backend event 수신
+- `GET /api/query/runs/{requestId}` — 상태/최종 결과 조회 (SSE 연결 실패 시 polling fallback)
+- `query/domain/QueryRun`, `QueryRunStatus` — 진행 상태 추적용 immutable 도메인 모델 (상태 전이마다 새 인스턴스 반환)
+- `query/service/QueryRunStore` — in-memory `ConcurrentHashMap` 기반 run 저장, 완료 후 10분 TTL 자동 정리
+- `query/service/QueryEventBroker` — requestId별 `SseEmitter` 구독/버퍼/heartbeat/complete 관리
+- `query/service/QueryRunService` — run 생성, 전용 executor로 비동기 실행 orchestration, 만료 run 정리 스케줄러
+- `query/controller/QueryRunController`, `query/dto/QueryRunCreateResponse`, `QueryRunStatusResponse`, `PipelineEventCallbackRequest` 추가
+- `query/exception/QueryRunNotFoundException` + `GlobalExceptionHandler` 404 핸들러 추가
+- `QueryService.query()`, `PipelineQueryRequester.query()` — `requestId`/`logCallbackUrl` overload 추가. 기존 메서드는 새 overload에 위임만 하므로 **기존 `POST /api/query` 동기 경로는 요청/응답/저장 로직 100% 동일하게 유지**
+- `application.properties`/`infra/.env.example` — `app.callback.base-url`/`CALLBACK_BASE_URL` 추가. backend가 docker-compose 서비스가 아니라 호스트에서 직접 실행되는 구조라 기본값을 `http://host.docker.internal:8080`으로 설정
+- `infra/docker-compose.pipeline.yml` — `pipeline-api`에 `extra_hosts: host.docker.internal:host-gateway` 추가 (Docker Desktop 외 환경 호환)
+- `query/config/QueryAsyncConfig` — `Clock`, 전용 `queryRunExecutor`(`ThreadPoolTaskExecutor`) bean 추가, `BackendApplication`에 `@EnableScheduling` 추가
+- `docs/spec/backend-query-events-api.md`, `docs/issue/2026-06-20.md` 추가
+
+**검증**
+
+- `./gradlew test` 32개 전체 통과
+- 로컬 전체 스택(Postgres/MinIO/pipeline-api/backend/frontend)을 직접 기동해 `POST /api/query/runs` → SSE 구독 → `query_started`~`answer_generated` 전체 단계 event를 순서대로(`sequence` 1~10) 실시간 수신 → `query.completed` 종료까지 end-to-end 확인
+- 기존 `POST /api/query` 동기 경로, `GET /api/chat/messages` 저장 결과 회귀 없음 확인
+
+---
+
 ## 2026-06-19
 
 ### feat: related_pages 별도 테이블 저장 및 채팅 조회 API 반영

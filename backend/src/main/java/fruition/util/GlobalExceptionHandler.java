@@ -6,6 +6,7 @@ import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.query.exception.PipelineQueryException;
+import fruition.query.exception.QueryRunNotFoundException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
@@ -99,5 +100,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(e.getHttpStatus())
                 .body(ErrorResponse.of(e.getErrorCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(QueryRunNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleQueryRunNotFound(QueryRunNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("QUERY_RUN_NOT_FOUND", e.getMessage()));
     }
 }
