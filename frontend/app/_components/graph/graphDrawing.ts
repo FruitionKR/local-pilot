@@ -14,6 +14,7 @@ export function drawGraphFrame({
   positions,
   initialNodePositions,
   nodeHoverAmounts,
+  selectedNodeId,
   graphToCanvas,
   nodeSize,
   isRawSourceLink
@@ -25,6 +26,7 @@ export function drawGraphFrame({
   positions: NodePositionMap;
   initialNodePositions: NodePositionMap;
   nodeHoverAmounts: Record<string, number>;
+  selectedNodeId: string | null;
   graphToCanvas: (position: NodePosition, canvas: HTMLCanvasElement) => NodePosition;
   nodeSize: (node: GraphNode) => number;
   isRawSourceLink: (link: GraphLink) => boolean;
@@ -117,14 +119,16 @@ export function drawGraphFrame({
     const screenPosition = graphToCanvas(position, canvas);
     const radius = nodeSize(node) / 2;
     const hoverAmount = nodeHoverAmounts[node.id] ?? 0;
+    const selectedAmount = node.id === selectedNodeId ? 1 : 0;
+    const markerAmount = Math.max(hoverAmount, selectedAmount);
     const focusAmount = focusAmountFromHover(linkedHoverAmounts.get(node.id) ?? 0);
     const nodeAlpha = 0.16 + 0.84 * focusAmount;
 
     context.save();
     context.globalAlpha = nodeAlpha;
 
-    if (hoverAmount > 0.01) {
-      drawSelectedNodeMarker(context, screenPosition.x, screenPosition.y, hoverAmount);
+    if (markerAmount > 0.01) {
+      drawSelectedNodeMarker(context, screenPosition.x, screenPosition.y, markerAmount);
       context.globalAlpha = nodeAlpha;
     }
 

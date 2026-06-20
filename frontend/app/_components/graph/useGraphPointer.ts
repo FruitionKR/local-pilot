@@ -27,7 +27,8 @@ export function useGraphPointer({
   setGraphPan,
   setDraggingNodeId,
   onOpenNodePreview,
-  setFocusedNode,
+  setHoveredNode,
+  setSelectedNode,
   stopDragging,
   stopPanning
 }: {
@@ -54,7 +55,8 @@ export function useGraphPointer({
   setGraphPan: Dispatch<SetStateAction<NodePosition>>;
   setDraggingNodeId: Dispatch<SetStateAction<string | null>>;
   onOpenNodePreview: (node: GraphNode) => void;
-  setFocusedNode: (nodeId: string | null) => void;
+  setHoveredNode: (nodeId: string | null) => void;
+  setSelectedNode: (nodeId: string | null) => void;
   stopDragging: (pointerId?: number) => void;
   stopPanning: (pointerId?: number) => void;
 }) {
@@ -85,23 +87,13 @@ export function useGraphPointer({
   function moveNode(event: ReactPointerEvent<HTMLDivElement>, node: GraphNode) {
     if (!isPointerHeldRef.current || activePointerIdRef.current !== event.pointerId) return;
     if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) return;
-    if (
-      event.clientX < 0 ||
-      event.clientY < 0 ||
-      event.clientX > window.innerWidth ||
-      event.clientY > window.innerHeight
-    ) {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      stopDragging(event.pointerId);
-      return;
-    }
 
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const nextPosition = clampPosition(canvasToGraph(event.clientX, event.clientY, canvas), node.id);
+    const clampedX = Math.max(0, Math.min(window.innerWidth - 1, event.clientX));
+    const clampedY = Math.max(0, Math.min(window.innerHeight - 1, event.clientY));
+    const nextPosition = clampPosition(canvasToGraph(clampedX, clampedY, canvas), node.id);
     const distances = getGraphDistances(links, node.id);
     const current = nodePositionsRef.current;
     const draggedPosition = current[node.id] ?? initialNodePositions[node.id];
@@ -140,11 +132,16 @@ export function useGraphPointer({
     if (hitNode) {
       isPointerHeldRef.current = true;
       activePointerIdRef.current = event.pointerId;
-      setFocusedNode(hitNode.id);
+      setSelectedNode(hitNode.id);
+      setHoveredNode(hitNode.id);
       setDraggingNodeId(hitNode.id);
       draggingNodeIdRef.current = hitNode.id;
       drawGraphRef.current();
       return;
+    }
+
+    if (isPrimaryButton) {
+      setSelectedNode(null);
     }
 
     panDragRef.current = {
@@ -184,7 +181,7 @@ export function useGraphPointer({
   function updateHover(event: ReactPointerEvent<HTMLDivElement>) {
     if (draggingNodeIdRef.current || panDragRef.current) return;
     if (externalFocusedNodeIdRef.current) return;
-    setFocusedNode(hitTestNode(event.clientX, event.clientY)?.id ?? null);
+    setHoveredNode(hitTestNode(event.clientX, event.clientY)?.id ?? null);
   }
 
   function stopCanvasPanning(event: ReactPointerEvent<HTMLDivElement>) {
@@ -193,9 +190,10 @@ export function useGraphPointer({
     }
     const wasDragging = activePointerIdRef.current === event.pointerId;
     if (wasDragging) {
+      const draggedNodeId = draggingNodeIdRef.current;
       stopDragging(event.pointerId);
       if (!externalFocusedNodeIdRef.current) {
-        setFocusedNode(hitTestNode(event.clientX, event.clientY)?.id ?? null);
+        setSelectedNode(hitTestNode(event.clientX, event.clientY)?.id ?? draggedNodeId ?? null);
       }
     }
     if (panDragRef.current?.pointerId !== event.pointerId) return;
@@ -207,7 +205,8 @@ export function useGraphPointer({
     if (!node) return;
     event.preventDefault();
     event.stopPropagation();
-    setFocusedNode(node.id);
+    setSelectedNode(node.id);
+    setHoveredNode(node.id);
     onOpenNodePreview(node);
   }
 
@@ -223,7 +222,7 @@ export function useGraphPointer({
     onAuxClick: (event: ReactPointerEvent<HTMLDivElement>) => event.preventDefault(),
     onPointerLeave: () => {
       if (!draggingNodeIdRef.current && !panDragRef.current && !externalFocusedNodeIdRef.current) {
-        setFocusedNode(null);
+        setHoveredNode(null);
       }
     },
     onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => {

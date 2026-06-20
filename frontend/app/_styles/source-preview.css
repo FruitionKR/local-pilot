@@ -174,7 +174,6 @@
 .markdown-codeblock,
 .markdown-frontmatter pre {
   margin: 0 0 16px;
-  padding: 14px;
   overflow-x: auto;
   color: #d0d7de;
   background: #0a0a0a;
@@ -183,12 +182,25 @@
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown-codeblock {
+  padding: 22px 24px;
+}
+
+.markdown-frontmatter pre {
+  padding: 12px 14px;
 }
 
 .markdown-codeblock code {
+  display: block;
+  margin: 0;
   padding: 0;
   background: transparent;
   border-radius: 0;
+  line-height: inherit;
 }
 
 .markdown-frontmatter {

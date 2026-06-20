@@ -117,9 +117,10 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     setGraphPan(nextPan);
     setGraphZoom(nextZoom);
     setVisibleNodeCount(nodes.length);
-    selectedNodeIdRef.current = null;
-    hoveredNodeIdRef.current = null;
-    nodeHoverAmountsRef.current = {};
+    const externalId = externalFocusedNodeIdRef.current;
+    selectedNodeIdRef.current = externalId;
+    hoveredNodeIdRef.current = externalId;
+    nodeHoverAmountsRef.current = externalId ? { [externalId]: nodeHoverAmountsRef.current[externalId] ?? 1 } : {};
     drawGraphRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphSignature, initialNodePositions]);
@@ -210,7 +211,13 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     if (cacheWriteRef.current !== null) window.clearTimeout(cacheWriteRef.current);
   }, []);
 
-  const setFocusedNode = useCallback((nodeId: string | null) => {
+  const setHoveredNode = useCallback((nodeId: string | null) => {
+    if (hoveredNodeIdRef.current === nodeId) return;
+    hoveredNodeIdRef.current = nodeId;
+    drawGraphRef.current();
+  }, []);
+
+  const setSelectedNode = useCallback((nodeId: string | null) => {
     if (selectedNodeIdRef.current === nodeId) return;
     selectedNodeIdRef.current = nodeId;
     hoveredNodeIdRef.current = nodeId;
@@ -218,22 +225,18 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   }, []);
 
   useEffect(() => {
-    if (!focusedNodeId) {
-      setFocusedNode(null);
-      return;
-    }
+    if (!focusedNodeId) return;
     if (!nodeById.has(focusedNodeId)) return;
-    setFocusedNode(focusedNodeId);
-  }, [focusedNodeId, nodeById, setFocusedNode]);
+    setSelectedNode(focusedNodeId);
+  }, [focusedNodeId, nodeById, setSelectedNode]);
 
   const stopDragging = useCallback((pointerId?: number) => {
     if (pointerId !== undefined && activePointerIdRef.current !== pointerId) return;
     isPointerHeldRef.current = false;
     activePointerIdRef.current = null;
-    if (!externalFocusedNodeIdRef.current) setFocusedNode(null);
     setDraggingNodeId(null);
     draggingNodeIdRef.current = null;
-  }, [setFocusedNode]);
+  }, []);
 
   const stopPanning = useCallback((pointerId?: number) => {
     if (pointerId !== undefined && panDragRef.current?.pointerId !== pointerId) return;
@@ -276,6 +279,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
       positions: nodePositionsRef.current,
       initialNodePositions,
       nodeHoverAmounts: nodeHoverAmountsRef.current,
+      selectedNodeId: selectedNodeIdRef.current,
       graphToCanvas,
       nodeSize,
       isRawSourceLink
@@ -386,7 +390,8 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     setGraphPan,
     setDraggingNodeId,
     onOpenNodePreview,
-    setFocusedNode,
+    setHoveredNode,
+    setSelectedNode,
     stopDragging,
     stopPanning
   });
