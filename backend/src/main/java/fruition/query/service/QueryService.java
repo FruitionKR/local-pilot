@@ -49,6 +49,10 @@ public class QueryService {
     }
 
     public QueryResponse query(String question) {
+        return query(question, null, null);
+    }
+
+    public QueryResponse query(String question, String requestId, String logCallbackUrl) {
         Instant userCreatedAt = Instant.now();
 
         String userMessageId = "chat_user_" + UUID.randomUUID();
@@ -56,7 +60,9 @@ public class QueryService {
 
         PipelineQueryResponse pipelineResponse;
         try {
-            pipelineResponse = pipelineQueryClient.query(question);
+            pipelineResponse = requestId == null
+                    ? pipelineQueryClient.query(question)
+                    : pipelineQueryClient.query(question, requestId, logCallbackUrl);
         } catch (PipelineQueryException e) {
             String errorBody = e.getPipelineErrorBody();
             String errorMessage = errorBody != null

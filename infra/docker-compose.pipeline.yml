@@ -19,6 +19,8 @@ services:
       - "${PIPELINE_API_PORT:-8000}:8000"
     volumes:
       - pipeline-runs:/app/runs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgresql:
         condition: service_healthy
