@@ -279,7 +279,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
       positions: nodePositionsRef.current,
       initialNodePositions,
       nodeHoverAmounts: nodeHoverAmountsRef.current,
-      selectedNodeId: selectedNodeIdRef.current,
       graphToCanvas,
       nodeSize,
       isRawSourceLink
@@ -289,7 +288,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   drawGraphRef.current = drawGraph;
 
   function advanceHoverAnimation(deltaMs: number) {
-    const targetNodeId = hoveredNodeIdRef.current;
+    const targetNodeId = hoveredNodeIdRef.current ?? selectedNodeIdRef.current;
     const amounts = nodeHoverAmountsRef.current;
     const smoothing = 1 - Math.exp(-deltaMs / HOVER_SMOOTHING_MS);
     let changed = false;
