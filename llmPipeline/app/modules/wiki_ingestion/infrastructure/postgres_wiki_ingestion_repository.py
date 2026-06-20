@@ -75,6 +75,16 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS source_blocks (
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                block_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                PRIMARY KEY (document_id, block_id)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS wiki_page_links (
                 from_page_id TEXT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
                 to_page_id TEXT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
@@ -219,6 +229,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
     normalized = json.loads((out_dir / "normalized.json").read_text(encoding="utf-8"))
     links = json.loads(Path(manifest["links"]).read_text(encoding="utf-8"))
     persisted_page_ids: list[str] = []
+    _persist_source_blocks(conn, document_id, manifest)
 
     source_page_id = f"source:{document_id}"
     source_slug = document_id
@@ -274,6 +285,31 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
             )
     _refresh_source_related_links(conn)
     return persisted_page_ids
+
+
+def _persist_source_blocks(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> None:
+    source_blocks_path = manifest.get("source_blocks")
+    if not source_blocks_path:
+        return
+    path = Path(source_blocks_path)
+    if not path.exists():
+        return
+    blocks = json.loads(path.read_text(encoding="utf-8"))
+    conn.execute("DELETE FROM source_blocks WHERE document_id = %s", (document_id,))
+    for block in blocks:
+        block_id = block.get("block_id")
+        text = block.get("text")
+        if not block_id or not text:
+            continue
+        conn.execute(
+            """
+            INSERT INTO source_blocks (document_id, block_id, text)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (document_id, block_id) DO UPDATE SET
+                text = EXCLUDED.text
+            """,
+            (document_id, block_id, text),
+        )
 
 
 def _upload_wiki_markdown(path: Path, object_name: str) -> str:

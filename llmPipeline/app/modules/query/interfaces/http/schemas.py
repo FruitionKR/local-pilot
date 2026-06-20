@@ -41,17 +41,10 @@ class TraversalPathResponse(BaseModel):
 
 
 class EvidenceSnippetResponse(BaseModel):
-    page_id: str
-    page_type: str
-    page_title: str
-    page_slug: str
-    page_url: str
-    page_role: str
-    text: str
-    score: float
     rank: int
-    paragraph_index: int | None = None
-    sentence_index: int | None = None
+    source_document_id: str
+    source_block_ids: list[str]
+    text: str
 
 
 class QueryResponse(BaseModel):

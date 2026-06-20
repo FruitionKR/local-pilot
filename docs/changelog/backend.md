@@ -4,6 +4,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-21
+
+### feat: query evidence를 원본 source block 기준으로 변경
+
+**배경**
+
+기존 `evidence_snippets`는 Wiki page의 문장 위치(`page_id`, `paragraph_index`, `sentence_index`)를 기준으로 반환되어 답변 citation을 원본 문서 block 하이라이트로 연결하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- `llmPipeline` query evidence 응답을 `rank`, `source_document_id`, `source_block_ids`, `text` 중심으로 변경했습니다.
+- block citation(`[B0005]` 등)이 없는 Wiki 문장은 evidence 후보에서 제외했습니다.
+- `source_blocks(document_id, block_id, text)` 테이블을 추가하고 pipeline 산출 block을 저장하도록 연결했습니다.
+- source page의 `Categories`, `Core Concepts`, `Section Candidates`, `Mentions` 섹션을 별도 retrieval representation으로 점수 계산에 반영했습니다.
+- Spring/Frontend 후속 반영 항목은 `docs/issue/2026-06-21.md`에 정리했습니다.
+
+**검증**
+
+- Docker `python:3.12-slim` 컨테이너에서 `pip install -q -r requirements.txt && python -m unittest discover` 실행 결과 22개 테스트가 통과했습니다.
+- `git diff --check`를 통과했습니다.
+
+---
+
 ## 2026-06-20
 
 ### feat: Query run 비동기 처리 및 SSE 진행상황 중계 (POST /api/query/runs)

@@ -1,6 +1,15 @@
 import re
+from dataclasses import dataclass
 
 from app.modules.query.domain.entities import EvidenceSnippet, GraphContext, QueryContext, RetrievedPage, TraversalPath
+
+
+@dataclass(frozen=True)
+class _EvidenceCandidate:
+    source_document_id: str
+    source_block_ids: list[str]
+    text: str
+    score: float
 
 
 class BuildQueryContextUseCase:
@@ -79,10 +88,6 @@ class BuildQueryContextUseCase:
             lines.extend(
                 [
                     f"## Evidence {snippet.rank}",
-                    f"- page: {snippet.page_title}",
-                    f"- page_type: {snippet.page_type}",
-                    f"- page_role: {snippet.page_role}",
-                    f"- evidence_score: {snippet.score:.3f}",
                     "- text:",
                     self._indent(self._excerpt(snippet.text, self._max_paragraph_chars), spaces=2),
                     "",
@@ -100,39 +105,20 @@ class BuildQueryContextUseCase:
         return "\n".join(lines).strip()
 
     def _build_evidence_snippets(self, question: str, related_pages: list[RetrievedPage]) -> list[EvidenceSnippet]:
-        candidates = []
+        candidates: list[_EvidenceCandidate] = []
         for item in related_pages[: self._max_related_pages]:
-            for sentence_score, sentence, paragraph_index, sentence_index in self._score_evidence_sentences(question, item):
-                candidates.append(
-                    EvidenceSnippet(
-                        page_id=item.page.id,
-                        page_type=item.page.page_type,
-                        page_title=item.page.title,
-                        page_slug=item.page.slug,
-                        page_url=self._page_url(item.page),
-                        page_role=item.role,
-                        text=sentence,
-                        score=sentence_score,
-                        rank=0,
-                        paragraph_index=paragraph_index,
-                        sentence_index=sentence_index,
-                    )
-                )
+            source_document_id = self._source_document_id(item)
+            if not source_document_id:
+                continue
+            candidates.extend(self._score_evidence_sentences(question, item, source_document_id))
 
         candidates.sort(key=lambda snippet: snippet.score, reverse=True)
         return [
             EvidenceSnippet(
-                page_id=snippet.page_id,
-                page_type=snippet.page_type,
-                page_title=snippet.page_title,
-                page_slug=snippet.page_slug,
-                page_url=snippet.page_url,
-                page_role=snippet.page_role,
-                text=snippet.text,
-                score=snippet.score,
                 rank=index,
-                paragraph_index=snippet.paragraph_index,
-                sentence_index=snippet.sentence_index,
+                source_document_id=snippet.source_document_id,
+                source_block_ids=snippet.source_block_ids,
+                text=snippet.text,
             )
             for index, snippet in enumerate(candidates, start=1)
         ]
@@ -173,16 +159,25 @@ class BuildQueryContextUseCase:
         scored.sort(key=lambda value: (-value[0], value[2]))
         return scored[: self._max_paragraphs_per_page]
 
-    def _score_evidence_sentences(self, question: str, item: RetrievedPage) -> list[tuple[float, str, int, int]]:
+    def _score_evidence_sentences(
+        self,
+        question: str,
+        item: RetrievedPage,
+        source_document_id: str,
+    ) -> list[_EvidenceCandidate]:
         content = item.page.markdown or item.page.summary
         paragraphs = self._split_paragraphs(content)
         if not paragraphs:
             return []
 
         query_terms = set(self._tokens(question))
-        scored = []
+        scored: list[_EvidenceCandidate] = []
         for paragraph_index, paragraph in enumerate(paragraphs):
-            for sentence_index, sentence in enumerate(self._split_sentences(paragraph)):
+            for sentence in self._split_sentences(paragraph):
+                source_block_ids = self._source_block_ids(sentence)
+                if not source_block_ids:
+                    continue
+                clean_sentence = self._remove_block_refs(sentence)
                 sentence_terms = set(self._tokens(sentence))
                 overlap = len(query_terms & sentence_terms)
                 score = overlap * 2.0 + item.score
@@ -194,9 +189,16 @@ class BuildQueryContextUseCase:
                     score += 0.15
                 if overlap == 0:
                     score -= 0.75
-                scored.append((score, sentence, paragraph_index, sentence_index))
+                scored.append(
+                    _EvidenceCandidate(
+                        source_document_id=source_document_id,
+                        source_block_ids=source_block_ids,
+                        text=clean_sentence,
+                        score=score,
+                    )
+                )
 
-        scored.sort(key=lambda value: (-value[0], value[2], value[3]))
+        scored.sort(key=lambda value: -value.score)
         return scored[: self._max_paragraphs_per_page]
 
     def _split_paragraphs(self, text: str | None) -> list[str]:
@@ -221,12 +223,22 @@ class BuildQueryContextUseCase:
         normalized = " ".join(line.strip() for line in paragraph.strip().splitlines() if line.strip())
         if not normalized:
             return []
-        sentences = [
-            self._clean_sentence(chunk)
-            for chunk in re.split(r"(?<=[.!?。！？])\s+|(?<=[다요죠니다까])\.\s*", normalized)
-            if self._clean_sentence(chunk)
+        raw_chunks = [
+            chunk.strip()
+            for chunk in re.split(r"(?<=[.!?。！？])\s+|(?<=[다요죠니다까]\.)\s*", normalized)
+            if chunk.strip()
         ]
+        chunks: list[str] = []
+        for chunk in raw_chunks:
+            if chunks and self._is_block_ref_only(chunk):
+                chunks[-1] = f"{chunks[-1]} {chunk}"
+            else:
+                chunks.append(chunk)
+        sentences = [self._clean_sentence(chunk) for chunk in chunks if self._clean_sentence(chunk)]
         return sentences or [self._clean_sentence(normalized)]
+
+    def _is_block_ref_only(self, text: str) -> bool:
+        return bool(re.fullmatch(r"(?:\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]\s*)+", text.strip()))
 
     def _clean_sentence(self, sentence: str) -> str:
         cleaned = sentence.strip()
@@ -236,6 +248,48 @@ class BuildQueryContextUseCase:
         cleaned = re.sub(r"^(Summary|Definition|Why It Matters|Key Points|Evidence)\s+", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"^(?:\[[A-Za-z0-9_,\s-]+\]\s*)+", "", cleaned)
         cleaned = re.sub(r"^[-*]\s+", "", cleaned)
+        return cleaned.strip()
+
+    def _source_document_id(self, item: RetrievedPage) -> str | None:
+        if item.page.source_document_id:
+            return item.page.source_document_id
+        markdown = item.page.markdown or ""
+        if item.page.is_source:
+            return self._frontmatter_value(markdown, "document_id") or self._source_id_from_page_id(item.page.id)
+        if item.page.is_concept:
+            sources = self._frontmatter_value(markdown, "sources")
+            if not sources:
+                return None
+            source_ids = [part.strip() for part in re.split(r"[,\s]+", sources) if part.strip()]
+            if len(source_ids) == 1:
+                return source_ids[0]
+        return None
+
+    def _source_id_from_page_id(self, page_id: str) -> str | None:
+        if page_id.startswith("source:"):
+            return page_id.split(":", 1)[1]
+        return None
+
+    def _frontmatter_value(self, markdown: str, key: str) -> str | None:
+        if not markdown.startswith("---"):
+            return None
+        parts = markdown.split("---", 2)
+        if len(parts) < 3:
+            return None
+        for line in parts[1].splitlines():
+            match = re.match(rf"^{re.escape(key)}\s*:\s*(.+)$", line.strip(), flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return None
+
+    def _source_block_ids(self, text: str) -> list[str]:
+        block_ids = []
+        for group in re.findall(r"\[((?:B\d{4})(?:\s*,\s*B\d{4})*)\]", text):
+            block_ids.extend(part.strip() for part in group.split(",") if part.strip())
+        return list(dict.fromkeys(block_ids))
+
+    def _remove_block_refs(self, text: str) -> str:
+        cleaned = re.sub(r"\s*\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]", "", text)
         return cleaned.strip()
 
     def _tokens(self, text: str) -> list[str]:
@@ -250,9 +304,3 @@ class BuildQueryContextUseCase:
     def _indent(self, text: str, spaces: int = 2) -> str:
         prefix = " " * spaces
         return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())
-
-    def _page_url(self, page) -> str:
-        if page.page_type == "web" and page.markdown_uri:
-            return page.markdown_uri
-        return f"/api/wiki/pages/{page.id}"
-

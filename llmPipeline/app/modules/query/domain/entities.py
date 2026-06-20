@@ -10,6 +10,7 @@ class WikiPage:
     summary: str
     markdown_uri: str | None = None
     markdown: str | None = None
+    source_document_id: str | None = None
 
     @property
     def is_source(self) -> bool:
@@ -93,17 +94,10 @@ class RetrievalSummary:
 
 @dataclass(frozen=True)
 class EvidenceSnippet:
-    page_id: str
-    page_type: str
-    page_title: str
-    page_slug: str
-    page_url: str
-    page_role: str
-    text: str
-    score: float
     rank: int
-    paragraph_index: int | None = None
-    sentence_index: int | None = None
+    source_document_id: str
+    source_block_ids: list[str]
+    text: str
 
 
 @dataclass(frozen=True)
@@ -129,4 +123,3 @@ class QueryAnswer:
     graph_context: GraphContext
     traversal_paths: list[TraversalPath]
     retrieval_summary: RetrievalSummary
-
