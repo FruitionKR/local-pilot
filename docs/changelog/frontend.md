@@ -21,6 +21,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - Markdown code block 끝의 불필요한 빈 줄을 제거하고, 왼쪽 여백을 추가로 보정했다.
 - Agent의 "찾은 자료" 카드를 `related_pages` 우선으로 렌더링하고, 현재 graph에 있는 page만 표시하도록 했다.
 - 자료 관리 raw 문서 클릭과 graph raw 노드 더블 클릭이 같은 preview open 경로를 사용하도록 통합했다.
+- 원본 문서 preview의 세로 스크롤바가 패널 오른쪽 테두리에 붙어 보이도록 조정했다.
 
 **검증 결과**
 
