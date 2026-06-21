@@ -10,10 +10,6 @@ import fruition.query.dto.QueryResponse;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
 import fruition.query.repository.PipelineQueryResponse;
-import fruition.wiki.domain.WikiPage;
-import fruition.wiki.domain.WikiPageType;
-import fruition.wiki.repository.DocumentWikiLinkRepository;
-import fruition.wiki.repository.WikiPageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,28 +35,18 @@ class QueryServiceTest {
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
-    @Mock WikiPageRepository wikiPageRepository;
-    @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
 
     QueryService queryService;
 
-    private static final String SOURCE_ID = "source:codex-container-llm-wiki-api-20260611_013043";
-    private static final String CONCEPT_ID = "concept:index-md";
+    private static final String DOCUMENT_ID = "doc_1f9a74af";
 
     @BeforeEach
     void setUp() {
         queryService = new QueryService(
-                pipelineQueryRequester, chatMessageRepository, referenceRepository,
-                relatedPageRepository, wikiPageRepository, documentWikiLinkRepository);
+                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository);
         when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
-
-        WikiPage sourcePage = new WikiPage(SOURCE_ID, WikiPageType.source, "LLM Wiki",
-                "codex-container-llm-wiki-api-20260611_013043", null, "wiki/sources/llm-wiki.md");
-        WikiPage conceptPage = new WikiPage(CONCEPT_ID, WikiPageType.concept, "Index.md",
-                "index-md", null, "wiki/concepts/index-md.md");
-        lenient().when(wikiPageRepository.findAllById(anyList())).thenReturn(List.of(sourcePage, conceptPage));
     }
 
     @Test
@@ -74,9 +60,7 @@ class QueryServiceTest {
         // 응답 형태 검증
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
         assertThat(result.relatedPages()).hasSize(2);
-        assertThat(result.evidenceSnippets()).hasSize(6);
-        assertThat(result.graphContext().nodes()).hasSize(2);
-        assertThat(result.traversalPaths()).hasSize(1);
+        assertThat(result.evidenceSnippets()).hasSize(2);
 
         // related_pages role/depth 검증
         assertThat(result.relatedPages().get(0).role()).isEqualTo("seed_source");
@@ -91,48 +75,33 @@ class QueryServiceTest {
         assertThat(savedMessages.get(0).getRole()).isEqualTo("user");
         assertThat(savedMessages.get(1).getRole()).isEqualTo("assistant");
 
-        // chat_message_references 저장 검증
+        // chat_message_references 저장 검증 (원본 문서 block 기준)
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
         verify(referenceRepository).saveAll(refCaptor.capture());
         List<ChatMessageReference> savedRefs = refCaptor.getValue();
+        assertThat(savedRefs).hasSize(2);
 
-        // source 3개 + concept 3개 = 6개 (related_pages는 저장하지 않음)
-        assertThat(savedRefs).hasSize(6);
+        ChatMessageReference firstRef = savedRefs.stream()
+                .filter(r -> r.getRank() == 1).findFirst().orElseThrow();
+        assertThat(firstRef.getReferenceType()).isEqualTo("source_block");
+        assertThat(firstRef.getDocumentId()).isEqualTo(DOCUMENT_ID);
+        assertThat(firstRef.getSourceBlockIds()).isEqualTo(List.of("B0005", "B0006"));
+        assertThat(firstRef.getQuote()).isEqualTo("원본 block citation이 붙어 있던 근거 문장");
 
-        long sourceRefs  = savedRefs.stream().filter(r -> "source".equals(r.getReferenceType())).count();
-        long conceptRefs = savedRefs.stream().filter(r -> "concept".equals(r.getReferenceType())).count();
-        assertThat(sourceRefs).isEqualTo(3);
-        assertThat(conceptRefs).isEqualTo(3);
+        ChatMessageReference secondRef = savedRefs.stream()
+                .filter(r -> r.getRank() == 2).findFirst().orElseThrow();
+        assertThat(secondRef.getDocumentId()).isEqualTo("doc_2a8b91cc");
+        assertThat(secondRef.getSourceBlockIds()).isEqualTo(List.of("B0010"));
 
         // chat_message_related_pages 저장 검증
         ArgumentCaptor<List<ChatMessageRelatedPage>> rpCaptor = ArgumentCaptor.forClass(List.class);
         verify(relatedPageRepository).saveAll(rpCaptor.capture());
         List<ChatMessageRelatedPage> savedRelatedPages = rpCaptor.getValue();
         assertThat(savedRelatedPages).hasSize(2);
-        assertThat(savedRelatedPages.get(0).getWikiPageId()).isEqualTo(SOURCE_ID);
         assertThat(savedRelatedPages.get(0).getRole()).isEqualTo("seed_source");
         assertThat(savedRelatedPages.get(0).getDepth()).isEqualTo(0);
         assertThat(savedRelatedPages.get(0).getRank()).isEqualTo(1);
-        assertThat(savedRelatedPages.get(1).getWikiPageId()).isEqualTo(CONCEPT_ID);
         assertThat(savedRelatedPages.get(1).getRank()).isEqualTo(2);
-
-        // source ref: wiki_page_id = 전체 page_id, rank·sentence_index 저장 검증
-        ChatMessageReference sourceRef = savedRefs.stream()
-                .filter(r -> "source".equals(r.getReferenceType()) && r.getRank() == 1)
-                .findFirst().orElseThrow();
-        assertThat(sourceRef.getWikiPageId()).isEqualTo("source:codex-container-llm-wiki-api-20260611_013043");
-        assertThat(sourceRef.getRank()).isEqualTo(1);
-        assertThat(sourceRef.getPageRole()).isEqualTo("seed_source");
-        assertThat(sourceRef.getSentenceIndex()).isEqualTo(4);
-        assertThat(sourceRef.getQuote()).isNotBlank();
-
-        // concept ref: wiki_page_id·quote 저장 검증
-        ChatMessageReference conceptRef = savedRefs.stream()
-                .filter(r -> "concept".equals(r.getReferenceType()) && r.getRank() == 2)
-                .findFirst().orElseThrow();
-        assertThat(conceptRef.getWikiPageId()).isEqualTo("concept:index-md");
-        assertThat(conceptRef.getRank()).isEqualTo(2);
-        assertThat(conceptRef.getQuote()).isNotBlank();
     }
 
     @Test
@@ -175,8 +144,8 @@ class QueryServiceTest {
     }
 
     private PipelineQueryResponse samplePipelineResponse() {
-        String sourceId = SOURCE_ID;
-        String conceptId = CONCEPT_ID;
+        String sourceId = "source:codex-container-llm-wiki-api-20260611_013043";
+        String conceptId = "concept:index-md";
 
         List<PipelineQueryResponse.RelatedPage> relatedPages = List.of(
                 new PipelineQueryResponse.RelatedPage(sourceId, "source", "LLM Wiki",
@@ -186,27 +155,12 @@ class QueryServiceTest {
         );
 
         List<PipelineQueryResponse.EvidenceSnippet> evidenceSnippets = List.of(
-                new PipelineQueryResponse.EvidenceSnippet(sourceId, "source", "LLM Wiki",
-                        "codex-container-llm-wiki-api-20260611_013043",
-                        "/api/wiki/pages/" + sourceId, "seed_source",
-                        "index.md는 위키 콘텐츠를 카테고리별로 정리한 카탈로그 파일입니다", 3.5, 1, 2, 4),
-                new PipelineQueryResponse.EvidenceSnippet(conceptId, "concept", "Index.md",
-                        "index-md", "/api/wiki/pages/" + conceptId, "focus_concept",
-                        "index.md는 위키 콘텐츠를 카테고리별로 정리한 카탈로그 파일입니다", 3.5, 2, 2, 0),
-                new PipelineQueryResponse.EvidenceSnippet(conceptId, "concept", "Index.md",
-                        "index-md", "/api/wiki/pages/" + conceptId, "focus_concept",
-                        "index.md는 LLM이 쿼리 시 관련 페이지를 찾는 첫 번째 참조 지점입니다", 3.5, 3, 4, 0),
-                new PipelineQueryResponse.EvidenceSnippet(conceptId, "concept", "Index.md",
-                        "index-md", "/api/wiki/pages/" + conceptId, "focus_concept",
-                        "위키 내 모든 페이지를 카테고리별로 정리한 파일입니다", 0.75, 4, 0, 0),
-                new PipelineQueryResponse.EvidenceSnippet(sourceId, "source", "LLM Wiki",
-                        "codex-container-llm-wiki-api-20260611_013043",
-                        "/api/wiki/pages/" + sourceId, "seed_source",
-                        "LLM Wiki는 LLM을 활용하여 지속적으로 업데이트되는 개인 지식 베이스입니다", 0.25, 5, 0, 0),
-                new PipelineQueryResponse.EvidenceSnippet(sourceId, "source", "LLM Wiki",
-                        "codex-container-llm-wiki-api-20260611_013043",
-                        "/api/wiki/pages/" + sourceId, "seed_source",
-                        "기존 RAG 방식과 달리 위키 형태로 지식을 구조화합니다", 0.25, 6, 0, 1)
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0005", "B0006"),
+                        "원본 block citation이 붙어 있던 근거 문장"),
+                new PipelineQueryResponse.EvidenceSnippet(
+                        2, "doc_2a8b91cc", List.of("B0010"),
+                        "두 번째 근거 block 본문")
         );
 
         PipelineQueryResponse.GraphEdge edge = new PipelineQueryResponse.GraphEdge(

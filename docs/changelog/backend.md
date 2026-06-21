@@ -4,6 +4,43 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-21
+
+### feat: query evidence를 원본 문서 block 기준으로 전환, 문서 block 조회 API 추가
+
+**배경**
+
+llmPipeline이 query 응답의 `evidence_snippets`를 Wiki page 기준 필드(`page_id`, `page_role`, `score`, `paragraph_index`, `sentence_index` 등)에서 원본 문서 block 기준 필드(`source_document_id`, `source_block_ids`)로 변경할 계획입니다(`feature/original-evidence-blocks`, PR #43). Spring을 새 계약에 맞춰 먼저 수신/저장/조회하도록 구현하고, citation `[n]` 클릭 시 원본 block을 가져올 조회 API를 추가했습니다. `input-data/spring-original-evidence-block-plan.md` 구현 계획과 `docs/issue/2026-06-20.md` 2번 이슈의 backend(Java) 범위를 기준으로 작업했습니다.
+
+**추가/변경된 것**
+
+- `query/repository/PipelineQueryResponse.EvidenceSnippet` — `rank`/`source_document_id`/`source_block_ids`/`text`로 전면 교체. 기존 Wiki page 기준 필드는 모두 제거
+- `chat/domain/ChatMessageReference`, `chat/dto/ChatMessageReference` — `wikiPageId`/`pageRole`/`relevanceScore`/`pageNumber`/`paragraphIndex`/`sentenceIndex` 제거, `documentId`/`rank`/`sourceBlockIds`/`quote`로 교체. query 응답과 동일한 필드명(`source_document_id`/`source_block_ids`/`text`)으로 응답 계약 일치
+- `chat/domain/StringListJsonConverter` 추가 — `sourceBlockIds`(`List<String>`)를 `TEXT` 컬럼에 JSON 문자열로 저장하는 JPA `AttributeConverter`
+- `QueryService.buildReferences()` — wiki page 존재/markdown 접근 가능 여부를 확인하던 viewability 체크 로직 제거(새 계약은 pipeline이 원본 block을 직접 가리켜 불필요). 더 이상 쓰지 않는 `WikiPageRepository`, `DocumentWikiLinkRepository` 의존성을 생성자에서 제거
+- `chat/controller/ChatController` — `GET /api/chat/messages` 응답의 reference 매핑을 새 필드 기준으로 교체
+- `GET /api/documents/{document_id}/blocks` 신규 — `document/domain/SourceBlock`, `SourceBlockId`(복합키), `document/repository/SourceBlockRepository`, `document/dto/DocumentBlockResponse`, `DocumentBlocksResponse`, `DocumentService.blocks()`, `DocumentController` 엔드포인트 추가. `source_blocks` 테이블은 llmPipeline ingestion이 적재할 예정이며 Spring은 읽기만 함(`ddl-auto=update`로 엔티티 매핑)
+- `docs/spec/backend-mvp-erd.md` — `chat_message_references` 컬럼 갱신, `source_blocks` 테이블 신규 반영
+- `docs/Fruition_MVP_API_Contract.md` — `GET /documents/{document_id}/blocks` 섹션 추가, `evidence_snippets`/`references` 예시를 새 계약으로 갱신
+
+**검증**
+
+- `./gradlew test` 38개 전체 통과 (신규: `PipelineQueryResponseTest`, `DocumentControllerTest`, `DocumentServiceBlocksTest`, 재작성: `QueryServiceTest`)
+- 로컬 전체 스택(Postgres/MinIO/pipeline-api 기존 컨테이너 + `./gradlew bootRun`)을 직접 띄워 실제 DB로 확인:
+  - 기동 시 Hibernate가 `chat_message_references.source_block_ids` 컬럼 추가, `source_blocks` 테이블 생성을 자동 반영 (`ddl-auto=update`)
+  - 문서 업로드 → `source_blocks`에 테스트 row 직접 삽입 → `GET /api/documents/{id}/blocks` 호출 시 `block_id` 오름차순으로 정확히 반환 확인
+  - block이 없는 문서는 200 + `blocks: []`, 존재하지 않는 문서는 404 `DOCUMENT_NOT_FOUND` 확인
+  - `/v3/api-docs`에 새 endpoint가 정상 노출됨을 확인
+  - `GET /api/chat/messages` 기존 데이터 조회 회귀 없음 확인
+  - 검증에 사용한 테스트 문서/DB row/MinIO 객체는 확인 후 모두 정리함
+
+**남은 작업**
+
+- llmPipeline은 아직 옛 `page_id` 기준 스키마(`llmPipeline/app/modules/query/interfaces/http/schemas.py`)라 PR #43 병합 전에는 `/api/query` 호출 시 `evidence_snippets[].source_document_id/source_block_ids`가 비어 와 `buildReferences()`가 모두 걸러냄 (에러 없이 graceful하게 0건 저장)
+- llmPipeline의 `source_blocks` 저장 배선, frontend `[n]` 클릭 → block 하이라이트 연동은 별도 작업 (`docs/issue/2026-06-20.md` 2번 이슈)
+
+---
+
 ## 2026-06-20
 
 ### feat: Query run 비동기 처리 및 SSE 진행상황 중계 (POST /api/query/runs)

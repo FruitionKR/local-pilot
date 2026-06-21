@@ -75,11 +75,8 @@ public class ChatController {
                     var refs = refsByMessageId.getOrDefault(m.getId(), List.of()).stream()
                             .map(r -> new fruition.chat.dto.ChatMessageReference(
                                     r.getId(), r.getReferenceType(),
-                                    r.getWikiPageId(), r.getDocumentId(),
-                                    r.getPageRole(),
-                                    r.getRelevanceScore() != null ? r.getRelevanceScore() : 0.0,
-                                    r.getRank(), r.getPageNumber(),
-                                    r.getParagraphIndex(), r.getSentenceIndex(),
+                                    r.getRank(), r.getDocumentId(),
+                                    r.getSourceBlockIds(),
                                     r.getQuote()
                             ))
                             .toList();

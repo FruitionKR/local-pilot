@@ -14,9 +14,12 @@ import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.DocumentBlockResponse;
+import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentWikiPageRef;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentRepository;
+import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.DocumentWikiRelationType;
 import fruition.wiki.domain.WikiPage;
@@ -49,19 +52,22 @@ public class DocumentService {
     private final DocumentProcessingRequester processingRequester;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
+    private final SourceBlockRepository sourceBlockRepository;
 
     public DocumentService(DocumentRepository documentRepository,
                            MinioClient minioClient,
                            StorageProperties storageProps,
                            DocumentProcessingRequester processingRequester,
                            DocumentWikiLinkRepository documentWikiLinkRepository,
-                           WikiPageRepository wikiPageRepository) {
+                           WikiPageRepository wikiPageRepository,
+                           SourceBlockRepository sourceBlockRepository) {
         this.documentRepository = documentRepository;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
         this.processingRequester = processingRequester;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
+        this.sourceBlockRepository = sourceBlockRepository;
     }
 
     @Transactional
@@ -272,6 +278,18 @@ public class DocumentService {
         }
 
         return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
+    }
+
+    public DocumentBlocksResponse blocks(String documentId) {
+        documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        List<DocumentBlockResponse> blocks = sourceBlockRepository
+                .findAllByIdDocumentIdOrderByIdBlockIdAsc(documentId).stream()
+                .map(b -> new DocumentBlockResponse(b.getBlockId(), b.getText()))
+                .toList();
+
+        return new DocumentBlocksResponse(documentId, blocks);
     }
 
     public DocumentOriginalResult getOriginal(String documentId) {
