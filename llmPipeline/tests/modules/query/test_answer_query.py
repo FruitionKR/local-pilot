@@ -74,12 +74,13 @@ class RecordingEventPublisher:
 
 
 class RecordingAnswerGenerator:
-    def __init__(self) -> None:
+    def __init__(self, content: str = "테스트 답변입니다. [1]") -> None:
+        self.content = content
         self.last_context: QueryContext | None = None
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         self.last_context = context
-        return GeneratedAnswer(content="테스트 답변입니다. [1]")
+        return GeneratedAnswer(content=self.content)
 
 
 class FixedQueryRewriter:
@@ -182,7 +183,8 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("citation markers like [1]", answer_generator.last_context.answer_context)
         self.assertNotIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
         self.assertIn("Lecture Attention -> Self Attention", answer_generator.last_context.answer_context)
-        self.assertGreaterEqual(len(result.evidence_snippets), 2)
+        self.assertGreaterEqual(len(answer_generator.last_context.evidence_snippets), 2)
+        self.assertEqual(len(result.evidence_snippets), 1)
         self.assertEqual(result.evidence_snippets[0].rank, 1)
         self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_attention")
         self.assertTrue(result.evidence_snippets[0].source_block_ids)
@@ -207,6 +209,42 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                 "answer_generated",
             ],
         )
+
+    def test_renumbers_answer_citations_to_used_evidence_order(self) -> None:
+        pages = [
+            source_page(
+                "source:attention",
+                "Lecture Attention",
+            )
+        ]
+        answer_generator = RecordingAnswerGenerator(
+            content="첫 번째 근거를 사용합니다. [1] 세 번째 근거도 사용합니다. [3]"
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Lecture Attention": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:attention.md": (
+                        "---\ndocument_id: doc_attention\n---\n\n"
+                        "토큰 관계를 설명하는 첫 번째 근거입니다. [B0001]\n\n"
+                        "토큰 관계를 보조 설명하는 두 번째 근거입니다. [B0002]\n\n"
+                        "토큰 관계를 다시 설명하는 세 번째 근거입니다. [B0003]"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.execute("토큰 관계 설명")
+
+        self.assertIn("[1]", result.answer.content)
+        self.assertIn("[2]", result.answer.content)
+        self.assertNotIn("[3]", result.answer.content)
+        self.assertEqual([snippet.rank for snippet in result.evidence_snippets], [1, 2])
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
+        self.assertEqual(result.evidence_snippets[1].source_block_ids, ["B0003"])
 
     def test_traverses_source_related_to_edges(self) -> None:
         pages = [

@@ -4,6 +4,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-26
+
+### fix: query citation 번호를 실제 사용 근거 기준으로 재정렬
+
+**배경**
+
+pipeline이 evidence 후보 전체 순위로 citation rank를 부여하고, 답변 LLM은 그중 일부만 사용하면서 최종 답변에 `[1]`, `[3]`, `[5]`처럼 중간 번호가 비어 보일 수 있었습니다.
+
+**추가/변경된 것**
+
+- 답변 생성 후 실제 답변에 등장한 citation만 사용 순서대로 `[1]..[N]`으로 다시 매핑하도록 변경했습니다.
+- 최종 `evidence_snippets`도 답변에 사용된 근거만 반환하고, 답변 본문의 citation 번호와 같은 `rank`를 갖도록 조정했습니다.
+- 답변 citation 재매핑 회귀 테스트를 추가했습니다.
+
+**검증**
+
+- `python3 -m unittest tests.modules.query.test_answer_query` 통과.
+
 ## 2026-06-21
 
 ### feat: query evidence를 원본 source block 기준으로 변경

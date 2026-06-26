@@ -129,7 +129,10 @@
 
 .markdown-viewer h1:first-child,
 .markdown-viewer h2:first-child,
-.markdown-viewer h3:first-child {
+.markdown-viewer h3:first-child,
+.markdown-source-block:first-child h1,
+.markdown-source-block:first-child h2,
+.markdown-source-block:first-child h3 {
   margin-top: 0;
 }
 
@@ -231,6 +234,40 @@
 
 .markdown-wikilink {
   color: #58a6ff;
+}
+
+.markdown-source-block.is-highlighted {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  color: #f0f0f0;
+  background: var(--citation-bg-soft);
+  border-left: 3px solid var(--citation-color);
+  border-radius: 8px;
+}
+
+.citation-rank-1 {
+  --citation-color: #ffc117;
+  --citation-bg-soft: rgba(255, 193, 23, 0.12);
+}
+
+.citation-rank-2 {
+  --citation-color: #58a6ff;
+  --citation-bg-soft: rgba(88, 166, 255, 0.14);
+}
+
+.citation-rank-3 {
+  --citation-color: #7ee787;
+  --citation-bg-soft: rgba(126, 231, 135, 0.14);
+}
+
+.citation-rank-4 {
+  --citation-color: #ff9b72;
+  --citation-bg-soft: rgba(255, 155, 114, 0.14);
+}
+
+.citation-rank-5 {
+  --citation-color: #d2a8ff;
+  --citation-bg-soft: rgba(210, 168, 255, 0.14);
 }
 
 .source-preview-meta {

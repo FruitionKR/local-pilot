@@ -1,13 +1,14 @@
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { fetchWikiPage } from "../_lib/api";
-import type { WikiPageDetailResponse } from "../_lib/types";
+import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 export function SourcePreviewPanel({
   title,
   pageId,
   pageType,
   documentId,
+  sourceBlockHighlights,
   width,
   onResizeStart
 }: {
@@ -15,6 +16,7 @@ export function SourcePreviewPanel({
   pageId: string | null;
   pageType: string | null;
   documentId?: string | null;
+  sourceBlockHighlights?: SourceBlockHighlight[];
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
@@ -22,10 +24,13 @@ export function SourcePreviewPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
+  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
   const sourceDocuments = page?.source_documents ?? [];
-  const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
+  const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
+  const isMarkdownDocument = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
+  const isMarkdownFile = isMarkdownDocument;
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
   const rawDocumentUrl = documentId ? `/api/documents/${documentId}/original` : null;
 
@@ -86,6 +91,15 @@ export function SourcePreviewPanel({
     };
   }, [isMarkdownFile, rawDocumentUrl]);
 
+  useEffect(() => {
+    if (!isMarkdownFile || selectedBlockHighlights.length === 0 || rawMarkdown === null) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      blockRefs.current[selectedBlockHighlights[0].block_id]?.scrollIntoView({ block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isMarkdownFile, rawMarkdown, selectedBlockHighlights]);
+
   return (
     <section
       className="source-preview-panel"
@@ -101,7 +115,13 @@ export function SourcePreviewPanel({
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && (
-          <MarkdownViewer markdown={rawMarkdown} />
+          <MarkdownViewer
+            markdown={rawMarkdown}
+            highlightedBlocks={selectedBlockHighlights}
+            onBlockRef={(blockId, node) => {
+              blockRefs.current[blockId] = node;
+            }}
+          />
         )}
         {isPdfOrOther && rawDocumentUrl && (
           <iframe
