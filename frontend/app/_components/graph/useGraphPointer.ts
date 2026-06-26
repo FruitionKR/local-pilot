@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { Dispatch, MouseEvent as ReactMouseEvent, MutableRefObject, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 import type { GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
 import { canvasToGraphPosition, graphDistanceInfluence } from "./graphGeometry";
@@ -60,6 +61,9 @@ export function useGraphPointer({
   stopDragging: (pointerId?: number) => void;
   stopPanning: (pointerId?: number) => void;
 }) {
+  const nodeDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const hasMovedDraggedNodeRef = useRef(false);
+
   function canvasToGraph(clientX: number, clientY: number, canvas: HTMLCanvasElement) {
     return canvasToGraphPosition({ clientX, clientY, canvas, pan: graphPanRef.current, zoom: graphZoomRef.current });
   }
@@ -90,6 +94,11 @@ export function useGraphPointer({
 
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    const start = nodeDragStartRef.current;
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 3) {
+      hasMovedDraggedNodeRef.current = true;
+    }
 
     const clampedX = Math.max(0, Math.min(window.innerWidth - 1, event.clientX));
     const clampedY = Math.max(0, Math.min(window.innerHeight - 1, event.clientY));
@@ -136,6 +145,8 @@ export function useGraphPointer({
       setHoveredNode(hitNode.id);
       setDraggingNodeId(hitNode.id);
       draggingNodeIdRef.current = hitNode.id;
+      nodeDragStartRef.current = { x: event.clientX, y: event.clientY };
+      hasMovedDraggedNodeRef.current = false;
       drawGraphRef.current();
       return;
     }
@@ -191,9 +202,12 @@ export function useGraphPointer({
     const wasDragging = activePointerIdRef.current === event.pointerId;
     if (wasDragging) {
       const draggedNodeId = draggingNodeIdRef.current;
+      const hasMovedDraggedNode = hasMovedDraggedNodeRef.current;
       stopDragging(event.pointerId);
+      nodeDragStartRef.current = null;
+      hasMovedDraggedNodeRef.current = false;
       if (!externalFocusedNodeIdRef.current) {
-        setSelectedNode(hitTestNode(event.clientX, event.clientY)?.id ?? draggedNodeId ?? null);
+        setSelectedNode(hasMovedDraggedNode ? null : hitTestNode(event.clientX, event.clientY)?.id ?? draggedNodeId ?? null);
       }
     }
     if (panDragRef.current?.pointerId !== event.pointerId) return;
@@ -227,6 +241,8 @@ export function useGraphPointer({
     },
     onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => {
       stopDragging(event.pointerId);
+      nodeDragStartRef.current = null;
+      hasMovedDraggedNodeRef.current = false;
       stopPanning(event.pointerId);
     }
   };

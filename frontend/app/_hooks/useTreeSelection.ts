@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
-import { makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
+import { NODE_PREFIX, makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
 import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
-import type { Project } from "../_lib/types";
+import type { Project, SourceBlockHighlight } from "../_lib/types";
 
 export type PreviewTarget = {
   pageId: string | null;
   title: string;
   pageType: string | null;
+  sourceBlockHighlights?: SourceBlockHighlight[];
 };
 
 export function useTreeSelection(projects: Project[]) {
@@ -72,6 +73,15 @@ export function useTreeSelection(projects: Project[]) {
     openPreviewTarget({ nodeId: pageId, title, treeItemId: findTreeItemIdByGraphNodeId(pageId) });
   }
 
+  function openSourceBlockPreview(documentId: string, title: string, sourceBlockHighlights: SourceBlockHighlight[]) {
+    const sourceNodeId = makeSourceId(documentId);
+    const rawNodeId = `${NODE_PREFIX.raw}${documentId}`;
+    setSelectedTreeItemId(findTreeItemIdByGraphNodeId(rawNodeId) ?? findTreeItemIdByGraphNodeId(sourceNodeId));
+    setSelectedPreviewTarget({ pageId: null, title, pageType: null, sourceBlockHighlights });
+    setFocusedGraphNodeId(sourceNodeId);
+    setSelectedDocumentId(documentId);
+  }
+
   function clearTreeGraphSelection() {
     setSelectedTreeItemId(null);
     setSelectedPreviewTarget(null);
@@ -88,6 +98,7 @@ export function useTreeSelection(projects: Project[]) {
     selectTreeGraphNode,
     openGraphNodePreview,
     openWikiPagePreview,
+    openSourceBlockPreview,
     clearTreeGraphSelection
   };
 }

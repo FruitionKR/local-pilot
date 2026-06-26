@@ -13,6 +13,7 @@ import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend } from "../../_lib/graph";
+import type { SourceBlockHighlight } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 220;
@@ -51,6 +52,11 @@ export function HomeWorkspace() {
   const isHomeView = activeView === "home";
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
+
+  function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
+    const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
+    selection.openSourceBlockPreview(documentId, documentTitle, highlights);
+  }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -173,6 +179,7 @@ export function HomeWorkspace() {
               pageId={selection.selectedPreviewTarget?.pageId ?? null}
               pageType={selection.selectedPreviewTarget?.pageType ?? null}
               documentId={selection.selectedDocumentId}
+              sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
               width={sourcePreviewWidth}
               onResizeStart={startSourcePreviewResize}
             />
@@ -193,6 +200,7 @@ export function HomeWorkspace() {
             <AgentPanel
               onClose={() => setIsAgentPanelOpen(false)}
               onOpenWikiPage={selection.openWikiPagePreview}
+              onOpenSourceBlocks={openSourceBlocks}
               nodes={graphData.nodes}
             />
           )}

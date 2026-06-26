@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchChatMessages, queryWiki } from "../../_lib/api";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
+import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
 
 export type ActiveAgentTurn = {
   question: string;
@@ -72,15 +72,17 @@ export function useChatThread() {
         ? findLastUserMessage(nextMessages.slice(0, nextAssistantMessageIndex))
         : undefined;
 
-      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.references?.length && queryRelatedPages.length
+      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.related_pages?.length && queryRelatedPages.length
         ? {
             ...nextAssistantMessage,
-            references: queryRelatedPages.map((page, idx): ChatMessageReferenceResponse => ({
-              id: -(idx + 1),
-              reference_type: page.page_type,
+            related_pages: queryRelatedPages.map((page, idx): ChatMessageRelatedPageResponse => ({
               wiki_page_id: page.id,
-              page_role: page.role,
+              page_type: page.page_type,
+              title: page.title,
+              slug: page.slug,
               relevance_score: page.relevance_score,
+              role: page.role,
+              depth: page.depth,
               rank: idx + 1
             }))
           }

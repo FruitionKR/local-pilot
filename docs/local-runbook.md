@@ -54,6 +54,27 @@ export JAVA_HOME_21=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Ho
 
 ## 한 번에 실행
 
+처음 실행하는 컴퓨터에서는 bootstrap 스크립트로 로컬 환경 파일과 프로젝트 의존성을 먼저 준비할 수 있습니다.
+
+```sh
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh
+```
+
+스크립트가 수행하는 작업은 아래와 같습니다.
+
+1. 필수 명령(`curl`, `docker`, `docker compose`, `node`, `npm`)과 Node.js 20 이상, npm 10 이상, Java 21 확인
+2. `infra/.env`가 없으면 `infra/.env.example`에서 복사
+3. `frontend/node_modules`가 없거나 `package.json` / `package-lock.json`이 더 최신이면 `npm install` 실행
+
+pipeline API는 Docker 컨테이너 안에서 `llmPipeline/requirements.txt`를 설치하므로 일반 실행에는 로컬 Python 가상환경이 필요하지 않습니다. pipeline 코드를 로컬에서 직접 실행하거나 테스트해야 하면 아래 옵션을 사용합니다.
+
+```sh
+./scripts/bootstrap.sh --with-python
+```
+
+이 옵션은 `llmPipeline/.venv`를 만들고 `llmPipeline/requirements.txt`를 설치합니다.
+
 실행 스크립트를 사용하면 인프라, pipeline API, 백엔드, 프론트엔드를 순서대로 시작하고 HTTP 응답까지 확인합니다.
 
 ```sh
@@ -63,14 +84,13 @@ chmod +x scripts/dev-up.sh
 
 스크립트가 수행하는 작업은 아래와 같습니다.
 
-1. `infra/.env`가 없으면 `infra/.env.example`에서 복사
+1. `scripts/bootstrap.sh`로 로컬 환경 파일과 프론트엔드 의존성 준비
 2. Docker daemon 확인, 가능한 경우 Colima 시작
 3. `infra/docker-compose.dev.yml`와 `infra/docker-compose.pipeline.yml`로 PostgreSQL, MinIO, pipeline API 시작
 4. `http://localhost:8000/health` 응답 확인
 5. Java 21 경로 탐색 후 `backend/./gradlew bootRun` 실행
-6. `frontend/node_modules`가 없으면 `npm install` 실행
-7. `frontend/npm run dev` 실행
-8. `http://localhost:8080/api/documents`, `http://localhost:3000` 응답 확인
+6. `frontend/npm run dev` 실행
+7. `http://localhost:8080/api/documents`, `http://localhost:3000` 응답 확인
 
 스크립트를 종료하려면 터미널에서 `Ctrl-C`를 누릅니다. 이때 백엔드와 프론트엔드 프로세스는 종료되지만 PostgreSQL, MinIO, pipeline API 컨테이너는 유지됩니다.
 

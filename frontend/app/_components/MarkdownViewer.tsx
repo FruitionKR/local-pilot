@@ -1,22 +1,50 @@
 import { Fragment, type ReactNode } from "react";
+import type { SourceBlockHighlight } from "../_lib/types";
 
-function renderInline(text: string): ReactNode[] {
+function rankColorClass(rank: number) {
+  return `citation-rank-${((rank - 1) % 5) + 1}`;
+}
+
+function renderInline(text: string, onCitationClick?: (rank: number) => void, canClickCitation?: (rank: number) => boolean): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[\[[^\]|]+(?:\|[^\]]+)?\]\])/g;
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[\[[^\]|]+(?:\|[^\]]+)?\]\]|\[((?:\d+)(?:\s*,\s*\d+)*)\])/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
     const token = match[0];
+    const citationRanks = match[2]?.split(",").map((value) => Number(value.trim())).filter(Number.isFinite) ?? [];
     if (token.startsWith("**")) {
       nodes.push(<strong key={`${match.index}-strong`}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(<code key={`${match.index}-code`}>{token.slice(1, -1)}</code>);
-    } else {
+    } else if (token.startsWith("[[")) {
       const body = token.slice(2, -2);
       const label = body.includes("|") ? body.split("|")[1] : body;
       nodes.push(<span className="markdown-wikilink" key={`${match.index}-wikilink`}>{label}</span>);
+    } else if (citationRanks.length > 0 && onCitationClick && citationRanks.some((rank) => !canClickCitation || canClickCitation(rank))) {
+      nodes.push(
+        <Fragment key={`${match.index}-citations`}>
+          {citationRanks.map((citationRank) => (
+            (!canClickCitation || canClickCitation(citationRank)) ? (
+              <button
+                type="button"
+                className={`markdown-citation ${rankColorClass(citationRank)}`}
+                key={citationRank}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCitationClick(citationRank);
+                }}
+              >
+                [{citationRank}]
+              </button>
+            ) : `[${citationRank}]`
+          ))}
+        </Fragment>
+      );
+    } else {
+      nodes.push(token);
     }
     lastIndex = match.index + token.length;
   }
@@ -25,10 +53,45 @@ function renderInline(text: string): ReactNode[] {
   return nodes;
 }
 
-export function MarkdownViewer({ markdown }: { markdown: string }) {
+export function MarkdownViewer({
+  markdown,
+  onCitationClick,
+  canClickCitation,
+  highlightedBlocks,
+  onBlockRef
+}: {
+  markdown: string;
+  onCitationClick?: (rank: number) => void;
+  canClickCitation?: (rank: number) => boolean;
+  highlightedBlocks?: SourceBlockHighlight[];
+  onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void;
+}) {
   const blocks: ReactNode[] = [];
+  const highlightedBlockRankById = new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank]));
   const lines = markdown.split("\n");
   let index = 0;
+  let blockNumber = 0;
+
+  function appendBlock(node: ReactNode) {
+    blockNumber += 1;
+    const blockId = `B${String(blockNumber).padStart(4, "0")}`;
+    const highlightedRank = highlightedBlockRankById.get(blockId);
+    blocks.push(
+      <div
+        className={[
+          "markdown-source-block",
+          highlightedRank ? "is-highlighted" : "",
+          highlightedRank ? rankColorClass(highlightedRank) : ""
+        ].filter(Boolean).join(" ")}
+        data-block-id={blockId}
+        data-citation-rank={highlightedRank}
+        ref={(element) => onBlockRef?.(blockId, element)}
+        key={blockId}
+      >
+        {node}
+      </div>
+    );
+  }
 
   while (index < lines.length) {
     const line = lines[index];
@@ -47,7 +110,7 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
         index += 1;
       }
       index += 1;
-      blocks.push(
+      appendBlock(
         <details className="markdown-frontmatter" key={`frontmatter-${index}`}>
           <summary>Metadata</summary>
           <pre>{frontmatter.join("\n")}</pre>
@@ -65,30 +128,30 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
       }
       while (code.length > 0 && code[code.length - 1].trim() === "") code.pop();
       index += 1;
-      blocks.push(<pre className="markdown-codeblock" key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
+      appendBlock(<pre className="markdown-codeblock" key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
       continue;
     }
 
     if (trimmed.startsWith("# ")) {
-      blocks.push(<h1 key={`h1-${index}`}>{renderInline(trimmed.slice(2))}</h1>);
+      appendBlock(<h1 key={`h1-${index}`}>{renderInline(trimmed.slice(2), onCitationClick, canClickCitation)}</h1>);
       index += 1;
       continue;
     }
 
     if (trimmed.startsWith("## ")) {
-      blocks.push(<h2 key={`h2-${index}`}>{renderInline(trimmed.slice(3))}</h2>);
+      appendBlock(<h2 key={`h2-${index}`}>{renderInline(trimmed.slice(3), onCitationClick, canClickCitation)}</h2>);
       index += 1;
       continue;
     }
 
     if (trimmed.startsWith("### ")) {
-      blocks.push(<h3 key={`h3-${index}`}>{renderInline(trimmed.slice(4))}</h3>);
+      appendBlock(<h3 key={`h3-${index}`}>{renderInline(trimmed.slice(4), onCitationClick, canClickCitation)}</h3>);
       index += 1;
       continue;
     }
 
     if (trimmed === "---" || trimmed === "***") {
-      blocks.push(<hr key={`hr-${index}`} />);
+      appendBlock(<hr key={`hr-${index}`} />);
       index += 1;
       continue;
     }
@@ -99,9 +162,9 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
         items.push(lines[index].trim().slice(2));
         index += 1;
       }
-      blocks.push(
+      appendBlock(
         <ul key={`ul-${index}`}>
-          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
+          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, onCitationClick, canClickCitation)}</li>)}
         </ul>
       );
       continue;
@@ -113,9 +176,9 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
         items.push(lines[index].trim().replace(/^\d+\. /, ""));
         index += 1;
       }
-      blocks.push(
+      appendBlock(
         <ol key={`ol-${index}`}>
-          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
+          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, onCitationClick, canClickCitation)}</li>)}
         </ol>
       );
       continue;
@@ -127,7 +190,7 @@ export function MarkdownViewer({ markdown }: { markdown: string }) {
       paragraph.push(lines[index].trim());
       index += 1;
     }
-    blocks.push(<p key={`p-${index}`}>{renderInline(paragraph.join(" "))}</p>);
+    appendBlock(<p key={`p-${index}`}>{renderInline(paragraph.join(" "), onCitationClick, canClickCitation)}</p>);
   }
 
   return <div className="markdown-viewer">{blocks.map((block, blockIndex) => <Fragment key={blockIndex}>{block}</Fragment>)}</div>;

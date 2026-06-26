@@ -6,7 +6,7 @@
   width: var(--sidebar-width, 260px);
   display: flex;
   flex-direction: column;
-  padding: 16px 0 0;
+  padding: 0;
   overflow: hidden;
   background: #1e1e1e;
   border-top: 1px solid #4f4f4f;
@@ -66,12 +66,12 @@
 
 .sidebar-header {
   position: relative;
-  height: 48px;
+  min-height: 48px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   margin: 0 0 8px;
-  padding: 0 12px 0 18px;
+  padding: 12px 12px 12px 18px;
 }
 
 .sidebar-header::after {
@@ -86,7 +86,7 @@
 
 .sidebar h1 {
   min-width: 0;
-  margin: 0 0 34px;
+  margin: 0;
   color: var(--secondary-050, #f0f0f0);
   font-family: Pretendard;
   font-size: 20px;

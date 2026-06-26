@@ -327,9 +327,8 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     errorMessage: document.error_message
   }));
   const nextProjects = projects.map((project, index) => {
-    const wikiGroups = buildWikiTreeGroups(graph, project.items);
     const syncedItems = syncDocumentItems(removeGeneratedWikiGroups(project.items), documents);
-    const nextItems = index === 0 ? [...syncedItems, ...backendItems, ...wikiGroups] : syncedItems;
+    const nextItems = index === 0 ? [...syncedItems, ...backendItems] : syncedItems;
     if (areTreeItemsEqual(project.items, nextItems)) return project;
     return { ...project, items: nextItems };
   });

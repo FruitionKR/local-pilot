@@ -1,10 +1,11 @@
-import type { BackendData, ChatMessagesResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "./types";
+import type { BackendData, ChatMessagesResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "./types";
 
 // 공통 에러 메시지 상수
 const ERROR_MESSAGES = {
   uploadFailed: "문서 업로드에 실패했습니다.",
   queryFailed: "질의에 실패했습니다.",
-  chatLoadFailed: "채팅 기록을 불러오지 못했습니다."
+  chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
+  documentBlocksLoadFailed: "원본 문서 block을 불러오지 못했습니다."
 } as const;
 
 // HTTP 응답에서 에러 메시지를 추출하는 공통 헬퍼
@@ -69,6 +70,16 @@ export async function fetchWikiPage(pageId: string): Promise<WikiPageDetailRespo
   }
 
   return response.json() as Promise<WikiPageDetailResponse>;
+}
+
+export async function fetchDocumentBlocks(documentId: string): Promise<DocumentBlocksResponse> {
+  const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/blocks`, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentBlocksLoadFailed));
+  }
+
+  return response.json() as Promise<DocumentBlocksResponse>;
 }
 
 export async function fetchChatMessages(): Promise<ChatMessagesResponse> {

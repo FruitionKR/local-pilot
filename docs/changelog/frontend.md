@@ -4,6 +4,31 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-26
+
+### feat: query citation 원문 block 하이라이트 개선
+
+**변경 배경**
+
+- query 답변의 `[n]` citation을 눌러 원문 근거를 확인할 때 markdown 원문이 일반 텍스트 block 목록처럼 표시되어 원문 구조를 보기 어려웠다.
+- 여러 citation 근거를 확인할 때 번호별 구분이 어려웠고, 같은 원본 문서 안의 관련 근거를 한 번에 비교하기 어려웠다.
+
+**변경된 내용**
+
+- 원문 근거 확인 시 원본 markdown을 `MarkdownViewer`로 계속 렌더링하면서 해당 source block만 하이라이트하도록 변경했다.
+- 답변 citation 버튼과 원문 block 하이라이트에 rank별 색상 팔레트를 적용했다.
+- 한 문장에 `[1, 2]`처럼 여러 citation이 붙은 경우 각각 클릭 가능한 citation 버튼으로 렌더링한다.
+- citation 클릭 시 같은 답변에서 같은 원본 문서에 속한 다른 근거 block도 함께 하이라이트해 `[1]`~`[5]` 근거를 색상으로 비교할 수 있게 했다.
+- citation 클릭 시 실제 답변에 등장한 선택 rank만 원문 block 하이라이트에 사용하도록 제한했다.
+- citation으로 원문을 열 때 자료 관리의 raw 원문 문서 row가 선택 표시되도록 했다.
+- 자료 관리 트리에서 generated `Source 문서`/`Concept 문서` 그룹을 숨겼다.
+- Figma `v1` title 노드 기준으로 자료 관리 header 상단 padding과 title 여백을 조정했다.
+- graph 노드를 실제로 드래그한 뒤에는 클릭 선택 효과가 남지 않도록 했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+
 ## 2026-06-20
 
 ### fix: 그래프 노드 선택 표시와 Markdown code block 여백 조정

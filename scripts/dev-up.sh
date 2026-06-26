@@ -212,6 +212,8 @@ start_frontend() {
 }
 
 main() {
+  "$ROOT_DIR/scripts/bootstrap.sh"
+
   need_cmd curl
   ensure_env_file
   ensure_docker
