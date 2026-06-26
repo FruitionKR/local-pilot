@@ -6,6 +6,20 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-26
 
+### fix: 원문 패널에서 자료관리 클릭 시 그래프 노드 선택 표시 해제
+
+**변경 배경**
+
+- 원문 미리보기가 열린 상태에서 그래프가 아닌 자료관리 영역을 클릭하면 `focusedGraphNodeId`는 해제되지만 그래프 내부 클릭 표시(`selectedNodeIdRef`)가 남아 노드가 계속 선택된 것처럼 보였다.
+
+**변경된 내용**
+
+- `useGraphCanvas`의 focus 동기화 effect가 `focusedNodeId`가 없거나 유효하지 않을 때 `setSelectedNode(null)`로 내부 클릭 표시도 해제하도록 수정했다(기존에는 focus 설정만 동기화).
+
+**검증 결과**
+
+- `npm run build`(타입체크 포함), `npm run lint` 통과.
+
 ### refactor: 프론트엔드 중복 로직 공통 유틸로 통합
 
 **변경 배경**
