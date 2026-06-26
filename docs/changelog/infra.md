@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-06-26
+
+### chore: 로컬 bootstrap 스크립트 추가
+
+**배경**
+
+처음 저장소를 실행하는 컴퓨터에서 필요한 프로젝트 의존성을 매번 수동으로 확인하고 설치해야 했습니다.
+
+**변경된 것**
+
+- `scripts/bootstrap.sh` — 필수 명령과 Node.js/npm/Java 버전을 확인하고, `infra/.env` 생성과 프론트엔드 의존성 설치를 자동화
+- `scripts/bootstrap.sh` — `--with-python` 옵션으로 `llmPipeline/.venv` 생성과 `llmPipeline/requirements.txt` 설치 지원
+- `scripts/dev-up.sh` — 실행 시작 시 bootstrap을 먼저 호출하도록 변경
+- `docs/local-runbook.md` — bootstrap 사용법과 Python 가상환경 옵션 문서화
+
+**검증**
+
+- `bash -n scripts/bootstrap.sh`
+- `bash -n scripts/dev-up.sh`
+
+---
+
 ## 2026-06-18
 
 ### chore: dev-up pipeline API 포함
