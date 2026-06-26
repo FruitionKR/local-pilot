@@ -54,17 +54,10 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
         ],
         evidence_snippets=[
             EvidenceSnippetResponse(
-                page_id=snippet.page_id,
-                page_type=snippet.page_type,
-                page_title=snippet.page_title,
-                page_slug=snippet.page_slug,
-                page_url=snippet.page_url,
-                page_role=snippet.page_role,
-                text=snippet.text,
-                score=snippet.score,
                 rank=snippet.rank,
-                paragraph_index=snippet.paragraph_index,
-                sentence_index=snippet.sentence_index,
+                source_document_id=snippet.source_document_id,
+                source_block_ids=snippet.source_block_ids,
+                text=snippet.text,
             )
             for snippet in result.evidence_snippets
         ],

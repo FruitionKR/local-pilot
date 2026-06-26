@@ -320,6 +320,18 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     if args.save_debug_json:
         write_json(out / "document.json", asdict(document))
         write_json(out / "block_map.json", {b.block_id: b.source_reference_id for b in blocks})
+    source_blocks_path = out / "source_blocks.json"
+    write_json(
+        source_blocks_path,
+        [
+            {
+                "document_id": block.document_id,
+                "block_id": block.block_id,
+                "text": block.text,
+            }
+            for block in blocks
+        ],
+    )
     log.emit(
         "1. 블록 추출",
         "Markdown 원문을 블록 객체로 변환했고, 이 블록 목록을 다음 단계 입력으로 전달합니다.",
@@ -618,6 +630,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "generated_concept_page_count": len(generated_concept_pages),
         "source_page": source_page,
         "source_extraction_artifact": normalized.get("source_extraction_artifact"),
+        "source_blocks": str(source_blocks_path),
         "concept_pages": concept_pages,
         "links": str(out / "wiki" / "links.json"),
         "review_report": report,
