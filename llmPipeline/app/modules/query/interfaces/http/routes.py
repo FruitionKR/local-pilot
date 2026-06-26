@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.exceptions import QueryError
-from app.modules.query.domain.entities import QueryAnswer
+from app.modules.query.domain.entities import ConversationContext, QueryAnswer
 from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
 from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
 from app.modules.query.interfaces.http.schemas import (
@@ -29,12 +29,25 @@ def answer_query(
             callback_url=payload.log_callback_url,
             request_id=payload.request_id,
         )
-        result = use_case.execute(payload.question, event_publisher=event_publisher)
+        result = use_case.execute(
+            payload.question,
+            event_publisher=event_publisher,
+            conversation_context=_conversation_context(payload),
+        )
     except QueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return _to_response(result)
+
+
+def _conversation_context(payload: QueryRequest) -> ConversationContext | None:
+    if payload.recent_conversation_summary is None and payload.reference_context is None:
+        return None
+    return ConversationContext(
+        recent_conversation_summary=payload.recent_conversation_summary,
+        reference_context=payload.reference_context or {},
+    )
 
 
 def _to_response(result: QueryAnswer) -> QueryResponse:

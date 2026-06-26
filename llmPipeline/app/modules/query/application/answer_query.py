@@ -18,6 +18,7 @@ from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphU
 from app.modules.query.domain.entities import (
     EvidenceSnippet,
     GeneratedAnswer,
+    ConversationContext,
     GraphContext,
     QueryAnswer,
     QueryRewrite,
@@ -70,11 +71,24 @@ class AnswerQueryUseCase:
         self._returned_path_limit = returned_path_limit
         self._min_internal_relevance_score = min_internal_relevance_score
 
-    def execute(self, question: str, event_publisher: QueryEventPublisherPort | None = None) -> QueryAnswer:
+    def execute(
+        self,
+        question: str,
+        event_publisher: QueryEventPublisherPort | None = None,
+        conversation_context: ConversationContext | None = None,
+    ) -> QueryAnswer:
         event_publisher = event_publisher or self._event_publisher
         query = Question(question)
         self._publish(event_publisher, "query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
-        query_rewrite = self._rewrite_query(query.normalized)
+        contextual_question = self._contextualize_question(query.normalized, conversation_context)
+        if contextual_question != query.normalized:
+            self._publish(
+                event_publisher,
+                "query_contextualized",
+                "대화 요약과 참조 메모리로 검색용 질문을 보강했습니다.",
+                {"contextual_question": contextual_question},
+            )
+        query_rewrite = self._rewrite_query(contextual_question)
         if query_rewrite.retrieval_query != query.normalized:
             self._publish(
                 event_publisher,
@@ -156,6 +170,7 @@ class AnswerQueryUseCase:
         )
         related_pages = self._load_markdown_for_related_pages(related_pages)
         graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
+        evidence_question = self._evidence_question(query.normalized, conversation_context, contextual_question)
         self._publish(
             event_publisher,
             "markdown_loaded",
@@ -163,10 +178,12 @@ class AnswerQueryUseCase:
             {"loaded_markdown_count": len([item for item in related_pages if item.page.markdown])},
         )
         query_context = self._build_query_context.execute(
-            question=query.normalized,
+            question=contextual_question,
             related_pages=related_pages,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
+            original_question=query.normalized,
+            evidence_question=evidence_question,
         )
         self._publish(
             event_publisher,
@@ -219,6 +236,90 @@ class AnswerQueryUseCase:
         if not rewritten.retrieval_query.strip():
             return QueryRewrite(original_question=question, retrieval_query=question)
         return rewritten
+
+    def _contextualize_question(self, question: str, conversation_context: ConversationContext | None) -> str:
+        if conversation_context is None:
+            return question
+
+        sections = []
+        matched_referents = self._matching_referent_values(question, conversation_context.reference_context)
+        if matched_referents:
+            sections.append(" ".join(matched_referents))
+
+        reference_lines = self._reference_context_lines(conversation_context.reference_context, excluded_values=set(matched_referents))
+        if reference_lines:
+            sections.append(" ".join(reference_lines))
+
+        if conversation_context.recent_conversation_summary:
+            sections.append(conversation_context.recent_conversation_summary.strip())
+
+        sections.append(question)
+
+        return "\n".join(section for section in sections if section.strip()).strip()
+
+    def _evidence_question(
+        self,
+        question: str,
+        conversation_context: ConversationContext | None,
+        contextual_question: str,
+    ) -> str:
+        if conversation_context is None:
+            return contextual_question
+        matched_referents = self._matching_referent_values(question, conversation_context.reference_context)
+        if not matched_referents:
+            return question
+        return " ".join([*matched_referents, question])
+
+    def _matching_referent_values(self, question: str, reference_context: dict[str, object]) -> list[str]:
+        referents = reference_context.get("referents")
+        if not isinstance(referents, dict):
+            return []
+        values = []
+        for marker, value in referents.items():
+            if str(marker) in question and value is not None:
+                values.extend(self._reference_values(value))
+        return list(dict.fromkeys(value for value in values if value))
+
+    def _reference_context_lines(self, reference_context: dict[str, object], excluded_values: set[str] | None = None) -> list[str]:
+        excluded_values = excluded_values or set()
+        lines: list[str] = []
+        for key, value in reference_context.items():
+            if value is None:
+                continue
+            lines.extend(
+                line
+                for line in self._format_reference_value(str(key), value)
+                if line and line not in excluded_values
+            )
+        return lines
+
+    def _format_reference_value(self, key: str, value: object) -> list[str]:
+        if isinstance(value, dict):
+            lines = []
+            for _, child_value in value.items():
+                if child_value is None:
+                    continue
+                lines.extend(self._reference_values(child_value))
+            return lines
+        if isinstance(value, list):
+            return [item for value in value if value is not None for item in self._reference_values(value)]
+        return [self._reference_scalar(value)]
+
+    def _reference_values(self, value: object) -> list[str]:
+        if isinstance(value, dict):
+            values: list[str] = []
+            for child_value in value.values():
+                if child_value is not None:
+                    values.extend(self._reference_values(child_value))
+            return values
+        if isinstance(value, list):
+            return [item for child_value in value if child_value is not None for item in self._reference_values(child_value)]
+        return [self._reference_scalar(value)]
+
+    def _reference_scalar(self, value: object) -> str:
+        if isinstance(value, (dict, list)):
+            return str(value)
+        return str(value).strip()
 
     def _should_use_web_fallback(self, source_scores: dict[str, float], concept_scores: dict[str, float]) -> bool:
         if self._web_search is None or self._min_internal_relevance_score <= 0:

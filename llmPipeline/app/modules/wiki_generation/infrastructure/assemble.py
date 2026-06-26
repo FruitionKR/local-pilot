@@ -70,6 +70,11 @@ class SourcePageAssembler:
             for item in normalized.get("mentions", [])
             if item.get("name") or item.get("slug")
         ]
+        observation_lines = [
+            _source_observation_line(item)
+            for item in normalized.get("observations", [])
+            if item.get("title") or item.get("summary")
+        ]
 
         md = f"""---
 type: source
@@ -85,6 +90,9 @@ categories: {', '.join(item.get('name', '') for item in normalized.get('categori
 
 ## Key Points
 {chr(10).join(key_points) if key_points else '- 핵심 포인트 없음'}
+
+## Observations
+{chr(10).join(observation_lines) if observation_lines else '- observation 없음'}
 
 ## Categories
 {chr(10).join(category_lines) if category_lines else '- 카테고리 없음'}
@@ -152,6 +160,7 @@ def _source_extraction_artifact(
             if item.get("text")
         ],
         "categories": categories,
+        "observations": normalized.get("observations", []),
         "core_concepts": core_concepts,
         "section_candidates": section_candidates,
         "mentions": mentions,
@@ -164,6 +173,26 @@ def _source_section_line(item: dict[str, Any]) -> str:
     context = item.get("context") or ""
     suffix = f" - {context}" if context else ""
     return f"- {title}{suffix}{cite_refs(item.get('anchor_reference_ids', []))}"
+
+
+def _source_observation_line(item: dict[str, Any]) -> str:
+    observation_id = item.get("observation_id") or "O000"
+    observation_type = item.get("type") or "source_claim"
+    title = item.get("title") or "observation"
+    query_text = item.get("query_text")
+    summary = item.get("summary") or ""
+    claims = item.get("claims", [])
+    related = item.get("related_concept_hints", [])
+    parts = [f"{observation_id} ({observation_type}) {title}"]
+    if query_text:
+        parts.append(f"query: {query_text}")
+    if summary:
+        parts.append(f"summary: {summary}")
+    if claims:
+        parts.append(f"claims: {'; '.join(claims[:3])}")
+    if related:
+        parts.append(f"related: {', '.join(related[:5])}")
+    return f"- {' / '.join(parts)}{cite_refs(item.get('anchor_reference_ids', []))}"
 
 
 def _source_mention_line(item: dict[str, Any]) -> str:

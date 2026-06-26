@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Sequence
 
 from app.modules.wiki_generation.application.ports import (
@@ -153,6 +155,24 @@ class ChatCompletionsJsonClient:
 
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
+        self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
+        self._request_index = 0
+
+    def _write_prompt_log(self, body: JsonDict, content: str | None = None, error: str | None = None) -> None:
+        if not self.prompt_log_dir:
+            return
+        self._request_index += 1
+        log_dir = Path(self.prompt_log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "request": body,
+            "response_content": content,
+            "error": error,
+        }
+        (log_dir / f"request_{self._request_index:04d}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def complete_text(self, system_prompt: str, user_prompt: str) -> str:
         body: JsonDict = {
@@ -182,14 +202,18 @@ class ChatCompletionsJsonClient:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
+            self._write_prompt_log(body, error=f"LLM API HTTP {e.code}: {detail}")
             raise RuntimeError(f"LLM API HTTP {e.code}: {detail}") from e
         except urllib.error.URLError as e:
+            self._write_prompt_log(body, error=f"LLM API connection error: {e}")
             raise RuntimeError(f"LLM API connection error: {e}") from e
 
         try:
             content = payload["choices"][0]["message"]["content"]
         except Exception as e:
+            self._write_prompt_log(body, error=f"Unexpected chat-completions response: {payload}")
             raise RuntimeError(f"Unexpected chat-completions response: {payload}") from e
+        self._write_prompt_log(body, content=content)
         return content
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
