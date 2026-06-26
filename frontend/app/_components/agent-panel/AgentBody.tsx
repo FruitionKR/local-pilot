@@ -185,6 +185,17 @@ export function AgentBody({
     return findGraphNode(makeSourceId(documentId))?.label ?? documentId;
   }
 
+  function citedRanks(content: string) {
+    const ranks = new Set<number>();
+    for (const match of content.matchAll(/\[((?:\d+)(?:\s*,\s*\d+)*)\]/g)) {
+      match[1].split(",").forEach((value) => {
+        const rank = Number(value.trim());
+        if (Number.isFinite(rank)) ranks.add(rank);
+      });
+    }
+    return ranks;
+  }
+
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
   const animatedQuestionId = animatedMessageIndex > 0
     ? findLastUserMessage(messages.slice(0, animatedMessageIndex))?.id ?? null
@@ -197,30 +208,18 @@ export function AgentBody({
 
   function renderAssistantThread(message: ChatMessageResponse, isAnimated: boolean, threadKey?: string) {
     const resultCards = buildRelatedPageCards(message);
+    const ranksInAnswer = citedRanks(message.content);
     const citationReferenceByRank = new Map(
       message.references
-        .filter((item) => item.rank && item.source_document_id && item.source_block_ids?.length)
+        .filter((item) => item.rank && ranksInAnswer.has(item.rank) && item.source_document_id && item.source_block_ids?.length)
         .map((item) => [item.rank as number, item])
     );
     const canOpenCitation = (rank: number) => citationReferenceByRank.has(rank);
     const openCitation = (rank: number) => {
       const reference = citationReferenceByRank.get(rank);
       if (!reference?.source_document_id || !reference.source_block_ids?.length) return;
-      const highlightsByBlockId = new Map<string, SourceBlockHighlight>();
-      for (const blockId of reference.source_block_ids) {
-        highlightsByBlockId.set(blockId, { block_id: blockId, rank });
-      }
-      message.references
-        .filter((item) => item.rank && item.source_document_id === reference.source_document_id && item.source_block_ids?.length)
-        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-        .forEach((item) => {
-          item.source_block_ids?.forEach((blockId) => {
-            if (!highlightsByBlockId.has(blockId)) {
-              highlightsByBlockId.set(blockId, { block_id: blockId, rank: item.rank as number });
-            }
-          });
-        });
-      onOpenSourceBlocks(reference.source_document_id, sourceTitle(reference.source_document_id), Array.from(highlightsByBlockId.values()));
+      const highlights = reference.source_block_ids.map((blockId) => ({ block_id: blockId, rank }));
+      onOpenSourceBlocks(reference.source_document_id, sourceTitle(reference.source_document_id), highlights);
     };
 
     return (

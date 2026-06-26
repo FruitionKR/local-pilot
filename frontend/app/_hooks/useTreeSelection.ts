@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
+import { NODE_PREFIX, makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
 import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
 import type { Project, SourceBlockHighlight } from "../_lib/types";
 
@@ -74,10 +74,11 @@ export function useTreeSelection(projects: Project[]) {
   }
 
   function openSourceBlockPreview(documentId: string, title: string, sourceBlockHighlights: SourceBlockHighlight[]) {
-    const nodeId = makeSourceId(documentId);
-    setSelectedTreeItemId(findTreeItemIdByGraphNodeId(nodeId));
+    const sourceNodeId = makeSourceId(documentId);
+    const rawNodeId = `${NODE_PREFIX.raw}${documentId}`;
+    setSelectedTreeItemId(findTreeItemIdByGraphNodeId(rawNodeId) ?? findTreeItemIdByGraphNodeId(sourceNodeId));
     setSelectedPreviewTarget({ pageId: null, title, pageType: null, sourceBlockHighlights });
-    setFocusedGraphNodeId(nodeId);
+    setFocusedGraphNodeId(sourceNodeId);
     setSelectedDocumentId(documentId);
   }
 
