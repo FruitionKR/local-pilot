@@ -1,5 +1,5 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { GRAPH_COLORS } from "./graphColors";
+import { GRAPH_COLORS, mixHexColor } from "./graphColors";
 import rawNodeIcon from "../../../svg/raw.svg";
 
 const RAW_NODE_ICON_SRC = rawNodeIcon.src;
@@ -208,20 +208,3 @@ function getRawNodeImage() {
   return rawNodeImage.complete ? rawNodeImage : null;
 }
 
-function mixHexColor(from: string, to: string, amount: number) {
-  const fromRgb = hexToRgb(from);
-  const toRgb = hexToRgb(to);
-  const red = Math.round(fromRgb[0] + (toRgb[0] - fromRgb[0]) * amount);
-  const green = Math.round(fromRgb[1] + (toRgb[1] - fromRgb[1]) * amount);
-  const blue = Math.round(fromRgb[2] + (toRgb[2] - fromRgb[2]) * amount);
-  return `rgb(${red}, ${green}, ${blue})`;
-}
-
-function hexToRgb(hex: string): [number, number, number] {
-  const normalized = hex.replace("#", "");
-  return [
-    parseInt(normalized.slice(0, 2), 16),
-    parseInt(normalized.slice(2, 4), 16),
-    parseInt(normalized.slice(4, 6), 16)
-  ];
-}

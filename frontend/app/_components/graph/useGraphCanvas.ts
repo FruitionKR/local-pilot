@@ -225,9 +225,11 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   }, []);
 
   useEffect(() => {
-    if (!focusedNodeId) return;
-    if (!nodeById.has(focusedNodeId)) return;
-    setSelectedNode(focusedNodeId);
+    if (focusedNodeId && nodeById.has(focusedNodeId)) {
+      setSelectedNode(focusedNodeId);
+    } else {
+      setSelectedNode(null);
+    }
   }, [focusedNodeId, nodeById, setSelectedNode]);
 
   const stopDragging = useCallback((pointerId?: number) => {

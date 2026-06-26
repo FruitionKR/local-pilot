@@ -6,6 +6,39 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-26
 
+### fix: 원문 패널에서 자료관리 클릭 시 그래프 노드 선택 표시 해제
+
+**변경 배경**
+
+- 원문 미리보기가 열린 상태에서 그래프가 아닌 자료관리 영역을 클릭하면 `focusedGraphNodeId`는 해제되지만 그래프 내부 클릭 표시(`selectedNodeIdRef`)가 남아 노드가 계속 선택된 것처럼 보였다.
+
+**변경된 내용**
+
+- `useGraphCanvas`의 focus 동기화 effect가 `focusedNodeId`가 없거나 유효하지 않을 때 `setSelectedNode(null)`로 내부 클릭 표시도 해제하도록 수정했다(기존에는 focus 설정만 동기화).
+
+**검증 결과**
+
+- `npm run build`(타입체크 포함), `npm run lint` 통과.
+
+### refactor: 프론트엔드 중복 로직 공통 유틸로 통합
+
+**변경 배경**
+
+- 동일한 로직(에러 메시지 추출, 조건부 className 합성, 그래프 색상/거리 계산, 드래그 leave 판정)이 여러 파일에 복붙되어 있어 재사용성과 일관성이 떨어졌다.
+
+**변경된 내용**
+
+- `_lib/errors.ts`의 `getErrorMessage`로 `error instanceof Error` 패턴 6곳을 통합했다.
+- `_lib/classNames.ts`의 `cx`로 `filter(Boolean).join(" ")` className 합성 3곳을 통합했다.
+- `AgentBody`에 섞여 있던 순수 포맷 함수 4개를 `agentFormatters.ts`로 추출했다.
+- 그래프 색상 유틸(`hexToRgb`, `mixHexColor`)을 `graphColors.ts`로 모으고, `Math.hypot(dx, dy) || 0.01` 거리 계산을 `graphGeometry.safeDistance`로 통합했다.
+- 드래그 leave 판정 중복을 `dragDrop.isPointerLeavingElement`로 통합했다.
+- 동작 변경 없이 추출/이동만 수행했고, 구조 변경(Context 도입·훅 시그니처 재설계·타입 통합)은 범위에서 제외했다.
+
+**검증 결과**
+
+- `npm run build`(타입체크 포함), `npm run lint` 통과.
+
 ### feat: query citation 원문 block 하이라이트 개선
 
 **변경 배경**

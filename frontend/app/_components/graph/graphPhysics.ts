@@ -1,5 +1,6 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
 import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH, graphNodeKind } from "../../_lib/graph";
+import { safeDistance } from "./graphGeometry";
 
 export type GraphLinkForce = GraphLink & {
   idealDistance: number;
@@ -201,7 +202,7 @@ export function resolveGraphCollisions({
       const posB = next[nodeB.id];
       const dx = posB.x - posA.x;
       const dy = posB.y - posA.y;
-      const distance = Math.hypot(dx, dy) || 0.01;
+      const distance = safeDistance(dx, dy);
       const overlap = minDistance - distance;
 
       if (overlap <= 0) continue;
@@ -256,7 +257,7 @@ export function tickGraphPositions({
 
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    const distance = Math.hypot(dx, dy) || 0.01;
+    const distance = safeDistance(dx, dy);
     const revealBoost = isRevealingGraph ? GRAPH_PHYSICS.revealLinkBoost : 1;
     const force = (distance - link.idealDistance) * GRAPH_PHYSICS.linkStrength * link.weight * revealBoost;
     const fx = (dx / distance) * force;
@@ -279,7 +280,7 @@ export function tickGraphPositions({
     const posB = next[nodeB.id];
     const dx = posB.x - posA.x;
     const dy = posB.y - posA.y;
-    const distance = Math.hypot(dx, dy) || 0.01;
+    const distance = safeDistance(dx, dy);
     if (linked || distance >= desiredDistance || distance >= GRAPH_PHYSICS.repulsionRange) continue;
 
     const proximity = 1 - distance / GRAPH_PHYSICS.repulsionRange;

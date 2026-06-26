@@ -6,7 +6,8 @@ import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";
+import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "./agentFormatters";
+import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";
 import { useSmoothScroll } from "./useSmoothScroll";
 
 const SCROLL_OFFSET_PX = 20;
@@ -111,31 +112,6 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [messages.length, animatedMessageId, isLoading, queryErrorMessage, scrollToLatestMessage]);
 
-  function formatWikiPageTitle(pageId?: string, fallback = "근거") {
-    if (!pageId) return fallback;
-    if (nodes) {
-      const node = nodes.find((n) => n.id === pageId);
-      if (node?.label) return node.label;
-    }
-    const [, slug = pageId] = pageId.split(":");
-    return slug
-      .split("-")
-      .filter(Boolean)
-      .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
-  function formatAnswerMarkdown(content: string) {
-    return content.replace(/(?<!\d)\.(?!\d)\s+/g, ".\n\n");
-  }
-
-  function formatReferenceMeta(reference: ChatMessageReferenceResponse) {
-    const blockLabel = reference.source_block_ids?.length ? reference.source_block_ids.join(", ") : null;
-    const description = reference.text || "";
-
-    return [blockLabel, description].filter(Boolean).join(" · ") || "관련 근거";
-  }
-
   function findGraphNode(pageId: string) {
     return nodes?.find((node) => node.id === pageId);
   }
@@ -175,7 +151,7 @@ export function AgentBody({
           key: `reference-${reference.id}`,
           pageId,
           pageType,
-          title: formatWikiPageTitle(pageId, reference.source_document_id || "근거"),
+          title: formatWikiPageTitle(pageId, nodes, reference.source_document_id || "근거"),
           meta: formatReferenceMeta(reference)
         };
       });
@@ -183,17 +159,6 @@ export function AgentBody({
 
   function sourceTitle(documentId: string) {
     return findGraphNode(makeSourceId(documentId))?.label ?? documentId;
-  }
-
-  function citedRanks(content: string) {
-    const ranks = new Set<number>();
-    for (const match of content.matchAll(/\[((?:\d+)(?:\s*,\s*\d+)*)\]/g)) {
-      match[1].split(",").forEach((value) => {
-        const rank = Number(value.trim());
-        if (Number.isFinite(rank)) ranks.add(rank);
-      });
-    }
-    return ranks;
   }
 
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);

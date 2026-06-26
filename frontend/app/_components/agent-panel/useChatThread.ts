@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchChatMessages, queryWiki } from "../../_lib/api";
+import { getErrorMessage } from "../../_lib/errors";
 import { findLastUserMessage } from "../../_lib/messages";
 import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
 
@@ -31,7 +32,7 @@ export function useChatThread() {
 
   useEffect(() => {
     void refreshMessages().catch((error: unknown) => {
-      setChatLoadErrorMessage(error instanceof Error ? error.message : "채팅 기록을 불러오지 못했습니다.");
+      setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,7 +55,7 @@ export function useChatThread() {
       querySucceeded = true;
       queryRelatedPages = queryResponse.related_pages ?? [];
     } catch (error) {
-      setQueryErrorMessage(error instanceof Error ? error.message : "질의에 실패했습니다.");
+      setQueryErrorMessage(getErrorMessage(error, "질의에 실패했습니다."));
       setActiveTurn(null);
     } finally {
       setIsLoading(false);
@@ -95,7 +96,7 @@ export function useChatThread() {
         assistantMessage
       });
     }).catch((error: unknown) => {
-      setChatLoadErrorMessage(error instanceof Error ? error.message : "채팅 기록을 불러오지 못했습니다.");
+      setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
       setActiveTurn(null);
     });
   }

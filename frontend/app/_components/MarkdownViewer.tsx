@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { cx } from "../_lib/classNames";
 import type { SourceBlockHighlight } from "../_lib/types";
 
 function rankColorClass(rank: number) {
@@ -78,11 +79,11 @@ export function MarkdownViewer({
     const highlightedRank = highlightedBlockRankById.get(blockId);
     blocks.push(
       <div
-        className={[
+        className={cx(
           "markdown-source-block",
-          highlightedRank ? "is-highlighted" : "",
-          highlightedRank ? rankColorClass(highlightedRank) : ""
-        ].filter(Boolean).join(" ")}
+          highlightedRank && "is-highlighted",
+          highlightedRank && rankColorClass(highlightedRank)
+        )}
         data-block-id={blockId}
         data-citation-rank={highlightedRank}
         ref={(element) => onBlockRef?.(blockId, element)}
