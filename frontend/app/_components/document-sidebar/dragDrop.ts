@@ -1,6 +1,15 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { DropPosition } from "../../_lib/types";
 
+/**
+ * dragleave가 현재 요소 밖으로 나가는 경우인지 판단한다.
+ * relatedTarget이 currentTarget 내부 자식이면(요소 안에서의 이동) false를 반환한다.
+ */
+export function isPointerLeavingElement<T extends HTMLElement>(event: ReactDragEvent<T>): boolean {
+  const next = event.relatedTarget;
+  return !(next instanceof Node && event.currentTarget.contains(next));
+}
+
 export function resolveDropPosition(event: ReactDragEvent<HTMLButtonElement>): DropPosition {
   const rect = event.currentTarget.getBoundingClientRect();
   const offsetY = event.clientY - rect.top;

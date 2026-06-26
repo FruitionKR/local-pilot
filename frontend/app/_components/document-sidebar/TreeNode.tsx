@@ -1,3 +1,4 @@
+import { cx } from "../../_lib/classNames";
 import type { DropTarget, TreeItem } from "../../_lib/types";
 import { InlineEditInput } from "./InlineEditInput";
 import { TreeNodeIcon } from "./TreeNodeIcon";
@@ -61,14 +62,14 @@ export function TreeNode({
     <>
       <button
         type="button"
-        className={[
+        className={cx(
           "tree-row",
-          item.active ? "is-active" : "",
-          selectedItemId === item.id ? "is-selected" : "",
-          draggedItemId === item.id ? "is-dragging" : "",
-          isFileDropTarget ? "is-file-drop-target" : "",
-          isDropTarget ? `is-drop-${dropTarget.position}` : ""
-        ].filter(Boolean).join(" ")}
+          item.active && "is-active",
+          selectedItemId === item.id && "is-selected",
+          draggedItemId === item.id && "is-dragging",
+          isFileDropTarget && "is-file-drop-target",
+          isDropTarget && `is-drop-${dropTarget.position}`
+        )}
         style={{ paddingLeft: 10 + depth * 17 }}
         title={item.errorMessage ?? item.sourceUri}
         aria-expanded={hasChildren ? isOpen : undefined}

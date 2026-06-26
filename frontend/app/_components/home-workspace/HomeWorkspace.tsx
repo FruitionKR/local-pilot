@@ -8,6 +8,7 @@ import { RailNavigation, railItems, type RailView } from "../RailNavigation";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
 import { sideboxIcon, SvgIcon } from "../SvgIcon";
 import { TopBar } from "../TopBar";
+import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
@@ -109,12 +110,12 @@ export function HomeWorkspace() {
 
   return (
     <main
-      className={[
+      className={cx(
         "workspace",
-        isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : "",
-        isHomeView && !isDocumentSidebarOpen ? "is-sidebar-collapsed" : "",
-        hasSourcePreview ? "has-source-preview" : ""
-      ].filter(Boolean).join(" ")}
+        isHomeView && !isAgentPanelOpen && "is-agent-collapsed",
+        isHomeView && !isDocumentSidebarOpen && "is-sidebar-collapsed",
+        hasSourcePreview && "has-source-preview"
+      )}
       style={{
         "--sidebar-width": `${sidebarWidth}px`,
         "--source-preview-width": `${sourcePreviewWidth}px`

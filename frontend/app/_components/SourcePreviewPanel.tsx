@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { fetchWikiPage } from "../_lib/api";
+import { getErrorMessage } from "../_lib/errors";
 import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 export function SourcePreviewPanel({
@@ -50,7 +51,7 @@ export function SourcePreviewPanel({
         if (!ignore) setPage(nextPage);
       })
       .catch((error) => {
-        if (!ignore) setErrorMessage(error instanceof Error ? error.message : "Wiki page를 불러오지 못했습니다.");
+        if (!ignore) setErrorMessage(getErrorMessage(error, "Wiki page를 불러오지 못했습니다."));
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -80,7 +81,7 @@ export function SourcePreviewPanel({
         if (!ignore) setRawMarkdown(text);
       })
       .catch((error: unknown) => {
-        if (!ignore) setErrorMessage(error instanceof Error ? error.message : "문서를 불러오지 못했습니다.");
+        if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
