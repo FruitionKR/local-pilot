@@ -314,12 +314,69 @@ class AnswerQueryUseCase:
         representations = [self._representation(page) for page in pages]
         embedding_scores = self._embedding_search.score(query, representations)
         text_scores = self._text_search.score(query, representations)
-        return {
+        base_scores = {
             page.id: self._final_retrieval_score(
                 hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight),
                 self._name_match_score(query_rewrite, page),
             )
             for page, embedding_score, text_score in zip(pages, embedding_scores, text_scores)
+        }
+        if pages and all(page.is_source for page in pages):
+            structure_scores = self._score_source_structures(query, pages, embedding_weight)
+            return {
+                page.id: min(1.0, base_scores.get(page.id, 0.0) + structure_scores.get(page.id, 0.0))
+                for page in pages
+            }
+        return base_scores
+
+    def _score_source_structures(self, query: str, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
+        weighted_representations: list[tuple[str, str, float]] = []
+        for page in pages:
+            for representation, weight in self._source_structure_representations(page):
+                weighted_representations.append((page.id, representation, weight))
+        if not weighted_representations:
+            return {}
+
+        documents = [item[1] for item in weighted_representations]
+        embedding_scores = self._embedding_search.score(query, documents)
+        text_scores = self._text_search.score(query, documents)
+        scores: dict[str, float] = {}
+        for (page_id, _, weight), embedding_score, text_score in zip(weighted_representations, embedding_scores, text_scores):
+            score = hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight) * weight
+            scores[page_id] = max(scores.get(page_id, 0.0), score)
+        return scores
+
+    def _source_structure_representations(self, page: WikiPage) -> list[tuple[str, float]]:
+        markdown = page.markdown or ""
+        sections = self._markdown_sections(markdown)
+        weighted_sections = [
+            ("Categories", 0.10),
+            ("Core Concepts", 0.20),
+            ("Section Candidates", 0.25),
+            ("Mentions", 0.15),
+        ]
+        representations = []
+        for section_name, weight in weighted_sections:
+            body = sections.get(section_name.lower())
+            if body:
+                representations.append((f"{section_name}\n{body}", weight))
+        return representations
+
+    def _markdown_sections(self, markdown: str) -> dict[str, str]:
+        sections: dict[str, list[str]] = {}
+        current: str | None = None
+        for line in markdown.splitlines():
+            match = re.match(r"^##\s+(.+?)\s*$", line.strip())
+            if match:
+                current = match.group(1).strip().lower()
+                sections.setdefault(current, [])
+                continue
+            if current is not None:
+                sections[current].append(line)
+        return {
+            section: "\n".join(lines).strip()
+            for section, lines in sections.items()
+            if "\n".join(lines).strip()
         }
 
     def _final_retrieval_score(self, retrieval_score: float, name_match_score: float) -> float:
@@ -558,7 +615,7 @@ class AnswerQueryUseCase:
         return GeneratedAnswer(
             content=(
                 "제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다. "
-                f"가장 가까운 자료는 {nearest.page_title}이지만, 이 자료도 질문 주제를 직접 설명하지 않습니다. [{nearest.rank}]"
+                f"가장 가까운 근거도 질문 주제를 직접 설명하지 않습니다. [{nearest.rank}]"
             )
         )
 

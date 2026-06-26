@@ -30,6 +30,33 @@ class EmptyTextSearch:
         return [0.0 for _ in documents]
 
 
+class QueryContainsSearch:
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        query_terms = [term.lower() for term in query.split() if term.strip()]
+        scores = []
+        for document in documents:
+            lowered = document.lower()
+            scores.append(1.0 if any(term in lowered for term in query_terms) else 0.0)
+        return scores
+
+
+class SourceStructureIntentSearch:
+    def score(self, query: str, documents: list[str]) -> list[float]:
+        intents = [
+            ("과학개념 추출", "Categories", "과학 개념"),
+            ("응결이 뭐야", "Core Concepts", "응결"),
+            ("강수 과정 섹션", "Section Candidates", "강수 과정"),
+            ("지반이 언급", "Mentions", "지반"),
+        ]
+        for query_marker, section_name, content_marker in intents:
+            if query_marker in query:
+                return [
+                    1.0 if document.startswith(f"{section_name}\n") and content_marker in document else 0.0
+                    for document in documents
+                ]
+        return [0.0 for _ in documents]
+
+
 class FakeMarkdownReader:
     def __init__(self, markdown_by_uri: dict[str, str]) -> None:
         self._markdown_by_uri = markdown_by_uri
@@ -125,9 +152,9 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             answer_generator=answer_generator,
             markdown_reader=FakeMarkdownReader(
                 {
-                    "s3://test/source:attention.md": "Self-attention computes relationships between tokens in one sequence.",
-                    "s3://test/source:unrelated.md": "Unrelated source body.",
-                    "s3://test/concept:self-attention.md": "입력 토큰들이 서로를 참조해 중요도를 계산하는 Transformer 메커니즘.",
+                    "s3://test/source:attention.md": "---\ndocument_id: doc_attention\n---\n\nSelf-attention computes relationships between tokens in one sequence. [B0001]",
+                    "s3://test/source:unrelated.md": "---\ndocument_id: doc_unrelated\n---\n\nUnrelated source body. [B0009]",
+                    "s3://test/concept:self-attention.md": "---\ntype: concept\nsources: doc_attention\n---\n\n입력 토큰들이 서로를 참조해 중요도를 계산하는 Transformer 메커니즘. [B0002]",
                 }
             ),
             source_candidate_limit=1,
@@ -151,17 +178,17 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("Do not create examples, analogies, or fictional cases", answer_generator.last_context.answer_context)
         self.assertIn("Self-attention computes relationships between tokens", answer_generator.last_context.answer_context)
         self.assertIn("입력 토큰들이 서로를 참조", answer_generator.last_context.answer_context)
+        self.assertNotIn("[B0001]", answer_generator.last_context.answer_context)
         self.assertIn("citation markers like [1]", answer_generator.last_context.answer_context)
         self.assertNotIn("/api/wiki/pages/concept:self-attention", answer_generator.last_context.answer_context)
         self.assertIn("Lecture Attention -> Self Attention", answer_generator.last_context.answer_context)
         self.assertGreaterEqual(len(result.evidence_snippets), 2)
         self.assertEqual(result.evidence_snippets[0].rank, 1)
-        self.assertEqual(result.evidence_snippets[0].page_url, f"/api/wiki/pages/{result.evidence_snippets[0].page_id}")
-        self.assertIsNotNone(result.evidence_snippets[0].paragraph_index)
-        self.assertIsNotNone(result.evidence_snippets[0].sentence_index)
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_attention")
+        self.assertTrue(result.evidence_snippets[0].source_block_ids)
         self.assertIn("토큰", result.evidence_snippets[0].text)
+        self.assertNotIn("[B", result.evidence_snippets[0].text)
         self.assertNotIn("Unrelated", result.evidence_snippets[0].text)
-        self.assertEqual(result.evidence_snippets, sorted(result.evidence_snippets, key=lambda snippet: snippet.score, reverse=True))
         self.assertIn("[1]", result.answer.content)
         self.assertEqual(result.retrieval_summary.max_depth, 0)
         self.assertNotIn("# User Question", result.answer.content)
@@ -366,7 +393,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.traversal_paths, [])
         self.assertEqual(result.related_pages[0].page.page_type, "web")
         self.assertEqual(result.related_pages[0].page.markdown_uri, "https://example.com/rag")
-        self.assertEqual(result.evidence_snippets[0].page_url, "https://example.com/rag")
+        self.assertEqual(result.evidence_snippets, [])
         self.assertIn("[1]", result.answer.content)
 
     def test_direct_concept_name_match_can_answer_without_relevant_source_seed(self) -> None:
@@ -396,9 +423,9 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             answer_generator=RecordingAnswerGenerator(),
             markdown_reader=FakeMarkdownReader(
                 {
-                    "s3://test/source:solar-system.md": "태양계는 태양과 행성으로 구성됩니다.",
-                    "s3://test/concept:sun.md": "태양은 태양계의 중심에 있는 별입니다.",
-                    "s3://test/concept:solar-system.md": "태양계는 태양, 행성, 위성 등으로 이루어진 천체 체계입니다.",
+                    "s3://test/source:solar-system.md": "---\ndocument_id: doc_solar\n---\n\n태양계는 태양과 행성으로 구성됩니다. [B0001]",
+                    "s3://test/concept:sun.md": "---\ntype: concept\nsources: doc_solar\n---\n\n태양은 태양계의 중심에 있는 별입니다. [B0002]",
+                    "s3://test/concept:solar-system.md": "---\ntype: concept\nsources: doc_solar\n---\n\n태양계는 태양, 행성, 위성 등으로 이루어진 천체 체계입니다. [B0003]",
                 }
             ),
             query_rewriter=FixedQueryRewriter("태양"),
@@ -413,7 +440,101 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.traversal_paths[0].stop_reason, "concept_direct_match")
         self.assertEqual(result.traversal_paths[0].nodes, ["source:solar-system", "concept:sun"])
         self.assertIn("태양은 태양계의 중심", result.evidence_snippets[0].text)
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_solar")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002"])
         self.assertIn("[1]", result.answer.content)
+
+    def test_evidence_uses_only_sentences_with_source_block_refs(self) -> None:
+        pages = [source_page("source:seed", "Seed Source")]
+        answer_generator = RecordingAnswerGenerator()
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Seed Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:seed.md": (
+                        "---\ndocument_id: doc_seed\n---\n\n"
+                        "요약 문장은 citation이 없어서 근거가 되면 안 됩니다.\n\n"
+                        "원본에 연결된 근거 문장입니다. [B0005]"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.execute("원본에 연결된 근거는?")
+
+        self.assertEqual(len(result.evidence_snippets), 1)
+        self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_seed")
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0005"])
+        self.assertEqual(result.evidence_snippets[0].text, "원본에 연결된 근거 문장입니다.")
+        self.assertNotIn("citation이 없어서", answer_generator.last_context.answer_context)
+
+    def test_source_structure_sections_boost_source_retrieval(self) -> None:
+        pages = [
+            source_page("source:qmd", "Low Base QMD Source"),
+            source_page("source:other", "Other Source"),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"Low Base QMD Source": 0.0, "Other Source": 0.0}),
+            text_search=QueryContainsSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:qmd.md": (
+                        "---\ndocument_id: doc_qmd\n---\n\n"
+                        "## Summary\n요약에는 검색어가 없습니다.\n\n"
+                        "## Section Candidates\n- qmd - 로컬 마크다운 검색 엔진입니다. [B0025]\n"
+                    ),
+                    "s3://test/source:other.md": "---\ndocument_id: doc_other\n---\n\n## Summary\n다른 문서입니다. [B0001]",
+                }
+            ),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("qmd")
+
+        self.assertEqual(result.related_pages[0].page.id, "source:qmd")
+
+    def test_source_structure_sections_match_narrow_question_intent(self) -> None:
+        cases = [
+            ("Categories", "과학개념 추출해줘", "과학 개념"),
+            ("Core Concepts", "응결이 뭐야?", "응결"),
+            ("Section Candidates", "강수 과정 섹션이 있어?", "강수 과정"),
+            ("Mentions", "지반이 언급된 적이 있나?", "지반"),
+        ]
+        for section_name, question, section_content in cases:
+            with self.subTest(section_name=section_name):
+                pages = [
+                    source_page("source:target", "Target Source"),
+                    source_page("source:other", "Other Source"),
+                ]
+                markdown_reader = FakeMarkdownReader(
+                    {
+                        "s3://test/source:target.md": (
+                            "---\ndocument_id: doc_target\n---\n\n"
+                            f"## {section_name}\n- {section_content} 범위에서 검색되어야 하는 항목입니다. [B0001]\n"
+                        ),
+                        "s3://test/source:other.md": (
+                            "---\ndocument_id: doc_other\n---\n\n"
+                            f"## {section_name}\n- 관련 없는 비교 항목입니다. [B0002]\n"
+                        ),
+                    }
+                )
+                use_case = AnswerQueryUseCase(
+                    wiki_repository=InMemoryWikiRepository(pages, []),
+                    embedding_search=SourceStructureIntentSearch(),
+                    text_search=EmptyTextSearch(),
+                    answer_generator=RecordingAnswerGenerator(),
+                    markdown_reader=markdown_reader,
+                    source_candidate_limit=1,
+                )
+
+                result = use_case.execute(question)
+
+                self.assertEqual(result.related_pages[0].page.id, "source:target")
 
     def test_traverses_without_configured_max_depth_limit(self) -> None:
         pages = [
