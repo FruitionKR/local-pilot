@@ -2,6 +2,7 @@ package fruition.document.controller;
 
 import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
+import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentOriginalResult;
@@ -149,6 +150,20 @@ public class DocumentController {
 
     private boolean isInlineable(String mimeType) {
         return mimeType != null && (mimeType.startsWith("text/") || mimeType.equals("application/pdf"));
+    }
+
+    @Operation(summary = "원본 문서 block 목록 조회", description = "원본 문서를 block 단위로 나눈 텍스트 목록을 반환합니다. 답변 인용 클릭 시 원본 block 하이라이트에 사용됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = DocumentBlocksResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/blocks")
+    public ResponseEntity<DocumentBlocksResponse> blocks(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId) {
+        return ResponseEntity.ok(documentService.blocks(documentId));
     }
 
     @Operation(summary = "문서 이름 변경", description = "문서 표시명을 변경합니다. sync_source_title=true이면 연결된 source Wiki 페이지 제목도 함께 변경됩니다.")

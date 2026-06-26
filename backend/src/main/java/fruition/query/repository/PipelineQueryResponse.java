@@ -22,17 +22,10 @@ public record PipelineQueryResponse(
     ) {}
 
     public record EvidenceSnippet(
-            @JsonProperty("page_id") String pageId,
-            @JsonProperty("page_type") String pageType,
-            @JsonProperty("page_title") String pageTitle,
-            @JsonProperty("page_slug") String pageSlug,
-            @JsonProperty("page_url") String pageUrl,
-            @JsonProperty("page_role") String pageRole,
-            String text,
-            double score,
             int rank,
-            @JsonProperty("paragraph_index") Integer paragraphIndex,
-            @JsonProperty("sentence_index") Integer sentenceIndex
+            @JsonProperty("source_document_id") String sourceDocumentId,
+            @JsonProperty("source_block_ids") List<String> sourceBlockIds,
+            String text
     ) {}
 
     public record GraphContext(

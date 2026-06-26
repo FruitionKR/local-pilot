@@ -2,6 +2,8 @@ package fruition.chat.domain;
 
 import jakarta.persistence.*;
 
+import java.util.List;
+
 @Entity
 @Table(name = "chat_message_references")
 public class ChatMessageReference {
@@ -16,29 +18,15 @@ public class ChatMessageReference {
     @Column(name = "reference_type", nullable = false)
     private String referenceType;
 
-    @Column(name = "wiki_page_id")
-    private String wikiPageId;
-
     @Column(name = "document_id")
     private String documentId;
-
-    @Column(name = "page_role")
-    private String pageRole;
-
-    @Column(name = "relevance_score")
-    private Double relevanceScore;
-
-    @Column(name = "page_number")
-    private Integer pageNumber;
 
     @Column(name = "rank")
     private Integer rank;
 
-    @Column(name = "paragraph_index")
-    private Integer paragraphIndex;
-
-    @Column(name = "sentence_index")
-    private Integer sentenceIndex;
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(name = "source_block_ids", columnDefinition = "TEXT")
+    private List<String> sourceBlockIds;
 
     @Column(columnDefinition = "TEXT")
     private String quote;
@@ -46,34 +34,21 @@ public class ChatMessageReference {
     protected ChatMessageReference() {}
 
     public ChatMessageReference(String chatMessageId, String referenceType,
-                                 String wikiPageId, String documentId,
-                                 String pageRole,
-                                 Double relevanceScore, Integer pageNumber,
-                                 Integer rank, Integer paragraphIndex,
-                                 Integer sentenceIndex, String quote) {
+                                 String documentId, Integer rank,
+                                 List<String> sourceBlockIds, String quote) {
         this.chatMessageId = chatMessageId;
         this.referenceType = referenceType;
-        this.wikiPageId = wikiPageId;
         this.documentId = documentId;
-        this.pageRole = pageRole;
-        this.relevanceScore = relevanceScore;
-        this.pageNumber = pageNumber;
         this.rank = rank;
-        this.paragraphIndex = paragraphIndex;
-        this.sentenceIndex = sentenceIndex;
+        this.sourceBlockIds = sourceBlockIds;
         this.quote = quote;
     }
 
     public Long getId() { return id; }
     public String getChatMessageId() { return chatMessageId; }
     public String getReferenceType() { return referenceType; }
-    public String getWikiPageId() { return wikiPageId; }
     public String getDocumentId() { return documentId; }
-    public String getPageRole() { return pageRole; }
-    public Double getRelevanceScore() { return relevanceScore; }
-    public Integer getPageNumber() { return pageNumber; }
     public Integer getRank() { return rank; }
-    public Integer getParagraphIndex() { return paragraphIndex; }
-    public Integer getSentenceIndex() { return sentenceIndex; }
+    public List<String> getSourceBlockIds() { return sourceBlockIds; }
     public String getQuote() { return quote; }
 }

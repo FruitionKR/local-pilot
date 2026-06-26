@@ -61,18 +61,20 @@ erDiagram
         BIGINT  id PK
         VARCHAR chat_message_id FK
         VARCHAR reference_type
-        VARCHAR wiki_page_id
         VARCHAR document_id
-        VARCHAR page_role
-        DOUBLE  relevance_score
-        INTEGER page_number
         INTEGER rank
-        INTEGER paragraph_index
-        INTEGER sentence_index
+        TEXT    source_block_ids
         TEXT    quote
     }
 
+    source_blocks {
+        VARCHAR document_id PK
+        VARCHAR block_id PK
+        TEXT    text
+    }
+
     documents ||--o{ document_wiki_links : "document_id"
+    documents ||--o{ source_blocks : "document_id"
     wiki_pages ||--o{ document_wiki_links : "wiki_page_id"
     wiki_pages ||--o{ wiki_page_links : "from_page_id"
     wiki_pages ||--o{ wiki_page_links : "to_page_id"
@@ -188,22 +190,31 @@ Wiki 페이지 간 방향성 있는 링크. 복합 PK.
 
 ### chat_message_references
 
-assistant 메시지의 근거 스니펫(evidence_snippets) 저장. pipeline 응답의 `evidence_snippets` 중 `page_id`가 있는 항목만 저장된다.
+assistant 메시지의 근거 스니펫(evidence_snippets) 저장. pipeline 응답의 `evidence_snippets` 중 `source_document_id`가 있고 `text`가 공백이 아닌 항목만 저장된다. 원본 문서 block 기준으로 저장되며, wiki page 존재 여부는 더 이상 확인하지 않는다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |
 | `id` | BIGINT | PK, AUTO_INCREMENT | 자동 생성 식별자 |
 | `chat_message_id` | VARCHAR | NOT NULL, FK → chat_messages.id | 연결된 assistant 메시지 |
-| `reference_type` | VARCHAR | NOT NULL | `source` 또는 `concept` (pipeline `page_type`) |
-| `wiki_page_id` | VARCHAR | NULL 허용 | 참조 Wiki 페이지 ID |
-| `document_id` | VARCHAR | NULL 허용 | 참조 원본 문서 ID (현재 미사용) |
-| `page_role` | VARCHAR | NULL 허용 | pipeline `page_role` (e.g. `seed_source`, `focus_concept`) |
-| `relevance_score` | DOUBLE | NULL 허용 | 관련성 점수 (pipeline `score`) |
-| `page_number` | INTEGER | NULL 허용 | 페이지 번호 (현재 미사용) |
+| `reference_type` | VARCHAR | NOT NULL | 고정값 `source_block` |
+| `document_id` | VARCHAR | NULL 허용 | 참조 원본 문서 ID (pipeline `source_document_id`) |
 | `rank` | INTEGER | NULL 허용 | 답변 내 인용 순위 ([1], [2], ...) |
-| `paragraph_index` | INTEGER | NULL 허용 | 단락 인덱스 |
-| `sentence_index` | INTEGER | NULL 허용 | 문장 인덱스 |
+| `source_block_ids` | TEXT | NULL 허용 | 근거 block id 목록 (`["B0005","B0006"]` 형태 JSON 문자열, `StringListJsonConverter`로 변환) |
 | `quote` | TEXT | NULL 허용 | 인용 텍스트 (pipeline `text`) |
+
+---
+
+### source_blocks
+
+원본 문서를 block 단위로 나눈 텍스트. llmPipeline ingestion이 적재하며, Spring은 `GET /api/documents/{document_id}/blocks`에서 읽기만 한다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| `document_id` | VARCHAR | PK, FK → documents.id | 원본 문서 |
+| `block_id` | VARCHAR | PK | block 식별자 (예: `B0005`) |
+| `text` | TEXT | NOT NULL | block 본문 |
+
+**복합 PK**: `(document_id, block_id)`
 
 ---
 
@@ -273,5 +284,6 @@ assistant 메시지와 연결된 탐색된 Wiki 페이지 목록. pipeline 응�
 | `wiki_pages` → `wiki_page_links` (to) | 1:N, 하나의 페이지가 여러 링크의 대상 |
 | `chat_messages` → `chat_message_references` | 1:N, 하나의 assistant 메시지가 여러 근거 참조 보유 |
 | `chat_messages` → `chat_message_related_pages` | 1:N, 하나의 assistant 메시지가 여러 탐색 Wiki 페이지 보유 |
+| `documents` → `source_blocks` | 1:N, 하나의 문서가 여러 block으로 나뉨 (llmPipeline ingestion이 적재) |
 
-`chat_message_references.wiki_page_id` / `document_id` 및 `chat_message_related_pages.wiki_page_id`는 논리적 참조이며, DB 레벨 FK 제약은 없다.
+`chat_message_references.document_id` 및 `chat_message_related_pages.wiki_page_id`는 논리적 참조이며, DB 레벨 FK 제약은 없다.

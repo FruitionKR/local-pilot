@@ -146,7 +146,7 @@ DB에 있지만 기본 API 응답에서 생략 가능한 필드
 - wiki_page_links.label
 - wiki_page_links.confidence
 - chat_message_references.reference_type
-- chat_message_references.relevance_score
+- chat_message_references.source_block_ids
 ```
 
 즉, API 응답은 화면과 프론트 상태 관리에 필요한 필드를 중심으로 구성하고, 내부 처리용 필드는 서버 내부에 둔다.
@@ -223,6 +223,7 @@ POST   /documents
 GET    /documents
 GET    /documents/{document_id}
 GET    /documents/{document_id}/original
+GET    /documents/{document_id}/blocks
 PATCH  /documents/{document_id}/rename
 GET    /wiki/graph
 GET    /wiki/pages/{wiki_page_id}
@@ -456,6 +457,42 @@ Error response:
 | `INVALID_DOCUMENT_FILENAME` | 400 | 이름이 비어 있거나 허용되지 않는 문자를 포함한다. |
 | `DOCUMENT_RENAME_CONFLICT` | 409 | 백엔드가 중복 이름을 금지하는 정책일 때 같은 이름이 이미 존재한다. |
 
+### 5.6 원본 문서 block 목록 조회
+
+```http
+GET /api/documents/{document_id}/blocks
+```
+
+Response:
+
+```json
+{
+  "document_id": "doc_123",
+  "blocks": [
+    {
+      "block_id": "B0005",
+      "text": "원본 문서의 다섯 번째 block 본문"
+    },
+    {
+      "block_id": "B0006",
+      "text": "원본 문서의 여섯 번째 block 본문"
+    }
+  ]
+}
+```
+
+처리 규칙:
+
+- `source_blocks` 테이블에서 해당 `document_id`의 block을 `block_id` 오름차순으로 조회한다.
+- block이 없어도 200과 빈 배열을 반환한다 (404 아님).
+- 답변 citation `[n]` 클릭 시 `evidence_snippets[].source_document_id` + `source_block_ids`로 이 API를 호출해 원본 block을 가져와 하이라이트한다.
+
+주요 error code:
+
+| code | HTTP status | description |
+| --- | --- | --- |
+| `DOCUMENT_NOT_FOUND` | 404 | 문서 ID가 존재하지 않는다. |
+
 ## 6. Wiki API
 
 ### 6.1 Wiki graph 조회
@@ -682,17 +719,10 @@ Response:
   ],
   "evidence_snippets": [
     {
-      "page_id": "page_source_123",
-      "page_type": "source",
-      "page_title": "lecture_01",
-      "page_slug": "lecture-01",
-      "page_url": "wiki/sources/lecture-01.md",
-      "page_role": "source",
-      "text": "Self-attention computes relationships between tokens.",
-      "score": 0.91,
       "rank": 1,
-      "paragraph_index": 2,
-      "sentence_index": 0
+      "source_document_id": "doc_123",
+      "source_block_ids": ["B0005", "B0006"],
+      "text": "Self-attention computes relationships between tokens."
     }
   ],
   "graph_context": {
@@ -746,7 +776,7 @@ Response fields:
 | `user_message` | 저장된 사용자 메시지 요약 |
 | `assistant_message` | 저장된 어시스턴트 메시지 요약. 답변 본문에는 `[1]`, `[2]` 형태의 evidence rank 표식이 포함될 수 있다. |
 | `related_pages` | 탐색에 사용된 Wiki page 목록. `role`은 탐색 중 page의 역할(`source`/`concept`), `depth`는 그래프 탐색 깊이 |
-| `evidence_snippets` | 답변 근거로 사용된 문장 단위 snippet. `rank`는 답변 본문의 `[N]` 표식과 대응한다. |
+| `evidence_snippets` | 답변 근거로 사용된 원본 문서 block 단위 snippet. `rank`는 답변 본문의 `[N]` 표식과 대응하며, `source_document_id` + `source_block_ids`로 `GET /api/documents/{document_id}/blocks`를 호출해 원본 block을 가져올 수 있다. |
 | `graph_context` | 탐색 중 방문한 nodes와 edges. 그래프 하이라이트 렌더링에 사용한다. |
 | `traversal_paths` | 탐색 경로 목록. `used_for_answer=true`인 path가 실제 답변 생성에 사용된 경로다. |
 
@@ -811,14 +841,11 @@ Response:
       "references": [
         {
           "id": 1,
-          "reference_type": "source",
-          "wiki_page_id": "source:lecture-01",
-          "page_role": "seed_source",
-          "relevance_score": 0.91,
+          "reference_type": "source_block",
           "rank": 1,
-          "paragraph_index": 2,
-          "sentence_index": 0,
-          "quote": "Self-attention computes relationships between tokens."
+          "source_document_id": "doc_123",
+          "source_block_ids": ["B0005", "B0006"],
+          "text": "Self-attention computes relationships between tokens."
         }
       ]
     }
@@ -831,7 +858,7 @@ Response fields:
 | field | description |
 | --- | --- |
 | `related_pages` | pipeline `related_pages` 기준 탐색된 Wiki page 목록. 프론트 "찾은 자료" 카드 기준. |
-| `references` | pipeline `evidence_snippets` 기준 인용 근거. 답변 본문 `[N]` citation과 대응. |
+| `references` | pipeline `evidence_snippets` 기준 인용 근거. 답변 본문 `[N]` citation과 대응하며, 원본 문서 block 기준(`source_document_id` + `source_block_ids`)으로 저장된다. |
 
 사용처:
 
