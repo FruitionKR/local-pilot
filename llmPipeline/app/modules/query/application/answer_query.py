@@ -1,4 +1,3 @@
-import hashlib
 import re
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from dataclasses import replace
@@ -16,6 +15,7 @@ from app.modules.query.application.ports import (
 )
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.application.query_page_scorer import QueryPageScorer
+from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     EvidenceSnippet,
@@ -30,7 +30,6 @@ from app.modules.query.domain.entities import (
     RetrievalSummary,
     TraversalEdge,
     TraversalPath,
-    WebSearchResult,
     WikiPage,
     WikiPageLink,
 )
@@ -53,6 +52,7 @@ class AnswerQueryUseCase:
         build_query_context: BuildQueryContextUseCase | None = None,
         query_answer_assembler: QueryAnswerAssembler | None = None,
         query_page_scorer: QueryPageScorer | None = None,
+        query_web_answer_builder: QueryWebAnswerBuilder | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
         focus_concept_threshold: float = 0.60,
@@ -81,6 +81,14 @@ class AnswerQueryUseCase:
             concept_candidate_limit=concept_candidate_limit,
             focus_concept_threshold=focus_concept_threshold,
         )
+        self._query_web_answer_builder = query_web_answer_builder
+        if self._query_web_answer_builder is None and web_search is not None:
+            self._query_web_answer_builder = QueryWebAnswerBuilder(
+                web_search=web_search,
+                build_query_context=self._build_query_context,
+                query_answer_assembler=self._query_answer_assembler,
+                embedding_unit_loader=self._load_embedding_units_for_related_pages,
+            )
         self._source_candidate_limit = source_candidate_limit
         self._concept_candidate_limit = concept_candidate_limit
         self._focus_concept_threshold = focus_concept_threshold
@@ -429,56 +437,12 @@ class AnswerQueryUseCase:
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> QueryAnswer | None:
-        if self._web_search is None:
+        if self._query_web_answer_builder is None:
             return None
-        self._publish(
-            event_publisher,
-            "web_search_started",
-            "내부 Wiki 근거가 부족해 웹 검색 fallback을 시작했습니다.",
-            {"retrieval_query": query_rewrite.retrieval_query},
-        )
-        try:
-            web_results = self._web_search.search(query_rewrite.retrieval_query)
-        except Exception as exc:
-            self._publish(event_publisher, "web_search_failed", "웹 검색 fallback이 실패했습니다.", {"error": str(exc)})
-            return None
-        related_pages = self._web_results_to_related_pages(web_results)
-        if not related_pages:
-            self._publish(event_publisher, "web_search_empty", "웹 검색 fallback 결과가 없습니다.", None)
-            return None
-
-        graph_context = GraphContext(nodes=related_pages, edges=[])
-        query_context = self._build_query_context.execute(
+        return self._query_web_answer_builder.answer_from_web_search(
             question=question,
-            related_pages=related_pages,
-            graph_context=graph_context,
-            traversal_paths=[],
-            answer_mode="web_fallback",
-        )
-        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
-        self._publish(
-            event_publisher,
-            "web_search_answer_generated",
-            "웹 검색 근거로 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
-        )
-        summary = RetrievalSummary(
-            source_candidate_count=0,
-            concept_candidate_count=0,
-            visited_node_count=len(related_pages),
-            returned_node_count=len(related_pages),
-            used_source_count=0,
-            used_concept_count=0,
-            max_depth=0,
-            stop_reason="web_search_fallback",
-        )
-        return QueryAnswer(
-            answer=answer,
-            related_pages=related_pages,
-            evidence_snippets=evidence_snippets,
-            graph_context=graph_context,
-            traversal_paths=[],
-            retrieval_summary=summary,
+            query_rewrite=query_rewrite,
+            event_publisher=event_publisher,
         )
 
     def _answer_from_internal_web_augmented(
@@ -491,93 +455,17 @@ class AnswerQueryUseCase:
         stop_reason: str,
         event_publisher: QueryEventPublisherPort | None,
     ) -> QueryAnswer | None:
-        if self._web_search is None:
+        if self._query_web_answer_builder is None:
             return None
-        self._publish(
-            event_publisher,
-            "web_search_started",
-            "내부 Wiki 근거에 외부 검색 근거를 보강합니다.",
-            {"retrieval_query": query_rewrite.retrieval_query},
-        )
-        try:
-            web_results = self._web_search.search(query_rewrite.retrieval_query)
-        except Exception as exc:
-            self._publish(event_publisher, "web_search_failed", "웹 검색 보강이 실패했습니다.", {"error": str(exc)})
-            return None
-        web_related_pages = self._web_results_to_related_pages(web_results)
-        if not web_related_pages:
-            self._publish(event_publisher, "web_search_empty", "웹 검색 보강 결과가 없습니다.", None)
-            return None
-
-        related_pages = self._merge_related_pages(query_context.related_pages, web_related_pages)
-        augmented_graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        augmented_context = self._build_query_context.execute(
-            question=query_context.question,
-            related_pages=related_pages,
-            graph_context=augmented_graph_context,
+        return self._query_web_answer_builder.answer_from_internal_web_augmented(
+            question=question,
+            query_rewrite=query_rewrite,
+            query_context=query_context,
+            graph_context=graph_context,
             traversal_paths=traversal_paths,
-            original_question=question,
-            answer_mode="internal_web_augmented",
-            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(related_pages),
+            stop_reason=stop_reason,
+            event_publisher=event_publisher,
         )
-        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(augmented_context)
-        self._publish(
-            event_publisher,
-            "web_search_answer_generated",
-            "내부 Wiki와 웹 검색 근거를 함께 사용해 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
-        )
-        used_source_count = len([item for item in related_pages if item.page.is_source])
-        used_concept_count = len([item for item in related_pages if item.page.is_concept])
-        return QueryAnswer(
-            answer=answer,
-            related_pages=related_pages,
-            evidence_snippets=evidence_snippets,
-            graph_context=augmented_graph_context,
-            traversal_paths=traversal_paths,
-            retrieval_summary=RetrievalSummary(
-                source_candidate_count=0,
-                concept_candidate_count=0,
-                visited_node_count=len(related_pages),
-                returned_node_count=len(related_pages),
-                used_source_count=used_source_count,
-                used_concept_count=used_concept_count,
-                max_depth=0,
-                stop_reason=stop_reason,
-            ),
-        )
-
-    def _merge_related_pages(self, internal_pages: list[RetrievedPage], web_pages: list[RetrievedPage]) -> list[RetrievedPage]:
-        merged = list(internal_pages)
-        seen = {item.page.id for item in merged}
-        for item in web_pages:
-            if item.page.id in seen:
-                continue
-            merged.append(item)
-            seen.add(item.page.id)
-        return merged
-
-    def _web_results_to_related_pages(self, web_results: list[WebSearchResult]) -> list[RetrievedPage]:
-        related_pages = []
-        for index, result in enumerate(web_results, start=1):
-            page = WikiPage(
-                id=f"web:{self._hash(result.url)}",
-                page_type="web",
-                title=result.title,
-                slug=self._slug(result.title) or f"web-result-{index}",
-                summary=result.snippet,
-                markdown_uri=result.url,
-                markdown=result.content or result.snippet,
-            )
-            related_pages.append(
-                RetrievedPage(
-                    page=page,
-                    score=max(0.0, min(1.0, result.score)),
-                    role="web_search_result",
-                    depth=0,
-                )
-            )
-        return related_pages
 
     def _top_id(self, scores: dict[str, float]) -> str | None:
         if not scores:
@@ -754,13 +642,6 @@ class AnswerQueryUseCase:
             except Exception:
                 loaded.append(page)
         return loaded
-
-    def _hash(self, text: str) -> str:
-        return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
-
-    def _slug(self, text: str) -> str:
-        slug = re.sub(r"[^A-Za-z0-9가-힣_.-]+", "-", text.lower()).strip("-._")
-        return slug[:80]
 
     def _publish(
         self,
