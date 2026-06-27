@@ -28,11 +28,21 @@ class SemanticNormalizer:
         categories_by_name: dict[str, dict[str, Any]] = {}
         section_candidates_by_slug: dict[str, dict[str, Any]] = {}
         mentions_by_slug: dict[str, dict[str, Any]] = {}
+        observations: list[dict[str, Any]] = []
 
         for note_idx, note in enumerate(notes):
             chunk_id = note.get("chunk_id") or f"chunk_{note_idx + 1:04d}"
             normalized_note = self._normalize_single_note(note, warnings)
             normalized_notes.append(normalized_note)
+
+            for observation in normalized_note.get("observations", []):
+                observations.append(
+                    {
+                        **observation,
+                        "observation_id": f"O{len(observations) + 1:03d}",
+                        "source_document_id": self.document.document_id,
+                    }
+                )
 
             for category in normalized_note.get("categories", []):
                 self._merge_source_item(categories_by_name, category, key="term")
@@ -96,6 +106,7 @@ class SemanticNormalizer:
             "categories": sorted(categories_by_name.values(), key=lambda x: x.get("name", "")),
             "section_candidates": sorted(section_candidates_by_slug.values(), key=lambda x: x.get("slug", "")),
             "mentions": sorted(mentions_by_slug.values(), key=lambda x: x.get("slug", "")),
+            "observations": observations,
             "evidence_units": [asdict(e) for e in evidence_rows],
             "missing_related_concept_hints": sorted(missing_related_hints.values(), key=lambda x: (-x["max_confidence"], x["slug"])),
             "warnings": warnings,
@@ -122,6 +133,19 @@ class SemanticNormalizer:
                     "anchor_reference_ids": map_anchor_ids(kp.get("anchor_block_ids", []), limit=3),
                 }
                 for kp in note.get("key_points", [])
+            ],
+            "observations": [
+                {
+                    "type": _observation_type(obs.get("type")),
+                    "title": str(obs.get("title", "")).strip(),
+                    "query_text": _optional_text(obs.get("query_text")),
+                    "summary": str(obs.get("summary", "")).strip(),
+                    "claims": [str(claim).strip() for claim in obs.get("claims", []) if str(claim).strip()],
+                    "related_concept_hints": [slugify(x) for x in obs.get("related_concept_hints", [])],
+                    "anchor_reference_ids": map_anchor_ids(obs.get("anchor_block_ids", []), limit=5),
+                }
+                for obs in note.get("observations", [])
+                if str(obs.get("title", "")).strip() or str(obs.get("summary", "")).strip()
             ],
             "categories": [
                 {
@@ -212,8 +236,8 @@ class SemanticNormalizer:
     def _normalize_concept(self, c: dict[str, Any], warnings: list[str]) -> NormalizedConcept:
         title = c.get("title") or "Untitled Concept"
         slug = slugify(c.get("slug_hint") or title)
-        aliases = unique_keep_order([str(a) for a in c.get("aliases", []) if a] + [title])
         anchor_refs = self._anchor_refs(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), warnings, limit=3)
+        aliases = unique_keep_order([str(a).strip() for a in c.get("aliases", []) if str(a).strip()] + [title])
         return NormalizedConcept(
             slug=slug,
             title=title,
@@ -267,3 +291,23 @@ class SemanticNormalizer:
         # For Korean aliases, substring is acceptable. For English, require substring
         # across case; this keeps the prototype simple.
         return contains_ci(text, needle)
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _observation_type(value: Any) -> str:
+    allowed = {
+        "source_claim",
+        "definition",
+        "comparison",
+        "example",
+        "qa_episode",
+        "follow_up",
+        "correction",
+        "decision",
+    }
+    text = str(value or "").strip()
+    return text if text in allowed else "source_claim"

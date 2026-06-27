@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -5,6 +7,8 @@ class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
     request_id: str | None = None
     log_callback_url: str | None = None
+    recent_conversation_summary: str | None = None
+    reference_context: dict[str, Any] | None = None
 
 
 class RelatedPageResponse(BaseModel):

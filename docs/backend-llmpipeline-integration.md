@@ -41,13 +41,40 @@ Frontend
 }
 ```
 
-질의 요청은 사용자 질문만 전달한다.
+질의 요청은 기본적으로 사용자 질문을 전달한다.
+멀티턴 질의 정확도를 높이려면 backend가 최근 대화 요약과 참조 맥락을 함께 전달한다.
 
 ```json
 {
   "question": "LLM Wiki가 뭐야?"
 }
 ```
+
+멀티턴 context를 포함하는 요청 예:
+
+```json
+{
+  "question": "그거는 일반 RAG랑 뭐가 달라?",
+  "recent_conversation_summary": "사용자는 LLM Wiki가 RAG와 어떻게 다른지, 채팅 원문을 Wiki source/concept 구조로 저장하는 방식과 함께 논의 중이다.",
+  "reference_context": {
+    "active_topic": {
+      "canonical": "LLM Wiki",
+      "aliases": ["Persistent Wiki", "지속적 Wiki"]
+    },
+    "recent_concepts": ["LLM Wiki", "RAG", "source page", "concept page"],
+    "referents": {
+      "그거": {
+        "canonical": "LLM Wiki",
+        "aliases": ["Persistent Wiki", "지속적 Wiki"]
+      }
+    }
+  }
+}
+```
+
+1차 연동에서는 프론트엔드가 이 구조를 직접 만들지 않는다.
+Spring backend가 저장된 `chat_messages`와 최근 질의 응답을 바탕으로 `recent_conversation_summary`, `reference_context`를 구성해 `llmPipeline`에 전달한다.
+프론트엔드는 기존처럼 `POST /api/query`를 호출하고, context 생성 책임은 backend에 둔다.
 
 ## 현재 응답 계약
 
@@ -78,6 +105,42 @@ Spring `POST /api/query`는 FastAPI `/query` 응답을 현재 API 계약에 맞�
 보류 이유는 `related_pages`가 탐색 결과 목록이고, `evidence_snippets`는 답변 근거 문장이라 데이터 성격이 다르기 때문이다.
 같은 테이블에 섞으면 nullable 컬럼이 늘고, 별도 테이블을 만들면 조회 구조가 바뀐다.
 현재 목표는 백엔드와 `llmPipeline` Query 연결 검증이므로 영속화 범위를 넓히지 않는다.
+
+## 멀티턴 Query 연동 검토 항목
+
+현재 `llmPipeline`의 `POST /query`는 아래 선택 필드를 받을 수 있다.
+
+| 필드 | 용도 | 생성 주체 |
+| --- | --- | --- |
+| `recent_conversation_summary` | 직전 대화 흐름 요약. 지시어와 생략된 주제를 해석할 때 사용 | Spring backend |
+| `reference_context` | 활성 주제, 최근 concept, 지시어 해소 후보를 담는 구조화 context | Spring backend |
+
+backend에서 추가로 검토할 부분:
+
+- `PipelineQueryRequester` 요청 DTO에 두 필드를 추가한다.
+- `QueryService`가 최근 `chat_messages`를 조회해 context를 만들지, 별도 memory/compiler 서비스를 둘지 결정한다.
+- context 생성 실패 시에는 기존처럼 `question`만 전달해도 동작해야 한다.
+- assistant 응답 저장 시 사용된 context를 별도 저장할지 결정한다. 디버깅과 재현성이 필요하면 최소 요약 문자열은 저장 대상 후보가 된다.
+- `reference_context`는 LLM 내부 판단을 돕는 입력이지, 프론트 표시용 계약으로 노출하지 않는다.
+
+frontend에서 추가로 검토할 부분:
+
+- 1차 구현에서는 변경이 없어도 된다.
+- UI가 명시적으로 선택한 page/concept를 질문 context로 넘겨야 하는 기능이 생기면, 그때 Spring `POST /api/query` 계약에 별도 필드를 추가한다.
+- 프론트가 `reference_context`를 직접 만들게 하면 UI가 LLM memory 구조를 알아야 하므로 1차 범위에서는 피한다.
+
+## Pipeline Run 평가 루프 검토 항목
+
+채팅 원문을 Wiki page로 만들 때는 `run_lab.py` 기준으로 evaluator/repair loop를 사용할 수 있다.
+다만 실제 backend 문서 처리 경로는 FastAPI `POST /pipeline/runs` 계약을 사용하므로, backend에서 이 기능을 켜려면 API 입력 필드와 기본값을 확인해야 한다.
+
+검토 대상:
+
+- `wiki_evaluation_loop`를 API 요청으로 받을지, pipeline 기본값으로 켤지 결정한다.
+- `max_eval_attempts` 기본값을 정한다. 실험에서는 재시도 비용과 품질 개선 폭을 함께 봐야 한다.
+- `json_mode=true`가 채팅 source/concept 생성 품질에 필요한지 확인한다.
+- evaluator prompt 경로를 외부 설정으로 열지, 고정 prompt를 사용할지 결정한다.
+- evaluation/repair 결과를 manifest 또는 debug artifact로 저장해 재현 가능하게 만든다.
 
 ## 로컬 실행
 

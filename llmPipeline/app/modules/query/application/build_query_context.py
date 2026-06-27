@@ -31,15 +31,17 @@ class BuildQueryContextUseCase:
         related_pages: list[RetrievedPage],
         graph_context: GraphContext,
         traversal_paths: list[TraversalPath],
+        original_question: str | None = None,
+        evidence_question: str | None = None,
     ) -> QueryContext:
-        evidence_snippets = self._build_evidence_snippets(question, related_pages)
+        evidence_snippets = self._build_evidence_snippets(evidence_question or question, related_pages)
         return QueryContext(
             question=question,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
             related_pages=related_pages,
             evidence_snippets=evidence_snippets,
-            answer_context=self._build_answer_context(question, related_pages, traversal_paths, evidence_snippets),
+            answer_context=self._build_answer_context(question, related_pages, traversal_paths, evidence_snippets, original_question),
         )
 
     def _build_answer_context(
@@ -48,12 +50,23 @@ class BuildQueryContextUseCase:
         related_pages: list[RetrievedPage],
         traversal_paths: list[TraversalPath],
         evidence_snippets: list[EvidenceSnippet],
+        original_question: str | None = None,
     ) -> str:
         pages_by_id = {item.page.id: item for item in related_pages}
         lines = [
             "# User Question",
-            question,
+            original_question or question,
             "",
+        ]
+        if original_question and original_question.strip() != question.strip():
+            lines.extend(
+                [
+                    "# Resolved Retrieval Question",
+                    question,
+                    "",
+                ]
+            )
+        lines.extend([
             "# Assistant Output Policy",
             "- Answer in Korean.",
             "- Write only the conversational answer body that should be shown to the user.",
@@ -70,7 +83,7 @@ class BuildQueryContextUseCase:
             "- Do not add information from outside the context.",
             "",
             "# Related Pages By Relevance",
-        ]
+        ])
         for item in related_pages[: self._max_related_pages]:
             lines.extend(
                 [
@@ -172,14 +185,15 @@ class BuildQueryContextUseCase:
 
         query_terms = set(self._tokens(question))
         scored: list[_EvidenceCandidate] = []
+        matched: list[_EvidenceCandidate] = []
         for paragraph_index, paragraph in enumerate(paragraphs):
-            for sentence in self._split_sentences(paragraph):
-                source_block_ids = self._source_block_ids(sentence)
+            for unit in self._split_evidence_units(paragraph):
+                source_block_ids = self._source_block_ids(unit)
                 if not source_block_ids:
                     continue
-                clean_sentence = self._remove_block_refs(sentence)
-                sentence_terms = set(self._tokens(sentence))
-                overlap = len(query_terms & sentence_terms)
+                clean_sentence = self._remove_block_refs(unit)
+                unit_terms = set(self._tokens(unit))
+                overlap = len(query_terms & unit_terms)
                 score = overlap * 2.0 + item.score
                 if item.role == "focus_concept":
                     score += 0.5
@@ -189,17 +203,55 @@ class BuildQueryContextUseCase:
                     score += 0.15
                 if overlap == 0:
                     score -= 0.75
-                scored.append(
-                    _EvidenceCandidate(
-                        source_document_id=source_document_id,
-                        source_block_ids=source_block_ids,
-                        text=clean_sentence,
-                        score=score,
-                    )
+                candidate = _EvidenceCandidate(
+                    source_document_id=source_document_id,
+                    source_block_ids=source_block_ids,
+                    text=clean_sentence,
+                    score=score,
                 )
+                scored.append(candidate)
+                if overlap > 0:
+                    matched.append(candidate)
 
+        if matched:
+            matched.sort(key=lambda value: -value.score)
+            return self._dedupe_evidence(matched)[: self._max_paragraphs_per_page]
         scored.sort(key=lambda value: -value.score)
-        return scored[: self._max_paragraphs_per_page]
+        return self._dedupe_evidence(scored)[: self._max_paragraphs_per_page]
+
+    def _split_evidence_units(self, paragraph: str) -> list[str]:
+        if self._section_heading(paragraph) == "core concepts":
+            return []
+        bullet_lines = [
+            self._clean_sentence(line)
+            for line in paragraph.splitlines()
+            if re.match(r"^\s*[-*]\s+", line) and self._source_block_ids(line)
+        ]
+        if bullet_lines:
+            return bullet_lines
+        return self._split_sentences(paragraph)
+
+    def _section_heading(self, paragraph: str) -> str | None:
+        for line in paragraph.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = re.match(r"^##\s+(.+?)\s*$", stripped)
+            if match:
+                return match.group(1).strip().lower()
+            return None
+        return None
+
+    def _dedupe_evidence(self, candidates: list[_EvidenceCandidate]) -> list[_EvidenceCandidate]:
+        deduped: list[_EvidenceCandidate] = []
+        seen: set[tuple[str, tuple[str, ...]]] = set()
+        for candidate in candidates:
+            key = (candidate.text, tuple(candidate.source_block_ids))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+        return deduped
 
     def _split_paragraphs(self, text: str | None) -> list[str]:
         if not text:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Protocol, Sequence
 
 from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock

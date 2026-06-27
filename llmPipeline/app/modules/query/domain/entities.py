@@ -38,6 +38,12 @@ class QueryRewrite:
 
 
 @dataclass(frozen=True)
+class ConversationContext:
+    recent_conversation_summary: str | None = None
+    reference_context: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class WebSearchResult:
     title: str
     url: str

@@ -2,7 +2,7 @@ import unittest
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
-from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import ConversationContext, GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
 from app.modules.query.domain.exceptions import InvalidQuestionError
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
 
@@ -402,6 +402,68 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertTrue(embedding_search.queries)
         self.assertTrue(all(query == "self attention token" for query in embedding_search.queries))
 
+    def test_uses_conversation_context_to_resolve_follow_up_question_for_retrieval(self) -> None:
+        pages = [
+            source_page("source:wiki", "LLM Wiki Source"),
+            concept_page("concept:persistent-wiki", "Persistent Wiki"),
+        ]
+        embedding_search = RecordingScoreSearch(
+            {
+                "LLM Wiki Source": 0.95,
+                "Persistent Wiki": 0.94,
+            }
+        )
+        answer_generator = RecordingAnswerGenerator()
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(
+                pages,
+                [
+                    WikiPageLink(
+                        from_page_id="source:wiki",
+                        to_page_id="concept:persistent-wiki",
+                        link_type="source_mentions_concept",
+                        confidence=0.95,
+                    )
+                ],
+            ),
+            embedding_search=embedding_search,
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "Persistent Wiki는 기존 RAG 시스템과 달리 지식을 지속적으로 축적합니다. [B0001]"
+                    ),
+                    "s3://test/concept:persistent-wiki.md": (
+                        "---\ntype: concept\nsources: doc_wiki\n---\n\n"
+                        "Persistent Wiki는 누적되는 위키 구조입니다. [B0002]"
+                    ),
+                }
+            ),
+        )
+
+        result = use_case.execute(
+            "그거랑 RAG 차이는?",
+            conversation_context=ConversationContext(
+                recent_conversation_summary="사용자는 Persistent Wiki와 RAG의 차이를 이어서 묻고 있다.",
+                reference_context={
+                    "active_topic": {"canonical": "Persistent Wiki", "aliases": ["지속적 위키"]},
+                    "recent_concepts": ["Persistent Wiki", "RAG"],
+                    "referents": {"그거": {"canonical": "Persistent Wiki", "aliases": ["지속적 위키"]}},
+                },
+            ),
+        )
+
+        self.assertTrue(embedding_search.queries)
+        self.assertTrue(any("persistent" in query.lower() and "rag" in query.lower() for query in embedding_search.queries))
+        self.assertTrue(any("지속적 위키" in query for query in embedding_search.queries))
+        self.assertIn("concept:persistent-wiki", {item.page.id for item in result.related_pages})
+        self.assertIsNotNone(answer_generator.last_context)
+        self.assertIn("# User Question\n그거랑 RAG 차이는?", answer_generator.last_context.answer_context)
+        self.assertIn("# Resolved Retrieval Question", answer_generator.last_context.answer_context)
+        self.assertIn("Persistent Wiki", answer_generator.last_context.answer_context)
+
     def test_falls_back_to_web_search_when_internal_relevance_is_low(self) -> None:
         pages = [source_page("source:seed", "Seed Source")]
         web_search = FakeWebSearch(
@@ -508,6 +570,87 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0005"])
         self.assertEqual(result.evidence_snippets[0].text, "원본에 연결된 근거 문장입니다.")
         self.assertNotIn("citation이 없어서", answer_generator.last_context.answer_context)
+
+    def test_evidence_prefers_matching_key_point_bullet_over_entire_section(self) -> None:
+        pages = [source_page("source:wiki", "LLM Wiki Source")]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"LLM Wiki Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "## Key Points\n"
+                        "- 기존 RAG 시스템과의 차이점: 지속적 축적 vs 일회성 검색 [B0001]\n"
+                        "- 3계층 아키텍처: 원시 문서, 위키, 스키마 [B0002]\n"
+                        "- Obsidian Web Clipper는 웹 기사를 마크다운으로 변환하는 브라우저 확장입니다. [B0003]\n"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.execute("Obsidian Web Clipper 역할")
+
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0003"])
+        self.assertIn("Obsidian Web Clipper", result.evidence_snippets[0].text)
+        self.assertNotIn("기존 RAG", result.evidence_snippets[0].text)
+        self.assertNotIn("3계층", result.evidence_snippets[0].text)
+
+    def test_evidence_excludes_core_concept_link_section(self) -> None:
+        pages = [source_page("source:wiki", "LLM Wiki Source")]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"LLM Wiki Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "## Core Concepts\n"
+                        "- [[persistent-wiki|Persistent Wiki]] [B0001]\n\n"
+                        "## Key Points\n"
+                        "- Persistent Wiki는 기존 RAG 시스템과 달리 지식을 지속적으로 축적합니다. [B0002]\n"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.execute("Persistent Wiki RAG 차이")
+
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002"])
+        self.assertIn("지속적으로 축적", result.evidence_snippets[0].text)
+        self.assertNotIn("[[persistent-wiki", result.evidence_snippets[0].text)
+
+    def test_evidence_can_use_observation_episode_before_concept_link(self) -> None:
+        pages = [source_page("source:wiki", "LLM Wiki Source")]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"LLM Wiki Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "## Core Concepts\n"
+                        "- [[llm-wiki|LLM Wiki]] [B0001]\n\n"
+                        "## Observations\n"
+                        "- O001 (qa_episode) LLM Wiki와 RAG 차이 질문 / query: LLM Wiki는 RAG랑 뭐가 달라? / "
+                        "summary: LLM Wiki는 대화에서 얻은 지식을 위키 페이지로 누적하고, RAG는 질문 시점에 문서를 검색해 답한다. [B0002, B0003]\n"
+                    )
+                }
+            ),
+        )
+
+        result = use_case.execute("LLM Wiki랑 RAG 차이는?")
+
+        self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002", "B0003"])
+        self.assertIn("qa_episode", result.evidence_snippets[0].text)
+        self.assertIn("RAG", result.evidence_snippets[0].text)
+        self.assertNotIn("[[llm-wiki", result.evidence_snippets[0].text)
 
     def test_source_structure_sections_boost_source_retrieval(self) -> None:
         pages = [

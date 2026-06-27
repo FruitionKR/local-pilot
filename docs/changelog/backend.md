@@ -6,6 +6,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-06-26
 
+### feat: 채팅 Wiki observation 생성과 평가 보정 루프 추가
+
+**배경**
+
+긴 채팅 원문을 source page로 변환할 때 멀티턴 지시어, chunk 경계, 중복 QA episode 때문에 검색용 source 구조가 깨질 수 있었습니다.
+
+**추가/변경된 것**
+
+- `semantic_extraction`에 `observations` 구조를 추가해 `qa_episode`, `follow_up`, `definition`, `comparison` 같은 검색 단위를 source page에 저장하도록 변경했습니다.
+- query API에 `recent_conversation_summary`와 `reference_context`를 받아 멀티턴 질문의 검색 질의를 보강하도록 추가했습니다.
+- source evidence 선택 시 `Core Concepts` 링크 섹션을 제외하고, bullet 단위 evidence와 observation을 우선 활용하도록 보정했습니다.
+- wiki generation evaluator loop를 추가하고, `observation_missing_ref`, `broken_observation`, `duplicate_observation`을 감지해 명확한 observation 문제는 deterministic repair 후 재평가하도록 했습니다.
+- `LLM_PROMPT_LOG_DIR` 환경변수 기반 LLM 요청/응답 로그 저장 옵션을 추가했습니다.
+
+**검증**
+
+- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query` 통과.
+- `test_source_extraction_artifact` 직접 호출 검증 통과.
+- 관련 `llmPipeline` Python 파일 `py_compile` 통과.
+- 실험 run `/Users/jaehyeong/chat-wiki-source-lab/runs/chat-source-multiturn-context-repair-agent`에서 observation repair 후 evaluator `passed=true`, `overall=0.95` 확인.
+
 ### fix: query citation 번호를 실제 사용 근거 기준으로 재정렬
 
 **배경**

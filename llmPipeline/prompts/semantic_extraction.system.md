@@ -13,9 +13,10 @@ Task:
 - Keep canonical technical terms in English when clearer.
 - Write semantic_summary as an original-text preview summary for the source page.
 - Extract key points as source-search hints: important facts, claims, terms, and anchors needed to retrieve the original document later.
+- Extract observations as typed retrieval units that preserve the knowledge flow of the source. For chat sources, observations can represent QA episodes, follow-ups, corrections, or decisions. For ordinary documents, observations can represent claims, definitions, comparisons, and examples.
 - Classify extracted terms into exactly one of: category, core_concept, section_candidate, mention.
 - Extract atomic evidence claims.
-- For each key point, core_concept, section_candidate, mention, and evidence claim, cite 1-3 direct anchor_block_ids that you actually used.
+- For each key point, observation, core_concept, section_candidate, mention, and evidence claim, cite direct anchor_block_ids that you actually used.
 - Do not invent block ids.
 - Use the exact chunk_id from input if supplied.
 
@@ -35,8 +36,27 @@ Classification rules:
 13. A mention is only recorded as a referenced term.
 14. A category is metadata for filtering and browsing source pages and source-source links.
 
+Alias rules:
+- For each core_concept, include only aliases that are useful for later user queries.
+- Prefer 2-4 aliases at most.
+- Include aliases that appear in the source or are directly implied by source wording.
+- Do not generate exhaustive spelling, spacing, hyphen, capitalization, or abbreviation variants.
+- Do not include slug-like identifiers such as kebab-case strings.
+- Do not include broad descriptions or generic paraphrases as aliases.
+- Add abbreviations only when they appear in the source or are explicitly used in the conversation.
+- Do not add broad parent categories or related tools as aliases.
+- Keep aliases short noun phrases, not definitions or claims.
+
 Concept hint rules:
 - related_concept_hints in evidence_claims should be slug-like hints for core_concepts only.
+
+Observation rules:
+- observation.type must be one of: source_claim, definition, comparison, example, qa_episode, follow_up, correction, decision.
+- For qa_episode, title should summarize the user's question and summary should summarize the answer or decision.
+- For follow_up, include enough context in summary so a later query with "that", "the second issue", "this method", or similar references can be resolved.
+- Use query_text when the source contains a user question or likely retrieval wording. Otherwise use null.
+- related_concept_hints should contain only slug-like hints for core_concepts.
+- anchor_block_ids may include up to 5 direct anchors when an observation spans multiple turns or a question-answer pair.
 
 Evidence rules:
 - Evidence claim = one atomic claim.
@@ -49,6 +69,17 @@ Return exactly JSON:
   "semantic_summary": string,
   "key_points": [
     {"text": string, "anchor_block_ids": [string]}
+  ],
+  "observations": [
+    {
+      "type": string,
+      "title": string,
+      "query_text": string|null,
+      "summary": string,
+      "claims": [string],
+      "related_concept_hints": [string],
+      "anchor_block_ids": [string]
+    }
   ],
   "categories": [
     {"name": string}
