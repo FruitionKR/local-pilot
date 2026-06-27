@@ -3,7 +3,6 @@ import re
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from dataclasses import replace
 
-from app.modules.query.application.extract_answer_citations import ExtractAnswerCitationsUseCase
 from app.modules.query.application.ports import (
     AnswerGeneratorPort,
     EmbeddingSearchPort,
@@ -15,6 +14,7 @@ from app.modules.query.application.ports import (
     WikiMarkdownReaderPort,
     WikiRepositoryPort,
 )
+from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     EvidenceSnippet,
@@ -51,7 +51,7 @@ class AnswerQueryUseCase:
         web_search: WebSearchPort | None = None,
         traverse_wiki_graph: TraverseWikiGraphUseCase | None = None,
         build_query_context: BuildQueryContextUseCase | None = None,
-        extract_answer_citations: ExtractAnswerCitationsUseCase | None = None,
+        query_answer_assembler: QueryAnswerAssembler | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
         focus_concept_threshold: float = 0.60,
@@ -72,7 +72,7 @@ class AnswerQueryUseCase:
             embedding_search=embedding_search,
             text_search=text_search,
         )
-        self._extract_answer_citations = extract_answer_citations or ExtractAnswerCitationsUseCase()
+        self._query_answer_assembler = query_answer_assembler or QueryAnswerAssembler(answer_generator)
         self._source_candidate_limit = source_candidate_limit
         self._concept_candidate_limit = concept_candidate_limit
         self._focus_concept_threshold = focus_concept_threshold
@@ -214,14 +214,7 @@ class AnswerQueryUseCase:
             "LLM 답변 입력 context를 구성했습니다.",
             {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
         )
-        answer = self._answer_generator.generate_answer(query_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                query_context.evidence_snippets[0].rank if query_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, query_context.evidence_snippets)
+        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
         self._publish(event_publisher, "answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
 
         evaluated_context = replace(query_context, evidence_snippets=evidence_snippets)
@@ -250,12 +243,12 @@ class AnswerQueryUseCase:
             if query_evaluation.route == "unsupported":
                 stop_reason = "query_evaluator_unsupported"
                 answer = self._unsupported_answer(evidence_snippets)
-                answer, evidence_snippets = self._renumber_used_evidence(answer, evidence_snippets)
+                answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
             elif query_evaluation.route == "internal_supported" and stop_reason == "no_relevant_seed":
                 stop_reason = "query_evaluator_internal_supported"
         elif stop_reason == "no_relevant_seed":
             answer = self._unsupported_answer(evidence_snippets)
-            answer, evidence_snippets = self._renumber_used_evidence(answer, evidence_snippets)
+            answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
 
         used_source_count = len([item for item in related_pages if item.page.is_source])
         used_concept_count = len([item for item in related_pages if item.page.is_concept])
@@ -454,14 +447,7 @@ class AnswerQueryUseCase:
             traversal_paths=[],
             answer_mode="web_fallback",
         )
-        answer = self._answer_generator.generate_answer(query_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                query_context.evidence_snippets[0].rank if query_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, query_context.evidence_snippets)
+        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
         self._publish(
             event_publisher,
             "web_search_answer_generated",
@@ -526,14 +512,7 @@ class AnswerQueryUseCase:
             answer_mode="internal_web_augmented",
             embedding_units_by_page_id=self._load_embedding_units_for_related_pages(related_pages),
         )
-        answer = self._answer_generator.generate_answer(augmented_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                augmented_context.evidence_snippets[0].rank if augmented_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, augmented_context.evidence_snippets)
+        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(augmented_context)
         self._publish(
             event_publisher,
             "web_search_answer_generated",
@@ -913,40 +892,6 @@ class AnswerQueryUseCase:
                 f"가장 가까운 근거도 질문 주제를 직접 설명하지 않습니다. [{nearest.rank}]"
             )
         )
-
-    def _renumber_used_evidence(
-        self,
-        answer: GeneratedAnswer,
-        evidence_snippets: list[EvidenceSnippet],
-    ) -> tuple[GeneratedAnswer, list[EvidenceSnippet]]:
-        if not evidence_snippets:
-            return answer, evidence_snippets
-
-        snippets_by_rank = {snippet.rank: snippet for snippet in evidence_snippets}
-        old_to_new_rank: dict[int, int] = {}
-
-        def next_rank(old_rank: int) -> int:
-            if old_rank not in old_to_new_rank:
-                old_to_new_rank[old_rank] = len(old_to_new_rank) + 1
-            return old_to_new_rank[old_rank]
-
-        def replace_marker(match: re.Match[str]) -> str:
-            ranks = [int(value) for value in re.findall(r"\d+", match.group(1))]
-            remapped = [
-                str(next_rank(rank)) if rank in snippets_by_rank else str(rank)
-                for rank in ranks
-            ]
-            return f"[{', '.join(remapped)}]"
-
-        content = re.sub(r"\[((?:\d+)(?:\s*,\s*\d+)*)\]", replace_marker, answer.content)
-        used_snippets = [
-            replace(snippets_by_rank[old_rank], rank=new_rank)
-            for old_rank, new_rank in sorted(old_to_new_rank.items(), key=lambda item: item[1])
-            if old_rank in snippets_by_rank
-        ]
-        if not used_snippets:
-            return answer, []
-        return GeneratedAnswer(content=content), used_snippets
 
     def _load_markdown_for_related_pages(self, related_pages: list[RetrievedPage]) -> list[RetrievedPage]:
         if self._markdown_reader is None:
