@@ -17,7 +17,6 @@ from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
     GeneratedConceptPageAssembler,
     LinkBuilder,
-    ReviewReport,
     SourcePageAssembler,
 )
 from app.modules.wiki_generation.infrastructure.extract import MarkdownBlockExtractor
@@ -567,7 +566,9 @@ def _unique(values: list[str]) -> list[str]:
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
-    input_path = Path(args.input)
+    input_text = getattr(args, "input_markdown", None)
+    input_source_name = getattr(args, "input_name", None) or getattr(args, "input", None) or "inline.md"
+    input_path = Path(args.input) if getattr(args, "input", None) else Path(input_source_name)
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
@@ -581,7 +582,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "시작",
         "파이프라인 실행을 시작했습니다.",
         {
-            "입력": input_path,
+            "입력": input_source_name if input_text is not None else input_path,
             "출력 폴더": out,
             "실행 모드": args.mode,
             "Source Page 모드": source_page_mode(args),
@@ -629,7 +630,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
 
     # 1. Extract blocks. Normalized refs use short B-ids; source_reference_id stays on SourceBlock for DB/export use.
     extractor = MarkdownBlockExtractor()
-    document, blocks = extractor.extract(input_path)
+    if input_text is not None:
+        document, blocks = extractor.extract_text(input_text, source_path=input_source_name, fallback_title=Path(input_source_name).stem)
+    else:
+        document, blocks = extractor.extract(input_path)
     source_document_id = getattr(args, "source_document_id", None)
     if source_document_id:
         document.document_id = source_document_id
@@ -638,18 +642,14 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     if args.save_debug_json:
         write_json(out / "document.json", asdict(document))
         write_json(out / "block_map.json", {b.block_id: b.source_reference_id for b in blocks})
-    source_blocks_path = out / "source_blocks.json"
-    write_json(
-        source_blocks_path,
-        [
-            {
-                "document_id": block.document_id,
-                "block_id": block.block_id,
-                "text": block.text,
-            }
-            for block in blocks
-        ],
-    )
+    source_blocks = [
+        {
+            "document_id": block.document_id,
+            "block_id": block.block_id,
+            "text": block.text,
+        }
+        for block in blocks
+    ]
     log.emit(
         "1. 블록 추출",
         "Markdown 원문을 블록 객체로 변환했고, 이 블록 목록을 다음 단계 입력으로 전달합니다.",
@@ -798,9 +798,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             "링크 판단 수": sum(1 for item in resolutions if item.get("link_targets")),
         },
     )
-    write_json(out / "normalized.json", normalized)
-    if generation_evaluations:
-        write_json(out / "wiki_generation_evaluations.json", generation_evaluations)
+    if args.save_debug_json:
+        write_json(out / "normalized.json", normalized)
+        if generation_evaluations:
+            write_json(out / "wiki_generation_evaluations.json", generation_evaluations)
 
     # 4b. Collect source blocks for concept page generation.
     concept_source_blocks_by_slug = {}
@@ -839,10 +840,16 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         try:
             raw_source_polish = section_polisher.polish(source_payload, blocks)
         except SectionPolishParseError as exc:
-            ensure_dir(invalid_polish_dir)
-            write_text(invalid_polish_dir / "source_page.txt", exc.raw_content)
+            invalid_path = invalid_polish_dir / "source_page.txt"
+            if args.save_debug_json:
+                ensure_dir(invalid_polish_dir)
+                write_text(invalid_path, exc.raw_content)
             normalized.setdefault("warnings", []).append("source_page: section polish output was not repairable; used backend skeleton")
-            log.emit("5-보조. Source Section Polish", "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.", {"invalid_raw": invalid_polish_dir / "source_page.txt"})
+            log.emit(
+                "5-보조. Source Section Polish",
+                "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.",
+                {"invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
+            )
         else:
             if raw_polish_dir is not None:
                 write_json(raw_polish_dir / "source_page.json", raw_source_polish)
@@ -861,12 +868,12 @@ def run_pipeline(args: argparse.Namespace) -> dict:
                 "Source page의 summary/key points 섹션만 LLM으로 다듬었습니다.",
                 {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
             )
-    source_page = SourcePageAssembler().assemble(normalized, out, polish=source_polish)
+    source_page = SourcePageAssembler().build(normalized, polish=source_polish)
     source_artifact = normalized.get("source_extraction_artifact")
     log.emit(
         "5. Source Page 생성",
-        "백엔드 조립 방식으로 source page markdown과 source extraction JSON을 생성했습니다.",
-        {"파일": source_page, "source_json": source_artifact, "mode": sp_mode},
+        "백엔드 조립 방식으로 source page markdown 데이터를 생성했습니다.",
+        {"source_page": source_page.get("markdown_path"), "source_json": bool(source_artifact), "mode": sp_mode},
     )
     generated_concept_pages = []
     concept_polish_by_slug: dict[str, Any] = {}
@@ -901,14 +908,15 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             try:
                 raw_polish = section_polisher.polish(payload, source_blocks)
             except SectionPolishParseError as exc:
-                ensure_dir(invalid_polish_dir)
                 invalid_path = invalid_polish_dir / f"concept_{concept['slug']}.txt"
-                write_text(invalid_path, exc.raw_content)
+                if args.save_debug_json:
+                    ensure_dir(invalid_polish_dir)
+                    write_text(invalid_path, exc.raw_content)
                 normalized.setdefault("warnings", []).append(f"concept:{concept['slug']}: section polish output was not repairable; used backend skeleton")
                 log.emit(
                     "6-보조. Concept Section Polish",
                     "Concept section polish가 복구 불가능해 해당 concept은 backend skeleton으로 대체했습니다.",
-                    {"개념": concept["slug"], "invalid_raw": invalid_path},
+                    {"개념": concept["slug"], "invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
                 )
                 continue
             else:
@@ -933,14 +941,13 @@ def run_pipeline(args: argparse.Namespace) -> dict:
                     "Concept page의 definition/key points/related hint 섹션만 LLM으로 다듬었습니다.",
                     {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": mapped.get("confidence")},
                 )
-        concept_pages = ConceptPageAssembler().assemble_top(
+        concept_pages = ConceptPageAssembler().build_top(
             normalized,
-            out,
             top_n=None,
             polish_by_slug=concept_polish_by_slug,
             source_key_points=source_key_points_for_concepts,
         )
-        log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page를 생성했습니다.", {"파일 수": len(concept_pages)})
+        log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
     elif cp_mode in {"api", "full-llm"}:
         assert api_client is not None
         concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt)
@@ -962,27 +969,24 @@ def run_pipeline(args: argparse.Namespace) -> dict:
                 "LLM concept page 출력을 backend 형식으로 정규화했습니다.",
                 {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": generated_page.get("confidence")},
             )
-        concept_pages = generator_assembler.assemble_pages(generated_concept_pages, out)
+        concept_pages = generator_assembler.build_pages(generated_concept_pages)
     else:
-        concept_pages = ConceptPageAssembler().assemble_top(
+        concept_pages = ConceptPageAssembler().build_top(
             normalized,
-            out,
             top_n=None,
             source_key_points=source_key_points_for_concepts,
         )
-        log.emit("6. Concept Page 생성", "Backend skeleton 방식으로 concept page를 생성했습니다.", {"파일 수": len(concept_pages)})
+        log.emit("6. Concept Page 생성", "Backend skeleton 방식으로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
 
     links = LinkBuilder().build(normalized, generated_concept_pages=generated_concept_pages)
-    write_json(out / "wiki" / "links.json", links)
-    report = ReviewReport().write(normalized, out, generated_concept_pages=generated_concept_pages)
     log.emit(
-        "7. 링크/리뷰 생성",
-        "위키 링크와 리뷰 리포트를 생성했습니다.",
-        {"링크 수": len(links), "리뷰 리포트": report},
+        "7. 링크 생성",
+        "위키 링크 데이터를 생성했습니다.",
+        {"링크 수": len(links)},
     )
 
     manifest = {
-        "input": str(input_path),
+        "input": input_source_name if input_text is not None else str(input_path),
         "out": str(out),
         "mode": args.mode,
         "source_page_mode": sp_mode,
@@ -1007,16 +1011,16 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "wiki_generation_final_evaluation": generation_evaluations[-1] if generation_evaluations else None,
         "source_page": source_page,
         "source_extraction_artifact": normalized.get("source_extraction_artifact"),
-        "source_blocks": str(source_blocks_path),
+        "source_blocks": source_blocks,
         "concept_pages": concept_pages,
-        "links": str(out / "wiki" / "links.json"),
-        "review_report": report,
+        "links": links,
+        "normalized": normalized,
+        "wiki_generation_evaluations": generation_evaluations,
         "pipeline_log": str(log.path),
         "log_callback_url": getattr(args, "log_callback_url", None),
         "save_debug_json": args.save_debug_json,
         "warnings": normalized.get("warnings", []),
     }
-    write_json(out / "manifest.json", manifest)
     log.emit(
         "완료",
         "파이프라인 실행이 완료되었습니다.",
@@ -1027,7 +1031,6 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             "mention 수": len(normalized.get("mentions", [])),
             "category 수": len(normalized.get("categories", [])),
             "근거 수": len(normalized["evidence_units"]),
-            "manifest": out / "manifest.json",
         },
     )
     return manifest

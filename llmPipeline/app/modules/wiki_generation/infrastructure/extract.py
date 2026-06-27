@@ -24,13 +24,21 @@ class MarkdownBlockExtractor:
     def extract(self, path: str | Path) -> tuple[SourceDocument, list[SourceBlock]]:
         path = Path(path)
         text = path.read_text(encoding="utf-8")
+        return self.extract_text(text, source_path=str(path), fallback_title=path.stem)
+
+    def extract_text(
+        self,
+        text: str,
+        source_path: str,
+        fallback_title: str | None = None,
+    ) -> tuple[SourceDocument, list[SourceBlock]]:
         doc_hash = sha1_short(text)
         document_id = f"doc_{doc_hash}"
-        title = _guess_title(text, path.stem)
+        title = _guess_title(text, fallback_title or Path(source_path).stem)
         doc = SourceDocument(
             document_id=document_id,
             title=title,
-            source_path=str(path),
+            source_path=source_path,
             content_sha1=sha1_short(text, 40),
         )
         raw_blocks = self._split_blocks(text)

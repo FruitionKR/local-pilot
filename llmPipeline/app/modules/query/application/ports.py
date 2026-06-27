@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryRewrite, WebSearchResult, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
 
 
 class WikiRepositoryPort(Protocol):
@@ -8,6 +8,9 @@ class WikiRepositoryPort(Protocol):
         ...
 
     def list_active_links(self) -> list[WikiPageLink]:
+        ...
+
+    def list_embedding_units_by_page_ids(self, page_ids: list[str]) -> dict[str, list[WikiEmbeddingUnit]]:
         ...
 
 
@@ -41,7 +44,18 @@ class AnswerGeneratorPort(Protocol):
         ...
 
 
+class QueryEvaluatorPort(Protocol):
+    def evaluate(
+        self,
+        question: str,
+        context: QueryContext,
+        answer: GeneratedAnswer,
+        stop_reason: str,
+        web_search_available: bool = False,
+    ) -> QueryEvaluation:
+        ...
+
+
 class QueryEventPublisherPort(Protocol):
     def publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
         ...
-

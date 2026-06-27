@@ -46,17 +46,24 @@ def strip_json_fence(content: str) -> str:
 
 def parse_json_object(content: str) -> JsonDict:
     cleaned = strip_json_fence(content)
-    try:
-        value = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise JsonParseError(f"Model output is not JSON: {content[:500]}")
-        value = json.loads(cleaned[start : end + 1])
-    if not isinstance(value, dict):
-        raise JsonParseError("Model output must be a JSON object")
-    return value
+    candidates = [cleaned]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(cleaned[start : end + 1])
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        for repaired in _json_repair_candidates(candidate):
+            try:
+                value = json.loads(repaired)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if not isinstance(value, dict):
+                raise JsonParseError("Model output must be a JSON object")
+            return value
+    raise JsonParseError(f"Model output is not repairable JSON: {last_error}")
 
 
 def parse_section_polish_object(content: str) -> JsonDict:
@@ -90,7 +97,23 @@ def _section_polish_repair_candidates(text: str) -> list[str]:
     out.append(current)
     current = current.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
     out.append(current)
+    out.append(_escape_invalid_json_backslashes(current))
     return out
+
+
+def _json_repair_candidates(text: str) -> list[str]:
+    current = text.strip()
+    candidates = [current]
+    current = re.sub(r",\s*([}\]])", r"\1", current)
+    candidates.append(current)
+    current = current.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    candidates.append(current)
+    candidates.append(_escape_invalid_json_backslashes(current))
+    return list(dict.fromkeys(candidates))
+
+
+def _escape_invalid_json_backslashes(text: str) -> str:
+    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def _normalize_section_polish_schema(value: JsonDict) -> JsonDict:
