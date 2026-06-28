@@ -18,7 +18,6 @@ from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import Bge
 from app.modules.wiki_embedding.infrastructure.minio_markdown_reader import MinioMarkdownReader
 from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import PostgresWikiPageEmbeddingRepository
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
-from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from run_lab import run_pipeline
 
@@ -37,6 +36,7 @@ class PipelineRunIn(BaseModel):
     document_id: str | None = None
     input_markdown: str | None = None
     input_path: str | None = None
+    input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
     provider: Literal["upstage", "generic"] = "upstage"
@@ -61,7 +61,10 @@ class PipelineRunIn(BaseModel):
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
     concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
     section_polish_system_prompt: str = "prompts/section_polish.system.md"
+    wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     existing_wiki_dir: str | None = None
+    wiki_evaluation_loop: bool = False
+    max_eval_attempts: int = 2
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
     wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
@@ -82,11 +85,22 @@ class PipelineRunOut(BaseModel):
     log_path: str
 
 
-def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, out: Path, log_path: Path) -> argparse.Namespace:
+def _build_pipeline_args(
+    payload: PipelineRunIn,
+    run_id: str,
+    input_path: Path | None,
+    input_markdown: str | None,
+    input_name: str,
+    out: Path,
+    log_path: Path,
+    source_document_id: str | None,
+) -> argparse.Namespace:
     return argparse.Namespace(
         run_id=run_id,
-        source_document_id=payload.document_id,
-        input=str(input_path),
+        source_document_id=source_document_id,
+        input=str(input_path) if input_path else input_name,
+        input_markdown=input_markdown,
+        input_name=input_name,
         out=str(out),
         mode=payload.mode,
         provider=payload.provider,
@@ -108,7 +122,10 @@ def _build_pipeline_args(payload: PipelineRunIn, run_id: str, input_path: Path, 
         concept_system_prompt=payload.concept_system_prompt,
         concept_resolution_system_prompt=payload.concept_resolution_system_prompt,
         section_polish_system_prompt=payload.section_polish_system_prompt,
+        wiki_evaluator_system_prompt=payload.wiki_evaluator_system_prompt,
         existing_wiki_dir=payload.existing_wiki_dir,
+        wiki_evaluation_loop=payload.wiki_evaluation_loop,
+        max_eval_attempts=payload.max_eval_attempts,
         save_debug_json=payload.save_debug_json,
         log_path=str(log_path),
         log_callback_url=payload.log_callback_url,
@@ -175,7 +192,7 @@ def get_document(document_id: str) -> dict:
     return document
 
 
-def _materialize_document_input(document: dict, run_id: str) -> tuple[Path, str]:
+def _load_document_markdown(document: dict) -> tuple[str, str, str]:
     source_uri = document.get("source_uri")
     extracted_text_uri = document.get("extracted_text_uri")
     mime_type = (document.get("mime_type") or "").lower()
@@ -198,10 +215,7 @@ def _materialize_document_input(document: dict, run_id: str) -> tuple[Path, str]
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to read document object from storage: {exc}") from exc
 
-    input_dir = ensure_dir(Path("runs") / "_api_inputs" / run_id)
-    input_path = input_dir / f"{_safe_name(document['id'])}.md"
-    write_text(input_path, markdown)
-    return input_path, object_uri
+    return markdown, object_uri, str(document.get("filename") or f"{_safe_name(document['id'])}.md")
 
 
 @app.post("/pipeline/runs", response_model=PipelineRunOut)
@@ -211,6 +225,9 @@ def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTa
     log_path = out / "pipeline.log"
     input_source = ""
     document_id = payload.document_id
+    input_path: Path | None = None
+    input_markdown: str | None = None
+    input_name = payload.input_name or "inline.md"
 
     if payload.document_id:
         try:
@@ -219,25 +236,41 @@ def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTa
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
-        input_path, object_uri = _materialize_document_input(document, run_id)
+        input_markdown, object_uri, input_name = _load_document_markdown(document)
         input_source = f"storage:{object_uri}"
     elif payload.input_markdown:
-        input_dir = ensure_dir(Path("runs") / "_api_inputs" / run_id)
-        input_path = input_dir / "inline.md"
-        write_text(input_path, payload.input_markdown)
-        input_source = "inline"
+        input_markdown = payload.input_markdown
+        document_id = f"api-inline-{run_id}"
+        input_name = payload.input_name or "inline.md"
+        input_source = f"inline:{input_name}"
+        database.create_pipeline_input_document(
+            document_id=document_id,
+            filename=input_name,
+            mime_type="text/markdown",
+            byte_size=len(payload.input_markdown.encode("utf-8")),
+            source_uri=input_source,
+        )
     else:
         input_path = Path(payload.input_path or "")
         if not input_path.exists():
             raise HTTPException(status_code=404, detail=f"Input file not found: {input_path}")
+        document_id = f"api-file-{run_id}"
+        input_name = payload.input_name or input_path.name
         input_source = str(input_path)
+        database.create_pipeline_input_document(
+            document_id=document_id,
+            filename=input_name,
+            mime_type="text/markdown",
+            byte_size=input_path.stat().st_size,
+            source_uri=input_source,
+        )
 
     try:
         database.create_pipeline_run(run_id, document_id, input_source, str(out), payload.mode)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    args = _build_pipeline_args(payload, run_id, input_path, out, log_path)
+    args = _build_pipeline_args(payload, run_id, input_path, input_markdown, input_name, out, log_path, document_id)
 
     if not payload.wait:
         background_tasks.add_task(_execute_pipeline_run, run_id, args)

@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-28
+
+### chore: pipeline query 보강 설정 추가
+
+**배경**
+
+Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pipeline API에서 환경변수로 제어할 수 있어야 했습니다.
+
+**변경된 것**
+
+- `infra/docker-compose.pipeline.yml` — `QUERY_EVALUATOR_MODE`, `QUERY_WEB_SEARCH_MODE`, `QUERY_WEB_SEARCH_MAX_RESULTS`, `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`, `QUERY_MIN_INTERNAL_RELEVANCE_SCORE` 환경변수 추가
+- `infra/docker-compose.pipeline.yml` — `TAVILY_API_KEY`를 외부 환경변수로 주입할 수 있게 추가
+
+**검증**
+
+- `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests -q`
+
+---
+
 ## 2026-06-26
 
 ### chore: 로컬 bootstrap 스크립트 추가
