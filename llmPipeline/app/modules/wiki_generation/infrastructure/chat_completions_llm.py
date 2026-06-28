@@ -5,6 +5,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Sequence
@@ -22,6 +23,7 @@ from app.modules.wiki_generation.infrastructure.prompt_io import (
     render_section_polish_user_prompt,
     render_semantic_user_prompt,
 )
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 JsonDict = Dict[str, Any]
 
@@ -244,30 +246,51 @@ class ChatCompletionsJsonClient:
 
 
 class GenericChatCompletionsExtractor:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def extract(self, packet: SemanticPacket) -> JsonDict:
-        return self.client.complete_json(self.system_prompt, render_semantic_user_prompt(packet))
+        return self.client.complete_json(
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("ingest")),
+            render_semantic_user_prompt(packet),
+        )
 
 
 class GenericChatCompletionsConceptPageGenerator:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def generate(self, concept: JsonDict, evidence_units: list[JsonDict], source_blocks: Sequence[SourceBlock]) -> JsonDict:
         return self.client.complete_json(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_page_user_prompt(concept, evidence_units, source_blocks),
         )
 
 
 class GenericChatCompletionsConceptResolver:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def resolve(
         self,
@@ -276,22 +299,34 @@ class GenericChatCompletionsConceptResolver:
         missing_related_hints: list[JsonDict] | None = None,
     ) -> JsonDict:
         return self.client.complete_json(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_resolution_user_prompt(incoming_concepts, existing_concepts, missing_related_hints),
         )
 
 
 class GenericChatCompletionsSectionPolisher:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
         content = self.client.complete_text(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
             render_section_polish_user_prompt(payload, source_blocks),
         )
         return parse_section_polish_object(content)
+
+
+def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
+    if not schema_prompt.strip():
+        return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 # Backwards-compatible aliases.
