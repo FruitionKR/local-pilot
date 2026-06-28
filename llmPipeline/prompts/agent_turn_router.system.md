@@ -14,7 +14,8 @@ Route to markdown_edit only for scoped edits such as summarizing, shortening, st
 Route ambiguous follow-up phrases such as "그렇게 해줘", "그걸로", "ㅇㅇ", or "아까 말한 대로" to markdown_edit when recent conversation shows an agreed scoped edit for the active Markdown target.
 Route to markdown_create when the user asks to make, write, draft, or generate a new Markdown document from the chat so far, recent conversation, notes, or reference context. This does not require an active Markdown target.
 Route template, full-document structure reconstruction, and source-document-structure preservation requests to clarify with edit_goal "template_transform".
-If no active Markdown target exists and the user asks to edit, route to markdown_edit anyway; the application will ask for a target.
+If active Markdown exists but no target exists and the user asks to edit, route to markdown_edit; the application will treat the whole document as the target.
+If no active Markdown exists and the user asks to edit, route to markdown_edit anyway; the application will ask for a document.
 
 Required JSON schema:
 {

@@ -12,7 +12,7 @@ from app.modules.query.interfaces.http.schemas import QueryResponse
 
 
 class MarkdownEditTargetRequest(BaseModel):
-    type: Literal["selection", "current_section"]
+    type: Literal["selection", "current_section", "whole_document"]
     start_line: int = Field(..., ge=1)
     end_line: int = Field(..., ge=1)
 
@@ -69,7 +69,7 @@ class AgentTurnRouteResponse(BaseModel):
 
 
 class MarkdownEditTargetResponse(BaseModel):
-    type: Literal["selection", "current_section"]
+    type: Literal["selection", "current_section", "whole_document"]
     start_line: int
     end_line: int
 

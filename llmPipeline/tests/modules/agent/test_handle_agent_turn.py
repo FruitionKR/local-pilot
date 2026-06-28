@@ -170,7 +170,41 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(editor.create_requests[0].instruction, "지금까지 이야기한 내용 md로 만들어줘")
         self.assertIn("편집과 생성을 분리", editor.create_requests[0].conversation_summary or "")
 
-    def test_asks_for_target_when_edit_has_no_markdown_target(self) -> None:
+    def test_uses_whole_document_when_edit_has_markdown_but_no_target(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=target,
+                    summary="문서 전체를 정리했습니다.",
+                    replacement_markdown="# 정리된 문서\n\n본문입니다.",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(AgentTurnRoute(action="markdown_edit", confidence=0.8, reason="edit request")),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="문서 전체를 보기 좋게 정리해줘",
+                active_markdown_context=ActiveMarkdownContext(
+                    markdown="# 제목\n\n긴 본문입니다.",
+                    document_kind="wiki_page",
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "markdown_edit")
+        self.assertIsNotNone(result.edit)
+        self.assertEqual(result.edit.target, target)
+        self.assertEqual(editor.requests[0].target, target)
+
+    def test_asks_for_document_when_edit_has_no_markdown(self) -> None:
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
                 edit=MarkdownEditOperation(
@@ -191,7 +225,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         result = use_case.execute(AgentTurnRequest(message="표로 바꿔줘"))
 
         self.assertEqual(result.action, "clarify")
-        self.assertIn("Markdown 범위", result.message or "")
+        self.assertIn("Markdown 문서", result.message or "")
 
     def test_defers_template_transform(self) -> None:
         editor = RecordingMarkdownEditor(
@@ -222,6 +256,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.action, "clarify")
         self.assertIn("template 기반 전체 문서 재구성", result.message or "")
+        self.assertIn("문서 전체의 일반 편집", result.message or "")
 
     def test_routes_chat_to_query_use_case(self) -> None:
         query_use_case = FakeQueryUseCase()

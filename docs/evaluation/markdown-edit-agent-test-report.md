@@ -997,3 +997,71 @@ edit_goal=create_from_chat
 - target 없이도 `markdown_create`로 라우팅되어 새 문서 생성이 가능하다.
 - 기존 `markdown_edit`의 replace operation과 응답 필드가 분리되어 프론트 처리 방식이 명확하다.
 - 생성 품질은 대화 요약 품질에 크게 의존하므로, 프론트 또는 conversation memory가 최근 대화 요약을 충분히 넘겨야 한다.
+
+## whole_document 기본 target 정책
+
+Notion식 편집 UX를 위해 target이 없더라도 active Markdown 본문이 있으면 전체 문서를 편집 대상으로 본다. 사용자가 전체 문서를 굳이 드래그하지 않아도 “너무 장황한데 보기 좋게 정리해줘” 같은 요청을 문서 전체 기준으로 처리할 수 있어야 한다.
+
+새 정책:
+
+| 상황 | 처리 |
+| --- | --- |
+| active Markdown 있음 + target 있음 | `selection` 또는 `current_section` 기준 `markdown_edit` |
+| active Markdown 있음 + target 없음 | `whole_document` target을 자동 생성해 `markdown_edit` |
+| active Markdown 없음 + 편집 요청 | `clarify` |
+| `markdown_create` 요청 | active Markdown target 없이도 실행 |
+
+`whole_document` target:
+
+```json
+{
+  "type": "whole_document",
+  "start_line": 1,
+  "end_line": 3
+}
+```
+
+검증:
+
+```text
+cd llmPipeline && .venv/bin/python -m pytest tests/modules/agent tests/modules/markdown_edit -q
+11 passed
+```
+
+### 실제 LLM 호출 결과
+
+선택 영역 없이 active Markdown 본문만 넘겨 `whole_document` 기본 target 정책을 확인했다.
+
+요청:
+
+```text
+너무 장황한데 보기 좋게 정리해줘
+```
+
+결과:
+
+```json
+{
+  "elapsed": 17.1,
+  "action": "markdown_edit",
+  "route_action": "markdown_edit",
+  "edit_goal": "shorten",
+  "message": null,
+  "edit": {
+    "operation": "replace",
+    "target": {
+      "type": "whole_document",
+      "start_line": 1,
+      "end_line": 3
+    },
+    "summary": "프로젝트 메모에서 온보딩 문서의 길고 반복적인 설명을 줄이고, 용어를 통일하며 가이드를 간결하게 정리해야 한다.",
+    "replacement_markdown": "# 프로젝트 메모\n\n온보딩 문서는 길고 반복적이어서 신규 사용자가 흐름을 찾기 어렵다. 다음 릴리스 전까지 용어를 통일하고 가이드를 간결하게 정리해야 한다."
+  }
+}
+```
+
+판단:
+
+- active Markdown target이 없어도 `clarify`로 빠지지 않고 전체 문서 기준 `markdown_edit`가 실행됐다.
+- 응답 target은 `whole_document`, `start_line=1`, `end_line=3`으로 반환됐다.
+- 프론트는 이 target을 기준으로 전체 문서 preview/diff를 보여줄 수 있다.

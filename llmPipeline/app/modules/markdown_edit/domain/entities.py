@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-TargetType = Literal["selection", "current_section"]
+TargetType = Literal["selection", "current_section", "whole_document"]
 
 
 @dataclass(frozen=True)

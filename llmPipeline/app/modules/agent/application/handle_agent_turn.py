@@ -2,13 +2,14 @@ from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
-from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest
+from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
 
 
 CLARIFY_MARKDOWN_TARGET_MESSAGE = "수정할 Markdown 범위를 선택한 뒤 다시 요청해 주세요."
-DEFERRED_TEMPLATE_MESSAGE = "현재는 선택 영역이나 현재 섹션 단위 편집만 지원합니다. template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다."
+CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시 요청해 주세요."
+DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다. 현재는 선택 영역, 현재 섹션, 또는 문서 전체의 일반 편집만 지원합니다."
 
 
 class HandleAgentTurnUseCase:
@@ -49,17 +50,18 @@ class HandleAgentTurnUseCase:
 
         if route.action == "markdown_edit":
             markdown_context = request.active_markdown_context
-            if markdown_context is None or markdown_context.target is None or not markdown_context.markdown.strip():
+            if markdown_context is None or not markdown_context.markdown.strip():
                 return AgentTurnResult(
                     action="clarify",
                     route=route,
-                    message=CLARIFY_MARKDOWN_TARGET_MESSAGE,
+                    message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                 )
+            target = markdown_context.target or _whole_document_target(markdown_context.markdown)
             result = self._markdown_edit_use_case.execute(
                 MarkdownEditRequest(
                     instruction=request.message,
                     markdown=markdown_context.markdown,
-                    target=markdown_context.target,
+                    target=target,
                     conversation_summary=(
                         request.conversation_context.recent_conversation_summary
                         if request.conversation_context
@@ -96,4 +98,12 @@ def _to_query_conversation_context(request: AgentTurnRequest) -> ConversationCon
     return ConversationContext(
         recent_conversation_summary=request.conversation_context.recent_conversation_summary,
         reference_context=request.conversation_context.reference_context,
+    )
+
+
+def _whole_document_target(markdown: str) -> MarkdownEditTarget:
+    return MarkdownEditTarget(
+        type="whole_document",
+        start_line=1,
+        end_line=max(1, len(markdown.splitlines())),
     )

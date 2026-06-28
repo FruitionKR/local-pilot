@@ -10,7 +10,7 @@
   -> AgentTurnRouter
   -> action 판정
       chat_answer      -> 기존 query pipeline으로 답변 생성
-      markdown_edit    -> active Markdown target을 replace할 edit 생성
+      markdown_edit    -> active Markdown target 또는 문서 전체를 replace할 edit 생성
       markdown_create  -> 대화/context 기반 새 Markdown 문서 생성
       clarify          -> target 선택 또는 추가 입력 요청
       reject           -> 지원하지 않는 요청 거절
@@ -23,7 +23,7 @@
 | action | 결과 필드 | 프론트 처리 |
 | --- | --- | --- |
 | `chat_answer` | `chat` | 기존 채팅 답변으로 렌더링 |
-| `markdown_edit` | `edit` | 기존 문서의 target range에 대한 preview/diff 표시 |
+| `markdown_edit` | `edit` | 선택 영역 또는 문서 전체에 대한 preview/diff 표시 |
 | `markdown_create` | `generated_markdown` | 새 문서 탭 또는 새 editor buffer 생성 |
 | `clarify` | `message` | target 선택이나 추가 입력 유도 |
 | `reject` | `message` | 지원하지 않는 요청 안내 |
@@ -57,10 +57,10 @@
 | `conversation_context.recent_conversation_summary` | 아니오 | 멀티턴 후속 요청과 새 문서 생성에 쓰는 최근 대화 요약 |
 | `conversation_context.reference_context` | 아니오 | LLM 판단에 필요한 추가 참조 context |
 | `active_markdown_context.markdown` | 편집 시 필요 | 현재 편집 중인 Markdown 본문 |
-| `active_markdown_context.target` | 편집 시 필요 | 교체 대상 selection/current_section 범위 |
+| `active_markdown_context.target` | 아니오 | 교체 대상 selection/current_section 범위. 없으면 문서 전체를 대상으로 본다 |
 | `active_markdown_context.document_kind` | 아니오 | 문서 종류 힌트 |
 
-`markdown_create`는 active Markdown target 없이도 실행될 수 있다. `markdown_edit`는 target이 없으면 `clarify`로 응답한다.
+`markdown_create`는 active Markdown target 없이도 실행될 수 있다. `markdown_edit`는 active Markdown target이 없으면 전체 문서를 대상으로 실행하고, active Markdown 본문이 없을 때만 `clarify`로 응답한다.
 
 ## 3. 공통 응답
 
@@ -98,7 +98,7 @@
 
 ## 4. 기존 문서 편집
 
-`action == "markdown_edit"`이면 프론트는 기존 Markdown 문서의 선택 영역이나 현재 섹션을 교체할 수 있는 preview/diff를 보여준다.
+`action == "markdown_edit"`이면 프론트는 기존 Markdown 문서의 선택 영역, 현재 섹션, 또는 문서 전체를 교체할 수 있는 preview/diff를 보여준다.
 
 ```json
 {
@@ -121,7 +121,7 @@
 | 필드 | 설명 |
 | --- | --- |
 | `operation` | 현재는 `replace`만 지원 |
-| `target.type` | `selection` 또는 `current_section` |
+| `target.type` | `selection`, `current_section`, 또는 `whole_document` |
 | `target.start_line` | 교체 시작 line. 1-base |
 | `target.end_line` | 교체 종료 line. 1-base, inclusive |
 | `summary` | 편집 요약 |
@@ -131,6 +131,8 @@
 
 - `operation == "replace"`만 지원한다.
 - `target.start_line`부터 `target.end_line`까지 `replacement_markdown`으로 교체한다.
+- 선택 영역이 있으면 프론트는 `active_markdown_context.target`을 보낸다.
+- 선택 영역이 없으면 target을 생략하고, 백엔드가 `whole_document` target을 만들어 응답한다.
 - 사용자가 Apply를 누르기 전까지 원본 Markdown은 변경하지 않는다.
 - `edit_goal`은 preview label이나 처리 힌트로 사용할 수 있지만, 실제 적용 기준은 `edit.operation`과 `edit.target`이다.
 
@@ -174,7 +176,7 @@
 
 대표 케이스:
 
-- 편집 요청인데 active Markdown target이 없음
+- 편집 요청인데 active Markdown 본문이 없음
 - template 기반 전체 문서 재구성처럼 현재 보류한 범위
 
 ## 7. Conversation Context
