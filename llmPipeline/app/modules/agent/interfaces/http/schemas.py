@@ -62,7 +62,7 @@ class AgentTurnRequestBody(BaseModel):
 
 
 class AgentTurnRouteResponse(BaseModel):
-    action: Literal["chat_answer", "markdown_edit", "clarify", "reject"]
+    action: Literal["chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"]
     confidence: float
     reason: str
     edit_goal: str | None = None
@@ -81,9 +81,16 @@ class MarkdownEditOperationResponse(BaseModel):
     replacement_markdown: str
 
 
+class GeneratedMarkdownResponse(BaseModel):
+    title: str
+    summary: str
+    markdown: str
+
+
 class AgentTurnResponse(BaseModel):
-    action: Literal["chat_answer", "markdown_edit", "clarify", "reject"]
+    action: Literal["chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"]
     route: AgentTurnRouteResponse
     message: str | None = None
     chat: QueryResponse | None = None
     edit: MarkdownEditOperationResponse | None = None
+    generated_markdown: GeneratedMarkdownResponse | None = None

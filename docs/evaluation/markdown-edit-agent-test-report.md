@@ -650,3 +650,350 @@ active_markdown_context 없음
 ```
 
 특히 7, 8번은 멀티턴 라우팅 품질을 보는 핵심 케이스다.
+
+## Synthetic eval set 설계
+
+사용자가 실제 예시를 미리 정의하지 않아도 prompt 품질을 볼 수 있도록 아래 범주를 고정 평가셋으로 둔다.
+
+| 범주 | 예시 요청 | 기대 동작 | 실패 기준 |
+| --- | --- | --- | --- |
+| 명확한 축약 | `너무 장황해. 짧게 줄여줘` | 핵심 의미와 제약을 보존하며 짧게 rewrite | 의미 삭제, 메타 설명만 반환 |
+| 명확한 구조 변환 | `표로 바꿔줘` | 원문 정보 기반 Markdown table 생성 | 빈 표, 원문에 없는 항목 추가 |
+| Checklist 변환 | `TODO checklist로 바꿔줘` | 모든 항목이 `- [ ]` task list 문법 사용 | 일반 bullet, `TODO` 단어만 추가 |
+| 회의록 변환 | `회의록 형식으로 정리해줘` | `논의 사항`, `결정 사항`, `보류 사항`, `다음 작업` 중 원문으로 채울 수 있는 섹션만 사용 | 빈 날짜/참석자 template, checkbox 사용 |
+| 표현 정리 | `말이 어색해. 자연스럽게 다듬어줘` | 사실과 링크를 유지하고 문장만 정리 | 새 사실 추가, 링크/코드 손상 |
+| 애매한 단일턴 | `좀 정리해줘`, `보기 좋게 해줘` | target이 있으면 cleanup/format 성격의 scoped edit | chat 답변으로 이탈 |
+| 멀티턴 후속 | `그럼 그렇게 해줘`, `그걸로`, `ㅇㅇ` | conversation summary의 마지막 합의된 편집 목표를 적용 | 의도 무시, 일반 답변 |
+| target 없음 | `이 부분 표로 바꿔줘` + target 없음 | application layer에서 clarify | 임의 범위 수정 |
+| 보류 범위 | `전체 문서를 회사 template에 맞춰줘` | `template_transform` clarify | 전체 문서 재구성 실행 |
+
+이 평가셋은 정답 문장을 하나로 고정하기보다 아래 품질 계약을 통과하는지 본다.
+
+- `replacement_markdown`은 실제 교체 가능한 Markdown이어야 한다.
+- 구조 변환은 빈 template이 아니라 원문 내용을 구조 안에 배치해야 한다.
+- 원문에 없는 날짜, 참석자, owner, due date, 수치, 외부 지식은 만들지 않는다.
+- checklist 요청은 반드시 Markdown task list 문법을 쓴다.
+- 회의록 요청은 checkbox를 쓰지 않는다.
+- 멀티턴 후속 요청은 `conversation_summary`를 사용해 마지막 편집 의도를 복원한다.
+
+## qwen2.5:7b 실제 호출 결과
+
+실험 환경:
+
+```text
+Ollama Docker container: markdown-edit-ollama
+Model: qwen2.5:7b
+Endpoint: http://localhost:11434/v1/chat/completions
+Docker memory limit: 15.84GiB
+```
+
+주의:
+
+- Docker 메모리 한도가 `3.8GiB`일 때는 `qwen2.5:7b` 로딩 중 `signal: killed`로 실패했다.
+- Docker 메모리 한도를 올린 뒤에는 정상 로딩됐다.
+- `qwen2.5:7b`는 로컬 CPU 실행 기준으로 케이스당 수 초에서 수십 초가 걸렸다.
+
+### Prompt 보강 전 관찰
+
+| 케이스 | 결과 | 판단 |
+| --- | --- | --- |
+| 간결화 | 짧게 rewrite | 통과 |
+| 멀티턴 `그럼 그렇게 해줘` | `conversation_summary` 기반으로 축약 | 통과 |
+| target 없음 | `clarify` | 통과 |
+| template 보류 | LLM 호출 없이 `clarify` | 통과 |
+| checklist | `TODO checklist` 단어를 강조하거나 일반 bullet로 변환 | 실패 |
+| 회의록 | 빈 회의록 template 또는 checklist 규칙 오염 | 실패 |
+
+### Prompt 보강 내용
+
+`llmPipeline/prompts/markdown_edit.system.md`를 mode 선택 방식으로 정리했다.
+
+- `checklist`, `meeting_notes`, `table`, `shorten`, `cleanup/style/translate` 중 하나의 edit mode를 먼저 고르게 했다.
+- checklist 요청에는 모든 줄이 `- [ ]`로 시작해야 한다고 명시했다.
+- meeting notes 요청에는 checkbox를 금지하고, 원문으로 채울 수 있는 섹션만 쓰게 했다.
+- 빈 template, 새 사실 추가, 메타 설명 반환을 금지했다.
+
+`llmPipeline/prompts/agent_turn_router.system.md`에는 애매한 후속 발화 규칙을 추가했다.
+
+- `그렇게 해줘`, `그걸로`, `ㅇㅇ`, `아까 말한 대로` 같은 표현은 최근 대화에서 scoped edit이 합의됐으면 `markdown_edit`으로 라우팅한다.
+
+### Prompt 보강 후 실제 결과
+
+Checklist 요청:
+
+```json
+{
+  "action": "markdown_edit",
+  "route": {
+    "action": "markdown_edit",
+    "confidence": 0.95,
+    "edit_goal": "checklist"
+  },
+  "edit": {
+    "operation": "replace",
+    "target": {
+      "type": "selection",
+      "start_line": 1,
+      "end_line": 1
+    },
+    "summary": "Markdown 편집 agent는 사용자의 의도를 파악하고 선택 영역을 TODO checklist로 변환한다.",
+    "replacement_markdown": "- [ ] Markdown 편집 agent는 사용자가 원하는 문서 편집 의도를 파악하고 선택 영역을 바꿔주는 기능이다.\n- [ ] 처음부터 전체 문서 재구성을 포함하면 범위가 커지므로 선택 영역 기반 replace operation부터 구현한다.\n- [ ] 사용자가 Apply를 누르기 전까지 원본은 바꾸지 않는다."
+  }
+}
+```
+
+회의록 요청:
+
+```json
+{
+  "action": "markdown_edit",
+  "route": {
+    "action": "markdown_edit",
+    "confidence": 0.95,
+    "edit_goal": "convert_format"
+  },
+  "edit": {
+    "operation": "replace",
+    "target": {
+      "type": "selection",
+      "start_line": 1,
+      "end_line": 1
+    },
+    "summary": "회의록 형식으로 정리하였습니다.",
+    "replacement_markdown": "## 논의 사항\n- Markdown 편집 agent는 사용자가 원하는 문서 편집 의도를 파악하고 선택 영역을 바꿔주는 기능이다.\n\n## 결정 사항\n- 범위가 커지므로 선택 영역 기반 replace operation부터 구현한다.\n\n## 다음 작업\n- 사용자가 Apply를 누르기 전까지 원본은 바꾸지 않는다."
+  }
+}
+```
+
+판단:
+
+- checklist는 task list 문법을 지키게 됐다.
+- 회의록은 빈 template 대신 원문 내용을 섹션에 배치하게 됐다.
+- 다만 `qwen2.5:7b`는 여전히 느리고, 더 복잡한 원문에서는 추가 평가가 필요하다.
+
+## edit_goal 전달 후 실제 호출 결과
+
+Prompt-only 방식은 editor가 `instruction`만 보고 mode를 다시 추론해야 해서, `shorten` 요청이 checklist 규칙에 오염될 수 있었다. 그래서 router가 이미 판정한 `edit_goal`을 `MarkdownEditRequest`와 editor payload에 함께 전달하도록 변경했다.
+
+변경된 흐름:
+
+```text
+AgentTurnRouter
+  -> AgentTurnRoute.edit_goal
+  -> MarkdownEditRequest.edit_goal
+  -> markdown editor payload.edit_goal
+  -> markdown_edit.system.md mode selection
+```
+
+Editor prompt는 `payload.edit_goal`이 있으면 이를 우선 mode로 사용한다. 단, router의 `convert_format`은 table, 회의록, 기타 형식 변환을 모두 포함하므로 editor가 `instruction`을 함께 보고 세부 출력 형식을 고른다.
+
+실험 환경은 위와 동일하게 `qwen2.5:7b`와 Ollama Docker를 사용했다.
+
+| 케이스 | 요청 | route edit_goal | 실행 시간 | 결과 판단 |
+| --- | --- | --- | ---: | --- |
+| 명확한 축약 | `짧게 줄여줘` | `shorten` | 15.3초 | checklist로 새지 않고 짧은 문단 반환 |
+| Checklist | `TODO 체크리스트로 바꿔줘` | `checklist` | 6.3초 | `- [ ]` task list 반환 |
+| 회의록 | `회의록 형태로 정리해줘` | `convert_format` | 53.7초 | checkbox 없이 `논의 사항`, `결정 사항` 섹션 반환 |
+| 멀티턴 애매 | `그렇게 해줘` + 최근 대화 요약 | `shorten` | 25.6초 | 최근 합의된 축약 의도를 적용 |
+
+대표 출력:
+
+```text
+CASE shorten
+edit_goal=shorten
+replacement_markdown:
+# 프로젝트 메모
+
+온보딩 문서는 길고 반복적이어서 신규 사용자가 흐름을 찾기 어렵다. 용어를 맞추고 시작 가이드를 정리해야 한다.
+```
+
+```text
+CASE checklist
+edit_goal=checklist
+replacement_markdown:
+- [ ] 용어 맞추기
+- [ ] 시작 가이드 정리
+```
+
+```text
+CASE meeting
+edit_goal=convert_format
+replacement_markdown:
+## 논의 사항
+
+- 프로젝트 메모에서 온보딩 문서는 내용이 길고 반복 설명이 많아 신규 사용자가 핵심 흐름을 찾기 어렵다.
+- 검색 결과는 정확하지만 문서마다 표현이 달라 같은 개념이 여러 이름으로 나타난다.
+
+## 결정 사항
+
+- 다음 릴리스 전까지 용어를 맞추고 시작 가이드를 짧게 정리한다.
+```
+
+판단:
+
+- `edit_goal` 전달 후에는 명확한 축약과 멀티턴 축약 요청이 checklist 형식으로 오염되지 않았다.
+- `checklist`는 router의 goal을 그대로 사용해 task list 제약을 안정적으로 지켰다.
+- `convert_format`은 여전히 editor가 instruction을 함께 해석해야 하므로 table/회의록/기타 형식 변환에 대한 추가 fixture가 필요하다.
+- 로컬 `qwen2.5:7b`는 품질 확인용으로는 쓸 수 있지만, CPU 실행 기준 회의록 케이스가 53.7초까지 걸려 제품 기본값으로 쓰기에는 느리다.
+
+## 단독 순차 재측정 결과
+
+이전 측정의 `meeting 53.7초`, `ambiguous router 96.3초`는 실행 상태 영향이 섞였을 가능성이 있어 같은 조건으로 다시 실행했다.
+
+측정 방식:
+
+- `qwen2.5:7b`를 router와 editor에 모두 사용했다.
+- 케이스별로 warm-up 1회를 먼저 실행했다.
+- warm-up 이후 각 케이스를 3회씩 순차 실행했다.
+- router 호출 시간과 editor 호출 시간을 분리했다.
+- 요청은 병렬로 보내지 않았다.
+
+재측정 결과:
+
+| 케이스 | 요청 | edit_goal | 평균 router | 평균 editor | 평균 total | median total | 판단 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| shorten | `짧게 줄여줘` | `shorten` | 1.4초 | 3.0초 | 4.3초 | 4.4초 | 안정적 |
+| checklist | `TODO 체크리스트로 바꿔줘` | `checklist` | 1.5초 | 2.2초 | 3.7초 | 3.7초 | 안정적 |
+| meeting | `회의록 형태로 정리해줘` | `convert_format` | 1.7초 | 8.1초 | 9.8초 | 11.0초 | editor가 상대적으로 느림 |
+| ambiguous | `그렇게 해줘` + 최근 대화 요약 | `shorten` | 1.5초 | 4.2초 | 5.7초 | 5.8초 | 재측정에서는 안정적 |
+
+Run별 상세:
+
+| 케이스 | run | router | editor | total |
+| --- | ---: | ---: | ---: | ---: |
+| shorten | 1 | 1.4초 | 2.9초 | 4.3초 |
+| shorten | 2 | 1.4초 | 2.9초 | 4.4초 |
+| shorten | 3 | 1.3초 | 3.0초 | 4.4초 |
+| checklist | 1 | 1.5초 | 2.1초 | 3.7초 |
+| checklist | 2 | 1.5초 | 2.2초 | 3.7초 |
+| checklist | 3 | 1.4초 | 2.2초 | 3.6초 |
+| meeting | 1 | 1.5초 | 5.4초 | 6.9초 |
+| meeting | 2 | 1.8초 | 9.1초 | 11.0초 |
+| meeting | 3 | 1.7초 | 9.8초 | 11.5초 |
+| ambiguous | 1 | 1.5초 | 4.0초 | 5.5초 |
+| ambiguous | 2 | 1.5초 | 4.2초 | 5.8초 |
+| ambiguous | 3 | 1.5초 | 4.3초 | 5.8초 |
+
+대표 출력:
+
+```text
+CASE shorten
+edit_goal=shorten
+replacement_markdown:
+# 프로젝트 메모
+
+온보딩 문서가 길고 반복적이어서 신규 사용자가 흐름을 찾기 어렵다. 용어를 맞추고 가이드를 정리해야 한다.
+```
+
+```text
+CASE checklist
+edit_goal=checklist
+replacement_markdown:
+- [ ] 용어 일치화
+- [ ] 시작 가이드 정리
+```
+
+```text
+CASE meeting
+edit_goal=convert_format
+replacement_markdown:
+## 논의 사항
+
+- 프로젝트 메모에서 온보딩 문서는 내용이 길고 반복 설명이 많아 신규 사용자가 핵심 흐름을 찾기 어렵다.
+- 검색 결과는 정확하지만 문서마다 표현이 달라 같은 개념이 여러 이름으로 나타난다.
+
+## 결정 사항
+
+- 다음 릴리스 전까지 용어를 맞추고 시작 가이드를 짧게 정리한다.
+```
+
+```text
+CASE ambiguous
+edit_goal=shorten
+replacement_markdown:
+# 프로젝트 메모
+
+온보딩 문서가 길고 반복적이어서 신규 사용자가 흐름을 찾기 어렵다. 다음 릴리스 전까지 용어를 맞추고 가이드를 정리해야 한다。
+```
+
+재측정 판단:
+
+- 병렬 실행 또는 Ollama 실행 상태 영향 가능성을 제거하니 `meeting`은 평균 9.8초로 측정됐다.
+- `ambiguous`도 재측정에서는 router outlier 없이 평균 5.7초로 측정됐다.
+- router는 대부분 1.3-1.8초 범위에 있고, 실제 지연은 editor 생성 길이에 더 크게 좌우된다.
+- `edit_goal` 전달 이후 품질 측면에서는 checklist 오염이 재현되지 않았다.
+- 마지막 ambiguous 출력에 한국어 문장 끝 fullwidth `。`가 포함되어, 문장부호 정규화는 별도 후처리 후보로 남는다.
+
+## markdown_create 실제 호출 결과
+
+선택 영역 편집과 별도로, 채팅 내용을 새 Markdown 문서로 생성하는 `markdown_create` action을 추가했다. 이 action은 active Markdown target이 없어도 실행되며, 프론트는 응답의 `generated_markdown`을 새 문서 탭이나 새 editor buffer로 열 수 있다.
+
+응답 계약:
+
+```json
+{
+  "action": "markdown_create",
+  "route": {
+    "action": "markdown_create",
+    "edit_goal": "create_from_chat"
+  },
+  "generated_markdown": {
+    "title": "문서 제목",
+    "summary": "생성 요약",
+    "markdown": "# 문서 제목\n\nMarkdown body"
+  }
+}
+```
+
+실험 환경:
+
+```text
+Model: qwen2.5:7b
+Endpoint: http://localhost:11434/v1/chat/completions
+Router model: qwen2.5:7b
+Markdown create model: qwen2.5:7b
+```
+
+요청:
+
+```text
+지금까지 이야기한 내용을 md 문서로 만들어줘
+```
+
+대화 요약:
+
+```text
+사용자는 Markdown 편집 agent에서 기존 선택 영역 replace와 새 문서 생성을 분리하려고 한다.
+edit 요청은 active target을 replace하고, create 요청은 대화 내용을 새 Markdown 문서로 생성한다.
+router는 markdown_create action을 반환하고 프론트는 generated_markdown을 새 문서 탭으로 열어야 한다.
+```
+
+결과:
+
+```text
+elapsed=15.2s
+action=markdown_create
+route_action=markdown_create
+edit_goal=create_from_chat
+```
+
+생성 Markdown:
+
+```markdown
+# Markdown 편집 agent에 대한 설명
+
+## 개요
+- `edit` 요청: 현재 선택된 영역을 대체한다.
+- `create` 요청: 새로운 Markdown 문서를 생성한다.
+
+## 동작 방식
+1. `edit` 요청은 active target의 선택된 부분을 replace한다.
+2. `create` 요청은 대화 내용을 기반으로 새 Markdown 문서를 생성한다.
+3. 프론트엔드는 generated_markdown을 새 문서 탭으로 열어야 한다.
+```
+
+판단:
+
+- target 없이도 `markdown_create`로 라우팅되어 새 문서 생성이 가능하다.
+- 기존 `markdown_edit`의 replace operation과 응답 필드가 분리되어 프론트 처리 방식이 명확하다.
+- 생성 품질은 대화 요약 품질에 크게 의존하므로, 프론트 또는 conversation memory가 최근 대화 요약을 충분히 넘겨야 한다.

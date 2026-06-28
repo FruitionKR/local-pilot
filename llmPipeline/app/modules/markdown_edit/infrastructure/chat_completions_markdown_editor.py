@@ -5,6 +5,9 @@ from typing import Any
 
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
+    GeneratedMarkdownDocument,
+    MarkdownCreateRequest,
+    MarkdownCreateResult,
     MarkdownEditOperation,
     MarkdownEditRequest,
     MarkdownEditResult,
@@ -14,16 +17,24 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import Chat
 
 
 DEFAULT_MARKDOWN_EDIT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_edit.system.md"
+DEFAULT_MARKDOWN_CREATE_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_create.system.md"
 
 
 class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        create_system_prompt: str | None = None,
+    ) -> None:
         self._client = client
         self._system_prompt = system_prompt
+        self._create_system_prompt = create_system_prompt or system_prompt
 
     def generate_edit(self, request: MarkdownEditRequest) -> MarkdownEditResult:
         payload = {
             "instruction": request.instruction,
+            "edit_goal": request.edit_goal,
             "conversation_summary": request.conversation_summary,
             "target": {
                 "type": request.target.type,
@@ -35,12 +46,25 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         raw = self._client.complete_json(self._system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
         return _normalize_edit_result(raw, request.target)
 
+    def generate_markdown(self, request: MarkdownCreateRequest) -> MarkdownCreateResult:
+        payload = {
+            "instruction": request.instruction,
+            "conversation_summary": request.conversation_summary,
+            "reference_context": request.reference_context or {},
+        }
+        raw = self._client.complete_json(
+            self._create_system_prompt,
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        )
+        return _normalize_create_result(raw)
+
 
 def build_markdown_editor() -> MarkdownEditorPort:
     api_key = _api_key()
     if not api_key:
         raise RuntimeError("Set MARKDOWN_EDIT_LLM_API_KEY, QUERY_LLM_API_KEY, UPSTAGE_API_KEY, or LLM_API_KEY.")
     prompt_path = Path(os.environ.get("MARKDOWN_EDIT_SYSTEM_PROMPT", str(DEFAULT_MARKDOWN_EDIT_PROMPT)))
+    create_prompt_path = Path(os.environ.get("MARKDOWN_CREATE_SYSTEM_PROMPT", str(DEFAULT_MARKDOWN_CREATE_PROMPT)))
     return ChatCompletionsMarkdownEditor(
         ChatCompletionsJsonClient(
             ChatClientConfig(
@@ -54,6 +78,7 @@ def build_markdown_editor() -> MarkdownEditorPort:
             )
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
+        create_system_prompt=create_prompt_path.read_text(encoding="utf-8"),
     )
 
 
@@ -67,6 +92,16 @@ def _normalize_edit_result(value: dict[str, Any], requested_target: MarkdownEdit
             target=requested_target,
             summary=str(value.get("summary") or "").strip(),
             replacement_markdown=str(value.get("replacement_markdown") or value.get("replacementMarkdown") or "").strip(),
+        )
+    )
+
+
+def _normalize_create_result(value: dict[str, Any]) -> MarkdownCreateResult:
+    return MarkdownCreateResult(
+        document=GeneratedMarkdownDocument(
+            title=str(value.get("title") or "").strip(),
+            summary=str(value.get("summary") or "").strip(),
+            markdown=str(value.get("markdown") or value.get("content") or "").strip(),
         )
     )
 

@@ -7,6 +7,7 @@ from app.modules.agent.interfaces.http.schemas import (
     AgentTurnRequestBody,
     AgentTurnResponse,
     AgentTurnRouteResponse,
+    GeneratedMarkdownResponse,
     MarkdownEditOperationResponse,
     MarkdownEditTargetResponse,
 )
@@ -42,6 +43,7 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
         message=result.message,
         chat=query_to_response(result.query_answer) if result.query_answer else None,
         edit=_edit_to_response(result) if result.edit else None,
+        generated_markdown=_generated_markdown_to_response(result),
     )
 
 
@@ -57,4 +59,14 @@ def _edit_to_response(result: AgentTurnResult) -> MarkdownEditOperationResponse 
         ),
         summary=result.edit.summary,
         replacement_markdown=result.edit.replacement_markdown,
+    )
+
+
+def _generated_markdown_to_response(result: AgentTurnResult) -> GeneratedMarkdownResponse | None:
+    if result.generated_markdown is None:
+        return None
+    return GeneratedMarkdownResponse(
+        title=result.generated_markdown.title,
+        summary=result.generated_markdown.summary,
+        markdown=result.generated_markdown.markdown,
     )

@@ -3,11 +3,16 @@ import unittest
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
 from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
+    AgentConversationContext,
     AgentTurnRequest,
     AgentTurnRoute,
 )
+from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import (
+    GeneratedMarkdownDocument,
+    MarkdownCreateRequest,
+    MarkdownCreateResult,
     MarkdownEditOperation,
     MarkdownEditRequest,
     MarkdownEditResult,
@@ -57,13 +62,25 @@ class FakeQueryUseCase:
 
 
 class RecordingMarkdownEditor:
-    def __init__(self, result: MarkdownEditResult) -> None:
+    def __init__(self, result: MarkdownEditResult, create_result: MarkdownCreateResult | None = None) -> None:
         self.result = result
+        self.create_result = create_result or MarkdownCreateResult(
+            document=GeneratedMarkdownDocument(
+                title="생성 문서",
+                summary="대화 내용을 Markdown으로 정리했습니다.",
+                markdown="# 생성 문서\n\n대화 요약입니다.",
+            )
+        )
         self.requests: list[MarkdownEditRequest] = []
+        self.create_requests: list[MarkdownCreateRequest] = []
 
     def generate_edit(self, request: MarkdownEditRequest) -> MarkdownEditResult:
         self.requests.append(request)
         return self.result
+
+    def generate_markdown(self, request: MarkdownCreateRequest) -> MarkdownCreateResult:
+        self.create_requests.append(request)
+        return self.create_result
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
@@ -80,9 +97,12 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             )
         )
         use_case = HandleAgentTurnUseCase(
-            router=FixedRouter(AgentTurnRoute(action="markdown_edit", confidence=0.9, reason="edit request")),
+            router=FixedRouter(
+                AgentTurnRoute(action="markdown_edit", confidence=0.9, reason="edit request", edit_goal="shorten")
+            ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
         )
 
         result = use_case.execute(
@@ -100,23 +120,72 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIsNotNone(result.edit)
         self.assertEqual(result.edit.target, target)
         self.assertEqual(editor.requests[0].instruction, "줄여줘")
+        self.assertEqual(editor.requests[0].edit_goal, "shorten")
+
+    def test_executes_markdown_create_action(self) -> None:
+        target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=target,
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            ),
+            create_result=MarkdownCreateResult(
+                document=GeneratedMarkdownDocument(
+                    title="Agent 설계 메모",
+                    summary="대화 내용을 Markdown 문서로 정리했습니다.",
+                    markdown="# Agent 설계 메모\n\n- 편집과 생성을 분리한다.",
+                )
+            ),
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_create",
+                    confidence=0.92,
+                    reason="create markdown from chat",
+                    edit_goal="create_from_chat",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="지금까지 이야기한 내용 md로 만들어줘",
+                conversation_context=AgentConversationContext(
+                    recent_conversation_summary="사용자는 편집과 생성을 분리하는 agent 설계를 논의했다."
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "markdown_create")
+        self.assertIsNotNone(result.generated_markdown)
+        self.assertEqual(result.generated_markdown.title, "Agent 설계 메모")
+        self.assertEqual(editor.create_requests[0].instruction, "지금까지 이야기한 내용 md로 만들어줘")
+        self.assertIn("편집과 생성을 분리", editor.create_requests[0].conversation_summary or "")
 
     def test_asks_for_target_when_edit_has_no_markdown_target(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="",
+                    replacement_markdown="unused",
+                )
+            )
+        )
         use_case = HandleAgentTurnUseCase(
             router=FixedRouter(AgentTurnRoute(action="markdown_edit", confidence=0.8, reason="edit request")),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
-            markdown_edit_use_case=GenerateMarkdownEditUseCase(
-                RecordingMarkdownEditor(
-                    MarkdownEditResult(
-                        edit=MarkdownEditOperation(
-                            operation="replace",
-                            target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
-                            summary="",
-                            replacement_markdown="unused",
-                        )
-                    )
-                )
-            ),
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
         )
 
         result = use_case.execute(AgentTurnRequest(message="표로 바꿔줘"))
@@ -125,6 +194,16 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("Markdown 범위", result.message or "")
 
     def test_defers_template_transform(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="",
+                    replacement_markdown="unused",
+                )
+            )
+        )
         use_case = HandleAgentTurnUseCase(
             router=FixedRouter(
                 AgentTurnRoute(
@@ -135,18 +214,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 )
             ),
             query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
-            markdown_edit_use_case=GenerateMarkdownEditUseCase(
-                RecordingMarkdownEditor(
-                    MarkdownEditResult(
-                        edit=MarkdownEditOperation(
-                            operation="replace",
-                            target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
-                            summary="",
-                            replacement_markdown="unused",
-                        )
-                    )
-                )
-            ),
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
         )
 
         result = use_case.execute(AgentTurnRequest(message="회사 template에 맞춰줘"))
@@ -156,21 +225,21 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
     def test_routes_chat_to_query_use_case(self) -> None:
         query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="",
+                    replacement_markdown="unused",
+                )
+            )
+        )
         use_case = HandleAgentTurnUseCase(
             router=FixedRouter(AgentTurnRoute(action="chat_answer", confidence=0.9, reason="question")),
             query_use_case=query_use_case,  # type: ignore[arg-type]
-            markdown_edit_use_case=GenerateMarkdownEditUseCase(
-                RecordingMarkdownEditor(
-                    MarkdownEditResult(
-                        edit=MarkdownEditOperation(
-                            operation="replace",
-                            target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
-                            summary="",
-                            replacement_markdown="unused",
-                        )
-                    )
-                )
-            ),
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
         )
 
         result = use_case.execute(AgentTurnRequest(message="이 문서는 무엇을 설명해?"))

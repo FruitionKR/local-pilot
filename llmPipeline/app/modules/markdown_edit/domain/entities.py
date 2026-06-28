@@ -18,6 +18,7 @@ class MarkdownEditRequest:
     markdown: str
     target: MarkdownEditTarget
     conversation_summary: str | None = None
+    edit_goal: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,3 +32,22 @@ class MarkdownEditOperation:
 @dataclass(frozen=True)
 class MarkdownEditResult:
     edit: MarkdownEditOperation
+
+
+@dataclass(frozen=True)
+class MarkdownCreateRequest:
+    instruction: str
+    conversation_summary: str | None = None
+    reference_context: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class GeneratedMarkdownDocument:
+    title: str
+    summary: str
+    markdown: str
+
+
+@dataclass(frozen=True)
+class MarkdownCreateResult:
+    document: GeneratedMarkdownDocument

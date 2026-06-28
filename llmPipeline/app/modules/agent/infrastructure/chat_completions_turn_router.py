@@ -101,7 +101,9 @@ def _normalize_route(value: dict[str, Any]) -> AgentTurnRoute:
         action = "chat_answer"
     if action == "edit":
         action = "markdown_edit"
-    if action not in {"chat_answer", "markdown_edit", "clarify", "reject"}:
+    if action == "create":
+        action = "markdown_create"
+    if action not in {"chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"}:
         action = "chat_answer"
     return AgentTurnRoute(
         action=action,  # type: ignore[arg-type]
