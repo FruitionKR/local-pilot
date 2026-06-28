@@ -12,6 +12,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
+from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.query.interfaces.http.routes import router as query_router
 from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase
 from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
@@ -23,6 +24,7 @@ from run_lab import run_pipeline
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+app.include_router(agent_router)
 app.include_router(query_router)
 logger = logging.getLogger("fruition.pipeline")
 
