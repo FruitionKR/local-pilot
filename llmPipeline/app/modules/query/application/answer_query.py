@@ -1,9 +1,7 @@
-import hashlib
 import re
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from dataclasses import replace
 
-from app.modules.query.application.extract_answer_citations import ExtractAnswerCitationsUseCase
 from app.modules.query.application.ports import (
     AnswerGeneratorPort,
     EmbeddingSearchPort,
@@ -15,6 +13,9 @@ from app.modules.query.application.ports import (
     WikiMarkdownReaderPort,
     WikiRepositoryPort,
 )
+from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
+from app.modules.query.application.query_page_scorer import QueryPageScorer
+from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     EvidenceSnippet,
@@ -29,11 +30,9 @@ from app.modules.query.domain.entities import (
     RetrievalSummary,
     TraversalEdge,
     TraversalPath,
-    WebSearchResult,
     WikiPage,
     WikiPageLink,
 )
-from app.modules.query.domain.scoring import hybrid_score
 from app.modules.query.domain.value_objects import Question
 
 
@@ -51,7 +50,9 @@ class AnswerQueryUseCase:
         web_search: WebSearchPort | None = None,
         traverse_wiki_graph: TraverseWikiGraphUseCase | None = None,
         build_query_context: BuildQueryContextUseCase | None = None,
-        extract_answer_citations: ExtractAnswerCitationsUseCase | None = None,
+        query_answer_assembler: QueryAnswerAssembler | None = None,
+        query_page_scorer: QueryPageScorer | None = None,
+        query_web_answer_builder: QueryWebAnswerBuilder | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
         focus_concept_threshold: float = 0.60,
@@ -72,7 +73,22 @@ class AnswerQueryUseCase:
             embedding_search=embedding_search,
             text_search=text_search,
         )
-        self._extract_answer_citations = extract_answer_citations or ExtractAnswerCitationsUseCase()
+        self._query_answer_assembler = query_answer_assembler or QueryAnswerAssembler(answer_generator)
+        self._query_page_scorer = query_page_scorer or QueryPageScorer(
+            embedding_search=embedding_search,
+            text_search=text_search,
+            source_candidate_limit=source_candidate_limit,
+            concept_candidate_limit=concept_candidate_limit,
+            focus_concept_threshold=focus_concept_threshold,
+        )
+        self._query_web_answer_builder = query_web_answer_builder
+        if self._query_web_answer_builder is None and web_search is not None:
+            self._query_web_answer_builder = QueryWebAnswerBuilder(
+                web_search=web_search,
+                build_query_context=self._build_query_context,
+                query_answer_assembler=self._query_answer_assembler,
+                embedding_unit_loader=self._load_embedding_units_for_related_pages,
+            )
         self._source_candidate_limit = source_candidate_limit
         self._concept_candidate_limit = concept_candidate_limit
         self._focus_concept_threshold = focus_concept_threshold
@@ -118,8 +134,8 @@ class AnswerQueryUseCase:
         source_pages = [page for page in pages if page.is_source]
         concept_pages = [page for page in pages if page.is_concept]
 
-        source_scores = self._score_pages(query_rewrite, source_pages, embedding_weight=0.8)
-        concept_scores = self._score_pages(query_rewrite, concept_pages, embedding_weight=0.8)
+        source_scores = self._query_page_scorer.score_pages(query_rewrite, source_pages, embedding_weight=0.8)
+        concept_scores = self._query_page_scorer.score_pages(query_rewrite, concept_pages, embedding_weight=0.8)
         self._publish(
             event_publisher,
             "retrieval_scored",
@@ -134,15 +150,15 @@ class AnswerQueryUseCase:
             },
         )
         node_scores = {**source_scores, **concept_scores}
-        direct_concept_ids = self._select_direct_match_concepts(query_rewrite, concept_pages)
+        direct_concept_ids = self._query_page_scorer.select_direct_match_concepts(query_rewrite, concept_pages)
 
         if self._query_evaluator is None and self._should_use_web_fallback(source_scores, concept_scores):
             fallback_answer = self._answer_from_web_search(query.normalized, query_rewrite, event_publisher)
             if fallback_answer is not None:
                 return fallback_answer
 
-        seed_source_ids = self._select_seed_sources(source_pages, source_scores)
-        focus_concept_ids = self._select_focus_concepts(concept_pages, concept_scores)
+        seed_source_ids = self._query_page_scorer.select_seed_sources(source_pages, source_scores)
+        focus_concept_ids = self._query_page_scorer.select_focus_concepts(concept_pages, concept_scores)
         if direct_concept_ids and max(source_scores.values(), default=0.0) < self._focus_concept_threshold:
             seed_source_ids = self._add_sources_connected_to_focus_concepts(seed_source_ids, direct_concept_ids, links)
         seed_page_ids = list(dict.fromkeys([*seed_source_ids, *focus_concept_ids, *direct_concept_ids]))
@@ -214,14 +230,7 @@ class AnswerQueryUseCase:
             "LLM 답변 입력 context를 구성했습니다.",
             {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
         )
-        answer = self._answer_generator.generate_answer(query_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                query_context.evidence_snippets[0].rank if query_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, query_context.evidence_snippets)
+        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
         self._publish(event_publisher, "answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
 
         evaluated_context = replace(query_context, evidence_snippets=evidence_snippets)
@@ -250,12 +259,12 @@ class AnswerQueryUseCase:
             if query_evaluation.route == "unsupported":
                 stop_reason = "query_evaluator_unsupported"
                 answer = self._unsupported_answer(evidence_snippets)
-                answer, evidence_snippets = self._renumber_used_evidence(answer, evidence_snippets)
+                answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
             elif query_evaluation.route == "internal_supported" and stop_reason == "no_relevant_seed":
                 stop_reason = "query_evaluator_internal_supported"
         elif stop_reason == "no_relevant_seed":
             answer = self._unsupported_answer(evidence_snippets)
-            answer, evidence_snippets = self._renumber_used_evidence(answer, evidence_snippets)
+            answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
 
         used_source_count = len([item for item in related_pages if item.page.is_source])
         used_concept_count = len([item for item in related_pages if item.page.is_concept])
@@ -428,63 +437,12 @@ class AnswerQueryUseCase:
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> QueryAnswer | None:
-        if self._web_search is None:
+        if self._query_web_answer_builder is None:
             return None
-        self._publish(
-            event_publisher,
-            "web_search_started",
-            "내부 Wiki 근거가 부족해 웹 검색 fallback을 시작했습니다.",
-            {"retrieval_query": query_rewrite.retrieval_query},
-        )
-        try:
-            web_results = self._web_search.search(query_rewrite.retrieval_query)
-        except Exception as exc:
-            self._publish(event_publisher, "web_search_failed", "웹 검색 fallback이 실패했습니다.", {"error": str(exc)})
-            return None
-        related_pages = self._web_results_to_related_pages(web_results)
-        if not related_pages:
-            self._publish(event_publisher, "web_search_empty", "웹 검색 fallback 결과가 없습니다.", None)
-            return None
-
-        graph_context = GraphContext(nodes=related_pages, edges=[])
-        query_context = self._build_query_context.execute(
+        return self._query_web_answer_builder.answer_from_web_search(
             question=question,
-            related_pages=related_pages,
-            graph_context=graph_context,
-            traversal_paths=[],
-            answer_mode="web_fallback",
-        )
-        answer = self._answer_generator.generate_answer(query_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                query_context.evidence_snippets[0].rank if query_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, query_context.evidence_snippets)
-        self._publish(
-            event_publisher,
-            "web_search_answer_generated",
-            "웹 검색 근거로 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
-        )
-        summary = RetrievalSummary(
-            source_candidate_count=0,
-            concept_candidate_count=0,
-            visited_node_count=len(related_pages),
-            returned_node_count=len(related_pages),
-            used_source_count=0,
-            used_concept_count=0,
-            max_depth=0,
-            stop_reason="web_search_fallback",
-        )
-        return QueryAnswer(
-            answer=answer,
-            related_pages=related_pages,
-            evidence_snippets=evidence_snippets,
-            graph_context=graph_context,
-            traversal_paths=[],
-            retrieval_summary=summary,
+            query_rewrite=query_rewrite,
+            event_publisher=event_publisher,
         )
 
     def _answer_from_internal_web_augmented(
@@ -497,179 +455,17 @@ class AnswerQueryUseCase:
         stop_reason: str,
         event_publisher: QueryEventPublisherPort | None,
     ) -> QueryAnswer | None:
-        if self._web_search is None:
+        if self._query_web_answer_builder is None:
             return None
-        self._publish(
-            event_publisher,
-            "web_search_started",
-            "내부 Wiki 근거에 외부 검색 근거를 보강합니다.",
-            {"retrieval_query": query_rewrite.retrieval_query},
-        )
-        try:
-            web_results = self._web_search.search(query_rewrite.retrieval_query)
-        except Exception as exc:
-            self._publish(event_publisher, "web_search_failed", "웹 검색 보강이 실패했습니다.", {"error": str(exc)})
-            return None
-        web_related_pages = self._web_results_to_related_pages(web_results)
-        if not web_related_pages:
-            self._publish(event_publisher, "web_search_empty", "웹 검색 보강 결과가 없습니다.", None)
-            return None
-
-        related_pages = self._merge_related_pages(query_context.related_pages, web_related_pages)
-        augmented_graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        augmented_context = self._build_query_context.execute(
-            question=query_context.question,
-            related_pages=related_pages,
-            graph_context=augmented_graph_context,
+        return self._query_web_answer_builder.answer_from_internal_web_augmented(
+            question=question,
+            query_rewrite=query_rewrite,
+            query_context=query_context,
+            graph_context=graph_context,
             traversal_paths=traversal_paths,
-            original_question=question,
-            answer_mode="internal_web_augmented",
-            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(related_pages),
+            stop_reason=stop_reason,
+            event_publisher=event_publisher,
         )
-        answer = self._answer_generator.generate_answer(augmented_context)
-        answer = GeneratedAnswer(
-            content=self._extract_answer_citations.ensure_sentence_citations(
-                answer.content,
-                augmented_context.evidence_snippets[0].rank if augmented_context.evidence_snippets else None,
-            )
-        )
-        answer, evidence_snippets = self._renumber_used_evidence(answer, augmented_context.evidence_snippets)
-        self._publish(
-            event_publisher,
-            "web_search_answer_generated",
-            "내부 Wiki와 웹 검색 근거를 함께 사용해 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
-        )
-        used_source_count = len([item for item in related_pages if item.page.is_source])
-        used_concept_count = len([item for item in related_pages if item.page.is_concept])
-        return QueryAnswer(
-            answer=answer,
-            related_pages=related_pages,
-            evidence_snippets=evidence_snippets,
-            graph_context=augmented_graph_context,
-            traversal_paths=traversal_paths,
-            retrieval_summary=RetrievalSummary(
-                source_candidate_count=0,
-                concept_candidate_count=0,
-                visited_node_count=len(related_pages),
-                returned_node_count=len(related_pages),
-                used_source_count=used_source_count,
-                used_concept_count=used_concept_count,
-                max_depth=0,
-                stop_reason=stop_reason,
-            ),
-        )
-
-    def _merge_related_pages(self, internal_pages: list[RetrievedPage], web_pages: list[RetrievedPage]) -> list[RetrievedPage]:
-        merged = list(internal_pages)
-        seen = {item.page.id for item in merged}
-        for item in web_pages:
-            if item.page.id in seen:
-                continue
-            merged.append(item)
-            seen.add(item.page.id)
-        return merged
-
-    def _web_results_to_related_pages(self, web_results: list[WebSearchResult]) -> list[RetrievedPage]:
-        related_pages = []
-        for index, result in enumerate(web_results, start=1):
-            page = WikiPage(
-                id=f"web:{self._hash(result.url)}",
-                page_type="web",
-                title=result.title,
-                slug=self._slug(result.title) or f"web-result-{index}",
-                summary=result.snippet,
-                markdown_uri=result.url,
-                markdown=result.content or result.snippet,
-            )
-            related_pages.append(
-                RetrievedPage(
-                    page=page,
-                    score=max(0.0, min(1.0, result.score)),
-                    role="web_search_result",
-                    depth=0,
-                )
-            )
-        return related_pages
-
-    def _score_pages(self, query_rewrite: QueryRewrite, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
-        query = query_rewrite.retrieval_query
-        representations = [self._representation(page) for page in pages]
-        embedding_scores = self._embedding_search.score(query, representations)
-        text_scores = self._text_search.score(query, representations)
-        base_scores = {
-            page.id: self._final_retrieval_score(
-                hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight),
-                self._name_match_score(query_rewrite, page),
-            )
-            for page, embedding_score, text_score in zip(pages, embedding_scores, text_scores)
-        }
-        if pages and all(page.is_source for page in pages):
-            structure_scores = self._score_source_structures(query, pages, embedding_weight)
-            return {
-                page.id: min(1.0, base_scores.get(page.id, 0.0) + structure_scores.get(page.id, 0.0))
-                for page in pages
-            }
-        return base_scores
-
-    def _score_source_structures(self, query: str, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
-        weighted_representations: list[tuple[str, str, float]] = []
-        for page in pages:
-            for representation, weight in self._source_structure_representations(page):
-                weighted_representations.append((page.id, representation, weight))
-        if not weighted_representations:
-            return {}
-
-        documents = [item[1] for item in weighted_representations]
-        embedding_scores = self._embedding_search.score(query, documents)
-        text_scores = self._text_search.score(query, documents)
-        scores: dict[str, float] = {}
-        for (page_id, _, weight), embedding_score, text_score in zip(weighted_representations, embedding_scores, text_scores):
-            score = hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight) * weight
-            scores[page_id] = max(scores.get(page_id, 0.0), score)
-        return scores
-
-    def _source_structure_representations(self, page: WikiPage) -> list[tuple[str, float]]:
-        markdown = page.markdown or ""
-        sections = self._markdown_sections(markdown)
-        weighted_sections = [
-            ("Categories", 0.10),
-            ("Core Concepts", 0.20),
-            ("Section Candidates", 0.25),
-            ("Mentions", 0.15),
-        ]
-        representations = []
-        for section_name, weight in weighted_sections:
-            body = sections.get(section_name.lower())
-            if body:
-                representations.append((f"{section_name}\n{body}", weight))
-        return representations
-
-    def _markdown_sections(self, markdown: str) -> dict[str, str]:
-        sections: dict[str, list[str]] = {}
-        current: str | None = None
-        for line in markdown.splitlines():
-            match = re.match(r"^##\s+(.+?)\s*$", line.strip())
-            if match:
-                current = match.group(1).strip().lower()
-                sections.setdefault(current, [])
-                continue
-            if current is not None:
-                sections[current].append(line)
-        return {
-            section: "\n".join(lines).strip()
-            for section, lines in sections.items()
-            if "\n".join(lines).strip()
-        }
-
-    def _final_retrieval_score(self, retrieval_score: float, name_match_score: float) -> float:
-        if name_match_score >= 1.0:
-            return max(retrieval_score, 0.95)
-        if name_match_score >= 0.85:
-            return max(retrieval_score, 0.88)
-        if name_match_score > 0:
-            return min(1.0, retrieval_score + 0.20 * name_match_score)
-        return retrieval_score
 
     def _top_id(self, scores: dict[str, float]) -> str | None:
         if not scores:
@@ -681,118 +477,6 @@ class AnswerQueryUseCase:
             {"id": page_id, "score": round(score, 4)}
             for page_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)[:limit]
         ]
-
-    def _name_match_score(self, query_rewrite: QueryRewrite, page: WikiPage) -> float:
-        query_names = self._query_name_variants(query_rewrite)
-        page_names = self._page_name_variants(page)
-        if not query_names or not page_names:
-            return 0.0
-
-        for query_name in query_names:
-            if query_name in page_names:
-                return 1.0
-
-        if page.is_source:
-            return 0.0
-
-        for query_name in query_names:
-            for page_name in page_names:
-                if len(query_name) >= 2 and len(page_name) >= 2 and (query_name in page_name or page_name in query_name):
-                    return 0.85
-        return 0.0
-
-    def _query_name_variants(self, query_rewrite: QueryRewrite) -> set[str]:
-        values = [query_rewrite.original_question, query_rewrite.retrieval_query, *query_rewrite.keywords]
-        variants = set()
-        for value in values:
-            for token in re.findall(r"[A-Za-z0-9가-힣_.-]+", value.lower()):
-                normalized = self._normalize_name(token)
-                if normalized and normalized not in self._question_stopwords():
-                    variants.add(normalized)
-        return variants
-
-    def _page_name_variants(self, page: WikiPage) -> set[str]:
-        values = [page.title, page.slug, *self._extract_aliases(page.markdown or "")]
-        return {normalized for value in values if (normalized := self._normalize_name(value))}
-
-    def _extract_aliases(self, markdown: str) -> list[str]:
-        aliases = []
-        in_alias_block = False
-        for line in markdown.splitlines():
-            stripped = line.strip()
-            if re.match(r"^aliases\s*:\s*$", stripped, flags=re.IGNORECASE):
-                in_alias_block = True
-                continue
-            if in_alias_block:
-                if stripped.startswith("-"):
-                    aliases.append(stripped.lstrip("-").strip().strip('"').strip("'"))
-                    continue
-                in_alias_block = False
-            match = re.match(r"^(aliases|alias|별칭|다른 이름)\s*[:：]\s*(.+)$", stripped, flags=re.IGNORECASE)
-            if match:
-                aliases.extend(part.strip().strip('"').strip("'") for part in re.split(r"[,/、，]", match.group(2)) if part.strip())
-        return aliases
-
-    def _normalize_name(self, value: str) -> str:
-        normalized = value.lower().strip()
-        normalized = re.sub(r"\([^)]*\)", "", normalized)
-        normalized = re.sub(r"[^a-z0-9가-힣]+", "", normalized)
-        if re.search(r"[가-힣]", normalized):
-            for suffix in ["으로부터", "로부터", "에게서", "한테서", "에게", "한테", "으로", "로", "이랑", "랑", "이나", "나", "은", "는", "이", "가", "을", "를", "에", "의", "도", "만", "와", "과"]:
-                if normalized.endswith(suffix) and len(normalized) > len(suffix) + 1:
-                    return normalized[: -len(suffix)]
-        return normalized
-
-    def _question_stopwords(self) -> set[str]:
-        return {
-            "뭐",
-            "뭐야",
-            "무엇",
-            "어떻게",
-            "왜",
-            "차이",
-            "설명",
-            "알려줘",
-            "what",
-            "is",
-            "are",
-            "the",
-            "a",
-            "an",
-        }
-
-    def _representation(self, page: WikiPage) -> str:
-        markdown = page.markdown or ""
-        return "\n".join([page.title, page.summary, markdown]).strip()
-
-    def _select_seed_sources(self, source_pages: list[WikiPage], source_scores: dict[str, float]) -> list[str]:
-        ranked = sorted(source_pages, key=lambda page: source_scores.get(page.id, 0.0), reverse=True)
-        if not ranked:
-            return []
-        top_score = source_scores.get(ranked[0].id, 0.0)
-        return [
-            page.id
-            for page in ranked
-            if source_scores.get(page.id, 0.0) >= top_score - 0.02
-        ][: self._source_candidate_limit]
-
-    def _select_focus_concepts(self, concept_pages: list[WikiPage], concept_scores: dict[str, float]) -> list[str]:
-        ranked = sorted(concept_pages, key=lambda page: concept_scores.get(page.id, 0.0), reverse=True)
-        if not ranked:
-            return []
-        top_score = concept_scores.get(ranked[0].id, 0.0)
-        if top_score < self._focus_concept_threshold:
-            return []
-        focus = [page.id for page in ranked if concept_scores.get(page.id, 0.0) >= top_score - 0.001]
-        return focus[: self._concept_candidate_limit]
-
-    def _select_direct_match_concepts(self, query_rewrite: QueryRewrite, concept_pages: list[WikiPage]) -> list[str]:
-        direct_matches = [
-            page.id
-            for page in concept_pages
-            if self._name_match_score(query_rewrite, page) >= 1.0
-        ]
-        return direct_matches[: self._concept_candidate_limit]
 
     def _add_focus_concepts_to_related_pages(
         self,
@@ -914,40 +598,6 @@ class AnswerQueryUseCase:
             )
         )
 
-    def _renumber_used_evidence(
-        self,
-        answer: GeneratedAnswer,
-        evidence_snippets: list[EvidenceSnippet],
-    ) -> tuple[GeneratedAnswer, list[EvidenceSnippet]]:
-        if not evidence_snippets:
-            return answer, evidence_snippets
-
-        snippets_by_rank = {snippet.rank: snippet for snippet in evidence_snippets}
-        old_to_new_rank: dict[int, int] = {}
-
-        def next_rank(old_rank: int) -> int:
-            if old_rank not in old_to_new_rank:
-                old_to_new_rank[old_rank] = len(old_to_new_rank) + 1
-            return old_to_new_rank[old_rank]
-
-        def replace_marker(match: re.Match[str]) -> str:
-            ranks = [int(value) for value in re.findall(r"\d+", match.group(1))]
-            remapped = [
-                str(next_rank(rank)) if rank in snippets_by_rank else str(rank)
-                for rank in ranks
-            ]
-            return f"[{', '.join(remapped)}]"
-
-        content = re.sub(r"\[((?:\d+)(?:\s*,\s*\d+)*)\]", replace_marker, answer.content)
-        used_snippets = [
-            replace(snippets_by_rank[old_rank], rank=new_rank)
-            for old_rank, new_rank in sorted(old_to_new_rank.items(), key=lambda item: item[1])
-            if old_rank in snippets_by_rank
-        ]
-        if not used_snippets:
-            return answer, []
-        return GeneratedAnswer(content=content), used_snippets
-
     def _load_markdown_for_related_pages(self, related_pages: list[RetrievedPage]) -> list[RetrievedPage]:
         if self._markdown_reader is None:
             return related_pages
@@ -992,13 +642,6 @@ class AnswerQueryUseCase:
             except Exception:
                 loaded.append(page)
         return loaded
-
-    def _hash(self, text: str) -> str:
-        return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
-
-    def _slug(self, text: str) -> str:
-        slug = re.sub(r"[^A-Za-z0-9가-힣_.-]+", "-", text.lower()).strip("-._")
-        return slug[:80]
 
     def _publish(
         self,

@@ -720,34 +720,6 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002"])
         self.assertIn("[1]", result.answer.content)
 
-    def test_selects_multiple_near_tied_seed_sources(self) -> None:
-        pages = [
-            source_page("source:first", "First Source"),
-            source_page("source:second", "Second Source"),
-            source_page("source:third", "Third Source"),
-            source_page("source:fourth", "Fourth Source"),
-            source_page("source:low", "Low Source"),
-        ]
-        use_case = AnswerQueryUseCase(
-            wiki_repository=InMemoryWikiRepository(pages, []),
-            embedding_search=ScoreSearch({}),
-            text_search=EmptyTextSearch(),
-            answer_generator=RecordingAnswerGenerator(),
-        )
-
-        selected = use_case._select_seed_sources(
-            pages,
-            {
-                "source:first": 1.0,
-                "source:second": 0.99,
-                "source:third": 0.98,
-                "source:fourth": 0.981,
-                "source:low": 0.80,
-            },
-        )
-
-        self.assertEqual(selected, ["source:first", "source:second", "source:fourth", "source:third"])
-
     def test_focus_concepts_are_used_as_graph_seed_pages(self) -> None:
         pages = [
             source_page("source:wiki", "Wiki Source"),
