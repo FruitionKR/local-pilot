@@ -146,6 +146,84 @@ Frontend 표시 우선순위:
 - 상세/디버그 화면에는 event timeline을 표시한다.
 - 멀티턴 디버깅에는 `query_contextualized.contextual_question`이 특히 중요하다.
 
+## 현재 Spring 코드와 DB 대조 결과
+
+이 섹션은 2026-06-28 현재 코드 기준으로 문서의 작업 목록을 다시 대조한 결과다.
+
+### 이미 구현된 Spring 기능
+
+- 문서 업로드 후 Spring `documents.id`를 pipeline `document_id`로 전달한다.
+  - `DocumentService.upload()`가 `documents` row를 저장한다.
+  - transaction commit 이후 `DocumentProcessingRequester`가 `POST /pipeline/runs`에 `{"document_id": "..."}`를 보낸다.
+- 원문 block 조회 API가 있다.
+  - `GET /api/documents/{document_id}/blocks`
+  - `source_blocks`는 pipeline이 적재하고 Spring은 조회한다.
+- Query 응답의 기본 필드는 Spring 응답에 포함된다.
+  - `answer`
+  - `related_pages`
+  - `evidence_snippets`
+  - `graph_context`
+  - `traversal_paths`
+- Query 결과 저장 일부가 구현되어 있다.
+  - `chat_messages`에 user/assistant 메시지를 저장한다.
+  - `chat_message_references`에 `evidence_snippets` 기반 source block reference를 저장한다.
+  - `chat_message_related_pages`에 `related_pages`를 저장한다.
+- 비동기 query run과 SSE callback endpoint가 있다.
+  - `POST /api/query/runs`
+  - `GET /api/query/runs/{requestId}`
+  - `GET /api/query/runs/{requestId}/events`
+  - `POST /api/query/runs/{requestId}/events/callback`
+
+### 현재 Spring 코드에서 부족한 부분
+
+- `DocumentProcessingRequester`는 pipeline 응답의 `run_id`를 로그로만 남기고 Spring DB에 저장하지 않는다.
+  - 따라서 Spring API만으로 문서와 pipeline run을 안정적으로 연결하기 어렵다.
+- `QueryRunStore`와 `QueryEventBroker`는 메모리 기반이다.
+  - 서버 재시작, TTL 만료 후에는 query run 상태와 event timeline을 복원할 수 없다.
+  - 제품 데이터로 쓰려면 DB 테이블이 필요하다.
+- Spring `QueryRequest`는 현재 `question`만 받는다.
+  - pipeline `/query`는 `recent_conversation_summary`, `reference_context`, `request_id`, `log_callback_url`을 받을 수 있지만, 일반 `POST /api/query` 경로에서는 멀티턴 context가 전달되지 않는다.
+  - 비동기 query run 경로도 `QueryRunService.start(question)`만 받아 context를 저장하거나 전달하지 않는다.
+- `PipelineQueryRequester.QueryPayload`는 `question`, `request_id`, `log_callback_url`만 보낸다.
+  - pipeline이 원하는 `recent_conversation_summary`, `reference_context`를 Spring에서 만들더라도 현재 requester로는 전달할 수 없다.
+- Query evaluator 결과는 Spring 응답이나 DB에 직접 저장되지 않는다.
+  - pipeline은 `query_evaluated` event로 `route`, `evidence_relevance`, `reason`, `web_query`를 보낼 수 있다.
+  - Spring은 현재 event를 SSE로 중계하지만 영속 저장하지 않으므로 query 상세 화면에서 안정적으로 복원할 수 없다.
+- `retrieval_summary`는 pipeline HTTP response에 없고 Spring DTO에도 없다.
+  - 화면에서 `used_source_count`, `used_concept_count`, `stop_reason` 같은 값을 요구하면 pipeline response 확장 또는 event 기반 조립이 필요하다.
+- Spring은 현재 JPA `ddl-auto=update`에 의존한다.
+  - 개발 환경에서는 컬럼/테이블이 자동 생성될 수 있지만, 운영/공유 DB에서는 Flyway/Liquibase 같은 명시적 migration이 필요하다.
+
+### pipeline 코드가 요구하는 DB
+
+pipeline `init_db()`와 query repository 기준으로 아래 테이블은 ingest/query가 실제로 사용한다.
+
+| 테이블 | 사용 주체 | 현재 용도 | Spring 작업 |
+| --- | --- | --- | --- |
+| `documents` | Spring + pipeline | 업로드 문서, inline/input path 문서 추적 | 기존 Spring entity와 pipeline insert 컬럼이 계속 호환되어야 함 |
+| `source_blocks` | pipeline write, Spring read | citation 원문 block 조회 | 이미 조회 API 있음. 운영 migration 필요 |
+| `wiki_pages` | pipeline write, Spring read | source/concept page | 기존 Spring entity와 pipeline upsert 계약 유지 |
+| `document_wiki_links` | pipeline write, Spring read | 문서와 source/concept page 연결 | `GET /api/documents/{id}`에서 이미 사용 |
+| `wiki_page_links` | pipeline write, Spring read | graph edge | graph/query 조회에서 사용 |
+| `pipeline_runs` | pipeline write, Spring read 필요 | ingest run 상태, 축소 manifest, error | Spring 조회 API와 문서 연결 저장 필요 |
+| `wiki_page_embeddings` | pipeline embedding job write | page 단위 dense embedding 상태 | 운영 migration 필요 |
+| `wiki_embedding_vectors` | pipeline write/query read | canonical representation dedupe, vector 저장 또는 pending 상태 | 운영 migration 필요 |
+| `wiki_embedding_units` | pipeline write/query read, Spring read 필요 | page 내부 evidence 후보와 source block refs | 운영 migration 및 조회 API 필요 |
+| `chat_messages` | Spring write/read | user/assistant 메시지 | 이미 구현 |
+| `chat_message_references` | Spring write/read | 답변 citation/evidence source block reference | 이미 구현 |
+| `chat_message_related_pages` | Spring write/read | 답변과 관련 page 목록 | 이미 구현 |
+
+추가로 제품 기능을 위해 Spring이 만들어야 하는 DB 후보는 아래와 같다.
+
+| 테이블 또는 저장 위치 | 필요한 이유 | 최소 필드 |
+| --- | --- | --- |
+| `query_runs` | 비동기 query 상태를 서버 재시작 후에도 복원 | `request_id`, `status`, `question`, `result_json`, `error_message`, `created_at`, `started_at`, `completed_at` |
+| `query_events` | event timeline, evaluator route, web search, contextualized question 복원 | `id`, `request_id`, `sequence`, `stage`, `message`, `data_json`, `received_at` |
+| `query_contexts` 또는 `query_runs` 컬럼 | 멀티턴 context와 재현성 보존 | `request_id`, `thread_id`, `original_question`, `recent_conversation_summary`, `reference_context_json` |
+| `query_evaluations` 또는 `query_events`에서 파생 저장 | query 상세 화면에서 evaluator 결과를 빠르게 표시 | `request_id`, `route`, `evidence_relevance`, `citation_evidence_alignment`, `unsupported_refusal_accuracy`, `reason`, `feedback`, `web_query` |
+
+1차 구현에서는 `query_events.data_json`에 원본 event를 저장하고, `query_evaluated` stage에서 evaluator 값을 읽어 query 상세 응답에 조립해도 된다. 다만 검색/필터링이 필요해지면 `query_evaluations`처럼 분리하는 편이 낫다.
+
 ## 멀티턴 Query 기준
 
 현재 pipeline query API는 멀티턴 자체를 message history 전체로 받지 않는다.
@@ -200,7 +278,9 @@ Spring은 문서 업로드 후 pipeline에 안정적인 `document_id`를 전달�
 필요 작업:
 
 - Markdown 업로드 후 Spring `documents.id`를 pipeline `document_id`로 전달한다.
-- pipeline run 응답의 `run_id`를 Spring 문서 상태에 저장한다.
+- pipeline run 응답의 `run_id`를 Spring 문서 상태 또는 별도 ingest run 테이블에 저장한다.
+  - 현재 코드는 `run_id`를 로그로만 남긴다.
+  - 최소한 `documents.pipeline_run_id` 또는 `document_pipeline_runs(document_id, run_id, status, created_at)`가 필요하다.
 - inline text, local path, uploaded file ingest가 같은 추적 모델을 쓰도록 정리한다.
 - `input_markdown` 또는 `input_path`를 직접 호출하는 내부/관리자 기능이 있다면, pipeline이 생성한 `api-inline-{run_id}` 또는 `api-file-{run_id}` document id를 Spring에서도 추적할지 결정한다.
 - `wait=false` 기본 흐름에서는 `manifest`가 없다는 전제로 polling 또는 callback 기반 상태 갱신을 구현한다.
@@ -220,6 +300,9 @@ Spring은 채팅 thread의 최근 상태를 pipeline request에 맞는 `recent_c
 
 - chat thread 단위로 최근 대화 요약을 저장하거나 즉시 생성한다.
 - 현재 활성 주제, 최근 concept, 대명사/지시어 referent를 추출한다.
+- Spring `QueryRequest`에 최소 `thread_id`를 추가하거나, 비동기 query run 생성 API에서 thread id를 받는다.
+- `PipelineQueryRequester.QueryPayload`에 `recent_conversation_summary`, `reference_context`를 추가한다.
+- `QueryService.query()`와 `QueryRunService.start()`가 context payload를 받아 pipeline에 전달하도록 확장한다.
 - `POST /query` 호출 시 다음 필드를 함께 전달한다.
   - `question`
   - `recent_conversation_summary`
@@ -273,6 +356,11 @@ Spring은 채팅 thread의 최근 상태를 pipeline request에 맞는 `recent_c
   - `pipeline_log`
   - `warnings`
 - `save_debug_json` 사용 여부
+- Spring에서 `pipeline_runs`를 조회하는 API를 추가한다.
+  - pipeline DB에는 이미 `pipeline_runs` 테이블이 있다.
+  - Spring이 같은 DB를 읽는다면 JPA entity 또는 JDBC 조회 DTO가 필요하다.
+- `DocumentProcessingRequester`가 받은 `run_id`를 문서 상세 응답에서 확인할 수 있게 저장한다.
+- callback event가 필요하면 ingest용 event 저장 테이블을 query event와 분리할지 공용 event 테이블로 둘지 결정한다.
 
 권장 endpoint:
 
@@ -315,6 +403,13 @@ pipeline query 응답의 evidence 정보를 Spring 응답에서 손실 없이 �
   - `recent_conversation_summary`
   - `reference_context`
   - `contextualized_question` 또는 pipeline event의 `query_contextualized.contextual_question`
+
+현재 Spring 코드 상태:
+
+- `answer`, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`는 `QueryResponse`로 반환한다.
+- `chat_message_references`에는 `source_document_id`, `source_block_ids`, `text`, `rank` 기반 reference를 저장한다.
+- `chat_message_related_pages`에는 `related_pages`를 저장한다.
+- 멀티턴 context, contextualized question, evaluator 결과는 아직 DB에 저장하지 않는다.
 
 제품 표시를 위해 Spring에서 보강하거나 pipeline에 추가 요청해야 하는 필드:
 
@@ -364,24 +459,41 @@ pipeline이 만든 신규 테이블을 운영 DB에서 재현 가능하게 해�
 
 필요 테이블:
 
+- `pipeline_runs`
+- `wiki_page_embeddings`
 - `wiki_embedding_vectors`
 - `wiki_embedding_units`
+- `query_runs`
+- `query_events`
+- `query_contexts` 또는 `query_runs`의 context 컬럼
+- 필요 시 `query_evaluations`
 
 필요 작업:
 
 - Spring이 DB schema를 소유한다면 Flyway/Liquibase migration을 추가한다.
+  - 현재 `spring.jpa.hibernate.ddl-auto=update`는 개발 편의로만 취급한다.
+  - 운영/공유 DB에서는 JPA 자동 변경 대신 migration 파일로 재현해야 한다.
 - pipeline이 schema를 소유한다면 Spring 문서에 조회 전용 계약을 명시한다.
+- pipeline `init_db()`가 만든 테이블 정의를 Spring migration과 맞춘다.
+- `pipeline_runs`는 Spring에서 문서 처리 상태 조회에 필요하다.
+- `wiki_page_embeddings`는 page 단위 embedding job 상태 확인에 필요하다.
 - canonical representation dedupe 기준인 `embedding_model + representation_hash` unique 정책을 유지한다.
 - `wiki_embedding_units.page_id` index를 유지한다.
 - `wiki_embedding_units.embedding_vector_id` index를 유지한다.
 - `wiki_embedding_units.source_document_id` 기준 조회가 필요하면 Spring migration에서 추가 index를 검토한다.
 - `wiki_embedding_vectors.embedding_vector`는 nullable이다. dense vector가 아직 없더라도 row가 생성되는 상태를 정상으로 취급한다.
 - `wiki_embedding_vectors.status='pending'`은 오류가 아니라 vector 생성 전 canonical text 저장 상태다.
+- `query_runs.request_id`는 unique해야 한다.
+- `query_events`는 `request_id + sequence` 또는 `request_id + received_at + stage`로 정렬 가능해야 한다.
+- `query_events.data_json`은 `jsonb`로 저장해 `query_contextualized`, `query_evaluated`, `web_search_*` event를 원본 손실 없이 보존한다.
+- `reference_context`는 고정 컬럼으로 쪼개기보다 1차에서는 `jsonb`로 저장한다.
 
 검증 기준:
 
 - 깨끗한 DB에서 migration 후 ingest/query가 성공한다.
 - 같은 representation text가 여러 page에서 반복되어도 vector row는 중복 생성되지 않고 unit link만 추가된다.
+- Spring 재시작 후에도 query run 상태와 event timeline을 조회할 수 있다.
+- `query_evaluated` event의 route와 `web_query`를 query 상세 화면에서 복원할 수 있다.
 
 ### 6. Web search 및 evaluator 설정 노출
 
@@ -418,19 +530,25 @@ query callback event는 단순 로그가 아니라 멀티턴/웹보강/평가 �
 
 - Spring이 `request_id`를 생성해 `POST /query`에 전달한다.
 - Spring이 `log_callback_url`을 제공하고 event를 저장한다.
+  - 현재 코드는 SSE 중계와 메모리 버퍼까지만 제공한다.
+  - 제품 기능으로 쓰려면 `query_events` 같은 DB 저장소가 필요하다.
 - event 저장 모델은 최소 다음 필드를 가진다.
   - `request_id`
+  - `sequence`
   - `stage`
   - `message`
-  - `data`
-  - `created_at`
+  - `data_json`
+  - `received_at`
 - 같은 request 안에서 stage 순서를 유지한다.
 - query response와 event log를 같은 request id로 연결한다.
+- `query_evaluated` event는 evaluator 결과 저장의 1차 source로 취급한다.
+- `query_contextualized` event는 멀티턴 참조 해소 디버깅의 1차 source로 취급한다.
 
 검증 기준:
 
 - `query_contextualized`, `query_evaluated`, `web_search_started`, `web_search_answer_generated` 이벤트를 query 상세 화면에서 확인할 수 있다.
 - evaluator 실패 이벤트가 있어도 최종 query 자체가 무조건 실패로 표시되지 않는다.
+- 서버를 재시작해도 완료된 query run의 event timeline을 다시 조회할 수 있다.
 
 ## Frontend 작업
 
