@@ -167,6 +167,20 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.blocks(documentId));
     }
 
+    @Operation(summary = "문서 삭제", description = "문서와 연결된 source Wiki 페이지, MinIO 오브젝트를 삭제합니다. concept Wiki 페이지는 삭제되지 않습니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "삭제 성공"),
+        @ApiResponse(responseCode = "404", description = "문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @DeleteMapping("/{document_id}")
+    public ResponseEntity<Void> delete(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId) {
+        documentService.delete(documentId);
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "파이프라인 이벤트 수신", description = "llmPipeline이 처리 단계마다 호출하는 heartbeat callback입니다. processing_updated_at을 갱신합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "이벤트 처리 완료"),

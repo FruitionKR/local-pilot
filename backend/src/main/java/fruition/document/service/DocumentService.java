@@ -30,6 +30,9 @@ import fruition.wiki.repository.WikiPageRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +53,7 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentService {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     private static final int STALLED_THRESHOLD_SECONDS = 60;
 
     private final DocumentRepository documentRepository;
@@ -325,6 +329,48 @@ public class DocumentService {
         }
 
         return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
+    }
+
+    @Transactional
+    public void delete(String documentId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        String sourceUri = document.getSourceUri();
+        String extractedTextUri = document.getExtractedTextUri();
+
+        // source wiki page 삭제 → wiki_page_links, wiki_page_embeddings CASCADE
+        wikiPageRepository.findById("source:" + documentId)
+                .ifPresent(wikiPageRepository::delete);
+
+        // document 삭제 → source_blocks, document_wiki_links, wiki_embedding_units CASCADE
+        documentRepository.delete(document);
+
+        // commit 이후 MinIO 오브젝트 삭제
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteMinioObject(sourceUri);
+                if (extractedTextUri != null) {
+                    deleteMinioObject(extractedTextUri);
+                }
+            }
+        });
+    }
+
+    private void deleteMinioObject(String uri) {
+        if (uri == null || uri.isBlank()) return;
+        String objectKey = normalizeObjectKey(uri);
+        try {
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectKey)
+                            .build()
+            );
+        } catch (Exception e) {
+            log.warn("[MinIO 오브젝트 삭제 실패] uri={} error={}", uri, e.getMessage());
+        }
     }
 
     public DocumentBlocksResponse blocks(String documentId) {

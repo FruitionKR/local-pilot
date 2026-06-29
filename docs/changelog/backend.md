@@ -4,6 +4,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-29 (2)
+
+### feat: 문서 삭제 API 추가 — DELETE /api/documents/{id}
+
+**배경**
+
+프론트의 삭제 메뉴가 로컬 tree 상태만 제거하고 backend API를 호출하지 않아 새로고침하면 문서가 다시 나타났습니다.
+
+**추가/변경된 것**
+
+- `DELETE /api/documents/{document_id}` endpoint 추가. 성공 시 `204 No Content`.
+- 삭제 범위: source wiki page, MinIO 원본/추출 텍스트 오브젝트.
+- DB CASCADE로 자동 처리: `source_blocks`, `document_wiki_links`, `wiki_page_links`, `wiki_page_embeddings`, `wiki_embedding_units`.
+- concept wiki page는 여러 문서 공유 가능하므로 삭제 제외.
+- MinIO 오브젝트 삭제는 DB commit 이후 실행. 실패 시 경고 로그만 남기고 204 반환.
+- `processing` 상태 문서도 삭제 허용. 이후 pipeline callback은 404 무시.
+
+---
+
 ## 2026-06-29
 
 ### feat: 문서 처리 상태 신뢰성 개선 — pipeline_run_id 추적 및 processing_state 추가
