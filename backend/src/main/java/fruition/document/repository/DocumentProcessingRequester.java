@@ -26,27 +26,36 @@ public class DocumentProcessingRequester {
                 .build();
     }
 
-    public void request(String documentId) {
+    public PipelineRunResponse request(String documentId, String callbackUrl) {
+        String body = "{\"document_id\":\"" + documentId + "\""
+                + (callbackUrl != null ? ",\"log_callback_url\":\"" + callbackUrl + "\"" : "")
+                + "}";
         try {
             PipelineRunResponse response = restClient.post()
                     .uri(processingEndpoint)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"document_id\":\"" + documentId + "\"}")
+                    .body(body)
                     .retrieve()
                     .body(PipelineRunResponse.class);
             log.info("[파이프라인 실행 요청 완료] documentId={} runId={} status={}",
                     documentId,
                     response != null ? response.runId() : "null",
                     response != null ? response.status() : "null");
+            return response;
         } catch (RestClientResponseException e) {
-            log.warn("[파이프라인 실행 요청 실패] documentId={} httpStatus={} body={}",
-                    documentId, e.getStatusCode(), e.getResponseBodyAsString());
+            String msg = "[파이프라인 실행 요청 실패] documentId=" + documentId
+                    + " httpStatus=" + e.getStatusCode()
+                    + " body=" + e.getResponseBodyAsString();
+            log.warn(msg);
+            throw new RuntimeException(msg, e);
         } catch (Exception e) {
-            log.warn("[파이프라인 실행 요청 실패] documentId={} error={}", documentId, e.getMessage());
+            String msg = "[파이프라인 실행 요청 실패] documentId=" + documentId + " error=" + e.getMessage();
+            log.warn(msg);
+            throw new RuntimeException(msg, e);
         }
     }
 
-    private record PipelineRunResponse(
+    public record PipelineRunResponse(
             @JsonProperty("run_id") String runId,
             String status,
             @JsonProperty("output_dir") String outputDir,

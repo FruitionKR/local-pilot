@@ -10,6 +10,7 @@ import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.PipelineEventRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -164,6 +165,21 @@ public class DocumentController {
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId) {
         return ResponseEntity.ok(documentService.blocks(documentId));
+    }
+
+    @Operation(summary = "파이프라인 이벤트 수신", description = "llmPipeline이 처리 단계마다 호출하는 heartbeat callback입니다. processing_updated_at을 갱신합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "이벤트 처리 완료"),
+        @ApiResponse(responseCode = "404", description = "문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/pipeline-events")
+    public ResponseEntity<Void> pipelineEvent(
+            @Parameter(description = "문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId,
+            @RequestBody PipelineEventRequest request) {
+        documentService.applyPipelineEvent(documentId, request.runId());
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "문서 이름 변경", description = "문서 표시명을 변경합니다. sync_source_title=true이면 연결된 source Wiki 페이지 제목도 함께 변경됩니다.")

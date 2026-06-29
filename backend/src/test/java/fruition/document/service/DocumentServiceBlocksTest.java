@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,13 +37,15 @@ class DocumentServiceBlocksTest {
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
+    @Mock TransactionTemplate transactionTemplate;
 
     DocumentService documentService;
 
     @BeforeEach
     void setUp() {
         documentService = new DocumentService(documentRepository, minioClient, storageProps,
-                processingRequester, documentWikiLinkRepository, wikiPageRepository, sourceBlockRepository);
+                processingRequester, documentWikiLinkRepository, wikiPageRepository,
+                sourceBlockRepository, transactionTemplate, "http://localhost:8080");
     }
 
     @Test
