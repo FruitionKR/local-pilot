@@ -1,5 +1,6 @@
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditTarget,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 DEFAULT_MARKDOWN_EDIT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_edit.system.md"
@@ -26,10 +28,12 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         client: ChatCompletionsJsonClient,
         system_prompt: str,
         create_system_prompt: str | None = None,
+        schema_prompt_provider: Callable[[str], str] | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
         self._create_system_prompt = create_system_prompt or system_prompt
+        self._schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def generate_edit(self, request: MarkdownEditRequest) -> MarkdownEditResult:
         payload = {
@@ -43,7 +47,10 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             },
             "markdown": request.markdown,
         }
-        raw = self._client.complete_json(self._system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+        raw = self._client.complete_json(
+            _with_schema_prompt(self._system_prompt, self._schema_prompt_provider("edit")),
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        )
         return _normalize_edit_result(raw, request.target)
 
     def generate_markdown(self, request: MarkdownCreateRequest) -> MarkdownCreateResult:
@@ -53,7 +60,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "reference_context": request.reference_context or {},
         }
         raw = self._client.complete_json(
-            self._create_system_prompt,
+            _with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit")),
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
         return _normalize_create_result(raw)
@@ -79,7 +86,14 @@ def build_markdown_editor() -> MarkdownEditorPort:
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
         create_system_prompt=create_prompt_path.read_text(encoding="utf-8"),
+        schema_prompt_provider=lambda feature: get_active_schema_prompt(feature),  # type: ignore[arg-type]
     )
+
+
+def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
+    if not schema_prompt.strip():
+        return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 def _normalize_edit_result(value: dict[str, Any], requested_target: MarkdownEditTarget) -> MarkdownEditResult:
