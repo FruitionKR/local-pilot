@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/infra/docker-compose.dev.yml"
 PIPELINE_COMPOSE_FILE="$ROOT_DIR/infra/docker-compose.pipeline.yml"
 
-REMOVE_VOLUMES="false"
+REMOVE_VOLUMES="true"
 
 log() {
   printf '[dev-down] %s\n' "$*"
@@ -21,7 +21,7 @@ usage() {
 Usage: scripts/dev-down.sh [--volumes]
 
 Options:
-  --volumes   PostgreSQL, MinIO, pipeline 로컬 볼륨까지 삭제합니다.
+  --volumes   PostgreSQL, MinIO, pipeline 로컬 볼륨까지 삭제합니다. 기본 동작입니다.
   -h, --help  도움말을 출력합니다.
 USAGE
 }
