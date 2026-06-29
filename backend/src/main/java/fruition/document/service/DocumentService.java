@@ -19,6 +19,8 @@ import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentWikiPageRef;
+import fruition.document.domain.DocumentProcessingQueue;
+import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
@@ -63,6 +65,7 @@ public class DocumentService {
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
     private final SourceBlockRepository sourceBlockRepository;
+    private final DocumentProcessingQueueRepository queueRepository;
     private final TransactionTemplate transactionTemplate;
     private final String callbackBaseUrl;
 
@@ -73,6 +76,7 @@ public class DocumentService {
                            DocumentWikiLinkRepository documentWikiLinkRepository,
                            WikiPageRepository wikiPageRepository,
                            SourceBlockRepository sourceBlockRepository,
+                           DocumentProcessingQueueRepository queueRepository,
                            TransactionTemplate transactionTemplate,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
@@ -82,6 +86,7 @@ public class DocumentService {
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.sourceBlockRepository = sourceBlockRepository;
+        this.queueRepository = queueRepository;
         this.transactionTemplate = transactionTemplate;
         this.callbackBaseUrl = callbackBaseUrl;
     }
@@ -158,18 +163,24 @@ public class DocumentService {
 
     private void requestProcessingAfterCommit(String documentId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            doRequestProcessing(documentId);
+            transactionTemplate.execute(status -> {
+                queueRepository.save(new DocumentProcessingQueue(documentId));
+                return null;
+            });
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                doRequestProcessing(documentId);
+                transactionTemplate.execute(status -> {
+                    queueRepository.save(new DocumentProcessingQueue(documentId));
+                    return null;
+                });
             }
         });
     }
 
-    private void doRequestProcessing(String documentId) {
+    void doRequestProcessing(String documentId) {
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
@@ -338,6 +349,9 @@ public class DocumentService {
 
         String sourceUri = document.getSourceUri();
         String extractedTextUri = document.getExtractedTextUri();
+
+        // 처리 queue에서 제거
+        queueRepository.deleteByDocumentId(documentId);
 
         // source wiki page 삭제 → wiki_page_links, wiki_page_embeddings CASCADE
         wikiPageRepository.findById("source:" + documentId)

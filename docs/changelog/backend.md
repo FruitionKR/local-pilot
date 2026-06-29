@@ -4,6 +4,30 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-29 (3)
+
+### feat: 여러 문서 동시 업로드 시 pipeline 처리 순서 보장 — DB 기반 처리 큐 도입
+
+**배경**
+
+프론트에서 파일을 여러 개 동시에 업로드하면 각 업로드 요청이 병렬로 처리되어 pipeline run이 동시에 여러 개 실행됐습니다.
+llmPipeline 내부에 전역 큐나 단일 worker 제한이 없어 처리 순서와 완료 순서가 보장되지 않았습니다.
+
+**추가/변경된 것**
+
+- `document_processing_queue` 테이블 추가. 컬럼: `id`, `document_id`(UNIQUE), `created_at`, `status`(`pending`|`processing`).
+- `DocumentProcessingQueue` 엔티티 + `DocumentProcessingQueueRepository` 추가.
+- `DocumentProcessingWorker` 추가. `@Scheduled(fixedDelay=2000)`로 `pending` 항목을 `created_at` 오름차순으로 하나씩 꺼내 pipeline 요청을 순차 실행합니다.
+- `@PostConstruct`에서 서버 재시작 시 `processing` 상태로 stuck된 항목을 `pending`으로 리셋합니다.
+- `DocumentService.requestProcessingAfterCommit()`이 pipeline을 즉시 호출하는 대신 queue에 INSERT하도록 변경했습니다.
+- `DocumentService.delete()`가 문서 삭제 시 queue 항목도 함께 제거합니다.
+
+**주의사항**
+
+- 서버 인스턴스가 여러 개인 환경에서는 `pending → processing` 전환의 원자성을 보장하지 않습니다. 현재 로컬 단일 인스턴스 기준 구현입니다.
+
+---
+
 ## 2026-06-29 (2)
 
 ### feat: 문서 삭제 API 추가 — DELETE /api/documents/{id}

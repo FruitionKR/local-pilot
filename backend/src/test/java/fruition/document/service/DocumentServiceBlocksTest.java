@@ -5,6 +5,7 @@ import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
@@ -37,6 +38,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
+    @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock TransactionTemplate transactionTemplate;
 
     DocumentService documentService;
@@ -45,7 +47,7 @@ class DocumentServiceBlocksTest {
     void setUp() {
         documentService = new DocumentService(documentRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
-                sourceBlockRepository, transactionTemplate, "http://localhost:8080");
+                sourceBlockRepository, queueRepository, transactionTemplate, "http://localhost:8080");
     }
 
     @Test
