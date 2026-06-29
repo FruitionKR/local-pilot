@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-06-29
+
+### chore: dev-down 기본 볼륨 삭제 적용
+
+**배경**
+
+로컬 개발 환경을 종료할 때 PostgreSQL, MinIO, pipeline 로컬 볼륨까지 함께 정리되도록 기본 동작을 맞출 필요가 있었습니다.
+
+**변경된 것**
+
+- `scripts/dev-down.sh` — 옵션 없이 실행해도 Docker Compose 로컬 볼륨을 삭제하도록 기본값 변경
+- `scripts/dev-down.sh` — `--volumes` 도움말에 기본 동작임을 명시
+
+**검증**
+
+- `bash -n scripts/dev-down.sh`
+- `scripts/dev-down.sh --help`
+
+---
+
 ## 2026-06-18
 
 ### chore: dev-up pipeline API 포함
