@@ -12,18 +12,23 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
+from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.query.interfaces.http.routes import router as query_router
+from app.modules.wiki_schema.interfaces.http.routes import router as wiki_schema_router
 from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase
 from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
 from app.modules.wiki_embedding.infrastructure.minio_markdown_reader import MinioMarkdownReader
 from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import PostgresWikiPageEmbeddingRepository
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+from app.modules.wiki_schema.infrastructure import postgres_wiki_schema_repository as wiki_schema_database
 from run_lab import run_pipeline
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+app.include_router(agent_router)
 app.include_router(query_router)
+app.include_router(wiki_schema_router)
 logger = logging.getLogger("fruition.pipeline")
 
 
@@ -176,6 +181,7 @@ def health() -> dict[str, str]:
 def init_db() -> dict[str, str]:
     try:
         database.init_db()
+        wiki_schema_database.init_db()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "initialized"}
