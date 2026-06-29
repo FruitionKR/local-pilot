@@ -1,5 +1,5 @@
 from app.modules.query.application.ports import WikiRepositoryPort
-from app.modules.query.domain.entities import WikiPage, WikiPageLink
+from app.modules.query.domain.entities import WikiEmbeddingUnit, WikiPage, WikiPageLink
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
@@ -48,3 +48,30 @@ class PostgresWikiRepository(WikiRepositoryPort):
             )
             for row in rows
         ]
+
+    def list_embedding_units_by_page_ids(self, page_ids: list[str]) -> dict[str, list[WikiEmbeddingUnit]]:
+        if not page_ids:
+            return {}
+        with database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, page_id, source_document_id, unit_type, block_refs, text, weight
+                FROM wiki_embedding_units
+                WHERE page_id = ANY(%s)
+                ORDER BY page_id, weight DESC, id
+                """,
+                (page_ids,),
+            ).fetchall()
+        units_by_page_id: dict[str, list[WikiEmbeddingUnit]] = {}
+        for row in rows:
+            unit = WikiEmbeddingUnit(
+                id=row["id"],
+                page_id=row["page_id"],
+                source_document_id=row["source_document_id"],
+                unit_type=row["unit_type"],
+                source_block_ids=list(row["block_refs"] or []),
+                text=row["text"],
+                weight=float(row["weight"] or 1.0),
+            )
+            units_by_page_id.setdefault(unit.page_id, []).append(unit)
+        return units_by_page_id

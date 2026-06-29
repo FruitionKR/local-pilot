@@ -4,23 +4,44 @@
 
 ---
 
-## 2026-06-29
+## 2026-06-28
 
-### chore: dev-down 기본 볼륨 삭제 적용
+### chore: pipeline query 보강 설정 추가
 
 **배경**
 
-로컬 개발 환경을 종료할 때 PostgreSQL, MinIO, pipeline 로컬 볼륨까지 함께 정리되도록 기본 동작을 맞출 필요가 있었습니다.
+Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pipeline API에서 환경변수로 제어할 수 있어야 했습니다.
 
 **변경된 것**
 
-- `scripts/dev-down.sh` — 옵션 없이 실행해도 Docker Compose 로컬 볼륨을 삭제하도록 기본값 변경
-- `scripts/dev-down.sh` — `--volumes` 도움말에 기본 동작임을 명시
+- `infra/docker-compose.pipeline.yml` — `QUERY_EVALUATOR_MODE`, `QUERY_WEB_SEARCH_MODE`, `QUERY_WEB_SEARCH_MAX_RESULTS`, `QUERY_WEB_SEARCH_TIMEOUT_SECONDS`, `QUERY_MIN_INTERNAL_RELEVANCE_SCORE` 환경변수 추가
+- `infra/docker-compose.pipeline.yml` — `TAVILY_API_KEY`를 외부 환경변수로 주입할 수 있게 추가
 
 **검증**
 
-- `bash -n scripts/dev-down.sh`
-- `scripts/dev-down.sh --help`
+- `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests -q`
+
+---
+
+## 2026-06-26
+
+### chore: 로컬 bootstrap 스크립트 추가
+
+**배경**
+
+처음 저장소를 실행하는 컴퓨터에서 필요한 프로젝트 의존성을 매번 수동으로 확인하고 설치해야 했습니다.
+
+**변경된 것**
+
+- `scripts/bootstrap.sh` — 필수 명령과 Node.js/npm/Java 버전을 확인하고, `infra/.env` 생성과 프론트엔드 의존성 설치를 자동화
+- `scripts/bootstrap.sh` — `--with-python` 옵션으로 `llmPipeline/.venv` 생성과 `llmPipeline/requirements.txt` 설치 지원
+- `scripts/dev-up.sh` — 실행 시작 시 bootstrap을 먼저 호출하도록 변경
+- `docs/local-runbook.md` — bootstrap 사용법과 Python 가상환경 옵션 문서화
+
+**검증**
+
+- `bash -n scripts/bootstrap.sh`
+- `bash -n scripts/dev-up.sh`
 
 ---
 

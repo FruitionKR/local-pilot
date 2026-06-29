@@ -6,6 +6,7 @@ from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
 from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWikiMarkdownReader
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
 from app.modules.query.infrastructure.query_chat_answer_generator import build_query_chat_answer_generator
+from app.modules.query.infrastructure.query_answer_evaluator import build_query_answer_evaluator
 from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
 from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
@@ -23,6 +24,7 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
         text_search=text_search,
         answer_generator=build_query_chat_answer_generator(),
         query_rewriter=RuleBasedQueryRewriter(),
+        query_evaluator=build_query_answer_evaluator(),
         web_search=build_web_search(),
         min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
     )

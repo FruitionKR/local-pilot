@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { fetchChatMessages, queryWiki } from "../../_lib/api";
+import { getErrorMessage } from "../../_lib/errors";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
+import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
 
 export type ActiveAgentTurn = {
   question: string;
@@ -31,7 +32,7 @@ export function useChatThread() {
 
   useEffect(() => {
     void refreshMessages().catch((error: unknown) => {
-      setChatLoadErrorMessage(error instanceof Error ? error.message : "채팅 기록을 불러오지 못했습니다.");
+      setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -54,7 +55,7 @@ export function useChatThread() {
       querySucceeded = true;
       queryRelatedPages = queryResponse.related_pages ?? [];
     } catch (error) {
-      setQueryErrorMessage(error instanceof Error ? error.message : "질의에 실패했습니다.");
+      setQueryErrorMessage(getErrorMessage(error, "질의에 실패했습니다."));
       setActiveTurn(null);
     } finally {
       setIsLoading(false);
@@ -72,15 +73,17 @@ export function useChatThread() {
         ? findLastUserMessage(nextMessages.slice(0, nextAssistantMessageIndex))
         : undefined;
 
-      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.references?.length && queryRelatedPages.length
+      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.related_pages?.length && queryRelatedPages.length
         ? {
             ...nextAssistantMessage,
-            references: queryRelatedPages.map((page, idx): ChatMessageReferenceResponse => ({
-              id: -(idx + 1),
-              reference_type: page.page_type,
+            related_pages: queryRelatedPages.map((page, idx): ChatMessageRelatedPageResponse => ({
               wiki_page_id: page.id,
-              page_role: page.role,
+              page_type: page.page_type,
+              title: page.title,
+              slug: page.slug,
               relevance_score: page.relevance_score,
+              role: page.role,
+              depth: page.depth,
               rank: idx + 1
             }))
           }
@@ -93,7 +96,7 @@ export function useChatThread() {
         assistantMessage
       });
     }).catch((error: unknown) => {
-      setChatLoadErrorMessage(error instanceof Error ? error.message : "채팅 기록을 불러오지 못했습니다.");
+      setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
       setActiveTurn(null);
     });
   }

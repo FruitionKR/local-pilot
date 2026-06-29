@@ -4,6 +4,11 @@ import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_ZOOM } from "../../_lib/
 const GRAPH_VIEW_PADDING = 80;
 const GRAPH_PAN_MARGIN = 48;
 
+/** 두 성분의 유클리드 거리. 0이면 division-by-zero를 막기 위해 0.01로 보정한다. */
+export function safeDistance(dx: number, dy: number): number {
+  return Math.hypot(dx, dy) || 0.01;
+}
+
 export function clampGraphZoom(nextZoom: number) {
   return Math.min(GRAPH_ZOOM.max, Math.max(GRAPH_ZOOM.min, nextZoom));
 }

@@ -31,10 +31,27 @@ class WikiPageLink:
 
 
 @dataclass(frozen=True)
+class WikiEmbeddingUnit:
+    id: str
+    page_id: str
+    source_document_id: str
+    unit_type: str
+    source_block_ids: list[str]
+    text: str
+    weight: float = 1.0
+
+
+@dataclass(frozen=True)
 class QueryRewrite:
     original_question: str
     retrieval_query: str
     keywords: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ConversationContext:
+    recent_conversation_summary: str | None = None
+    reference_context: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -113,6 +130,17 @@ class QueryContext:
 @dataclass(frozen=True)
 class GeneratedAnswer:
     content: str
+
+
+@dataclass(frozen=True)
+class QueryEvaluation:
+    route: str
+    evidence_relevance: float = 0.0
+    citation_evidence_alignment: float | None = None
+    unsupported_refusal_accuracy: float | None = None
+    reason: str = ""
+    feedback: str = ""
+    web_query: str | None = None
 
 
 @dataclass(frozen=True)

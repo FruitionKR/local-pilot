@@ -66,6 +66,15 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5.1 Python Work Instructions
+
+**Read the Python rules before Python work.**
+
+- Before writing or modifying Python code, read `docs/python_convention.md`.
+- Before Python refactoring work, read `docs/python_convention.md` first, then read `docs/backlog/python-refactoring-rules.md`.
+- Apply `docs/backlog/python-refactoring-rules.md` only when the task includes structural refactoring, responsibility separation, I/O boundary changes, or behavior-preserving cleanup.
+- Do not put "when to read this" instructions inside ordinary technical docs when the rule belongs to agent behavior; put those instructions in `AGENTS.md`.
+
 ## 6. 작업 승인
 
 **Do not create or modify files before explicit user approval.**

@@ -1,7 +1,7 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { DropTarget, FileDropTarget, TreeItem } from "../../_lib/types";
 import { canDragTreeItem, getDroppedFiles, hasDroppedFiles, isFileItem, isWikiItem } from "../../_lib/tree";
-import { resolveDropPosition, setLightDragPreview } from "./dragDrop";
+import { isPointerLeavingElement, resolveDropPosition, setLightDragPreview } from "./dragDrop";
 
 export function useTreeNodeDragDrop({
   item,
@@ -61,8 +61,7 @@ export function useTreeNodeDragDrop({
   function handleDragLeave(event: ReactDragEvent<HTMLButtonElement>) {
     if (!hasDroppedFiles(event)) return;
     event.stopPropagation();
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    if (!isPointerLeavingElement(event)) return;
     onFileDragLeave();
   }
 

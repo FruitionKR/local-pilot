@@ -4,6 +4,64 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-26
+
+### fix: 원문 패널에서 자료관리 클릭 시 그래프 노드 선택 표시 해제
+
+**변경 배경**
+
+- 원문 미리보기가 열린 상태에서 그래프가 아닌 자료관리 영역을 클릭하면 `focusedGraphNodeId`는 해제되지만 그래프 내부 클릭 표시(`selectedNodeIdRef`)가 남아 노드가 계속 선택된 것처럼 보였다.
+
+**변경된 내용**
+
+- `useGraphCanvas`의 focus 동기화 effect가 `focusedNodeId`가 없거나 유효하지 않을 때 `setSelectedNode(null)`로 내부 클릭 표시도 해제하도록 수정했다(기존에는 focus 설정만 동기화).
+
+**검증 결과**
+
+- `npm run build`(타입체크 포함), `npm run lint` 통과.
+
+### refactor: 프론트엔드 중복 로직 공통 유틸로 통합
+
+**변경 배경**
+
+- 동일한 로직(에러 메시지 추출, 조건부 className 합성, 그래프 색상/거리 계산, 드래그 leave 판정)이 여러 파일에 복붙되어 있어 재사용성과 일관성이 떨어졌다.
+
+**변경된 내용**
+
+- `_lib/errors.ts`의 `getErrorMessage`로 `error instanceof Error` 패턴 6곳을 통합했다.
+- `_lib/classNames.ts`의 `cx`로 `filter(Boolean).join(" ")` className 합성 3곳을 통합했다.
+- `AgentBody`에 섞여 있던 순수 포맷 함수 4개를 `agentFormatters.ts`로 추출했다.
+- 그래프 색상 유틸(`hexToRgb`, `mixHexColor`)을 `graphColors.ts`로 모으고, `Math.hypot(dx, dy) || 0.01` 거리 계산을 `graphGeometry.safeDistance`로 통합했다.
+- 드래그 leave 판정 중복을 `dragDrop.isPointerLeavingElement`로 통합했다.
+- 동작 변경 없이 추출/이동만 수행했고, 구조 변경(Context 도입·훅 시그니처 재설계·타입 통합)은 범위에서 제외했다.
+
+**검증 결과**
+
+- `npm run build`(타입체크 포함), `npm run lint` 통과.
+
+### feat: query citation 원문 block 하이라이트 개선
+
+**변경 배경**
+
+- query 답변의 `[n]` citation을 눌러 원문 근거를 확인할 때 markdown 원문이 일반 텍스트 block 목록처럼 표시되어 원문 구조를 보기 어려웠다.
+- 여러 citation 근거를 확인할 때 번호별 구분이 어려웠고, 같은 원본 문서 안의 관련 근거를 한 번에 비교하기 어려웠다.
+
+**변경된 내용**
+
+- 원문 근거 확인 시 원본 markdown을 `MarkdownViewer`로 계속 렌더링하면서 해당 source block만 하이라이트하도록 변경했다.
+- 답변 citation 버튼과 원문 block 하이라이트에 rank별 색상 팔레트를 적용했다.
+- 한 문장에 `[1, 2]`처럼 여러 citation이 붙은 경우 각각 클릭 가능한 citation 버튼으로 렌더링한다.
+- citation 클릭 시 같은 답변에서 같은 원본 문서에 속한 다른 근거 block도 함께 하이라이트해 `[1]`~`[5]` 근거를 색상으로 비교할 수 있게 했다.
+- citation 클릭 시 실제 답변에 등장한 선택 rank만 원문 block 하이라이트에 사용하도록 제한했다.
+- citation으로 원문을 열 때 자료 관리의 raw 원문 문서 row가 선택 표시되도록 했다.
+- 자료 관리 트리에서 generated `Source 문서`/`Concept 문서` 그룹을 숨겼다.
+- Figma `v1` title 노드 기준으로 자료 관리 header 상단 padding과 title 여백을 조정했다.
+- graph 노드를 실제로 드래그한 뒤에는 클릭 선택 효과가 남지 않도록 했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+
 ## 2026-06-20
 
 ### fix: 그래프 노드 선택 표시와 Markdown code block 여백 조정

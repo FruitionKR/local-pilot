@@ -114,17 +114,10 @@ export type QueryRelatedPageResponse = {
 };
 
 export type QueryEvidenceSnippetResponse = {
-  page_id: string;
-  page_type: string;
-  page_title: string;
-  page_slug: string;
-  page_url: string;
-  page_role: string;
-  text: string;
-  score: number;
   rank: number;
-  paragraph_index: number;
-  sentence_index: number;
+  source_document_id: string;
+  source_block_ids: string[];
+  text: string;
 };
 
 export type QueryMessageSummary = {
@@ -145,15 +138,10 @@ export type QueryResponse = {
 export type ChatMessageReferenceResponse = {
   id: number;
   reference_type: string;
-  wiki_page_id?: string;
-  document_id?: string;
-  page_role?: string;
-  relevance_score: number;
   rank?: number;
-  page_number?: number;
-  paragraph_index?: number;
-  sentence_index?: number;
-  quote?: string;
+  source_document_id?: string;
+  source_block_ids?: string[];
+  text?: string;
 };
 
 export type ChatMessageRelatedPageResponse = {
@@ -174,6 +162,21 @@ export type ChatMessageResponse = QueryMessageSummary & {
 
 export type ChatMessagesResponse = {
   messages: ChatMessageResponse[];
+};
+
+export type SourceBlockHighlight = {
+  block_id: string;
+  rank: number;
+};
+
+export type DocumentBlockResponse = {
+  block_id: string;
+  text: string;
+};
+
+export type DocumentBlocksResponse = {
+  document_id: string;
+  blocks: DocumentBlockResponse[];
 };
 
 export type WikiPageSourceDocument = {

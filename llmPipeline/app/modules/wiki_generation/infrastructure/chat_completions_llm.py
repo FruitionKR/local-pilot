@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Sequence
 
 from app.modules.wiki_generation.application.ports import (
@@ -20,6 +23,7 @@ from app.modules.wiki_generation.infrastructure.prompt_io import (
     render_section_polish_user_prompt,
     render_semantic_user_prompt,
 )
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 JsonDict = Dict[str, Any]
 
@@ -44,17 +48,24 @@ def strip_json_fence(content: str) -> str:
 
 def parse_json_object(content: str) -> JsonDict:
     cleaned = strip_json_fence(content)
-    try:
-        value = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise JsonParseError(f"Model output is not JSON: {content[:500]}")
-        value = json.loads(cleaned[start : end + 1])
-    if not isinstance(value, dict):
-        raise JsonParseError("Model output must be a JSON object")
-    return value
+    candidates = [cleaned]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(cleaned[start : end + 1])
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        for repaired in _json_repair_candidates(candidate):
+            try:
+                value = json.loads(repaired)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if not isinstance(value, dict):
+                raise JsonParseError("Model output must be a JSON object")
+            return value
+    raise JsonParseError(f"Model output is not repairable JSON: {last_error}")
 
 
 def parse_section_polish_object(content: str) -> JsonDict:
@@ -88,7 +99,23 @@ def _section_polish_repair_candidates(text: str) -> list[str]:
     out.append(current)
     current = current.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
     out.append(current)
+    out.append(_escape_invalid_json_backslashes(current))
     return out
+
+
+def _json_repair_candidates(text: str) -> list[str]:
+    current = text.strip()
+    candidates = [current]
+    current = re.sub(r",\s*([}\]])", r"\1", current)
+    candidates.append(current)
+    current = current.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    candidates.append(current)
+    candidates.append(_escape_invalid_json_backslashes(current))
+    return list(dict.fromkeys(candidates))
+
+
+def _escape_invalid_json_backslashes(text: str) -> str:
+    return re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
 
 
 def _normalize_section_polish_schema(value: JsonDict) -> JsonDict:
@@ -153,6 +180,24 @@ class ChatCompletionsJsonClient:
 
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
+        self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
+        self._request_index = 0
+
+    def _write_prompt_log(self, body: JsonDict, content: str | None = None, error: str | None = None) -> None:
+        if not self.prompt_log_dir:
+            return
+        self._request_index += 1
+        log_dir = Path(self.prompt_log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "request": body,
+            "response_content": content,
+            "error": error,
+        }
+        (log_dir / f"request_{self._request_index:04d}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def complete_text(self, system_prompt: str, user_prompt: str) -> str:
         body: JsonDict = {
@@ -182,14 +227,18 @@ class ChatCompletionsJsonClient:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
+            self._write_prompt_log(body, error=f"LLM API HTTP {e.code}: {detail}")
             raise RuntimeError(f"LLM API HTTP {e.code}: {detail}") from e
         except urllib.error.URLError as e:
+            self._write_prompt_log(body, error=f"LLM API connection error: {e}")
             raise RuntimeError(f"LLM API connection error: {e}") from e
 
         try:
             content = payload["choices"][0]["message"]["content"]
         except Exception as e:
+            self._write_prompt_log(body, error=f"Unexpected chat-completions response: {payload}")
             raise RuntimeError(f"Unexpected chat-completions response: {payload}") from e
+        self._write_prompt_log(body, content=content)
         return content
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
@@ -197,30 +246,51 @@ class ChatCompletionsJsonClient:
 
 
 class GenericChatCompletionsExtractor:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def extract(self, packet: SemanticPacket) -> JsonDict:
-        return self.client.complete_json(self.system_prompt, render_semantic_user_prompt(packet))
+        return self.client.complete_json(
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("ingest")),
+            render_semantic_user_prompt(packet),
+        )
 
 
 class GenericChatCompletionsConceptPageGenerator:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def generate(self, concept: JsonDict, evidence_units: list[JsonDict], source_blocks: Sequence[SourceBlock]) -> JsonDict:
         return self.client.complete_json(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_page_user_prompt(concept, evidence_units, source_blocks),
         )
 
 
 class GenericChatCompletionsConceptResolver:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def resolve(
         self,
@@ -229,22 +299,34 @@ class GenericChatCompletionsConceptResolver:
         missing_related_hints: list[JsonDict] | None = None,
     ) -> JsonDict:
         return self.client.complete_json(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_resolution_user_prompt(incoming_concepts, existing_concepts, missing_related_hints),
         )
 
 
 class GenericChatCompletionsSectionPolisher:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        schema_prompt_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.client = client
         self.system_prompt = system_prompt
+        self.schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
         content = self.client.complete_text(
-            self.system_prompt,
+            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
             render_section_polish_user_prompt(payload, source_blocks),
         )
         return parse_section_polish_object(content)
+
+
+def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
+    if not schema_prompt.strip():
+        return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 # Backwards-compatible aliases.

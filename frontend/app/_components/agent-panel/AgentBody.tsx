@@ -6,7 +6,8 @@ import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
-import type { ChatMessageReferenceResponse, ChatMessageResponse, GraphNode } from "../../_lib/types";
+import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "./agentFormatters";
+import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";
 import { useSmoothScroll } from "./useSmoothScroll";
 
 const SCROLL_OFFSET_PX = 20;
@@ -22,6 +23,7 @@ export function AgentBody({
   chatLoadErrorMessage,
   animatedMessageId,
   onOpenWikiPage,
+  onOpenSourceBlocks,
   nodes
 }: {
   messages: ChatMessageResponse[];
@@ -31,6 +33,7 @@ export function AgentBody({
   chatLoadErrorMessage: string | null;
   animatedMessageId: string | null;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
+  onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
   nodes?: GraphNode[];
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
@@ -109,31 +112,6 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [messages.length, animatedMessageId, isLoading, queryErrorMessage, scrollToLatestMessage]);
 
-  function formatWikiPageTitle(pageId?: string, fallback = "근거") {
-    if (!pageId) return fallback;
-    if (nodes) {
-      const node = nodes.find((n) => n.id === pageId);
-      if (node?.label) return node.label;
-    }
-    const [, slug = pageId] = pageId.split(":");
-    return slug
-      .split("-")
-      .filter(Boolean)
-      .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
-  function formatAnswerMarkdown(content: string) {
-    return content.replace(/(?<!\d)\.(?!\d)\s+/g, ".\n\n");
-  }
-
-  function formatReferenceMeta(reference: ChatMessageReferenceResponse) {
-    const pageLabel = typeof reference.page_number === "number" ? `p.${reference.page_number}` : null;
-    const description = reference.quote || reference.page_role || "";
-
-    return [pageLabel, description].filter(Boolean).join(" · ") || "관련 근거";
-  }
-
   function findGraphNode(pageId: string) {
     return nodes?.find((node) => node.id === pageId);
   }
@@ -160,23 +138,27 @@ export function AgentBody({
     const seenPageIds = new Set<string>();
     return message.references
       .filter((reference) => {
-        const pageId = reference.wiki_page_id || (reference.document_id ? makeSourceId(reference.document_id) : null);
+        const pageId = reference.source_document_id ? makeSourceId(reference.source_document_id) : null;
         if (!pageId || seenPageIds.has(pageId) || !isKnownPage(pageId)) return false;
         seenPageIds.add(pageId);
         return true;
       })
       .slice(0, MAX_RESULT_CARDS)
       .map((reference) => {
-        const pageId = reference.wiki_page_id || makeSourceId(reference.document_id ?? "");
+        const pageId = makeSourceId(reference.source_document_id ?? "");
         const pageType = nodeIdToPageType(pageId) ?? "source";
         return {
           key: `reference-${reference.id}`,
           pageId,
           pageType,
-          title: formatWikiPageTitle(pageId, reference.document_id || "근거"),
+          title: formatWikiPageTitle(pageId, nodes, reference.source_document_id || "근거"),
           meta: formatReferenceMeta(reference)
         };
       });
+  }
+
+  function sourceTitle(documentId: string) {
+    return findGraphNode(makeSourceId(documentId))?.label ?? documentId;
   }
 
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
@@ -191,6 +173,19 @@ export function AgentBody({
 
   function renderAssistantThread(message: ChatMessageResponse, isAnimated: boolean, threadKey?: string) {
     const resultCards = buildRelatedPageCards(message);
+    const ranksInAnswer = citedRanks(message.content);
+    const citationReferenceByRank = new Map(
+      message.references
+        .filter((item) => item.rank && ranksInAnswer.has(item.rank) && item.source_document_id && item.source_block_ids?.length)
+        .map((item) => [item.rank as number, item])
+    );
+    const canOpenCitation = (rank: number) => citationReferenceByRank.has(rank);
+    const openCitation = (rank: number) => {
+      const reference = citationReferenceByRank.get(rank);
+      if (!reference?.source_document_id || !reference.source_block_ids?.length) return;
+      const highlights = reference.source_block_ids.map((blockId) => ({ block_id: blockId, rank }));
+      onOpenSourceBlocks(reference.source_document_id, sourceTitle(reference.source_document_id), highlights);
+    };
 
     return (
       <div className="agent-thread" key={threadKey}>
@@ -221,7 +216,11 @@ export function AgentBody({
               <span>실행 중 발견 사항</span>
               <ChevronDown size={8} />
             </div>
-            <MarkdownViewer markdown={formatAnswerMarkdown(message.content)} />
+            <MarkdownViewer
+              markdown={formatAnswerMarkdown(message.content)}
+              onCitationClick={openCitation}
+              canClickCitation={canOpenCitation}
+            />
           </section>
         )}
       </div>

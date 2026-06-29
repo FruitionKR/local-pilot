@@ -1,8 +1,10 @@
 import os
+from collections.abc import Callable
 
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 QUERY_ANSWER_SYSTEM_PROMPT = """You are a document-grounded question-answering assistant.
@@ -16,6 +18,7 @@ Every sentence that contains factual content from evidence must end with at leas
 Do not write uncited factual sentences.
 Do not expose evidence lists, scores, path ids, page ids, page URLs, or internal metadata in the answer body.
 Do not expose internal link type names or implementation labels unless the user explicitly asks for technical details.
+If the context includes a mode-specific answer policy, follow that policy over generic unsupported-answer guidance.
 If the evidence directly answers the question, answer naturally from that evidence.
 If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported.
 For unsupported questions, do not explain the answer from general knowledge; mention only that the provided evidence does not support it and, if useful, name the closest related evidence topic.
@@ -30,17 +33,31 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
         self,
         client: ChatCompletionsJsonClient,
         system_prompt: str = QUERY_ANSWER_SYSTEM_PROMPT,
+        schema_prompt_provider: Callable[[str], str] | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
+        self._schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
-        content = self._client.complete_text(self._system_prompt, context.answer_context).strip()
+        content = self._client.complete_text(
+            _with_schema_prompt(self._system_prompt, self._schema_prompt_provider("query")),
+            context.answer_context,
+        ).strip()
         return GeneratedAnswer(content=content)
 
 
 def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
-    return QueryChatAnswerGenerator(ChatCompletionsJsonClient(_config_from_env()))
+    return QueryChatAnswerGenerator(
+        ChatCompletionsJsonClient(_config_from_env()),
+        schema_prompt_provider=lambda feature: get_active_schema_prompt(feature),  # type: ignore[arg-type]
+    )
+
+
+def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
+    if not schema_prompt.strip():
+        return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 def _config_from_env() -> ChatClientConfig:

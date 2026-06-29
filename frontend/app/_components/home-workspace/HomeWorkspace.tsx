@@ -8,11 +8,13 @@ import { RailNavigation, railItems, type RailView } from "../RailNavigation";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
 import { sideboxIcon, SvgIcon } from "../SvgIcon";
 import { TopBar } from "../TopBar";
+import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend } from "../../_lib/graph";
+import type { SourceBlockHighlight } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 220;
@@ -51,6 +53,11 @@ export function HomeWorkspace() {
   const isHomeView = activeView === "home";
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
+
+  function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
+    const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
+    selection.openSourceBlockPreview(documentId, documentTitle, highlights);
+  }
 
   function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -103,12 +110,12 @@ export function HomeWorkspace() {
 
   return (
     <main
-      className={[
+      className={cx(
         "workspace",
-        isHomeView && !isAgentPanelOpen ? "is-agent-collapsed" : "",
-        isHomeView && !isDocumentSidebarOpen ? "is-sidebar-collapsed" : "",
-        hasSourcePreview ? "has-source-preview" : ""
-      ].filter(Boolean).join(" ")}
+        isHomeView && !isAgentPanelOpen && "is-agent-collapsed",
+        isHomeView && !isDocumentSidebarOpen && "is-sidebar-collapsed",
+        hasSourcePreview && "has-source-preview"
+      )}
       style={{
         "--sidebar-width": `${sidebarWidth}px`,
         "--source-preview-width": `${sourcePreviewWidth}px`
@@ -173,6 +180,7 @@ export function HomeWorkspace() {
               pageId={selection.selectedPreviewTarget?.pageId ?? null}
               pageType={selection.selectedPreviewTarget?.pageType ?? null}
               documentId={selection.selectedDocumentId}
+              sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
               width={sourcePreviewWidth}
               onResizeStart={startSourcePreviewResize}
             />
@@ -193,6 +201,7 @@ export function HomeWorkspace() {
             <AgentPanel
               onClose={() => setIsAgentPanelOpen(false)}
               onOpenWikiPage={selection.openWikiPagePreview}
+              onOpenSourceBlocks={openSourceBlocks}
               nodes={graphData.nodes}
             />
           )}

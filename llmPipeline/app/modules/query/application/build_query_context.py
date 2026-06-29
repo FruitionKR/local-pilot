@@ -1,29 +1,38 @@
-import re
-from dataclasses import dataclass
-
-from app.modules.query.domain.entities import EvidenceSnippet, GraphContext, QueryContext, RetrievedPage, TraversalPath
-
-
-@dataclass(frozen=True)
-class _EvidenceCandidate:
-    source_document_id: str
-    source_block_ids: list[str]
-    text: str
-    score: float
+from app.modules.query.application.answer_context_formatter import AnswerContextFormatter
+from app.modules.query.application.evidence_selector import EvidenceSelector
+from app.modules.query.application.ports import EmbeddingSearchPort, TextSearchPort
+from app.modules.query.domain.entities import GraphContext, QueryContext, RetrievedPage, TraversalPath, WikiEmbeddingUnit
 
 
 class BuildQueryContextUseCase:
     def __init__(
         self,
+        embedding_search: EmbeddingSearchPort | None = None,
+        text_search: TextSearchPort | None = None,
         max_related_pages: int = 8,
         max_paths: int = 5,
-        max_paragraphs_per_page: int = 3,
+        max_paragraphs_per_page: int = 4,
         max_paragraph_chars: int = 900,
+        evidence_embedding_weight: float = 0.75,
+        min_evidence_score: float = 0.0,
+        evidence_relative_score_floor: float = 0.85,
+        answer_context_formatter: AnswerContextFormatter | None = None,
+        evidence_selector: EvidenceSelector | None = None,
     ) -> None:
-        self._max_related_pages = max_related_pages
-        self._max_paths = max_paths
-        self._max_paragraphs_per_page = max_paragraphs_per_page
-        self._max_paragraph_chars = max_paragraph_chars
+        self._evidence_selector = evidence_selector or EvidenceSelector(
+            embedding_search=embedding_search,
+            text_search=text_search,
+            max_related_pages=max_related_pages,
+            max_paragraphs_per_page=max_paragraphs_per_page,
+            evidence_embedding_weight=evidence_embedding_weight,
+            min_evidence_score=min_evidence_score,
+            evidence_relative_score_floor=evidence_relative_score_floor,
+        )
+        self._answer_context_formatter = answer_context_formatter or AnswerContextFormatter(
+            max_related_pages=max_related_pages,
+            max_paths=max_paths,
+            max_paragraph_chars=max_paragraph_chars,
+        )
 
     def execute(
         self,
@@ -31,276 +40,28 @@ class BuildQueryContextUseCase:
         related_pages: list[RetrievedPage],
         graph_context: GraphContext,
         traversal_paths: list[TraversalPath],
+        original_question: str | None = None,
+        evidence_question: str | None = None,
+        answer_mode: str | None = None,
+        embedding_units_by_page_id: dict[str, list[WikiEmbeddingUnit]] | None = None,
     ) -> QueryContext:
-        evidence_snippets = self._build_evidence_snippets(question, related_pages)
+        evidence_snippets = self._evidence_selector.select(
+            evidence_question or question,
+            related_pages,
+            embedding_units_by_page_id or {},
+        )
         return QueryContext(
             question=question,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
             related_pages=related_pages,
             evidence_snippets=evidence_snippets,
-            answer_context=self._build_answer_context(question, related_pages, traversal_paths, evidence_snippets),
+            answer_context=self._answer_context_formatter.format(
+                question=question,
+                related_pages=related_pages,
+                traversal_paths=traversal_paths,
+                evidence_snippets=evidence_snippets,
+                original_question=original_question,
+                answer_mode=answer_mode,
+            ),
         )
-
-    def _build_answer_context(
-        self,
-        question: str,
-        related_pages: list[RetrievedPage],
-        traversal_paths: list[TraversalPath],
-        evidence_snippets: list[EvidenceSnippet],
-    ) -> str:
-        pages_by_id = {item.page.id: item for item in related_pages}
-        lines = [
-            "# User Question",
-            question,
-            "",
-            "# Assistant Output Policy",
-            "- Answer in Korean.",
-            "- Write only the conversational answer body that should be shown to the user.",
-            "- Mark the evidence used for each supported sentence with citation markers like [1] or [2].",
-            "- Use only the evidence rank numbers listed below as citation markers.",
-            "- Every sentence that contains factual content from evidence must end with at least one citation marker.",
-            "- Do not write uncited factual sentences.",
-            "- Do not expose evidence lists, scores, path ids, page ids, or page URLs in the answer body.",
-            "- If the evidence directly answers the question, answer naturally from that evidence.",
-            "- If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported.",
-            "- For unsupported questions, do not explain the answer from general knowledge; mention only that the provided evidence does not support it and, if useful, name the closest related evidence topic.",
-            "- Do not create examples, analogies, or fictional cases that are not present in the context.",
-            "- If an example is needed, use only entities or cases that appear in the evidence.",
-            "- Do not add information from outside the context.",
-            "",
-            "# Related Pages By Relevance",
-        ]
-        for item in related_pages[: self._max_related_pages]:
-            lines.extend(
-                [
-                    f"- id: {item.page.id}",
-                    f"  type: {item.page.page_type}",
-                    f"  title: {item.page.title}",
-                    f"  role: {item.role}",
-                    f"  score: {item.score:.3f}",
-                    f"  depth: {item.depth}",
-                    f"  summary: {item.page.summary}",
-                ]
-            )
-        lines.extend(["", "# Evidence Snippets By Relevance"])
-        for snippet in evidence_snippets:
-            lines.extend(
-                [
-                    f"## Evidence {snippet.rank}",
-                    "- text:",
-                    self._indent(self._excerpt(snippet.text, self._max_paragraph_chars), spaces=2),
-                    "",
-                ]
-            )
-
-        lines.extend(["", "# Traversal Paths"])
-        for path in traversal_paths[: self._max_paths]:
-            path_titles = [pages_by_id[node_id].page.title if node_id in pages_by_id else node_id for node_id in path.nodes]
-            lines.extend(
-                [
-                    f"- titles: {' -> '.join(path_titles)}",
-                ]
-            )
-        return "\n".join(lines).strip()
-
-    def _build_evidence_snippets(self, question: str, related_pages: list[RetrievedPage]) -> list[EvidenceSnippet]:
-        candidates: list[_EvidenceCandidate] = []
-        for item in related_pages[: self._max_related_pages]:
-            source_document_id = self._source_document_id(item)
-            if not source_document_id:
-                continue
-            candidates.extend(self._score_evidence_sentences(question, item, source_document_id))
-
-        candidates.sort(key=lambda snippet: snippet.score, reverse=True)
-        return [
-            EvidenceSnippet(
-                rank=index,
-                source_document_id=snippet.source_document_id,
-                source_block_ids=snippet.source_block_ids,
-                text=snippet.text,
-            )
-            for index, snippet in enumerate(candidates, start=1)
-        ]
-
-    def _select_evidence_paragraphs(self, question: str, item: RetrievedPage) -> list[str]:
-        content = item.page.markdown or item.page.summary
-        paragraphs = self._split_paragraphs(content)
-        if not paragraphs:
-            return []
-
-        query_terms = set(self._tokens(question))
-        scored = self._score_evidence_paragraphs(question, item)
-        selected = sorted(scored[: self._max_paragraphs_per_page], key=lambda value: value[2])
-        return [paragraph for _, paragraph, _ in selected]
-
-    def _score_evidence_paragraphs(self, question: str, item: RetrievedPage) -> list[tuple[float, str, int]]:
-        content = item.page.markdown or item.page.summary
-        paragraphs = self._split_paragraphs(content)
-        if not paragraphs:
-            return []
-
-        query_terms = set(self._tokens(question))
-        scored = []
-        for index, paragraph in enumerate(paragraphs):
-            paragraph_terms = set(self._tokens(paragraph))
-            overlap = len(query_terms & paragraph_terms)
-            score = overlap * 2.0 + item.score
-            if item.role == "focus_concept":
-                score += 0.5
-            elif overlap > 0 and item.role == "seed_source":
-                score += 0.5
-            if overlap > 0 and index == 0:
-                score += 0.15
-            if overlap == 0:
-                score -= 0.75
-            scored.append((score, paragraph, index))
-
-        scored.sort(key=lambda value: (-value[0], value[2]))
-        return scored[: self._max_paragraphs_per_page]
-
-    def _score_evidence_sentences(
-        self,
-        question: str,
-        item: RetrievedPage,
-        source_document_id: str,
-    ) -> list[_EvidenceCandidate]:
-        content = item.page.markdown or item.page.summary
-        paragraphs = self._split_paragraphs(content)
-        if not paragraphs:
-            return []
-
-        query_terms = set(self._tokens(question))
-        scored: list[_EvidenceCandidate] = []
-        for paragraph_index, paragraph in enumerate(paragraphs):
-            for sentence in self._split_sentences(paragraph):
-                source_block_ids = self._source_block_ids(sentence)
-                if not source_block_ids:
-                    continue
-                clean_sentence = self._remove_block_refs(sentence)
-                sentence_terms = set(self._tokens(sentence))
-                overlap = len(query_terms & sentence_terms)
-                score = overlap * 2.0 + item.score
-                if item.role == "focus_concept":
-                    score += 0.5
-                elif overlap > 0 and item.role == "seed_source":
-                    score += 0.5
-                if overlap > 0 and paragraph_index == 0:
-                    score += 0.15
-                if overlap == 0:
-                    score -= 0.75
-                scored.append(
-                    _EvidenceCandidate(
-                        source_document_id=source_document_id,
-                        source_block_ids=source_block_ids,
-                        text=clean_sentence,
-                        score=score,
-                    )
-                )
-
-        scored.sort(key=lambda value: -value.score)
-        return scored[: self._max_paragraphs_per_page]
-
-    def _split_paragraphs(self, text: str | None) -> list[str]:
-        if not text:
-            return []
-        normalized = "\n".join(line.rstrip() for line in text.strip().splitlines())
-        return [
-            chunk.strip()
-            for chunk in re.split(r"\n\s*\n", normalized)
-            if chunk.strip() and not self._is_heading_only(chunk) and not self._is_frontmatter(chunk)
-        ]
-
-    def _is_heading_only(self, text: str) -> bool:
-        lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-        return bool(lines) and all(line.startswith("#") for line in lines)
-
-    def _is_frontmatter(self, text: str) -> bool:
-        lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
-        return len(lines) >= 2 and lines[0] == "---" and lines[-1] == "---"
-
-    def _split_sentences(self, paragraph: str) -> list[str]:
-        normalized = " ".join(line.strip() for line in paragraph.strip().splitlines() if line.strip())
-        if not normalized:
-            return []
-        raw_chunks = [
-            chunk.strip()
-            for chunk in re.split(r"(?<=[.!?。！？])\s+|(?<=[다요죠니다까]\.)\s*", normalized)
-            if chunk.strip()
-        ]
-        chunks: list[str] = []
-        for chunk in raw_chunks:
-            if chunks and self._is_block_ref_only(chunk):
-                chunks[-1] = f"{chunks[-1]} {chunk}"
-            else:
-                chunks.append(chunk)
-        sentences = [self._clean_sentence(chunk) for chunk in chunks if self._clean_sentence(chunk)]
-        return sentences or [self._clean_sentence(normalized)]
-
-    def _is_block_ref_only(self, text: str) -> bool:
-        return bool(re.fullmatch(r"(?:\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]\s*)+", text.strip()))
-
-    def _clean_sentence(self, sentence: str) -> str:
-        cleaned = sentence.strip()
-        cleaned = re.sub(r"^#+\s*[^-–—:：]*\s*[-–—:：]\s*", "", cleaned)
-        cleaned = re.sub(r"^#+\s*", "", cleaned)
-        cleaned = re.sub(r"^[-*]\s+", "", cleaned)
-        cleaned = re.sub(r"^(Summary|Definition|Why It Matters|Key Points|Evidence)\s+", "", cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r"^(?:\[[A-Za-z0-9_,\s-]+\]\s*)+", "", cleaned)
-        cleaned = re.sub(r"^[-*]\s+", "", cleaned)
-        return cleaned.strip()
-
-    def _source_document_id(self, item: RetrievedPage) -> str | None:
-        if item.page.source_document_id:
-            return item.page.source_document_id
-        markdown = item.page.markdown or ""
-        if item.page.is_source:
-            return self._frontmatter_value(markdown, "document_id") or self._source_id_from_page_id(item.page.id)
-        if item.page.is_concept:
-            sources = self._frontmatter_value(markdown, "sources")
-            if not sources:
-                return None
-            source_ids = [part.strip() for part in re.split(r"[,\s]+", sources) if part.strip()]
-            if len(source_ids) == 1:
-                return source_ids[0]
-        return None
-
-    def _source_id_from_page_id(self, page_id: str) -> str | None:
-        if page_id.startswith("source:"):
-            return page_id.split(":", 1)[1]
-        return None
-
-    def _frontmatter_value(self, markdown: str, key: str) -> str | None:
-        if not markdown.startswith("---"):
-            return None
-        parts = markdown.split("---", 2)
-        if len(parts) < 3:
-            return None
-        for line in parts[1].splitlines():
-            match = re.match(rf"^{re.escape(key)}\s*:\s*(.+)$", line.strip(), flags=re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
-
-    def _source_block_ids(self, text: str) -> list[str]:
-        block_ids = []
-        for group in re.findall(r"\[((?:B\d{4})(?:\s*,\s*B\d{4})*)\]", text):
-            block_ids.extend(part.strip() for part in group.split(",") if part.strip())
-        return list(dict.fromkeys(block_ids))
-
-    def _remove_block_refs(self, text: str) -> str:
-        cleaned = re.sub(r"\s*\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]", "", text)
-        return cleaned.strip()
-
-    def _tokens(self, text: str) -> list[str]:
-        return re.findall(r"[A-Za-z0-9가-힣_.-]+", text.lower())
-
-    def _excerpt(self, text: str, limit: int = 500) -> str:
-        normalized = "\n".join(line.rstrip() for line in text.strip().splitlines())
-        if len(normalized) <= limit:
-            return normalized
-        return normalized[: limit - 3].rstrip() + "..."
-
-    def _indent(self, text: str, spaces: int = 2) -> str:
-        prefix = " " * spaces
-        return "\n".join(f"{prefix}{line}" if line else "" for line in text.splitlines())

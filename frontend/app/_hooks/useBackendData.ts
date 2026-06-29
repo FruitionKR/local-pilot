@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchBackendData } from "../_lib/api";
+import { getErrorMessage } from "../_lib/errors";
 import { mergeBackendDataIntoProjects } from "../_lib/tree";
 import type { DocumentItemResponse, Project, WikiGraphResponse } from "../_lib/types";
 
@@ -24,7 +25,7 @@ export function useBackendData({
       setProjects((current) => mergeBackendDataIntoProjects(current, nextData.documents, nextData.graph));
       setApiError(null);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : "백엔드 데이터를 불러오지 못했습니다.");
+      setApiError(getErrorMessage(error, "백엔드 데이터를 불러오지 못했습니다."));
     } finally {
       setIsGraphLoading(false);
     }

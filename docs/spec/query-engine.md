@@ -368,6 +368,39 @@ FastAPI route는 이 use case만 호출한다.
 }
 ```
 
+멀티턴 질문에서 지시어나 생략된 주제를 해소해야 하면 backend가 선택 context를 함께 전달할 수 있다.
+
+```json
+{
+  "question": "그거는 일반 RAG랑 뭐가 달라?",
+  "recent_conversation_summary": "사용자는 LLM Wiki와 RAG의 차이, 그리고 채팅 원문을 Wiki source/concept 구조로 저장하는 방식을 논의 중이다.",
+  "reference_context": {
+    "active_topic": {
+      "canonical": "LLM Wiki",
+      "aliases": ["Persistent Wiki", "지속적 Wiki"]
+    },
+    "recent_concepts": ["LLM Wiki", "RAG", "source page", "concept page"],
+    "referents": {
+      "그거": {
+        "canonical": "LLM Wiki",
+        "aliases": ["Persistent Wiki", "지속적 Wiki"]
+      }
+    }
+  }
+}
+```
+
+필드 의미:
+
+| 필드 | 필수 여부 | 설명 |
+| --- | --- | --- |
+| `question` | 필수 | 사용자의 현재 질문 |
+| `recent_conversation_summary` | 선택 | 최근 대화 흐름 요약. 생략된 주제와 지시어를 해석하는 데 사용 |
+| `reference_context` | 선택 | 활성 주제, 최근 concept, 지시어 해소 후보를 담는 구조화 context |
+
+`reference_context`는 고정 DB schema가 아니라 Query Engine 입력 hint다.
+backend는 저장된 채팅 이력을 바탕으로 이 값을 만들고, 값이 없으면 기존 single-turn 질의처럼 동작한다.
+
 ### Response
 
 ```json

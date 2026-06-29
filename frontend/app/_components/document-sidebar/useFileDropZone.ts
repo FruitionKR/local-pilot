@@ -1,6 +1,7 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { FileDropTarget } from "../../_lib/types";
 import { getDroppedFiles, hasDroppedFiles } from "../../_lib/tree";
+import { isPointerLeavingElement } from "./dragDrop";
 
 /**
  * 프로젝트 섹션 루트 영역의 파일 드래그앤드롭 핸들러를 반환합니다.
@@ -28,8 +29,7 @@ export function useFileDropZone({
 
   function handleDragLeave(event: ReactDragEvent<HTMLElement>) {
     if (!hasDroppedFiles(event)) return;
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    if (!isPointerLeavingElement(event)) return;
     onFileDragLeave();
   }
 
