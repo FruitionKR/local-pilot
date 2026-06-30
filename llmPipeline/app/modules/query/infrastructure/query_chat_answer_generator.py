@@ -1,8 +1,10 @@
 import os
+from collections.abc import Callable
 
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 QUERY_ANSWER_SYSTEM_PROMPT = """You are a document-grounded question-answering assistant.
@@ -31,17 +33,31 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
         self,
         client: ChatCompletionsJsonClient,
         system_prompt: str = QUERY_ANSWER_SYSTEM_PROMPT,
+        schema_prompt_provider: Callable[[str], str] | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
+        self._schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
-        content = self._client.complete_text(self._system_prompt, context.answer_context).strip()
+        content = self._client.complete_text(
+            _with_schema_prompt(self._system_prompt, self._schema_prompt_provider("query")),
+            context.answer_context,
+        ).strip()
         return GeneratedAnswer(content=content)
 
 
 def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
-    return QueryChatAnswerGenerator(ChatCompletionsJsonClient(_config_from_env()))
+    return QueryChatAnswerGenerator(
+        ChatCompletionsJsonClient(_config_from_env()),
+        schema_prompt_provider=lambda feature: get_active_schema_prompt(feature),  # type: ignore[arg-type]
+    )
+
+
+def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
+    if not schema_prompt.strip():
+        return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 def _config_from_env() -> ChatClientConfig:
