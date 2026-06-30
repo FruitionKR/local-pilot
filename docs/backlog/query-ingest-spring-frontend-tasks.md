@@ -277,13 +277,11 @@ Spring은 문서 업로드 후 pipeline에 안정적인 `document_id`를 전달�
 
 필요 작업:
 
-- Markdown 업로드 후 Spring `documents.id`를 pipeline `document_id`로 전달한다.
-- pipeline run 응답의 `run_id`를 Spring 문서 상태 또는 별도 ingest run 테이블에 저장한다.
-  - 현재 코드는 `run_id`를 로그로만 남긴다.
-  - 최소한 `documents.pipeline_run_id` 또는 `document_pipeline_runs(document_id, run_id, status, created_at)`가 필요하다.
+- [완료] Markdown 업로드 후 Spring `documents.id`를 pipeline `document_id`로 전달한다.
+- [완료] pipeline run 응답의 `run_id`를 `documents.pipeline_run_id`에 저장한다. (commit `263a935`)
 - inline text, local path, uploaded file ingest가 같은 추적 모델을 쓰도록 정리한다.
 - `input_markdown` 또는 `input_path`를 직접 호출하는 내부/관리자 기능이 있다면, pipeline이 생성한 `api-inline-{run_id}` 또는 `api-file-{run_id}` document id를 Spring에서도 추적할지 결정한다.
-- `wait=false` 기본 흐름에서는 `manifest`가 없다는 전제로 polling 또는 callback 기반 상태 갱신을 구현한다.
+- [완료] `wait=false` 기본 흐름에서는 `manifest`가 없다는 전제로 callback 기반 상태 갱신을 구현한다. `POST /api/documents/{id}/pipeline-events`로 heartbeat 수신. (commit `263a935`)
 - `wait=true` 응답의 full manifest를 제품 저장소에 그대로 저장하지 않는다. markdown 본문과 source block 원문은 DB/object storage에 이미 저장되며, manifest는 디버그/관리 정보로만 취급한다.
 
 검증 기준:
@@ -343,9 +341,10 @@ Spring은 채팅 thread의 최근 상태를 pipeline request에 맞는 `recent_c
 
 필요 작업:
 
-- `pipeline_run_id`
-- `processing_started_at`
-- `processing_updated_at`
+- [완료] `pipeline_run_id` — `documents` 컬럼 추가, `DocumentListResponse`/`DocumentDetailResponse` 포함 (commit `263a935`)
+- [완료] `processing_started_at` — `documents` 컬럼 추가 (commit `263a935`)
+- [완료] `processing_updated_at` — `documents` 컬럼 추가, `POST /api/documents/{id}/pipeline-events` callback으로 갱신 (commit `263a935`)
+- [완료] `processing_state` (`starting`/`running`/`stalled`) — `pipeline_run_id` 없으면 `starting`, 60초 이상 heartbeat 없으면 `stalled`. `DocumentProcessingState` enum 추가, 응답 포함 (commit `263a935`)
 - `processed_at`
 - `error_message`
 - warning 또는 failed file 목록
@@ -359,12 +358,14 @@ Spring은 채팅 thread의 최근 상태를 pipeline request에 맞는 `recent_c
 - Spring에서 `pipeline_runs`를 조회하는 API를 추가한다.
   - pipeline DB에는 이미 `pipeline_runs` 테이블이 있다.
   - Spring이 같은 DB를 읽는다면 JPA entity 또는 JDBC 조회 DTO가 필요하다.
-- `DocumentProcessingRequester`가 받은 `run_id`를 문서 상세 응답에서 확인할 수 있게 저장한다.
-- callback event가 필요하면 ingest용 event 저장 테이블을 query event와 분리할지 공용 event 테이블로 둘지 결정한다.
+- [완료] `DocumentProcessingRequester`가 받은 `run_id`를 문서 상세 응답에서 확인할 수 있게 저장한다. (commit `263a935`)
+- callback event 저장 테이블을 query event와 분리할지 공용 event 테이블로 둘지 결정한다. (미결)
 
 권장 endpoint:
 
-- `GET /api/documents/{documentId}`
+- [완료] `GET /api/documents/{documentId}` — `pipeline_run_id`, `processing_state` 포함 (commit `263a935`)
+- [완료] `POST /api/documents/{documentId}/pipeline-events` — heartbeat callback 신규 추가 (commit `263a935`)
+- [완료] `DELETE /api/documents/{documentId}` — 문서·MinIO 오브젝트·queue 항목 삭제 (commit `9c8d262`)
 - `GET /api/pipeline/runs/{runId}`
 - `GET /api/pipeline/runs/{runId}/logs`
 - `GET /api/pipeline/runs/{runId}/events`
