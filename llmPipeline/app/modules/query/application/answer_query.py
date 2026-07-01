@@ -6,6 +6,7 @@ from app.modules.query.application.ports import (
     AnswerGeneratorPort,
     EmbeddingSearchPort,
     QueryEventPublisherPort,
+    QueryEvaluatorGraphPort,
     QueryEvaluatorPort,
     QueryRewritePort,
     TextSearchPort,
@@ -14,6 +15,7 @@ from app.modules.query.application.ports import (
     WikiRepositoryPort,
 )
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
+from app.modules.query.application.query_evaluator_flow import QueryEvaluatorLoop
 from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
@@ -53,11 +55,13 @@ class AnswerQueryUseCase:
         query_answer_assembler: QueryAnswerAssembler | None = None,
         query_page_scorer: QueryPageScorer | None = None,
         query_web_answer_builder: QueryWebAnswerBuilder | None = None,
+        query_evaluator_graph: QueryEvaluatorGraphPort | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
         focus_concept_threshold: float = 0.60,
         returned_path_limit: int = 5,
         min_internal_relevance_score: float = 0.0,
+        query_evaluator_max_attempts: int = 2,
     ) -> None:
         self._wiki_repository = wiki_repository
         self._embedding_search = embedding_search
@@ -94,6 +98,13 @@ class AnswerQueryUseCase:
         self._focus_concept_threshold = focus_concept_threshold
         self._returned_path_limit = returned_path_limit
         self._min_internal_relevance_score = min_internal_relevance_score
+        self._query_evaluator_max_attempts = max(1, query_evaluator_max_attempts)
+        self._query_evaluator_graph = query_evaluator_graph or QueryEvaluatorLoop(
+            query_answer_assembler=self._query_answer_assembler,
+            query_evaluator=query_evaluator,
+            web_search_available=web_search is not None,
+            max_attempts=self._query_evaluator_max_attempts,
+        )
 
     def execute(
         self,
@@ -230,11 +241,12 @@ class AnswerQueryUseCase:
             "LLM 답변 입력 context를 구성했습니다.",
             {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
         )
-        answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
-        self._publish(event_publisher, "answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": len(answer.content)})
-
-        evaluated_context = replace(query_context, evidence_snippets=evidence_snippets)
-        query_evaluation = self._evaluate_query(query.normalized, evaluated_context, answer, stop_reason, event_publisher)
+        answer, evidence_snippets, evaluated_context, query_evaluation = self._query_evaluator_graph.run(
+            question=query.normalized,
+            query_context=query_context,
+            stop_reason=stop_reason,
+            event_publisher=event_publisher,
+        )
         if query_evaluation is not None:
             if query_evaluation.route == "web_fallback":
                 fallback_answer = self._answer_from_web_search(
@@ -297,40 +309,6 @@ class AnswerQueryUseCase:
         if not rewritten.retrieval_query.strip():
             return QueryRewrite(original_question=question, retrieval_query=question)
         return rewritten
-
-    def _evaluate_query(
-        self,
-        question: str,
-        query_context: QueryContext,
-        answer: GeneratedAnswer,
-        stop_reason: str,
-        event_publisher: QueryEventPublisherPort | None,
-    ) -> QueryEvaluation | None:
-        if self._query_evaluator is None:
-            return None
-        try:
-            evaluation = self._query_evaluator.evaluate(
-                question,
-                query_context,
-                answer,
-                stop_reason,
-                web_search_available=self._web_search is not None,
-            )
-        except Exception as exc:
-            self._publish(event_publisher, "query_evaluation_failed", "Query evaluator 실행에 실패했습니다.", {"error": str(exc)})
-            return None
-        self._publish(
-            event_publisher,
-            "query_evaluated",
-            "검색 근거와 질문의 정합성을 평가했습니다.",
-            {
-                "route": evaluation.route,
-                "evidence_relevance": round(evaluation.evidence_relevance, 4),
-                "reason": evaluation.reason,
-                "web_query": evaluation.web_query,
-            },
-        )
-        return evaluation
 
     def _query_rewrite_for_web(self, query_rewrite: QueryRewrite, evaluation: QueryEvaluation) -> QueryRewrite:
         if not evaluation.web_query:

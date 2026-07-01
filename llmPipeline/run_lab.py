@@ -11,7 +11,9 @@ import urllib.request
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
+
+from langgraph.graph import END, StateGraph
 
 from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
@@ -79,6 +81,15 @@ class PipelineLog:
                 pass
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             append_text(self.path, f"[{event['timestamp']}] [로그 전송 실패] {exc}\n")
+
+
+class _WikiGenerationGraphState(TypedDict):
+    attempt: int
+    semantic_prompt_for_attempt: str
+    notes: list[dict[str, Any]]
+    normalized: dict[str, Any]
+    evaluation: dict[str, Any] | None
+    generation_evaluations: list[dict[str, Any]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -564,6 +575,181 @@ def _unique(values: list[str]) -> list[str]:
     return rows
 
 
+def _json_safe(value: Any) -> Any:
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        pass
+    if hasattr(value, "__dataclass_fields__"):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+def _run_wiki_generation_graph(
+    *,
+    api_client: ChatCompletionsJsonClient,
+    semantic_system_prompt: str,
+    wiki_evaluator_system_prompt: str,
+    packets: list[Any],
+    raw_dir: Path | None,
+    log: PipelineLog,
+    normalizer: SemanticNormalizer,
+    document: Any,
+    blocks: list[Any],
+    out: Path,
+    save_debug_json: bool,
+    wiki_evaluation_loop: bool,
+    max_eval_attempts: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    graph = StateGraph(_WikiGenerationGraphState)
+
+    def generate_semantics(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
+        attempt = int(state.get("attempt", 1))
+        notes = _run_semantic_extraction(
+            api_client=api_client,
+            system_prompt=state["semantic_prompt_for_attempt"],
+            packets=packets,
+            raw_dir=raw_dir,
+            log=log,
+            attempt=attempt,
+        )
+        log.emit("3. 의미 추출 완료", "의미 노트 목록을 정규화 단계 입력으로 전달합니다.", {"시도": attempt, "노트 수": len(notes)})
+        normalized = normalizer.normalize_notes(notes)
+        return {**state, "notes": notes, "normalized": normalized}
+
+    def should_evaluate(state: _WikiGenerationGraphState) -> str:
+        return "evaluate" if wiki_evaluation_loop else "finished"
+
+    def evaluate_generation(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
+        attempt = int(state.get("attempt", 1))
+        evaluation = _evaluate_generation(
+            api_client=api_client,
+            evaluator_prompt=wiki_evaluator_system_prompt,
+            document=document,
+            blocks=blocks,
+            normalized=state["normalized"],
+        )
+        generation_evaluations = [*state.get("generation_evaluations", []), evaluation]
+        if save_debug_json:
+            write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.json", evaluation)
+        log.emit(
+            "3-평가. Wiki 생성 평가",
+            "정규화된 의미 구조를 평가했습니다.",
+            {
+                "시도": attempt,
+                "passed": evaluation.get("passed"),
+                "retry": evaluation.get("retry_recommended"),
+                "overall": (evaluation.get("scores") or {}).get("overall"),
+                "issue 수": len(evaluation.get("issues", [])),
+            },
+        )
+        return {**state, "evaluation": evaluation, "generation_evaluations": generation_evaluations}
+
+    def repair_generation(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
+        attempt = int(state.get("attempt", 1))
+        normalized = state["normalized"]
+        evaluation = state["evaluation"]
+        if evaluation is None:
+            return state
+        repaired_normalized, repair_operations = _repair_normalized_from_evaluation(normalized, evaluation)
+        if not repair_operations:
+            return state
+        repair_evaluation = _evaluate_generation(
+            api_client=api_client,
+            evaluator_prompt=wiki_evaluator_system_prompt,
+            document=document,
+            blocks=blocks,
+            normalized=repaired_normalized,
+        )
+        repair_evaluation["repair_operations"] = repair_operations
+        generation_evaluations = [*state.get("generation_evaluations", []), repair_evaluation]
+        if save_debug_json:
+            write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.repair.json", repair_evaluation)
+        log.emit(
+            "3-평가-보정. Wiki 생성 보정",
+            "평가 issue를 바탕으로 명확한 observation 문제를 자동 보정하고 다시 평가했습니다.",
+            {
+                "시도": attempt,
+                "보정 수": len(repair_operations),
+                "passed": repair_evaluation.get("passed"),
+                "retry": repair_evaluation.get("retry_recommended"),
+                "overall": (repair_evaluation.get("scores") or {}).get("overall"),
+                "issue 수": len(repair_evaluation.get("issues", [])),
+            },
+        )
+        return {
+            **state,
+            "normalized": repaired_normalized,
+            "evaluation": repair_evaluation,
+            "generation_evaluations": generation_evaluations,
+        }
+
+    def route_after_evaluation(state: _WikiGenerationGraphState) -> str:
+        evaluation = state.get("evaluation") or {}
+        attempt = int(state.get("attempt", 1))
+        if not evaluation.get("retry_recommended") or evaluation.get("passed") or attempt >= max_eval_attempts:
+            return "finished"
+        return "retry"
+
+    def prepare_retry(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
+        evaluation = state.get("evaluation") or {}
+        feedback = str(evaluation.get("retry_feedback") or "")
+        semantic_prompt_for_attempt = (
+            semantic_system_prompt
+            + "\n\nEvaluator feedback for retry:\n"
+            + feedback
+            + "\nApply this feedback strictly. Keep source anchors exact. Return the same JSON schema."
+        )
+        return {
+            **state,
+            "attempt": int(state.get("attempt", 1)) + 1,
+            "semantic_prompt_for_attempt": semantic_prompt_for_attempt,
+        }
+
+    graph.add_node("generate_semantics", generate_semantics)
+    graph.add_node("evaluate_generation", evaluate_generation)
+    graph.add_node("repair_generation", repair_generation)
+    graph.add_node("prepare_retry", prepare_retry)
+    graph.set_entry_point("generate_semantics")
+    graph.add_conditional_edges(
+        "generate_semantics",
+        should_evaluate,
+        {
+            "evaluate": "evaluate_generation",
+            "finished": END,
+        },
+    )
+    graph.add_edge("evaluate_generation", "repair_generation")
+    graph.add_conditional_edges(
+        "repair_generation",
+        route_after_evaluation,
+        {
+            "finished": END,
+            "retry": "prepare_retry",
+        },
+    )
+    graph.add_edge("prepare_retry", "generate_semantics")
+
+    result = graph.compile().invoke(
+        {
+            "attempt": 1,
+            "semantic_prompt_for_attempt": semantic_system_prompt,
+            "notes": [],
+            "normalized": {},
+            "evaluation": None,
+            "generation_evaluations": [],
+        }
+    )
+    return result["notes"], result["normalized"], result["generation_evaluations"]
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -674,81 +860,22 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     assert api_client is not None
     raw_dir = ensure_dir(out / "raw_llm_outputs" / "semantic_extraction") if args.save_debug_json else None
     normalizer = SemanticNormalizer(document, blocks)
-    notes = []
-    generation_evaluations: list[dict[str, Any]] = []
-    normalized: dict[str, Any] = {}
     max_eval_attempts = max(1, int(getattr(args, "max_eval_attempts", 2) or 2))
-    semantic_prompt_for_attempt = semantic_system_prompt
-    for attempt in range(1, max_eval_attempts + 1):
-        notes = _run_semantic_extraction(
-            api_client=api_client,
-            system_prompt=semantic_prompt_for_attempt,
-            packets=packets,
-            raw_dir=raw_dir,
-            log=log,
-            attempt=attempt,
-        )
-        log.emit("3. 의미 추출 완료", "의미 노트 목록을 정규화 단계 입력으로 전달합니다.", {"시도": attempt, "노트 수": len(notes)})
-        normalized = normalizer.normalize_notes(notes)
-        if not getattr(args, "wiki_evaluation_loop", False):
-            break
-        evaluation = _evaluate_generation(
-            api_client=api_client,
-            evaluator_prompt=wiki_evaluator_system_prompt,
-            document=document,
-            blocks=blocks,
-            normalized=normalized,
-        )
-        generation_evaluations.append(evaluation)
-        if args.save_debug_json:
-            write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.json", evaluation)
-        log.emit(
-            "3-평가. Wiki 생성 평가",
-            "정규화된 의미 구조를 평가했습니다.",
-            {
-                "시도": attempt,
-                "passed": evaluation.get("passed"),
-                "retry": evaluation.get("retry_recommended"),
-                "overall": (evaluation.get("scores") or {}).get("overall"),
-                "issue 수": len(evaluation.get("issues", [])),
-            },
-        )
-        repaired_normalized, repair_operations = _repair_normalized_from_evaluation(normalized, evaluation)
-        if repair_operations:
-            normalized = repaired_normalized
-            repair_evaluation = _evaluate_generation(
-                api_client=api_client,
-                evaluator_prompt=wiki_evaluator_system_prompt,
-                document=document,
-                blocks=blocks,
-                normalized=normalized,
-            )
-            repair_evaluation["repair_operations"] = repair_operations
-            generation_evaluations.append(repair_evaluation)
-            evaluation = repair_evaluation
-            if args.save_debug_json:
-                write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.repair.json", repair_evaluation)
-            log.emit(
-                "3-평가-보정. Wiki 생성 보정",
-                "평가 issue를 바탕으로 명확한 observation 문제를 자동 보정하고 다시 평가했습니다.",
-                {
-                    "시도": attempt,
-                    "보정 수": len(repair_operations),
-                    "passed": repair_evaluation.get("passed"),
-                    "retry": repair_evaluation.get("retry_recommended"),
-                    "overall": (repair_evaluation.get("scores") or {}).get("overall"),
-                    "issue 수": len(repair_evaluation.get("issues", [])),
-                },
-            )
-        if not evaluation.get("retry_recommended") or evaluation.get("passed") or attempt >= max_eval_attempts:
-            break
-        feedback = str(evaluation.get("retry_feedback") or "")
-        semantic_prompt_for_attempt = (
-            semantic_system_prompt
-            + "\n\nEvaluator feedback for retry:\n"
-            + feedback
-            + "\nApply this feedback strictly. Keep source anchors exact. Return the same JSON schema."
-        )
+    notes, normalized, generation_evaluations = _run_wiki_generation_graph(
+        api_client=api_client,
+        semantic_system_prompt=semantic_system_prompt,
+        wiki_evaluator_system_prompt=wiki_evaluator_system_prompt,
+        packets=packets,
+        raw_dir=raw_dir,
+        log=log,
+        normalizer=normalizer,
+        document=document,
+        blocks=blocks,
+        out=out,
+        save_debug_json=args.save_debug_json,
+        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", False),
+        max_eval_attempts=max_eval_attempts,
+    )
 
     # 4. Backend normalize/merge/mention expansion.
     log.emit(
@@ -1011,7 +1138,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "wiki_generation_evaluation_count": len(generation_evaluations),
         "wiki_generation_final_evaluation": generation_evaluations[-1] if generation_evaluations else None,
         "source_page": source_page,
-        "source_extraction_artifact": normalized.get("source_extraction_artifact"),
+        "source_extraction_artifact": _json_safe(normalized.get("source_extraction_artifact")),
         "source_blocks": source_blocks,
         "concept_pages": concept_pages,
         "links": links,
@@ -1034,7 +1161,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             "근거 수": len(normalized["evidence_units"]),
         },
     )
-    return manifest
+    return _json_safe(manifest)
 
 
 def main() -> None:

@@ -4,6 +4,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-01
+
+### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가
+
+**배경**
+
+Query evaluator loop가 `AnswerQueryUseCase` 내부에서 직접 LangGraph를 조립해 application layer가 LangGraph SDK에 의존하고, LangGraph Studio에서 graph 구조를 보기 어려웠습니다.
+
+**추가/변경된 것**
+
+- query evaluator retry 흐름을 `QueryEvaluatorGraphPort`와 `query_evaluator_flow.py`로 분리했습니다.
+- 실제 LangGraph 실행 구현을 infrastructure의 `LangGraphQueryEvaluatorGraph`로 이동했습니다.
+- LangGraph Studio/Agent Server용 `query_evaluator` graph entry와 `langgraph.json`을 추가했습니다.
+- LangSmith tracing이 켜진 환경에서 query evaluator graph node와 LLM span을 확인할 수 있게 했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_answer_query.py tests/modules/query/test_query_evaluator_graph.py tests/modules/query/test_query_evaluator_studio_graph.py` 통과.
+- `llmPipeline/.venv/bin/langgraph validate --config langgraph.json` 통과.
+- 실제 `POST /pipeline/runs`, `POST /query` 실행 결과 LangSmith에서 `LangGraph`, `generate_answer`, `evaluate_answer`, `prepare_retry` trace 확인.
+
+---
+
 ## 2026-06-29 (3)
 
 ### feat: 여러 문서 동시 업로드 시 pipeline 처리 순서 보장 — DB 기반 처리 큐 도입

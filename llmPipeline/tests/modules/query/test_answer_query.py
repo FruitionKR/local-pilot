@@ -92,6 +92,17 @@ class RecordingAnswerGenerator:
         return GeneratedAnswer(content=self.content)
 
 
+class SequencedAnswerGenerator:
+    def __init__(self, contents: list[str]) -> None:
+        self.contents = contents
+        self.contexts: list[QueryContext] = []
+
+    def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
+        self.contexts.append(context)
+        index = min(len(self.contexts) - 1, len(self.contents) - 1)
+        return GeneratedAnswer(content=self.contents[index])
+
+
 class FixedQueryRewriter:
     def __init__(self, rewritten_query: str) -> None:
         self.rewritten_query = rewritten_query
@@ -111,8 +122,8 @@ class FakeWebSearch:
 
 
 class FakeQueryEvaluator:
-    def __init__(self, evaluation: QueryEvaluation) -> None:
-        self.evaluation = evaluation
+    def __init__(self, evaluation: QueryEvaluation | list[QueryEvaluation]) -> None:
+        self.evaluations = evaluation if isinstance(evaluation, list) else [evaluation]
         self.calls: list[tuple[str, QueryContext, GeneratedAnswer, str, bool]] = []
 
     def evaluate(
@@ -123,8 +134,9 @@ class FakeQueryEvaluator:
         stop_reason: str,
         web_search_available: bool = False,
     ) -> QueryEvaluation:
+        index = min(len(self.calls), len(self.evaluations) - 1)
         self.calls.append((question, context, answer, stop_reason, web_search_available))
-        return self.evaluation
+        return self.evaluations[index]
 
 
 def source_page(page_id: str, title: str) -> WikiPage:
@@ -559,6 +571,54 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_internal_supported")
         self.assertIn("index.md는 위키 페이지 카탈로그입니다.", result.answer.content)
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0022"])
+
+    def test_query_evaluator_feedback_can_retry_answer_until_internal_supported(self) -> None:
+        pages = [source_page("source:wiki", "LLM Wiki Source")]
+        answer_generator = SequencedAnswerGenerator(
+            [
+                "초안 답변입니다. [1]",
+                "evaluator 피드백을 반영한 개선 답변입니다. [1]",
+            ]
+        )
+        query_evaluator = FakeQueryEvaluator(
+            [
+                QueryEvaluation(
+                    route="unsupported",
+                    evidence_relevance=0.2,
+                    reason="근거 문장을 충분히 사용하지 않았습니다.",
+                    feedback="근거 문장을 직접 반영해 답변하세요.",
+                ),
+                QueryEvaluation(
+                    route="internal_supported",
+                    evidence_relevance=0.95,
+                    reason="내부 근거로 충분히 답했습니다.",
+                ),
+            ]
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"LLM Wiki Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "## Key Points\n"
+                        "- LLM Wiki Source는 내부 근거로 답변을 생성하는 데 사용됩니다. [B0001]\n"
+                    )
+                }
+            ),
+            query_evaluator=query_evaluator,
+            query_evaluator_max_attempts=2,
+        )
+
+        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?")
+
+        self.assertEqual(len(query_evaluator.calls), 2)
+        self.assertEqual(len(answer_generator.contexts), 2)
+        self.assertIn("근거 문장을 직접 반영해 답변하세요.", answer_generator.contexts[1].answer_context)
+        self.assertIn("evaluator 피드백을 반영한 개선 답변입니다.", result.answer.content)
 
     def test_query_evaluator_can_request_web_fallback_after_reviewing_answer(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

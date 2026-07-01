@@ -24,6 +24,68 @@ DATABASE_URL=postgresql://...@postgresql:5432/...
 S3_ENDPOINT=http://minio:9000
 ```
 
+LangGraph evaluator loop를 LangSmith에서 확인하려면 아래 값도 `infra/.env`에 설정합니다.
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=local-pilot-dev
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+QUERY_EVALUATOR_MODE=llm
+QUERY_EVALUATOR_MAX_ATTEMPTS=2
+```
+
+현재 LLM 호출은 Upstage OpenAI-compatible API를 사용합니다. `LANGSMITH_TRACING=true`이면 LangGraph node 실행과 `upstage_chat_completions` LLM span이 LangSmith project에 기록됩니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+
+LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
+
+- US 기본값: `LANGSMITH_ENDPOINT=https://api.smith.langchain.com`
+- APAC/Sydney: `LANGSMITH_ENDPOINT=https://apac.api.smith.langchain.com`
+- EU: `LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com`
+- AWS US: `LANGSMITH_ENDPOINT=https://aws.api.smith.langchain.com`
+
+한국에서 새 workspace를 만들 수 있다면 APAC/Sydney가 가장 가까운 SaaS region입니다. 이미 `smith.langchain.com`에서 만든 기본 US workspace의 API key라면 US endpoint를 그대로 써야 합니다.
+
+### LangGraph Studio에서 evaluator graph 보기
+
+`langgraph.json`은 `llmPipeline/langgraph.json`에 있습니다. 이 설정은 `query_evaluator` graph를 Studio/Agent Server에 노출하고, 환경변수는 `../infra/.env`에서 읽습니다.
+
+```bash
+cd llmPipeline
+./.venv/bin/python -m pip install -U "langgraph-cli[inmem]"
+./.venv/bin/langgraph dev
+```
+
+Studio에서 `query_evaluator` graph를 열고 아래 형태의 입력으로 실행할 수 있습니다.
+
+```json
+{
+  "question": "Query evaluator graph 구조는 어디서 실행되나요?",
+  "resolved_retrieval_question": "Query evaluator graph 구조는 어디서 실행되나요?",
+  "answer": "LangGraph evaluator graph는 infrastructure 모듈에서 실행됩니다. [1]",
+  "stop_reason": "answer_context_selected",
+  "max_attempts": 1,
+  "related_pages": [
+    {
+      "id": "query-evaluator-graph",
+      "page_type": "concept",
+      "title": "Query Evaluator Graph",
+      "role": "concept",
+      "score": 0.95,
+      "summary": "Query evaluator graph는 LangGraph infrastructure 모듈로 분리되어 실행된다."
+    }
+  ],
+  "evidence_snippets": [
+    {
+      "rank": 1,
+      "source_document_id": "local-graph-guide",
+      "source_block_ids": ["graph-1"],
+      "text": "Query evaluator graph는 application use case가 아니라 infrastructure의 LangGraphQueryEvaluatorGraph에서 실행된다."
+    }
+  ]
+}
+```
+
 ### CLI 실행
 
 `llmPipeline` 폴더에서 실행합니다.
@@ -35,6 +97,8 @@ python run_lab.py \
   --mode api \
   --source-page-mode section-polish \
   --concept-page-mode skeleton \
+  --wiki-evaluation-loop \
+  --max-eval-attempts 2 \
   --env-file ../infra/.env
 ```
 
