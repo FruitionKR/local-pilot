@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-07-01
+
+### chore: LangSmith tracing과 evaluator graph 환경변수 추가
+
+**배경**
+
+로컬 pipeline API에서 LangSmith tracing과 query evaluator graph 재시도 횟수를 같은 compose 설정으로 관리해야 했습니다.
+
+**변경된 것**
+
+- `infra/.env.example`에 `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT`, `QUERY_EVALUATOR_MODE`, `QUERY_EVALUATOR_MAX_ATTEMPTS` 예시를 추가했습니다.
+- `infra/docker-compose.pipeline.yml`에서 LangSmith와 query evaluator 환경변수를 pipeline container로 전달하도록 추가했습니다.
+
+**검증**
+
+- `docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml up -d --build pipeline-api`로 pipeline container 재빌드 확인.
+- 컨테이너 내부에서 `LANGSMITH_TRACING=true`, `QUERY_EVALUATOR_MODE=llm`, `QUERY_EVALUATOR_MAX_ATTEMPTS=2` 반영 확인.
+
 ## 2026-06-28
 
 ### chore: pipeline query 보강 설정 추가

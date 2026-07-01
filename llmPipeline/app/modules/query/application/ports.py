@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
 
 
 class WikiRepositoryPort(Protocol):
@@ -53,6 +53,18 @@ class QueryEvaluatorPort(Protocol):
         stop_reason: str,
         web_search_available: bool = False,
     ) -> QueryEvaluation:
+        ...
+
+
+class QueryEvaluatorGraphPort(Protocol):
+    def run(
+        self,
+        *,
+        question: str,
+        query_context: QueryContext,
+        stop_reason: str,
+        event_publisher: "QueryEventPublisherPort | None",
+    ) -> tuple[GeneratedAnswer, list[EvidenceSnippet], QueryContext, QueryEvaluation | None]:
         ...
 
 

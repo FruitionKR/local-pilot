@@ -25,6 +25,11 @@ from app.modules.wiki_generation.infrastructure.prompt_io import (
 )
 from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
+try:
+    from langsmith import traceable
+except ImportError:  # pragma: no cover - optional tracing dependency
+    traceable = None
+
 JsonDict = Dict[str, Any]
 
 
@@ -213,6 +218,24 @@ class ChatCompletionsJsonClient:
         if self.config.json_mode:
             body["response_format"] = {"type": "json_object"}
 
+        return self._complete_text_with_optional_trace(body)
+
+    def _complete_text_with_optional_trace(self, body: JsonDict) -> str:
+        if traceable is None or not _langsmith_tracing_enabled():
+            return self._send_chat_completion(body)
+        traced = traceable(
+            name="upstage_chat_completions",
+            run_type="llm",
+            metadata={
+                "provider": os.environ.get("LLM_PROVIDER", "upstage"),
+                "model": self.config.model,
+                "endpoint": self.config.endpoint,
+                "json_mode": self.config.json_mode,
+            },
+        )(self._send_chat_completion)
+        return traced(body)
+
+    def _send_chat_completion(self, body: JsonDict) -> str:
         req = urllib.request.Request(
             self.config.endpoint,
             data=json.dumps(body).encode("utf-8"),
@@ -327,6 +350,10 @@ def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
     if not schema_prompt.strip():
         return system_prompt
     return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
+
+
+def _langsmith_tracing_enabled() -> bool:
+    return os.environ.get("LANGSMITH_TRACING", os.environ.get("LANGCHAIN_TRACING_V2", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 # Backwards-compatible aliases.
