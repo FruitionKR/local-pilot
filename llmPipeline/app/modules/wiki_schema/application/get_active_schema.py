@@ -6,7 +6,9 @@ class GetActiveSchemaUseCase:
     def __init__(self, repository: WikiSchemaRepositoryPort) -> None:
         self._repository = repository
 
-    def execute(self, project_id: str = "default") -> WikiSchemaRecord | None:
-        if not project_id.strip():
-            raise ValueError("project_id is required.")
-        return self._repository.get_active(project_id.strip())
+    def execute(self, workspace_id: str, user_id: str) -> WikiSchemaRecord | None:
+        if not workspace_id.strip():
+            raise ValueError("workspace_id is required.")
+        if not user_id.strip():
+            raise ValueError("user_id is required.")
+        return self._repository.get_active(workspace_id.strip(), user_id.strip())

@@ -36,7 +36,7 @@ class FakeJsonClient:
 
 
 def schema_prompt(feature: str) -> str:
-    return f"<project_schema>\n## {feature}\n- active schema\n</project_schema>"
+    return f"<workspace_schema>\n## {feature}\n- active schema\n</workspace_schema>"
 
 
 class SchemaPromptInjectionTest(unittest.TestCase):

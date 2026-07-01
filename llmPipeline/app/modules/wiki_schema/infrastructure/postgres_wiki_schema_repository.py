@@ -16,7 +16,8 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
                 """
                 INSERT INTO wiki_schemas (
                     id,
-                    project_id,
+                    workspace_id,
+                    user_id,
                     name,
                     raw_markdown,
                     sanitized_global_markdown,
@@ -30,12 +31,13 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
                     status,
                     schema_version
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
                     record.id,
-                    record.project_id,
+                    record.workspace_id,
+                    record.user_id,
                     record.name,
                     record.raw_markdown,
                     record.fragments.global_markdown,
@@ -59,17 +61,18 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
 
     def activate(self, schema_id: str) -> WikiSchemaRecord:
         with database.connect() as conn:
-            row = conn.execute("SELECT project_id FROM wiki_schemas WHERE id = %s", (schema_id,)).fetchone()
+            row = conn.execute("SELECT workspace_id, user_id FROM wiki_schemas WHERE id = %s", (schema_id,)).fetchone()
             if not row:
                 raise ValueError("Schema not found.")
-            project_id = row["project_id"]
+            workspace_id = row["workspace_id"]
+            user_id = row["user_id"]
             conn.execute(
                 """
                 UPDATE wiki_schemas
                 SET status = 'draft', updated_at = now(), activated_at = NULL
-                WHERE project_id = %s AND status = 'active'
+                WHERE workspace_id = %s AND user_id = %s AND status = 'active'
                 """,
-                (project_id,),
+                (workspace_id, user_id),
             )
             activated = conn.execute(
                 """
@@ -82,17 +85,17 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
             ).fetchone()
         return _row_to_record(activated)
 
-    def get_active(self, project_id: str) -> WikiSchemaRecord | None:
+    def get_active(self, workspace_id: str, user_id: str) -> WikiSchemaRecord | None:
         with database.connect() as conn:
             row = conn.execute(
                 """
                 SELECT *
                 FROM wiki_schemas
-                WHERE project_id = %s AND status = 'active'
+                WHERE workspace_id = %s AND user_id = %s AND status = 'active'
                 ORDER BY activated_at DESC NULLS LAST, updated_at DESC
                 LIMIT 1
                 """,
-                (project_id,),
+                (workspace_id, user_id),
             ).fetchone()
         return _row_to_record(row) if row else None
 
@@ -103,7 +106,8 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS wiki_schemas (
                 id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 raw_markdown TEXT NOT NULL,
                 sanitized_global_markdown TEXT NOT NULL DEFAULT '',
@@ -124,14 +128,39 @@ def init_db() -> None:
         )
         conn.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_wiki_schemas_project_status
-            ON wiki_schemas (project_id, status)
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'wiki_schemas' AND column_name = 'project_id'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'wiki_schemas' AND column_name = 'workspace_id'
+                ) THEN
+                    ALTER TABLE wiki_schemas RENAME COLUMN project_id TO workspace_id;
+                END IF;
+            END $$;
             """
         )
         conn.execute(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_wiki_schemas_one_active_per_project
-            ON wiki_schemas (project_id)
+            ALTER TABLE wiki_schemas
+            ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'default'
+            """
+        )
+        conn.execute("ALTER TABLE wiki_schemas ALTER COLUMN user_id DROP DEFAULT")
+        conn.execute("DROP INDEX IF EXISTS idx_wiki_schemas_project_status")
+        conn.execute("DROP INDEX IF EXISTS uq_wiki_schemas_one_active_per_project")
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_wiki_schemas_workspace_user_status
+            ON wiki_schemas (workspace_id, user_id, status)
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_wiki_schemas_one_active_per_workspace_user
+            ON wiki_schemas (workspace_id, user_id)
             WHERE status = 'active'
             """
         )
@@ -142,7 +171,8 @@ def _row_to_record(row: dict[str, Any]) -> WikiSchemaRecord:
     issue_values = lint_result.get("issues", []) if isinstance(lint_result, dict) else []
     return WikiSchemaRecord(
         id=row["id"],
-        project_id=row["project_id"],
+        workspace_id=row["workspace_id"],
+        user_id=row["user_id"],
         name=row["name"],
         raw_markdown=row["raw_markdown"],
         fragments=SchemaFragments(

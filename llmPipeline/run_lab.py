@@ -39,7 +39,6 @@ from app.modules.wiki_generation.infrastructure.normalize import SemanticNormali
 from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuilder
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_ingestion.infrastructure.file_io import append_text, ensure_dir, write_json, write_text
-from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 class PipelineLog:
@@ -260,7 +259,7 @@ def _run_semantic_extraction(
     log: PipelineLog,
     attempt: int,
 ) -> list[dict[str, Any]]:
-    semantic_llm = ApiSemanticExtractor(api_client, system_prompt, schema_prompt_provider=get_active_schema_prompt)
+    semantic_llm = ApiSemanticExtractor(api_client, system_prompt)
     notes = []
     for p in packets:
         note = semantic_llm.extract(p)
@@ -768,7 +767,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     existing_concepts = load_existing_concept_index(getattr(args, "existing_wiki_dir", None))
     missing_related_hints = normalized.get("missing_related_concept_hints", [])
     assert api_client is not None
-    concept_resolver = ApiConceptResolver(api_client, concept_resolution_system_prompt, schema_prompt_provider=get_active_schema_prompt)
+    concept_resolver = ApiConceptResolver(api_client, concept_resolution_system_prompt)
     raw_resolution = concept_resolver.resolve(normalized["concept_ledger"], existing_concepts, missing_related_hints)
     if args.save_debug_json:
         write_json(ensure_dir(out / "raw_llm_outputs") / "concept_resolution.json", raw_resolution)
@@ -812,7 +811,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     log.emit("4-보조. Concept 입력 준비", "전체 개념별 source block을 메모리에 모았습니다.", {"대상 개념 수": len(concept_source_blocks_by_slug)})
 
     # 5. Assemble source page with optional section polish.
-    section_polisher = ApiSectionPolisher(api_client, section_polish_system_prompt, schema_prompt_provider=get_active_schema_prompt) if api_client is not None else None
+    section_polisher = ApiSectionPolisher(api_client, section_polish_system_prompt) if api_client is not None else None
     raw_polish_dir = ensure_dir(out / "raw_llm_outputs" / "section_polish") if args.save_debug_json else None
     invalid_polish_dir = out / "raw_llm_outputs" / "section_polish_invalid"
     source_polish: dict[str, Any] = {}
@@ -951,7 +950,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
     elif cp_mode in {"api", "full-llm"}:
         assert api_client is not None
-        concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt, schema_prompt_provider=get_active_schema_prompt)
+        concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt)
         generator_assembler = GeneratedConceptPageAssembler()
         for concept in normalized["concept_ledger"]:
             source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
