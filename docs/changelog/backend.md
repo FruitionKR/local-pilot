@@ -4,6 +4,76 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-06-29 (3)
+
+### feat: 여러 문서 동시 업로드 시 pipeline 처리 순서 보장 — DB 기반 처리 큐 도입
+
+**배경**
+
+프론트에서 파일을 여러 개 동시에 업로드하면 각 업로드 요청이 병렬로 처리되어 pipeline run이 동시에 여러 개 실행됐습니다.
+llmPipeline 내부에 전역 큐나 단일 worker 제한이 없어 처리 순서와 완료 순서가 보장되지 않았습니다.
+
+**추가/변경된 것**
+
+- `document_processing_queue` 테이블 추가. 컬럼: `id`, `document_id`(UNIQUE), `created_at`, `status`(`pending`|`processing`).
+- `DocumentProcessingQueue` 엔티티 + `DocumentProcessingQueueRepository` 추가.
+- `DocumentProcessingWorker` 추가. `@Scheduled(fixedDelay=2000)`로 `pending` 항목을 `created_at` 오름차순으로 하나씩 꺼내 pipeline 요청을 순차 실행합니다.
+- `@PostConstruct`에서 서버 재시작 시 `processing` 상태로 stuck된 항목을 `pending`으로 리셋합니다.
+- `DocumentService.requestProcessingAfterCommit()`이 pipeline을 즉시 호출하는 대신 queue에 INSERT하도록 변경했습니다.
+- `DocumentService.delete()`가 문서 삭제 시 queue 항목도 함께 제거합니다.
+
+**주의사항**
+
+- 서버 인스턴스가 여러 개인 환경에서는 `pending → processing` 전환의 원자성을 보장하지 않습니다. 현재 로컬 단일 인스턴스 기준 구현입니다.
+
+---
+
+## 2026-06-29 (2)
+
+### feat: 문서 삭제 API 추가 — DELETE /api/documents/{id}
+
+**배경**
+
+프론트의 삭제 메뉴가 로컬 tree 상태만 제거하고 backend API를 호출하지 않아 새로고침하면 문서가 다시 나타났습니다.
+
+**추가/변경된 것**
+
+- `DELETE /api/documents/{document_id}` endpoint 추가. 성공 시 `204 No Content`.
+- 삭제 범위: source wiki page, MinIO 원본/추출 텍스트 오브젝트.
+- DB CASCADE로 자동 처리: `source_blocks`, `document_wiki_links`, `wiki_page_links`, `wiki_page_embeddings`, `wiki_embedding_units`.
+- concept wiki page는 여러 문서 공유 가능하므로 삭제 제외.
+- MinIO 오브젝트 삭제는 DB commit 이후 실행. 실패 시 경고 로그만 남기고 204 반환.
+- `processing` 상태 문서도 삭제 허용. 이후 pipeline callback은 404 무시.
+
+---
+
+## 2026-06-29
+
+### feat: 문서 처리 상태 신뢰성 개선 — pipeline_run_id 추적 및 processing_state 추가
+
+**배경**
+
+`documents.status=processing`만으로는 pipeline worker가 실제로 살아서 처리 중인지 알 수 없었습니다.
+pipeline 요청 실패, 장시간 무응답 상태를 구분할 방법이 없어 프론트엔드에서 신뢰도 있는 상태 표시가 불가능했습니다.
+
+**추가/변경된 것**
+
+- `Document` 엔티티에 `pipeline_run_id`, `processing_started_at`, `processing_updated_at` 필드를 추가했습니다.
+- `markPipelineStarted()`, `markProcessingHeartbeat()`, `markProcessingFailed()` 메서드를 추가해 상태 변경을 엔티티에서 관리합니다.
+- `DocumentProcessingRequester.request()`가 pipeline 요청 성공 시 `PipelineRunResponse`를 반환하고, 실패 시 예외를 throw하도록 변경했습니다. callback URL도 요청 body에 포함합니다.
+- `DocumentService.doRequestProcessing()`을 분리해 pipeline 요청 성공 시 `pipeline_run_id`를 저장하고, 실패 시 `status=failed`로 즉시 기록합니다.
+- `POST /api/documents/{document_id}/pipeline-events` endpoint를 추가했습니다. llmPipeline의 `PipelineLog.emit()`이 단계마다 이 URL로 POST하면 `processing_updated_at`이 갱신됩니다.
+- `DocumentListResponse`, `DocumentDetailResponse`에 `pipeline_run_id`, `processing_state` 필드를 추가했습니다.
+- `processing_state` 계산 규칙: `pipeline_run_id` 없으면 `starting`, heartbeat가 60초 이상 없으면 `stalled`, 그 외 `running`.
+- `DocumentProcessingState` enum(`starting/running/stalled/completed/failed`)을 추가했습니다.
+
+**주의사항**
+
+- `spring.jpa.hibernate.ddl-auto=update`로 개발 환경에서는 컬럼이 자동 추가됩니다. 공유 DB 환경은 별도 migration 필요.
+- llmPipeline의 `log_callback_url` 기능은 이미 구현되어 있어 callback URL을 전달하면 자동으로 heartbeat가 발송됩니다.
+
+---
+
 ## 2026-06-26
 
 ### feat: 채팅 Wiki observation 생성과 평가 보정 루프 추가

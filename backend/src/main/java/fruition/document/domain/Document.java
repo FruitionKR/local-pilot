@@ -41,6 +41,15 @@ public class Document {
     @Column(name = "error_message")
     private String errorMessage;
 
+    @Column(name = "pipeline_run_id")
+    private String pipelineRunId;
+
+    @Column(name = "processing_started_at")
+    private Instant processingStartedAt;
+
+    @Column(name = "processing_updated_at")
+    private Instant processingUpdatedAt;
+
     protected Document() {}
 
     public Document(String id, String filename, String mimeType, long byteSize,
@@ -63,6 +72,23 @@ public class Document {
         this.errorMessage = errorMessage;
     }
 
+    public void markPipelineStarted(String pipelineRunId, Instant now) {
+        this.pipelineRunId = pipelineRunId;
+        this.processingStartedAt = now;
+        this.processingUpdatedAt = now;
+    }
+
+    public void markProcessingHeartbeat(Instant now) {
+        this.processingUpdatedAt = now;
+    }
+
+    public void markProcessingFailed(String errorMessage, Instant now) {
+        this.status = DocumentStatus.failed;
+        this.errorMessage = errorMessage;
+        this.processedAt = now;
+        this.processingUpdatedAt = now;
+    }
+
     public void rename(String filename) {
         this.filename = filename;
     }
@@ -78,4 +104,7 @@ public class Document {
     public Instant getUploadedAt() { return uploadedAt; }
     public Instant getProcessedAt() { return processedAt; }
     public String getErrorMessage() { return errorMessage; }
+    public String getPipelineRunId() { return pipelineRunId; }
+    public Instant getProcessingStartedAt() { return processingStartedAt; }
+    public Instant getProcessingUpdatedAt() { return processingUpdatedAt; }
 }

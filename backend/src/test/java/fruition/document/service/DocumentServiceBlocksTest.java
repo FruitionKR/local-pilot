@@ -5,6 +5,7 @@ import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,13 +38,16 @@ class DocumentServiceBlocksTest {
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
+    @Mock DocumentProcessingQueueRepository queueRepository;
+    @Mock TransactionTemplate transactionTemplate;
 
     DocumentService documentService;
 
     @BeforeEach
     void setUp() {
         documentService = new DocumentService(documentRepository, minioClient, storageProps,
-                processingRequester, documentWikiLinkRepository, wikiPageRepository, sourceBlockRepository);
+                processingRequester, documentWikiLinkRepository, wikiPageRepository,
+                sourceBlockRepository, queueRepository, transactionTemplate, "http://localhost:8080");
     }
 
     @Test

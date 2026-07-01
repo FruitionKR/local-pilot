@@ -2,6 +2,8 @@ package fruition.document.service;
 
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
+import fruition.document.domain.DocumentProcessingState;
+import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -17,6 +19,8 @@ import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentWikiPageRef;
+import fruition.document.domain.DocumentProcessingQueue;
+import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
@@ -28,10 +32,15 @@ import fruition.wiki.repository.WikiPageRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -46,6 +55,9 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentService {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
+    private static final int STALLED_THRESHOLD_SECONDS = 60;
+
     private final DocumentRepository documentRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
@@ -53,6 +65,9 @@ public class DocumentService {
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
     private final SourceBlockRepository sourceBlockRepository;
+    private final DocumentProcessingQueueRepository queueRepository;
+    private final TransactionTemplate transactionTemplate;
+    private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
                            MinioClient minioClient,
@@ -60,7 +75,10 @@ public class DocumentService {
                            DocumentProcessingRequester processingRequester,
                            DocumentWikiLinkRepository documentWikiLinkRepository,
                            WikiPageRepository wikiPageRepository,
-                           SourceBlockRepository sourceBlockRepository) {
+                           SourceBlockRepository sourceBlockRepository,
+                           DocumentProcessingQueueRepository queueRepository,
+                           TransactionTemplate transactionTemplate,
+                           @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
@@ -68,6 +86,9 @@ public class DocumentService {
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.sourceBlockRepository = sourceBlockRepository;
+        this.queueRepository = queueRepository;
+        this.transactionTemplate = transactionTemplate;
+        this.callbackBaseUrl = callbackBaseUrl;
     }
 
     @Transactional
@@ -142,14 +163,51 @@ public class DocumentService {
 
     private void requestProcessingAfterCommit(String documentId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            processingRequester.request(documentId);
+            transactionTemplate.execute(status -> {
+                queueRepository.save(new DocumentProcessingQueue(documentId));
+                return null;
+            });
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                processingRequester.request(documentId);
+                transactionTemplate.execute(status -> {
+                    queueRepository.save(new DocumentProcessingQueue(documentId));
+                    return null;
+                });
             }
+        });
+    }
+
+    void doRequestProcessing(String documentId) {
+        String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
+        try {
+            DocumentProcessingRequester.PipelineRunResponse response =
+                    processingRequester.request(documentId, callbackUrl);
+            String runId = response != null ? response.runId() : null;
+            Instant now = Instant.now();
+            transactionTemplate.execute(status -> {
+                documentRepository.findById(documentId).ifPresent(doc -> doc.markPipelineStarted(runId, now));
+                return null;
+            });
+        } catch (Exception e) {
+            Instant now = Instant.now();
+            transactionTemplate.execute(status -> {
+                documentRepository.findById(documentId).ifPresent(doc ->
+                        doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
+                return null;
+            });
+        }
+    }
+
+    @Transactional
+    public void applyPipelineEvent(String documentId, String runId) {
+        documentRepository.findById(documentId).ifPresent(doc -> {
+            if (runId != null && !runId.equals(doc.getPipelineRunId())) {
+                return;
+            }
+            doc.markProcessingHeartbeat(Instant.now());
         });
     }
 
@@ -165,7 +223,9 @@ public class DocumentService {
                         doc.getExtractedTextUri(),
                         doc.getUploadedAt(),
                         doc.getProcessedAt(),
-                        doc.getErrorMessage()
+                        doc.getErrorMessage(),
+                        doc.getPipelineRunId(),
+                        resolveProcessingState(doc)
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -201,7 +261,9 @@ public class DocumentService {
                 doc.getUploadedAt(),
                 doc.getProcessedAt(),
                 doc.getErrorMessage(),
-                wikiPages
+                wikiPages,
+                doc.getPipelineRunId(),
+                resolveProcessingState(doc)
         );
     }
 
@@ -280,6 +342,51 @@ public class DocumentService {
         return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
     }
 
+    @Transactional
+    public void delete(String documentId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        String sourceUri = document.getSourceUri();
+        String extractedTextUri = document.getExtractedTextUri();
+
+        // 처리 queue에서 제거
+        queueRepository.deleteByDocumentId(documentId);
+
+        // source wiki page 삭제 → wiki_page_links, wiki_page_embeddings CASCADE
+        wikiPageRepository.findById("source:" + documentId)
+                .ifPresent(wikiPageRepository::delete);
+
+        // document 삭제 → source_blocks, document_wiki_links, wiki_embedding_units CASCADE
+        documentRepository.delete(document);
+
+        // commit 이후 MinIO 오브젝트 삭제
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteMinioObject(sourceUri);
+                if (extractedTextUri != null) {
+                    deleteMinioObject(extractedTextUri);
+                }
+            }
+        });
+    }
+
+    private void deleteMinioObject(String uri) {
+        if (uri == null || uri.isBlank()) return;
+        String objectKey = normalizeObjectKey(uri);
+        try {
+            minioClient.removeObject(
+                    RemoveObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectKey)
+                            .build()
+            );
+        } catch (Exception e) {
+            log.warn("[MinIO 오브젝트 삭제 실패] uri={} error={}", uri, e.getMessage());
+        }
+    }
+
     public DocumentBlocksResponse blocks(String documentId) {
         documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
@@ -337,6 +444,16 @@ public class DocumentService {
     private String stripExtension(String filename) {
         int dotIndex = filename.lastIndexOf('.');
         return dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
+    }
+
+    private DocumentProcessingState resolveProcessingState(Document doc) {
+        if (doc.getStatus() == DocumentStatus.completed) return DocumentProcessingState.completed;
+        if (doc.getStatus() == DocumentStatus.failed) return DocumentProcessingState.failed;
+        if (doc.getPipelineRunId() == null) return DocumentProcessingState.starting;
+        if (doc.getProcessingUpdatedAt() == null) return DocumentProcessingState.starting;
+        boolean stalled = doc.getProcessingUpdatedAt()
+                .isBefore(Instant.now().minusSeconds(STALLED_THRESHOLD_SECONDS));
+        return stalled ? DocumentProcessingState.stalled : DocumentProcessingState.running;
     }
 
     private String sha256(byte[] data) {
