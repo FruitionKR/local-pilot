@@ -31,7 +31,8 @@ class FakeWikiSchemaRepository:
         record = self.records[schema_id]
         activated = WikiSchemaRecord(
             id=record.id,
-            project_id=record.project_id,
+            workspace_id=record.workspace_id,
+            user_id=record.user_id,
             name=record.name,
             raw_markdown=record.raw_markdown,
             fragments=record.fragments,
@@ -42,9 +43,9 @@ class FakeWikiSchemaRepository:
         self.records[schema_id] = activated
         return activated
 
-    def get_active(self, project_id: str) -> WikiSchemaRecord | None:
+    def get_active(self, workspace_id: str, user_id: str) -> WikiSchemaRecord | None:
         for record in self.records.values():
-            if record.project_id == project_id and record.status == "active":
+            if record.workspace_id == workspace_id and record.user_id == user_id and record.status == "active":
                 return record
         return None
 
@@ -59,11 +60,13 @@ class SchemaStorageUseCasesTest(unittest.TestCase):
 
         record = use_case.execute(
             raw_markdown="답변은 한국어로 해줘.",
-            project_id="project-1",
+            workspace_id="ws-1",
+            user_id="user-1",
             name="기본 schema",
         )
 
-        self.assertEqual(record.project_id, "project-1")
+        self.assertEqual(record.workspace_id, "ws-1")
+        self.assertEqual(record.user_id, "user-1")
         self.assertEqual(record.name, "기본 schema")
         self.assertEqual(record.status, "draft")
         self.assertIn("적용될 Schema 설정", record.preview_markdown)
@@ -73,12 +76,13 @@ class SchemaStorageUseCasesTest(unittest.TestCase):
         repository = FakeWikiSchemaRepository()
         draft = CreateSchemaDraftUseCase(FakeSchemaOrganizer(), repository).execute(
             raw_markdown="답변은 한국어로 해줘.",
-            project_id="project-1",
+            workspace_id="ws-1",
+            user_id="user-1",
             name="기본 schema",
         )
 
         activated = ActivateSchemaUseCase(repository).execute(draft.id)
-        active = GetActiveSchemaUseCase(repository).execute("project-1")
+        active = GetActiveSchemaUseCase(repository).execute("ws-1", "user-1")
 
         self.assertEqual(activated.status, "active")
         self.assertEqual(active, activated)

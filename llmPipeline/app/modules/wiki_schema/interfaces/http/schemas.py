@@ -65,13 +65,15 @@ class WikiSchemaPreviewResponse(BaseModel):
 
 class CreateWikiSchemaDraftRequest(BaseModel):
     raw_markdown: str = Field(..., min_length=1)
-    project_id: str = Field(default="default", min_length=1)
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
     name: str = Field(default="default", min_length=1)
 
 
 class WikiSchemaResponse(BaseModel):
     id: str
-    project_id: str
+    workspace_id: str
+    user_id: str
     name: str
     raw_markdown: str
     fragments: SchemaFragmentsResponse
@@ -88,7 +90,8 @@ class WikiSchemaResponse(BaseModel):
     def from_domain(cls, record: WikiSchemaRecord) -> "WikiSchemaResponse":
         return cls(
             id=record.id,
-            project_id=record.project_id,
+            workspace_id=record.workspace_id,
+            user_id=record.user_id,
             name=record.name,
             raw_markdown=record.raw_markdown,
             fragments=SchemaFragmentsResponse.from_domain(record.fragments),

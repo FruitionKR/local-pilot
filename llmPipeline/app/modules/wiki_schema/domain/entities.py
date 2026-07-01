@@ -57,7 +57,8 @@ class SchemaOrganizerCandidate:
 @dataclass(frozen=True)
 class WikiSchemaRecord:
     id: str
-    project_id: str
+    workspace_id: str
+    user_id: str
     name: str
     raw_markdown: str
     fragments: SchemaFragments

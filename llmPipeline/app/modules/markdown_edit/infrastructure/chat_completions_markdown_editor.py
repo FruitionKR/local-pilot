@@ -15,7 +15,6 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditTarget,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
-from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 DEFAULT_MARKDOWN_EDIT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_edit.system.md"
@@ -86,7 +85,6 @@ def build_markdown_editor() -> MarkdownEditorPort:
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
         create_system_prompt=create_prompt_path.read_text(encoding="utf-8"),
-        schema_prompt_provider=lambda feature: get_active_schema_prompt(feature),  # type: ignore[arg-type]
     )
 
 

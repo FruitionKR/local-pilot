@@ -23,7 +23,6 @@ from app.modules.wiki_generation.infrastructure.prompt_io import (
     render_section_polish_user_prompt,
     render_semantic_user_prompt,
 )
-from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 try:
     from langsmith import traceable

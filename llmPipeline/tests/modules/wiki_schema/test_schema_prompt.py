@@ -1,6 +1,6 @@
 import unittest
 
-from app.modules.wiki_schema.application.build_project_schema_prompt import build_project_schema_prompt
+from app.modules.wiki_schema.application.build_workspace_schema_prompt import build_workspace_schema_prompt
 from app.modules.wiki_schema.application.select_schema_fragments import select_schema_fragments
 from app.modules.wiki_schema.domain.entities import SchemaFragments
 
@@ -39,10 +39,10 @@ class SchemaPromptTest(unittest.TestCase):
             edit_markdown="## 편집\n- 수식은 보존한다.",
         )
 
-        prompt = build_project_schema_prompt(fragments, "query")
+        prompt = build_workspace_schema_prompt(fragments, "query")
 
-        self.assertIn("sanitized project configuration", prompt)
-        self.assertIn("<project_schema>", prompt)
+        self.assertIn("sanitized workspace configuration", prompt)
+        self.assertIn("<workspace_schema>", prompt)
         self.assertIn("## 질문 답변", prompt)
         self.assertNotIn("## 편집", prompt)
 

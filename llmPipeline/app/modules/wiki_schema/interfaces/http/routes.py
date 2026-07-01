@@ -49,7 +49,8 @@ def create_wiki_schema_draft(
     try:
         record = use_case.execute(
             raw_markdown=payload.raw_markdown,
-            project_id=payload.project_id,
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
             name=payload.name,
         )
     except ValueError as exc:
@@ -75,11 +76,12 @@ def activate_wiki_schema(
 
 @router.get("/active", response_model=WikiSchemaResponse | None)
 def get_active_wiki_schema(
-    project_id: str = "default",
+    workspace_id: str,
+    user_id: str,
     use_case: GetActiveSchemaUseCase = Depends(get_active_schema_use_case),
 ) -> WikiSchemaResponse | None:
     try:
-        record = use_case.execute(project_id)
+        record = use_case.execute(workspace_id, user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return WikiSchemaResponse.from_domain(record) if record else None
