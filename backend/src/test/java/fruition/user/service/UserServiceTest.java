@@ -4,6 +4,8 @@ import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.repository.UserRepository;
+import fruition.workspace.service.WorkspaceService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -13,19 +15,25 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock UserRepository userRepository;
+    @Mock WorkspaceService workspaceService;
 
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     UserService userService;
 
+    @BeforeEach
+    void setUp() {
+        userService = new UserService(userRepository, passwordEncoder, workspaceService);
+    }
+
     @Test
     void signup_newEmail_createsUserWithHashedPassword() {
-        userService = new UserService(userRepository, passwordEncoder);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
 
         SignupResponse response = userService.signup(new SignupRequest("test@example.com", "password123"));
@@ -36,8 +44,16 @@ class UserServiceTest {
     }
 
     @Test
+    void signup_newEmail_createsDefaultWorkspace() {
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+
+        SignupResponse response = userService.signup(new SignupRequest("test@example.com", "password123"));
+
+        verify(workspaceService).createDefault(response.id(), "tes");
+    }
+
+    @Test
     void signup_duplicateEmail_throwsException() {
-        userService = new UserService(userRepository, passwordEncoder);
         when(userRepository.existsByEmail("test@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signup(new SignupRequest("test@example.com", "password123")))
@@ -46,7 +62,6 @@ class UserServiceTest {
 
     @Test
     void signup_displayName_isFirstThreeCharsOfEmail() {
-        userService = new UserService(userRepository, passwordEncoder);
         when(userRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
 
         SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123"));

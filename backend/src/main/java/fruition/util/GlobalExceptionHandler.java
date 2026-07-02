@@ -14,6 +14,7 @@ import fruition.user.exception.UserNotFoundException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
+import fruition.workspace.exception.WorkspaceNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -139,5 +140,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("USER_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceNotFound(WorkspaceNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
     }
 }

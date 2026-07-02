@@ -44,6 +44,24 @@ MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 �
 
 ---
 
+### feat: Workspace CRUD 및 회원가입 시 첫 워크스페이스 자동 생성
+
+**배경**
+
+문서·wiki·채팅을 사용자별로 격리 관리하려면 워크스페이스 단위가 필요합니다. 로그인 기반이 갖춰졌으니 이어서 워크스페이스 CRUD와, 가입 직후 바로 쓸 수 있는 기본 워크스페이스 자동 생성을 구현했습니다.
+
+**추가/변경된 것**
+
+- `Workspace` 엔티티(`ws_{UUID}`)/repository, CRUD API(`POST/GET/PATCH/DELETE /api/workspaces`) 추가. user_id는 요청 바디가 아니라 JWT 인증 정보로만 결정하고, 소유하지 않은 워크스페이스는 404로 응답.
+- `UserService.signup()`이 유저 생성 직후 같은 트랜잭션에서 `WorkspaceService.createDefault(userId, displayName)`을 호출해 `"{displayName}의 워크스페이스"` 이름으로 첫 워크스페이스를 자동 생성.
+- `SecurityConfig`에 `/api/workspaces/**` 인증 필요 규칙 추가.
+
+**검증**
+
+- `./gradlew test` 통과 (워크스페이스 생성/목록/이름변경/삭제, 소유권 검증, 회원가입 시 기본 워크스페이스 생성 케이스 포함).
+
+---
+
 ## 2026-07-01
 
 ### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가

@@ -5,6 +5,7 @@ import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.repository.UserRepository;
+import fruition.workspace.service.WorkspaceService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,10 +17,12 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final WorkspaceService workspaceService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, WorkspaceService workspaceService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.workspaceService = workspaceService;
     }
 
     @Transactional
@@ -34,6 +37,8 @@ public class UserService {
         String userId = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         User user = new User(userId, email, displayName, passwordEncoder.encode(request.password()));
         userRepository.save(user);
+
+        workspaceService.createDefault(user.getId(), user.getDisplayName());
 
         return new SignupResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
     }
