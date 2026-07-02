@@ -6,6 +6,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-02
 
+### feat: query evidence에 다중 원문 source_refs 추가
+
+**배경**
+
+같은 answer citation rank가 여러 원문 문서 block을 동시에 참조할 수 있는데, 기존 `source_document_id` + `source_block_ids` 구조는 document id를 하나만 담을 수 있어 `doc_a:B0001`, `doc_b:B0008` 같은 전역 ref를 정확히 표현하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- `llmPipeline` query evidence domain과 FastAPI 응답에 `source_refs` 배열을 추가했습니다.
+- `doc_id:B0001` 전역 ref를 `{source_document_id, source_block_id}` 객체로 구조화해 evidence snippet에 포함합니다.
+- 기존 `source_document_id`, `source_block_ids`는 첫 번째 문서 기준 호환 필드로 유지했습니다.
+- Spring backend와 frontend의 `source_refs` 소비 작업은 `docs/issue/2026-07-02.md` 후속작업으로 분리했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -m pytest tests/modules/query` 통과.
+
+**주의사항**
+
+- 현재 Spring `/api/query`, `/api/chat/messages` 응답은 아직 `source_refs`를 저장/전달하지 않습니다. 이번 변경은 pipeline API 응답까지입니다.
+
 ### feat: 위키 클러스터 승격 lint 흐름 추가
 
 **배경**

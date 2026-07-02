@@ -44,10 +44,16 @@ class TraversalPathResponse(BaseModel):
     edges: list[TraversalEdgeResponse]
 
 
+class SourceReferenceResponse(BaseModel):
+    source_document_id: str
+    source_block_id: str
+
+
 class EvidenceSnippetResponse(BaseModel):
     rank: int
     source_document_id: str
     source_block_ids: list[str]
+    source_refs: list[SourceReferenceResponse]
     text: str
 
 
