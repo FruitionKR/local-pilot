@@ -19,6 +19,7 @@ from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
     GeneratedConceptPageAssembler,
     LinkBuilder,
+    MeaningClusterArtifactAssembler,
     SourcePageAssembler,
 )
 from app.modules.wiki_generation.infrastructure.extract import MarkdownBlockExtractor
@@ -41,6 +42,7 @@ from app.modules.wiki_generation.infrastructure.normalize import SemanticNormali
 from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuilder
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_ingestion.infrastructure.file_io import append_text, ensure_dir, write_json, write_text
+from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 
 
 class PipelineLog:
@@ -126,6 +128,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--log-path", help="Pipeline progress log path. Default: {out}/pipeline.log")
     ap.add_argument("--log-callback-url", help="Optional URL to POST each Korean pipeline log event to")
     ap.add_argument("--save-debug-json", action="store_true", help="Save intermediate/debug JSON such as raw LLM outputs, document.json, block_map.json, and api_config.json")
+    ap.add_argument("--user-id", default=os.environ.get("WIKI_USER_ID", "local-user"), help="Wiki artifact owner namespace")
+    ap.add_argument("--workspace-id", default=os.environ.get("WIKI_WORKSPACE_ID", "local-workspace"), help="Wiki artifact workspace namespace")
 
     ap.add_argument("--system-prompt", default="prompts/semantic_extraction.system.md")
     ap.add_argument("--concept-system-prompt", default="prompts/concept_page_generation.system.md")
@@ -591,6 +595,225 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _read_existing_active_clusters(user_id: str, workspace_id: str) -> str:
+    object_name = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
+    try:
+        return read_text_object(object_name)
+    except Exception:
+        return ""
+
+
+def _judge_meaning_cluster_candidates(
+    *,
+    api_client: ChatCompletionsJsonClient,
+    existing_active_markdown: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not candidates:
+        return []
+    system_prompt = """Stage=MeaningClusterJudge.
+You decide whether section/mention evidence claims should update an existing term_cluster or create a new term_cluster.
+
+Rules:
+- Return JSON only.
+- Do not create core concepts or graph edges.
+- Prefer same_cluster when the candidate is a synonym, abbreviation, translation, spelling variant, or narrower wording of an existing cluster.
+- Use new_cluster only when no existing cluster or other incoming candidate has the same meaning.
+- Incoming candidates may share the same new target_cluster_id if they should be grouped together.
+- target_cluster_id must be descriptive kebab-case such as "back-emf" or "manufacturing-uncertainty".
+- Never use generic ids such as "cluster-001", "new-cluster", "candidate-1", or "term".
+- Use needs_review only when the candidate is ambiguous.
+- promotion_status is usually "none".
+- Respect the earlier extraction decision: if a term arrived as a
+  section_candidate, mention, or evidence item instead of a core_concept, do
+  not immediately promote it in the same ingest pass.
+- Never set promotion_status to "candidate" for a new_cluster decision. A newly
+  created cluster must first remain in active.md and accumulate more evidence.
+- Never promote a cluster based on a single incoming candidate, a single claim,
+  or a single source in this pass. Promotion requires accumulated evidence that
+  already exists in existing_active_clusters plus the incoming claim.
+- Use promotion_status "candidate" only when decision is same_cluster and the
+  target cluster already exists in existing_active_clusters with multiple
+  grounded claims or multiple source refs.
+- Use promotion_status "candidate" only when the cluster is worth becoming a
+  long-lived core wiki page: it is a reusable domain concept, has grounded
+  evidence claims, and can support future relations or retrieval beyond the
+  current source.
+- Do not promote merely because a term is definable. Definition extractability
+  is insufficient without reusable evidence and relation value.
+- Do not promote bibliographic/entity metadata: author names, researcher names,
+  universities, funders, journals, conferences, publishers, citations, document
+  titles, affiliations, or project metadata.
+- Do not promote one-off named tools, software, product names, experimental
+  labels, parameter labels, or isolated metrics unless the accumulated claims
+  show a reusable domain concept with meaningful relations to existing concepts.
+- If evidence comes from only one source and mainly identifies a name/entity,
+  keep promotion_status as "none".
+
+Schema:
+{
+  "decisions": [
+    {
+      "candidate_id": "cand_001",
+      "decision": "same_cluster | new_cluster | needs_review",
+      "target_cluster_id": "cluster-id-to-update-or-create",
+      "representative": "short display label",
+      "promotion_status": "none | candidate | needs_review",
+      "reason": "brief Korean reason"
+    }
+  ]
+}
+"""
+    payload = {
+        "existing_active_clusters": existing_active_markdown[-24000:],
+        "incoming_candidates": [
+            {
+                "candidate_id": item["candidate_id"],
+                "term": item["term"],
+                "suggested_slug": item["slug"],
+                "claim": item["claim"],
+                "refs": item["refs"],
+                "candidate_type": item["candidate_type"],
+                "suggested_promotion_status": item.get("suggested_promotion_status", "none"),
+                "suggested_promotion_reason": item.get("suggested_promotion_reason", ""),
+            }
+            for item in candidates
+        ],
+    }
+    raw = api_client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+    decisions = raw.get("decisions", [])
+    if not isinstance(decisions, list):
+        return []
+    valid_candidate_ids = {item["candidate_id"] for item in candidates}
+    normalized_decisions: list[dict[str, Any]] = []
+    for item in decisions:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = str(item.get("candidate_id") or "")
+        if candidate_id not in valid_candidate_ids:
+            continue
+        decision = str(item.get("decision") or "new_cluster")
+        if decision not in {"same_cluster", "new_cluster", "needs_review"}:
+            decision = "new_cluster"
+        promotion_status = str(item.get("promotion_status") or "none")
+        if promotion_status not in {"none", "candidate", "needs_review"}:
+            promotion_status = "none"
+        normalized_decisions.append(
+            {
+                "candidate_id": candidate_id,
+                "decision": decision,
+                "target_cluster_id": item.get("target_cluster_id"),
+                "representative": item.get("representative"),
+                "promotion_status": promotion_status,
+                "reason": item.get("reason"),
+            }
+        )
+    return normalized_decisions
+
+
+def _judge_concept_update_candidates(
+    *,
+    api_client: ChatCompletionsJsonClient,
+    concepts: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not concepts or not candidates:
+        return []
+    system_prompt = """Stage=ConceptUpdateCandidateJudge.
+You decide whether section/mention evidence claims already belong to or have an evidence-backed relation with an existing/current core concept.
+
+Rules:
+- Return JSON only.
+- Use same_concept when the candidate is a synonym, translation, abbreviation, direct property, or evidence for an existing/current concept.
+- Use relation_candidate when the candidate is not the same concept but has an evidence-backed relation to an existing/current concept.
+- Use not_same_concept when it should remain available for active cluster judging.
+- Do not create new concepts or clusters.
+- Allowed relation values: part_of, child_of, uses_or_depends_on, contrasts_with, supports_or_enables, related_evidence, insufficient_evidence.
+
+Schema:
+{
+  "decisions": [
+    {
+      "candidate_id": "cand_001",
+      "decision": "same_concept | relation_candidate | not_same_concept",
+      "concept_slug": "existing-concept-slug-or-empty",
+      "relation": "part_of | child_of | uses_or_depends_on | contrasts_with | supports_or_enables | related_evidence | insufficient_evidence | empty",
+      "reason": "brief Korean reason"
+    }
+  ]
+}
+"""
+    payload = {
+        "concepts": [
+            {
+                "slug": concept.get("slug"),
+                "title": concept.get("title"),
+                "aliases": concept.get("aliases", []),
+                "definition": concept.get("definition", ""),
+                "evidence": concept.get("evidence", []),
+                "why_page_worthy": concept.get("why_page_worthy", ""),
+            }
+            for concept in concepts
+            if concept.get("slug")
+        ],
+        "incoming_candidates": [
+            {
+                "candidate_id": item["candidate_id"],
+                "term": item["term"],
+                "suggested_slug": item["slug"],
+                "claim": item["claim"],
+                "refs": item["refs"],
+                "candidate_type": item["candidate_type"],
+            }
+            for item in candidates
+        ],
+    }
+    raw = api_client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+    decisions = raw.get("decisions", [])
+    if not isinstance(decisions, list):
+        return []
+    valid_candidate_ids = {item["candidate_id"] for item in candidates}
+    valid_concept_slugs = {str(concept.get("slug")) for concept in concepts if concept.get("slug")}
+    normalized_decisions: list[dict[str, Any]] = []
+    for item in decisions:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = str(item.get("candidate_id") or "")
+        if candidate_id not in valid_candidate_ids:
+            continue
+        decision = str(item.get("decision") or "not_same_concept")
+        concept_slug = str(item.get("concept_slug") or "")
+        relation = str(item.get("relation") or "")
+        if relation not in {
+            "part_of",
+            "child_of",
+            "uses_or_depends_on",
+            "contrasts_with",
+            "supports_or_enables",
+            "related_evidence",
+            "insufficient_evidence",
+        }:
+            relation = ""
+        if decision == "same_concept" and concept_slug in valid_concept_slugs:
+            relation = "same_concept"
+        elif decision == "relation_candidate" and concept_slug in valid_concept_slugs and relation:
+            pass
+        else:
+            decision = "not_same_concept"
+            concept_slug = ""
+            relation = ""
+        normalized_decisions.append(
+            {
+                "candidate_id": candidate_id,
+                "decision": decision,
+                "concept_slug": concept_slug,
+                "relation": relation,
+                "reason": item.get("reason"),
+            }
+        )
+    return normalized_decisions
+
+
 def _run_wiki_generation_graph(
     *,
     api_client: ChatCompletionsJsonClient,
@@ -828,7 +1051,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     if args.save_debug_json:
         write_json(out / "document.json", asdict(document))
         write_json(out / "block_map.json", {b.block_id: b.source_reference_id for b in blocks})
-    source_blocks = [
+    source_block_records = [
         {
             "document_id": block.document_id,
             "block_id": block.block_id,
@@ -891,7 +1114,9 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     )
 
     # 4a. Resolve incoming concepts against each other and existing wiki concepts before page generation.
-    existing_concepts = load_existing_concept_index(getattr(args, "existing_wiki_dir", None))
+    existing_concepts = getattr(args, "existing_concept_index", None)
+    if existing_concepts is None:
+        existing_concepts = load_existing_concept_index(getattr(args, "existing_wiki_dir", None))
     missing_related_hints = normalized.get("missing_related_concept_hints", [])
     assert api_client is not None
     concept_resolver = ApiConceptResolver(api_client, concept_resolution_system_prompt)
@@ -1112,10 +1337,96 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         {"링크 수": len(links)},
     )
 
+    meaning_cluster_assembler = MeaningClusterArtifactAssembler()
+    meaning_cluster_candidates = meaning_cluster_assembler.candidate_claims(normalized)
+    concept_candidates = [
+        *normalized.get("concept_ledger", []),
+        *normalized.get("existing_concept_index", []),
+    ]
+    concept_update_decisions = _judge_concept_update_candidates(
+        api_client=api_client,
+        concepts=concept_candidates,
+        candidates=meaning_cluster_candidates,
+    )
+    concept_update_by_candidate = {
+        item["candidate_id"]: item
+        for item in concept_update_decisions
+        if item.get("decision") == "same_concept"
+    }
+    candidates_by_id = {candidate["candidate_id"]: candidate for candidate in meaning_cluster_candidates}
+    core_relation_decisions = [
+        item
+        for item in concept_update_decisions
+        if item.get("decision") == "relation_candidate"
+    ]
+    cluster_judge_candidates = [
+        item
+        for item in meaning_cluster_candidates
+        if item["candidate_id"] not in concept_update_by_candidate
+    ]
+    log.emit(
+        "8-보조. Concept 갱신 후보 판단",
+        "section/mention evidence claim이 이미 존재하는 core concept에 속하는지 먼저 판단했습니다.",
+        {
+            "candidate 수": len(meaning_cluster_candidates),
+            "same_concept 수": len(concept_update_by_candidate),
+            "relation_candidate 수": len(core_relation_decisions),
+            "cluster judge 대상": len(cluster_judge_candidates),
+        },
+    )
+    existing_active_clusters = _read_existing_active_clusters(args.user_id, args.workspace_id)
+    cluster_decisions = _judge_meaning_cluster_candidates(
+        api_client=api_client,
+        existing_active_markdown=existing_active_clusters,
+        candidates=cluster_judge_candidates,
+    )
+    log.emit(
+        "8-보조. Meaning Cluster 판단",
+        "section/mention evidence claim을 기존 active cluster와 비교해 생성 또는 갱신 대상을 판단했습니다.",
+        {
+            "candidate 수": len(cluster_judge_candidates),
+            "decision 수": len(cluster_decisions),
+            "기존 active 크기": len(existing_active_clusters),
+        },
+    )
+    meaning_cluster_artifact = meaning_cluster_assembler.assemble(
+        normalized,
+        out,
+        user_id=args.user_id,
+        workspace_id=args.workspace_id,
+        cluster_decisions=cluster_decisions,
+        core_relation_decisions=core_relation_decisions,
+        concept_update_decisions=[
+            {
+                **item,
+                "claim_id": candidates_by_id.get(item["candidate_id"], {}).get("claim_id"),
+                "claim": candidates_by_id.get(item["candidate_id"], {}).get("claim"),
+                "refs": candidates_by_id.get(item["candidate_id"], {}).get("refs", []),
+                "candidate_type": candidates_by_id.get(item["candidate_id"], {}).get("candidate_type"),
+            }
+            for item in concept_update_by_candidate.values()
+        ],
+    )
+    maintenance_summary = meaning_cluster_artifact.get("maintenance_summary", {})
+    log.emit(
+        "8. Meaning Cluster 생성",
+        "section/mention evidence claim 기반 active cluster와 ingest log artifact를 생성했습니다.",
+        {
+            "active": meaning_cluster_artifact["active_path"],
+            "log": meaning_cluster_artifact["log_path"],
+            "cluster 수": len(meaning_cluster_artifact["clusters"]),
+            "promotion 후보 수": maintenance_summary.get("promotion_candidate_count", 0),
+            "relation 후보 수": maintenance_summary.get("relation_candidate_count", 0),
+            "invalid 후보 수": maintenance_summary.get("invalid_candidate_count", 0),
+        },
+    )
+
     manifest = {
         "input": input_source_name if input_text is not None else str(input_path),
         "out": str(out),
         "mode": args.mode,
+        "user_id": args.user_id,
+        "workspace_id": args.workspace_id,
         "source_page_mode": sp_mode,
         "concept_page_mode": cp_mode,
         "document_id": document.document_id,
@@ -1138,9 +1449,11 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "wiki_generation_final_evaluation": generation_evaluations[-1] if generation_evaluations else None,
         "source_page": source_page,
         "source_extraction_artifact": _json_safe(normalized.get("source_extraction_artifact")),
-        "source_blocks": source_blocks,
+        "source_blocks": source_block_records,
         "concept_pages": concept_pages,
         "links": links,
+        "meaning_clusters": meaning_cluster_artifact,
+        "maintenance_summary": maintenance_summary,
         "normalized": normalized,
         "wiki_generation_evaluations": generation_evaluations,
         "pipeline_log": str(log.path),

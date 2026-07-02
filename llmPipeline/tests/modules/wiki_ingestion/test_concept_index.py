@@ -1,0 +1,233 @@
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
+    _append_concept_evidence,
+    _extract_embedding_units,
+    _concept_index_from_markdown,
+    _materialize_active_relation_candidates,
+    _parse_active_cluster_lint,
+    _resolve_or_create_wiki_page_id,
+)
+
+
+def test_concept_index_uses_markdown_definition_and_evidence() -> None:
+    markdown = """---
+type: concept
+---
+
+# Back EMF
+
+## Definition
+Back EMF는 회전 전동기에서 유기되는 역기전력이다. [doc_a:B0001]
+
+## Why It Matters
+전동기 성능 평가에 필요하다.
+
+## Aliases
+back electromotive force, BEMF
+
+## Evidence
+- Back EMF는 토크 리플 및 코깅 토크와 함께 최적화 대상이다. [doc_a:B0002]
+- 제조 공차는 Back EMF 응답에 영향을 준다. [doc_b:B0003]
+
+## Reference Summary
+- display refs: doc_a:B0001
+"""
+
+    concept = _concept_index_from_markdown("back-emf", "Back EMF", "s3://bucket/wiki/concepts/back-emf.md", markdown)
+
+    assert "summary" not in concept
+    assert concept["definition"] == "Back EMF는 회전 전동기에서 유기되는 역기전력이다. [doc_a:B0001]"
+    assert concept["why_page_worthy"] == "전동기 성능 평가에 필요하다."
+    assert concept["aliases"] == ["back electromotive force, BEMF"]
+    assert concept["evidence"] == [
+        "Back EMF는 토크 리플 및 코깅 토크와 함께 최적화 대상이다. [doc_a:B0002]",
+        "제조 공차는 Back EMF 응답에 영향을 준다. [doc_b:B0003]",
+    ]
+
+
+def test_append_concept_evidence_replaces_placeholder_and_deduplicates() -> None:
+    markdown = """# Back EMF
+
+## Definition
+Back EMF 정의
+
+## Evidence
+- 아직 연결된 evidence claim 없음
+
+## Related Concepts
+- 관련 개념 없음
+"""
+
+    updated_once = _append_concept_evidence(
+        markdown,
+        [
+            {
+                "claim_id": "claim_001",
+                "claim": "Back EMF는 제조 공차의 영향을 받는다.",
+                "refs": ["doc_a:B0001"],
+            }
+        ],
+    )
+    updated_twice = _append_concept_evidence(
+        updated_once,
+        [
+            {
+                "claim_id": "claim_001",
+                "claim": "Back EMF는 제조 공차의 영향을 받는다.",
+                "refs": ["doc_a:B0001"],
+            }
+        ],
+    )
+
+    assert "- 아직 연결된 evidence claim 없음" not in updated_once
+    assert updated_once.count("claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001]") == 1
+    assert updated_twice.count("claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001]") == 1
+    assert "## Related Concepts" in updated_once
+
+
+def test_embedding_units_extract_global_source_refs() -> None:
+    markdown = """# Source
+
+## Key Points
+- Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001, doc_b:B0002]
+"""
+
+    units = _extract_embedding_units(markdown)
+
+    assert units[0]["block_refs"] == ["doc_a:B0001", "doc_b:B0002"]
+    assert units[0]["text"] == "Back EMF는 제조 공차의 영향을 받는다."
+
+
+def test_resolve_or_create_wiki_page_id_reuses_existing_uuid() -> None:
+    class FakeConn:
+        def __init__(self) -> None:
+            self.rows = []
+
+        def execute(self, _query: str, params: tuple[str, str, str, str]):
+            self.rows.append(params)
+            return self
+
+        def fetchone(self):
+            if len(self.rows) == 1:
+                return None
+            return {"id": "wiki_page_existing"}
+
+    conn = FakeConn()
+
+    first_id = _resolve_or_create_wiki_page_id(conn, "user_1", "workspace_1", "concept", "back-emf")
+    second_id = _resolve_or_create_wiki_page_id(conn, "user_1", "workspace_1", "concept", "back-emf")
+
+    assert first_id.startswith("wiki_page_")
+    assert "back-emf" not in first_id
+    assert second_id == "wiki_page_existing"
+
+
+def test_parse_active_cluster_lint_reads_promotion_relations_and_refs() -> None:
+    markdown = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+### Evidence Claims
+- claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001, doc_b:B0002]
+
+### Core Relation Candidates
+- target: concept:tolerance-analysis
+  relation: supports_or_enables
+  evidence: [doc_a:B0001]
+  reason: Back EMF 변화가 공차 분석 근거로 쓰임
+
+### Promotion
+status: candidate
+source_refs: [doc_a, doc_b]
+reason: definition/evidence/relation이 충분함
+"""
+
+    clusters = _parse_active_cluster_lint(markdown)
+
+    assert clusters == [
+        {
+            "id": "back-emf",
+            "refs": ["doc_a:B0001", "doc_b:B0002"],
+            "claims": [
+                    {
+                        "id": "claim_001",
+                        "text": "Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001, doc_b:B0002]",
+                        "claim": "Back EMF는 제조 공차의 영향을 받는다.",
+                        "refs": ["doc_a:B0001", "doc_b:B0002"],
+                        "decision": "",
+                    }
+                ],
+                "relations": [
+                    {
+                        "target": "concept:tolerance-analysis",
+                        "relation": "supports_or_enables",
+                        "evidence": ["doc_a:B0001"],
+                        "reason": "Back EMF 변화가 공차 분석 근거로 쓰임",
+                    }
+                ],
+                "invalid_relations": [],
+                "promotion_status": "candidate",
+                "promotion_source_refs": ["doc_a", "doc_b"],
+        }
+    ]
+
+
+def test_materialize_active_relation_candidates_links_existing_concepts_only() -> None:
+    class FakeConn:
+        def __init__(self) -> None:
+            self.link_params = []
+
+        def execute(self, _query: str, params: tuple[str, str, str, str, float]):
+            self.link_params.append(params)
+            return self
+
+    clusters = [
+        {
+            "id": "torque-ripple-optimization",
+            "claims": [
+                {
+                    "id": "claim_001",
+                    "refs": ["doc_a:B0001"],
+                }
+            ],
+            "relations": [
+                {
+                    "target": "concept:afpm-motor-optimization",
+                    "relation": "part_of",
+                    "evidence": ["claim_001"],
+                    "reason": "토크 리플 최적화는 AFPM 모터 최적화의 일부",
+                },
+                {
+                    "target": "concept:cogging-torque",
+                    "relation": "related_evidence",
+                    "evidence": ["claim_001"],
+                    "reason": "약한 근거 연결",
+                },
+                {
+                    "target": "concept:missing-concept",
+                    "relation": "uses_or_depends_on",
+                    "evidence": ["claim_001"],
+                    "reason": "대상 concept 없음",
+                },
+            ],
+        }
+    ]
+
+    materialized = _materialize_active_relation_candidates(
+        FakeConn(),
+        clusters,
+        {
+            "torque-ripple-optimization": "page_source",
+            "afpm-motor-optimization": "page_target",
+            "cogging-torque": "page_related",
+        },
+    )
+
+    assert materialized == [
+        {
+            "from": "torque-ripple-optimization",
+            "to": "afpm-motor-optimization",
+            "relation": "part_of",
+            "evidence": ["claim_001"],
+            "source_refs": ["doc_a:B0001"],
+        }
+    ]
