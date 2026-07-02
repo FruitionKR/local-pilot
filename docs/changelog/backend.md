@@ -6,6 +6,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-02
 
+### feat: Document API에 workspace 소유권 연동
+
+**배경**
+
+User/Workspace/Auth 기반을 구현한 뒤, 기존 documents API가 로그인·워크스페이스와 전혀 연결되어 있지 않던 부분을 연동했다. `wiki_pages`는 실제 row 생성 주체가 Spring Boot가 아니라 llmPipeline(Python)이라 훨씬 큰 범위의 작업으로 확인되어 이번 단계에서는 제외했다. 상세 내용은 `docs/issue/2026-07-02.md` 참고.
+
+**추가/변경된 것**
+
+- `Document` 엔티티에 `workspace_id`, `user_id` 컬럼 추가.
+- `DocumentRepository`에 `findAllByWorkspaceId`, `findByIdAndWorkspaceId` 추가.
+- `DocumentService`의 모든 사용자용 메서드가 workspace 소유권을 먼저 검증(`WorkspaceRepository.findByIdAndUserId`)하도록 변경. 소유하지 않은 workspace_id를 넘기면 `WorkspaceNotFoundException`(404).
+- 사용자용 `DocumentController`를 `/api/documents/*` → `/api/workspaces/{workspace_id}/documents/*`로 이동.
+- llmPipeline이 호출하는 콜백 endpoint(`PATCH /api/documents/{id}/status`, `POST /api/documents/{id}/pipeline-events`)는 workspace_id를 알지 못하므로 `DocumentPipelineController`로 분리해 기존 경로(`/api/documents/{id}/...`) 그대로 유지.
+
+**검증**
+
+- `./gradlew test` 통과 (workspace 소유권 검증, 미소유 workspace 404, 미인증 401 케이스 포함).
+
+---
+
 ### feat: 이메일 회원가입 API 추가
 
 **배경**

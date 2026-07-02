@@ -29,6 +29,8 @@ import fruition.wiki.domain.DocumentWikiRelationType;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -59,6 +61,7 @@ public class DocumentService {
     private static final int STALLED_THRESHOLD_SECONDS = 60;
 
     private final DocumentRepository documentRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
     private final DocumentProcessingRequester processingRequester;
@@ -70,6 +73,7 @@ public class DocumentService {
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
+                           WorkspaceRepository workspaceRepository,
                            MinioClient minioClient,
                            StorageProperties storageProps,
                            DocumentProcessingRequester processingRequester,
@@ -80,6 +84,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
+        this.workspaceRepository = workspaceRepository;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
         this.processingRequester = processingRequester;
@@ -91,8 +96,14 @@ public class DocumentService {
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
+    private void verifyWorkspaceOwnership(String workspaceId, String userId) {
+        workspaceRepository.findByIdAndUserId(workspaceId, userId)
+                .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
+    }
+
     @Transactional
-    public DocumentUploadResponse upload(MultipartFile file) {
+    public DocumentUploadResponse upload(String workspaceId, String userId, MultipartFile file) {
+        verifyWorkspaceOwnership(workspaceId, userId);
         try {
             byte[] bytes = file.getBytes();
 
@@ -121,6 +132,8 @@ public class DocumentService {
             // 3. documents 레코드 생성 (status=processing)
             Document document = new Document(
                     documentId,
+                    workspaceId,
+                    userId,
                     file.getOriginalFilename(),
                     mimeType,
                     file.getSize(),
@@ -211,8 +224,10 @@ public class DocumentService {
         });
     }
 
-    public DocumentListResponse findAll() {
-        List<DocumentListResponse.DocumentItem> items = documentRepository.findAll().stream()
+    public DocumentListResponse findAll(String workspaceId, String userId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+
+        List<DocumentListResponse.DocumentItem> items = documentRepository.findAllByWorkspaceId(workspaceId).stream()
                 .map(doc -> new DocumentListResponse.DocumentItem(
                         doc.getId(),
                         doc.getFilename(),
@@ -243,8 +258,9 @@ public class DocumentService {
         );
     }
 
-    public DocumentDetailResponse findById(String documentId) {
-        Document doc = documentRepository.findById(documentId)
+    public DocumentDetailResponse findById(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document doc = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
@@ -292,10 +308,11 @@ public class DocumentService {
     }
 
     @Transactional
-    public DocumentRenameResponse rename(String documentId, DocumentRenameRequest request) {
+    public DocumentRenameResponse rename(String workspaceId, String userId, String documentId, DocumentRenameRequest request) {
+        verifyWorkspaceOwnership(workspaceId, userId);
         validateFilename(request.filename());
 
-        Document document = documentRepository.findById(documentId)
+        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String previousFilename = document.getFilename();
@@ -343,8 +360,9 @@ public class DocumentService {
     }
 
     @Transactional
-    public void delete(String documentId) {
-        Document document = documentRepository.findById(documentId)
+    public void delete(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String sourceUri = document.getSourceUri();
@@ -387,8 +405,9 @@ public class DocumentService {
         }
     }
 
-    public DocumentBlocksResponse blocks(String documentId) {
-        documentRepository.findById(documentId)
+    public DocumentBlocksResponse blocks(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         List<DocumentBlockResponse> blocks = sourceBlockRepository
@@ -399,8 +418,9 @@ public class DocumentService {
         return new DocumentBlocksResponse(documentId, blocks);
     }
 
-    public DocumentOriginalResult getOriginal(String documentId) {
-        Document document = documentRepository.findById(documentId)
+    public DocumentOriginalResult getOriginal(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String objectKey = normalizeObjectKey(document.getSourceUri());
