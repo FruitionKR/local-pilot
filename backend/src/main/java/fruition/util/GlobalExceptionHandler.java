@@ -5,6 +5,8 @@ import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.chat.exception.ChatSessionLimitExceededException;
+import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
 import fruition.user.exception.DuplicateEmailException;
@@ -163,5 +165,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("OAUTH_EMAIL_NOT_PROVIDED", e.getMessage()));
+    }
+
+    @ExceptionHandler(ChatSessionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleChatSessionNotFound(ChatSessionNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("CHAT_SESSION_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(ChatSessionLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleChatSessionLimitExceeded(ChatSessionLimitExceededException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("CHAT_SESSION_LIMIT_EXCEEDED", e.getMessage()));
     }
 }

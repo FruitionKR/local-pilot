@@ -3,7 +3,6 @@ package fruition.query.controller;
 import fruition.query.domain.QueryRun;
 import fruition.query.dto.QueryResponse;
 import fruition.query.service.QueryEventBroker;
-import fruition.query.service.QueryRunService;
 import fruition.query.service.QueryRunStore;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
@@ -41,23 +40,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class QueryRunControllerTest {
 
     @Autowired MockMvc mockMvc;
-    @MockBean QueryRunService queryRunService;
     @MockBean QueryRunStore queryRunStore;
     @MockBean QueryEventBroker queryEventBroker;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
-
-    @Test
-    void createRun_returns202WithRequestIdAndPendingStatus() throws Exception {
-        QueryRun run = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunService.start("질문")).thenReturn(run);
-
-        mockMvc.perform(post("/api/query/runs")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"question\":\"질문\"}"))
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.request_id").value("query_abc123"))
-                .andExpect(jsonPath("$.status").value("pending"));
-    }
 
     @Test
     void getRun_unknownRequestId_returns404() throws Exception {
@@ -71,7 +56,7 @@ class QueryRunControllerTest {
     @Test
     void getRun_completedRun_returnsResult() throws Exception {
         QueryResponse result = new QueryResponse(null, null, null, null, null, null);
-        QueryRun run = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"))
+        QueryRun run = QueryRun.pending("query_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"))
                 .running()
                 .completed(result, Instant.parse("2026-06-20T10:00:05Z"));
         when(queryRunStore.find("query_abc123")).thenReturn(Optional.of(run));
@@ -92,7 +77,7 @@ class QueryRunControllerTest {
 
     @Test
     void subscribe_existingRun_startsAsyncSseResponse() throws Exception {
-        QueryRun run = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
+        QueryRun run = QueryRun.pending("query_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
         when(queryRunStore.find("query_abc123")).thenReturn(Optional.of(run));
         when(queryEventBroker.subscribe("query_abc123")).thenReturn(new SseEmitter(0L));
 
@@ -112,7 +97,7 @@ class QueryRunControllerTest {
 
     @Test
     void receiveCallback_existingRun_publishesToBroker() throws Exception {
-        QueryRun run = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
+        QueryRun run = QueryRun.pending("query_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
         when(queryRunStore.find("query_abc123")).thenReturn(Optional.of(run));
 
         mockMvc.perform(post("/api/query/runs/query_abc123/events/callback")

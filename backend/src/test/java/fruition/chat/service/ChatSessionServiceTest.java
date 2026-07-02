@@ -1,0 +1,121 @@
+package fruition.chat.service;
+
+import fruition.chat.domain.ChatSession;
+import fruition.chat.dto.ChatSessionCreateRequest;
+import fruition.chat.dto.ChatSessionResponse;
+import fruition.chat.exception.ChatSessionLimitExceededException;
+import fruition.chat.exception.ChatSessionNotFoundException;
+import fruition.chat.repository.ChatSessionRepository;
+import fruition.workspace.domain.Workspace;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class ChatSessionServiceTest {
+
+    private static final String USER_ID = "user_1f9a74af";
+    private static final String WORKSPACE_ID = "ws_aaa11111";
+
+    @Mock ChatSessionRepository chatSessionRepository;
+    @Mock WorkspaceRepository workspaceRepository;
+
+    ChatSessionService chatSessionService;
+
+    @BeforeEach
+    void setUp() {
+        chatSessionService = new ChatSessionService(chatSessionRepository, workspaceRepository);
+    }
+
+    private void stubOwnedWorkspace() {
+        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID))
+                .thenReturn(Optional.of(new Workspace(WORKSPACE_ID, USER_ID, "테스트 워크스페이스")));
+    }
+
+    @Test
+    void create_underLimit_createsSession() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.countByWorkspaceId(WORKSPACE_ID)).thenReturn(3L);
+        when(chatSessionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        ChatSessionResponse response = chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest("제목"));
+
+        assertThat(response.id()).startsWith("session_");
+        assertThat(response.title()).isEqualTo("제목");
+    }
+
+    @Test
+    void create_atLimit_throwsChatSessionLimitExceeded() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.countByWorkspaceId(WORKSPACE_ID)).thenReturn(10L);
+
+        assertThatThrownBy(() -> chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest(null)))
+                .isInstanceOf(ChatSessionLimitExceededException.class);
+    }
+
+    @Test
+    void create_notOwnedWorkspace_throwsWorkspaceNotFound() {
+        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest(null)))
+                .isInstanceOf(WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    void list_returnsSessionsOrderedByLastMessageAt() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.findAllByWorkspaceIdOrderByLastMessageAtDesc(WORKSPACE_ID))
+                .thenReturn(List.of(new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, "세션 A")));
+
+        var response = chatSessionService.list(WORKSPACE_ID, USER_ID);
+
+        assertThat(response.sessions()).hasSize(1);
+        assertThat(response.sessions().get(0).title()).isEqualTo("세션 A");
+    }
+
+    @Test
+    void verifyOwnedSession_ownedSession_returnsSession() {
+        stubOwnedWorkspace();
+        ChatSession session = new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, null);
+        when(chatSessionRepository.findByIdAndWorkspaceId("session_aaa11111", WORKSPACE_ID))
+                .thenReturn(Optional.of(session));
+
+        ChatSession result = chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, "session_aaa11111");
+
+        assertThat(result).isSameAs(session);
+    }
+
+    @Test
+    void verifyOwnedSession_unknownSession_throwsChatSessionNotFound() {
+        stubOwnedWorkspace();
+        when(chatSessionRepository.findByIdAndWorkspaceId("session_unknown", WORKSPACE_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, "session_unknown"))
+                .isInstanceOf(ChatSessionNotFoundException.class);
+    }
+
+    @Test
+    void delete_ownedSession_removesIt() {
+        stubOwnedWorkspace();
+        ChatSession session = new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, null);
+        when(chatSessionRepository.findByIdAndWorkspaceId("session_aaa11111", WORKSPACE_ID))
+                .thenReturn(Optional.of(session));
+
+        chatSessionService.delete(WORKSPACE_ID, USER_ID, "session_aaa11111");
+
+        verify(chatSessionRepository).delete(session);
+    }
+}

@@ -25,9 +25,9 @@ public class QueryRunStore {
         this.clock = clock;
     }
 
-    public QueryRun create(String question) {
+    public QueryRun create(String sessionId, String question) {
         String requestId = "query_" + UUID.randomUUID();
-        QueryRun run = QueryRun.pending(requestId, question, clock.instant());
+        QueryRun run = QueryRun.pending(requestId, sessionId, question, clock.instant());
         runs.put(requestId, run);
         return run;
     }

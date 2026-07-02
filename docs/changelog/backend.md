@@ -6,6 +6,32 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-02
 
+### feat: ChatSession 도입 및 채팅 API workspace 격리
+
+**배경**
+
+`GET /api/chat/messages`가 session/workspace 개념 없이 시스템 전체의 모든 채팅 메시지를 하나의 글로벌 로그로 반환하고 있었다 (다른 사용자의 대화가 그대로 노출되는 상태). ERD에 정의된 `chat_sessions` 테이블이 아예 없었고, `chat_messages`에도 `session_id`/`pair_id`/`wiki_page_id` 컬럼이 없었다.
+
+**추가/변경된 것**
+
+- `ChatSession` 엔티티(`session_{UUID}`, workspace_id/user_id/title/context_summary/last_message_at/wiki_page_id) + repository + `ChatSessionService` 추가.
+- 워크스페이스당 세션 최대 10개 제한. 초과 시 `POST` 요청을 409로 거부(자동 삭제하지 않음 — 프론트가 사용자에게 기존 세션 삭제를 요청해야 함).
+- `ChatMessage`에 `session_id`(필수), `pair_id`(user/assistant 쌍 식별, 필수), `wiki_page_id`(nullable) 컬럼 추가.
+- `ChatController`(글로벌 조회) 제거, `ChatSessionController`(`/api/workspaces/{workspace_id}/chat/sessions`)로 대체: 세션 생성/목록/삭제, 세션별 메시지 조회(`GET /{session_id}/messages`).
+- `QueryService.query()`가 `sessionId`를 받아 메시지에 스탬프하고, 질의 성공/실패와 무관하게 세션의 `last_message_at`을 갱신하도록 변경.
+- 질의 API를 세션 하위로 이동: `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query`(동기), `.../query/runs`(비동기 run 시작)로 통합. `QueryRunController`는 `request_id` 기준 polling/SSE/callback(`GET /api/query/runs/{id}`, `/events`, `/events/callback`)만 남기고 flat 경로 유지 — 이 endpoint들은 이미 발급된 request_id로 접근하는 후속 조회라 워크스페이스 인증을 다시 요구하지 않음.
+
+**검증**
+
+- `./gradlew test` 통과. 세션 생성/제한 초과/소유권 검증, 메시지 조회 소유권 검증, 동기/비동기 질의 endpoint 인증 여부 테스트 포함.
+
+**주의사항**
+
+- `chat_messages`에 `session_id`/`pair_id`가 NOT NULL로 추가됐다. `ddl-auto=update`는 기존 row가 있는 테이블에 NOT NULL 컬럼을 추가하지 못하므로, 기존 로컬 DB에 채팅 데이터가 남아있다면 볼륨을 초기화해야 한다(`docs/local-runbook.md` 참고). Document의 `workspace_id`/`user_id` 추가도 동일한 제약이 있다.
+- Wiki는 여전히 workspace 미연동 상태다 (`docs/issue/2026-07-02.md` 참고).
+
+---
+
 ### feat: Document API에 workspace 소유권 연동
 
 **배경**
