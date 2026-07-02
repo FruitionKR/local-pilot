@@ -24,6 +24,26 @@ MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 �
 
 ---
 
+### feat: JWT 로그인/토큰 재발급/로그아웃 API 추가
+
+**배경**
+
+회원가입만으로는 인증된 API 호출이 불가능해, 이메일/비밀번호 로그인과 JWT 기반 인증을 이어서 구현했습니다.
+
+**추가/변경된 것**
+
+- JJWT(0.12.6) 의존성 추가.
+- `UserRefreshToken` 엔티티(원문 대신 SHA-256 해시로 저장) + repository.
+- `JwtTokenProvider`(access token 발급/검증, HS256), `JwtAuthenticationFilter`(Authorization 헤더 검증 후 SecurityContext에 인증 주입).
+- `POST /api/auth/login`, `POST /api/auth/refresh`(기존 refresh token 폐기 + 새 토큰쌍 발급, 회전 방식), `POST /api/auth/logout`, `GET /api/auth/me` 추가.
+- `SecurityConfig`: JWT 필터 연결, `/api/auth/me`만 인증 필요로 전환, 미인증 요청에 403 대신 401을 반환하도록 `AuthenticationEntryPoint` 설정.
+
+**검증**
+
+- `./gradlew test` 통과 (로그인 성공/실패, refresh 회전/만료/미존재, 로그아웃, me 인증 여부 케이스 포함).
+
+---
+
 ## 2026-07-01
 
 ### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가

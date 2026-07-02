@@ -5,6 +5,8 @@ import fruition.query.dto.QueryResponse;
 import fruition.query.service.QueryEventBroker;
 import fruition.query.service.QueryRunService;
 import fruition.query.service.QueryRunStore;
+import fruition.security.JwtAuthenticationFilter;
+import fruition.security.JwtTokenProvider;
 import fruition.security.SecurityConfig;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(QueryRunController.class)
-@Import({GlobalExceptionHandler.class, SecurityConfig.class})
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
 class QueryRunControllerTest {
 
     @Autowired MockMvc mockMvc;
