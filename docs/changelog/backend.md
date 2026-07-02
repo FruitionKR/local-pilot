@@ -4,6 +4,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-02
+
+### feat: 이메일 회원가입 API 추가
+
+**배경**
+
+MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 사용자별로 격리 관리하려면 인증 체계가 필요합니다. `docs/spec/fruition-backend-mvp-erd.md` ERD를 기준으로 user, workspace, 인증 기능을 순차 구현하기로 하고 그 첫 단계로 이메일 회원가입을 추가했습니다.
+
+**추가/변경된 것**
+
+- Spring Security 의존성 추가, `BCryptPasswordEncoder` 기반 `SecurityConfig` 골격 추가(현재는 모든 요청 permitAll, 이후 인증 필터 도입 시 전환 예정).
+- `User` 엔티티/repository, 회원가입 API(`POST /api/auth/signup`) 추가. displayName은 이메일 앞 3글자로 자동 설정, 비밀번호는 BCrypt 해시로 저장.
+
+**검증**
+
+- `./gradlew test` 통과.
+- Spring Security 의존성 도입으로 기존 `@WebMvcTest` 슬라이스 테스트(`DocumentControllerTest`, `QueryRunControllerTest`)가 403으로 깨지는 회귀를 발견해 `SecurityConfig` import로 수정.
+
+---
+
 ## 2026-07-01
 
 ### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가

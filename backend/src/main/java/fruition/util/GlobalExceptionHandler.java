@@ -7,6 +7,7 @@ import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
+import fruition.user.exception.DuplicateEmailException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
@@ -107,5 +108,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("QUERY_RUN_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(DuplicateEmailException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateEmail(DuplicateEmailException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("DUPLICATE_EMAIL", e.getMessage()));
     }
 }

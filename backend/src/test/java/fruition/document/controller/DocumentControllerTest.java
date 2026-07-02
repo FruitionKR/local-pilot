@@ -4,6 +4,7 @@ import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.service.DocumentService;
+import fruition.security.SecurityConfig;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DocumentController.class)
-@Import(GlobalExceptionHandler.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class})
 class DocumentControllerTest {
 
     @Autowired MockMvc mockMvc;
