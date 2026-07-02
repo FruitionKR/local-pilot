@@ -9,12 +9,14 @@ import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.InvalidCredentialsException;
+import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
+import fruition.user.exception.OAuthEmailNotProvidedException;
 import fruition.user.exception.UserNotFoundException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
+import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
-import fruition.workspace.exception.WorkspaceNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -147,5 +149,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidOAuthCodeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOAuthCode(InvalidOAuthCodeException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("INVALID_OAUTH_CODE", e.getMessage()));
+    }
+
+    @ExceptionHandler(OAuthEmailNotProvidedException.class)
+    public ResponseEntity<ErrorResponse> handleOAuthEmailNotProvided(OAuthEmailNotProvidedException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("OAUTH_EMAIL_NOT_PROVIDED", e.getMessage()));
     }
 }

@@ -8,6 +8,10 @@ import fruition.query.service.QueryRunStore;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
 import fruition.security.SecurityConfig;
+import fruition.security.oauth.CustomOAuth2UserService;
+import fruition.security.oauth.OAuth2AuthenticationFailureHandler;
+import fruition.security.oauth.OAuth2AuthenticationSuccessHandler;
+import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,13 +36,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(QueryRunController.class)
-@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
+        OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
 class QueryRunControllerTest {
 
     @Autowired MockMvc mockMvc;
     @MockBean QueryRunService queryRunService;
     @MockBean QueryRunStore queryRunStore;
     @MockBean QueryEventBroker queryEventBroker;
+    @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     @Test
     void createRun_returns202WithRequestIdAndPendingStatus() throws Exception {

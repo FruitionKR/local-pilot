@@ -62,6 +62,33 @@ MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 �
 
 ---
 
+### feat: OAuth 소셜 로그인(Google/Naver/Kakao) 추가
+
+**배경**
+
+이메일/비밀번호 가입 외에 소셜 로그인 진입점을 제공하기 위해 Google/Naver/Kakao OAuth 로그인을 추가했습니다.
+
+**추가/변경된 것**
+
+- OAuth2 Client 의존성 추가.
+- `UserOAuthAccount` 엔티티(provider + provider_user_id 복합 유니크)/repository.
+- provider별 사용자 정보 파서: `GoogleOAuth2UserInfo`(평면 구조), `NaverOAuth2UserInfo`(`response` 중첩), `KakaoOAuth2UserInfo`(`kakao_account.email`, `kakao_account.profile.nickname` 중첩) + `OAuth2UserInfoFactory`. Naver/Kakao는 Spring Security 기본 provider가 아니라 `application.properties`에 authorization-uri/token-uri/user-info-uri를 직접 등록.
+- `OAuthUserService`: provider+provider_user_id로 기존 연결 조회 → 없으면 이메일로 기존 유저를 찾아 연결만 추가 → 그것도 없으면 신규 유저 + 첫 워크스페이스를 함께 생성(`password_hash`는 null).
+- `CustomOAuth2UserService`가 Spring Security OAuth2 로그인 훅에 `OAuthUserService`를 연결하고 내부 `userId`를 인증 principal로 노출.
+- 1회용 code 교환 방식으로 토큰 발급: `OAuthExchangeCodeStore`(메모리, 60초 TTL) + `OAuth2AuthenticationSuccessHandler`(로그인 성공 시 프론트로 `?code=xxx` redirect)/`OAuth2AuthenticationFailureHandler`(`?error=oauth_failed` redirect) + `POST /api/auth/oauth/exchange`.
+- `SecurityConfig`: `oauth2Login()` 연결. OAuth2 로그인 redirect 흐름에 세션이 필요해 세션 정책을 STATELESS에서 IF_REQUIRED로 변경(기존 미사용이던 `spring-session-jdbc`가 이제 실제로 쓰임).
+
+**검증**
+
+- `./gradlew test` 통과. Testcontainers 기반 전체 context 로드 테스트(`BackendApplicationTests`)도 OAuth2 client placeholder 설정으로 정상 기동 확인.
+
+**주의사항**
+
+- Google/Naver/Kakao client-id/secret은 dev placeholder 기본값입니다. 실제 OAuth 로그인은 `infra/.env`에 실제 값을 채운 뒤 동작합니다.
+- documents/wiki_pages/chat_sessions에는 아직 `workspace_id`/`user_id` 연동이 되어 있지 않아 다음 단계에서 진행할 예정입니다.
+
+---
+
 ## 2026-07-01
 
 ### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가

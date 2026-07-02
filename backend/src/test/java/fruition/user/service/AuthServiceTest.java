@@ -1,12 +1,15 @@
 package fruition.user.service;
 
 import fruition.security.JwtTokenProvider;
+import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.user.domain.User;
 import fruition.user.domain.UserRefreshToken;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
+import fruition.user.dto.OAuthExchangeRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.exception.InvalidCredentialsException;
+import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
 import fruition.user.repository.UserRefreshTokenRepository;
 import fruition.user.repository.UserRepository;
@@ -35,11 +38,13 @@ class AuthServiceTest {
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(
             "test-only-jwt-secret-32-bytes-minimum-length", 900);
+    OAuthExchangeCodeStore oAuthExchangeCodeStore = new OAuthExchangeCodeStore();
     AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtTokenProvider, 1209600);
+        authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtTokenProvider,
+                oAuthExchangeCodeStore, 1209600);
     }
 
     private User newUser(String rawPassword) {
@@ -118,5 +123,32 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.logout(new RefreshRequest("unknown-token")))
                 .isInstanceOf(InvalidRefreshTokenException.class);
+    }
+
+    @Test
+    void exchangeOAuthCode_validCode_issuesTokens() {
+        String code = oAuthExchangeCodeStore.issue("user_1f9a74af");
+        when(userRepository.findById("user_1f9a74af")).thenReturn(Optional.of(newUser("password123")));
+
+        LoginResponse response = authService.exchangeOAuthCode(new OAuthExchangeRequest(code));
+
+        assertThat(response.accessToken()).isNotBlank();
+        assertThat(response.refreshToken()).isNotBlank();
+    }
+
+    @Test
+    void exchangeOAuthCode_unknownCode_throwsInvalidOAuthCode() {
+        assertThatThrownBy(() -> authService.exchangeOAuthCode(new OAuthExchangeRequest("unknown-code")))
+                .isInstanceOf(InvalidOAuthCodeException.class);
+    }
+
+    @Test
+    void exchangeOAuthCode_alreadyConsumedCode_throwsInvalidOAuthCode() {
+        String code = oAuthExchangeCodeStore.issue("user_1f9a74af");
+        when(userRepository.findById("user_1f9a74af")).thenReturn(Optional.of(newUser("password123")));
+        authService.exchangeOAuthCode(new OAuthExchangeRequest(code));
+
+        assertThatThrownBy(() -> authService.exchangeOAuthCode(new OAuthExchangeRequest(code)))
+                .isInstanceOf(InvalidOAuthCodeException.class);
     }
 }

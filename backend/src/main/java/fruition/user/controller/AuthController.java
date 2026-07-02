@@ -3,6 +3,7 @@ package fruition.user.controller;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
+import fruition.user.dto.OAuthExchangeRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
@@ -87,6 +88,18 @@ public class AuthController {
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
         authService.logout(request);
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "OAuth code 교환", description = "OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "교환 성공",
+            content = @Content(schema = @Schema(implementation = LoginResponse.class))),
+        @ApiResponse(responseCode = "401", description = "유효하지 않거나 만료된 code",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/oauth/exchange")
+    public ResponseEntity<LoginResponse> exchangeOAuthCode(@Valid @RequestBody OAuthExchangeRequest request) {
+        return ResponseEntity.ok(authService.exchangeOAuthCode(request));
     }
 
     @Operation(summary = "내 정보 조회", description = "access token으로 인증된 사용자의 프로필을 반환합니다.")

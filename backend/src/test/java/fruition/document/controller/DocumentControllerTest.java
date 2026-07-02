@@ -7,6 +7,10 @@ import fruition.document.service.DocumentService;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
 import fruition.security.SecurityConfig;
+import fruition.security.oauth.CustomOAuth2UserService;
+import fruition.security.oauth.OAuth2AuthenticationFailureHandler;
+import fruition.security.oauth.OAuth2AuthenticationSuccessHandler;
+import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,11 +27,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DocumentController.class)
-@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
+        OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
 class DocumentControllerTest {
 
     @Autowired MockMvc mockMvc;
     @MockBean DocumentService documentService;
+    @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     @Test
     void getBlocks_existingDocument_returnsDocumentIdAndBlocksInOrder() throws Exception {

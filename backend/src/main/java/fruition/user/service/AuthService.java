@@ -1,13 +1,16 @@
 package fruition.user.service;
 
 import fruition.security.JwtTokenProvider;
+import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.user.domain.User;
 import fruition.user.domain.UserRefreshToken;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
+import fruition.user.dto.OAuthExchangeRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.exception.InvalidCredentialsException;
+import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
 import fruition.user.exception.UserNotFoundException;
 import fruition.user.repository.UserRefreshTokenRepository;
@@ -31,17 +34,20 @@ public class AuthService {
     private final UserRefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final OAuthExchangeCodeStore oAuthExchangeCodeStore;
     private final long refreshTokenExpirationSeconds;
 
     public AuthService(UserRepository userRepository,
                        UserRefreshTokenRepository refreshTokenRepository,
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider jwtTokenProvider,
+                       OAuthExchangeCodeStore oAuthExchangeCodeStore,
                        @Value("${app.jwt.refresh-token-expiration-seconds}") long refreshTokenExpirationSeconds) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.oAuthExchangeCodeStore = oAuthExchangeCodeStore;
         this.refreshTokenExpirationSeconds = refreshTokenExpirationSeconds;
     }
 
@@ -78,6 +84,15 @@ public class AuthService {
         UserRefreshToken tokenRow = refreshTokenRepository.findByTokenHash(sha256(request.refreshToken()))
                 .orElseThrow(InvalidRefreshTokenException::new);
         tokenRow.revoke();
+    }
+
+    @Transactional
+    public LoginResponse exchangeOAuthCode(OAuthExchangeRequest request) {
+        String userId = oAuthExchangeCodeStore.consume(request.code())
+                .orElseThrow(InvalidOAuthCodeException::new);
+        User user = userRepository.findById(userId)
+                .orElseThrow(InvalidOAuthCodeException::new);
+        return issueTokenPair(user);
     }
 
     public MeResponse me(String userId) {

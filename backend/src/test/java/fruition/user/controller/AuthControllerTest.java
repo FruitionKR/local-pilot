@@ -4,14 +4,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
 import fruition.security.SecurityConfig;
+import fruition.security.oauth.CustomOAuth2UserService;
+import fruition.security.oauth.OAuth2AuthenticationFailureHandler;
+import fruition.security.oauth.OAuth2AuthenticationSuccessHandler;
+import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
+import fruition.user.dto.OAuthExchangeRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.InvalidCredentialsException;
+import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
 import fruition.user.service.AuthService;
 import fruition.user.service.UserService;
@@ -34,7 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
-@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
+        OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
 class AuthControllerTest {
 
     @Autowired MockMvc mockMvc;
@@ -42,6 +49,7 @@ class AuthControllerTest {
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean UserService userService;
     @MockBean AuthService authService;
+    @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     @Test
     void signup_validRequest_returns201() throws Exception {
@@ -172,5 +180,28 @@ class AuthControllerTest {
     void me_withoutAccessToken_returns401() throws Exception {
         mockMvc.perform(get("/api/auth/me"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void exchangeOAuthCode_validCode_returns200WithTokens() throws Exception {
+        when(authService.exchangeOAuthCode(any())).thenReturn(
+                new LoginResponse("access-token", "refresh-token", "Bearer", 900));
+
+        mockMvc.perform(post("/api/auth/oauth/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new OAuthExchangeRequest("some-code"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").value("access-token"));
+    }
+
+    @Test
+    void exchangeOAuthCode_invalidCode_returns401() throws Exception {
+        when(authService.exchangeOAuthCode(any())).thenThrow(new InvalidOAuthCodeException());
+
+        mockMvc.perform(post("/api/auth/oauth/exchange")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new OAuthExchangeRequest("bad-code"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("INVALID_OAUTH_CODE"));
     }
 }
