@@ -88,7 +88,7 @@
 .tree-status.uploading,
 .tree-status.processing,
 .tree-status.uploaded {
-  color: #ffc117;
+  color: var(--yellow);
   background: #323232;
 }
 
@@ -98,7 +98,7 @@
   width: 10px;
   height: 10px;
   border: 2px solid rgba(255, 193, 23, 0.28);
-  border-top-color: #ffc117;
+  border-top-color: var(--yellow);
   border-radius: 999px;
   animation: processing-spin 0.78s linear infinite;
 }
@@ -134,7 +134,7 @@
 }
 
 .tree-edit-input:focus {
-  border-color: #ffc117;
+  border-color: var(--yellow);
   box-shadow: 0 0 0 2px rgba(255, 193, 23, 0.2);
 }
 
@@ -152,7 +152,7 @@
 
 .tree-row.is-selected .tree-asset,
 .tree-row.is-selected svg {
-  color: #8a8a8a;
+  color: var(--subdued);
 }
 
 .tree-row:focus-visible {
@@ -163,7 +163,7 @@
 .tree-row svg,
 .tree-asset {
   flex: 0 0 auto;
-  color: #8a8a8a;
+  color: var(--subdued);
 }
 
 .tree-asset {

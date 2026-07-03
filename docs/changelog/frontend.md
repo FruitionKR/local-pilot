@@ -6,6 +6,25 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### refactor: _styles 색상 토큰화와 중복 규칙 통합
+
+**변경 배경**
+
+- `--yellow` 변수가 있음에도 `#ffc117` 리터럴이 8곳에 반복되었고, `#8a8a8a`/`#3a3a3a`는 변수 없이 산재했다.
+- 동일한 스크롤바 스타일 블록이 3개 파일에 복붙되어 있었고, `--dark` dead 변수와 no-op override 규칙이 남아 있었다.
+
+**변경된 내용**
+
+- `base.css`에 `--subdued`(#8a8a8a), `--line-soft`(#3a3a3a) 토큰 추가, 미사용 `--dark` 제거.
+- `#ffc117`→`var(--yellow)`, `#8a8a8a`→`var(--subdued)`, `#3a3a3a`→`var(--line-soft)` 전면 교체.
+- `.agent-body`/`.sidebar-content`/`.source-preview-content` 스크롤바 규칙을 `base.css` 공통 블록으로 통합.
+- `results.css`의 no-op `.result-card b.raw/.source/.concept` override 제거.
+- 렌더 결과 변화 없음(값 동일).
+
+**검증 결과**
+
+- 하드코딩 색상 잔여 없음(grep 확인), `npx tsc --noEmit` 통과.
+
 ### refactor: _lib 모듈 dead code 제거와 중복 통합
 
 **변경 배경**

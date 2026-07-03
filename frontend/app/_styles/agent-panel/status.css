@@ -65,7 +65,7 @@
   justify-content: center;
   gap: 10px;
   flex-shrink: 0;
-  border: 1px dashed #8a8a8a;
+  border: 1px dashed var(--subdued);
   border-radius: 100px;
 }
 
@@ -76,7 +76,7 @@
   top: 10px;
   width: 1px;
   height: 24px;
-  background: repeating-linear-gradient(to bottom, #8a8a8a 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(to bottom, var(--subdued) 0 2px, transparent 2px 4px);
   transform: translateX(-50%);
 }
 
@@ -87,12 +87,12 @@
 .status-row.done span,
 .status-row.done span {
   border: 0;
-  background: #ffc117;
+  background: var(--yellow);
 }
 
 .status-row.active span {
   aspect-ratio: 1 / 1;
-  border: 1px solid #ffc117;
+  border: 1px solid var(--yellow);
   background: #1e1e1e;
 }
 
