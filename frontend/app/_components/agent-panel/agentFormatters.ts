@@ -1,5 +1,10 @@
 import type { ChatMessageReferenceResponse, GraphNode } from "../../_lib/types";
 
+/** 첫 글자만 대문자로 바꾼다. */
+export function capitalize(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
 /**
  * wiki page id로 표시용 제목을 만든다.
  * 그래프 노드 라벨이 있으면 우선 사용하고, 없으면 slug를 Title Case로 변환한다.
@@ -18,7 +23,7 @@ export function formatWikiPageTitle(
   return slug
     .split("-")
     .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .map(capitalize)
     .join(" ");
 }
 

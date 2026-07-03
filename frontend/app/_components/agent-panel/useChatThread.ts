@@ -10,6 +10,55 @@ export type ActiveAgentTurn = {
   assistantMessage?: ChatMessageResponse;
 };
 
+/** 질의 응답의 related page를 채팅 메시지용 related page 형태로 변환한다. */
+function toRelatedPageMessage(page: QueryRelatedPageResponse, rank: number): ChatMessageRelatedPageResponse {
+  return {
+    wiki_page_id: page.id,
+    page_type: page.page_type,
+    title: page.title,
+    slug: page.slug,
+    relevance_score: page.relevance_score,
+    role: page.role,
+    depth: page.depth,
+    rank
+  };
+}
+
+/**
+ * 새로 받은 메시지 목록에서 이번 질의로 생성된 assistant 메시지를 찾아
+ * 다음 activeTurn 상태를 만든다. 새 assistant 메시지에 related_pages가 없으면
+ * 질의 응답의 related_pages로 보강한다.
+ */
+function buildNextActiveTurn(
+  nextMessages: ChatMessageResponse[],
+  previousAssistantMessageIds: Set<string>,
+  queryRelatedPages: QueryRelatedPageResponse[],
+  question: string
+): ActiveAgentTurn {
+  const nextAssistantMessage = [...nextMessages]
+    .reverse()
+    .find((message) => message.role !== "user" && !previousAssistantMessageIds.has(message.id));
+  const nextAssistantMessageIndex = nextAssistantMessage
+    ? nextMessages.findIndex((message) => message.id === nextAssistantMessage.id)
+    : -1;
+  const nextUserMessage = nextAssistantMessageIndex > 0
+    ? findLastUserMessage(nextMessages.slice(0, nextAssistantMessageIndex))
+    : undefined;
+
+  const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.related_pages?.length && queryRelatedPages.length
+    ? {
+        ...nextAssistantMessage,
+        related_pages: queryRelatedPages.map((page, idx) => toRelatedPageMessage(page, idx + 1))
+      }
+    : nextAssistantMessage;
+
+  return {
+    question: nextUserMessage?.content ?? question,
+    userMessageId: nextUserMessage?.id,
+    assistantMessage
+  };
+}
+
 /**
  * 채팅 스레드 페칭·폴링·질의 상태를 관리하는 훅.
  * AgentPanel에서 추출했습니다.
@@ -63,38 +112,9 @@ export function useChatThread() {
 
     if (!querySucceeded) return;
     await refreshMessages().then((nextMessages) => {
-      const nextAssistantMessage = [...nextMessages]
-        .reverse()
-        .find((message) => message.role !== "user" && !previousAssistantMessageIds.has(message.id));
-      const nextAssistantMessageIndex = nextAssistantMessage
-        ? nextMessages.findIndex((message) => message.id === nextAssistantMessage.id)
-        : -1;
-      const nextUserMessage = nextAssistantMessageIndex > 0
-        ? findLastUserMessage(nextMessages.slice(0, nextAssistantMessageIndex))
-        : undefined;
-
-      const assistantMessage: ChatMessageResponse | undefined = nextAssistantMessage && !nextAssistantMessage.related_pages?.length && queryRelatedPages.length
-        ? {
-            ...nextAssistantMessage,
-            related_pages: queryRelatedPages.map((page, idx): ChatMessageRelatedPageResponse => ({
-              wiki_page_id: page.id,
-              page_type: page.page_type,
-              title: page.title,
-              slug: page.slug,
-              relevance_score: page.relevance_score,
-              role: page.role,
-              depth: page.depth,
-              rank: idx + 1
-            }))
-          }
-        : nextAssistantMessage;
-
-      setAnimatedMessageId(assistantMessage?.id ?? null);
-      setActiveTurn({
-        question: nextUserMessage?.content ?? question,
-        userMessageId: nextUserMessage?.id,
-        assistantMessage
-      });
+      const nextTurn = buildNextActiveTurn(nextMessages, previousAssistantMessageIds, queryRelatedPages, question);
+      setAnimatedMessageId(nextTurn.assistantMessage?.id ?? null);
+      setActiveTurn(nextTurn);
     }).catch((error: unknown) => {
       setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
       setActiveTurn(null);

@@ -2,8 +2,11 @@ import { Fragment, type ReactNode } from "react";
 import { cx } from "../_lib/classNames";
 import type { SourceBlockHighlight } from "../_lib/types";
 
+// citation 강조에 사용하는 색상 팔레트 개수
+const CITATION_COLOR_COUNT = 5;
+
 function rankColorClass(rank: number) {
-  return `citation-rank-${((rank - 1) % 5) + 1}`;
+  return `citation-rank-${((rank - 1) % CITATION_COLOR_COUNT) + 1}`;
 }
 
 function renderInline(text: string, onCitationClick?: (rank: number) => void, canClickCitation?: (rank: number) => boolean): ReactNode[] {
@@ -54,19 +57,14 @@ function renderInline(text: string, onCitationClick?: (rank: number) => void, ca
   return nodes;
 }
 
-export function MarkdownViewer({
-  markdown,
-  onCitationClick,
-  canClickCitation,
-  highlightedBlocks,
-  onBlockRef
-}: {
-  markdown: string;
-  onCitationClick?: (rank: number) => void;
-  canClickCitation?: (rank: number) => boolean;
-  highlightedBlocks?: SourceBlockHighlight[];
-  onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void;
-}) {
+/** markdown 문자열을 블록 단위 ReactNode 목록으로 파싱한다. MarkdownViewer 본문에서 추출했습니다. */
+function parseMarkdownBlocks(
+  markdown: string,
+  onCitationClick?: (rank: number) => void,
+  canClickCitation?: (rank: number) => boolean,
+  highlightedBlocks?: SourceBlockHighlight[],
+  onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void
+): ReactNode[] {
   const blocks: ReactNode[] = [];
   const highlightedBlockRankById = new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank]));
   const lines = markdown.split("\n");
@@ -193,6 +191,24 @@ export function MarkdownViewer({
     }
     appendBlock(<p key={`p-${index}`}>{renderInline(paragraph.join(" "), onCitationClick, canClickCitation)}</p>);
   }
+
+  return blocks;
+}
+
+export function MarkdownViewer({
+  markdown,
+  onCitationClick,
+  canClickCitation,
+  highlightedBlocks,
+  onBlockRef
+}: {
+  markdown: string;
+  onCitationClick?: (rank: number) => void;
+  canClickCitation?: (rank: number) => boolean;
+  highlightedBlocks?: SourceBlockHighlight[];
+  onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void;
+}) {
+  const blocks = parseMarkdownBlocks(markdown, onCitationClick, canClickCitation, highlightedBlocks, onBlockRef);
 
   return <div className="markdown-viewer">{blocks.map((block, blockIndex) => <Fragment key={blockIndex}>{block}</Fragment>)}</div>;
 }

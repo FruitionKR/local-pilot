@@ -14,6 +14,61 @@ const SCROLL_OFFSET_PX = 20;
 const REVEAL_RESULTS_DELAY_MS = 1000;
 const REVEAL_ANSWER_DELAY_MS = 2000;
 const MAX_RESULT_CARDS = 3;
+const SEARCH_STATUS_TITLE = "서치 명령 실행 중";
+
+// 답변 공개 단계: 1=상태 목록만, 2=결과 카드까지, 3=답변 본문까지 표시
+const STAGE_STATUS = 1;
+const STAGE_RESULTS = 2;
+const STAGE_ANSWER = 3;
+
+function findGraphNode(nodes: GraphNode[] | undefined, pageId: string) {
+  return nodes?.find((node) => node.id === pageId);
+}
+
+function isKnownPage(nodes: GraphNode[] | undefined, pageId: string) {
+  return !nodes || !!findGraphNode(nodes, pageId);
+}
+
+function buildRelatedPageCards(message: ChatMessageResponse, nodes: GraphNode[] | undefined) {
+  const relatedPages = message.related_pages ?? [];
+  if (relatedPages.length > 0) {
+    return relatedPages
+      .filter((page) => isKnownPage(nodes, page.wiki_page_id))
+      .slice(0, MAX_RESULT_CARDS)
+      .map((page) => ({
+        key: `related-${page.wiki_page_id}`,
+        pageId: page.wiki_page_id,
+        pageType: page.page_type,
+        title: findGraphNode(nodes, page.wiki_page_id)?.label ?? page.title,
+        meta: page.role || "관련 자료"
+      }));
+  }
+
+  const seenPageIds = new Set<string>();
+  return message.references
+    .filter((reference) => {
+      const pageId = reference.source_document_id ? makeSourceId(reference.source_document_id) : null;
+      if (!pageId || seenPageIds.has(pageId) || !isKnownPage(nodes, pageId)) return false;
+      seenPageIds.add(pageId);
+      return true;
+    })
+    .slice(0, MAX_RESULT_CARDS)
+    .map((reference) => {
+      const pageId = makeSourceId(reference.source_document_id ?? "");
+      const pageType = nodeIdToPageType(pageId) ?? "source";
+      return {
+        key: `reference-${reference.id}`,
+        pageId,
+        pageType,
+        title: formatWikiPageTitle(pageId, nodes, reference.source_document_id || "근거"),
+        meta: formatReferenceMeta(reference)
+      };
+    });
+}
+
+function sourceTitle(nodes: GraphNode[] | undefined, documentId: string) {
+  return findGraphNode(nodes, makeSourceId(documentId))?.label ?? documentId;
+}
 
 export function AgentBody({
   messages,
@@ -37,7 +92,7 @@ export function AgentBody({
   nodes?: GraphNode[];
 }) {
   const showAgentStatus = isLoading && activeTurn === null;
-  const [visibleAnswerStage, setVisibleAnswerStage] = useState(3);
+  const [visibleAnswerStage, setVisibleAnswerStage] = useState(STAGE_ANSWER);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const activeQuestionRef = useRef<HTMLDivElement | null>(null);
   const animatedQuestionRef = useRef<HTMLDivElement | null>(null);
@@ -63,13 +118,13 @@ export function AgentBody({
 
   useEffect(() => {
     if (!animatedMessageId) {
-      setVisibleAnswerStage(3);
+      setVisibleAnswerStage(STAGE_ANSWER);
       return;
     }
 
-    setVisibleAnswerStage(1);
-    const revealResults = window.setTimeout(() => setVisibleAnswerStage(2), REVEAL_RESULTS_DELAY_MS);
-    const revealAnswer = window.setTimeout(() => setVisibleAnswerStage(3), REVEAL_ANSWER_DELAY_MS);
+    setVisibleAnswerStage(STAGE_STATUS);
+    const revealResults = window.setTimeout(() => setVisibleAnswerStage(STAGE_RESULTS), REVEAL_RESULTS_DELAY_MS);
+    const revealAnswer = window.setTimeout(() => setVisibleAnswerStage(STAGE_ANSWER), REVEAL_ANSWER_DELAY_MS);
 
     return () => {
       window.clearTimeout(revealResults);
@@ -112,120 +167,18 @@ export function AgentBody({
     return () => window.cancelAnimationFrame(frameId);
   }, [messages.length, animatedMessageId, isLoading, queryErrorMessage, scrollToLatestMessage]);
 
-  function findGraphNode(pageId: string) {
-    return nodes?.find((node) => node.id === pageId);
-  }
-
-  function isKnownPage(pageId: string) {
-    return !nodes || !!findGraphNode(pageId);
-  }
-
-  function buildRelatedPageCards(message: ChatMessageResponse) {
-    const relatedPages = message.related_pages ?? [];
-    if (relatedPages.length > 0) {
-      return relatedPages
-        .filter((page) => isKnownPage(page.wiki_page_id))
-        .slice(0, MAX_RESULT_CARDS)
-        .map((page) => ({
-          key: `related-${page.wiki_page_id}`,
-          pageId: page.wiki_page_id,
-          pageType: page.page_type,
-          title: findGraphNode(page.wiki_page_id)?.label ?? page.title,
-          meta: page.role || "관련 자료"
-        }));
-    }
-
-    const seenPageIds = new Set<string>();
-    return message.references
-      .filter((reference) => {
-        const pageId = reference.source_document_id ? makeSourceId(reference.source_document_id) : null;
-        if (!pageId || seenPageIds.has(pageId) || !isKnownPage(pageId)) return false;
-        seenPageIds.add(pageId);
-        return true;
-      })
-      .slice(0, MAX_RESULT_CARDS)
-      .map((reference) => {
-        const pageId = makeSourceId(reference.source_document_id ?? "");
-        const pageType = nodeIdToPageType(pageId) ?? "source";
-        return {
-          key: `reference-${reference.id}`,
-          pageId,
-          pageType,
-          title: formatWikiPageTitle(pageId, nodes, reference.source_document_id || "근거"),
-          meta: formatReferenceMeta(reference)
-        };
-      });
-  }
-
-  function sourceTitle(documentId: string) {
-    return findGraphNode(makeSourceId(documentId))?.label ?? documentId;
-  }
-
   const animatedMessageIndex = messages.findIndex((message) => message.id === animatedMessageId);
   const animatedQuestionId = animatedMessageIndex > 0
     ? findLastUserMessage(messages.slice(0, animatedMessageIndex))?.id ?? null
     : null;
   const activeAssistantMessage = activeTurn?.assistantMessage;
-  const shouldReserveScrollSpace = activeTurn !== null && (!activeAssistantMessage || visibleAnswerStage < 3);
+  const shouldReserveScrollSpace = activeTurn !== null && (!activeAssistantMessage || visibleAnswerStage < STAGE_ANSWER);
   const messagesToRender = activeTurn
     ? messages.filter((message) => message.id !== activeTurn.userMessageId && message.id !== activeTurn.assistantMessage?.id)
     : messages;
-
-  function renderAssistantThread(message: ChatMessageResponse, isAnimated: boolean, threadKey?: string) {
-    const resultCards = buildRelatedPageCards(message);
-    const ranksInAnswer = citedRanks(message.content);
-    const citationReferenceByRank = new Map(
-      message.references
-        .filter((item) => item.rank && ranksInAnswer.has(item.rank) && item.source_document_id && item.source_block_ids?.length)
-        .map((item) => [item.rank as number, item])
-    );
-    const canOpenCitation = (rank: number) => citationReferenceByRank.has(rank);
-    const openCitation = (rank: number) => {
-      const reference = citationReferenceByRank.get(rank);
-      if (!reference?.source_document_id || !reference.source_block_ids?.length) return;
-      const highlights = reference.source_block_ids.map((blockId) => ({ block_id: blockId, rank }));
-      onOpenSourceBlocks(reference.source_document_id, sourceTitle(reference.source_document_id), highlights);
-    };
-
-    return (
-      <div className="agent-thread" key={threadKey}>
-        {(!isAnimated || visibleAnswerStage >= 1) && (
-          <div className={isAnimated ? "agent-stage" : undefined}>
-            <StatusList title="서치 명령 실행 중" isLoading={false} hasResponse />
-          </div>
-        )}
-
-        {resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= 2) && (
-          <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
-            <p>찾은 자료 {resultCards.length}건</p>
-            {resultCards.map((card) => (
-              <AgentResultCard
-                key={card.key}
-                title={card.title}
-                meta={card.meta}
-                pageType={card.pageType}
-                onClick={() => onOpenWikiPage(card.pageId, card.title, card.pageType)}
-              />
-            ))}
-          </div>
-        )}
-
-        {(!isAnimated || visibleAnswerStage >= 3) && (
-          <section className={`agent-answer ${isAnimated ? "agent-stage" : ""}`} aria-label="실행 중 발견 사항">
-            <div className="answer-section-title">
-              <span>실행 중 발견 사항</span>
-              <ChevronDown size={8} />
-            </div>
-            <MarkdownViewer
-              markdown={formatAnswerMarkdown(message.content)}
-              onCitationClick={openCitation}
-              canClickCitation={canOpenCitation}
-            />
-          </section>
-        )}
-      </div>
-    );
-  }
+  const pendingStatusThread = (
+    <div className="agent-thread"><StatusList title={SEARCH_STATUS_TITLE} isLoading={isLoading} hasResponse={false} /></div>
+  );
 
   return (
     <div className="agent-body" ref={bodyRef}>
@@ -239,7 +192,15 @@ export function AgentBody({
             {message.content}
           </div>
         ) : (
-          renderAssistantThread(message, message.id === animatedMessageId, message.id)
+          <AssistantThread
+            key={message.id}
+            message={message}
+            isAnimated={message.id === animatedMessageId}
+            visibleAnswerStage={visibleAnswerStage}
+            nodes={nodes}
+            onOpenWikiPage={onOpenWikiPage}
+            onOpenSourceBlocks={onOpenSourceBlocks}
+          />
         )
       ))}
 
@@ -247,17 +208,97 @@ export function AgentBody({
         <>
           <div className="question-bubble" ref={activeQuestionRef}>{activeTurn.question}</div>
           {activeAssistantMessage
-            ? renderAssistantThread(activeAssistantMessage, activeAssistantMessage.id === animatedMessageId)
-            : <div className="agent-thread"><StatusList title="서치 명령 실행 중" isLoading={isLoading} hasResponse={false} /></div>}
+            ? (
+              <AssistantThread
+                message={activeAssistantMessage}
+                isAnimated={activeAssistantMessage.id === animatedMessageId}
+                visibleAnswerStage={visibleAnswerStage}
+                nodes={nodes}
+                onOpenWikiPage={onOpenWikiPage}
+                onOpenSourceBlocks={onOpenSourceBlocks}
+              />
+            )
+            : pendingStatusThread}
         </>
       )}
-      {showAgentStatus && <div className="agent-thread"><StatusList title="서치 명령 실행 중" isLoading={isLoading} hasResponse={false} /></div>}
+      {showAgentStatus && pendingStatusThread}
 
       {queryErrorMessage && <p className="query-error">{queryErrorMessage}</p>}
       {chatLoadErrorMessage && <p className="query-error">{chatLoadErrorMessage}</p>}
 
       {isLoading && <div className="typing"><i /><i /><i /> 답변을 작성하고 있어요…</div>}
       {shouldReserveScrollSpace && <div className="agent-scroll-reserve" aria-hidden />}
+    </div>
+  );
+}
+
+/** assistant 메시지 하나를 상태 목록·결과 카드·답변 본문 순서로 렌더링한다. */
+function AssistantThread({
+  message,
+  isAnimated,
+  visibleAnswerStage,
+  nodes,
+  onOpenWikiPage,
+  onOpenSourceBlocks
+}: {
+  message: ChatMessageResponse;
+  isAnimated: boolean;
+  visibleAnswerStage: number;
+  nodes?: GraphNode[];
+  onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
+  onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
+}) {
+  const resultCards = buildRelatedPageCards(message, nodes);
+  const ranksInAnswer = citedRanks(message.content);
+  const citationReferenceByRank = new Map(
+    message.references
+      .filter((item) => item.rank && ranksInAnswer.has(item.rank) && item.source_document_id && item.source_block_ids?.length)
+      .map((item) => [item.rank as number, item])
+  );
+  const canOpenCitation = (rank: number) => citationReferenceByRank.has(rank);
+  const openCitation = (rank: number) => {
+    const reference = citationReferenceByRank.get(rank);
+    if (!reference?.source_document_id || !reference.source_block_ids?.length) return;
+    const highlights = reference.source_block_ids.map((blockId) => ({ block_id: blockId, rank }));
+    onOpenSourceBlocks(reference.source_document_id, sourceTitle(nodes, reference.source_document_id), highlights);
+  };
+
+  return (
+    <div className="agent-thread">
+      {(!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
+        <div className={isAnimated ? "agent-stage" : undefined}>
+          <StatusList title={SEARCH_STATUS_TITLE} isLoading={false} hasResponse />
+        </div>
+      )}
+
+      {resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= STAGE_RESULTS) && (
+        <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
+          <p>찾은 자료 {resultCards.length}건</p>
+          {resultCards.map((card) => (
+            <AgentResultCard
+              key={card.key}
+              title={card.title}
+              meta={card.meta}
+              pageType={card.pageType}
+              onClick={() => onOpenWikiPage(card.pageId, card.title, card.pageType)}
+            />
+          ))}
+        </div>
+      )}
+
+      {(!isAnimated || visibleAnswerStage >= STAGE_ANSWER) && (
+        <section className={`agent-answer ${isAnimated ? "agent-stage" : ""}`} aria-label="실행 중 발견 사항">
+          <div className="answer-section-title">
+            <span>실행 중 발견 사항</span>
+            <ChevronDown size={8} />
+          </div>
+          <MarkdownViewer
+            markdown={formatAnswerMarkdown(message.content)}
+            onCitationClick={openCitation}
+            canClickCitation={canOpenCitation}
+          />
+        </section>
+      )}
     </div>
   );
 }

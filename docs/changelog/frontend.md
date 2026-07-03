@@ -6,6 +6,26 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### refactor: agent-panel과 루트 컴포넌트 정리
+
+**변경 배경**
+
+- `AgentBody` 내부에 55줄 인라인 렌더 함수와 순수 헬퍼 4개가 컴포넌트 안에 섞여 있었고, `MarkdownViewer`는 100줄 파싱 루프가 컴포넌트 본문에서 실행됐다.
+- `SvgIcon`에 가짜 `as StaticImageData` cast, `SourcePreviewPanel`에 dead 별칭 변수, `useSmoothScroll`에 미사용 반환값이 있었고, `HomeWorkspace`의 resize 핸들러 4개가 로직을 중복했다.
+
+**변경된 내용**
+
+- `AgentBody`: answer 단계 상수화(`STAGE_*`), 순수 헬퍼 모듈 레벨 이동, `AssistantThread` 컴포넌트 분리, 중복 StatusList JSX 통합.
+- `useChatThread`: `buildNextActiveTurn`/`toRelatedPageMessage` 순수 함수 추출.
+- `MarkdownViewer`: 파싱 루프를 `parseMarkdownBlocks` 모듈 함수로 추출, `CITATION_COLOR_COUNT` 상수화.
+- `SvgIcon`: 인라인 아이콘 3종을 renderer map으로 처리해 unsafe cast 제거.
+- `HomeWorkspace`: resize 로직을 `useResizeHandle` 훅(신규 파일)으로 추출해 2회 인스턴스화.
+- `useSmoothScroll` 미사용 `animationRef` 반환 제거, `SourcePreviewPanel` dead 변수 제거, `StatusList` button `type="button"` 명시, `AgentResultCard`/`agentFormatters` capitalize 중복 통합, `RailNavigation` 특수 케이스를 `isLarge` 데이터 필드로 전환.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
 ### refactor: _styles 색상 토큰화와 중복 규칙 통합
 
 **변경 배경**

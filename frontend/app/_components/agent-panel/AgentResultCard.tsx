@@ -1,4 +1,8 @@
 import { fileIcon, sourceIcon, SvgIcon } from "../SvgIcon";
+import { capitalize } from "./agentFormatters";
+
+// 카드 스타일이 정의된 page type 목록. 그 외 값은 source로 취급한다.
+const KNOWN_PAGE_TYPES = ["raw", "source", "concept"] as const;
 
 export function AgentResultCard({
   title,
@@ -11,10 +15,10 @@ export function AgentResultCard({
   pageType: string;
   onClick?: () => void;
 }) {
-  const normalizedPageType = ["raw", "source", "concept"].includes(pageType.toLowerCase())
+  const normalizedPageType = (KNOWN_PAGE_TYPES as readonly string[]).includes(pageType.toLowerCase())
     ? pageType.toLowerCase()
     : "source";
-  const label = normalizedPageType.slice(0, 1).toUpperCase() + normalizedPageType.slice(1);
+  const label = capitalize(normalizedPageType);
   const icon = normalizedPageType === "source" ? sourceIcon : fileIcon;
 
   return (
