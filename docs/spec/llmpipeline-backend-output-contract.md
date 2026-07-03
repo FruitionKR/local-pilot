@@ -59,8 +59,6 @@ backend는 `POST /pipeline/runs`로 실행을 요청하고, 필요하면 `GET /p
     "concept_page_mode": "skeleton",
     "document_id": "doc_123",
     "source_document_id": "doc_123",
-    "wiki_generation_evaluation_loop": false,
-    "wiki_generation_final_evaluation": null,
     "source_page": {
       "slug": "doc_123",
       "title": "문서 제목",
@@ -127,7 +125,6 @@ backend는 `POST /pipeline/runs`로 실행을 요청하고, 필요하면 `GET /p
       ],
       "lint_action_available": true
     },
-    "wiki_generation_evaluations": [],
     "pipeline_log": "runs/api_x/pipeline.log",
     "log_callback_url": null,
     "save_debug_json": false,
@@ -162,15 +159,12 @@ backend는 `POST /pipeline/runs`로 실행을 요청하고, 필요하면 `GET /p
 | `source_page_mode`, `concept_page_mode` | string | source page와 concept page 생성 방식이다. |
 | `document_id` | string | pipeline 내부 document id다. |
 | `source_document_id` | string 또는 null | backend 원본 문서 id다. source block ref의 document 부분으로 쓰인다. |
-| `wiki_generation_evaluation_loop` | boolean | evaluator/repair loop 사용 여부다. |
-| `wiki_generation_final_evaluation` | object 또는 null | 마지막 evaluator 결과다. 사용하지 않으면 `null`이다. |
 | `source_page` | object | 생성된 source page 요약이다. `wait=true` 즉시 응답에는 `markdown`이 포함될 수 있고, DB 저장용 manifest에서는 Markdown 본문이 제거된다. |
 | `source_extraction_artifact` | object | source page 생성에 사용된 추출 artifact다. |
 | `concept_pages` | array | 생성된 concept page 요약 목록이다. `wait=true` 즉시 응답에는 page별 `markdown`이 포함될 수 있고, DB 저장용 manifest에서는 Markdown 본문이 제거된다. |
 | `links` | array | source/concept page 사이 graph edge 후보 목록이다. |
 | `meaning_clusters` | object | active cluster/log artifact 경로와 maintenance 요약이다. `wait=true` 즉시 응답에는 `active_markdown`, `log_markdown`, `clusters`가 포함될 수 있고, DB 저장용 manifest에서는 이 큰 본문 필드들이 제거된다. |
 | `maintenance_summary` | object | promotion/relation 후보 등 유지보수 요약이다. |
-| `wiki_generation_evaluations` | array | evaluator 실행 기록이다. |
 | `pipeline_log` | string | pipeline 로그 파일 경로다. |
 | `log_callback_url` | string 또는 null | pipeline log event를 callback으로 보낸 URL이다. |
 | `save_debug_json` | boolean | debug JSON 저장 여부다. |
