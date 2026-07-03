@@ -3,6 +3,7 @@ import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Projec
 import { switchIcon, SvgIcon } from "../SvgIcon";
 import { ContextMenu } from "./ContextMenu";
 import { ProjectSection } from "./ProjectSection";
+import type { SelectableTreeItem } from "./types";
 
 export function DocumentSidebar({
   projects,
@@ -53,7 +54,7 @@ export function DocumentSidebar({
   onDragEnd: () => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
   onContextMenuItem: (event: ReactMouseEvent<HTMLButtonElement>, projectId: string, itemId: string) => void;
-  onSelectGraphNode: (item: { id: string; label: string; documentId?: string; graphNodeId?: string }) => void;
+  onSelectGraphNode: (item: SelectableTreeItem) => void;
   onEditingChange: (label: string) => void;
   onCommitEditing: () => void;
   onCancelEditing: () => void;

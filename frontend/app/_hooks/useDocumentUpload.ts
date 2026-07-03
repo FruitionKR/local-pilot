@@ -22,7 +22,7 @@ export function useDocumentUpload({
   refreshBackendData: () => Promise<void>;
 }) {
   const uploadPickerTargetRef = useRef<UploadPickerTarget | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   function openUploadPicker(projectId: string, folderId: string | null) {
     uploadPickerTargetRef.current = { projectId, folderId };
@@ -42,20 +42,24 @@ export function useDocumentUpload({
     setFileDropTarget(null);
     if (uploadFiles.length === 0) return;
 
-    const uploadItems = uploadFiles.map((file) => ({
-      id: createClientId("upload"),
-      label: file.name,
-      type: "file" as const,
-      status: "uploading" as const
+    // 파일과 업로드 항목을 쌍으로 묶어 인덱스 기반 병렬 배열 접근을 피한다.
+    const uploads = uploadFiles.map((file) => ({
+      file,
+      item: {
+        id: createClientId("upload"),
+        label: file.name,
+        type: "file" as const,
+        status: "uploading" as const
+      }
     }));
+    const uploadItems = uploads.map(({ item }) => item);
 
     setProjects((current) => current.map((project) => {
       if (project.id !== projectId) return project;
       return { ...project, items: appendItemsToFolder(project.items, folderId, uploadItems) };
     }));
 
-    uploadItems.forEach((item, index) => {
-      const file = uploadFiles[index];
+    uploads.forEach(({ file, item }) => {
       void uploadDocumentFile(file)
         .then((response) => {
           setDocuments((current) => {

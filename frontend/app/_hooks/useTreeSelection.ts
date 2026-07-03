@@ -10,11 +10,24 @@ export type PreviewTarget = {
   sourceBlockHighlights?: SourceBlockHighlight[];
 };
 
+// 트리/그래프 선택 관련 상태는 항상 함께 변경되므로 하나의 객체로 관리한다.
+type TreeSelectionState = {
+  focusedGraphNodeId: string | null;
+  selectedTreeItemId: string | null;
+  selectedPreviewTarget: PreviewTarget | null;
+  selectedDocumentId: string | null;
+};
+
+const EMPTY_SELECTION: TreeSelectionState = {
+  focusedGraphNodeId: null,
+  selectedTreeItemId: null,
+  selectedPreviewTarget: null,
+  selectedDocumentId: null
+};
+
 export function useTreeSelection(projects: Project[]) {
-  const [focusedGraphNodeId, setFocusedGraphNodeId] = useState<string | null>(null);
-  const [selectedTreeItemId, setSelectedTreeItemId] = useState<string | null>(null);
-  const [selectedPreviewTarget, setSelectedPreviewTarget] = useState<PreviewTarget | null>(null);
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<TreeSelectionState>(EMPTY_SELECTION);
+  const { focusedGraphNodeId, selectedTreeItemId, selectedPreviewTarget, selectedDocumentId } = selection;
   const selectedDocumentTitle = useMemo(() => {
     if (selectedPreviewTarget) return selectedPreviewTarget.title;
     if (!selectedTreeItemId) return null;
@@ -48,10 +61,12 @@ export function useTreeSelection(projects: Project[]) {
     const pageType = nodeIdToPageType(nodeId);
     const resolvedTreeItemId = treeItemId ?? findTreeItemIdByGraphNodeId(nodeId);
 
-    setSelectedTreeItemId(resolvedTreeItemId);
-    setSelectedPreviewTarget({ pageId: pageType ? nodeId : null, title, pageType });
-    setFocusedGraphNodeId(nodeId);
-    setSelectedDocumentId(pageType ? null : rawDocumentId);
+    setSelection({
+      selectedTreeItemId: resolvedTreeItemId,
+      selectedPreviewTarget: { pageId: pageType ? nodeId : null, title, pageType },
+      focusedGraphNodeId: nodeId,
+      selectedDocumentId: pageType ? null : rawDocumentId
+    });
   }
 
   function selectTreeGraphNode(item: { id: string; label: string; documentId?: string; graphNodeId?: string }) {
@@ -76,17 +91,16 @@ export function useTreeSelection(projects: Project[]) {
   function openSourceBlockPreview(documentId: string, title: string, sourceBlockHighlights: SourceBlockHighlight[]) {
     const sourceNodeId = makeSourceId(documentId);
     const rawNodeId = `${NODE_PREFIX.raw}${documentId}`;
-    setSelectedTreeItemId(findTreeItemIdByGraphNodeId(rawNodeId) ?? findTreeItemIdByGraphNodeId(sourceNodeId));
-    setSelectedPreviewTarget({ pageId: null, title, pageType: null, sourceBlockHighlights });
-    setFocusedGraphNodeId(sourceNodeId);
-    setSelectedDocumentId(documentId);
+    setSelection({
+      selectedTreeItemId: findTreeItemIdByGraphNodeId(rawNodeId) ?? findTreeItemIdByGraphNodeId(sourceNodeId),
+      selectedPreviewTarget: { pageId: null, title, pageType: null, sourceBlockHighlights },
+      focusedGraphNodeId: sourceNodeId,
+      selectedDocumentId: documentId
+    });
   }
 
   function clearTreeGraphSelection() {
-    setSelectedTreeItemId(null);
-    setSelectedPreviewTarget(null);
-    setFocusedGraphNodeId(null);
-    setSelectedDocumentId(null);
+    setSelection(EMPTY_SELECTION);
   }
 
   return {

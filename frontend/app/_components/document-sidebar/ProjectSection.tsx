@@ -1,5 +1,6 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useState } from "react";
+import { cx } from "../../_lib/classNames";
 import type { Project } from "../../_lib/types";
 import { arrowIcon, SvgIcon } from "../SvgIcon";
 import { InlineEditInput } from "./InlineEditInput";
@@ -44,7 +45,7 @@ export function ProjectSection({
 
   return (
     <section
-      className={`project-section ${isRootFileDropTarget ? "is-file-drop-target" : ""}`}
+      className={cx("project-section", isRootFileDropTarget && "is-file-drop-target")}
       onContextMenu={(event) => onContextMenuProject(event, project.id)}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

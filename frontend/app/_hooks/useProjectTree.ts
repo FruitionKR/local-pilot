@@ -114,7 +114,7 @@ export function useProjectTree() {
 
   function renameContextTarget() {
     if (!contextMenu) return;
-    const project = projects.find((candidate) => candidate.id === contextMenu.projectId);
+    const project = projects.find((project) => project.id === contextMenu.projectId);
     if (!project) return;
     editingCancelRef.current = false;
     if (contextMenu.itemId === null) {
@@ -129,7 +129,7 @@ export function useProjectTree() {
 
   function addFolderFromContext() {
     if (!contextMenu) return;
-    const project = projects.find((candidate) => candidate.id === contextMenu.projectId);
+    const project = projects.find((project) => project.id === contextMenu.projectId);
     const item = contextMenu.itemId && project ? findTreeItem(project.items, contextMenu.itemId) : null;
     addFolder(contextMenu.projectId, item && !isFileItem(item) && !isWikiItem(item) ? item.id : null);
     setContextMenu(null);
@@ -172,6 +172,29 @@ export function useProjectTree() {
     setEditing(null);
   }
 
+  function onDragStart(projectId: string, itemId: string) {
+    setDraggedItem({ projectId, itemId });
+    setContextMenu(null);
+  }
+
+  function onDragOverItem(target: DropTarget) {
+    if (draggedItem?.projectId === target.projectId) setDropTarget(target);
+  }
+
+  function onFileDragLeave() {
+    setFileDropTarget(null);
+  }
+
+  function onDragEnd() {
+    setDraggedItem(null);
+    setDropTarget(null);
+    setFileDropTarget(null);
+  }
+
+  function onEditingChange(label: string) {
+    setEditing((current) => current ? { ...current, label } : current);
+  }
+
   return {
     projects,
     setProjects,
@@ -190,21 +213,10 @@ export function useProjectTree() {
     deleteContextTarget,
     commitEditing,
     cancelEditing,
-    onDragStart: (projectId: string, itemId: string) => {
-      setDraggedItem({ projectId, itemId });
-      setContextMenu(null);
-    },
-    onDragOverItem: (target: DropTarget) => {
-      if (draggedItem?.projectId === target.projectId) setDropTarget(target);
-    },
-    onFileDragLeave: () => setFileDropTarget(null),
-    onDragEnd: () => {
-      setDraggedItem(null);
-      setDropTarget(null);
-      setFileDropTarget(null);
-    },
-    onEditingChange: (label: string) => {
-      setEditing((current) => current ? { ...current, label } : current);
-    }
+    onDragStart,
+    onDragOverItem,
+    onFileDragLeave,
+    onDragEnd,
+    onEditingChange
   };
 }

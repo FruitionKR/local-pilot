@@ -5,6 +5,10 @@ import { TreeNodeIcon } from "./TreeNodeIcon";
 import type { TreeInteractionProps } from "./types";
 import { useTreeNodeDragDrop } from "./useTreeNodeDragDrop";
 
+// 트리 행 들여쓰기: 기본 패딩 + depth당 증가 폭 (px)
+const TREE_ROW_BASE_PADDING_PX = 10;
+const TREE_ROW_INDENT_PER_DEPTH_PX = 17;
+
 export function TreeNode({
   item,
   depth,
@@ -70,7 +74,7 @@ export function TreeNode({
           isFileDropTarget && "is-file-drop-target",
           isDropTarget && `is-drop-${dropTarget.position}`
         )}
-        style={{ paddingLeft: 10 + depth * 17 }}
+        style={{ paddingLeft: TREE_ROW_BASE_PADDING_PX + depth * TREE_ROW_INDENT_PER_DEPTH_PX }}
         title={item.errorMessage ?? item.sourceUri}
         aria-expanded={hasChildren ? isOpen : undefined}
         draggable={!isEditing && canDrag}

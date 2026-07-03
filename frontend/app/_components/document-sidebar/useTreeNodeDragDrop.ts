@@ -27,6 +27,15 @@ export function useTreeNodeDragDrop({
 
   const wikiKindMimeType = item.wikiKind ? `application/x-wiki-kind-${item.wikiKind}` : null;
 
+  // 같은 wikiKind끼리의 드래그인 경우에만 드롭 대상을 계산한다. ("inside"는 "after"로 정규화)
+  function resolveWikiDropTarget(event: ReactDragEvent<HTMLButtonElement>): DropTarget | null {
+    const isSameKind = wikiKindMimeType && event.dataTransfer.types.includes(wikiKindMimeType);
+    if (!isSameKind) return null;
+    const rawPosition = resolveDropPosition(event);
+    const position = rawPosition === "inside" ? "after" : rawPosition;
+    return { projectId, targetId: item.id, position };
+  }
+
   function handleDragStart(event: ReactDragEvent<HTMLButtonElement>) {
     if (!canDrag) return;
     event.dataTransfer.effectAllowed = "move";
@@ -45,12 +54,8 @@ export function useTreeNodeDragDrop({
       return;
     }
     if (isWikiItem(item)) {
-      const isSameKind = wikiKindMimeType && event.dataTransfer.types.includes(wikiKindMimeType);
-      if (isSameKind) {
-        const rawPosition = resolveDropPosition(event);
-        const position = rawPosition === "inside" ? "after" : rawPosition;
-        onDragOverItem({ projectId, targetId: item.id, position });
-      }
+      const target = resolveWikiDropTarget(event);
+      if (target) onDragOverItem(target);
       return;
     }
     if (item.generated) return;
@@ -74,12 +79,8 @@ export function useTreeNodeDragDrop({
       return;
     }
     if (isWikiItem(item)) {
-      const isSameKind = wikiKindMimeType && event.dataTransfer.types.includes(wikiKindMimeType);
-      if (isSameKind) {
-        const rawPosition = resolveDropPosition(event);
-        const position = rawPosition === "inside" ? "after" : rawPosition;
-        onDropItem({ projectId, targetId: item.id, position });
-      }
+      const target = resolveWikiDropTarget(event);
+      if (target) onDropItem(target);
       return;
     }
     if (!item.generated) {

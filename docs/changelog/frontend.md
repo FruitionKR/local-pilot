@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### refactor: document-sidebar와 _hooks 정리
+
+**변경 배경**
+
+- `onSelectGraphNode` 인자 타입이 두 파일에 인라인으로 복제되어 있었고, drag/drop 판정 로직과 매직 넘버가 중복·산재했다.
+- `useTreeSelection`의 연동 state 4개가 별개 useState로 관리되어 항상 함께 갱신되는 관계가 코드에 드러나지 않았다.
+
+**변경된 내용**
+
+- `types.ts`에 `SelectableTreeItem` 타입 추출, `DocumentSidebar` 인라인 타입 교체.
+- `dragDrop.ts` drop 임계값(0.28/0.72)·offscreen 좌표 상수화, `TreeNode` 들여쓰기 상수화.
+- `useTreeNodeDragDrop`의 중복 wiki 드롭 판정을 `resolveWikiDropTarget` 헬퍼로 통합.
+- `ProjectSection` className을 `cx()` 헬퍼로 통일.
+- `useProjectTree` 반환 객체의 인라인 화살표 함수 5개를 명명 함수로 전환, 변수명 일관화.
+- `useTreeSelection` state 4개를 단일 객체 state로 병합(반환 API 동일).
+- `useDocumentUpload` ref 타입 정리, 병렬 배열 인덱스 패턴을 쌍(zip) 기반 반복으로 교체.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
 ### refactor: agent-panel과 루트 컴포넌트 정리
 
 **변경 배경**
