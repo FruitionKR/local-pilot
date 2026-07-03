@@ -10,9 +10,6 @@ public class Workspace {
     @Id
     private String id;
 
-    @Column(name = "user_id", nullable = false)
-    private String userId;
-
     @Column(nullable = false)
     private String name;
 
@@ -24,9 +21,8 @@ public class Workspace {
 
     protected Workspace() {}
 
-    public Workspace(String id, String userId, String name) {
+    public Workspace(String id, String name) {
         this.id = id;
-        this.userId = userId;
         this.name = name;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
@@ -38,7 +34,6 @@ public class Workspace {
     }
 
     public String getId() { return id; }
-    public String getUserId() { return userId; }
     public String getName() { return name; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

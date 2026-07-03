@@ -12,9 +12,8 @@ import fruition.document.repository.SourceBlockRepository;
 import fruition.util.StorageProperties;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
-import fruition.workspace.domain.Workspace;
 import fruition.workspace.exception.WorkspaceNotFoundException;
-import fruition.workspace.repository.WorkspaceRepository;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,7 +37,7 @@ class DocumentServiceBlocksTest {
     private static final String WORKSPACE_ID = "ws_aaa11111";
 
     @Mock DocumentRepository documentRepository;
-    @Mock WorkspaceRepository workspaceRepository;
+    @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
     @Mock DocumentProcessingRequester processingRequester;
@@ -52,14 +51,13 @@ class DocumentServiceBlocksTest {
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentRepository, workspaceRepository, minioClient, storageProps,
+        documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 sourceBlockRepository, queueRepository, transactionTemplate, "http://localhost:8080");
     }
 
     private void stubOwnedWorkspace() {
-        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID))
-                .thenReturn(Optional.of(new Workspace(WORKSPACE_ID, USER_ID, "테스트 워크스페이스")));
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(true);
     }
 
     @Test
@@ -110,7 +108,7 @@ class DocumentServiceBlocksTest {
     @Test
     @DisplayName("소유하지 않은 워크스페이스면 WorkspaceNotFoundException을 던진다")
     void blocks_notOwnedWorkspace_throws() {
-        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(false);
 
         assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af"))
                 .isInstanceOf(WorkspaceNotFoundException.class);

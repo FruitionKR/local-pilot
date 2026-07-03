@@ -6,6 +6,32 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-03
 
+### refactor: 워크스페이스 소유 구조를 workspace_members 테이블로 전환
+
+**배경**
+
+향후 워크스페이스를 여러 유저가 공유할 수 있게 하려면 `workspaces.user_id` 1:1 구조부터 바뀌어야 한다는 논의가 있었다. 이번엔 그 설계의 첫 단계만 구현한다 — 초대/제거 같은 실제 공유 기능은 아직 없고, 워크스페이스마다 owner 1명만 있는 지금과 동일한 동작을 새 테이블 구조로 재구현했다.
+
+**추가/변경된 것**
+
+- `WorkspaceMember` 엔티티 신규 — `(workspace_id, user_id)` 복합 PK, `role`(owner/member), `joined_at`. `@ManyToOne` + `@OnDelete(CASCADE)`로 `Workspace`/`User` 삭제 시 자동 정리되도록 구성. 합성 PK 대신 복합 PK를 선택해 8자리 UUID truncate 충돌 이슈(`docs/issue/2026-07-03.md`)를 이 테이블에서는 원천적으로 피했다.
+- `Workspace.userId` 컬럼 제거. `WorkspaceRepository`의 `findByIdAndUserId`/`findAllByUserIdOrderByCreatedAtDesc` 제거.
+- `WorkspaceService`: 워크스페이스 생성 시 `WorkspaceMember(role=owner)`를 함께 생성. `list`/`rename`/`delete`의 소유권 판단을 `WorkspaceMemberRepository` 기준으로 전환.
+- `ChatSessionService`/`DocumentService`의 `verifyWorkspaceOwnership()`도 동일하게 `WorkspaceMemberRepository.existsByWorkspace_IdAndUser_Id`로 전환 — 소유권 검증 로직이 3곳에 중복 구현되어 있던 문제를 이번 기회에 함께 정리했다.
+- 마이그레이션: `ddl-auto=update`는 "컬럼 삭제 전 데이터 백필" 같은 순서 있는 작업을 안전하게 못 해서, 로컬 개발 DB 볼륨을 초기화하는 방식으로 처리했다(운영 데이터 없음).
+
+**검증**
+
+- `./gradlew test` 전체 통과 (116개).
+- `@EmbeddedId` + `@ManyToOne` 조합에서 Spring Data가 `workspaceId`/`userId`를 단일 프로퍼티로 못 찾는 문제 발생 — 이전 `ChatMessage.sessionId` 때와 동일한 패턴이라 언더스코어 문법(`existsByWorkspace_IdAndUser_Id`)으로 해결했다.
+- 볼륨 초기화 후 백엔드 재기동 → `\d workspaces`/`\d workspace_members`로 스키마 확인(user_id 컬럼 제거, 복합 PK + 양쪽 FK CASCADE 확인) → 이메일 회원가입 → 자동 생성된 워크스페이스가 `workspace_members`에 `role=owner`로 저장되는지 확인 → 로그인 → 워크스페이스 목록 조회 → 문서 업로드 → 채팅 세션 생성까지 curl로 전 구간 재검증.
+
+**주의사항**
+
+- 이번 변경은 owner 1명만 존재하는 상태까지만 구현했다. 실제 멤버 초대/제거, role 기반 권한 분기(예: rename/delete는 owner 전용), 채팅 세션의 유저별 프라이빗 처리는 별도 이슈로 남겨뒀다.
+
+---
+
 ### fix: bootRun이 infra/.env를 못 읽던 경로 버그 수정
 
 **배경**

@@ -6,9 +6,8 @@ import fruition.chat.dto.ChatSessionResponse;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatSessionRepository;
-import fruition.workspace.domain.Workspace;
 import fruition.workspace.exception.WorkspaceNotFoundException;
-import fruition.workspace.repository.WorkspaceRepository;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,18 +31,17 @@ class ChatSessionServiceTest {
     private static final String SESSION_ID = "session_aaa11111";
 
     @Mock ChatSessionRepository chatSessionRepository;
-    @Mock WorkspaceRepository workspaceRepository;
+    @Mock WorkspaceMemberRepository workspaceMemberRepository;
 
     ChatSessionService chatSessionService;
 
     @BeforeEach
     void setUp() {
-        chatSessionService = new ChatSessionService(chatSessionRepository, workspaceRepository);
+        chatSessionService = new ChatSessionService(chatSessionRepository, workspaceMemberRepository);
     }
 
     private void stubOwnedWorkspace() {
-        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID))
-                .thenReturn(Optional.of(new Workspace(WORKSPACE_ID, USER_ID, "테스트 워크스페이스")));
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(true);
     }
 
     @Test
@@ -69,7 +67,7 @@ class ChatSessionServiceTest {
 
     @Test
     void create_notOwnedWorkspace_throwsWorkspaceNotFound() {
-        when(workspaceRepository.findByIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(false);
 
         assertThatThrownBy(() -> chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest(null)))
                 .isInstanceOf(WorkspaceNotFoundException.class);

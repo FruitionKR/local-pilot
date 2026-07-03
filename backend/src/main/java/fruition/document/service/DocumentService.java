@@ -30,7 +30,7 @@ import fruition.wiki.domain.WikiPage;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
-import fruition.workspace.repository.WorkspaceRepository;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -61,7 +61,7 @@ public class DocumentService {
     private static final int STALLED_THRESHOLD_SECONDS = 60;
 
     private final DocumentRepository documentRepository;
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
     private final DocumentProcessingRequester processingRequester;
@@ -73,7 +73,7 @@ public class DocumentService {
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
-                           WorkspaceRepository workspaceRepository,
+                           WorkspaceMemberRepository workspaceMemberRepository,
                            MinioClient minioClient,
                            StorageProperties storageProps,
                            DocumentProcessingRequester processingRequester,
@@ -84,7 +84,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
-        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
         this.processingRequester = processingRequester;
@@ -97,8 +97,9 @@ public class DocumentService {
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
-        workspaceRepository.findByIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new WorkspaceNotFoundException(workspaceId);
+        }
     }
 
     @Transactional

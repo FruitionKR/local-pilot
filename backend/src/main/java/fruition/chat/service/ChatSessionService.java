@@ -8,7 +8,7 @@ import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatSessionRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
-import fruition.workspace.repository.WorkspaceRepository;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,16 +20,17 @@ public class ChatSessionService {
     private static final int MAX_SESSIONS_PER_WORKSPACE = 10;
 
     private final ChatSessionRepository chatSessionRepository;
-    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
 
-    public ChatSessionService(ChatSessionRepository chatSessionRepository, WorkspaceRepository workspaceRepository) {
+    public ChatSessionService(ChatSessionRepository chatSessionRepository, WorkspaceMemberRepository workspaceMemberRepository) {
         this.chatSessionRepository = chatSessionRepository;
-        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
-        workspaceRepository.findByIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new WorkspaceNotFoundException(workspaceId);
+        }
     }
 
     /** workspace 소유권과 세션 소속을 함께 검증한다. 호출부는 컨트롤러/QueryController에서 재사용한다. */

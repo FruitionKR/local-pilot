@@ -2,12 +2,15 @@ package fruition.workspace.service;
 
 import fruition.chat.service.ChatSessionService;
 import fruition.document.service.DocumentService;
+import fruition.user.repository.UserRepository;
 import fruition.workspace.domain.Workspace;
+import fruition.workspace.domain.WorkspaceMember;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceListResponse;
 import fruition.workspace.dto.WorkspaceRenameRequest;
 import fruition.workspace.dto.WorkspaceResponse;
 import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import fruition.workspace.repository.WorkspaceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +21,19 @@ import java.util.UUID;
 public class WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final UserRepository userRepository;
     private final DocumentService documentService;
     private final ChatSessionService chatSessionService;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository,
+                            WorkspaceMemberRepository workspaceMemberRepository,
+                            UserRepository userRepository,
                             DocumentService documentService,
                             ChatSessionService chatSessionService) {
         this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.userRepository = userRepository;
         this.documentService = documentService;
         this.chatSessionService = chatSessionService;
     }
@@ -42,7 +51,7 @@ public class WorkspaceService {
 
     public WorkspaceListResponse list(String userId) {
         return new WorkspaceListResponse(
-                workspaceRepository.findAllByUserIdOrderByCreatedAtDesc(userId).stream()
+                workspaceMemberRepository.findAllWorkspacesByUserId(userId).stream()
                         .map(this::toResponse)
                         .toList()
         );
@@ -69,12 +78,20 @@ public class WorkspaceService {
 
     private Workspace createWorkspace(String userId, String name) {
         String workspaceId = "ws_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        Workspace workspace = new Workspace(workspaceId, userId, name);
-        return workspaceRepository.save(workspace);
+        Workspace workspace = new Workspace(workspaceId, name);
+        workspaceRepository.save(workspace);
+
+        WorkspaceMember owner = new WorkspaceMember(workspace, userRepository.getReferenceById(userId), WorkspaceMember.ROLE_OWNER);
+        workspaceMemberRepository.save(owner);
+
+        return workspace;
     }
 
     private Workspace findOwned(String userId, String workspaceId) {
-        return workspaceRepository.findByIdAndUserId(workspaceId, userId)
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new WorkspaceNotFoundException(workspaceId);
+        }
+        return workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
     }
 
