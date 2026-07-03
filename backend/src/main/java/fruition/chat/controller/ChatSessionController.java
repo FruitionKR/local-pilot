@@ -111,16 +111,16 @@ public class ChatSessionController {
             @PathVariable("session_id") String sessionId) {
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
 
-        var messages = chatMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId);
+        var messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
         List<String> messageIds = messages.stream().map(m -> m.getId()).toList();
 
         // N+1 방지: 메시지 ID 목록으로 references와 related_pages를 한 번에 조회한다.
         Map<String, List<ChatMessageReference>> refsByMessageId = referenceRepository
-                .findAllByChatMessageIdIn(messageIds).stream()
+                .findAllByChatMessage_IdIn(messageIds).stream()
                 .collect(Collectors.groupingBy(ChatMessageReference::getChatMessageId));
 
         Map<String, List<ChatMessageRelatedPageResponse>> relatedPagesByMessageId = relatedPageRepository
-                .findAllByChatMessageIdIn(messageIds).stream()
+                .findAllByChatMessage_IdIn(messageIds).stream()
                 .collect(Collectors.groupingBy(
                         p -> p.getChatMessageId(),
                         Collectors.mapping(p -> new ChatMessageRelatedPageResponse(

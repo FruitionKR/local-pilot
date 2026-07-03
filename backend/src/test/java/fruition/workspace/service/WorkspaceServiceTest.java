@@ -1,5 +1,7 @@
 package fruition.workspace.service;
 
+import fruition.chat.service.ChatSessionService;
+import fruition.document.service.DocumentService;
 import fruition.workspace.domain.Workspace;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceRenameRequest;
@@ -18,18 +20,22 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class WorkspaceServiceTest {
 
     @Mock WorkspaceRepository workspaceRepository;
+    @Mock DocumentService documentService;
+    @Mock ChatSessionService chatSessionService;
 
     WorkspaceService workspaceService;
 
     @BeforeEach
     void setUp() {
-        workspaceService = new WorkspaceService(workspaceRepository);
+        workspaceService = new WorkspaceService(workspaceRepository, documentService, chatSessionService);
     }
 
     @Test
@@ -83,20 +89,25 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    void delete_ownedWorkspace_removesIt() {
+    void delete_ownedWorkspace_cascadesToDocumentsAndChatSessionsThenRemovesWorkspace() {
         Workspace workspace = new Workspace("ws_aaa11111", "user_1f9a74af", "워크스페이스 A");
         when(workspaceRepository.findByIdAndUserId("ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
 
         workspaceService.delete("user_1f9a74af", "ws_aaa11111");
 
-        org.mockito.Mockito.verify(workspaceRepository).delete(workspace);
+        verify(documentService).deleteAllByWorkspaceId("ws_aaa11111");
+        verify(chatSessionService).deleteAllByWorkspaceId("ws_aaa11111");
+        verify(workspaceRepository).delete(workspace);
     }
 
     @Test
-    void delete_notOwnedWorkspace_throwsNotFound() {
+    void delete_notOwnedWorkspace_throwsNotFoundWithoutCascading() {
         when(workspaceRepository.findByIdAndUserId("ws_aaa11111", "user_other")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> workspaceService.delete("user_other", "ws_aaa11111"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
+
+        verify(documentService, never()).deleteAllByWorkspaceId(any());
+        verify(chatSessionService, never()).deleteAllByWorkspaceId(any());
     }
 }

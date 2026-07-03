@@ -127,14 +127,14 @@ class ChatSessionControllerTest {
 
     @Test
     void getMessages_ownedSession_returnsMessagesInOrder() throws Exception {
-        when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
-                .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
-        when(chatMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
-                new ChatMessage("chat_user_1", SESSION_ID, "pair_1", "user", "질문", "completed", Instant.now(), null),
-                new ChatMessage("chat_assistant_1", SESSION_ID, "pair_1", "assistant", "답변", "completed", Instant.now(), null)
+        ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null);
+        when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID)).thenReturn(session);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+                new ChatMessage("chat_user_1", session, "pair_1", "user", "질문", "completed", Instant.now(), null),
+                new ChatMessage("chat_assistant_1", session, "pair_1", "assistant", "답변", "completed", Instant.now(), null)
         ));
-        when(referenceRepository.findAllByChatMessageIdIn(any())).thenReturn(List.of());
-        when(relatedPageRepository.findAllByChatMessageIdIn(any())).thenReturn(List.of());
+        when(referenceRepository.findAllByChatMessage_IdIn(any())).thenReturn(List.of());
+        when(relatedPageRepository.findAllByChatMessage_IdIn(any())).thenReturn(List.of());
 
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/chat/sessions/" + SESSION_ID + "/messages")
                         .header("Authorization", bearerToken()))

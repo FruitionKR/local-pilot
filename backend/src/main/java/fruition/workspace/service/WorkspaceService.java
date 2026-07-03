@@ -1,5 +1,7 @@
 package fruition.workspace.service;
 
+import fruition.chat.service.ChatSessionService;
+import fruition.document.service.DocumentService;
 import fruition.workspace.domain.Workspace;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceListResponse;
@@ -16,9 +18,15 @@ import java.util.UUID;
 public class WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
+    private final DocumentService documentService;
+    private final ChatSessionService chatSessionService;
 
-    public WorkspaceService(WorkspaceRepository workspaceRepository) {
+    public WorkspaceService(WorkspaceRepository workspaceRepository,
+                            DocumentService documentService,
+                            ChatSessionService chatSessionService) {
         this.workspaceRepository = workspaceRepository;
+        this.documentService = documentService;
+        this.chatSessionService = chatSessionService;
     }
 
     @Transactional
@@ -50,6 +58,12 @@ public class WorkspaceService {
     @Transactional
     public void delete(String userId, String workspaceId) {
         Workspace workspace = findOwned(userId, workspaceId);
+
+        // DB에 workspace_id FK CASCADE가 없어 하위 리소스를 애플리케이션에서 직접 정리한다.
+        // wiki_pages는 아직 workspace_id가 없어 대상에서 제외됨 (docs/issue/2026-07-02.md 참고).
+        documentService.deleteAllByWorkspaceId(workspaceId);
+        chatSessionService.deleteAllByWorkspaceId(workspaceId);
+
         workspaceRepository.delete(workspace);
     }
 

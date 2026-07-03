@@ -1,9 +1,8 @@
 package fruition.chat.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
@@ -14,8 +13,10 @@ public class ChatMessage {
     @Id
     private String id;
 
-    @Column(name = "session_id", nullable = false)
-    private String sessionId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "session_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private ChatSession session;
 
     @Column(name = "pair_id", nullable = false)
     private String pairId;
@@ -40,10 +41,10 @@ public class ChatMessage {
 
     protected ChatMessage() {}
 
-    public ChatMessage(String id, String sessionId, String pairId, String role, String content,
+    public ChatMessage(String id, ChatSession session, String pairId, String role, String content,
                        String status, Instant createdAt, String errorMessage) {
         this.id = id;
-        this.sessionId = sessionId;
+        this.session = session;
         this.pairId = pairId;
         this.role = role;
         this.content = content;
@@ -53,7 +54,8 @@ public class ChatMessage {
     }
 
     public String getId() { return id; }
-    public String getSessionId() { return sessionId; }
+    public String getSessionId() { return session.getId(); }
+    public ChatSession getSession() { return session; }
     public String getPairId() { return pairId; }
     public String getRole() { return role; }
     public String getContent() { return content; }

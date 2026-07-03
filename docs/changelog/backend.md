@@ -4,6 +4,55 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-03
+
+### refactor: chat_sessions 하위 리소스 삭제를 DB FK ON DELETE CASCADE로 전환
+
+**배경**
+
+직전 커밋에서 `ChatSessionService`가 세션 삭제 시 `chat_messages`/`chat_message_references`/`chat_message_related_pages`를 애플리케이션 코드로 직접 정리하도록 구현했다. `documents`, `wiki_pages`는 llmPipeline(Python)이 DDL을 직접 소유해서 FK를 걸려면 스키마 소유권 조율이 필요하지만, `chat_sessions`/`chat_messages`/`chat_message_references`/`chat_message_related_pages`는 전부 Spring 전용 테이블이라 이 관계만 먼저 DB 레벨 CASCADE로 전환했다. `documents`/`wiki_pages` 쪽 FK 전환은 별도로 남겨둔다 (`docs/issue/2026-07-03.md` 참고).
+
+**추가/변경된 것**
+
+- `ChatMessage.sessionId`(String) → `@ManyToOne ChatSession session` + `@OnDelete(action = OnDeleteAction.CASCADE)`로 전환.
+- `ChatMessageReference.chatMessageId`, `ChatMessageRelatedPage.chatMessageId`도 동일하게 `@ManyToOne ChatMessage chatMessage` + `@OnDelete(CASCADE)`로 전환. `getChatMessageId()` 등 기존 getter는 유지(내부적으로 연관 엔티티의 id를 반환).
+- Hibernate `ddl-auto=update`가 위 매핑을 보고 실제 FK 제약(`ON DELETE CASCADE`)을 생성한다. Flyway 등 별도 마이그레이션 도구 도입 없이 처리했다.
+- `ChatSessionService.delete()`/`deleteAllByWorkspaceId()`에서 메시지/참조/관련페이지를 직접 지우던 코드를 제거 — 이제 `chatSessionRepository.delete(session)` 한 줄이면 DB가 나머지를 cascade한다.
+- `QueryService`가 메시지 생성 전에 `ChatSession` 엔티티를 먼저 조회하도록 변경(연관관계 설정에 필요). 세션이 존재하지 않으면 `ChatSessionNotFoundException`을 던진다.
+- 리포지토리 파생 쿼리 메서드명을 중첩 프로퍼티 경로로 변경: `findAllBySessionIdOrderByCreatedAtAsc` → `findAllBySession_IdOrderByCreatedAtAsc`, `findAllByChatMessageIdIn` → `findAllByChatMessage_IdIn` (Spring Data가 변경 전 이름을 단일 프로퍼티로 오인해 매핑 실패했다).
+- 테스트 편의를 위해 `TestcontainersConfiguration`을 package-private → public으로 변경.
+
+**검증**
+
+- `./gradlew test` 통과 (116개).
+- `ChatSessionCascadeDeleteIntegrationTest` 신규 추가 — Mockito 단위 테스트로는 실제 FK 동작을 확인할 수 없어, Testcontainers Postgres에 실제로 세션을 저장하고 삭제한 뒤 메시지/참조/관련페이지가 DB에서 사라졌는지 직접 검증한다.
+- `BackendApplicationTests`(전체 context 로드, 실제 Postgres 대상)가 통과해 Hibernate가 FK DDL을 문제없이 생성함을 확인했다.
+
+---
+
+### fix: 워크스페이스 삭제 시 소속 문서/채팅 세션 CASCADE 삭제
+
+**배경**
+
+커밋 리뷰 중 `WorkspaceService.delete()`가 Workspace row만 지우고 소속 documents/chat_sessions는 그대로 남기는 걸 확인했다. DB에 `workspace_id` FK CASCADE 제약이 없어서(Spring이 plain VARCHAR 컬럼으로만 관리, JPA 연관관계 미사용), 워크스페이스를 지우면 고아 데이터가 남는 상태였다.
+
+**추가/변경된 것**
+
+- `DocumentService`: 기존 `delete()`의 실제 삭제 로직을 `deleteInternal(Document)`로 추출하고, 워크스페이스 소속 문서를 전부 정리하는 `deleteAllByWorkspaceId(workspaceId)` 추가 (MinIO 오브젝트, source wiki page 정리 로직 재사용).
+- `ChatSessionService`: 세션 삭제 시 딸린 `chat_messages`/`chat_message_references`/`chat_message_related_pages`까지 함께 삭제하도록 `deleteInternal(ChatSession)` 추가, 워크스페이스 소속 세션 전체를 정리하는 `deleteAllByWorkspaceId(workspaceId)` 추가.
+- `ChatMessageReferenceRepository`, `ChatMessageRelatedPageRepository`에 `deleteAllByChatMessageIdIn` 추가.
+- `WorkspaceService.delete()`가 workspace 삭제 전에 `documentService.deleteAllByWorkspaceId()`, `chatSessionService.deleteAllByWorkspaceId()`를 호출하도록 변경 (같은 트랜잭션).
+
+**검증**
+
+- `./gradlew test` 통과 (세션 삭제 시 메시지/참조 함께 삭제, 워크스페이스 삭제 시 문서·세션 전체 cascade, 소유권 실패 시 cascade 미실행 케이스 포함).
+
+**주의사항**
+
+- `wiki_pages`는 여전히 workspace_id가 없어 이번 CASCADE 대상에서 제외됨 (`docs/issue/2026-07-02.md` 참고). source wiki page는 문서별 삭제 로직(`deleteInternal`)에서 기존과 동일하게 document_id 기준으로 정리된다.
+
+---
+
 ## 2026-07-02
 
 ### feat: ChatSession 도입 및 채팅 API workspace 격리

@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface ChatMessageRelatedPageRepository extends JpaRepository<ChatMessageRelatedPage, Long> {
-    List<ChatMessageRelatedPage> findAllByChatMessageIdIn(List<String> chatMessageIds);
+    List<ChatMessageRelatedPage> findAllByChatMessage_IdIn(List<String> chatMessageIds);
 }

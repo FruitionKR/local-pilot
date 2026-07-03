@@ -29,6 +29,7 @@ class ChatSessionServiceTest {
 
     private static final String USER_ID = "user_1f9a74af";
     private static final String WORKSPACE_ID = "ws_aaa11111";
+    private static final String SESSION_ID = "session_aaa11111";
 
     @Mock ChatSessionRepository chatSessionRepository;
     @Mock WorkspaceRepository workspaceRepository;
@@ -108,14 +109,26 @@ class ChatSessionServiceTest {
     }
 
     @Test
-    void delete_ownedSession_removesIt() {
+    void delete_ownedSession_removesSession() {
         stubOwnedWorkspace();
-        ChatSession session = new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, null);
-        when(chatSessionRepository.findByIdAndWorkspaceId("session_aaa11111", WORKSPACE_ID))
-                .thenReturn(Optional.of(session));
+        ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null);
+        when(chatSessionRepository.findByIdAndWorkspaceId(SESSION_ID, WORKSPACE_ID)).thenReturn(Optional.of(session));
 
-        chatSessionService.delete(WORKSPACE_ID, USER_ID, "session_aaa11111");
+        chatSessionService.delete(WORKSPACE_ID, USER_ID, SESSION_ID);
 
+        // chat_messages/references/related_pages 삭제는 DB FK ON DELETE CASCADE가 처리한다 (여기서는 검증 불가 — 통합 테스트 참고).
         verify(chatSessionRepository).delete(session);
+    }
+
+    @Test
+    void deleteAllByWorkspaceId_removesEverySessionInWorkspace() {
+        ChatSession session1 = new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, null);
+        ChatSession session2 = new ChatSession("session_bbb22222", WORKSPACE_ID, USER_ID, null);
+        List<ChatSession> sessions = List.of(session1, session2);
+        when(chatSessionRepository.findAllByWorkspaceIdOrderByLastMessageAtDesc(WORKSPACE_ID)).thenReturn(sessions);
+
+        chatSessionService.deleteAllByWorkspaceId(WORKSPACE_ID);
+
+        verify(chatSessionRepository).deleteAll(sessions);
     }
 }

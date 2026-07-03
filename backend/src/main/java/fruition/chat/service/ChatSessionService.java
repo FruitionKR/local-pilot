@@ -67,7 +67,16 @@ public class ChatSessionService {
     @Transactional
     public void delete(String workspaceId, String userId, String sessionId) {
         ChatSession session = verifyOwnedSession(workspaceId, userId, sessionId);
+        // chat_messages/chat_message_references/chat_message_related_pages는
+        // DB FK ON DELETE CASCADE로 함께 삭제된다 (ChatMessage.session 참고).
         chatSessionRepository.delete(session);
+    }
+
+    /** 워크스페이스 삭제 시 소속 세션을 함께 정리한다. DB에 workspace_id FK CASCADE가 없어 애플리케이션에서 직접 처리한다. */
+    @Transactional
+    public void deleteAllByWorkspaceId(String workspaceId) {
+        chatSessionRepository.deleteAll(
+                chatSessionRepository.findAllByWorkspaceIdOrderByLastMessageAtDesc(workspaceId));
     }
 
     private ChatSessionResponse toResponse(ChatSession session) {

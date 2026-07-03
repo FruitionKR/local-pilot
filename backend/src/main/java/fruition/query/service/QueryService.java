@@ -3,6 +3,8 @@ package fruition.query.service;
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.domain.ChatMessageRelatedPage;
+import fruition.chat.domain.ChatSession;
+import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
@@ -12,6 +14,7 @@ import fruition.query.repository.PipelineQueryRequester;
 import fruition.query.repository.PipelineQueryResponse;
 import fruition.query.dto.QueryResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,7 +48,11 @@ public class QueryService {
         return query(sessionId, question, null, null);
     }
 
+    @Transactional
     public QueryResponse query(String sessionId, String question, String requestId, String logCallbackUrl) {
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ChatSessionNotFoundException(sessionId));
+
         Instant userCreatedAt = Instant.now();
 
         String pairId = UUID.randomUUID().toString();
@@ -63,23 +70,26 @@ public class QueryService {
                     ? errorBody.substring(0, Math.min(errorBody.length(), 255))
                     : e.getMessage();
             chatMessageRepository.saveAll(List.of(
-                    new ChatMessage(userMessageId, sessionId, pairId, "user", question, "failed", userCreatedAt, errorMessage),
-                    new ChatMessage(assistantMessageId, sessionId, pairId, "assistant", "", "failed", Instant.now(), errorMessage)
+                    new ChatMessage(userMessageId, session, pairId, "user", question, "failed", userCreatedAt, errorMessage),
+                    new ChatMessage(assistantMessageId, session, pairId, "assistant", "", "failed", Instant.now(), errorMessage)
             ));
-            touchSessionLastMessageAt(sessionId);
+            touchSessionLastMessageAt(session);
             throw e;
         }
 
         Instant assistantCreatedAt = Instant.now();
 
+        ChatMessage assistantMessage = new ChatMessage(
+                assistantMessageId, session, pairId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt, null);
+
         chatMessageRepository.saveAll(List.of(
-                new ChatMessage(userMessageId, sessionId, pairId, "user", question, "completed", userCreatedAt, null),
-                new ChatMessage(assistantMessageId, sessionId, pairId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt, null)
+                new ChatMessage(userMessageId, session, pairId, "user", question, "completed", userCreatedAt, null),
+                assistantMessage
         ));
 
-        referenceRepository.saveAll(buildReferences(assistantMessageId, pipelineResponse));
-        relatedPageRepository.saveAll(buildRelatedPages(assistantMessageId, pipelineResponse));
-        touchSessionLastMessageAt(sessionId);
+        referenceRepository.saveAll(buildReferences(assistantMessage, pipelineResponse));
+        relatedPageRepository.saveAll(buildRelatedPages(assistantMessage, pipelineResponse));
+        touchSessionLastMessageAt(session);
 
         return new QueryResponse(
                 new QueryResponse.MessageSummary(userMessageId, "user", question, "completed", userCreatedAt),
@@ -91,14 +101,12 @@ public class QueryService {
         );
     }
 
-    private void touchSessionLastMessageAt(String sessionId) {
-        chatSessionRepository.findById(sessionId).ifPresent(session -> {
-            session.touchLastMessageAt(Instant.now());
-            chatSessionRepository.save(session);
-        });
+    private void touchSessionLastMessageAt(ChatSession session) {
+        session.touchLastMessageAt(Instant.now());
+        chatSessionRepository.save(session);
     }
 
-    private List<ChatMessageRelatedPage> buildRelatedPages(String assistantMessageId,
+    private List<ChatMessageRelatedPage> buildRelatedPages(ChatMessage assistantMessage,
                                                               PipelineQueryResponse pipelineResponse) {
         if (pipelineResponse.relatedPages() == null) return List.of();
 
@@ -107,14 +115,14 @@ public class QueryService {
         for (int i = 0; i < relatedPages.size(); i++) {
             PipelineQueryResponse.RelatedPage rp = relatedPages.get(i);
             pages.add(new ChatMessageRelatedPage(
-                    assistantMessageId, rp.id(), rp.pageType(), rp.title(), rp.slug(),
+                    assistantMessage, rp.id(), rp.pageType(), rp.title(), rp.slug(),
                     rp.relevanceScore(), rp.role(), rp.depth(), i + 1
             ));
         }
         return pages;
     }
 
-    private List<ChatMessageReference> buildReferences(String assistantMessageId,
+    private List<ChatMessageReference> buildReferences(ChatMessage assistantMessage,
                                                         PipelineQueryResponse pipelineResponse) {
         if (pipelineResponse.evidenceSnippets() == null) return List.of();
 
@@ -124,7 +132,7 @@ public class QueryService {
                 continue;
             }
             refs.add(new ChatMessageReference(
-                    assistantMessageId, REFERENCE_TYPE_SOURCE_BLOCK,
+                    assistantMessage, REFERENCE_TYPE_SOURCE_BLOCK,
                     snippet.sourceDocumentId(), snippet.rank(),
                     snippet.sourceBlockIds(), snippet.text()
             ));

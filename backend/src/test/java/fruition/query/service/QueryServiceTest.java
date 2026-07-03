@@ -4,6 +4,7 @@ import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.domain.ChatMessageRelatedPage;
 import fruition.chat.domain.ChatSession;
+import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
@@ -49,7 +50,7 @@ class QueryServiceTest {
     void setUp() {
         queryService = new QueryService(
                 pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository, chatSessionRepository);
-        when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(chatSessionRepository.findById(SESSION_ID))
@@ -154,6 +155,15 @@ class QueryServiceTest {
         assertThat(assistantMsg.getRole()).isEqualTo("assistant");
         assertThat(assistantMsg.getStatus()).isEqualTo("failed");
         assertThat(assistantMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+    }
+
+    @Test
+    @DisplayName("세션이 존재하지 않으면 ChatSessionNotFoundException을 던진다")
+    void query_unknownSession_throwsChatSessionNotFound() {
+        when(chatSessionRepository.findById("session_unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> queryService.query("session_unknown", "질문"))
+                .isInstanceOf(ChatSessionNotFoundException.class);
     }
 
     private PipelineQueryResponse samplePipelineResponse() {

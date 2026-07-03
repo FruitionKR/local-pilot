@@ -364,7 +364,17 @@ public class DocumentService {
         verifyWorkspaceOwnership(workspaceId, userId);
         Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        deleteInternal(document);
+    }
 
+    /** 워크스페이스 삭제 시 소속 문서를 함께 정리한다. DB에 workspace_id FK CASCADE가 없어 애플리케이션에서 직접 처리한다. */
+    @Transactional
+    public void deleteAllByWorkspaceId(String workspaceId) {
+        documentRepository.findAllByWorkspaceId(workspaceId).forEach(this::deleteInternal);
+    }
+
+    private void deleteInternal(Document document) {
+        String documentId = document.getId();
         String sourceUri = document.getSourceUri();
         String extractedTextUri = document.getExtractedTextUri();
 
