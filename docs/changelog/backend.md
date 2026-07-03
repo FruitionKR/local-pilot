@@ -26,6 +26,34 @@ Google OAuth 로그인을 브라우저로 실제 검증하던 중, `infra/.env`�
 
 ---
 
+### fix: /api/** 요청에 CORS 설정 추가
+
+**배경**
+
+Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔드에 CORS 설정이 전혀 없다는 걸 발견했다. 지금은 프론트엔드가 없어서 안 드러났지만, 프론트엔드(`localhost:3000`)가 fetch/XHR로 백엔드(`localhost:8080`)의 `/api/auth/oauth/exchange` 등을 호출하는 순간 브라우저가 차단하는 구조였다.
+
+**추가/변경된 것**
+
+- `SecurityConfig`에 `CorsConfigurationSource` 빈 추가, 필터체인에 `.cors(...)` 연결. `/api/**` 경로에 적용.
+- 허용 origin은 하드코딩하지 않고 `app.cors.allowed-origins` 설정값(콤마 구분, `List<String>`)으로 뺐다. 기존 `app.oauth.frontend-redirect-uri` 패턴과 동일하게 구성.
+- `application.properties`에 `app.cors.allowed-origins=${CORS_ALLOWED_ORIGINS:http://localhost:3000}` 추가.
+- `infra/.env.example`에 `CORS_ALLOWED_ORIGINS=http://localhost:3000` 추가.
+- 허용 HTTP 메서드는 실제 컨트롤러에서 쓰는 것만 포함: `GET, POST, PATCH, DELETE, OPTIONS`.
+
+**검증**
+
+- `./gradlew compileJava` 통과.
+- 관련 슬라이스 테스트(`SecurityConfig`를 `@Import`하는 `AuthControllerTest`, `WorkspaceControllerTest`, `DocumentControllerTest`, `QueryRunControllerTest`, `QueryControllerTest`, `ChatSessionControllerTest`) 전부 통과.
+- 백엔드 재기동 후 `curl -X OPTIONS`로 preflight 요청 시 `Access-Control-Allow-Origin: http://localhost:3000` 헤더 확인.
+- `Origin: http://localhost:3000`을 붙인 실제 요청(`GET /api/workspaces`)에서도 CORS 헤더가 정상적으로 붙는 것 확인(응답 자체는 인증 필요라 401, CORS 차단은 아님).
+- 기존 Google OAuth 리다이렉트(`/oauth2/authorization/google`)가 CORS 설정 추가 후에도 동일하게 동작하는 것 재확인.
+
+**주의사항**
+
+- `app.cors.allowed-origins`는 콤마로 여러 origin을 넣을 수 있게 `List<String>`으로 바인딩했다. 배포 환경이 늘어나면 `CORS_ALLOWED_ORIGINS` 값에 콤마로 추가하면 된다.
+
+---
+
 ### refactor: chat_sessions 하위 리소스 삭제를 DB FK ON DELETE CASCADE로 전환
 
 **배경**
