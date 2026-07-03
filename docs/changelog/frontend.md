@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### refactor: graph 캔버스 모듈 정리
+
+**변경 배경**
+
+- `graphPhysics`에 모든 분기가 14를 반환하는 dead if-체인이 있었고, link마다 `nodes.find()`를 도는 O(L×N) 탐색이 있었다.
+- `useGraphCanvas`가 초기화 시 localStorage cache를 3회 파싱했고, render 중 ref 할당(side-effect)이 있었다.
+
+**변경된 내용**
+
+- `graphPhysics`: `FIXED_NODE_SIZE` 단일 상수화, node Map 1회 생성으로 O(1) 조회 전환, `PAIR_DISTANCE` 상수 추출.
+- `graphGeometry`: 거리 영향도 if-체인을 `DISTANCE_INFLUENCE` lookup 배열로 교체(값 동일).
+- `graphCache`: `JSON.parse` 결과를 `unknown`으로 받아 기존 필드 검사로 좁히도록 변경.
+- `useGraphCanvas`: cache 1회 읽기로 통합, render 중 ref 할당을 `useLayoutEffect`로 이동, 무의미한 `clampZoom` wrapper 제거, layout 버전 문자열 상수화.
+- `useGraphPointer`: 버튼 마스크 상수화, 드래그 ref 2개를 단일 `nodeDragRef`로 병합, `startPanning`→`handlePointerDown` rename.
+- `graphDrawing`: DPR resize를 `ensureCanvasSize`로, hover 연산을 `computeLinkedHoverAmounts`로 추출, Figma 유래 marker 수치 상수화, gradient 색상을 `hexToRgb(GRAPH_COLORS.hoverNode)`로 파생.
+- `useGraphAnimation`: 프레임/tick 매직 넘버 상수화.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
 ### refactor: document-sidebar와 _hooks 정리
 
 **변경 배경**

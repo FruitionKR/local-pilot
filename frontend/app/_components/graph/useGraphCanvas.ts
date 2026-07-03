@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { GraphCache, GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
 import { GRAPH_ZOOM, linkKey } from "../../_lib/graph";
 import { readStoredGraphCache, writeStoredGraphCache } from "./graphCache";
 import { drawGraphFrame } from "./graphDrawing";
@@ -19,6 +19,8 @@ import { useGraphPointer } from "./useGraphPointer";
 const HOVER_SMOOTHING_MS = 320;
 const HOVER_SETTLE_THRESHOLD = 0.002;
 const GRAPH_CACHE_DEBOUNCE_MS = 700;
+/** graph cache signature의 레이아웃 버전 prefix */
+const GRAPH_LAYOUT_VERSION = "api-layout-v3";
 
 export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNodePreview }: {
   nodes: GraphNode[];
@@ -30,7 +32,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     () => {
       const nodeSignature = nodes.map((node) => node.id).sort().join("|");
       const linkSignature = links.map((link) => linkKey(link.from, link.to)).sort().join("|");
-      return `api-layout-v3:${nodeSignature}:${linkSignature}`;
+      return `${GRAPH_LAYOUT_VERSION}:${nodeSignature}:${linkSignature}`;
     },
     [links, nodes]
   );
@@ -66,24 +68,19 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     return readStoredGraphCache({ signature: graphSignature, nodes });
   }
 
-  function cachedOrInitialPositionsForCurrentGraph() {
-    return readGraphCacheForCurrentGraph()?.positions ?? initialNodePositions;
+  // 초기 렌더에서 graph cache를 한 번만 읽어 positions/pan/zoom 초기값에 함께 사용한다.
+  const initialCacheRef = useRef<GraphCache | null | undefined>(undefined);
+  if (initialCacheRef.current === undefined) {
+    initialCacheRef.current = readGraphCacheForCurrentGraph();
   }
-
-  function cachedOrInitialPanForCurrentGraph() {
-    return readGraphCacheForCurrentGraph()?.pan ?? { x: 0, y: 0 };
-  }
-
-  function cachedOrInitialZoomForCurrentGraph() {
-    return readGraphCacheForCurrentGraph()?.zoom ?? 1;
-  }
+  const initialCache = initialCacheRef.current;
 
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [visibleNodeCount, setVisibleNodeCount] = useState(0);
-  const [graphZoom, setGraphZoom] = useState(cachedOrInitialZoomForCurrentGraph);
-  const [graphPan, setGraphPan] = useState<NodePosition>(cachedOrInitialPanForCurrentGraph);
+  const [graphZoom, setGraphZoom] = useState(() => initialCache?.zoom ?? 1);
+  const [graphPan, setGraphPan] = useState<NodePosition>(() => initialCache?.pan ?? { x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const nodePositionsRef = useRef<NodePositionMap>(cachedOrInitialPositionsForCurrentGraph());
+  const nodePositionsRef = useRef<NodePositionMap>(initialCache?.positions ?? initialNodePositions);
   const selectedNodeIdRef = useRef<string | null>(null);
   const hoveredNodeIdRef = useRef<string | null>(null);
   const nodeHoverAmountsRef = useRef<Record<string, number>>({});
@@ -109,7 +106,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
         cached?.positions[node.id] ?? nodePositionsRef.current[node.id] ?? initialNodePositions[node.id]
       ])
     );
-    const nextZoom = clampZoom(cached?.zoom ?? graphZoomRef.current);
+    const nextZoom = clampGraphZoom(cached?.zoom ?? graphZoomRef.current);
     const nextPan = clampPan(cached?.pan ?? graphPanRef.current, nextZoom);
     nodePositionsRef.current = nextPositions;
     graphPanRef.current = nextPan;
@@ -174,7 +171,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      const nextZoom = clampZoom(graphZoomRef.current * Math.exp(-event.deltaY * GRAPH_ZOOM.wheelSensitivity));
+      const nextZoom = clampGraphZoom(graphZoomRef.current * Math.exp(-event.deltaY * GRAPH_ZOOM.wheelSensitivity));
       const nextPan = clampPan(graphPanRef.current, nextZoom);
       graphZoomRef.current = nextZoom;
       graphPanRef.current = nextPan;
@@ -287,7 +284,10 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     });
   }
 
-  drawGraphRef.current = drawGraph;
+  // render 중 ref 할당을 피하기 위해 매 렌더 후 layout effect에서 갱신한다.
+  useLayoutEffect(() => {
+    drawGraphRef.current = drawGraph;
+  });
 
   function advanceHoverAnimation(deltaMs: number) {
     const targetNodeId = hoveredNodeIdRef.current ?? selectedNodeIdRef.current;
@@ -323,10 +323,6 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
   }
 
   advanceHoverAnimationRef.current = advanceHoverAnimation;
-
-  function clampZoom(nextZoom: number) {
-    return clampGraphZoom(nextZoom);
-  }
 
   function clampPan(nextPan: NodePosition, nextZoom = graphZoomRef.current) {
     const canvas = canvasRef.current;

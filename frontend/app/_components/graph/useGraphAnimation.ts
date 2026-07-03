@@ -2,6 +2,11 @@ import type { MutableRefObject } from "react";
 import { useEffect } from "react";
 import type { NodePositionMap } from "../../_lib/types";
 
+/** 첫 프레임에서 이전 프레임 시각이 없을 때 사용하는 delta 기본값(ms) */
+const INITIAL_FRAME_DELTA_MS = 16;
+/** 물리 tick 실행 간격(ms) */
+const PHYSICS_TICK_INTERVAL_MS = 32;
+
 export function useGraphAnimation({
   tickGraphRef,
   advanceHoverAnimationRef,
@@ -23,11 +28,11 @@ export function useGraphAnimation({
     let lastHoverFrame = 0;
 
     const animate = (time: number) => {
-      const hoverDelta = lastHoverFrame > 0 ? time - lastHoverFrame : 16;
+      const hoverDelta = lastHoverFrame > 0 ? time - lastHoverFrame : INITIAL_FRAME_DELTA_MS;
       lastHoverFrame = time;
       const hoverChanged = advanceHoverAnimationRef.current(hoverDelta);
 
-      if (time - lastFrame > 32) {
+      if (time - lastFrame > PHYSICS_TICK_INTERVAL_MS) {
         lastFrame = time;
         const anchorId = draggingNodeIdRef.current;
         const next = tickGraphRef.current(nodePositionsRef.current, anchorId);

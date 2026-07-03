@@ -15,17 +15,19 @@ export type GraphPairForce = {
   minDistance: number;
 };
 
-const FIXED_NODE_SIZE = {
-  concept: 14,
-  raw: 14,
-  source: 14
+const FIXED_NODE_SIZE = 14;
+
+/** 노드 종류 조합별 pair 간 추가 거리 */
+const PAIR_DISTANCE = {
+  default: 48,
+  sourceToSource: 118,
+  sourceToOther: 58,
+  rawInvolved: 42
 } as const;
 
 export function buildNodeSizes(nodes: GraphNode[]) {
   return nodes.reduce<Record<string, number>>((sizes, node) => {
-    if (node.kind === "raw") sizes[node.id] = FIXED_NODE_SIZE.raw;
-    else if (node.kind === "source") sizes[node.id] = FIXED_NODE_SIZE.source;
-    else sizes[node.id] = FIXED_NODE_SIZE.concept;
+    sizes[node.id] = FIXED_NODE_SIZE;
     return sizes;
   }, {});
 }
@@ -37,9 +39,10 @@ export function buildLinkForces({
   links: GraphLink[];
   nodes: GraphNode[];
 }) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   return links.map((link) => ({
     ...link,
-    idealDistance: idealLinkDistanceValue(link, nodes),
+    idealDistance: idealLinkDistanceValue(link, nodeById),
     weight: 1
   }));
 }
@@ -310,21 +313,24 @@ export function tickGraphPositions({
     deltas[node.id].y += (initialPosition.y - position.y) * GRAPH_PHYSICS.originStrength;
   });
 
+  // damping이 적용된 이동 후 좌표
+  const dampedPositions: NodePositionMap = Object.fromEntries(
+    nodes.map((node) => {
+      const position = next[node.id] ?? initialNodePositions[node.id];
+      const delta = deltas[node.id];
+      if (node.id === anchorId) return [node.id, clampPosition(position, node.id)];
+      const damping = isRevealingGraph ? GRAPH_PHYSICS.revealDamping : GRAPH_PHYSICS.damping;
+
+      return [node.id, clampPosition({
+        x: position.x + delta.x * damping,
+        y: position.y + delta.y * damping
+      }, node.id)];
+    })
+  );
+
   const nextPositions = resolveGraphCollisions({
     nodes,
-    positions: Object.fromEntries(
-      nodes.map((node) => {
-        const position = next[node.id] ?? initialNodePositions[node.id];
-        const delta = deltas[node.id];
-        if (node.id === anchorId) return [node.id, clampPosition(position, node.id)];
-        const damping = isRevealingGraph ? GRAPH_PHYSICS.revealDamping : GRAPH_PHYSICS.damping;
-
-        return [node.id, clampPosition({
-          x: position.x + delta.x * damping,
-          y: position.y + delta.y * damping
-        }, node.id)];
-      })
-    ),
+    positions: dampedPositions,
     initialNodePositions,
     pairForces,
     anchorId,
@@ -344,9 +350,9 @@ export function tickGraphPositions({
   return nextPositions;
 }
 
-function idealLinkDistanceValue(link: GraphLink, nodes: GraphNode[]) {
-  const from = nodes.find((node) => node.id === link.from);
-  const to = nodes.find((node) => node.id === link.to);
+function idealLinkDistanceValue(link: GraphLink, nodeById: Map<string, GraphNode>) {
+  const from = nodeById.get(link.from);
+  const to = nodeById.get(link.to);
   if (!from || !to) return GRAPH_PHYSICS.linkDistance.fallback * GRAPH_PHYSICS.linkDistanceMultiplier;
 
   const kinds = [graphNodeKind(from), graphNodeKind(to)];
@@ -365,10 +371,10 @@ function pairDistanceValue(nodeA: GraphNode, nodeB: GraphNode, nodeSize: (node: 
   const base = physicsNodeRadius(nodeA, nodeSize) + physicsNodeRadius(nodeB, nodeSize);
   const kindA = graphNodeKind(nodeA);
   const kindB = graphNodeKind(nodeB);
-  let distance = base + 48;
-  if (kindA === "source" && kindB === "source") distance = base + 118;
-  else if (kindA === "source" || kindB === "source") distance = base + 58;
-  else if (kindA === "raw" || kindB === "raw") distance = base + 42;
+  let distance = base + PAIR_DISTANCE.default;
+  if (kindA === "source" && kindB === "source") distance = base + PAIR_DISTANCE.sourceToSource;
+  else if (kindA === "source" || kindB === "source") distance = base + PAIR_DISTANCE.sourceToOther;
+  else if (kindA === "raw" || kindB === "raw") distance = base + PAIR_DISTANCE.rawInvolved;
   const typeMultiplier = kindA === "source" && kindB === "source"
     ? GRAPH_PHYSICS.sourceNodeDistanceMultiplier
     : 1;

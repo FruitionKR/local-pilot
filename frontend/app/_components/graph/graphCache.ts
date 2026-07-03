@@ -14,7 +14,10 @@ export function readStoredGraphCache({
     const rawCache = window.localStorage.getItem(GRAPH_CACHE_KEY);
     if (!rawCache) return null;
 
-    const cache = JSON.parse(rawCache) as Partial<GraphCache>;
+    const parsed: unknown = JSON.parse(rawCache);
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    const cache = parsed as Partial<GraphCache>;
     if (cache.signature !== signature || !cache.positions || !cache.pan || typeof cache.zoom !== "number") {
       return null;
     }
