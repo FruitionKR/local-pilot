@@ -196,7 +196,7 @@ User/Workspace/Auth 기반을 구현한 뒤, 기존 documents API가 로그인·
 
 **배경**
 
-MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 사용자별로 격리 관리하려면 인증 체계가 필요합니다. `docs/spec/fruition-backend-mvp-erd.md` ERD를 기준으로 user, workspace, 인증 기능을 순차 구현하기로 하고 그 첫 단계로 이메일 회원가입을 추가했습니다.
+MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 사용자별로 격리 관리하려면 인증 체계가 필요합니다. `docs/spec/Fruition_MVP_Erd.md` ERD를 기준으로 user, workspace, 인증 기능을 순차 구현하기로 하고 그 첫 단계로 이메일 회원가입을 추가했습니다.
 
 **추가/변경된 것**
 
