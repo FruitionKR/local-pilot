@@ -4,6 +4,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-04
+
+### refactor: _lib 모듈 dead code 제거와 중복 통합
+
+**변경 배경**
+
+- `_lib/tree.ts`에 호출처가 없는 `buildWikiTreeGroups`(57줄)가 남아 있었고, 동일한 재귀 트리 순회 패턴이 5개 함수에 반복되어 있었다.
+- `graph.ts`에 `NODE_PREFIX` 상수가 있음에도 `"raw:"`, `"source:"` 리터럴이 인라인으로 흩어져 있었고, `api.ts`의 에러 메시지 일부가 `ERROR_MESSAGES` 상수를 거치지 않았다.
+
+**변경된 내용**
+
+- `tree.ts`: dead 함수 `buildWikiTreeGroups` 삭제, 재귀 순회를 `mapTreeItemById` 헬퍼로 통합, wiki 그룹 ID를 상수로 추출, `raw:` 리터럴을 `makeRawId`로 대체.
+- `graph.ts`: `makeRawId` 헬퍼 추가, `buildGraphFromBackend` 내부 리터럴을 `NODE_PREFIX`/`makeSourceId`/`makeRawId`로 통일.
+- `api.ts`: `fetchBackendData`/`fetchWikiPage` 인라인 에러 문자열을 `ERROR_MESSAGES`로 이동, `fetchWikiPage`도 `parseErrorResponse`를 사용하도록 통일.
+- `types.ts`: `QueryRelatedPageResponse`/`ChatMessageRelatedPageResponse` 공통 필드를 `RelatedPageBase`로 추출.
+- 동작 변경 없음(순수 정리). export 시그니처는 `makeRawId` 추가 외 변화 없음.
+
+**검증 결과**
+
+- `npx tsc --noEmit` 통과.
+
 ## 2026-06-26
 
 ### fix: 원문 패널에서 자료관리 클릭 시 그래프 노드 선택 표시 해제

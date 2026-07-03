@@ -1,4 +1,5 @@
 import type { DragEvent as ReactDragEvent } from "react";
+import { makeRawId } from "./graph";
 import type { DocumentItemResponse, DocumentUploadResponse, DropPosition, DropTarget, Project, TreeItem, WikiGraphResponse } from "./types";
 
 export const initialProjects: Project[] = [
@@ -26,6 +27,10 @@ export function canDragTreeItem(item: TreeItem) {
   if (isWikiItem(item) && item.wikiKind) return true;
   return !item.generated && !isWikiItem(item);
 }
+
+// 백엔드 wiki graph에서 자동 생성되는 그룹 폴더 ID
+const WIKI_SOURCE_GROUP_ID = "wiki-source-pages";
+const WIKI_CONCEPT_GROUP_ID = "wiki-concept-pages";
 
 function isGeneratedGroup(item: TreeItem, groupId: string) {
   return item.generated && item.id === groupId;
@@ -76,12 +81,20 @@ export function removeTreeItem(items: TreeItem[], itemId: string): { items: Tree
   return { items: nextItems, removed };
 }
 
-function replaceTreeItem(items: TreeItem[], itemId: string, replacement: TreeItem): TreeItem[] {
+/**
+ * itemId와 일치하는 항목을 update 결과로 교체한 새 트리를 반환합니다.
+ * 재귀 트리 순회 패턴을 한 곳에서 관리합니다.
+ */
+function mapTreeItemById(items: TreeItem[], itemId: string, update: (item: TreeItem) => TreeItem): TreeItem[] {
   return items.map((item) => {
-    if (item.id === itemId) return replacement;
-    if (item.children?.length) return { ...item, children: replaceTreeItem(item.children, itemId, replacement) };
+    if (item.id === itemId) return update(item);
+    if (item.children?.length) return { ...item, children: mapTreeItemById(item.children, itemId, update) };
     return item;
   });
+}
+
+function replaceTreeItem(items: TreeItem[], itemId: string, replacement: TreeItem): TreeItem[] {
+  return mapTreeItemById(items, itemId, () => replacement);
 }
 
 function insertTreeItem(items: TreeItem[], movedItem: TreeItem, target: DropTarget): TreeItem[] {
@@ -126,11 +139,7 @@ export function mergeTreeItemsIntoFolder(items: TreeItem[], draggedId: string, t
 }
 
 export function updateTreeItemLabel(items: TreeItem[], itemId: string, label: string): TreeItem[] {
-  return items.map((item) => {
-    if (item.id === itemId) return { ...item, label, customLabel: true };
-    if (item.children?.length) return { ...item, children: updateTreeItemLabel(item.children, itemId, label) };
-    return item;
-  });
+  return mapTreeItemById(items, itemId, (item) => ({ ...item, label, customLabel: true }));
 }
 
 export function findTreeItem(items: TreeItem[], itemId: string): TreeItem | null {
@@ -154,13 +163,7 @@ export function findTreeItemByGraphNodeId(items: TreeItem[], graphNodeId: string
 export function appendItemsToFolder(items: TreeItem[], folderId: string | null, nextItems: TreeItem[]): TreeItem[] {
   if (!folderId) return [...items, ...nextItems];
 
-  return items.map((item) => {
-    if (item.id === folderId) {
-      return { ...item, children: [...(item.children ?? []), ...nextItems] };
-    }
-    if (item.children?.length) return { ...item, children: appendItemsToFolder(item.children, folderId, nextItems) };
-    return item;
-  });
+  return mapTreeItemById(items, folderId, (item) => ({ ...item, children: [...(item.children ?? []), ...nextItems] }));
 }
 
 export function appendFolderToFolder(items: TreeItem[], folderId: string | null, folder: TreeItem): TreeItem[] {
@@ -168,97 +171,30 @@ export function appendFolderToFolder(items: TreeItem[], folderId: string | null,
 }
 
 export function updateTreeItemStatus(items: TreeItem[], itemId: string, status: TreeItem["status"], errorMessage?: string): TreeItem[] {
-  return items.map((item) => {
-    if (item.id === itemId) return { ...item, status, errorMessage };
-    if (item.children?.length) return { ...item, children: updateTreeItemStatus(item.children, itemId, status, errorMessage) };
-    return item;
-  });
+  return mapTreeItemById(items, itemId, (item) => ({ ...item, status, errorMessage }));
 }
 
 export function applyUploadedDocument(items: TreeItem[], itemId: string, document: DocumentUploadResponse): TreeItem[] {
-  return items.map((item) => {
-    if (item.id === itemId) {
-      return {
-        ...item,
-        label: document.filename,
-        status: document.status,
-        errorMessage: undefined,
-        documentId: document.id,
-        graphNodeId: `raw:${document.id}`,
-        mimeType: document.mime_type,
-        byteSize: document.byte_size,
-        sourceUri: document.source_uri,
-        uploadedAt: document.uploaded_at
-      };
-    }
-    if (item.children?.length) return { ...item, children: applyUploadedDocument(item.children, itemId, document) };
-    return item;
-  });
+  return mapTreeItemById(items, itemId, (item) => ({
+    ...item,
+    label: document.filename,
+    status: document.status,
+    errorMessage: undefined,
+    documentId: document.id,
+    graphNodeId: makeRawId(document.id),
+    mimeType: document.mime_type,
+    byteSize: document.byte_size,
+    sourceUri: document.source_uri,
+    uploadedAt: document.uploaded_at
+  }));
 }
 
 function removeGeneratedWikiGroups(items: TreeItem[]): TreeItem[] {
   return items
-    .filter((item) => !isGeneratedGroup(item, "wiki-source-pages") && !isGeneratedGroup(item, "wiki-concept-pages"))
+    .filter((item) => !isGeneratedGroup(item, WIKI_SOURCE_GROUP_ID) && !isGeneratedGroup(item, WIKI_CONCEPT_GROUP_ID))
     .map((item) => item.children?.length ? { ...item, children: removeGeneratedWikiGroups(item.children) } : item);
 }
 
-function buildWikiTreeGroups(graph: WikiGraphResponse, existingItems?: TreeItem[]): TreeItem[] {
-  const sourceItems = (graph.nodes ?? [])
-    .filter((node) => node.page_type === "source")
-    .map((node) => ({
-      id: `wiki-item-${node.id}`,
-      label: node.title || node.slug || node.id,
-      type: "wiki" as const,
-      wikiKind: "source" as const,
-      graphNodeId: node.id,
-      generated: true
-    }));
-
-  const conceptItems = (graph.nodes ?? [])
-    .filter((node) => node.page_type === "concept")
-    .map((node) => ({
-      id: `wiki-item-${node.id}`,
-      label: node.title || node.slug || node.id,
-      type: "wiki" as const,
-      wikiKind: "concept" as const,
-      graphNodeId: node.id,
-      generated: true
-    }));
-
-  const sortByExistingOrder = (items: TreeItem[], existingGroup?: TreeItem): TreeItem[] => {
-    if (!existingGroup?.children?.length) return items;
-    const orderMap = new Map(existingGroup.children.map((child, idx) => [child.graphNodeId ?? child.id, idx]));
-    return [...items].sort((a, b) => {
-      const aIdx = orderMap.get(a.graphNodeId ?? a.id) ?? Infinity;
-      const bIdx = orderMap.get(b.graphNodeId ?? b.id) ?? Infinity;
-      return aIdx - bIdx;
-    });
-  };
-
-  const existingSourceGroup = existingItems?.find((i) => i.id === "wiki-source-pages");
-  const existingConceptGroup = existingItems?.find((i) => i.id === "wiki-concept-pages");
-
-  const groups: TreeItem[] = [];
-  if (sourceItems.length > 0) {
-    groups.push({
-      id: "wiki-source-pages",
-      label: "Source 문서",
-      type: "folder",
-      generated: true,
-      children: sortByExistingOrder(sourceItems, existingSourceGroup)
-    });
-  }
-  if (conceptItems.length > 0) {
-    groups.push({
-      id: "wiki-concept-pages",
-      label: "Concept 문서",
-      type: "folder",
-      generated: true,
-      children: sortByExistingOrder(conceptItems, existingConceptGroup)
-    });
-  }
-  return groups;
-}
 function syncDocumentItems(items: TreeItem[], documents: DocumentItemResponse[]): TreeItem[] {
   const documentById = new Map(documents.map((document) => [document.id, document]));
   return items.map((item) => {
@@ -319,7 +255,7 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     type: "file" as const,
     status: document.status,
     documentId: document.id,
-    graphNodeId: `raw:${document.id}`,
+    graphNodeId: makeRawId(document.id),
     mimeType: document.mime_type,
     byteSize: document.byte_size,
     sourceUri: document.source_uri,

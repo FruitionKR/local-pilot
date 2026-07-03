@@ -103,14 +103,18 @@ export type BackendData = {
   graph: WikiGraphResponse;
 };
 
-export type QueryRelatedPageResponse = {
-  id: string;
+// 질의/채팅 응답이 공유하는 관련 페이지 공통 필드
+type RelatedPageBase = {
   page_type: string;
   title: string;
   slug: string;
   relevance_score: number;
   role: string;
   depth: number;
+};
+
+export type QueryRelatedPageResponse = RelatedPageBase & {
+  id: string;
 };
 
 export type QueryEvidenceSnippetResponse = {
@@ -144,14 +148,8 @@ export type ChatMessageReferenceResponse = {
   text?: string;
 };
 
-export type ChatMessageRelatedPageResponse = {
+export type ChatMessageRelatedPageResponse = RelatedPageBase & {
   wiki_page_id: string;
-  page_type: string;
-  title: string;
-  slug: string;
-  relevance_score: number;
-  role: string;
-  depth: number;
   rank: number;
 };
 

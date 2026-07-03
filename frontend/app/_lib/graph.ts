@@ -25,6 +25,13 @@ export function makeSourceId(documentId: string): string {
 }
 
 /**
+ * documentId로 raw 노드 ID를 생성합니다.
+ */
+export function makeRawId(documentId: string): string {
+  return `${NODE_PREFIX.raw}${documentId}`;
+}
+
+/**
  * raw 노드 ID에서 documentId를 복원합니다.
  */
 export function rawNodeIdToDocumentId(nodeId: string): string | null {
@@ -76,18 +83,18 @@ export function graphNodeKind(node: GraphNode) {
 export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: WikiGraphResponse) {
   const backendSourceByDocumentId = new Map(
     (graph.nodes ?? [])
-      .filter((node) => node.page_type === "source" && node.id.startsWith("source:"))
-      .map((node) => [node.id.replace("source:", ""), node])
+      .filter((node) => node.page_type === "source" && node.id.startsWith(NODE_PREFIX.source))
+      .map((node) => [node.id.slice(NODE_PREFIX.source.length), node])
   );
   const rawNodes: GraphNode[] = documents.map((document) => ({
-    id: `raw:${document.id}`,
+    id: makeRawId(document.id),
     label: document.filename,
     kind: "raw" as const
   }));
   const sourceNodes: GraphNode[] = documents.map((document) => {
     const backendSource = backendSourceByDocumentId.get(document.id);
     return {
-      id: `source:${document.id}`,
+      id: makeSourceId(document.id),
       label: backendSource?.title || document.filename,
       kind: "source" as const
     };
@@ -101,8 +108,8 @@ export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: 
     }));
 
   const rawSourceLinks: GraphLink[] = documents.map((document) => ({
-    from: `raw:${document.id}`,
-    to: `source:${document.id}`,
+    from: makeRawId(document.id),
+    to: makeSourceId(document.id),
     dashed: document.status !== "completed"
   }));
   const graphLinks: GraphLink[] = (graph.edges ?? []).map((edge) => ({
