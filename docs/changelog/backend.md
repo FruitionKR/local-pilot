@@ -6,6 +6,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-03
 
+### fix: bootRun이 infra/.env를 못 읽던 경로 버그 수정
+
+**배경**
+
+Google OAuth 로그인을 브라우저로 실제 검증하던 중, `infra/.env`에 채운 실제 Google client-id가 반영되지 않고 `dev-placeholder-client-id`만 보이는 걸 발견했다. 원인은 `backend/build.gradle`의 `bootRun.doFirst`가 `rootProject.file('infra/.env')`를 쓰고 있었는데, `backend/settings.gradle`이 `rootProject.name = 'backend'`만 선언한 단일 프로젝트 빌드라 `rootProject`가 `backend/` 디렉터리 자신을 가리켜서 실제로는 존재하지 않는 `backend/infra/.env`를 찾고 있었다. 이 세션에서 새로 생긴 버그가 아니라, `bootRun`으로 `infra/.env`를 자동 로드하는 기능이 도입된 시점부터 있었던 기존 버그다.
+
+**추가/변경된 것**
+
+- `backend/build.gradle`의 `bootRun.doFirst` 블록에서 `rootProject.file('infra/.env')` → `file("$projectDir/../infra/.env")`로 변경. `build.gradle`이 있는 `backend/`를 기준으로 상위(repo root)의 `infra/.env`를 가리키도록 고쳤다. `docs/local-runbook.md`, `backend/README.md`, `scripts/dev-up.sh`가 공통으로 전제하는 "`infra/.env`는 repo root 기준 단일 관리 파일"이라는 기존 정책과 동일하게 맞춘 것이다.
+
+**검증**
+
+- 백엔드 재기동 후 `curl -sI http://localhost:8080/oauth2/authorization/google`의 `Location` 헤더 `client_id` 파라미터가 `dev-placeholder-client-id`에서 실제 Google client-id로 바뀐 것을 확인.
+
+**주의사항**
+
+- 이 버그로 인해 그동안 `./gradlew bootRun`으로 실행할 때 `infra/.env`의 값이 사실상 한 번도 실제로 반영된 적이 없었다. 지금까지 "동작한 것처럼 보였던" 이유는 `application.properties`의 기본값이 로컬 Docker 인프라 설정과 우연히 일치했기 때문이다.
+
+---
+
 ### refactor: chat_sessions 하위 리소스 삭제를 DB FK ON DELETE CASCADE로 전환
 
 **배경**

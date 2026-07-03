@@ -58,7 +58,7 @@ tasks.named('test') {
 
 tasks.named('bootRun') {
 	doFirst {
-		def envFile = rootProject.file('infra/.env')
+		def envFile = file("$projectDir/../infra/.env")
 		if (envFile.exists()) {
 			envFile.readLines().each { line ->
 				if (line && !line.startsWith('#') && line.contains('=')) {
