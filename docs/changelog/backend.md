@@ -6,6 +6,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-03
 
+### fix: Swagger UI에 Authorize 버튼이 안 보이던 문제 수정
+
+**배경**
+
+Swagger UI(`/swagger-ui.html`)로 인증이 필요한 API를 직접 눌러보며 검증하려는데, Authorize 버튼 자체가 안 보였다. `OpenApiConfig`에 `SecurityScheme`이 전혀 정의되어 있지 않아 springdoc이 인증 UI를 만들지 않고 있었다.
+
+**추가/변경된 것**
+
+- `OpenApiConfig`에 `bearerAuth`(HTTP Bearer, JWT) `SecurityScheme`과 전역 `SecurityRequirement` 추가.
+
+**검증**
+
+- `./gradlew compileJava` 통과, 백엔드 재기동 후 `GET /v3/api-docs` 응답에 `securitySchemes.bearerAuth` 포함 확인.
+- Swagger UI 새로고침 후 Authorize 버튼 노출, 토큰 등록 후 인증 필요 API 정상 호출 확인.
+
+---
+
 ### refactor: 워크스페이스 소유 구조를 workspace_members 테이블로 전환
 
 **배경**
