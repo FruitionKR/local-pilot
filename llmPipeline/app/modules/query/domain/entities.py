@@ -110,11 +110,18 @@ class RetrievalSummary:
 
 
 @dataclass(frozen=True)
+class SourceReference:
+    source_document_id: str
+    source_block_id: str
+
+
+@dataclass(frozen=True)
 class EvidenceSnippet:
     rank: int
     source_document_id: str
     source_block_ids: list[str]
     text: str
+    source_refs: list[SourceReference] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

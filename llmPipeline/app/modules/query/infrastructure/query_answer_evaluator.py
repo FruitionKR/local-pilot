@@ -47,6 +47,13 @@ class QueryAnswerEvaluator(QueryEvaluatorPort):
                     "rank": snippet.rank,
                     "source_document_id": snippet.source_document_id,
                     "source_block_ids": snippet.source_block_ids,
+                    "source_refs": [
+                        {
+                            "source_document_id": ref.source_document_id,
+                            "source_block_id": ref.source_block_id,
+                        }
+                        for ref in snippet.source_refs
+                    ],
                     "text": snippet.text,
                 }
                 for snippet in context.evidence_snippets[:8]

@@ -17,6 +17,9 @@ Task:
 - Classify extracted terms into exactly one of: category, core_concept, section_candidate, mention.
 - Extract atomic evidence claims.
 - For each key point, observation, core_concept, section_candidate, mention, and evidence claim, cite direct anchor_block_ids that you actually used.
+- If you cannot cite at least one direct anchor_block_id for a factual key point,
+  observation, core_concept, section_candidate, mention, or evidence claim, omit
+  that item instead of returning it without refs.
 - Do not invent block ids.
 - Use the exact chunk_id from input if supplied.
 

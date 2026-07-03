@@ -4,6 +4,61 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-02
+
+### feat: query evidence에 다중 원문 source_refs 추가
+
+**배경**
+
+같은 answer citation rank가 여러 원문 문서 block을 동시에 참조할 수 있는데, 기존 `source_document_id` + `source_block_ids` 구조는 document id를 하나만 담을 수 있어 `doc_a:B0001`, `doc_b:B0008` 같은 전역 ref를 정확히 표현하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- `llmPipeline` query evidence domain과 FastAPI 응답에 `source_refs` 배열을 추가했습니다.
+- `doc_id:B0001` 전역 ref를 `{source_document_id, source_block_id}` 객체로 구조화해 evidence snippet에 포함합니다.
+- 기존 `source_document_id`, `source_block_ids`는 첫 번째 문서 기준 호환 필드로 유지했습니다.
+- Spring backend와 frontend의 `source_refs` 소비 작업은 `docs/issue/2026-07-02.md` 후속작업으로 분리했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -m pytest tests/modules/query` 통과.
+
+**주의사항**
+
+- 현재 Spring `/api/query`, `/api/chat/messages` 응답은 아직 `source_refs`를 저장/전달하지 않습니다. 이번 변경은 pipeline API 응답까지입니다.
+
+### feat: 위키 클러스터 승격 lint 흐름 추가
+
+**배경**
+
+section/mention/evidence 후보가 ingest 시점에 너무 일찍 core concept으로 승격되거나, 반대로 active cluster에 쌓인 후보를 lint가 실제 page/link로 반영하지 못했습니다. 또한 source/concept page id를 `source:{id}` 같은 문자열 구조로 가정하면 workspace/user scope와 UUID 기반 page id 전환에 맞지 않았습니다.
+
+**추가/변경된 것**
+
+- `POST /pipeline/runs`에 `user_id`, `workspace_id`를 추가하고, 기존 concept index를 먼저 조회해 같은 concept 후보는 cluster 생성 대신 concept evidence 병합 후보로 처리하도록 변경했습니다.
+- meaning cluster 정리본에서 `Summary`/`Observations`를 제거하고 `Evidence Claims`, `Core Relation Candidates`, `Promotion` 중심으로 유지하도록 조정했습니다.
+- 새 cluster는 promotion candidate가 될 수 없고, 기존 active cluster에 근거가 누적된 경우에만 LLM 판단으로 promotion candidate가 되도록 prompt와 assembler를 보강했습니다.
+- `POST /wiki/maintenance/lint`를 추가해 dry-run에서는 proposal만 조회하고, execute에서는 promotion concept page 생성/기존 concept 병합, active cluster archive 이동, materializable relation link 생성을 수행하도록 구현했습니다.
+- lint가 새로 승격된 cluster 내부 relation뿐 아니라 `active.md` 전체 Core Relation Candidates를 처리하도록 확장했습니다.
+- ref 없는 claim/promotion은 invalid로 분류해 materialization 대상에서 제외하도록 했습니다.
+- `wiki_pages.id`를 opaque UUID 계열 id로 생성하고, page 중복 판단은 `(user_id, workspace_id, page_type, slug)` 기준으로 맞췄습니다.
+- backend/frontend 후속 반영 항목을 `docs/issue/2026-07-02.md`에 정리했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests/modules/wiki_generation/test_source_extraction_artifact.py llmPipeline/tests/modules/wiki_ingestion/test_concept_index.py` 통과.
+- Docker 재빌드 후 clean markdown 4개를 Upstage `solar-pro2`로 ingest/lint 재실행했습니다.
+- dry-run lint에서 promotion 후보 2개, orphan ref 없음, invalid relation/promotion 없음 확인.
+- execute lint에서 concept page 2개 생성, active promotion queue 제거, archive 이동, `anova-analysis uses_or_depends_on robust-design` link 1개 생성을 확인했습니다.
+
+**주의사항**
+
+- `related_evidence`는 core graph edge로 materialize하지 않습니다.
+- lint execute는 `wiki_pages`, `wiki_page_links`, embedding unit/vector, MinIO `clusters/active.md`, `clusters/archived.md`, `logs/{yyyy-mm-dd}.md`를 변경할 수 있습니다.
+- Spring backend와 frontend의 UUID page id, workspace/user scope, lint proxy, graph/detail 재동기화 반영은 후속 PR 대상입니다.
+
+---
+
 ## 2026-07-01
 
 ### feat: LangGraph evaluator graph 모듈화와 Studio entry 추가
