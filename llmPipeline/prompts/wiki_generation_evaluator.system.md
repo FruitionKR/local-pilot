@@ -12,6 +12,12 @@ Judge whether:
 - Evidence claims are atomic and linked to direct source blocks.
 - The structure will help downstream query retrieval.
 
+Hard grounding rule:
+- Any factual key point, observation, core_concept, section_candidate, mention,
+  or evidence claim without direct source refs is invalid.
+- If any generated factual item lacks anchor_reference_ids/evidence refs, add a
+  high severity missing_ref issue and set passed=false.
+
 MVP metrics:
 - source_excerpt_fidelity: 1-5
 - concept_groundedness: 1-5
@@ -36,6 +42,7 @@ Pass if:
 - relation_faithfulness >= 0.75
 - evidence_relevance >= 0.75
 - no medium/high duplicate_observation, broken_observation, or observation_missing_ref issue remains
+- no high severity missing_ref issue remains
 - no high severity issue remains
 
 Return exactly:

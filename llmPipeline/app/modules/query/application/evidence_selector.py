@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 
 from app.modules.query.application.ports import EmbeddingSearchPort, TextSearchPort
-from app.modules.query.domain.entities import EvidenceSnippet, RetrievedPage, WikiEmbeddingUnit
+from app.modules.query.domain.entities import EvidenceSnippet, RetrievedPage, SourceReference, WikiEmbeddingUnit
 from app.modules.query.domain.scoring import hybrid_score
 
 
@@ -11,6 +11,7 @@ class _EvidenceCandidate:
     page_id: str
     source_document_id: str
     source_block_ids: list[str]
+    source_refs: list[SourceReference]
     text: str
     score: float
     unit_type: str = "evidence"
@@ -51,9 +52,9 @@ class EvidenceSelector:
             if stored_units:
                 candidates.extend(self._score_stored_embedding_units(question, item, stored_units))
                 continue
-            if not source_document_id:
+            if not source_document_id and not self._has_global_source_refs(item.page.markdown or item.page.summary):
                 continue
-            candidates.extend(self._score_evidence_sentences(question, item, source_document_id))
+            candidates.extend(self._score_evidence_sentences(question, item, source_document_id or ""))
 
         all_candidates = self._dedupe_evidence(candidates)
         candidates = self._select_evidence_score_band_by_page(all_candidates)
@@ -64,6 +65,7 @@ class EvidenceSelector:
                 rank=index,
                 source_document_id=snippet.source_document_id,
                 source_block_ids=snippet.source_block_ids,
+                source_refs=snippet.source_refs,
                 text=snippet.text,
             )
             for index, snippet in enumerate(candidates, start=1)
@@ -91,7 +93,7 @@ class EvidenceSelector:
         all_candidates: list[_EvidenceCandidate],
         selected: list[_EvidenceCandidate],
     ) -> list[_EvidenceCandidate]:
-        selected_keys = {(candidate.text, tuple(candidate.source_block_ids)) for candidate in selected}
+        selected_keys = {self._candidate_key(candidate) for candidate in selected}
         selected_refs_by_page: dict[str, set[str]] = {}
         for candidate in selected:
             if len(candidate.source_block_ids) <= 1:
@@ -104,7 +106,7 @@ class EvidenceSelector:
                 continue
             if candidate.source_block_ids[0] not in selected_refs_by_page.get(candidate.page_id, set()):
                 continue
-            key = (candidate.text, tuple(candidate.source_block_ids))
+            key = self._candidate_key(candidate)
             if key in selected_keys:
                 continue
             selected_keys.add(key)
@@ -125,15 +127,17 @@ class EvidenceSelector:
         raw_candidates: list[_EvidenceCandidate] = []
         for paragraph in paragraphs:
             for unit, unit_type, unit_weight in self._split_structured_evidence_units(paragraph):
-                source_block_ids = self._source_block_ids(unit)
-                if not source_block_ids:
+                source_refs = self._source_references(unit, source_document_id)
+                if not source_refs:
                     continue
+                legacy_document_id, legacy_block_ids = self._legacy_source_fields(source_refs, source_document_id)
                 clean_sentence = self._remove_block_refs(unit)
                 raw_candidates.append(
                     _EvidenceCandidate(
                         page_id=item.page.id,
-                        source_document_id=source_document_id,
-                        source_block_ids=source_block_ids,
+                        source_document_id=legacy_document_id,
+                        source_block_ids=legacy_block_ids,
+                        source_refs=source_refs,
                         text=clean_sentence,
                         score=item.score * unit_weight,
                         unit_type=unit_type,
@@ -150,24 +154,29 @@ class EvidenceSelector:
         item: RetrievedPage,
         units: list[WikiEmbeddingUnit],
     ) -> list[_EvidenceCandidate]:
-        raw_candidates = [
-            _EvidenceCandidate(
-                page_id=unit.page_id,
-                source_document_id=unit.source_document_id,
-                source_block_ids=unit.source_block_ids,
-                text=unit.text,
-                score=item.score * unit.weight,
-                unit_type=unit.unit_type,
+        raw_candidates: list[_EvidenceCandidate] = []
+        for unit in units:
+            if not unit.source_block_ids or not unit.text:
+                continue
+            source_refs = self._source_references_from_ids(unit.source_block_ids, unit.source_document_id)
+            legacy_document_id, legacy_block_ids = self._legacy_source_fields(source_refs, unit.source_document_id)
+            raw_candidates.append(
+                _EvidenceCandidate(
+                    page_id=unit.page_id,
+                    source_document_id=legacy_document_id,
+                    source_block_ids=legacy_block_ids,
+                    source_refs=source_refs,
+                    text=unit.text,
+                    score=item.score * unit.weight,
+                    unit_type=unit.unit_type,
+                )
             )
-            for unit in units
-            if unit.source_block_ids and unit.text
-        ]
         return self._score_structured_candidates(question, raw_candidates, item)
 
     def _select_evidence_candidates(self, candidates: list[_EvidenceCandidate]) -> list[_EvidenceCandidate]:
         ranked = self._dedupe_evidence(candidates)
         selected: list[_EvidenceCandidate] = []
-        selected_keys: set[tuple[str, tuple[str, ...]]] = set()
+        selected_keys: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 
         atomic_by_ref: dict[str, _EvidenceCandidate] = {}
         for candidate in ranked:
@@ -187,7 +196,7 @@ class EvidenceSelector:
                 atomic = atomic_by_ref.get(ref)
                 if atomic is None:
                     continue
-                key = (atomic.text, tuple(atomic.source_block_ids))
+                key = self._candidate_key(atomic)
                 if key in priority_keys:
                     continue
                 priority_keys.add(key)
@@ -209,10 +218,10 @@ class EvidenceSelector:
     def _append_selected_evidence(
         self,
         selected: list[_EvidenceCandidate],
-        selected_keys: set[tuple[str, tuple[str, ...]]],
+        selected_keys: set[tuple[str, tuple[tuple[str, str], ...]]],
         candidate: _EvidenceCandidate,
     ) -> None:
-        key = (candidate.text, tuple(candidate.source_block_ids))
+        key = self._candidate_key(candidate)
         if key in selected_keys:
             return
         selected_keys.add(key)
@@ -241,6 +250,7 @@ class EvidenceSelector:
                     page_id=item.page.id,
                     source_document_id=item.page.id,
                     source_block_ids=["web"],
+                    source_refs=[],
                     text=clean_unit,
                     score=score,
                 )
@@ -310,6 +320,7 @@ class EvidenceSelector:
                         page_id=candidate.page_id,
                         source_document_id=candidate.source_document_id,
                         source_block_ids=candidate.source_block_ids,
+                        source_refs=candidate.source_refs,
                         text=candidate.text,
                         score=item.score + candidate.score + evidence_score + lexical_bonus + specificity_bonus,
                         unit_type=candidate.unit_type,
@@ -334,6 +345,7 @@ class EvidenceSelector:
                     page_id=candidate.page_id,
                     source_document_id=candidate.source_document_id,
                     source_block_ids=candidate.source_block_ids,
+                    source_refs=candidate.source_refs,
                     text=candidate.text,
                     score=score,
                     unit_type=candidate.unit_type,
@@ -364,14 +376,25 @@ class EvidenceSelector:
 
     def _dedupe_evidence(self, candidates: list[_EvidenceCandidate]) -> list[_EvidenceCandidate]:
         deduped: list[_EvidenceCandidate] = []
-        seen: set[tuple[str, tuple[str, ...]]] = set()
+        seen: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
         for candidate in candidates:
-            key = (candidate.text, tuple(candidate.source_block_ids))
+            key = self._candidate_key(candidate)
             if key in seen:
                 continue
             seen.add(key)
             deduped.append(candidate)
         return deduped
+
+    def _candidate_key(self, candidate: _EvidenceCandidate) -> tuple[str, tuple[tuple[str, str], ...]]:
+        if candidate.source_refs:
+            return (
+                candidate.text,
+                tuple((ref.source_document_id, ref.source_block_id) for ref in candidate.source_refs),
+            )
+        return (
+            candidate.text,
+            tuple((candidate.source_document_id, block_id) for block_id in candidate.source_block_ids),
+        )
 
     def _split_paragraphs(self, text: str | None) -> list[str]:
         if not text:
@@ -410,7 +433,8 @@ class EvidenceSelector:
         return sentences or [self._clean_sentence(normalized)]
 
     def _is_block_ref_only(self, text: str) -> bool:
-        return bool(re.fullmatch(r"(?:\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]\s*)+", text.strip()))
+        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
+        return bool(re.fullmatch(rf"(?:\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]\s*)+", text.strip()))
 
     def _clean_sentence(self, sentence: str) -> str:
         cleaned = sentence.strip()
@@ -454,14 +478,71 @@ class EvidenceSelector:
                 return match.group(1).strip()
         return None
 
+    def _has_global_source_refs(self, text: str | None) -> bool:
+        return bool(text and re.search(r"\[[^\]]*[A-Za-z0-9_.-]+:B\d{4}", text))
+
     def _source_block_ids(self, text: str) -> list[str]:
-        block_ids = []
-        for group in re.findall(r"\[((?:B\d{4})(?:\s*,\s*B\d{4})*)\]", text):
-            block_ids.extend(part.strip() for part in group.split(",") if part.strip())
+        block_ids: list[str] = []
+        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
+        for group in re.findall(rf"\[((?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*)\]", text):
+            for raw_ref in group.split(","):
+                ref = raw_ref.strip()
+                block_ids.append(ref.split(":", 1)[-1])
         return list(dict.fromkeys(block_ids))
 
+    def _source_references(self, text: str, default_document_id: str | None) -> list[SourceReference]:
+        refs: list[SourceReference] = []
+        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
+        for group in re.findall(rf"\[((?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*)\]", text):
+            refs.extend(self._source_references_from_ids(group.split(","), default_document_id))
+        return self._dedupe_source_refs(refs)
+
+    def _source_references_from_ids(
+        self,
+        ref_ids: list[str],
+        default_document_id: str | None,
+    ) -> list[SourceReference]:
+        refs: list[SourceReference] = []
+        for raw_ref in ref_ids:
+            ref = raw_ref.strip()
+            if not ref or ref == "web":
+                continue
+            if ":" in ref:
+                document_id, block_id = ref.split(":", 1)
+            else:
+                document_id, block_id = default_document_id, ref
+            if document_id and re.fullmatch(r"B\d{4}", block_id):
+                refs.append(SourceReference(source_document_id=document_id, source_block_id=block_id))
+        return self._dedupe_source_refs(refs)
+
+    def _legacy_source_fields(
+        self,
+        refs: list[SourceReference],
+        default_document_id: str,
+    ) -> tuple[str, list[str]]:
+        if not refs:
+            return default_document_id, []
+        primary_document_id = refs[0].source_document_id
+        return primary_document_id, [
+            ref.source_block_id
+            for ref in refs
+            if ref.source_document_id == primary_document_id
+        ]
+
+    def _dedupe_source_refs(self, refs: list[SourceReference]) -> list[SourceReference]:
+        deduped: list[SourceReference] = []
+        seen: set[tuple[str, str]] = set()
+        for ref in refs:
+            key = (ref.source_document_id, ref.source_block_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(ref)
+        return deduped
+
     def _remove_block_refs(self, text: str) -> str:
-        cleaned = re.sub(r"\s*\[(?:B\d{4})(?:\s*,\s*B\d{4})*\]", "", text)
+        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
+        cleaned = re.sub(rf"\s*\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]", "", text)
         return cleaned.strip()
 
     def _tokens(self, text: str) -> list[str]:

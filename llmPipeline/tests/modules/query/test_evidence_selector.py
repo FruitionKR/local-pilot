@@ -53,7 +53,47 @@ class EvidenceSelectorTest(unittest.TestCase):
         self.assertEqual(len(snippets), 1)
         self.assertEqual(snippets[0].source_document_id, "doc_seed")
         self.assertEqual(snippets[0].source_block_ids, ["B0005"])
+        self.assertEqual(snippets[0].source_refs[0].source_document_id, "doc_seed")
+        self.assertEqual(snippets[0].source_refs[0].source_block_id, "B0005")
         self.assertEqual(snippets[0].text, "원본에 연결된 근거 문장입니다.")
+
+    def test_maps_global_source_refs_to_structured_refs(self) -> None:
+        page = WikiPage(
+            id="concept:shared",
+            page_type="concept",
+            title="Shared Concept",
+            slug="shared-concept",
+            summary="Shared summary",
+            markdown=(
+                "---\nsources: doc_a, doc_b\n---\n\n"
+                "- 여러 원문을 함께 참조하는 근거입니다. [doc_a:B0001, doc_b:B0008]"
+            ),
+        )
+        selector = EvidenceSelector(
+            embedding_search=QueryContainsSearch(),
+            text_search=EmptySearch(),
+        )
+
+        snippets = selector.select(
+            question="여러 원문 근거",
+            related_pages=[
+                RetrievedPage(
+                    page=page,
+                    score=0.9,
+                    role="focus_concept",
+                )
+            ],
+            embedding_units_by_page_id={},
+        )
+
+        self.assertEqual(len(snippets), 1)
+        self.assertEqual(snippets[0].source_document_id, "doc_a")
+        self.assertEqual(snippets[0].source_block_ids, ["B0001"])
+        self.assertEqual(
+            [(ref.source_document_id, ref.source_block_id) for ref in snippets[0].source_refs],
+            [("doc_a", "B0001"), ("doc_b", "B0008")],
+        )
+        self.assertEqual(snippets[0].text, "여러 원문을 함께 참조하는 근거입니다.")
 
 
 if __name__ == "__main__":

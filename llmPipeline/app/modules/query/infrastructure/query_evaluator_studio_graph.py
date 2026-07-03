@@ -2,7 +2,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, GraphContext, QueryContext, QueryEvaluation, RetrievedPage, WikiPage
+from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, GraphContext, QueryContext, QueryEvaluation, RetrievedPage, SourceReference, WikiPage
 from app.modules.query.infrastructure.query_answer_evaluator import build_query_answer_evaluator
 
 
@@ -119,10 +119,23 @@ def _retrieved_page(item: dict[str, Any]) -> RetrievedPage:
 
 
 def _evidence_snippet(item: dict[str, Any], index: int) -> EvidenceSnippet:
+    source_refs = [
+        SourceReference(
+            source_document_id=str(ref.get("source_document_id") or ""),
+            source_block_id=str(ref.get("source_block_id") or ""),
+        )
+        for ref in item.get("source_refs", [])
+        if isinstance(ref, dict)
+    ]
     return EvidenceSnippet(
         rank=int(item.get("rank") or index),
         source_document_id=str(item.get("source_document_id") or "studio-document"),
         source_block_ids=[str(value) for value in item.get("source_block_ids", [])],
+        source_refs=[
+            ref
+            for ref in source_refs
+            if ref.source_document_id and ref.source_block_id
+        ],
         text=str(item.get("text") or ""),
     )
 

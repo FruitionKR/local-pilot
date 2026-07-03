@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import re
 import threading
 import uuid
@@ -19,6 +21,8 @@ from app.modules.wiki_embedding.application.build_wiki_page_embeddings import Bu
 from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
 from app.modules.wiki_embedding.infrastructure.minio_markdown_reader import MinioMarkdownReader
 from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import PostgresWikiPageEmbeddingRepository
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_generation.infrastructure.assemble import slugify
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from app.modules.wiki_schema.infrastructure import postgres_wiki_schema_repository as wiki_schema_database
@@ -73,6 +77,8 @@ class PipelineRunIn(BaseModel):
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
     wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
+    user_id: str = Field(default="local-user", description="Wiki artifact owner namespace")
+    workspace_id: str = Field(default="local-workspace", description="Wiki artifact workspace namespace")
 
     @model_validator(mode="after")
     def exactly_one_input(self) -> "PipelineRunIn":
@@ -90,6 +96,22 @@ class PipelineRunOut(BaseModel):
     log_path: str
 
 
+class WikiLintIn(BaseModel):
+    user_id: str = "local-user"
+    workspace_id: str = "local-workspace"
+    materialize_promotions: bool = True
+    dry_run: bool = False
+    provider: Literal["upstage", "generic"] = "upstage"
+    endpoint: str | None = None
+    api_base_url: str | None = None
+    api_key_env: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+    max_tokens: int | None = None
+
+
 def _build_pipeline_args(
     payload: PipelineRunIn,
     run_id: str,
@@ -100,6 +122,7 @@ def _build_pipeline_args(
     log_path: Path,
     source_document_id: str | None,
 ) -> argparse.Namespace:
+    existing_concept_index = _load_existing_concept_index_for_run(payload.user_id, payload.workspace_id)
     return argparse.Namespace(
         run_id=run_id,
         source_document_id=source_document_id,
@@ -129,12 +152,23 @@ def _build_pipeline_args(
         section_polish_system_prompt=payload.section_polish_system_prompt,
         wiki_evaluator_system_prompt=payload.wiki_evaluator_system_prompt,
         existing_wiki_dir=payload.existing_wiki_dir,
+        existing_concept_index=existing_concept_index,
         wiki_evaluation_loop=payload.wiki_evaluation_loop,
         max_eval_attempts=payload.max_eval_attempts,
         save_debug_json=payload.save_debug_json,
         log_path=str(log_path),
         log_callback_url=payload.log_callback_url,
+        user_id=payload.user_id,
+        workspace_id=payload.workspace_id,
     )
+
+
+def _load_existing_concept_index_for_run(user_id: str, workspace_id: str) -> list[dict[str, Any]]:
+    try:
+        return database.list_active_concept_index(user_id, workspace_id)
+    except Exception:
+        logger.exception("failed to load existing concept index for pipeline run")
+        return []
 
 
 def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
@@ -185,6 +219,190 @@ def init_db() -> dict[str, str]:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "initialized"}
+
+
+@app.post("/wiki/maintenance/lint")
+def lint_wiki_workspace(payload: WikiLintIn) -> dict[str, Any]:
+    try:
+        should_materialize = payload.materialize_promotions and not payload.dry_run
+        promotion_generator = _build_promotion_page_generator(payload) if should_materialize else None
+        return database.lint_wiki_workspace(
+            payload.user_id,
+            payload.workspace_id,
+            materialize_promotions=should_materialize,
+            promotion_page_generator=promotion_generator,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _build_promotion_page_generator(payload: WikiLintIn):
+    client = _lint_api_client(payload)
+
+    def generate(cluster: dict[str, Any]) -> dict[str, Any]:
+        allowed_refs = {
+            ref
+            for claim in cluster.get("claims", [])
+            for ref in claim.get("refs", [])
+        }
+        allowed_refs.update(block.get("ref") for block in cluster.get("source_blocks", []) if block.get("ref"))
+        source_ref_by_block = {ref.rsplit(":", 1)[-1]: ref for ref in allowed_refs}
+        system_prompt = _promotion_concept_system_prompt()
+        user_payload = {
+            "cluster": {
+                "id": cluster.get("id"),
+                "representative": _promotion_representative(cluster),
+                "promotion_status": cluster.get("promotion_status"),
+                "promotion_source_refs": cluster.get("promotion_source_refs", []),
+                "claims": cluster.get("claims", []),
+                "relations": cluster.get("relations", []),
+            },
+            "source_blocks": cluster.get("source_blocks", []),
+            "allowed_anchor_refs": sorted(allowed_refs),
+        }
+        draft = client.complete_json(system_prompt, json.dumps(user_payload, ensure_ascii=False, indent=2))
+        return _promotion_concept_page(cluster, draft, allowed_refs, source_ref_by_block)
+
+    return generate
+
+
+def _lint_api_client(payload: WikiLintIn) -> ChatCompletionsJsonClient:
+    if payload.provider == "upstage":
+        base_url = payload.api_base_url or os.environ.get("UPSTAGE_BASE_URL") or "https://api.upstage.ai/v1"
+        endpoint = payload.endpoint or base_url.rstrip("/") + "/chat/completions"
+        api_key_env = payload.api_key_env or "UPSTAGE_API_KEY"
+        model = payload.model or os.environ.get("UPSTAGE_MODEL") or "solar-pro2"
+    else:
+        endpoint = payload.endpoint or os.environ.get("LLM_ENDPOINT") or ""
+        api_key_env = payload.api_key_env or "LLM_API_KEY"
+        model = payload.model or os.environ.get("LLM_MODEL") or "gpt-4o-mini"
+    api_key = payload.api_key or os.environ.get(api_key_env)
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="Set endpoint or api_base_url for lint LLM")
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"Missing API key. Set {api_key_env}=... or pass api_key")
+    return ChatCompletionsJsonClient(
+        ChatClientConfig(
+            endpoint=endpoint,
+            api_key=api_key,
+            model=model,
+            temperature=payload.temperature,
+            timeout_seconds=payload.timeout_seconds,
+            max_tokens=payload.max_tokens,
+            json_mode=False,
+        )
+    )
+
+
+def _promotion_concept_system_prompt() -> str:
+    base_prompt = Path("prompts/concept_page_generation.system.md").read_text(encoding="utf-8")
+    return (
+        base_prompt
+        + "\n\nStage=PromotionClusterConceptPageGeneration.\n"
+        "You receive one promotion cluster, evidence claims, existing relation candidates, and source blocks.\n"
+        "Generate a real concept page draft from the supplied evidence only.\n"
+        "Use allowed_anchor_refs exactly as anchor_block_ids. They may be global refs like doc_id:B0001.\n"
+        "Do not use refs that are not listed in allowed_anchor_refs.\n"
+    )
+
+
+def _promotion_representative(cluster: dict[str, Any]) -> str:
+    return str(cluster.get("representative") or cluster.get("id") or "").strip()
+
+
+def _promotion_concept_page(
+    cluster: dict[str, Any],
+    draft: dict[str, Any],
+    allowed_refs: set[str],
+    source_ref_by_block: dict[str, str],
+) -> dict[str, Any]:
+    slug = slugify(str(draft.get("slug") or cluster.get("id") or "promoted-concept"))
+    title = str(draft.get("title") or _promotion_representative(cluster) or slug).strip()
+    definition = draft.get("definition") if isinstance(draft.get("definition"), dict) else {}
+    key_points = draft.get("key_points") if isinstance(draft.get("key_points"), list) else []
+    evidence = draft.get("evidence") if isinstance(draft.get("evidence"), list) else []
+    related = draft.get("related_concept_hints") if isinstance(draft.get("related_concept_hints"), list) else []
+    claim_refs = [ref for claim in cluster.get("claims", []) for ref in claim.get("refs", [])]
+    source_docs = sorted({ref.split(":", 1)[0] for ref in claim_refs if ":" in ref})
+    evidence_lines = [
+        f"- {str(item.get('text') or '').strip()}{_lint_cite_refs(_normalize_lint_refs(item.get('anchor_block_ids', []), allowed_refs, source_ref_by_block))}"
+        for item in evidence
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ]
+    if not evidence_lines:
+        evidence_lines = [
+            f"- {claim.get('id')}: {claim.get('claim') or claim.get('text')}{_lint_cite_refs(claim.get('refs', []))}"
+            for claim in cluster.get("claims", [])
+        ]
+    key_point_lines = [
+        f"- {str(item.get('text') or '').strip()}{_lint_cite_refs(_normalize_lint_refs(item.get('anchor_block_ids', []), allowed_refs, source_ref_by_block))}"
+        for item in key_points
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ]
+    definition_text = str(definition.get("text") or "").strip() or (cluster.get("claims", [{}])[0].get("claim") or "정의 없음.")
+    definition_refs = _normalize_lint_refs(definition.get("anchor_block_ids", []), allowed_refs, source_ref_by_block) or claim_refs[:3]
+    related_lines = [f"- [[{slugify(str(item))}|{item}]]" for item in related if item]
+    for relation in cluster.get("relations", []):
+        target = str(relation.get("target") or "")
+        if target.startswith("concept:"):
+            target_slug = target.split(":", 1)[1]
+            line = f"- [[{target_slug}|{target_slug}]]"
+            if line not in related_lines:
+                related_lines.append(line)
+    md = f"""---
+type: concept
+slug: {slug}
+sources: {', '.join(source_docs)}
+mention_count: {len(cluster.get('claims', []))}
+importance_score: 0.7
+generated_by: llm_promotion_materialization
+llm_confidence: {draft.get('confidence', 0.0)}
+---
+
+# {title}
+
+## Definition
+{definition_text}{_lint_cite_refs(definition_refs)}
+
+## Why It Matters
+{draft.get('why_it_matters') or 'Promotion cluster에서 독립 concept 후보로 판단된 항목이다.'}
+
+## Key Points
+{chr(10).join(key_point_lines) if key_point_lines else '- 핵심 포인트 없음'}
+
+## Aliases
+-
+
+## Evidence
+{chr(10).join(evidence_lines) if evidence_lines else '- evidence 없음'}
+
+## Related Concepts
+{chr(10).join(related_lines) if related_lines else '- 관련 개념 없음'}
+
+## Reference Summary
+- display refs: {', '.join(sorted(claim_refs)) or '-'}
+- promoted_from: cluster:{cluster.get('id')}
+"""
+    return {"slug": slug, "title": title, "markdown": md}
+
+
+def _normalize_lint_refs(value: Any, allowed_refs: set[str], source_ref_by_block: dict[str, str]) -> list[str]:
+    refs = []
+    raw_refs = value if isinstance(value, list) else [value]
+    for raw in raw_refs:
+        ref = str(raw or "").strip()
+        if not ref:
+            continue
+        if ref in allowed_refs:
+            refs.append(ref)
+        elif ref in source_ref_by_block:
+            refs.append(source_ref_by_block[ref])
+    return list(dict.fromkeys(refs))
+
+
+def _lint_cite_refs(refs: list[str]) -> str:
+    clean = [str(ref) for ref in refs if ref]
+    return f" [{', '.join(clean)}]" if clean else ""
 
 
 @app.get("/documents/{document_id}")

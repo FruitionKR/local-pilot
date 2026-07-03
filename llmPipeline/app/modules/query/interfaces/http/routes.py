@@ -11,6 +11,7 @@ from app.modules.query.interfaces.http.schemas import (
     QueryRequest,
     QueryResponse,
     RelatedPageResponse,
+    SourceReferenceResponse,
     TraversalEdgeResponse,
     TraversalPathResponse,
 )
@@ -70,6 +71,13 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
                 rank=snippet.rank,
                 source_document_id=snippet.source_document_id,
                 source_block_ids=snippet.source_block_ids,
+                source_refs=[
+                    SourceReferenceResponse(
+                        source_document_id=ref.source_document_id,
+                        source_block_id=ref.source_block_id,
+                    )
+                    for ref in snippet.source_refs
+                ],
                 text=snippet.text,
             )
             for snippet in result.evidence_snippets

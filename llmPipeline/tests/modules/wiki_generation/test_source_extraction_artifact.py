@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocument
-from app.modules.wiki_generation.infrastructure.assemble import SourcePageAssembler
+from app.modules.wiki_generation.infrastructure.assemble import LinkBuilder, MeaningClusterArtifactAssembler, SourcePageAssembler
 from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
 
 
@@ -85,8 +85,10 @@ def test_source_extraction_artifact_uses_embedding_friendly_terms(tmp_path: Path
     assert "bucket" not in artifact["core_concepts"][0]
     assert "source_reference_ids" not in artifact["core_concepts"][0]
     assert "terms" not in artifact
-    assert "## Observations" in Path(source_page).read_text(encoding="utf-8")
-    assert "O001 (qa_episode)" in Path(source_page).read_text(encoding="utf-8")
+    source_markdown = Path(source_page).read_text(encoding="utf-8")
+    assert "## Observations" in source_markdown
+    assert "O001 (qa_episode)" in source_markdown
+    assert "doc_test:B0001" in source_markdown
 
 
 def test_concept_aliases_preserve_llm_aliases_without_backend_expansion() -> None:
@@ -132,3 +134,236 @@ def test_concept_aliases_preserve_llm_aliases_without_backend_expansion() -> Non
     assert "3계층 아키텍처" in aliases
     assert "three-layer architecture" not in aliases
     assert "three-layer-architecture" not in aliases
+
+
+def test_meaning_cluster_artifact_accumulates_promote_hint_without_immediate_promotion(tmp_path: Path) -> None:
+    normalized = {
+        "document": {
+            "document_id": "doc_a",
+            "source_path": "examples/wiki-schema.md",
+        },
+        "section_candidates": [
+            {
+                "term": "Schema",
+                "slug": "wiki-schema",
+                "context": "위키 구조, 규칙, workflow를 정의하는 구성 파일이다.",
+                "anchor_reference_ids": ["B0015"],
+            }
+        ],
+        "mentions": [],
+        "evidence_units": [
+            {
+                "evidence_id": "ev_0001",
+                "claim": "Wiki Schema는 LLM이 ingest/query 시 따르는 규칙 문서다.",
+                "anchor_reference_ids": ["B0008"],
+                "related_concept_slugs": ["wiki-schema"],
+                "source_document_id": "doc_b",
+            }
+        ],
+        "unresolved_related_concept_hints": [
+            {
+                "hint_slug": "wiki-schema",
+                "decision": "promote_new_concept",
+                "canonical_slug": "wiki-schema",
+                "evidence_ids": ["ev_0001"],
+                "reason": "여러 source에서 독립 구성 요소로 반복 언급됨",
+            }
+        ],
+    }
+
+    artifact = MeaningClusterArtifactAssembler().assemble(
+        normalized,
+        tmp_path,
+        user_id="user_1",
+        workspace_id="workspace_1",
+    )
+
+    active_path = tmp_path / artifact["active_path"]
+    log_path = tmp_path / artifact["log_path"]
+    active_markdown = active_path.read_text(encoding="utf-8")
+    log_markdown = log_path.read_text(encoding="utf-8")
+
+    assert artifact["active_path"] == "wiki/user_1/workspace_1/clusters/active.md"
+    assert active_path.exists()
+    assert log_path.exists()
+    assert "### Evidence Claims" in active_markdown
+    assert "### Observations" not in active_markdown
+    assert "### Promotion" not in active_markdown
+    assert "doc_a:B0015" in active_markdown
+    assert "doc_b:B0008" in active_markdown
+    assert "### Cluster Decisions" in log_markdown
+    assert "### Promotion Decisions" in log_markdown
+    assert "- promotion decision 없음" in log_markdown
+
+
+def test_meaning_cluster_artifact_excludes_existing_concept_updates(tmp_path: Path) -> None:
+    normalized = {
+        "document": {
+            "document_id": "doc_a",
+            "source_path": "examples/motor.md",
+        },
+        "section_candidates": [
+            {
+                "term": "Back EMF",
+                "slug": "back-emf",
+                "context": "전동기 성능 평가의 핵심 지표다.",
+                "anchor_reference_ids": ["B0001"],
+            },
+            {
+                "term": "Torque Ripple",
+                "slug": "torque-ripple",
+                "context": "회전 토크의 주기적 변동이다.",
+                "anchor_reference_ids": ["B0002"],
+            },
+        ],
+        "mentions": [],
+        "evidence_units": [],
+        "unresolved_related_concept_hints": [],
+    }
+
+    artifact = MeaningClusterArtifactAssembler().assemble(
+        normalized,
+        tmp_path,
+        user_id="user_1",
+        workspace_id="workspace_1",
+        concept_update_decisions=[
+            {
+                "candidate_id": "cand_001",
+                "claim_id": "claim_doc_001",
+                "decision": "same_concept",
+                "concept_slug": "back-emf",
+                "reason": "이미 core concept로 존재함",
+            }
+        ],
+    )
+
+    active_markdown = (tmp_path / artifact["active_path"]).read_text(encoding="utf-8")
+    log_markdown = (tmp_path / artifact["log_path"]).read_text(encoding="utf-8")
+
+    assert "## cluster: back-emf" not in active_markdown
+    assert "## cluster: torque-ripple" in active_markdown
+    assert "claim_doc_001 -> concept:back-emf" in log_markdown
+
+
+def test_meaning_cluster_artifact_records_core_relation_candidates(tmp_path: Path) -> None:
+    normalized = {
+        "document": {
+            "document_id": "doc_a",
+            "source_path": "examples/motor.md",
+        },
+        "section_candidates": [
+            {
+                "term": "Rotor Magnet",
+                "slug": "rotor-magnet",
+                "context": "SPMSM의 회전자 자석 구성 요소다.",
+                "anchor_reference_ids": ["B0001"],
+            },
+        ],
+        "mentions": [],
+        "evidence_units": [],
+        "unresolved_related_concept_hints": [],
+    }
+
+    artifact = MeaningClusterArtifactAssembler().assemble(
+        normalized,
+        tmp_path,
+        user_id="user_1",
+        workspace_id="workspace_1",
+        cluster_decisions=[
+            {
+                "candidate_id": "cand_001",
+                "decision": "new_cluster",
+                "target_cluster_id": "rotor-magnet",
+                "representative": "Rotor Magnet",
+                "reason": "새 개념 후보",
+            }
+        ],
+        core_relation_decisions=[
+            {
+                "candidate_id": "cand_001",
+                "decision": "relation_candidate",
+                "concept_slug": "spmsm",
+                "relation": "part_of",
+                "reason": "회전자 자석은 SPMSM 구성 요소로 설명됨",
+            }
+        ],
+    )
+
+    active_markdown = (tmp_path / artifact["active_path"]).read_text(encoding="utf-8")
+    log_markdown = (tmp_path / artifact["log_path"]).read_text(encoding="utf-8")
+
+    assert "### Core Relation Candidates" in active_markdown
+    assert "target: concept:spmsm" in active_markdown
+    assert "relation: part_of" in active_markdown
+    assert "### Relation Candidates" in log_markdown
+    assert "cluster:rotor-magnet -> concept:spmsm" in log_markdown
+
+
+def test_meaning_cluster_artifact_excludes_refless_candidates_from_active(tmp_path: Path) -> None:
+    normalized = {
+        "document": {
+            "document_id": "doc_a",
+            "source_path": "examples/motor.md",
+        },
+        "section_candidates": [
+            {
+                "term": "Torque Ripple Ratio",
+                "slug": "torque-ripple-ratio",
+                "context": "평균 토크 대비 토크 리플의 비율이다.",
+                "anchor_reference_ids": [],
+            },
+            {
+                "term": "Back EMF",
+                "slug": "back-emf",
+                "context": "전동기 성능 평가 지표다.",
+                "anchor_reference_ids": ["B0001"],
+            },
+        ],
+        "mentions": [],
+        "evidence_units": [],
+        "unresolved_related_concept_hints": [],
+    }
+
+    artifact = MeaningClusterArtifactAssembler().assemble(
+        normalized,
+        tmp_path,
+        user_id="user_1",
+        workspace_id="workspace_1",
+    )
+
+    active_markdown = (tmp_path / artifact["active_path"]).read_text(encoding="utf-8")
+    log_markdown = (tmp_path / artifact["log_path"]).read_text(encoding="utf-8")
+
+    assert "## cluster: torque-ripple-ratio" not in active_markdown
+    assert "## cluster: back-emf" in active_markdown
+    assert artifact["maintenance_summary"]["invalid_candidate_count"] == 1
+    assert artifact["maintenance_summary"]["invalid_candidates"][0]["slug"] == "torque-ripple-ratio"
+    assert "### Invalid Candidates" in log_markdown
+    assert "missing source refs" in log_markdown
+
+
+def test_link_builder_does_not_materialize_weak_concept_edges() -> None:
+    normalized = {
+        "document": {"document_id": "doc_a"},
+        "concept_ledger": [
+            {"slug": "back-emf"},
+            {"slug": "cogging-torque"},
+        ],
+        "evidence_units": [
+            {
+                "evidence_id": "ev_0001",
+                "related_concept_slugs": ["back-emf", "cogging-torque"],
+            }
+        ],
+        "concept_resolutions": [
+            {
+                "canonical_slug": "back-emf",
+                "link_targets": ["cogging-torque"],
+                "confidence": 0.8,
+            }
+        ],
+    }
+
+    links = LinkBuilder().build(normalized)
+
+    assert {link["relation"] for link in links} == {"source_mentions_concept"}
