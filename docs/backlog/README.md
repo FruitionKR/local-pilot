@@ -10,3 +10,4 @@
 - `development.md` — 백엔드/프론트엔드 도입 전 개발 환경 기록. 현재 실행 기준은 `docs/local-runbook.md`.
 - `issue-2026-06-11.md` — 2026-06-16 기준 해결 또는 이관된 2026-06-11 이슈 기록.
 - `issue-2026-06-12.md` — 2026-06-16 기준 해결된 rename API 이슈 기록.
+- `Fruition_MVP_API_Contract.md` — 로그인 없이 단일 기본 workspace만 쓰던 시절 API 계약. 현재 API 계약은 `docs/Fruition_MVP_API_Contract.md`.
