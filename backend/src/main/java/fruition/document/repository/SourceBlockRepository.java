@@ -8,4 +8,6 @@ import java.util.List;
 
 public interface SourceBlockRepository extends JpaRepository<SourceBlock, SourceBlockId> {
     List<SourceBlock> findAllByIdDocumentIdOrderByIdBlockIdAsc(String documentId);
+
+    void deleteByIdDocumentId(String documentId);
 }

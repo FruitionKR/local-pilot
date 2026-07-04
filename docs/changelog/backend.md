@@ -8,6 +8,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### fix: 문서 삭제가 opaque wiki page id에 대응하고 하위 데이터를 명시 삭제
+
+**배경**
+
+llmPipeline이 wiki page id를 옛 의미형(`source:{documentId}`, `concept:{slug}`)에서 opaque UUID(`wiki_page_{uuid}`)로 바꾸면서(2026-07-02 커밋), `DocumentService.deleteInternal()`이 source page를 `wikiPageRepository.findById("source:" + documentId)`로 찾던 코드가 조용히 깨졌다 — 실제 id는 UUID라 항상 못 찾아 문서 삭제 시 source wiki page가 고아로 남았다. 추가로 이 로직은 `source_blocks`/`document_wiki_links`/`wiki_page_links` 정리를 DB `ON DELETE CASCADE`에 의존했는데, 로컬 dev DB를 새로 만들면 이 테이블들을 Spring이 먼저 varchar로 생성해 CASCADE FK가 걸리지 않아(그 FK는 llmPipeline DDL에만 정의됨) 삭제 후 고아가 남는 것을 실측으로 확인했다.
+
+**추가/변경된 것**
+
+- `document/service/DocumentService.java`:
+  - source page를 id 문자열이 아니라 `document_wiki_links`의 `source_of` 링크로 찾아 삭제(opaque UUID 대응). concept page는 공유 자원이라 삭제하지 않는다.
+  - `source_blocks`(document_id), `document_wiki_links`(document_id)를 명시적으로 삭제. `wiki_page_links`는 link_type이 아니라 삭제되는 source page id(from/to)로 좁혀 삭제.
+  - `WikiPageLinkRepository`를 새로 주입.
+- repository에 delete 메서드 추가: `SourceBlockRepository.deleteByIdDocumentId`, `DocumentWikiLinkRepository.deleteByIdDocumentId`, `WikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId`.
+- `DocumentServiceBlocksTest`: 생성자 변경에 맞춰 `WikiPageLinkRepository` mock 추가.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e: 문서 업로드→인제스트(source 1 + concept 3 + source_blocks 7 + document_wiki_links 4 + wiki_page_links 3)→삭제 후 `documents`/source page/`source_blocks`/`document_wiki_links`/`wiki_page_links` 모두 0, concept page 3개는 유지됨을 확인.
+
+**주의사항**
+
+- DB CASCADE 대신 앱 레벨 명시 삭제를 택한 이유: 현재 스키마 소유권이 Spring/llmPipeline 사이에 엉켜 있어(varchar vs TEXT, 생성 순서에 따라 CASCADE FK 유무가 갈림) CASCADE 정석화는 소유권 정리(2026-07-03 "documents/wiki_pages CASCADE 보류")와 함께 다뤄야 한다. 문서 삭제는 현재 Spring 경로로만 일어나므로 앱 레벨 정리로 충분하다.
+- `wiki_embedding_units`/`wiki_page_embeddings`는 llmPipeline 전용(Spring 레포 없음)이고 현재 비어 있어 이번 정리 범위에서 제외했다. 임베딩 저장 흐름이 붙으면 별도 정리가 필요하다.
+
 ### fix: wiki_pages 엔티티를 llmPipeline의 workspace scope에 정렬
 
 **배경**

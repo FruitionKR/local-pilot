@@ -11,4 +11,6 @@ public interface WikiPageLinkRepository extends JpaRepository<WikiPageLink, Wiki
     List<WikiPageLink> findAllByIdFromPageId(String fromPageId);
 
     List<WikiPageLink> findAllByIdToPageId(String toPageId);
+
+    void deleteByIdFromPageIdOrIdToPageId(String fromPageId, String toPageId);
 }
