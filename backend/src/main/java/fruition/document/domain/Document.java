@@ -44,7 +44,7 @@ public class Document {
     @Column(name = "processed_at")
     private Instant processedAt;
 
-    @Column(name = "error_message")
+    @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
     @Column(name = "pipeline_run_id")

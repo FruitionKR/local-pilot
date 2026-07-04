@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### fix: documents.error_message를 TEXT로 변경해 긴 에러 저장 시 크래시 제거
+
+**배경**
+
+`DocumentProcessingWorker`가 파이프라인 실패를 문서에 기록할 때 `documents.error_message`(varchar(255))에 255자를 넘는 에러 문자열을 넣어 `value too long for type character varying(255)`(DataIntegrityViolationException)로 워커가 크래시하고, 문서가 `failed`로도 전이되지 못한 채 `processing`에 갇히는 버그를 e2e 검증 중 확인했다. llmPipeline DDL도 `documents.error_message`를 `TEXT`로 정의(및 write 시 truncate)하고 있어, Spring 엔티티가 varchar(255)로 잡던 것이 실제 의도와 어긋난 상태였다.
+
+**추가/변경된 것**
+
+- `document/domain/Document.java`: `error_message` 컬럼을 `@Column(columnDefinition = "TEXT")`로 변경. 새로 생성되는 DB에서는 TEXT로 만들어진다.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 기존 dev DB는 `ddl-auto=update`가 컬럼 타입을 바꾸지 못하므로 `ALTER TABLE documents ALTER COLUMN error_message TYPE TEXT`로 직접 넓혔고(무손실), 400자 문자열 UPDATE가 성공하는 것을 확인(이전엔 여기서 `value too long` 발생).
+
+**주의사항**
+
+- 다른 기존 DB에도 동일한 수동 ALTER가 필요하다(`ddl-auto=update`는 varchar→text 타입 변경을 반영하지 않음). 새로 생성하는 DB는 엔티티 기준으로 TEXT가 된다.
+
 ### fix: 문서 삭제가 opaque wiki page id에 대응하고 하위 데이터를 명시 삭제
 
 **배경**
