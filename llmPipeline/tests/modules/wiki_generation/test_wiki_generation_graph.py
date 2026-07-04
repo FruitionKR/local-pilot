@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from run_lab import PipelineLog, _prepare_source_page_polish, _run_wiki_generation_graph
+from run_lab import PipelineLog, _prepare_concept_section_polish, _prepare_source_page_polish, _run_wiki_generation_graph
 
 
 @dataclass
@@ -149,6 +149,57 @@ class WikiGenerationGraphTest(unittest.TestCase):
         self.assertEqual(source_polish["key_points"]["items"][0]["text"], "다듬은 핵심")
         self.assertEqual(source_key_points[0]["text"], "다듬은 핵심")
         self.assertEqual(source_key_points[1]["text"], "원본 핵심")
+
+    def test_concept_section_polish_helper_builds_polished_concept_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized = {
+                "document": {"document_id": "doc-1"},
+                "concept_ledger": [
+                    {
+                        "slug": "concept-a",
+                        "title": "Concept A",
+                        "definition": "원본 정의",
+                        "source_document_ids": ["doc-1"],
+                        "display_reference_ids": ["B0001"],
+                    }
+                ],
+                "evidence_units": [
+                    {
+                        "related_concept_slugs": ["concept-a"],
+                        "claim": "근거",
+                        "anchor_reference_ids": ["B0001"],
+                        "source_document_id": "doc-1",
+                    }
+                ],
+                "concept_resolutions": [{"canonical_slug": "concept-a", "link_targets": ["concept-b"]}],
+                "warnings": [],
+            }
+            polisher = FakeSectionPolisher(
+                {
+                    "section": "concept_definition_key_points_and_related",
+                    "text": "다듬은 정의 [B0001]",
+                    "anchor_block_ids": ["B0001"],
+                    "items": [{"text": "다듬은 핵심 [B0001]", "anchor_block_ids": ["B0001"]}],
+                    "related_concept_hints": ["Concept B"],
+                    "confidence": 0.7,
+                }
+            )
+
+            concept_pages, generated_pages = _prepare_concept_section_polish(
+                SimpleNamespace(save_debug_json=False),
+                normalized,
+                {"concept-a": [FakeBlock(block_id="B0001", text="본문")]},
+                [{"text": "source 핵심", "anchor_reference_ids": ["B0001"]}],
+                polisher,  # type: ignore[arg-type]
+                raw_polish_dir=None,
+                invalid_polish_dir=Path(tmp_dir) / "invalid",
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(polisher.payloads[0]["context"]["resolution_link_targets"], ["concept-b"])
+        self.assertEqual(generated_pages[0]["confidence"], 0.7)
+        self.assertIn("다듬은 정의", concept_pages[0]["markdown"])
+        self.assertIn("다듬은 핵심", concept_pages[0]["markdown"])
 
 
 if __name__ == "__main__":

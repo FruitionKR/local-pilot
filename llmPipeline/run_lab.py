@@ -765,6 +765,90 @@ def _prepare_source_page_polish(
     return source_polish, source_key_points_for_concepts, sp_mode
 
 
+def _prepare_concept_section_polish(
+    args: argparse.Namespace,
+    normalized: dict[str, Any],
+    concept_source_blocks_by_slug: dict[str, list[Any]],
+    source_key_points_for_concepts: list[dict[str, Any]],
+    section_polisher: ApiSectionPolisher,
+    raw_polish_dir: Path | None,
+    invalid_polish_dir: Path,
+    log: PipelineLog,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    concept_polish_by_slug: dict[str, Any] = {}
+    generated_concept_pages: list[dict[str, Any]] = []
+
+    for concept in normalized["concept_ledger"]:
+        source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
+        related_evidence = [ev for ev in normalized["evidence_units"] if concept["slug"] in ev.get("related_concept_slugs", [])]
+        resolution_links = [
+            target
+            for resolution in normalized.get("concept_resolutions", [])
+            if (resolution.get("canonical_slug") or resolution.get("incoming_slug")) == concept["slug"]
+            for target in resolution.get("link_targets", [])
+        ]
+        payload = {
+            "page_type": "concept",
+            "section": "concept_definition_key_points_and_related",
+            "context": {
+                "title": concept.get("title"),
+                "slug": concept.get("slug"),
+                "aliases": concept.get("aliases", []),
+                "why_page_worthy": concept.get("why_page_worthy"),
+                "resolution_link_targets": resolution_links,
+            },
+            "draft": {
+                "definition": concept.get("definition"),
+            },
+            "evidence": related_evidence,
+        }
+        try:
+            raw_polish = section_polisher.polish(payload, source_blocks)
+        except SectionPolishParseError as exc:
+            invalid_path = invalid_polish_dir / f"concept_{concept['slug']}.txt"
+            if args.save_debug_json:
+                ensure_dir(invalid_polish_dir)
+                write_text(invalid_path, exc.raw_content)
+            normalized.setdefault("warnings", []).append(f"concept:{concept['slug']}: section polish output was not repairable; used backend skeleton")
+            log.emit(
+                "6-보조. Concept Section Polish",
+                "Concept section polish가 복구 불가능해 해당 concept은 backend skeleton으로 대체했습니다.",
+                {"개념": concept["slug"], "invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
+            )
+            continue
+
+        if raw_polish_dir is not None:
+            write_json(raw_polish_dir / f"concept_{concept['slug']}.json", raw_polish)
+        mapped = _map_polish_output(raw_polish, source_blocks, normalized.setdefault("warnings", []), f"concept:{concept['slug']}")
+        concept_polish_by_slug[concept["slug"]] = {
+            "definition": mapped,
+            "key_points": mapped,
+            "related_concept_hints": mapped.get("related_concept_hints", []),
+        }
+        generated_concept_pages.append(
+            {
+                "slug": concept["slug"],
+                "title": concept.get("title"),
+                "confidence": mapped.get("confidence"),
+                "related_concept_hints": mapped.get("related_concept_hints", []),
+            }
+        )
+        log.emit(
+            "6-보조. Concept Section Polish",
+            "Concept page의 definition/key points/related hint 섹션만 LLM으로 다듬었습니다.",
+            {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": mapped.get("confidence")},
+        )
+
+    concept_pages = ConceptPageAssembler().build_top(
+        normalized,
+        top_n=None,
+        polish_by_slug=concept_polish_by_slug,
+        source_key_points=source_key_points_for_concepts,
+    )
+    log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
+    return concept_pages, generated_concept_pages
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -976,78 +1060,20 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         {"source_page": source_page.get("markdown_path"), "source_json": bool(source_artifact), "mode": sp_mode},
     )
     generated_concept_pages = []
-    concept_polish_by_slug: dict[str, Any] = {}
     raw_concept_dir = ensure_dir(out / "raw_llm_outputs" / "concept_page_generation") if args.save_debug_json else None
     cp_mode = concept_page_mode(args)
     if cp_mode == "section-polish":
         assert section_polisher is not None
-        for concept in normalized["concept_ledger"]:
-            source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
-            related_evidence = [ev for ev in normalized["evidence_units"] if concept["slug"] in ev.get("related_concept_slugs", [])]
-            resolution_links = [
-                target
-                for resolution in normalized.get("concept_resolutions", [])
-                if (resolution.get("canonical_slug") or resolution.get("incoming_slug")) == concept["slug"]
-                for target in resolution.get("link_targets", [])
-            ]
-            payload = {
-                "page_type": "concept",
-                "section": "concept_definition_key_points_and_related",
-                "context": {
-                    "title": concept.get("title"),
-                    "slug": concept.get("slug"),
-                    "aliases": concept.get("aliases", []),
-                    "why_page_worthy": concept.get("why_page_worthy"),
-                    "resolution_link_targets": resolution_links,
-                },
-                "draft": {
-                    "definition": concept.get("definition"),
-                },
-                "evidence": related_evidence,
-            }
-            try:
-                raw_polish = section_polisher.polish(payload, source_blocks)
-            except SectionPolishParseError as exc:
-                invalid_path = invalid_polish_dir / f"concept_{concept['slug']}.txt"
-                if args.save_debug_json:
-                    ensure_dir(invalid_polish_dir)
-                    write_text(invalid_path, exc.raw_content)
-                normalized.setdefault("warnings", []).append(f"concept:{concept['slug']}: section polish output was not repairable; used backend skeleton")
-                log.emit(
-                    "6-보조. Concept Section Polish",
-                    "Concept section polish가 복구 불가능해 해당 concept은 backend skeleton으로 대체했습니다.",
-                    {"개념": concept["slug"], "invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
-                )
-                continue
-            else:
-                if raw_polish_dir is not None:
-                    write_json(raw_polish_dir / f"concept_{concept['slug']}.json", raw_polish)
-                mapped = _map_polish_output(raw_polish, source_blocks, normalized.setdefault("warnings", []), f"concept:{concept['slug']}")
-                concept_polish_by_slug[concept["slug"]] = {
-                    "definition": mapped,
-                    "key_points": mapped,
-                    "related_concept_hints": mapped.get("related_concept_hints", []),
-                }
-                generated_concept_pages.append(
-                    {
-                        "slug": concept["slug"],
-                        "title": concept.get("title"),
-                        "confidence": mapped.get("confidence"),
-                        "related_concept_hints": mapped.get("related_concept_hints", []),
-                    }
-                )
-                log.emit(
-                    "6-보조. Concept Section Polish",
-                    "Concept page의 definition/key points/related hint 섹션만 LLM으로 다듬었습니다.",
-                    {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": mapped.get("confidence")},
-                )
-        concept_pages = ConceptPageAssembler().build_top(
+        concept_pages, generated_concept_pages = _prepare_concept_section_polish(
+            args,
             normalized,
-            top_n=None,
-            polish_by_slug=concept_polish_by_slug,
-            source_key_points=source_key_points_for_concepts,
+            concept_source_blocks_by_slug,
+            source_key_points_for_concepts,
+            section_polisher,
+            raw_polish_dir,
+            invalid_polish_dir,
+            log,
         )
-        log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
     elif cp_mode in {"api", "full-llm"}:
         assert api_client is not None
         concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt)

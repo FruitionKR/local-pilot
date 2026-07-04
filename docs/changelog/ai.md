@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Concept section polish stage 분리
+
+**배경**
+
+`run_pipeline()`가 source page polish와 별도로 concept page section polish payload 구성, LLM 호출, fallback 처리, page assembly를 직접 들고 있어 concept 생성 분기가 길어졌습니다.
+
+**추가/변경된 것**
+
+- concept definition/key points/related hint section polish 준비와 결과 mapping을 `_prepare_concept_section_polish()`로 분리했습니다.
+- `section-polish`, `api/full-llm`, backend skeleton mode 분기와 manifest 계약은 유지했습니다.
+- concept polish helper가 resolution link hint와 polished Markdown을 연결하는 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+
 ### refactor: Source page polish stage 분리
 
 **배경**
