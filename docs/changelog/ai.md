@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Query evidence text helper 분리
+
+**배경**
+
+`EvidenceSelector`가 evidence 후보 선택과 Markdown 문단/sentence 분리, 토큰 정규화, specificity bonus 계산을 함께 담당하고 있었습니다.
+
+**추가/변경된 것**
+
+- evidence text unit 분리, section weight, sentence cleanup, token normalization을 `evidence_text.py`로 분리했습니다.
+- `EvidenceSelector`는 기존 evidence 후보 생성과 선택 흐름을 유지하고 순수 text helper만 새 모듈에 위임합니다.
+- evidence text helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_evidence_text.py tests/modules/query/test_evidence_selector.py tests/modules/query/test_answer_query.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/evidence_selector.py app/modules/query/application/evidence_text.py` 통과.
+
 ### refactor: Meaning cluster artifact assembler 분리
 
 **배경**
