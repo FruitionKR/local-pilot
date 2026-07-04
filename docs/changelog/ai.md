@@ -6,6 +6,26 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki generation evaluation guard 분리
+
+**배경**
+
+`run_lab.py`가 CLI/graph orchestration과 wiki generation evaluation guard, observation repair 규칙을 함께 들고 있어 pipeline 흐름을 읽기 어려웠습니다.
+
+**추가/변경된 것**
+
+- generation evaluation 보정 규칙과 observation repair 로직을 `evaluation_guards.py`로 분리했습니다.
+- `run_lab.py`는 기존 graph 흐름을 유지하고 evaluation guard 함수만 application 모듈에서 가져오도록 정리했습니다.
+- evaluation guard와 observation repair 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/run_lab.py llmPipeline/app/modules/wiki_generation/application/evaluation_guards.py llmPipeline/tests/modules/wiki_generation/test_evaluation_guards.py llmPipeline/tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_evaluation_guards` 통과.
+- 로컬 `test_wiki_generation_graph`는 `langgraph` 미설치로 Docker 환경에서 검증했습니다.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Query source reference parser 분리
 
 **배경**
