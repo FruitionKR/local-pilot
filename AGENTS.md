@@ -97,7 +97,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 포함된 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
 - Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
 - 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
-- AI/pipeline 기능 코드 변경은 해당 영역 changelog가 있을 때 그 문서에 기록한다.
+- AI/pipeline(llmPipeline) 기능 코드 변경은 `docs/changelog/ai.md`에 기록한다.
 - 인프라, DevOps, Docker, 배포 환경 코드 또는 설정 변경은 `docs/changelog/infra.md`에 기록한다.
 - 여러 기능 영역에 걸친 코드 변경은 해당하는 changelog를 모두 갱신한다.
 - 이슈 문서 정리, 작업 지침 변경, 단순 문서 이동처럼 기능 코드 변경이 없는 커밋은 changelog를 갱신하지 않는다.
@@ -127,6 +127,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 기능 개발이나 수정 작업은 `dev`에서 직접 진행하지 않고, 작업 목적이 드러나는 별도 브랜치를 생성해 진행한다.
 - 기능 브랜치 작업이 완료되면 `dev`를 대상으로 PR을 생성한다.
+- PR 생성 전, 각 커밋의 변경 내용이 기능 단위로 분리되어 있는지 확인한다.
+- 서로 다른 기능이 한 PR에 섞이지 않도록, 같은 기능에 속하는 변경만 묶어 PR을 나눠서 작성한다.
+- PR을 작성하기 전에는 항상 전체 변경분이 기능별로 제대로 분할되어 있는지 다시 확인한 뒤 진행한다.
 - `dev`에서는 전체 검사와 테스트를 실행해 변경사항이 합당한지 확인한다.
 - `dev` 검증이 통과하고 main 반영이 적절하다고 판단되면 `main`을 대상으로 PR을 생성한다.
 - PR 제목과 본문은 한글로 작성한다.
