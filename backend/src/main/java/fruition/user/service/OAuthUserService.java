@@ -52,7 +52,7 @@ public class OAuthUserService {
 
     private User createUser(String email) {
         String displayName = email.substring(0, Math.min(3, email.length()));
-        String userId = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
         User user = new User(userId, email, displayName, null);
         userRepository.save(user);
         workspaceService.createDefault(user.getId(), user.getDisplayName());

@@ -115,7 +115,7 @@ public class DocumentService {
             });
 
             // 2. MinIO에 원본 파일 저장
-            String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
             String objectPath = "sources/documents/" + documentId + "/original";
             String mimeType = resolveMimeType(file);
 

@@ -34,7 +34,7 @@ public class UserService {
 
         String displayName = email.substring(0, Math.min(3, email.length()));
 
-        String userId = "user_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
         User user = new User(userId, email, displayName, passwordEncoder.encode(request.password()));
         userRepository.save(user);
 

@@ -48,7 +48,7 @@ public class ChatSessionService {
             throw new ChatSessionLimitExceededException(workspaceId);
         }
 
-        String sessionId = "session_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String sessionId = "session_" + UUID.randomUUID().toString().replace("-", "");
         ChatSession session = new ChatSession(sessionId, workspaceId, userId, request.title());
         chatSessionRepository.save(session);
 

@@ -6,6 +6,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-04
+
+### fix: PK ID를 전체 UUID로 전환해 충돌 위험 제거
+
+**배경**
+
+`User`/`Workspace`/`ChatSession`/`Document` 등의 PK를 `prefix_` + `UUID.randomUUID()` 앞 8자리(hex)로 생성하고 있었다. 앞 8자리만 쓰면 무작위성이 32비트로 줄어, 생일 역설 기준 같은 종류 ID가 수만 건 쌓이면 PK 충돌로 `save()`가 500 에러를 내는 잠재 버그가 있었다(`docs/issue/2026-07-03.md` "PK ID 생성 시 UUID 8자리 truncate로 인한 충돌 위험").
+
+**추가/변경된 것**
+
+- 아래 5개 서비스의 ID 생성에서 `.substring(0, 8)`을 제거해 전체 32자 hex(122비트 무작위성)를 사용하도록 통일했다. prefix(`user_`/`ws_`/`session_`/`doc_`)는 그대로 유지.
+  - `user/service/UserService.java`, `user/service/OAuthUserService.java` (`user_`)
+  - `workspace/service/WorkspaceService.java` (`ws_`)
+  - `chat/service/ChatSessionService.java` (`session_`)
+  - `document/service/DocumentService.java` (`doc_`)
+- ID 컬럼은 length 미지정(기본 VARCHAR(255))이라 32자로 길어져도 스키마 변경이 필요 없다.
+
+**검증**
+
+- `./gradlew test` 전체 통과. ID prefix를 검사하는 기존 `startsWith(...)` assertion은 prefix가 그대로라 영향 없음.
+
+---
+
 ## 2026-07-03
 
 ### refactor: 워크스페이스 소유 구조를 workspace_members 테이블로 전환

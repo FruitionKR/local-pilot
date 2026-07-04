@@ -77,7 +77,7 @@ public class WorkspaceService {
     }
 
     private Workspace createWorkspace(String userId, String name) {
-        String workspaceId = "ws_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String workspaceId = "ws_" + UUID.randomUUID().toString().replace("-", "");
         Workspace workspace = new Workspace(workspaceId, name);
         workspaceRepository.save(workspace);
 
