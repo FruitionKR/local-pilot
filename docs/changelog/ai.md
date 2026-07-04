@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki persistence payload helper 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB write 흐름과 pipeline manifest/page payload 정규화 규칙을 함께 들고 있었습니다.
+
+**추가/변경된 것**
+
+- source summary, Markdown title, page payload, stored manifest, page id resolution helper를 `wiki_persistence_payload.py`로 분리했습니다.
+- repository의 SQL/DB persistence 흐름과 저장 계약은 유지했습니다.
+- persistence payload helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_ingestion/test_wiki_persistence_payload.py tests/modules/wiki_ingestion/test_concept_index.py tests/modules/wiki_ingestion/test_markdown_sections.py tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py app/modules/wiki_ingestion/infrastructure/wiki_persistence_payload.py` 통과.
+
 ### refactor: Query evidence text helper 분리
 
 **배경**

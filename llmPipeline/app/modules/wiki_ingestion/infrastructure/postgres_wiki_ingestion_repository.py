@@ -31,6 +31,13 @@ from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
     markdown_section as _markdown_section,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object, write_text_object
+from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
+    markdown_title as _markdown_title,
+    page_payload as _page_payload,
+    resolve_page_id as _resolve_page_id,
+    source_summary as _source_summary,
+    stored_manifest as _stored_manifest,
+)
 
 
 SOURCE_RELATED_THRESHOLD = 0.75
@@ -1150,76 +1157,6 @@ def _source_related_label(shared_concepts: list[str], concept_titles: dict[str, 
     visible_titles = titles[:5]
     suffix = f" 외 {len(titles) - len(visible_titles)}개" if len(titles) > len(visible_titles) else ""
     return f"공유 concept: {', '.join(visible_titles)}{suffix}"
-
-
-def _source_summary(normalized: dict[str, Any]) -> str:
-    for note in normalized.get("semantic_notes", []):
-        summary = note.get("semantic_summary")
-        if summary:
-            return summary
-    return normalized.get("document", {}).get("title", "")
-
-
-def _markdown_title(markdown: str) -> str:
-    for line in markdown.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return ""
-
-
-def _page_payload(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        if "markdown" not in value:
-            raise RuntimeError("Pipeline manifest page payload is missing markdown")
-        return value
-    path = Path(str(value))
-    if not path.exists():
-        raise RuntimeError(f"Pipeline manifest page path does not exist: {path}")
-    return {
-        "slug": path.stem,
-        "title": _markdown_title(path.read_text(encoding="utf-8")),
-        "markdown_path": str(path),
-        "markdown": path.read_text(encoding="utf-8"),
-    }
-
-
-def _stored_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
-    stored = dict(manifest)
-    source_page = stored.get("source_page")
-    if isinstance(source_page, dict):
-        stored["source_page"] = _stored_page(source_page)
-    stored["concept_pages"] = [
-        _stored_page(page) if isinstance(page, dict) else page
-        for page in stored.get("concept_pages", [])
-    ]
-    stored.pop("normalized", None)
-    stored.pop("source_blocks", None)
-    meaning_clusters = stored.get("meaning_clusters")
-    if isinstance(meaning_clusters, dict):
-        stored["meaning_clusters"] = {
-            key: value
-            for key, value in meaning_clusters.items()
-            if key not in {"active_markdown", "log_markdown", "clusters"}
-        }
-    return stored
-
-
-def _stored_page(page: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in page.items()
-        if key not in {"markdown", "source_extraction_artifact"}
-    }
-
-
-def _resolve_page_id(value: str | None, source_page_id: str, concept_id_by_slug: dict[str, str]) -> str | None:
-    if not value:
-        return None
-    if value.startswith("source:"):
-        return source_page_id
-    if value.startswith("concept:"):
-        return concept_id_by_slug.get(value.split(":", 1)[1])
-    return None
 
 
 def _load_existing_concept_ids_by_slug(conn: psycopg.Connection, user_id: str, workspace_id: str) -> dict[str, str]:
