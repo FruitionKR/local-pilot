@@ -1,7 +1,7 @@
-import re
-from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from dataclasses import replace
 
+from app.modules.query.application.build_query_context import BuildQueryContextUseCase
+from app.modules.query.application.conversation_context_resolver import contextualize_question, evidence_question
 from app.modules.query.application.ports import (
     AnswerGeneratorPort,
     EmbeddingSearchPort,
@@ -18,18 +18,18 @@ from app.modules.query.application.query_answer_assembler import QueryAnswerAsse
 from app.modules.query.application.query_evaluator_flow import QueryEvaluatorLoop
 from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
+from app.modules.query.application.retrieval_summary import build_retrieval_summary
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
+    ConversationContext,
     EvidenceSnippet,
     GeneratedAnswer,
-    ConversationContext,
     GraphContext,
     QueryAnswer,
     QueryContext,
     QueryEvaluation,
     QueryRewrite,
     RetrievedPage,
-    RetrievalSummary,
     TraversalEdge,
     TraversalPath,
     WikiPage,
@@ -115,7 +115,7 @@ class AnswerQueryUseCase:
         event_publisher = event_publisher or self._event_publisher
         query = Question(question)
         self._publish(event_publisher, "query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
-        contextual_question = self._contextualize_question(query.normalized, conversation_context)
+        contextual_question = contextualize_question(query.normalized, conversation_context)
         if contextual_question != query.normalized:
             self._publish(
                 event_publisher,
@@ -218,7 +218,7 @@ class AnswerQueryUseCase:
             ]
         related_pages = self._load_markdown_for_related_pages(related_pages)
         graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        evidence_question = self._evidence_question(query.normalized, conversation_context, contextual_question)
+        evidence_query = evidence_question(query.normalized, conversation_context, contextual_question)
         self._publish(
             event_publisher,
             "markdown_loaded",
@@ -232,7 +232,7 @@ class AnswerQueryUseCase:
             graph_context=graph_context,
             traversal_paths=traversal_paths,
             original_question=query.normalized,
-            evidence_question=evidence_question,
+            evidence_question=evidence_query,
             embedding_units_by_page_id=embedding_units_by_page_id,
         )
         self._publish(
@@ -278,16 +278,10 @@ class AnswerQueryUseCase:
             answer = self._unsupported_answer(evidence_snippets)
             answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
 
-        used_source_count = len([item for item in related_pages if item.page.is_source])
-        used_concept_count = len([item for item in related_pages if item.page.is_concept])
-        summary = RetrievalSummary(
+        summary = build_retrieval_summary(
+            related_pages=related_pages,
             source_candidate_count=min(len(source_pages), self._source_candidate_limit),
             concept_candidate_count=min(len(concept_pages), self._concept_candidate_limit),
-            visited_node_count=len(related_pages),
-            returned_node_count=len(related_pages),
-            used_source_count=used_source_count,
-            used_concept_count=used_concept_count,
-            max_depth=0,
             stop_reason=stop_reason,
         )
         return QueryAnswer(
@@ -318,90 +312,6 @@ class AnswerQueryUseCase:
             retrieval_query=evaluation.web_query,
             keywords=evaluation.web_query.split(),
         )
-
-    def _contextualize_question(self, question: str, conversation_context: ConversationContext | None) -> str:
-        if conversation_context is None:
-            return question
-
-        sections = []
-        matched_referents = self._matching_referent_values(question, conversation_context.reference_context)
-        if matched_referents:
-            sections.append(" ".join(matched_referents))
-
-        reference_lines = self._reference_context_lines(conversation_context.reference_context, excluded_values=set(matched_referents))
-        if reference_lines:
-            sections.append(" ".join(reference_lines))
-
-        if conversation_context.recent_conversation_summary:
-            sections.append(conversation_context.recent_conversation_summary.strip())
-
-        sections.append(question)
-
-        return "\n".join(section for section in sections if section.strip()).strip()
-
-    def _evidence_question(
-        self,
-        question: str,
-        conversation_context: ConversationContext | None,
-        contextual_question: str,
-    ) -> str:
-        if conversation_context is None:
-            return contextual_question
-        matched_referents = self._matching_referent_values(question, conversation_context.reference_context)
-        if not matched_referents:
-            return question
-        return " ".join([*matched_referents, question])
-
-    def _matching_referent_values(self, question: str, reference_context: dict[str, object]) -> list[str]:
-        referents = reference_context.get("referents")
-        if not isinstance(referents, dict):
-            return []
-        values = []
-        for marker, value in referents.items():
-            if str(marker) in question and value is not None:
-                values.extend(self._reference_values(value))
-        return list(dict.fromkeys(value for value in values if value))
-
-    def _reference_context_lines(self, reference_context: dict[str, object], excluded_values: set[str] | None = None) -> list[str]:
-        excluded_values = excluded_values or set()
-        lines: list[str] = []
-        for key, value in reference_context.items():
-            if value is None:
-                continue
-            lines.extend(
-                line
-                for line in self._format_reference_value(str(key), value)
-                if line and line not in excluded_values
-            )
-        return lines
-
-    def _format_reference_value(self, key: str, value: object) -> list[str]:
-        if isinstance(value, dict):
-            lines = []
-            for _, child_value in value.items():
-                if child_value is None:
-                    continue
-                lines.extend(self._reference_values(child_value))
-            return lines
-        if isinstance(value, list):
-            return [item for value in value if value is not None for item in self._reference_values(value)]
-        return [self._reference_scalar(value)]
-
-    def _reference_values(self, value: object) -> list[str]:
-        if isinstance(value, dict):
-            values: list[str] = []
-            for child_value in value.values():
-                if child_value is not None:
-                    values.extend(self._reference_values(child_value))
-            return values
-        if isinstance(value, list):
-            return [item for child_value in value if child_value is not None for item in self._reference_values(child_value)]
-        return [self._reference_scalar(value)]
-
-    def _reference_scalar(self, value: object) -> str:
-        if isinstance(value, (dict, list)):
-            return str(value)
-        return str(value).strip()
 
     def _should_use_web_fallback(self, source_scores: dict[str, float], concept_scores: dict[str, float]) -> bool:
         if self._web_search is None or self._min_internal_relevance_score <= 0:

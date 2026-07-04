@@ -4,6 +4,28 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-04
+
+### refactor: Query application 보조 책임 분리
+
+**배경**
+
+`AnswerQueryUseCase`가 질의 처리 orchestration 외에 대화 맥락 해석과 retrieval summary 조립까지 함께 담당해, query 흐름을 읽고 테스트하기 어려웠습니다. 외부 API 응답 계약은 유지하면서 순수 보조 로직만 분리했습니다.
+
+**추가/변경된 것**
+
+- 대화 맥락 기반 검색 질문 보강과 evidence 질문 선택 로직을 `conversation_context_resolver.py`로 분리했습니다.
+- `RetrievalSummary` 조립을 `retrieval_summary.py`로 분리해 내부 답변과 web fallback 답변에서 같은 계산을 재사용하도록 했습니다.
+- `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`는 기존 흐름을 유지하고 새 보조 함수에 위임하도록 정리했습니다.
+- 분리한 순수 로직에 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query llmPipeline.tests.modules.query.test_query_web_answer_builder llmPipeline.tests.modules.query.test_conversation_context_resolver llmPipeline.tests.modules.query.test_retrieval_summary` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ## 2026-07-02
 
 ### feat: query evidence에 다중 원문 source_refs 추가
