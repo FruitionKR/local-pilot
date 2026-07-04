@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### feat: wiki 조회를 workspace 경로 기반으로 격리 (Scope B)
+
+**배경**
+
+파이프라인이 실제 workspace_id를 wiki_pages에 기록하게 됐지만(직전 커밋), `WikiController`(`/api/wiki`)의 graph/detail 조회가 `wikiPageRepository.findAll()`로 **전 workspace 페이지를 반환**해 다른 workspace의 wiki가 그대로 새어 나오던 상태였다. 실측으로 두 workspace(`ws_7baa...` 4개, `local-workspace` 3개)의 페이지가 `GET /api/wiki/graph` 한 번에 7개 모두 반환되는 것을 확인했다.
+
+**추가/변경된 것**
+
+- `wiki/controller/WikiController.java`: base path를 `/api/wiki` → **`/api/workspaces/{workspace_id}/wiki`** 로 변경(문서·채팅 API와 동일한 경로 규약). 각 엔드포인트가 `@PathVariable workspace_id`와 `@AuthenticationPrincipal userId`를 받는다. 이로써 `/api/workspaces/**` 규칙에 걸려 인증이 필수가 된다.
+- `wiki/service/WikiService.java`: `WorkspaceMemberRepository`를 주입해 `verifyWorkspaceOwnership`(멤버십 검증) 추가. `findGraph`/`findById`/`rename`이 `(workspaceId, userId)`를 받아 소유권 검증 후 workspace scope로 조회. graph는 `findAllByWorkspaceId`로 페이지를 가져오고, `wiki_page_links`는 workspace 컬럼이 없으므로 해당 page id 집합 안에서 양 끝점이 모두 존재하는 링크만 포함. detail/rename은 `findByIdAndWorkspaceId`로 다른 workspace 페이지 접근을 404 처리.
+- repository: `WikiPageRepository.findAllByWorkspaceId`/`findByIdAndWorkspaceId`, `WikiPageLinkRepository.findAllByIdFromPageIdIn` 추가.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e(두 workspace 데이터 공존 상태): `GET /api/workspaces/{ws_7baa}/wiki/graph`가 `ws_7baa` 페이지 4개만 반환(이전엔 7개), 옛 경로 `/api/wiki/graph`는 404, 인증 없으면 401, 다른 workspace 페이지 상세 요청은 404, 내 페이지는 200을 확인.
+
+**주의사항**
+
+- **API 경로가 바뀌는 breaking change다.** 프론트엔드가 호출하는 `/api/wiki/graph` 등을 `/api/workspaces/{workspace_id}/wiki/...`로 바꾸고 인증 헤더를 붙여야 한다(`docs/issue/2026-07-02.md` "프론트엔드 workspace-scoped API 마이그레이션"과 연결).
+- 페이지 필터링은 문서 API와 동일하게 멤버십 검증 후 **workspace_id 기준**이다(공유 workspace 대비). 현재 MVP는 owner 1인 구조라 user 단위와 동일하게 동작한다.
+
 ### feat: 파이프라인 실행 요청에 실제 user_id/workspace_id 전달
 
 **배경**
