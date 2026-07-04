@@ -1,6 +1,8 @@
 package fruition.chat.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.util.List;
 
@@ -12,8 +14,10 @@ public class ChatMessageReference {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_message_id", nullable = false)
-    private String chatMessageId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chat_message_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private ChatMessage chatMessage;
 
     @Column(name = "reference_type", nullable = false)
     private String referenceType;
@@ -33,10 +37,10 @@ public class ChatMessageReference {
 
     protected ChatMessageReference() {}
 
-    public ChatMessageReference(String chatMessageId, String referenceType,
+    public ChatMessageReference(ChatMessage chatMessage, String referenceType,
                                  String documentId, Integer rank,
                                  List<String> sourceBlockIds, String quote) {
-        this.chatMessageId = chatMessageId;
+        this.chatMessage = chatMessage;
         this.referenceType = referenceType;
         this.documentId = documentId;
         this.rank = rank;
@@ -45,7 +49,7 @@ public class ChatMessageReference {
     }
 
     public Long getId() { return id; }
-    public String getChatMessageId() { return chatMessageId; }
+    public String getChatMessageId() { return chatMessage.getId(); }
     public String getReferenceType() { return referenceType; }
     public String getDocumentId() { return documentId; }
     public Integer getRank() { return rank; }

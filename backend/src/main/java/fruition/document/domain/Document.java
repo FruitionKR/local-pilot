@@ -10,6 +10,12 @@ public class Document {
     @Id
     private String id;
 
+    @Column(name = "workspace_id", nullable = false)
+    private String workspaceId;
+
+    @Column(name = "user_id", nullable = false)
+    private String userId;
+
     @Column(nullable = false)
     private String filename;
 
@@ -52,9 +58,11 @@ public class Document {
 
     protected Document() {}
 
-    public Document(String id, String filename, String mimeType, long byteSize,
+    public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
                     String sourceUri, String contentHash) {
         this.id = id;
+        this.workspaceId = workspaceId;
+        this.userId = userId;
         this.filename = filename;
         this.mimeType = mimeType;
         this.byteSize = byteSize;
@@ -94,6 +102,8 @@ public class Document {
     }
 
     public String getId() { return id; }
+    public String getWorkspaceId() { return workspaceId; }
+    public String getUserId() { return userId; }
     public String getFilename() { return filename; }
     public String getMimeType() { return mimeType; }
     public long getByteSize() { return byteSize; }

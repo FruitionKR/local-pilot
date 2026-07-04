@@ -35,14 +35,14 @@ class QueryRunServiceTest {
 
     @Test
     void start_pipelineSucceeds_marksRunCompletedAndBroadcastsCompletion() {
-        QueryRun pending = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("질문")).thenReturn(pending);
+        QueryRun pending = QueryRun.pending("query_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
+        when(queryRunStore.create("session_abc123", "질문")).thenReturn(pending);
         QueryResponse result = new QueryResponse(null, null, null, null, null, null);
-        when(queryService.query("질문", "query_abc123",
+        when(queryService.query("session_abc123", "질문", "query_abc123",
                 "http://backend:8080/api/query/runs/query_abc123/events/callback"))
                 .thenReturn(result);
 
-        QueryRun returned = queryRunService.start("질문");
+        QueryRun returned = queryRunService.start("session_abc123", "질문");
 
         assertThat(returned).isEqualTo(pending);
         verify(queryRunStore).markRunning("query_abc123");
@@ -52,14 +52,15 @@ class QueryRunServiceTest {
 
     @Test
     void start_pipelineFails_marksRunFailedAndBroadcastsFailure() {
-        QueryRun pending = QueryRun.pending("query_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("질문")).thenReturn(pending);
+        QueryRun pending = QueryRun.pending("query_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
+        when(queryRunStore.create("session_abc123", "질문")).thenReturn(pending);
         PipelineQueryException error = new PipelineQueryException(
                 "PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, null);
-        when(queryService.query(eq("질문"), eq("query_abc123"), eq("http://backend:8080/api/query/runs/query_abc123/events/callback")))
+        when(queryService.query(eq("session_abc123"), eq("질문"), eq("query_abc123"),
+                eq("http://backend:8080/api/query/runs/query_abc123/events/callback")))
                 .thenThrow(error);
 
-        queryRunService.start("질문");
+        queryRunService.start("session_abc123", "질문");
 
         verify(queryRunStore).markRunning("query_abc123");
         verify(queryRunStore).markFailed("query_abc123", "쿼리 파이프라인을 사용할 수 없습니다.");

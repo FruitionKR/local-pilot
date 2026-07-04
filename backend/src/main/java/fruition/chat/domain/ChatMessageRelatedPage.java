@@ -1,6 +1,8 @@
 package fruition.chat.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Entity
 @Table(name = "chat_message_related_pages")
@@ -10,8 +12,10 @@ public class ChatMessageRelatedPage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_message_id", nullable = false)
-    private String chatMessageId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chat_message_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private ChatMessage chatMessage;
 
     @Column(name = "wiki_page_id")
     private String wikiPageId;
@@ -39,10 +43,10 @@ public class ChatMessageRelatedPage {
 
     protected ChatMessageRelatedPage() {}
 
-    public ChatMessageRelatedPage(String chatMessageId, String wikiPageId, String pageType,
+    public ChatMessageRelatedPage(ChatMessage chatMessage, String wikiPageId, String pageType,
                                    String title, String slug, Double relevanceScore,
                                    String role, Integer depth, Integer rank) {
-        this.chatMessageId = chatMessageId;
+        this.chatMessage = chatMessage;
         this.wikiPageId = wikiPageId;
         this.pageType = pageType;
         this.title = title;
@@ -54,7 +58,7 @@ public class ChatMessageRelatedPage {
     }
 
     public Long getId() { return id; }
-    public String getChatMessageId() { return chatMessageId; }
+    public String getChatMessageId() { return chatMessage.getId(); }
     public String getWikiPageId() { return wikiPageId; }
     public String getPageType() { return pageType; }
     public String getTitle() { return title; }

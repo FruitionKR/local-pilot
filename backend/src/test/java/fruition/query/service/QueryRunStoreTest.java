@@ -48,7 +48,7 @@ class QueryRunStoreTest {
 
     @Test
     void create_thenFind_returnsPendingRun() {
-        QueryRun run = store.create("질문");
+        QueryRun run = store.create("session_abc123", "질문");
 
         assertThat(store.find(run.requestId())).contains(run);
         assertThat(run.status()).isEqualTo(QueryRunStatus.PENDING);
@@ -61,7 +61,7 @@ class QueryRunStoreTest {
 
     @Test
     void markRunning_thenMarkCompleted_updatesStatusAndResult() {
-        QueryRun run = store.create("질문");
+        QueryRun run = store.create("session_abc123", "질문");
         QueryResponse result = new QueryResponse(null, null, null, null, null, null);
 
         store.markRunning(run.requestId());
@@ -75,7 +75,7 @@ class QueryRunStoreTest {
 
     @Test
     void markFailed_updatesStatusAndErrorMessage() {
-        QueryRun run = store.create("질문");
+        QueryRun run = store.create("session_abc123", "질문");
 
         store.markFailed(run.requestId(), "파이프라인 오류");
 
@@ -86,9 +86,9 @@ class QueryRunStoreTest {
 
     @Test
     void evictExpired_removesOnlyFinishedRunsOlderThanTtl() {
-        QueryRun stillRunning = store.create("진행중 질문");
+        QueryRun stillRunning = store.create("session_abc123", "진행중 질문");
 
-        QueryRun finished = store.create("완료된 질문");
+        QueryRun finished = store.create("session_abc123", "완료된 질문");
         store.markCompleted(finished.requestId(), new QueryResponse(null, null, null, null, null, null));
 
         clock.advance(Duration.ofMinutes(11));
@@ -102,7 +102,7 @@ class QueryRunStoreTest {
 
     @Test
     void evictExpired_keepsFinishedRunsWithinTtl() {
-        QueryRun finished = store.create("완료된 질문");
+        QueryRun finished = store.create("session_abc123", "완료된 질문");
         store.markCompleted(finished.requestId(), new QueryResponse(null, null, null, null, null, null));
 
         clock.advance(Duration.ofMinutes(5));

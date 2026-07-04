@@ -12,6 +12,8 @@ import fruition.document.repository.SourceBlockRepository;
 import fruition.util.StorageProperties;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +33,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DocumentServiceBlocksTest {
 
+    private static final String USER_ID = "user_1f9a74af";
+    private static final String WORKSPACE_ID = "ws_aaa11111";
+
     @Mock DocumentRepository documentRepository;
+    @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
     @Mock DocumentProcessingRequester processingRequester;
@@ -45,23 +51,28 @@ class DocumentServiceBlocksTest {
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentRepository, minioClient, storageProps,
+        documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 sourceBlockRepository, queueRepository, transactionTemplate, "http://localhost:8080");
+    }
+
+    private void stubOwnedWorkspace() {
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(true);
     }
 
     @Test
     @DisplayName("문서가 존재하면 block 목록을 block_id 오름차순으로 반환한다")
     void blocks_existingDocument_returnsBlocksInOrder() {
-        Document document = new Document("doc_1f9a74af", "original.md", "text/markdown", 100L,
+        stubOwnedWorkspace();
+        Document document = new Document("doc_1f9a74af", WORKSPACE_ID, USER_ID, "original.md", "text/markdown", 100L,
                 "sources/documents/doc_1f9a74af/original", "hash1");
-        when(documentRepository.findById("doc_1f9a74af")).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceId("doc_1f9a74af", WORKSPACE_ID)).thenReturn(Optional.of(document));
         when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_1f9a74af")).thenReturn(List.of(
                 new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0005"), "다섯 번째 block 본문"),
                 new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0006"), "여섯 번째 block 본문")
         ));
 
-        DocumentBlocksResponse response = documentService.blocks("doc_1f9a74af");
+        DocumentBlocksResponse response = documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af");
 
         assertThat(response.documentId()).isEqualTo("doc_1f9a74af");
         assertThat(response.blocks()).hasSize(2);
@@ -73,12 +84,13 @@ class DocumentServiceBlocksTest {
     @Test
     @DisplayName("block이 없으면 200과 빈 배열을 반환한다")
     void blocks_noBlocks_returnsEmptyList() {
-        Document document = new Document("doc_empty", "original.md", "text/markdown", 100L,
+        stubOwnedWorkspace();
+        Document document = new Document("doc_empty", WORKSPACE_ID, USER_ID, "original.md", "text/markdown", 100L,
                 "sources/documents/doc_empty/original", "hash2");
-        when(documentRepository.findById("doc_empty")).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceId("doc_empty", WORKSPACE_ID)).thenReturn(Optional.of(document));
         when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_empty")).thenReturn(List.of());
 
-        DocumentBlocksResponse response = documentService.blocks("doc_empty");
+        DocumentBlocksResponse response = documentService.blocks(WORKSPACE_ID, USER_ID, "doc_empty");
 
         assertThat(response.blocks()).isEmpty();
     }
@@ -86,9 +98,19 @@ class DocumentServiceBlocksTest {
     @Test
     @DisplayName("문서가 존재하지 않으면 DocumentNotFoundException을 던진다")
     void blocks_unknownDocument_throws() {
-        when(documentRepository.findById("doc_unknown")).thenReturn(Optional.empty());
+        stubOwnedWorkspace();
+        when(documentRepository.findByIdAndWorkspaceId("doc_unknown", WORKSPACE_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> documentService.blocks("doc_unknown"))
+        assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_unknown"))
                 .isInstanceOf(DocumentNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("소유하지 않은 워크스페이스면 WorkspaceNotFoundException을 던진다")
+    void blocks_notOwnedWorkspace_throws() {
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, USER_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af"))
+                .isInstanceOf(WorkspaceNotFoundException.class);
     }
 }

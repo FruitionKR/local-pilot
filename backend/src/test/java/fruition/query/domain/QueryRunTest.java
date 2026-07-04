@@ -14,9 +14,10 @@ class QueryRunTest {
 
     @Test
     void pending_createsRunWithPendingStatusAndNoResult() {
-        QueryRun run = QueryRun.pending("query_abc123", "질문", CREATED_AT);
+        QueryRun run = QueryRun.pending("query_abc123", "session_abc123", "질문", CREATED_AT);
 
         assertThat(run.requestId()).isEqualTo("query_abc123");
+        assertThat(run.sessionId()).isEqualTo("session_abc123");
         assertThat(run.status()).isEqualTo(QueryRunStatus.PENDING);
         assertThat(run.question()).isEqualTo("질문");
         assertThat(run.result()).isNull();
@@ -26,7 +27,7 @@ class QueryRunTest {
 
     @Test
     void running_returnsNewInstanceWithRunningStatus_originalUnchanged() {
-        QueryRun pending = QueryRun.pending("query_abc123", "질문", CREATED_AT);
+        QueryRun pending = QueryRun.pending("query_abc123", "session_abc123", "질문", CREATED_AT);
 
         QueryRun running = pending.running();
 
@@ -37,7 +38,7 @@ class QueryRunTest {
 
     @Test
     void completed_setsResultAndCompletedAt_clearsErrorMessage() {
-        QueryRun running = QueryRun.pending("query_abc123", "질문", CREATED_AT).running();
+        QueryRun running = QueryRun.pending("query_abc123", "session_abc123", "질문", CREATED_AT).running();
         QueryResponse result = new QueryResponse(null, null, null, null, null, null);
 
         QueryRun completed = running.completed(result, COMPLETED_AT);
@@ -51,7 +52,7 @@ class QueryRunTest {
 
     @Test
     void failed_setsErrorMessageAndCompletedAt_resultStaysNull() {
-        QueryRun running = QueryRun.pending("query_abc123", "질문", CREATED_AT).running();
+        QueryRun running = QueryRun.pending("query_abc123", "session_abc123", "질문", CREATED_AT).running();
 
         QueryRun failed = running.failed("파이프라인 오류", COMPLETED_AT);
 

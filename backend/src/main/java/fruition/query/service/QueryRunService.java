@@ -32,17 +32,17 @@ public class QueryRunService {
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
-    public QueryRun start(String question) {
-        QueryRun run = queryRunStore.create(question);
-        queryRunExecutor.execute(() -> runPipeline(run.requestId(), question));
+    public QueryRun start(String sessionId, String question) {
+        QueryRun run = queryRunStore.create(sessionId, question);
+        queryRunExecutor.execute(() -> runPipeline(run.requestId(), sessionId, question));
         return run;
     }
 
-    private void runPipeline(String requestId, String question) {
+    private void runPipeline(String requestId, String sessionId, String question) {
         queryRunStore.markRunning(requestId);
         String logCallbackUrl = callbackBaseUrl + "/api/query/runs/" + requestId + "/events/callback";
         try {
-            QueryResponse result = queryService.query(question, requestId, logCallbackUrl);
+            QueryResponse result = queryService.query(sessionId, question, requestId, logCallbackUrl);
             queryRunStore.markCompleted(requestId, result);
             queryEventBroker.complete(requestId);
         } catch (PipelineQueryException e) {

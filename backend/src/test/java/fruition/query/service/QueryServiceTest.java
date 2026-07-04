@@ -3,9 +3,12 @@ package fruition.query.service;
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.domain.ChatMessageRelatedPage;
+import fruition.chat.domain.ChatSession;
+import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.chat.repository.ChatSessionRepository;
 import fruition.query.dto.QueryResponse;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.repository.PipelineQueryRequester;
@@ -19,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,22 +35,27 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class QueryServiceTest {
 
+    private static final String SESSION_ID = "session_1f9a74af";
+    private static final String DOCUMENT_ID = "doc_1f9a74af";
+
     @Mock PipelineQueryRequester pipelineQueryRequester;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
+    @Mock ChatSessionRepository chatSessionRepository;
 
     QueryService queryService;
-
-    private static final String DOCUMENT_ID = "doc_1f9a74af";
 
     @BeforeEach
     void setUp() {
         queryService = new QueryService(
-                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository);
-        when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository, chatSessionRepository);
+        lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(chatSessionRepository.findById(SESSION_ID))
+                .thenReturn(Optional.of(new ChatSession(SESSION_ID, "ws_aaa11111", "user_1f9a74af", null)));
+        lenient().when(chatSessionRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(i -> i.getArgument(0));
     }
 
     @Test
@@ -55,7 +64,7 @@ class QueryServiceTest {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
         when(pipelineQueryRequester.query("Self-Attention이 뭐야?")).thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query("Self-Attention이 뭐야?");
+        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?");
 
         // 응답 형태 검증
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
@@ -73,7 +82,9 @@ class QueryServiceTest {
         List<ChatMessage> savedMessages = msgCaptor.getValue();
         assertThat(savedMessages).hasSize(2);
         assertThat(savedMessages.get(0).getRole()).isEqualTo("user");
+        assertThat(savedMessages.get(0).getSessionId()).isEqualTo(SESSION_ID);
         assertThat(savedMessages.get(1).getRole()).isEqualTo("assistant");
+        assertThat(savedMessages.get(0).getPairId()).isEqualTo(savedMessages.get(1).getPairId());
 
         // chat_message_references 저장 검증 (원본 문서 block 기준)
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
@@ -102,6 +113,9 @@ class QueryServiceTest {
         assertThat(savedRelatedPages.get(0).getDepth()).isEqualTo(0);
         assertThat(savedRelatedPages.get(0).getRank()).isEqualTo(1);
         assertThat(savedRelatedPages.get(1).getRank()).isEqualTo(2);
+
+        // 세션 last_message_at 갱신 검증
+        verify(chatSessionRepository).save(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -111,7 +125,7 @@ class QueryServiceTest {
         when(pipelineQueryRequester.query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
                 .thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
+        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
 
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
         verify(pipelineQueryRequester).query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
@@ -123,7 +137,7 @@ class QueryServiceTest {
         PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
         when(pipelineQueryRequester.query(anyString())).thenThrow(pipelineError);
 
-        assertThatThrownBy(() -> queryService.query("Self-Attention이 뭐야?"))
+        assertThatThrownBy(() -> queryService.query(SESSION_ID, "Self-Attention이 뭐야?"))
                 .isInstanceOf(PipelineQueryException.class);
 
         ArgumentCaptor<List<ChatMessage>> msgCaptor = ArgumentCaptor.forClass(List.class);
@@ -141,6 +155,15 @@ class QueryServiceTest {
         assertThat(assistantMsg.getRole()).isEqualTo("assistant");
         assertThat(assistantMsg.getStatus()).isEqualTo("failed");
         assertThat(assistantMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+    }
+
+    @Test
+    @DisplayName("세션이 존재하지 않으면 ChatSessionNotFoundException을 던진다")
+    void query_unknownSession_throwsChatSessionNotFound() {
+        when(chatSessionRepository.findById("session_unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> queryService.query("session_unknown", "질문"))
+                .isInstanceOf(ChatSessionNotFoundException.class);
     }
 
     private PipelineQueryResponse samplePipelineResponse() {

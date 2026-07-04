@@ -6,6 +6,260 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-03
+
+### refactor: 워크스페이스 소유 구조를 workspace_members 테이블로 전환
+
+**배경**
+
+향후 워크스페이스를 여러 유저가 공유할 수 있게 하려면 `workspaces.user_id` 1:1 구조부터 바뀌어야 한다는 논의가 있었다. 이번엔 그 설계의 첫 단계만 구현한다 — 초대/제거 같은 실제 공유 기능은 아직 없고, 워크스페이스마다 owner 1명만 있는 지금과 동일한 동작을 새 테이블 구조로 재구현했다.
+
+**추가/변경된 것**
+
+- `WorkspaceMember` 엔티티 신규 — `(workspace_id, user_id)` 복합 PK, `role`(owner/member), `joined_at`. `@ManyToOne` + `@OnDelete(CASCADE)`로 `Workspace`/`User` 삭제 시 자동 정리되도록 구성. 합성 PK 대신 복합 PK를 선택해 8자리 UUID truncate 충돌 이슈(`docs/issue/2026-07-03.md`)를 이 테이블에서는 원천적으로 피했다.
+- `Workspace.userId` 컬럼 제거. `WorkspaceRepository`의 `findByIdAndUserId`/`findAllByUserIdOrderByCreatedAtDesc` 제거.
+- `WorkspaceService`: 워크스페이스 생성 시 `WorkspaceMember(role=owner)`를 함께 생성. `list`/`rename`/`delete`의 소유권 판단을 `WorkspaceMemberRepository` 기준으로 전환.
+- `ChatSessionService`/`DocumentService`의 `verifyWorkspaceOwnership()`도 동일하게 `WorkspaceMemberRepository.existsByWorkspace_IdAndUser_Id`로 전환 — 소유권 검증 로직이 3곳에 중복 구현되어 있던 문제를 이번 기회에 함께 정리했다.
+- 마이그레이션: `ddl-auto=update`는 "컬럼 삭제 전 데이터 백필" 같은 순서 있는 작업을 안전하게 못 해서, 로컬 개발 DB 볼륨을 초기화하는 방식으로 처리했다(운영 데이터 없음).
+
+**검증**
+
+- `./gradlew test` 전체 통과 (116개).
+- `@EmbeddedId` + `@ManyToOne` 조합에서 Spring Data가 `workspaceId`/`userId`를 단일 프로퍼티로 못 찾는 문제 발생 — 이전 `ChatMessage.sessionId` 때와 동일한 패턴이라 언더스코어 문법(`existsByWorkspace_IdAndUser_Id`)으로 해결했다.
+- 볼륨 초기화 후 백엔드 재기동 → `\d workspaces`/`\d workspace_members`로 스키마 확인(user_id 컬럼 제거, 복합 PK + 양쪽 FK CASCADE 확인) → 이메일 회원가입 → 자동 생성된 워크스페이스가 `workspace_members`에 `role=owner`로 저장되는지 확인 → 로그인 → 워크스페이스 목록 조회 → 문서 업로드 → 채팅 세션 생성까지 curl로 전 구간 재검증.
+
+**주의사항**
+
+- 이번 변경은 owner 1명만 존재하는 상태까지만 구현했다. 실제 멤버 초대/제거, role 기반 권한 분기(예: rename/delete는 owner 전용), 채팅 세션의 유저별 프라이빗 처리는 별도 이슈로 남겨뒀다.
+
+---
+
+### fix: bootRun이 infra/.env를 못 읽던 경로 버그 수정
+
+**배경**
+
+Google OAuth 로그인을 브라우저로 실제 검증하던 중, `infra/.env`에 채운 실제 Google client-id가 반영되지 않고 `dev-placeholder-client-id`만 보이는 걸 발견했다. 원인은 `backend/build.gradle`의 `bootRun.doFirst`가 `rootProject.file('infra/.env')`를 쓰고 있었는데, `backend/settings.gradle`이 `rootProject.name = 'backend'`만 선언한 단일 프로젝트 빌드라 `rootProject`가 `backend/` 디렉터리 자신을 가리켜서 실제로는 존재하지 않는 `backend/infra/.env`를 찾고 있었다. 이 세션에서 새로 생긴 버그가 아니라, `bootRun`으로 `infra/.env`를 자동 로드하는 기능이 도입된 시점부터 있었던 기존 버그다.
+
+**추가/변경된 것**
+
+- `backend/build.gradle`의 `bootRun.doFirst` 블록에서 `rootProject.file('infra/.env')` → `file("$projectDir/../infra/.env")`로 변경. `build.gradle`이 있는 `backend/`를 기준으로 상위(repo root)의 `infra/.env`를 가리키도록 고쳤다. `docs/local-runbook.md`, `backend/README.md`, `scripts/dev-up.sh`가 공통으로 전제하는 "`infra/.env`는 repo root 기준 단일 관리 파일"이라는 기존 정책과 동일하게 맞춘 것이다.
+
+**검증**
+
+- 백엔드 재기동 후 `curl -sI http://localhost:8080/oauth2/authorization/google`의 `Location` 헤더 `client_id` 파라미터가 `dev-placeholder-client-id`에서 실제 Google client-id로 바뀐 것을 확인.
+
+**주의사항**
+
+- 이 버그로 인해 그동안 `./gradlew bootRun`으로 실행할 때 `infra/.env`의 값이 사실상 한 번도 실제로 반영된 적이 없었다. 지금까지 "동작한 것처럼 보였던" 이유는 `application.properties`의 기본값이 로컬 Docker 인프라 설정과 우연히 일치했기 때문이다.
+
+---
+
+### fix: /api/** 요청에 CORS 설정 추가
+
+**배경**
+
+Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔드에 CORS 설정이 전혀 없다는 걸 발견했다. 지금은 프론트엔드가 없어서 안 드러났지만, 프론트엔드(`localhost:3000`)가 fetch/XHR로 백엔드(`localhost:8080`)의 `/api/auth/oauth/exchange` 등을 호출하는 순간 브라우저가 차단하는 구조였다.
+
+**추가/변경된 것**
+
+- `SecurityConfig`에 `CorsConfigurationSource` 빈 추가, 필터체인에 `.cors(...)` 연결. `/api/**` 경로에 적용.
+- 허용 origin은 하드코딩하지 않고 `app.cors.allowed-origins` 설정값(콤마 구분, `List<String>`)으로 뺐다. 기존 `app.oauth.frontend-redirect-uri` 패턴과 동일하게 구성.
+- `application.properties`에 `app.cors.allowed-origins=${CORS_ALLOWED_ORIGINS:http://localhost:3000}` 추가.
+- `infra/.env.example`에 `CORS_ALLOWED_ORIGINS=http://localhost:3000` 추가.
+- 허용 HTTP 메서드는 실제 컨트롤러에서 쓰는 것만 포함: `GET, POST, PATCH, DELETE, OPTIONS`.
+
+**검증**
+
+- `./gradlew compileJava` 통과.
+- 관련 슬라이스 테스트(`SecurityConfig`를 `@Import`하는 `AuthControllerTest`, `WorkspaceControllerTest`, `DocumentControllerTest`, `QueryRunControllerTest`, `QueryControllerTest`, `ChatSessionControllerTest`) 전부 통과.
+- 백엔드 재기동 후 `curl -X OPTIONS`로 preflight 요청 시 `Access-Control-Allow-Origin: http://localhost:3000` 헤더 확인.
+- `Origin: http://localhost:3000`을 붙인 실제 요청(`GET /api/workspaces`)에서도 CORS 헤더가 정상적으로 붙는 것 확인(응답 자체는 인증 필요라 401, CORS 차단은 아님).
+- 기존 Google OAuth 리다이렉트(`/oauth2/authorization/google`)가 CORS 설정 추가 후에도 동일하게 동작하는 것 재확인.
+
+**주의사항**
+
+- `app.cors.allowed-origins`는 콤마로 여러 origin을 넣을 수 있게 `List<String>`으로 바인딩했다. 배포 환경이 늘어나면 `CORS_ALLOWED_ORIGINS` 값에 콤마로 추가하면 된다.
+
+---
+
+### refactor: chat_sessions 하위 리소스 삭제를 DB FK ON DELETE CASCADE로 전환
+
+**배경**
+
+직전 커밋에서 `ChatSessionService`가 세션 삭제 시 `chat_messages`/`chat_message_references`/`chat_message_related_pages`를 애플리케이션 코드로 직접 정리하도록 구현했다. `documents`, `wiki_pages`는 llmPipeline(Python)이 DDL을 직접 소유해서 FK를 걸려면 스키마 소유권 조율이 필요하지만, `chat_sessions`/`chat_messages`/`chat_message_references`/`chat_message_related_pages`는 전부 Spring 전용 테이블이라 이 관계만 먼저 DB 레벨 CASCADE로 전환했다. `documents`/`wiki_pages` 쪽 FK 전환은 별도로 남겨둔다 (`docs/issue/2026-07-03.md` 참고).
+
+**추가/변경된 것**
+
+- `ChatMessage.sessionId`(String) → `@ManyToOne ChatSession session` + `@OnDelete(action = OnDeleteAction.CASCADE)`로 전환.
+- `ChatMessageReference.chatMessageId`, `ChatMessageRelatedPage.chatMessageId`도 동일하게 `@ManyToOne ChatMessage chatMessage` + `@OnDelete(CASCADE)`로 전환. `getChatMessageId()` 등 기존 getter는 유지(내부적으로 연관 엔티티의 id를 반환).
+- Hibernate `ddl-auto=update`가 위 매핑을 보고 실제 FK 제약(`ON DELETE CASCADE`)을 생성한다. Flyway 등 별도 마이그레이션 도구 도입 없이 처리했다.
+- `ChatSessionService.delete()`/`deleteAllByWorkspaceId()`에서 메시지/참조/관련페이지를 직접 지우던 코드를 제거 — 이제 `chatSessionRepository.delete(session)` 한 줄이면 DB가 나머지를 cascade한다.
+- `QueryService`가 메시지 생성 전에 `ChatSession` 엔티티를 먼저 조회하도록 변경(연관관계 설정에 필요). 세션이 존재하지 않으면 `ChatSessionNotFoundException`을 던진다.
+- 리포지토리 파생 쿼리 메서드명을 중첩 프로퍼티 경로로 변경: `findAllBySessionIdOrderByCreatedAtAsc` → `findAllBySession_IdOrderByCreatedAtAsc`, `findAllByChatMessageIdIn` → `findAllByChatMessage_IdIn` (Spring Data가 변경 전 이름을 단일 프로퍼티로 오인해 매핑 실패했다).
+- 테스트 편의를 위해 `TestcontainersConfiguration`을 package-private → public으로 변경.
+
+**검증**
+
+- `./gradlew test` 통과 (116개).
+- `ChatSessionCascadeDeleteIntegrationTest` 신규 추가 — Mockito 단위 테스트로는 실제 FK 동작을 확인할 수 없어, Testcontainers Postgres에 실제로 세션을 저장하고 삭제한 뒤 메시지/참조/관련페이지가 DB에서 사라졌는지 직접 검증한다.
+- `BackendApplicationTests`(전체 context 로드, 실제 Postgres 대상)가 통과해 Hibernate가 FK DDL을 문제없이 생성함을 확인했다.
+
+---
+
+### fix: 워크스페이스 삭제 시 소속 문서/채팅 세션 CASCADE 삭제
+
+**배경**
+
+커밋 리뷰 중 `WorkspaceService.delete()`가 Workspace row만 지우고 소속 documents/chat_sessions는 그대로 남기는 걸 확인했다. DB에 `workspace_id` FK CASCADE 제약이 없어서(Spring이 plain VARCHAR 컬럼으로만 관리, JPA 연관관계 미사용), 워크스페이스를 지우면 고아 데이터가 남는 상태였다.
+
+**추가/변경된 것**
+
+- `DocumentService`: 기존 `delete()`의 실제 삭제 로직을 `deleteInternal(Document)`로 추출하고, 워크스페이스 소속 문서를 전부 정리하는 `deleteAllByWorkspaceId(workspaceId)` 추가 (MinIO 오브젝트, source wiki page 정리 로직 재사용).
+- `ChatSessionService`: 세션 삭제 시 딸린 `chat_messages`/`chat_message_references`/`chat_message_related_pages`까지 함께 삭제하도록 `deleteInternal(ChatSession)` 추가, 워크스페이스 소속 세션 전체를 정리하는 `deleteAllByWorkspaceId(workspaceId)` 추가.
+- `ChatMessageReferenceRepository`, `ChatMessageRelatedPageRepository`에 `deleteAllByChatMessageIdIn` 추가.
+- `WorkspaceService.delete()`가 workspace 삭제 전에 `documentService.deleteAllByWorkspaceId()`, `chatSessionService.deleteAllByWorkspaceId()`를 호출하도록 변경 (같은 트랜잭션).
+
+**검증**
+
+- `./gradlew test` 통과 (세션 삭제 시 메시지/참조 함께 삭제, 워크스페이스 삭제 시 문서·세션 전체 cascade, 소유권 실패 시 cascade 미실행 케이스 포함).
+
+**주의사항**
+
+- `wiki_pages`는 여전히 workspace_id가 없어 이번 CASCADE 대상에서 제외됨 (`docs/issue/2026-07-02.md` 참고). source wiki page는 문서별 삭제 로직(`deleteInternal`)에서 기존과 동일하게 document_id 기준으로 정리된다.
+
+---
+
+## 2026-07-02
+
+### feat: ChatSession 도입 및 채팅 API workspace 격리
+
+**배경**
+
+`GET /api/chat/messages`가 session/workspace 개념 없이 시스템 전체의 모든 채팅 메시지를 하나의 글로벌 로그로 반환하고 있었다 (다른 사용자의 대화가 그대로 노출되는 상태). ERD에 정의된 `chat_sessions` 테이블이 아예 없었고, `chat_messages`에도 `session_id`/`pair_id`/`wiki_page_id` 컬럼이 없었다.
+
+**추가/변경된 것**
+
+- `ChatSession` 엔티티(`session_{UUID}`, workspace_id/user_id/title/context_summary/last_message_at/wiki_page_id) + repository + `ChatSessionService` 추가.
+- 워크스페이스당 세션 최대 10개 제한. 초과 시 `POST` 요청을 409로 거부(자동 삭제하지 않음 — 프론트가 사용자에게 기존 세션 삭제를 요청해야 함).
+- `ChatMessage`에 `session_id`(필수), `pair_id`(user/assistant 쌍 식별, 필수), `wiki_page_id`(nullable) 컬럼 추가.
+- `ChatController`(글로벌 조회) 제거, `ChatSessionController`(`/api/workspaces/{workspace_id}/chat/sessions`)로 대체: 세션 생성/목록/삭제, 세션별 메시지 조회(`GET /{session_id}/messages`).
+- `QueryService.query()`가 `sessionId`를 받아 메시지에 스탬프하고, 질의 성공/실패와 무관하게 세션의 `last_message_at`을 갱신하도록 변경.
+- 질의 API를 세션 하위로 이동: `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query`(동기), `.../query/runs`(비동기 run 시작)로 통합. `QueryRunController`는 `request_id` 기준 polling/SSE/callback(`GET /api/query/runs/{id}`, `/events`, `/events/callback`)만 남기고 flat 경로 유지 — 이 endpoint들은 이미 발급된 request_id로 접근하는 후속 조회라 워크스페이스 인증을 다시 요구하지 않음.
+
+**검증**
+
+- `./gradlew test` 통과. 세션 생성/제한 초과/소유권 검증, 메시지 조회 소유권 검증, 동기/비동기 질의 endpoint 인증 여부 테스트 포함.
+
+**주의사항**
+
+- `chat_messages`에 `session_id`/`pair_id`가 NOT NULL로 추가됐다. `ddl-auto=update`는 기존 row가 있는 테이블에 NOT NULL 컬럼을 추가하지 못하므로, 기존 로컬 DB에 채팅 데이터가 남아있다면 볼륨을 초기화해야 한다(`docs/local-runbook.md` 참고). Document의 `workspace_id`/`user_id` 추가도 동일한 제약이 있다.
+- Wiki는 여전히 workspace 미연동 상태다 (`docs/issue/2026-07-02.md` 참고).
+
+---
+
+### feat: Document API에 workspace 소유권 연동
+
+**배경**
+
+User/Workspace/Auth 기반을 구현한 뒤, 기존 documents API가 로그인·워크스페이스와 전혀 연결되어 있지 않던 부분을 연동했다. `wiki_pages`는 실제 row 생성 주체가 Spring Boot가 아니라 llmPipeline(Python)이라 훨씬 큰 범위의 작업으로 확인되어 이번 단계에서는 제외했다. 상세 내용은 `docs/issue/2026-07-02.md` 참고.
+
+**추가/변경된 것**
+
+- `Document` 엔티티에 `workspace_id`, `user_id` 컬럼 추가.
+- `DocumentRepository`에 `findAllByWorkspaceId`, `findByIdAndWorkspaceId` 추가.
+- `DocumentService`의 모든 사용자용 메서드가 workspace 소유권을 먼저 검증(`WorkspaceRepository.findByIdAndUserId`)하도록 변경. 소유하지 않은 workspace_id를 넘기면 `WorkspaceNotFoundException`(404).
+- 사용자용 `DocumentController`를 `/api/documents/*` → `/api/workspaces/{workspace_id}/documents/*`로 이동.
+- llmPipeline이 호출하는 콜백 endpoint(`PATCH /api/documents/{id}/status`, `POST /api/documents/{id}/pipeline-events`)는 workspace_id를 알지 못하므로 `DocumentPipelineController`로 분리해 기존 경로(`/api/documents/{id}/...`) 그대로 유지.
+
+**검증**
+
+- `./gradlew test` 통과 (workspace 소유권 검증, 미소유 workspace 404, 미인증 401 케이스 포함).
+
+---
+
+### feat: 이메일 회원가입 API 추가
+
+**배경**
+
+MVP는 로그인 없이 시작했지만, 문서·워크스페이스·채팅을 사용자별로 격리 관리하려면 인증 체계가 필요합니다. `docs/spec/Fruition_MVP_Erd.md` ERD를 기준으로 user, workspace, 인증 기능을 순차 구현하기로 하고 그 첫 단계로 이메일 회원가입을 추가했습니다.
+
+**추가/변경된 것**
+
+- Spring Security 의존성 추가, `BCryptPasswordEncoder` 기반 `SecurityConfig` 골격 추가(현재는 모든 요청 permitAll, 이후 인증 필터 도입 시 전환 예정).
+- `User` 엔티티/repository, 회원가입 API(`POST /api/auth/signup`) 추가. displayName은 이메일 앞 3글자로 자동 설정, 비밀번호는 BCrypt 해시로 저장.
+
+**검증**
+
+- `./gradlew test` 통과.
+- Spring Security 의존성 도입으로 기존 `@WebMvcTest` 슬라이스 테스트(`DocumentControllerTest`, `QueryRunControllerTest`)가 403으로 깨지는 회귀를 발견해 `SecurityConfig` import로 수정.
+
+---
+
+### feat: JWT 로그인/토큰 재발급/로그아웃 API 추가
+
+**배경**
+
+회원가입만으로는 인증된 API 호출이 불가능해, 이메일/비밀번호 로그인과 JWT 기반 인증을 이어서 구현했습니다.
+
+**추가/변경된 것**
+
+- JJWT(0.12.6) 의존성 추가.
+- `UserRefreshToken` 엔티티(원문 대신 SHA-256 해시로 저장) + repository.
+- `JwtTokenProvider`(access token 발급/검증, HS256), `JwtAuthenticationFilter`(Authorization 헤더 검증 후 SecurityContext에 인증 주입).
+- `POST /api/auth/login`, `POST /api/auth/refresh`(기존 refresh token 폐기 + 새 토큰쌍 발급, 회전 방식), `POST /api/auth/logout`, `GET /api/auth/me` 추가.
+- `SecurityConfig`: JWT 필터 연결, `/api/auth/me`만 인증 필요로 전환, 미인증 요청에 403 대신 401을 반환하도록 `AuthenticationEntryPoint` 설정.
+
+**검증**
+
+- `./gradlew test` 통과 (로그인 성공/실패, refresh 회전/만료/미존재, 로그아웃, me 인증 여부 케이스 포함).
+
+---
+
+### feat: Workspace CRUD 및 회원가입 시 첫 워크스페이스 자동 생성
+
+**배경**
+
+문서·wiki·채팅을 사용자별로 격리 관리하려면 워크스페이스 단위가 필요합니다. 로그인 기반이 갖춰졌으니 이어서 워크스페이스 CRUD와, 가입 직후 바로 쓸 수 있는 기본 워크스페이스 자동 생성을 구현했습니다.
+
+**추가/변경된 것**
+
+- `Workspace` 엔티티(`ws_{UUID}`)/repository, CRUD API(`POST/GET/PATCH/DELETE /api/workspaces`) 추가. user_id는 요청 바디가 아니라 JWT 인증 정보로만 결정하고, 소유하지 않은 워크스페이스는 404로 응답.
+- `UserService.signup()`이 유저 생성 직후 같은 트랜잭션에서 `WorkspaceService.createDefault(userId, displayName)`을 호출해 `"{displayName}의 워크스페이스"` 이름으로 첫 워크스페이스를 자동 생성.
+- `SecurityConfig`에 `/api/workspaces/**` 인증 필요 규칙 추가.
+
+**검증**
+
+- `./gradlew test` 통과 (워크스페이스 생성/목록/이름변경/삭제, 소유권 검증, 회원가입 시 기본 워크스페이스 생성 케이스 포함).
+
+---
+
+### feat: OAuth 소셜 로그인(Google/Naver/Kakao) 추가
+
+**배경**
+
+이메일/비밀번호 가입 외에 소셜 로그인 진입점을 제공하기 위해 Google/Naver/Kakao OAuth 로그인을 추가했습니다.
+
+**추가/변경된 것**
+
+- OAuth2 Client 의존성 추가.
+- `UserOAuthAccount` 엔티티(provider + provider_user_id 복합 유니크)/repository.
+- provider별 사용자 정보 파서: `GoogleOAuth2UserInfo`(평면 구조), `NaverOAuth2UserInfo`(`response` 중첩), `KakaoOAuth2UserInfo`(`kakao_account.email`, `kakao_account.profile.nickname` 중첩) + `OAuth2UserInfoFactory`. Naver/Kakao는 Spring Security 기본 provider가 아니라 `application.properties`에 authorization-uri/token-uri/user-info-uri를 직접 등록.
+- `OAuthUserService`: provider+provider_user_id로 기존 연결 조회 → 없으면 이메일로 기존 유저를 찾아 연결만 추가 → 그것도 없으면 신규 유저 + 첫 워크스페이스를 함께 생성(`password_hash`는 null).
+- `CustomOAuth2UserService`가 Spring Security OAuth2 로그인 훅에 `OAuthUserService`를 연결하고 내부 `userId`를 인증 principal로 노출.
+- 1회용 code 교환 방식으로 토큰 발급: `OAuthExchangeCodeStore`(메모리, 60초 TTL) + `OAuth2AuthenticationSuccessHandler`(로그인 성공 시 프론트로 `?code=xxx` redirect)/`OAuth2AuthenticationFailureHandler`(`?error=oauth_failed` redirect) + `POST /api/auth/oauth/exchange`.
+- `SecurityConfig`: `oauth2Login()` 연결. OAuth2 로그인 redirect 흐름에 세션이 필요해 세션 정책을 STATELESS에서 IF_REQUIRED로 변경(기존 미사용이던 `spring-session-jdbc`가 이제 실제로 쓰임).
+
+**검증**
+
+- `./gradlew test` 통과. Testcontainers 기반 전체 context 로드 테스트(`BackendApplicationTests`)도 OAuth2 client placeholder 설정으로 정상 기동 확인.
+
+**주의사항**
+
+- Google/Naver/Kakao client-id/secret은 dev placeholder 기본값입니다. 실제 OAuth 로그인은 `infra/.env`에 실제 값을 채운 뒤 동작합니다.
+- documents/wiki_pages/chat_sessions에는 아직 `workspace_id`/`user_id` 연동이 되어 있지 않아 다음 단계에서 진행할 예정입니다.
+
+---
+
 ## 2026-06-29 (3)
 
 ### feat: 여러 문서 동시 업로드 시 pipeline 처리 순서 보장 — DB 기반 처리 큐 도입

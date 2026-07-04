@@ -27,6 +27,11 @@ dependencies {
 	implementation 'io.minio:minio:8.5.7'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
 	// implementation 'org.springframework.ai:spring-ai-pdf-document-reader'
 	// implementation 'org.springframework.ai:spring-ai-starter-model-openai-sdk'
@@ -53,7 +58,7 @@ tasks.named('test') {
 
 tasks.named('bootRun') {
 	doFirst {
-		def envFile = rootProject.file('infra/.env')
+		def envFile = file("$projectDir/../infra/.env")
 		if (envFile.exists()) {
 			envFile.readLines().each { line ->
 				if (line && !line.startsWith('#') && line.contains('=')) {
