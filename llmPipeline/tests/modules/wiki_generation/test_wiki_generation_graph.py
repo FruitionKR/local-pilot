@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from run_lab import PipelineLog, _run_wiki_generation_graph
+from run_lab import PipelineLog, _prepare_source_page_polish, _run_wiki_generation_graph
 
 
 @dataclass
@@ -27,6 +27,16 @@ class FakeNormalizer:
             "concept_ledger": [],
             "evidence_units": [],
         }
+
+
+class FakeSectionPolisher:
+    def __init__(self, raw: dict[str, object]) -> None:
+        self.raw = raw
+        self.payloads: list[dict[str, object]] = []
+
+    def polish(self, payload: dict[str, object], blocks: list[FakeBlock]) -> dict[str, object]:
+        self.payloads.append(payload)
+        return self.raw
 
 
 class WikiGenerationGraphTest(unittest.TestCase):
@@ -80,6 +90,65 @@ class WikiGenerationGraphTest(unittest.TestCase):
         self.assertEqual(len(generation_evaluations), 2)
         self.assertEqual(len(prompts), 2)
         self.assertIn("누락된 source anchor를 보강하세요.", prompts[1])
+
+    def test_source_page_polish_helper_keeps_skeleton_mode_without_llm_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized = {
+                "document": {"document_id": "doc-1"},
+                "concept_ledger": [{"slug": "concept-a"}],
+                "semantic_notes": [{"key_points": [{"text": "원본 핵심", "anchor_block_ids": ["B0001"]}]}],
+                "evidence_units": [],
+            }
+            polisher = FakeSectionPolisher({})
+
+            source_polish, source_key_points, mode = _prepare_source_page_polish(
+                SimpleNamespace(source_page_mode="skeleton", save_debug_json=False, mode="api"),
+                normalized,
+                [FakeBlock(block_id="B0001", text="본문")],
+                polisher,  # type: ignore[arg-type]
+                raw_polish_dir=None,
+                invalid_polish_dir=Path(tmp_dir) / "invalid",
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(mode, "skeleton")
+        self.assertEqual(source_polish, {})
+        self.assertEqual(source_key_points, [{"text": "원본 핵심", "anchor_block_ids": ["B0001"]}])
+        self.assertEqual(polisher.payloads, [])
+
+    def test_source_page_polish_helper_maps_polished_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized = {
+                "document": {"document_id": "doc-1"},
+                "concept_ledger": [{"slug": "concept-a"}],
+                "semantic_notes": [{"semantic_summary": "요약", "key_points": [{"text": "원본 핵심", "anchor_block_ids": ["B0001"]}]}],
+                "evidence_units": [],
+            }
+            polisher = FakeSectionPolisher(
+                {
+                    "section": "source_summary_and_key_points",
+                    "text": "다듬은 요약 [B0001]",
+                    "anchor_block_ids": ["B0001"],
+                    "items": [{"text": "다듬은 핵심 [B0001]", "anchor_block_ids": ["B0001"]}],
+                    "confidence": 0.8,
+                }
+            )
+
+            source_polish, source_key_points, mode = _prepare_source_page_polish(
+                SimpleNamespace(source_page_mode="section-polish", save_debug_json=False, mode="api"),
+                normalized,
+                [FakeBlock(block_id="B0001", text="본문")],
+                polisher,  # type: ignore[arg-type]
+                raw_polish_dir=None,
+                invalid_polish_dir=Path(tmp_dir) / "invalid",
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(mode, "section-polish")
+        self.assertEqual(source_polish["summary"]["text"], "다듬은 요약")
+        self.assertEqual(source_polish["key_points"]["items"][0]["text"], "다듬은 핵심")
+        self.assertEqual(source_key_points[0]["text"], "다듬은 핵심")
+        self.assertEqual(source_key_points[1]["text"], "원본 핵심")
 
 
 if __name__ == "__main__":

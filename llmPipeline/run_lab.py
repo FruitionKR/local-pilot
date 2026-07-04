@@ -696,6 +696,75 @@ def _run_wiki_generation_graph(
     return result["notes"], result["normalized"], result["generation_evaluations"]
 
 
+def _prepare_source_page_polish(
+    args: argparse.Namespace,
+    normalized: dict[str, Any],
+    blocks: list[Any],
+    section_polisher: ApiSectionPolisher | None,
+    raw_polish_dir: Path | None,
+    invalid_polish_dir: Path,
+    log: PipelineLog,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    source_polish: dict[str, Any] = {}
+    raw_source_key_points_for_concepts: list[dict[str, Any]] = [
+        kp
+        for note in normalized.get("semantic_notes", [])
+        for kp in note.get("key_points", [])
+    ]
+    source_key_points_for_concepts = list(raw_source_key_points_for_concepts)
+    sp_mode = source_page_mode(args)
+    if sp_mode != "section-polish":
+        return source_polish, source_key_points_for_concepts, sp_mode
+
+    assert section_polisher is not None
+    source_payload = {
+        "page_type": "source",
+        "section": "source_summary_and_key_points",
+        "context": {
+            "document": normalized["document"],
+            "concept_slugs": [concept["slug"] for concept in normalized["concept_ledger"]],
+        },
+        "draft": {
+            "summary_candidates": [n.get("semantic_summary", "") for n in normalized["semantic_notes"] if n.get("semantic_summary")],
+            "key_points": [kp for note in normalized["semantic_notes"] for kp in note.get("key_points", [])],
+        },
+        "evidence": normalized["evidence_units"],
+    }
+    try:
+        raw_source_polish = section_polisher.polish(source_payload, blocks)
+    except SectionPolishParseError as exc:
+        invalid_path = invalid_polish_dir / "source_page.txt"
+        if args.save_debug_json:
+            ensure_dir(invalid_polish_dir)
+            write_text(invalid_path, exc.raw_content)
+        normalized.setdefault("warnings", []).append("source_page: section polish output was not repairable; used backend skeleton")
+        log.emit(
+            "5-보조. Source Section Polish",
+            "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.",
+            {"invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
+        )
+        return source_polish, source_key_points_for_concepts, sp_mode
+
+    if raw_polish_dir is not None:
+        write_json(raw_polish_dir / "source_page.json", raw_source_polish)
+    mapped_source_polish = _map_polish_output(raw_source_polish, blocks, normalized.setdefault("warnings", []), "source_page")
+    source_polish = {
+        "title": mapped_source_polish.get("title"),
+        "summary": mapped_source_polish,
+        "key_points": mapped_source_polish,
+    }
+    source_key_points_for_concepts = [
+        *mapped_source_polish.get("items", []),
+        *raw_source_key_points_for_concepts,
+    ]
+    log.emit(
+        "5-보조. Source Section Polish",
+        "Source page의 summary/key points 섹션만 LLM으로 다듬었습니다.",
+        {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
+    )
+    return source_polish, source_key_points_for_concepts, sp_mode
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -890,60 +959,15 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     section_polisher = ApiSectionPolisher(api_client, section_polish_system_prompt) if api_client is not None else None
     raw_polish_dir = ensure_dir(out / "raw_llm_outputs" / "section_polish") if args.save_debug_json else None
     invalid_polish_dir = out / "raw_llm_outputs" / "section_polish_invalid"
-    source_polish: dict[str, Any] = {}
-    raw_source_key_points_for_concepts: list[dict[str, Any]] = [
-        kp
-        for note in normalized.get("semantic_notes", [])
-        for kp in note.get("key_points", [])
-    ]
-    source_key_points_for_concepts = list(raw_source_key_points_for_concepts)
-    sp_mode = source_page_mode(args)
-    if sp_mode == "section-polish":
-        assert section_polisher is not None
-        source_payload = {
-            "page_type": "source",
-            "section": "source_summary_and_key_points",
-            "context": {
-                "document": normalized["document"],
-                "concept_slugs": [concept["slug"] for concept in normalized["concept_ledger"]],
-            },
-            "draft": {
-                "summary_candidates": [n.get("semantic_summary", "") for n in normalized["semantic_notes"] if n.get("semantic_summary")],
-                "key_points": [kp for note in normalized["semantic_notes"] for kp in note.get("key_points", [])],
-            },
-            "evidence": normalized["evidence_units"],
-        }
-        try:
-            raw_source_polish = section_polisher.polish(source_payload, blocks)
-        except SectionPolishParseError as exc:
-            invalid_path = invalid_polish_dir / "source_page.txt"
-            if args.save_debug_json:
-                ensure_dir(invalid_polish_dir)
-                write_text(invalid_path, exc.raw_content)
-            normalized.setdefault("warnings", []).append("source_page: section polish output was not repairable; used backend skeleton")
-            log.emit(
-                "5-보조. Source Section Polish",
-                "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.",
-                {"invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
-            )
-        else:
-            if raw_polish_dir is not None:
-                write_json(raw_polish_dir / "source_page.json", raw_source_polish)
-            mapped_source_polish = _map_polish_output(raw_source_polish, blocks, normalized.setdefault("warnings", []), "source_page")
-            source_polish = {
-                "title": mapped_source_polish.get("title"),
-                "summary": mapped_source_polish,
-                "key_points": mapped_source_polish,
-            }
-            source_key_points_for_concepts = [
-                *mapped_source_polish.get("items", []),
-                *raw_source_key_points_for_concepts,
-            ]
-            log.emit(
-                "5-보조. Source Section Polish",
-                "Source page의 summary/key points 섹션만 LLM으로 다듬었습니다.",
-                {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
-            )
+    source_polish, source_key_points_for_concepts, sp_mode = _prepare_source_page_polish(
+        args,
+        normalized,
+        blocks,
+        section_polisher,
+        raw_polish_dir,
+        invalid_polish_dir,
+        log,
+    )
     source_page = SourcePageAssembler().build(normalized, polish=source_polish)
     source_artifact = normalized.get("source_extraction_artifact")
     log.emit(

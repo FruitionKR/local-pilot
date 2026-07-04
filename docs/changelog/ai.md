@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Source page polish stage 분리
+
+**배경**
+
+`run_pipeline()`가 pipeline stage orchestration과 source page section polish payload 구성/실패 처리/결과 mapping을 함께 들고 있어 stage 흐름이 길어졌습니다.
+
+**추가/변경된 것**
+
+- source page summary/key points section polish 준비와 결과 mapping을 `_prepare_source_page_polish()`로 분리했습니다.
+- source page 생성, concept page 생성, manifest 계약은 유지했습니다.
+- source polish helper의 skeleton mode와 polish mapping 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+
 ### refactor: Wiki persistence payload helper 분리
 
 **배경**
