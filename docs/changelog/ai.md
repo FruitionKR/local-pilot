@@ -6,6 +6,27 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki ingestion active cluster helper 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB persistence와 active cluster Markdown parser/merge, embedding unit 추출 규칙을 함께 들고 있어 repository 책임이 과도했습니다.
+
+**추가/변경된 것**
+
+- active cluster lint/merge 규칙을 `active_cluster_markdown.py`로 분리했습니다.
+- wiki embedding unit 추출, canonical representation, hash helper를 `embedding_units.py`로 분리했습니다.
+- repository는 기존 persistence 흐름을 유지하고 순수 Markdown/embedding helper만 새 모듈에서 가져오도록 정리했습니다.
+- active cluster merge 중복 claim/relation 처리 characterization 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py llmPipeline/app/modules/wiki_ingestion/infrastructure/active_cluster_markdown.py llmPipeline/app/modules/wiki_ingestion/infrastructure/embedding_units.py llmPipeline/tests/modules/wiki_ingestion/test_concept_index.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_markdown_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki ingestion Markdown section parser 분리
 
 **배경**

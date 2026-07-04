@@ -1,9 +1,12 @@
+from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
+    merge_active_cluster_markdown,
+    parse_active_cluster_lint,
+)
+from app.modules.wiki_ingestion.infrastructure.embedding_units import extract_embedding_units
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     _append_concept_evidence,
-    _extract_embedding_units,
     _concept_index_from_markdown,
     _materialize_active_relation_candidates,
-    _parse_active_cluster_lint,
     _resolve_or_create_wiki_page_id,
 )
 
@@ -91,7 +94,7 @@ def test_embedding_units_extract_global_source_refs() -> None:
 - Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001, doc_b:B0002]
 """
 
-    units = _extract_embedding_units(markdown)
+    units = extract_embedding_units(markdown)
 
     assert units[0]["block_refs"] == ["doc_a:B0001", "doc_b:B0002"]
     assert units[0]["text"] == "Back EMF는 제조 공차의 영향을 받는다."
@@ -141,7 +144,7 @@ source_refs: [doc_a, doc_b]
 reason: definition/evidence/relation이 충분함
 """
 
-    clusters = _parse_active_cluster_lint(markdown)
+    clusters = parse_active_cluster_lint(markdown)
 
     assert clusters == [
         {
@@ -169,6 +172,47 @@ reason: definition/evidence/relation이 충분함
                 "promotion_source_refs": ["doc_a", "doc_b"],
         }
     ]
+
+
+def test_merge_active_cluster_markdown_deduplicates_claims_and_relations() -> None:
+    existing = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+### Evidence Claims
+- claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001]
+
+### Core Relation Candidates
+- target: concept:tolerance-analysis
+  relation: supports_or_enables
+  evidence: [doc_a:B0001]
+  reason: 기존 근거
+"""
+    incoming = """# Active Meaning Clusters
+
+## cluster: back-emf
+
+### Evidence Claims
+- claim_001: Back EMF는 제조 공차의 영향을 받는다. [doc_a:B0001]
+- claim_002: Back EMF는 토크 리플 분석에도 쓰인다. [doc_b:B0002]
+
+### Core Relation Candidates
+- target: concept:tolerance-analysis
+  relation: supports_or_enables
+  evidence: [doc_a:B0001]
+  reason: 중복 근거
+- target: concept:torque-ripple
+  relation: related_evidence
+  evidence: [doc_b:B0002]
+  reason: 신규 관계 후보
+"""
+
+    merged = merge_active_cluster_markdown(existing, incoming)
+
+    assert merged.count("claim_001") == 1
+    assert "claim_002: Back EMF는 토크 리플 분석에도 쓰인다. [doc_b:B0002]" in merged
+    assert merged.count("target: concept:tolerance-analysis") == 1
+    assert "target: concept:torque-ripple" in merged
 
 
 def test_materialize_active_relation_candidates_links_existing_concepts_only() -> None:
