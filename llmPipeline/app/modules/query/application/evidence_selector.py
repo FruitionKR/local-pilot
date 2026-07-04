@@ -2,6 +2,15 @@ import re
 from dataclasses import dataclass
 
 from app.modules.query.application.ports import EmbeddingSearchPort, TextSearchPort
+from app.modules.query.application.source_references import (
+    has_global_source_refs,
+    is_block_ref_only,
+    legacy_source_fields,
+    remove_block_refs,
+    source_block_ids,
+    source_references,
+    source_references_from_ids,
+)
 from app.modules.query.domain.entities import EvidenceSnippet, RetrievedPage, SourceReference, WikiEmbeddingUnit
 from app.modules.query.domain.scoring import hybrid_score
 
@@ -52,7 +61,7 @@ class EvidenceSelector:
             if stored_units:
                 candidates.extend(self._score_stored_embedding_units(question, item, stored_units))
                 continue
-            if not source_document_id and not self._has_global_source_refs(item.page.markdown or item.page.summary):
+            if not source_document_id and not has_global_source_refs(item.page.markdown or item.page.summary):
                 continue
             candidates.extend(self._score_evidence_sentences(question, item, source_document_id or ""))
 
@@ -127,11 +136,11 @@ class EvidenceSelector:
         raw_candidates: list[_EvidenceCandidate] = []
         for paragraph in paragraphs:
             for unit, unit_type, unit_weight in self._split_structured_evidence_units(paragraph):
-                source_refs = self._source_references(unit, source_document_id)
+                source_refs = source_references(unit, source_document_id)
                 if not source_refs:
                     continue
-                legacy_document_id, legacy_block_ids = self._legacy_source_fields(source_refs, source_document_id)
-                clean_sentence = self._remove_block_refs(unit)
+                legacy_document_id, legacy_block_ids = legacy_source_fields(source_refs, source_document_id)
+                clean_sentence = remove_block_refs(unit)
                 raw_candidates.append(
                     _EvidenceCandidate(
                         page_id=item.page.id,
@@ -158,8 +167,8 @@ class EvidenceSelector:
         for unit in units:
             if not unit.source_block_ids or not unit.text:
                 continue
-            source_refs = self._source_references_from_ids(unit.source_block_ids, unit.source_document_id)
-            legacy_document_id, legacy_block_ids = self._legacy_source_fields(source_refs, unit.source_document_id)
+            source_refs = source_references_from_ids(unit.source_block_ids, unit.source_document_id)
+            legacy_document_id, legacy_block_ids = legacy_source_fields(source_refs, unit.source_document_id)
             raw_candidates.append(
                 _EvidenceCandidate(
                     page_id=unit.page_id,
@@ -237,7 +246,7 @@ class EvidenceSelector:
             units = [self._clean_sentence(text)]
         scored: list[_EvidenceCandidate] = []
         for unit in units:
-            clean_unit = self._remove_block_refs(unit)
+            clean_unit = remove_block_refs(unit)
             if not clean_unit:
                 continue
             unit_terms = set(self._tokens(clean_unit))
@@ -262,7 +271,7 @@ class EvidenceSelector:
         bullet_lines = [
             self._clean_sentence(line)
             for line in paragraph.splitlines()
-            if re.match(r"^\s*[-*]\s+", line) and self._source_block_ids(line)
+            if re.match(r"^\s*[-*]\s+", line) and source_block_ids(line)
         ]
         if bullet_lines:
             return bullet_lines
@@ -425,16 +434,12 @@ class EvidenceSelector:
         ]
         chunks: list[str] = []
         for chunk in raw_chunks:
-            if chunks and self._is_block_ref_only(chunk):
+            if chunks and is_block_ref_only(chunk):
                 chunks[-1] = f"{chunks[-1]} {chunk}"
             else:
                 chunks.append(chunk)
         sentences = [self._clean_sentence(chunk) for chunk in chunks if self._clean_sentence(chunk)]
         return sentences or [self._clean_sentence(normalized)]
-
-    def _is_block_ref_only(self, text: str) -> bool:
-        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-        return bool(re.fullmatch(rf"(?:\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]\s*)+", text.strip()))
 
     def _clean_sentence(self, sentence: str) -> str:
         cleaned = sentence.strip()
@@ -477,73 +482,6 @@ class EvidenceSelector:
             if match:
                 return match.group(1).strip()
         return None
-
-    def _has_global_source_refs(self, text: str | None) -> bool:
-        return bool(text and re.search(r"\[[^\]]*[A-Za-z0-9_.-]+:B\d{4}", text))
-
-    def _source_block_ids(self, text: str) -> list[str]:
-        block_ids: list[str] = []
-        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-        for group in re.findall(rf"\[((?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*)\]", text):
-            for raw_ref in group.split(","):
-                ref = raw_ref.strip()
-                block_ids.append(ref.split(":", 1)[-1])
-        return list(dict.fromkeys(block_ids))
-
-    def _source_references(self, text: str, default_document_id: str | None) -> list[SourceReference]:
-        refs: list[SourceReference] = []
-        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-        for group in re.findall(rf"\[((?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*)\]", text):
-            refs.extend(self._source_references_from_ids(group.split(","), default_document_id))
-        return self._dedupe_source_refs(refs)
-
-    def _source_references_from_ids(
-        self,
-        ref_ids: list[str],
-        default_document_id: str | None,
-    ) -> list[SourceReference]:
-        refs: list[SourceReference] = []
-        for raw_ref in ref_ids:
-            ref = raw_ref.strip()
-            if not ref or ref == "web":
-                continue
-            if ":" in ref:
-                document_id, block_id = ref.split(":", 1)
-            else:
-                document_id, block_id = default_document_id, ref
-            if document_id and re.fullmatch(r"B\d{4}", block_id):
-                refs.append(SourceReference(source_document_id=document_id, source_block_id=block_id))
-        return self._dedupe_source_refs(refs)
-
-    def _legacy_source_fields(
-        self,
-        refs: list[SourceReference],
-        default_document_id: str,
-    ) -> tuple[str, list[str]]:
-        if not refs:
-            return default_document_id, []
-        primary_document_id = refs[0].source_document_id
-        return primary_document_id, [
-            ref.source_block_id
-            for ref in refs
-            if ref.source_document_id == primary_document_id
-        ]
-
-    def _dedupe_source_refs(self, refs: list[SourceReference]) -> list[SourceReference]:
-        deduped: list[SourceReference] = []
-        seen: set[tuple[str, str]] = set()
-        for ref in refs:
-            key = (ref.source_document_id, ref.source_block_id)
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(ref)
-        return deduped
-
-    def _remove_block_refs(self, text: str) -> str:
-        ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-        cleaned = re.sub(rf"\s*\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]", "", text)
-        return cleaned.strip()
 
     def _tokens(self, text: str) -> list[str]:
         return [

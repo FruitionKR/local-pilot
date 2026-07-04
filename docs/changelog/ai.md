@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Query source reference parser 분리
+
+**배경**
+
+`EvidenceSelector`가 evidence 선택/scoring과 source block ref 문자열 파싱을 함께 담당해, citation ref 처리 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- source ref 감지, block id 추출, structured `SourceReference` 변환, legacy field 변환, ref 제거 로직을 `source_references.py`로 분리했습니다.
+- `EvidenceSelector`는 기존 evidence selection 흐름을 유지하고 source ref parser 함수만 새 모듈에서 가져오도록 정리했습니다.
+- source ref parser 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/query/application/evidence_selector.py llmPipeline/app/modules/query/application/source_references.py llmPipeline/tests/modules/query/test_source_references.py llmPipeline/tests/modules/query/test_evidence_selector.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_source_references llmPipeline.tests.modules.query.test_evidence_selector` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki ingestion active cluster helper 분리
 
 **배경**
