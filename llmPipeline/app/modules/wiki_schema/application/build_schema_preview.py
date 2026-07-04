@@ -2,17 +2,9 @@ from __future__ import annotations
 
 import re
 
+from app.modules.wiki_schema.application.schema_sections import SCHEMA_SECTIONS
 from app.modules.wiki_schema.domain.entities import SchemaFilterResult, SchemaFragments, SchemaIssue
 
-
-SECTION_TITLES = (
-    ("global_markdown", "공통 작성 기준"),
-    ("query_markdown", "질문 답변 기준"),
-    ("ingest_markdown", "문서 수집 기준"),
-    ("edit_markdown", "문서 편집 기준"),
-    ("concept_markdown", "Concept 기준"),
-    ("template_markdown", "Template 기준"),
-)
 
 SECRET_VALUE_PATTERNS = (
     re.compile(r"(?i)(sk-[a-z0-9_-]{8,})"),
@@ -41,7 +33,7 @@ def build_schema_preview(result: SchemaFilterResult) -> str:
 
 def _render_applied_sections(fragments: SchemaFragments) -> str:
     rendered_sections: list[str] = []
-    for field_name, title in SECTION_TITLES:
+    for field_name, title in SCHEMA_SECTIONS:
         markdown = getattr(fragments, field_name).strip()
         if markdown:
             rendered_sections.append(f"## {title}\n{_redact_secret_values(markdown)}")

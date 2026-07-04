@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki schema section metadata 공통화
+
+**배경**
+
+schema fragment section 목록이 filter와 preview 렌더링 코드에 각각 정의되어 있어, 새 section을 추가할 때 한쪽만 갱신될 위험이 있었습니다.
+
+**추가/변경된 것**
+
+- `schema_sections.py`를 추가해 schema section field 이름과 preview title을 한 곳에서 관리하도록 했습니다.
+- `filter_schema_fragments.py`와 `build_schema_preview.py`가 공통 section metadata를 사용하도록 정리했습니다.
+- `SchemaFragments` 필드와 section metadata가 어긋나지 않도록 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_schema.test_schema_filter llmPipeline.tests.modules.wiki_schema.test_schema_preview llmPipeline.tests.modules.wiki_schema.test_schema_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_schema` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Query event publish 보조 함수 분리
 
 **배경**

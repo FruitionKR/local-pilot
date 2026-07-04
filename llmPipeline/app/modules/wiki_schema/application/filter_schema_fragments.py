@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from typing import cast
 
+from app.modules.wiki_schema.application.schema_sections import SCHEMA_SECTION_NAMES
 from app.modules.wiki_schema.domain.entities import (
     SchemaFilterResult,
     SchemaFragments,
@@ -66,21 +67,11 @@ BLOCKING_RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
 )
 
 
-SECTION_NAMES = (
-    "global_markdown",
-    "query_markdown",
-    "ingest_markdown",
-    "edit_markdown",
-    "concept_markdown",
-    "template_markdown",
-)
-
-
 def filter_schema_fragments(raw_markdown: str, fragments: SchemaFragments) -> SchemaFilterResult:
     issues = _find_issues("raw_markdown", raw_markdown)
     cleaned_values: dict[str, str] = {}
 
-    for section_name in SECTION_NAMES:
+    for section_name in SCHEMA_SECTION_NAMES:
         section_text = getattr(fragments, section_name)
         cleaned_text, section_issues = _clean_fragment(section_name, section_text)
         cleaned_values[section_name] = cleaned_text
