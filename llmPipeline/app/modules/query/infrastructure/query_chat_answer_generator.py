@@ -1,6 +1,6 @@
-import os
 from collections.abc import Callable
 
+from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
@@ -74,48 +74,31 @@ def _config_from_env() -> ChatClientConfig:
 
 
 def _endpoint() -> str:
-    endpoint = os.environ.get("QUERY_LLM_ENDPOINT") or os.environ.get("LLM_ENDPOINT")
-    if endpoint:
-        return endpoint
-    base_url = (
-        os.environ.get("QUERY_LLM_BASE_URL")
-        or os.environ.get("UPSTAGE_BASE_URL")
-        or os.environ.get("LLM_BASE_URL")
-        or "https://api.upstage.ai/v1"
+    return chat_completions_endpoint(
+        endpoint_env_names=("QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
+        base_url_env_names=("QUERY_LLM_BASE_URL", "UPSTAGE_BASE_URL", "LLM_BASE_URL"),
+        default_base_url="https://api.upstage.ai/v1",
     )
-    return base_url.rstrip("/") + "/chat/completions"
 
 
 def _api_key() -> str | None:
-    key_env = os.environ.get("QUERY_LLM_API_KEY_ENV")
-    if key_env and os.environ.get(key_env):
-        return os.environ[key_env]
-    return os.environ.get("QUERY_LLM_API_KEY") or os.environ.get("UPSTAGE_API_KEY") or os.environ.get("LLM_API_KEY")
+    return api_key_from_env(
+        key_env_name="QUERY_LLM_API_KEY_ENV",
+        key_env_names=("QUERY_LLM_API_KEY", "UPSTAGE_API_KEY", "LLM_API_KEY"),
+    )
 
 
 def _model() -> str:
-    return os.environ.get("QUERY_LLM_MODEL") or os.environ.get("UPSTAGE_MODEL") or os.environ.get("LLM_MODEL") or "solar-pro2"
+    return model_from_env(("QUERY_LLM_MODEL", "UPSTAGE_MODEL", "LLM_MODEL"), "solar-pro2")
 
 
 def _float_env(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default
+    return float_env(name, default)
 
 
 def _int_env(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default
+    return int_env(name, default)
 
 
 def _optional_int_env(name: str) -> int | None:
-    raw = os.environ.get(name)
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
+    return optional_int_env(name)

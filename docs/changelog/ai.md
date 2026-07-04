@@ -6,6 +6,26 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: LLM 환경변수 해석 helper 공통화
+
+**배경**
+
+agent, markdown edit, wiki schema, query LLM infrastructure가 endpoint/API key/model/numeric 옵션을 거의 같은 방식으로 해석하는 함수를 반복하고 있었습니다. 각 모듈의 환경변수 우선순위와 기본값은 유지하면서 공통 parsing만 분리했습니다.
+
+**추가/변경된 것**
+
+- `app/core/llm_env.py`를 추가해 chat completions endpoint, API key, model, float/int option 해석을 공통화했습니다.
+- agent router, markdown editor, wiki schema organizer, query answer generator/evaluator가 공통 helper를 사용하도록 정리했습니다.
+- API key trim 여부처럼 기존 모듈별 차이는 호출부 옵션으로 유지했습니다.
+- env helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.test_llm_env llmPipeline.tests.modules.agent.test_handle_agent_turn llmPipeline.tests.modules.markdown_edit.test_generate_markdown_edit llmPipeline.tests.modules.markdown_edit.test_generate_markdown_document llmPipeline.tests.modules.wiki_schema.test_chat_completions_schema_organizer llmPipeline.tests.modules.query.test_query_chat_answer_generator` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules` 통과.
+- 관련 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki embedding 결과 summary 조립 분리
 
 **배경**
