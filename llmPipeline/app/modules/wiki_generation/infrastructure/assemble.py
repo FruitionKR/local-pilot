@@ -9,25 +9,12 @@ from typing import Any
 from app.modules.wiki_ingestion.infrastructure.file_io import write_json, write_text
 from app.modules.wiki_generation.domain.entities import SourceBlock
 from app.modules.wiki_generation.domain.text_utils import slugify, unique_keep_order
-
-
-def ref_label(ref_id: str) -> str:
-    m = re.search(r"_b(\d{4})$", ref_id)
-    if m:
-        return f"B{m.group(1)}"
-    return ref_id
-
-
-def cite_refs(refs: list[str], document_id: str | None = None) -> str:
-    refs = _global_refs(document_id, refs) if document_id else unique_keep_order([r for r in refs if r])
-    return f" [{', '.join(_display_ref(r) for r in refs)}]" if refs else ""
-
-
-def _display_ref(ref: str) -> str:
-    if ":" not in ref:
-        return ref_label(ref)
-    document_id, block_id = ref.split(":", 1)
-    return f"{document_id}:{ref_label(block_id)}"
+from app.modules.wiki_generation.infrastructure.ref_format import (
+    cite_global_refs as _cite_global_refs,
+    cite_refs,
+    display_ref as _display_ref,
+    global_refs as _global_refs,
+)
 
 
 class SourcePageAssembler:
@@ -1122,23 +1109,6 @@ class MeaningClusterArtifactAssembler:
 
         lines.extend(["", "### Materialized Changes", "- updated: clusters/active.md", "- updated: logs/{yyyy-mm-dd}.md"])
         return "\n".join(lines) + "\n"
-
-
-def _global_refs(document_id: str | None, refs: list[str]) -> list[str]:
-    if not document_id:
-        return unique_keep_order([str(ref) for ref in refs if ref])
-    return unique_keep_order(
-        [
-            ref if ":" in str(ref) else f"{document_id}:{ref}"
-            for ref in refs
-            if ref
-        ]
-    )
-
-
-def _cite_global_refs(refs: list[str]) -> str:
-    refs = unique_keep_order([str(ref) for ref in refs if ref])
-    return f" [{', '.join(refs)}]" if refs else ""
 
 
 def _title_from_slug(slug: str) -> str:

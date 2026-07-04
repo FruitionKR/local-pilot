@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki generation ref formatting 분리
+
+**배경**
+
+`assemble.py`가 page/cluster artifact 조립과 source block ref 표기 규칙을 함께 들고 있어, citation 표기 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- ref label, global ref, citation suffix formatting을 `ref_format.py`로 분리했습니다.
+- `assemble.py`는 기존 page/cluster 조립 흐름을 유지하고 ref formatting 함수만 새 모듈에서 가져오도록 정리했습니다.
+- ref formatting 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_ref_format` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- 관련 infrastructure 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: LLM 환경변수 해석 helper 공통화
 
 **배경**
