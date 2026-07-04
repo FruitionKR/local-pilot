@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-07-04
+
+### ci: web-services workflow 검증 강화
+
+**배경**
+
+기존 CI의 `docker compose ps` 단계는 컨테이너가 죽어 있어도 exit 0이라 실패를 잡지 못했고, timeout·concurrency·paths 필터가 없어 잡 멈춤이나 불필요한 실행에 취약했습니다.
+
+**변경된 것**
+
+- `.github/workflows/web-services.yml` — `up -d --wait --wait-timeout 120`으로 healthcheck 통과까지 대기하도록 변경하고, 가짜 검증이던 `ps` 단계를 `minio-init` 컨테이너 exit code 확인으로 교체
+- `.github/workflows/web-services.yml` — `paths` 필터(`infra/**`, workflow 자체), `concurrency`(cancel-in-progress), `timeout-minutes: 10` 추가
+- `.github/workflows/web-services.yml` — `down` 단계에도 `--env-file infra/.env.example`을 지정해 변수 미정의 경고 제거
+
+**검증**
+
+- YAML 문법 검사 통과 (ruby YAML.load_file)
+- 로컬 `up`/`down -v` 실행 검증은 로컬 dev 볼륨(`fruition-mvp-dev`) 삭제 위험으로 생략 — PR의 Actions run으로 실제 동작 확인 필요
+- minio 서비스에 healthcheck가 없어 `--wait`는 running 상태만 확인함 — 추후 compose에 minio healthcheck 추가 여지 있음
+
 ## 2026-07-01
 
 ### chore: LangSmith tracing과 evaluator graph 환경변수 추가

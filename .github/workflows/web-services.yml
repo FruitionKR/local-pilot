@@ -2,15 +2,26 @@ name: Web Services
 
 on:
   pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/web-services.yml'
   push:
     branches:
       - dev
       - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/web-services.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docker-compose:
     name: Docker Compose
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,11 +30,13 @@ jobs:
         run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml config
 
       - name: Start web service dependencies
-        run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d
+        run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d --wait --wait-timeout 120
 
-      - name: Check service status
-        run: docker compose -f infra/docker-compose.dev.yml ps
+      - name: Check minio-init result
+        run: |
+          exit_code=$(docker inspect fruition-minio-init-dev --format '{{.State.ExitCode}}')
+          test "$exit_code" = "0"
 
       - name: Stop web service dependencies
         if: always()
-        run: docker compose -f infra/docker-compose.dev.yml down -v
+        run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml down -v
