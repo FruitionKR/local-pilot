@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Query event publish 보조 함수 분리
+
+**배경**
+
+query application 흐름에서 callback event publish 실패를 삼키고 본 흐름을 계속 진행하는 처리가 `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`에 중복되어 있었습니다. 같은 실패 처리 정책을 한 곳에서 확인할 수 있도록 보조 함수로 분리했습니다.
+
+**추가/변경된 것**
+
+- `publish_query_event()`를 추가해 event publisher 없음/실패 시 조용히 반환하는 기존 정책을 공통화했습니다.
+- `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`의 `_publish()`는 새 보조 함수에 위임하도록 정리했습니다.
+- event publish 성공/무시 동작을 검증하는 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query llmPipeline.tests.modules.query.test_query_web_answer_builder llmPipeline.tests.modules.query.test_query_event` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Query application 보조 책임 분리
 
 **배경**

@@ -15,6 +15,7 @@ from app.modules.query.application.ports import (
     WikiRepositoryPort,
 )
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
+from app.modules.query.application.query_event import publish_query_event
 from app.modules.query.application.query_evaluator_flow import QueryEvaluatorLoop
 from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
@@ -538,9 +539,4 @@ class AnswerQueryUseCase:
         message: str,
         data: dict[str, object] | None = None,
     ) -> None:
-        if event_publisher is None:
-            return
-        try:
-            event_publisher.publish(stage, message, data)
-        except Exception:
-            return
+        publish_query_event(event_publisher, stage, message, data)
