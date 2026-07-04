@@ -199,10 +199,12 @@ public class DocumentService {
     }
 
     void doRequestProcessing(String documentId) {
+        Document document = documentRepository.findById(documentId).orElse(null);
+        if (document == null) return;
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
-                    processingRequester.request(documentId, callbackUrl);
+                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(), callbackUrl);
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {

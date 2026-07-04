@@ -8,6 +8,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### feat: 파이프라인 실행 요청에 실제 user_id/workspace_id 전달
+
+**배경**
+
+`DocumentProcessingRequester`가 `/pipeline/runs`에 `{document_id, log_callback_url}`만 보내, llmPipeline이 `wiki_pages`를 DDL 기본값 `local-user`/`local-workspace`로 기록했다. wiki_pages 스키마·삭제는 workspace scope로 맞췄지만(2026-07-04 이전 커밋), 실제 workspace 값이 전달되지 않아 **데이터 레벨 격리가 안 되고 모든 문서의 wiki가 `local-workspace`로 섞이던** 상태를 e2e로 확인했다(`docs/issue/2026-07-02.md` B3).
+
+**추가/변경된 것**
+
+- `document/repository/DocumentProcessingRequester.java`: JSON 문자열 수동 조립을 `PipelineRunRequest` record로 교체(escaping 취약점 제거). `request(documentId, userId, workspaceId, callbackUrl)`로 시그니처를 바꿔 `user_id`/`workspace_id`를 body에 포함.
+- `document/service/DocumentService.java`: `doRequestProcessing`이 문서를 로드해 그 문서의 `userId`/`workspaceId`를 요청에 전달. 문서가 이미 삭제됐으면 조용히 반환.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e: `ws_7baa...` 워크스페이스에 문서 업로드→인제스트 후, 생성된 source/concept wiki_pages가 모두 실제 `user_id=user_6fdd...`, `workspace_id=ws_7baa...`로 기록됨을 확인(이전엔 `local-user`/`local-workspace`).
+
+**주의사항**
+
+- `source_page_mode`/`concept_page_mode`/`provider`는 파이프라인 기본값(auto/auto/upstage)이 합리적이고, 명시하면 백엔드에 하드코딩이 되므로 이번엔 전달하지 않았다. 필요 시 별도 config로 추가한다.
+- 이제 데이터 레벨 workspace 격리가 되므로, graph/detail 조회를 요청 workspace로 필터링하는 후속 작업(Scope B)이 의미를 갖는다.
+
 ### fix: documents.error_message를 TEXT로 변경해 긴 에러 저장 시 크래시 제거
 
 **배경**
