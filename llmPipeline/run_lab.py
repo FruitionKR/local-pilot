@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import urllib.error
 import urllib.request
@@ -18,6 +17,9 @@ from langgraph.graph import END, StateGraph
 from app.modules.wiki_generation.application.evaluation_guards import (
     apply_generation_evaluation_guards as _apply_generation_evaluation_guards,
     repair_normalized_from_evaluation as _repair_normalized_from_evaluation,
+)
+from app.modules.wiki_generation.application.section_polish_mapping import (
+    map_polish_output as _map_polish_output,
 )
 from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
@@ -231,42 +233,6 @@ def source_page_mode(args: argparse.Namespace) -> str:
     if getattr(args, "source_page_mode", "auto") != "auto":
         return args.source_page_mode
     return "section-polish" if args.mode in {"api", "generic-chat"} else "skeleton"
-
-
-def _map_polish_output(raw: dict[str, Any], source_blocks: list[Any], warnings: list[str], context: str) -> dict[str, Any]:
-    valid_bids = {b.block_id for b in source_blocks}
-
-    def map_refs(anchor_block_ids: list[str]) -> list[str]:
-        refs = []
-        for bid in anchor_block_ids or []:
-            if bid not in valid_bids:
-                warnings.append(f"{context}: unknown polish anchor_block_id {bid}")
-                continue
-            refs.append(bid)
-        return refs
-
-    def clean_text(text: Any) -> str:
-        text = str(text or "")
-        text = re.sub(r"\s*[\[(]B\d{4}[\])]", "", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
-
-    mapped = {
-        "section": raw.get("section"),
-        "text": clean_text(raw.get("text", "")),
-        "anchor_reference_ids": map_refs(raw.get("anchor_block_ids", [])),
-        "items": [],
-        "related_concept_hints": raw.get("related_concept_hints", []),
-        "confidence": raw.get("confidence", 0.0),
-    }
-    for item in raw.get("items", []) or []:
-        mapped["items"].append(
-            {
-                "text": clean_text(item.get("text", "")),
-                "anchor_reference_ids": map_refs(item.get("anchor_block_ids", [])),
-            }
-        )
-    return mapped
 
 
 def _run_semantic_extraction(
