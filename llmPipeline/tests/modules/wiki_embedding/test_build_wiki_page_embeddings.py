@@ -1,6 +1,6 @@
 import unittest
 
-from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase
+from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase, embedding_result
 from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 
 
@@ -49,6 +49,12 @@ class FakeMarkdownReader:
 
 
 class BuildWikiPageEmbeddingsUseCaseTest(unittest.TestCase):
+    def test_embedding_result_uses_stable_response_shape(self) -> None:
+        self.assertEqual(
+            embedding_result(target_count=2, embedded_count=1, skipped_count=1, failed_count=0),
+            {"target_count": 2, "embedded_count": 1, "skipped_count": 1, "failed_count": 0},
+        )
+
     def test_embeds_pages_and_skips_unchanged_hashes(self) -> None:
         targets = [
             WikiPageEmbeddingTarget("page:one", "One", "summary", "s3://test/one.md"),

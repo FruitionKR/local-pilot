@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki embedding 결과 summary 조립 분리
+
+**배경**
+
+wiki page embedding use case가 동일한 결과 dict shape를 여러 return 지점에서 반복해, 응답 key 변경이나 집계 기준 수정 시 누락 위험이 있었습니다.
+
+**추가/변경된 것**
+
+- embedding 실행 결과 dict를 만드는 `embedding_result()` 보조 함수를 추가했습니다.
+- `BuildWikiPageEmbeddingsUseCase`의 기존 반환 shape는 유지하면서 모든 return 지점이 같은 helper를 사용하도록 정리했습니다.
+- 결과 summary shape를 고정하는 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_embedding.test_build_wiki_page_embeddings` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_embedding` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki schema section metadata 공통화
 
 **배경**
