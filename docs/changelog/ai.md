@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Chat completions JSON parser 분리
+
+**배경**
+
+`chat_completions_llm.py`가 HTTP client, LLM adapter, JSON parsing/repair 정책을 함께 들고 있어 외부 호출 경계와 순수 parsing 규칙이 섞여 있었습니다.
+
+**추가/변경된 것**
+
+- JSON fence 제거, JSON object repair, section polish output 정규화를 `json_output_parser.py`로 분리했습니다.
+- 기존 `chat_completions_llm.py`의 parser import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+- JSON parsing/repair와 section polish schema normalization 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_json_output_parser.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/chat_completions_llm.py app/modules/wiki_generation/infrastructure/json_output_parser.py tests/modules/wiki_generation/test_json_output_parser.py run_lab.py` 통과.
+
 ### refactor: Query graph path helper 분리
 
 **배경**
