@@ -76,7 +76,7 @@
 }
 
 .markdown-citation.citation-rank-1 {
-  background: #ffc117;
+  background: var(--yellow);
 }
 
 .markdown-citation.citation-rank-2 {

@@ -4,6 +4,108 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-04
+
+### refactor: graph 캔버스 모듈 정리
+
+**변경 배경**
+
+- `graphPhysics`에 모든 분기가 14를 반환하는 dead if-체인이 있었고, link마다 `nodes.find()`를 도는 O(L×N) 탐색이 있었다.
+- `useGraphCanvas`가 초기화 시 localStorage cache를 3회 파싱했고, render 중 ref 할당(side-effect)이 있었다.
+
+**변경된 내용**
+
+- `graphPhysics`: `FIXED_NODE_SIZE` 단일 상수화, node Map 1회 생성으로 O(1) 조회 전환, `PAIR_DISTANCE` 상수 추출.
+- `graphGeometry`: 거리 영향도 if-체인을 `DISTANCE_INFLUENCE` lookup 배열로 교체(값 동일).
+- `graphCache`: `JSON.parse` 결과를 `unknown`으로 받아 기존 필드 검사로 좁히도록 변경.
+- `useGraphCanvas`: cache 1회 읽기로 통합, render 중 ref 할당을 `useLayoutEffect`로 이동, 무의미한 `clampZoom` wrapper 제거, layout 버전 문자열 상수화.
+- `useGraphPointer`: 버튼 마스크 상수화, 드래그 ref 2개를 단일 `nodeDragRef`로 병합, `startPanning`→`handlePointerDown` rename.
+- `graphDrawing`: DPR resize를 `ensureCanvasSize`로, hover 연산을 `computeLinkedHoverAmounts`로 추출, Figma 유래 marker 수치 상수화, gradient 색상을 `hexToRgb(GRAPH_COLORS.hoverNode)`로 파생.
+- `useGraphAnimation`: 프레임/tick 매직 넘버 상수화.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
+### refactor: document-sidebar와 _hooks 정리
+
+**변경 배경**
+
+- `onSelectGraphNode` 인자 타입이 두 파일에 인라인으로 복제되어 있었고, drag/drop 판정 로직과 매직 넘버가 중복·산재했다.
+- `useTreeSelection`의 연동 state 4개가 별개 useState로 관리되어 항상 함께 갱신되는 관계가 코드에 드러나지 않았다.
+
+**변경된 내용**
+
+- `types.ts`에 `SelectableTreeItem` 타입 추출, `DocumentSidebar` 인라인 타입 교체.
+- `dragDrop.ts` drop 임계값(0.28/0.72)·offscreen 좌표 상수화, `TreeNode` 들여쓰기 상수화.
+- `useTreeNodeDragDrop`의 중복 wiki 드롭 판정을 `resolveWikiDropTarget` 헬퍼로 통합.
+- `ProjectSection` className을 `cx()` 헬퍼로 통일.
+- `useProjectTree` 반환 객체의 인라인 화살표 함수 5개를 명명 함수로 전환, 변수명 일관화.
+- `useTreeSelection` state 4개를 단일 객체 state로 병합(반환 API 동일).
+- `useDocumentUpload` ref 타입 정리, 병렬 배열 인덱스 패턴을 쌍(zip) 기반 반복으로 교체.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
+### refactor: agent-panel과 루트 컴포넌트 정리
+
+**변경 배경**
+
+- `AgentBody` 내부에 55줄 인라인 렌더 함수와 순수 헬퍼 4개가 컴포넌트 안에 섞여 있었고, `MarkdownViewer`는 100줄 파싱 루프가 컴포넌트 본문에서 실행됐다.
+- `SvgIcon`에 가짜 `as StaticImageData` cast, `SourcePreviewPanel`에 dead 별칭 변수, `useSmoothScroll`에 미사용 반환값이 있었고, `HomeWorkspace`의 resize 핸들러 4개가 로직을 중복했다.
+
+**변경된 내용**
+
+- `AgentBody`: answer 단계 상수화(`STAGE_*`), 순수 헬퍼 모듈 레벨 이동, `AssistantThread` 컴포넌트 분리, 중복 StatusList JSX 통합.
+- `useChatThread`: `buildNextActiveTurn`/`toRelatedPageMessage` 순수 함수 추출.
+- `MarkdownViewer`: 파싱 루프를 `parseMarkdownBlocks` 모듈 함수로 추출, `CITATION_COLOR_COUNT` 상수화.
+- `SvgIcon`: 인라인 아이콘 3종을 renderer map으로 처리해 unsafe cast 제거.
+- `HomeWorkspace`: resize 로직을 `useResizeHandle` 훅(신규 파일)으로 추출해 2회 인스턴스화.
+- `useSmoothScroll` 미사용 `animationRef` 반환 제거, `SourcePreviewPanel` dead 변수 제거, `StatusList` button `type="button"` 명시, `AgentResultCard`/`agentFormatters` capitalize 중복 통합, `RailNavigation` 특수 케이스를 `isLarge` 데이터 필드로 전환.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+
+### refactor: _styles 색상 토큰화와 중복 규칙 통합
+
+**변경 배경**
+
+- `--yellow` 변수가 있음에도 `#ffc117` 리터럴이 8곳에 반복되었고, `#8a8a8a`/`#3a3a3a`는 변수 없이 산재했다.
+- 동일한 스크롤바 스타일 블록이 3개 파일에 복붙되어 있었고, `--dark` dead 변수와 no-op override 규칙이 남아 있었다.
+
+**변경된 내용**
+
+- `base.css`에 `--subdued`(#8a8a8a), `--line-soft`(#3a3a3a) 토큰 추가, 미사용 `--dark` 제거.
+- `#ffc117`→`var(--yellow)`, `#8a8a8a`→`var(--subdued)`, `#3a3a3a`→`var(--line-soft)` 전면 교체.
+- `.agent-body`/`.sidebar-content`/`.source-preview-content` 스크롤바 규칙을 `base.css` 공통 블록으로 통합.
+- `results.css`의 no-op `.result-card b.raw/.source/.concept` override 제거.
+- 렌더 결과 변화 없음(값 동일).
+
+**검증 결과**
+
+- 하드코딩 색상 잔여 없음(grep 확인), `npx tsc --noEmit` 통과.
+
+### refactor: _lib 모듈 dead code 제거와 중복 통합
+
+**변경 배경**
+
+- `_lib/tree.ts`에 호출처가 없는 `buildWikiTreeGroups`(57줄)가 남아 있었고, 동일한 재귀 트리 순회 패턴이 5개 함수에 반복되어 있었다.
+- `graph.ts`에 `NODE_PREFIX` 상수가 있음에도 `"raw:"`, `"source:"` 리터럴이 인라인으로 흩어져 있었고, `api.ts`의 에러 메시지 일부가 `ERROR_MESSAGES` 상수를 거치지 않았다.
+
+**변경된 내용**
+
+- `tree.ts`: dead 함수 `buildWikiTreeGroups` 삭제, 재귀 순회를 `mapTreeItemById` 헬퍼로 통합, wiki 그룹 ID를 상수로 추출, `raw:` 리터럴을 `makeRawId`로 대체.
+- `graph.ts`: `makeRawId` 헬퍼 추가, `buildGraphFromBackend` 내부 리터럴을 `NODE_PREFIX`/`makeSourceId`/`makeRawId`로 통일.
+- `api.ts`: `fetchBackendData`/`fetchWikiPage` 인라인 에러 문자열을 `ERROR_MESSAGES`로 이동, `fetchWikiPage`도 `parseErrorResponse`를 사용하도록 통일.
+- `types.ts`: `QueryRelatedPageResponse`/`ChatMessageRelatedPageResponse` 공통 필드를 `RelatedPageBase`로 추출.
+- 동작 변경 없음(순수 정리). export 시그니처는 `makeRawId` 추가 외 변화 없음.
+
+**검증 결과**
+
+- `npx tsc --noEmit` 통과.
+
 ## 2026-06-26
 
 ### fix: 원문 패널에서 자료관리 클릭 시 그래프 노드 선택 표시 해제

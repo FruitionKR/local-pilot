@@ -5,7 +5,8 @@
   --muted: #a7a7a7;
   --line: #4f4f4f;
   --soft: #323232;
-  --dark: #0a0a0a;
+  --subdued: #8a8a8a;
+  --line-soft: #3a3a3a;
   --yellow: #ffc117;
   --source-page: #bbcf6c;
   --concept-page: #fffdf0;
@@ -44,4 +45,31 @@ button {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* 패널 공통 스크롤바 */
+.agent-body,
+.sidebar-content,
+.source-preview-content {
+  scrollbar-color: var(--line) transparent;
+}
+
+.agent-body::-webkit-scrollbar,
+.sidebar-content::-webkit-scrollbar,
+.source-preview-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.agent-body::-webkit-scrollbar-track,
+.sidebar-content::-webkit-scrollbar-track,
+.source-preview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-body::-webkit-scrollbar-thumb,
+.sidebar-content::-webkit-scrollbar-thumb,
+.source-preview-content::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border: 2px solid var(--panel);
+  border-radius: 999px;
 }

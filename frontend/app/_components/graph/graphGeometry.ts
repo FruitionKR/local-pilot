@@ -13,13 +13,12 @@ export function clampGraphZoom(nextZoom: number) {
   return Math.min(GRAPH_ZOOM.max, Math.max(GRAPH_ZOOM.min, nextZoom));
 }
 
+/** 드래그 노드로부터의 그래프 거리별 이동 영향도 (거리 4 이상은 0.03) */
+const DISTANCE_INFLUENCE = [1, 0.34, 0.16, 0.07, 0.03] as const;
+
 export function graphDistanceInfluence(distance: number | undefined) {
-  if (distance === 0) return 1;
-  if (distance === 1) return 0.34;
-  if (distance === 2) return 0.16;
-  if (distance === 3) return 0.07;
-  if (distance !== undefined) return 0.03;
-  return 0;
+  if (distance === undefined) return 0;
+  return DISTANCE_INFLUENCE[distance] ?? 0.03;
 }
 
 export function canvasWorldScale(canvas: HTMLCanvasElement, zoom: number) {

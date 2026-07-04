@@ -112,19 +112,4 @@
   padding: 31px 22px 0;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-color: #4f4f4f transparent;
-}
-
-.agent-body::-webkit-scrollbar {
-  width: 8px;
-}
-
-.agent-body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.agent-body::-webkit-scrollbar-thumb {
-  background: #4f4f4f;
-  border: 2px solid #1e1e1e;
-  border-radius: 999px;
 }

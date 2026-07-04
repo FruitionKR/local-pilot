@@ -1,8 +1,18 @@
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { GRAPH_COLORS, mixHexColor } from "./graphColors";
+import { GRAPH_COLORS, hexToRgb, mixHexColor } from "./graphColors";
 import rawNodeIcon from "../../../svg/raw.svg";
 
 const RAW_NODE_ICON_SRC = rawNodeIcon.src;
+
+// 선택 마커 geometry 값 (Figma 디자인에서 가져온 수치)
+const SELECTED_MARKER_OUTER_RADIUS = 34.6542;
+const SELECTED_MARKER_INNER_RADIUS = 6.5134;
+const SELECTED_MARKER_GRADIENT_INNER_RATIO = 0.350403;
+
+// GRAPH_COLORS.hoverNode(#ffc117) 기반 glow gradient 색상
+const HOVER_GLOW_RGB = hexToRgb(GRAPH_COLORS.hoverNode).join(", ");
+const HOVER_GLOW_START = `rgba(${HOVER_GLOW_RGB}, 0.24)`;
+const HOVER_GLOW_END = `rgba(${HOVER_GLOW_RGB}, 0)`;
 
 let rawNodeImage: HTMLImageElement | null = null;
 
@@ -29,15 +39,10 @@ export function drawGraphFrame({
   nodeSize: (node: GraphNode) => number;
   isRawSourceLink: (link: GraphLink) => boolean;
 }) {
+  ensureCanvasSize(canvas);
   const pixelRatio = window.devicePixelRatio || 1;
   const cssWidth = canvas.clientWidth;
   const cssHeight = canvas.clientHeight;
-  const nextWidth = Math.max(1, Math.floor(cssWidth * pixelRatio));
-  const nextHeight = Math.max(1, Math.floor(cssHeight * pixelRatio));
-  if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
-    canvas.width = nextWidth;
-    canvas.height = nextHeight;
-  }
 
   const context = canvas.getContext("2d");
   if (!context) return;
@@ -46,28 +51,12 @@ export function drawGraphFrame({
   context.clearRect(0, 0, cssWidth, cssHeight);
   const drawableNodeCount = Math.min(visibleNodeCount, nodes.length);
   const visibleNodeIds = new Set(nodes.slice(0, drawableNodeCount).map((node) => node.id));
-  const linkedHoverAmounts = new Map<string, number>();
-  let activeHoverAmount = 0;
-
-  nodes.slice(0, drawableNodeCount).forEach((node) => {
-    const hoverAmount = nodeHoverAmounts[node.id] ?? 0;
-    linkedHoverAmounts.set(node.id, hoverAmount);
-    activeHoverAmount = Math.max(activeHoverAmount, hoverAmount);
-  });
-
-  links.forEach((link) => {
-    if (!visibleNodeIds.has(link.from) || !visibleNodeIds.has(link.to)) return;
-    const fromHoverAmount = nodeHoverAmounts[link.from] ?? 0;
-    const toHoverAmount = nodeHoverAmounts[link.to] ?? 0;
-
-    linkedHoverAmounts.set(
-      link.from,
-      Math.max(linkedHoverAmounts.get(link.from) ?? 0, fromHoverAmount, toHoverAmount)
-    );
-    linkedHoverAmounts.set(
-      link.to,
-      Math.max(linkedHoverAmounts.get(link.to) ?? 0, fromHoverAmount, toHoverAmount)
-    );
+  const { linkedHoverAmounts, activeHoverAmount } = computeLinkedHoverAmounts({
+    nodes,
+    links,
+    drawableNodeCount,
+    visibleNodeIds,
+    nodeHoverAmounts
   });
 
   function focusAmountFromHover(hoverAmount: number) {
@@ -162,6 +151,59 @@ export function drawGraphFrame({
   }
 }
 
+/** canvas 크기를 devicePixelRatio에 맞춰 갱신한다. 크기가 바뀌었으면 true를 반환한다. */
+function ensureCanvasSize(canvas: HTMLCanvasElement): boolean {
+  const pixelRatio = window.devicePixelRatio || 1;
+  const nextWidth = Math.max(1, Math.floor(canvas.clientWidth * pixelRatio));
+  const nextHeight = Math.max(1, Math.floor(canvas.clientHeight * pixelRatio));
+  if (canvas.width === nextWidth && canvas.height === nextHeight) return false;
+
+  canvas.width = nextWidth;
+  canvas.height = nextHeight;
+  return true;
+}
+
+/** 링크로 연결된 노드까지 hover 강도를 전파해 노드별 최대값과 전체 최대값을 계산한다. */
+function computeLinkedHoverAmounts({
+  nodes,
+  links,
+  drawableNodeCount,
+  visibleNodeIds,
+  nodeHoverAmounts
+}: {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  drawableNodeCount: number;
+  visibleNodeIds: Set<string>;
+  nodeHoverAmounts: Record<string, number>;
+}) {
+  const linkedHoverAmounts = new Map<string, number>();
+  let activeHoverAmount = 0;
+
+  nodes.slice(0, drawableNodeCount).forEach((node) => {
+    const hoverAmount = nodeHoverAmounts[node.id] ?? 0;
+    linkedHoverAmounts.set(node.id, hoverAmount);
+    activeHoverAmount = Math.max(activeHoverAmount, hoverAmount);
+  });
+
+  links.forEach((link) => {
+    if (!visibleNodeIds.has(link.from) || !visibleNodeIds.has(link.to)) return;
+    const fromHoverAmount = nodeHoverAmounts[link.from] ?? 0;
+    const toHoverAmount = nodeHoverAmounts[link.to] ?? 0;
+
+    linkedHoverAmounts.set(
+      link.from,
+      Math.max(linkedHoverAmounts.get(link.from) ?? 0, fromHoverAmount, toHoverAmount)
+    );
+    linkedHoverAmounts.set(
+      link.to,
+      Math.max(linkedHoverAmounts.get(link.to) ?? 0, fromHoverAmount, toHoverAmount)
+    );
+  });
+
+  return { linkedHoverAmounts, activeHoverAmount };
+}
+
 export function drawNodeLabel(context: CanvasRenderingContext2D, node: GraphNode, x: number, y: number, radius: number) {
   const labelY = y + radius + 16;
   context.font = node.kind === "source" ? "600 12px Inter, sans-serif" : "11px Inter, sans-serif";
@@ -179,12 +221,12 @@ export function drawNodeLabel(context: CanvasRenderingContext2D, node: GraphNode
 }
 
 function drawSelectedNodeMarker(context: CanvasRenderingContext2D, x: number, y: number, opacity: number) {
-  const outerRadius = 34.6542;
-  const innerRadius = 6.5134;
-  const gradient = context.createRadialGradient(x, y, outerRadius * 0.350403, x, y, outerRadius);
+  const outerRadius = SELECTED_MARKER_OUTER_RADIUS;
+  const innerRadius = SELECTED_MARKER_INNER_RADIUS;
+  const gradient = context.createRadialGradient(x, y, outerRadius * SELECTED_MARKER_GRADIENT_INNER_RATIO, x, y, outerRadius);
 
-  gradient.addColorStop(0, "rgba(255, 193, 23, 0.24)"); // GRAPH_COLORS.hoverNode = #ffc117
-  gradient.addColorStop(1, "rgba(255, 193, 23, 0)");
+  gradient.addColorStop(0, HOVER_GLOW_START);
+  gradient.addColorStop(1, HOVER_GLOW_END);
 
   context.globalAlpha = opacity;
   context.fillStyle = gradient;

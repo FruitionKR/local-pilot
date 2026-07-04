@@ -50,7 +50,7 @@
 
 .source-preview-panel h2 {
   margin: 0;
-  color: #8a8a8a;
+  color: var(--subdued);
   font-size: 28px;
   font-weight: 500;
   line-height: 1.2;
@@ -60,7 +60,7 @@
   width: fit-content;
   padding: 4px 9px;
   color: #0a0a0a;
-  background: #ffc117;
+  background: var(--yellow);
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
@@ -76,21 +76,6 @@
   color: #f0f0f0;
   font-size: 14px;
   line-height: 1.6;
-  scrollbar-color: #4f4f4f transparent;
-}
-
-.source-preview-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.source-preview-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.source-preview-content::-webkit-scrollbar-thumb {
-  background: #4f4f4f;
-  border: 2px solid #1e1e1e;
-  border-radius: 999px;
 }
 
 .source-preview-content strong {
@@ -144,7 +129,7 @@
 
 .markdown-viewer h2 {
   padding-bottom: 8px;
-  border-bottom: 1px solid #3a3a3a;
+  border-bottom: 1px solid var(--line-soft);
   font-size: 19px;
 }
 
@@ -181,7 +166,7 @@
   overflow-x: auto;
   color: #d0d7de;
   background: #0a0a0a;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--line-soft);
   border-radius: 8px;
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -246,7 +231,7 @@
 }
 
 .citation-rank-1 {
-  --citation-color: #ffc117;
+  --citation-color: var(--yellow);
   --citation-bg-soft: rgba(255, 193, 23, 0.12);
 }
 

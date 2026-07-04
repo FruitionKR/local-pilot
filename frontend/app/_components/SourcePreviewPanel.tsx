@@ -30,8 +30,7 @@ export function SourcePreviewPanel({
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
   const sourceDocuments = page?.source_documents ?? [];
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
-  const isMarkdownDocument = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
-  const isMarkdownFile = isMarkdownDocument;
+  const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
   const rawDocumentUrl = documentId ? `/api/documents/${documentId}/original` : null;
 

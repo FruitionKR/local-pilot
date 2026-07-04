@@ -1,6 +1,12 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import type { DropPosition } from "../../_lib/types";
 
+// 드롭 위치 판정 비율: 상단 28% 미만이면 before, 하단 72% 초과면 after
+const DROP_BEFORE_RATIO = 0.28;
+const DROP_AFTER_RATIO = 0.72;
+// 드래그 프리뷰를 화면 밖으로 숨기기 위한 오프스크린 위치
+const DRAG_PREVIEW_OFFSCREEN_POSITION = "-1000px";
+
 /**
  * dragleave가 현재 요소 밖으로 나가는 경우인지 판단한다.
  * relatedTarget이 currentTarget 내부 자식이면(요소 안에서의 이동) false를 반환한다.
@@ -13,8 +19,8 @@ export function isPointerLeavingElement<T extends HTMLElement>(event: ReactDragE
 export function resolveDropPosition(event: ReactDragEvent<HTMLButtonElement>): DropPosition {
   const rect = event.currentTarget.getBoundingClientRect();
   const offsetY = event.clientY - rect.top;
-  if (offsetY < rect.height * 0.28) return "before";
-  if (offsetY > rect.height * 0.72) return "after";
+  if (offsetY < rect.height * DROP_BEFORE_RATIO) return "before";
+  if (offsetY > rect.height * DROP_AFTER_RATIO) return "after";
   return "inside";
 }
 
@@ -24,8 +30,8 @@ export function setLightDragPreview(event: ReactDragEvent<HTMLButtonElement>) {
   const preview = source.cloneNode(true) as HTMLElement;
 
   preview.style.position = "fixed";
-  preview.style.top = "-1000px";
-  preview.style.left = "-1000px";
+  preview.style.top = DRAG_PREVIEW_OFFSCREEN_POSITION;
+  preview.style.left = DRAG_PREVIEW_OFFSCREEN_POSITION;
   preview.style.width = `${rect.width}px`;
   preview.style.height = `${rect.height}px`;
   preview.style.opacity = "0.06";

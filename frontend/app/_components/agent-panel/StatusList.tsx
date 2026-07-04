@@ -7,7 +7,7 @@ export function StatusList({ title, isLoading, hasResponse }: { title: string; i
 
   return (
     <div className="status-list">
-      <button>{title} <ChevronDown size={14} /></button>
+      <button type="button">{title} <ChevronDown size={14} /></button>
       <div className="status-steps">
         {steps.map(([label, state]) => (
           <div className={`status-row ${state}`} key={`${title}-${label}`}>

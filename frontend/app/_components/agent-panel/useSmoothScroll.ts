@@ -57,5 +57,5 @@ export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | n
     }
   }, []);
 
-  return { scrollToPosition, animationRef };
+  return { scrollToPosition };
 }

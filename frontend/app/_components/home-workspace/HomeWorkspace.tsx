@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
@@ -14,6 +14,7 @@ import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend } from "../../_lib/graph";
+import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -30,10 +31,15 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
-  const [sourcePreviewWidth, setSourcePreviewWidth] = useState(SOURCE_PREVIEW_DEFAULT_WIDTH);
-  const sidebarResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-  const sourcePreviewResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
+  const sourcePreviewResize = useResizeHandle(
+    SOURCE_PREVIEW_DEFAULT_WIDTH,
+    SOURCE_PREVIEW_MIN_WIDTH,
+    () => Math.max(
+      SOURCE_PREVIEW_MAX_FLOOR,
+      window.innerWidth - sidebarResize.width - (isAgentPanelOpen ? AGENT_PANEL_WIDTH : AGENT_PANEL_COLLAPSED_WIDTH) - RESIZE_SAFETY_MARGIN
+    )
+  );
   const projectTree = useProjectTree();
   const {
     documents,
@@ -59,53 +65,14 @@ export function HomeWorkspace() {
     selection.openSourceBlockPreview(documentId, documentTitle, highlights);
   }
 
-  function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    sidebarResizeRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startWidth: sidebarWidth
-    };
+  function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    if (sidebarResize.update(event)) return;
+    sourcePreviewResize.update(event);
   }
 
-  function startSourcePreviewResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    sourcePreviewResizeRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startWidth: sourcePreviewWidth
-    };
-  }
-
-  function updateSourcePreviewResize(event: ReactPointerEvent<HTMLElement>) {
-    const sidebarResize = sidebarResizeRef.current;
-    if (sidebarResize && sidebarResize.pointerId === event.pointerId) {
-      const nextWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, sidebarResize.startWidth + event.clientX - sidebarResize.startX));
-      setSidebarWidth(nextWidth);
-      return;
-    }
-
-    const sourceResize = sourcePreviewResizeRef.current;
-    if (!sourceResize || sourceResize.pointerId !== event.pointerId) return;
-    const maxWidth = Math.max(SOURCE_PREVIEW_MAX_FLOOR, window.innerWidth - sidebarWidth - (isAgentPanelOpen ? AGENT_PANEL_WIDTH : AGENT_PANEL_COLLAPSED_WIDTH) - RESIZE_SAFETY_MARGIN);
-    const nextWidth = Math.min(maxWidth, Math.max(SOURCE_PREVIEW_MIN_WIDTH, sourceResize.startWidth + event.clientX - sourceResize.startX));
-    setSourcePreviewWidth(nextWidth);
-  }
-
-  function stopSourcePreviewResize(event: ReactPointerEvent<HTMLElement>) {
-    const sidebarResize = sidebarResizeRef.current;
-    if (sidebarResize?.pointerId === event.pointerId) {
-      sidebarResizeRef.current = null;
-      return;
-    }
-
-    const resize = sourcePreviewResizeRef.current;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-    sourcePreviewResizeRef.current = null;
+  function handleResizePointerEnd(event: ReactPointerEvent<HTMLElement>) {
+    if (sidebarResize.stop(event)) return;
+    sourcePreviewResize.stop(event);
   }
 
   return (
@@ -117,13 +84,13 @@ export function HomeWorkspace() {
         hasSourcePreview && "has-source-preview"
       )}
       style={{
-        "--sidebar-width": `${sidebarWidth}px`,
-        "--source-preview-width": `${sourcePreviewWidth}px`
+        "--sidebar-width": `${sidebarResize.width}px`,
+        "--source-preview-width": `${sourcePreviewResize.width}px`
       } as CSSProperties}
       onClick={selection.clearTreeGraphSelection}
-      onPointerMove={updateSourcePreviewResize}
-      onPointerUp={stopSourcePreviewResize}
-      onPointerCancel={stopSourcePreviewResize}
+      onPointerMove={handleResizePointerMove}
+      onPointerUp={handleResizePointerEnd}
+      onPointerCancel={handleResizePointerEnd}
     >
       <TopBar />
       <RailNavigation activeView={activeView} onViewChange={setActiveView} />
@@ -141,7 +108,7 @@ export function HomeWorkspace() {
               contextMenu={projectTree.contextMenu}
               uploadInputRef={upload.uploadInputRef}
               onAddProject={projectTree.addProject}
-              onResizeStart={startSidebarResize}
+              onResizeStart={sidebarResize.start}
               onUploadPickerChange={upload.handleUploadPickerChange}
               onMoveItem={projectTree.moveTreeEntry}
               onDropFiles={upload.dropUploadFiles}
@@ -181,8 +148,8 @@ export function HomeWorkspace() {
               pageType={selection.selectedPreviewTarget?.pageType ?? null}
               documentId={selection.selectedDocumentId}
               sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
-              width={sourcePreviewWidth}
-              onResizeStart={startSourcePreviewResize}
+              width={sourcePreviewResize.width}
+              onResizeStart={sourcePreviewResize.start}
             />
           )}
 
