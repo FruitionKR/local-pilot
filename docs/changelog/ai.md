@@ -394,6 +394,24 @@ query application 흐름에서 callback event publish 실패를 삼키고 본 �
 - 관련 application 모듈 `py_compile` 통과.
 - `git diff --check` 통과.
 
+### fix: 위키 lint dry-run과 workspace link scope 정리
+
+**배경**
+
+`POST /wiki/maintenance/lint`가 이름과 달리 기본값으로 promotion materialize를 실행할 수 있었고, dry-run 성격의 호출도 lint log object를 쓸 수 있었습니다. 또한 workspace/user scope가 추가된 뒤에도 `source_related_to` 재계산은 전역 link를 삭제하고 재생성해 다른 workspace의 link에 영향을 줄 수 있었습니다.
+
+**추가/변경된 것**
+
+- `WikiLintIn` 기본값을 `dry_run=true`, `materialize_promotions=false`로 변경했습니다.
+- dry-run lint 호출에서는 lint log object를 쓰지 않도록 `write_log` 옵션을 분리했습니다.
+- `source_related_to` 재계산을 현재 `user_id`/`workspace_id`의 source/concept page 범위로 제한했습니다.
+- dry-run log 미작성과 workspace scoped link refresh regression test를 추가했습니다.
+
+**검증**
+
+- Docker `pipeline-api` 컨테이너에서 `python -m compileall -q /tmp/pr66-llmpipeline-ae7e5d5/app /tmp/pr66-llmpipeline-ae7e5d5/api.py /tmp/pr66-llmpipeline-ae7e5d5/run_lab.py` 통과.
+- Docker `pipeline-api` 컨테이너에서 `python -m pytest /tmp/pr66-llmpipeline-ae7e5d5/tests` 통과 (`154 passed`).
+
 ## 2026-07-02
 
 ### feat: query evidence에 다중 원문 source_refs 추가

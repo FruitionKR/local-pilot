@@ -102,8 +102,8 @@ class PipelineRunOut(BaseModel):
 class WikiLintIn(BaseModel):
     user_id: str = "local-user"
     workspace_id: str = "local-workspace"
-    materialize_promotions: bool = True
-    dry_run: bool = False
+    materialize_promotions: bool = False
+    dry_run: bool = True
     provider: Literal["upstage", "generic"] = "upstage"
     endpoint: str | None = None
     api_base_url: str | None = None
@@ -234,6 +234,7 @@ def lint_wiki_workspace(payload: WikiLintIn) -> dict[str, Any]:
             payload.workspace_id,
             materialize_promotions=should_materialize,
             promotion_page_generator=promotion_generator,
+            write_log=not payload.dry_run,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
