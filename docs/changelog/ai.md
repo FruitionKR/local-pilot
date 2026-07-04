@@ -6,6 +6,22 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Meaning cluster artifact assembler 분리
+
+**배경**
+
+`assemble.py`가 source/concept page 조립 외에 meaning cluster active/log artifact 조립까지 함께 담당해 파일 책임이 계속 커지고 있었습니다.
+
+**추가/변경된 것**
+
+- meaning cluster 후보 수집, active cluster Markdown, ingest log Markdown 조립을 `meaning_cluster_artifact.py`로 분리했습니다.
+- 기존 `assemble.py` import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/meaning_cluster_artifact.py` 통과.
+
 ### refactor: Wiki generation section polish mapping 분리
 
 **배경**
