@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Generated concept page assembler 분리
+
+**배경**
+
+`assemble.py`가 backend source/concept page 조립과 LLM generated concept page 출력 정규화/Markdown 조립을 함께 들고 있어 assembly 책임이 넓었습니다.
+
+**추가/변경된 것**
+
+- `GeneratedConceptPageAssembler`를 `generated_concept_page_assembler.py`로 분리했습니다.
+- 기존 `assemble.py` import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+- generated concept page assembler의 block id mapping과 Markdown 조립 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/generated_concept_page_assembler.py tests/modules/wiki_generation/test_source_extraction_artifact.py` 통과.
+
 ### refactor: Concept section polish stage 분리
 
 **배경**
