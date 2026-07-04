@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki generation concept page section helper 분리
+
+**배경**
+
+`assemble.py`가 concept page Markdown 조립과 source key point, evidence fallback, related concept line 계산 규칙을 함께 들고 있어 page assembly 책임이 커졌습니다.
+
+**추가/변경된 것**
+
+- concept page의 source key point 수집, evidence 선택, key point line 생성, related concept line 계산을 `concept_page_sections.py`로 분리했습니다.
+- `assemble.py`는 기존 Markdown 산출물 조립 흐름을 유지하고 concept section helper만 새 모듈에서 가져오도록 정리했습니다.
+- concept page section helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/wiki_generation/infrastructure/assemble.py llmPipeline/app/modules/wiki_generation/infrastructure/concept_page_sections.py llmPipeline/tests/modules/wiki_generation/test_concept_page_sections.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_concept_page_sections llmPipeline.tests.modules.wiki_generation.test_ref_format` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki generation evaluation guard 분리
 
 **배경**
