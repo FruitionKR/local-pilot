@@ -17,6 +17,12 @@ from app.modules.query.application.ports import (
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.application.query_event import publish_query_event
 from app.modules.query.application.query_evaluator_flow import QueryEvaluatorLoop
+from app.modules.query.application.query_graph_paths import (
+    add_focus_concepts_to_related_pages,
+    add_sources_connected_to_focus_concepts,
+    backfill_direct_concept_paths,
+    select_answer_paths,
+)
 from app.modules.query.application.query_page_scorer import QueryPageScorer
 from app.modules.query.application.query_web_answer_builder import QueryWebAnswerBuilder
 from app.modules.query.application.retrieval_summary import build_retrieval_summary
@@ -31,10 +37,8 @@ from app.modules.query.domain.entities import (
     QueryEvaluation,
     QueryRewrite,
     RetrievedPage,
-    TraversalEdge,
     TraversalPath,
     WikiPage,
-    WikiPageLink,
 )
 from app.modules.query.domain.value_objects import Question
 
@@ -172,7 +176,7 @@ class AnswerQueryUseCase:
         seed_source_ids = self._query_page_scorer.select_seed_sources(source_pages, source_scores)
         focus_concept_ids = self._query_page_scorer.select_focus_concepts(concept_pages, concept_scores)
         if direct_concept_ids and max(source_scores.values(), default=0.0) < self._focus_concept_threshold:
-            seed_source_ids = self._add_sources_connected_to_focus_concepts(seed_source_ids, direct_concept_ids, links)
+            seed_source_ids = add_sources_connected_to_focus_concepts(seed_source_ids, direct_concept_ids, links)
         seed_page_ids = list(dict.fromkeys([*seed_source_ids, *focus_concept_ids, *direct_concept_ids]))
         self._publish(
             event_publisher,
@@ -198,11 +202,11 @@ class AnswerQueryUseCase:
             "Wiki graph traversal을 완료했습니다.",
             {"visited_node_count": len(graph_context.nodes), "path_count": len(traversal_paths), "stop_reason": stop_reason},
         )
-        traversal_paths = self._select_answer_paths(traversal_paths)
-        related_pages = self._add_focus_concepts_to_related_pages(graph_context.nodes, direct_concept_ids, pages_by_id, concept_scores)
+        traversal_paths = select_answer_paths(traversal_paths, self._returned_path_limit)
+        related_pages = add_focus_concepts_to_related_pages(graph_context.nodes, direct_concept_ids, pages_by_id, concept_scores)
         if direct_concept_ids and {item.page.id for item in related_pages} & set(direct_concept_ids):
             stop_reason = "concept_direct_match"
-        graph_context, traversal_paths = self._backfill_direct_concept_paths(
+        graph_context, traversal_paths = backfill_direct_concept_paths(
             graph_context=GraphContext(nodes=related_pages, edges=graph_context.edges),
             traversal_paths=traversal_paths,
             links=links,
@@ -365,115 +369,6 @@ class AnswerQueryUseCase:
         return [
             {"id": page_id, "score": round(score, 4)}
             for page_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)[:limit]
-        ]
-
-    def _add_focus_concepts_to_related_pages(
-        self,
-        related_pages: list[RetrievedPage],
-        focus_concept_ids: list[str],
-        pages_by_id: dict[str, WikiPage],
-        concept_scores: dict[str, float],
-    ) -> list[RetrievedPage]:
-        merged = list(related_pages)
-        seen = {item.page.id for item in merged}
-        for concept_id in focus_concept_ids:
-            if concept_id in seen or concept_id not in pages_by_id:
-                continue
-            merged.append(
-                RetrievedPage(
-                    page=pages_by_id[concept_id],
-                    score=concept_scores.get(concept_id, 0.0),
-                    role="focus_concept",
-                    depth=0,
-                )
-            )
-            seen.add(concept_id)
-        return sorted(merged, key=lambda item: item.score, reverse=True)
-
-    def _backfill_direct_concept_paths(
-        self,
-        graph_context: GraphContext,
-        traversal_paths: list[TraversalPath],
-        links: list[WikiPageLink],
-        direct_concept_ids: list[str],
-        source_scores: dict[str, float],
-        concept_scores: dict[str, float],
-    ) -> tuple[GraphContext, list[TraversalPath]]:
-        if not direct_concept_ids:
-            return graph_context, traversal_paths
-
-        related_ids = {item.page.id for item in graph_context.nodes}
-        existing_edge_keys = {(edge.from_page_id, edge.to_page_id, edge.link_type) for edge in graph_context.edges}
-        existing_path_pairs = {
-            (path.nodes[0], path.nodes[-1])
-            for path in traversal_paths
-            if len(path.nodes) >= 2
-        }
-        edges = list(graph_context.edges)
-        paths = list(traversal_paths)
-
-        for link in links:
-            if link.link_type != "source_mentions_concept":
-                continue
-            if link.to_page_id not in direct_concept_ids:
-                continue
-            if link.from_page_id not in related_ids or link.to_page_id not in related_ids:
-                continue
-
-            edge_key = (link.from_page_id, link.to_page_id, link.link_type)
-            score = float(link.confidence or 1.0)
-            traversal_edge = TraversalEdge(
-                from_page_id=link.from_page_id,
-                to_page_id=link.to_page_id,
-                link_type=link.link_type,
-                role="seed_to_focus",
-                score=score,
-            )
-            if edge_key not in existing_edge_keys:
-                edges.append(traversal_edge)
-                existing_edge_keys.add(edge_key)
-
-            path_pair = (link.from_page_id, link.to_page_id)
-            if path_pair in existing_path_pairs:
-                continue
-            path_score = max(source_scores.get(link.from_page_id, 0.0), concept_scores.get(link.to_page_id, 0.0))
-            paths.append(
-                TraversalPath(
-                    path_id=f"direct_concept_path_{len(paths) + 1}",
-                    role="primary_answer_path" if not paths else "candidate_path",
-                    nodes=[link.from_page_id, link.to_page_id],
-                    edges=[traversal_edge],
-                    score=path_score,
-                    used_for_answer=True,
-                    stop_reason="concept_direct_match",
-                )
-            )
-            existing_path_pairs.add(path_pair)
-
-        return GraphContext(nodes=graph_context.nodes, edges=edges), paths
-
-    def _add_sources_connected_to_focus_concepts(
-        self,
-        seed_source_ids: list[str],
-        focus_concept_ids: list[str],
-        links: list[WikiPageLink],
-    ) -> list[str]:
-        seeds = list(dict.fromkeys(seed_source_ids))
-        focus_set = set(focus_concept_ids)
-        for link in links:
-            if link.link_type != "source_mentions_concept":
-                continue
-            if link.to_page_id in focus_set and link.from_page_id not in seeds:
-                seeds.append(link.from_page_id)
-            elif link.from_page_id in focus_set and link.to_page_id not in seeds:
-                seeds.append(link.to_page_id)
-        return seeds
-
-    def _select_answer_paths(self, traversal_paths: list[TraversalPath]) -> list[TraversalPath]:
-        selected = sorted(traversal_paths, key=lambda path: path.score, reverse=True)[: self._returned_path_limit]
-        return [
-            replace(path, role="primary_answer_path" if index == 0 else "candidate_path")
-            for index, path in enumerate(selected)
         ]
 
     def _unsupported_answer(self, evidence_snippets: list[EvidenceSnippet]) -> GeneratedAnswer:

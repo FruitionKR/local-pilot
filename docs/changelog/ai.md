@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Query graph path helper 분리
+
+**배경**
+
+`AnswerQueryUseCase`가 query orchestration과 direct concept match 시 graph node/path 보정 규칙을 함께 들고 있어 use case 본문이 길어졌습니다.
+
+**추가/변경된 것**
+
+- focus concept related page 병합, direct concept path backfill, focus concept 연결 source 확장, answer path 선택을 `query_graph_paths.py`로 분리했습니다.
+- query scoring, traversal, answer generation, 응답 계약은 유지했습니다.
+- 분리된 graph path helper의 정렬, 중복 제거, direct concept path 보정 동작을 단위 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_query_graph_paths.py tests/modules/query/test_answer_query.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/answer_query.py app/modules/query/application/query_graph_paths.py tests/modules/query/test_query_graph_paths.py` 통과.
+
 ### refactor: Generated concept page assembler 분리
 
 **배경**
