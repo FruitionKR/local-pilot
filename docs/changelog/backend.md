@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-04
 
+### fix: wiki_pages 엔티티를 llmPipeline의 workspace scope에 정렬
+
+**배경**
+
+llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id`/`workspace_id` 컬럼과 `(user_id, workspace_id, page_type, slug)` scope unique index(`uq_wiki_pages_workspace_type_slug`)로 관리하도록 바뀌었는데, Spring `WikiPage` 엔티티는 옛 전역 unique `(page_type, slug)`를 선언하고 `workspace_id`를 매핑조차 하지 않아 실제 DB와 어긋나 있었다. 이 불일치로 (1) `ddl-auto=update`가 전역 제약을 심으려다 충돌/부팅 실패, (2) Spring이 workspace 단위 격리를 할 수 없었다(`docs/issue/2026-07-02.md` B1 / "Wiki 격리 미구현").
+
+**추가/변경된 것**
+
+- `wiki/domain/WikiPage.java`: `user_id`/`workspace_id` 컬럼 매핑과 getter 추가. `@UniqueConstraint`를 DB와 동일하게 `uq_wiki_pages_workspace_type_slug (user_id, workspace_id, page_type, slug)`로 교체.
+- `wiki/repository/WikiPageRepository.java`: `findByPageTypeAndSlug` → `findByUserIdAndWorkspaceIdAndPageTypeAndSlug`.
+- `wiki/service/WikiService.java`: rename slug 충돌 검사를 페이지 자신의 `userId`/`workspaceId` scope 안에서 수행.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 로컬 dev DB를 새로 생성(볼륨 초기화 + pipeline 재빌드)하고 실제 기동해 `\d wiki_pages`로 확인: `user_id`/`workspace_id` 컬럼과 scoped unique만 존재하고 옛 전역 제약은 사라짐. 문서 업로드→인제스트 e2e로 `wiki_pages`에 정상 기록되는 것까지 확인.
+
+**주의사항**
+
+- Spring은 `wiki_pages`에 INSERT하지 않고 읽기/rename만 하며(실제 INSERT는 llmPipeline), `new WikiPage(...)` 생성 코드가 없어 생성자 시그니처는 건드리지 않았다.
+- graph/detail 조회(`findAll()`)를 요청 workspace 단위로 필터링하는 작업은 `WikiController`에 workspace_id 소스가 필요하고 파이프라인이 실제 `workspace_id`를 전달해야(B3) 의미가 생겨 이번엔 제외했다. e2e에서 인제스트된 페이지의 `workspace_id`가 아직 기본값 `local-workspace`로 찍히는 것을 확인했다(B3 미구현).
+
 ### fix: PK ID를 전체 UUID로 전환해 충돌 위험 제거
 
 **배경**

@@ -10,7 +10,8 @@ import java.util.Optional;
 
 public interface WikiPageRepository extends JpaRepository<WikiPage, String> {
 
-    Optional<WikiPage> findByPageTypeAndSlug(WikiPageType pageType, String slug);
+    Optional<WikiPage> findByUserIdAndWorkspaceIdAndPageTypeAndSlug(
+            String userId, String workspaceId, WikiPageType pageType, String slug);
 
     List<WikiPage> findAllByStatus(WikiPageStatus status);
 

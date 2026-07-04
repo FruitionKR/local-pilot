@@ -7,8 +7,8 @@ import java.time.Instant;
 @Table(
     name = "wiki_pages",
     uniqueConstraints = @UniqueConstraint(
-        name = "uq_wiki_pages_type_slug",
-        columnNames = {"page_type", "slug"}
+        name = "uq_wiki_pages_workspace_type_slug",
+        columnNames = {"user_id", "workspace_id", "page_type", "slug"}
     )
 )
 public class WikiPage {
@@ -31,6 +31,12 @@ public class WikiPage {
 
     @Column(name = "markdown_uri")
     private String markdownUri;
+
+    @Column(name = "user_id", nullable = false)
+    private String userId;
+
+    @Column(name = "workspace_id", nullable = false)
+    private String workspaceId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -90,6 +96,8 @@ public class WikiPage {
     public String getSlug() { return slug; }
     public String getSummary() { return summary; }
     public String getMarkdownUri() { return markdownUri; }
+    public String getUserId() { return userId; }
+    public String getWorkspaceId() { return workspaceId; }
     public WikiPageStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

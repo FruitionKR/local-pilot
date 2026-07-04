@@ -202,7 +202,8 @@ public class WikiService {
         if (updateSlug) {
             String newSlug = generateSlug(newTitle);
             if (!newSlug.equals(previousSlug)) {
-                boolean conflict = wikiPageRepository.findByPageTypeAndSlug(page.getPageType(), newSlug)
+                boolean conflict = wikiPageRepository.findByUserIdAndWorkspaceIdAndPageTypeAndSlug(
+                                page.getUserId(), page.getWorkspaceId(), page.getPageType(), newSlug)
                         .filter(existing -> !existing.getId().equals(page.getId()))
                         .isPresent();
                 if (conflict) {
