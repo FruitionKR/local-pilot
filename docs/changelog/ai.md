@@ -6,6 +6,26 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki ingestion Markdown section parser 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB persistence 외에 concept Markdown section 파싱 보조 함수까지 함께 들고 있어, 순수 문자열 처리 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- Markdown `## Heading` section 추출과 list item 추출 로직을 `markdown_sections.py`로 분리했습니다.
+- repository는 기존 DB/persistence 흐름을 유지하고 Markdown parser 함수만 새 모듈에서 가져오도록 정리했습니다.
+- Markdown section parser 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_markdown_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+- 관련 infrastructure 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ### refactor: Wiki generation ref formatting 분리
 
 **배경**

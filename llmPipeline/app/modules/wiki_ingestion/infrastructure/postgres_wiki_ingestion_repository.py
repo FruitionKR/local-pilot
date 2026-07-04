@@ -13,6 +13,10 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
+    markdown_list_section as _markdown_list_section,
+    markdown_section as _markdown_section,
+)
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object, write_text_object
 
 
@@ -912,39 +916,6 @@ def _lint_log_markdown(result: dict[str, Any]) -> str:
             lines.append(f"- linked: concept:{item.get('from')} -[{item.get('relation')}]-> concept:{item.get('to')}")
     lines.append("- updated: logs/{yyyy-mm-dd}.md")
     return "\n".join(lines) + "\n"
-
-
-def _markdown_section(markdown: str, heading: str) -> str:
-    lines = _markdown_section_lines(markdown, heading)
-    return "\n".join(line.strip() for line in lines if line.strip()).strip()
-
-
-def _markdown_list_section(markdown: str, heading: str) -> list[str]:
-    items = []
-    for line in _markdown_section_lines(markdown, heading):
-        stripped = line.strip()
-        if not stripped or stripped == "-":
-            continue
-        if stripped.startswith("- "):
-            stripped = stripped[2:].strip()
-        if stripped and not stripped.startswith("-"):
-            items.append(stripped)
-    return items
-
-
-def _markdown_section_lines(markdown: str, heading: str) -> list[str]:
-    lines = []
-    in_section = False
-    heading_pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$", re.IGNORECASE)
-    for line in markdown.splitlines():
-        if heading_pattern.match(line.strip()):
-            in_section = True
-            continue
-        if in_section and line.startswith("## "):
-            break
-        if in_section:
-            lines.append(line)
-    return lines
 
 
 def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> list[str]:
