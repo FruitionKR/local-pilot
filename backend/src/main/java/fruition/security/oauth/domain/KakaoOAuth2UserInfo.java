@@ -1,4 +1,4 @@
-package fruition.security.oauth;
+package fruition.security.oauth.domain;
 
 import java.util.Map;
 

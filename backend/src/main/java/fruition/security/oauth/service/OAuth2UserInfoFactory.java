@@ -1,4 +1,9 @@
-package fruition.security.oauth;
+package fruition.security.oauth.service;
+
+import fruition.security.oauth.domain.GoogleOAuth2UserInfo;
+import fruition.security.oauth.domain.KakaoOAuth2UserInfo;
+import fruition.security.oauth.domain.NaverOAuth2UserInfo;
+import fruition.security.oauth.domain.OAuth2UserInfo;
 
 import java.util.Map;
 

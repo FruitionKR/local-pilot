@@ -1,5 +1,6 @@
-package fruition.security.oauth;
+package fruition.security.oauth.domain;
 
+import fruition.security.oauth.service.OAuth2UserInfoFactory;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;

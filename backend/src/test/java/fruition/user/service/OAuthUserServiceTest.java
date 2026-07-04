@@ -1,6 +1,6 @@
 package fruition.user.service;
 
-import fruition.security.oauth.GoogleOAuth2UserInfo;
+import fruition.security.oauth.domain.GoogleOAuth2UserInfo;
 import fruition.user.domain.User;
 import fruition.user.domain.UserOAuthAccount;
 import fruition.user.exception.OAuthEmailNotProvidedException;

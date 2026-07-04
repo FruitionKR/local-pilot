@@ -1,8 +1,8 @@
 package fruition.security;
 
-import fruition.security.oauth.CustomOAuth2UserService;
-import fruition.security.oauth.OAuth2AuthenticationFailureHandler;
-import fruition.security.oauth.OAuth2AuthenticationSuccessHandler;
+import fruition.security.oauth.service.CustomOAuth2UserService;
+import fruition.security.oauth.handler.OAuth2AuthenticationFailureHandler;
+import fruition.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

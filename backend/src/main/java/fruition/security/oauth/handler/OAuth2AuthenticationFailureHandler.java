@@ -1,4 +1,4 @@
-package fruition.security.oauth;
+package fruition.security.oauth.handler;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;

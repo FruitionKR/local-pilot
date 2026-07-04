@@ -1,4 +1,4 @@
-package fruition.security.oauth;
+package fruition.security.oauth.domain;
 
 public interface OAuth2UserInfo {
 

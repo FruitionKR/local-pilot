@@ -1,4 +1,6 @@
-package fruition.security.oauth;
+package fruition.security.oauth.service;
+
+import fruition.security.oauth.domain.OAuth2UserInfo;
 
 import fruition.user.domain.User;
 import fruition.user.service.OAuthUserService;
