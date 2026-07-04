@@ -6,6 +6,25 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-04
 
+### refactor: Wiki ingestion promotion concept page builder 분리
+
+**배경**
+
+`api.py`가 FastAPI route와 lint LLM client 구성 외에 promotion cluster LLM draft를 concept Markdown으로 변환하는 순수 조립 규칙까지 함께 들고 있었습니다.
+
+**추가/변경된 것**
+
+- promotion concept page Markdown 조립, representative 선택, lint ref 정규화/표기 함수를 `promotion_concept_page.py`로 분리했습니다.
+- API route는 기존 lint materialization 흐름을 유지하고 promotion page builder만 새 모듈에서 가져오도록 정리했습니다.
+- promotion concept page builder 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/api.py llmPipeline/app/modules/wiki_ingestion/infrastructure/promotion_concept_page.py llmPipeline/tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_promotion_concept_page` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+
 ### refactor: Wiki generation concept page section helper 분리
 
 **배경**
