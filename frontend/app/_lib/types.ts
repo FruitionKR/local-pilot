@@ -56,6 +56,28 @@ export type UploadPickerTarget = {
 
 export type DocumentStatus = "uploaded" | "processing" | "completed" | "failed";
 
+export type WorkspaceResponse = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceListResponse = {
+  workspaces: WorkspaceResponse[];
+};
+
+export type ChatSessionResponse = {
+  id: string;
+  title: string | null;
+  created_at: string;
+  last_message_at: string;
+};
+
+export type ChatSessionListResponse = {
+  sessions: ChatSessionResponse[];
+};
+
 export type DocumentUploadResponse = {
   id: string;
   filename: string;
@@ -83,6 +105,11 @@ export type WikiGraphNodeResponse = {
   slug: string;
   summary?: string;
   status: string;
+  // source page가 연결된 원본 문서 정보 (page_type=source일 때만 내려온다)
+  source_document?: {
+    id: string;
+    filename?: string | null;
+  };
 };
 
 export type WikiGraphEdgeResponse = {
@@ -212,6 +239,8 @@ export type GraphNode = {
   id: string;
   label: string;
   kind?: "source" | "concept" | "raw";
+  // raw/source 노드가 연결된 문서 ID
+  documentId?: string;
 };
 
 export type GraphLink = {

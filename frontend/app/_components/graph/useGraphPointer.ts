@@ -1,104 +1,65 @@
 import { useRef } from "react";
 import type { Dispatch, MouseEvent as ReactMouseEvent, MutableRefObject, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
-import type { GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { canvasToGraphPosition, graphDistanceInfluence } from "./graphGeometry";
-import { getGraphDistances } from "./graphPhysics";
+import type { GraphLink, GraphNode, NodePosition } from "../../_lib/types";
+import { graphDistanceInfluence } from "./graphGeometry";
+import { getGraphDistances, reheatGraphSimulation } from "./graphPhysics";
+import type { GraphSimNode, GraphSimulation } from "./graphPhysics";
 
 /** PointerEvent.buttons 비트마스크: 왼쪽 버튼 */
 const PRIMARY_BUTTON_MASK = 1;
-/** PointerEvent.buttons 비트마스크: 가운데 버튼 */
-const MIDDLE_BUTTON_MASK = 4;
 
+/**
+ * 노드 드래그/hover/미리보기 포인터 이벤트를 처리한다.
+ * 빈 영역 pan과 wheel/핀치 줌은 d3-zoom(useGraphCanvas)이 담당한다.
+ */
 export function useGraphPointer({
   nodes,
   links,
-  canvasRef,
-  nodePositionsRef,
-  visibleNodeCountRef,
-  initialNodePositions,
   draggingNodeIdRef,
-  panDragRef,
   isPointerHeldRef,
   activePointerIdRef,
   externalFocusedNodeIdRef,
-  graphPanRef,
-  graphZoomRef,
   drawGraphRef,
-  nodeSize,
-  graphToCanvas,
+  hitTestNode,
+  getSimNode,
+  getSimulation,
+  canvasToGraph,
   clampPosition,
-  clampPan,
-  resolveCollisions,
   scheduleGraphCacheWrite,
-  setGraphPan,
   setDraggingNodeId,
   onOpenNodePreview,
   setHoveredNode,
   setSelectedNode,
-  stopDragging,
-  stopPanning
+  stopDragging
 }: {
   nodes: GraphNode[];
-  links: Parameters<typeof getGraphDistances>[0];
-  canvasRef: MutableRefObject<HTMLCanvasElement | null>;
-  nodePositionsRef: MutableRefObject<NodePositionMap>;
-  visibleNodeCountRef: MutableRefObject<number>;
-  initialNodePositions: NodePositionMap;
+  links: GraphLink[];
   draggingNodeIdRef: MutableRefObject<string | null>;
-  panDragRef: MutableRefObject<{ pointerId: number; button: number; startX: number; startY: number; startPan: NodePosition } | null>;
   isPointerHeldRef: MutableRefObject<boolean>;
   activePointerIdRef: MutableRefObject<number | null>;
   externalFocusedNodeIdRef: MutableRefObject<string | null>;
-  graphPanRef: MutableRefObject<NodePosition>;
-  graphZoomRef: MutableRefObject<number>;
   drawGraphRef: MutableRefObject<() => void>;
-  nodeSize: (node: GraphNode) => number;
-  graphToCanvas: (position: NodePosition, canvas: HTMLCanvasElement) => NodePosition;
+  hitTestNode: (clientX: number, clientY: number) => GraphNode | null;
+  getSimNode: (nodeId: string) => GraphSimNode | null;
+  getSimulation: () => GraphSimulation | null;
+  canvasToGraph: (clientX: number, clientY: number) => NodePosition | null;
   clampPosition: (position: NodePosition, nodeId?: string) => NodePosition;
-  clampPan: (pan: NodePosition, zoom?: number) => NodePosition;
-  resolveCollisions: (positions: NodePositionMap, anchorId: string | null) => NodePositionMap;
   scheduleGraphCacheWrite: () => void;
-  setGraphPan: Dispatch<SetStateAction<NodePosition>>;
   setDraggingNodeId: Dispatch<SetStateAction<string | null>>;
   onOpenNodePreview: (node: GraphNode) => void;
   setHoveredNode: (nodeId: string | null) => void;
   setSelectedNode: (nodeId: string | null) => void;
   stopDragging: (pointerId?: number) => void;
-  stopPanning: (pointerId?: number) => void;
 }) {
   // 노드 드래그 시작 좌표와 실제 이동 여부를 함께 추적한다.
   const nodeDragRef = useRef<{ start: { x: number; y: number }; hasMoved: boolean } | null>(null);
-
-  function canvasToGraph(clientX: number, clientY: number, canvas: HTMLCanvasElement) {
-    return canvasToGraphPosition({ clientX, clientY, canvas, pan: graphPanRef.current, zoom: graphZoomRef.current });
-  }
-
-  function hitTestNode(clientX: number, clientY: number) {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    const rect = canvas.getBoundingClientRect();
-    const pointerX = clientX - rect.left;
-    const pointerY = clientY - rect.top;
-
-    for (let index = visibleNodeCountRef.current - 1; index >= 0; index -= 1) {
-      const node = nodes[index];
-      const position = nodePositionsRef.current[node.id] ?? initialNodePositions[node.id];
-      const screenPosition = graphToCanvas(position, canvas);
-      const radius = nodeSize(node) / 2;
-      const distance = Math.hypot(pointerX - screenPosition.x, pointerY - screenPosition.y);
-      if (distance <= radius + 2) return node;
-    }
-
-    return null;
-  }
 
   function moveNode(event: ReactPointerEvent<HTMLDivElement>, node: GraphNode) {
     if (!isPointerHeldRef.current || activePointerIdRef.current !== event.pointerId) return;
     if (event.pointerType === "mouse" && (event.buttons & PRIMARY_BUTTON_MASK) !== PRIMARY_BUTTON_MASK) return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const draggedSimNode = getSimNode(node.id);
+    if (!draggedSimNode) return;
 
     const nodeDrag = nodeDragRef.current;
     if (nodeDrag && Math.hypot(event.clientX - nodeDrag.start.x, event.clientY - nodeDrag.start.y) > 3) {
@@ -107,43 +68,48 @@ export function useGraphPointer({
 
     const clampedX = Math.max(0, Math.min(window.innerWidth - 1, event.clientX));
     const clampedY = Math.max(0, Math.min(window.innerHeight - 1, event.clientY));
-    const nextPosition = clampPosition(canvasToGraph(clampedX, clampedY, canvas), node.id);
+    const graphPosition = canvasToGraph(clampedX, clampedY);
+    if (!graphPosition) return;
+
+    const nextPosition = clampPosition(graphPosition, node.id);
+    const deltaX = nextPosition.x - draggedSimNode.x;
+    const deltaY = nextPosition.y - draggedSimNode.y;
+
+    // 드래그 노드로부터의 그래프 거리에 따라 주변 노드도 함께 끌려온다.
     const distances = getGraphDistances(links, node.id);
-    const current = nodePositionsRef.current;
-    const draggedPosition = current[node.id] ?? initialNodePositions[node.id];
-    const moved = {
-      ...current,
-      ...Object.fromEntries(
-        nodes.map((candidate) => {
-          const currentPosition = current[candidate.id] ?? initialNodePositions[candidate.id];
-          const influence = graphDistanceInfluence(distances[candidate.id]);
-          const delta = {
-            x: (nextPosition.x - draggedPosition.x) * influence,
-            y: (nextPosition.y - draggedPosition.y) * influence
-          };
+    nodes.forEach((candidate) => {
+      if (candidate.id === node.id) return;
+      const influence = graphDistanceInfluence(distances[candidate.id]);
+      if (influence <= 0) return;
+      const simNode = getSimNode(candidate.id);
+      if (!simNode) return;
+      const moved = clampPosition(
+        { x: simNode.x + deltaX * influence, y: simNode.y + deltaY * influence },
+        candidate.id
+      );
+      simNode.x = moved.x;
+      simNode.y = moved.y;
+    });
 
-          return [candidate.id, clampPosition({
-            x: currentPosition.x + delta.x,
-            y: currentPosition.y + delta.y
-          }, candidate.id)];
-        })
-      )
-    };
+    draggedSimNode.x = nextPosition.x;
+    draggedSimNode.y = nextPosition.y;
+    // 드래그 중에는 위치를 고정해 simulation이 되돌리지 못하게 한다.
+    draggedSimNode.fx = nextPosition.x;
+    draggedSimNode.fy = nextPosition.y;
 
-    nodePositionsRef.current = resolveCollisions(moved, node.id);
+    const graphSimulation = getSimulation();
+    if (graphSimulation) reheatGraphSimulation(graphSimulation);
     scheduleGraphCacheWrite();
     drawGraphRef.current();
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    const isPrimaryButton = event.button === 0;
-    const isMiddleButton = event.button === 1;
-    if (!isPrimaryButton && !isMiddleButton) return;
+    if (event.button !== 0) return;
 
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const hitNode = isPrimaryButton ? hitTestNode(event.clientX, event.clientY) : null;
+    const hitNode = hitTestNode(event.clientX, event.clientY);
     if (hitNode) {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
       isPointerHeldRef.current = true;
       activePointerIdRef.current = event.pointerId;
       setSelectedNode(hitNode.id);
@@ -155,66 +121,36 @@ export function useGraphPointer({
       return;
     }
 
-    if (isPrimaryButton) {
-      setSelectedNode(null);
-    }
-
-    panDragRef.current = {
-      pointerId: event.pointerId,
-      button: event.button,
-      startX: event.clientX,
-      startY: event.clientY,
-      startPan: graphPanRef.current
-    };
+    // 빈 영역 클릭은 선택 해제. pan은 d3-zoom이 처리한다.
+    setSelectedNode(null);
   }
 
-  function updatePanning(event: ReactPointerEvent<HTMLDivElement>) {
+  function updateNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
     const draggedNodeId = draggingNodeIdRef.current;
-    if (draggedNodeId) {
-      const node = nodes.find((candidate) => candidate.id === draggedNodeId);
-      if (node) moveNode(event, node);
-      return;
-    }
-
-    const panDrag = panDragRef.current;
-    if (!panDrag || panDrag.pointerId !== event.pointerId) return;
-    const expectedButtonMask = panDrag.button === 1 ? MIDDLE_BUTTON_MASK : PRIMARY_BUTTON_MASK;
-    if (event.pointerType === "mouse" && (event.buttons & expectedButtonMask) !== expectedButtonMask) {
-      stopPanning(event.pointerId);
-      return;
-    }
-
-    const nextPan = clampPan({
-      x: panDrag.startPan.x + event.clientX - panDrag.startX,
-      y: panDrag.startPan.y + event.clientY - panDrag.startY
-    }, graphZoomRef.current);
-    graphPanRef.current = nextPan;
-    setGraphPan(nextPan);
-    scheduleGraphCacheWrite();
+    if (!draggedNodeId) return;
+    const node = nodes.find((candidate) => candidate.id === draggedNodeId);
+    if (node) moveNode(event, node);
   }
 
   function updateHover(event: ReactPointerEvent<HTMLDivElement>) {
-    if (draggingNodeIdRef.current || panDragRef.current) return;
+    if (draggingNodeIdRef.current) return;
     if (externalFocusedNodeIdRef.current) return;
     setHoveredNode(hitTestNode(event.clientX, event.clientY)?.id ?? null);
   }
 
-  function stopCanvasPanning(event: ReactPointerEvent<HTMLDivElement>) {
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    const wasDragging = activePointerIdRef.current === event.pointerId;
-    if (wasDragging) {
-      const draggedNodeId = draggingNodeIdRef.current;
-      const hasMovedDraggedNode = nodeDragRef.current?.hasMoved ?? false;
-      stopDragging(event.pointerId);
-      nodeDragRef.current = null;
-      if (!externalFocusedNodeIdRef.current) {
-        setSelectedNode(hasMovedDraggedNode ? null : hitTestNode(event.clientX, event.clientY)?.id ?? draggedNodeId ?? null);
-      }
+    if (activePointerIdRef.current !== event.pointerId) return;
+
+    const draggedNodeId = draggingNodeIdRef.current;
+    const hasMovedDraggedNode = nodeDragRef.current?.hasMoved ?? false;
+    stopDragging(event.pointerId);
+    nodeDragRef.current = null;
+    if (!externalFocusedNodeIdRef.current) {
+      setSelectedNode(hasMovedDraggedNode ? null : hitTestNode(event.clientX, event.clientY)?.id ?? draggedNodeId ?? null);
     }
-    if (panDragRef.current?.pointerId !== event.pointerId) return;
-    stopPanning(event.pointerId);
   }
 
   function openNodePreview(event: ReactMouseEvent<HTMLDivElement>) {
@@ -230,22 +166,21 @@ export function useGraphPointer({
   return {
     onPointerDown: handlePointerDown,
     onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
-      updatePanning(event);
+      updateNodeDrag(event);
       updateHover(event);
     },
-    onPointerUp: stopCanvasPanning,
-    onPointerCancel: stopCanvasPanning,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerUp,
     onDoubleClick: openNodePreview,
     onAuxClick: (event: ReactPointerEvent<HTMLDivElement>) => event.preventDefault(),
     onPointerLeave: () => {
-      if (!draggingNodeIdRef.current && !panDragRef.current && !externalFocusedNodeIdRef.current) {
+      if (!draggingNodeIdRef.current && !externalFocusedNodeIdRef.current) {
         setHoveredNode(null);
       }
     },
     onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => {
       stopDragging(event.pointerId);
       nodeDragRef.current = null;
-      stopPanning(event.pointerId);
     }
   };
 }

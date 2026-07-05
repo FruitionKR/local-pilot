@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { NODE_PREFIX, makeSourceId, nodeIdToPageType, rawNodeIdToDocumentId } from "../_lib/graph";
+import { findSourceNodeByDocumentId, makeRawId, rawNodeIdToDocumentId } from "../_lib/graph";
 import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
-import type { Project, SourceBlockHighlight } from "../_lib/types";
+import type { GraphNode, Project, SourceBlockHighlight } from "../_lib/types";
 
 export type PreviewTarget = {
   pageId: string | null;
@@ -25,7 +25,7 @@ const EMPTY_SELECTION: TreeSelectionState = {
   selectedDocumentId: null
 };
 
-export function useTreeSelection(projects: Project[]) {
+export function useTreeSelection(projects: Project[], nodes: GraphNode[]) {
   const [selection, setSelection] = useState<TreeSelectionState>(EMPTY_SELECTION);
   const { focusedGraphNodeId, selectedTreeItemId, selectedPreviewTarget, selectedDocumentId } = selection;
   const selectedDocumentTitle = useMemo(() => {
@@ -49,28 +49,31 @@ export function useTreeSelection(projects: Project[]) {
   function openPreviewTarget({
     nodeId,
     title,
+    pageType = null,
     treeItemId,
     documentId = null
   }: {
     nodeId: string;
     title: string;
+    pageType?: string | null;
     treeItemId?: string | null;
     documentId?: string | null;
   }) {
+    // wiki page(source/concept)면 pageId로 상세 조회, 아니면 raw 문서로 처리한다.
+    const isWikiPage = pageType === "source" || pageType === "concept";
     const rawDocumentId = rawNodeIdToDocumentId(nodeId) ?? documentId;
-    const pageType = nodeIdToPageType(nodeId);
     const resolvedTreeItemId = treeItemId ?? findTreeItemIdByGraphNodeId(nodeId);
 
     setSelection({
       selectedTreeItemId: resolvedTreeItemId,
-      selectedPreviewTarget: { pageId: pageType ? nodeId : null, title, pageType },
+      selectedPreviewTarget: { pageId: isWikiPage ? nodeId : null, title, pageType: isWikiPage ? pageType : null },
       focusedGraphNodeId: nodeId,
-      selectedDocumentId: pageType ? null : rawDocumentId
+      selectedDocumentId: isWikiPage ? null : rawDocumentId
     });
   }
 
   function selectTreeGraphNode(item: { id: string; label: string; documentId?: string; graphNodeId?: string }) {
-    const nodeId = item.graphNodeId ?? (item.documentId ? makeSourceId(item.documentId) : null);
+    const nodeId = item.graphNodeId ?? (item.documentId ? makeRawId(item.documentId) : null);
     if (!nodeId) return;
     openPreviewTarget({
       nodeId,
@@ -80,21 +83,27 @@ export function useTreeSelection(projects: Project[]) {
     });
   }
 
-  function openGraphNodePreview(nodeId: string, title: string) {
-    openPreviewTarget({ nodeId, title });
+  function openGraphNodePreview(node: GraphNode) {
+    const kind = node.kind ?? "concept";
+    openPreviewTarget({
+      nodeId: node.id,
+      title: node.label,
+      pageType: kind === "raw" ? null : kind,
+      documentId: node.documentId ?? null
+    });
   }
 
   function openWikiPagePreview(pageId: string, title: string, pageType: string) {
-    openPreviewTarget({ nodeId: pageId, title, treeItemId: findTreeItemIdByGraphNodeId(pageId) });
+    openPreviewTarget({ nodeId: pageId, title, pageType, treeItemId: findTreeItemIdByGraphNodeId(pageId) });
   }
 
   function openSourceBlockPreview(documentId: string, title: string, sourceBlockHighlights: SourceBlockHighlight[]) {
-    const sourceNodeId = makeSourceId(documentId);
-    const rawNodeId = `${NODE_PREFIX.raw}${documentId}`;
+    const rawNodeId = makeRawId(documentId);
+    const sourceNodeId = findSourceNodeByDocumentId(nodes, documentId)?.id ?? null;
     setSelection({
-      selectedTreeItemId: findTreeItemIdByGraphNodeId(rawNodeId) ?? findTreeItemIdByGraphNodeId(sourceNodeId),
+      selectedTreeItemId: findTreeItemIdByGraphNodeId(rawNodeId) ?? (sourceNodeId ? findTreeItemIdByGraphNodeId(sourceNodeId) : null),
       selectedPreviewTarget: { pageId: null, title, pageType: null, sourceBlockHighlights },
-      focusedGraphNodeId: sourceNodeId,
+      focusedGraphNodeId: sourceNodeId ?? rawNodeId,
       selectedDocumentId: documentId
     });
   }

@@ -4,6 +4,34 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-05
+
+### feat: 로그인/워크스페이스 플로우 추가 및 프론트 데이터 계층 개편
+
+**변경 배경**
+
+- 백엔드 인증/워크스페이스 API 계약에 맞춘 임시 로그인·워크스페이스 선택 흐름이 필요했다.
+- 수동 fetch 상태 관리, 자체 물리엔진, 수제 마크다운 파서를 검증된 라이브러리(React Query, d3-force, react-markdown)로 교체했다.
+
+**추가 및 변경된 내용**
+
+- `/login`, `/workspaces` 페이지와 `_lib/auth.ts` 토큰/워크스페이스 저장 헬퍼 추가 (임시 UI, Figma 시안 도입 시 교체 대상). `page.tsx`에 토큰/워크스페이스 가드 추가.
+- `providers.tsx`에 React Query Provider 구성, `useBackendData`를 `useQuery` 기반으로 전환 (processing/uploaded 문서가 있을 때만 3초 폴링, `refetchOnWindowFocus` 비활성).
+- `api.ts`: Bearer 토큰을 부착하는 `apiFetch`, 워크스페이스 스코프 endpoint, chat session 캐시와 `clearSessionCache()` 추가. 에러 처리를 `parseJsonOrThrow`로 통일해 백엔드 에러 메시지를 보존.
+- graph 물리엔진을 d3-force로 교체하고 wheel 줌/드래그 pan/터치 핀치를 d3-zoom으로 전환.
+- `MarkdownViewer`를 react-markdown + remark-gfm 기반으로 재구성, wikilink(`[[...]]`)/citation(`[1,2]`) 커스텀 remark 플러그인 추가.
+- 코드 리뷰 반영: `scheduleGraphCacheWrite` 안정 참조화(RAF 루프 재시작·캐시 서명 stale 버그 수정), signup/login 에러 메시지 분리, workspaces fetch cleanup, remark 플러그인 mdast 타입 적용, 미사용 `graphNodeKind` 제거.
+
+**검증 결과**
+
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` 통과.
+- 코드 리뷰(보안/graph/api 3개 관점) 지적 사항 HIGH·MEDIUM 반영 완료.
+
+**주의사항**
+
+- 토큰을 localStorage에 저장한다(XSS 시 탈취 가능한 알려진 트레이드오프). 정식 도입 시 httpOnly 쿠키 전환 필요.
+- refresh token 갱신 흐름 미구현 — access token 만료 시 재로그인이 필요하다.
+
 ## 2026-07-04
 
 ### refactor: graph 캔버스 모듈 정리

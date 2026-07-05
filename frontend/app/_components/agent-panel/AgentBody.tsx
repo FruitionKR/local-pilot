@@ -4,7 +4,7 @@ import { MarkdownViewer } from "../MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
 import { StatusList } from "./StatusList";
 import type { ActiveAgentTurn } from "./AgentPanel";
-import { makeSourceId, nodeIdToPageType } from "../../_lib/graph";
+import { findSourceNodeByDocumentId } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
 import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "./agentFormatters";
 import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";
@@ -46,28 +46,29 @@ function buildRelatedPageCards(message: ChatMessageResponse, nodes: GraphNode[] 
 
   const seenPageIds = new Set<string>();
   return message.references
-    .filter((reference) => {
-      const pageId = reference.source_document_id ? makeSourceId(reference.source_document_id) : null;
-      if (!pageId || seenPageIds.has(pageId) || !isKnownPage(nodes, pageId)) return false;
+    .map((reference) => ({
+      reference,
+      pageId: reference.source_document_id
+        ? findSourceNodeByDocumentId(nodes, reference.source_document_id)?.id ?? null
+        : null
+    }))
+    .filter(({ pageId }) => {
+      if (!pageId || seenPageIds.has(pageId)) return false;
       seenPageIds.add(pageId);
       return true;
     })
     .slice(0, MAX_RESULT_CARDS)
-    .map((reference) => {
-      const pageId = makeSourceId(reference.source_document_id ?? "");
-      const pageType = nodeIdToPageType(pageId) ?? "source";
-      return {
-        key: `reference-${reference.id}`,
-        pageId,
-        pageType,
-        title: formatWikiPageTitle(pageId, nodes, reference.source_document_id || "근거"),
-        meta: formatReferenceMeta(reference)
-      };
-    });
+    .map(({ reference, pageId }) => ({
+      key: `reference-${reference.id}`,
+      pageId: pageId as string,
+      pageType: "source",
+      title: formatWikiPageTitle(pageId as string, nodes, reference.source_document_id || "근거"),
+      meta: formatReferenceMeta(reference)
+    }));
 }
 
 function sourceTitle(nodes: GraphNode[] | undefined, documentId: string) {
-  return findGraphNode(nodes, makeSourceId(documentId))?.label ?? documentId;
+  return findSourceNodeByDocumentId(nodes, documentId)?.label ?? documentId;
 }
 
 export function AgentBody({
