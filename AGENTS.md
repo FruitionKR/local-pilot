@@ -85,10 +85,12 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 7. 커밋과 PR
 
-**Before any commit, read and follow `.claude/skills/commit/SKILL.md`. Before any PR, read and follow `.claude/skills/pr/SKILL.md`. Never merge PRs into `main`.**
+**Before any commit, use the Codex `commit` skill. Before any PR, use the Codex `pr` skill. Never merge PRs into `main`.**
 
-- 커밋을 생성하거나 준비할 때는 반드시 `.claude/skills/commit/SKILL.md`의 절차를 따른다.
-- PR을 생성하거나 준비할 때는 반드시 `.claude/skills/pr/SKILL.md`의 절차를 따른다.
+- 커밋을 생성하거나 준비할 때는 반드시 Codex `commit` 스킬(`.codex/skills/commit/SKILL.md`)의 절차를 따른다.
+- PR을 생성하거나 준비할 때는 반드시 Codex `pr` 스킬(`.codex/skills/pr/SKILL.md`)의 절차를 따른다.
+- 코드 리뷰를 요청받으면 Codex `review` 스킬(`.codex/skills/review/SKILL.md`)의 절차를 따른다.
+- Codex 스킬을 사용할 수 없는 환경에서는 같은 이름의 `.claude/skills/*/SKILL.md` 절차를 fallback으로 읽고 따른다.
 
 ## 8. 이슈 문서 관리
 

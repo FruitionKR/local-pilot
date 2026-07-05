@@ -1,92 +1,34 @@
-# Claude Code 스킬 사용 가이드
+# Agent 스킬 사용 가이드
 
-이 저장소에는 커밋과 PR 작업을 자동화하는 Claude Code 스킬이 포함되어 있습니다.
-스킬은 `.claude/skills/` 폴더에 있으며, repo를 clone하면 별도 설치 없이 바로 사용할 수 있습니다.
+이 저장소에는 반복 작업 절차를 분리한 agent 스킬이 포함되어 있습니다.
 
-## 스킬이란?
+- Codex용 스킬: `.codex/skills/`
+- Claude Code용 스킬: `.claude/skills/`
 
-Claude Code가 특정 작업을 할 때만 불러오는 **작업 절차서**입니다.
-
-- `CLAUDE.md` → 매 세션 항상 로드되는 기본 지침
-- 스킬 → 평소에는 한 줄 요약(description)만 인식하고, 해당 작업을 할 때만 전체 내용을 로드
-
-커밋/PR 규칙처럼 특정 시점에만 필요한 절차를 스킬로 분리하면 평소 대화에서 불필요한 컨텍스트를 줄일 수 있습니다.
+두 경로는 같은 작업 의도를 공유합니다. Codex에서는 `.codex/skills/`를 우선 사용하고, Claude Code에서는 `.claude/skills/`를 사용합니다.
 
 ## 이 저장소의 스킬
 
 | 스킬 | 하는 일 |
 |------|---------|
-| `commit` | 보안 점검 → changelog 갱신 → 한글 Conventional Commits 메시지 작성 → 커밋 생성 |
-| `pr` | 미커밋 변경 확인(있으면 commit 스킬 선행) → PR 보안 점검 → 브랜치/PR 흐름 확인 → PR 작성 |
+| `commit` | 보안 점검 -> changelog 갱신 -> 한글 Conventional Commits 메시지 작성 -> 커밋 생성 |
+| `pr` | 미커밋 변경 확인(있으면 commit 스킬 선행) -> PR 보안 점검 -> 브랜치/PR 흐름 확인 -> PR 작성 |
+| `review` | 로컬 변경분 또는 GitHub PR을 버그·정합성·보안 중심으로 리뷰 |
 
-### commit 스킬 순서
+## 사용 규칙
 
-1. **보안 점검** — 변경분에 API key, token, `.env` 같은 실제 비밀값이 없는지 확인. 발견 시 커밋 중단 후 보고.
-2. **changelog 갱신** — 기능 코드 변경이면 `docs/changelog/` 아래 해당 영역(frontend/backend/ai/infra) 파일 갱신.
-3. **커밋 메시지** — `feat:`, `fix:` 등 Conventional Commits + 한글 제목/본문.
-4. **커밋 생성** — 위 단계 통과 후 커밋. changelog는 같은 커밋에 포함.
+- 커밋을 생성하거나 준비할 때는 `commit` 스킬을 사용합니다.
+- PR을 생성하거나 준비할 때는 `pr` 스킬을 사용합니다.
+- 코드 리뷰를 요청받으면 `review` 스킬을 사용합니다.
+- `main` 대상 PR은 생성과 상태 확인까지만 수행하고, 병합은 사용자가 직접 합니다.
 
-### pr 스킬 순서
+## 새 스킬 추가
 
-1. **커밋 상태 확인** — 미커밋 변경이 있으면 commit 스킬을 먼저 수행.
-2. **PR 보안 점검** — PR 변경분 전체(`git diff base...HEAD`)에 비밀값 없는지 확인.
-3. **브랜치/PR 흐름** — 기능 브랜치 → `dev` 대상 PR. 기능 단위로 커밋/PR 분리 확인.
-4. **PR 작성** — 한글 제목/본문. 변경 요약, 테스트 결과, 주의사항 포함.
-5. **main 제한** — `main` 대상 PR은 생성까지만. 병합은 반드시 사용자가 직접 수행.
+Codex와 Claude Code 양쪽에서 같은 절차를 쓰려면 두 경로에 같은 이름의 스킬을 추가합니다.
 
-## 사용법
-
-### 방법 1: 그냥 말하기 (자동 발동)
-
-스킬 이름을 몰라도 됩니다. 평소처럼 요청하면 Claude가 알아서 스킬을 불러옵니다.
-
-```
-> 지금까지 작업 커밋해줘
-→ commit 스킬 자동 로드 → 보안 점검 → changelog → 커밋
-
-> dev로 PR 올려줘
-→ pr 스킬 자동 로드 → 미커밋 변경 있으면 커밋 먼저 → PR 생성
+```text
+.codex/skills/<skill-name>/SKILL.md
+.claude/skills/<skill-name>/SKILL.md
 ```
 
-### 방법 2: 직접 호출
-
-입력창에 `/`를 입력하면 사용 가능한 스킬 목록이 자동완성으로 표시됩니다.
-
-```
-/commit                  ← 커밋 절차 즉시 시작
-/commit 그래프 캔버스 정리   ← 맥락을 인자로 전달
-/pr                      ← PR 절차 즉시 시작
-```
-
-## 새 스킬 추가하기
-
-1. `.claude/skills/<스킬이름>/SKILL.md` 파일 생성:
-
-```markdown
----
-name: 스킬이름
-description: 언제 사용하는지 한 줄로. 이 문장을 보고 Claude가 자동 발동 여부를 판단.
----
-
-# 절차 제목
-
-## 1. 첫 단계
-- 구체적인 지시 내용
-```
-
-2. `description`이 가장 중요합니다. "커밋을 생성하거나 준비할 때 반드시 사용"처럼 **발동 조건**을 명확히 적어야 자동으로 불려옵니다.
-3. 새 세션을 시작하면 스킬이 등록됩니다.
-
-## 자주 묻는 질문
-
-**Q. 스킬이 목록에 안 보여요.**
-새 세션을 시작하세요. 스킬은 세션 시작 시점에 `.claude/skills/`를 스캔해 등록됩니다.
-
-**Q. 스킬 없이 커밋하면 규칙이 안 지켜지나요?**
-루트 `CLAUDE.md` 7번(커밋과 PR)에 "커밋/PR 전 반드시 해당 스킬을 따른다"는 지침이 있어, Claude가 커밋 작업을 인식하면 스킬을 참조합니다. `Never merge PRs into main` 같은 핵심 안전 규칙은 CLAUDE.md에도 이중으로 남겨져 있습니다.
-
-**Q. Claude Code가 아닌 다른 AI 도구에서도 동작하나요?**
-자동 발동은 Claude Code 전용입니다. 다른 도구는 `AGENTS.md` 7번에 적힌 스킬 파일 경로(`.claude/skills/commit/SKILL.md`, `.claude/skills/pr/SKILL.md`)를 읽고 따르도록 되어 있습니다.
-
-**Q. 내 컴퓨터에만 적용되는 건가요?**
-아니요. `.claude/skills/`는 repo에 커밋되므로 clone한 모든 팀원이 동일하게 사용합니다.
+Codex 스킬의 `SKILL.md`에는 frontmatter의 `name`과 `description`이 필요합니다. `description`에는 스킬이 언제 발동되어야 하는지 명확히 적습니다.
