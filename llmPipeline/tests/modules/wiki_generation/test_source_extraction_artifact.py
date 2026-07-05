@@ -2,7 +2,12 @@ import json
 from pathlib import Path
 
 from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocument
-from app.modules.wiki_generation.infrastructure.assemble import LinkBuilder, MeaningClusterArtifactAssembler, SourcePageAssembler
+from app.modules.wiki_generation.infrastructure.assemble import (
+    GeneratedConceptPageAssembler,
+    LinkBuilder,
+    MeaningClusterArtifactAssembler,
+    SourcePageAssembler,
+)
 from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
 
 
@@ -134,6 +139,38 @@ def test_concept_aliases_preserve_llm_aliases_without_backend_expansion() -> Non
     assert "3계층 아키텍처" in aliases
     assert "three-layer architecture" not in aliases
     assert "three-layer-architecture" not in aliases
+
+
+def test_generated_concept_page_assembler_keeps_assemble_import_contract() -> None:
+    source_blocks = [
+        SourceBlock("doc_generated", "B0001", "ref_generated_md_b0001", "생성형 concept page 근거이다.", 1, 1),
+    ]
+    concept = {
+        "slug": "generated-concept",
+        "title": "Generated Concept",
+        "source_document_ids": ["doc_generated"],
+        "display_reference_ids": ["B0001"],
+    }
+    raw_page = {
+        "definition": {"text": "다듬은 정의", "anchor_block_ids": ["B0001", "B9999"]},
+        "key_points": [{"text": "핵심 포인트", "anchor_block_ids": ["B0001"]}],
+        "evidence": [],
+        "confidence": 0.9,
+    }
+    warnings: list[str] = []
+
+    normalized = GeneratedConceptPageAssembler().normalize_generated_output(
+        concept,
+        raw_page,
+        source_blocks,
+        warnings,
+    )
+    pages = GeneratedConceptPageAssembler().build_pages([normalized])
+
+    assert normalized["definition"]["anchor_reference_ids"] == ["B0001"]
+    assert warnings == ["generated-concept.definition: unknown concept-page anchor_block_id B9999"]
+    assert "다듬은 정의" in pages[0]["markdown"]
+    assert "핵심 포인트" in pages[0]["markdown"]
 
 
 def test_meaning_cluster_artifact_accumulates_promote_hint_without_immediate_promotion(tmp_path: Path) -> None:

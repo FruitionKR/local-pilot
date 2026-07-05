@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import urllib.error
 import urllib.request
@@ -15,6 +14,13 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.modules.wiki_generation.application.evaluation_guards import (
+    apply_generation_evaluation_guards as _apply_generation_evaluation_guards,
+    repair_normalized_from_evaluation as _repair_normalized_from_evaluation,
+)
+from app.modules.wiki_generation.application.section_polish_mapping import (
+    map_polish_output as _map_polish_output,
+)
 from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
     GeneratedConceptPageAssembler,
@@ -229,42 +235,6 @@ def source_page_mode(args: argparse.Namespace) -> str:
     return "section-polish" if args.mode in {"api", "generic-chat"} else "skeleton"
 
 
-def _map_polish_output(raw: dict[str, Any], source_blocks: list[Any], warnings: list[str], context: str) -> dict[str, Any]:
-    valid_bids = {b.block_id for b in source_blocks}
-
-    def map_refs(anchor_block_ids: list[str]) -> list[str]:
-        refs = []
-        for bid in anchor_block_ids or []:
-            if bid not in valid_bids:
-                warnings.append(f"{context}: unknown polish anchor_block_id {bid}")
-                continue
-            refs.append(bid)
-        return refs
-
-    def clean_text(text: Any) -> str:
-        text = str(text or "")
-        text = re.sub(r"\s*[\[(]B\d{4}[\])]", "", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
-
-    mapped = {
-        "section": raw.get("section"),
-        "text": clean_text(raw.get("text", "")),
-        "anchor_reference_ids": map_refs(raw.get("anchor_block_ids", [])),
-        "items": [],
-        "related_concept_hints": raw.get("related_concept_hints", []),
-        "confidence": raw.get("confidence", 0.0),
-    }
-    for item in raw.get("items", []) or []:
-        mapped["items"].append(
-            {
-                "text": clean_text(item.get("text", "")),
-                "anchor_reference_ids": map_refs(item.get("anchor_block_ids", [])),
-            }
-        )
-    return mapped
-
-
 def _run_semantic_extraction(
     *,
     api_client: ChatCompletionsJsonClient,
@@ -330,252 +300,6 @@ def _evaluate_generation(
     evaluation.setdefault("retry_feedback", "")
     _apply_generation_evaluation_guards(evaluation, normalized)
     return evaluation
-
-
-def _apply_generation_evaluation_guards(evaluation: dict[str, Any], normalized: dict[str, Any]) -> None:
-    core_slugs = {str(item.get("slug")) for item in normalized.get("concept_ledger", [])}
-    metadata_fragments = {
-        "citation-marker",
-        "citation-rank",
-        "retrieval-rank",
-        "source-block",
-        "web-url",
-        "confidence",
-    }
-    fragmented = sorted(core_slugs.intersection(metadata_fragments))
-    if len(fragmented) >= 3:
-        _append_eval_issue(
-            evaluation,
-            {
-                "metric": "concept_groundedness",
-                "type": "over_fragmented_concept",
-                "severity": "medium",
-                "target": fragmented,
-                "reason": "citation/source metadata가 독립 core concept로 과하게 분리됨",
-                "feedback": "citation marker, citation_rank, retrieval_rank, source block, web URL, confidence는 독립 core concept가 아니라 citation/provenance metadata의 section_candidate 또는 mention으로 낮추세요.",
-            },
-        )
-    _apply_observation_evaluation_guards(evaluation, normalized)
-    if any(issue.get("severity") in {"medium", "high"} for issue in evaluation.get("issues", [])):
-        evaluation["passed"] = False
-        evaluation["retry_recommended"] = True
-        scores = evaluation.setdefault("scores", {})
-        if isinstance(scores.get("overall"), int | float):
-            scores["overall"] = min(float(scores["overall"]), 0.74)
-        feedbacks = [str(issue.get("feedback")) for issue in evaluation.get("issues", []) if issue.get("feedback")]
-        evaluation["retry_feedback"] = " ".join(_unique(feedbacks))
-
-
-def _repair_normalized_from_evaluation(normalized: dict[str, Any], evaluation: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    repairable_types = {"observation_missing_ref", "broken_observation", "duplicate_observation"}
-    issues = [issue for issue in evaluation.get("issues", []) if issue.get("type") in repairable_types]
-    if not issues:
-        return normalized, []
-    repaired = {**normalized}
-    observations = [dict(item) for item in normalized.get("observations", [])]
-    if not observations:
-        return normalized, []
-
-    remove_ids: set[str] = set()
-    duplicate_groups: list[list[str]] = []
-    for issue in issues:
-        targets = [str(target) for target in issue.get("target", []) if str(target)]
-        if issue.get("type") in {"observation_missing_ref", "broken_observation"}:
-            remove_ids.update(targets)
-        elif issue.get("type") == "duplicate_observation" and len(targets) > 1:
-            duplicate_groups.append(targets)
-
-    operations: list[str] = []
-    observations_by_id = {str(item.get("observation_id")): item for item in observations}
-    for ids in duplicate_groups:
-        candidates = [observations_by_id[item_id] for item_id in ids if item_id in observations_by_id and item_id not in remove_ids]
-        if len(candidates) < 2:
-            continue
-        keeper = _select_observation_keeper(candidates)
-        for candidate in candidates:
-            if candidate is keeper:
-                continue
-            _merge_observation(keeper, candidate)
-            remove_ids.add(str(candidate.get("observation_id")))
-        operations.append(f"merged duplicate observations {ids} into {keeper.get('observation_id')}")
-
-    before_count = len(observations)
-    observations = [item for item in observations if str(item.get("observation_id")) not in remove_ids]
-    if len(observations) != before_count:
-        operations.append(f"removed {before_count - len(observations)} broken or duplicate observations")
-    observations = _renumber_observations(observations)
-    repaired["observations"] = observations
-
-    repaired_notes = []
-    valid_signatures = {_observation_content_signature(item) for item in observations}
-    for note in normalized.get("semantic_notes", []):
-        note_copy = {**note}
-        note_observations = []
-        for observation in note.get("observations", []):
-            if _observation_content_signature(observation) in valid_signatures:
-                note_observations.append(observation)
-        note_copy["observations"] = note_observations
-        repaired_notes.append(note_copy)
-    repaired["semantic_notes"] = repaired_notes
-    return repaired, operations
-
-
-def _select_observation_keeper(observations: list[dict[str, Any]]) -> dict[str, Any]:
-    return max(
-        observations,
-        key=lambda item: (
-            len(item.get("anchor_reference_ids", []) or []),
-            len(str(item.get("summary") or "")),
-            len(item.get("claims", []) or []),
-        ),
-    )
-
-
-def _merge_observation(target: dict[str, Any], incoming: dict[str, Any]) -> None:
-    target["anchor_reference_ids"] = _unique((target.get("anchor_reference_ids", []) or []) + (incoming.get("anchor_reference_ids", []) or []))
-    target["claims"] = _unique([str(item).strip() for item in (target.get("claims", []) or []) + (incoming.get("claims", []) or []) if str(item).strip()])
-    target["related_concept_hints"] = _unique(
-        [str(item).strip() for item in (target.get("related_concept_hints", []) or []) + (incoming.get("related_concept_hints", []) or []) if str(item).strip()]
-    )
-    for field in ("summary", "title", "query_text"):
-        if len(str(incoming.get(field) or "")) > len(str(target.get(field) or "")):
-            target[field] = incoming.get(field)
-
-
-def _renumber_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    renumbered = []
-    for idx, observation in enumerate(observations, start=1):
-        renumbered.append({**observation, "observation_id": f"O{idx:03d}"})
-    return renumbered
-
-
-def _observation_content_signature(observation: dict[str, Any]) -> str:
-    return "\n".join(
-        [
-            str(observation.get("type") or ""),
-            str(observation.get("title") or ""),
-            str(observation.get("query_text") or ""),
-            str(observation.get("summary") or ""),
-        ]
-    )
-
-
-def _apply_observation_evaluation_guards(evaluation: dict[str, Any], normalized: dict[str, Any]) -> None:
-    observations = normalized.get("observations", [])
-    for observation in observations:
-        observation_id = str(observation.get("observation_id") or "unknown")
-        refs = observation.get("anchor_reference_ids", []) or []
-        summary = str(observation.get("summary") or "").strip()
-        title = str(observation.get("title") or "").strip()
-        claims = [str(claim).strip() for claim in observation.get("claims", []) if str(claim).strip()]
-        if not refs:
-            _append_eval_issue(
-                evaluation,
-                {
-                    "metric": "source_faithfulness",
-                    "type": "observation_missing_ref",
-                    "severity": "medium",
-                    "target": [observation_id],
-                    "reason": "Observation이 원문 source block anchor 없이 생성되어 검색 근거로 신뢰하기 어렵습니다.",
-                    "feedback": "모든 observation은 직접 사용한 anchor_block_ids를 포함해야 합니다. 근거가 없으면 해당 observation을 제거하세요.",
-                },
-            )
-        if _is_broken_observation_text(summary) or (not summary and not claims):
-            _append_eval_issue(
-                evaluation,
-                {
-                    "metric": "source_faithfulness",
-                    "type": "broken_observation",
-                    "severity": "medium",
-                    "target": [observation_id],
-                    "reason": "Observation summary가 중간에서 끊겼거나 검색 단위로 쓸 수 있을 만큼 완성되지 않았습니다.",
-                    "feedback": "chunk 경계에서 깨진 observation은 제거하고, 같은 의미의 정상 observation만 남기세요.",
-                },
-            )
-        if not title and not summary and not claims:
-            _append_eval_issue(
-                evaluation,
-                {
-                    "metric": "source_faithfulness",
-                    "type": "broken_observation",
-                    "severity": "medium",
-                    "target": [observation_id],
-                    "reason": "Observation에 title, summary, claims가 모두 없어 검색 단위로 사용할 수 없습니다.",
-                    "feedback": "빈 observation을 생성하지 마세요.",
-                },
-            )
-
-    buckets: dict[str, list[str]] = {}
-    for observation in observations:
-        signature = _observation_signature(observation)
-        if not signature:
-            continue
-        buckets.setdefault(signature, []).append(str(observation.get("observation_id") or "unknown"))
-    duplicates = [ids for ids in buckets.values() if len(ids) > 1]
-    for ids in duplicates:
-        _append_eval_issue(
-            evaluation,
-            {
-                "metric": "source_coverage",
-                "type": "duplicate_observation",
-                "severity": "medium",
-                "target": ids,
-                "reason": "서로 다른 chunk나 registry 섹션에서 같은 의미의 observation이 중복 생성되었습니다.",
-                "feedback": "query_text/resolved intent와 summary가 같은 observation은 하나로 병합하고 가장 직접적인 source block refs를 유지하세요.",
-            },
-        )
-
-
-def _is_broken_observation_text(text: str) -> bool:
-    if not text:
-        return False
-    stripped = text.strip()
-    if stripped in {"-", "없음", "N/A"}:
-        return True
-    openers = {"(": ")", "[": "]", "{": "}", "“": "”", "\"": "\"", "'": "'"}
-    for opener, closer in openers.items():
-        if stripped.endswith(opener):
-            return True
-        if stripped.count(opener) > stripped.count(closer):
-            return True
-    return len(stripped) < 8
-
-
-def _observation_signature(observation: dict[str, Any]) -> str:
-    query = _compact_observation_text(str(observation.get("query_text") or ""))
-    summary = _compact_observation_text(str(observation.get("summary") or ""))
-    title = _compact_observation_text(str(observation.get("title") or ""))
-    if query:
-        return f"q:{query}"
-    if summary:
-        return f"s:{summary[:80]}"
-    return f"t:{title}" if title else ""
-
-
-def _compact_observation_text(text: str) -> str:
-    text = re.sub(r"\s+", " ", text.lower()).strip()
-    text = re.sub(r"[^0-9a-z가-힣 ]+", "", text)
-    return text
-
-
-def _append_eval_issue(evaluation: dict[str, Any], issue: dict[str, Any]) -> None:
-    issues = evaluation.setdefault("issues", [])
-    signature = (issue.get("type"), tuple(issue.get("target", [])))
-    for existing in issues:
-        if (existing.get("type"), tuple(existing.get("target", []))) == signature:
-            return
-    issues.append(issue)
-
-
-def _unique(values: list[str]) -> list[str]:
-    seen = set()
-    rows = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        rows.append(value)
-    return rows
 
 
 def _json_safe(value: Any) -> Any:
@@ -972,6 +696,159 @@ def _run_wiki_generation_graph(
     return result["notes"], result["normalized"], result["generation_evaluations"]
 
 
+def _prepare_source_page_polish(
+    args: argparse.Namespace,
+    normalized: dict[str, Any],
+    blocks: list[Any],
+    section_polisher: ApiSectionPolisher | None,
+    raw_polish_dir: Path | None,
+    invalid_polish_dir: Path,
+    log: PipelineLog,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    source_polish: dict[str, Any] = {}
+    raw_source_key_points_for_concepts: list[dict[str, Any]] = [
+        kp
+        for note in normalized.get("semantic_notes", [])
+        for kp in note.get("key_points", [])
+    ]
+    source_key_points_for_concepts = list(raw_source_key_points_for_concepts)
+    sp_mode = source_page_mode(args)
+    if sp_mode != "section-polish":
+        return source_polish, source_key_points_for_concepts, sp_mode
+
+    assert section_polisher is not None
+    source_payload = {
+        "page_type": "source",
+        "section": "source_summary_and_key_points",
+        "context": {
+            "document": normalized["document"],
+            "concept_slugs": [concept["slug"] for concept in normalized["concept_ledger"]],
+        },
+        "draft": {
+            "summary_candidates": [n.get("semantic_summary", "") for n in normalized["semantic_notes"] if n.get("semantic_summary")],
+            "key_points": [kp for note in normalized["semantic_notes"] for kp in note.get("key_points", [])],
+        },
+        "evidence": normalized["evidence_units"],
+    }
+    try:
+        raw_source_polish = section_polisher.polish(source_payload, blocks)
+    except SectionPolishParseError as exc:
+        invalid_path = invalid_polish_dir / "source_page.txt"
+        if args.save_debug_json:
+            ensure_dir(invalid_polish_dir)
+            write_text(invalid_path, exc.raw_content)
+        normalized.setdefault("warnings", []).append("source_page: section polish output was not repairable; used backend skeleton")
+        log.emit(
+            "5-보조. Source Section Polish",
+            "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.",
+            {"invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
+        )
+        return source_polish, source_key_points_for_concepts, sp_mode
+
+    if raw_polish_dir is not None:
+        write_json(raw_polish_dir / "source_page.json", raw_source_polish)
+    mapped_source_polish = _map_polish_output(raw_source_polish, blocks, normalized.setdefault("warnings", []), "source_page")
+    source_polish = {
+        "title": mapped_source_polish.get("title"),
+        "summary": mapped_source_polish,
+        "key_points": mapped_source_polish,
+    }
+    source_key_points_for_concepts = [
+        *mapped_source_polish.get("items", []),
+        *raw_source_key_points_for_concepts,
+    ]
+    log.emit(
+        "5-보조. Source Section Polish",
+        "Source page의 summary/key points 섹션만 LLM으로 다듬었습니다.",
+        {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
+    )
+    return source_polish, source_key_points_for_concepts, sp_mode
+
+
+def _prepare_concept_section_polish(
+    args: argparse.Namespace,
+    normalized: dict[str, Any],
+    concept_source_blocks_by_slug: dict[str, list[Any]],
+    source_key_points_for_concepts: list[dict[str, Any]],
+    section_polisher: ApiSectionPolisher,
+    raw_polish_dir: Path | None,
+    invalid_polish_dir: Path,
+    log: PipelineLog,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    concept_polish_by_slug: dict[str, Any] = {}
+    generated_concept_pages: list[dict[str, Any]] = []
+
+    for concept in normalized["concept_ledger"]:
+        source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
+        related_evidence = [ev for ev in normalized["evidence_units"] if concept["slug"] in ev.get("related_concept_slugs", [])]
+        resolution_links = [
+            target
+            for resolution in normalized.get("concept_resolutions", [])
+            if (resolution.get("canonical_slug") or resolution.get("incoming_slug")) == concept["slug"]
+            for target in resolution.get("link_targets", [])
+        ]
+        payload = {
+            "page_type": "concept",
+            "section": "concept_definition_key_points_and_related",
+            "context": {
+                "title": concept.get("title"),
+                "slug": concept.get("slug"),
+                "aliases": concept.get("aliases", []),
+                "why_page_worthy": concept.get("why_page_worthy"),
+                "resolution_link_targets": resolution_links,
+            },
+            "draft": {
+                "definition": concept.get("definition"),
+            },
+            "evidence": related_evidence,
+        }
+        try:
+            raw_polish = section_polisher.polish(payload, source_blocks)
+        except SectionPolishParseError as exc:
+            invalid_path = invalid_polish_dir / f"concept_{concept['slug']}.txt"
+            if args.save_debug_json:
+                ensure_dir(invalid_polish_dir)
+                write_text(invalid_path, exc.raw_content)
+            normalized.setdefault("warnings", []).append(f"concept:{concept['slug']}: section polish output was not repairable; used backend skeleton")
+            log.emit(
+                "6-보조. Concept Section Polish",
+                "Concept section polish가 복구 불가능해 해당 concept은 backend skeleton으로 대체했습니다.",
+                {"개념": concept["slug"], "invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
+            )
+            continue
+
+        if raw_polish_dir is not None:
+            write_json(raw_polish_dir / f"concept_{concept['slug']}.json", raw_polish)
+        mapped = _map_polish_output(raw_polish, source_blocks, normalized.setdefault("warnings", []), f"concept:{concept['slug']}")
+        concept_polish_by_slug[concept["slug"]] = {
+            "definition": mapped,
+            "key_points": mapped,
+            "related_concept_hints": mapped.get("related_concept_hints", []),
+        }
+        generated_concept_pages.append(
+            {
+                "slug": concept["slug"],
+                "title": concept.get("title"),
+                "confidence": mapped.get("confidence"),
+                "related_concept_hints": mapped.get("related_concept_hints", []),
+            }
+        )
+        log.emit(
+            "6-보조. Concept Section Polish",
+            "Concept page의 definition/key points/related hint 섹션만 LLM으로 다듬었습니다.",
+            {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": mapped.get("confidence")},
+        )
+
+    concept_pages = ConceptPageAssembler().build_top(
+        normalized,
+        top_n=None,
+        polish_by_slug=concept_polish_by_slug,
+        source_key_points=source_key_points_for_concepts,
+    )
+    log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
+    return concept_pages, generated_concept_pages
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -1166,60 +1043,15 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     section_polisher = ApiSectionPolisher(api_client, section_polish_system_prompt) if api_client is not None else None
     raw_polish_dir = ensure_dir(out / "raw_llm_outputs" / "section_polish") if args.save_debug_json else None
     invalid_polish_dir = out / "raw_llm_outputs" / "section_polish_invalid"
-    source_polish: dict[str, Any] = {}
-    raw_source_key_points_for_concepts: list[dict[str, Any]] = [
-        kp
-        for note in normalized.get("semantic_notes", [])
-        for kp in note.get("key_points", [])
-    ]
-    source_key_points_for_concepts = list(raw_source_key_points_for_concepts)
-    sp_mode = source_page_mode(args)
-    if sp_mode == "section-polish":
-        assert section_polisher is not None
-        source_payload = {
-            "page_type": "source",
-            "section": "source_summary_and_key_points",
-            "context": {
-                "document": normalized["document"],
-                "concept_slugs": [concept["slug"] for concept in normalized["concept_ledger"]],
-            },
-            "draft": {
-                "summary_candidates": [n.get("semantic_summary", "") for n in normalized["semantic_notes"] if n.get("semantic_summary")],
-                "key_points": [kp for note in normalized["semantic_notes"] for kp in note.get("key_points", [])],
-            },
-            "evidence": normalized["evidence_units"],
-        }
-        try:
-            raw_source_polish = section_polisher.polish(source_payload, blocks)
-        except SectionPolishParseError as exc:
-            invalid_path = invalid_polish_dir / "source_page.txt"
-            if args.save_debug_json:
-                ensure_dir(invalid_polish_dir)
-                write_text(invalid_path, exc.raw_content)
-            normalized.setdefault("warnings", []).append("source_page: section polish output was not repairable; used backend skeleton")
-            log.emit(
-                "5-보조. Source Section Polish",
-                "Source page section polish가 복구 불가능해 backend skeleton으로 대체했습니다.",
-                {"invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
-            )
-        else:
-            if raw_polish_dir is not None:
-                write_json(raw_polish_dir / "source_page.json", raw_source_polish)
-            mapped_source_polish = _map_polish_output(raw_source_polish, blocks, normalized.setdefault("warnings", []), "source_page")
-            source_polish = {
-                "title": mapped_source_polish.get("title"),
-                "summary": mapped_source_polish,
-                "key_points": mapped_source_polish,
-            }
-            source_key_points_for_concepts = [
-                *mapped_source_polish.get("items", []),
-                *raw_source_key_points_for_concepts,
-            ]
-            log.emit(
-                "5-보조. Source Section Polish",
-                "Source page의 summary/key points 섹션만 LLM으로 다듬었습니다.",
-                {"confidence": mapped_source_polish.get("confidence"), "항목 수": len(mapped_source_polish.get("items", []))},
-            )
+    source_polish, source_key_points_for_concepts, sp_mode = _prepare_source_page_polish(
+        args,
+        normalized,
+        blocks,
+        section_polisher,
+        raw_polish_dir,
+        invalid_polish_dir,
+        log,
+    )
     source_page = SourcePageAssembler().build(normalized, polish=source_polish)
     source_artifact = normalized.get("source_extraction_artifact")
     log.emit(
@@ -1228,78 +1060,20 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         {"source_page": source_page.get("markdown_path"), "source_json": bool(source_artifact), "mode": sp_mode},
     )
     generated_concept_pages = []
-    concept_polish_by_slug: dict[str, Any] = {}
     raw_concept_dir = ensure_dir(out / "raw_llm_outputs" / "concept_page_generation") if args.save_debug_json else None
     cp_mode = concept_page_mode(args)
     if cp_mode == "section-polish":
         assert section_polisher is not None
-        for concept in normalized["concept_ledger"]:
-            source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
-            related_evidence = [ev for ev in normalized["evidence_units"] if concept["slug"] in ev.get("related_concept_slugs", [])]
-            resolution_links = [
-                target
-                for resolution in normalized.get("concept_resolutions", [])
-                if (resolution.get("canonical_slug") or resolution.get("incoming_slug")) == concept["slug"]
-                for target in resolution.get("link_targets", [])
-            ]
-            payload = {
-                "page_type": "concept",
-                "section": "concept_definition_key_points_and_related",
-                "context": {
-                    "title": concept.get("title"),
-                    "slug": concept.get("slug"),
-                    "aliases": concept.get("aliases", []),
-                    "why_page_worthy": concept.get("why_page_worthy"),
-                    "resolution_link_targets": resolution_links,
-                },
-                "draft": {
-                    "definition": concept.get("definition"),
-                },
-                "evidence": related_evidence,
-            }
-            try:
-                raw_polish = section_polisher.polish(payload, source_blocks)
-            except SectionPolishParseError as exc:
-                invalid_path = invalid_polish_dir / f"concept_{concept['slug']}.txt"
-                if args.save_debug_json:
-                    ensure_dir(invalid_polish_dir)
-                    write_text(invalid_path, exc.raw_content)
-                normalized.setdefault("warnings", []).append(f"concept:{concept['slug']}: section polish output was not repairable; used backend skeleton")
-                log.emit(
-                    "6-보조. Concept Section Polish",
-                    "Concept section polish가 복구 불가능해 해당 concept은 backend skeleton으로 대체했습니다.",
-                    {"개념": concept["slug"], "invalid_raw": invalid_path if args.save_debug_json else "not_saved"},
-                )
-                continue
-            else:
-                if raw_polish_dir is not None:
-                    write_json(raw_polish_dir / f"concept_{concept['slug']}.json", raw_polish)
-                mapped = _map_polish_output(raw_polish, source_blocks, normalized.setdefault("warnings", []), f"concept:{concept['slug']}")
-                concept_polish_by_slug[concept["slug"]] = {
-                    "definition": mapped,
-                    "key_points": mapped,
-                    "related_concept_hints": mapped.get("related_concept_hints", []),
-                }
-                generated_concept_pages.append(
-                    {
-                        "slug": concept["slug"],
-                        "title": concept.get("title"),
-                        "confidence": mapped.get("confidence"),
-                        "related_concept_hints": mapped.get("related_concept_hints", []),
-                    }
-                )
-                log.emit(
-                    "6-보조. Concept Section Polish",
-                    "Concept page의 definition/key points/related hint 섹션만 LLM으로 다듬었습니다.",
-                    {"개념": concept["slug"], "근거 블록 수": len(source_blocks), "confidence": mapped.get("confidence")},
-                )
-        concept_pages = ConceptPageAssembler().build_top(
+        concept_pages, generated_concept_pages = _prepare_concept_section_polish(
+            args,
             normalized,
-            top_n=None,
-            polish_by_slug=concept_polish_by_slug,
-            source_key_points=source_key_points_for_concepts,
+            concept_source_blocks_by_slug,
+            source_key_points_for_concepts,
+            section_polisher,
+            raw_polish_dir,
+            invalid_polish_dir,
+            log,
         )
-        log.emit("6. Concept Page 생성", "백엔드 조립과 섹션 polish로 concept page markdown 데이터를 생성했습니다.", {"페이지 수": len(concept_pages)})
     elif cp_mode in {"api", "full-llm"}:
         assert api_client is not None
         concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt)

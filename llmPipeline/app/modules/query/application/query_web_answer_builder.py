@@ -5,13 +5,14 @@ from collections.abc import Callable
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.ports import QueryEventPublisherPort, WebSearchPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
+from app.modules.query.application.query_event import publish_query_event
+from app.modules.query.application.retrieval_summary import build_retrieval_summary
 from app.modules.query.domain.entities import (
     GraphContext,
     QueryAnswer,
     QueryContext,
     QueryRewrite,
     RetrievedPage,
-    RetrievalSummary,
     TraversalPath,
     WebSearchResult,
     WikiEmbeddingUnit,
@@ -70,14 +71,10 @@ class QueryWebAnswerBuilder:
             evidence_snippets=evidence_snippets,
             graph_context=graph_context,
             traversal_paths=[],
-            retrieval_summary=RetrievalSummary(
+            retrieval_summary=build_retrieval_summary(
+                related_pages=related_pages,
                 source_candidate_count=0,
                 concept_candidate_count=0,
-                visited_node_count=len(related_pages),
-                returned_node_count=len(related_pages),
-                used_source_count=0,
-                used_concept_count=0,
-                max_depth=0,
                 stop_reason="web_search_fallback",
             ),
         )
@@ -121,22 +118,16 @@ class QueryWebAnswerBuilder:
             "내부 Wiki와 웹 검색 근거를 함께 사용해 답변 생성을 완료했습니다.",
             {"result_count": len(web_results), "answer_chars": len(answer.content)},
         )
-        used_source_count = len([item for item in related_pages if item.page.is_source])
-        used_concept_count = len([item for item in related_pages if item.page.is_concept])
         return QueryAnswer(
             answer=answer,
             related_pages=related_pages,
             evidence_snippets=evidence_snippets,
             graph_context=augmented_graph_context,
             traversal_paths=traversal_paths,
-            retrieval_summary=RetrievalSummary(
+            retrieval_summary=build_retrieval_summary(
+                related_pages=related_pages,
                 source_candidate_count=0,
                 concept_candidate_count=0,
-                visited_node_count=len(related_pages),
-                returned_node_count=len(related_pages),
-                used_source_count=used_source_count,
-                used_concept_count=used_concept_count,
-                max_depth=0,
                 stop_reason=stop_reason,
             ),
         )
@@ -211,9 +202,4 @@ class QueryWebAnswerBuilder:
         message: str,
         data: dict[str, object] | None = None,
     ) -> None:
-        if event_publisher is None:
-            return
-        try:
-            event_publisher.publish(stage, message, data)
-        except Exception:
-            return
+        publish_query_event(event_publisher, stage, message, data)

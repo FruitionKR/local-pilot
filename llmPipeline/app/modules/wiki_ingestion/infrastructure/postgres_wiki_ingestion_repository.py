@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -13,19 +12,35 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
+    MATERIALIZED_CORE_RELATIONS,
+    cluster_relation_items as _cluster_relation_items,
+    cluster_sections_by_id as _cluster_sections_by_id,
+    merge_active_cluster_markdown as _merge_active_cluster_markdown,
+    parse_active_cluster_lint as _parse_active_cluster_lint,
+    refs_in_text as _refs_in_text,
+)
+from app.modules.wiki_ingestion.infrastructure.embedding_units import (
+    clean_unit_text as _clean_unit_text,
+    extract_embedding_units as _extract_embedding_units,
+    hash_text as _hash_text,
+    unit_representation as _unit_representation,
+)
+from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
+    markdown_list_section as _markdown_list_section,
+    markdown_section as _markdown_section,
+)
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object, write_text_object
+from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
+    markdown_title as _markdown_title,
+    page_payload as _page_payload,
+    resolve_page_id as _resolve_page_id,
+    source_summary as _source_summary,
+    stored_manifest as _stored_manifest,
+)
 
 
 SOURCE_RELATED_THRESHOLD = 0.75
-ALLOWED_CORE_RELATIONS = {
-    "part_of",
-    "child_of",
-    "uses_or_depends_on",
-    "contrasts_with",
-    "supports_or_enables",
-    "related_evidence",
-}
-MATERIALIZED_CORE_RELATIONS = ALLOWED_CORE_RELATIONS - {"related_evidence"}
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:
@@ -471,136 +486,6 @@ def lint_wiki_workspace(
     return result
 
 
-def _parse_active_cluster_lint(markdown: str) -> list[dict[str, Any]]:
-    clusters = []
-    for cluster_id, section in _cluster_sections_by_id(markdown).items():
-        relations, invalid_relations = _cluster_relation_items(section)
-        cluster = {
-            "id": cluster_id,
-            "refs": _refs_in_text(section),
-            "claims": _cluster_claims(section),
-            "relations": relations,
-            "invalid_relations": invalid_relations,
-            "promotion_status": _cluster_promotion_status(section),
-            "promotion_source_refs": _cluster_promotion_source_refs(section),
-        }
-        clusters.append(cluster)
-    return clusters
-
-
-def _refs_in_text(text: str) -> list[str]:
-    ref_pattern = r"[A-Za-z0-9_.-]+:B\d{4}"
-    return _unique_keep_order(re.findall(ref_pattern, text))
-
-
-def _cluster_claims(section: str) -> list[dict[str, str]]:
-    claims = []
-    current_claim: dict[str, str] | None = None
-    for line in section.splitlines():
-        stripped = line.strip()
-        match = re.match(r"^- (claim_[^:]+|ev_[^:]+):\s*(.+)$", stripped)
-        if match:
-            text = match.group(2)
-            current_claim = {
-                "id": match.group(1),
-                "text": text,
-                "claim": _clean_unit_text(text),
-                "refs": _refs_in_text(text),
-                "decision": "",
-            }
-            claims.append(current_claim)
-            continue
-        if current_claim and stripped.startswith("cluster_decision:"):
-            current_claim["decision"] = stripped.split(":", 1)[1].strip()
-    return claims
-
-
-def _cluster_relations(section: str) -> list[dict[str, Any]]:
-    relations, _invalid = _cluster_relation_items(section)
-    return relations
-
-
-def _cluster_relation_items(section: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    relations: list[dict[str, Any]] = []
-    invalid: list[dict[str, Any]] = []
-    current: dict[str, Any] | None = None
-    in_relations = False
-
-    def finish_current() -> None:
-        nonlocal current
-        if not current:
-            return
-        target = str(current.get("target") or "").strip()
-        relation = str(current.get("relation") or "").strip()
-        evidence = [str(item).strip() for item in current.get("evidence", []) if str(item).strip()]
-        reason = str(current.get("reason") or "").strip()
-        item = {"target": target, "relation": relation, "evidence": evidence, "reason": reason}
-        if target and relation in ALLOWED_CORE_RELATIONS and evidence:
-            relations.append(item)
-        else:
-            missing = []
-            if not target:
-                missing.append("target")
-            if relation not in ALLOWED_CORE_RELATIONS:
-                missing.append("relation")
-            if not evidence:
-                missing.append("evidence")
-            item["missing"] = missing
-            invalid.append(item)
-        current = None
-
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped == "### Core Relation Candidates":
-            in_relations = True
-            continue
-        if in_relations and stripped.startswith("### "):
-            finish_current()
-            break
-        if not in_relations:
-            continue
-        if stripped.startswith("- target:"):
-            finish_current()
-            current = {"target": stripped.split(":", 1)[1].strip(), "relation": "", "evidence": []}
-        elif current and stripped.startswith("relation:"):
-            current["relation"] = stripped.split(":", 1)[1].strip()
-        elif current and stripped.startswith("evidence:"):
-            current["evidence"] = [part.strip() for part in stripped.split("[", 1)[-1].rstrip("]").split(",") if part.strip()]
-        elif current and stripped.startswith("reason:"):
-            current["reason"] = stripped.split(":", 1)[1].strip()
-    if in_relations:
-        finish_current()
-    return relations, invalid
-
-
-def _cluster_promotion_status(section: str) -> str:
-    in_promotion = False
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped == "### Promotion":
-            in_promotion = True
-            continue
-        if in_promotion and stripped.startswith("### "):
-            break
-        if in_promotion and stripped.startswith("status:"):
-            return stripped.split(":", 1)[1].strip()
-    return ""
-
-
-def _cluster_promotion_source_refs(section: str) -> list[str]:
-    in_promotion = False
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped == "### Promotion":
-            in_promotion = True
-            continue
-        if in_promotion and stripped.startswith("### "):
-            break
-        if in_promotion and stripped.startswith("source_refs:"):
-            return [part.strip() for part in stripped.split("[", 1)[-1].rstrip("]").split(",") if part.strip()]
-    return []
-
-
 def _orphan_source_refs(refs: list[str]) -> list[str]:
     if not refs:
         return []
@@ -914,39 +799,6 @@ def _lint_log_markdown(result: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _markdown_section(markdown: str, heading: str) -> str:
-    lines = _markdown_section_lines(markdown, heading)
-    return "\n".join(line.strip() for line in lines if line.strip()).strip()
-
-
-def _markdown_list_section(markdown: str, heading: str) -> list[str]:
-    items = []
-    for line in _markdown_section_lines(markdown, heading):
-        stripped = line.strip()
-        if not stripped or stripped == "-":
-            continue
-        if stripped.startswith("- "):
-            stripped = stripped[2:].strip()
-        if stripped and not stripped.startswith("-"):
-            items.append(stripped)
-    return items
-
-
-def _markdown_section_lines(markdown: str, heading: str) -> list[str]:
-    lines = []
-    in_section = False
-    heading_pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$", re.IGNORECASE)
-    for line in markdown.splitlines():
-        if heading_pattern.match(line.strip()):
-            in_section = True
-            continue
-        if in_section and line.startswith("## "):
-            break
-        if in_section:
-            lines.append(line)
-    return lines
-
-
 def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> list[str]:
     normalized = manifest.get("normalized")
     if normalized is None:
@@ -1118,100 +970,6 @@ def _persist_embedding_units(conn: psycopg.Connection, page_id: str, document_id
         )
 
 
-def _extract_embedding_units(markdown: str) -> list[dict[str, Any]]:
-    units: list[dict[str, Any]] = []
-    current_section = "body"
-    in_frontmatter = False
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if line == "---":
-            in_frontmatter = not in_frontmatter
-            continue
-        if in_frontmatter or not line:
-            continue
-        heading = re.match(r"^##+\s+(.+?)\s*$", line)
-        if heading:
-            current_section = heading.group(1).strip()
-            continue
-        if not _source_block_ids(line):
-            continue
-        unit_text = _clean_unit_text(line)
-        if not unit_text:
-            continue
-        units.append(
-            {
-                "unit_type": _unit_type(current_section),
-                "block_refs": _source_block_ids(line),
-                "text": unit_text,
-                "weight": _section_weight(current_section),
-            }
-        )
-    return _dedupe_units(units)
-
-
-def _dedupe_units(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    deduped: list[dict[str, Any]] = []
-    seen: set[tuple[str, tuple[str, ...], str]] = set()
-    for unit in units:
-        key = (unit["unit_type"], tuple(unit["block_refs"]), unit["text"])
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(unit)
-    return deduped
-
-
-def _unit_type(section: str) -> str:
-    normalized = section.strip().lower()
-    mapping = {
-        "key points": "key_point",
-        "observations": "observation",
-        "observation": "observation",
-        "categories": "category",
-        "core concepts": "core_concept",
-        "section candidates": "section_candidate",
-        "mentions": "mention",
-    }
-    return mapping.get(normalized, "source_block")
-
-
-def _section_weight(section: str) -> float:
-    weights = {
-        "key_point": 1.35,
-        "observation": 1.30,
-        "core_concept": 1.20,
-        "section_candidate": 1.15,
-        "mention": 1.05,
-        "category": 0.95,
-    }
-    return weights.get(_unit_type(section), 1.0)
-
-
-def _unit_representation(unit_type: str, text: str) -> str:
-    normalized = re.sub(r"\s+", " ", text).strip().lower()
-    return f"{unit_type}\n{normalized}"
-
-
-def _source_block_ids(text: str) -> list[str]:
-    block_ids = []
-    ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-    for group in re.findall(rf"\[((?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*)\]", text):
-        block_ids.extend(part.strip() for part in group.split(",") if part.strip())
-    return list(dict.fromkeys(block_ids))
-
-
-def _clean_unit_text(text: str) -> str:
-    ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-    cleaned = re.sub(rf"\s*\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]", "", text)
-    cleaned = re.sub(r"^[-*]\s+", "", cleaned.strip())
-    cleaned = re.sub(r"^(?:\[[A-Za-z0-9_,\s-]+\]\s*)+", "", cleaned)
-    return cleaned.strip()
-
-
-def _hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def _upload_wiki_markdown(markdown: str, object_name: str) -> str:
     return write_text_object(object_name, markdown)
 
@@ -1342,174 +1100,6 @@ def _concept_evidence_line(update: dict[str, Any]) -> str:
     return f"- {prefix}{claim}{suffix}"
 
 
-def _merge_active_cluster_markdown(existing: str, incoming: str) -> str:
-    existing_sections = _cluster_sections_by_id(existing)
-    incoming_sections = _cluster_sections_by_id(incoming)
-    if not existing_sections:
-        return incoming
-    for cluster_id, section in incoming_sections.items():
-        if cluster_id not in existing_sections:
-            existing_sections[cluster_id] = section
-            continue
-        existing_sections[cluster_id] = _merge_cluster_section(existing_sections[cluster_id], section)
-    lines = ["# Active Meaning Clusters"]
-    for cluster_id in sorted(existing_sections):
-        lines.append(existing_sections[cluster_id].strip())
-    return "\n\n".join(lines).rstrip() + "\n"
-
-
-def _cluster_sections_by_id(markdown: str) -> dict[str, str]:
-    sections: dict[str, str] = {}
-    current_id = ""
-    current_lines: list[str] = []
-    for line in markdown.splitlines():
-        match = re.match(r"^## cluster:\s*(.+?)\s*$", line)
-        if match:
-            if current_id:
-                sections[current_id] = "\n".join(current_lines).strip()
-            current_id = match.group(1).strip()
-            current_lines = [line]
-            continue
-        if current_id:
-            current_lines.append(line)
-    if current_id:
-        sections[current_id] = "\n".join(current_lines).strip()
-    return sections
-
-
-def _merge_cluster_section(existing: str, incoming: str) -> str:
-    existing_lines = existing.splitlines()
-    incoming_lines = incoming.splitlines()
-    merged_lines = list(existing_lines)
-    existing_claims = {line.strip() for line in existing_lines if line.strip().startswith("- claim_") or line.strip().startswith("- ev_")}
-    incoming_claims = [line for line in incoming_lines if line.strip().startswith("- claim_") or line.strip().startswith("- ev_")]
-    insert_at = _claim_insert_index(merged_lines)
-    for claim in incoming_claims:
-        if claim.strip() in existing_claims:
-            continue
-        merged_lines.insert(insert_at, claim)
-        insert_at += 1
-        existing_claims.add(claim.strip())
-
-    _merge_relation_candidate_section(merged_lines, incoming_lines)
-    if "### Promotion" not in existing and "### Promotion" in incoming:
-        promotion = _section_from_heading(incoming_lines, "### Promotion")
-        if promotion:
-            if merged_lines and merged_lines[-1].strip():
-                merged_lines.append("")
-            merged_lines.extend(promotion)
-    return "\n".join(merged_lines).strip()
-
-
-def _merge_heading_section(merged_lines: list[str], existing: str, incoming_lines: list[str], heading: str) -> None:
-    incoming_section = _section_from_heading(incoming_lines, heading)
-    if not incoming_section:
-        return
-    if heading not in existing:
-        if merged_lines and merged_lines[-1].strip():
-            merged_lines.append("")
-        merged_lines.extend(incoming_section)
-        return
-    existing_entries = {line.strip() for line in merged_lines if line.strip()}
-    insert_at = len(merged_lines)
-    for index, line in enumerate(merged_lines):
-        if line.strip() == heading:
-            insert_at = index + 1
-            while insert_at < len(merged_lines) and not merged_lines[insert_at].startswith("### "):
-                insert_at += 1
-            break
-    for line in incoming_section[1:]:
-        if line.strip() and line.strip() in existing_entries:
-            continue
-        merged_lines.insert(insert_at, line)
-        insert_at += 1
-        if line.strip():
-            existing_entries.add(line.strip())
-
-
-def _merge_relation_candidate_section(merged_lines: list[str], incoming_lines: list[str]) -> None:
-    incoming_section = _section_from_heading(incoming_lines, "### Core Relation Candidates")
-    if not incoming_section:
-        return
-    existing_relations, _existing_invalid = _cluster_relation_items("\n".join(merged_lines))
-    incoming_relations, _incoming_invalid = _cluster_relation_items("\n".join(incoming_section))
-    relations_by_key = {
-        _relation_item_key(item): item
-        for item in existing_relations
-    }
-    for item in incoming_relations:
-        relations_by_key.setdefault(_relation_item_key(item), item)
-    replacement = _relation_items_to_lines(list(relations_by_key.values()))
-    _replace_heading_section(merged_lines, "### Core Relation Candidates", replacement)
-
-
-def _relation_item_key(item: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
-    return (
-        str(item.get("target") or ""),
-        str(item.get("relation") or ""),
-        tuple(sorted(str(evidence) for evidence in item.get("evidence", []))),
-    )
-
-
-def _relation_items_to_lines(items: list[dict[str, Any]]) -> list[str]:
-    if not items:
-        return []
-    lines = ["### Core Relation Candidates"]
-    for item in items:
-        lines.extend(
-            [
-                f"- target: {item.get('target')}",
-                f"  relation: {item.get('relation')}",
-                f"  evidence: [{', '.join(item.get('evidence', []))}]",
-                f"  reason: {item.get('reason') or '-'}",
-            ]
-        )
-    return lines
-
-
-def _replace_heading_section(lines: list[str], heading: str, replacement: list[str]) -> None:
-    start = next((index for index, line in enumerate(lines) if line.strip() == heading), -1)
-    if start >= 0:
-        end = start + 1
-        while end < len(lines) and not lines[end].startswith("### "):
-            end += 1
-        lines[start:end] = replacement
-        return
-    if not replacement:
-        return
-    insert_at = next((index for index, line in enumerate(lines) if line.strip() == "### Promotion"), len(lines))
-    if insert_at > 0 and lines[insert_at - 1].strip():
-        replacement = ["", *replacement]
-    lines[insert_at:insert_at] = replacement
-
-
-def _claim_insert_index(lines: list[str]) -> int:
-    last_claim_index = -1
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("- claim_") or stripped.startswith("- ev_"):
-            last_claim_index = index
-    if last_claim_index >= 0:
-        return last_claim_index + 1
-    for index, line in enumerate(lines):
-        if line.strip() == "### Evidence Claims":
-            return index + 1
-    return len(lines)
-
-
-def _section_from_heading(lines: list[str], heading: str) -> list[str]:
-    out: list[str] = []
-    in_section = False
-    for line in lines:
-        if line.strip() == heading:
-            in_section = True
-        elif in_section and line.startswith("### "):
-            break
-        if in_section:
-            out.append(line)
-    return out
-
-
 def _refresh_source_related_links(conn: psycopg.Connection) -> None:
     rows = conn.execute(
         """
@@ -1567,76 +1157,6 @@ def _source_related_label(shared_concepts: list[str], concept_titles: dict[str, 
     visible_titles = titles[:5]
     suffix = f" 외 {len(titles) - len(visible_titles)}개" if len(titles) > len(visible_titles) else ""
     return f"공유 concept: {', '.join(visible_titles)}{suffix}"
-
-
-def _source_summary(normalized: dict[str, Any]) -> str:
-    for note in normalized.get("semantic_notes", []):
-        summary = note.get("semantic_summary")
-        if summary:
-            return summary
-    return normalized.get("document", {}).get("title", "")
-
-
-def _markdown_title(markdown: str) -> str:
-    for line in markdown.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return ""
-
-
-def _page_payload(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        if "markdown" not in value:
-            raise RuntimeError("Pipeline manifest page payload is missing markdown")
-        return value
-    path = Path(str(value))
-    if not path.exists():
-        raise RuntimeError(f"Pipeline manifest page path does not exist: {path}")
-    return {
-        "slug": path.stem,
-        "title": _markdown_title(path.read_text(encoding="utf-8")),
-        "markdown_path": str(path),
-        "markdown": path.read_text(encoding="utf-8"),
-    }
-
-
-def _stored_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
-    stored = dict(manifest)
-    source_page = stored.get("source_page")
-    if isinstance(source_page, dict):
-        stored["source_page"] = _stored_page(source_page)
-    stored["concept_pages"] = [
-        _stored_page(page) if isinstance(page, dict) else page
-        for page in stored.get("concept_pages", [])
-    ]
-    stored.pop("normalized", None)
-    stored.pop("source_blocks", None)
-    meaning_clusters = stored.get("meaning_clusters")
-    if isinstance(meaning_clusters, dict):
-        stored["meaning_clusters"] = {
-            key: value
-            for key, value in meaning_clusters.items()
-            if key not in {"active_markdown", "log_markdown", "clusters"}
-        }
-    return stored
-
-
-def _stored_page(page: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in page.items()
-        if key not in {"markdown", "source_extraction_artifact"}
-    }
-
-
-def _resolve_page_id(value: str | None, source_page_id: str, concept_id_by_slug: dict[str, str]) -> str | None:
-    if not value:
-        return None
-    if value.startswith("source:"):
-        return source_page_id
-    if value.startswith("concept:"):
-        return concept_id_by_slug.get(value.split(":", 1)[1])
-    return None
 
 
 def _load_existing_concept_ids_by_slug(conn: psycopg.Connection, user_id: str, workspace_id: str) -> dict[str, str]:

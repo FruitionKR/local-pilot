@@ -18,7 +18,7 @@ class BuildWikiPageEmbeddingsUseCase:
     def execute(self, page_ids: list[str]) -> dict[str, int]:
         unique_page_ids = list(dict.fromkeys(page_ids))
         if not unique_page_ids:
-            return {"target_count": 0, "embedded_count": 0, "skipped_count": 0, "failed_count": 0}
+            return embedding_result()
 
         targets = self._repository.list_active_pages_by_ids(unique_page_ids)
         existing_hashes = self._repository.existing_hashes(unique_page_ids, self._embedding_model.model_name)
@@ -29,12 +29,7 @@ class BuildWikiPageEmbeddingsUseCase:
         failed_count = read_failed_count
 
         if not pending:
-            return {
-                "target_count": len(targets),
-                "embedded_count": embedded_count,
-                "skipped_count": skipped_count,
-                "failed_count": failed_count,
-            }
+            return embedding_result(len(targets), embedded_count, skipped_count, failed_count)
 
         try:
             vectors = self._embedding_model.embed([item.representation for item in pending])
@@ -46,12 +41,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     item.representation_hash,
                     str(exc),
                 )
-            return {
-                "target_count": len(targets),
-                "embedded_count": embedded_count,
-                "skipped_count": skipped_count,
-                "failed_count": len(pending),
-            }
+            return embedding_result(len(targets), embedded_count, skipped_count, len(pending))
 
         for item, vector in zip(pending, vectors):
             try:
@@ -71,12 +61,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     str(exc),
                 )
 
-        return {
-            "target_count": len(targets),
-            "embedded_count": embedded_count,
-            "skipped_count": skipped_count,
-            "failed_count": failed_count,
-        }
+        return embedding_result(len(targets), embedded_count, skipped_count, failed_count)
 
     def _build_inputs(self, targets: list[WikiPageEmbeddingTarget]) -> tuple[list[WikiPageEmbeddingInput], int]:
         inputs = []
@@ -109,3 +94,17 @@ class BuildWikiPageEmbeddingsUseCase:
 
     def _hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def embedding_result(
+    target_count: int = 0,
+    embedded_count: int = 0,
+    skipped_count: int = 0,
+    failed_count: int = 0,
+) -> dict[str, int]:
+    return {
+        "target_count": target_count,
+        "embedded_count": embedded_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+    }

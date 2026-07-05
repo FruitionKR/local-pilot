@@ -4,6 +4,396 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-04
+
+### refactor: Chat completions JSON parser 분리
+
+**배경**
+
+`chat_completions_llm.py`가 HTTP client, LLM adapter, JSON parsing/repair 정책을 함께 들고 있어 외부 호출 경계와 순수 parsing 규칙이 섞여 있었습니다.
+
+**추가/변경된 것**
+
+- JSON fence 제거, JSON object repair, section polish output 정규화를 `json_output_parser.py`로 분리했습니다.
+- 기존 `chat_completions_llm.py`의 parser import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+- JSON parsing/repair와 section polish schema normalization 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_json_output_parser.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/chat_completions_llm.py app/modules/wiki_generation/infrastructure/json_output_parser.py tests/modules/wiki_generation/test_json_output_parser.py run_lab.py` 통과.
+
+### refactor: Query graph path helper 분리
+
+**배경**
+
+`AnswerQueryUseCase`가 query orchestration과 direct concept match 시 graph node/path 보정 규칙을 함께 들고 있어 use case 본문이 길어졌습니다.
+
+**추가/변경된 것**
+
+- focus concept related page 병합, direct concept path backfill, focus concept 연결 source 확장, answer path 선택을 `query_graph_paths.py`로 분리했습니다.
+- query scoring, traversal, answer generation, 응답 계약은 유지했습니다.
+- 분리된 graph path helper의 정렬, 중복 제거, direct concept path 보정 동작을 단위 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_query_graph_paths.py tests/modules/query/test_answer_query.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/answer_query.py app/modules/query/application/query_graph_paths.py tests/modules/query/test_query_graph_paths.py` 통과.
+
+### refactor: Generated concept page assembler 분리
+
+**배경**
+
+`assemble.py`가 backend source/concept page 조립과 LLM generated concept page 출력 정규화/Markdown 조립을 함께 들고 있어 assembly 책임이 넓었습니다.
+
+**추가/변경된 것**
+
+- `GeneratedConceptPageAssembler`를 `generated_concept_page_assembler.py`로 분리했습니다.
+- 기존 `assemble.py` import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+- generated concept page assembler의 block id mapping과 Markdown 조립 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/generated_concept_page_assembler.py tests/modules/wiki_generation/test_source_extraction_artifact.py` 통과.
+
+### refactor: Concept section polish stage 분리
+
+**배경**
+
+`run_pipeline()`가 source page polish와 별도로 concept page section polish payload 구성, LLM 호출, fallback 처리, page assembly를 직접 들고 있어 concept 생성 분기가 길어졌습니다.
+
+**추가/변경된 것**
+
+- concept definition/key points/related hint section polish 준비와 결과 mapping을 `_prepare_concept_section_polish()`로 분리했습니다.
+- `section-polish`, `api/full-llm`, backend skeleton mode 분기와 manifest 계약은 유지했습니다.
+- concept polish helper가 resolution link hint와 polished Markdown을 연결하는 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+
+### refactor: Source page polish stage 분리
+
+**배경**
+
+`run_pipeline()`가 pipeline stage orchestration과 source page section polish payload 구성/실패 처리/결과 mapping을 함께 들고 있어 stage 흐름이 길어졌습니다.
+
+**추가/변경된 것**
+
+- source page summary/key points section polish 준비와 결과 mapping을 `_prepare_source_page_polish()`로 분리했습니다.
+- source page 생성, concept page 생성, manifest 계약은 유지했습니다.
+- source polish helper의 skeleton mode와 polish mapping 동작을 테스트로 고정했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_wiki_generation_graph.py tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile run_lab.py tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+
+### refactor: Wiki persistence payload helper 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB write 흐름과 pipeline manifest/page payload 정규화 규칙을 함께 들고 있었습니다.
+
+**추가/변경된 것**
+
+- source summary, Markdown title, page payload, stored manifest, page id resolution helper를 `wiki_persistence_payload.py`로 분리했습니다.
+- repository의 SQL/DB persistence 흐름과 저장 계약은 유지했습니다.
+- persistence payload helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_ingestion/test_wiki_persistence_payload.py tests/modules/wiki_ingestion/test_concept_index.py tests/modules/wiki_ingestion/test_markdown_sections.py tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py app/modules/wiki_ingestion/infrastructure/wiki_persistence_payload.py` 통과.
+
+### refactor: Query evidence text helper 분리
+
+**배경**
+
+`EvidenceSelector`가 evidence 후보 선택과 Markdown 문단/sentence 분리, 토큰 정규화, specificity bonus 계산을 함께 담당하고 있었습니다.
+
+**추가/변경된 것**
+
+- evidence text unit 분리, section weight, sentence cleanup, token normalization을 `evidence_text.py`로 분리했습니다.
+- `EvidenceSelector`는 기존 evidence 후보 생성과 선택 흐름을 유지하고 순수 text helper만 새 모듈에 위임합니다.
+- evidence text helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_evidence_text.py tests/modules/query/test_evidence_selector.py tests/modules/query/test_answer_query.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/query/application/evidence_selector.py app/modules/query/application/evidence_text.py` 통과.
+
+### refactor: Meaning cluster artifact assembler 분리
+
+**배경**
+
+`assemble.py`가 source/concept page 조립 외에 meaning cluster active/log artifact 조립까지 함께 담당해 파일 책임이 계속 커지고 있었습니다.
+
+**추가/변경된 것**
+
+- meaning cluster 후보 수집, active cluster Markdown, ingest log Markdown 조립을 `meaning_cluster_artifact.py`로 분리했습니다.
+- 기존 `assemble.py` import 경로는 유지해 호출부 계약을 바꾸지 않았습니다.
+
+**검증**
+
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m pytest tests/modules/wiki_generation/test_source_extraction_artifact.py tests/modules/wiki_generation/test_ref_format.py` 통과.
+- `/Users/jaehyeong/local-pilot/llmPipeline/.venv/bin/python -m py_compile app/modules/wiki_generation/infrastructure/assemble.py app/modules/wiki_generation/infrastructure/meaning_cluster_artifact.py` 통과.
+
+### refactor: Wiki generation section polish mapping 분리
+
+**배경**
+
+`run_lab.py`가 wiki generation graph orchestration과 LLM section polish output 정규화 규칙을 함께 들고 있어 CLI 흐름의 책임이 커졌습니다.
+
+**추가/변경된 것**
+
+- section polish raw output의 text cleanup, anchor ref 검증, item mapping을 `section_polish_mapping.py`로 분리했습니다.
+- `run_lab.py`는 기존 section polish 호출 흐름을 유지하고 mapping 함수만 application 모듈에서 가져오도록 정리했습니다.
+- section polish mapping 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/run_lab.py llmPipeline/app/modules/wiki_generation/application/section_polish_mapping.py llmPipeline/tests/modules/wiki_generation/test_section_polish_mapping.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_section_polish_mapping` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki ingestion promotion concept page builder 분리
+
+**배경**
+
+`api.py`가 FastAPI route와 lint LLM client 구성 외에 promotion cluster LLM draft를 concept Markdown으로 변환하는 순수 조립 규칙까지 함께 들고 있었습니다.
+
+**추가/변경된 것**
+
+- promotion concept page Markdown 조립, representative 선택, lint ref 정규화/표기 함수를 `promotion_concept_page.py`로 분리했습니다.
+- API route는 기존 lint materialization 흐름을 유지하고 promotion page builder만 새 모듈에서 가져오도록 정리했습니다.
+- promotion concept page builder 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/api.py llmPipeline/app/modules/wiki_ingestion/infrastructure/promotion_concept_page.py llmPipeline/tests/modules/wiki_ingestion/test_promotion_concept_page.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_promotion_concept_page` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+
+### refactor: Wiki generation concept page section helper 분리
+
+**배경**
+
+`assemble.py`가 concept page Markdown 조립과 source key point, evidence fallback, related concept line 계산 규칙을 함께 들고 있어 page assembly 책임이 커졌습니다.
+
+**추가/변경된 것**
+
+- concept page의 source key point 수집, evidence 선택, key point line 생성, related concept line 계산을 `concept_page_sections.py`로 분리했습니다.
+- `assemble.py`는 기존 Markdown 산출물 조립 흐름을 유지하고 concept section helper만 새 모듈에서 가져오도록 정리했습니다.
+- concept page section helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/wiki_generation/infrastructure/assemble.py llmPipeline/app/modules/wiki_generation/infrastructure/concept_page_sections.py llmPipeline/tests/modules/wiki_generation/test_concept_page_sections.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_concept_page_sections llmPipeline.tests.modules.wiki_generation.test_ref_format` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki generation evaluation guard 분리
+
+**배경**
+
+`run_lab.py`가 CLI/graph orchestration과 wiki generation evaluation guard, observation repair 규칙을 함께 들고 있어 pipeline 흐름을 읽기 어려웠습니다.
+
+**추가/변경된 것**
+
+- generation evaluation 보정 규칙과 observation repair 로직을 `evaluation_guards.py`로 분리했습니다.
+- `run_lab.py`는 기존 graph 흐름을 유지하고 evaluation guard 함수만 application 모듈에서 가져오도록 정리했습니다.
+- evaluation guard와 observation repair 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/run_lab.py llmPipeline/app/modules/wiki_generation/application/evaluation_guards.py llmPipeline/tests/modules/wiki_generation/test_evaluation_guards.py llmPipeline/tests/modules/wiki_generation/test_wiki_generation_graph.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_evaluation_guards` 통과.
+- 로컬 `test_wiki_generation_graph`는 `langgraph` 미설치로 Docker 환경에서 검증했습니다.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- `git diff --check` 통과.
+
+### refactor: Query source reference parser 분리
+
+**배경**
+
+`EvidenceSelector`가 evidence 선택/scoring과 source block ref 문자열 파싱을 함께 담당해, citation ref 처리 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- source ref 감지, block id 추출, structured `SourceReference` 변환, legacy field 변환, ref 제거 로직을 `source_references.py`로 분리했습니다.
+- `EvidenceSelector`는 기존 evidence selection 흐름을 유지하고 source ref parser 함수만 새 모듈에서 가져오도록 정리했습니다.
+- source ref parser 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/query/application/evidence_selector.py llmPipeline/app/modules/query/application/source_references.py llmPipeline/tests/modules/query/test_source_references.py llmPipeline/tests/modules/query/test_evidence_selector.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_source_references llmPipeline.tests.modules.query.test_evidence_selector` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki ingestion active cluster helper 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB persistence와 active cluster Markdown parser/merge, embedding unit 추출 규칙을 함께 들고 있어 repository 책임이 과도했습니다.
+
+**추가/변경된 것**
+
+- active cluster lint/merge 규칙을 `active_cluster_markdown.py`로 분리했습니다.
+- wiki embedding unit 추출, canonical representation, hash helper를 `embedding_units.py`로 분리했습니다.
+- repository는 기존 persistence 흐름을 유지하고 순수 Markdown/embedding helper만 새 모듈에서 가져오도록 정리했습니다.
+- active cluster merge 중복 claim/relation 처리 characterization 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m py_compile llmPipeline/app/modules/wiki_ingestion/infrastructure/postgres_wiki_ingestion_repository.py llmPipeline/app/modules/wiki_ingestion/infrastructure/active_cluster_markdown.py llmPipeline/app/modules/wiki_ingestion/infrastructure/embedding_units.py llmPipeline/tests/modules/wiki_ingestion/test_concept_index.py` 통과.
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_markdown_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki ingestion Markdown section parser 분리
+
+**배경**
+
+`postgres_wiki_ingestion_repository.py`가 DB persistence 외에 concept Markdown section 파싱 보조 함수까지 함께 들고 있어, 순수 문자열 처리 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- Markdown `## Heading` section 추출과 list item 추출 로직을 `markdown_sections.py`로 분리했습니다.
+- repository는 기존 DB/persistence 흐름을 유지하고 Markdown parser 함수만 새 모듈에서 가져오도록 정리했습니다.
+- Markdown section parser 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_ingestion.test_markdown_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_ingestion` 통과.
+- Docker 환경에서 `tests.modules.wiki_ingestion.test_concept_index`의 pytest-style 함수 테스트 직접 호출 통과.
+- 관련 infrastructure 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki generation ref formatting 분리
+
+**배경**
+
+`assemble.py`가 page/cluster artifact 조립과 source block ref 표기 규칙을 함께 들고 있어, citation 표기 규칙을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- ref label, global ref, citation suffix formatting을 `ref_format.py`로 분리했습니다.
+- `assemble.py`는 기존 page/cluster 조립 흐름을 유지하고 ref formatting 함수만 새 모듈에서 가져오도록 정리했습니다.
+- ref formatting 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_generation.test_ref_format` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_generation` 통과.
+- 관련 infrastructure 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: LLM 환경변수 해석 helper 공통화
+
+**배경**
+
+agent, markdown edit, wiki schema, query LLM infrastructure가 endpoint/API key/model/numeric 옵션을 거의 같은 방식으로 해석하는 함수를 반복하고 있었습니다. 각 모듈의 환경변수 우선순위와 기본값은 유지하면서 공통 parsing만 분리했습니다.
+
+**추가/변경된 것**
+
+- `app/core/llm_env.py`를 추가해 chat completions endpoint, API key, model, float/int option 해석을 공통화했습니다.
+- agent router, markdown editor, wiki schema organizer, query answer generator/evaluator가 공통 helper를 사용하도록 정리했습니다.
+- API key trim 여부처럼 기존 모듈별 차이는 호출부 옵션으로 유지했습니다.
+- env helper 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.test_llm_env llmPipeline.tests.modules.agent.test_handle_agent_turn llmPipeline.tests.modules.markdown_edit.test_generate_markdown_edit llmPipeline.tests.modules.markdown_edit.test_generate_markdown_document llmPipeline.tests.modules.wiki_schema.test_chat_completions_schema_organizer llmPipeline.tests.modules.query.test_query_chat_answer_generator` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules` 통과.
+- 관련 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki embedding 결과 summary 조립 분리
+
+**배경**
+
+wiki page embedding use case가 동일한 결과 dict shape를 여러 return 지점에서 반복해, 응답 key 변경이나 집계 기준 수정 시 누락 위험이 있었습니다.
+
+**추가/변경된 것**
+
+- embedding 실행 결과 dict를 만드는 `embedding_result()` 보조 함수를 추가했습니다.
+- `BuildWikiPageEmbeddingsUseCase`의 기존 반환 shape는 유지하면서 모든 return 지점이 같은 helper를 사용하도록 정리했습니다.
+- 결과 summary shape를 고정하는 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_embedding.test_build_wiki_page_embeddings` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_embedding` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: Wiki schema section metadata 공통화
+
+**배경**
+
+schema fragment section 목록이 filter와 preview 렌더링 코드에 각각 정의되어 있어, 새 section을 추가할 때 한쪽만 갱신될 위험이 있었습니다.
+
+**추가/변경된 것**
+
+- `schema_sections.py`를 추가해 schema section field 이름과 preview title을 한 곳에서 관리하도록 했습니다.
+- `filter_schema_fragments.py`와 `build_schema_preview.py`가 공통 section metadata를 사용하도록 정리했습니다.
+- `SchemaFragments` 필드와 section metadata가 어긋나지 않도록 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.wiki_schema.test_schema_filter llmPipeline.tests.modules.wiki_schema.test_schema_preview llmPipeline.tests.modules.wiki_schema.test_schema_sections` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/wiki_schema` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: Query event publish 보조 함수 분리
+
+**배경**
+
+query application 흐름에서 callback event publish 실패를 삼키고 본 흐름을 계속 진행하는 처리가 `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`에 중복되어 있었습니다. 같은 실패 처리 정책을 한 곳에서 확인할 수 있도록 보조 함수로 분리했습니다.
+
+**추가/변경된 것**
+
+- `publish_query_event()`를 추가해 event publisher 없음/실패 시 조용히 반환하는 기존 정책을 공통화했습니다.
+- `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`의 `_publish()`는 새 보조 함수에 위임하도록 정리했습니다.
+- event publish 성공/무시 동작을 검증하는 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query llmPipeline.tests.modules.query.test_query_web_answer_builder llmPipeline.tests.modules.query.test_query_event` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
+### refactor: Query application 보조 책임 분리
+
+**배경**
+
+`AnswerQueryUseCase`가 질의 처리 orchestration 외에 대화 맥락 해석과 retrieval summary 조립까지 함께 담당해, query 흐름을 읽고 테스트하기 어려웠습니다. 외부 API 응답 계약은 유지하면서 순수 보조 로직만 분리했습니다.
+
+**추가/변경된 것**
+
+- 대화 맥락 기반 검색 질문 보강과 evidence 질문 선택 로직을 `conversation_context_resolver.py`로 분리했습니다.
+- `RetrievalSummary` 조립을 `retrieval_summary.py`로 분리해 내부 답변과 web fallback 답변에서 같은 계산을 재사용하도록 했습니다.
+- `AnswerQueryUseCase`와 `QueryWebAnswerBuilder`는 기존 흐름을 유지하고 새 보조 함수에 위임하도록 정리했습니다.
+- 분리한 순수 로직에 단위 테스트를 추가했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline /opt/homebrew/bin/python3.12 -m unittest llmPipeline.tests.modules.query.test_answer_query llmPipeline.tests.modules.query.test_query_web_answer_builder llmPipeline.tests.modules.query.test_conversation_context_resolver llmPipeline.tests.modules.query.test_retrieval_summary` 통과.
+- `docker run --rm -v /private/tmp/local-pilot-llmpipeline-refactor/llmPipeline:/app -w /app fruition-mvp-dev-pipeline-api python -m unittest discover -s tests/modules/query` 통과.
+- 관련 application 모듈 `py_compile` 통과.
+- `git diff --check` 통과.
+
 ## 2026-07-02
 
 ### feat: query evidence에 다중 원문 source_refs 추가
