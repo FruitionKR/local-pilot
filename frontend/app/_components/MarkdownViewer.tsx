@@ -1,4 +1,10 @@
-import { Fragment, type ReactNode } from "react";
+import { useMemo } from "react";
+import type { ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { PhrasingContent, Root } from "mdast";
+import { visit } from "unist-util-visit";
 import { cx } from "../_lib/classNames";
 import type { SourceBlockHighlight } from "../_lib/types";
 
@@ -9,99 +15,86 @@ function rankColorClass(rank: number) {
   return `citation-rank-${((rank - 1) % CITATION_COLOR_COUNT) + 1}`;
 }
 
-function renderInline(text: string, onCitationClick?: (rank: number) => void, canClickCitation?: (rank: number) => boolean): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[\[[^\]|]+(?:\|[^\]]+)?\]\]|\[((?:\d+)(?:\s*,\s*\d+)*)\])/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+/** wikilink([[...]])와 citation([1,2])을 커스텀 노드로 분리하는 remark 플러그인 */
+function remarkCustomTokens() {
+  return (tree: Root) => {
+    visit(tree, "text", (node, index, parent) => {
+      if (!parent || index === undefined) return;
 
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index));
-    const token = match[0];
-    const citationRanks = match[2]?.split(",").map((value) => Number(value.trim())).filter(Number.isFinite) ?? [];
-    if (token.startsWith("**")) {
-      nodes.push(<strong key={`${match.index}-strong`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith("`")) {
-      nodes.push(<code key={`${match.index}-code`}>{token.slice(1, -1)}</code>);
-    } else if (token.startsWith("[[")) {
-      const body = token.slice(2, -2);
-      const label = body.includes("|") ? body.split("|")[1] : body;
-      nodes.push(<span className="markdown-wikilink" key={`${match.index}-wikilink`}>{label}</span>);
-    } else if (citationRanks.length > 0 && onCitationClick && citationRanks.some((rank) => !canClickCitation || canClickCitation(rank))) {
-      nodes.push(
-        <Fragment key={`${match.index}-citations`}>
-          {citationRanks.map((citationRank) => (
-            (!canClickCitation || canClickCitation(citationRank)) ? (
-              <button
-                type="button"
-                className={`markdown-citation ${rankColorClass(citationRank)}`}
-                key={citationRank}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCitationClick(citationRank);
-                }}
-              >
-                [{citationRank}]
-              </button>
-            ) : `[${citationRank}]`
-          ))}
-        </Fragment>
-      );
-    } else {
-      nodes.push(token);
-    }
-    lastIndex = match.index + token.length;
-  }
+      const pattern = /(\[\[[^\]|]+(?:\|[^\]]+)?\]\]|\[(?:\d+)(?:\s*,\s*\d+)*\])/g;
+      const value = node.value;
+      const replacements: PhrasingContent[] = [];
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
 
-  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
-  return nodes;
+      while ((match = pattern.exec(value)) !== null) {
+        if (match.index > lastIndex) {
+          replacements.push({ type: "text", value: value.slice(lastIndex, match.index) });
+        }
+
+        const token = match[0];
+        if (token.startsWith("[[")) {
+          const body = token.slice(2, -2);
+          const label = body.includes("|") ? body.split("|")[1] : body;
+          // 커스텀 노드 타입이라 mdast 유니온에 없어 캐스팅한다. hName 기반으로 hast에서 span으로 변환된다.
+          replacements.push({
+            type: "wikiLinkToken",
+            data: { hName: "span", hProperties: { className: "markdown-wikilink" } },
+            children: [{ type: "text", value: label }]
+          } as unknown as PhrasingContent);
+        } else {
+          const ranks = token
+            .slice(1, -1)
+            .split(",")
+            .map((part) => Number(part.trim()))
+            .filter(Number.isFinite);
+          ranks.forEach((rank) => {
+            replacements.push({
+              type: "citationToken",
+              data: { hName: "citation-ref", hProperties: { rank } },
+              children: [{ type: "text", value: `[${rank}]` }]
+            } as unknown as PhrasingContent);
+          });
+        }
+
+        lastIndex = match.index + token.length;
+      }
+
+      if (replacements.length === 0) return;
+      if (lastIndex < value.length) {
+        replacements.push({ type: "text", value: value.slice(lastIndex) });
+      }
+
+      parent.children.splice(index, 1, ...replacements);
+      return index + replacements.length;
+    });
+  };
 }
 
-/** markdown 문자열을 블록 단위 ReactNode 목록으로 파싱한다. MarkdownViewer 본문에서 추출했습니다. */
-function parseMarkdownBlocks(
-  markdown: string,
-  onCitationClick?: (rank: number) => void,
-  canClickCitation?: (rank: number) => boolean,
-  highlightedBlocks?: SourceBlockHighlight[],
-  onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void
-): ReactNode[] {
-  const blocks: ReactNode[] = [];
-  const highlightedBlockRankById = new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank]));
+// 렌더마다 배열 참조가 바뀌면 react-markdown이 재파싱하므로 모듈 상수로 유지한다.
+const REMARK_PLUGINS = [remarkGfm, remarkCustomTokens];
+
+type MarkdownSegment = { kind: "frontmatter" | "markdown"; content: string };
+
+/**
+ * markdown을 블록 단위 문자열로 분할한다.
+ * 분할 순서가 백엔드 block ID(B0001, B0002, ...) 계약과 일치해야 하므로
+ * 기존 파서와 동일한 경계 규칙을 유지한다.
+ */
+function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
   const lines = markdown.split("\n");
   let index = 0;
-  let blockNumber = 0;
-
-  function appendBlock(node: ReactNode) {
-    blockNumber += 1;
-    const blockId = `B${String(blockNumber).padStart(4, "0")}`;
-    const highlightedRank = highlightedBlockRankById.get(blockId);
-    blocks.push(
-      <div
-        className={cx(
-          "markdown-source-block",
-          highlightedRank && "is-highlighted",
-          highlightedRank && rankColorClass(highlightedRank)
-        )}
-        data-block-id={blockId}
-        data-citation-rank={highlightedRank}
-        ref={(element) => onBlockRef?.(blockId, element)}
-        key={blockId}
-      >
-        {node}
-      </div>
-    );
-  }
 
   while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
+    const trimmed = lines[index].trim();
 
     if (!trimmed) {
       index += 1;
       continue;
     }
 
-    if (trimmed === "---" && blocks.length === 0) {
+    if (trimmed === "---" && segments.length === 0) {
       const frontmatter = [];
       index += 1;
       while (index < lines.length && lines[index].trim() !== "---") {
@@ -109,48 +102,25 @@ function parseMarkdownBlocks(
         index += 1;
       }
       index += 1;
-      appendBlock(
-        <details className="markdown-frontmatter" key={`frontmatter-${index}`}>
-          <summary>Metadata</summary>
-          <pre>{frontmatter.join("\n")}</pre>
-        </details>
-      );
+      segments.push({ kind: "frontmatter", content: frontmatter.join("\n") });
       continue;
     }
 
     if (trimmed.startsWith("```")) {
-      const code = [];
+      const code = [lines[index]];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("```")) {
         code.push(lines[index]);
         index += 1;
       }
-      while (code.length > 0 && code[code.length - 1].trim() === "") code.pop();
+      code.push("```");
       index += 1;
-      appendBlock(<pre className="markdown-codeblock" key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
+      segments.push({ kind: "markdown", content: code.join("\n") });
       continue;
     }
 
-    if (trimmed.startsWith("# ")) {
-      appendBlock(<h1 key={`h1-${index}`}>{renderInline(trimmed.slice(2), onCitationClick, canClickCitation)}</h1>);
-      index += 1;
-      continue;
-    }
-
-    if (trimmed.startsWith("## ")) {
-      appendBlock(<h2 key={`h2-${index}`}>{renderInline(trimmed.slice(3), onCitationClick, canClickCitation)}</h2>);
-      index += 1;
-      continue;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      appendBlock(<h3 key={`h3-${index}`}>{renderInline(trimmed.slice(4), onCitationClick, canClickCitation)}</h3>);
-      index += 1;
-      continue;
-    }
-
-    if (trimmed === "---" || trimmed === "***") {
-      appendBlock(<hr key={`hr-${index}`} />);
+    if (/^#{1,3} /.test(trimmed) || trimmed === "---" || trimmed === "***") {
+      segments.push({ kind: "markdown", content: trimmed });
       index += 1;
       continue;
     }
@@ -158,28 +128,20 @@ function parseMarkdownBlocks(
     if (/^- /.test(trimmed)) {
       const items = [];
       while (index < lines.length && /^- /.test(lines[index].trim())) {
-        items.push(lines[index].trim().slice(2));
+        items.push(lines[index].trim());
         index += 1;
       }
-      appendBlock(
-        <ul key={`ul-${index}`}>
-          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, onCitationClick, canClickCitation)}</li>)}
-        </ul>
-      );
+      segments.push({ kind: "markdown", content: items.join("\n") });
       continue;
     }
 
     if (/^\d+\. /.test(trimmed)) {
       const items = [];
       while (index < lines.length && /^\d+\. /.test(lines[index].trim())) {
-        items.push(lines[index].trim().replace(/^\d+\. /, ""));
+        items.push(lines[index].trim());
         index += 1;
       }
-      appendBlock(
-        <ol key={`ol-${index}`}>
-          {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item, onCitationClick, canClickCitation)}</li>)}
-        </ol>
-      );
+      segments.push({ kind: "markdown", content: items.join("\n") });
       continue;
     }
 
@@ -189,10 +151,10 @@ function parseMarkdownBlocks(
       paragraph.push(lines[index].trim());
       index += 1;
     }
-    appendBlock(<p key={`p-${index}`}>{renderInline(paragraph.join(" "), onCitationClick, canClickCitation)}</p>);
+    segments.push({ kind: "markdown", content: paragraph.join("\n") });
   }
 
-  return blocks;
+  return segments;
 }
 
 export function MarkdownViewer({
@@ -208,7 +170,69 @@ export function MarkdownViewer({
   highlightedBlocks?: SourceBlockHighlight[];
   onBlockRef?: (blockId: string, node: HTMLDivElement | null) => void;
 }) {
-  const blocks = parseMarkdownBlocks(markdown, onCitationClick, canClickCitation, highlightedBlocks, onBlockRef);
+  const highlightedBlockRankById = useMemo(
+    () => new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank])),
+    [highlightedBlocks]
+  );
+  const segments = useMemo(() => splitMarkdownBlocks(markdown), [markdown]);
 
-  return <div className="markdown-viewer">{blocks.map((block, blockIndex) => <Fragment key={blockIndex}>{block}</Fragment>)}</div>;
+  const components = useMemo(() => {
+    function CitationRef({ rank, children }: { rank?: number; children?: ReactNode }) {
+      const citationRank = Number(rank);
+      if (!Number.isFinite(citationRank) || !onCitationClick || (canClickCitation && !canClickCitation(citationRank))) {
+        return <>{children}</>;
+      }
+      return (
+        <button
+          type="button"
+          className={`markdown-citation ${rankColorClass(citationRank)}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCitationClick(citationRank);
+          }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    return {
+      pre: ({ children }: { children?: ReactNode }) => <pre className="markdown-codeblock">{children}</pre>,
+      "citation-ref": CitationRef
+    } as Components;
+  }, [canClickCitation, onCitationClick]);
+
+  return (
+    <div className="markdown-viewer">
+      {segments.map((segment, segmentIndex) => {
+        const blockId = `B${String(segmentIndex + 1).padStart(4, "0")}`;
+        const highlightedRank = highlightedBlockRankById.get(blockId);
+
+        return (
+          <div
+            className={cx(
+              "markdown-source-block",
+              highlightedRank && "is-highlighted",
+              highlightedRank && rankColorClass(highlightedRank)
+            )}
+            data-block-id={blockId}
+            data-citation-rank={highlightedRank}
+            ref={(element) => onBlockRef?.(blockId, element)}
+            key={blockId}
+          >
+            {segment.kind === "frontmatter" ? (
+              <details className="markdown-frontmatter">
+                <summary>Metadata</summary>
+                <pre>{segment.content}</pre>
+              </details>
+            ) : (
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+                {segment.content}
+              </ReactMarkdown>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }

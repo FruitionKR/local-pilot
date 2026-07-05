@@ -1,34 +1,22 @@
 import type { DocumentItemResponse, GraphLink, GraphNode, WikiGraphResponse } from "./types";
 
-// 노드 ID 접두사 상수
+// 노드 ID 접두사 상수 (raw 노드만 프론트에서 합성한다. source/concept 노드는 백엔드 wiki page ID를 그대로 쓴다)
 export const NODE_PREFIX = {
-  source: "source:",
-  concept: "concept:",
   raw: "raw:"
 } as const;
-
-/**
- * 노드 ID에서 pageType을 반환합니다.
- * source:/concept: 접두사 판정 규칙을 한 곳에서 관리합니다.
- */
-export function nodeIdToPageType(nodeId: string): "source" | "concept" | null {
-  if (nodeId.startsWith(NODE_PREFIX.source)) return "source";
-  if (nodeId.startsWith(NODE_PREFIX.concept)) return "concept";
-  return null;
-}
-
-/**
- * documentId로 source 노드 ID를 생성합니다.
- */
-export function makeSourceId(documentId: string): string {
-  return `${NODE_PREFIX.source}${documentId}`;
-}
 
 /**
  * documentId로 raw 노드 ID를 생성합니다.
  */
 export function makeRawId(documentId: string): string {
   return `${NODE_PREFIX.raw}${documentId}`;
+}
+
+/**
+ * documentId에 연결된 source 노드를 찾습니다.
+ */
+export function findSourceNodeByDocumentId(nodes: GraphNode[] | undefined, documentId: string): GraphNode | null {
+  return nodes?.find((node) => node.kind === "source" && node.documentId === documentId) ?? null;
 }
 
 /**
@@ -41,27 +29,14 @@ export function rawNodeIdToDocumentId(nodeId: string): string | null {
 
 export const GRAPH_WIDTH = 746;
 export const GRAPH_HEIGHT = 568;
-export const GRAPH_CACHE_KEY = "fruition.graph.layout.v7";
+export const GRAPH_CACHE_KEY = "fruition.graph.layout.v8";
 export const GRAPH_CENTER = { x: GRAPH_WIDTH / 2, y: GRAPH_HEIGHT / 2 };
 export const GRAPH_ZOOM = {
   min: 0.62,
-  max: 3.2,
-  wheelSensitivity: 0.0018
+  max: 3.2
 };
+// 힘 세기 튜닝 값은 graphPhysics.ts의 SIM_FORCES에 있다. 여기는 링크 목표 거리만 관리한다.
 export const GRAPH_PHYSICS = {
-  centerStrength: 0.0009,
-  damping: 0.42,
-  settleThreshold: 0.02,
-  revealCenterBoost: 1.7,
-  revealLinkBoost: 2.8,
-  revealDamping: 0.72,
-  originStrength: 0.008,
-  repulsionStrength: 0.006,
-  repulsionRange: 260,
-  collisionRadiusMultiplier: 0.32,
-  nodeDistanceMultiplier: 0.72,
-  sourceNodeDistanceMultiplier: 1.8,
-  linkStrength: 0.026,
   linkDistanceMultiplier: 0.85,
   linkDistance: {
     source: 178,
@@ -76,29 +51,23 @@ export function linkKey(nodeAId: string, nodeBId: string) {
   return nodeAId < nodeBId ? `${nodeAId}:${nodeBId}` : `${nodeBId}:${nodeAId}`;
 }
 
-export function graphNodeKind(node: GraphNode) {
-  return node.kind ?? "concept";
-}
-
 export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: WikiGraphResponse) {
-  const backendSourceByDocumentId = new Map(
-    (graph.nodes ?? [])
-      .filter((node) => node.page_type === "source" && node.id.startsWith(NODE_PREFIX.source))
-      .map((node) => [node.id.slice(NODE_PREFIX.source.length), node])
-  );
+  const documentById = new Map(documents.map((document) => [document.id, document]));
   const rawNodes: GraphNode[] = documents.map((document) => ({
     id: makeRawId(document.id),
     label: document.filename,
-    kind: "raw" as const
+    kind: "raw" as const,
+    documentId: document.id
   }));
-  const sourceNodes: GraphNode[] = documents.map((document) => {
-    const backendSource = backendSourceByDocumentId.get(document.id);
-    return {
-      id: makeSourceId(document.id),
-      label: backendSource?.title || document.filename,
-      kind: "source" as const
-    };
-  });
+  // source/concept 노드는 백엔드에 실제로 생성된 wiki page만 표시한다.
+  const sourceNodes: GraphNode[] = (graph.nodes ?? [])
+    .filter((node) => node.page_type === "source")
+    .map((node) => ({
+      id: node.id,
+      label: node.title || documentById.get(node.source_document?.id ?? "")?.filename || node.slug || node.id,
+      kind: "source" as const,
+      documentId: node.source_document?.id
+    }));
   const conceptNodes: GraphNode[] = (graph.nodes ?? [])
     .filter((node) => node.page_type !== "source")
     .map((node) => ({
@@ -107,16 +76,21 @@ export function buildGraphFromBackend(documents: DocumentItemResponse[], graph: 
       kind: "concept" as const
     }));
 
-  const rawSourceLinks: GraphLink[] = documents.map((document) => ({
-    from: makeRawId(document.id),
-    to: makeSourceId(document.id),
-    dashed: document.status !== "completed"
-  }));
-  const graphLinks: GraphLink[] = (graph.edges ?? []).map((edge) => ({
-    from: edge.from_page_id,
-    to: edge.to_page_id,
-    active: edge.link_type === "source_mentions_concept"
-  }));
+  const rawSourceLinks: GraphLink[] = sourceNodes
+    .filter((node) => node.documentId && documentById.has(node.documentId))
+    .map((node) => ({
+      from: makeRawId(node.documentId as string),
+      to: node.id,
+      dashed: documentById.get(node.documentId as string)?.status !== "completed"
+    }));
+  const nodeIds = new Set([...rawNodes, ...sourceNodes, ...conceptNodes].map((node) => node.id));
+  const graphLinks: GraphLink[] = (graph.edges ?? [])
+    .filter((edge) => nodeIds.has(edge.from_page_id) && nodeIds.has(edge.to_page_id))
+    .map((edge) => ({
+      from: edge.from_page_id,
+      to: edge.to_page_id,
+      active: edge.link_type === "source_mentions_concept"
+    }));
 
   return {
     nodes: [...rawNodes, ...sourceNodes, ...conceptNodes],

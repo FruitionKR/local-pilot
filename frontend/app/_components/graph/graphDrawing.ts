@@ -1,4 +1,4 @@
-import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
+import type { GraphLink, GraphNode, NodePosition } from "../../_lib/types";
 import { GRAPH_COLORS, hexToRgb, mixHexColor } from "./graphColors";
 import rawNodeIcon from "../../../svg/raw.svg";
 
@@ -21,8 +21,7 @@ export function drawGraphFrame({
   nodes,
   links,
   visibleNodeCount,
-  positions,
-  initialNodePositions,
+  getNodePosition,
   nodeHoverAmounts,
   graphToCanvas,
   nodeSize,
@@ -32,8 +31,7 @@ export function drawGraphFrame({
   nodes: GraphNode[];
   links: GraphLink[];
   visibleNodeCount: number;
-  positions: NodePositionMap;
-  initialNodePositions: NodePositionMap;
+  getNodePosition: (nodeId: string) => NodePosition;
   nodeHoverAmounts: Record<string, number>;
   graphToCanvas: (position: NodePosition, canvas: HTMLCanvasElement) => NodePosition;
   nodeSize: (node: GraphNode) => number;
@@ -65,8 +63,8 @@ export function drawGraphFrame({
 
   for (const link of links) {
     if (!visibleNodeIds.has(link.from) || !visibleNodeIds.has(link.to)) continue;
-    const from = positions[link.from] ?? initialNodePositions[link.from];
-    const to = positions[link.to] ?? initialNodePositions[link.to];
+    const from = getNodePosition(link.from);
+    const to = getNodePosition(link.to);
     const fromScreen = graphToCanvas(from, canvas);
     const toScreen = graphToCanvas(to, canvas);
     const rawSourceLink = isRawSourceLink(link);
@@ -102,7 +100,7 @@ export function drawGraphFrame({
 
   for (let index = 0; index < drawableNodeCount; index += 1) {
     const node = nodes[index];
-    const position = positions[node.id] ?? initialNodePositions[node.id];
+    const position = getNodePosition(node.id);
     const screenPosition = graphToCanvas(position, canvas);
     const radius = nodeSize(node) / 2;
     const hoverAmount = nodeHoverAmounts[node.id] ?? 0;

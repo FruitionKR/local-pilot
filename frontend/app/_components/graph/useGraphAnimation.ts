@@ -1,6 +1,5 @@
 import type { MutableRefObject } from "react";
 import { useEffect } from "react";
-import type { NodePositionMap } from "../../_lib/types";
 
 /** 첫 프레임에서 이전 프레임 시각이 없을 때 사용하는 delta 기본값(ms) */
 const INITIAL_FRAME_DELTA_MS = 16;
@@ -10,15 +9,12 @@ const PHYSICS_TICK_INTERVAL_MS = 32;
 export function useGraphAnimation({
   tickGraphRef,
   advanceHoverAnimationRef,
-  nodePositionsRef,
-  draggingNodeIdRef,
   drawGraphRef,
   scheduleGraphCacheWrite
 }: {
-  tickGraphRef: MutableRefObject<(positions: NodePositionMap, anchorId: string | null) => NodePositionMap>;
+  /** simulation을 한 tick 진행. 아직 움직이는 중이면 true. */
+  tickGraphRef: MutableRefObject<() => boolean>;
   advanceHoverAnimationRef: MutableRefObject<(deltaMs: number) => boolean>;
-  nodePositionsRef: MutableRefObject<NodePositionMap>;
-  draggingNodeIdRef: MutableRefObject<string | null>;
   drawGraphRef: MutableRefObject<() => void>;
   scheduleGraphCacheWrite: () => void;
 }) {
@@ -34,13 +30,13 @@ export function useGraphAnimation({
 
       if (time - lastFrame > PHYSICS_TICK_INTERVAL_MS) {
         lastFrame = time;
-        const anchorId = draggingNodeIdRef.current;
-        const next = tickGraphRef.current(nodePositionsRef.current, anchorId);
-        if (next !== nodePositionsRef.current) {
-          nodePositionsRef.current = next;
+        const isActive = tickGraphRef.current();
+        if (isActive) {
           scheduleGraphCacheWrite();
+          drawGraphRef.current();
+        } else if (hoverChanged) {
+          drawGraphRef.current();
         }
-        drawGraphRef.current();
       } else if (hoverChanged) {
         drawGraphRef.current();
       }
@@ -50,5 +46,5 @@ export function useGraphAnimation({
 
     frameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId);
-  }, [advanceHoverAnimationRef, draggingNodeIdRef, drawGraphRef, nodePositionsRef, scheduleGraphCacheWrite, tickGraphRef]);
+  }, [advanceHoverAnimationRef, drawGraphRef, scheduleGraphCacheWrite, tickGraphRef]);
 }

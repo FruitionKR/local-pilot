@@ -55,9 +55,9 @@ export function HomeWorkspace() {
     setFileDropTarget: projectTree.setFileDropTarget,
     refreshBackendData
   });
-  const selection = useTreeSelection(projectTree.projects);
-  const isHomeView = activeView === "home";
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
+  const selection = useTreeSelection(projectTree.projects, graphData.nodes);
+  const isHomeView = activeView === "home";
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
 
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
@@ -158,7 +158,7 @@ export function HomeWorkspace() {
             links={graphData.links}
             rawDocumentCount={documents.length}
             focusedNodeId={selection.focusedGraphNodeId}
-            onOpenNodePreview={(node) => selection.openGraphNodePreview(node.id, node.label)}
+            onOpenNodePreview={selection.openGraphNodePreview}
             onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
             loading={isGraphLoading}
             errorMessage={apiError}

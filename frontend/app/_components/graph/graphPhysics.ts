@@ -1,75 +1,151 @@
+import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
+import type { Simulation, SimulationLinkDatum } from "d3-force";
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH, graphNodeKind } from "../../_lib/graph";
-import { safeDistance } from "./graphGeometry";
+import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH } from "../../_lib/graph";
+import { clampGraphPosition } from "./graphGeometry";
 
-export type GraphLinkForce = GraphLink & {
-  idealDistance: number;
-  weight: number;
+export const FIXED_NODE_SIZE = 14;
+
+/** d3-force simulation 노드. d3가 x/y/vx/vy/fx/fy를 직접 갱신한다. */
+export type GraphSimNode = {
+  id: string;
+  kind?: GraphNode["kind"];
+  x: number;
+  y: number;
+  vx?: number;
+  vy?: number;
+  fx?: number | null;
+  fy?: number | null;
 };
 
-export type GraphPairForce = {
-  nodeA: GraphNode;
-  nodeB: GraphNode;
-  linked: boolean;
-  desiredDistance: number;
-  minDistance: number;
+type GraphSimLink = SimulationLinkDatum<GraphSimNode>;
+
+export type GraphSimulation = {
+  simulation: Simulation<GraphSimNode, GraphSimLink>;
+  nodeById: Map<string, GraphSimNode>;
 };
 
-const FIXED_NODE_SIZE = 14;
+/** d3-force 힘 세기 튜닝 값 */
+const SIM_FORCES = {
+  linkStrength: 0.28,
+  /** 노드 종류별 반발력(charge) 세기 */
+  charge: {
+    source: -170,
+    concept: -60,
+    raw: -40
+  },
+  chargeDistanceMax: 260,
+  /** 노드 종류별 최소 간격 반경 (collide) */
+  collideRadius: {
+    source: 44,
+    concept: 20,
+    raw: 16
+  },
+  collideStrength: 0.85,
+  centerStrength: 0.006,
+  /** 초기 배치 위치로 되돌리는 힘 (클러스터 구조 유지) */
+  originStrength: 0.045,
+  alphaMin: 0.02,
+  /** 드래그 중 유지하는 최소 alpha */
+  dragAlpha: 0.3
+};
 
-/** 노드 종류 조합별 pair 간 추가 거리 */
-const PAIR_DISTANCE = {
-  default: 48,
-  sourceToSource: 118,
-  sourceToOther: 58,
-  rawInvolved: 42
-} as const;
-
-export function buildNodeSizes(nodes: GraphNode[]) {
-  return nodes.reduce<Record<string, number>>((sizes, node) => {
-    sizes[node.id] = FIXED_NODE_SIZE;
-    return sizes;
-  }, {});
-}
-
-export function buildLinkForces({
-  links,
-  nodes
-}: {
-  links: GraphLink[];
-  nodes: GraphNode[];
-}) {
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  return links.map((link) => ({
-    ...link,
-    idealDistance: idealLinkDistanceValue(link, nodeById),
-    weight: 1
-  }));
-}
-
-export function buildPairForces({
+export function createGraphSimulation({
   nodes,
-  linkedNodePairs,
-  nodeSize,
-  linkKey
+  links,
+  startPositions,
+  originPositions
 }: {
   nodes: GraphNode[];
-  linkedNodePairs: Set<string>;
-  nodeSize: (node: GraphNode) => number;
-  linkKey: (nodeAId: string, nodeBId: string) => string;
-}) {
-  return nodes.flatMap((nodeA, index) =>
-    nodes.slice(index + 1).map((nodeB) => {
-      const linked = linkedNodePairs.has(linkKey(nodeA.id, nodeB.id));
-      return {
-        nodeA,
-        nodeB,
-        linked,
-        desiredDistance: linked ? 0 : pairDistanceValue(nodeA, nodeB, nodeSize),
-        minDistance: physicsNodeRadius(nodeA, nodeSize) + physicsNodeRadius(nodeB, nodeSize)
-      };
-    })
+  links: GraphLink[];
+  startPositions: NodePositionMap;
+  originPositions: NodePositionMap;
+}): GraphSimulation {
+  const simNodes: GraphSimNode[] = nodes.map((node) => ({
+    id: node.id,
+    kind: node.kind,
+    x: startPositions[node.id]?.x ?? GRAPH_CENTER.x,
+    y: startPositions[node.id]?.y ?? GRAPH_CENTER.y
+  }));
+  const nodeById = new Map(simNodes.map((node) => [node.id, node]));
+  const simLinks: GraphSimLink[] = links
+    .filter((link) => nodeById.has(link.from) && nodeById.has(link.to))
+    .map((link) => ({ source: link.from, target: link.to }));
+
+  const simulation = forceSimulation(simNodes)
+    .force(
+      "link",
+      forceLink<GraphSimNode, GraphSimLink>(simLinks)
+        .id((node) => node.id)
+        .distance((link) => idealLinkDistanceValue(link))
+        .strength(SIM_FORCES.linkStrength)
+    )
+    .force(
+      "charge",
+      forceManyBody<GraphSimNode>()
+        .strength((node) => SIM_FORCES.charge[simNodeKind(node)])
+        .distanceMax(SIM_FORCES.chargeDistanceMax)
+    )
+    .force(
+      "collide",
+      forceCollide<GraphSimNode>((node) => SIM_FORCES.collideRadius[simNodeKind(node)])
+        .strength(SIM_FORCES.collideStrength)
+    )
+    .force("centerX", forceX<GraphSimNode>(GRAPH_CENTER.x).strength(SIM_FORCES.centerStrength))
+    .force("centerY", forceY<GraphSimNode>(GRAPH_CENTER.y).strength(SIM_FORCES.centerStrength))
+    .force(
+      "originX",
+      forceX<GraphSimNode>((node) => originPositions[node.id]?.x ?? GRAPH_CENTER.x).strength(SIM_FORCES.originStrength)
+    )
+    .force(
+      "originY",
+      forceY<GraphSimNode>((node) => originPositions[node.id]?.y ?? GRAPH_CENTER.y).strength(SIM_FORCES.originStrength)
+    )
+    .alphaMin(SIM_FORCES.alphaMin)
+    .stop(); // 내부 타이머 대신 RAF 루프에서 수동 tick
+
+  return { simulation, nodeById };
+}
+
+/**
+ * simulation을 한 tick 진행하고 노드를 그래프 영역 안으로 clamp한다.
+ * 이미 settle됐으면(alpha < alphaMin) false를 반환한다.
+ */
+export function tickGraphSimulation(graphSimulation: GraphSimulation, isDragging: boolean): boolean {
+  const { simulation } = graphSimulation;
+  if (isDragging) simulation.alpha(Math.max(simulation.alpha(), SIM_FORCES.dragAlpha));
+  if (simulation.alpha() < simulation.alphaMin()) return false;
+
+  simulation.tick();
+
+  for (const node of simulation.nodes()) {
+    const clamped = clampSimPosition(node);
+    node.x = clamped.x;
+    node.y = clamped.y;
+  }
+
+  return true;
+}
+
+/** 드래그 종료 등으로 simulation을 다시 데운다. */
+export function reheatGraphSimulation(graphSimulation: GraphSimulation) {
+  const { simulation } = graphSimulation;
+  simulation.alpha(Math.max(simulation.alpha(), SIM_FORCES.dragAlpha));
+}
+
+/** simulation 노드 좌표를 캐시 저장용 위치 맵으로 변환한다. */
+export function simulationPositions(graphSimulation: GraphSimulation): NodePositionMap {
+  return Object.fromEntries(
+    graphSimulation.simulation.nodes().map((node) => [node.id, { x: node.x, y: node.y }])
   );
+}
+
+export function clampSimPosition(node: GraphSimNode): NodePosition {
+  return clampGraphPosition({
+    position: { x: node.x, y: node.y },
+    node: { id: node.id, label: "", kind: node.kind },
+    nodeSize: FIXED_NODE_SIZE
+  });
 }
 
 export function createSourceCenteredNodePositions(nodes: GraphNode[], links: GraphLink[]) {
@@ -179,204 +255,21 @@ export function getGraphDistances(links: GraphLink[], sourceId: string) {
   return distances;
 }
 
-export function resolveGraphCollisions({
-  nodes,
-  positions,
-  initialNodePositions,
-  pairForces,
-  anchorId,
-  clampPosition
-}: {
-  nodes: GraphNode[];
-  positions: NodePositionMap;
-  initialNodePositions: NodePositionMap;
-  pairForces: GraphPairForce[];
-  anchorId: string | null;
-  clampPosition: (position: NodePosition, nodeId?: string) => NodePosition;
-}) {
-  const next: NodePositionMap = Object.fromEntries(
-    nodes.map((node) => [node.id, positions[node.id] ?? initialNodePositions[node.id]])
-  );
-
-  for (let iteration = 0; iteration < 4; iteration += 1) {
-    for (const pair of pairForces) {
-      const { nodeA, nodeB, minDistance } = pair;
-      const posA = next[nodeA.id];
-      const posB = next[nodeB.id];
-      const dx = posB.x - posA.x;
-      const dy = posB.y - posA.y;
-      const distance = safeDistance(dx, dy);
-      const overlap = minDistance - distance;
-
-      if (overlap <= 0) continue;
-
-      const pushX = (dx / distance) * overlap;
-      const pushY = (dy / distance) * overlap;
-
-      if (anchorId && nodeA.id === anchorId) {
-        next[nodeB.id] = clampPosition({ x: posB.x + pushX, y: posB.y + pushY }, nodeB.id);
-      } else if (anchorId && nodeB.id === anchorId) {
-        next[nodeA.id] = clampPosition({ x: posA.x - pushX, y: posA.y - pushY }, nodeA.id);
-      } else {
-        next[nodeA.id] = clampPosition({ x: posA.x - pushX / 2, y: posA.y - pushY / 2 }, nodeA.id);
-        next[nodeB.id] = clampPosition({ x: posB.x + pushX / 2, y: posB.y + pushY / 2 }, nodeB.id);
-      }
-    }
-  }
-
-  return next;
+function simNodeKind(node: GraphSimNode): "source" | "concept" | "raw" {
+  return node.kind ?? "concept";
 }
 
-export function tickGraphPositions({
-  nodes,
-  positions,
-  initialNodePositions,
-  linkForces,
-  pairForces,
-  anchorId,
-  isRevealingGraph,
-  clampPosition
-}: {
-  nodes: GraphNode[];
-  positions: NodePositionMap;
-  initialNodePositions: NodePositionMap;
-  linkForces: GraphLinkForce[];
-  pairForces: GraphPairForce[];
-  anchorId: string | null;
-  isRevealingGraph: boolean;
-  clampPosition: (position: NodePosition, nodeId?: string) => NodePosition;
-}) {
-  const next: NodePositionMap = Object.fromEntries(
-    nodes.map((node) => [node.id, positions[node.id] ?? initialNodePositions[node.id]])
-  );
-  const deltas: Record<string, NodePosition> = Object.fromEntries(
-    nodes.map((node) => [node.id, { x: 0, y: 0 }])
-  );
-
-  linkForces.forEach((link) => {
-    const from = next[link.from];
-    const to = next[link.to];
-    if (!from || !to) return;
-
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const distance = safeDistance(dx, dy);
-    const revealBoost = isRevealingGraph ? GRAPH_PHYSICS.revealLinkBoost : 1;
-    const force = (distance - link.idealDistance) * GRAPH_PHYSICS.linkStrength * link.weight * revealBoost;
-    const fx = (dx / distance) * force;
-    const fy = (dy / distance) * force;
-
-    if (link.from !== anchorId) {
-      deltas[link.from].x += fx;
-      deltas[link.from].y += fy;
-    }
-
-    if (link.to !== anchorId) {
-      deltas[link.to].x -= fx;
-      deltas[link.to].y -= fy;
-    }
-  });
-
-  for (const pair of pairForces) {
-    const { nodeA, nodeB, linked, desiredDistance } = pair;
-    const posA = next[nodeA.id];
-    const posB = next[nodeB.id];
-    const dx = posB.x - posA.x;
-    const dy = posB.y - posA.y;
-    const distance = safeDistance(dx, dy);
-    if (linked || distance >= desiredDistance || distance >= GRAPH_PHYSICS.repulsionRange) continue;
-
-    const proximity = 1 - distance / GRAPH_PHYSICS.repulsionRange;
-    const force = (desiredDistance - distance) * GRAPH_PHYSICS.repulsionStrength * proximity;
-    const fx = (dx / distance) * force;
-    const fy = (dy / distance) * force;
-
-    if (nodeA.id !== anchorId) {
-      deltas[nodeA.id].x -= fx;
-      deltas[nodeA.id].y -= fy;
-    }
-
-    if (nodeB.id !== anchorId) {
-      deltas[nodeB.id].x += fx;
-      deltas[nodeB.id].y += fy;
-    }
+function idealLinkDistanceValue(link: GraphSimLink) {
+  const from = link.source as GraphSimNode;
+  const to = link.target as GraphSimNode;
+  if (typeof from !== "object" || typeof to !== "object") {
+    return GRAPH_PHYSICS.linkDistance.fallback * GRAPH_PHYSICS.linkDistanceMultiplier;
   }
 
-  nodes.forEach((node) => {
-    if (node.id === anchorId) return;
-    const initialPosition = initialNodePositions[node.id];
-    const position = next[node.id] ?? initialPosition;
-    const centerStrength = GRAPH_PHYSICS.centerStrength * (isRevealingGraph ? GRAPH_PHYSICS.revealCenterBoost : 1);
-    deltas[node.id].x += (GRAPH_CENTER.x - position.x) * centerStrength;
-    deltas[node.id].y += (GRAPH_CENTER.y - position.y) * centerStrength;
-    deltas[node.id].x += (initialPosition.x - position.x) * GRAPH_PHYSICS.originStrength;
-    deltas[node.id].y += (initialPosition.y - position.y) * GRAPH_PHYSICS.originStrength;
-  });
-
-  // damping이 적용된 이동 후 좌표
-  const dampedPositions: NodePositionMap = Object.fromEntries(
-    nodes.map((node) => {
-      const position = next[node.id] ?? initialNodePositions[node.id];
-      const delta = deltas[node.id];
-      if (node.id === anchorId) return [node.id, clampPosition(position, node.id)];
-      const damping = isRevealingGraph ? GRAPH_PHYSICS.revealDamping : GRAPH_PHYSICS.damping;
-
-      return [node.id, clampPosition({
-        x: position.x + delta.x * damping,
-        y: position.y + delta.y * damping
-      }, node.id)];
-    })
-  );
-
-  const nextPositions = resolveGraphCollisions({
-    nodes,
-    positions: dampedPositions,
-    initialNodePositions,
-    pairForces,
-    anchorId,
-    clampPosition
-  });
-
-  if (!isRevealingGraph && !anchorId) {
-    const maxMovement = nodes.reduce((movement, node) => {
-      const previous = positions[node.id] ?? initialNodePositions[node.id];
-      const current = nextPositions[node.id] ?? previous;
-      return Math.max(movement, Math.hypot(current.x - previous.x, current.y - previous.y));
-    }, 0);
-
-    if (maxMovement < GRAPH_PHYSICS.settleThreshold) return positions;
-  }
-
-  return nextPositions;
-}
-
-function idealLinkDistanceValue(link: GraphLink, nodeById: Map<string, GraphNode>) {
-  const from = nodeById.get(link.from);
-  const to = nodeById.get(link.to);
-  if (!from || !to) return GRAPH_PHYSICS.linkDistance.fallback * GRAPH_PHYSICS.linkDistanceMultiplier;
-
-  const kinds = [graphNodeKind(from), graphNodeKind(to)];
+  const kinds = [simNodeKind(from), simNodeKind(to)];
   let distance = GRAPH_PHYSICS.linkDistance.concept;
   if (kinds.every((kind) => kind === "source")) distance = GRAPH_PHYSICS.linkDistance.source;
   else if (kinds.includes("raw")) distance = GRAPH_PHYSICS.linkDistance.raw;
   else if (kinds.includes("source") && kinds.includes("concept")) distance = GRAPH_PHYSICS.linkDistance.sourceConcept;
   return distance * GRAPH_PHYSICS.linkDistanceMultiplier;
-}
-
-function physicsNodeRadius(node: GraphNode, nodeSize: (node: GraphNode) => number) {
-  return (nodeSize(node) / 2) * GRAPH_PHYSICS.collisionRadiusMultiplier;
-}
-
-function pairDistanceValue(nodeA: GraphNode, nodeB: GraphNode, nodeSize: (node: GraphNode) => number) {
-  const base = physicsNodeRadius(nodeA, nodeSize) + physicsNodeRadius(nodeB, nodeSize);
-  const kindA = graphNodeKind(nodeA);
-  const kindB = graphNodeKind(nodeB);
-  let distance = base + PAIR_DISTANCE.default;
-  if (kindA === "source" && kindB === "source") distance = base + PAIR_DISTANCE.sourceToSource;
-  else if (kindA === "source" || kindB === "source") distance = base + PAIR_DISTANCE.sourceToOther;
-  else if (kindA === "raw" || kindB === "raw") distance = base + PAIR_DISTANCE.rawInvolved;
-  const typeMultiplier = kindA === "source" && kindB === "source"
-    ? GRAPH_PHYSICS.sourceNodeDistanceMultiplier
-    : 1;
-  return distance * GRAPH_PHYSICS.nodeDistanceMultiplier * typeMultiplier;
 }
