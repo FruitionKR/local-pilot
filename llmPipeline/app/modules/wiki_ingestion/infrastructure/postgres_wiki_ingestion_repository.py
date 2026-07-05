@@ -401,6 +401,7 @@ def lint_wiki_workspace(
     *,
     materialize_promotions: bool = False,
     promotion_page_generator: PromotionPageGenerator | None = None,
+    write_log: bool = True,
 ) -> dict[str, Any]:
     active_path = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
     log_path = f"wiki/{user_id}/{workspace_id}/logs/{_today_iso()}.md"
@@ -480,9 +481,10 @@ def lint_wiki_workspace(
         result["merged_promotions"] = materialized["merged_promotions"]
         result["materialized_relations"] = materialized["relations"]
         result["active_path"] = active_path
-    existing_log = _read_optional_text_object(log_path)
-    separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
-    write_text_object(log_path, f"{existing_log}{separator}{_lint_log_markdown(result)}")
+    if write_log:
+        existing_log = _read_optional_text_object(log_path)
+        separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
+        write_text_object(log_path, f"{existing_log}{separator}{_lint_log_markdown(result)}")
     return result
 
 
@@ -875,7 +877,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
                 link.get("label"),
                 link.get("confidence"),
             )
-    _refresh_source_related_links(conn)
+    _refresh_source_related_links(conn, user_id, workspace_id)
     _persist_meaning_cluster_artifacts(conn, document_id, manifest)
     return persisted_page_ids
 
@@ -1100,7 +1102,7 @@ def _concept_evidence_line(update: dict[str, Any]) -> str:
     return f"- {prefix}{claim}{suffix}"
 
 
-def _refresh_source_related_links(conn: psycopg.Connection) -> None:
+def _refresh_source_related_links(conn: psycopg.Connection, user_id: str, workspace_id: str) -> None:
     rows = conn.execute(
         """
         SELECT l.from_page_id AS source_id, l.to_page_id AS concept_id, c.title AS concept_title
@@ -1112,10 +1114,30 @@ def _refresh_source_related_links(conn: psycopg.Connection) -> None:
           AND c.page_type = 'concept'
           AND s.status = 'active'
           AND c.status = 'active'
-        """
+          AND s.user_id = %s
+          AND s.workspace_id = %s
+          AND c.user_id = %s
+          AND c.workspace_id = %s
+        """,
+        (user_id, workspace_id, user_id, workspace_id),
     ).fetchall()
 
-    conn.execute("DELETE FROM wiki_page_links WHERE link_type = 'source_related_to'")
+    conn.execute(
+        """
+        DELETE FROM wiki_page_links l
+        USING wiki_pages from_page, wiki_pages to_page
+        WHERE l.link_type = 'source_related_to'
+          AND from_page.id = l.from_page_id
+          AND to_page.id = l.to_page_id
+          AND from_page.page_type = 'source'
+          AND to_page.page_type = 'source'
+          AND from_page.user_id = %s
+          AND from_page.workspace_id = %s
+          AND to_page.user_id = %s
+          AND to_page.workspace_id = %s
+        """,
+        (user_id, workspace_id, user_id, workspace_id),
+    )
     source_concepts: dict[str, dict[str, str]] = {}
     concept_source_counts: dict[str, int] = {}
     for row in rows:
