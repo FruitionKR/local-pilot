@@ -26,10 +26,8 @@ public class DocumentProcessingRequester {
                 .build();
     }
 
-    public PipelineRunResponse request(String documentId, String callbackUrl) {
-        String body = "{\"document_id\":\"" + documentId + "\""
-                + (callbackUrl != null ? ",\"log_callback_url\":\"" + callbackUrl + "\"" : "")
-                + "}";
+    public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl) {
+        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl);
         try {
             PipelineRunResponse response = restClient.post()
                     .uri(processingEndpoint)
@@ -37,8 +35,9 @@ public class DocumentProcessingRequester {
                     .body(body)
                     .retrieve()
                     .body(PipelineRunResponse.class);
-            log.info("[파이프라인 실행 요청 완료] documentId={} runId={} status={}",
+            log.info("[파이프라인 실행 요청 완료] documentId={} workspaceId={} runId={} status={}",
                     documentId,
+                    workspaceId,
                     response != null ? response.runId() : "null",
                     response != null ? response.status() : "null");
             return response;
@@ -54,6 +53,13 @@ public class DocumentProcessingRequester {
             throw new RuntimeException(msg, e);
         }
     }
+
+    public record PipelineRunRequest(
+            @JsonProperty("document_id") String documentId,
+            @JsonProperty("user_id") String userId,
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("log_callback_url") String logCallbackUrl
+    ) {}
 
     public record PipelineRunResponse(
             @JsonProperty("run_id") String runId,

@@ -6,6 +6,138 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-04
+
+### feat: wiki 조회를 workspace 경로 기반으로 격리 (Scope B)
+
+**배경**
+
+파이프라인이 실제 workspace_id를 wiki_pages에 기록하게 됐지만(직전 커밋), `WikiController`(`/api/wiki`)의 graph/detail 조회가 `wikiPageRepository.findAll()`로 **전 workspace 페이지를 반환**해 다른 workspace의 wiki가 그대로 새어 나오던 상태였다. 실측으로 두 workspace(`ws_7baa...` 4개, `local-workspace` 3개)의 페이지가 `GET /api/wiki/graph` 한 번에 7개 모두 반환되는 것을 확인했다.
+
+**추가/변경된 것**
+
+- `wiki/controller/WikiController.java`: base path를 `/api/wiki` → **`/api/workspaces/{workspace_id}/wiki`** 로 변경(문서·채팅 API와 동일한 경로 규약). 각 엔드포인트가 `@PathVariable workspace_id`와 `@AuthenticationPrincipal userId`를 받는다. 이로써 `/api/workspaces/**` 규칙에 걸려 인증이 필수가 된다.
+- `wiki/service/WikiService.java`: `WorkspaceMemberRepository`를 주입해 `verifyWorkspaceOwnership`(멤버십 검증) 추가. `findGraph`/`findById`/`rename`이 `(workspaceId, userId)`를 받아 소유권 검증 후 workspace scope로 조회. graph는 `findAllByWorkspaceId`로 페이지를 가져오고, `wiki_page_links`는 workspace 컬럼이 없으므로 해당 page id 집합 안에서 양 끝점이 모두 존재하는 링크만 포함. detail/rename은 `findByIdAndWorkspaceId`로 다른 workspace 페이지 접근을 404 처리.
+- repository: `WikiPageRepository.findAllByWorkspaceId`/`findByIdAndWorkspaceId`, `WikiPageLinkRepository.findAllByIdFromPageIdIn` 추가.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e(두 workspace 데이터 공존 상태): `GET /api/workspaces/{ws_7baa}/wiki/graph`가 `ws_7baa` 페이지 4개만 반환(이전엔 7개), 옛 경로 `/api/wiki/graph`는 404, 인증 없으면 401, 다른 workspace 페이지 상세 요청은 404, 내 페이지는 200을 확인.
+
+**주의사항**
+
+- **API 경로가 바뀌는 breaking change다.** 프론트엔드가 호출하는 `/api/wiki/graph` 등을 `/api/workspaces/{workspace_id}/wiki/...`로 바꾸고 인증 헤더를 붙여야 한다(`docs/issue/2026-07-02.md` "프론트엔드 workspace-scoped API 마이그레이션"과 연결).
+- 페이지 필터링은 문서 API와 동일하게 멤버십 검증 후 **workspace_id 기준**이다(공유 workspace 대비). 현재 MVP는 owner 1인 구조라 user 단위와 동일하게 동작한다.
+
+### feat: 파이프라인 실행 요청에 실제 user_id/workspace_id 전달
+
+**배경**
+
+`DocumentProcessingRequester`가 `/pipeline/runs`에 `{document_id, log_callback_url}`만 보내, llmPipeline이 `wiki_pages`를 DDL 기본값 `local-user`/`local-workspace`로 기록했다. wiki_pages 스키마·삭제는 workspace scope로 맞췄지만(2026-07-04 이전 커밋), 실제 workspace 값이 전달되지 않아 **데이터 레벨 격리가 안 되고 모든 문서의 wiki가 `local-workspace`로 섞이던** 상태를 e2e로 확인했다(`docs/issue/2026-07-02.md` B3).
+
+**추가/변경된 것**
+
+- `document/repository/DocumentProcessingRequester.java`: JSON 문자열 수동 조립을 `PipelineRunRequest` record로 교체(escaping 취약점 제거). `request(documentId, userId, workspaceId, callbackUrl)`로 시그니처를 바꿔 `user_id`/`workspace_id`를 body에 포함.
+- `document/service/DocumentService.java`: `doRequestProcessing`이 문서를 로드해 그 문서의 `userId`/`workspaceId`를 요청에 전달. 문서가 이미 삭제됐으면 조용히 반환.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e: `ws_7baa...` 워크스페이스에 문서 업로드→인제스트 후, 생성된 source/concept wiki_pages가 모두 실제 `user_id=user_6fdd...`, `workspace_id=ws_7baa...`로 기록됨을 확인(이전엔 `local-user`/`local-workspace`).
+
+**주의사항**
+
+- `source_page_mode`/`concept_page_mode`/`provider`는 파이프라인 기본값(auto/auto/upstage)이 합리적이고, 명시하면 백엔드에 하드코딩이 되므로 이번엔 전달하지 않았다. 필요 시 별도 config로 추가한다.
+- 이제 데이터 레벨 workspace 격리가 되므로, graph/detail 조회를 요청 workspace로 필터링하는 후속 작업(Scope B)이 의미를 갖는다.
+
+### fix: documents.error_message를 TEXT로 변경해 긴 에러 저장 시 크래시 제거
+
+**배경**
+
+`DocumentProcessingWorker`가 파이프라인 실패를 문서에 기록할 때 `documents.error_message`(varchar(255))에 255자를 넘는 에러 문자열을 넣어 `value too long for type character varying(255)`(DataIntegrityViolationException)로 워커가 크래시하고, 문서가 `failed`로도 전이되지 못한 채 `processing`에 갇히는 버그를 e2e 검증 중 확인했다. llmPipeline DDL도 `documents.error_message`를 `TEXT`로 정의(및 write 시 truncate)하고 있어, Spring 엔티티가 varchar(255)로 잡던 것이 실제 의도와 어긋난 상태였다.
+
+**추가/변경된 것**
+
+- `document/domain/Document.java`: `error_message` 컬럼을 `@Column(columnDefinition = "TEXT")`로 변경. 새로 생성되는 DB에서는 TEXT로 만들어진다.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 기존 dev DB는 `ddl-auto=update`가 컬럼 타입을 바꾸지 못하므로 `ALTER TABLE documents ALTER COLUMN error_message TYPE TEXT`로 직접 넓혔고(무손실), 400자 문자열 UPDATE가 성공하는 것을 확인(이전엔 여기서 `value too long` 발생).
+
+**주의사항**
+
+- 다른 기존 DB에도 동일한 수동 ALTER가 필요하다(`ddl-auto=update`는 varchar→text 타입 변경을 반영하지 않음). 새로 생성하는 DB는 엔티티 기준으로 TEXT가 된다.
+
+### fix: 문서 삭제가 opaque wiki page id에 대응하고 하위 데이터를 명시 삭제
+
+**배경**
+
+llmPipeline이 wiki page id를 옛 의미형(`source:{documentId}`, `concept:{slug}`)에서 opaque UUID(`wiki_page_{uuid}`)로 바꾸면서(2026-07-02 커밋), `DocumentService.deleteInternal()`이 source page를 `wikiPageRepository.findById("source:" + documentId)`로 찾던 코드가 조용히 깨졌다 — 실제 id는 UUID라 항상 못 찾아 문서 삭제 시 source wiki page가 고아로 남았다. 추가로 이 로직은 `source_blocks`/`document_wiki_links`/`wiki_page_links` 정리를 DB `ON DELETE CASCADE`에 의존했는데, 로컬 dev DB를 새로 만들면 이 테이블들을 Spring이 먼저 varchar로 생성해 CASCADE FK가 걸리지 않아(그 FK는 llmPipeline DDL에만 정의됨) 삭제 후 고아가 남는 것을 실측으로 확인했다.
+
+**추가/변경된 것**
+
+- `document/service/DocumentService.java`:
+  - source page를 id 문자열이 아니라 `document_wiki_links`의 `source_of` 링크로 찾아 삭제(opaque UUID 대응). concept page는 공유 자원이라 삭제하지 않는다.
+  - `source_blocks`(document_id), `document_wiki_links`(document_id)를 명시적으로 삭제. `wiki_page_links`는 link_type이 아니라 삭제되는 source page id(from/to)로 좁혀 삭제.
+  - `WikiPageLinkRepository`를 새로 주입.
+- repository에 delete 메서드 추가: `SourceBlockRepository.deleteByIdDocumentId`, `DocumentWikiLinkRepository.deleteByIdDocumentId`, `WikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId`.
+- `DocumentServiceBlocksTest`: 생성자 변경에 맞춰 `WikiPageLinkRepository` mock 추가.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 라이브 e2e: 문서 업로드→인제스트(source 1 + concept 3 + source_blocks 7 + document_wiki_links 4 + wiki_page_links 3)→삭제 후 `documents`/source page/`source_blocks`/`document_wiki_links`/`wiki_page_links` 모두 0, concept page 3개는 유지됨을 확인.
+
+**주의사항**
+
+- DB CASCADE 대신 앱 레벨 명시 삭제를 택한 이유: 현재 스키마 소유권이 Spring/llmPipeline 사이에 엉켜 있어(varchar vs TEXT, 생성 순서에 따라 CASCADE FK 유무가 갈림) CASCADE 정석화는 소유권 정리(2026-07-03 "documents/wiki_pages CASCADE 보류")와 함께 다뤄야 한다. 문서 삭제는 현재 Spring 경로로만 일어나므로 앱 레벨 정리로 충분하다.
+- `wiki_embedding_units`/`wiki_page_embeddings`는 llmPipeline 전용(Spring 레포 없음)이고 현재 비어 있어 이번 정리 범위에서 제외했다. 임베딩 저장 흐름이 붙으면 별도 정리가 필요하다.
+
+### fix: wiki_pages 엔티티를 llmPipeline의 workspace scope에 정렬
+
+**배경**
+
+llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id`/`workspace_id` 컬럼과 `(user_id, workspace_id, page_type, slug)` scope unique index(`uq_wiki_pages_workspace_type_slug`)로 관리하도록 바뀌었는데, Spring `WikiPage` 엔티티는 옛 전역 unique `(page_type, slug)`를 선언하고 `workspace_id`를 매핑조차 하지 않아 실제 DB와 어긋나 있었다. 이 불일치로 (1) `ddl-auto=update`가 전역 제약을 심으려다 충돌/부팅 실패, (2) Spring이 workspace 단위 격리를 할 수 없었다(`docs/issue/2026-07-02.md` B1 / "Wiki 격리 미구현").
+
+**추가/변경된 것**
+
+- `wiki/domain/WikiPage.java`: `user_id`/`workspace_id` 컬럼 매핑과 getter 추가. `@UniqueConstraint`를 DB와 동일하게 `uq_wiki_pages_workspace_type_slug (user_id, workspace_id, page_type, slug)`로 교체.
+- `wiki/repository/WikiPageRepository.java`: `findByPageTypeAndSlug` → `findByUserIdAndWorkspaceIdAndPageTypeAndSlug`.
+- `wiki/service/WikiService.java`: rename slug 충돌 검사를 페이지 자신의 `userId`/`workspaceId` scope 안에서 수행.
+
+**검증**
+
+- `./gradlew test` 전체 통과.
+- 로컬 dev DB를 새로 생성(볼륨 초기화 + pipeline 재빌드)하고 실제 기동해 `\d wiki_pages`로 확인: `user_id`/`workspace_id` 컬럼과 scoped unique만 존재하고 옛 전역 제약은 사라짐. 문서 업로드→인제스트 e2e로 `wiki_pages`에 정상 기록되는 것까지 확인.
+
+**주의사항**
+
+- Spring은 `wiki_pages`에 INSERT하지 않고 읽기/rename만 하며(실제 INSERT는 llmPipeline), `new WikiPage(...)` 생성 코드가 없어 생성자 시그니처는 건드리지 않았다.
+- graph/detail 조회(`findAll()`)를 요청 workspace 단위로 필터링하는 작업은 `WikiController`에 workspace_id 소스가 필요하고 파이프라인이 실제 `workspace_id`를 전달해야(B3) 의미가 생겨 이번엔 제외했다. e2e에서 인제스트된 페이지의 `workspace_id`가 아직 기본값 `local-workspace`로 찍히는 것을 확인했다(B3 미구현).
+
+### fix: PK ID를 전체 UUID로 전환해 충돌 위험 제거
+
+**배경**
+
+`User`/`Workspace`/`ChatSession`/`Document` 등의 PK를 `prefix_` + `UUID.randomUUID()` 앞 8자리(hex)로 생성하고 있었다. 앞 8자리만 쓰면 무작위성이 32비트로 줄어, 생일 역설 기준 같은 종류 ID가 수만 건 쌓이면 PK 충돌로 `save()`가 500 에러를 내는 잠재 버그가 있었다(`docs/issue/2026-07-03.md` "PK ID 생성 시 UUID 8자리 truncate로 인한 충돌 위험").
+
+**추가/변경된 것**
+
+- 아래 5개 서비스의 ID 생성에서 `.substring(0, 8)`을 제거해 전체 32자 hex(122비트 무작위성)를 사용하도록 통일했다. prefix(`user_`/`ws_`/`session_`/`doc_`)는 그대로 유지.
+  - `user/service/UserService.java`, `user/service/OAuthUserService.java` (`user_`)
+  - `workspace/service/WorkspaceService.java` (`ws_`)
+  - `chat/service/ChatSessionService.java` (`session_`)
+  - `document/service/DocumentService.java` (`doc_`)
+- ID 컬럼은 length 미지정(기본 VARCHAR(255))이라 32자로 길어져도 스키마 변경이 필요 없다.
+
+**검증**
+
+- `./gradlew test` 전체 통과. ID prefix를 검사하는 기존 `startsWith(...)` assertion은 prefix가 그대로라 영향 없음.
+
+---
+
 ## 2026-07-03
 
 ### refactor: 워크스페이스 소유 구조를 workspace_members 테이블로 전환

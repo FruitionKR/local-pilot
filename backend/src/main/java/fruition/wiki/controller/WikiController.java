@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/wiki")
+@RequestMapping("/api/workspaces/{workspace_id}/wiki")
 @Tag(name = "Wiki", description = "Wiki 그래프 및 페이지 조회 API")
 public class WikiController {
 
@@ -40,8 +41,10 @@ public class WikiController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @GetMapping("/graph")
-    public ResponseEntity<WikiGraphResponse> getGraph() {
-        return ResponseEntity.ok(wikiService.findGraph());
+    public ResponseEntity<WikiGraphResponse> getGraph(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(wikiService.findGraph(workspaceId, userId));
     }
 
     @Operation(summary = "Wiki 페이지 상세 조회", description = "특정 Wiki 페이지의 상세 정보를 반환합니다. source_documents와 related_pages를 포함합니다.")
@@ -55,9 +58,11 @@ public class WikiController {
     })
     @GetMapping("/pages/{wiki_page_id}")
     public ResponseEntity<WikiPageDetailResponse> getPage(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
             @Parameter(description = "Wiki 페이지 ID", example = "wp_abc123")
             @PathVariable("wiki_page_id") String wikiPageId) {
-        return ResponseEntity.ok(wikiService.findById(wikiPageId));
+        return ResponseEntity.ok(wikiService.findById(workspaceId, userId, wikiPageId));
     }
 
     @Operation(summary = "Wiki 페이지 이름 변경", description = "Wiki 페이지 제목을 변경합니다. update_slug=true이면 slug도 재생성하며 중복 여부를 검증합니다.")
@@ -73,9 +78,11 @@ public class WikiController {
     })
     @PatchMapping("/pages/{wiki_page_id}/rename")
     public ResponseEntity<WikiPageRenameResponse> rename(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
             @Parameter(description = "Wiki 페이지 ID", example = "wp_abc123")
             @PathVariable("wiki_page_id") String wikiPageId,
             @RequestBody WikiPageRenameRequest request) {
-        return ResponseEntity.ok(wikiService.rename(wikiPageId, request));
+        return ResponseEntity.ok(wikiService.rename(workspaceId, userId, wikiPageId, request));
     }
 }

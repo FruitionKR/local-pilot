@@ -11,6 +11,7 @@ import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.util.StorageProperties;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
+import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.workspace.repository.WorkspaceMemberRepository;
@@ -43,6 +44,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentProcessingRequester processingRequester;
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
+    @Mock WikiPageLinkRepository wikiPageLinkRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
     @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock TransactionTemplate transactionTemplate;
@@ -53,7 +55,8 @@ class DocumentServiceBlocksTest {
     void setUp() {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
-                sourceBlockRepository, queueRepository, transactionTemplate, "http://localhost:8080");
+                wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
+                "http://localhost:8080");
     }
 
     private void stubOwnedWorkspace() {

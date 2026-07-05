@@ -28,6 +28,7 @@ import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.DocumentWikiRelationType;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
+import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.workspace.repository.WorkspaceMemberRepository;
@@ -67,6 +68,7 @@ public class DocumentService {
     private final DocumentProcessingRequester processingRequester;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
+    private final WikiPageLinkRepository wikiPageLinkRepository;
     private final SourceBlockRepository sourceBlockRepository;
     private final DocumentProcessingQueueRepository queueRepository;
     private final TransactionTemplate transactionTemplate;
@@ -79,6 +81,7 @@ public class DocumentService {
                            DocumentProcessingRequester processingRequester,
                            DocumentWikiLinkRepository documentWikiLinkRepository,
                            WikiPageRepository wikiPageRepository,
+                           WikiPageLinkRepository wikiPageLinkRepository,
                            SourceBlockRepository sourceBlockRepository,
                            DocumentProcessingQueueRepository queueRepository,
                            TransactionTemplate transactionTemplate,
@@ -90,6 +93,7 @@ public class DocumentService {
         this.processingRequester = processingRequester;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
+        this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.sourceBlockRepository = sourceBlockRepository;
         this.queueRepository = queueRepository;
         this.transactionTemplate = transactionTemplate;
@@ -115,7 +119,7 @@ public class DocumentService {
             });
 
             // 2. MinIO에 원본 파일 저장
-            String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
             String objectPath = "sources/documents/" + documentId + "/original";
             String mimeType = resolveMimeType(file);
 
@@ -195,10 +199,12 @@ public class DocumentService {
     }
 
     void doRequestProcessing(String documentId) {
+        Document document = documentRepository.findById(documentId).orElse(null);
+        if (document == null) return;
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
-                    processingRequester.request(documentId, callbackUrl);
+                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(), callbackUrl);
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
@@ -382,11 +388,24 @@ public class DocumentService {
         // 처리 queue에서 제거
         queueRepository.deleteByDocumentId(documentId);
 
-        // source wiki page 삭제 → wiki_page_links, wiki_page_embeddings CASCADE
-        wikiPageRepository.findById("source:" + documentId)
-                .ifPresent(wikiPageRepository::delete);
+        // 이 문서의 source wiki page와 그에 딸린 링크를 명시적으로 삭제한다.
+        // - wiki page id는 opaque UUID이므로 id 문자열 형식이 아니라 document_wiki_links(source_of)로 찾는다.
+        // - wiki_page_links는 link_type이 아니라 삭제되는 source page id(from/to)로 좁혀 지운다.
+        // - concept page는 여러 문서가 공유하므로 삭제하지 않는다.
+        documentWikiLinkRepository
+                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of)
+                .forEach(link -> {
+                    String sourcePageId = link.getWikiPageId();
+                    wikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId(sourcePageId, sourcePageId);
+                    wikiPageRepository.findById(sourcePageId).ifPresent(wikiPageRepository::delete);
+                });
 
-        // document 삭제 → source_blocks, document_wiki_links, wiki_embedding_units CASCADE
+        // document에 종속된 나머지 데이터를 명시적으로 삭제한다.
+        // 이 테이블들은 DB에 ON DELETE CASCADE FK가 없어(Spring이 생성) document 삭제만으로는 정리되지 않는다.
+        documentWikiLinkRepository.deleteByIdDocumentId(documentId);
+        sourceBlockRepository.deleteByIdDocumentId(documentId);
+
+        // document 삭제
         documentRepository.delete(document);
 
         // commit 이후 MinIO 오브젝트 삭제

@@ -14,6 +14,8 @@ import fruition.wiki.dto.*;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,6 +36,7 @@ public class WikiService {
     private final WikiPageLinkRepository wikiPageLinkRepository;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final DocumentRepository documentRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
 
@@ -40,19 +44,34 @@ public class WikiService {
                        WikiPageLinkRepository wikiPageLinkRepository,
                        DocumentWikiLinkRepository documentWikiLinkRepository,
                        DocumentRepository documentRepository,
+                       WorkspaceMemberRepository workspaceMemberRepository,
                        MinioClient minioClient,
                        StorageProperties storageProperties) {
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.documentRepository = documentRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
     }
 
-    public WikiGraphResponse findGraph() {
-        List<WikiPage> pages = wikiPageRepository.findAll();
-        List<WikiPageLink> links = wikiPageLinkRepository.findAll();
+    private void verifyWorkspaceOwnership(String workspaceId, String userId) {
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new WorkspaceNotFoundException(workspaceId);
+        }
+    }
+
+    public WikiGraphResponse findGraph(String workspaceId, String userId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+
+        List<WikiPage> pages = wikiPageRepository.findAllByWorkspaceId(workspaceId);
+        Set<String> pageIds = pages.stream().map(WikiPage::getId).collect(Collectors.toSet());
+        // wiki_page_links에는 workspace 컬럼이 없으므로, 이 workspace의 page id 집합 안에서
+        // 양 끝점이 모두 존재하는 링크만 포함한다.
+        List<WikiPageLink> links = wikiPageLinkRepository.findAllByIdFromPageIdIn(pageIds).stream()
+                .filter(l -> pageIds.contains(l.getToPageId()))
+                .toList();
 
         Map<String, WikiGraphNode.SourceDocRef> sourceDocByWikiPageId = buildSourceDocRefs(pages);
 
@@ -110,8 +129,9 @@ public class WikiService {
                 ));
     }
 
-    public WikiPageDetailResponse findById(String id) {
-        WikiPage page = wikiPageRepository.findById(id)
+    public WikiPageDetailResponse findById(String workspaceId, String userId, String id) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        WikiPage page = wikiPageRepository.findByIdAndWorkspaceId(id, workspaceId)
                 .orElseThrow(() -> new WikiPageNotFoundException(id));
 
         List<WikiPageSourceDoc> sourceDocuments = buildSourceDocs(id);
@@ -183,10 +203,12 @@ public class WikiService {
     }
 
     @Transactional
-    public WikiPageRenameResponse rename(String wikiPageId, WikiPageRenameRequest request) {
+    public WikiPageRenameResponse rename(String workspaceId, String userId, String wikiPageId,
+                                         WikiPageRenameRequest request) {
+        verifyWorkspaceOwnership(workspaceId, userId);
         validateTitle(request.title());
 
-        WikiPage page = wikiPageRepository.findById(wikiPageId)
+        WikiPage page = wikiPageRepository.findByIdAndWorkspaceId(wikiPageId, workspaceId)
                 .orElseThrow(() -> new WikiPageNotFoundException(wikiPageId));
 
         String previousTitle = page.getTitle();
@@ -202,7 +224,8 @@ public class WikiService {
         if (updateSlug) {
             String newSlug = generateSlug(newTitle);
             if (!newSlug.equals(previousSlug)) {
-                boolean conflict = wikiPageRepository.findByPageTypeAndSlug(page.getPageType(), newSlug)
+                boolean conflict = wikiPageRepository.findByUserIdAndWorkspaceIdAndPageTypeAndSlug(
+                                page.getUserId(), page.getWorkspaceId(), page.getPageType(), newSlug)
                         .filter(existing -> !existing.getId().equals(page.getId()))
                         .isPresent();
                 if (conflict) {

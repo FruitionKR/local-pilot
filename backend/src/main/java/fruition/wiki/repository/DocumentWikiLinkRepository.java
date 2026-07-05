@@ -18,4 +18,6 @@ public interface DocumentWikiLinkRepository extends JpaRepository<DocumentWikiLi
 
     List<DocumentWikiLink> findAllByIdDocumentIdAndIdRelationType(
             String documentId, DocumentWikiRelationType relationType);
+
+    void deleteByIdDocumentId(String documentId);
 }
