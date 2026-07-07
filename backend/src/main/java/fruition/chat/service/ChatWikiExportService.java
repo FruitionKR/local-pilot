@@ -3,6 +3,7 @@ package fruition.chat.service;
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatSession;
 import fruition.chat.dto.ChatWikiExportResponse;
+import fruition.chat.exception.EmptyChatWikiExportException;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.chat.repository.ChatSessionRepository;
 import fruition.document.service.DocumentService;
@@ -61,6 +62,9 @@ public class ChatWikiExportService {
     public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId) {
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        if (messages.stream().noneMatch(m -> "completed".equals(m.getStatus()))) {
+            throw new EmptyChatWikiExportException(sessionId);
+        }
 
         String markdown = buildMaskedMarkdown(session, messages);
         String contentHash = stableContentHash(session, messages);

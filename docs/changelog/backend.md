@@ -23,6 +23,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `document/domain/Document`: `origin` 컬럼 추가(upload/chat_export). `document/repository/DocumentRepository`: `findVisibleByWorkspaceId`(null 안전).
 - `chat/service/ChatWikiExportReconciler`(신규): 파이프라인이 완료를 DB에 직접 쓰므로(백엔드 콜백 미경유), `@Scheduled`로 completed된 chat_export를 감지해 `source_of` 링크 → `ChatSession.wikiPageId` 연결.
 - `chat/domain/ChatSession`: `wikiExportDocumentId` 컬럼 + 링크 도메인 메서드. `chat/controller/ChatWikiExportController`(신규): `POST .../{session_id}/wiki`(202) 및 임시 `.../wiki/preview`.
+- completed 메시지가 없는 세션 export는 `EmptyChatWikiExportException`으로 400(`EMPTY_CHAT_WIKI_EXPORT`) 반환해 빈 위키 생성·불필요한 파이프라인 실행을 막는다.
 
 **검증**
 
