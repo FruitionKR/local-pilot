@@ -56,10 +56,19 @@ public class Document {
     @Column(name = "processing_updated_at")
     private Instant processingUpdatedAt;
 
+    /** 문서 출처. 일반 업로드는 "upload", 채팅 Wiki page화 export는 "chat_export". */
+    @Column(name = "origin")
+    private String origin;
+
     protected Document() {}
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
                     String sourceUri, String contentHash) {
+        this(id, workspaceId, userId, filename, mimeType, byteSize, sourceUri, contentHash, "upload");
+    }
+
+    public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
+                    String sourceUri, String contentHash, String origin) {
         this.id = id;
         this.workspaceId = workspaceId;
         this.userId = userId;
@@ -70,6 +79,7 @@ public class Document {
         this.sourceUri = sourceUri;
         this.contentHash = contentHash;
         this.uploadedAt = Instant.now();
+        this.origin = origin;
     }
 
     public void updateStatus(DocumentStatus status, String extractedTextUri,
@@ -117,4 +127,5 @@ public class Document {
     public String getPipelineRunId() { return pipelineRunId; }
     public Instant getProcessingStartedAt() { return processingStartedAt; }
     public Instant getProcessingUpdatedAt() { return processingUpdatedAt; }
+    public String getOrigin() { return origin; }
 }

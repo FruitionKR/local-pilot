@@ -46,12 +46,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -198,6 +201,48 @@ public class DocumentService {
         });
     }
 
+    /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
+    public record ExportDocumentResult(String documentId, boolean skipped) {}
+
+    /**
+     * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
+     * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
+     */
+    @Transactional
+    public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
+                                                         String filename, String markdown, String contentHash) {
+        Optional<Document> existing = documentRepository.findByContentHash(contentHash);
+        if (existing.isPresent()) {
+            return new ExportDocumentResult(existing.get().getId(), true);
+        }
+
+        String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
+        String objectPath = "sources/documents/" + documentId + "/original";
+        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectPath)
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 저장 중 오류가 발생했습니다.", e);
+        }
+
+        Document document = new Document(
+                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
+                objectPath, contentHash, "chat_export");
+        documentRepository.save(document);
+
+        requestProcessingAfterCommit(documentId);
+
+        return new ExportDocumentResult(documentId, false);
+    }
+
     void doRequestProcessing(String documentId) {
         Document document = documentRepository.findById(documentId).orElse(null);
         if (document == null) return;
@@ -234,7 +279,7 @@ public class DocumentService {
     public DocumentListResponse findAll(String workspaceId, String userId) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<DocumentListResponse.DocumentItem> items = documentRepository.findAllByWorkspaceId(workspaceId).stream()
+        List<DocumentListResponse.DocumentItem> items = documentRepository.findVisibleByWorkspaceId(workspaceId).stream()
                 .map(doc -> new DocumentListResponse.DocumentItem(
                         doc.getId(),
                         doc.getFilename(),
