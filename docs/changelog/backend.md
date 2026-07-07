@@ -6,6 +6,35 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-07
+
+### feat: 채팅 세션 Wiki page화 (chat → wiki export)
+
+**배경**
+
+저장된 채팅을 검색 가능한 wiki graph에 편입하려면 채팅을 Markdown 원문 문서로 만들어 기존 문서 ingestion 파이프라인에 넣어야 한다. `llmPipeline`엔 위키 생성 전용 API가 없고 위키는 문서 ingestion(source/concept page)으로만 생성되므로, 채팅을 "문서처럼" 태우는 경로를 재사용한다. 설계는 `docs/spec/chat-to-wiki-contract.md`를 따른다.
+
+**추가/변경된 것**
+
+- `chat/service/ChatWikiMarkdownSerializer`(신규): 세션 + completed 메시지를 계약 §6 Markdown으로 직렬화.
+- `util/SecretMasker`(신규): export 전 best-effort 비밀값 마스킹(private key 블록, `sk-`/`AKIA`/`ghp_` 등, Bearer, `key=value`).
+- `chat/service/ChatWikiExportService`(신규): 권한검증 → 직렬화 → 마스킹 → 안정 content_hash(sessionId + 대화내용, `exported_at` 등 휘발성 제외) → 문서 저장/큐 등록 위임. export 시 `ChatSession.wikiExportDocumentId` 기록. 임시 `previewMarkdown`과 정식 `export` 제공.
+- `document/service/DocumentService`: `createChatExportDocument` 추가(dedup → MinIO 저장 → `documents` 행(origin=chat_export) → 처리 큐 등록). `findAll`을 `findVisibleByWorkspaceId`로 바꿔 문서 목록에서 chat_export 제외.
+- `document/domain/Document`: `origin` 컬럼 추가(upload/chat_export). `document/repository/DocumentRepository`: `findVisibleByWorkspaceId`(null 안전).
+- `chat/service/ChatWikiExportReconciler`(신규): 파이프라인이 완료를 DB에 직접 쓰므로(백엔드 콜백 미경유), `@Scheduled`로 completed된 chat_export를 감지해 `source_of` 링크 → `ChatSession.wikiPageId` 연결.
+- `chat/domain/ChatSession`: `wikiExportDocumentId` 컬럼 + 링크 도메인 메서드. `chat/controller/ChatWikiExportController`(신규): `POST .../{session_id}/wiki`(202) 및 임시 `.../wiki/preview`.
+
+**검증**
+
+- `./gradlew test` 문서/serializer/masker 단위테스트 및 컨텍스트 배선 통과(upload 회귀 없음).
+- 라이브 e2e: `POST .../wiki` → 202, `documents(origin=chat_export, status=completed)`, 파이프라인이 `wiki_pages(source, active)` + concept + `document_wiki_links(source_of)` 생성, reconciler가 `ChatSession.wikiPageId`를 자동 연결함을 확인.
+
+**주의사항 / 남은 작업**
+
+- **재-export(재위키화)는 미지원** — 추후 과제. 내용이 바뀐 재-export는 옛 위키가 graph에 남고 reconciler가 새 export를 연결하지 못하는 gap이 있어, 구현 시 함께 해결해야 한다.
+- 마스킹은 정규식 best-effort라 오탐/누락 가능. 위키 공유·공개 단계에서 재설계 필요.
+- 초기 설계의 message↔block 매핑 테이블/heading 앵커는 계약 미규정·미사용이라 제외했다(source_blocks로 충분).
+
 ## 2026-07-04
 
 ### feat: wiki 조회를 workspace 경로 기반으로 격리 (Scope B)
