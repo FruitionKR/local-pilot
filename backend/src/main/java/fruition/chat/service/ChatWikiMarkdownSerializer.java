@@ -10,10 +10,6 @@ import java.util.List;
 /**
  * 저장된 채팅 세션을 llmPipeline이 일반 문서처럼 처리할 수 있는 Markdown 원문으로 직렬화한다.
  * 형식은 docs/spec/chat-to-wiki-contract.md §6을 따른다.
- *
- * 각 메시지 heading에 {@code · msg:{id}} 앵커를 넣어, 이후 block ↔ 원본 메시지 매핑에 쓸 수 있게 한다.
- *
- * NOTE(임시): 미리보기 스파이크 단계라 비밀값 마스킹(§12.4)은 아직 적용하지 않는다.
  */
 @Component
 public class ChatWikiMarkdownSerializer {
@@ -38,8 +34,7 @@ public class ChatWikiMarkdownSerializer {
                 continue;
             }
             sb.append("### ").append(message.getCreatedAt())
-              .append(" ").append(displayRole(message.getRole()))
-              .append(" · msg:").append(message.getId()).append("\n\n");
+              .append(" ").append(displayRole(message.getRole())).append("\n\n");
             sb.append(message.getContent().strip()).append("\n\n");
         }
 

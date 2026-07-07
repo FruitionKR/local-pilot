@@ -4,9 +4,11 @@ import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatSession;
 import fruition.chat.dto.ChatWikiExportResponse;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.chat.repository.ChatSessionRepository;
 import fruition.document.service.DocumentService;
 import fruition.util.SecretMasker;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -18,25 +20,29 @@ import java.util.List;
  * 채팅 세션을 Wiki page화하기 위한 export 오케스트레이션.
  *
  * 세션을 Markdown으로 직렬화·마스킹한 뒤, 문서 저장/큐 등록은 {@link DocumentService}에 위임한다.
- * 실제 위키 생성은 기존 문서 ingestion 파이프라인이 담당한다. (docs/spec/features/chat-wiki-export.md)
+ * 실제 위키 생성은 기존 문서 ingestion 파이프라인이 담당한다. (docs/spec/chat-to-wiki-contract.md)
  *
- * NOTE(현재 단계): 완료 후 세션↔위키 연결과 block 매핑(Stage 3~4)은 아직 없다.
+ * 완료 후 세션↔source wiki page 연결은, 파이프라인이 DB에 직접 기록하는 완료 상태를
+ * {@link ChatWikiExportReconciler}가 폴링으로 감지해 처리한다.
  */
 @Service
 public class ChatWikiExportService {
 
     private final ChatSessionService chatSessionService;
+    private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatWikiMarkdownSerializer serializer;
     private final SecretMasker secretMasker;
     private final DocumentService documentService;
 
     public ChatWikiExportService(ChatSessionService chatSessionService,
+                                 ChatSessionRepository chatSessionRepository,
                                  ChatMessageRepository chatMessageRepository,
                                  ChatWikiMarkdownSerializer serializer,
                                  SecretMasker secretMasker,
                                  DocumentService documentService) {
         this.chatSessionService = chatSessionService;
+        this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.serializer = serializer;
         this.secretMasker = secretMasker;
@@ -51,6 +57,7 @@ public class ChatWikiExportService {
     }
 
     /** 세션을 문서로 저장하고 처리 큐에 등록한다. 파이프라인이 이후 비동기로 위키를 생성한다. */
+    @Transactional
     public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId) {
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
@@ -61,6 +68,10 @@ public class ChatWikiExportService {
 
         DocumentService.ExportDocumentResult result =
                 documentService.createChatExportDocument(workspaceId, userId, filename, markdown, contentHash);
+
+        // 완료 콜백에서 이 세션을 역조회해 wiki_page_id를 연결할 수 있도록 export 문서 id를 기록한다.
+        session.assignWikiExportDocument(result.documentId());
+        chatSessionRepository.save(session);
 
         String status = result.skipped() ? "skipped" : "processing";
         return new ChatWikiExportResponse(result.documentId(), status);
