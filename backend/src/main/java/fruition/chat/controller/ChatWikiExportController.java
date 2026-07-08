@@ -1,5 +1,6 @@
 package fruition.chat.controller;
 
+import fruition.chat.dto.ChatWikiExportRequest;
 import fruition.chat.dto.ChatWikiExportResponse;
 import fruition.chat.service.ChatWikiExportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,14 +31,16 @@ public class ChatWikiExportController {
     }
 
     @Operation(summary = "채팅 Wiki page화",
-            description = "세션을 Markdown 문서로 저장하고 처리 큐에 등록합니다. 위키 생성은 파이프라인이 비동기로 수행합니다.")
+            description = "세션(full) 또는 선택 문답(partial)을 Markdown 문서로 저장하고 처리 큐에 등록합니다. "
+                    + "위키 생성은 파이프라인이 비동기로 수행합니다.")
     @PostMapping("/{session_id}/wiki")
     public ResponseEntity<ChatWikiExportResponse> exportToWiki(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @Parameter(description = "채팅 세션 ID", example = "session_abc12345")
-            @PathVariable("session_id") String sessionId) {
-        return ResponseEntity.accepted().body(chatWikiExportService.export(workspaceId, userId, sessionId));
+            @PathVariable("session_id") String sessionId,
+            @RequestBody ChatWikiExportRequest request) {
+        return ResponseEntity.accepted().body(chatWikiExportService.export(workspaceId, userId, sessionId, request));
     }
 
     @Operation(summary = "[임시] 채팅 Wiki page화 Markdown 미리보기",

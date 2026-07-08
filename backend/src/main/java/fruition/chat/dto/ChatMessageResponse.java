@@ -8,6 +8,7 @@ import java.util.List;
 
 public record ChatMessageResponse(
         String id,
+        @JsonProperty("pair_id") String pairId,
         String role,
         String content,
         String status,

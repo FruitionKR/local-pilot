@@ -143,7 +143,7 @@ public class ChatSessionController {
                             ))
                             .toList();
                     var relatedPages = relatedPagesByMessageId.getOrDefault(m.getId(), List.of());
-                    return new ChatMessageResponse(m.getId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(), relatedPages, refs, m.getErrorMessage());
+                    return new ChatMessageResponse(m.getId(), m.getPairId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(), relatedPages, refs, m.getErrorMessage());
                 })
                 .toList();
 

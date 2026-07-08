@@ -2,8 +2,10 @@ package fruition.chat.service;
 
 import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatSession;
+import fruition.chat.dto.ChatWikiExportRequest;
 import fruition.chat.dto.ChatWikiExportResponse;
 import fruition.chat.exception.EmptyChatWikiExportException;
+import fruition.chat.exception.InvalidChatWikiExportRequestException;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.chat.repository.ChatSessionRepository;
 import fruition.document.service.DocumentService;
@@ -13,9 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Instant;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 채팅 세션을 Wiki page화하기 위한 export 오케스트레이션.
@@ -50,24 +53,27 @@ public class ChatWikiExportService {
         this.documentService = documentService;
     }
 
-    /** 세션을 Wiki page화용 Markdown으로 직렬화하고 비밀값을 마스킹해 반환한다. (저장/파이프라인 호출 없음) */
+    /** 세션 전체를 Wiki page화용 Markdown으로 직렬화하고 비밀값을 마스킹해 반환한다. (저장/파이프라인 호출 없음) */
     public String previewMarkdown(String workspaceId, String userId, String sessionId) {
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
         return buildMaskedMarkdown(session, messages);
     }
 
-    /** 세션을 문서로 저장하고 처리 큐에 등록한다. 파이프라인이 이후 비동기로 위키를 생성한다. */
+    /** 선택된(full=전체 / partial=선택 문답) 채팅을 문서로 저장하고 처리 큐에 등록한다. */
     @Transactional
-    public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId) {
+    public ChatWikiExportResponse export(String workspaceId, String userId, String sessionId,
+                                         ChatWikiExportRequest request) {
+        validate(request);
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
-        if (messages.stream().noneMatch(m -> "completed".equals(m.getStatus()))) {
+        List<ChatMessage> selected = selectMessages(messages, request);
+
+        String markdown = buildMaskedMarkdown(session, selected);
+        if (!markdown.contains("]Q : ")) { // 완전한 문답이 하나도 없음
             throw new EmptyChatWikiExportException(sessionId);
         }
-
-        String markdown = buildMaskedMarkdown(session, messages);
-        String contentHash = stableContentHash(session, messages);
+        String contentHash = stableContentHash(session, selected);
         String filename = titleOf(session) + ".md";
 
         DocumentService.ExportDocumentResult result =
@@ -81,14 +87,35 @@ public class ChatWikiExportService {
         return new ChatWikiExportResponse(result.documentId(), status);
     }
 
+    private void validate(ChatWikiExportRequest request) {
+        if (request == null || request.selectionMode() == null) {
+            throw new InvalidChatWikiExportRequestException("selection_mode는 필수입니다.");
+        }
+        boolean full = "full".equals(request.selectionMode());
+        boolean partial = "partial".equals(request.selectionMode());
+        if (!full && !partial) {
+            throw new InvalidChatWikiExportRequestException("selection_mode는 full 또는 partial이어야 합니다.");
+        }
+        if (partial && (request.pairIds() == null || request.pairIds().isEmpty())) {
+            throw new InvalidChatWikiExportRequestException("partial 선택은 pair_ids가 필요합니다.");
+        }
+    }
+
+    /** partial이면 선택된 pair_id의 메시지만, full이면 전체를 반환한다. */
+    private List<ChatMessage> selectMessages(List<ChatMessage> messages, ChatWikiExportRequest request) {
+        if ("partial".equals(request.selectionMode())) {
+            Set<String> selectedPairIds = new HashSet<>(request.pairIds());
+            return messages.stream().filter(m -> selectedPairIds.contains(m.getPairId())).toList();
+        }
+        return messages;
+    }
+
     private String buildMaskedMarkdown(ChatSession session, List<ChatMessage> messages) {
-        String markdown = serializer.serialize(session, messages, Instant.now());
-        return secretMasker.mask(markdown);
+        return secretMasker.mask(serializer.serialize(session, messages));
     }
 
     /**
-     * 재-export 중복 판별용 안정 해시. exported_at 같은 휘발성 값은 제외하고
-     * conversation(session id)과 completed 메시지의 role/content만 기준으로 삼는다. (spec A-1)
+     * 재-export 중복 판별용 안정 해시. conversation(session id)과 completed 메시지의 role/content만 기준으로 삼는다. (spec A-1)
      */
     private String stableContentHash(ChatSession session, List<ChatMessage> messages) {
         StringBuilder sb = new StringBuilder(session.getId());

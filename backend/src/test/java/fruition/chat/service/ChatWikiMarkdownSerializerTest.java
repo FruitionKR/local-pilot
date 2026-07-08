@@ -14,57 +14,79 @@ class ChatWikiMarkdownSerializerTest {
 
     private final ChatWikiMarkdownSerializer serializer = new ChatWikiMarkdownSerializer();
 
-    private static final Instant EXPORTED_AT = Instant.parse("2026-07-07T00:00:00Z");
     private static final Instant T1 = Instant.parse("2026-07-07T10:00:00Z");
     private static final Instant T2 = Instant.parse("2026-07-07T10:00:01Z");
     private static final Instant T3 = Instant.parse("2026-07-07T10:01:00Z");
+    private static final Instant T4 = Instant.parse("2026-07-07T10:01:01Z");
 
-    private ChatMessage message(ChatSession session, String id, String role, String content, String status, Instant createdAt) {
-        return new ChatMessage(id, session, "pair_1", role, content, status, createdAt, null);
+    private ChatMessage message(ChatSession session, String id, String pairId, String role,
+                                String content, String status, Instant createdAt) {
+        return new ChatMessage(id, session, pairId, role, content, status, createdAt, null);
     }
 
     @Test
-    @DisplayName("§6 구조로 completed 메시지를 시간순으로 직렬화한다")
-    void serializesCompletedMessagesInOrder() {
-        ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "LangSmith 설정 논의");
-        List<ChatMessage> messages = List.of(
-                message(session, "m1", "user", "LangSmith 연결은 어디서 봐?", "completed", T1),
-                message(session, "m2", "assistant", "traces 화면에서 확인합니다.", "completed", T2)
-        );
-
-        String md = serializer.serialize(session, messages, EXPORTED_AT);
-
-        assertThat(md).contains("# LangSmith 설정 논의");
-        assertThat(md).contains("- workspace_id: ws_1");
-        assertThat(md).contains("- conversation_id: session_1");
-        assertThat(md).contains("- exported_at: 2026-07-07T00:00:00Z");
-        assertThat(md).contains("### 2026-07-07T10:00:00Z User");
-        assertThat(md).contains("LangSmith 연결은 어디서 봐?");
-        assertThat(md).contains("### 2026-07-07T10:00:01Z Assistant");
-        // 순서 보존: user 발화가 assistant 발화보다 앞
-        assertThat(md.indexOf("LangSmith 연결은")).isLessThan(md.indexOf("traces 화면"));
-    }
-
-    @Test
-    @DisplayName("completed가 아닌 메시지는 제외한다")
-    void skipsNonCompletedMessages() {
+    @DisplayName("§4 형식으로 문답을 [session:pair]Q/A 단위로 직렬화한다")
+    void serializesPairInContractFormat() {
         ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
         List<ChatMessage> messages = List.of(
-                message(session, "m1", "user", "질문1", "completed", T1),
-                message(session, "m_fail", "user", "실패한질문", "failed", T3)
+                message(session, "m1", "pair_1", "user", "LangSmith 연결은 어디서 봐?", "completed", T1),
+                message(session, "m2", "pair_1", "assistant", "traces 화면에서 확인합니다.", "completed", T2)
         );
 
-        String md = serializer.serialize(session, messages, EXPORTED_AT);
+        String md = serializer.serialize(session, messages);
 
-        assertThat(md).contains("질문1");
-        assertThat(md).doesNotContain("실패한질문");
+        assertThat(md).startsWith("# Chat Export");
+        assertThat(md).contains("[session_1:pair_1]Q : LangSmith 연결은 어디서 봐?");
+        assertThat(md).contains("A : traces 화면에서 확인합니다.");
     }
 
     @Test
-    @DisplayName("title이 비어 있으면 세션 id 기반 제목으로 대체한다")
-    void fallsBackToSessionIdTitle() {
-        ChatSession session = new ChatSession("session_1", "ws_1", "user_1", null);
-        String md = serializer.serialize(session, List.of(), EXPORTED_AT);
-        assertThat(md).contains("# 채팅 session_1");
+    @DisplayName("여러 문답을 대화 순서대로 직렬화하고 문답 사이는 빈 줄로 구분한다")
+    void serializesMultiplePairsInOrder() {
+        ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
+        List<ChatMessage> messages = List.of(
+                message(session, "m1", "pair_1", "user", "질문1", "completed", T1),
+                message(session, "m2", "pair_1", "assistant", "답변1", "completed", T2),
+                message(session, "m3", "pair_2", "user", "질문2", "completed", T3),
+                message(session, "m4", "pair_2", "assistant", "답변2", "completed", T4)
+        );
+
+        String md = serializer.serialize(session, messages);
+
+        assertThat(md.indexOf("pair_1")).isLessThan(md.indexOf("pair_2"));
+        // 문답 사이 빈 줄 구분
+        assertThat(md).contains("A : 답변1\n\n[session_1:pair_2]Q : 질문2");
+    }
+
+    @Test
+    @DisplayName("user 또는 assistant가 완료되지 않은 불완전 문답은 제외한다")
+    void skipsIncompletePairs() {
+        ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
+        List<ChatMessage> messages = List.of(
+                message(session, "m1", "pair_1", "user", "정상질문", "completed", T1),
+                message(session, "m2", "pair_1", "assistant", "정상답변", "completed", T2),
+                message(session, "m3", "pair_2", "user", "질문만있음", "completed", T3),
+                message(session, "m4", "pair_2", "assistant", "실패답변", "failed", T4)
+        );
+
+        String md = serializer.serialize(session, messages);
+
+        assertThat(md).contains("pair_1").contains("정상질문");
+        assertThat(md).doesNotContain("pair_2").doesNotContain("질문만있음").doesNotContain("실패답변");
+    }
+
+    @Test
+    @DisplayName("문답 1쌍 안의 빈 줄은 단일 개행으로 접는다")
+    void collapsesBlankLinesWithinPair() {
+        ChatSession session = new ChatSession("session_1", "ws_1", "user_1", "제목");
+        List<ChatMessage> messages = List.of(
+                message(session, "m1", "pair_1", "user", "질문", "completed", T1),
+                message(session, "m2", "pair_1", "assistant", "줄1\n\n줄2", "completed", T2)
+        );
+
+        String md = serializer.serialize(session, messages);
+
+        assertThat(md).contains("A : 줄1\n줄2");
+        assertThat(md).doesNotContain("줄1\n\n줄2");
     }
 }

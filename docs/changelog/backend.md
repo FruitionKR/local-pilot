@@ -6,6 +6,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-08
+
+### refactor: 채팅 Wiki page화를 문답(pair) 단위 직렬화 + full/partial 선택으로 전환
+
+**배경**
+
+채팅 → 위키 계약이 개정되어(v2), 직렬화 단위를 메시지 → 문답(pair)로, 원문 링크 식별을 `session_id + pair_id`로 바꾼다. 이 커밋은 backend의 직렬화·선택 부분을 새 계약(§4)에 맞춘다. 입력 방식은 "storage/document_id 유지" 결정에 따라 그대로 둔다.
+
+**추가/변경된 것**
+
+- `chat/service/ChatWikiMarkdownSerializer`: 메시지 단위 헤딩 → **문답 pair 단위 `[session_id:pair_id]Q : … / A : …`** 포맷(§4). 불완전 문답(user·assistant 미완) 제외, 문답 내 빈 줄 접기.
+- `chat/service/ChatWikiExportService.export`: `ChatWikiExportRequest(selection_mode, pair_ids)`를 받아 **full(전체) / partial(선택 문답)** 직렬화. partial은 선택된 pair만 포함.
+- `chat/dto/ChatWikiExportRequest`(신규), `chat/exception/InvalidChatWikiExportRequestException`(신규 → 400 `INVALID_CHAT_WIKI_EXPORT_REQUEST`): selection_mode 검증.
+- `chat/dto/ChatMessageResponse`에 `pair_id` 노출 — 프론트가 문답 단위로 선택할 수 있게.
+
+**검증**
+
+- serializer 단위테스트 재작성(포맷·순서·불완전 제외·빈 줄 접기).
+- 라이브 e2e: full/partial 각각 export → `source_blocks`에 `[session:pair]Q/A` 포맷 저장, partial은 선택 pair만 담김, `wiki_pages` 생성 확인.
+
+**주의사항 (breaking)**
+
+- `POST .../{session_id}/wiki`가 **요청 body 필수**로 바뀜: `{"selection_mode":"full"}` 또는 `{"selection_mode":"partial","pair_ids":[...]}`. 무 body 호출은 400.
+- chat_pair provenance·append/create·pair dedup·query 링크는 pipeline(A·B) 이후. 현재는 pipeline이 새 포맷을 일반 문서로 처리하며, source page 제목이 모두 "Chat Export"로 동일해지는 한계가 있다.
+
 ## 2026-07-07
 
 ### feat: 채팅 세션 Wiki page화 (chat → wiki export)
