@@ -69,7 +69,7 @@ class ChatWikiExportServiceTest {
 
     private ArgumentCaptor<String> stubDocumentCreation() {
         ArgumentCaptor<String> markdown = ArgumentCaptor.forClass(String.class);
-        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), markdown.capture(), anyString()))
+        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), markdown.capture(), anyString(), anyString()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_1", false));
         return markdown;
     }
@@ -109,7 +109,7 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
-        when(documentService.createChatExportDocument(any(), any(), any(), any(), any()))
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_existing", true));
 
         ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));

@@ -210,7 +210,11 @@ public class DocumentService {
      */
     @Transactional
     public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
-                                                         String filename, String markdown, String contentHash) {
+                                                         String filename, String markdown, String contentHash,
+                                                         String selectionMode) {
+        if (selectionMode == null || selectionMode.isBlank()) {
+            throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
+        }
         Optional<Document> existing = documentRepository.findByContentHash(contentHash);
         if (existing.isPresent()) {
             return new ExportDocumentResult(existing.get().getId(), true);
@@ -236,6 +240,7 @@ public class DocumentService {
         Document document = new Document(
                 documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
                 objectPath, contentHash, "chat_export");
+        document.assignSelectionMode(selectionMode);
         documentRepository.save(document);
 
         requestProcessingAfterCommit(documentId);
@@ -249,7 +254,8 @@ public class DocumentService {
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
-                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(), callbackUrl);
+                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
+                            callbackUrl, document.getSelectionMode());
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {

@@ -60,6 +60,10 @@ public class Document {
     @Column(name = "origin")
     private String origin;
 
+    /** 채팅 export의 선택 모드("full"/"partial"). 파이프라인에 전달한다. 일반 업로드는 null. */
+    @Column(name = "selection_mode")
+    private String selectionMode;
+
     protected Document() {}
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
@@ -128,4 +132,7 @@ public class Document {
     public Instant getProcessingStartedAt() { return processingStartedAt; }
     public Instant getProcessingUpdatedAt() { return processingUpdatedAt; }
     public String getOrigin() { return origin; }
+
+    public void assignSelectionMode(String selectionMode) { this.selectionMode = selectionMode; }
+    public String getSelectionMode() { return selectionMode; }
 }

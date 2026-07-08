@@ -76,8 +76,8 @@ public class ChatWikiExportService {
         String contentHash = stableContentHash(session, selected);
         String filename = titleOf(session) + ".md";
 
-        DocumentService.ExportDocumentResult result =
-                documentService.createChatExportDocument(workspaceId, userId, filename, markdown, contentHash);
+        DocumentService.ExportDocumentResult result = documentService.createChatExportDocument(
+                workspaceId, userId, filename, markdown, contentHash, request.selectionMode());
 
         // 완료 콜백에서 이 세션을 역조회해 wiki_page_id를 연결할 수 있도록 export 문서 id를 기록한다.
         session.assignWikiExportDocument(result.documentId());

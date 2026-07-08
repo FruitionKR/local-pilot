@@ -20,6 +20,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `chat/service/ChatWikiExportService.export`: `ChatWikiExportRequest(selection_mode, pair_ids)`를 받아 **full(전체) / partial(선택 문답)** 직렬화. partial은 선택된 pair만 포함.
 - `chat/dto/ChatWikiExportRequest`(신규), `chat/exception/InvalidChatWikiExportRequestException`(신규 → 400 `INVALID_CHAT_WIKI_EXPORT_REQUEST`): selection_mode 검증.
 - `chat/dto/ChatMessageResponse`에 `pair_id` 노출 — 프론트가 문답 단위로 선택할 수 있게.
+- `document/domain/Document`에 `selection_mode` 컬럼 추가. export 시 저장하고, 워커가 `/pipeline/runs` 요청에 `selection_mode`로 전달한다(`@JsonInclude(NON_NULL)`이라 일반 업로드 요청은 불변). `createChatExportDocument`는 chat_export 문서에 selection_mode가 비면 생성을 거부한다. 파이프라인이 아직 이 값을 읽지 않아 현재는 no-op이며, append/create_new 분기 구현 시 사용된다.
 
 **검증**
 

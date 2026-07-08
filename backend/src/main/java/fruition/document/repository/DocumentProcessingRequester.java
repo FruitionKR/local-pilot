@@ -1,5 +1,6 @@
 package fruition.document.repository;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,8 +27,9 @@ public class DocumentProcessingRequester {
                 .build();
     }
 
-    public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl) {
-        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl);
+    public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
+                                       String selectionMode) {
+        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode);
         try {
             PipelineRunResponse response = restClient.post()
                     .uri(processingEndpoint)
@@ -58,7 +60,8 @@ public class DocumentProcessingRequester {
             @JsonProperty("document_id") String documentId,
             @JsonProperty("user_id") String userId,
             @JsonProperty("workspace_id") String workspaceId,
-            @JsonProperty("log_callback_url") String logCallbackUrl
+            @JsonProperty("log_callback_url") String logCallbackUrl,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode
     ) {}
 
     public record PipelineRunResponse(
