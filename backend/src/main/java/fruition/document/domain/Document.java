@@ -68,6 +68,13 @@ public class Document {
     @Column(name = "selection_mode")
     private String selectionMode;
 
+    /**
+     * full 재생성 시 파이프라인에 inline으로 보낼 미편입 문답(delta) Markdown. 있으면 storage 대신 이 값을 input_markdown으로 전달한다.
+     * 일반 업로드·첫 export는 null(= document_id + storage 경로).
+     */
+    @Column(name = "pipeline_input_markdown", columnDefinition = "TEXT")
+    private String pipelineInputMarkdown;
+
     protected Document() {}
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
@@ -122,6 +129,19 @@ public class Document {
         this.filename = filename;
     }
 
+    /**
+     * 채팅 full 재생성: 기존 export 문서를 갱신해 재처리한다. MinIO 원본은 세션 전체로 덮어쓴 뒤,
+     * 그 전체 내용의 해시/크기로 갱신하고, 파이프라인엔 delta만 inline으로 보낸다.
+     */
+    public void reopenForChatExportRegeneration(String contentHash, long byteSize, String pipelineInputMarkdown) {
+        this.contentHash = contentHash;
+        this.byteSize = byteSize;
+        this.status = DocumentStatus.processing;
+        this.processedAt = null;
+        this.errorMessage = null;
+        this.pipelineInputMarkdown = pipelineInputMarkdown;
+    }
+
     public String getId() { return id; }
     public String getWorkspaceId() { return workspaceId; }
     public String getUserId() { return userId; }
@@ -143,4 +163,5 @@ public class Document {
 
     public void assignSelectionMode(String selectionMode) { this.selectionMode = selectionMode; }
     public String getSelectionMode() { return selectionMode; }
+    public String getPipelineInputMarkdown() { return pipelineInputMarkdown; }
 }

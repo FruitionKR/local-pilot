@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-09
 
+### feat: 채팅 full 재생성 시 기존 문서 재사용 + delta inline markdown 전송
+
+**배경**
+
+이미 위키가 연결된 세션을 다시 full로 export(재생성)할 때, 매번 새 문서를 만들지 않고 **기존 export 문서를 갱신**한다. 원본은 세션 전체로 덮어써 누적 기록을 유지하고, 파이프라인엔 미편입 문답(delta)만 inline으로 보내 append 처리에 쓰게 한다.
+
+**추가/변경된 것**
+
+- `document/domain/Document`: `pipeline_input_markdown`(TEXT) 컬럼 추가 + `reopenForChatExportRegeneration(contentHash, byteSize, inputMarkdown)`(status=processing 리셋, 원본 해시/크기 갱신, inline delta 저장).
+- `document/service/DocumentService`: `regenerateChatExportDocument(documentId, fullMarkdown, fullContentHash, deltaMarkdown)` 추가 — 기존 문서의 MinIO 원본을 세션 전체로 **덮어쓰고** 처리 큐에 재등록. `doRequestProcessing`가 `Document.pipelineInputMarkdown`을 파이프라인 요청에 전달.
+- `document/repository/DocumentProcessingRequester`: `PipelineRunRequest`에 `input_markdown`(`@JsonInclude(NON_NULL)`) 추가. 일반 업로드·첫 export는 null이라 키가 빠져 요청 불변.
+- `chat/service/ChatWikiExportService`: `isRegeneration`(`full` + `session.wikiPageId != null` + `wikiExportDocumentId != null`) 분기. 재생성이면 기존 문서 재사용(원본=세션 전체, inline=delta), 그 외는 기존 신규 생성 경로.
+
+**검증**
+
+- 단위테스트 추가(재생성: 기존 문서 재사용, 원본=전체·inline=delta 분리, 신규 생성 경로 미호출). 전체 테스트 통과.
+
+**주의사항 (하드 블로커)**
+
+- **full 재생성은 llmPipeline 변경 전까지 실패한다.** 현재 `PipelineRunIn`은 `document_id`/`input_markdown` 중 하나만 허용(`exactly_one_input`)하고, inline 경로는 합성 `api-inline-{run_id}` id를 만들어 완료·reconciler가 깨진다. 파이프라인이 `document_id`(신원) + `input_markdown`(내용) 동시 수용 + `selection_mode` append 처리를 구현해야 한다. 상세: `docs/issue/2026-07-09.md` "llmPipeline 후속 작업".
+- 첫 full·partial·일반 업로드는 기존 `document_id`+storage 경로 그대로.
+
 ### feat: partial 발췌 위키 멤버십(chat_partial_wiki) 기록 + 문답별 위키 노출
 
 **배경**

@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -146,5 +147,36 @@ class ChatWikiExportServiceTest {
 
         assertThatThrownBy(() -> service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null)))
                 .isInstanceOf(EmptyChatWikiExportException.class);
+    }
+
+    @Test
+    @DisplayName("이미 위키가 연결된 세션을 full로 다시 export하면 기존 문서를 재생성한다(원본=전체, inline=delta)")
+    void fullRegenerationReusesDocumentWithDeltaInline() {
+        ChatSession s = session();
+        s.linkWikiPage("wiki_page_x");            // 이미 위키 연결됨(재생성 조건)
+        s.assignWikiExportDocument("chatdoc_1");  // 재사용할 기존 export 문서
+
+        ChatMessage u1 = msg(s, "u1", "p1", "user", "질문1", "completed");
+        ChatMessage a1 = msg(s, "a1", "p1", "assistant", "답변1", "completed");
+        u1.markIngested("wiki_page_x");           // p1은 이미 편입됨 → delta 제외
+        a1.markIngested("wiki_page_x");
+        ChatMessage u2 = msg(s, "u2", "p2", "user", "질문2", "completed");   // p2는 새 문답(미편입)
+        ChatMessage a2 = msg(s, "a2", "p2", "assistant", "답변2", "completed");
+
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION))
+                .thenReturn(List.of(u1, a1, u2, a2));
+
+        ArgumentCaptor<String> full = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> delta = ArgumentCaptor.forClass(String.class);
+
+        ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        assertThat(response.status()).isEqualTo("processing");
+        assertThat(response.exportDocumentId()).isEqualTo("chatdoc_1");
+        verify(documentService).regenerateChatExportDocument(eq("chatdoc_1"), full.capture(), anyString(), delta.capture());
+        assertThat(full.getValue()).contains("[session_1:p1]").contains("[session_1:p2]");   // 원본은 전체
+        assertThat(delta.getValue()).contains("[session_1:p2]").doesNotContain("[session_1:p1]"); // inline은 delta만
+        verify(documentService, never()).createChatExportDocument(any(), any(), any(), any(), any(), any());
     }
 }

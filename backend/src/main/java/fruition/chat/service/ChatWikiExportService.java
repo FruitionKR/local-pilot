@@ -77,6 +77,18 @@ public class ChatWikiExportService {
         if (!markdown.contains("]Q : ")) { // 완전한 문답이 하나도 없음
             throw new EmptyChatWikiExportException(sessionId);
         }
+
+        // full 재생성: 이미 위키가 연결된 세션을 다시 full로 export → 기존 문서 재사용, 원본은 세션 전체로 갱신,
+        // 파이프라인엔 미편입 문답(delta=markdown)만 inline으로 전송.
+        if (isRegeneration(session, request)) {
+            String documentId = session.getWikiExportDocumentId();
+            String fullMarkdown = buildMaskedMarkdown(session, messages);
+            String fullHash = stableContentHash(session, messages);
+            log.info("[chat-wiki][export] 재생성 session={} document={} delta={}건", sessionId, documentId, selected.size());
+            documentService.regenerateChatExportDocument(documentId, fullMarkdown, fullHash, markdown);
+            return new ChatWikiExportResponse(documentId, "processing");
+        }
+
         String contentHash = stableContentHash(session, selected);
         String filename = titleOf(session) + ".md";
 
@@ -92,6 +104,13 @@ public class ChatWikiExportService {
         String status = result.skipped() ? "skipped" : "processing";
         log.info("[chat-wiki][export] 등록 session={} document={} status={}", sessionId, result.documentId(), status);
         return new ChatWikiExportResponse(result.documentId(), status);
+    }
+
+    /** full이면서 이미 위키가 연결된 세션(= 재생성)이고, 재사용할 기존 export 문서가 있으면 true. */
+    private boolean isRegeneration(ChatSession session, ChatWikiExportRequest request) {
+        return "full".equals(request.selectionMode())
+                && session.getWikiPageId() != null
+                && session.getWikiExportDocumentId() != null;
     }
 
     private void validate(ChatWikiExportRequest request) {

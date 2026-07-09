@@ -28,8 +28,8 @@ public class DocumentProcessingRequester {
     }
 
     public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
-                                       String selectionMode) {
-        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode);
+                                       String selectionMode, String inputMarkdown) {
+        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown);
         try {
             PipelineRunResponse response = restClient.post()
                     .uri(processingEndpoint)
@@ -61,7 +61,8 @@ public class DocumentProcessingRequester {
             @JsonProperty("user_id") String userId,
             @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("log_callback_url") String logCallbackUrl,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown
     ) {}
 
     public record PipelineRunResponse(

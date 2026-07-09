@@ -248,6 +248,34 @@ public class DocumentService {
         return new ExportDocumentResult(documentId, false);
     }
 
+    /**
+     * 채팅 full 재생성: 기존 export 문서(documentId)를 재사용한다. MinIO 원본을 세션 전체(fullMarkdown)로 덮어쓰고,
+     * 파이프라인엔 미편입 문답(deltaMarkdown)만 inline으로 보내도록 문서를 갱신한 뒤 처리 큐에 재등록한다.
+     */
+    @Transactional
+    public void regenerateChatExportDocument(String documentId, String fullMarkdown, String fullContentHash,
+                                             String deltaMarkdown) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(document.getSourceUri())
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 재생성 저장 중 오류가 발생했습니다.", e);
+        }
+
+        document.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
+        requestProcessingAfterCommit(documentId);
+    }
+
     void doRequestProcessing(String documentId) {
         Document document = documentRepository.findById(documentId).orElse(null);
         if (document == null) return;
@@ -255,7 +283,7 @@ public class DocumentService {
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
                     processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
-                            callbackUrl, document.getSelectionMode());
+                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown());
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
