@@ -1,7 +1,9 @@
 package fruition.chat.service;
 
 import fruition.chat.domain.ChatMessage;
+import fruition.chat.domain.ChatPartialWiki;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.chat.repository.ChatPartialWikiRepository;
 import fruition.chat.repository.ChatSessionRepository;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentStatus;
@@ -16,9 +18,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,9 +30,14 @@ import java.util.regex.Pattern;
  * 채팅 Wiki page화 export의 처리 완료를 폴링으로 감지해 후처리한다.
  *
  * 파이프라인은 완료 시 documents.status='completed'와 wiki_pages/links/source_blocks를 한 트랜잭션으로 DB에 직접
- * 쓴다(백엔드 콜백 미경유). 그래서 완료를 push로 받을 수 없어, 완료된 chat_export 문서를 주기적으로 훑어
- * <b>full</b> export에 한해 (1) source wiki page를 세션에 연결하고 (2) 편입된 문답을 {@code chat_messages.wiki_page_id}로
- * 마킹한다(= 다음 full에서 필터로 제외). partial은 독립 page라 대상이 아니다. 모두 멱등하게 동작한다.
+ * 쓴다(백엔드 콜백 미경유). 그래서 완료를 push로 받을 수 없어, 완료된 chat_export 문서를 주기적으로 훑어 후처리한다.
+ * <ul>
+ *   <li><b>full</b>: (1) source wiki page를 세션에 연결하고 (2) 편입된 문답을 {@code chat_messages.wiki_page_id}로
+ *       마킹한다(= 다음 full에서 필터로 제외).</li>
+ *   <li><b>partial</b>: 발췌 문답 ↔ 위키 페이지 멤버십을 {@code chat_partial_wiki}에 기록한다(1:N). 세션 연결·마킹은
+ *       하지 않는다(발췌는 독립 page이며, full 제외 필터를 오염시키면 안 되기 때문).</li>
+ * </ul>
+ * 모두 멱등하게 동작한다.
  *
  * session_id와 pair_id는 source_block 텍스트의 {@code [session_id:pair_id]} prefix에서 파싱한다(별도 저장 없음).
  *
@@ -47,26 +56,27 @@ public class ChatWikiExportReconciler {
     private final SourceBlockRepository sourceBlockRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatPartialWikiRepository chatPartialWikiRepository;
 
     public ChatWikiExportReconciler(DocumentRepository documentRepository,
                                     DocumentWikiLinkRepository documentWikiLinkRepository,
                                     SourceBlockRepository sourceBlockRepository,
                                     ChatSessionRepository chatSessionRepository,
-                                    ChatMessageRepository chatMessageRepository) {
+                                    ChatMessageRepository chatMessageRepository,
+                                    ChatPartialWikiRepository chatPartialWikiRepository) {
         this.documentRepository = documentRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.sourceBlockRepository = sourceBlockRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
+        this.chatPartialWikiRepository = chatPartialWikiRepository;
     }
 
     @Scheduled(fixedDelay = 3000)
     @Transactional
     public void reconcile() {
         for (Document document : documentRepository.findAllByOriginAndStatus("chat_export", DocumentStatus.completed)) {
-            if (!"full".equals(document.getSelectionMode())) {
-                continue; // partial은 독립 page → 세션 연결·마킹 대상 아님
-            }
+            String mode = document.getSelectionMode();
 
             // source_blocks의 [session_id:pair_id]에서 세션과 문답을 파싱
             String sessionId = null;
@@ -88,11 +98,20 @@ public class ChatWikiExportReconciler {
             if (wikiPageId == null) {
                 continue;
             }
-            boolean linked = linkSession(sessionId, wikiPageId);
-            int marked = markIngestedPairs(sessionId, pairIds, wikiPageId);
-            if (linked || marked > 0) {
-                log.info("[chat-wiki][reconcile] session={} page={} 신규연결={} 편입마킹={}건 (document={})",
-                        sessionId, wikiPageId, linked, marked, document.getId());
+
+            if ("full".equals(mode)) {
+                boolean linked = linkSession(sessionId, wikiPageId);
+                int marked = markIngestedPairs(sessionId, pairIds, wikiPageId);
+                if (linked || marked > 0) {
+                    log.info("[chat-wiki][reconcile] full session={} page={} 신규연결={} 편입마킹={}건 (document={})",
+                            sessionId, wikiPageId, linked, marked, document.getId());
+                }
+            } else if ("partial".equals(mode)) {
+                int added = recordPartialPairs(sessionId, pairIds, wikiPageId, document.getId());
+                if (added > 0) {
+                    log.info("[chat-wiki][reconcile] partial session={} page={} 발췌기록={}건 (document={})",
+                            sessionId, wikiPageId, added, document.getId());
+                }
             }
         }
     }
@@ -106,16 +125,31 @@ public class ChatWikiExportReconciler {
                 .orElse(null);
     }
 
-    /** 세션을 source page에 연결한다. 새로 연결(변경)했으면 true. */
+    /** 세션을 source page에 연결한다. 아직 미연결인 세션만 연결한다(멱등, 다중 full 문서에도 무한 재기록/flip 방지). 새로 연결했으면 true. */
     private boolean linkSession(String sessionId, String wikiPageId) {
         return chatSessionRepository.findById(sessionId).map(session -> {
-            if (wikiPageId.equals(session.getWikiPageId())) {
-                return false;
+            if (session.getWikiPageId() != null) {
+                return false; // 이미 연결됨 → 재연결하지 않음
             }
             session.linkWikiPage(wikiPageId);
             chatSessionRepository.save(session);
             return true;
         }).orElse(false);
+    }
+
+    /** partial 발췌 문답을 chat_partial_wiki에 기록한다(멱등: 이 문서로 이미 기록했으면 skip). 새로 기록한 행 수를 반환. */
+    private int recordPartialPairs(String sessionId, Set<String> pairIds, String wikiPageId, String documentId) {
+        if (pairIds.isEmpty() || chatPartialWikiRepository.existsByDocumentId(documentId)) {
+            return 0;
+        }
+        Instant now = Instant.now();
+        int added = 0;
+        for (String pairId : pairIds) {
+            String id = "cpw_" + UUID.randomUUID().toString().replace("-", "");
+            chatPartialWikiRepository.save(new ChatPartialWiki(id, sessionId, pairId, wikiPageId, documentId, now));
+            added++;
+        }
+        return added;
     }
 
     /** 편입된 문답을 세션 위키에 편입됨으로 마킹한다(멱등: 아직 null인 것만). 새로 마킹한 메시지 수를 반환. */

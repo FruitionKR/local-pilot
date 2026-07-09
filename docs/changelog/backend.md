@@ -6,6 +6,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-09
+
+### feat: partial 발췌 위키 멤버십(chat_partial_wiki) 기록 + 문답별 위키 노출
+
+**배경**
+
+한 문답을 서로 다른 발췌(partial) 위키에 여러 번 담을 수 있으므로(1:N), full 전용 `chat_messages.wiki_page_id`(1:1)로는 partial 멤버십을 표현할 수 없다. partial "문답 ↔ 위키 페이지" 관계를 별도 junction으로 정규화하고, 채팅 화면이 문답별로 "이미 위키인지"를 알 수 있게 노출한다.
+
+**추가/변경된 것**
+
+- `chat/domain/ChatPartialWiki`(신규) + `chat/repository/ChatPartialWikiRepository`(신규): 테이블 `chat_partial_wiki(session_id, pair_id, wiki_page_id, document_id, created_at)`, `UNIQUE(pair_id, wiki_page_id)`. partial 발췌 멤버십만 기록(full은 기존대로 `chat_messages.wiki_page_id`).
+- `chat/service/ChatWikiExportReconciler`: 완료 문서를 **full/partial 분기**로 후처리. partial이면 `chat_partial_wiki`에 문답 멤버십 기록(`existsByDocumentId` 멱등 가드). `linkSession`을 "미연결 세션만 연결"로 바꿔, 잘못된 데이터(같은 세션 full 문서 다수)에도 무한 재기록/flip을 방지.
+- `chat/dto/ChatMessageResponse`에 `wiki_page_id`(full, nullable) + `partial_wiki_page_ids`(partial 페이지 목록) 노출. `chat/controller/ChatSessionController`가 `findAllBySessionId`로 pair별 partial 페이지를 매핑해 채운다.
+
+**검증**
+
+- `compileJava`/`compileTestJava` 통과, `fruition.chat.*` 테스트 통과(`ChatSessionControllerTest`에 `ChatPartialWikiRepository` `@MockBean` 추가).
+
+**주의사항**
+
+- `chat_partial_wiki` 테이블은 `ddl-auto=update`로 자동 생성.
+- 방향2(위키 페이지 → 원본 문답) 조회는 레포 메서드(`findAllByWikiPageId`)만 두고 엔드포인트는 후속.
+
 ## 2026-07-08
 
 ### refactor: 채팅 Wiki page화를 문답(pair) 단위 직렬화 + full/partial 선택으로 전환

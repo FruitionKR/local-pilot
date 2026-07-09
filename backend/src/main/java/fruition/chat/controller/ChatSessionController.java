@@ -1,6 +1,7 @@
 package fruition.chat.controller;
 
 import fruition.chat.domain.ChatMessageReference;
+import fruition.chat.domain.ChatPartialWiki;
 import fruition.chat.dto.ChatMessageRelatedPageResponse;
 import fruition.chat.dto.ChatMessageResponse;
 import fruition.chat.dto.ChatMessagesResponse;
@@ -10,6 +11,7 @@ import fruition.chat.dto.ChatSessionResponse;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.chat.repository.ChatPartialWikiRepository;
 import fruition.chat.service.ChatSessionService;
 import fruition.util.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,15 +39,18 @@ public class ChatSessionController {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatMessageReferenceRepository referenceRepository;
     private final ChatMessageRelatedPageRepository relatedPageRepository;
+    private final ChatPartialWikiRepository chatPartialWikiRepository;
 
     public ChatSessionController(ChatSessionService chatSessionService,
                                  ChatMessageRepository chatMessageRepository,
                                  ChatMessageReferenceRepository referenceRepository,
-                                 ChatMessageRelatedPageRepository relatedPageRepository) {
+                                 ChatMessageRelatedPageRepository relatedPageRepository,
+                                 ChatPartialWikiRepository chatPartialWikiRepository) {
         this.chatSessionService = chatSessionService;
         this.chatMessageRepository = chatMessageRepository;
         this.referenceRepository = referenceRepository;
         this.relatedPageRepository = relatedPageRepository;
+        this.chatPartialWikiRepository = chatPartialWikiRepository;
     }
 
     @Operation(summary = "채팅 세션 생성", description = "워크스페이스당 최대 10개까지 생성할 수 있습니다.")
@@ -132,6 +137,12 @@ public class ChatSessionController {
                         ), Collectors.toList())
                 ));
 
+        // 문답별 partial 위키 페이지 목록(1:N). full은 message.wiki_page_id로 노출.
+        Map<String, List<String>> partialPagesByPairId = chatPartialWikiRepository.findAllBySessionId(sessionId).stream()
+                .collect(Collectors.groupingBy(
+                        ChatPartialWiki::getPairId,
+                        Collectors.mapping(ChatPartialWiki::getWikiPageId, Collectors.toList())));
+
         List<ChatMessageResponse> responses = messages.stream()
                 .map(m -> {
                     var refs = refsByMessageId.getOrDefault(m.getId(), List.of()).stream()
@@ -143,7 +154,9 @@ public class ChatSessionController {
                             ))
                             .toList();
                     var relatedPages = relatedPagesByMessageId.getOrDefault(m.getId(), List.of());
-                    return new ChatMessageResponse(m.getId(), m.getPairId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(), relatedPages, refs, m.getErrorMessage());
+                    var partialWikiPageIds = partialPagesByPairId.getOrDefault(m.getPairId(), List.of());
+                    return new ChatMessageResponse(m.getId(), m.getPairId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(),
+                            relatedPages, refs, m.getWikiPageId(), partialWikiPageIds, m.getErrorMessage());
                 })
                 .toList();
 
