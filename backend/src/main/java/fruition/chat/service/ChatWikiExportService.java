@@ -10,6 +10,8 @@ import fruition.chat.repository.ChatMessageRepository;
 import fruition.chat.repository.ChatSessionRepository;
 import fruition.document.service.DocumentService;
 import fruition.util.SecretMasker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +33,8 @@ import java.util.Set;
  */
 @Service
 public class ChatWikiExportService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatWikiExportService.class);
 
     private final ChatSessionService chatSessionService;
     private final ChatSessionRepository chatSessionRepository;
@@ -76,6 +80,8 @@ public class ChatWikiExportService {
         String contentHash = stableContentHash(session, selected);
         String filename = titleOf(session) + ".md";
 
+        log.info("[chat-wiki][export] session={} mode={} 전송 메시지={}건", sessionId, request.selectionMode(), selected.size());
+
         DocumentService.ExportDocumentResult result = documentService.createChatExportDocument(
                 workspaceId, userId, filename, markdown, contentHash, request.selectionMode());
 
@@ -84,6 +90,7 @@ public class ChatWikiExportService {
         chatSessionRepository.save(session);
 
         String status = result.skipped() ? "skipped" : "processing";
+        log.info("[chat-wiki][export] 등록 session={} document={} status={}", sessionId, result.documentId(), status);
         return new ChatWikiExportResponse(result.documentId(), status);
     }
 
@@ -101,13 +108,16 @@ public class ChatWikiExportService {
         }
     }
 
-    /** partial이면 선택된 pair_id의 메시지만, full이면 전체를 반환한다. */
+    /**
+     * partial이면 선택된 pair_id의 메시지만, full이면 아직 세션 위키에 편입되지 않은 문답만 반환한다.
+     * (full 편입: 이미 편입된 문답은 chat_messages.wiki_page_id가 세팅돼 있어 제외 → 새 문답만 파이프라인에 보냄)
+     */
     private List<ChatMessage> selectMessages(List<ChatMessage> messages, ChatWikiExportRequest request) {
         if ("partial".equals(request.selectionMode())) {
             Set<String> selectedPairIds = new HashSet<>(request.pairIds());
             return messages.stream().filter(m -> selectedPairIds.contains(m.getPairId())).toList();
         }
-        return messages;
+        return messages.stream().filter(m -> m.getWikiPageId() == null).toList();
     }
 
     private String buildMaskedMarkdown(ChatSession session, List<ChatMessage> messages) {

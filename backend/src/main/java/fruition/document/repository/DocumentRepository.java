@@ -1,6 +1,7 @@
 package fruition.document.repository;
 
 import fruition.document.domain.Document;
+import fruition.document.domain.DocumentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,9 @@ import java.util.Optional;
 public interface DocumentRepository extends JpaRepository<Document, String> {
 
     Optional<Document> findByContentHash(String contentHash);
+
+    /** 완료 후처리(reconcile) 대상: origin·status로 조회. */
+    List<Document> findAllByOriginAndStatus(String origin, DocumentStatus status);
 
     List<Document> findAllByWorkspaceId(String workspaceId);
 
