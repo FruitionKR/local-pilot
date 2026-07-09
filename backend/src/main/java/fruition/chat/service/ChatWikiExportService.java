@@ -97,9 +97,12 @@ public class ChatWikiExportService {
         DocumentService.ExportDocumentResult result = documentService.createChatExportDocument(
                 workspaceId, userId, filename, markdown, contentHash, request.selectionMode());
 
-        // 완료 콜백에서 이 세션을 역조회해 wiki_page_id를 연결할 수 있도록 export 문서 id를 기록한다.
-        session.assignWikiExportDocument(result.documentId());
-        chatSessionRepository.save(session);
+        // full(첫 생성)만 세션의 정식 export 문서를 기록한다(완료 콜백 역조회·재생성 대상). partial은 독립 발췌라
+        // 세션 정식 상태를 건드리지 않는다 — 그래야 이후 full 재생성이 partial 문서를 잘못 재사용하지 않는다.
+        if ("full".equals(request.selectionMode())) {
+            session.assignWikiExportDocument(result.documentId());
+            chatSessionRepository.save(session);
+        }
 
         String status = result.skipped() ? "skipped" : "processing";
         log.info("[chat-wiki][export] 등록 session={} document={} status={}", sessionId, result.documentId(), status);

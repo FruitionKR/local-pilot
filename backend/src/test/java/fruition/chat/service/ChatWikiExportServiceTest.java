@@ -179,4 +179,20 @@ class ChatWikiExportServiceTest {
         assertThat(delta.getValue()).contains("[session_1:p2]").doesNotContain("[session_1:p1]"); // inline은 delta만
         verify(documentService, never()).createChatExportDocument(any(), any(), any(), any(), any(), any());
     }
+
+    @Test
+    @DisplayName("partial export는 세션의 wikiExportDocumentId를 덮어쓰지 않는다(full 재생성 오염 방지)")
+    void partialDoesNotTouchSessionExportDocument() {
+        ChatSession s = session();
+        s.assignWikiExportDocument("chatdoc_full");   // 기존 full export 문서
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
+
+        assertThat(s.getWikiExportDocumentId()).isEqualTo("chatdoc_full"); // partial이 덮어쓰지 않음
+        verify(chatSessionRepository, never()).save(any());
+    }
 }

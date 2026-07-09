@@ -8,6 +8,17 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-09
 
+### fix: partial export가 세션 정식 export 문서를 덮어써 full 재생성이 오작동하던 문제
+
+**배경**
+
+`assignWikiExportDocument`가 full·partial 공통 경로라, partial export가 세션의 `wikiExportDocumentId`를 partial 문서 id로 덮어썼다. 그러면 이후 full 재생성이 그 값을 재사용해 **partial 문서를 대상으로 재생성**(MinIO 원본 덮어쓰기·status 리셋·재큐)하는 정합성 문제가 있었다.
+
+**변경된 것**
+
+- `chat/service/ChatWikiExportService.export`: `wikiExportDocumentId` 기록(+세션 save)을 **full일 때만** 수행. partial은 세션 정식 상태를 건드리지 않는다(독립 발췌).
+- 회귀 테스트 추가: partial export 후 `wikiExportDocumentId` 불변·`save` 미호출 검증.
+
 ### feat: 채팅 full 재생성 시 기존 문서 재사용 + delta inline markdown 전송
 
 **배경**
