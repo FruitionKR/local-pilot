@@ -273,12 +273,12 @@ public class DocumentService {
     }
 
     @Transactional
-    public void applyPipelineEvent(String documentId, String runId) {
+    public void applyPipelineEvent(String documentId, String runId, String stage) {
         documentRepository.findById(documentId).ifPresent(doc -> {
             if (runId != null && !runId.equals(doc.getPipelineRunId())) {
                 return;
             }
-            doc.markProcessingHeartbeat(Instant.now());
+            doc.markProcessingHeartbeat(stage, Instant.now());
         });
     }
 
@@ -298,7 +298,8 @@ public class DocumentService {
                         doc.getProcessedAt(),
                         doc.getErrorMessage(),
                         doc.getPipelineRunId(),
-                        resolveProcessingState(doc)
+                        resolveProcessingState(doc),
+                        doc.getProcessingStage()
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -337,7 +338,8 @@ public class DocumentService {
                 doc.getErrorMessage(),
                 wikiPages,
                 doc.getPipelineRunId(),
-                resolveProcessingState(doc)
+                resolveProcessingState(doc),
+                doc.getProcessingStage()
         );
     }
 

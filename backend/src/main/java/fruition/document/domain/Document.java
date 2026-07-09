@@ -56,6 +56,10 @@ public class Document {
     @Column(name = "processing_updated_at")
     private Instant processingUpdatedAt;
 
+    /** 파이프라인이 heartbeat로 보내는 현재 처리 단계 라벨(예: "5. Source Page 생성"). */
+    @Column(name = "processing_stage")
+    private String processingStage;
+
     /** 문서 출처. 일반 업로드는 "upload", 채팅 Wiki page화 export는 "chat_export". */
     @Column(name = "origin")
     private String origin;
@@ -100,7 +104,10 @@ public class Document {
         this.processingUpdatedAt = now;
     }
 
-    public void markProcessingHeartbeat(Instant now) {
+    public void markProcessingHeartbeat(String stage, Instant now) {
+        if (stage != null && !stage.isBlank()) {
+            this.processingStage = stage;
+        }
         this.processingUpdatedAt = now;
     }
 
@@ -131,6 +138,7 @@ public class Document {
     public String getPipelineRunId() { return pipelineRunId; }
     public Instant getProcessingStartedAt() { return processingStartedAt; }
     public Instant getProcessingUpdatedAt() { return processingUpdatedAt; }
+    public String getProcessingStage() { return processingStage; }
     public String getOrigin() { return origin; }
 
     public void assignSelectionMode(String selectionMode) { this.selectionMode = selectionMode; }
