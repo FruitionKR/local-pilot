@@ -291,6 +291,8 @@ POST   /api/workspaces/{workspace_id}/chat/sessions
 GET    /api/workspaces/{workspace_id}/chat/sessions
 DELETE /api/workspaces/{workspace_id}/chat/sessions/{session_id}
 GET    /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages
+POST   /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki           # 채팅 Wiki page화 export
+POST   /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview   # [임시] 직렬화 Markdown 미리보기
 
 # Query (workspace + session 하위)
 POST   /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query
@@ -640,16 +642,19 @@ Response (`200`):
       "source_uri": "sources/documents/doc_24ec7500/original",
       "extracted_text_uri": "sources/documents/doc_24ec7500/extracted.txt",
       "uploaded_at": "2026-07-03T10:00:00Z",
-      "processed_at": "2026-07-03T10:01:20Z"
+      "processed_at": "2026-07-03T10:01:20Z",
+      "processing_stage": "5. Source Page 생성"
     }
   ]
 }
 ```
 
+`processing_stage`는 파이프라인 heartbeat가 보내는 현재/마지막 처리 단계 라벨이다(진행 표시용). 값이 없으면 응답에서 생략된다(`NON_NULL`). 채팅 export 문서(`origin=chat_export`)는 이 목록에서 제외된다.
+
 사용처:
 
 - 왼쪽 사이드바의 원본 파일 flat list
-- 문서 처리 상태 polling
+- 문서 처리 상태 polling (`status` + `processing_stage`로 진행 단계 표시)
 
 ### 7.3 문서 상세 조회
 
@@ -671,6 +676,7 @@ Response (`200`):
   "extracted_text_uri": "sources/documents/doc_24ec7500/extracted.txt",
   "uploaded_at": "2026-07-03T10:00:00Z",
   "processed_at": "2026-07-03T10:01:20Z",
+  "processing_stage": "5. Source Page 생성",
   "wiki_pages": [
     {
       "id": "source:doc_24ec7500",
@@ -1044,15 +1050,19 @@ Response (`200`):
   "messages": [
     {
       "id": "chat_user_66f884a8-5fed-407c-9351-c00c79dbf6e7",
+      "pair_id": "3f1c8e02-7a4b-4c1d-9e55-2b6f0a1c8d10",
       "role": "user",
       "content": "Self-Attention이 뭐야?",
       "status": "completed",
       "created_at": "2026-07-03T10:05:00Z",
       "related_pages": [],
-      "references": []
+      "references": [],
+      "wiki_page_id": null,
+      "partial_wiki_page_ids": []
     },
     {
       "id": "chat_assistant_f06bb7ca-b0fb-4770-8276-39f543934ee6",
+      "pair_id": "3f1c8e02-7a4b-4c1d-9e55-2b6f0a1c8d10",
       "role": "assistant",
       "content": "Self-Attention은 입력 토큰들이 서로 어떤 관계를 갖는지 계산하는 Transformer의 핵심 메커니즘이에요. [1]",
       "status": "completed",
@@ -1078,13 +1088,77 @@ Response (`200`):
           "source_block_ids": ["B0005", "B0006"],
           "text": "Self-attention computes relationships between tokens."
         }
-      ]
+      ],
+      "wiki_page_id": "source:chatdoc_abc123",
+      "partial_wiki_page_ids": []
     }
   ]
 }
 ```
 
 세션 안의 메시지를 생성 순서대로 반환한다. 실패한 assistant 메시지는 `status: "failed"`이고 `error_message`가 포함된다.
+
+- `pair_id`: user-assistant 한 쌍이 공유하는 id. 채팅 Wiki page화의 문답 선택 단위다.
+- `wiki_page_id`: 이 문답이 세션의 정식(full) Wiki 페이지에 편입됐으면 그 페이지 id, 아니면 `null`.
+- `partial_wiki_page_ids`: 이 문답이 편입된 partial 발췌 Wiki 페이지 id 목록(1:N). 없으면 `[]`.
+
+### 9.5 채팅 Wiki page화 (export)
+
+```http
+POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+
+세션(full) 또는 선택한 문답(partial)을 Markdown 문서로 직렬화해 문서 ingestion 파이프라인에 넣는다. 실제 Wiki 생성은 파이프라인이 비동기로 수행하므로 요청은 즉시 `202`로 응답한다.
+
+Request:
+
+```json
+{ "selection_mode": "full" }
+```
+
+또는
+
+```json
+{ "selection_mode": "partial", "pair_ids": ["3f1c8e02-7a4b-4c1d-9e55-2b6f0a1c8d10"] }
+```
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `selection_mode` | string | `full`(세션 전체) \| `partial`(선택 문답). 필수 |
+| `pair_ids` | string[] | partial일 때 위키화할 문답(pair) id 목록. full이면 무시 |
+
+Response (`202`):
+
+```json
+{ "exportDocumentId": "chatdoc_abc123", "status": "processing" }
+```
+
+| 필드 | 설명 |
+|---|---|
+| `exportDocumentId` | 생성(또는 중복 시 기존) export 문서 id |
+| `status` | `processing`(새로 등록) \| `skipped`(동일 content가 이미 존재) |
+
+동작:
+
+- **full**: 아직 편입되지 않은 문답만 파이프라인에 보낸다(이미 편입된 문답은 `messages[].wiki_page_id`로 표시됨). 완료 후 세션이 정식 source Wiki 페이지에 연결된다.
+- **full 재생성**: 이미 위키가 연결된 세션을 다시 full로 export하면 기존 export 문서를 재사용해 원본을 세션 전체로 갱신하고, 추가된 문답만 재처리한다. (파이프라인의 inline 입력 지원이 전제 — 후속작업. `docs/issue/2026-07-09.md` "llmPipeline 후속 작업" 참고)
+- **partial**: 선택한 문답으로 독립 발췌 페이지를 만든다. 문답↔페이지 멤버십은 `messages[].partial_wiki_page_ids`로 노출된다(1:N).
+
+에러:
+
+- `400 INVALID_CHAT_WIKI_EXPORT_REQUEST`: `selection_mode`가 없거나 `full`/`partial`이 아님, 또는 partial인데 `pair_ids`가 빔.
+- `400 EMPTY_CHAT_WIKI_EXPORT`: 위키화할 완료된 문답이 없음(예: full 재-export인데 추가된 문답이 없음).
+
+#### 9.5.1 [임시] 직렬화 Markdown 미리보기
+
+```http
+POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/wiki/preview
+Authorization: Bearer {access_token}
+```
+
+세션을 파이프라인 입력용 Markdown으로 직렬화한 결과만 `text/plain`으로 반환한다(저장·파이프라인 호출 없음).
 
 ## 10. Query API
 
