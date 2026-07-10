@@ -19,6 +19,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - chat Markdown의 `[session_id:pair_id]` prefix를 source reference로 보존합니다.
 - 기존 source page markdown과 artifact를 context로 사용해 `full` 누적 source page를 평가/병합합니다.
 - source accumulation evaluator 결과가 source page artifact, concept page 입력, DB summary에 반영되도록 조정했습니다.
+- 후속 정리로 chat API 입력 해석 로직을 별도 함수로 분리해 `input_markdown` 허용 조건과 저장 문서 fallback 경로를 한 곳에서 읽히게 했습니다.
 
 **검증**
 

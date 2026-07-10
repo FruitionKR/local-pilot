@@ -448,6 +448,38 @@ def _load_document_markdown(document: dict) -> tuple[str, str, str]:
     return markdown, object_uri, str(document.get("filename") or f"{_safe_name(document['id'])}.md")
 
 
+def _load_stored_document_input(document_id: str) -> tuple[str, str, str]:
+    try:
+        document = database.get_document(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    input_markdown, object_uri, input_name = _load_document_markdown(document)
+    return input_markdown, f"storage:{object_uri}", input_name
+
+
+def _resolve_chat_wiki_input(payload: ChatWikiRunIn) -> tuple[str, str, str]:
+    if payload.input_markdown:
+        _validate_chat_inline_markdown(payload)
+        input_name = payload.input_name or "chat.md"
+        input_source = f"inline:{input_name}"
+        try:
+            document = database.get_document(payload.document_id)
+            if not document:
+                database.create_pipeline_input_document(
+                    document_id=payload.document_id,
+                    filename=input_name,
+                    mime_type="text/markdown",
+                    byte_size=len(payload.input_markdown.encode("utf-8")),
+                    source_uri=input_source,
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return payload.input_markdown, input_source, input_name
+    return _load_stored_document_input(payload.document_id)
+
+
 @app.post("/pipeline/runs", response_model=PipelineRunOut)
 def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTasks) -> PipelineRunOut:
     return _run_pipeline_request(payload, background_tasks)
@@ -468,32 +500,10 @@ def _run_pipeline_request(payload: PipelineRunIn | ChatWikiRunIn, background_tas
     input_markdown: str | None = None
     input_name = payload.input_name or "inline.md"
 
-    if isinstance(payload, ChatWikiRunIn) and payload.input_markdown:
-        _validate_chat_inline_markdown(payload)
-        input_markdown = payload.input_markdown
-        input_name = payload.input_name or "chat.md"
-        input_source = f"inline:{input_name}"
-        try:
-            document = database.get_document(payload.document_id)
-            if not document:
-                database.create_pipeline_input_document(
-                    document_id=payload.document_id,
-                    filename=input_name,
-                    mime_type="text/markdown",
-                    byte_size=len(payload.input_markdown.encode("utf-8")),
-                    source_uri=input_source,
-                )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if isinstance(payload, ChatWikiRunIn):
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(payload)
     elif payload.document_id:
-        try:
-            document = database.get_document(payload.document_id)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
-        input_markdown, object_uri, input_name = _load_document_markdown(document)
-        input_source = f"storage:{object_uri}"
+        input_markdown, input_source, input_name = _load_stored_document_input(payload.document_id)
     elif isinstance(payload, PipelineRunIn) and payload.input_markdown:
         input_markdown = payload.input_markdown
         document_id = f"api-inline-{run_id}"
