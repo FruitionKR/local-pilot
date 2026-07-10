@@ -6,20 +6,20 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-10
 
-### docs: Prompt 내 한글 예시 영문화
+### docs: Prompt 지시문 영문화
 
 **배경**
 
-LLM system prompt에 한글 예시가 섞여 있어 prompt 언어를 영어로 통일할 필요가 있었습니다.
+LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야 하는 한국어 결과와 한국어 사용자 표현 예시는 보존해야 했습니다.
 
 **추가/변경된 것**
 
-- `agent_turn_router`, `concept_page_generation`, `markdown_edit`, `wiki_schema_organizer` prompt의 한글 예시와 지시 문구를 영어로 번역했습니다.
-- prompt 파일 내 한글 문자열이 남지 않도록 정리했습니다.
+- `agent_turn_router`, `concept_page_generation`, `markdown_edit`, `wiki_schema_organizer` prompt에서 영어 지시문과 한국어 출력 예시의 역할을 구분했습니다.
+- meeting notes 섹션명, schema organizer 출력 예시, 한국어 follow-up trigger처럼 실제 결과 구조나 사용자 입력 매칭에 필요한 한국어는 유지했습니다.
 
 **검증**
 
-- `rg -n "[가-힣]" llmPipeline/prompts` 결과 한글 매칭이 없음을 확인했습니다.
+- `rg -n "Discussion Items|Decisions|Pending Items|Next Actions|do it that way|contrasting concept|please do it|Prioritize it as a concept candidate" llmPipeline/prompts` 결과 잘못 영문화된 출력 예시가 없음을 확인했습니다.
 
 ---
 

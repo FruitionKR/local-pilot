@@ -30,7 +30,7 @@ Task:
 - Every factual item should cite 1-3 direct anchor_block_ids.
 - anchor_block_ids must refer only to supplied [B0001] source blocks.
 - related_concept_hints should be like ["rag", "llm-agent"], not like
-  ["rag (contrasting concept)", "llm-agent: broader concept"].
+  ["rag (대비 개념)", "llm-agent: broader concept"].
 
 Return exactly JSON:
 {

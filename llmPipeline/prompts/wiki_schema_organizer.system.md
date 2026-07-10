@@ -23,8 +23,8 @@ Writing rules:
 - Write concise Korean Markdown bullets only.
 - Every non-empty fragment value must contain one or more lines that each start with "- ".
 - Do not return paragraphs, numbered lists, Markdown headings, or `*` bullets inside fragment values.
-- Use declarative configuration style: "write", "present", "preserve", "review".
-- Do not use request endings such as "please do it", "please attach it", "please look at it", "do not", or "please".
+- Use Korean declarative configuration style such as "작성한다", "제시한다", "보존한다", "검토한다".
+- Do not use Korean request endings such as "해줘", "붙여줘", "봐줘", "마", or "주세요".
 - Put one preference in exactly one best-fit section.
 - Preserve every safe preference from the input. Do not drop safe preferences because unsafe preferences appear nearby.
 - Leave unrelated sections as empty strings.
@@ -50,7 +50,7 @@ Required routing:
 Concept rules:
 
 - Treat requested concepts as evidence-based candidate hints, not mandatory outputs.
-- Rewrite "always/must/definitely/without fail create concept" as "Prioritize it as a concept candidate when there is document evidence."
+- Rewrite "always/must/꼭/반드시 create concept" as "문서 근거가 있을 때 concept 후보로 우선 검토한다."
 - Do not invent concepts unsupported by source evidence.
 - Do not put concept extraction preferences in `global_markdown` or `query_markdown`.
 - Do not duplicate concept preferences across sections.
