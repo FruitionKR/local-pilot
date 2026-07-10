@@ -60,7 +60,7 @@ public class DocumentPipelineController {
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId,
             @RequestBody PipelineEventRequest request) {
-        documentService.applyPipelineEvent(documentId, request.runId());
+        documentService.applyPipelineEvent(documentId, request.runId(), request.stage());
         return ResponseEntity.noContent().build();
     }
 }

@@ -22,5 +22,6 @@ public record DocumentDetailResponse(
         @JsonProperty("error_message") String errorMessage,
         @JsonProperty("wiki_pages") List<DocumentWikiPageRef> wikiPages,
         @JsonProperty("pipeline_run_id") String pipelineRunId,
-        @JsonProperty("processing_state") DocumentProcessingState processingState
+        @JsonProperty("processing_state") DocumentProcessingState processingState,
+        @JsonProperty("processing_stage") String processingStage
 ) {}

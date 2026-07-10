@@ -7,6 +7,8 @@ import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
+import fruition.chat.exception.EmptyChatWikiExportException;
+import fruition.chat.exception.InvalidChatWikiExportRequestException;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
 import fruition.user.exception.DuplicateEmailException;
@@ -67,6 +69,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_FILENAME", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmptyChatWikiExportException.class)
+    public ResponseEntity<ErrorResponse> handleEmptyChatWikiExport(EmptyChatWikiExportException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("EMPTY_CHAT_WIKI_EXPORT", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidChatWikiExportRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidChatWikiExportRequest(InvalidChatWikiExportRequestException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_CHAT_WIKI_EXPORT_REQUEST", e.getMessage()));
     }
 
     @ExceptionHandler(WikiPageNotFoundException.class)

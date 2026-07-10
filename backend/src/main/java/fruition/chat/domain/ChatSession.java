@@ -33,6 +33,9 @@ public class ChatSession {
     @Column(name = "wiki_page_id")
     private String wikiPageId;
 
+    @Column(name = "wiki_export_document_id")
+    private String wikiExportDocumentId;
+
     protected ChatSession() {}
 
     public ChatSession(String id, String workspaceId, String userId, String title) {
@@ -48,6 +51,16 @@ public class ChatSession {
         this.lastMessageAt = now;
     }
 
+    /** Wiki page화 export 문서 id를 기록한다. 완료 콜백에서 이 세션을 역조회하는 데 쓴다. */
+    public void assignWikiExportDocument(String documentId) {
+        this.wikiExportDocumentId = documentId;
+    }
+
+    /** export 완료 후 생성된 source wiki page를 세션에 연결한다. */
+    public void linkWikiPage(String wikiPageId) {
+        this.wikiPageId = wikiPageId;
+    }
+
     public String getId() { return id; }
     public String getWorkspaceId() { return workspaceId; }
     public String getUserId() { return userId; }
@@ -57,4 +70,5 @@ public class ChatSession {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getLastMessageAt() { return lastMessageAt; }
     public String getWikiPageId() { return wikiPageId; }
+    public String getWikiExportDocumentId() { return wikiExportDocumentId; }
 }
