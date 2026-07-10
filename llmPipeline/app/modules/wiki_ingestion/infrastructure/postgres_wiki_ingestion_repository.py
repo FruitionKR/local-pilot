@@ -380,6 +380,57 @@ def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "
     return concepts
 
 
+def latest_source_extraction_artifact(document_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT manifest
+            FROM pipeline_runs
+            WHERE document_id = %s
+              AND status = 'succeeded'
+              AND manifest ? 'source_extraction_artifact'
+            ORDER BY finished_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """,
+            (document_id,),
+        ).fetchone()
+    if not row:
+        return None
+    manifest = row.get("manifest") or {}
+    artifact = manifest.get("source_extraction_artifact")
+    return artifact if isinstance(artifact, dict) else None
+
+
+def latest_source_page_context(
+    document_id: str,
+    user_id: str = "local-user",
+    workspace_id: str = "local-workspace",
+) -> dict[str, Any] | None:
+    artifact = latest_source_extraction_artifact(document_id)
+    if artifact is None:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT markdown_uri
+            FROM wiki_pages
+            WHERE page_type = 'source'
+              AND slug = %s
+              AND status = 'active'
+              AND user_id = %s
+              AND workspace_id = %s
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (document_id, user_id, workspace_id),
+        ).fetchone()
+    source_markdown = _read_optional_text_object(row["markdown_uri"]) if row else ""
+    return {
+        "artifact": artifact,
+        "source_markdown": source_markdown,
+    }
+
+
 def _concept_index_from_markdown(slug: str, title: str, markdown_uri: str, markdown: str) -> dict[str, Any]:
     return {
         "slug": slug,
@@ -821,7 +872,7 @@ def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: 
     source_markdown = source_page["markdown"]
     source_markdown_uri = _upload_wiki_markdown(source_markdown, f"wiki/{user_id}/{workspace_id}/sources/{source_slug}.md")
     source_title = source_page.get("title") or _markdown_title(source_markdown) or normalized["document"].get("title") or document_id
-    source_summary = _source_summary(normalized)
+    source_summary = _source_summary(normalized, manifest)
     _upsert_wiki_page(
         conn,
         source_page_id,

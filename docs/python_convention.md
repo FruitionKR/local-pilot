@@ -237,6 +237,12 @@ get_predict_text_use_case()
 - Constants: `UPPER_SNAKE_CASE`
 - Exceptions: end with `Error`
 
+## 5.1 No Performance Hardcoding
+
+Do not hardcode values, branches, or special cases just to improve performance.
+
+If performance needs improvement, use a general algorithmic change, profiling result, configuration, cache, index, batching, or data-structure improvement instead.
+
 ## 6. Canonical Flow
 
 All prediction requests must follow this flow:

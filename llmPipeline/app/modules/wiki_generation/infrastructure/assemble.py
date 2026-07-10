@@ -110,7 +110,7 @@ categories: {', '.join(item.get('name', '') for item in normalized.get('categori
         if filename_slug == "untitled":
             filename_slug = doc["document_id"]
         markdown_path = f"wiki/sources/{filename_slug}.md"
-        artifact = _source_extraction_artifact(normalized, title, summary, markdown_path)
+        artifact = _source_extraction_artifact(normalized, title, summary, markdown_path, polish=polish)
         normalized["source_extraction_artifact"] = artifact
         return {
             "slug": filename_slug,
@@ -152,6 +152,7 @@ def _source_extraction_artifact(
     title: str,
     summary: str,
     markdown_path: str,
+    polish: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     doc = normalized["document"]
     core_concepts = [_term_record({**concept, "term": concept.get("title")}) for concept in normalized.get("concept_ledger", [])]
@@ -166,12 +167,7 @@ def _source_extraction_artifact(
         "source_file": doc.get("source_path"),
         "markdown_path": markdown_path,
         "summary": summary,
-        "key_points": [
-            {"text": item.get("text", ""), "evidence_block_ids": _item_refs(item)}
-            for note in normalized.get("semantic_notes", [])
-            for item in note.get("key_points", [])
-            if item.get("text")
-        ],
+        "key_points": _source_artifact_key_points(normalized, polish or {}),
         "categories": categories,
         "observations": normalized.get("observations", []),
         "core_concepts": core_concepts,
@@ -179,6 +175,22 @@ def _source_extraction_artifact(
         "mentions": mentions,
         "evidence_claims": normalized.get("evidence_units", []),
     }
+
+
+def _source_artifact_key_points(normalized: dict[str, Any], polish: dict[str, Any]) -> list[dict[str, Any]]:
+    polished = polish.get("key_points", {}).get("items", [])
+    if polished:
+        return [
+            {"text": item.get("text", ""), "evidence_block_ids": _item_refs(item)}
+            for item in polished
+            if item.get("text")
+        ]
+    return [
+        {"text": item.get("text", ""), "evidence_block_ids": _item_refs(item)}
+        for note in normalized.get("semantic_notes", [])
+        for item in note.get("key_points", [])
+        if item.get("text")
+    ]
 
 
 def _source_section_line(item: dict[str, Any], document_id: str) -> str:

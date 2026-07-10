@@ -53,6 +53,13 @@ class WikiPersistencePayloadTest(unittest.TestCase):
             source_summary({"semantic_notes": [{"semantic_summary": "첫 요약"}], "document": {"title": "문서 제목"}}),
             "첫 요약",
         )
+        self.assertEqual(
+            source_summary(
+                {"semantic_notes": [{"semantic_summary": "첫 요약"}], "document": {"title": "문서 제목"}},
+                {"source_extraction_artifact": {"summary": "평가 후 전체 요약"}},
+            ),
+            "평가 후 전체 요약",
+        )
         self.assertEqual(markdown_title("본문\n# 제목\n내용"), "제목")
         self.assertEqual(resolve_page_id("source:doc", "source-id", {}), "source-id")
         self.assertEqual(resolve_page_id("concept:test", "source-id", {"test": "concept-id"}), "concept-id")

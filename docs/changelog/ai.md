@@ -4,6 +4,29 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-10
+
+### feat: Chat Wiki 누적 API 계약 분리
+
+**배경**
+
+채팅 Wiki page화는 일반 문서 ingest와 달리 `session_id:pair_id`를 source reference로 유지하고, 기존 chat source page가 있을 때만 신규 pair를 누적해야 했습니다. 기존 `/pipeline/runs` 계약에 섞으면 `selection_mode`와 inline Markdown 입력을 잘못 사용할 수 있어 chat 전용 API boundary가 필요했습니다.
+
+**추가/변경된 것**
+
+- `/chat-wiki/runs`를 추가하고 `document_id`, `selection_mode`를 필수로 검증합니다.
+- `input_markdown`은 기존 source page가 있는 `full` 누적에서만 허용하고, `partial` 또는 최초 `full`에서는 거부합니다.
+- chat Markdown의 `[session_id:pair_id]` prefix를 source reference로 보존합니다.
+- 기존 source page markdown과 artifact를 context로 사용해 `full` 누적 source page를 평가/병합합니다.
+- source accumulation evaluator 결과가 source page artifact, concept page 입력, DB summary에 반영되도록 조정했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests/test_pipeline_run_api_contract.py llmPipeline/tests/modules/wiki_generation llmPipeline/tests/modules/wiki_ingestion` 통과.
+- 실제 API 실행으로 `full` 누적 시 기존 ref와 신규 ref가 source/concept page에 함께 반영되고 DB source summary가 evaluator 결과로 저장되는 것을 확인했습니다.
+
+---
+
 ## 2026-07-04
 
 ### refactor: Chat completions JSON parser 분리
