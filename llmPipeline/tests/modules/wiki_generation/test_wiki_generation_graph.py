@@ -5,7 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from run_lab import PipelineLog, _prepare_concept_section_polish, _prepare_source_page_polish, _run_wiki_generation_graph
+from app.modules.wiki_generation.infrastructure.chat_source_accumulation import (
+    apply_chat_source_accumulation_result,
+    build_chat_source_accumulation_payload,
+)
+from run_lab import (
+    PipelineLog,
+    _prepare_concept_section_polish,
+    _prepare_source_page_polish,
+    _run_wiki_generation_graph,
+)
 
 
 @dataclass
@@ -40,6 +49,28 @@ class FakeSectionPolisher:
 
 
 class WikiGenerationGraphTest(unittest.TestCase):
+    def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
+        normalized = {
+            "document": {"document_id": "chat-doc-1"},
+            "existing_source_context": {"summary": "기존 요약"},
+            "semantic_notes": [
+                {
+                    "semantic_summary": "신규 요약",
+                    "key_points": [{"text": "신규 핵심", "anchor_reference_ids": ["pair_2"]}],
+                }
+            ],
+            "observations": [{"summary": "관찰"}],
+            "categories": [{"name": "운영"}],
+        }
+
+        payload = build_chat_source_accumulation_payload(normalized, "# Existing Source")
+
+        self.assertEqual(payload["context"]["document"], {"document_id": "chat-doc-1"})
+        self.assertEqual(payload["context"]["existing_source_summary"], "기존 요약")
+        self.assertEqual(payload["context"]["existing_source_markdown"], "# Existing Source")
+        self.assertEqual(payload["draft"]["accumulated_summary_candidates"], ["신규 요약"])
+        self.assertEqual(payload["draft"]["key_points"][0]["text"], "신규 핵심")
+
     def test_evaluator_feedback_retries_semantic_extraction_until_passed(self) -> None:
         prompts: list[str] = []
         evaluations = [
@@ -122,6 +153,10 @@ class WikiGenerationGraphTest(unittest.TestCase):
                 "document": {"document_id": "doc-1"},
                 "concept_ledger": [{"slug": "concept-a"}],
                 "semantic_notes": [{"semantic_summary": "요약", "key_points": [{"text": "원본 핵심", "anchor_block_ids": ["B0001"]}]}],
+                "existing_source_context": {
+                    "summary": "기존 전체 요약",
+                    "source_markdown": "# 기존 source\n\n## Summary\n기존 전체 요약",
+                },
                 "evidence_units": [],
             }
             polisher = FakeSectionPolisher(
@@ -149,6 +184,10 @@ class WikiGenerationGraphTest(unittest.TestCase):
         self.assertEqual(source_polish["key_points"]["items"][0]["text"], "다듬은 핵심")
         self.assertEqual(source_key_points[0]["text"], "다듬은 핵심")
         self.assertEqual(source_key_points[1]["text"], "원본 핵심")
+        self.assertEqual(polisher.payloads[0]["context"]["existing_source_summary"], "기존 전체 요약")
+        self.assertIn("기존 source", polisher.payloads[0]["context"]["existing_source_markdown"])
+        self.assertEqual(polisher.payloads[0]["draft"]["new_summary_candidates"], ["요약"])
+        self.assertNotIn("summary_candidates", polisher.payloads[0]["draft"])
 
     def test_concept_section_polish_helper_builds_polished_concept_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -200,6 +239,46 @@ class WikiGenerationGraphTest(unittest.TestCase):
         self.assertEqual(generated_pages[0]["confidence"], 0.7)
         self.assertIn("다듬은 정의", concept_pages[0]["markdown"])
         self.assertIn("다듬은 핵심", concept_pages[0]["markdown"])
+
+    def test_apply_source_accumulation_result_replaces_source_sections_with_validated_refs(self) -> None:
+        normalized = {
+            "warnings": [],
+            "observations": [{"summary": "기존 observation", "anchor_reference_ids": ["B0001"]}],
+            "categories": [{"name": "기존"}],
+        }
+        raw = {
+            "passed": True,
+            "issues": [],
+            "revised_source": {
+                "summary": {"text": "전체 요약", "anchor_block_ids": ["B0001", "B9999"]},
+                "key_points": [{"text": "중복 의미를 합친 핵심", "anchor_block_ids": ["B0001", "B0002"]}],
+                "observations": [
+                    {
+                        "type": "qa_episode",
+                        "title": "합친 observation",
+                        "query_text": None,
+                        "summary": "기존과 신규 observation을 합친다.",
+                        "claims": ["기존과 신규 근거를 모두 유지한다."],
+                        "related_concept_hints": ["concept-a"],
+                        "anchor_block_ids": ["B0001", "B0002"],
+                    }
+                ],
+                "categories": [{"name": "운영"}],
+            },
+        }
+
+        result = apply_chat_source_accumulation_result(
+            normalized,
+            raw,
+            [FakeBlock(block_id="B0001", text="기존"), FakeBlock(block_id="B0002", text="신규")],
+        )
+
+        self.assertEqual(result["source_accumulation_polish"]["summary"]["text"], "전체 요약")
+        self.assertEqual(result["source_accumulation_polish"]["summary"]["anchor_reference_ids"], ["B0001"])
+        self.assertEqual(result["source_accumulation_polish"]["key_points"]["items"][0]["anchor_reference_ids"], ["B0001", "B0002"])
+        self.assertEqual(result["observations"][0]["summary"], "기존과 신규 observation을 합친다.")
+        self.assertEqual(result["categories"], [{"name": "운영"}])
+        self.assertEqual(result["warnings"], ["source_accumulation.summary: unknown accumulation anchor_block_id B9999"])
 
 
 if __name__ == "__main__":

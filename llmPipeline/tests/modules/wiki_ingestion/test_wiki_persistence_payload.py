@@ -8,6 +8,7 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     source_summary,
     stored_manifest,
 )
+from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as repository
 
 
 class WikiPersistencePayloadTest(unittest.TestCase):
@@ -53,10 +54,44 @@ class WikiPersistencePayloadTest(unittest.TestCase):
             source_summary({"semantic_notes": [{"semantic_summary": "첫 요약"}], "document": {"title": "문서 제목"}}),
             "첫 요약",
         )
+        self.assertEqual(
+            source_summary(
+                {"semantic_notes": [{"semantic_summary": "첫 요약"}], "document": {"title": "문서 제목"}},
+                {"source_extraction_artifact": {"summary": "평가 후 전체 요약"}},
+            ),
+            "평가 후 전체 요약",
+        )
         self.assertEqual(markdown_title("본문\n# 제목\n내용"), "제목")
         self.assertEqual(resolve_page_id("source:doc", "source-id", {}), "source-id")
         self.assertEqual(resolve_page_id("concept:test", "source-id", {"test": "concept-id"}), "concept-id")
         self.assertIsNone(resolve_page_id("concept:missing", "source-id", {}))
+
+    def test_latest_source_page_context_requires_source_page_row(self) -> None:
+        class FakeConn:
+            def execute(self, _query: str, _params: tuple[str, str, str]) -> "FakeConn":
+                return self
+
+            def fetchone(self) -> None:
+                return None
+
+            def __enter__(self) -> "FakeConn":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        original_artifact = repository.latest_source_extraction_artifact
+        original_connect = repository.connect
+        try:
+            repository.latest_source_extraction_artifact = lambda _document_id: {"document_id": "chat-doc-1"}  # type: ignore[assignment]
+            repository.connect = lambda: FakeConn()  # type: ignore[assignment]
+
+            context = repository.latest_source_page_context("chat-doc-1", "user-1", "workspace-1")
+        finally:
+            repository.latest_source_extraction_artifact = original_artifact  # type: ignore[assignment]
+            repository.connect = original_connect  # type: ignore[assignment]
+
+        self.assertIsNone(context)
 
     def setUp(self) -> None:
         import tempfile

@@ -4,6 +4,50 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-10
+
+### docs: Prompt 지시문 영문화
+
+**배경**
+
+LLM system prompt의 지시문은 영어로 유지하되, 모델이 생성해야 하는 한국어 결과와 한국어 사용자 표현 예시는 보존해야 했습니다.
+
+**추가/변경된 것**
+
+- `agent_turn_router`, `concept_page_generation`, `markdown_edit`, `wiki_schema_organizer` prompt에서 영어 지시문과 한국어 출력 예시의 역할을 구분했습니다.
+- meeting notes 섹션명, schema organizer 출력 예시, 한국어 follow-up trigger처럼 실제 결과 구조나 사용자 입력 매칭에 필요한 한국어는 유지했습니다.
+
+**검증**
+
+- `rg -n "Discussion Items|Decisions|Pending Items|Next Actions|do it that way|contrasting concept|please do it|Prioritize it as a concept candidate" llmPipeline/prompts` 결과 잘못 영문화된 출력 예시가 없음을 확인했습니다.
+
+---
+
+### feat: Chat Wiki 누적 API 계약 분리
+
+**배경**
+
+채팅 Wiki page화는 일반 문서 ingest와 달리 `session_id:pair_id`를 source reference로 유지하고, 기존 chat source page가 있을 때만 신규 pair를 누적해야 했습니다. 기존 `/pipeline/runs` 계약에 섞으면 `selection_mode`와 inline Markdown 입력을 잘못 사용할 수 있어 chat 전용 API boundary가 필요했습니다.
+
+**추가/변경된 것**
+
+- `/chat-wiki/runs`를 추가하고 `document_id`, `selection_mode`를 필수로 검증합니다.
+- `input_markdown`은 기존 source page가 있는 `full` 누적에서만 허용하고, `partial` 또는 최초 `full`에서는 거부합니다.
+- chat Markdown의 `[session_id:pair_id]` prefix를 source reference로 보존합니다.
+- 기존 source page markdown과 artifact를 context로 사용해 `full` 누적 source page를 평가/병합합니다.
+- source accumulation evaluator 결과가 source page artifact, concept page 입력, DB summary에 반영되도록 조정했습니다.
+- 후속 정리로 chat API 입력 해석 로직을 별도 함수로 분리해 `input_markdown` 허용 조건과 저장 문서 fallback 경로를 한 곳에서 읽히게 했습니다.
+- chat source accumulation payload 생성과 evaluator 결과 적용 로직을 `chat_source_accumulation.py`로 분리해 pipeline orchestration과 구조화 결과 매핑 책임을 나눴습니다.
+- 기존 source page row가 없으면 `full` 누적 context가 없는 것으로 판단해 `input_markdown`을 거부하도록 보정했습니다.
+
+**검증**
+
+- `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests/test_pipeline_run_api_contract.py llmPipeline/tests/modules/wiki_generation llmPipeline/tests/modules/wiki_ingestion` 통과.
+- 최종 결과: `68 passed, 1 warning`
+- 실제 API 실행으로 `full` 누적 시 기존 ref와 신규 ref가 source/concept page에 함께 반영되고 DB source summary가 evaluator 결과로 저장되는 것을 확인했습니다.
+
+---
+
 ## 2026-07-04
 
 ### refactor: Chat completions JSON parser 분리

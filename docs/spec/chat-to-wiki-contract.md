@@ -1,81 +1,85 @@
 # 채팅 Wiki page화 계약
 
-이 문서는 저장된 채팅을 나중에 다시 검색 가능한 Wiki page로 만들기 위한 backend와 `llmPipeline` 사이의 계약을 정리한다.
+이 문서는 backend가 직렬화한 채팅 Markdown을 기존 ingest pipeline에 넣어 Wiki graph 검색 대상으로 만드는 흐름과 입출력 계약을 정리한다.
 
-일반 채팅 답변 계약은 [query-engine.md](./query-engine.md)를 따른다. 이 문서는 `/query` 응답을 설명하는 문서가 아니라, **이미 저장된 채팅 대화를 원문 문서처럼 정리해서 기존 Wiki page 생성 pipeline에 넣는 흐름**을 설명한다.
+일반 문서 ingest는 기존 `POST /pipeline/runs` 계약을 유지한다. 채팅 Wiki page화는 별도 `POST /chat-wiki/runs` 계약을 사용한다. 최종 출력은 기존 ingest output과 동일하게 유지하되, ingest에 들어가기 전 채팅 전용 입력 해석과 source reference 보존을 추가한다.
 
-## 1. 목표
+## 1. 핵심 결정
 
-사용자가 채팅에서 논의한 내용은 저장만 해두면 나중에 Wiki graph 검색 대상이 되지 않는다. Wiki page화는 저장된 채팅을 Markdown/text 원문으로 정리하고, 그 원문을 기존 문서 ingestion과 같은 pipeline에 넣어 `source page`, `concept page`, `source_blocks`, page link를 생성하는 과정이다.
+- 기존 ingest pipeline은 재사용한다.
+- 채팅 입력은 누적 대상 source page를 특정하는 `document_id`로 받는다.
+- `document_id`는 source page 선택 key이며, 이번 실행 입력 Markdown을 뜻하지 않는다.
+- 기존 source page가 있는 `full` 누적에서 backend가 신규 chat Q&A를 Markdown으로 직렬화한 경우 `input_markdown`으로 넘긴다.
+- `input_markdown`이 없을 때만 pipeline이 `document_id`로 저장된 Markdown을 읽는다.
+- 전체 선택(`full`)에서는 이미 저장된 채팅 문답 제외를 backend가 처리한다.
+- 일부 선택(`partial`)에서는 이미 저장된 문답도 선택 구간의 일부로 다시 독립 source page화할 수 있다.
+- 채팅 Wiki page화는 일반 문서 ingest API와 분리된 `/chat-wiki/runs`를 사용한다.
+- 채팅 전용 입력에는 `document_id`와 `selection_mode`가 필수다.
+- 채팅 원문 링크는 `session_id`와 `pair_id`로 특정한다.
+- 개별 user/assistant message id는 원문 링크 식별 계약에 사용하지 않는다.
+- 채팅 원문 링크 단위는 문답 1쌍이며, 이 단위는 `session_id + pair_id`로 이미 특정된다.
+- 전체 선택(`full`)은 기존 chat source page에 누적한다.
+- 일부 선택(`partial`)은 chat prompt로 새 독립 source page를 만든다.
+- `llmPipeline` ingest는 같은 source page 내부에 축적된 section/mention 근거만 새 core에 누적한다.
+- `llmPipeline` ingest는 다른 source page나 active cluster의 외부 evidence를 새 core에 병합하지 않는다.
+- 최종 응답 형식은 기존 `PipelineRunOut`과 manifest 구조를 유지한다.
+
+## 2. 현재 ingest 입력 구조
+
+현재 `llmPipeline`의 기존 ingest endpoint는 다음 세 입력 중 하나만 받는다.
 
 ```text
-채팅 진행
-  -> Spring backend가 user/assistant 메시지 저장
-  -> 사용자가 저장된 채팅의 Wiki page화를 요청하거나 backend 정책이 트리거
-  -> backend가 채팅을 Markdown/text 원문 문서로 정리
-  -> 기존 Wiki page 생성 pipeline 실행
-  -> source page, concept page, source_blocks, links 저장
-  -> 이후 /query 검색 대상에 포함
+POST /pipeline/runs
+
+document_id | input_markdown | input_path
 ```
 
-## 2. 현재 구현 기준
-
-현재 `llmPipeline`에는 채팅 전용 source page 생성 API가 따로 없다. 채팅 Wiki page화는 다음 기존 기능을 재사용한다.
-
-- `MarkdownBlockExtractor.extract_text(...)`: Markdown/text를 `SourceDocument`와 `SourceBlock[]`로 분해
-- `SemanticPacketBuilder`: block 목록을 LLM 입력 packet으로 분할
-- semantic extraction, normalize, concept resolution
-- `SourcePageAssembler`: source page Markdown 생성
-- concept page assembler/generator
-- wiki ingestion repository: `documents`, `source_blocks`, `wiki_pages`, `document_wiki_links`, `wiki_page_links` 저장
-
-따라서 backend가 해야 할 핵심 일은 “채팅을 pipeline이 읽을 수 있는 안정적인 원문 Markdown/text로 만드는 것”이다.
-
-## 3. Backend 책임
-
-Spring backend는 다음을 소유한다.
-
-- 채팅 메시지 저장과 조회
-- conversation, workspace, user 권한 검증
-- 어떤 채팅 범위를 Wiki page화할지 결정
-- 저장된 메시지를 Markdown/text 원문으로 직렬화
-- 원문 문서 id와 content hash 관리
-- pipeline 실행 요청 또는 queue 등록
-- pipeline 결과와 기존 documents/wiki tables 연결
-- 중복 실행, 재시도, 실패 상태 관리
-
-`llmPipeline`은 채팅 저장소를 직접 읽지 않는다. backend가 원문 텍스트와 필요한 식별자를 넘겨야 한다.
-
-## 4. llmPipeline 책임
-
-`llmPipeline`은 전달받은 채팅 Markdown/text를 일반 문서처럼 처리한다.
-
-- 원문을 block으로 나눈다.
-- block마다 `B0001` 같은 짧은 anchor id를 부여한다.
-- 의미 추출 단계에서 요약, 핵심 주장, concept 후보, evidence를 만든다.
-- source page를 생성한다.
-- 반복되거나 재사용할 만한 개념은 concept page 후보로 만든다.
-- source page와 concept page 사이 link를 만든다.
-- 저장 단계가 연결된 실행에서는 `source_blocks`, `wiki_pages`, `document_wiki_links`, `wiki_page_links`를 적재한다.
-
-`llmPipeline`은 사용자의 채팅 권한, conversation 보존 정책, 공개 범위 정책을 판단하지 않는다.
-
-## 5. 입력 계약
-
-현재 실행 단위는 “하나의 채팅 export를 하나의 원문 문서처럼 전달한다”이다. 구현 방식은 HTTP endpoint, queue worker, CLI 실행 중 무엇이든 될 수 있지만, pipeline에 들어가기 전 최소 정보는 아래와 같아야 한다.
+현재 Spring 문서 처리 흐름은 보통 아래처럼 `document_id`만 전달한다.
 
 ```json
 {
-  "source_document_id": "chatdoc_workspace-1_conversation-7_20260701",
-  "source_path": "chat://workspace-1/conversations/conversation-7/wiki-export/20260701",
-  "title": "LangSmith 설정 논의",
-  "markdown": "# LangSmith 설정 논의\n\n## 대화 정보\n\n- workspace_id: workspace-1\n- conversation_id: conversation-7\n\n## 대화 내용\n\n### 2026-07-01 10:00 User\nLangSmith 연결은 어디서 봐?\n\n### 2026-07-01 10:01 Assistant\nLangSmith 프로젝트의 traces 화면에서 run을 확인합니다.\n",
-  "metadata": {
-    "workspace_id": "workspace-1",
-    "conversation_id": "conversation-7",
-    "message_ids": ["chat_user_1", "chat_assistant_1"],
-    "created_from": "chat_export"
-  }
+  "document_id": "document_1",
+  "log_callback_url": "http://backend:8080/api/documents/document_1/pipeline-events/callback"
+}
+```
+
+기존 endpoint는 직렬화된 Markdown도 직접 받을 수 있지만, 채팅 Wiki page화에서는 일반 문서 ingest endpoint를 쓰지 않는다.
+
+```json
+{
+  "input_markdown": "# 문서 제목\n\n본문..."
+}
+```
+
+채팅 Wiki page화는 source page를 특정하는 `document_id`를 `POST /chat-wiki/runs`로 전달한다. backend가 이미 처리된 pair를 제외한 Markdown을 직접 넘기는 경우 `input_markdown`을 함께 전달한다.
+
+`document_id`와 `input_markdown`의 역할은 분리한다.
+
+```text
+document_id
+  -> 누적 대상 source page slug
+  -> 기존 source_extraction_artifact 조회 key
+  -> 최종 wiki_pages(source) 저장 key
+
+input_markdown
+  -> 이번 pipeline 실행에서 새로 읽을 chat Q&A Markdown
+  -> 기존 source page가 있는 full 누적에서 backend가 이미 처리된 pair를 제외한 신규 pair Markdown
+```
+
+## 3. 채팅 입력 계약
+
+채팅용 요청은 최소 아래 값을 가진다.
+
+```text
+POST /chat-wiki/runs
+```
+
+```json
+{
+  "document_id": "chat_document_1",
+  "selection_mode": "full",
+  "input_markdown": "# Chat Export\n\n[chat_session_1:pair_3]Q : 새 질문\nA : 새 답변",
+  "log_callback_url": "http://backend:8080/api/chat-wiki/runs/{run_id}/pipeline-events/callback"
 }
 ```
 
@@ -83,144 +87,335 @@ Spring backend는 다음을 소유한다.
 
 | 필드 | 필수 | 설명 |
 | --- | --- | --- |
-| `source_document_id` | 예 | backend가 부여하는 채팅 export 문서 id. pipeline 실행 시 `document.document_id`로 사용 |
-| `source_path` | 예 | 원문 출처를 식별하는 논리 경로. 실제 파일 경로일 필요는 없음 |
-| `title` | 예 | source page 제목 후보. Markdown 첫 heading에도 같은 제목을 넣는 것을 권장 |
-| `markdown` | 예 | 저장된 채팅을 직렬화한 원문 |
-| `metadata.workspace_id` | 예 | 권한과 검색 scope 연결용 |
-| `metadata.conversation_id` | 예 | 원본 conversation 추적용 |
-| `metadata.message_ids` | 예 | 이 export에 포함된 message id 목록 |
-| `metadata.created_from` | 권장 | `chat_export` 같은 출처 구분값 |
+| `document_id` | 예 | 누적 대상 chat source page를 특정하는 stable id. 이번 입력 본문이 아니라 source page 선택 key다. |
+| `selection_mode` | 예 | `full`이면 전체 선택, `partial`이면 일부 선택 |
+| `input_markdown` | 선택 | 기존 source page가 있는 `full` 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown. 없으면 `document_id`로 저장된 문서를 읽는다. |
+| `log_callback_url` | 예 | 기존 문서 처리처럼 pipeline event를 backend에 전달할 callback URL |
+| `workspace_id` | 선택 | 기존 pipeline namespace가 필요하면 기존 계약처럼 포함 |
+| `user_id` | 선택 | 기존 pipeline namespace가 필요하면 기존 계약처럼 포함 |
+| `input_name` | 선택 | 실행 로그와 임시 document filename에 사용할 이름 |
+| `wait` | 선택 | 기존 실행 API와 같은 비동기/동기 실행 옵션 |
 
-현재 `MarkdownBlockExtractor`는 텍스트의 SHA-1로 기본 `document_id`를 만들지만, backend가 안정적인 id를 유지해야 하므로 pipeline 실행 시 `source_document_id`를 명시해서 덮어써야 한다.
+`POST /pipeline/runs`는 일반 문서 ingest 전용이다. 채팅 요청에서 `selection_mode`가 빠진 상태는 유효하지 않으며, `selection_mode`가 포함된 요청도 `/pipeline/runs`가 아니라 `/chat-wiki/runs`로 보내야 한다.
 
-## 6. Markdown 직렬화 규칙
+`session_id`와 `pair_id`는 top-level request 필드로 받지 않는다. backend가 직렬화한 각 문답 앞의 `[session_id:pair_id]` prefix를 canonical source ref로 사용한다.
 
-채팅은 사람이 읽기 좋고 pipeline이 block으로 안정적으로 나눌 수 있는 Markdown으로 만든다.
+## 4. Markdown 직렬화 규칙
 
-권장 구조:
+backend는 채팅을 Markdown으로 직렬화할 때 문답 1쌍을 하나의 단위로 만든다. 각 문답 앞에는 원본 채팅을 바로 특정할 수 있는 `[session_id:pair_id]` prefix를 붙인다.
+
+권장 형식:
 
 ```markdown
-# {채팅 문서 제목}
+# Chat Export
 
-## 대화 정보
+[chat_session_1:pair_1]Q : LangSmith 연결은 어디서 봐?
+A : traces 화면에서 run을 확인합니다.
 
-- workspace_id: workspace-1
-- conversation_id: conversation-7
-- exported_at: 2026-07-01T10:30:00Z
 
-## 대화 내용
-
-### 2026-07-01 10:00 User
-
-LangSmith 연결은 어디서 봐?
-
-### 2026-07-01 10:01 Assistant
-
-LangSmith 프로젝트의 traces 화면에서 run을 확인합니다.
+[chat_session_1:pair_2]Q : 실패한 run은 어떻게 봐?
+A : error filter를 적용해서 확인합니다.
 ```
 
 규칙:
 
-- user/assistant 발화를 모두 남긴다.
-- 메시지 순서를 보존한다.
-- 타임스탬프는 가능하면 ISO-8601 또는 표시용 고정 포맷으로 넣는다.
-- message id는 필요하면 heading 아래 bullet metadata로 넣되, 본문 의미를 해치지 않게 한다.
-- 한 메시지는 최소 하나의 문단 block이 되도록 빈 줄로 분리한다.
-- LLM이 추론한 요약만 넣지 말고, 원문 발화를 함께 포함한다.
-- 비밀값, credential, private URL 등 저장하면 안 되는 값은 backend 정책으로 마스킹한 뒤 넘긴다.
+- `[session_id:pair_id]`는 문답 1쌍을 특정하는 canonical source ref다.
+- `pair_id`는 같은 `session_id` 안에서 문답 1쌍을 특정해야 한다.
+- `Q :`에는 user 발화를 넣고, `A :`에는 assistant 응답을 넣는다.
+- user 발화와 assistant 응답을 모두 포함한다.
+- 문답 순서를 보존한다.
+- 개별 user/assistant message id는 넣지 않는다.
+- 문답 1쌍 안에는 빈 줄을 넣지 않는다.
+- 문답과 문답 사이는 빈 줄로 구분한다.
+- credential, token, private key, 민감 URL은 backend에서 마스킹한 뒤 넘긴다.
 
-## 7. Block과 evidence 추적
+## 5. Source Reference 계약
 
-pipeline은 Markdown/text를 block으로 나누고 각 block에 `B0001`, `B0002` 같은 id를 붙인다.
+일반 문서는 pipeline이 Markdown을 보고 source block을 나누고, 원문 위치를 `document_id + block_id`로 특정한다.
 
-`SourceBlock` 주요 필드:
+채팅은 다르다. 채팅은 원문 링크 단위가 이미 `session_id + pair_id`로 특정된다. 따라서 채팅에서는 일반 문서용 block anchor를 만들지 않고, `session_id + pair_id`를 처음부터 끝까지 source reference로 사용한다.
 
-| 필드 | 설명 |
-| --- | --- |
-| `document_id` | `source_document_id`와 같아야 함 |
-| `block_id` | `B0001` 형식의 짧은 block anchor |
-| `source_reference_id` | DB/export에서 쓸 수 있는 안정 참조 id |
-| `text` | block 본문 |
-| `line_start`, `line_end` | Markdown 원문 기준 line 범위 |
-| `section_path` | heading 기준 섹션 경로 |
-| `block_type` | `heading`, `paragraph`, `list`, `code` 등 |
+채팅 source reference는 아래 논리 구조를 가진다.
 
-나중에 `/query` 답변은 `evidence_snippets[].source_document_id`와 `source_block_ids[]`로 이 block을 다시 참조한다. 따라서 채팅 export 원문과 block id 매핑은 재처리나 디버깅을 위해 보존되어야 한다.
+```json
+{
+  "type": "chat_pair",
+  "session_id": "chat_session_1",
+  "pair_id": "pair_1"
+}
+```
+
+pipeline은 외부 query 링크용 ref로 아래 값을 보존해야 한다.
+
+```json
+{
+  "type": "chat_pair",
+  "session_id": "chat_session_1",
+  "pair_id": "pair_1"
+}
+```
+
+핵심은 query 응답에서 이 두 값을 잃지 않는 것이다.
+
+```text
+session_id + pair_id -> 원본 채팅 문답 1쌍
+```
+
+## 6. 처리 플로우
+
+### 6.1 일반 문서
+
+```text
+POST /pipeline/runs
+  -> document_id 또는 input_markdown 수신
+  -> 일반 source block splitter 실행
+  -> 일반 문서 semantic extraction prompt 사용
+  -> source page/concept page/link 생성
+  -> 기존 output 반환
+```
+
+### 6.2 채팅 전체 선택 - 기존 source page 있음
+
+`selection_mode = full`
+
+```text
+backend가 document_id로 누적 대상 chat source page를 결정
+  -> backend가 이미 저장된 pair를 제외하고 신규 pair만 Markdown으로 직렬화
+  -> POST /chat-wiki/runs
+  -> document_id + selection_mode=full + input_markdown + log_callback_url 전달
+  -> pipeline이 document_id로 기존 source page/artifact 조회
+  -> pipeline이 input_markdown을 이번 실행 입력으로 우선 사용
+  -> input_markdown이 없으면 pipeline이 document_id로 저장된 채팅 Markdown을 fallback 로드
+  -> pipeline이 [session_id:pair_id] prefix를 source ref로 보존
+  -> chat append prompt 사용
+  -> concept page는 현재 입력 근거와 같은 source page 내부 누적 근거로 생성
+  -> source page의 key points/observations/categories/core/section/mention은 기존 항목 선행 + 새 항목으로 append draft 생성
+  -> source accumulation evaluator가 의미 중복을 평가하고 refs를 병합한 구조화 결과 반환
+  -> source page summary는 기존 source page 문맥과 새 대화를 함께 본 전체 요약으로 재작성
+  -> 기존 ingest output 반환
+```
+
+중복 제거 기준:
+
+```text
+same session_id AND same pair_id
+```
+
+이 중복 제거는 backend 요청 생성 단계에서 끝낸다. `llmPipeline`은 전달받은 `input_markdown` 또는 `document_id`의 채팅 Markdown을 이미 처리 대상이라고 보고, 별도 중복 제외 흐름 없이 append prompt를 실행한다.
+
+기존 source page가 있는 `full`에서는 `input_markdown`이 권장 입력이다. 전체 원문을 다시 넣을 수도 있지만, 이미 처리된 pair가 다시 추출될 수 있으므로 backend가 신규 pair만 넘기는 쪽을 기본 계약으로 본다.
+
+### 6.3 채팅 일부 선택
+
+`selection_mode = partial`
+
+```text
+backend가 document_id로 partial source page 저장 key를 결정
+  -> backend가 선택된 문답을 저장된 Markdown 문서로 준비
+  -> POST /chat-wiki/runs
+  -> document_id + selection_mode=partial + log_callback_url 전달
+  -> pipeline이 document_id로 저장된 채팅 Markdown을 로드
+  -> pipeline이 [session_id:pair_id] prefix를 source ref로 보존
+  -> 기존 source page에 붙이지 않음
+  -> 선택된 pair 묶음을 새 독립 source page로 생성
+  -> chat prompt 사용
+  -> 기존 ingest output 반환
+```
+
+일부 선택은 사용자가 특정 범위를 독립적인 지식 단위로 선택했다는 신호로 본다.
+따라서 `partial`에서는 같은 pair가 기존 chat source page에 이미 포함되어 있어도 backend가 자동 제외하지 않는다.
+같은 partial export 요청 자체를 재실행하지 않기 위한 멱등성 처리는 backend가 별도 작업 id나 content hash로 다룰 수 있지만, pair 중복 제외와는 분리한다.
+
+### 6.4 채팅 최초 full
+
+`selection_mode = full`이지만 아직 기존 source page가 없는 경우다.
+
+```text
+backend가 document_id로 앞으로 누적할 chat source page key를 결정
+  -> backend가 처리 대상 pair를 저장된 Markdown 문서로 준비
+  -> POST /chat-wiki/runs
+  -> document_id + selection_mode=full + log_callback_url 전달
+  -> pipeline이 document_id로 기존 source page/artifact 조회
+  -> 기존 source page가 없으므로 chat prompt 사용
+  -> pipeline이 document_id로 저장된 채팅 Markdown을 로드
+  -> 새 source page와 concept page 생성
+  -> 생성된 source page slug는 document_id로 저장
+```
+
+최초 full은 누적할 기존 source page가 없으므로 partial과 같은 chat semantic extraction prompt를 사용한다. 차이는 저장 의도다. 최초 full에서 만들어진 source page는 이후 같은 `document_id`의 full 요청이 누적할 대상이 된다.
+
+## 7. Prompt 분기
+
+채팅은 기존 ingest를 재사용하되, `full` 누적 처리에만 별도 append prompt를 사용한다.
+`partial`은 선택된 채팅 문답을 새 문서처럼 처리하지만, 일반 문서 prompt가 아니라 채팅 전용 prompt를 사용한다.
+일반 문서, 채팅 최초/partial, 채팅 full append는 서로 다른 prompt로 분리한다.
+
+`full` append prompt:
+
+```text
+기존 chat source page와 새 채팅 문답을 함께 보고,
+기존 source page markdown은 용어와 문맥 유지를 위한 배경으로만 사용한다.
+출력 evidence와 anchor_block_ids는 현재 새 문답 SOURCE BLOCKS에서만 가져온다.
+semantic extraction 출력은 현재 새 문답 근거만 포함한다.
+같은 source page에 이미 있던 section/mention 근거의 누적 병합은 코드가 처리한다.
+source accumulation evaluator는 append draft를 평가해 의미적으로 같은 key point/observation/category를 병합하고 refs를 합친다.
+source page summary는 기존 요약에 새 요약을 append하지 않고 전체 source page 기준으로 다시 쓴다.
+```
+
+`partial` chat prompt:
+
+```text
+선택된 채팅 문답만 기준으로 독립적인 source page를 만든다.
+기존 같은 session의 source page에 의존하지 않는다.
+채팅 Q&A 흐름을 보존하는 observation과 source ref 규칙을 사용한다.
+```
 
 ## 8. 출력 계약
 
-채팅 Wiki page화가 끝나면 일반 문서 ingestion과 같은 종류의 결과가 생긴다.
+채팅 Wiki page화의 HTTP 응답은 기존 pipeline 응답과 같은 형태를 유지한다.
 
-| 결과 | 설명 |
-| --- | --- |
-| `documents` | 채팅 export 원문 문서 레코드 |
-| `source_blocks` | 채팅 Markdown을 나눈 block 목록 |
-| `wiki_pages` source | 채팅 전체를 대표하는 source page |
-| `wiki_pages` concept | 채팅에서 재사용할 만한 개념 page |
-| `document_wiki_links` | 채팅 export 문서와 생성된 wiki page 연결 |
-| `wiki_page_links` | source page와 concept page, concept 간 link |
+```json
+{
+  "run_id": "uuid",
+  "status": "running",
+  "manifest": null,
+  "output_dir": "runs/api_uuid",
+  "log_path": "runs/api_uuid/pipeline.log"
+}
+```
 
-source page는 “대화 내용을 대표하는 원문 기반 page”다. concept page는 대화에서 반복되거나 이후 검색에 재사용할 만한 개념이 있을 때 생성된다.
+`wait=true`로 완료까지 기다리는 경우에도 manifest 구조는 기존 ingest manifest를 유지한다.
 
-현재 pipeline은 채팅 전용 고정 필드인 “결정된 사항”, “남은 질문”, “검증 결과” 같은 항목을 항상 추출하도록 계약되어 있지 않다. 저장된 채팅 Markdown/text를 일반 문서로 보고, 기존 semantic extraction과 normalize 단계가 source page 내용, evidence, concept 후보를 만든다. 그런 고정 섹션이 필요하면 backend가 Markdown export 단계에서 명시적으로 섹션을 만들거나, 별도 chat-specific extraction 기능을 추가해야 한다.
+```json
+{
+  "run_id": "uuid",
+  "status": "succeeded",
+  "manifest": {
+    "input": "inline.md",
+    "out": "runs/api_uuid",
+    "source_page": {},
+    "concept_pages": [],
+    "links": [],
+    "warnings": []
+  },
+  "output_dir": "runs/api_uuid",
+  "log_path": "runs/api_uuid/pipeline.log"
+}
+```
 
-## 9. 상태 관리
+채팅 전용 추가 정보가 필요하면 manifest 안에 기존 구조를 깨지 않는 보조 필드로 둔다.
 
-채팅 Wiki page화는 비동기 작업으로 다루는 것이 안전하다.
+```json
+{
+  "chat_wiki": {
+    "selection_mode": "full",
+    "appended_pair_ids": ["pair_3"],
+    "skipped_pair_ids": ["pair_1", "pair_2"]
+  }
+}
+```
 
-권장 상태:
+## 9. Query 원문 링크 태그
 
-| 상태 | 의미 |
-| --- | --- |
-| `pending` | export 요청이 생성되었지만 pipeline이 아직 시작되지 않음 |
-| `processing` | pipeline 실행 중 |
-| `completed` | source/concept page와 block 저장 완료 |
-| `failed` | pipeline 실패. 재시도 가능 |
-| `skipped` | 중복 export 또는 정책상 처리하지 않음 |
+Query 응답에서 일반 문서 근거와 채팅 근거를 구분해야 한다. 채팅 근거는 파일 line이나 문서 block 링크가 아니라 원본 채팅 문답으로 이동해야 하기 때문이다.
 
-backend는 같은 conversation 범위를 같은 내용으로 반복 export하지 않도록 content hash 또는 `(conversation_id, message range, content_hash)` 기준 중복 방지를 해야 한다.
+채팅 evidence/source reference는 `session_id + pair_id`를 바로 내려준다. backend/frontend는 추가로 source block을 조회하지 않고 이 두 값으로 원본 문답 링크를 만든다.
 
-## 10. API/Queue 설계 기준
+```json
+{
+  "type": "chat_pair",
+  "session_id": "chat_session_1",
+  "pair_id": "pair_1"
+}
+```
 
-현재 repository 기준으로 이 문서가 요구하는 별도 Spring API나 `llmPipeline` HTTP endpoint가 이미 존재한다고 가정하지 않는다. 구현 시에는 다음 중 하나로 연결한다.
+일반 문서 근거는 기존처럼 문서와 block을 참조한다.
 
-1. Spring backend가 채팅 export를 문서 업로드와 같은 흐름으로 저장하고 기존 document processing queue에 등록한다.
-2. Spring backend가 내부 worker에서 `llmPipeline` 실행을 요청한다.
-3. 운영 도구나 batch job이 저장된 채팅을 Markdown으로 export한 뒤 pipeline을 실행한다.
+```json
+{
+  "type": "document_block",
+  "source_document_id": "document_1",
+  "source_block_id": "B0001"
+}
+```
 
-어떤 방식을 쓰든 pipeline 입력은 5장의 입력 계약을 만족해야 한다.
+채팅 query 링크 처리:
 
-## 11. `/agent/turn`과의 관계
+```text
+query evidence 반환
+  -> type=chat_pair 확인
+  -> backend가 session_id + pair_id로 채팅 문답 조회
+  -> frontend가 해당 원문 대화 위치로 이동
+```
 
-`/agent/turn`의 `markdown_create`는 “대화를 바탕으로 새 Markdown draft를 만드는 기능”이다. 이것은 채팅 Wiki page화와 다르다.
+권장 응답 조각:
 
-| 기능 | 목적 | 결과 |
-| --- | --- | --- |
-| `/agent/turn` `markdown_create` | 사용자가 볼 새 Markdown 초안 생성 | editor draft |
-| 채팅 Wiki page화 | 저장된 채팅을 검색 가능한 Wiki graph에 편입 | source page, concept page, source_blocks |
+```json
+{
+  "evidence_snippets": [
+    {
+      "text": "LangSmith traces 화면에서 run을 확인한다는 문답",
+      "source_ref": {
+        "type": "chat_pair",
+        "session_id": "chat_session_1",
+        "pair_id": "pair_1"
+      }
+    }
+  ]
+}
+```
 
-사용자가 “지금까지 대화를 문서로 만들어줘”라고 요청하면 먼저 `markdown_create`로 editor draft를 만들 수 있다. 반대로 “이 채팅을 지식으로 저장” 같은 기능은 저장된 채팅 원문을 export해서 이 문서의 흐름으로 pipeline에 넣어야 한다.
+## 10. Backend 책임
 
-## 12. 구현 계획 체크리스트
+backend는 다음을 책임진다.
 
-AI agent나 backend/frontend 작업자가 계획을 세울 때는 아래 항목을 빠뜨리지 않는다.
+- 채팅 메시지 저장과 조회
+- 사용자가 선택한 채팅 범위 결정
+- `full` 요청에서 이미 저장된 pair 제외
+- 선택 범위를 pair 단위 Markdown으로 직렬화
+- 각 문답 앞에 `[session_id:pair_id]` prefix 포함
+- 민감정보 마스킹
+- `document_id`, `selection_mode`, `log_callback_url`을 포함한 pipeline 실행 요청
+- 기존 source page가 있는 `full` 누적에서는 신규 pair Markdown을 `input_markdown`으로 포함할 수 있음
+- pipeline event callback을 받아 채팅 Wiki page화 진행 상태 갱신
+- query 응답의 `chat_pair` source ref를 실제 원문 대화 링크로 변환
 
-1. 채팅 범위 결정: conversation 전체인지, 선택 메시지인지, 특정 시점 이후인지 정한다.
-2. 권한 확인: export 대상 메시지에 대한 workspace/user 접근 권한을 확인한다.
-3. Markdown export: user/assistant 발화, 순서, 시간, message id를 보존해 Markdown을 만든다.
-4. 비밀값 마스킹: credential, token, private key, 민감 URL을 저장 전에 제거하거나 마스킹한다.
-5. 안정 id 부여: `source_document_id`, `source_path`, content hash를 만든다.
-6. pipeline 실행: 기존 Wiki page 생성 pipeline에 Markdown/text를 전달한다.
-7. block 저장 확인: `source_blocks`가 `source_document_id`와 함께 저장되는지 확인한다.
-8. page/link 저장 확인: source page, concept page, document link, page link가 저장되는지 확인한다.
-9. query 포함 확인: 완료 후 `/query`에서 해당 source/concept page가 검색 후보에 포함되는지 확인한다.
-10. 재처리 정책: 같은 채팅을 다시 export할 때 새 문서로 만들지, 기존 문서를 갱신할지 정책을 정한다.
+backend는 `session_id + pair_id`로 원본 문답을 조회할 수 있어야 한다.
 
-## 13. 현재 제한
+## 11. llmPipeline 책임
 
-- 채팅 전용 source page schema는 아직 없다.
-- 채팅 export 전용 `llmPipeline` HTTP endpoint는 아직 없다.
-- 채팅 message id와 `source_blocks` 사이의 별도 DB mapping table은 현재 명시되어 있지 않다.
-- 재처리 시 기존 source/concept page를 어떻게 갱신할지는 별도 정책이 필요하다.
-- schema 문서의 prompt 설정과는 별개 기능이며, 이 문서에서는 Wiki Schema 계약을 다루지 않는다.
+`llmPipeline`은 다음을 책임진다.
+
+- `POST /chat-wiki/runs`에서 `document_id`, `selection_mode`, `log_callback_url` 수신
+- 기존 source page가 있는 `full` 누적에서만 `input_markdown` 수신 허용
+- `input_markdown`이 허용된 경우 신규 pair 입력으로 사용하고, 그 외에는 `document_id`로 저장된 채팅 Markdown 로드
+- 채팅 Markdown에서 `[session_id:pair_id]` prefix를 source ref로 보존
+- 채팅에서는 `session_id + pair_id`를 query 원문 링크 식별자로 사용
+- `full`이면 기존 source page가 있을 때 append prompt 실행
+- `full`이지만 기존 source page가 없으면 chat prompt 실행
+- `partial`이면 chat prompt로 독립 source page 생성
+- 이미 저장된 pair 중복 제외는 수행하지 않음
+- 같은 source page의 기존 section/mention이 새 core와 겹치면 해당 근거를 새 core에 누적
+- 다른 source page나 active cluster의 evidence는 병합하지 않음
+- query 근거로 사용할 수 있도록 `chat_pair` source reference 보존
+- 기존 ingest output 형태 유지
+
+`llmPipeline`은 채팅 저장소를 직접 읽지 않는다. 원본 채팅 조회와 실제 링크 생성은 backend가 담당한다.
+
+## 12. 구현 체크리스트
+
+1. 기존 source page가 있는 `full` 요청에서는 backend가 이미 저장된 pair를 제외한다.
+2. 기존 source page가 있는 `full` 요청에서는 backend가 신규 pair만 Markdown으로 직렬화해 `input_markdown`으로 보낼 수 있다.
+3. 최초 `full` 요청에서는 backend가 처리 대상 pair를 저장된 Markdown 문서로 준비한다.
+4. `partial` 요청에서는 backend가 선택된 pair를 저장된 Markdown 문서로 준비한다.
+5. 채팅 pipeline 요청에 `document_id`, `selection_mode`, `log_callback_url`을 포함한다.
+6. 기존 source page가 있는 `full` 누적에서만 선택적으로 `input_markdown`을 포함한다.
+7. backend 직렬화 Markdown에서 각 문답 앞에 `[session_id:pair_id]` prefix를 포함한다.
+8. pipeline이 허용된 `input_markdown`은 우선 사용하고, 그 외에는 `document_id`로 저장된 채팅 Markdown을 로드한다.
+9. pipeline이 `[session_id:pair_id]`를 query용 `chat_pair` source reference로 보존하게 한다.
+10. 일반 문서 prompt, chat prompt, chat append prompt를 분리한다.
+11. pipeline은 중복 제외 없이 `selection_mode`에 맞는 prompt를 바로 실행한다.
+12. source reference에 `chat_pair` 태그를 보존한다.
+13. query evidence 응답에 `type=chat_pair`를 추가한다.
+14. backend가 `chat_pair` source ref를 원본 채팅 링크로 변환한다.
+15. 일반 문서 ingest output과 채팅 ingest output의 응답 shape이 같은지 확인한다.

@@ -23,8 +23,8 @@ Writing rules:
 - Write concise Korean Markdown bullets only.
 - Every non-empty fragment value must contain one or more lines that each start with "- ".
 - Do not return paragraphs, numbered lists, Markdown headings, or `*` bullets inside fragment values.
-- Use declarative configuration style: "작성한다", "제시한다", "보존한다", "검토한다".
-- Do not use request endings such as "해줘", "붙여줘", "봐줘", "마", "주세요".
+- Use Korean declarative configuration style such as "작성한다", "제시한다", "보존한다", "검토한다".
+- Do not use Korean request endings such as "해줘", "붙여줘", "봐줘", "마", or "주세요".
 - Put one preference in exactly one best-fit section.
 - Preserve every safe preference from the input. Do not drop safe preferences because unsafe preferences appear nearby.
 - Leave unrelated sections as empty strings.

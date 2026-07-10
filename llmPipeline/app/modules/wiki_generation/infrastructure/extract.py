@@ -31,6 +31,7 @@ class MarkdownBlockExtractor:
         text: str,
         source_path: str,
         fallback_title: str | None = None,
+        preserve_prefixed_refs: bool = False,
     ) -> tuple[SourceDocument, list[SourceBlock]]:
         doc_hash = sha1_short(text)
         document_id = f"doc_{doc_hash}"
@@ -50,14 +51,21 @@ class MarkdownBlockExtractor:
                 level = len(stripped) - len(stripped.lstrip("#"))
                 heading = stripped.lstrip("#").strip()
                 section_path = section_path[: max(0, level - 1)] + [heading]
-            block_id = f"B{idx:04d}"
-            source_ref = f"ref_{doc_hash}_md_b{idx:04d}"
+            prefix_ref, text_without_prefix = _prefixed_ref(stripped)
+            if preserve_prefixed_refs and prefix_ref:
+                block_id = prefix_ref
+                source_ref = prefix_ref
+                block_body = text_without_prefix or stripped
+            else:
+                block_id = f"B{idx:04d}"
+                source_ref = f"ref_{doc_hash}_md_b{idx:04d}"
+                block_body = block_text
             blocks.append(
                 SourceBlock(
                     document_id=document_id,
                     block_id=block_id,
                     source_reference_id=source_ref,
-                    text=normalize_space(block_text),
+                    text=normalize_space(block_body),
                     line_start=start,
                     line_end=end,
                     section_path=section_path.copy(),
@@ -118,3 +126,15 @@ class MarkdownBlockExtractor:
             buf.append(line)
         flush(len(lines))
         return blocks
+
+
+def _prefixed_ref(text: str) -> tuple[str | None, str]:
+    if not text.startswith("["):
+        return None, text
+    close = text.find("]")
+    if close <= 1:
+        return None, text
+    ref = text[1:close].strip()
+    if ":" not in ref or any(ch.isspace() for ch in ref):
+        return None, text
+    return ref, text[close + 1 :].lstrip()

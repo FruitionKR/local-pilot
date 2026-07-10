@@ -6,17 +6,30 @@ from typing import Any, Iterable, Sequence
 from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock
 
 
-def render_semantic_user_prompt(packet: SemanticPacket) -> str:
+def render_semantic_user_prompt(packet: SemanticPacket, source_context: dict[str, Any] | None = None) -> str:
     """User message for ChunkSemanticExtraction.
 
-    The model sees and returns only short local anchors such as [B0001].
+    The model returns the exact anchors shown in SOURCE BLOCKS.
     """
+    context_text = ""
+    source_markdown = str((source_context or {}).get("source_markdown") or "").strip()
+    if source_markdown:
+        context_text = f"""
+
+EXISTING SOURCE PAGE MARKDOWN:
+Use this existing source page as background context only. Do not use references from this markdown in anchor_block_ids; anchor_block_ids must come from SOURCE BLOCKS.
+```markdown
+{source_markdown}
+```
+"""
+
     return f"""Stage input: ChunkSemanticExtraction
 
 chunk_id: {packet.chunk_id}
 document_id: {packet.document_id}
 
-Read the following source blocks as one semantic packet. The [B0001] labels are local anchors. Use only these labels in anchor_block_ids.
+Read the following source blocks as one semantic packet. Each source block starts with an anchor in square brackets. Use those exact anchor values in anchor_block_ids.
+{context_text}
 
 SOURCE BLOCKS:
 {packet.text}
@@ -116,6 +129,9 @@ Polish only the requested section. Return JSON only.
 If PAGE TYPE is source, also return a concise human-readable title that
 summarizes the source topic. If PAGE TYPE is concept, keep title empty unless a
 title is already supplied in CONTEXT.
+For source_summary_and_key_points, write one holistic summary for the whole
+source page from existing_source_markdown/existing_source_summary and current
+SOURCE BLOCKS. Do not append a new summary after the old summary.
 
 SECTION:
 {payload.get("section")}
@@ -131,6 +147,25 @@ DRAFT:
 
 EVIDENCE CLAIMS:
 {evidence_json}
+
+SOURCE BLOCKS:
+{block_lines}
+""".rstrip() + "\n"
+
+
+def render_source_accumulation_user_prompt(payload: dict[str, Any], source_blocks: Sequence[SourceBlock]) -> str:
+    context_json = json.dumps(payload.get("context", {}), ensure_ascii=False, indent=2)
+    draft_json = json.dumps(payload.get("draft", {}), ensure_ascii=False, indent=2)
+    block_lines = "\n".join(b.to_llm_line() for b in source_blocks)
+    return f"""Stage input: SourceAccumulationEvaluation
+
+Evaluate the accumulated draft and return a corrected structured source update.
+
+CONTEXT:
+{context_json}
+
+ACCUMULATED DRAFT:
+{draft_json}
 
 SOURCE BLOCKS:
 {block_lines}
@@ -154,7 +189,13 @@ def _blocks_by_ref_map(blocks: Sequence[SourceBlock]) -> dict[str, SourceBlock]:
     return by_ref
 
 
-def collect_concept_source_blocks(concept: dict[str, Any], evidence_units: list[dict[str, Any]], blocks: Sequence[SourceBlock], max_blocks: int | None = None) -> list[SourceBlock]:
+def collect_concept_source_blocks(
+    concept: dict[str, Any],
+    evidence_units: list[dict[str, Any]],
+    blocks: Sequence[SourceBlock],
+    max_blocks: int | None = None,
+    source_key_points: list[dict[str, Any]] | None = None,
+) -> list[SourceBlock]:
     """Select blocks for optional ConceptPageGeneration prompt.
 
     This is deterministic: use display/anchor refs and linked evidence refs
@@ -169,6 +210,11 @@ def collect_concept_source_blocks(concept: dict[str, Any], evidence_units: list[
     for ev in evidence_units:
         if slug and slug in ev.get("related_concept_slugs", []):
             refs.extend(ev.get("anchor_reference_ids", []))
+    concept_refs = set(_unique(refs + concept.get("mention_reference_ids", [])))
+    for key_point in source_key_points or []:
+        key_point_refs = key_point.get("anchor_reference_ids", []) or key_point.get("anchor_block_ids", [])
+        if concept_refs.intersection(key_point_refs):
+            refs.extend(key_point_refs)
     refs.extend(concept.get("mention_reference_ids", []))
 
     selected = []

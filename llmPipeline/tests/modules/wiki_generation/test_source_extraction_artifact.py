@@ -141,6 +141,44 @@ def test_concept_aliases_preserve_llm_aliases_without_backend_expansion() -> Non
     assert "three-layer-architecture" not in aliases
 
 
+def test_source_extraction_artifact_uses_polished_key_points_when_available() -> None:
+    normalized = {
+        "document": {
+            "document_id": "doc_polished",
+            "title": "Polished",
+            "source_path": "polished.md",
+        },
+        "semantic_notes": [
+            {
+                "semantic_summary": "원본 요약",
+                "key_points": [{"text": "원본 핵심", "anchor_reference_ids": ["B0001"]}],
+            }
+        ],
+        "concept_ledger": [],
+        "section_candidates": [],
+        "mentions": [],
+        "categories": [],
+        "observations": [],
+        "evidence_units": [],
+    }
+
+    page = SourcePageAssembler().build(
+        normalized,
+        polish={
+            "summary": {"text": "전체 요약"},
+            "key_points": {
+                "items": [
+                    {"text": "평가 후 핵심", "anchor_reference_ids": ["B0001", "B0002"]},
+                ]
+            },
+        },
+    )
+
+    assert page["source_extraction_artifact"]["key_points"] == [
+        {"text": "평가 후 핵심", "evidence_block_ids": ["B0001", "B0002"]}
+    ]
+
+
 def test_generated_concept_page_assembler_keeps_assemble_import_contract() -> None:
     source_blocks = [
         SourceBlock("doc_generated", "B0001", "ref_generated_md_b0001", "생성형 concept page 근거이다.", 1, 1),

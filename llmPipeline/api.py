@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.query.interfaces.http.routes import router as query_router
@@ -38,6 +38,10 @@ app.include_router(query_router)
 app.include_router(wiki_schema_router)
 logger = logging.getLogger("fruition.pipeline")
 
+DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
+CHAT_SEMANTIC_PROMPT = "prompts/chat_semantic_extraction.system.md"
+CHAT_APPEND_SEMANTIC_PROMPT = "prompts/chat_semantic_append.system.md"
+
 
 def _safe_name(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._")
@@ -45,6 +49,8 @@ def _safe_name(value: str) -> str:
 
 
 class PipelineRunIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     document_id: str | None = None
     input_markdown: str | None = None
     input_path: str | None = None
@@ -69,10 +75,11 @@ class PipelineRunIn(BaseModel):
     timeout_seconds: int = 180
     max_tokens: int | None = None
     json_mode: bool = False
-    system_prompt: str = "prompts/semantic_extraction.system.md"
+    system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
     concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
     section_polish_system_prompt: str = "prompts/section_polish.system.md"
+    source_accumulation_system_prompt: str = "prompts/source_accumulation_evaluator.system.md"
     wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     existing_wiki_dir: str | None = None
     wiki_evaluation_loop: bool = False
@@ -89,6 +96,55 @@ class PipelineRunIn(BaseModel):
         if sum(1 for source in sources if source) != 1:
             raise ValueError("Pass exactly one of document_id, input_markdown, or input_path")
         return self
+
+
+class ChatWikiRunIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    selection_mode: Literal["full", "partial"] = Field(
+        description="full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.",
+    )
+    input_markdown: str | None = Field(
+        default=None,
+        description="기존 source page가 있는 full 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown입니다.",
+    )
+    input_name: str | None = None
+    out: str | None = None
+    mode: Literal["api", "generic-chat"] = "api"
+    provider: Literal["upstage", "generic"] = "upstage"
+    env_file: str | None = None
+    source_page_mode: Literal["auto", "skeleton", "section-polish"] = "auto"
+    concept_page_mode: Literal["auto", "api", "full-llm", "skeleton", "section-polish"] = Field(
+        default="auto",
+        description="auto는 backend skeleton concept page만 생성합니다. section-polish를 명시하면 concept별 LLM polish를 수행합니다.",
+    )
+    max_packet_chars: int = 7000
+    overlap_blocks: int = 1
+    endpoint: str | None = None
+    api_base_url: str | None = None
+    api_key_env: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+    max_tokens: int | None = None
+    json_mode: bool = False
+    chat_system_prompt: str = CHAT_SEMANTIC_PROMPT
+    chat_append_system_prompt: str = CHAT_APPEND_SEMANTIC_PROMPT
+    concept_system_prompt: str = "prompts/concept_page_generation.system.md"
+    concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
+    section_polish_system_prompt: str = "prompts/section_polish.system.md"
+    source_accumulation_system_prompt: str = "prompts/source_accumulation_evaluator.system.md"
+    wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
+    existing_wiki_dir: str | None = None
+    wiki_evaluation_loop: bool = False
+    max_eval_attempts: int = 2
+    save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
+    log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
+    wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
+    user_id: str = Field(default="local-user", description="Wiki artifact owner namespace")
+    workspace_id: str = Field(default="local-workspace", description="Wiki artifact workspace namespace")
 
 
 class PipelineRunOut(BaseModel):
@@ -116,7 +172,7 @@ class WikiLintIn(BaseModel):
 
 
 def _build_pipeline_args(
-    payload: PipelineRunIn,
+    payload: PipelineRunIn | ChatWikiRunIn,
     run_id: str,
     input_path: Path | None,
     input_markdown: str | None,
@@ -126,9 +182,12 @@ def _build_pipeline_args(
     source_document_id: str | None,
 ) -> argparse.Namespace:
     existing_concept_index = _load_existing_concept_index_for_run(payload.user_id, payload.workspace_id)
+    existing_source_context = _load_existing_source_context_for_run(payload)
+    system_prompt = _semantic_prompt_for_run(payload, existing_source_context)
     return argparse.Namespace(
         run_id=run_id,
         source_document_id=source_document_id,
+        selection_mode=getattr(payload, "selection_mode", None),
         input=str(input_path) if input_path else input_name,
         input_markdown=input_markdown,
         input_name=input_name,
@@ -149,13 +208,16 @@ def _build_pipeline_args(
         timeout_seconds=payload.timeout_seconds,
         max_tokens=payload.max_tokens,
         json_mode=payload.json_mode,
-        system_prompt=payload.system_prompt,
+        system_prompt=system_prompt,
         concept_system_prompt=payload.concept_system_prompt,
         concept_resolution_system_prompt=payload.concept_resolution_system_prompt,
         section_polish_system_prompt=payload.section_polish_system_prompt,
+        source_accumulation_system_prompt=payload.source_accumulation_system_prompt,
         wiki_evaluator_system_prompt=payload.wiki_evaluator_system_prompt,
         existing_wiki_dir=payload.existing_wiki_dir,
         existing_concept_index=existing_concept_index,
+        existing_source_artifact=(existing_source_context or {}).get("artifact"),
+        existing_source_markdown=(existing_source_context or {}).get("source_markdown"),
         wiki_evaluation_loop=payload.wiki_evaluation_loop,
         max_eval_attempts=payload.max_eval_attempts,
         save_debug_json=payload.save_debug_json,
@@ -172,6 +234,45 @@ def _load_existing_concept_index_for_run(user_id: str, workspace_id: str) -> lis
     except Exception:
         logger.exception("failed to load existing concept index for pipeline run")
         return []
+
+
+def _load_existing_source_context_for_run(payload: PipelineRunIn | ChatWikiRunIn) -> dict[str, Any] | None:
+    if getattr(payload, "selection_mode", None) != "full" or not payload.document_id:
+        return None
+    try:
+        return database.latest_source_page_context(payload.document_id, payload.user_id, payload.workspace_id)
+    except Exception:
+        logger.exception("failed to load existing source page context for pipeline run")
+        return None
+
+
+def _semantic_prompt_for_run(payload: PipelineRunIn | ChatWikiRunIn, existing_source_context: dict[str, Any] | None) -> str:
+    selection_mode = getattr(payload, "selection_mode", None)
+    if not selection_mode:
+        return payload.system_prompt
+    if selection_mode == "full" and existing_source_context:
+        return payload.chat_append_system_prompt
+    return payload.chat_system_prompt
+
+
+def _validate_chat_inline_markdown(payload: ChatWikiRunIn) -> None:
+    if not payload.input_markdown:
+        return
+    if payload.selection_mode != "full":
+        raise HTTPException(status_code=422, detail="input_markdown is only allowed for full chat accumulation")
+    try:
+        existing_source_context = database.latest_source_page_context(
+            payload.document_id,
+            payload.user_id,
+            payload.workspace_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not existing_source_context:
+        raise HTTPException(
+            status_code=422,
+            detail="input_markdown requires an existing source page for full chat accumulation",
+        )
 
 
 def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
@@ -347,8 +448,49 @@ def _load_document_markdown(document: dict) -> tuple[str, str, str]:
     return markdown, object_uri, str(document.get("filename") or f"{_safe_name(document['id'])}.md")
 
 
+def _load_stored_document_input(document_id: str) -> tuple[str, str, str]:
+    try:
+        document = database.get_document(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    input_markdown, object_uri, input_name = _load_document_markdown(document)
+    return input_markdown, f"storage:{object_uri}", input_name
+
+
+def _resolve_chat_wiki_input(payload: ChatWikiRunIn) -> tuple[str, str, str]:
+    if payload.input_markdown:
+        _validate_chat_inline_markdown(payload)
+        input_name = payload.input_name or "chat.md"
+        input_source = f"inline:{input_name}"
+        try:
+            document = database.get_document(payload.document_id)
+            if not document:
+                database.create_pipeline_input_document(
+                    document_id=payload.document_id,
+                    filename=input_name,
+                    mime_type="text/markdown",
+                    byte_size=len(payload.input_markdown.encode("utf-8")),
+                    source_uri=input_source,
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return payload.input_markdown, input_source, input_name
+    return _load_stored_document_input(payload.document_id)
+
+
 @app.post("/pipeline/runs", response_model=PipelineRunOut)
 def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTasks) -> PipelineRunOut:
+    return _run_pipeline_request(payload, background_tasks)
+
+
+@app.post("/chat-wiki/runs", response_model=PipelineRunOut)
+def run_chat_wiki_endpoint(payload: ChatWikiRunIn, background_tasks: BackgroundTasks) -> PipelineRunOut:
+    return _run_pipeline_request(payload, background_tasks)
+
+
+def _run_pipeline_request(payload: PipelineRunIn | ChatWikiRunIn, background_tasks: BackgroundTasks) -> PipelineRunOut:
     run_id = str(uuid.uuid4())
     out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
     log_path = out / "pipeline.log"
@@ -358,16 +500,11 @@ def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTa
     input_markdown: str | None = None
     input_name = payload.input_name or "inline.md"
 
-    if payload.document_id:
-        try:
-            document = database.get_document(payload.document_id)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        if not document:
-            raise HTTPException(status_code=404, detail="Document not found")
-        input_markdown, object_uri, input_name = _load_document_markdown(document)
-        input_source = f"storage:{object_uri}"
-    elif payload.input_markdown:
+    if isinstance(payload, ChatWikiRunIn):
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(payload)
+    elif payload.document_id:
+        input_markdown, input_source, input_name = _load_stored_document_input(payload.document_id)
+    elif isinstance(payload, PipelineRunIn) and payload.input_markdown:
         input_markdown = payload.input_markdown
         document_id = f"api-inline-{run_id}"
         input_name = payload.input_name or "inline.md"
@@ -380,7 +517,7 @@ def run_pipeline_endpoint(payload: PipelineRunIn, background_tasks: BackgroundTa
             source_uri=input_source,
         )
     else:
-        input_path = Path(payload.input_path or "")
+        input_path = Path(payload.input_path or "") if isinstance(payload, PipelineRunIn) else Path("")
         if not input_path.exists():
             raise HTTPException(status_code=404, detail=f"Input file not found: {input_path}")
         document_id = f"api-file-{run_id}"
