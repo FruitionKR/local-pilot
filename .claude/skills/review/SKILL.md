@@ -1,7 +1,7 @@
 ---
 description: >-
-  PR 생성 전/후 코드 리뷰. 인자가 없으면 로컬 변경분(base..HEAD)을 리뷰해
-  터미널에 출력하고, PR 번호를 주면 해당 PR을 리뷰해 GitHub 인라인 코멘트로
+  PR 생성 전/후 코드 리뷰. 인자가 없으면 미푸시 커밋(origin/dev..HEAD)과 미커밋 변경을
+  리뷰해 터미널에 출력하고, PR 번호를 주면 해당 PR을 리뷰해 GitHub 인라인 코멘트로
   게시한다. 버그·정합성·보안 위주로 고신뢰 지적만 낸다.
 argument-hint: "[PR 번호] [포커스: 더 깊게 볼 영역·주제]"
 allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
@@ -23,9 +23,12 @@ allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
 
 ## Step 1 — diff 가져오기
 
-- **로컬**: 아직 커밋하지 않은 작업분을 대상으로 한다.
-  `git diff` (unstaged) + `git diff --cached` (staged) + `git status --short`
-  두 diff가 모두 비어 있으면 `커밋하지 않은 변경이 없습니다.` 출력 후 종료.
+- **로컬**: 아직 `dev`에 반영되지 않은 **미푸시 커밋**과 커밋하지 않은 작업분을 대상으로 한다(= 다음 PR에 담길 변경).
+  - base = `origin/dev`. 먼저 `git fetch origin dev`로 최신화한다(로컬 `dev`는 stale일 수 있음). `origin/dev`가 없으면 로컬 `dev`.
+  - 미푸시 커밋 목록: `git log --oneline --no-merges origin/dev..HEAD`
+  - 변경 diff: `git diff origin/dev...HEAD` (merge-base 기준 3-dot, merge 커밋 제외)
+  - 여기에 아직 커밋 안 한 작업분도 포함: `git diff` (unstaged) + `git diff --cached` (staged) + `git status --short`
+  - 미푸시 커밋과 두 diff가 **모두 비어 있으면** `리뷰할 미푸시 커밋·변경이 없습니다.` 출력 후 종료.
 - **PR**: `gh pr diff $ARGUMENTS` + `gh pr view $ARGUMENTS --json title,body`
 
 ## Step 2 — 리뷰
@@ -39,8 +42,8 @@ allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
 **포커스 지시가 있으면**: 전체는 그대로 빠짐없이 검토하되, 지정된 영역·파일·주제를
 **추가로 더 깊이** 분석하고 그 발견을 우선한다. 단 "~만/only"처럼 범위를 좁히라는
 지시면 그 영역만 검토하고 나머지는 범위 밖임을 밝힌다.
-PR 모드의 요구사항 기준은 PR 설명이다. 로컬 모드는 커밋 전이라 기준 문구가 없으므로
-변경 코드·주석에서 의도를 파악하고, 의도가 불명확하면 사용자에게 한 번 확인한다.
+PR 모드의 요구사항 기준은 PR 설명이다. 로컬 모드는 미푸시 커밋의 **커밋 메시지**와
+변경 코드·주석에서 의도를 파악하고(미커밋 변경은 기준 문구가 없을 수 있음), 의도가 불명확하면 사용자에게 한 번 확인한다.
 
 우선순위 순으로 **확신이 서는 것만** 지적한다. 애매하거나 취향 수준은 넣지 않는다.
 

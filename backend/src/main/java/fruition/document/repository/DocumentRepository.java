@@ -13,8 +13,8 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     Optional<Document> findByContentHash(String contentHash);
 
-    /** 완료 후처리(reconcile) 대상: origin·status로 조회. */
-    List<Document> findAllByOriginAndStatus(String origin, DocumentStatus status);
+    /** 완료 후처리(reconcile) 대상: 아직 후처리 안 된(reconciled_at IS NULL) origin·status 문서. */
+    List<Document> findAllByOriginAndStatusAndReconciledAtIsNull(String origin, DocumentStatus status);
 
     List<Document> findAllByWorkspaceId(String workspaceId);
 

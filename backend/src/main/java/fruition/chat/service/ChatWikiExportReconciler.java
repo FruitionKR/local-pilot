@@ -75,7 +75,7 @@ public class ChatWikiExportReconciler {
     @Scheduled(fixedDelay = 3000)
     @Transactional
     public void reconcile() {
-        for (Document document : documentRepository.findAllByOriginAndStatus("chat_export", DocumentStatus.completed)) {
+        for (Document document : documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed)) {
             String mode = document.getSelectionMode();
 
             // source_blocks의 [session_id:pair_id]에서 세션과 문답을 파싱
@@ -113,6 +113,10 @@ public class ChatWikiExportReconciler {
                             sessionId, wikiPageId, added, document.getId());
                 }
             }
+
+            // 후처리 완료 → reconciled_at 세팅(다음 tick 조회에서 제외). source_blocks/page 미생성이면 위에서 continue돼 여기 도달 안 함.
+            document.markReconciled(Instant.now());
+            documentRepository.save(document);
         }
     }
 

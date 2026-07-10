@@ -6,6 +6,49 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-10
+
+### perf: reconciler 폴링 최적화 — reconciled_at 마커 + 인덱스 + @DynamicUpdate
+
+**배경**
+
+`ChatWikiExportReconciler`가 매 3초마다 완료된 chat_export를 훑는데, `documents`에 인덱스가 없어 순차 스캔이었고 이미 후처리된 문서까지 매번 다시 조회했다. 또 파이프라인이 같은 `documents` 행에 raw SQL로 직접 쓰므로(공유 쓰기), backend의 JPA full-column UPDATE가 파이프라인 컬럼을 덮어쓸 위험이 있었다. (설계 배경·대안: `docs/spec/pipeline-db-ownership.md`)
+
+**변경된 것**
+
+- `document/domain/Document`: `reconciled_at` 컬럼(null=미처리) + `markReconciled` + 재생성(`reopenForChatExportRegeneration`) 시 `reconciled_at` 리셋. `@Index(idx_documents_reconcile: origin, status, reconciled_at)`로 순차 스캔 제거. `@DynamicUpdate`로 **변경한 컬럼만 UPDATE**해 파이프라인이 쓴 `status` 등을 덮어쓰지 않게 함(공유 테이블 컬럼 단위 소유 분리).
+- `document/repository/DocumentRepository`: `findAllByOriginAndStatus` → `findAllByOriginAndStatusAndReconciledAtIsNull`(미처리분만 조회).
+- `chat/service/ChatWikiExportReconciler`: 새 쿼리 사용 + 후처리 성공 문서에 `markReconciled` + save. 미완(source_blocks/page 미생성)이면 마킹 안 하고 다음 tick 재시도(self-healing 유지).
+
+**검증**
+
+- 컴파일·`fruition.document.*`/`fruition.chat.*` 테스트 통과.
+
+**주의사항**
+
+- 인덱스·컬럼은 `ddl-auto=update`로 **재시작 시 생성**. 기존 `origin=chat_export AND status=completed` 문서는 `reconciled_at=NULL`이라 재시작 후 1회 재-reconcile되나 멱등이라 무해.
+- 이번 변경은 파이프라인의 `documents` 직접쓰기라는 근본 문제의 우회(단기안)다. 소유권 회수(중기 C-poll)는 `docs/spec/pipeline-db-ownership.md` 후속작업 참고.
+
+### feat: 채팅 export를 llmPipeline `/chat-wiki/runs` 엔드포인트로 라우팅
+
+**배경**
+
+llmPipeline이 채팅 전용 엔드포인트 `POST /chat-wiki/runs`(모델 `ChatWikiRunIn`)를 추가했다. 이 엔드포인트는 `document_id`(신원) + `selection_mode` + `input_markdown`(delta)을 동시 수용하고, full=기존 chat source page 누적(append)/partial=독립 페이지로 처리한다. 기존 `/pipeline/runs`는 `exactly_one_input` 제약이 있어 full 재생성 inline이 불가능했던 하드 블로커가 이 엔드포인트로 해소됐다. 일반 문서 ingest는 그대로 `/pipeline/runs`를 쓴다.
+
+**변경된 것**
+
+- `resources/application.properties`: `app.processing.chat-endpoint`(`${CHAT_PROCESSING_ENDPOINT:http://localhost:8000/chat-wiki/runs}`) 추가.
+- `document/repository/DocumentProcessingRequester`: `chatEndpoint` 주입, `request(..., boolean chatWiki)`로 endpoint 분기(로그에 endpoint 표기). 페이로드(`PipelineRunRequest`)는 불변 — 보내는 필드가 모두 `ChatWikiRunIn`에 존재.
+- `document/service/DocumentService.doRequestProcessing`: `origin=chat_export`이면 `chatWiki=true`로 전달.
+
+**검증**
+
+- 컴파일·`fruition.document.*`/`fruition.chat.*` 테스트 통과. 페이로드는 chat 계약(`docs/spec/chat-to-wiki-contract.md` §3)과 정합.
+
+**주의사항**
+
+- 실제 동작하려면 **backend 재시작 + `/chat-wiki/runs`를 포함한 파이프라인(현재 dev 반영분) 재빌드**가 필요하다. 재빌드 전엔 chat export가 `/chat-wiki/runs` 404로 실패한다.
+
 ## 2026-07-09
 
 ### fix: partial export가 세션 정식 export 문서를 덮어써 full 재생성이 오작동하던 문제

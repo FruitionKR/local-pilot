@@ -1,6 +1,6 @@
 ---
 name: review
-description: Use for code review before or after PR creation. Triggers include "리뷰해줘", "코드리뷰", "PR 리뷰", "결실봇 리뷰", "review", "gh review". With no PR number, review local changes and print findings to the terminal. With a PR number, review the PR and post GitHub inline comments. Report only high-confidence findings, focused on bugs, consistency, and security.
+description: Use for code review before or after PR creation. Triggers include "리뷰해줘", "코드리뷰", "PR 리뷰", "결실봇 리뷰", "review", "gh review". With no PR number, review unpushed commits (origin/dev..HEAD) and uncommitted changes, printing findings to the terminal. With a PR number, review the PR and post GitHub inline comments. Report only high-confidence findings, focused on bugs, consistency, and security.
 allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
 ---
 
@@ -20,7 +20,12 @@ Interpret `$ARGUMENTS` as follows.
 
 ## Step 1 - Get Diff
 
-- Local mode: review uncommitted work. Check `git diff`, `git diff --cached`, and `git status --short`. If both diffs are empty, print `커밋하지 않은 변경이 없습니다.` and stop.
+- Local mode: review unpushed commits (not yet on `dev`) plus uncommitted work (= what the next PR will contain).
+  - Base is `origin/dev`. First run `git fetch origin dev` to refresh it (local `dev` may be stale). If `origin/dev` is absent, use local `dev`.
+  - Unpushed commit list: `git log --oneline --no-merges origin/dev..HEAD`
+  - Change diff: `git diff origin/dev...HEAD` (3-dot from merge-base, excludes merge commits)
+  - Also include uncommitted work: `git diff`, `git diff --cached`, `git status --short`.
+  - If the unpushed commits and both diffs are all empty, print `리뷰할 미푸시 커밋·변경이 없습니다.` and stop.
 - PR mode: inspect `gh pr diff <PR 번호>` and `gh pr view <PR 번호> --json title,body`.
 
 ## Step 2 - Review
@@ -31,7 +36,7 @@ Inspect only changed lines for findings. Read surrounding code only for context.
 
 If a focus instruction is present, still review the full diff and inspect the requested area, file, or topic more deeply. If the user says `only` or `만`, review only that scope and state that the rest is out of scope.
 
-In PR mode, use the PR body as the requirement baseline. In local mode, infer intent from changed code and comments. If intent is unclear, ask the user once.
+In PR mode, use the PR body as the requirement baseline. In local mode, infer intent from the unpushed commit messages plus changed code and comments (uncommitted work may lack a baseline). If intent is unclear, ask the user once.
 
 Report only high-confidence findings. Do not include ambiguous or preference-only comments. Prioritize findings in this order:
 

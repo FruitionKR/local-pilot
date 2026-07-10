@@ -1,10 +1,14 @@
 package fruition.document.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.DynamicUpdate;
 import java.time.Instant;
 
 @Entity
-@Table(name = "documents")
+// 파이프라인이 raw SQL로 같은 documents 행에 직접 쓰므로, backend는 변경한 컬럼만 UPDATE해 파이프라인 컬럼을 덮어쓰지 않는다.
+@DynamicUpdate
+@Table(name = "documents",
+        indexes = @Index(name = "idx_documents_reconcile", columnList = "origin, status, reconciled_at"))
 public class Document {
 
     @Id
@@ -75,6 +79,10 @@ public class Document {
     @Column(name = "pipeline_input_markdown", columnDefinition = "TEXT")
     private String pipelineInputMarkdown;
 
+    /** 채팅 export 완료 후처리(reconcile) 완료 시각. null이면 아직 후처리 안 됨(=폴링 대상). 재생성 시 다시 null로 리셋된다. */
+    @Column(name = "reconciled_at")
+    private Instant reconciledAt;
+
     protected Document() {}
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
@@ -140,6 +148,12 @@ public class Document {
         this.processedAt = null;
         this.errorMessage = null;
         this.pipelineInputMarkdown = pipelineInputMarkdown;
+        this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
+    }
+
+    /** 완료 후처리(reconcile)를 마쳤음을 기록한다. 이후 폴링 조회에서 제외된다. */
+    public void markReconciled(Instant now) {
+        this.reconciledAt = now;
     }
 
     public String getId() { return id; }
@@ -164,4 +178,5 @@ public class Document {
     public void assignSelectionMode(String selectionMode) { this.selectionMode = selectionMode; }
     public String getSelectionMode() { return selectionMode; }
     public String getPipelineInputMarkdown() { return pipelineInputMarkdown; }
+    public Instant getReconciledAt() { return reconciledAt; }
 }

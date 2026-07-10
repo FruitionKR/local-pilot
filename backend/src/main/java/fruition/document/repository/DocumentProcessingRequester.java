@@ -18,26 +18,32 @@ public class DocumentProcessingRequester {
 
     private final RestClient restClient;
     private final String processingEndpoint;
+    private final String chatEndpoint;
 
     public DocumentProcessingRequester(
-            @Value("${app.processing.endpoint}") String processingEndpoint) {
+            @Value("${app.processing.endpoint}") String processingEndpoint,
+            @Value("${app.processing.chat-endpoint}") String chatEndpoint) {
         this.processingEndpoint = processingEndpoint;
+        this.chatEndpoint = chatEndpoint;
         this.restClient = RestClient.builder()
                 .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
     }
 
+    /** chatWiki=true면 채팅 Wiki page화 전용 엔드포인트(/chat-wiki/runs)로, 아니면 일반 문서 처리 엔드포인트로 보낸다. */
     public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
-                                       String selectionMode, String inputMarkdown) {
+                                       String selectionMode, String inputMarkdown, boolean chatWiki) {
+        String endpoint = chatWiki ? chatEndpoint : processingEndpoint;
         PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown);
         try {
             PipelineRunResponse response = restClient.post()
-                    .uri(processingEndpoint)
+                    .uri(endpoint)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
                     .body(PipelineRunResponse.class);
-            log.info("[파이프라인 실행 요청 완료] documentId={} workspaceId={} runId={} status={}",
+            log.info("[파이프라인 실행 요청 완료] endpoint={} documentId={} workspaceId={} runId={} status={}",
+                    endpoint,
                     documentId,
                     workspaceId,
                     response != null ? response.runId() : "null",
