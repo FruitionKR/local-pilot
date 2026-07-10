@@ -5,9 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from app.modules.wiki_generation.infrastructure.chat_source_accumulation import (
+    apply_chat_source_accumulation_result,
+    build_chat_source_accumulation_payload,
+)
 from run_lab import (
     PipelineLog,
-    _apply_source_accumulation_result,
     _prepare_concept_section_polish,
     _prepare_source_page_polish,
     _run_wiki_generation_graph,
@@ -46,6 +49,28 @@ class FakeSectionPolisher:
 
 
 class WikiGenerationGraphTest(unittest.TestCase):
+    def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
+        normalized = {
+            "document": {"document_id": "chat-doc-1"},
+            "existing_source_context": {"summary": "기존 요약"},
+            "semantic_notes": [
+                {
+                    "semantic_summary": "신규 요약",
+                    "key_points": [{"text": "신규 핵심", "anchor_reference_ids": ["pair_2"]}],
+                }
+            ],
+            "observations": [{"summary": "관찰"}],
+            "categories": [{"name": "운영"}],
+        }
+
+        payload = build_chat_source_accumulation_payload(normalized, "# Existing Source")
+
+        self.assertEqual(payload["context"]["document"], {"document_id": "chat-doc-1"})
+        self.assertEqual(payload["context"]["existing_source_summary"], "기존 요약")
+        self.assertEqual(payload["context"]["existing_source_markdown"], "# Existing Source")
+        self.assertEqual(payload["draft"]["accumulated_summary_candidates"], ["신규 요약"])
+        self.assertEqual(payload["draft"]["key_points"][0]["text"], "신규 핵심")
+
     def test_evaluator_feedback_retries_semantic_extraction_until_passed(self) -> None:
         prompts: list[str] = []
         evaluations = [
@@ -242,7 +267,7 @@ class WikiGenerationGraphTest(unittest.TestCase):
             },
         }
 
-        result = _apply_source_accumulation_result(
+        result = apply_chat_source_accumulation_result(
             normalized,
             raw,
             [FakeBlock(block_id="B0001", text="기존"), FakeBlock(block_id="B0002", text="신규")],
