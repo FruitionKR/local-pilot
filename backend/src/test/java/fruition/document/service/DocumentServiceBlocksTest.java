@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -29,6 +30,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -115,5 +121,39 @@ class DocumentServiceBlocksTest {
 
         assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("chat_export 문서는 chatWiki=true로 파이프라인 요청을 라우팅한다")
+    void doRequestProcessing_chatExport_routesChatWiki() {
+        Document chatDoc = new Document("chatdoc_1", WORKSPACE_ID, USER_ID, "c.md", "text/markdown", 10L,
+                "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
+        chatDoc.assignSelectionMode("full");
+        when(documentRepository.findById("chatdoc_1")).thenReturn(Optional.of(chatDoc));
+        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
+                .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_1", "running", null, null));
+
+        documentService.doRequestProcessing("chatdoc_1");
+
+        ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
+        verify(processingRequester).request(eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID), anyString(),
+                eq("full"), any(), chatWiki.capture());
+        assertThat(chatWiki.getValue()).isTrue();
+    }
+
+    @Test
+    @DisplayName("일반 업로드 문서는 chatWiki=false로 요청한다")
+    void doRequestProcessing_upload_routesGeneric() {
+        Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
+                "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
+        when(documentRepository.findById("doc_up")).thenReturn(Optional.of(doc));
+        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
+                .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_2", "running", null, null));
+
+        documentService.doRequestProcessing("doc_up");
+
+        ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
+        verify(processingRequester).request(any(), any(), any(), any(), any(), any(), chatWiki.capture());
+        assertThat(chatWiki.getValue()).isFalse();
     }
 }
