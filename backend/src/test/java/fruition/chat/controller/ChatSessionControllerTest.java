@@ -11,6 +11,7 @@ import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
+import fruition.chat.repository.ChatPartialWikiRepository;
 import fruition.chat.service.ChatSessionService;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
@@ -56,6 +57,7 @@ class ChatSessionControllerTest {
     @MockBean ChatMessageRepository chatMessageRepository;
     @MockBean ChatMessageReferenceRepository referenceRepository;
     @MockBean ChatMessageRelatedPageRepository relatedPageRepository;
+    @MockBean ChatPartialWikiRepository chatPartialWikiRepository;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     private String bearerToken() {

@@ -59,6 +59,10 @@ erDiagram
         VARCHAR pipeline_run_id
         TIMESTAMPTZ processing_started_at
         TIMESTAMPTZ processing_updated_at
+        VARCHAR processing_stage
+        VARCHAR origin
+        VARCHAR selection_mode
+        TEXT pipeline_input_markdown
     }
 
     document_processing_queue {
@@ -165,6 +169,7 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ last_message_at
         VARCHAR wiki_page_id
+        VARCHAR wiki_export_document_id
     }
 
     chat_messages {
@@ -202,6 +207,15 @@ erDiagram
         INTEGER rank
     }
 
+    chat_partial_wiki {
+        VARCHAR id PK
+        VARCHAR session_id FK
+        VARCHAR pair_id
+        VARCHAR wiki_page_id
+        VARCHAR document_id
+        TIMESTAMPTZ created_at
+    }
+
     users ||--o{ user_oauth_accounts : "user_id"
     users ||--o{ user_refresh_tokens : "user_id"
     users ||--o{ workspace_members : "user_id"
@@ -224,6 +238,9 @@ erDiagram
     wiki_pages ||--o{ wiki_embedding_units : "page_id"
     wiki_embedding_vectors ||--o{ wiki_embedding_units : "embedding_vector_id"
     chat_sessions ||--o{ chat_messages : "session_id"
+    chat_sessions ||--o{ chat_partial_wiki : "session_id"
+    wiki_pages ||--o{ chat_partial_wiki : "wiki_page_id"
+    documents ||--o{ chat_partial_wiki : "document_id"
     chat_messages ||--o{ chat_message_references : "chat_message_id"
     chat_messages ||--o{ chat_message_related_pages : "chat_message_id"
 ```
@@ -247,6 +264,7 @@ erDiagram
 | `chat_messages` | Spring Boot | 질의응답 메시지. user·assistant 쌍으로 저장. `pair_id`로 쌍 식별 |
 | `chat_message_references` | Spring Boot | assistant 메시지의 근거 source block 스니펫 |
 | `chat_message_related_pages` | Spring Boot | assistant 메시지와 연결된 탐색된 Wiki 페이지 목록 |
+| `chat_partial_wiki` | Spring Boot | partial 발췌 export의 문답(pair)↔Wiki 페이지 멤버십(1:N). `UNIQUE(pair_id, wiki_page_id)` |
 | `pipeline_runs` | llmPipeline | pipeline 실행 기록. llmPipeline이 단독 관리, Spring은 상태 조회만 |
 | `wiki_page_embeddings` | llmPipeline | Wiki 페이지 임베딩 벡터. 모델별 1개 행. query 검색에 사용 |
 | `wiki_embedding_vectors` | llmPipeline | 임베딩 벡터 풀. 동일 텍스트를 여러 페이지가 공유할 때 중복 연산 방지 |
@@ -340,6 +358,10 @@ JWT Refresh Token 저장. 로그아웃 및 강제 만료 지원. `revoked_at`으
 | `pipeline_run_id` | VARCHAR | pipeline run UUID. 요청 성공 후 채워짐 |
 | `processing_started_at` | TIMESTAMPTZ | pipeline run 시작 시각 |
 | `processing_updated_at` | TIMESTAMPTZ | 마지막 heartbeat 수신 시각. stalled 감지 기준 |
+| `processing_stage` | VARCHAR | 파이프라인 heartbeat의 현재 처리 단계 라벨(예: "5. Source Page 생성"). 진행 표시용 |
+| `origin` | VARCHAR | 문서 출처. `upload`(일반 업로드) \| `chat_export`(채팅 Wiki page화). NULL은 기존 업로드로 간주 |
+| `selection_mode` | VARCHAR | 채팅 export 선택 모드. `full` \| `partial`. 일반 업로드는 NULL |
+| `pipeline_input_markdown` | TEXT | full 재생성 시 파이프라인에 inline으로 보낼 미편입 문답(delta) Markdown. 일반 업로드·첫 export는 NULL |
 
 ---
 
@@ -426,7 +448,8 @@ Wiki 페이지 간 방향성 링크. 그래프 탐색에 사용.
 | `context_summary_updated_at` | TIMESTAMPTZ | race condition 사후 감지용 |
 | `created_at` | TIMESTAMPTZ | 생성 시각 |
 | `last_message_at` | TIMESTAMPTZ | 가장 최근 메시지 시각. 세션 목록 정렬 기준 |
-| `wiki_page_id` | VARCHAR | 세션 전체를 위키로 저장 시 연결 |
+| `wiki_page_id` | VARCHAR | full export 완료 후 연결되는 세션의 정식 source Wiki 페이지 |
+| `wiki_export_document_id` | VARCHAR | 세션의 정식 export 문서 id(full만 기록). 완료 콜백 역조회·full 재생성 대상. partial은 건드리지 않음 |
 
 ---
 
@@ -477,6 +500,22 @@ assistant 메시지와 연결된 탐색된 Wiki 페이지 목록.
 | `role` | VARCHAR | 예: `seed_source`, `focus_concept` |
 | `depth` | INTEGER | 그래프 탐색 깊이 (0 = 시드 노드) |
 | `rank` | INTEGER | 목록 내 순위 (1부터 시작) |
+
+---
+
+### chat_partial_wiki
+partial 발췌 export의 문답(pair)↔Wiki 페이지 멤버십. 한 문답이 서로 다른 발췌 페이지에 여러 번 포함될 수 있어(1:N) `chat_messages.wiki_page_id`(full 전용, 1:1)와 별도로 기록한다. full 편입은 여기에 넣지 않는다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | VARCHAR | `cpw_{UUID}` |
+| `session_id` | VARCHAR | 소속 채팅 세션 |
+| `pair_id` | VARCHAR | 발췌된 문답(pair) |
+| `wiki_page_id` | VARCHAR | 문답이 편입된 partial Wiki 페이지 |
+| `document_id` | VARCHAR | 이 멤버십을 만든 export 문서. 멱등 기록 가드에 사용 |
+| `created_at` | TIMESTAMPTZ | 기록 시각 |
+
+`UNIQUE(pair_id, wiki_page_id)` — 같은 문답이 같은 페이지에 중복 기록되지 않도록.
 
 ---
 

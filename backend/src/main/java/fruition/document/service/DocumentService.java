@@ -46,12 +46,15 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -198,13 +201,89 @@ public class DocumentService {
         });
     }
 
+    /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
+    public record ExportDocumentResult(String documentId, boolean skipped) {}
+
+    /**
+     * 채팅 export Markdown을 문서로 저장하고 처리 큐에 등록한다. (권한 검증은 호출부에서 이미 수행)
+     * contentHash로 중복을 확인해, 이미 있으면 기존 문서 id로 skipped 결과를 반환한다.
+     */
+    @Transactional
+    public ExportDocumentResult createChatExportDocument(String workspaceId, String userId,
+                                                         String filename, String markdown, String contentHash,
+                                                         String selectionMode) {
+        if (selectionMode == null || selectionMode.isBlank()) {
+            throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
+        }
+        Optional<Document> existing = documentRepository.findByContentHash(contentHash);
+        if (existing.isPresent()) {
+            return new ExportDocumentResult(existing.get().getId(), true);
+        }
+
+        String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
+        String objectPath = "sources/documents/" + documentId + "/original";
+        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectPath)
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 저장 중 오류가 발생했습니다.", e);
+        }
+
+        Document document = new Document(
+                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
+                objectPath, contentHash, "chat_export");
+        document.assignSelectionMode(selectionMode);
+        documentRepository.save(document);
+
+        requestProcessingAfterCommit(documentId);
+
+        return new ExportDocumentResult(documentId, false);
+    }
+
+    /**
+     * 채팅 full 재생성: 기존 export 문서(documentId)를 재사용한다. MinIO 원본을 세션 전체(fullMarkdown)로 덮어쓰고,
+     * 파이프라인엔 미편입 문답(deltaMarkdown)만 inline으로 보내도록 문서를 갱신한 뒤 처리 큐에 재등록한다.
+     */
+    @Transactional
+    public void regenerateChatExportDocument(String documentId, String fullMarkdown, String fullContentHash,
+                                             String deltaMarkdown) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(document.getSourceUri())
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 재생성 저장 중 오류가 발생했습니다.", e);
+        }
+
+        document.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
+        requestProcessingAfterCommit(documentId);
+    }
+
     void doRequestProcessing(String documentId) {
         Document document = documentRepository.findById(documentId).orElse(null);
         if (document == null) return;
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
-                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(), callbackUrl);
+                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
+                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown());
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
@@ -222,19 +301,19 @@ public class DocumentService {
     }
 
     @Transactional
-    public void applyPipelineEvent(String documentId, String runId) {
+    public void applyPipelineEvent(String documentId, String runId, String stage) {
         documentRepository.findById(documentId).ifPresent(doc -> {
             if (runId != null && !runId.equals(doc.getPipelineRunId())) {
                 return;
             }
-            doc.markProcessingHeartbeat(Instant.now());
+            doc.markProcessingHeartbeat(stage, Instant.now());
         });
     }
 
     public DocumentListResponse findAll(String workspaceId, String userId) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<DocumentListResponse.DocumentItem> items = documentRepository.findAllByWorkspaceId(workspaceId).stream()
+        List<DocumentListResponse.DocumentItem> items = documentRepository.findVisibleByWorkspaceId(workspaceId).stream()
                 .map(doc -> new DocumentListResponse.DocumentItem(
                         doc.getId(),
                         doc.getFilename(),
@@ -247,7 +326,8 @@ public class DocumentService {
                         doc.getProcessedAt(),
                         doc.getErrorMessage(),
                         doc.getPipelineRunId(),
-                        resolveProcessingState(doc)
+                        resolveProcessingState(doc),
+                        doc.getProcessingStage()
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -286,7 +366,8 @@ public class DocumentService {
                 doc.getErrorMessage(),
                 wikiPages,
                 doc.getPipelineRunId(),
-                resolveProcessingState(doc)
+                resolveProcessingState(doc),
+                doc.getProcessingStage()
         );
     }
 

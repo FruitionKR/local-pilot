@@ -6,6 +6,118 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-09
+
+### fix: partial export가 세션 정식 export 문서를 덮어써 full 재생성이 오작동하던 문제
+
+**배경**
+
+`assignWikiExportDocument`가 full·partial 공통 경로라, partial export가 세션의 `wikiExportDocumentId`를 partial 문서 id로 덮어썼다. 그러면 이후 full 재생성이 그 값을 재사용해 **partial 문서를 대상으로 재생성**(MinIO 원본 덮어쓰기·status 리셋·재큐)하는 정합성 문제가 있었다.
+
+**변경된 것**
+
+- `chat/service/ChatWikiExportService.export`: `wikiExportDocumentId` 기록(+세션 save)을 **full일 때만** 수행. partial은 세션 정식 상태를 건드리지 않는다(독립 발췌).
+- 회귀 테스트 추가: partial export 후 `wikiExportDocumentId` 불변·`save` 미호출 검증.
+
+### feat: 채팅 full 재생성 시 기존 문서 재사용 + delta inline markdown 전송
+
+**배경**
+
+이미 위키가 연결된 세션을 다시 full로 export(재생성)할 때, 매번 새 문서를 만들지 않고 **기존 export 문서를 갱신**한다. 원본은 세션 전체로 덮어써 누적 기록을 유지하고, 파이프라인엔 미편입 문답(delta)만 inline으로 보내 append 처리에 쓰게 한다.
+
+**추가/변경된 것**
+
+- `document/domain/Document`: `pipeline_input_markdown`(TEXT) 컬럼 추가 + `reopenForChatExportRegeneration(contentHash, byteSize, inputMarkdown)`(status=processing 리셋, 원본 해시/크기 갱신, inline delta 저장).
+- `document/service/DocumentService`: `regenerateChatExportDocument(documentId, fullMarkdown, fullContentHash, deltaMarkdown)` 추가 — 기존 문서의 MinIO 원본을 세션 전체로 **덮어쓰고** 처리 큐에 재등록. `doRequestProcessing`가 `Document.pipelineInputMarkdown`을 파이프라인 요청에 전달.
+- `document/repository/DocumentProcessingRequester`: `PipelineRunRequest`에 `input_markdown`(`@JsonInclude(NON_NULL)`) 추가. 일반 업로드·첫 export는 null이라 키가 빠져 요청 불변.
+- `chat/service/ChatWikiExportService`: `isRegeneration`(`full` + `session.wikiPageId != null` + `wikiExportDocumentId != null`) 분기. 재생성이면 기존 문서 재사용(원본=세션 전체, inline=delta), 그 외는 기존 신규 생성 경로.
+
+**검증**
+
+- 단위테스트 추가(재생성: 기존 문서 재사용, 원본=전체·inline=delta 분리, 신규 생성 경로 미호출). 전체 테스트 통과.
+
+**주의사항 (하드 블로커)**
+
+- **full 재생성은 llmPipeline 변경 전까지 실패한다.** 현재 `PipelineRunIn`은 `document_id`/`input_markdown` 중 하나만 허용(`exactly_one_input`)하고, inline 경로는 합성 `api-inline-{run_id}` id를 만들어 완료·reconciler가 깨진다. 파이프라인이 `document_id`(신원) + `input_markdown`(내용) 동시 수용 + `selection_mode` append 처리를 구현해야 한다. 상세: `docs/issue/2026-07-09.md` "llmPipeline 후속 작업".
+- 첫 full·partial·일반 업로드는 기존 `document_id`+storage 경로 그대로.
+
+### feat: partial 발췌 위키 멤버십(chat_partial_wiki) 기록 + 문답별 위키 노출
+
+**배경**
+
+한 문답을 서로 다른 발췌(partial) 위키에 여러 번 담을 수 있으므로(1:N), full 전용 `chat_messages.wiki_page_id`(1:1)로는 partial 멤버십을 표현할 수 없다. partial "문답 ↔ 위키 페이지" 관계를 별도 junction으로 정규화하고, 채팅 화면이 문답별로 "이미 위키인지"를 알 수 있게 노출한다.
+
+**추가/변경된 것**
+
+- `chat/domain/ChatPartialWiki`(신규) + `chat/repository/ChatPartialWikiRepository`(신규): 테이블 `chat_partial_wiki(session_id, pair_id, wiki_page_id, document_id, created_at)`, `UNIQUE(pair_id, wiki_page_id)`. partial 발췌 멤버십만 기록(full은 기존대로 `chat_messages.wiki_page_id`).
+- `chat/service/ChatWikiExportReconciler`: 완료 문서를 **full/partial 분기**로 후처리. partial이면 `chat_partial_wiki`에 문답 멤버십 기록(`existsByDocumentId` 멱등 가드). `linkSession`을 "미연결 세션만 연결"로 바꿔, 잘못된 데이터(같은 세션 full 문서 다수)에도 무한 재기록/flip을 방지.
+- `chat/dto/ChatMessageResponse`에 `wiki_page_id`(full, nullable) + `partial_wiki_page_ids`(partial 페이지 목록) 노출. `chat/controller/ChatSessionController`가 `findAllBySessionId`로 pair별 partial 페이지를 매핑해 채운다.
+
+**검증**
+
+- `compileJava`/`compileTestJava` 통과, `fruition.chat.*` 테스트 통과(`ChatSessionControllerTest`에 `ChatPartialWikiRepository` `@MockBean` 추가).
+
+**주의사항**
+
+- `chat_partial_wiki` 테이블은 `ddl-auto=update`로 자동 생성.
+- 방향2(위키 페이지 → 원본 문답) 조회는 레포 메서드(`findAllByWikiPageId`)만 두고 엔드포인트는 후속.
+
+## 2026-07-08
+
+### refactor: 채팅 Wiki page화를 문답(pair) 단위 직렬화 + full/partial 선택으로 전환
+
+**배경**
+
+채팅 → 위키 계약이 개정되어(v2), 직렬화 단위를 메시지 → 문답(pair)로, 원문 링크 식별을 `session_id + pair_id`로 바꾼다. 이 커밋은 backend의 직렬화·선택 부분을 새 계약(§4)에 맞춘다. 입력 방식은 "storage/document_id 유지" 결정에 따라 그대로 둔다.
+
+**추가/변경된 것**
+
+- `chat/service/ChatWikiMarkdownSerializer`: 메시지 단위 헤딩 → **문답 pair 단위 `[session_id:pair_id]Q : … / A : …`** 포맷(§4). 불완전 문답(user·assistant 미완) 제외, 문답 내 빈 줄 접기.
+- `chat/service/ChatWikiExportService.export`: `ChatWikiExportRequest(selection_mode, pair_ids)`를 받아 **full(전체) / partial(선택 문답)** 직렬화. partial은 선택된 pair만 포함.
+- `chat/dto/ChatWikiExportRequest`(신규), `chat/exception/InvalidChatWikiExportRequestException`(신규 → 400 `INVALID_CHAT_WIKI_EXPORT_REQUEST`): selection_mode 검증.
+- `chat/dto/ChatMessageResponse`에 `pair_id` 노출 — 프론트가 문답 단위로 선택할 수 있게.
+- `document/domain/Document`에 `selection_mode` 컬럼 추가. export 시 저장하고, 워커가 `/pipeline/runs` 요청에 `selection_mode`로 전달한다(`@JsonInclude(NON_NULL)`이라 일반 업로드 요청은 불변). `createChatExportDocument`는 chat_export 문서에 selection_mode가 비면 생성을 거부한다. 파이프라인이 아직 이 값을 읽지 않아 현재는 no-op이며, append/create_new 분기 구현 시 사용된다.
+
+**검증**
+
+- serializer 단위테스트 재작성(포맷·순서·불완전 제외·빈 줄 접기).
+- 라이브 e2e: full/partial 각각 export → `source_blocks`에 `[session:pair]Q/A` 포맷 저장, partial은 선택 pair만 담김, `wiki_pages` 생성 확인.
+
+**주의사항 (breaking)**
+
+- `POST .../{session_id}/wiki`가 **요청 body 필수**로 바뀜: `{"selection_mode":"full"}` 또는 `{"selection_mode":"partial","pair_ids":[...]}`. 무 body 호출은 400.
+- chat_pair provenance·append/create·pair dedup·query 링크는 pipeline(A·B) 이후. 현재는 pipeline이 새 포맷을 일반 문서로 처리하며, source page 제목이 모두 "Chat Export"로 동일해지는 한계가 있다.
+
+## 2026-07-07
+
+### feat: 채팅 세션 Wiki page화 (chat → wiki export)
+
+**배경**
+
+저장된 채팅을 검색 가능한 wiki graph에 편입하려면 채팅을 Markdown 원문 문서로 만들어 기존 문서 ingestion 파이프라인에 넣어야 한다. `llmPipeline`엔 위키 생성 전용 API가 없고 위키는 문서 ingestion(source/concept page)으로만 생성되므로, 채팅을 "문서처럼" 태우는 경로를 재사용한다. 설계는 `docs/spec/chat-to-wiki-contract.md`를 따른다.
+
+**추가/변경된 것**
+
+- `chat/service/ChatWikiMarkdownSerializer`(신규): 세션 + completed 메시지를 계약 §6 Markdown으로 직렬화.
+- `util/SecretMasker`(신규): export 전 best-effort 비밀값 마스킹(private key 블록, `sk-`/`AKIA`/`ghp_` 등, Bearer, `key=value`).
+- `chat/service/ChatWikiExportService`(신규): 권한검증 → 직렬화 → 마스킹 → 안정 content_hash(sessionId + 대화내용, `exported_at` 등 휘발성 제외) → 문서 저장/큐 등록 위임. export 시 `ChatSession.wikiExportDocumentId` 기록. 임시 `previewMarkdown`과 정식 `export` 제공.
+- `document/service/DocumentService`: `createChatExportDocument` 추가(dedup → MinIO 저장 → `documents` 행(origin=chat_export) → 처리 큐 등록). `findAll`을 `findVisibleByWorkspaceId`로 바꿔 문서 목록에서 chat_export 제외.
+- `document/domain/Document`: `origin` 컬럼 추가(upload/chat_export). `document/repository/DocumentRepository`: `findVisibleByWorkspaceId`(null 안전).
+- `chat/service/ChatWikiExportReconciler`(신규): 파이프라인이 완료를 DB에 직접 쓰므로(백엔드 콜백 미경유), `@Scheduled`로 completed된 chat_export를 감지해 `source_of` 링크 → `ChatSession.wikiPageId` 연결.
+- `chat/domain/ChatSession`: `wikiExportDocumentId` 컬럼 + 링크 도메인 메서드. `chat/controller/ChatWikiExportController`(신규): `POST .../{session_id}/wiki`(202) 및 임시 `.../wiki/preview`.
+- completed 메시지가 없는 세션 export는 `EmptyChatWikiExportException`으로 400(`EMPTY_CHAT_WIKI_EXPORT`) 반환해 빈 위키 생성·불필요한 파이프라인 실행을 막는다.
+
+**검증**
+
+- `./gradlew test` 문서/serializer/masker 단위테스트 및 컨텍스트 배선 통과(upload 회귀 없음).
+- 라이브 e2e: `POST .../wiki` → 202, `documents(origin=chat_export, status=completed)`, 파이프라인이 `wiki_pages(source, active)` + concept + `document_wiki_links(source_of)` 생성, reconciler가 `ChatSession.wikiPageId`를 자동 연결함을 확인.
+
+**주의사항 / 남은 작업**
+
+- **재-export(재위키화)는 미지원** — 추후 과제. 내용이 바뀐 재-export는 옛 위키가 graph에 남고 reconciler가 새 export를 연결하지 못하는 gap이 있어, 구현 시 함께 해결해야 한다.
+- 마스킹은 정규식 best-effort라 오탐/누락 가능. 위키 공유·공개 단계에서 재설계 필요.
+- 초기 설계의 message↔block 매핑 테이블/heading 앵커는 계약 미규정·미사용이라 제외했다(source_blocks로 충분).
+
 ## 2026-07-04
 
 ### feat: wiki 조회를 workspace 경로 기반으로 격리 (Scope B)

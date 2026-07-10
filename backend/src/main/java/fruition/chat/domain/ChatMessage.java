@@ -53,6 +53,9 @@ public class ChatMessage {
         this.errorMessage = errorMessage;
     }
 
+    /** 이 메시지(문답)가 세션 위키 source page에 편입됐음을 기록한다. */
+    public void markIngested(String wikiPageId) { this.wikiPageId = wikiPageId; }
+
     public String getId() { return id; }
     public String getSessionId() { return session.getId(); }
     public ChatSession getSession() { return session; }

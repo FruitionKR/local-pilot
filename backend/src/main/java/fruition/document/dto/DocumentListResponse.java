@@ -23,6 +23,7 @@ public record DocumentListResponse(List<DocumentItem> documents) {
             @JsonProperty("processed_at") Instant processedAt,
             @JsonProperty("error_message") String errorMessage,
             @JsonProperty("pipeline_run_id") String pipelineRunId,
-            @JsonProperty("processing_state") DocumentProcessingState processingState
+            @JsonProperty("processing_state") DocumentProcessingState processingState,
+            @JsonProperty("processing_stage") String processingStage
     ) {}
 }
