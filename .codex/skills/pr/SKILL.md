@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Use when Codex is asked to create, prepare, inspect, or help with a pull request in this repository. Check uncommitted changes, run the commit skill when needed, perform PR-wide security checks, follow branch and PR flow rules, and write Korean PR title/body.
+description: Use when Codex is asked to create, prepare, update, inspect, push changes for, or help with a pull request in this repository. Triggers include "PR 만들어줘", "PR 올려줘", "PR 갱신", "push해줘", "dev rebase", "pull request", "gh pr". Check uncommitted changes, run the commit skill when needed, perform PR-wide security checks, follow branch and PR flow rules, and write Korean PR title/body.
 ---
 
 # PR Procedure

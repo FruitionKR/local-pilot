@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Use when Codex is asked to create, prepare, amend, or help with a git commit in this repository. Follow security checks, changelog updates when applicable, Korean Conventional Commits message writing, and commit creation in order.
+description: Use when Codex is asked to create, prepare, amend, or help with a git commit in this repository. Triggers include "커밋해줘", "커밋하자", "커밋 준비", "저장해둬", "commit", "git commit". Follow security checks, changelog updates when applicable, Korean Conventional Commits message writing, and commit creation in order.
 ---
 
 # Commit Procedure

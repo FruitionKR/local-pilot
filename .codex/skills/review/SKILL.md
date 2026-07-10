@@ -1,7 +1,6 @@
 ---
 name: review
-description: PR 생성 전/후 코드 리뷰. 인자가 없으면 로컬 변경분(base..HEAD)을 리뷰해 터미널에 출력하고, PR 번호를 주면 해당 PR을 리뷰해 GitHub 인라인 코멘트로 게시한다. 버그·정합성·보안 위주로 고신뢰 지적만 낸다.
-argument-hint: "[PR 번호] [포커스: 더 깊게 볼 영역·주제]"
+description: PR 생성 전/후 코드 리뷰. Triggers include "리뷰해줘", "코드리뷰", "PR 리뷰", "결실봇 리뷰", "review", "gh review". 인자가 없으면 로컬 변경분(base..HEAD)을 리뷰해 터미널에 출력하고, PR 번호를 주면 해당 PR을 리뷰해 GitHub 인라인 코멘트로 게시한다. 버그·정합성·보안 위주로 고신뢰 지적만 낸다.
 allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
 ---
 

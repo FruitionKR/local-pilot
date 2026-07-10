@@ -22,15 +22,6 @@
 - 코드 리뷰를 요청받으면 `review` 스킬을 사용합니다.
 - `main` 대상 PR은 생성과 상태 확인까지만 수행하고, 병합은 사용자가 직접 합니다.
 
-## 자동 노출
-
-Codex가 저장소 내부 `.codex/skills/`를 자동 스킬 목록에 노출하지 못하는 환경에서는 전역 proxy 스킬을 둡니다.
-
-- 전역 위치: `${CODEX_HOME:-~/.codex}/skills/<skill-name>/SKILL.md`
-- 전역 proxy 스킬은 절대 repo 경로를 하드코딩하지 않습니다.
-- 전역 proxy 스킬은 `git rev-parse --show-toplevel`로 현재 repo root를 찾고, `<repo-root>/.codex/skills/<skill-name>/SKILL.md`를 읽어 그 절차를 우선 적용합니다.
-- repo-local 스킬이 있으면 repo-local 스킬이 authoritative source입니다.
-
 ## 새 스킬 추가
 
 Codex와 Claude Code 양쪽에서 같은 절차를 쓰려면 두 경로에 같은 이름의 스킬을 추가합니다.
