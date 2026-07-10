@@ -21,11 +21,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - source accumulation evaluator 결과가 source page artifact, concept page 입력, DB summary에 반영되도록 조정했습니다.
 - 후속 정리로 chat API 입력 해석 로직을 별도 함수로 분리해 `input_markdown` 허용 조건과 저장 문서 fallback 경로를 한 곳에서 읽히게 했습니다.
 - chat source accumulation payload 생성과 evaluator 결과 적용 로직을 `chat_source_accumulation.py`로 분리해 pipeline orchestration과 구조화 결과 매핑 책임을 나눴습니다.
+- 기존 source page row가 없으면 `full` 누적 context가 없는 것으로 판단해 `input_markdown`을 거부하도록 보정했습니다.
 
 **검증**
 
 - `PYTHONPATH=llmPipeline llmPipeline/.venv/bin/python -m pytest llmPipeline/tests/test_pipeline_run_api_contract.py llmPipeline/tests/modules/wiki_generation llmPipeline/tests/modules/wiki_ingestion` 통과.
-- 최종 결과: `67 passed, 1 warning`
+- 최종 결과: `68 passed, 1 warning`
 - 실제 API 실행으로 `full` 누적 시 기존 ref와 신규 ref가 source/concept page에 함께 반영되고 DB source summary가 evaluator 결과로 저장되는 것을 확인했습니다.
 
 ---

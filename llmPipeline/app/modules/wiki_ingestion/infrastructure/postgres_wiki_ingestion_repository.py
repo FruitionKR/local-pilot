@@ -424,7 +424,9 @@ def latest_source_page_context(
             """,
             (document_id, user_id, workspace_id),
         ).fetchone()
-    source_markdown = _read_optional_text_object(row["markdown_uri"]) if row else ""
+    if not row:
+        return None
+    source_markdown = _read_optional_text_object(row["markdown_uri"])
     return {
         "artifact": artifact,
         "source_markdown": source_markdown,
