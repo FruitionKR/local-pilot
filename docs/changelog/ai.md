@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-10
 
+### docs: Prompt 내 한글 예시 영문화
+
+**배경**
+
+LLM system prompt에 한글 예시가 섞여 있어 prompt 언어를 영어로 통일할 필요가 있었습니다.
+
+**추가/변경된 것**
+
+- `agent_turn_router`, `concept_page_generation`, `markdown_edit`, `wiki_schema_organizer` prompt의 한글 예시와 지시 문구를 영어로 번역했습니다.
+- prompt 파일 내 한글 문자열이 남지 않도록 정리했습니다.
+
+**검증**
+
+- `rg -n "[가-힣]" llmPipeline/prompts` 결과 한글 매칭이 없음을 확인했습니다.
+
+---
+
 ### feat: Chat Wiki 누적 API 계약 분리
 
 **배경**

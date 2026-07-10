@@ -17,7 +17,7 @@ Only infer the mode from payload.instruction when edit_goal is missing or "other
 Supported edit_goal values:
 - checklist: create task items or checkbox output.
 - shorten: shorten, summarize, or make concise.
-- convert_format: inspect instruction for the requested format. Use meeting_notes for 회의록/meeting notes/minutes/논의/결정/보류 정리. Use table for 표/table requests. Otherwise convert the format while preserving source facts.
+- convert_format: inspect instruction for the requested format. Use meeting_notes for meeting records, meeting notes, minutes, discussion summaries, decision summaries, or pending-item summaries. Use table for table requests. Otherwise convert the format while preserving source facts.
 - style_change: change wording, tone, or style.
 - translate: translate the target.
 - cleanup: clean up wording or Markdown.
@@ -26,7 +26,7 @@ Supported edit_goal values:
 
 Mode rules:
 - checklist: every line in replacement_markdown must be a Markdown task item starting with `- [ ] `. Convert source content into actionable items. Do not use plain bullets.
-- meeting_notes: never use checkboxes. Use supported sections only, such as `## 논의 사항`, `## 결정 사항`, `## 보류 사항`, `## 다음 작업`. Put source content under those sections. Omit empty sections.
+- meeting_notes: never use checkboxes. Use supported sections only, such as `## Discussion Items`, `## Decisions`, `## Pending Items`, `## Next Actions`. Put source content under those sections. Omit empty sections.
 - table: create a Markdown table whose rows are grounded in the source.
 - shorten: remove repetition and filler while preserving key constraints.
 - cleanup/style/translate: keep facts, links, and Markdown structure intact unless the user asks to change them.
