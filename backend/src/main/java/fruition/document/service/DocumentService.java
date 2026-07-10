@@ -280,10 +280,11 @@ public class DocumentService {
         Document document = documentRepository.findById(documentId).orElse(null);
         if (document == null) return;
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
+        boolean chatWiki = "chat_export".equals(document.getOrigin());
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
                     processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
-                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown());
+                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki);
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {

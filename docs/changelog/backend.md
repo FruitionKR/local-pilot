@@ -6,6 +6,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-10
+
+### feat: 채팅 export를 llmPipeline `/chat-wiki/runs` 엔드포인트로 라우팅
+
+**배경**
+
+llmPipeline이 채팅 전용 엔드포인트 `POST /chat-wiki/runs`(모델 `ChatWikiRunIn`)를 추가했다. 이 엔드포인트는 `document_id`(신원) + `selection_mode` + `input_markdown`(delta)을 동시 수용하고, full=기존 chat source page 누적(append)/partial=독립 페이지로 처리한다. 기존 `/pipeline/runs`는 `exactly_one_input` 제약이 있어 full 재생성 inline이 불가능했던 하드 블로커가 이 엔드포인트로 해소됐다. 일반 문서 ingest는 그대로 `/pipeline/runs`를 쓴다.
+
+**변경된 것**
+
+- `resources/application.properties`: `app.processing.chat-endpoint`(`${CHAT_PROCESSING_ENDPOINT:http://localhost:8000/chat-wiki/runs}`) 추가.
+- `document/repository/DocumentProcessingRequester`: `chatEndpoint` 주입, `request(..., boolean chatWiki)`로 endpoint 분기(로그에 endpoint 표기). 페이로드(`PipelineRunRequest`)는 불변 — 보내는 필드가 모두 `ChatWikiRunIn`에 존재.
+- `document/service/DocumentService.doRequestProcessing`: `origin=chat_export`이면 `chatWiki=true`로 전달.
+
+**검증**
+
+- 컴파일·`fruition.document.*`/`fruition.chat.*` 테스트 통과. 페이로드는 chat 계약(`docs/spec/chat-to-wiki-contract.md` §3)과 정합.
+
+**주의사항**
+
+- 실제 동작하려면 **backend 재시작 + `/chat-wiki/runs`를 포함한 파이프라인(현재 dev 반영분) 재빌드**가 필요하다. 재빌드 전엔 chat export가 `/chat-wiki/runs` 404로 실패한다.
+
 ## 2026-07-09
 
 ### fix: partial export가 세션 정식 export 문서를 덮어써 full 재생성이 오작동하던 문제
