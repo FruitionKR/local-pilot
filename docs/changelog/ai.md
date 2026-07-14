@@ -4,6 +4,35 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-14
+
+### refactor: 문서 복원·평가 pipeline DDD 이관
+
+**배경**
+
+PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물과 함께 있어 제품 경계, 재사용 가능한 진입점, 테스트 위치가 불명확했습니다.
+
+**추가/변경된 것**
+
+- canonical 문서 복원 단계를 `app/modules/document_restoration`의 domain/application/infrastructure/interfaces 구조로 이관했습니다.
+- `RestoreDocumentUseCase`가 단계 순서를 담당하고 파일·subprocess·Docling 실행은 application port 뒤의 infrastructure adapter로 분리했습니다.
+- 외부 evaluator job과 local-first evaluator CLI를 `app/modules/document_evaluation/interfaces`로 이동했습니다.
+- 복원 prompt, 전용 requirements, CLI 실행 문서와 회귀 테스트를 정식 경로에 추가했습니다.
+- PDF, crop, model cache와 실행 산출물이 포함된 `tmp/`, `paddle_cache/`는 Git 추적 대상에서 제외했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 164개 테스트를 통과했습니다.
+- document restoration/evaluation CLI 3개와 개별 infrastructure stage CLI 8개의 `--help` 실행을 확인했습니다.
+- 정식 모듈과 테스트의 `compileall`, `git diff --check`를 통과했습니다.
+
+**주의사항**
+
+- 문서 복원 CLI는 `requirements-document-restoration.txt`와 시스템 `tesseract`가 필요합니다.
+- Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+
+---
+
 ## 2026-07-10
 
 ### docs: Prompt 지시문 영문화
