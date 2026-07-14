@@ -145,13 +145,43 @@ FastAPI 서버입니다.
 
 ### `run_lab.py`
 
-CLI 엔트리포인트이자 파이프라인 오케스트레이터입니다.
+기존 CLI/API 호환 진입점이자 pipeline dependency composition root입니다.
 
 - CLI/API 인자 해석
 - `.env` 로드와 OpenAI-compatible API 설정
-- block extraction, packet build, semantic extraction, normalize, concept resolution, page assembly 실행
+- block extraction, packet build, concept resolution, page assembly 단계 연결
+- 의미 추출·평가·보정·재시도 application use case에 infrastructure adapter 주입
 - `pipeline.log`, `normalized.json`, `manifest.json`, `wiki/links.json`, `review_report.md` 생성
 - `--save-debug-json`이 켜진 경우에만 raw LLM output과 packet/debug JSON 저장
+
+### `app/modules/wiki_generation/application/run_generation_loop.py`
+
+의미 추출 결과의 정규화와 선택적 평가·보정·재시도 순서를 담당합니다.
+
+- LLM, 파일, callback 구현을 application port 뒤에서 호출
+- evaluator feedback을 다음 의미 추출 prompt에 반영
+- 명확한 observation 보정 후 재평가
+- 최대 시도 횟수와 종료 조건 적용
+
+### `app/modules/wiki_generation/application/judge_candidates.py`
+
+section/mention evidence candidate의 application 판단 정책입니다.
+
+- 기존 concept 갱신 또는 relation candidate 판정
+- existing active cluster 병합·신규 생성·검토 필요 판정
+- LLM JSON 결과의 candidate/concept 식별자와 허용 enum 검증
+
+### `app/modules/wiki_generation/infrastructure/generation_loop_adapters.py`
+
+generation loop port의 실제 LLM·debug artifact adapter입니다.
+
+- semantic packet별 LLM 추출
+- evaluator completion 호출
+- `--save-debug-json` 평가 산출물 기록
+
+### `app/modules/wiki_generation/infrastructure/pipeline_log.py`
+
+파일 기반 pipeline log와 선택적 callback HTTP 전송을 담당합니다.
 
 ### `app/modules/wiki_generation/infrastructure/extract.py`
 

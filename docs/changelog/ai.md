@@ -4,6 +4,29 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-14
+
+### refactor: Wiki generation 평가 orchestration 분리
+
+**배경**
+
+`run_lab.py`가 CLI wiring, LLM 호출, 평가·보정·재시도 정책과 callback/file I/O를 함께 담당해 application 흐름을 독립적으로 검증하기 어려웠습니다.
+
+**추가/변경된 것**
+
+- 의미 추출 결과의 정규화, 선택적 평가, 보정, evaluator feedback 재시도를 `RunGenerationLoopUseCase`로 분리했습니다.
+- LLM completion, semantic extraction, 평가 debug artifact, pipeline event를 application port와 infrastructure adapter로 분리했습니다.
+- meaning cluster와 concept update candidate 판단 정책을 `application/judge_candidates.py`로 이동했습니다.
+- 파일 log와 callback HTTP 전송을 `infrastructure/pipeline_log.py`로 이동했습니다.
+- Wiki generation 흐름에서 불필요해진 LangGraph orchestration을 단순한 application loop로 교체했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 129개 테스트를 통과했습니다.
+- `run_lab.py --help`, `api`와 `run_lab` import, 변경 모듈 `compileall`, application layer import 규칙과 `git diff --check`를 통과했습니다.
+
+---
+
 ## 2026-07-10
 
 ### docs: Prompt 지시문 영문화
