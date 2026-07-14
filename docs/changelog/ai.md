@@ -19,10 +19,11 @@ PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물
 - 외부 evaluator job과 local-first evaluator CLI를 `app/modules/document_evaluation/interfaces`로 이동했습니다.
 - 복원 prompt, 전용 requirements, CLI 실행 문서와 회귀 테스트를 정식 경로에 추가했습니다.
 - PDF, crop, model cache와 실행 산출물이 포함된 `tmp/`, `paddle_cache/`는 Git 추적 대상에서 제외했습니다.
+- 얕은 output 경로에서도 Paddle cache를 안전하게 찾도록 보정하고 `pix2tex` 의존성과 `unittest` 수집 범위를 명확히 했습니다.
 
 **검증**
 
-- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 164개 테스트를 통과했습니다.
+- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 170개 테스트를 통과했습니다.
 - document restoration/evaluation CLI 3개와 개별 infrastructure stage CLI 8개의 `--help` 실행을 확인했습니다.
 - 정식 모듈과 테스트의 `compileall`, `git diff --check`를 통과했습니다.
 
@@ -30,6 +31,7 @@ PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물
 
 - 문서 복원 CLI는 `requirements-document-restoration.txt`와 시스템 `tesseract`가 필요합니다.
 - Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+- 수식 image-to-LaTeX 근거 생성에는 전용 requirements에 포함된 `pix2tex`가 필요합니다.
 
 ---
 

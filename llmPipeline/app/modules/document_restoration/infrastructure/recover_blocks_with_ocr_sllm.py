@@ -271,14 +271,11 @@ def paddle_formula_ocr_image(image_file: Path, block_id: str) -> str:
 
 
 def resolve_paddle_cache_dir(base_dir: Path) -> Path:
-    candidates = [
-        base_dir.parents[2] / "paddle_cache",
-        base_dir.parents[3] / "paddle_cache",
-    ]
+    candidates = [parent / "paddle_cache" for parent in base_dir.parents]
     for candidate in candidates:
         if (candidate / "official_models" / "PP-FormulaNet_plus-M" / "inference.pdiparams").exists():
             return candidate
-    return candidates[0]
+    return candidates[0] if candidates else base_dir / "paddle_cache"
 
 
 def run_paddle_formula_ocr(image_file: Path) -> str:
