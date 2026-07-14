@@ -109,9 +109,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             AgentTurnRequest(
                 message="줄여줘",
                 active_markdown_context=ActiveMarkdownContext(
-                    markdown="긴 문장입니다.",
+                    markdown="첫 줄\n둘째 줄\n긴 문장입니다.\n반복 문장입니다.\n마지막 문장입니다.",
                     target=target,
-                    document_kind="wiki_page",
                 ),
             )
         )
@@ -194,7 +193,6 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="문서 전체를 보기 좋게 정리해줘",
                 active_markdown_context=ActiveMarkdownContext(
                     markdown="# 제목\n\n긴 본문입니다.",
-                    document_kind="wiki_page",
                 ),
             )
         )

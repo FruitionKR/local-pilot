@@ -4,6 +4,32 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-14
+
+### feat: sLLM Markdown 편집 구조 보존과 선택 범위 처리
+
+**배경**
+
+`qwen2.5:7b`가 Markdown 전체를 다시 생성하면 code fence, link, frontmatter와 표 같은 구조를 훼손할 수 있고, 긴 문서 전체를 prompt에 넣으면 context 사용량이 문서 길이에 비례해 증가합니다.
+
+**추가/변경된 것**
+
+- cleanup, 비구조 style 변경과 번역은 수정 가능한 원문 text range만 sLLM에 전달하고 원문 위치에 다시 적용하도록 변경했습니다.
+- selection/current section은 target 조각과 앞뒤 각 20줄의 읽기 전용 context만 전달합니다.
+- fenced code, table, frontmatter, footnote와 display math 일부만 선택한 요청은 HTTP 422 `markdown_target_crosses_structure`로 차단합니다.
+- 생성형 편집에는 Markdown 보호·복원, 문법·literal validator와 1회 제한 retry를 적용했습니다.
+- 재시도 후에도 출력 계약을 만족하지 못하면 HTTP 422 `markdown_output_contract_failed`를 반환하고 내부 model 출력은 숨깁니다.
+- Spring backend proxy와 frontend preview/Apply 구현을 위한 요청·응답·오류·버전 충돌 계약을 `docs/spec/agent-markdown-contract.md`에 기록했습니다.
+- 사용하지 않던 `active_markdown_context.document_kind`를 제거하고, Wiki page 같은 읽기 전용 문서의 편집 차단은 backend/frontend가 담당하도록 책임을 명확히 했습니다.
+
+**검증**
+
+- `cd llmPipeline && .venv/bin/python -m pytest -q`: 220 passed, warning 1개, subtest 28개 통과
+- 실제 FastAPI `/agent/turn` + 로컬 `qwen2.5:7b` E2E: selection cleanup, structured translation, 부분 fence 422의 3/3 통과
+- Markdown/GFM 19개 case 3회 반복: 55/57. 두 실패는 동의 표현을 exact 문자열 evaluator가 누락으로 본 경우이며 문법·구조·literal 위반은 없었습니다.
+- 1천/5천 줄 context benchmark: 실제 editor JSON 기준 model request payload 1,786/1,788자로 유지
+
+---
 ## 2026-07-10
 
 ### docs: Prompt 지시문 영문화

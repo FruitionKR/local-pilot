@@ -1,5 +1,6 @@
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditResult
+from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 
 
 class GenerateMarkdownEditUseCase:
@@ -15,6 +16,13 @@ class GenerateMarkdownEditUseCase:
             raise ValueError("target.start_line must be greater than 0.")
         if request.target.end_line < request.target.start_line:
             raise ValueError("target.end_line must be greater than or equal to target.start_line.")
+        line_count = markdown_line_count(request.markdown)
+        if request.target.end_line > line_count:
+            raise ValueError("target.end_line must not exceed the Markdown line count.")
+        if request.target.type == "whole_document" and (
+            request.target.start_line != 1 or request.target.end_line != line_count
+        ):
+            raise ValueError("whole_document target must cover the entire Markdown document.")
 
         result = self._editor.generate_edit(request)
         if result.edit.operation != "replace":

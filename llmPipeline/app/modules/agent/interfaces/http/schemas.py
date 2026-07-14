@@ -27,13 +27,11 @@ class MarkdownEditTargetRequest(BaseModel):
 class ActiveMarkdownContextRequest(BaseModel):
     markdown: str
     target: MarkdownEditTargetRequest | None = None
-    document_kind: str | None = None
 
     def to_domain(self) -> ActiveMarkdownContext:
         return ActiveMarkdownContext(
             markdown=self.markdown,
             target=self.target.to_domain() if self.target else None,
-            document_kind=self.document_kind,
         )
 
 
