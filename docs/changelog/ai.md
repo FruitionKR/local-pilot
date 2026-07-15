@@ -33,6 +33,16 @@ PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물
 - Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
 - 수식 image-to-LaTeX 근거 생성에는 전용 requirements에 포함된 `pix2tex`가 필요합니다.
 
+### perf: canonical PDF 복원 플로우 최적화 (v5~v8)
+
+`docs/issue/2026-07-14.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다.
+
+- 복원 플로우 실행 시간을 39.7% 단축했습니다 (v5 최적화).
+- 최종 Markdown 평가를 외부 evaluator job 대신 local-first evaluator로 전환했습니다 (153.34초, 테스트 31개 통과).
+- 불완전 종결 heuristic을 제거했습니다 (v7).
+- 구조 이상 표는 직접 Vision 검토로 처리하도록 변경했습니다 (v8, 최종 결론).
+- 해당 코드는 PR 74/75로 `llmPipeline/app/modules/document_restoration`, `document_evaluation`에 DDD 구조로 이관되었습니다. 당시 실측 리포트 경로(`tmp/canonical_flow_run_*`)는 git 추적 제외 산출물이라 현재는 stale입니다.
+
 ---
 
 ## 2026-07-10
@@ -562,6 +572,26 @@ Query evaluator loop가 `AnswerQueryUseCase` 내부에서 직접 LangGraph를 �
 - `llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_answer_query.py tests/modules/query/test_query_evaluator_graph.py tests/modules/query/test_query_evaluator_studio_graph.py` 통과.
 - `llmPipeline/.venv/bin/langgraph validate --config langgraph.json` 통과.
 - 실제 `POST /pipeline/runs`, `POST /query` 실행 결과 LangSmith에서 `LangGraph`, `generate_answer`, `evaluate_answer`, `prepare_retry` trace 확인.
+
+---
+
+## 2026-06-27
+
+### feat: query 근거 평가와 ingest 저장 흐름 개선
+
+`docs/issue/2026-06-27.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다 (PR 49, 원문: `docs/backlog/issue-2026-06-27.md`).
+
+- `POST /pipeline/runs` inline 입력(`input`/`input_path`) 실행에도 `source_document_id`와 `documents` row가 생성되도록 보강했습니다.
+- `QueryAnswerEvaluator`를 추가해 답변/근거 정합성을 판단하고, 필요 시 web fallback 또는 internal web augmented route를 요청하도록 했습니다.
+- `wiki_embedding_vectors`(canonical representation 공유)·`wiki_embedding_units`(page/unit 연결) 테이블을 추가해 source/concept 원자 단위 근거 저장 구조를 도입했습니다.
+- Query context 조립이 저장된 embedding unit을 우선 사용하고, 없을 때만 markdown parsing fallback을 쓰도록 변경했습니다.
+- evidence 선택을 고정 top-N에서 page별 최고 점수 대비 score band 방식으로 바꾸고, 구체성 신호(설계 변수·수치·단위·표 등)를 점수에 반영했습니다.
+- 문장마다 자동 `[1]`을 붙이던 citation 후처리를 제거하고, LLM이 실제 인용한 evidence만 `evidence_snippets`에 남기도록 했습니다.
+- `parse_json_object()` repair 후보 추가 등 semantic extraction JSON parsing과 prompt를 보강했습니다.
+
+**검증**
+
+- 원문 기준 pytest 31 passed. 논문 ingest 실험 결과는 `docs/backlog/issue-2026-06-27.md`의 실험 이력 참조.
 
 ---
 
