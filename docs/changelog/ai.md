@@ -6,30 +6,35 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-14
 
-### feat: sLLM Markdown 편집 구조 보존과 선택 범위 처리
+### refactor: 문서 복원·평가 pipeline DDD 이관
 
 **배경**
 
-`qwen2.5:7b`가 Markdown 전체를 다시 생성하면 code fence, link, frontmatter와 표 같은 구조를 훼손할 수 있고, 긴 문서 전체를 prompt에 넣으면 context 사용량이 문서 길이에 비례해 증가합니다.
+PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물과 함께 있어 제품 경계, 재사용 가능한 진입점, 테스트 위치가 불명확했습니다.
 
 **추가/변경된 것**
 
-- cleanup, 비구조 style 변경과 번역은 수정 가능한 원문 text range만 sLLM에 전달하고 원문 위치에 다시 적용하도록 변경했습니다.
-- selection/current section은 target 조각과 앞뒤 각 20줄의 읽기 전용 context만 전달합니다.
-- fenced code, table, frontmatter, footnote와 display math 일부만 선택한 요청은 HTTP 422 `markdown_target_crosses_structure`로 차단합니다.
-- 생성형 편집에는 Markdown 보호·복원, 문법·literal validator와 1회 제한 retry를 적용했습니다.
-- 재시도 후에도 출력 계약을 만족하지 못하면 HTTP 422 `markdown_output_contract_failed`를 반환하고 내부 model 출력은 숨깁니다.
-- Spring backend proxy와 frontend preview/Apply 구현을 위한 요청·응답·오류·버전 충돌 계약을 `docs/spec/agent-markdown-contract.md`에 기록했습니다.
-- 사용하지 않던 `active_markdown_context.document_kind`를 제거하고, Wiki page 같은 읽기 전용 문서의 편집 차단은 backend/frontend가 담당하도록 책임을 명확히 했습니다.
+- canonical 문서 복원 단계를 `app/modules/document_restoration`의 domain/application/infrastructure/interfaces 구조로 이관했습니다.
+- `RestoreDocumentUseCase`가 단계 순서를 담당하고 파일·subprocess·Docling 실행은 application port 뒤의 infrastructure adapter로 분리했습니다.
+- 외부 evaluator job과 local-first evaluator CLI를 `app/modules/document_evaluation/interfaces`로 이동했습니다.
+- 복원 prompt, 전용 requirements, CLI 실행 문서와 회귀 테스트를 정식 경로에 추가했습니다.
+- PDF, crop, model cache와 실행 산출물이 포함된 `tmp/`, `paddle_cache/`는 Git 추적 대상에서 제외했습니다.
+- 얕은 output 경로에서도 Paddle cache를 안전하게 찾도록 보정하고 `pix2tex` 의존성과 `unittest` 수집 범위를 명확히 했습니다.
 
 **검증**
 
-- `cd llmPipeline && .venv/bin/python -m pytest -q`: 220 passed, warning 1개, subtest 28개 통과
-- 실제 FastAPI `/agent/turn` + 로컬 `qwen2.5:7b` E2E: selection cleanup, structured translation, 부분 fence 422의 3/3 통과
-- Markdown/GFM 19개 case 3회 반복: 55/57. 두 실패는 동의 표현을 exact 문자열 evaluator가 누락으로 본 경우이며 문법·구조·literal 위반은 없었습니다.
-- 1천/5천 줄 context benchmark: 실제 editor JSON 기준 model request payload 1,786/1,788자로 유지
+- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 170개 테스트를 통과했습니다.
+- document restoration/evaluation CLI 3개와 개별 infrastructure stage CLI 8개의 `--help` 실행을 확인했습니다.
+- 정식 모듈과 테스트의 `compileall`, `git diff --check`를 통과했습니다.
+
+**주의사항**
+
+- 문서 복원 CLI는 `requirements-document-restoration.txt`와 시스템 `tesseract`가 필요합니다.
+- Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+- 수식 image-to-LaTeX 근거 생성에는 전용 requirements에 포함된 `pix2tex`가 필요합니다.
 
 ---
+
 ## 2026-07-10
 
 ### docs: Prompt 지시문 영문화

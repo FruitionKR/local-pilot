@@ -13,7 +13,7 @@ from run_lab import (
     PipelineLog,
     _prepare_concept_section_polish,
     _prepare_source_page_polish,
-    _run_wiki_generation_graph,
+    _run_wiki_generation_loop,
 )
 
 
@@ -48,7 +48,7 @@ class FakeSectionPolisher:
         return self.raw
 
 
-class WikiGenerationGraphTest(unittest.TestCase):
+class WikiGenerationPipelineTest(unittest.TestCase):
     def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
         normalized = {
             "document": {"document_id": "chat-doc-1"},
@@ -90,17 +90,17 @@ class WikiGenerationGraphTest(unittest.TestCase):
             },
         ]
 
-        def fake_semantic_extraction(**kwargs):
-            prompts.append(kwargs["system_prompt"])
-            return [{"attempt": kwargs["attempt"]}]
+        def fake_semantic_extraction(_self, system_prompt, attempt, _source_context):
+            prompts.append(system_prompt)
+            return [{"attempt": attempt}]
 
-        def fake_evaluate_generation(**kwargs):
+        def fake_evaluate_generation(_self, _normalized):
             return evaluations.pop(0)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            with patch("run_lab._run_semantic_extraction", side_effect=fake_semantic_extraction):
-                with patch("run_lab._evaluate_generation", side_effect=fake_evaluate_generation):
-                    notes, normalized, generation_evaluations = _run_wiki_generation_graph(
+            with patch("run_lab.SemanticGenerationAdapter.generate", new=fake_semantic_extraction):
+                with patch("run_lab.GenerationEvaluatorAdapter.evaluate", new=fake_evaluate_generation):
+                    notes, normalized, generation_evaluations = _run_wiki_generation_loop(
                         api_client=SimpleNamespace(),
                         semantic_system_prompt="기본 semantic prompt",
                         wiki_evaluator_system_prompt="evaluator prompt",
