@@ -15,13 +15,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 **추가/변경된 것**
 
 - 외부 template 재구성만 보류하고 문서 전체·구조 보존형 일반 편집은 router가 처리하도록 범위를 좁혔습니다.
-- `insert_after`를 `current_section` 전용 operation으로 추가하고, 현재 섹션 target이 없으면 `clarify`로 반환합니다.
+- `insert_after`를 `current_section` 전용 operation으로 추가하고, local guard와 application 계층 모두 현재 섹션 target이 없으면 `clarify`로 반환합니다.
 - 삽입 결과가 기존 섹션 heading을 반복하면 계약 실패로 처리해 기존 내용의 중복 삽입을 막습니다.
 - 신규 Markdown의 `title`, `summary`, `markdown`을 검증하고 한 번 재시도한 뒤 재실패 시 전용 422를 반환합니다.
 
 **검증**
 
-- `llmPipeline/.venv/bin/python -m pytest -q` 결과 288개 테스트와 28개 subtest를 통과했습니다.
+- `llmPipeline/.venv/bin/python -m pytest -q` 결과 289개 테스트와 28개 subtest를 통과했습니다.
 
 ## 2026-07-14
 

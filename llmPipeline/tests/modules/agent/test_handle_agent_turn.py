@@ -286,6 +286,42 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.action, "clarify")
         self.assertIn("현재 섹션을 선택", result.message or "")
 
+    def test_rechecks_insert_after_target_after_llm_routing(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=MarkdownEditTarget(type="current_section", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_edit",
+                    confidence=0.8,
+                    reason="LLM routed an insert_after request",
+                    edit_goal="insert_after",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이어서 문제 해결 절을 추가해줘",
+                active_markdown_context=ActiveMarkdownContext(markdown="# 설치\n\n설치 방법입니다."),
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertIn("현재 섹션을 선택", result.message or "")
+        self.assertEqual(editor.requests, [])
+
     def test_routes_chat_to_query_use_case(self) -> None:
         query_use_case = FakeQueryUseCase()
         editor = RecordingMarkdownEditor(

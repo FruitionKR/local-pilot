@@ -57,6 +57,14 @@ class HandleAgentTurnUseCase:
                     route=route,
                     message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                 )
+            if route.edit_goal == "insert_after" and (
+                markdown_context.target is None or markdown_context.target.type != "current_section"
+            ):
+                return AgentTurnResult(
+                    action="clarify",
+                    route=route,
+                    message=CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
+                )
             target = markdown_context.target or _whole_document_target(markdown_context.markdown)
             result = self._markdown_edit_use_case.execute(
                 MarkdownEditRequest(
