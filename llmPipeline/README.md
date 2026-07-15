@@ -110,6 +110,33 @@ python run_lab.py \
 - 중간 raw/debug JSON은 저장하지 않음
 - 디버깅이 필요하면 `--save-debug-json` 사용
 
+### PDF 문서 복원 CLI
+
+문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 전용 requirements에는 수식 image-to-LaTeX 근거를 생성하는 `pix2tex`가 포함됩니다. `tesseract`는 별도 시스템 명령으로 설치되어 있어야 하며, Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+
+```bash
+python -m pip install -r requirements-document-restoration.txt
+python -m app.modules.document_restoration.interfaces.cli \
+  --pdf-file /path/to/paper.pdf \
+  --output-dir /path/to/output \
+  --document-slug paper \
+  --use-local-sllm \
+  --use-local-vision
+```
+
+조립된 Markdown을 local-first evaluator로 검사하려면 다음 CLI를 사용합니다.
+
+```bash
+python -m app.modules.document_evaluation.interfaces.local_cli \
+  --markdown-file /path/to/output/final/paper.restored.md \
+  --pdf-file /path/to/paper.pdf \
+  --output-file /path/to/output/final/paper.evaluation.json \
+  --output-markdown-file /path/to/output/final/paper.evaluated.md \
+  --output-report-file /path/to/output/final/paper.evaluator_report.md
+```
+
+외부 evaluator에 전달할 job만 만들 때는 `app.modules.document_evaluation.interfaces.cli`를 사용합니다. 외부 API 환경변수가 없으면 API를 호출하지 않고 `pending_external_evaluator` job을 생성합니다.
+
 ### FastAPI 실행
 
 개발 환경에서 직접 띄울 때:

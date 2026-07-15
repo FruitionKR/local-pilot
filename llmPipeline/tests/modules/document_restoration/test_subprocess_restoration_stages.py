@@ -1,0 +1,99 @@
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from app.modules.document_restoration.application.models import (
+    PreparedRestoration,
+    RestoreDocumentCommand,
+)
+from app.modules.document_restoration.domain.entities import RestorationStage
+from app.modules.document_restoration.infrastructure.subprocess_restoration_stages import (
+    SubprocessDocumentRestorationStages,
+)
+
+
+class SubprocessDocumentRestorationStagesTest(unittest.TestCase):
+    def test_prepare_copies_inputs_to_canonical_output_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pdf_file = root / "source.pdf"
+            docling_json = root / "source.json"
+            pdf_file.write_bytes(b"pdf")
+            docling_json.write_text("{}", encoding="utf-8")
+            output_dir = root / "output"
+
+            prepared = SubprocessDocumentRestorationStages().prepare(
+                RestoreDocumentCommand(
+                    pdf_file=pdf_file,
+                    docling_json=docling_json,
+                    output_dir=output_dir,
+                    document_slug="paper",
+                )
+            )
+
+            self.assertEqual(prepared.pdf_file, output_dir / "paper.pdf")
+            self.assertEqual(
+                prepared.docling_json,
+                output_dir / "layout" / "auto" / "docling_ocr_baseline" / "docling.json",
+            )
+            self.assertEqual(prepared.pdf_file.read_bytes(), b"pdf")
+            self.assertEqual(prepared.docling_json.read_text(encoding="utf-8"), "{}")
+
+    def test_recovery_stage_preserves_no_sllm_contract(self) -> None:
+        command = RestoreDocumentCommand(
+            pdf_file=Path("paper.pdf"),
+            output_dir=Path("output"),
+            document_slug="paper",
+        )
+        prepared = PreparedRestoration(
+            pdf_file=Path("output/paper.pdf"),
+            docling_json=Path("output/docling.json"),
+            manifest_file=Path("output/manifest.json"),
+        )
+
+        with mock.patch("subprocess.run") as run:
+            SubprocessDocumentRestorationStages().run_stage(
+                RestorationStage.RECOVER_BLOCKS,
+                command,
+                prepared,
+            )
+
+        args = run.call_args.args[0]
+        self.assertIn(
+            "app.modules.document_restoration.infrastructure.recover_blocks_with_ocr_sllm",
+            args,
+        )
+        self.assertIn("--no-sllm", args)
+        self.assertIn(str(prepared.manifest_file), args)
+
+    def test_vision_stage_passes_model_prompt_and_attempt_limit(self) -> None:
+        command = RestoreDocumentCommand(
+            pdf_file=Path("paper.pdf"),
+            output_dir=Path("output"),
+            document_slug="paper",
+            use_local_vision=True,
+            vision_model="vision-model",
+            max_vision_attempts=2,
+        )
+        prepared = PreparedRestoration(
+            pdf_file=Path("output/paper.pdf"),
+            docling_json=Path("output/docling.json"),
+            manifest_file=Path("output/manifest.json"),
+        )
+
+        with mock.patch("subprocess.run") as run:
+            SubprocessDocumentRestorationStages().run_stage(
+                RestorationStage.REVIEW_BLOCKS_WITH_VISION,
+                command,
+                prepared,
+            )
+
+        args = run.call_args.args[0]
+        self.assertEqual(args[args.index("--model") + 1], "vision-model")
+        self.assertEqual(args[args.index("--max-attempts") + 1], "2")
+        self.assertTrue(Path(args[args.index("--prompt-dir") + 1]).is_dir())
+
+
+if __name__ == "__main__":
+    unittest.main()
