@@ -230,7 +230,7 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 
 | 필드 | 타입 | nullable | 설명 |
 | --- | --- | --- | --- |
-| `edit.operation` | enum string | 아니오 | 현재는 `replace`만 지원 |
+| `edit.operation` | enum string | 아니오 | `replace` 또는 `insert_after` |
 | `edit.target` | object | 아니오 | 교체 대상 line 범위 |
 | `edit.target.type` | enum string | 아니오 | `selection`, `current_section`, `whole_document` 중 하나 |
 | `edit.target.start_line` | integer | 아니오 | 1-base 교체 시작 line |
@@ -238,8 +238,8 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 | `edit.summary` | string | 아니오 | 사용자에게 표시할 편집 결과 요약 |
 | `edit.replacement_markdown` | string | 아니오 | target 범위를 대체할 Markdown 조각 |
 
-- `operation`은 현재 `replace`만 지원한다.
-- `replacement_markdown`은 문서 전체가 아니라 `target` 범위를 대체할 조각이다.
+- `replace`의 `replacement_markdown`은 문서 전체가 아니라 `target` 범위를 대체할 조각이다.
+- `insert_after`는 `current_section` target에만 사용하며, `replacement_markdown`은 해당 섹션 뒤에 삽입할 새 Markdown만 포함한다.
 - 요청에 target이 없으면 `llmPipeline`은 전체 문서를 `whole_document` target으로 반환한다.
 - 이 응답만으로 문서를 자동 저장하지 않는다.
 
@@ -262,6 +262,8 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 | `generated_markdown.markdown` | string | 아니오 | 새 editor buffer에 넣을 Markdown 본문 |
 
 생성 결과는 기존 문서를 교체하지 않는 새 draft다. 저장과 Wiki ingestion은 별도 backend API로 처리한다.
+
+`llmPipeline`은 `title`, `summary`, `markdown` 필수 필드를 검증한다. 첫 생성 결과가 계약을 충족하지 않으면 실패 이유를 포함해 한 번 재시도하고, 두 번째 결과도 실패하면 `markdown_create_output_contract_failed`를 반환한다.
 
 ### 4.5 `message`
 
@@ -325,12 +327,12 @@ Frontend는 `result.action`에 따라 처리한다.
 
 `markdown_edit` Apply 조건:
 
-1. `edit.operation`이 `replace`다.
+1. `edit.operation`이 `replace` 또는 `insert_after`다.
 2. 응답 target이 요청 snapshot의 target과 일치한다.
 3. 요청 이후 editor revision 또는 buffer checksum이 바뀌지 않았다.
 4. 사용자가 preview에서 Apply를 명시적으로 선택했다.
 
-조건을 만족하면 editor의 line-range API로 한 번의 replace transaction을 수행한다. 이후 저장은 별도 backend 문서 API를 호출한다. 요청 이후 editor가 변경됐다면 적용하지 않고 재요청을 유도한다.
+조건을 만족하면 editor의 line-range API로 `replace` 또는 target 끝 line 뒤 `insert_after` transaction을 한 번 수행한다. 이후 저장은 별도 backend 문서 API를 호출한다. 요청 이후 editor가 변경됐다면 적용하지 않고 재요청을 유도한다.
 
 ## 7. 오류 처리
 
@@ -338,6 +340,7 @@ Frontend는 `result.action`에 따라 처리한다.
 | ---: | --- | --- | --- |
 | 400 | 빈 message 또는 잘못된 line 범위 | 요청 오류 전달 | snapshot과 target 재확인 |
 | 422 + `markdown_output_contract_failed` | 유효한 Markdown 교체안 생성 실패 | detail 보존, 저장 금지 | 원본 유지 후 재시도 안내 |
+| 422 + `markdown_create_output_contract_failed` | 필수 필드를 갖춘 Markdown 초안 생성 실패 | detail 보존, 저장 금지 | 새 draft를 열지 않고 재시도 안내 |
 | 422 + `markdown_target_crosses_structure` | target이 여러 줄 구조 일부만 포함 | detail 보존 | 구조 전체 선택 안내 |
 | 500 | pipeline 연결 실패 또는 예상하지 못한 오류 | `requestId`와 함께 서버 오류 처리 | 원본 유지 후 재시도 안내 |
 
@@ -350,3 +353,5 @@ Frontend는 `result.action`에 따라 처리한다.
 | `llmPipeline` | 구현됨 | routing, Markdown 편집·생성, 검증과 오류 응답 |
 | Spring backend | 미구현 | 인증·권한, DTO 변환, 문서 버전과 오류 전달 |
 | frontend | 미구현 | editor snapshot, action별 UI, diff와 Apply/Reject |
+
+현재 operation은 `replace`와 `insert_after`를 지원한다. `insert_after`는 `current_section` target이 있을 때만 생성하며, target이 없거나 다른 유형이면 현재 섹션 선택을 요청하는 `clarify`를 반환한다.

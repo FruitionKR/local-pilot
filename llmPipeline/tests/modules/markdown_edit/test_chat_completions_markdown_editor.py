@@ -1,8 +1,11 @@
 import json
 import unittest
 
-from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditTarget
-from app.modules.markdown_edit.domain.markdown_output_contract import MarkdownOutputContractError
+from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.domain.markdown_output_contract import (
+    MarkdownCreateOutputContractError,
+    MarkdownOutputContractError,
+)
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import ChatCompletionsMarkdownEditor
 
 
@@ -19,9 +22,9 @@ class SequenceJsonClient:
         return self.responses.pop(0)
 
 
-def response(replacement_markdown: str) -> dict[str, object]:
+def response(replacement_markdown: str, operation: str = "replace") -> dict[str, object]:
     return {
-        "operation": "replace",
+        "operation": operation,
         "summary": "수정했습니다.",
         "replacement_markdown": replacement_markdown,
     }
@@ -35,6 +38,54 @@ def source_range_response(segment_id: str, replacement: str) -> dict[str, object
 
 
 class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
+    def test_generates_insert_after_content_without_repeating_section(self) -> None:
+        client = SequenceJsonClient([response("## 문제 해결\n\n로그를 확인합니다.", operation="insert_after")])
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
+            markdown="# 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        result = editor.generate_edit(request)
+
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(payload["requested_operation"], "insert_after")
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertEqual(result.edit.replacement_markdown, "## 문제 해결\n\n로그를 확인합니다.")
+
+    def test_retries_markdown_create_with_contract_failures(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {"title": "대화 정리", "summary": "", "markdown": "# 대화 정리"},
+                {"title": "대화 정리", "summary": "대화를 정리했습니다.", "markdown": "# 대화 정리"},
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system", create_system_prompt="create")  # type: ignore[arg-type]
+
+        result = editor.generate_markdown(MarkdownCreateRequest(instruction="대화를 문서로 만들어줘."))
+
+        self.assertEqual(result.document.summary, "대화를 정리했습니다.")
+        self.assertEqual(len(client.calls), 2)
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn("summary must not be empty", retry_payload["contract_failures"])
+
+    def test_raises_after_second_markdown_create_contract_failure(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {"title": "", "summary": "", "markdown": ""},
+                {"title": "", "summary": "", "markdown": ""},
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system", create_system_prompt="create")  # type: ignore[arg-type]
+
+        with self.assertRaises(MarkdownCreateOutputContractError) as raised:
+            editor.generate_markdown(MarkdownCreateRequest(instruction="대화를 문서로 만들어줘."))
+
+        self.assertEqual(len(client.calls), 2)
+        self.assertIn("title must not be empty", raised.exception.failures)
+
     def test_edits_only_selected_lines_and_sends_bounded_context(self) -> None:
         client = SequenceJsonClient(
             [source_range_response("text-0001", "선택한 문장입니다.")]

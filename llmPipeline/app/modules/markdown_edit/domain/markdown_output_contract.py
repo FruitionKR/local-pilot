@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.modules.markdown_edit.domain.entities import MarkdownEditRequest
+from app.modules.markdown_edit.domain.entities import GeneratedMarkdownDocument, MarkdownEditRequest
 
 
 PROTECTED_EDIT_GOALS = {"cleanup", "style_change", "shorten"}
@@ -52,6 +52,24 @@ class MarkdownOutputContractError(ValueError):
         self.replacement_markdown = replacement_markdown
 
 
+class MarkdownCreateOutputContractError(ValueError):
+    def __init__(self, failures: list[str], output: dict[str, object]) -> None:
+        super().__init__("Markdown create output contract failed: " + "; ".join(failures))
+        self.failures = failures
+        self.output = output
+
+
+def validate_markdown_create_output(document: GeneratedMarkdownDocument) -> list[str]:
+    failures: list[str] = []
+    if not document.title.strip():
+        failures.append("title must not be empty")
+    if not document.summary.strip():
+        failures.append("summary must not be empty")
+    if not document.markdown.strip():
+        failures.append("markdown must not be empty")
+    return failures
+
+
 def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
     if request.edit_goal not in PROTECTED_EDIT_GOALS or _explicit_structure_change(request.instruction):
         return ProtectedMarkdown(markdown=request.markdown, fragments=())
@@ -92,6 +110,12 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
     if request.edit_goal == "checklist":
         if not nonempty_lines or not all(re.match(r"^- \[ \] ", line) for line in nonempty_lines):
             failures.append("checklist items must all start with `- [ ] `")
+
+    if request.edit_goal == "insert_after":
+        source_heading = next((line.strip() for line in request.markdown.splitlines() if line.strip()), "")
+        replacement_heading = next((line.strip() for line in replacement.splitlines() if line.strip()), "")
+        if source_heading.startswith("#") and replacement_heading == source_heading:
+            failures.append("insert_after output must not repeat the current section heading")
 
     if request.edit_goal == "bullet_list":
         if not nonempty_lines or not all(re.match(r"^\s*[-*+]\s+", line) for line in nonempty_lines):

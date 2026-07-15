@@ -15,4 +15,6 @@ class GenerateMarkdownDocumentUseCase:
             raise ValueError("markdown must not be empty.")
         if not result.document.title.strip():
             raise ValueError("title must not be empty.")
+        if not result.document.summary.strip():
+            raise ValueError("summary must not be empty.")
         return result

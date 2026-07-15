@@ -11,7 +11,10 @@ from app.modules.agent.interfaces.http.schemas import (
     MarkdownEditOperationResponse,
     MarkdownEditTargetResponse,
 )
-from app.modules.markdown_edit.domain.markdown_output_contract import MarkdownOutputContractError
+from app.modules.markdown_edit.domain.markdown_output_contract import (
+    MarkdownCreateOutputContractError,
+    MarkdownOutputContractError,
+)
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 
@@ -32,6 +35,14 @@ def handle_agent_turn(
             detail={
                 "code": "markdown_output_contract_failed",
                 "message": "Markdown 편집 결과가 문법 및 보존 조건을 충족하지 못했습니다.",
+            },
+        ) from exc
+    except MarkdownCreateOutputContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "markdown_create_output_contract_failed",
+                "message": "Markdown 생성 결과가 필수 출력 조건을 충족하지 못했습니다.",
             },
         ) from exc
     except MarkdownTargetBoundaryError as exc:

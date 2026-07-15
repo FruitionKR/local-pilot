@@ -23,10 +23,13 @@ class GenerateMarkdownEditUseCase:
             request.target.start_line != 1 or request.target.end_line != line_count
         ):
             raise ValueError("whole_document target must cover the entire Markdown document.")
+        if request.edit_goal == "insert_after" and request.target.type != "current_section":
+            raise ValueError("insert_after operation requires a current_section target.")
 
         result = self._editor.generate_edit(request)
-        if result.edit.operation != "replace":
-            raise ValueError("Only replace operation is supported.")
+        expected_operation = "insert_after" if request.edit_goal == "insert_after" else "replace"
+        if result.edit.operation != expected_operation:
+            raise ValueError(f"Edit operation must be {expected_operation}.")
         if result.edit.target != request.target:
             raise ValueError("Edit target must match the requested target.")
         if not result.edit.replacement_markdown.strip():

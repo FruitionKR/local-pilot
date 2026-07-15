@@ -13,14 +13,9 @@ DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompt
 TEMPLATE_DEFERRED_MARKERS = (
     "template",
     "템플릿",
-    "양식",
-    "서식",
-    "전체 문서",
-    "문서 전체",
-    "구조 그대로",
-    "구조를 그대로",
-    "원문 구조",
 )
+INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
+INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
 
 
 class ChatCompletionsTurnRouter(AgentTurnRouterPort):
@@ -91,6 +86,17 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             confidence=1.0,
             reason="template/full-document transform is deferred",
             edit_goal="template_transform",
+        )
+    requests_insert_after = any(marker in lowered for marker in INSERT_AFTER_POSITION_MARKERS) and any(
+        marker in lowered for marker in INSERT_AFTER_ACTION_MARKERS
+    )
+    if requests_insert_after:
+        target = request.active_markdown_context.target if request.active_markdown_context else None
+        return AgentTurnRoute(
+            action="markdown_edit" if target and target.type == "current_section" else "clarify",
+            confidence=1.0,
+            reason="insert_after request requires a current section target",
+            edit_goal="insert_after",
         )
     return None
 

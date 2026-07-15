@@ -12,6 +12,18 @@ TARGET = MarkdownEditTarget(type="whole_document", start_line=1, end_line=20)
 
 
 class MarkdownOutputContractTest(unittest.TestCase):
+    def test_rejects_insert_after_output_that_repeats_current_section_heading(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "## 설치\n\n설치 방법입니다.\n\n## 문제 해결")
+
+        self.assertIn("insert_after output must not repeat the current section heading", failures)
+
     def test_protects_and_restores_structured_markdown_for_cleanup(self) -> None:
         source = (
             "---\ntitle: 운영 점검\nstatus: draft\n---\n\n"

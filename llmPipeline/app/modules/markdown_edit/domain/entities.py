@@ -23,7 +23,7 @@ class MarkdownEditRequest:
 
 @dataclass(frozen=True)
 class MarkdownEditOperation:
-    operation: Literal["replace"]
+    operation: Literal["replace", "insert_after"]
     target: MarkdownEditTarget
     summary: str
     replacement_markdown: str
