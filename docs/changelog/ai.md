@@ -18,6 +18,8 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - `insert_after`를 `current_section` 전용 operation으로 추가하고, local guard와 application 계층 모두 현재 섹션 target이 없으면 `clarify`로 반환합니다.
 - 삽입 결과가 기존 섹션 heading을 반복하면 계약 실패로 처리해 기존 내용의 중복 삽입을 막습니다.
 - 신규 Markdown의 `title`, `summary`, `markdown`을 검증하고 한 번 재시도한 뒤 재실패 시 전용 422를 반환합니다.
+- 편집 목적에서 operation을 결정하는 규칙과 Markdown 생성 결과의 정규화·검증 흐름을 공통화했습니다.
+- Agent 연동 계약과 backend 출력 계약의 `insert_after`, Markdown 생성 및 422 오류 설명을 현재 구현과 일치시켰습니다.
 
 **검증**
 

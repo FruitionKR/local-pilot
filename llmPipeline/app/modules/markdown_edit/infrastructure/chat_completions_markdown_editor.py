@@ -8,6 +8,7 @@ from typing import Any
 from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
+    EditOperationType,
     GeneratedMarkdownDocument,
     MarkdownCreateRequest,
     MarkdownCreateResult,
@@ -15,6 +16,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditRequest,
     MarkdownEditResult,
     MarkdownEditTarget,
+    operation_for_edit_goal,
 )
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
@@ -64,7 +66,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         validate_markdown_target_boundary(request.markdown, request.target)
         scope = build_markdown_target_scope(request.markdown, request.target, self._context_lines)
         scoped_request = replace(request, markdown=scope.markdown)
-        requested_operation = "insert_after" if request.edit_goal == "insert_after" else "replace"
+        requested_operation = operation_for_edit_goal(request.edit_goal)
         source_range_plan = build_source_range_plan(scoped_request)
         if source_range_plan is not None:
             return self._generate_source_range_edit(scoped_request, source_range_plan, scope)
@@ -167,8 +169,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-        requested_operation = "insert_after" if request.edit_goal == "insert_after" else "replace"
-        result = _normalize_edit_result(raw, request.target, requested_operation)
+        result = _normalize_edit_result(raw, request.target, operation_for_edit_goal(request.edit_goal))
         protected_replacement = result.edit.replacement_markdown
         restored, failures = protected.restore(protected_replacement)
         restored = repair_markdown_output(request, restored)
@@ -190,9 +191,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "reference_context": request.reference_context or {},
         }
         system_prompt = _with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit"))
-        raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-        result = _normalize_create_result(raw)
-        failures = validate_markdown_create_output(result.document)
+        result, failures, raw = self._complete_markdown_create(system_prompt, payload)
         if not failures:
             return result
 
@@ -202,15 +201,19 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "contract_failures": failures,
             "retry_instruction": "Correct every contract failure and return the required JSON object again.",
         }
-        retried_raw = self._client.complete_json(
-            system_prompt,
-            json.dumps(retry_payload, ensure_ascii=False, indent=2),
-        )
-        retried = _normalize_create_result(retried_raw)
-        retry_failures = validate_markdown_create_output(retried.document)
+        retried, retry_failures, retried_raw = self._complete_markdown_create(system_prompt, retry_payload)
         if retry_failures:
             raise MarkdownCreateOutputContractError(retry_failures, retried_raw)
         return retried
+
+    def _complete_markdown_create(
+        self,
+        system_prompt: str,
+        payload: dict[str, object],
+    ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
+        raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+        result = _normalize_create_result(raw)
+        return result, validate_markdown_create_output(result.document), raw
 
 
 def build_markdown_editor() -> MarkdownEditorPort:
@@ -261,12 +264,11 @@ def _read_only_context_payload(scope: MarkdownTargetScope) -> dict[str, object]:
 def _normalize_edit_result(
     value: dict[str, Any],
     requested_target: MarkdownEditTarget,
-    requested_operation: str,
+    requested_operation: EditOperationType,
 ) -> MarkdownEditResult:
-    operation = "insert_after" if requested_operation == "insert_after" else "replace"
     return MarkdownEditResult(
         edit=MarkdownEditOperation(
-            operation=operation,
+            operation=requested_operation,
             target=requested_target,
             summary=str(value.get("summary") or "").strip(),
             replacement_markdown=str(value.get("replacement_markdown") or value.get("replacementMarkdown") or "").strip(),

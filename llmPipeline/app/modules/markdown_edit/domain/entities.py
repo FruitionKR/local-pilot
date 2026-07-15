@@ -3,6 +3,11 @@ from typing import Literal
 
 
 TargetType = Literal["selection", "current_section", "whole_document"]
+EditOperationType = Literal["replace", "insert_after"]
+
+
+def operation_for_edit_goal(edit_goal: str | None) -> EditOperationType:
+    return "insert_after" if edit_goal == "insert_after" else "replace"
 
 
 @dataclass(frozen=True)
@@ -23,7 +28,7 @@ class MarkdownEditRequest:
 
 @dataclass(frozen=True)
 class MarkdownEditOperation:
-    operation: Literal["replace", "insert_after"]
+    operation: EditOperationType
     target: MarkdownEditTarget
     summary: str
     replacement_markdown: str

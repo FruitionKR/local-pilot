@@ -226,17 +226,17 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 
 ### 4.3 `edit`
 
-`action == "markdown_edit"`일 때 `edit`은 기존 Markdown의 교체 범위와 교체할 조각을 포함한다.
+`action == "markdown_edit"`일 때 `edit`은 기존 Markdown의 편집 대상 범위와 교체하거나 삽입할 조각을 포함한다.
 
 | 필드 | 타입 | nullable | 설명 |
 | --- | --- | --- | --- |
 | `edit.operation` | enum string | 아니오 | `replace` 또는 `insert_after` |
-| `edit.target` | object | 아니오 | 교체 대상 line 범위 |
+| `edit.target` | object | 아니오 | 교체 또는 삽입 기준이 되는 line 범위 |
 | `edit.target.type` | enum string | 아니오 | `selection`, `current_section`, `whole_document` 중 하나 |
-| `edit.target.start_line` | integer | 아니오 | 1-base 교체 시작 line |
-| `edit.target.end_line` | integer | 아니오 | 1-base, inclusive 교체 종료 line |
+| `edit.target.start_line` | integer | 아니오 | 1-base 대상 시작 line |
+| `edit.target.end_line` | integer | 아니오 | 1-base, inclusive 대상 종료 line |
 | `edit.summary` | string | 아니오 | 사용자에게 표시할 편집 결과 요약 |
-| `edit.replacement_markdown` | string | 아니오 | target 범위를 대체할 Markdown 조각 |
+| `edit.replacement_markdown` | string | 아니오 | target을 대체하거나 target 뒤에 삽입할 Markdown 조각 |
 
 - `replace`의 `replacement_markdown`은 문서 전체가 아니라 `target` 범위를 대체할 조각이다.
 - `insert_after`는 `current_section` target에만 사용하며, `replacement_markdown`은 해당 섹션 뒤에 삽입할 새 Markdown만 포함한다.
@@ -339,7 +339,7 @@ Frontend는 `result.action`에 따라 처리한다.
 | HTTP | 조건 | Spring backend | Frontend |
 | ---: | --- | --- | --- |
 | 400 | 빈 message 또는 잘못된 line 범위 | 요청 오류 전달 | snapshot과 target 재확인 |
-| 422 + `markdown_output_contract_failed` | 유효한 Markdown 교체안 생성 실패 | detail 보존, 저장 금지 | 원본 유지 후 재시도 안내 |
+| 422 + `markdown_output_contract_failed` | 유효한 Markdown 편집안 생성 실패 | detail 보존, 저장 금지 | 원본 유지 후 재시도 안내 |
 | 422 + `markdown_create_output_contract_failed` | 필수 필드를 갖춘 Markdown 초안 생성 실패 | detail 보존, 저장 금지 | 새 draft를 열지 않고 재시도 안내 |
 | 422 + `markdown_target_crosses_structure` | target이 여러 줄 구조 일부만 포함 | detail 보존 | 구조 전체 선택 안내 |
 | 500 | pipeline 연결 실패 또는 예상하지 못한 오류 | `requestId`와 함께 서버 오류 처리 | 원본 유지 후 재시도 안내 |
