@@ -20,7 +20,10 @@ class MarkdownOutputContractTest(unittest.TestCase):
             edit_goal="insert_after",
         )
 
-        failures = validate_markdown_output(request, "## 설치\n\n설치 방법입니다.\n\n## 문제 해결")
+        failures = validate_markdown_output(
+            request,
+            "추가 내용을 안내합니다.\n\n## 설치\n\n설치 방법입니다.\n\n## 문제 해결",
+        )
 
         self.assertIn("insert_after output must not repeat the current section heading", failures)
 

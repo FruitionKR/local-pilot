@@ -113,8 +113,8 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
 
     if request.edit_goal == "insert_after":
         source_heading = next((line.strip() for line in request.markdown.splitlines() if line.strip()), "")
-        replacement_heading = next((line.strip() for line in replacement.splitlines() if line.strip()), "")
-        if source_heading.startswith("#") and replacement_heading == source_heading:
+        replacement_lines = {line.strip() for line in replacement.splitlines() if line.strip()}
+        if source_heading.startswith("#") and source_heading in replacement_lines:
             failures.append("insert_after output must not repeat the current section heading")
 
     if request.edit_goal == "bullet_list":
