@@ -37,7 +37,7 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
         result = use_case.execute(
             MarkdownEditRequest(
                 instruction="표로 바꿔줘",
-                markdown="# 제목\n\nA: B",
+                markdown="# 제목\n\nA: B\n추가 설명",
                 target=target,
             )
         )
@@ -70,6 +70,31 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
                     target=target,
                 )
             )
+
+    def test_rejects_partial_range_labeled_as_whole_document(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=2, end_line=2)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=target,
+                    summary="문서 전체를 정리했습니다.",
+                    replacement_markdown="# 전체 문서",
+                )
+            )
+        )
+        use_case = GenerateMarkdownEditUseCase(editor)
+
+        with self.assertRaisesRegex(ValueError, "whole_document target must cover"):
+            use_case.execute(
+                MarkdownEditRequest(
+                    instruction="문서 전체를 정리해줘.",
+                    markdown="# 제목\n\n본문",
+                    target=target,
+                )
+            )
+
+        self.assertEqual(editor.requests, [])
 
 
 if __name__ == "__main__":

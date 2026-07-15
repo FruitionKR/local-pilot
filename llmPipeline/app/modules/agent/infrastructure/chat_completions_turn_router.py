@@ -56,7 +56,6 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                     if request.active_markdown_context and request.active_markdown_context.target
                     else None
                 ),
-                "document_kind": request.active_markdown_context.document_kind if request.active_markdown_context else None,
             },
         }
         raw = self._client.complete_json(self._system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))

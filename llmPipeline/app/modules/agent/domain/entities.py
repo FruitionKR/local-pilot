@@ -16,7 +16,6 @@ AgentAction = Literal["chat_answer", "markdown_edit", "markdown_create", "clarif
 class ActiveMarkdownContext:
     markdown: str
     target: MarkdownEditTarget | None = None
-    document_kind: str | None = None
 
 
 @dataclass(frozen=True)
