@@ -6,7 +6,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-15
 
-### fix: Markdown 편집 라우팅과 생성 결과 계약 보강
+### feat: Markdown 편집 라우팅과 생성 결과 계약 보강
 
 **배경**
 
@@ -21,7 +21,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 **검증**
 
-- `llmPipeline/.venv/bin/python -m pytest -q` 결과 289개 테스트와 28개 subtest를 통과했습니다.
+- `llmPipeline/.venv/bin/python -m pytest -q` 결과 292개 테스트와 28개 subtest를 통과했습니다.
 
 ## 2026-07-14
 

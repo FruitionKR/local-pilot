@@ -64,5 +64,5 @@ Required JSON schema:
 {
   "operation": "replace | insert_after",
   "summary": "Korean one-sentence summary",
-  "replacement_markdown": "Markdown that replaces the target range"
+  "replacement_markdown": "Markdown that replaces the target range or is inserted after it"
 }

@@ -27,6 +27,42 @@ class MarkdownOutputContractTest(unittest.TestCase):
 
         self.assertIn("insert_after output must not repeat the current section heading", failures)
 
+    def test_allows_current_section_heading_inside_fenced_code_example(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "```markdown\n## 설치\n```")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_does_not_close_fence_when_fence_like_content_has_info_string(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "```text\n```python\n## 설치\n```")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_does_not_close_fence_with_mixed_fence_characters(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "~~~text\n~~~```\n## 설치\n~~~")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
     def test_protects_and_restores_structured_markdown_for_cleanup(self) -> None:
         source = (
             "---\ntitle: 운영 점검\nstatus: draft\n---\n\n"

@@ -112,9 +112,8 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
             failures.append("checklist items must all start with `- [ ] `")
 
     if request.edit_goal == "insert_after":
-        source_heading = next((line.strip() for line in request.markdown.splitlines() if line.strip()), "")
-        replacement_lines = {line.strip() for line in replacement.splitlines() if line.strip()}
-        if source_heading.startswith("#") and source_heading in replacement_lines:
+        source_heading = next(iter(_atx_heading_lines(request.markdown)), "")
+        if source_heading and source_heading in _atx_heading_lines(replacement):
             failures.append("insert_after output must not repeat the current section heading")
 
     if request.edit_goal == "bullet_list":
@@ -281,3 +280,31 @@ def _literal_anchors(markdown: str) -> set[str]:
 
 def _source_starts_with_list(markdown: str) -> bool:
     return bool(re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", markdown))
+
+
+def _atx_heading_lines(markdown: str) -> tuple[str, ...]:
+    headings: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in markdown.splitlines():
+        if fence_character is not None:
+            closing_fence = re.match(r"^ {0,3}(`+|~+)[ \t]*$", line)
+            if closing_fence:
+                marker = closing_fence.group(1)
+                if marker[0] == fence_character and len(marker) >= fence_length:
+                    fence_character = None
+                    fence_length = 0
+            continue
+
+        opening_fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if opening_fence:
+            marker = opening_fence.group(1)
+            info = opening_fence.group(2)
+            if marker[0] != "`" or "`" not in info:
+                fence_character = marker[0]
+                fence_length = len(marker)
+            continue
+
+        if re.match(r"^ {0,3}#{1,6}(?:[ \t]+|$)", line):
+            headings.append(line.strip())
+    return tuple(headings)
