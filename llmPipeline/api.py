@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.query.interfaces.http.routes import router as query_router
@@ -51,9 +51,7 @@ def _safe_name(value: str) -> str:
 class PipelineRunIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    document_id: str | None = None
-    input_markdown: str | None = None
-    input_path: str | None = None
+    document_id: str
     input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
@@ -87,16 +85,8 @@ class PipelineRunIn(BaseModel):
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
     wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
-    user_id: str = Field(default="local-user", description="Wiki artifact owner namespace")
-    workspace_id: str = Field(default="local-workspace", description="Wiki artifact workspace namespace")
-
-    @model_validator(mode="after")
-    def exactly_one_input(self) -> "PipelineRunIn":
-        sources = [self.document_id, self.input_markdown, self.input_path]
-        if sum(1 for source in sources if source) != 1:
-            raise ValueError("Pass exactly one of document_id, input_markdown, or input_path")
-        return self
-
+    user_id: str | None = Field(default=None, description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.")
+    workspace_id: str | None = Field(default=None, description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.")
 
 class ChatWikiRunIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -143,9 +133,8 @@ class ChatWikiRunIn(BaseModel):
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
     wait: bool = Field(default=False, description="True이면 요청 안에서 완료까지 기다립니다. False이면 백그라운드 실행 후 로그를 조회합니다.")
-    user_id: str = Field(default="local-user", description="Wiki artifact owner namespace")
-    workspace_id: str = Field(default="local-workspace", description="Wiki artifact workspace namespace")
-
+    user_id: str | None = Field(default=None, description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.")
+    workspace_id: str | None = Field(default=None, description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.")
 
 class PipelineRunOut(BaseModel):
     run_id: str
@@ -180,9 +169,11 @@ def _build_pipeline_args(
     out: Path,
     log_path: Path,
     source_document_id: str | None,
+    user_id: str,
+    workspace_id: str,
 ) -> argparse.Namespace:
-    existing_concept_index = _load_existing_concept_index_for_run(payload.user_id, payload.workspace_id)
-    existing_source_context = _load_existing_source_context_for_run(payload)
+    existing_concept_index = _load_existing_concept_index_for_run(user_id, workspace_id)
+    existing_source_context = _load_existing_source_context_for_run(payload, user_id, workspace_id)
     system_prompt = _semantic_prompt_for_run(payload, existing_source_context)
     return argparse.Namespace(
         run_id=run_id,
@@ -223,8 +214,8 @@ def _build_pipeline_args(
         save_debug_json=payload.save_debug_json,
         log_path=str(log_path),
         log_callback_url=payload.log_callback_url,
-        user_id=payload.user_id,
-        workspace_id=payload.workspace_id,
+        user_id=user_id,
+        workspace_id=workspace_id,
     )
 
 
@@ -236,11 +227,15 @@ def _load_existing_concept_index_for_run(user_id: str, workspace_id: str) -> lis
         return []
 
 
-def _load_existing_source_context_for_run(payload: PipelineRunIn | ChatWikiRunIn) -> dict[str, Any] | None:
+def _load_existing_source_context_for_run(
+    payload: PipelineRunIn | ChatWikiRunIn,
+    user_id: str,
+    workspace_id: str,
+) -> dict[str, Any] | None:
     if getattr(payload, "selection_mode", None) != "full" or not payload.document_id:
         return None
     try:
-        return database.latest_source_page_context(payload.document_id, payload.user_id, payload.workspace_id)
+        return database.latest_source_page_context(payload.document_id, user_id, workspace_id)
     except Exception:
         logger.exception("failed to load existing source page context for pipeline run")
         return None
@@ -255,7 +250,7 @@ def _semantic_prompt_for_run(payload: PipelineRunIn | ChatWikiRunIn, existing_so
     return payload.chat_system_prompt
 
 
-def _validate_chat_inline_markdown(payload: ChatWikiRunIn) -> None:
+def _validate_chat_inline_markdown(payload: ChatWikiRunIn, user_id: str, workspace_id: str) -> None:
     if not payload.input_markdown:
         return
     if payload.selection_mode != "full":
@@ -263,8 +258,8 @@ def _validate_chat_inline_markdown(payload: ChatWikiRunIn) -> None:
     try:
         existing_source_context = database.latest_source_page_context(
             payload.document_id,
-            payload.user_id,
-            payload.workspace_id,
+            user_id,
+            workspace_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -448,36 +443,33 @@ def _load_document_markdown(document: dict) -> tuple[str, str, str]:
     return markdown, object_uri, str(document.get("filename") or f"{_safe_name(document['id'])}.md")
 
 
-def _load_stored_document_input(document_id: str) -> tuple[str, str, str]:
+def _load_document(document_id: str) -> dict:
     try:
         document = database.get_document(document_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+    return document
+
+
+def _load_stored_document_input(document: dict) -> tuple[str, str, str]:
     input_markdown, object_uri, input_name = _load_document_markdown(document)
     return input_markdown, f"storage:{object_uri}", input_name
 
 
-def _resolve_chat_wiki_input(payload: ChatWikiRunIn) -> tuple[str, str, str]:
+def _resolve_chat_wiki_input(
+    payload: ChatWikiRunIn,
+    document: dict,
+    user_id: str,
+    workspace_id: str,
+) -> tuple[str, str, str]:
     if payload.input_markdown:
-        _validate_chat_inline_markdown(payload)
+        _validate_chat_inline_markdown(payload, user_id, workspace_id)
         input_name = payload.input_name or "chat.md"
         input_source = f"inline:{input_name}"
-        try:
-            document = database.get_document(payload.document_id)
-            if not document:
-                database.create_pipeline_input_document(
-                    document_id=payload.document_id,
-                    filename=input_name,
-                    mime_type="text/markdown",
-                    byte_size=len(payload.input_markdown.encode("utf-8")),
-                    source_uri=input_source,
-                )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
         return payload.input_markdown, input_source, input_name
-    return _load_stored_document_input(payload.document_id)
+    return _load_stored_document_input(document)
 
 
 @app.post("/pipeline/runs", response_model=PipelineRunOut)
@@ -496,47 +488,39 @@ def _run_pipeline_request(payload: PipelineRunIn | ChatWikiRunIn, background_tas
     log_path = out / "pipeline.log"
     input_source = ""
     document_id = payload.document_id
-    input_path: Path | None = None
+    document = _load_document(document_id)
+    user_id = str(document["user_id"])
+    workspace_id = str(document["workspace_id"])
     input_markdown: str | None = None
     input_name = payload.input_name or "inline.md"
 
     if isinstance(payload, ChatWikiRunIn):
-        input_markdown, input_source, input_name = _resolve_chat_wiki_input(payload)
-    elif payload.document_id:
-        input_markdown, input_source, input_name = _load_stored_document_input(payload.document_id)
-    elif isinstance(payload, PipelineRunIn) and payload.input_markdown:
-        input_markdown = payload.input_markdown
-        document_id = f"api-inline-{run_id}"
-        input_name = payload.input_name or "inline.md"
-        input_source = f"inline:{input_name}"
-        database.create_pipeline_input_document(
-            document_id=document_id,
-            filename=input_name,
-            mime_type="text/markdown",
-            byte_size=len(payload.input_markdown.encode("utf-8")),
-            source_uri=input_source,
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(
+            payload,
+            document,
+            user_id,
+            workspace_id,
         )
     else:
-        input_path = Path(payload.input_path or "") if isinstance(payload, PipelineRunIn) else Path("")
-        if not input_path.exists():
-            raise HTTPException(status_code=404, detail=f"Input file not found: {input_path}")
-        document_id = f"api-file-{run_id}"
-        input_name = payload.input_name or input_path.name
-        input_source = str(input_path)
-        database.create_pipeline_input_document(
-            document_id=document_id,
-            filename=input_name,
-            mime_type="text/markdown",
-            byte_size=input_path.stat().st_size,
-            source_uri=input_source,
-        )
+        input_markdown, input_source, input_name = _load_stored_document_input(document)
 
     try:
         database.create_pipeline_run(run_id, document_id, input_source, str(out), payload.mode)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    args = _build_pipeline_args(payload, run_id, input_path, input_markdown, input_name, out, log_path, document_id)
+    args = _build_pipeline_args(
+        payload,
+        run_id,
+        None,
+        input_markdown,
+        input_name,
+        out,
+        log_path,
+        document_id,
+        user_id,
+        workspace_id,
+    )
 
     if not payload.wait:
         background_tasks.add_task(_execute_pipeline_run, run_id, args)

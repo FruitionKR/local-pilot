@@ -4,6 +4,27 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-16
+
+### fix: Pipeline 입력 문서 생성 책임을 Backend로 일원화
+
+**배경**
+
+Backend는 원본과 `documents` row를 먼저 저장·커밋한 뒤 처리 큐에서 llmPipeline을 호출한다. 반면 일반 pipeline의 직접 Markdown·파일 입력 경로는 llmPipeline이 불완전한 `documents` row를 다시 생성해 `content_hash NOT NULL` 제약과 충돌했다.
+
+**변경된 것**
+
+- 일반 `POST /pipeline/runs`는 backend가 먼저 생성한 `document_id`만 받도록 제한했습니다.
+- llmPipeline의 `create_pipeline_input_document`와 일반 `input_markdown`·`input_path` 처리 경로를 제거했습니다.
+- 채팅 full 누적용 `input_markdown`은 신규 대화 delta 계약으로 유지하되, 기존 backend 문서가 없으면 404를 반환합니다.
+- llmPipeline이 `document_id`의 기존 문서에서 Wiki 저장 범위를 조회하도록 맞췄습니다. Backend가 보내는 `user_id`, `workspace_id`는 호환 목적으로 수신하되 저장 범위에는 사용하지 않습니다.
+- README, 채팅 Wiki 계약, 당일 이슈 문서를 현재 입력 책임과 남은 네트워크 보안 과제에 맞게 수정했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -m pytest tests/test_pipeline_run_api_contract.py`
+- `llmPipeline/.venv/bin/python -m pytest -q`
+
 ## 2026-07-15
 
 ### feat: Markdown 편집 라우팅과 생성 결과 계약 보강
