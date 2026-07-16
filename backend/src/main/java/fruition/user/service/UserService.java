@@ -5,6 +5,7 @@ import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.repository.UserRepository;
+import fruition.util.DisplayNames;
 import fruition.workspace.service.WorkspaceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +40,8 @@ public class UserService {
             throw new DuplicateEmailException(email);
         }
 
-        String displayName = resolveDisplayName(request.displayName(), email);
-        String displayNameSource = request.displayName() != null && !request.displayName().isBlank()
-                ? "request"
-                : "email_prefix";
+        String displayName = DisplayNames.resolve(request.displayName(), email);
+        String displayNameSource = DisplayNames.isPresent(request.displayName()) ? "request" : "email_prefix";
 
         String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
         User user = new User(userId, email, displayName, passwordEncoder.encode(request.password()));
@@ -52,12 +51,5 @@ public class UserService {
         log.info("[회원가입 성공] userId={} email={} displayNameSource={}", user.getId(), user.getEmail(), displayNameSource);
 
         return new SignupResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
-    }
-
-    private String resolveDisplayName(String displayName, String email) {
-        if (displayName != null && !displayName.isBlank()) {
-            return displayName.trim();
-        }
-        return email.substring(0, Math.min(3, email.length()));
     }
 }

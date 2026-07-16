@@ -8,6 +8,18 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-16
 
+### refactor: displayName 결정 규칙을 공용 유틸로 추출 + OAuth 닉네임 길이 상한
+
+**배경**
+
+회원가입(`UserService`)과 OAuth 신규 가입(`OAuthUserService`)에 "닉네임 있으면 trim, 없으면 이메일 앞 3글자" 로직이 중복돼 있었고, OAuth 경로는 provider 닉네임을 길이 제한 없이 저장해 회원가입(`@Size(max=50)`)과 규칙이 어긋났다.
+
+**변경된 것**
+
+- `fruition.util.DisplayNames`로 결정 규칙을 추출(`resolve`, `isPresent`). 결과를 최대 50자로 잘라 두 경로의 상한을 통일했다.
+- `UserService`/`OAuthUserService`가 이 유틸을 재사용하도록 정리(동작 동일, OAuth 닉네임만 50자 상한 추가).
+- `DisplayNamesTest`로 trim/fallback/상한/blank 판정을 검증.
+
 ### feat: workspace 삭제 연쇄를 위한 DB 레벨 FK CASCADE 도입 (V3)
 
 **배경**

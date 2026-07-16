@@ -6,6 +6,7 @@ import fruition.user.domain.UserOAuthAccount;
 import fruition.user.exception.OAuthEmailNotProvidedException;
 import fruition.user.repository.UserOAuthAccountRepository;
 import fruition.user.repository.UserRepository;
+import fruition.util.DisplayNames;
 import fruition.workspace.service.WorkspaceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,10 +66,8 @@ public class OAuthUserService {
     }
 
     private User createUser(String provider, String email, String name) {
-        String displayName = name != null && !name.isBlank()
-                ? name.trim()
-                : email.substring(0, Math.min(3, email.length()));
-        String displayNameSource = name != null && !name.isBlank() ? "provider" : "email_prefix";
+        String displayName = DisplayNames.resolve(name, email);
+        String displayNameSource = DisplayNames.isPresent(name) ? "provider" : "email_prefix";
         String userId = "user_" + UUID.randomUUID().toString().replace("-", "");
         User user = new User(userId, email, displayName, null);
         userRepository.save(user);
