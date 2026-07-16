@@ -6,6 +6,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-16
+
+### feat: 회원가입 닉네임 입력 및 인증 로그 추가
+
+**배경**
+
+일반 회원가입에서도 이메일/비밀번호 외에 닉네임을 받을 수 있게 하고, 카카오 OAuth에서 받은 닉네임도 사용자 표시명으로 저장해야 했다. 동시에 회원가입·로그인·OAuth 흐름을 로컬에서 확인하기 쉽도록 민감값을 제외한 진단 로그가 필요했다.
+
+**변경된 것**
+
+- `SignupRequest`에 선택 필드 `display_name`을 추가했다. 값이 있으면 trim 후 `displayName`으로 저장하고, 없거나 공백이면 기존처럼 이메일 앞 3글자를 저장한다.
+- OAuth 신규 사용자 생성 시 provider가 제공한 이름/닉네임을 `displayName`으로 우선 저장하고, 없으면 이메일 prefix fallback을 사용한다.
+- 회원가입, 로그인, OAuth 사용자 매핑, OAuth 인증 redirect, OAuth code 교환 흐름에 로그를 추가했다. 비밀번호, token, OAuth code, client secret은 로그에 남기지 않는다.
+- 닉네임 저장 규칙 테스트를 보강했다.
+
+**검증**
+
+- 실제 로컬 API 호출로 회원가입 `201`, 로그인 `200`을 확인했다.
+- Google/Naver/Kakao OAuth authorization endpoint가 각각 `302` redirect를 생성하는 것을 확인했다.
+- `./gradlew test --tests fruition.user.service.UserServiceTest --tests fruition.user.service.AuthServiceTest --tests fruition.user.service.OAuthUserServiceTest --tests fruition.security.oauth.domain.OAuth2UserInfoTest` 통과.
+
 ## 2026-07-10
 
 ### perf: reconciler 폴링 최적화 — reconciled_at 마커 + 인덱스 + @DynamicUpdate

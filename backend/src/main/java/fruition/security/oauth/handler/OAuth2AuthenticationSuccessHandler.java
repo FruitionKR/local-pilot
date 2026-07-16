@@ -4,6 +4,8 @@ import fruition.security.oauth.OAuthExchangeCodeStore;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
@@ -14,6 +16,8 @@ import java.io.IOException;
 
 @Component
 public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccessHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(OAuth2AuthenticationSuccessHandler.class);
 
     private final OAuthExchangeCodeStore exchangeCodeStore;
     private final String frontendRedirectUri;
@@ -29,6 +33,7 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
             throws IOException {
         String userId = authentication.getName();
         String code = exchangeCodeStore.issue(userId);
+        log.info("[OAuth 인증 성공] userId={} redirectUri={}", userId, frontendRedirectUri);
 
         String redirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectUri)
                 .queryParam("code", code)
