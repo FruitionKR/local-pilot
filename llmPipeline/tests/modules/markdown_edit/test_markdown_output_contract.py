@@ -1,0 +1,301 @@
+import unittest
+
+from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.domain.markdown_output_contract import (
+    protect_markdown,
+    repair_markdown_output,
+    validate_markdown_output,
+)
+
+
+TARGET = MarkdownEditTarget(type="whole_document", start_line=1, end_line=20)
+
+
+class MarkdownOutputContractTest(unittest.TestCase):
+    def test_rejects_insert_after_output_that_repeats_current_section_heading(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(
+            request,
+            "추가 내용을 안내합니다.\n\n## 설치\n\n설치 방법입니다.\n\n## 문제 해결",
+        )
+
+        self.assertIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_allows_current_section_heading_inside_fenced_code_example(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "```markdown\n## 설치\n```")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_does_not_close_fence_when_fence_like_content_has_info_string(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "```text\n```python\n## 설치\n```")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_does_not_close_fence_with_mixed_fence_characters(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="이 섹션 아래에 Markdown 예시를 추가해줘.",
+            markdown="## 설치\n\n설치 방법입니다.",
+            target=MarkdownEditTarget(type="current_section", start_line=1, end_line=3),
+            edit_goal="insert_after",
+        )
+
+        failures = validate_markdown_output(request, "~~~text\n~~~```\n## 설치\n~~~")
+
+        self.assertNotIn("insert_after output must not repeat the current section heading", failures)
+
+    def test_protects_and_restores_structured_markdown_for_cleanup(self) -> None:
+        source = (
+            "---\ntitle: 운영 점검\nstatus: draft\n---\n\n"
+            "본문을 확인을 한다.[^1]\n\n"
+            "![구조](https://example.com/diagram.png)\n\n"
+            "```bash\n./deploy.sh\n```\n\n"
+            "| 환경 | 상태 |\n| --- | --- |\n| prod | ready |\n\n"
+            "[^1]: 승인 후 실행한다."
+        )
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬고 구조는 그대로 유지해줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        protected = protect_markdown(request)
+
+        self.assertNotIn("title: 운영 점검", protected.markdown)
+        self.assertNotIn("status: draft", protected.markdown)
+        self.assertNotIn("./deploy.sh", protected.markdown)
+        self.assertNotIn("prod | ready", protected.markdown)
+        restored, failures = protected.restore(protected.markdown.replace("본문을 확인을 한다.", "본문을 확인한다."))
+        self.assertEqual(failures, [])
+        self.assertIn("---\ntitle: 운영 점검\nstatus: draft\n---", restored)
+        self.assertIn("![구조](https://example.com/diagram.png)", restored)
+        self.assertIn("```bash\n./deploy.sh\n```", restored)
+        self.assertIn("| prod | ready |", restored)
+        self.assertIn("[^1]: 승인 후 실행한다.", restored)
+
+    def test_restores_footnote_definition_at_line_start(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문장을 다듬고 각주는 유지해줘.",
+            markdown="본문.[^1]\n\n[^1]: 근거",
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+        protected = protect_markdown(request)
+
+        restored, failures = protected.restore(protected.markdown.replace("\n\n{{", "{{"))
+
+        self.assertEqual(failures, [])
+        self.assertIn("본문.[^1]\n\n[^1]: 근거", restored)
+
+    def test_protects_additional_code_math_and_gfm_table_forms_for_shorten(self) -> None:
+        source = (
+            "`deploy()`를 실행한다.\n\n"
+            "    ./deploy.sh --prod\n\n"
+            "$$\nE = mc^2\n$$\n\n"
+            "환경 | 상태\n--- | ---\nprod | ready"
+        )
+        request = MarkdownEditRequest(
+            instruction="설명을 짧게 줄이되 구조는 유지해줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        protected = protect_markdown(request)
+
+        for literal in ("`deploy()`", "./deploy.sh --prod", "E = mc^2", "prod | ready"):
+            self.assertNotIn(literal, protected.markdown)
+        restored, failures = protected.restore(protected.markdown)
+        self.assertEqual(failures, [])
+        self.assertEqual(restored, source)
+
+    def test_reports_missing_protected_token(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="본문만 다듬고 이미지는 유지해줘.",
+            markdown="본문\n\n![구조](https://example.com/diagram.png)",
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+        protected = protect_markdown(request)
+
+        _, failures = protected.restore("본문")
+
+        self.assertEqual(len(failures), 1)
+        self.assertIn("protected token count mismatch", failures[0])
+
+    def test_restores_missing_frontmatter_at_document_start(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="본문만 다듬고 frontmatter는 유지해줘.",
+            markdown="---\ntitle: 문서\n---\n\n본문",
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+        protected = protect_markdown(request)
+
+        restored, failures = protected.restore("다듬은 본문")
+
+        self.assertEqual(failures, [])
+        self.assertEqual(restored, "---\ntitle: 문서\n---\n\n다듬은 본문")
+
+    def test_validates_footnote_reference_count(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬고 각주는 유지해줘.",
+            markdown="근거가 있다.[^1]\n\n[^1]: 공식 문서",
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        self.assertIn(
+            "footnote reference count must be preserved: [^1]",
+            validate_markdown_output(request, "근거가 있다.\n\n[^1]: 공식 문서"),
+        )
+
+    def test_repairs_known_footnote_marker_corruption(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬고 각주는 유지해줘.",
+            markdown="근거가 있다.[^1]\n\n[^1]: 공식 문서",
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        repaired = repair_markdown_output(request, "근거가 있습니다.[[1]]\n\n[^1]: 공식 문서")
+
+        self.assertEqual(repaired, "근거가 있습니다.[^1]\n\n[^1]: 공식 문서")
+
+    def test_repairs_display_math_code_fence(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="관계식을 display math로 표시해줘.",
+            markdown="E = mc^2",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+
+        repaired = repair_markdown_output(request, "```markdown\n$$ E = mc^2 $$\n```")
+
+        self.assertEqual(repaired, "$$ E = mc^2 $$")
+
+    def test_validates_meeting_note_sections(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="회의록으로 정리해줘.",
+            markdown="정책을 논의하고 적용하기로 했다.",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+
+        failures = validate_markdown_output(request, "## 회의록\n\n정책을 논의했다.")
+
+        self.assertIn("meeting notes must contain `## 논의 사항`", failures)
+
+    def test_validates_requested_inline_styles_even_when_route_is_style_change(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="제목을 추가하고 회귀 테스트는 굵게, 문서 미리보기는 기울임, 수동 배포는 취소선으로 표시해줘.",
+            markdown="릴리스 정책. 회귀 테스트. 문서 미리보기. 수동 배포.",
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        failures = validate_markdown_output(request, "# 릴리스 정책\n회귀 테스트, 문서 미리보기, ~~수동 배포~~")
+
+        self.assertIn("bold text must use `**` delimiters", failures)
+        self.assertIn("italic text must use `*` delimiters", failures)
+
+    def test_validates_exact_format_contracts(self) -> None:
+        numbered_request = MarkdownEditRequest(
+            instruction="번호 목록으로 바꿔줘.",
+            markdown="설치. 테스트.",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+        math_request = MarkdownEditRequest(
+            instruction="display math로 바꿔줘.",
+            markdown="E = mc^2",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+
+        self.assertEqual(validate_markdown_output(numbered_request, "1. 설치\n2. 테스트"), [])
+        self.assertIn(
+            "numbered list items must start directly with `1.`, `2.`, and so on",
+            validate_markdown_output(numbered_request, "- 1. 설치\n- 2. 테스트"),
+        )
+        self.assertEqual(validate_markdown_output(math_request, "$$\nE = mc^2\n$$"), [])
+        self.assertIn(
+            "display math must not be wrapped in a code fence",
+            validate_markdown_output(math_request, "```markdown\n$$E = mc^2$$\n```"),
+        )
+
+    def test_rejects_unrequested_list_marker_for_cleanup(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문장을 자연스럽게 다듬어줘.",
+            markdown="배포 전 테스트가 필요하다.",
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        self.assertIn(
+            "plain-text edit must not add a list marker",
+            validate_markdown_output(request, "- 배포 전 테스트가 필요하다."),
+        )
+
+    def test_rejects_unrequested_list_marker_for_shorten(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="한 문장으로 줄여줘.",
+            markdown="시작 안내를 합치고 용어를 통일해야 한다.",
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        self.assertIn(
+            "plain-text edit must not add a list marker",
+            validate_markdown_output(request, "- 시작 안내와 용어를 통합해야 한다."),
+        )
+
+    def test_validates_shorten_length_line_count_and_literal_anchors(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="한 문장으로 짧게 줄여줘.",
+            markdown="API 응답의 TTL은 10분이다. 이 설정을 간단히 설명한다.",
+            target=TARGET,
+            edit_goal="shorten",
+        )
+
+        failures = validate_markdown_output(request, "설정을 설명한다.\nTTL은 짧다.")
+
+        self.assertIn("one-sentence shortening must stay on one line", failures)
+        self.assertIn("shortening must preserve literal anchor: API", failures)
+        self.assertIn("shortening must preserve literal anchor: 10분", failures)
+
+    def test_rejects_unexpected_han_characters_in_korean_cleanup(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="문장을 자연스럽게 다듬어줘.",
+            markdown="배포하기 전에 테스트를 한다.",
+            target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+            edit_goal="cleanup",
+        )
+
+        failures = validate_markdown_output(request, "테스트后再测试之前")
+
+        self.assertIn("Korean text edit must not introduce Han characters absent from the source", failures)
+
+
+if __name__ == "__main__":
+    unittest.main()

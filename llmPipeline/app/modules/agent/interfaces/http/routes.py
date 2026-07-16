@@ -11,6 +11,11 @@ from app.modules.agent.interfaces.http.schemas import (
     MarkdownEditOperationResponse,
     MarkdownEditTargetResponse,
 )
+from app.modules.markdown_edit.domain.markdown_output_contract import (
+    MarkdownCreateOutputContractError,
+    MarkdownOutputContractError,
+)
+from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 
 
@@ -24,6 +29,33 @@ def handle_agent_turn(
 ) -> AgentTurnResponse:
     try:
         result = use_case.execute(payload.to_domain())
+    except MarkdownOutputContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "markdown_output_contract_failed",
+                "message": "Markdown 편집 결과가 문법 및 보존 조건을 충족하지 못했습니다.",
+            },
+        ) from exc
+    except MarkdownCreateOutputContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "markdown_create_output_contract_failed",
+                "message": "Markdown 생성 결과가 필수 출력 조건을 충족하지 못했습니다.",
+            },
+        ) from exc
+    except MarkdownTargetBoundaryError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "markdown_target_crosses_structure",
+                "message": "선택 범위가 분리할 수 없는 Markdown 구조의 일부만 포함합니다.",
+                "structure": exc.structure,
+                "start_line": exc.start_line,
+                "end_line": exc.end_line,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

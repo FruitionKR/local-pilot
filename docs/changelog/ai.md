@@ -4,6 +4,68 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-15
+
+### feat: Markdown 편집 라우팅과 생성 결과 계약 보강
+
+**배경**
+
+일반적인 문서 전체 편집과 원문 구조 보존 요청이 template 재구성으로 차단되고, 아직 지원하지 않는 섹션 뒤 추가 요청이 `replace`로 처리될 수 있었습니다. 신규 Markdown 생성은 필수 필드가 누락돼도 LLM 재시도를 하지 않았습니다.
+
+**추가/변경된 것**
+
+- 외부 template 재구성만 보류하고 문서 전체·구조 보존형 일반 편집은 router가 처리하도록 범위를 좁혔습니다.
+- `insert_after`를 `current_section` 전용 operation으로 추가하고, local guard와 application 계층 모두 현재 섹션 target이 없으면 `clarify`로 반환합니다.
+- 삽입 결과가 기존 섹션 heading을 반복하면 계약 실패로 처리해 기존 내용의 중복 삽입을 막습니다.
+- 신규 Markdown의 `title`, `summary`, `markdown`을 검증하고 한 번 재시도한 뒤 재실패 시 전용 422를 반환합니다.
+- 편집 목적에서 operation을 결정하는 규칙과 Markdown 생성 결과의 정규화·검증 흐름을 공통화했습니다.
+- Agent 연동 계약과 backend 출력 계약의 `insert_after`, Markdown 생성 및 422 오류 설명을 현재 구현과 일치시켰습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -m pytest -q` 결과 292개 테스트와 28개 subtest를 통과했습니다.
+
+## 2026-07-14
+
+### refactor: 문서 복원·평가 pipeline DDD 이관
+
+**배경**
+
+PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물과 함께 있어 제품 경계, 재사용 가능한 진입점, 테스트 위치가 불명확했습니다.
+
+**추가/변경된 것**
+
+- canonical 문서 복원 단계를 `app/modules/document_restoration`의 domain/application/infrastructure/interfaces 구조로 이관했습니다.
+- `RestoreDocumentUseCase`가 단계 순서를 담당하고 파일·subprocess·Docling 실행은 application port 뒤의 infrastructure adapter로 분리했습니다.
+- 외부 evaluator job과 local-first evaluator CLI를 `app/modules/document_evaluation/interfaces`로 이동했습니다.
+- 복원 prompt, 전용 requirements, CLI 실행 문서와 회귀 테스트를 정식 경로에 추가했습니다.
+- PDF, crop, model cache와 실행 산출물이 포함된 `tmp/`, `paddle_cache/`는 Git 추적 대상에서 제외했습니다.
+- 얕은 output 경로에서도 Paddle cache를 안전하게 찾도록 보정하고 `pix2tex` 의존성과 `unittest` 수집 범위를 명확히 했습니다.
+
+**검증**
+
+- `llmPipeline/.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py'` 결과 170개 테스트를 통과했습니다.
+- document restoration/evaluation CLI 3개와 개별 infrastructure stage CLI 8개의 `--help` 실행을 확인했습니다.
+- 정식 모듈과 테스트의 `compileall`, `git diff --check`를 통과했습니다.
+
+**주의사항**
+
+- 문서 복원 CLI는 `requirements-document-restoration.txt`와 시스템 `tesseract`가 필요합니다.
+- Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+- 수식 image-to-LaTeX 근거 생성에는 전용 requirements에 포함된 `pix2tex`가 필요합니다.
+
+### perf: canonical PDF 복원 플로우 최적화 (v5~v8)
+
+`docs/issue/2026-07-14.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다.
+
+- 복원 플로우 실행 시간을 39.7% 단축했습니다 (v5 최적화).
+- 최종 Markdown 평가를 외부 evaluator job 대신 local-first evaluator로 전환했습니다 (153.34초, 테스트 31개 통과).
+- 불완전 종결 heuristic을 제거했습니다 (v7).
+- 구조 이상 표는 직접 Vision 검토로 처리하도록 변경했습니다 (v8, 최종 결론).
+- 해당 코드는 PR 74/75로 `llmPipeline/app/modules/document_restoration`, `document_evaluation`에 DDD 구조로 이관되었습니다. 당시 실측 리포트 경로(`tmp/canonical_flow_run_*`)는 git 추적 제외 산출물이라 현재는 stale입니다.
+
+---
+
 ## 2026-07-10
 
 ### docs: Prompt 지시문 영문화
@@ -531,6 +593,26 @@ Query evaluator loop가 `AnswerQueryUseCase` 내부에서 직접 LangGraph를 �
 - `llmPipeline/.venv/bin/python -m pytest tests/modules/query/test_answer_query.py tests/modules/query/test_query_evaluator_graph.py tests/modules/query/test_query_evaluator_studio_graph.py` 통과.
 - `llmPipeline/.venv/bin/langgraph validate --config langgraph.json` 통과.
 - 실제 `POST /pipeline/runs`, `POST /query` 실행 결과 LangSmith에서 `LangGraph`, `generate_answer`, `evaluate_answer`, `prepare_retry` trace 확인.
+
+---
+
+## 2026-06-27
+
+### feat: query 근거 평가와 ingest 저장 흐름 개선
+
+`docs/issue/2026-06-27.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다 (PR 49, 원문: `docs/backlog/issue-2026-06-27.md`).
+
+- `POST /pipeline/runs` inline 입력(`input`/`input_path`) 실행에도 `source_document_id`와 `documents` row가 생성되도록 보강했습니다.
+- `QueryAnswerEvaluator`를 추가해 답변/근거 정합성을 판단하고, 필요 시 web fallback 또는 internal web augmented route를 요청하도록 했습니다.
+- `wiki_embedding_vectors`(canonical representation 공유)·`wiki_embedding_units`(page/unit 연결) 테이블을 추가해 source/concept 원자 단위 근거 저장 구조를 도입했습니다.
+- Query context 조립이 저장된 embedding unit을 우선 사용하고, 없을 때만 markdown parsing fallback을 쓰도록 변경했습니다.
+- evidence 선택을 고정 top-N에서 page별 최고 점수 대비 score band 방식으로 바꾸고, 구체성 신호(설계 변수·수치·단위·표 등)를 점수에 반영했습니다.
+- 문장마다 자동 `[1]`을 붙이던 citation 후처리를 제거하고, LLM이 실제 인용한 evidence만 `evidence_snippets`에 남기도록 했습니다.
+- `parse_json_object()` repair 후보 추가 등 semantic extraction JSON parsing과 prompt를 보강했습니다.
+
+**검증**
+
+- 원문 기준 pytest 31 passed. 논문 ingest 실험 결과는 `docs/backlog/issue-2026-06-27.md`의 실험 이력 참조.
 
 ---
 

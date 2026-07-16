@@ -1,10 +1,10 @@
 # llmPipeline 백엔드 최종 출력 JSON 계약
 
 이 문서는 `llmPipeline` FastAPI가 Spring backend로 돌려주는 성공 응답 JSON 구조를 기능별로 정리한다.
-대상 기능은 `ingest`, `query`, `markdown_edit`, `schema`, `lint`다.
+대상 기능은 `ingest`, `query`, `markdown_edit`, `markdown_create`, `schema`, `lint`다.
 
 여기서 말하는 "최종 출력"은 LLM 내부 중간 산출물이 아니라, backend가 HTTP 응답 body로 받는 JSON이다.
-FastAPI 공통 실패 응답은 보통 `{"detail": "에러 메시지"}` 형태이며, 이 문서는 성공 응답을 중심으로 설명한다.
+FastAPI 공통 실패 응답은 보통 `{"detail": "에러 메시지"}` 형태다. `/agent/turn`의 Markdown 출력 계약 실패는 backend가 분기할 수 있도록 `detail.code`와 `detail.message`를 가진다. 이 문서는 성공 응답을 중심으로 설명한다.
 
 ## 1. Ingest
 
@@ -373,11 +373,15 @@ backend는 `POST /query` 응답을 받아 Spring API 응답과 채팅 저장 데
 | `nodes` | array | path에 포함된 page id 순서다. |
 | `edges` | array | path에 포함된 edge 목록이다. |
 
-## 3. Markdown Edit
+## 3. Markdown Agent
+
+Markdown 편집과 새 문서 생성은 모두 `POST /agent/turn`의 action으로 제공한다.
+
+### 3.1 Markdown Edit
 
 Markdown 편집은 독립 endpoint가 아니라 `POST /agent/turn`의 한 action이다.
 `action="markdown_edit"`이면 `edit` 필드가 채워지고, backend 또는 frontend는 이 결과를 preview/diff로 보여준 뒤 적용 여부를 결정한다.
-`llmPipeline`은 문서를 저장하지 않고, 교체할 Markdown 조각만 반환한다.
+`llmPipeline`은 문서를 저장하지 않고, 교체하거나 삽입할 Markdown 조각만 반환한다.
 
 ```json
 {
@@ -420,24 +424,82 @@ Markdown 편집은 독립 endpoint가 아니라 `POST /agent/turn`의 한 action
 | `action` | string | router가 분류한 action이다. |
 | `confidence` | number | 분류 신뢰도다. |
 | `reason` | string | 왜 이 action으로 판단했는지에 대한 짧은 설명이다. |
-| `edit_goal` | string 또는 null | 편집 목적 힌트다. 예: `shorten`, `cleanup`, `translate`, `checklist`, `create_from_chat`. |
+| `edit_goal` | string 또는 null | 편집 목적 힌트다. 예: `shorten`, `cleanup`, `translate`, `checklist`, `insert_after`, `create_from_chat`. |
 
 `edit` 필드:
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
-| `operation` | string | 현재는 `replace`만 지원한다. |
-| `target` | object | 교체 대상 line 범위다. |
+| `operation` | string | `replace` 또는 `insert_after`다. |
+| `target` | object | 교체 또는 삽입 기준이 되는 line 범위다. |
 | `summary` | string | 편집 결과 요약이다. |
-| `replacement_markdown` | string | `target` 범위를 대체할 Markdown 본문이다. |
+| `replacement_markdown` | string | `replace`에서는 `target`을 대체하고, `insert_after`에서는 `target` 뒤에 삽입할 Markdown 조각이다. |
 
 `edit.target` 필드:
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
 | `type` | string | 대상 종류다. `selection`, `current_section`, `whole_document` 중 하나다. |
-| `start_line` | number | 교체 시작 line이다. 1-base다. |
-| `end_line` | number | 교체 종료 line이다. 1-base이며 포함 범위다. |
+| `start_line` | number | 대상 시작 line이다. 1-base다. |
+| `end_line` | number | 대상 종료 line이다. 1-base이며 포함 범위다. |
+
+operation별 계약은 다음과 같다.
+
+- `replace`는 `selection`, `current_section`, `whole_document` target을 지원한다. `replacement_markdown`은 해당 범위를 대체할 조각이다.
+- `insert_after`는 `current_section` target에만 사용한다. `replacement_markdown`은 현재 섹션을 반복하지 않고 섹션 뒤에 추가할 새 Markdown만 포함한다.
+- `insert_after` 요청에 `current_section` target이 없으면 `llmPipeline`은 편집 결과를 만들지 않고 `action="clarify"`, `edit=null`과 현재 섹션 선택 안내 `message`를 반환한다.
+- 두 operation 모두 응답 target은 요청 target과 일치해야 하며, 빈 `replacement_markdown`은 성공 결과로 반환하지 않는다.
+
+### 3.2 Markdown Create
+
+새 Markdown 문서 생성도 `POST /agent/turn`의 action이다. `action="markdown_create"`이면 기존 문서를 교체하지 않는 새 draft가 `generated_markdown`에 채워진다.
+
+```json
+{
+  "action": "markdown_create",
+  "route": {
+    "action": "markdown_create",
+    "confidence": 0.95,
+    "reason": "대화 내용을 새 Markdown 문서로 생성하는 요청",
+    "edit_goal": "create_from_chat"
+  },
+  "message": null,
+  "chat": null,
+  "edit": null,
+  "generated_markdown": {
+    "title": "Agent 설계 메모",
+    "summary": "대화 내용을 Markdown 문서로 정리했습니다.",
+    "markdown": "# Agent 설계 메모\n\n- 편집과 생성을 분리한다."
+  }
+}
+```
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `title` | string | 새 문서 제목 후보다. 비어 있지 않아야 한다. |
+| `summary` | string | 사용자에게 보여줄 생성 결과 요약이다. 비어 있지 않아야 한다. |
+| `markdown` | string | 새 editor draft에 넣을 Markdown 본문이다. 비어 있지 않아야 한다. |
+
+`llmPipeline`은 첫 생성 결과에서 필수 필드가 비어 있으면 실패 이유를 포함해 한 번 재시도한다. 두 번째 결과도 계약을 만족하지 못하면 성공 응답 대신 아래 422를 반환한다.
+
+### 3.3 Markdown 계약 오류
+
+```json
+{
+  "detail": {
+    "code": "markdown_output_contract_failed",
+    "message": "Markdown 편집 결과가 문법 및 보존 조건을 충족하지 못했습니다."
+  }
+}
+```
+
+| HTTP / code | 의미 | backend 처리 |
+| --- | --- | --- |
+| `422 / markdown_output_contract_failed` | 두 번째 편집 결과도 Markdown 출력 계약을 만족하지 못했다. | 잘못된 결과를 저장하거나 frontend에 적용안으로 전달하지 않는다. |
+| `422 / markdown_create_output_contract_failed` | 두 번째 생성 결과도 `title`, `summary`, `markdown` 필수 계약을 만족하지 못했다. | 새 draft를 만들지 않고 오류를 전달한다. |
+| `422 / markdown_target_crosses_structure` | target이 fenced code, table 등 여러 줄 구조의 일부만 포함한다. | target 재선택을 안내하고 원본을 유지한다. |
+
+내부 validator 실패 사유, 보호 token과 잘못된 model 출력은 HTTP 응답에 노출하지 않는다.
 
 ## 4. Schema
 

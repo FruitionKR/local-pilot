@@ -5,21 +5,20 @@ import argparse
 import json
 import os
 import shutil
-import urllib.error
-import urllib.request
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
-from langgraph.graph import END, StateGraph
-
-from app.modules.wiki_generation.application.evaluation_guards import (
-    apply_generation_evaluation_guards as _apply_generation_evaluation_guards,
-    repair_normalized_from_evaluation as _repair_normalized_from_evaluation,
-)
 from app.modules.wiki_generation.application.section_polish_mapping import (
     map_polish_output as _map_polish_output,
+)
+from app.modules.wiki_generation.application.run_generation_loop import (
+    EvaluationGuardRepairer,
+    RunGenerationLoopUseCase,
+)
+from app.modules.wiki_generation.application.judge_candidates import (
+    judge_concept_update_candidates as _judge_concept_update_candidates,
+    judge_meaning_cluster_candidates as _judge_meaning_cluster_candidates,
 )
 from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
@@ -29,11 +28,15 @@ from app.modules.wiki_generation.infrastructure.assemble import (
     SourcePageAssembler,
 )
 from app.modules.wiki_generation.infrastructure.extract import MarkdownBlockExtractor
+from app.modules.wiki_generation.infrastructure.generation_loop_adapters import (
+    EvaluationArtifactAdapter,
+    GenerationEvaluatorAdapter,
+    SemanticGenerationAdapter,
+)
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ApiConceptResolver,
     ApiConceptPageGenerator,
     ApiSectionPolisher,
-    ApiSemanticExtractor,
     ApiSourceAccumulator,
     ChatClientConfig,
     ChatCompletionsJsonClient,
@@ -51,63 +54,15 @@ from app.modules.wiki_generation.infrastructure.concept_resolution import (
 )
 from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
 from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuilder
+from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
     apply_same_source_core_context,
     source_context_blocks,
     source_page_context_normalized,
 )
-from app.modules.wiki_ingestion.infrastructure.file_io import append_text, ensure_dir, write_json, write_text
+from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
-
-
-class PipelineLog:
-    def __init__(self, path: str | Path, callback_url: str | None = None, run_id: str | None = None) -> None:
-        self.path = Path(path)
-        self.callback_url = callback_url
-        self.run_id = run_id
-        if self.path.exists():
-            self.path.unlink()
-
-    def emit(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        event = {
-            "run_id": self.run_id,
-            "timestamp": now,
-            "stage": stage,
-            "message": message,
-            "data": {key: str(value) for key, value in (data or {}).items()},
-        }
-        lines = [f"[{now}] [{stage}] {message}"]
-        for key, value in event["data"].items():
-            lines.append(f"  - {key}: {value}")
-        append_text(self.path, "\n".join(lines) + "\n")
-        if self.callback_url:
-            self._post_event(event)
-
-    def _post_event(self, event: dict[str, Any]) -> None:
-        body = json.dumps(event, ensure_ascii=False).encode("utf-8")
-        request = urllib.request.Request(
-            self.callback_url,
-            data=body,
-            headers={"Content-Type": "application/json; charset=utf-8"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5):
-                pass
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            append_text(self.path, f"[{event['timestamp']}] [로그 전송 실패] {exc}\n")
-
-
-class _WikiGenerationGraphState(TypedDict):
-    attempt: int
-    semantic_prompt_for_attempt: str
-    source_context: dict[str, Any] | None
-    notes: list[dict[str, Any]]
-    normalized: dict[str, Any]
-    evaluation: dict[str, Any] | None
-    generation_evaluations: list[dict[str, Any]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -247,74 +202,6 @@ def source_page_mode(args: argparse.Namespace) -> str:
     return "section-polish" if args.mode in {"api", "generic-chat"} else "skeleton"
 
 
-def _run_semantic_extraction(
-    *,
-    api_client: ChatCompletionsJsonClient,
-    system_prompt: str,
-    packets: list[Any],
-    raw_dir: Path | None,
-    log: PipelineLog,
-    attempt: int,
-    source_context: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    semantic_llm = ApiSemanticExtractor(api_client, system_prompt, source_context=source_context)
-    notes = []
-    for p in packets:
-        note = semantic_llm.extract(p)
-        notes.append(note)
-        if raw_dir is not None:
-            suffix = "" if attempt == 1 else f".attempt{attempt}"
-            write_json(raw_dir / f"{p.chunk_id}{suffix}.json", note)
-        log.emit(
-            "3. 의미 추출",
-            "패킷에서 의미 노트를 추출했고, 노트 객체를 메모리에 추가했습니다.",
-            {
-                "시도": attempt,
-                "패킷": p.chunk_id,
-                "핵심 포인트 수": len(note.get("key_points", [])),
-                "core concept 수": len(note.get("core_concepts") or note.get("concept_candidates", [])),
-                "section/mention/category 수": f"{len(note.get('section_candidates', []))}/{len(note.get('mentions', []))}/{len(note.get('categories', []))}",
-                "근거 주장 수": len(note.get("evidence_claims", [])),
-            },
-        )
-    return notes
-
-
-def _evaluate_generation(
-    *,
-    api_client: ChatCompletionsJsonClient,
-    evaluator_prompt: str,
-    document: Any,
-    blocks: list[Any],
-    normalized: dict[str, Any],
-) -> dict[str, Any]:
-    payload = {
-        "document": asdict(document),
-        "source_blocks": [
-            {"block_id": block.block_id, "text": block.text}
-            for block in blocks
-        ],
-        "normalized": {
-            "semantic_notes": normalized.get("semantic_notes", []),
-            "concept_ledger": normalized.get("concept_ledger", []),
-            "categories": normalized.get("categories", []),
-            "section_candidates": normalized.get("section_candidates", []),
-            "mentions": normalized.get("mentions", []),
-            "observations": normalized.get("observations", []),
-            "evidence_units": normalized.get("evidence_units", []),
-            "warnings": normalized.get("warnings", []),
-        },
-    }
-    evaluation = api_client.complete_json(evaluator_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    evaluation.setdefault("scores", {})
-    evaluation.setdefault("passed", False)
-    evaluation.setdefault("retry_recommended", not bool(evaluation.get("passed")))
-    evaluation.setdefault("issues", [])
-    evaluation.setdefault("retry_feedback", "")
-    _apply_generation_evaluation_guards(evaluation, normalized)
-    return evaluation
-
-
 def _json_safe(value: Any) -> Any:
     try:
         json.dumps(value)
@@ -340,218 +227,8 @@ def _read_existing_active_clusters(user_id: str, workspace_id: str) -> str:
         return ""
 
 
-def _judge_meaning_cluster_candidates(
-    *,
-    api_client: ChatCompletionsJsonClient,
-    existing_active_markdown: str,
-    candidates: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if not candidates:
-        return []
-    system_prompt = """Stage=MeaningClusterJudge.
-You decide whether section/mention evidence claims should update an existing term_cluster or create a new term_cluster.
 
-Rules:
-- Return JSON only.
-- Do not create core concepts or graph edges.
-- Prefer same_cluster when the candidate is a synonym, abbreviation, translation, spelling variant, or narrower wording of an existing cluster.
-- Use new_cluster only when no existing cluster or other incoming candidate has the same meaning.
-- Incoming candidates may share the same new target_cluster_id if they should be grouped together.
-- target_cluster_id must be descriptive kebab-case such as "back-emf" or "manufacturing-uncertainty".
-- Never use generic ids such as "cluster-001", "new-cluster", "candidate-1", or "term".
-- Use needs_review only when the candidate is ambiguous.
-- promotion_status is usually "none".
-- Respect the earlier extraction decision: if a term arrived as a
-  section_candidate, mention, or evidence item instead of a core_concept, do
-  not immediately promote it in the same ingest pass.
-- Never set promotion_status to "candidate" for a new_cluster decision. A newly
-  created cluster must first remain in active.md and accumulate more evidence.
-- Never promote a cluster based on a single incoming candidate, a single claim,
-  or a single source in this pass. Promotion requires accumulated evidence that
-  already exists in existing_active_clusters plus the incoming claim.
-- Use promotion_status "candidate" only when decision is same_cluster and the
-  target cluster already exists in existing_active_clusters with multiple
-  grounded claims or multiple source refs.
-- Use promotion_status "candidate" only when the cluster is worth becoming a
-  long-lived core wiki page: it is a reusable domain concept, has grounded
-  evidence claims, and can support future relations or retrieval beyond the
-  current source.
-- Do not promote merely because a term is definable. Definition extractability
-  is insufficient without reusable evidence and relation value.
-- Do not promote bibliographic/entity metadata: author names, researcher names,
-  universities, funders, journals, conferences, publishers, citations, document
-  titles, affiliations, or project metadata.
-- Do not promote one-off named tools, software, product names, experimental
-  labels, parameter labels, or isolated metrics unless the accumulated claims
-  show a reusable domain concept with meaningful relations to existing concepts.
-- If evidence comes from only one source and mainly identifies a name/entity,
-  keep promotion_status as "none".
-
-Schema:
-{
-  "decisions": [
-    {
-      "candidate_id": "cand_001",
-      "decision": "same_cluster | new_cluster | needs_review",
-      "target_cluster_id": "cluster-id-to-update-or-create",
-      "representative": "short display label",
-      "promotion_status": "none | candidate | needs_review",
-      "reason": "brief Korean reason"
-    }
-  ]
-}
-"""
-    payload = {
-        "existing_active_clusters": existing_active_markdown[-24000:],
-        "incoming_candidates": [
-            {
-                "candidate_id": item["candidate_id"],
-                "term": item["term"],
-                "suggested_slug": item["slug"],
-                "claim": item["claim"],
-                "refs": item["refs"],
-                "candidate_type": item["candidate_type"],
-                "suggested_promotion_status": item.get("suggested_promotion_status", "none"),
-                "suggested_promotion_reason": item.get("suggested_promotion_reason", ""),
-            }
-            for item in candidates
-        ],
-    }
-    raw = api_client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    decisions = raw.get("decisions", [])
-    if not isinstance(decisions, list):
-        return []
-    valid_candidate_ids = {item["candidate_id"] for item in candidates}
-    normalized_decisions: list[dict[str, Any]] = []
-    for item in decisions:
-        if not isinstance(item, dict):
-            continue
-        candidate_id = str(item.get("candidate_id") or "")
-        if candidate_id not in valid_candidate_ids:
-            continue
-        decision = str(item.get("decision") or "new_cluster")
-        if decision not in {"same_cluster", "new_cluster", "needs_review"}:
-            decision = "new_cluster"
-        promotion_status = str(item.get("promotion_status") or "none")
-        if promotion_status not in {"none", "candidate", "needs_review"}:
-            promotion_status = "none"
-        normalized_decisions.append(
-            {
-                "candidate_id": candidate_id,
-                "decision": decision,
-                "target_cluster_id": item.get("target_cluster_id"),
-                "representative": item.get("representative"),
-                "promotion_status": promotion_status,
-                "reason": item.get("reason"),
-            }
-        )
-    return normalized_decisions
-
-
-def _judge_concept_update_candidates(
-    *,
-    api_client: ChatCompletionsJsonClient,
-    concepts: list[dict[str, Any]],
-    candidates: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if not concepts or not candidates:
-        return []
-    system_prompt = """Stage=ConceptUpdateCandidateJudge.
-You decide whether section/mention evidence claims already belong to or have an evidence-backed relation with an existing/current core concept.
-
-Rules:
-- Return JSON only.
-- Use same_concept when the candidate is a synonym, translation, abbreviation, direct property, or evidence for an existing/current concept.
-- Use relation_candidate when the candidate is not the same concept but has an evidence-backed relation to an existing/current concept.
-- Use not_same_concept when it should remain available for active cluster judging.
-- Do not create new concepts or clusters.
-- Allowed relation values: part_of, child_of, uses_or_depends_on, contrasts_with, supports_or_enables, related_evidence, insufficient_evidence.
-
-Schema:
-{
-  "decisions": [
-    {
-      "candidate_id": "cand_001",
-      "decision": "same_concept | relation_candidate | not_same_concept",
-      "concept_slug": "existing-concept-slug-or-empty",
-      "relation": "part_of | child_of | uses_or_depends_on | contrasts_with | supports_or_enables | related_evidence | insufficient_evidence | empty",
-      "reason": "brief Korean reason"
-    }
-  ]
-}
-"""
-    payload = {
-        "concepts": [
-            {
-                "slug": concept.get("slug"),
-                "title": concept.get("title"),
-                "aliases": concept.get("aliases", []),
-                "definition": concept.get("definition", ""),
-                "evidence": concept.get("evidence", []),
-                "why_page_worthy": concept.get("why_page_worthy", ""),
-            }
-            for concept in concepts
-            if concept.get("slug")
-        ],
-        "incoming_candidates": [
-            {
-                "candidate_id": item["candidate_id"],
-                "term": item["term"],
-                "suggested_slug": item["slug"],
-                "claim": item["claim"],
-                "refs": item["refs"],
-                "candidate_type": item["candidate_type"],
-            }
-            for item in candidates
-        ],
-    }
-    raw = api_client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    decisions = raw.get("decisions", [])
-    if not isinstance(decisions, list):
-        return []
-    valid_candidate_ids = {item["candidate_id"] for item in candidates}
-    valid_concept_slugs = {str(concept.get("slug")) for concept in concepts if concept.get("slug")}
-    normalized_decisions: list[dict[str, Any]] = []
-    for item in decisions:
-        if not isinstance(item, dict):
-            continue
-        candidate_id = str(item.get("candidate_id") or "")
-        if candidate_id not in valid_candidate_ids:
-            continue
-        decision = str(item.get("decision") or "not_same_concept")
-        concept_slug = str(item.get("concept_slug") or "")
-        relation = str(item.get("relation") or "")
-        if relation not in {
-            "part_of",
-            "child_of",
-            "uses_or_depends_on",
-            "contrasts_with",
-            "supports_or_enables",
-            "related_evidence",
-            "insufficient_evidence",
-        }:
-            relation = ""
-        if decision == "same_concept" and concept_slug in valid_concept_slugs:
-            relation = "same_concept"
-        elif decision == "relation_candidate" and concept_slug in valid_concept_slugs and relation:
-            pass
-        else:
-            decision = "not_same_concept"
-            concept_slug = ""
-            relation = ""
-        normalized_decisions.append(
-            {
-                "candidate_id": candidate_id,
-                "decision": decision,
-                "concept_slug": concept_slug,
-                "relation": relation,
-                "reason": item.get("reason"),
-            }
-        )
-    return normalized_decisions
-
-
-def _run_wiki_generation_graph(
+def _run_wiki_generation_loop(
     *,
     api_client: ChatCompletionsJsonClient,
     semantic_system_prompt: str,
@@ -568,148 +245,19 @@ def _run_wiki_generation_graph(
     max_eval_attempts: int,
     source_context: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
-    graph = StateGraph(_WikiGenerationGraphState)
-
-    def generate_semantics(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
-        attempt = int(state.get("attempt", 1))
-        notes = _run_semantic_extraction(
-            api_client=api_client,
-            system_prompt=state["semantic_prompt_for_attempt"],
-            packets=packets,
-            raw_dir=raw_dir,
-            log=log,
-            attempt=attempt,
-            source_context=state.get("source_context"),
-        )
-        log.emit("3. 의미 추출 완료", "의미 노트 목록을 정규화 단계 입력으로 전달합니다.", {"시도": attempt, "노트 수": len(notes)})
-        normalized = normalizer.normalize_notes(notes)
-        return {**state, "notes": notes, "normalized": normalized}
-
-    def should_evaluate(state: _WikiGenerationGraphState) -> str:
-        return "evaluate" if wiki_evaluation_loop else "finished"
-
-    def evaluate_generation(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
-        attempt = int(state.get("attempt", 1))
-        evaluation = _evaluate_generation(
-            api_client=api_client,
-            evaluator_prompt=wiki_evaluator_system_prompt,
-            document=document,
-            blocks=blocks,
-            normalized=state["normalized"],
-        )
-        generation_evaluations = [*state.get("generation_evaluations", []), evaluation]
-        if save_debug_json:
-            write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.json", evaluation)
-        log.emit(
-            "3-평가. Wiki 생성 평가",
-            "정규화된 의미 구조를 평가했습니다.",
-            {
-                "시도": attempt,
-                "passed": evaluation.get("passed"),
-                "retry": evaluation.get("retry_recommended"),
-                "overall": (evaluation.get("scores") or {}).get("overall"),
-                "issue 수": len(evaluation.get("issues", [])),
-            },
-        )
-        return {**state, "evaluation": evaluation, "generation_evaluations": generation_evaluations}
-
-    def repair_generation(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
-        attempt = int(state.get("attempt", 1))
-        normalized = state["normalized"]
-        evaluation = state["evaluation"]
-        if evaluation is None:
-            return state
-        repaired_normalized, repair_operations = _repair_normalized_from_evaluation(normalized, evaluation)
-        if not repair_operations:
-            return state
-        repair_evaluation = _evaluate_generation(
-            api_client=api_client,
-            evaluator_prompt=wiki_evaluator_system_prompt,
-            document=document,
-            blocks=blocks,
-            normalized=repaired_normalized,
-        )
-        repair_evaluation["repair_operations"] = repair_operations
-        generation_evaluations = [*state.get("generation_evaluations", []), repair_evaluation]
-        if save_debug_json:
-            write_json(ensure_dir(out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}.repair.json", repair_evaluation)
-        log.emit(
-            "3-평가-보정. Wiki 생성 보정",
-            "평가 issue를 바탕으로 명확한 observation 문제를 자동 보정하고 다시 평가했습니다.",
-            {
-                "시도": attempt,
-                "보정 수": len(repair_operations),
-                "passed": repair_evaluation.get("passed"),
-                "retry": repair_evaluation.get("retry_recommended"),
-                "overall": (repair_evaluation.get("scores") or {}).get("overall"),
-                "issue 수": len(repair_evaluation.get("issues", [])),
-            },
-        )
-        return {
-            **state,
-            "normalized": repaired_normalized,
-            "evaluation": repair_evaluation,
-            "generation_evaluations": generation_evaluations,
-        }
-
-    def route_after_evaluation(state: _WikiGenerationGraphState) -> str:
-        evaluation = state.get("evaluation") or {}
-        attempt = int(state.get("attempt", 1))
-        if not evaluation.get("retry_recommended") or evaluation.get("passed") or attempt >= max_eval_attempts:
-            return "finished"
-        return "retry"
-
-    def prepare_retry(state: _WikiGenerationGraphState) -> _WikiGenerationGraphState:
-        evaluation = state.get("evaluation") or {}
-        feedback = str(evaluation.get("retry_feedback") or "")
-        semantic_prompt_for_attempt = (
-            semantic_system_prompt
-            + "\n\nEvaluator feedback for retry:\n"
-            + feedback
-            + "\nApply this feedback strictly. Keep source anchors exact. Return the same JSON schema."
-        )
-        return {
-            **state,
-            "attempt": int(state.get("attempt", 1)) + 1,
-            "semantic_prompt_for_attempt": semantic_prompt_for_attempt,
-        }
-
-    graph.add_node("generate_semantics", generate_semantics)
-    graph.add_node("evaluate_generation", evaluate_generation)
-    graph.add_node("repair_generation", repair_generation)
-    graph.add_node("prepare_retry", prepare_retry)
-    graph.set_entry_point("generate_semantics")
-    graph.add_conditional_edges(
-        "generate_semantics",
-        should_evaluate,
-        {
-            "evaluate": "evaluate_generation",
-            "finished": END,
-        },
+    return RunGenerationLoopUseCase(
+        semantic_generation=SemanticGenerationAdapter(api_client, packets, raw_dir, log),
+        normalizer=normalizer,
+        evaluator=GenerationEvaluatorAdapter(api_client, wiki_evaluator_system_prompt, document, blocks),
+        repairer=EvaluationGuardRepairer(),
+        events=log,
+        evaluation_artifacts=EvaluationArtifactAdapter(out, save_debug_json),
+    ).execute(
+        semantic_system_prompt=semantic_system_prompt,
+        source_context=source_context,
+        evaluation_enabled=wiki_evaluation_loop,
+        max_attempts=max_eval_attempts,
     )
-    graph.add_edge("evaluate_generation", "repair_generation")
-    graph.add_conditional_edges(
-        "repair_generation",
-        route_after_evaluation,
-        {
-            "finished": END,
-            "retry": "prepare_retry",
-        },
-    )
-    graph.add_edge("prepare_retry", "generate_semantics")
-
-    result = graph.compile().invoke(
-        {
-            "attempt": 1,
-            "semantic_prompt_for_attempt": semantic_system_prompt,
-            "source_context": source_context,
-            "notes": [],
-            "normalized": {},
-            "evaluation": None,
-            "generation_evaluations": [],
-        }
-    )
-    return result["notes"], result["normalized"], result["generation_evaluations"]
 
 
 def _prepare_source_page_polish(
@@ -1029,7 +577,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     raw_dir = ensure_dir(out / "raw_llm_outputs" / "semantic_extraction") if args.save_debug_json else None
     normalizer = SemanticNormalizer(document, blocks)
     max_eval_attempts = max(1, int(getattr(args, "max_eval_attempts", 2) or 2))
-    notes, normalized, generation_evaluations = _run_wiki_generation_graph(
+    notes, normalized, generation_evaluations = _run_wiki_generation_loop(
         api_client=api_client,
         semantic_system_prompt=semantic_system_prompt,
         wiki_evaluator_system_prompt=wiki_evaluator_system_prompt,
@@ -1239,7 +787,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         *normalized.get("existing_concept_index", []),
     ]
     concept_update_decisions = _judge_concept_update_candidates(
-        api_client=api_client,
+        completion=api_client,
         concepts=concept_candidates,
         candidates=meaning_cluster_candidates,
     )
@@ -1271,7 +819,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     )
     existing_active_clusters = _read_existing_active_clusters(args.user_id, args.workspace_id)
     cluster_decisions = _judge_meaning_cluster_candidates(
-        api_client=api_client,
+        completion=api_client,
         existing_active_markdown=existing_active_clusters,
         candidates=cluster_judge_candidates,
     )

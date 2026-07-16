@@ -20,6 +20,56 @@ class FakeMarkdownEditor:
 
 
 class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
+    def test_returns_insert_after_operation_for_current_section(self) -> None:
+        target = MarkdownEditTarget(type="current_section", start_line=1, end_line=3)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=target,
+                    summary="문제 해결 절을 추가했습니다.",
+                    replacement_markdown="## 문제 해결\n\n로그를 확인합니다.",
+                )
+            )
+        )
+
+        result = GenerateMarkdownEditUseCase(editor).execute(
+            MarkdownEditRequest(
+                instruction="이 섹션 아래에 문제 해결 절을 추가해줘.",
+                markdown="# 설치\n\n설치 방법입니다.",
+                target=target,
+                edit_goal="insert_after",
+            )
+        )
+
+        self.assertEqual(result.edit.operation, "insert_after")
+        self.assertTrue(result.edit.replacement_markdown.startswith("## 문제 해결"))
+
+    def test_rejects_insert_after_for_non_section_target(self) -> None:
+        target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="insert_after",
+                    target=target,
+                    summary="내용을 추가했습니다.",
+                    replacement_markdown="추가 내용",
+                )
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "current_section"):
+            GenerateMarkdownEditUseCase(editor).execute(
+                MarkdownEditRequest(
+                    instruction="아래에 추가해줘.",
+                    markdown="본문",
+                    target=target,
+                    edit_goal="insert_after",
+                )
+            )
+
+        self.assertEqual(editor.requests, [])
+
     def test_returns_replace_operation_for_requested_target(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=2, end_line=4)
         editor = FakeMarkdownEditor(
@@ -37,7 +87,7 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
         result = use_case.execute(
             MarkdownEditRequest(
                 instruction="표로 바꿔줘",
-                markdown="# 제목\n\nA: B",
+                markdown="# 제목\n\nA: B\n추가 설명",
                 target=target,
             )
         )
@@ -70,6 +120,31 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
                     target=target,
                 )
             )
+
+    def test_rejects_partial_range_labeled_as_whole_document(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=2, end_line=2)
+        editor = FakeMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=target,
+                    summary="문서 전체를 정리했습니다.",
+                    replacement_markdown="# 전체 문서",
+                )
+            )
+        )
+        use_case = GenerateMarkdownEditUseCase(editor)
+
+        with self.assertRaisesRegex(ValueError, "whole_document target must cover"):
+            use_case.execute(
+                MarkdownEditRequest(
+                    instruction="문서 전체를 정리해줘.",
+                    markdown="# 제목\n\n본문",
+                    target=target,
+                )
+            )
+
+        self.assertEqual(editor.requests, [])
 
 
 if __name__ == "__main__":
