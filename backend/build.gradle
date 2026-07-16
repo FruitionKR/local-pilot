@@ -1,7 +1,18 @@
+// Flyway Gradle 플러그인(flywayInfo 등)이 DB에 접속하려면 JDBC 드라이버와
+// Postgres 모듈을 플러그인 classpath(buildscript)에 올려야 한다. Spring Boot가 쓰는 Flyway 11.7.2와 버전을 맞춘다.
+buildscript {
+	repositories { mavenCentral() }
+	dependencies {
+		classpath 'org.postgresql:postgresql:42.7.10'
+		classpath 'org.flywaydb:flyway-database-postgresql:11.7.2'
+	}
+}
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.5.14'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'org.flywaydb.flyway' version '11.7.2'
 }
 
 group = 'fruition'
@@ -52,6 +63,34 @@ dependencyManagement {
 	imports {
 		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
 	}
+}
+
+// Flyway Gradle 태스크(flywayInfo/flywayValidate 등) 설정.
+// 접속 정보는 bootRun과 동일하게 infra/.env에서 읽고, 없으면 application.properties와 같은 기본값을 쓴다.
+def flywayDbEnv = { ->
+	def env = [:]
+	def envFile = file("$projectDir/../infra/.env")
+	if (envFile.exists()) {
+		envFile.readLines().each { line ->
+			if (line && !line.startsWith('#') && line.contains('=')) {
+				def parts = line.split('=', 2)
+				env[parts[0].trim()] = parts[1].trim()
+			}
+		}
+	}
+	env
+}()
+
+flyway {
+	def host = flywayDbEnv.POSTGRES_HOST ?: System.getenv('POSTGRES_HOST') ?: 'localhost'
+	def port = flywayDbEnv.POSTGRES_PORT ?: System.getenv('POSTGRES_PORT') ?: '5432'
+	def name = flywayDbEnv.POSTGRES_DB ?: System.getenv('POSTGRES_DB') ?: 'fruition_mvp'
+	url = "jdbc:postgresql://${host}:${port}/${name}"
+	user = flywayDbEnv.POSTGRES_USER ?: System.getenv('POSTGRES_USER') ?: 'fruition'
+	password = flywayDbEnv.POSTGRES_PASSWORD ?: System.getenv('POSTGRES_PASSWORD') ?: 'fruition_dev_password'
+	locations = ['filesystem:src/main/resources/db/migration']
+	baselineOnMigrate = true
+	baselineVersion = '1'
 }
 
 tasks.named('test') {

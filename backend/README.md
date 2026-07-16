@@ -102,6 +102,47 @@ docker compose -f docker-compose.dev.yml up -d
 
 `spring.flyway.baseline-on-migrate=true`가 설정되어, 이미 데이터가 있는 기존 DB는 V1을 재실행하지 않고 v1로 마킹만 한 뒤 V2부터 적용합니다. 기존 DB도 데이터 유지한 채 Flyway로 편입됩니다.
 
+### 상태 모니터링
+
+**적용 상태 한눈에 보기 (Flyway Gradle 플러그인):**
+
+```bash
+cd backend
+./gradlew flywayInfo        # 각 마이그레이션의 Version/State(Success/Pending 등) 표로 출력
+./gradlew flywayValidate    # 로컬 파일과 DB 적용 이력의 정합성(체크섬 등) 검증
+```
+
+`flywayInfo`/`flywayValidate`는 접속 정보를 `infra/.env`에서 읽습니다(없으면 로컬 기본값). `bootRun`이 아니므로 DB(Docker)만 떠 있으면 됩니다.
+
+**적용 이력 직접 조회 (psql):**
+
+```bash
+docker compose -f infra/docker-compose.dev.yml exec -T postgresql \
+  psql -U fruition -d fruition_mvp \
+  -c "SELECT installed_rank, version, description, success, installed_on FROM flyway_schema_history ORDER BY installed_rank;"
+```
+
+`success`가 모두 `t`면 정상입니다. `flyway_schema_history`가 Flyway의 진실 소스입니다.
+
+**기동 로그:** 적용 시 `Migrating schema "public" to version "N - ..."` / `Successfully applied N migration(s)`, 변경 없을 때 `No migration necessary`가 찍힙니다.
+
+### 트러블슈팅
+
+| 증상 | 원인 | 대처 |
+|---|---|---|
+| 기동 실패 `Schema-validation: missing table/column ...` | 엔티티는 바꿨는데 마이그레이션을 안 만듦 | 해당 변경의 `Vn__*.sql`을 추가 |
+| `Migration checksum mismatch` | 이미 적용된 마이그레이션 파일을 수정함 | 파일을 원상복구하고 변경은 **새 번호**로 추가. `./gradlew flywayValidate`로 확인 |
+| `Detected applied migration not resolved locally` | 로컬에 없는 버전이 DB에만 적용됨(브랜치 꼬임) | 브랜치/파일 정합성 확인, 로컬 DB 리셋(`down -v`) |
+| 마이그레이션 SQL 오류로 기동 실패 | SQL 문법/제약 위반 | Postgres는 트랜잭션 DDL이라 실패분은 롤백됨 → SQL 고쳐 다시 `bootRun`(대개 수동 복구 불필요) |
+| FK/제약 추가가 실패 | 기존 DB에 무결성 안 맞는(고아) 데이터 | 로컬은 리셋, 운영은 데이터 정리 후 적용 |
+
+### 마이그레이션 작성 관행
+
+- 한 마이그레이션 = 하나의 논리적 변경. 무관한 변경을 섞지 않습니다.
+- 파괴적 변경은 단계적으로(expand-contract): 컬럼 rename은 ① 새 컬럼 추가 → ② 백필/양쪽 사용 → ③ 다음 릴리스에서 옛 컬럼 DROP.
+- 두 사람이 동시에 같은 번호를 만들면 나중 머지하는 쪽이 다음 번호로 조정합니다.
+- 운영 DB는 리셋 금지, 파괴적 변경 전 백업.
+
 ---
 
 ## 환경 변수
