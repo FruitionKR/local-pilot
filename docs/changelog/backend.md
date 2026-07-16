@@ -8,6 +8,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-16
 
+### chore: Flyway 도입 및 스키마 관리 방식 전환 (ddl-auto=validate)
+
+**배경**
+
+`ddl-auto=update`는 컬럼/제약을 추가만 하고 삭제·변경을 반영하지 못해, 엔티티 변경 시 옛 제약이 "잔재"로 남는다. 실제로 `wiki_pages`의 잔재 unique constraint `uq_wiki_pages_type_slug`가 llmPipeline의 wiki page upsert를 막는 문제가 있었다(`docs/issue/2026-07-16.md` 이슈 1). 스키마를 버전 관리되는 마이그레이션으로 전환한다.
+
+**변경된 것**
+
+- `build.gradle`에 `flyway-core`, `flyway-database-postgresql` 의존성을 추가했다.
+- `ddl-auto`를 `update` → `validate`로 바꿔 스키마의 단일 소스를 Flyway로 일원화했다. 앱은 기동 시 검증만 수행한다.
+- `application.properties`에 `spring.flyway.enabled/baseline-on-migrate/baseline-version`을 추가했다. 기존 데이터가 있는 DB는 v1로 마킹만 하고 V2부터 적용된다.
+- baseline 마이그레이션 `V1__baseline_schema.sql`(엔티티 16개 기준 깨끗한 스키마)과 잔재 제거 마이그레이션 `V2__drop_leftover_wiki_pages_unique.sql`을 추가했다.
+- `backend/README.md`에 팀원용 Flyway 사용법(최초 1회 리셋 / 평상시 pull+bootRun / 스키마 변경 시 Vn 규칙 / 운영 DB baseline)을 문서화했다.
+- Spring Session 테이블은 Flyway 관리 대상이 아니며 기존대로 Spring Session JDBC가 생성한다.
+
+**검증**
+
+- 빈 DB 기동 시 Flyway가 V1 → V2를 적용하고 `ddl-auto=validate`가 통과했다. `flyway_schema_history`에 2건 success 확인.
+- 적용 후 `wiki_pages`에 잔재 constraint가 제거되고 `uq_wiki_pages_workspace_type_slug`만 남는 것을 확인했다.
+- `./gradlew test --rerun-tasks` (Testcontainers) 통과. Test worker 로그에 `Successfully applied 2 migrations` 확인.
+
 ### feat: 회원가입 닉네임 입력 및 인증 로그 추가
 
 **배경**
