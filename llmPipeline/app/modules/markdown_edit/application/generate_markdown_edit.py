@@ -1,5 +1,5 @@
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
-from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditResult
+from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditResult, operation_for_edit_goal
 from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 
 
@@ -23,10 +23,13 @@ class GenerateMarkdownEditUseCase:
             request.target.start_line != 1 or request.target.end_line != line_count
         ):
             raise ValueError("whole_document target must cover the entire Markdown document.")
+        if request.edit_goal == "insert_after" and request.target.type != "current_section":
+            raise ValueError("insert_after operation requires a current_section target.")
 
         result = self._editor.generate_edit(request)
-        if result.edit.operation != "replace":
-            raise ValueError("Only replace operation is supported.")
+        expected_operation = operation_for_edit_goal(request.edit_goal)
+        if result.edit.operation != expected_operation:
+            raise ValueError(f"Edit operation must be {expected_operation}.")
         if result.edit.target != request.target:
             raise ValueError("Edit target must match the requested target.")
         if not result.edit.replacement_markdown.strip():

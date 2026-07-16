@@ -8,6 +8,7 @@ from typing import Any
 from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
+    EditOperationType,
     GeneratedMarkdownDocument,
     MarkdownCreateRequest,
     MarkdownCreateResult,
@@ -15,12 +16,15 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditRequest,
     MarkdownEditResult,
     MarkdownEditTarget,
+    operation_for_edit_goal,
 )
 from app.modules.markdown_edit.domain.markdown_output_contract import (
+    MarkdownCreateOutputContractError,
     MarkdownOutputContractError,
     ProtectedMarkdown,
     protect_markdown,
     repair_markdown_output,
+    validate_markdown_create_output,
     validate_markdown_output,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetScope, build_markdown_target_scope
@@ -62,6 +66,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         validate_markdown_target_boundary(request.markdown, request.target)
         scope = build_markdown_target_scope(request.markdown, request.target, self._context_lines)
         scoped_request = replace(request, markdown=scope.markdown)
+        requested_operation = operation_for_edit_goal(request.edit_goal)
         source_range_plan = build_source_range_plan(scoped_request)
         if source_range_plan is not None:
             return self._generate_source_range_edit(scoped_request, source_range_plan, scope)
@@ -70,6 +75,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         payload = {
             "instruction": scoped_request.instruction,
             "edit_goal": scoped_request.edit_goal,
+            "requested_operation": requested_operation,
             "conversation_summary": scoped_request.conversation_summary,
             "target": {
                 "type": scoped_request.target.type,
@@ -163,14 +169,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-        result = _normalize_edit_result(raw, request.target)
+        result = _normalize_edit_result(raw, request.target, operation_for_edit_goal(request.edit_goal))
         protected_replacement = result.edit.replacement_markdown
         restored, failures = protected.restore(protected_replacement)
         restored = repair_markdown_output(request, restored)
         failures.extend(validate_markdown_output(request, restored))
         restored_result = MarkdownEditResult(
             edit=MarkdownEditOperation(
-                operation="replace",
+                operation=result.edit.operation,
                 target=result.edit.target,
                 summary=result.edit.summary,
                 replacement_markdown=restored,
@@ -184,11 +190,30 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "conversation_summary": request.conversation_summary,
             "reference_context": request.reference_context or {},
         }
-        raw = self._client.complete_json(
-            _with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit")),
-            json.dumps(payload, ensure_ascii=False, indent=2),
-        )
-        return _normalize_create_result(raw)
+        system_prompt = _with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit"))
+        result, failures, raw = self._complete_markdown_create(system_prompt, payload)
+        if not failures:
+            return result
+
+        retry_payload = {
+            **payload,
+            "previous_generated_markdown": raw,
+            "contract_failures": failures,
+            "retry_instruction": "Correct every contract failure and return the required JSON object again.",
+        }
+        retried, retry_failures, retried_raw = self._complete_markdown_create(system_prompt, retry_payload)
+        if retry_failures:
+            raise MarkdownCreateOutputContractError(retry_failures, retried_raw)
+        return retried
+
+    def _complete_markdown_create(
+        self,
+        system_prompt: str,
+        payload: dict[str, object],
+    ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
+        raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+        result = _normalize_create_result(raw)
+        return result, validate_markdown_create_output(result.document), raw
 
 
 def build_markdown_editor() -> MarkdownEditorPort:
@@ -236,13 +261,14 @@ def _read_only_context_payload(scope: MarkdownTargetScope) -> dict[str, object]:
     }
 
 
-def _normalize_edit_result(value: dict[str, Any], requested_target: MarkdownEditTarget) -> MarkdownEditResult:
-    operation = str(value.get("operation") or "replace").strip()
-    if operation != "replace":
-        operation = "replace"
+def _normalize_edit_result(
+    value: dict[str, Any],
+    requested_target: MarkdownEditTarget,
+    requested_operation: EditOperationType,
+) -> MarkdownEditResult:
     return MarkdownEditResult(
         edit=MarkdownEditOperation(
-            operation="replace",
+            operation=requested_operation,
             target=requested_target,
             summary=str(value.get("summary") or "").strip(),
             replacement_markdown=str(value.get("replacement_markdown") or value.get("replacementMarkdown") or "").strip(),

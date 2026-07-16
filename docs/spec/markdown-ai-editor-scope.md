@@ -41,7 +41,9 @@
 | `clarify` | 편집 대상 또는 추가 정보 요청 |
 | `reject` | 지원하지 않는 요청 거절 |
 
-현재 편집 operation은 `replace` 하나다.
+현재 편집 operation은 `replace`와 `insert_after`다.
+
+일반적인 문서 전체 편집과 원문 구조 보존형 cleanup은 `replace` 범위에 포함한다. `insert_after`는 현재 섹션 아래에 새 Markdown을 추가할 때만 사용하고, 외부 template 기반 전체 구조 재구성은 보류한다.
 
 ```json
 {
@@ -265,12 +267,12 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 | Operation | 용도 | 우선순위 |
 | --- | --- | --- |
 | `replace` | 선택 영역 또는 문서 전체 교체 | 구현됨 |
-| `insert_after` | 이어 쓰기, 섹션 아래 내용 추가 | 높음 |
+| `insert_after` | 이어 쓰기, 섹션 아래 내용 추가 | 구현됨 |
 | `insert_before` | 문서 앞 요약 또는 안내 추가 | 중간 |
 | `delete` | 중복 문단이나 선택 영역 삭제 | 중간 |
 | `multi_replace` | 용어 통일, 여러 위치 동시 수정 | 후순위 |
 
-초기 확장은 `replace + insert_after`로 제한하는 것이 가장 단순하다.
+현재는 `replace + insert_after`로 제한한다.
 
 ## 9. 단계별 구현 범위
 
@@ -303,7 +305,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 ### 4단계: 편집 정확도 확장
 
-- [ ] `insert_after` 추가
+- [x] `insert_after` 추가
 - [ ] 필요할 때 `insert_before`, `delete` 추가
 - [ ] 장문 문서를 section 단위로 분할해 model context 구성
 - [ ] 여러 편집 결과 preview와 부분 Apply

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.modules.markdown_edit.domain.entities import MarkdownEditRequest
+from app.modules.markdown_edit.domain.entities import GeneratedMarkdownDocument, MarkdownEditRequest
 
 
 PROTECTED_EDIT_GOALS = {"cleanup", "style_change", "shorten"}
@@ -52,6 +52,24 @@ class MarkdownOutputContractError(ValueError):
         self.replacement_markdown = replacement_markdown
 
 
+class MarkdownCreateOutputContractError(ValueError):
+    def __init__(self, failures: list[str], output: dict[str, object]) -> None:
+        super().__init__("Markdown create output contract failed: " + "; ".join(failures))
+        self.failures = failures
+        self.output = output
+
+
+def validate_markdown_create_output(document: GeneratedMarkdownDocument) -> list[str]:
+    failures: list[str] = []
+    if not document.title.strip():
+        failures.append("title must not be empty")
+    if not document.summary.strip():
+        failures.append("summary must not be empty")
+    if not document.markdown.strip():
+        failures.append("markdown must not be empty")
+    return failures
+
+
 def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
     if request.edit_goal not in PROTECTED_EDIT_GOALS or _explicit_structure_change(request.instruction):
         return ProtectedMarkdown(markdown=request.markdown, fragments=())
@@ -92,6 +110,11 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
     if request.edit_goal == "checklist":
         if not nonempty_lines or not all(re.match(r"^- \[ \] ", line) for line in nonempty_lines):
             failures.append("checklist items must all start with `- [ ] `")
+
+    if request.edit_goal == "insert_after":
+        source_heading = next(iter(_atx_heading_lines(request.markdown)), "")
+        if source_heading and source_heading in _atx_heading_lines(replacement):
+            failures.append("insert_after output must not repeat the current section heading")
 
     if request.edit_goal == "bullet_list":
         if not nonempty_lines or not all(re.match(r"^\s*[-*+]\s+", line) for line in nonempty_lines):
@@ -257,3 +280,31 @@ def _literal_anchors(markdown: str) -> set[str]:
 
 def _source_starts_with_list(markdown: str) -> bool:
     return bool(re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", markdown))
+
+
+def _atx_heading_lines(markdown: str) -> tuple[str, ...]:
+    headings: list[str] = []
+    fence_character: str | None = None
+    fence_length = 0
+    for line in markdown.splitlines():
+        if fence_character is not None:
+            closing_fence = re.match(r"^ {0,3}(`+|~+)[ \t]*$", line)
+            if closing_fence:
+                marker = closing_fence.group(1)
+                if marker[0] == fence_character and len(marker) >= fence_length:
+                    fence_character = None
+                    fence_length = 0
+            continue
+
+        opening_fence = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if opening_fence:
+            marker = opening_fence.group(1)
+            info = opening_fence.group(2)
+            if marker[0] != "`" or "`" not in info:
+                fence_character = marker[0]
+                fence_length = len(marker)
+            continue
+
+        if re.match(r"^ {0,3}#{1,6}(?:[ \t]+|$)", line):
+            headings.append(line.strip())
+    return tuple(headings)

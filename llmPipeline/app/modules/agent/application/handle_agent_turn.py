@@ -10,6 +10,7 @@ from app.modules.query.domain.entities import ConversationContext
 CLARIFY_MARKDOWN_TARGET_MESSAGE = "수정할 Markdown 범위를 선택한 뒤 다시 요청해 주세요."
 CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시 요청해 주세요."
 DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다. 현재는 선택 영역, 현재 섹션, 또는 문서 전체의 일반 편집만 지원합니다."
+CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
 
 
 class HandleAgentTurnUseCase:
@@ -56,6 +57,14 @@ class HandleAgentTurnUseCase:
                     route=route,
                     message=CLARIFY_MARKDOWN_DOCUMENT_MESSAGE,
                 )
+            if route.edit_goal == "insert_after" and (
+                markdown_context.target is None or markdown_context.target.type != "current_section"
+            ):
+                return AgentTurnResult(
+                    action="clarify",
+                    route=route,
+                    message=CLARIFY_INSERT_AFTER_TARGET_MESSAGE,
+                )
             target = markdown_context.target or _whole_document_target(markdown_context.markdown)
             result = self._markdown_edit_use_case.execute(
                 MarkdownEditRequest(
@@ -73,7 +82,12 @@ class HandleAgentTurnUseCase:
             return AgentTurnResult(action="markdown_edit", route=route, edit=result.edit)
 
         if route.action == "clarify":
-            message = DEFERRED_TEMPLATE_MESSAGE if route.edit_goal == "template_transform" else CLARIFY_MARKDOWN_TARGET_MESSAGE
+            if route.edit_goal == "template_transform":
+                message = DEFERRED_TEMPLATE_MESSAGE
+            elif route.edit_goal == "insert_after":
+                message = CLARIFY_INSERT_AFTER_TARGET_MESSAGE
+            else:
+                message = CLARIFY_MARKDOWN_TARGET_MESSAGE
             return AgentTurnResult(action="clarify", route=route, message=message)
 
         if route.action == "reject":
