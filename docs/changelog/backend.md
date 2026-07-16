@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-16
 
+### feat: workspace 삭제 연쇄를 위한 DB 레벨 FK CASCADE 도입 (V3)
+
+**배경**
+
+지금까지 workspace 삭제 시 하위 리소스 정리를 애플리케이션 코드에 의존했고, `WorkspaceService.delete()`의 낡은 주석(`wiki_pages`에 workspace_id가 없다고 오기재) 때문에 **workspace 삭제 시 `wiki_pages`(특히 concept page)가 고아로 남는 버그**가 있었다(`docs/issue/backend/2026-07-15.md` #3). Flyway 도입 이후 이제 DB 레벨 참조 무결성을 세울 수 있게 됐다.
+
+**변경된 것**
+
+- `V3__add_workspace_fk_cascade.sql`로 FK 20개 추가 — 소유 관계는 `ON DELETE CASCADE`(15개), 단순 참조(nullable)는 `ON DELETE SET NULL`(5개).
+- 파이프라인이 같은 트랜잭션에서 wiki_pages보다 링크를 먼저 insert해도 안 깨지도록, wiki_pages를 참조하는 링크 FK 3개(`document_wiki_links.wiki_page_id`, `wiki_page_links.from_page_id/to_page_id`)는 `DEFERRABLE INITIALLY DEFERRED`.
+- 삭제 의미론: **workspace 삭제 → 그 안의 모든 것(concept page 포함) 연쇄 삭제**. **단일 document 삭제 → concept·source page 본체는 보존**(documents는 wiki_pages의 부모가 아님)하고, source page 선택 삭제 규칙은 앱 로직(`DocumentService.deleteInternal`)이 유지.
+- `WorkspaceService.delete()`의 낡은 주석을 정정(로직 변경 없음). 앱 레벨 삭제 코드는 MinIO 오브젝트 삭제·source/concept 규칙 때문에 이번엔 유지.
+
+**검증**
+
+- 빈/기존 DB에 V3 적용, `ddl-auto=validate` 통과. FK 20개의 ON DELETE 동작(CASCADE/SET NULL)과 DEFERRABLE 3개를 `pg_constraint`로 확인.
+- SQL 실증: workspace 삭제 전체 연쇄(고아 0), 단일 문서 삭제 시 wiki_pages 2개 보존 + 참조 SET NULL, concept page 삭제 시 링크 CASCADE + 참조 SET NULL, DEFERRABLE 링크 순서 insert commit 성공.
+- `./gradlew test --rerun-tasks` 통과. `ChatSessionCascadeDeleteIntegrationTest`는 새 FK에 맞게 부모 행 생성/참조 null로 테스트 데이터를 보정했다.
+
 ### chore: Flyway 도입 및 스키마 관리 방식 전환 (ddl-auto=validate)
 
 **배경**
