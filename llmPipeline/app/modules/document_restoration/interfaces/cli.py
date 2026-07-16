@@ -16,7 +16,11 @@ def main() -> None:
     parser.add_argument("--docling-json", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--document-slug", required=True)
-    parser.add_argument("--use-local-sllm", action="store_true")
+    parser.add_argument(
+        "--use-local-sllm",
+        action="store_true",
+        help="규칙 기반 코드로 복원하지 못한 수식에 로컬 SLLM 보완을 사용합니다.",
+    )
     parser.add_argument("--use-local-vision", action="store_true")
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1/chat/completions")
     parser.add_argument("--model", default="qwen2.5:7b")
