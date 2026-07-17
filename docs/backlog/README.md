@@ -11,15 +11,15 @@
 - `issue-2026-06-11.md` — 2026-06-16 기준 해결 또는 이관된 2026-06-11 이슈 기록.
 - `issue-2026-06-12.md` — 2026-06-16 기준 해결된 rename API 이슈 기록.
 - `issue-2026-06-16.md` — 전 항목 해결(PR 34/38/43/44/54/55/58)된 이슈 기록. 2026-07-15 이관.
-- `issue-2026-06-17.md` — 백엔드 query event 중계(PR 39/41) 해결 기록. 프론트 SSE 잔여분은 `docs/issue/2026-07-15.md`.
-- `issue-2026-06-20.md` — 인용 원본 하이라이트(PR 43~46) 해결 기록. 프론트 SSE 잔여분은 `docs/issue/2026-07-15.md`.
-- `issue-2026-06-26.md` — 문서 처리 상태·삭제 API·DB 큐(PR 55) 해결 기록. heartbeat·동시 실행 방지·프론트 연동 잔여분은 `docs/issue/2026-07-15.md`.
+- `issue-2026-06-17.md` — 백엔드 query event 중계(PR 39/41) 해결 기록. 프론트 SSE 잔여분은 `docs/issue/frontend/2026-07-15.md`.
+- `issue-2026-06-20.md` — 인용 원본 하이라이트(PR 43~46) 해결 기록. 프론트 SSE 잔여분은 `docs/issue/frontend/2026-07-15.md`.
+- `issue-2026-06-26.md` — 문서 처리 상태·삭제 API·DB 큐(PR 55) 해결 기록. heartbeat·동시 실행 방지·프론트 연동 잔여분은 `docs/issue/ai/2026-07-15.md`·`docs/issue/frontend/2026-07-15.md`.
 - `issue-2026-06-27.md` — PR 49 작업 완료 기록(변경 기록). 요약은 `docs/changelog/ai.md` 2026-06-27 항목.
-- `issue-2026-06-29.md` — concept 충돌·삭제 문서 handling 해결 기록. 동시 실행 방지·heartbeat 잔여분은 `docs/issue/2026-07-15.md`.
-- `issue-2026-07-02.md` — workspace 격리(PR 58/60/62/66/67) 해결 기록. lint/maintenance·source_refs 잔여분은 `docs/issue/2026-07-15.md`.
-- `issue-2026-07-03.md` — PK UUID(PR 67)·프론트 workspace 마이그레이션(PR 68) 해결 기록. OAuth·FK CASCADE 잔여분은 `docs/issue/2026-07-15.md`.
-- `issue-2026-07-04.md` — wiki workspace 경로 프론트 후속 작업 원문. 미해결 상태로 `docs/issue/2026-07-15.md`에 통합 이관.
-- `issue-2026-07-09.md` — chat inline markdown 계약(PR 72/73) 해소 기록. processing_stage 폴링 잔여분은 `docs/issue/2026-07-15.md`.
+- `issue-2026-06-29.md` — concept 충돌·삭제 문서 handling 해결 기록. 동시 실행 방지·heartbeat 잔여분은 `docs/issue/ai/2026-07-15.md`.
+- `issue-2026-07-02.md` — workspace 격리(PR 58/60/62/66/67) 해결 기록. lint/maintenance·source_refs 잔여분은 `docs/issue/backend/2026-07-15.md`·`docs/issue/frontend/2026-07-15.md`.
+- `issue-2026-07-03.md` — PK UUID(PR 67)·프론트 workspace 마이그레이션(PR 68) 해결 기록. OAuth·FK CASCADE 잔여분은 `docs/issue/backend/2026-07-15.md`·`docs/issue/frontend/2026-07-15.md`.
+- `issue-2026-07-04.md` — wiki workspace 경로 프론트 후속 작업 원문. 미해결 상태로 `docs/issue/frontend/2026-07-15.md`에 통합 이관.
+- `issue-2026-07-09.md` — chat inline markdown 계약(PR 72/73) 해소 기록. processing_stage 폴링 잔여분은 `docs/issue/frontend/2026-07-15.md`.
 - `issue-2026-07-10.md` — Chat Wiki API 계약 확정·검증 완료 기록. 계약 원본은 `docs/spec/chat-to-wiki-contract.md`.
 - `issue-2026-07-14.md` — 복원 플로우 최적화 v5~v8 완료 기록(변경 기록). 요약은 `docs/changelog/ai.md` 2026-07-14 항목.
 - `issue-2026-07-16.md` — wiki_pages 잔재 constraint 해결·Flyway 도입 완료 기록. 요약은 `docs/changelog/backend.md` 2026-07-16 항목.

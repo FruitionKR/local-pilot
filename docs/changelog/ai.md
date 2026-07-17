@@ -80,7 +80,7 @@ PDF 문서 복원과 최종 Markdown 평가 코드가 `tmp/`의 실행 산출물
 
 ### perf: canonical PDF 복원 플로우 최적화 (v5~v8)
 
-`docs/issue/2026-07-14.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다.
+`docs/backlog/issue-2026-07-14.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다.
 
 - 복원 플로우 실행 시간을 39.7% 단축했습니다 (v5 최적화).
 - 최종 Markdown 평가를 외부 evaluator job 대신 local-first evaluator로 전환했습니다 (153.34초, 테스트 31개 통과).
@@ -555,7 +555,7 @@ query application 흐름에서 callback event publish 실패를 삼키고 본 �
 - `llmPipeline` query evidence domain과 FastAPI 응답에 `source_refs` 배열을 추가했습니다.
 - `doc_id:B0001` 전역 ref를 `{source_document_id, source_block_id}` 객체로 구조화해 evidence snippet에 포함합니다.
 - 기존 `source_document_id`, `source_block_ids`는 첫 번째 문서 기준 호환 필드로 유지했습니다.
-- Spring backend와 frontend의 `source_refs` 소비 작업은 `docs/issue/2026-07-02.md` 후속작업으로 분리했습니다.
+- Spring backend와 frontend의 `source_refs` 소비 작업은 `docs/backlog/issue-2026-07-02.md` 후속작업으로 분리했습니다.
 
 **검증**
 
@@ -580,7 +580,7 @@ section/mention/evidence 후보가 ingest 시점에 너무 일찍 core concept�
 - lint가 새로 승격된 cluster 내부 relation뿐 아니라 `active.md` 전체 Core Relation Candidates를 처리하도록 확장했습니다.
 - ref 없는 claim/promotion은 invalid로 분류해 materialization 대상에서 제외하도록 했습니다.
 - `wiki_pages.id`를 opaque UUID 계열 id로 생성하고, page 중복 판단은 `(user_id, workspace_id, page_type, slug)` 기준으로 맞췄습니다.
-- backend/frontend 후속 반영 항목을 `docs/issue/2026-07-02.md`에 정리했습니다.
+- backend/frontend 후속 반영 항목을 `docs/backlog/issue-2026-07-02.md`에 정리했습니다.
 
 **검증**
 
@@ -624,7 +624,7 @@ Query evaluator loop가 `AnswerQueryUseCase` 내부에서 직접 LangGraph를 �
 
 ### feat: query 근거 평가와 ingest 저장 흐름 개선
 
-`docs/issue/2026-06-27.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다 (PR 49, 원문: `docs/backlog/issue-2026-06-27.md`).
+`docs/backlog/issue-2026-06-27.md`에 기록되었던 작업 완료 내용을 changelog로 이관한 항목입니다 (PR 49, 원문: `docs/backlog/issue-2026-06-27.md`).
 
 - `POST /pipeline/runs` inline 입력(`input`/`input_path`) 실행에도 `source_document_id`와 `documents` row가 생성되도록 보강했습니다.
 - `QueryAnswerEvaluator`를 추가해 답변/근거 정합성을 판단하고, 필요 시 web fallback 또는 internal web augmented route를 요청하도록 했습니다.
@@ -695,7 +695,7 @@ pipeline이 evidence 후보 전체 순위로 citation rank를 부여하고, 답�
 - block citation(`[B0005]` 등)이 없는 Wiki 문장은 evidence 후보에서 제외했습니다.
 - `source_blocks(document_id, block_id, text)` 테이블을 추가하고 pipeline 산출 block을 저장하도록 연결했습니다.
 - source page의 `Categories`, `Core Concepts`, `Section Candidates`, `Mentions` 섹션을 별도 retrieval representation으로 점수 계산에 반영했습니다.
-- Spring/Frontend 후속 반영 항목은 `docs/issue/2026-06-21.md`에 정리했습니다.
+- Spring/Frontend 후속 반영 항목은 `docs/backlog/issue-2026-06-21.md`에 정리했습니다.
 
 **검증**
 

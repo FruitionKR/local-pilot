@@ -89,7 +89,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 처리가 완료된 이슈는 `docs/backlog/issue-YYYY-MM-DD.md`로 이관하고, `docs/backlog/README.md`의 보관 문서 목록을 갱신한다.
 - 이슈 문서는 담당 역할별 폴더에 작업 당일 날짜 기준으로 작성하거나 갱신한다: `docs/issue/frontend/`, `docs/issue/backend/`, `docs/issue/ai/`, `docs/issue/infra/` 아래의 `YYYY-MM-DD.md`.
 - 여러 역할에 걸친 이슈는 역할별로 나눠 각 폴더에 작성하고, 서로의 문서 경로를 상호 참조로 남긴다.
-- 새 이슈 문서는 루트(`docs/issue/`)에 직접 만들지 않는다. 루트의 날짜 파일은 과거 포인터 호환용 안내 인덱스만 허용한다.
+- 새 이슈 문서는 루트(`docs/issue/`)에 직접 만들지 않는다. 루트에는 날짜 파일을 두지 않는다.
 - 지난 날짜의 이슈 문서에 남아 있는 내용을 새 날짜 기준으로 다시 관리해야 하면, 새 날짜 문서로 내용을 옮기고 기존 문서에는 이동 안내와 링크만 남긴다.
 - 이슈 해결을 위해 다른 문서에 API 계약, 설계, 절차, 정책 같은 구체적인 내용을 적었다면, 이슈 문서에도 해당 문서 경로와 확인 가능한 위치(섹션명 또는 line 위치)를 함께 기록한다.
 - 다른 문서의 위치를 기록할 때는 추후 검색과 검토가 쉽도록 파일 경로, 섹션 제목, 핵심 endpoint/API 이름을 가능한 한 함께 남긴다.

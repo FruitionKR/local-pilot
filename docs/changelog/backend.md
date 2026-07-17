@@ -43,7 +43,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 **배경**
 
-`ddl-auto=update`는 컬럼/제약을 추가만 하고 삭제·변경을 반영하지 못해, 엔티티 변경 시 옛 제약이 "잔재"로 남는다. 실제로 `wiki_pages`의 잔재 unique constraint `uq_wiki_pages_type_slug`가 llmPipeline의 wiki page upsert를 막는 문제가 있었다(`docs/issue/2026-07-16.md` 이슈 1). 스키마를 버전 관리되는 마이그레이션으로 전환한다.
+`ddl-auto=update`는 컬럼/제약을 추가만 하고 삭제·변경을 반영하지 못해, 엔티티 변경 시 옛 제약이 "잔재"로 남는다. 실제로 `wiki_pages`의 잔재 unique constraint `uq_wiki_pages_type_slug`가 llmPipeline의 wiki page upsert를 막는 문제가 있었다(`docs/backlog/issue-2026-07-16.md` 이슈 1). 스키마를 버전 관리되는 마이그레이션으로 전환한다.
 
 **변경된 것**
 
@@ -154,7 +154,7 @@ llmPipeline이 채팅 전용 엔드포인트 `POST /chat-wiki/runs`(모델 `Chat
 
 **주의사항 (하드 블로커)**
 
-- **full 재생성은 llmPipeline 변경 전까지 실패한다.** 현재 `PipelineRunIn`은 `document_id`/`input_markdown` 중 하나만 허용(`exactly_one_input`)하고, inline 경로는 합성 `api-inline-{run_id}` id를 만들어 완료·reconciler가 깨진다. 파이프라인이 `document_id`(신원) + `input_markdown`(내용) 동시 수용 + `selection_mode` append 처리를 구현해야 한다. 상세: `docs/issue/2026-07-09.md` "llmPipeline 후속 작업".
+- **full 재생성은 llmPipeline 변경 전까지 실패한다.** 현재 `PipelineRunIn`은 `document_id`/`input_markdown` 중 하나만 허용(`exactly_one_input`)하고, inline 경로는 합성 `api-inline-{run_id}` id를 만들어 완료·reconciler가 깨진다. 파이프라인이 `document_id`(신원) + `input_markdown`(내용) 동시 수용 + `selection_mode` append 처리를 구현해야 한다. 상세: `docs/backlog/issue-2026-07-09.md` "llmPipeline 후속 작업".
 - 첫 full·partial·일반 업로드는 기존 `document_id`+storage 경로 그대로.
 
 ### feat: partial 발췌 위키 멤버십(chat_partial_wiki) 기록 + 문답별 위키 노출
@@ -255,14 +255,14 @@ llmPipeline이 채팅 전용 엔드포인트 `POST /chat-wiki/runs`(모델 `Chat
 
 **주의사항**
 
-- **API 경로가 바뀌는 breaking change다.** 프론트엔드가 호출하는 `/api/wiki/graph` 등을 `/api/workspaces/{workspace_id}/wiki/...`로 바꾸고 인증 헤더를 붙여야 한다(`docs/issue/2026-07-02.md` "프론트엔드 workspace-scoped API 마이그레이션"과 연결).
+- **API 경로가 바뀌는 breaking change다.** 프론트엔드가 호출하는 `/api/wiki/graph` 등을 `/api/workspaces/{workspace_id}/wiki/...`로 바꾸고 인증 헤더를 붙여야 한다(`docs/backlog/issue-2026-07-02.md` "프론트엔드 workspace-scoped API 마이그레이션"과 연결).
 - 페이지 필터링은 문서 API와 동일하게 멤버십 검증 후 **workspace_id 기준**이다(공유 workspace 대비). 현재 MVP는 owner 1인 구조라 user 단위와 동일하게 동작한다.
 
 ### feat: 파이프라인 실행 요청에 실제 user_id/workspace_id 전달
 
 **배경**
 
-`DocumentProcessingRequester`가 `/pipeline/runs`에 `{document_id, log_callback_url}`만 보내, llmPipeline이 `wiki_pages`를 DDL 기본값 `local-user`/`local-workspace`로 기록했다. wiki_pages 스키마·삭제는 workspace scope로 맞췄지만(2026-07-04 이전 커밋), 실제 workspace 값이 전달되지 않아 **데이터 레벨 격리가 안 되고 모든 문서의 wiki가 `local-workspace`로 섞이던** 상태를 e2e로 확인했다(`docs/issue/2026-07-02.md` B3).
+`DocumentProcessingRequester`가 `/pipeline/runs`에 `{document_id, log_callback_url}`만 보내, llmPipeline이 `wiki_pages`를 DDL 기본값 `local-user`/`local-workspace`로 기록했다. wiki_pages 스키마·삭제는 workspace scope로 맞췄지만(2026-07-04 이전 커밋), 실제 workspace 값이 전달되지 않아 **데이터 레벨 격리가 안 되고 모든 문서의 wiki가 `local-workspace`로 섞이던** 상태를 e2e로 확인했다(`docs/backlog/issue-2026-07-02.md` B3).
 
 **추가/변경된 것**
 
@@ -327,7 +327,7 @@ llmPipeline이 wiki page id를 옛 의미형(`source:{documentId}`, `concept:{sl
 
 **배경**
 
-llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id`/`workspace_id` 컬럼과 `(user_id, workspace_id, page_type, slug)` scope unique index(`uq_wiki_pages_workspace_type_slug`)로 관리하도록 바뀌었는데, Spring `WikiPage` 엔티티는 옛 전역 unique `(page_type, slug)`를 선언하고 `workspace_id`를 매핑조차 하지 않아 실제 DB와 어긋나 있었다. 이 불일치로 (1) `ddl-auto=update`가 전역 제약을 심으려다 충돌/부팅 실패, (2) Spring이 workspace 단위 격리를 할 수 없었다(`docs/issue/2026-07-02.md` B1 / "Wiki 격리 미구현").
+llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id`/`workspace_id` 컬럼과 `(user_id, workspace_id, page_type, slug)` scope unique index(`uq_wiki_pages_workspace_type_slug`)로 관리하도록 바뀌었는데, Spring `WikiPage` 엔티티는 옛 전역 unique `(page_type, slug)`를 선언하고 `workspace_id`를 매핑조차 하지 않아 실제 DB와 어긋나 있었다. 이 불일치로 (1) `ddl-auto=update`가 전역 제약을 심으려다 충돌/부팅 실패, (2) Spring이 workspace 단위 격리를 할 수 없었다(`docs/backlog/issue-2026-07-02.md` B1 / "Wiki 격리 미구현").
 
 **추가/변경된 것**
 
@@ -349,7 +349,7 @@ llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id
 
 **배경**
 
-`User`/`Workspace`/`ChatSession`/`Document` 등의 PK를 `prefix_` + `UUID.randomUUID()` 앞 8자리(hex)로 생성하고 있었다. 앞 8자리만 쓰면 무작위성이 32비트로 줄어, 생일 역설 기준 같은 종류 ID가 수만 건 쌓이면 PK 충돌로 `save()`가 500 에러를 내는 잠재 버그가 있었다(`docs/issue/2026-07-03.md` "PK ID 생성 시 UUID 8자리 truncate로 인한 충돌 위험").
+`User`/`Workspace`/`ChatSession`/`Document` 등의 PK를 `prefix_` + `UUID.randomUUID()` 앞 8자리(hex)로 생성하고 있었다. 앞 8자리만 쓰면 무작위성이 32비트로 줄어, 생일 역설 기준 같은 종류 ID가 수만 건 쌓이면 PK 충돌로 `save()`가 500 에러를 내는 잠재 버그가 있었다(`docs/backlog/issue-2026-07-03.md` "PK ID 생성 시 UUID 8자리 truncate로 인한 충돌 위험").
 
 **추가/변경된 것**
 
@@ -376,7 +376,7 @@ llmPipeline(`postgres_wiki_ingestion_repository.py`)은 `wiki_pages`를 `user_id
 
 **추가/변경된 것**
 
-- `WorkspaceMember` 엔티티 신규 — `(workspace_id, user_id)` 복합 PK, `role`(owner/member), `joined_at`. `@ManyToOne` + `@OnDelete(CASCADE)`로 `Workspace`/`User` 삭제 시 자동 정리되도록 구성. 합성 PK 대신 복합 PK를 선택해 8자리 UUID truncate 충돌 이슈(`docs/issue/2026-07-03.md`)를 이 테이블에서는 원천적으로 피했다.
+- `WorkspaceMember` 엔티티 신규 — `(workspace_id, user_id)` 복합 PK, `role`(owner/member), `joined_at`. `@ManyToOne` + `@OnDelete(CASCADE)`로 `Workspace`/`User` 삭제 시 자동 정리되도록 구성. 합성 PK 대신 복합 PK를 선택해 8자리 UUID truncate 충돌 이슈(`docs/backlog/issue-2026-07-03.md`)를 이 테이블에서는 원천적으로 피했다.
 - `Workspace.userId` 컬럼 제거. `WorkspaceRepository`의 `findByIdAndUserId`/`findAllByUserIdOrderByCreatedAtDesc` 제거.
 - `WorkspaceService`: 워크스페이스 생성 시 `WorkspaceMember(role=owner)`를 함께 생성. `list`/`rename`/`delete`의 소유권 판단을 `WorkspaceMemberRepository` 기준으로 전환.
 - `ChatSessionService`/`DocumentService`의 `verifyWorkspaceOwnership()`도 동일하게 `WorkspaceMemberRepository.existsByWorkspace_IdAndUser_Id`로 전환 — 소유권 검증 로직이 3곳에 중복 구현되어 있던 문제를 이번 기회에 함께 정리했다.
@@ -446,7 +446,7 @@ Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔
 
 **배경**
 
-직전 커밋에서 `ChatSessionService`가 세션 삭제 시 `chat_messages`/`chat_message_references`/`chat_message_related_pages`를 애플리케이션 코드로 직접 정리하도록 구현했다. `documents`, `wiki_pages`는 llmPipeline(Python)이 DDL을 직접 소유해서 FK를 걸려면 스키마 소유권 조율이 필요하지만, `chat_sessions`/`chat_messages`/`chat_message_references`/`chat_message_related_pages`는 전부 Spring 전용 테이블이라 이 관계만 먼저 DB 레벨 CASCADE로 전환했다. `documents`/`wiki_pages` 쪽 FK 전환은 별도로 남겨둔다 (`docs/issue/2026-07-03.md` 참고).
+직전 커밋에서 `ChatSessionService`가 세션 삭제 시 `chat_messages`/`chat_message_references`/`chat_message_related_pages`를 애플리케이션 코드로 직접 정리하도록 구현했다. `documents`, `wiki_pages`는 llmPipeline(Python)이 DDL을 직접 소유해서 FK를 걸려면 스키마 소유권 조율이 필요하지만, `chat_sessions`/`chat_messages`/`chat_message_references`/`chat_message_related_pages`는 전부 Spring 전용 테이블이라 이 관계만 먼저 DB 레벨 CASCADE로 전환했다. `documents`/`wiki_pages` 쪽 FK 전환은 별도로 남겨둔다 (`docs/backlog/issue-2026-07-03.md` 참고).
 
 **추가/변경된 것**
 
@@ -485,7 +485,7 @@ Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔
 
 **주의사항**
 
-- `wiki_pages`는 여전히 workspace_id가 없어 이번 CASCADE 대상에서 제외됨 (`docs/issue/2026-07-02.md` 참고). source wiki page는 문서별 삭제 로직(`deleteInternal`)에서 기존과 동일하게 document_id 기준으로 정리된다.
+- `wiki_pages`는 여전히 workspace_id가 없어 이번 CASCADE 대상에서 제외됨 (`docs/backlog/issue-2026-07-02.md` 참고). source wiki page는 문서별 삭제 로직(`deleteInternal`)에서 기존과 동일하게 document_id 기준으로 정리된다.
 
 ---
 
@@ -513,7 +513,7 @@ Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔
 **주의사항**
 
 - `chat_messages`에 `session_id`/`pair_id`가 NOT NULL로 추가됐다. `ddl-auto=update`는 기존 row가 있는 테이블에 NOT NULL 컬럼을 추가하지 못하므로, 기존 로컬 DB에 채팅 데이터가 남아있다면 볼륨을 초기화해야 한다(`docs/local-runbook.md` 참고). Document의 `workspace_id`/`user_id` 추가도 동일한 제약이 있다.
-- Wiki는 여전히 workspace 미연동 상태다 (`docs/issue/2026-07-02.md` 참고).
+- Wiki는 여전히 workspace 미연동 상태다 (`docs/backlog/issue-2026-07-02.md` 참고).
 
 ---
 
@@ -521,7 +521,7 @@ Google OAuth 로그인 흐름을 브라우저로 실제 검증하던 중, 백엔
 
 **배경**
 
-User/Workspace/Auth 기반을 구현한 뒤, 기존 documents API가 로그인·워크스페이스와 전혀 연결되어 있지 않던 부분을 연동했다. `wiki_pages`는 실제 row 생성 주체가 Spring Boot가 아니라 llmPipeline(Python)이라 훨씬 큰 범위의 작업으로 확인되어 이번 단계에서는 제외했다. 상세 내용은 `docs/issue/2026-07-02.md` 참고.
+User/Workspace/Auth 기반을 구현한 뒤, 기존 documents API가 로그인·워크스페이스와 전혀 연결되어 있지 않던 부분을 연동했다. `wiki_pages`는 실제 row 생성 주체가 Spring Boot가 아니라 llmPipeline(Python)이라 훨씬 큰 범위의 작업으로 확인되어 이번 단계에서는 제외했다. 상세 내용은 `docs/backlog/issue-2026-07-02.md` 참고.
 
 **추가/변경된 것**
 
@@ -714,7 +714,7 @@ pipeline 요청 실패, 장시간 무응답 상태를 구분할 방법이 없어
 - `application.properties`/`infra/.env.example` — `app.callback.base-url`/`CALLBACK_BASE_URL` 추가. backend가 docker-compose 서비스가 아니라 호스트에서 직접 실행되는 구조라 기본값을 `http://host.docker.internal:8080`으로 설정
 - `infra/docker-compose.pipeline.yml` — `pipeline-api`에 `extra_hosts: host.docker.internal:host-gateway` 추가 (Docker Desktop 외 환경 호환)
 - `query/config/QueryAsyncConfig` — `Clock`, 전용 `queryRunExecutor`(`ThreadPoolTaskExecutor`) bean 추가, `BackendApplication`에 `@EnableScheduling` 추가
-- `docs/spec/backend-query-events-api.md`, `docs/issue/2026-06-20.md` 추가
+- `docs/spec/backend-query-events-api.md`, `docs/backlog/issue-2026-06-20.md` 추가
 
 **검증**
 
