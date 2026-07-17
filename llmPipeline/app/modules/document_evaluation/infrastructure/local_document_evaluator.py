@@ -735,6 +735,34 @@ def apply_corrections(markdown: str, corrections: dict[str, str]) -> str:
     return markdown
 
 
+def read_restoration_elapsed_seconds(markdown_file: Path) -> float | None:
+    suffix = ".restored.md"
+    if not markdown_file.name.endswith(suffix):
+        return None
+    document_slug = markdown_file.name[: -len(suffix)]
+    timing_file = markdown_file.with_name(f"{document_slug}.pipeline_timing.json")
+    if not timing_file.exists():
+        return None
+    payload = json.loads(timing_file.read_text(encoding="utf-8"))
+    elapsed = payload.get("total_elapsed_seconds")
+    return float(elapsed) if isinstance(elapsed, (int, float)) else None
+
+
+def record_evaluation_timing(
+    report: dict[str, Any],
+    evaluation_elapsed_seconds: float,
+    restoration_elapsed_seconds: float | None,
+) -> None:
+    previous_total = float(report.get("evaluation_elapsed_seconds_total", 0.0))
+    evaluation_total = previous_total + evaluation_elapsed_seconds
+    report["evaluation_elapsed_seconds_last_run"] = evaluation_elapsed_seconds
+    report["evaluation_elapsed_seconds_total"] = evaluation_total
+    if restoration_elapsed_seconds is None:
+        return
+    report["restoration_elapsed_seconds"] = restoration_elapsed_seconds
+    report["pdf_to_evaluated_processing_seconds"] = restoration_elapsed_seconds + evaluation_total
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     vision_results = [result for chunk in report["chunks"] for result in chunk["vision_results"]]
     decisions = [
@@ -756,10 +784,18 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Vision 요청 block: {len(vision_results)}",
         f"- 수정 반영 block: {correction_count}",
         f"- 미확정 block: {unresolved_count}",
-        "",
-        "## 판정",
-        "",
     ]
+    if "evaluation_elapsed_seconds_last_run" in report:
+        lines.append(
+            f"- Evaluator 이번 실행: {report['evaluation_elapsed_seconds_last_run']:.2f}초"
+        )
+        lines.append(f"- Evaluator 누적 실행: {report['evaluation_elapsed_seconds_total']:.2f}초")
+    if "pdf_to_evaluated_processing_seconds" in report:
+        lines.append(
+            "- PDF 복원 + evaluator 누적 처리: "
+            f"{report['pdf_to_evaluated_processing_seconds']:.2f}초"
+        )
+    lines.extend(["", "## 판정", ""])
     if not decisions:
         lines.append("- Vision 재검토가 필요한 block이 없었다.")
     for decision in decisions:

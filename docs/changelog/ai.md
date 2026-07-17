@@ -4,6 +4,30 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-16
+
+### feat: PDF 복원 흐름과 평가 기록 개선
+
+**배경**
+
+표와 수식에 같은 Text SLLM 경로를 적용하면 표의 행·열 관계가 손상되고 처리시간이 늘어났다. 또한 Docling group 내부 참고문헌 누락, Vision 거절 표현 판정, PDF 입력부터 최종 평가 Markdown까지의 시간 기록을 보완할 필요가 있었다.
+
+**변경된 것**
+
+- Docling 중첩 group을 문서 순서대로 탐색하고 참고문헌 `list_item` 원문을 보존하도록 변경
+- Text SLLM은 코드만으로 복원하지 못한 수식에만 사용하고 표는 Vision SLLM 중심으로 처리하도록 분리
+- Vision 거절 결과의 대괄호·대소문자 차이를 동일하게 판정
+- 복원 시간과 evaluator 실행·누적·합산 처리시간을 평가 산출물에 기록
+- 사용하지 않는 표·그림 Text SLLM prompt 제거
+- 현재 흐름, prompt, PDF 4개 정확도·처리시간을 멘토 설명 문서로 추가
+
+**검증**
+
+- `cd llmPipeline && .venv/bin/python -m unittest discover -s tests -p 'test_*.py'` — 249개 통과
+- 변경 Python 파일 `py_compile` 통과
+
+---
+
 ## 2026-07-15
 
 ### feat: Markdown 편집 라우팅과 생성 결과 계약 보강

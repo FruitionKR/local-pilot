@@ -1,4 +1,5 @@
 import argparse
+import time
 from pathlib import Path
 
 from app.modules.document_evaluation.application.models import (
@@ -7,6 +8,8 @@ from app.modules.document_evaluation.application.models import (
 from app.modules.document_evaluation.infrastructure.local_document_evaluator import (
     DEFAULT_ENDPOINT,
     evaluate,
+    read_restoration_elapsed_seconds,
+    record_evaluation_timing,
     write_artifacts,
 )
 
@@ -31,7 +34,13 @@ def main() -> None:
     args = parser.parse_args()
 
     command = LocalDocumentEvaluationCommand(**vars(args))
+    started_at = time.perf_counter()
     report = evaluate(command)
+    record_evaluation_timing(
+        report,
+        evaluation_elapsed_seconds=time.perf_counter() - started_at,
+        restoration_elapsed_seconds=read_restoration_elapsed_seconds(command.markdown_file),
+    )
     write_artifacts(command, report)
     print(command.output_file)
     if command.output_markdown_file:

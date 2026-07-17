@@ -53,6 +53,29 @@ def ref_index(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(item.get("self_ref")): item for item in items}
 
 
+def ordered_body_refs(docling: dict[str, Any]) -> list[str]:
+    groups_by_ref = ref_index(docling.get("groups", []))
+    visited_groups: set[str] = set()
+    refs: list[str] = []
+
+    def append_children(children: list[dict[str, Any]]) -> None:
+        for child in children:
+            ref = child.get("$ref")
+            if not ref:
+                continue
+            group = groups_by_ref.get(ref)
+            if group is None:
+                refs.append(ref)
+                continue
+            if ref in visited_groups:
+                continue
+            visited_groups.add(ref)
+            append_children(group.get("children", []))
+
+    append_children(docling.get("body", {}).get("children", []))
+    return refs
+
+
 def item_page_and_bbox(item: dict[str, Any], pages: dict[str, Any]) -> tuple[int, tuple[float, float, float, float]] | None:
     prov = item.get("prov") or []
     if not prov:
@@ -394,6 +417,8 @@ def best_text_for_docling_item(
 ) -> tuple[str, list[dict[str, Any]], bool]:
     current = clean_text(item.get("text") or item.get("orig") or "")
     candidates = [candidate_record("docling", current)]
+    if item.get("label") == "list_item":
+        return current, candidates, needs_text_adjudication(current)
     page_bbox = item_page_and_bbox(item, pages)
     if not page_bbox:
         return current, candidates, needs_text_adjudication(current)
@@ -456,8 +481,7 @@ def build_manifest(base_dir: Path, document_slug: str) -> list[dict[str, Any]]:
     counters = {"text": 0, "table": 0, "picture": 0, "formula": 0}
 
     with fitz.open(pdf_file) as pdf:
-        for order, child in enumerate(docling.get("body", {}).get("children", []), start=1):
-            ref = child.get("$ref")
+        for order, ref in enumerate(ordered_body_refs(docling), start=1):
             block = None
             if ref in texts_by_ref:
                 item = texts_by_ref[ref]

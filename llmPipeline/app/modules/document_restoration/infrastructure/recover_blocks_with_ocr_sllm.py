@@ -38,6 +38,10 @@ PADDLE_CACHE_DIR = BASE_DIR.parents[2] / "paddle_cache"
 DOCLING_EQUATION_SUMMARY: dict[str, Any] | None = None
 
 
+def should_use_sllm(block_type: str, enabled: bool) -> bool:
+    return enabled and block_type == "equation_candidate"
+
+
 def load_blocks() -> list[dict[str, Any]]:
     blocks = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
     return sorted(blocks, key=lambda block: (block["page"], block["order"]))
@@ -494,12 +498,7 @@ def unique_preserving_order(values: list[str]) -> list[str]:
 def prompt_for_block(block: dict[str, Any], ocr_text: str) -> str:
     block_type = block["type"]
     source_text = block.get("source_text", "")
-    if block_type == "table_candidate":
-        task = (PROMPT_DIR / "block_table_recovery.md").read_text(encoding="utf-8").strip()
-    elif block_type == "figure_candidate":
-        task = (PROMPT_DIR / "block_figure_ocr.md").read_text(encoding="utf-8").strip()
-    else:
-        task = (PROMPT_DIR / "block_equation_recovery.md").read_text(encoding="utf-8").strip()
+    task = (PROMPT_DIR / "block_equation_recovery.md").read_text(encoding="utf-8").strip()
 
     contract = observed_contract_for_block(block, ocr_text)
 
@@ -2099,12 +2098,7 @@ def has_display_math_without_equation(text: str) -> bool:
 
 
 def evaluator_prompt(block: dict[str, Any], ocr_text: str, markdown: str) -> str:
-    if block["type"] == "table_candidate":
-        prompt_file = PROMPT_DIR / "block_table_evaluator.md"
-    elif block["type"] == "figure_candidate":
-        prompt_file = PROMPT_DIR / "block_figure_evaluator.md"
-    else:
-        prompt_file = PROMPT_DIR / "block_equation_evaluator.md"
+    prompt_file = PROMPT_DIR / "block_equation_evaluator.md"
     template = prompt_file.read_text(encoding="utf-8").strip()
     return "\n".join(
         [
@@ -2241,9 +2235,11 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
     ocr_text = ocr_image(asset, block["id"], block["type"])
     ocr_text = append_docling_equation_ocr(block, ocr_text)
     (OCR_DIR / f"{block['id']}.txt").write_text(ocr_text + "\n", encoding="utf-8")
-    prompt = prompt_for_block(block, ocr_text)
+    use_sllm_for_block = should_use_sllm(block["type"], use_sllm)
+    prompt = prompt_for_block(block, ocr_text) if use_sllm_for_block else ""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUTPUT_DIR / f"{block['id']}.prompt.md").write_text(prompt + "\n", encoding="utf-8")
+    if prompt:
+        (OUTPUT_DIR / f"{block['id']}.prompt.md").write_text(prompt + "\n", encoding="utf-8")
 
     markdown = ""
     evaluation: dict[str, Any] | None = None
@@ -2284,7 +2280,7 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
                         "recovery_source": "latex_ocr_cleanup",
                     }
 
-    if not markdown and not use_sllm:
+    if not markdown and not use_sllm_for_block:
         markdown = "\n".join(["```text", ocr_text, "```"])
     elif not markdown:
         system_message = "You reconstruct OCR blocks. Return only the requested Markdown. Never summarize."
@@ -2314,8 +2310,8 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
             markdown = strip_markdown_fence(markdown)
 
     if evaluation is None:
-        evaluation = evaluate_block(block, ocr_text, markdown, endpoint, model, use_sllm)
-    if use_sllm and not evaluation.get("accepted"):
+        evaluation = evaluate_block(block, ocr_text, markdown, endpoint, model, use_sllm_for_block)
+    if use_sllm_for_block and not evaluation.get("accepted"):
         retry_markdown = call_sllm(
             endpoint,
             model,
@@ -2359,7 +2355,14 @@ def evaluate_existing_block(block: dict[str, Any], endpoint: str, model: str, us
     if block["type"] == "equation_candidate":
         markdown = normalize_equation_markdown(markdown, block)
         markdown_file.write_text(markdown.strip() + "\n", encoding="utf-8")
-    evaluation = evaluate_block(block, ocr_text, markdown, endpoint, model, use_sllm)
+    evaluation = evaluate_block(
+        block,
+        ocr_text,
+        markdown,
+        endpoint,
+        model,
+        should_use_sllm(block["type"], use_sllm),
+    )
     EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
     (EVALUATION_DIR / f"{block['id']}.json").write_text(
         json.dumps(evaluation, ensure_ascii=False, indent=2) + "\n",
