@@ -164,7 +164,8 @@ GET  /pipeline/runs/{run_id}/logs
 
 FastAPI 서버입니다.
 
-- `document_id`, `input_markdown`, `input_path` 중 하나를 받아 pipeline run 생성
+- 일반 문서는 Spring이 먼저 생성한 `document_id`로 pipeline run 생성
+- 채팅 full 누적은 기존 `document_id`와 신규 대화 `input_markdown`을 함께 받을 수 있음
 - Spring/DB 문서 입력이면 MinIO에서 Markdown/text를 읽어 로컬 입력 파일로 materialize
 - background task 또는 `wait=true` 동기 실행 지원
 - 실행 결과를 `pipeline_runs`에 저장
@@ -314,7 +315,7 @@ LLM stage별 system prompt입니다.
 
 ### 1. 입력 결정
 
-CLI는 `--input` 파일을 사용합니다. FastAPI는 `document_id`, `input_markdown`, `input_path` 중 하나를 받아 입력 Markdown 경로를 준비합니다.
+CLI는 `--input` 파일을 사용합니다. FastAPI 일반 문서 API는 Spring이 먼저 생성한 `document_id`로 저장된 Markdown을 읽습니다. 채팅 full 누적에서만 `/chat-wiki/runs`가 신규 대화 `input_markdown`을 우선 입력으로 사용할 수 있습니다.
 
 ### 2. Block Extraction
 

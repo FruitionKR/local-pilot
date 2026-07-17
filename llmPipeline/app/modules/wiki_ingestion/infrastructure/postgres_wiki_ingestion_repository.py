@@ -239,7 +239,7 @@ def get_document(document_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, filename, mime_type, byte_size, status, source_uri, extracted_text_uri,
+            SELECT id, user_id, workspace_id, filename, mime_type, byte_size, status, source_uri, extracted_text_uri,
                    content_hash, uploaded_at, processed_at, error_message
             FROM documents
             WHERE id = %s
@@ -257,42 +257,6 @@ def create_pipeline_run(run_id: str, document_id: str | None, input_source: str,
             VALUES (%s, %s, %s, %s, %s, 'running')
             """,
             (run_id, document_id, input_source, output_dir, mode),
-        )
-
-
-def create_pipeline_input_document(
-    document_id: str,
-    filename: str,
-    mime_type: str,
-    byte_size: int,
-    source_uri: str,
-) -> None:
-    with connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO documents (
-                id,
-                filename,
-                mime_type,
-                byte_size,
-                status,
-                source_uri,
-                extracted_text_uri,
-                processed_at,
-                error_message
-            )
-            VALUES (%s, %s, %s, %s, 'processing', %s, NULL, NULL, NULL)
-            ON CONFLICT (id) DO UPDATE SET
-                filename = EXCLUDED.filename,
-                mime_type = EXCLUDED.mime_type,
-                byte_size = EXCLUDED.byte_size,
-                status = 'processing',
-                source_uri = EXCLUDED.source_uri,
-                extracted_text_uri = NULL,
-                processed_at = NULL,
-                error_message = NULL
-            """,
-            (document_id, filename, mime_type, byte_size, source_uri),
         )
 
 
