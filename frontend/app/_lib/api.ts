@@ -54,11 +54,28 @@ export type AuthTokensResponse = {
   refresh_token: string;
 };
 
+export type OAuthProvider = "google" | "naver" | "kakao";
+
 export async function loginWithEmail(email: string, password: string): Promise<AuthTokensResponse> {
   const response = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
+  });
+
+  return parseJsonOrThrow<AuthTokensResponse>(response, ERROR_MESSAGES.loginFailed);
+}
+
+export function getOAuthAuthorizationUrl(provider: OAuthProvider): string {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
+  return `${backendUrl}/oauth2/authorization/${provider}`;
+}
+
+export async function exchangeOAuthCode(code: string): Promise<AuthTokensResponse> {
+  const response = await fetch("/api/auth/oauth/exchange", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code })
   });
 
   return parseJsonOrThrow<AuthTokensResponse>(response, ERROR_MESSAGES.loginFailed);
