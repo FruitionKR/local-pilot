@@ -6,24 +6,27 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-16
 
-### fix: Pipeline 입력 문서 생성 책임을 Backend로 일원화
+### feat: PDF 복원 흐름과 평가 기록 개선
 
 **배경**
 
-Backend는 원본과 `documents` row를 먼저 저장·커밋한 뒤 처리 큐에서 llmPipeline을 호출한다. 반면 일반 pipeline의 직접 Markdown·파일 입력 경로는 llmPipeline이 불완전한 `documents` row를 다시 생성해 `content_hash NOT NULL` 제약과 충돌했다.
+표와 수식에 같은 Text SLLM 경로를 적용하면 표의 행·열 관계가 손상되고 처리시간이 늘어났다. 또한 Docling group 내부 참고문헌 누락, Vision 거절 표현 판정, PDF 입력부터 최종 평가 Markdown까지의 시간 기록을 보완할 필요가 있었다.
 
 **변경된 것**
 
-- 일반 `POST /pipeline/runs`는 backend가 먼저 생성한 `document_id`만 받도록 제한했습니다.
-- llmPipeline의 `create_pipeline_input_document`와 일반 `input_markdown`·`input_path` 처리 경로를 제거했습니다.
-- 채팅 full 누적용 `input_markdown`은 신규 대화 delta 계약으로 유지하되, 기존 backend 문서가 없으면 404를 반환합니다.
-- llmPipeline이 `document_id`의 기존 문서에서 Wiki 저장 범위를 조회하도록 맞췄습니다. Backend가 보내는 `user_id`, `workspace_id`는 호환 목적으로 수신하되 저장 범위에는 사용하지 않습니다.
-- README, 채팅 Wiki 계약, 당일 이슈 문서를 현재 입력 책임과 남은 네트워크 보안 과제에 맞게 수정했습니다.
+- Docling 중첩 group을 문서 순서대로 탐색하고 참고문헌 `list_item` 원문을 보존하도록 변경
+- Text SLLM은 코드만으로 복원하지 못한 수식에만 사용하고 표는 Vision SLLM 중심으로 처리하도록 분리
+- Vision 거절 결과의 대괄호·대소문자 차이를 동일하게 판정
+- 복원 시간과 evaluator 실행·누적·합산 처리시간을 평가 산출물에 기록
+- 사용하지 않는 표·그림 Text SLLM prompt 제거
+- 현재 흐름, prompt, PDF 4개 정확도·처리시간을 멘토 설명 문서로 추가
 
 **검증**
 
-- `llmPipeline/.venv/bin/python -m pytest tests/test_pipeline_run_api_contract.py`
-- `llmPipeline/.venv/bin/python -m pytest -q`
+- `cd llmPipeline && .venv/bin/python -m unittest discover -s tests -p 'test_*.py'` — 249개 통과
+- 변경 Python 파일 `py_compile` 통과
+
+---
 
 ## 2026-07-15
 

@@ -45,6 +45,10 @@ def strip_markdown_fence(text: str) -> str:
     return stripped
 
 
+def is_rejected_result(text: str) -> bool:
+    return re.match(r"^\[?\s*rejected\s*:", text.strip(), flags=re.IGNORECASE) is not None
+
+
 def looks_glyph_encoded(text: str) -> bool:
     return generic_looks_glyph_encoded(text)
 
@@ -219,7 +223,7 @@ def normalize_vision_result(block: dict[str, Any], markdown: str) -> str:
     normalized = strip_markdown_fence(markdown)
     if block["type"] == "equation_candidate":
         normalized = re.sub(r"\s*\\tag\{(?!\d+\})[^}]+\}", "", normalized)
-        if normalized and not normalized.startswith("[rejected:") and "$$" not in normalized:
+        if normalized and not is_rejected_result(normalized) and "$$" not in normalized:
             normalized = f"$$\n{normalized}\n$$"
     return normalized.strip()
 
@@ -230,7 +234,7 @@ def evaluate_result(block: dict[str, Any], markdown: str) -> dict[str, Any]:
     reasons = []
     if not text:
         reasons.append("vision 결과가 비어 있음")
-    if text.startswith("[rejected:"):
+    if is_rejected_result(text):
         reasons.append("vision 모델이 crop 검토를 거부함")
     if "```" in text:
         reasons.append("code fence가 남아 있음")
