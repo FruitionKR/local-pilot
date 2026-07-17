@@ -26,12 +26,12 @@
 
 ## 2. 현재 ingest 입력 구조
 
-현재 `llmPipeline`의 기존 ingest endpoint는 다음 세 입력 중 하나만 받는다.
+현재 `llmPipeline`의 일반 ingest endpoint는 backend가 먼저 생성한 문서의 `document_id`를 받는다.
 
 ```text
 POST /pipeline/runs
 
-document_id | input_markdown | input_path
+document_id
 ```
 
 현재 Spring 문서 처리 흐름은 보통 아래처럼 `document_id`만 전달한다.
@@ -40,14 +40,6 @@ document_id | input_markdown | input_path
 {
   "document_id": "document_1",
   "log_callback_url": "http://backend:8080/api/documents/document_1/pipeline-events/callback"
-}
-```
-
-기존 endpoint는 직렬화된 Markdown도 직접 받을 수 있지만, 채팅 Wiki page화에서는 일반 문서 ingest endpoint를 쓰지 않는다.
-
-```json
-{
-  "input_markdown": "# 문서 제목\n\n본문..."
 }
 ```
 
@@ -91,8 +83,6 @@ POST /chat-wiki/runs
 | `selection_mode` | 예 | `full`이면 전체 선택, `partial`이면 일부 선택 |
 | `input_markdown` | 선택 | 기존 source page가 있는 `full` 누적에서 backend가 중복 필터링해 직렬화한 신규 pair Markdown. 없으면 `document_id`로 저장된 문서를 읽는다. |
 | `log_callback_url` | 예 | 기존 문서 처리처럼 pipeline event를 backend에 전달할 callback URL |
-| `workspace_id` | 선택 | 기존 pipeline namespace가 필요하면 기존 계약처럼 포함 |
-| `user_id` | 선택 | 기존 pipeline namespace가 필요하면 기존 계약처럼 포함 |
 | `input_name` | 선택 | 실행 로그와 임시 document filename에 사용할 이름 |
 | `wait` | 선택 | 기존 실행 API와 같은 비동기/동기 실행 옵션 |
 
@@ -167,7 +157,8 @@ session_id + pair_id -> 원본 채팅 문답 1쌍
 
 ```text
 POST /pipeline/runs
-  -> document_id 또는 input_markdown 수신
+  -> backend가 먼저 생성한 document_id 수신
+  -> document_id로 저장된 Markdown 로드
   -> 일반 source block splitter 실행
   -> 일반 문서 semantic extraction prompt 사용
   -> source page/concept page/link 생성
@@ -387,6 +378,7 @@ backend는 `session_id + pair_id`로 원본 문답을 조회할 수 있어야 �
 `llmPipeline`은 다음을 책임진다.
 
 - `POST /chat-wiki/runs`에서 `document_id`, `selection_mode`, `log_callback_url` 수신
+- `document_id`로 backend가 저장한 문서의 `user_id`, `workspace_id`를 조회해 Wiki 저장 범위로 사용
 - 기존 source page가 있는 `full` 누적에서만 `input_markdown` 수신 허용
 - `input_markdown`이 허용된 경우 신규 pair 입력으로 사용하고, 그 외에는 `document_id`로 저장된 채팅 Markdown 로드
 - 채팅 Markdown에서 `[session_id:pair_id]` prefix를 source ref로 보존
