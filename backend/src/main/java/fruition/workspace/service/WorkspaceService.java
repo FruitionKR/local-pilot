@@ -68,8 +68,9 @@ public class WorkspaceService {
     public void delete(String userId, String workspaceId) {
         Workspace workspace = findOwned(userId, workspaceId);
 
-        // DB에 workspace_id FK CASCADE가 없어 하위 리소스를 애플리케이션에서 직접 정리한다.
-        // wiki_pages는 아직 workspace_id가 없어 대상에서 제외됨 (docs/issue/2026-07-02.md 참고).
+        // workspace_id FK CASCADE(V3 마이그레이션)로 하위 리소스 row는 DB에서 연쇄 삭제된다
+        // (documents/wiki_pages(concept 포함)/chat_sessions 및 그 하위). 아래 호출은 DB CASCADE로
+        // 대체 불가한 MinIO 오브젝트 삭제(문서 원본 등)를 위해 남긴다.
         documentService.deleteAllByWorkspaceId(workspaceId);
         chatSessionService.deleteAllByWorkspaceId(workspaceId);
 

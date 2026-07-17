@@ -9,6 +9,8 @@ import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
 import fruition.chat.repository.ChatMessageRepository;
 import fruition.chat.repository.ChatSessionRepository;
+import fruition.user.domain.User;
+import fruition.workspace.domain.Workspace;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +40,11 @@ class ChatSessionCascadeDeleteIntegrationTest {
 
     @Test
     void deletingSession_cascadesToMessagesReferencesAndRelatedPages() {
+        // chat_sessions.workspace_id/user_id FK(CASCADE)를 위해 부모 행을 먼저 만든다.
+        entityManager.persist(new User("user_cascade_test", "cascade@example.com", "tester", null));
+        entityManager.persist(new Workspace("ws_cascade_test", "ws"));
+        entityManager.flush();
+
         ChatSession session = new ChatSession("session_cascade_test", "ws_cascade_test", "user_cascade_test", null);
         chatSessionRepository.save(session);
 
@@ -47,10 +54,12 @@ class ChatSessionCascadeDeleteIntegrationTest {
                 "assistant", "답변", "completed", Instant.now(), null);
         chatMessageRepository.saveAll(List.of(userMessage, assistantMessage));
 
+        // document_id/wiki_page_id는 이 테스트의 관심사(세션 CASCADE)가 아니므로,
+        // FK(SET NULL) 대상 부모를 만들지 않고 null로 둔다.
         referenceRepository.save(new ChatMessageReference(
-                assistantMessage, "source_block", "doc_cascade_test", 1, List.of("B0001"), "인용문"));
+                assistantMessage, "source_block", null, 1, List.of("B0001"), "인용문"));
         relatedPageRepository.save(new ChatMessageRelatedPage(
-                assistantMessage, "source:cascade-test", "source", "제목", "slug", 1.0, "seed_source", 0, 1));
+                assistantMessage, null, "source", "제목", "slug", 1.0, "seed_source", 0, 1));
 
         entityManager.flush();
 

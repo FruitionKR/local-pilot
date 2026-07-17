@@ -6,6 +6,79 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-16
+
+### refactor: displayName 결정 규칙을 공용 유틸로 추출 + OAuth 닉네임 길이 상한
+
+**배경**
+
+회원가입(`UserService`)과 OAuth 신규 가입(`OAuthUserService`)에 "닉네임 있으면 trim, 없으면 이메일 앞 3글자" 로직이 중복돼 있었고, OAuth 경로는 provider 닉네임을 길이 제한 없이 저장해 회원가입(`@Size(max=50)`)과 규칙이 어긋났다.
+
+**변경된 것**
+
+- `fruition.util.DisplayNames`로 결정 규칙을 추출(`resolve`, `isPresent`). 결과를 최대 50자로 잘라 두 경로의 상한을 통일했다.
+- `UserService`/`OAuthUserService`가 이 유틸을 재사용하도록 정리(동작 동일, OAuth 닉네임만 50자 상한 추가).
+- `DisplayNamesTest`로 trim/fallback/상한/blank 판정을 검증.
+
+### feat: workspace 삭제 연쇄를 위한 DB 레벨 FK CASCADE 도입 (V3)
+
+**배경**
+
+지금까지 workspace 삭제 시 하위 리소스 정리를 애플리케이션 코드에 의존했고, `WorkspaceService.delete()`의 낡은 주석(`wiki_pages`에 workspace_id가 없다고 오기재) 때문에 **workspace 삭제 시 `wiki_pages`(특히 concept page)가 고아로 남는 버그**가 있었다(`docs/issue/backend/2026-07-15.md` #3). Flyway 도입 이후 이제 DB 레벨 참조 무결성을 세울 수 있게 됐다.
+
+**변경된 것**
+
+- `V3__add_workspace_fk_cascade.sql`로 FK 20개 추가 — 소유 관계는 `ON DELETE CASCADE`(15개), 단순 참조(nullable)는 `ON DELETE SET NULL`(5개).
+- 파이프라인이 같은 트랜잭션에서 wiki_pages보다 링크를 먼저 insert해도 안 깨지도록, wiki_pages를 참조하는 링크 FK 3개(`document_wiki_links.wiki_page_id`, `wiki_page_links.from_page_id/to_page_id`)는 `DEFERRABLE INITIALLY DEFERRED`.
+- 삭제 의미론: **workspace 삭제 → 그 안의 모든 것(concept page 포함) 연쇄 삭제**. **단일 document 삭제 → concept·source page 본체는 보존**(documents는 wiki_pages의 부모가 아님)하고, source page 선택 삭제 규칙은 앱 로직(`DocumentService.deleteInternal`)이 유지.
+- `WorkspaceService.delete()`의 낡은 주석을 정정(로직 변경 없음). 앱 레벨 삭제 코드는 MinIO 오브젝트 삭제·source/concept 규칙 때문에 이번엔 유지.
+
+**검증**
+
+- 빈/기존 DB에 V3 적용, `ddl-auto=validate` 통과. FK 20개의 ON DELETE 동작(CASCADE/SET NULL)과 DEFERRABLE 3개를 `pg_constraint`로 확인.
+- SQL 실증: workspace 삭제 전체 연쇄(고아 0), 단일 문서 삭제 시 wiki_pages 2개 보존 + 참조 SET NULL, concept page 삭제 시 링크 CASCADE + 참조 SET NULL, DEFERRABLE 링크 순서 insert commit 성공.
+- `./gradlew test --rerun-tasks` 통과. `ChatSessionCascadeDeleteIntegrationTest`는 새 FK에 맞게 부모 행 생성/참조 null로 테스트 데이터를 보정했다.
+
+### chore: Flyway 도입 및 스키마 관리 방식 전환 (ddl-auto=validate)
+
+**배경**
+
+`ddl-auto=update`는 컬럼/제약을 추가만 하고 삭제·변경을 반영하지 못해, 엔티티 변경 시 옛 제약이 "잔재"로 남는다. 실제로 `wiki_pages`의 잔재 unique constraint `uq_wiki_pages_type_slug`가 llmPipeline의 wiki page upsert를 막는 문제가 있었다(`docs/issue/2026-07-16.md` 이슈 1). 스키마를 버전 관리되는 마이그레이션으로 전환한다.
+
+**변경된 것**
+
+- `build.gradle`에 `flyway-core`, `flyway-database-postgresql` 의존성을 추가했다.
+- `ddl-auto`를 `update` → `validate`로 바꿔 스키마의 단일 소스를 Flyway로 일원화했다. 앱은 기동 시 검증만 수행한다.
+- `application.properties`에 `spring.flyway.enabled/baseline-on-migrate/baseline-version`을 추가했다. 기존 데이터가 있는 DB는 v1로 마킹만 하고 V2부터 적용된다.
+- baseline 마이그레이션 `V1__baseline_schema.sql`(엔티티 16개 기준 깨끗한 스키마)과 잔재 제거 마이그레이션 `V2__drop_leftover_wiki_pages_unique.sql`을 추가했다.
+- `backend/README.md`에 팀원용 Flyway 사용법(최초 1회 리셋 / 평상시 pull+bootRun / 스키마 변경 시 Vn 규칙 / 운영 DB baseline)을 문서화했다.
+- Spring Session 테이블은 Flyway 관리 대상이 아니며 기존대로 Spring Session JDBC가 생성한다.
+
+**검증**
+
+- 빈 DB 기동 시 Flyway가 V1 → V2를 적용하고 `ddl-auto=validate`가 통과했다. `flyway_schema_history`에 2건 success 확인.
+- 적용 후 `wiki_pages`에 잔재 constraint가 제거되고 `uq_wiki_pages_workspace_type_slug`만 남는 것을 확인했다.
+- `./gradlew test --rerun-tasks` (Testcontainers) 통과. Test worker 로그에 `Successfully applied 2 migrations` 확인.
+
+### feat: 회원가입 닉네임 입력 및 인증 로그 추가
+
+**배경**
+
+일반 회원가입에서도 이메일/비밀번호 외에 닉네임을 받을 수 있게 하고, 카카오 OAuth에서 받은 닉네임도 사용자 표시명으로 저장해야 했다. 동시에 회원가입·로그인·OAuth 흐름을 로컬에서 확인하기 쉽도록 민감값을 제외한 진단 로그가 필요했다.
+
+**변경된 것**
+
+- `SignupRequest`에 선택 필드 `display_name`을 추가했다. 값이 있으면 trim 후 `displayName`으로 저장하고, 없거나 공백이면 기존처럼 이메일 앞 3글자를 저장한다.
+- OAuth 신규 사용자 생성 시 provider가 제공한 이름/닉네임을 `displayName`으로 우선 저장하고, 없으면 이메일 prefix fallback을 사용한다.
+- 회원가입, 로그인, OAuth 사용자 매핑, OAuth 인증 redirect, OAuth code 교환 흐름에 로그를 추가했다. 비밀번호, token, OAuth code, client secret은 로그에 남기지 않는다.
+- 닉네임 저장 규칙 테스트를 보강했다.
+
+**검증**
+
+- 실제 로컬 API 호출로 회원가입 `201`, 로그인 `200`을 확인했다.
+- Google/Naver/Kakao OAuth authorization endpoint가 각각 `302` redirect를 생성하는 것을 확인했다.
+- `./gradlew test --tests fruition.user.service.UserServiceTest --tests fruition.user.service.AuthServiceTest --tests fruition.user.service.OAuthUserServiceTest --tests fruition.security.oauth.domain.OAuth2UserInfoTest` 통과.
+
 ## 2026-07-10
 
 ### perf: reconciler 폴링 최적화 — reconciled_at 마커 + 인덱스 + @DynamicUpdate

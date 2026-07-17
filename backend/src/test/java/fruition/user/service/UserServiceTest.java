@@ -68,4 +68,22 @@ class UserServiceTest {
 
         assertThat(response.displayName()).isEqualTo("jan");
     }
+
+    @Test
+    void signup_displayNameProvided_usesTrimmedDisplayName() {
+        when(userRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
+
+        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  제인  "));
+
+        assertThat(response.displayName()).isEqualTo("제인");
+    }
+
+    @Test
+    void signup_blankDisplayName_usesFirstThreeCharsOfEmail() {
+        when(userRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
+
+        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  "));
+
+        assertThat(response.displayName()).isEqualTo("jan");
+    }
 }

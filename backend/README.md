@@ -65,6 +65,86 @@ docker compose -f docker-compose.dev.yml down -v
 
 ---
 
+## 데이터베이스 스키마 (Flyway)
+
+DB 스키마는 **Flyway가 단일 소스로 관리**합니다. 앱은 기동 시 스키마를 검증만 하고(`spring.jpa.hibernate.ddl-auto=validate`), 실제 테이블 생성/변경은 `backend/src/main/resources/db/migration/` 아래 `Vn__*.sql` 마이그레이션으로만 이뤄집니다.
+
+- 마이그레이션은 `./gradlew bootRun` 기동 시 자동 적용됩니다. 별도 명령이 필요 없습니다.
+- Spring Session 테이블(`spring_session*`)은 Flyway 관리 대상이 아니며 Spring Session JDBC가 별도로 생성합니다.
+
+### 처음 받았을 때 / 브랜치를 pull 한 뒤 (팀원 공통)
+
+기존 로컬 DB가 예전 스키마(`ddl-auto=update` 시절의 잔재 포함)면 새 baseline과 맞지 않아 기동이 실패할 수 있습니다. **로컬 DB를 한 번 비우고 새로 만들면** 됩니다. 로컬 데이터는 소모성입니다.
+
+```bash
+# infra/ 디렉토리에서
+docker compose -f docker-compose.dev.yml down -v   # postgres 볼륨 삭제
+docker compose -f docker-compose.dev.yml up -d
+
+# backend/ 디렉토리에서
+./gradlew bootRun   # 빈 DB에 Flyway가 V1부터 자동 적용
+```
+
+이후 평상시에는 `git pull` 뒤 `./gradlew bootRun`만 하면 새 마이그레이션이 자동 적용됩니다.
+
+### 스키마를 바꿀 때 (엔티티 수정 시)
+
+엔티티를 수정하면 **같은 PR에 마이그레이션 파일을 함께** 추가해야 합니다. `ddl-auto=validate`라 마이그레이션을 빠뜨리면 기동이 실패하므로 누락이 바로 드러납니다.
+
+1. `db/migration/`에 다음 번호로 파일을 추가합니다. 예: `V3__add_xxx_column.sql`
+   - 파일명 형식: `V<번호>__<설명>.sql` (버전과 설명 사이 밑줄 2개)
+2. 변경 DDL을 작성합니다. 예: `ALTER TABLE documents ADD COLUMN xxx varchar(255);`
+3. `./gradlew bootRun` 또는 `./gradlew test`로 적용/검증합니다.
+
+> **이미 머지된 마이그레이션 파일은 절대 수정하지 않습니다.** 항상 새 번호로 추가하세요. Flyway가 적용 이력(`flyway_schema_history`)과 체크섬을 추적하므로, 적용된 파일을 바꾸면 검증에 실패합니다.
+
+### 운영/공유 DB
+
+`spring.flyway.baseline-on-migrate=true`가 설정되어, 이미 데이터가 있는 기존 DB는 V1을 재실행하지 않고 v1로 마킹만 한 뒤 V2부터 적용합니다. 기존 DB도 데이터 유지한 채 Flyway로 편입됩니다.
+
+### 상태 모니터링
+
+**적용 상태 한눈에 보기 (Flyway Gradle 플러그인):**
+
+```bash
+cd backend
+./gradlew flywayInfo        # 각 마이그레이션의 Version/State(Success/Pending 등) 표로 출력
+./gradlew flywayValidate    # 로컬 파일과 DB 적용 이력의 정합성(체크섬 등) 검증
+```
+
+`flywayInfo`/`flywayValidate`는 접속 정보를 `infra/.env`에서 읽습니다(없으면 로컬 기본값). `bootRun`이 아니므로 DB(Docker)만 떠 있으면 됩니다.
+
+**적용 이력 직접 조회 (psql):**
+
+```bash
+docker compose -f infra/docker-compose.dev.yml exec -T postgresql \
+  psql -U fruition -d fruition_mvp \
+  -c "SELECT installed_rank, version, description, success, installed_on FROM flyway_schema_history ORDER BY installed_rank;"
+```
+
+`success`가 모두 `t`면 정상입니다. `flyway_schema_history`가 Flyway의 진실 소스입니다.
+
+**기동 로그:** 적용 시 `Migrating schema "public" to version "N - ..."` / `Successfully applied N migration(s)`, 변경 없을 때 `No migration necessary`가 찍힙니다.
+
+### 트러블슈팅
+
+| 증상 | 원인 | 대처 |
+|---|---|---|
+| 기동 실패 `Schema-validation: missing table/column ...` | 엔티티는 바꿨는데 마이그레이션을 안 만듦 | 해당 변경의 `Vn__*.sql`을 추가 |
+| `Migration checksum mismatch` | 이미 적용된 마이그레이션 파일을 수정함 | 파일을 원상복구하고 변경은 **새 번호**로 추가. `./gradlew flywayValidate`로 확인 |
+| `Detected applied migration not resolved locally` | 로컬에 없는 버전이 DB에만 적용됨(브랜치 꼬임) | 브랜치/파일 정합성 확인, 로컬 DB 리셋(`down -v`) |
+| 마이그레이션 SQL 오류로 기동 실패 | SQL 문법/제약 위반 | Postgres는 트랜잭션 DDL이라 실패분은 롤백됨 → SQL 고쳐 다시 `bootRun`(대개 수동 복구 불필요) |
+| FK/제약 추가가 실패 | 기존 DB에 무결성 안 맞는(고아) 데이터 | 로컬은 리셋, 운영은 데이터 정리 후 적용 |
+
+### 마이그레이션 작성 관행
+
+- 한 마이그레이션 = 하나의 논리적 변경. 무관한 변경을 섞지 않습니다.
+- 파괴적 변경은 단계적으로(expand-contract): 컬럼 rename은 ① 새 컬럼 추가 → ② 백필/양쪽 사용 → ③ 다음 릴리스에서 옛 컬럼 DROP.
+- 두 사람이 동시에 같은 번호를 만들면 나중 머지하는 쪽이 다음 번호로 조정합니다.
+- 운영 DB는 리셋 금지, 파괴적 변경 전 백업.
+
+---
+
 ## 환경 변수
 
 환경 변수는 `infra/.env` 파일에서 관리합니다.
