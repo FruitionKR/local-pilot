@@ -165,7 +165,7 @@ Query evaluator, web search 보강, 내부 근거 관련도 기준을 로컬 pip
 
 - `AGENTS.md` — 커밋 전 관련 changelog 갱신 규칙 추가
 - `CLAUDE.md` — 커밋 전 관련 changelog 갱신 규칙 추가
-- `docs/issue/2026-06-11.md` — backend / AI Pipeline 담당 영역별 미해결 이슈 정리
+- `docs/backlog/issue-2026-06-11.md` — backend / AI Pipeline 담당 영역별 미해결 이슈 정리
 
 **검증**
 

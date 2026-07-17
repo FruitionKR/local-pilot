@@ -1143,7 +1143,7 @@ Response (`202`):
 동작:
 
 - **full**: 아직 편입되지 않은 문답만 파이프라인에 보낸다(이미 편입된 문답은 `messages[].wiki_page_id`로 표시됨). 완료 후 세션이 정식 source Wiki 페이지에 연결된다.
-- **full 재생성**: 이미 위키가 연결된 세션을 다시 full로 export하면 기존 export 문서를 재사용해 원본을 세션 전체로 갱신하고, 추가된 문답만 재처리한다. (파이프라인의 inline 입력 지원이 전제 — 후속작업. `docs/issue/2026-07-09.md` "llmPipeline 후속 작업" 참고)
+- **full 재생성**: 이미 위키가 연결된 세션을 다시 full로 export하면 기존 export 문서를 재사용해 원본을 세션 전체로 갱신하고, 추가된 문답만 재처리한다. (파이프라인의 inline 입력 지원이 전제 — 후속작업. `docs/backlog/issue-2026-07-09.md` "llmPipeline 후속 작업" 참고)
 - **partial**: 선택한 문답으로 독립 발췌 페이지를 만든다. 문답↔페이지 멤버십은 `messages[].partial_wiki_page_ids`로 노출된다(1:N).
 
 에러:
@@ -1478,5 +1478,5 @@ traversal_paths
 
 ## 13. 알려진 이슈
 
-- **Wiki workspace 격리 미적용**: `wiki_pages`가 workspace_id를 갖지 않아 concept 페이지가 워크스페이스 간 전역 공유된다. `docs/issue/2026-07-02.md` 참고.
+- **Wiki workspace 격리 미적용**: `wiki_pages`가 workspace_id를 갖지 않아 concept 페이지가 워크스페이스 간 전역 공유된다. `docs/backlog/issue-2026-07-02.md` 참고.
 - **채팅 세션의 유저별 프라이빗 처리 미적용**: 지금은 워크스페이스 멤버가 1명(owner)뿐이라 드러나지 않지만, 조회 로직이 `workspace_id`만 확인하고 세션 소유자(`user_id`)는 확인하지 않는다. 워크스페이스 공유 기능이 들어가기 전에 고쳐야 한다.
