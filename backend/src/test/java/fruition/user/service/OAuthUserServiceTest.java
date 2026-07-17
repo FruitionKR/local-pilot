@@ -82,6 +82,7 @@ class OAuthUserServiceTest {
         User user = oAuthUserService.findOrCreateUser("google", googleUserInfo("google-sub-1", "new@example.com", "New User"));
 
         assertThat(user.getEmail()).isEqualTo("new@example.com");
+        assertThat(user.getDisplayName()).isEqualTo("New User");
         assertThat(user.getPasswordHash()).isNull();
         verify(userRepository).save(any());
         verify(workspaceService).createDefault(user.getId(), user.getDisplayName());

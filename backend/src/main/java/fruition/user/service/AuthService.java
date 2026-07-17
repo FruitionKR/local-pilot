@@ -15,6 +15,8 @@ import fruition.user.exception.InvalidRefreshTokenException;
 import fruition.user.exception.UserNotFoundException;
 import fruition.user.repository.UserRefreshTokenRepository;
 import fruition.user.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ import java.util.HexFormat;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final UserRefreshTokenRepository refreshTokenRepository;
@@ -53,14 +57,28 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email().trim().toLowerCase())
-                .orElseThrow(InvalidCredentialsException::new);
+        String email = request.email().trim().toLowerCase();
+        log.info("[로그인 요청] email={}", email);
 
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.warn("[로그인 실패] reason=unknown_email email={}", email);
+                    return new InvalidCredentialsException();
+                });
+
+        if (user.getPasswordHash() == null) {
+            log.warn("[로그인 실패] reason=password_login_unavailable userId={} email={}", user.getId(), email);
             throw new InvalidCredentialsException();
         }
 
-        return issueTokenPair(user);
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            log.warn("[로그인 실패] reason=password_mismatch userId={} email={}", user.getId(), email);
+            throw new InvalidCredentialsException();
+        }
+
+        LoginResponse response = issueTokenPair(user);
+        log.info("[로그인 성공] userId={} email={}", user.getId(), user.getEmail());
+        return response;
     }
 
     @Transactional
@@ -88,11 +106,20 @@ public class AuthService {
 
     @Transactional
     public LoginResponse exchangeOAuthCode(OAuthExchangeRequest request) {
+        log.info("[OAuth code 교환 요청]");
         String userId = oAuthExchangeCodeStore.consume(request.code())
-                .orElseThrow(InvalidOAuthCodeException::new);
+                .orElseThrow(() -> {
+                    log.warn("[OAuth code 교환 실패] reason=invalid_code");
+                    return new InvalidOAuthCodeException();
+                });
         User user = userRepository.findById(userId)
-                .orElseThrow(InvalidOAuthCodeException::new);
-        return issueTokenPair(user);
+                .orElseThrow(() -> {
+                    log.warn("[OAuth code 교환 실패] reason=user_not_found userId={}", userId);
+                    return new InvalidOAuthCodeException();
+                });
+        LoginResponse response = issueTokenPair(user);
+        log.info("[OAuth code 교환 성공] userId={} email={}", user.getId(), user.getEmail());
+        return response;
     }
 
     public MeResponse me(String userId) {
