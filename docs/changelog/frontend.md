@@ -4,6 +4,36 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-17
+
+### feat: 로그인/회원가입 화면 개편 및 소셜 로그인 UI 추가
+
+**변경 배경**
+
+- 임시 로그인 화면을 정식 디자인 기반의 인증 플로우(로그인, 회원가입, 인증번호 확인, 비밀번호 찾기/재설정)로 개편했다.
+- Google/Naver/Kakao 소셜 로그인 진입 UI와 OAuth code 교환 흐름이 필요했다.
+
+**추가 및 변경된 내용**
+
+- `frontend/app/login/page.tsx`를 `view` query param 기반 다중 화면(login, signup, signup-verification, forgot-password, reset-password)으로 개편했다.
+- `frontend/app/login/AuthControls.tsx`에 `AuthField`, `AuthError`, `AuthSubmitButton`, `SocialLoginButtons` 컴포넌트를 추가했다.
+- `frontend/app/login/useVerificationRequest.ts`에 인증 요청 타이머(5분)와 로컬 임시 인증 코드 판정 훅을 추가했다.
+- `frontend/app/_lib/api.ts`에 `OAuthProvider` 타입, `getOAuthAuthorizationUrl`, `exchangeOAuthCode`(POST `/api/auth/oauth/exchange`)를 추가했다.
+- `frontend/app/workspaces/page.tsx`를 워크스페이스 선택 화면에서 첫 워크스페이스 자동 선택(없으면 `나의 워크스페이스` 자동 생성) 후 홈으로 이동하는 흐름으로 변경했다.
+- `frontend/svg/`에 소셜 로고(google, naver, kakao)와 인증 화면용 아이콘(error-circle, password-hidden)을 추가하고 `frontend/app/_styles/auth.css`를 새 디자인에 맞게 갱신했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+
+**주의사항**
+
+- 인증번호는 백엔드 연동 전으로, 개발 환경에서만 임시 코드 `9700`으로 통과한다 (`NODE_ENV !== "production"` 조건).
+- 소셜 로그인은 백엔드 `/oauth2/authorization/{provider}` 및 `/api/auth/oauth/exchange` 구현이 필요하다.
+
+---
+
 ## 2026-07-05
 
 ### feat: 로그인/워크스페이스 플로우 추가 및 프론트 데이터 계층 개편

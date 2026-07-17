@@ -1,110 +1,285 @@
 "use client";
 
-// 임시 로그인/회원가입 화면. 정식 디자인(Figma) 도입 시 교체 대상.
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { loginWithEmail, signupWithEmail } from "../_lib/api";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { exchangeOAuthCode, loginWithEmail, signupWithEmail } from "../_lib/api";
 import { saveTokens } from "../_lib/auth";
 import { getErrorMessage } from "../_lib/errors";
+import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "./AuthControls";
+import { useVerificationRequest } from "./useVerificationRequest";
 
-type AuthMode = "login" | "signup";
+type AuthView = "login" | "signup" | "signup-verification" | "forgot-password" | "reset-password";
+
+const INVALID_CREDENTIALS_MESSAGE = "가입하지 않은 아이디거나, 잘못된 비밀번호입니다.";
+
+function resolveAuthView(value: string | null): AuthView {
+  if (
+    value === "signup" ||
+    value === "signup-verification" ||
+    value === "forgot-password" ||
+    value === "reset-password"
+  ) {
+    return value;
+  }
+  return "login";
+}
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="auth-screen auth-screen--login" />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>("login");
+  const searchParams = useSearchParams();
+  const hasHandledOAuth = useRef(false);
+  const isCompletingSignup = useRef(false);
+  const view = resolveAuthView(searchParams.get("view"));
+  const isVerificationView = view === "signup-verification" || view === "forgot-password";
+  const { buttonLabel, clearRequest, isTemporaryCode, isWaiting, startRequest } =
+    useVerificationRequest(isVerificationView);
+  const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent) {
+  useEffect(() => {
+    if (hasHandledOAuth.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const oauthError = params.get("error");
+    if (!code && !oauthError) return;
+
+    hasHandledOAuth.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+
+    if (oauthError) {
+      setErrorMessage("간편 로그인에 실패했습니다.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    exchangeOAuthCode(code as string)
+      .then((tokens) => {
+        saveTokens(tokens.access_token, tokens.refresh_token);
+        router.replace("/workspaces");
+      })
+      .catch(() => {
+        setErrorMessage("간편 로그인에 실패했습니다.");
+        setIsSubmitting(false);
+      });
+  }, [router]);
+
+  const changeView = useCallback((nextView: AuthView) => {
+    setErrorMessage(null);
+    if (nextView !== "signup-verification") clearRequest();
+    router.push(nextView === "login" ? "/login" : `/login?view=${nextView}`);
+  }, [clearRequest, router]);
+
+  useEffect(() => {
+    if (!isWaiting || !isTemporaryCode(verificationCode)) return;
+
+    if (view === "forgot-password") {
+      setVerificationCode("");
+      changeView("reset-password");
+      return;
+    }
+
+    if (view !== "signup-verification" || isCompletingSignup.current) return;
+
+    isCompletingSignup.current = true;
+    setIsSubmitting(true);
+    signupWithEmail(email, password)
+      .then(() => loginWithEmail(email, password))
+      .then((tokens) => {
+        saveTokens(tokens.access_token, tokens.refresh_token);
+        router.replace("/workspaces");
+      })
+      .catch((error: unknown) => {
+        setErrorMessage(getErrorMessage(error, "회원가입에 실패했습니다."));
+        setIsSubmitting(false);
+        isCompletingSignup.current = false;
+      });
+  }, [changeView, email, isTemporaryCode, isWaiting, password, router, verificationCode, view]);
+
+  async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
     if (isSubmitting) return;
 
     setErrorMessage(null);
     setIsSubmitting(true);
 
-    // 회원가입과 로그인 실패 메시지를 분리해 회원가입 성공 후 로그인 실패를 오표시하지 않는다.
-    if (mode === "signup") {
-      try {
-        await signupWithEmail(email, password);
-      } catch (error) {
-        setErrorMessage(getErrorMessage(error, "회원가입에 실패했습니다."));
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
     try {
       const tokens = await loginWithEmail(email, password);
       saveTokens(tokens.access_token, tokens.refresh_token);
       router.replace("/workspaces");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error, "로그인에 실패했습니다."));
+    } catch {
+      setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
       setIsSubmitting(false);
     }
   }
 
-  return (
-    <main className="auth-screen">
-      <section className="auth-card">
-        <h1 className="auth-title">Fruition</h1>
-        <p className="auth-subtitle">{mode === "login" ? "계정으로 로그인하세요." : "새 계정을 만드세요."}</p>
+  function handleSignupRequest(event: React.FormEvent) {
+    event.preventDefault();
+    if (password.length < 8) {
+      setErrorMessage("비밀번호는 8자 이상 입력해주세요.");
+      return;
+    }
 
-        <div className="auth-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "login"}
-            className={mode === "login" ? "auth-tab active" : "auth-tab"}
-            onClick={() => setMode("login")}
-          >
-            로그인
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "signup"}
-            className={mode === "signup" ? "auth-tab active" : "auth-tab"}
-            onClick={() => setMode("signup")}
-          >
-            회원가입
-          </button>
+    setVerificationCode("");
+    startRequest();
+    changeView("signup-verification");
+  }
+
+  function handleVerificationRequest(event: React.FormEvent) {
+    event.preventDefault();
+    if (isWaiting) return;
+
+    setErrorMessage(null);
+    startRequest();
+  }
+
+  function handlePasswordReset(event: React.FormEvent) {
+    event.preventDefault();
+    setErrorMessage(
+      password === passwordConfirmation ? null : "비밀번호가 일치하지 않습니다."
+    );
+  }
+
+  let content: React.ReactNode;
+
+  if (view === "login") {
+    content = (
+      <section className="auth-shell auth-shell--login" aria-labelledby="auth-title">
+        <div className="auth-content">
+          <h1 className="auth-title" id="auth-title">로그인</h1>
+          <div className="auth-main-section">
+            <form className="auth-form" onSubmit={handleLogin}>
+              <div className="auth-field-stack">
+                <AuthField
+                  autoComplete="email"
+                  label="이메일"
+                  name="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="example@email.com"
+                  type="email"
+                  value={email}
+                />
+                <div className="auth-field-with-error">
+                  <AuthField
+                    autoComplete="current-password"
+                    label="비밀번호"
+                    name="password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="password"
+                    type="password"
+                    value={password}
+                  />
+                  {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+                </div>
+              </div>
+              <AuthSubmitButton disabled={isSubmitting}>로그인</AuthSubmitButton>
+            </form>
+            <nav aria-label="계정 도움말" className="auth-login-links">
+              <button onClick={() => changeView("forgot-password")} type="button">비밀번호 찾기</button>
+              <span />
+              <button aria-disabled="true" className="is-disabled" type="button">아이디 찾기</button>
+              <span />
+              <button onClick={() => changeView("signup")} type="button">회원가입</button>
+            </nav>
+          </div>
+          <SocialLoginButtons />
         </div>
-
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <label className="auth-field">
-            <span>이메일</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="user@example.com"
-              autoComplete="email"
-              required
-            />
-          </label>
-          <label className="auth-field">
-            <span>비밀번호</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="8~72자"
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              minLength={8}
-              maxLength={72}
-              required
-            />
-          </label>
-
-          {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
-
-          <button type="submit" className="auth-submit" disabled={isSubmitting}>
-            {isSubmitting ? "처리 중..." : mode === "login" ? "로그인" : "회원가입"}
-          </button>
-        </form>
       </section>
-    </main>
-  );
+    );
+  } else if (view === "signup") {
+    content = (
+      <section className="auth-shell" aria-labelledby="auth-title">
+        <div className="auth-content">
+          <h1 className="auth-title" id="auth-title">회원가입</h1>
+          <div className="auth-main-section">
+            <form className="auth-form" onSubmit={handleSignupRequest}>
+              <div className="auth-field-with-error">
+                <div className="auth-field-stack">
+                  <AuthField label="닉네임" name="nickname" onChange={(event) => setNickname(event.target.value)} placeholder="name" value={nickname} />
+                  <AuthField autoComplete="email" label="이메일" name="email" onChange={(event) => setEmail(event.target.value)} placeholder="example@email.com" type="email" value={email} />
+                  <AuthField autoComplete="new-password" label="비밀번호" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="password" type="password" value={password} />
+                </div>
+                {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+              </div>
+              <AuthSubmitButton>인증 요청</AuthSubmitButton>
+            </form>
+            <p className="auth-prompt">이미 아이디가 있으신가요?<button onClick={() => changeView("login")} type="button">로그인하기</button></p>
+          </div>
+        </div>
+      </section>
+    );
+  } else if (view === "signup-verification") {
+    content = (
+      <section className="auth-shell auth-shell--verification" aria-labelledby="auth-title">
+        <div className="auth-content">
+          <h1 className="auth-title" id="auth-title">회원가입</h1>
+          <div className="auth-main-section">
+            <form className="auth-form" onSubmit={handleVerificationRequest}>
+              <div className="auth-field-with-error">
+                <AuthField label="인증번호" name="verificationCode" onChange={(event) => setVerificationCode(event.target.value)} placeholder="code" value={verificationCode} />
+                {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+              </div>
+              <AuthSubmitButton disabled={isWaiting || isSubmitting}>{buttonLabel}</AuthSubmitButton>
+            </form>
+          </div>
+        </div>
+      </section>
+    );
+  } else if (view === "forgot-password") {
+    content = (
+      <section className="auth-shell auth-shell--password" aria-labelledby="auth-title">
+        <div className="auth-content">
+          <h1 className="auth-title" id="auth-title">비밀번호 찾기</h1>
+          <div className="auth-main-section">
+            <form className="auth-form" onSubmit={handleVerificationRequest}>
+              <div className="auth-field-with-error">
+                <div className="auth-field-stack">
+                  <AuthField autoComplete="email" label="이메일 인증" name="email" onChange={(event) => setEmail(event.target.value)} placeholder="example@email.com" type="email" value={email} />
+                  <AuthField label="인증번호" name="verificationCode" onChange={(event) => setVerificationCode(event.target.value)} placeholder="code" required={false} value={verificationCode} />
+                </div>
+                {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+              </div>
+              <AuthSubmitButton disabled={isWaiting}>{buttonLabel}</AuthSubmitButton>
+            </form>
+          </div>
+        </div>
+      </section>
+    );
+  } else {
+    content = (
+      <section className="auth-shell auth-shell--password" aria-labelledby="auth-title">
+        <div className="auth-content">
+          <h1 className="auth-title" id="auth-title">비밀번호 재설정</h1>
+          <div className="auth-main-section">
+            <form className="auth-form" onSubmit={handlePasswordReset}>
+              <div className="auth-field-with-error">
+                <div className="auth-field-stack">
+                  <AuthField autoComplete="new-password" label="비밀번호" name="password" onChange={(event) => setPassword(event.target.value)} placeholder="password" type="password" value={password} />
+                  <AuthField autoComplete="new-password" label="비밀번호 재확인" name="passwordConfirmation" onChange={(event) => setPasswordConfirmation(event.target.value)} placeholder="password" type="password" value={passwordConfirmation} />
+                </div>
+                {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
+              </div>
+              <AuthSubmitButton>확인</AuthSubmitButton>
+            </form>
+            <p className="auth-prompt">이미 아이디가 있으신가요?<button onClick={() => changeView("login")} type="button">로그인하기</button></p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return <main className="auth-screen auth-screen--login">{content}</main>;
 }
