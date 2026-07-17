@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from app.modules.document_evaluation.interfaces import local_cli as LOCAL_CLI
 from app.modules.document_evaluation.infrastructure import (
     local_document_evaluator as MODULE,
 )
@@ -78,6 +79,58 @@ kept
         self.assertIn("corrected\n\n## Page 2", result)
         self.assertIn("docling_text_p02_001", result)
         self.assertNotIn("broken", result)
+
+    def test_record_evaluation_timing_accumulates_resume_runs(self) -> None:
+        report = {"evaluation_elapsed_seconds_total": 2.5}
+
+        MODULE.record_evaluation_timing(
+            report,
+            evaluation_elapsed_seconds=1.25,
+            restoration_elapsed_seconds=10.0,
+        )
+
+        self.assertEqual(report["evaluation_elapsed_seconds_last_run"], 1.25)
+        self.assertEqual(report["evaluation_elapsed_seconds_total"], 3.75)
+        self.assertEqual(report["restoration_elapsed_seconds"], 10.0)
+        self.assertEqual(report["pdf_to_evaluated_processing_seconds"], 13.75)
+
+    def test_read_restoration_elapsed_seconds_uses_restored_markdown_sibling(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            final_dir = Path(temp_dir)
+            markdown_file = final_dir / "paper.restored.md"
+            timing_file = final_dir / "paper.pipeline_timing.json"
+            timing_file.write_text('{"total_elapsed_seconds": 12.5}', encoding="utf-8")
+
+            elapsed = MODULE.read_restoration_elapsed_seconds(markdown_file)
+
+        self.assertEqual(elapsed, 12.5)
+
+    def test_local_cli_records_evaluator_and_combined_processing_time(self) -> None:
+        report = {"evaluation_elapsed_seconds_total": 1.0}
+        argv = [
+            "local_cli",
+            "--markdown-file",
+            "paper.restored.md",
+            "--pdf-file",
+            "paper.pdf",
+            "--output-file",
+            "paper.evaluation.json",
+        ]
+
+        with (
+            mock.patch("sys.argv", argv),
+            mock.patch.object(LOCAL_CLI, "evaluate", return_value=report),
+            mock.patch.object(LOCAL_CLI, "write_artifacts") as write_artifacts,
+            mock.patch.object(LOCAL_CLI, "read_restoration_elapsed_seconds", return_value=10.0),
+            mock.patch.object(LOCAL_CLI.time, "perf_counter", side_effect=[20.0, 22.5]),
+        ):
+            LOCAL_CLI.main()
+
+        final_report = write_artifacts.call_args_list[-1].args[1]
+        self.assertEqual(write_artifacts.call_count, 1)
+        self.assertEqual(final_report["evaluation_elapsed_seconds_last_run"], 2.5)
+        self.assertEqual(final_report["evaluation_elapsed_seconds_total"], 3.5)
+        self.assertEqual(final_report["pdf_to_evaluated_processing_seconds"], 13.5)
 
     def test_complete_decisions_fills_omitted_vision_result(self) -> None:
         final = {"decisions": []}
