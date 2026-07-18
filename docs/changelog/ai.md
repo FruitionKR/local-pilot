@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki PostgreSQL schema 초기화 분리
+
+- ingestion repository의 테이블·인덱스 생성 SQL을 `postgres_wiki_schema` 책임으로 분리
+- 기존 `init_db()` connection·transaction 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
 ### refactor: Pipeline run application 경계 분리
 
 - run 등록·실행·성공/실패 저장·embedding 시작 순서를 `RunPipelineUseCase`와 port adapter로 이동
