@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: concept resolution ledger 병합 분리
+
+- incoming concept의 canonical slug 병합·alias·근거 합산을 `merge_concept_ledger`로 분리
+- hint resolution과 evidence 연결 계약을 유지하고 Wiki generation 테스트 68개 통과
+
+---
+
 ### refactor: local document 평가 계획 분리
 
 - block 분류, table evidence, fallback chunk와 batch 제한을 명시적 `EvaluationPlan`으로 분리
