@@ -1018,7 +1018,7 @@ def first_data_row_index(rows: list[list[str]]) -> int | None:
     for index, row in enumerate(rows):
         if looks_like_table_header_row(row):
             continue
-        if row_has_numeric_value(row) and len(row) >= 2 and not looks_like_numeric_header_row(row):
+        if row_has_numeric_value(row) and len(row) >= 2:
             return index
     return None
 
@@ -1026,10 +1026,6 @@ def first_data_row_index(rows: list[list[str]]) -> int | None:
 def looks_like_table_header_row(row: list[str]) -> bool:
     joined = " ".join(row).lower()
     return "table" in joined or "parameter" in joined or "level" in joined
-
-
-def looks_like_numeric_header_row(row: list[str]) -> bool:
-    return False
 
 
 def row_has_numeric_value(row: list[str]) -> bool:
@@ -1961,7 +1957,7 @@ def equation_evaluation_reasons(block: dict[str, Any], markdown: str) -> list[st
         (bool(re.search(r"(\\cal\b|\\displaystyle\s*\\cal)", markdown)), "image-to-LaTeX OCR의 hallucinated symbol 또는 깨진 문자 인식이 남아 있음"),
         (bool(re.search(r"\d+\.\d+\s+\d\b", markdown)), "계수 뒤에 변수 없이 숫자만 남은 깨진 항이 있음"),
         (bool(re.search(r"\d+\.\d+\^\{\d+\}", markdown)), "계수 뒤에 변수 없이 지수만 붙은 깨진 항이 있음"),
-        (has_equation_number_evidence(block, markdown) and not has_equation_number_markdown(markdown), "OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음"),
+        (has_equation_number_evidence(block) and not has_equation_number_markdown(markdown), "OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음"),
         (len(re.findall(r"[A-Za-z\\]", markdown)) == 0, "수식 변수 구조가 거의 복원되지 않음"),
         (bool(re.fullmatch(r"(?s)(?:\\\[\s*[-+0-9.\s]+\s*\\\]|\$\$\s*[-+0-9.\s]+\s*\$\$)", markdown)), "좌변 변수 없는 숫자 조각만 복원됨"),
         ("[unclear]" in lowered and lowered.count("[unclear]") > 2, "unreadable term이 너무 많음"),
@@ -2038,7 +2034,7 @@ def has_duplicate_display_math(text: str) -> bool:
     return len(normalized) != len(set(normalized))
 
 
-def has_equation_number_evidence(block: dict[str, Any], markdown: str) -> bool:
+def has_equation_number_evidence(block: dict[str, Any]) -> bool:
     source_text = block.get("source_text", "")
     return bool(re.search(r"\(([1-9][0-9]?)\)", source_text, flags=re.MULTILINE))
 

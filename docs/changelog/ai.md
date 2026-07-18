@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: 문서 복원 dead contract 제거
+
+- 항상 `False`를 반환하던 numeric header predicate와 무의미한 부정 조건 제거
+- equation number evidence 검사에서 사용하지 않던 `markdown` 인자 제거
+
+---
+
 ### refactor: SemanticNormalizer 미사용 인덱스 제거
 
 - 생성 후 사용되지 않던 `source_reference_id` 기반 `by_ref_id` 인덱스 제거
