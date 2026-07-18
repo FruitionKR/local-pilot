@@ -11,6 +11,8 @@ from app.modules.wiki_generation.infrastructure.chat_source_accumulation import 
 )
 from run_lab import (
     PipelineLog,
+    PipelinePrompts,
+    _assemble_wiki_pages,
     _extract_pipeline_source,
     _load_pipeline_prompts,
     _prepare_concept_section_polish,
@@ -66,6 +68,44 @@ class FakeConceptResolutionClient:
 
 
 class WikiGenerationPipelineTest(unittest.TestCase):
+    def test_assemble_wiki_pages_keeps_skeleton_modes_without_api(self) -> None:
+        normalized = {
+            "document": {
+                "document_id": "doc-1",
+                "title": "문서",
+                "source_path": "document.md",
+            },
+            "semantic_notes": [],
+            "concept_ledger": [],
+            "evidence_units": [],
+            "warnings": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            outputs = _assemble_wiki_pages(
+                SimpleNamespace(
+                    mode="offline",
+                    source_page_mode="auto",
+                    concept_page_mode="auto",
+                    selection_mode=None,
+                    save_debug_json=False,
+                ),
+                api_client=None,
+                prompts=PipelinePrompts("", "", "", "", "", "", ""),
+                normalized=normalized,
+                blocks=[],
+                same_source_context_blocks=[],
+                existing_source_artifact=None,
+                existing_source_markdown=None,
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(outputs.source_page_mode, "skeleton")
+        self.assertEqual(outputs.concept_page_mode, "skeleton")
+        self.assertEqual(outputs.source_page["title"], "문서")
+        self.assertEqual(outputs.concept_pages, [])
+        self.assertEqual(outputs.links, [])
+
     def test_load_pipeline_prompts_returns_named_prompt_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             prompt_paths = {}

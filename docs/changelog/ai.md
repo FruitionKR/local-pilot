@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki page 조립 단계 분리
+
+- source page 누적·polish, concept page 생성, link 조립을 명시적 `WikiPageOutputs` 경계로 분리
+- skeleton/API mode와 source artifact 계약을 유지하고 전체 테스트 372개와 28개 subtest 통과
+
+---
+
 ### refactor: pipeline concept resolution 단계 분리
 
 - concept resolution의 LLM 호출, 응답 정규화, same-source context 병합을 독립 함수로 분리
