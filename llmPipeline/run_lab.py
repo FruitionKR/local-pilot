@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 import shutil
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ from app.modules.wiki_generation.application.judge_candidates import (
     judge_concept_update_candidates as _judge_concept_update_candidates,
     judge_meaning_cluster_candidates as _judge_meaning_cluster_candidates,
 )
+from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocument
 from app.modules.wiki_generation.infrastructure.assemble import (
     ConceptPageAssembler,
     GeneratedConceptPageAssembler,
@@ -66,6 +67,17 @@ from app.modules.wiki_generation.infrastructure.source_context_merge import (
 )
 from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+
+
+@dataclass(frozen=True)
+class PipelinePrompts:
+    semantic: str
+    concept: str
+    concept_resolution: str
+    section_polish: str
+    source_accumulation: str
+    wiki_evaluator: str
+    wiki_patch: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -460,6 +472,129 @@ def _prepare_concept_section_polish(
     return concept_pages, generated_concept_pages
 
 
+def _load_pipeline_prompts(args: argparse.Namespace, log: PipelineLog) -> PipelinePrompts:
+    wiki_patch_path = getattr(
+        args,
+        "wiki_patch_system_prompt",
+        "prompts/wiki_generation_patch.system.md",
+    )
+    prompts = PipelinePrompts(
+        semantic=read_prompt(args.system_prompt),
+        concept=read_prompt(args.concept_system_prompt),
+        concept_resolution=read_prompt(args.concept_resolution_system_prompt),
+        section_polish=read_prompt(args.section_polish_system_prompt),
+        source_accumulation=read_prompt(args.source_accumulation_system_prompt),
+        wiki_evaluator=read_prompt(args.wiki_evaluator_system_prompt),
+        wiki_patch=read_prompt(wiki_patch_path),
+    )
+    log.emit(
+        "프롬프트 로드",
+        "시스템 프롬프트를 메모리에 로드했습니다.",
+        {
+            "semantic": args.system_prompt,
+            "concept": args.concept_system_prompt,
+            "concept_resolution": args.concept_resolution_system_prompt,
+            "section_polish": args.section_polish_system_prompt,
+            "source_accumulation": args.source_accumulation_system_prompt,
+            "wiki_evaluator": args.wiki_evaluator_system_prompt,
+            "wiki_patch": wiki_patch_path,
+        },
+    )
+    return prompts
+
+
+def _prepare_api_client(
+    args: argparse.Namespace,
+    out: Path,
+    log: PipelineLog,
+) -> ChatCompletionsJsonClient | None:
+    requires_api = (
+        args.mode in {"api", "generic-chat"}
+        or concept_page_mode(args) in {"api", "full-llm", "section-polish"}
+        or source_page_mode(args) == "section-polish"
+    )
+    if not requires_api:
+        return None
+
+    api_client = load_api_client(args)
+    if args.save_debug_json:
+        write_json(
+            out / "api_config.json",
+            {
+                "provider": args.provider,
+                "endpoint": resolve_endpoint(args),
+                "api_base_url": args.api_base_url,
+                "api_key_source": "--api-key" if args.api_key else args.api_key_env,
+                "model": args.model,
+                "temperature": args.temperature,
+                "timeout_seconds": args.timeout_seconds,
+                "max_tokens": args.max_tokens,
+                "json_mode": args.json_mode,
+                "secret_values_saved": False,
+            },
+        )
+    log.emit(
+        "API 설정",
+        "LLM API 클라이언트를 준비했습니다.",
+        {
+            "provider": args.provider,
+            "model": args.model,
+            "endpoint": resolve_endpoint(args),
+        },
+    )
+    return api_client
+
+
+def _extract_pipeline_source(
+    args: argparse.Namespace,
+    *,
+    input_text: str | None,
+    input_source_name: str,
+    input_path: Path,
+    out: Path,
+    log: PipelineLog,
+) -> tuple[SourceDocument, list[SourceBlock], list[dict[str, str]]]:
+    extractor = MarkdownBlockExtractor()
+    preserve_prefixed_refs = bool(getattr(args, "selection_mode", None))
+    if input_text is not None:
+        document, blocks = extractor.extract_text(
+            input_text,
+            source_path=input_source_name,
+            fallback_title=Path(input_source_name).stem,
+            preserve_prefixed_refs=preserve_prefixed_refs,
+        )
+    else:
+        document, blocks = extractor.extract(input_path)
+
+    source_document_id = getattr(args, "source_document_id", None)
+    if source_document_id:
+        document.document_id = source_document_id
+        for block in blocks:
+            block.document_id = source_document_id
+    if args.save_debug_json:
+        write_json(out / "document.json", asdict(document))
+        write_json(out / "block_map.json", {block.block_id: block.source_reference_id for block in blocks})
+
+    source_block_records = [
+        {
+            "document_id": block.document_id,
+            "block_id": block.block_id,
+            "text": block.text,
+        }
+        for block in blocks
+    ]
+    log.emit(
+        "1. 블록 추출",
+        "Markdown 원문을 블록 객체로 변환했고, 이 블록 목록을 다음 단계 입력으로 전달합니다.",
+        {
+            "문서 ID": document.document_id,
+            "문서 제목": document.title,
+            "블록 수": len(blocks),
+        },
+    )
+    return document, blocks, source_block_records
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -488,85 +623,15 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         },
     )
 
-    semantic_system_prompt = read_prompt(args.system_prompt)
-    concept_system_prompt = read_prompt(args.concept_system_prompt)
-    concept_resolution_system_prompt = read_prompt(args.concept_resolution_system_prompt)
-    section_polish_system_prompt = read_prompt(args.section_polish_system_prompt)
-    source_accumulation_system_prompt = read_prompt(args.source_accumulation_system_prompt)
-    wiki_evaluator_system_prompt = read_prompt(args.wiki_evaluator_system_prompt)
-    wiki_patch_prompt_path = getattr(
+    prompts = _load_pipeline_prompts(args, log)
+    api_client = _prepare_api_client(args, out, log)
+    document, blocks, source_block_records = _extract_pipeline_source(
         args,
-        "wiki_patch_system_prompt",
-        "prompts/wiki_generation_patch.system.md",
-    )
-    wiki_patch_system_prompt = read_prompt(wiki_patch_prompt_path)
-    log.emit(
-        "프롬프트 로드",
-        "시스템 프롬프트를 메모리에 로드했습니다.",
-        {
-            "semantic": args.system_prompt,
-            "concept": args.concept_system_prompt,
-            "concept_resolution": args.concept_resolution_system_prompt,
-            "section_polish": args.section_polish_system_prompt,
-            "source_accumulation": args.source_accumulation_system_prompt,
-            "wiki_evaluator": args.wiki_evaluator_system_prompt,
-            "wiki_patch": wiki_patch_prompt_path,
-        },
-    )
-
-    api_client = None
-    if args.mode in {"api", "generic-chat"} or concept_page_mode(args) in {"api", "full-llm", "section-polish"} or source_page_mode(args) == "section-polish":
-        api_client = load_api_client(args)
-        if args.save_debug_json:
-            write_json(
-                out / "api_config.json",
-                {
-                    "provider": args.provider,
-                    "endpoint": resolve_endpoint(args),
-                    "api_base_url": args.api_base_url,
-                    "api_key_source": "--api-key" if args.api_key else args.api_key_env,
-                    "model": args.model,
-                    "temperature": args.temperature,
-                    "timeout_seconds": args.timeout_seconds,
-                    "max_tokens": args.max_tokens,
-                    "json_mode": args.json_mode,
-                    "secret_values_saved": False,
-                },
-            )
-        log.emit("API 설정", "LLM API 클라이언트를 준비했습니다.", {"provider": args.provider, "model": args.model, "endpoint": resolve_endpoint(args)})
-
-    # 1. Extract blocks. Chat sources preserve backend-provided global pair refs.
-    extractor = MarkdownBlockExtractor()
-    preserve_prefixed_refs = bool(getattr(args, "selection_mode", None))
-    if input_text is not None:
-        document, blocks = extractor.extract_text(
-            input_text,
-            source_path=input_source_name,
-            fallback_title=Path(input_source_name).stem,
-            preserve_prefixed_refs=preserve_prefixed_refs,
-        )
-    else:
-        document, blocks = extractor.extract(input_path)
-    source_document_id = getattr(args, "source_document_id", None)
-    if source_document_id:
-        document.document_id = source_document_id
-        for block in blocks:
-            block.document_id = source_document_id
-    if args.save_debug_json:
-        write_json(out / "document.json", asdict(document))
-        write_json(out / "block_map.json", {b.block_id: b.source_reference_id for b in blocks})
-    source_block_records = [
-        {
-            "document_id": block.document_id,
-            "block_id": block.block_id,
-            "text": block.text,
-        }
-        for block in blocks
-    ]
-    log.emit(
-        "1. 블록 추출",
-        "Markdown 원문을 블록 객체로 변환했고, 이 블록 목록을 다음 단계 입력으로 전달합니다.",
-        {"문서 ID": document.document_id, "문서 제목": document.title, "블록 수": len(blocks)},
+        input_text=input_text,
+        input_source_name=input_source_name,
+        input_path=input_path,
+        out=out,
+        log=log,
     )
 
     # 2. Build LLM packets with short [B0001] anchors only.
@@ -604,8 +669,8 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     max_eval_attempts = max(1, int(getattr(args, "max_eval_attempts", 2) or 2))
     notes, normalized, generation_evaluations = _run_wiki_generation_loop(
         api_client=api_client,
-        semantic_system_prompt=semantic_system_prompt,
-        wiki_evaluator_system_prompt=wiki_evaluator_system_prompt,
+        semantic_system_prompt=prompts.semantic,
+        wiki_evaluator_system_prompt=prompts.wiki_evaluator,
         packets=packets,
         raw_dir=raw_dir,
         log=log,
@@ -617,7 +682,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
         max_eval_attempts=max_eval_attempts,
         source_context=semantic_source_context,
-        wiki_patch_system_prompt=wiki_patch_system_prompt,
+        wiki_patch_system_prompt=prompts.wiki_patch,
     )
 
     # 4. Backend normalize/merge/mention expansion.
@@ -640,7 +705,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         existing_concepts = load_existing_concept_index(getattr(args, "existing_wiki_dir", None))
     missing_related_hints = normalized.get("missing_related_concept_hints", [])
     assert api_client is not None
-    concept_resolver = ApiConceptResolver(api_client, concept_resolution_system_prompt)
+    concept_resolver = ApiConceptResolver(api_client, prompts.concept_resolution)
     raw_resolution = concept_resolver.resolve(normalized["concept_ledger"], existing_concepts, missing_related_hints)
     if args.save_debug_json:
         write_json(ensure_dir(out / "raw_llm_outputs") / "concept_resolution.json", raw_resolution)
@@ -695,8 +760,8 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     existing_source_context_blocks = source_context_blocks(existing_source_artifact_with_markdown)
 
     # 5. Assemble source page with optional section polish.
-    section_polisher = ApiSectionPolisher(api_client, section_polish_system_prompt) if api_client is not None else None
-    source_accumulator = ApiSourceAccumulator(api_client, source_accumulation_system_prompt) if api_client is not None else None
+    section_polisher = ApiSectionPolisher(api_client, prompts.section_polish) if api_client is not None else None
+    source_accumulator = ApiSourceAccumulator(api_client, prompts.source_accumulation) if api_client is not None else None
     raw_polish_dir = ensure_dir(out / "raw_llm_outputs" / "section_polish") if args.save_debug_json else None
     invalid_polish_dir = out / "raw_llm_outputs" / "section_polish_invalid"
     source_polish = {}
@@ -771,7 +836,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         )
     elif cp_mode in {"api", "full-llm"}:
         assert api_client is not None
-        concept_generator = ApiConceptPageGenerator(api_client, concept_system_prompt)
+        concept_generator = ApiConceptPageGenerator(api_client, prompts.concept)
         generator_assembler = GeneratedConceptPageAssembler()
         for concept in normalized["concept_ledger"]:
             source_blocks = concept_source_blocks_by_slug.get(concept["slug"], [])
@@ -900,7 +965,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "source_page_mode": sp_mode,
         "concept_page_mode": cp_mode,
         "document_id": document.document_id,
-        "source_document_id": source_document_id,
+        "source_document_id": getattr(args, "source_document_id", None),
         "source_page": source_page,
         "source_extraction_artifact": _json_safe(source_page_normalized.get("source_extraction_artifact")),
         "source_blocks": source_block_records,

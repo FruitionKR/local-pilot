@@ -11,6 +11,8 @@ from app.modules.wiki_generation.infrastructure.chat_source_accumulation import 
 )
 from run_lab import (
     PipelineLog,
+    _extract_pipeline_source,
+    _load_pipeline_prompts,
     _prepare_concept_section_polish,
     _prepare_source_page_polish,
     _run_wiki_generation_loop,
@@ -49,6 +51,51 @@ class FakeSectionPolisher:
 
 
 class WikiGenerationPipelineTest(unittest.TestCase):
+    def test_load_pipeline_prompts_returns_named_prompt_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prompt_paths = {}
+            for name in (
+                "system_prompt",
+                "concept_system_prompt",
+                "concept_resolution_system_prompt",
+                "section_polish_system_prompt",
+                "source_accumulation_system_prompt",
+                "wiki_evaluator_system_prompt",
+                "wiki_patch_system_prompt",
+            ):
+                path = Path(tmp_dir) / f"{name}.md"
+                path.write_text(name, encoding="utf-8")
+                prompt_paths[name] = str(path)
+
+            prompts = _load_pipeline_prompts(
+                SimpleNamespace(**prompt_paths),
+                PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(prompts.semantic, "system_prompt")
+        self.assertEqual(prompts.concept, "concept_system_prompt")
+        self.assertEqual(prompts.wiki_patch, "wiki_patch_system_prompt")
+
+    def test_extract_pipeline_source_applies_requested_document_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            document, blocks, source_block_records = _extract_pipeline_source(
+                SimpleNamespace(
+                    selection_mode=None,
+                    source_document_id="requested-document",
+                    save_debug_json=False,
+                ),
+                input_text="# 문서\n\n본문입니다.",
+                input_source_name="inline.md",
+                input_path=Path("inline.md"),
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(document.document_id, "requested-document")
+        self.assertTrue(blocks)
+        self.assertTrue(all(block.document_id == "requested-document" for block in blocks))
+        self.assertEqual(source_block_records[0]["document_id"], "requested-document")
+
     def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
         normalized = {
             "document": {"document_id": "chat-doc-1"},

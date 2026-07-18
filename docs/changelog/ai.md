@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: pipeline 입력 준비 단계 분리
+
+- `run_pipeline`의 prompt 로드, API client 준비, source block 추출을 책임별 함수로 분리
+- 호출 순서와 로그·debug artifact 계약을 유지하고 전체 테스트 370개와 28개 subtest 통과
+
+---
+
 ### fix: Wiki evaluator 응답 형식 검증
 
 - 잘못된 `scores`, `issues`, `warnings`, 상태 필드를 안전한 평가 실패로 변환해 재시도 경로 유지
