@@ -44,6 +44,16 @@ class Block:
     markdown: str
 
 
+@dataclass(frozen=True)
+class EvaluationPlan:
+    table_evidence: dict[str, tuple[str | None, int | None]]
+    local_blocks: list[Block]
+    fallback_blocks: list[Block]
+    fallback_chunks: list[list[Block]]
+    batches: list[tuple[str, list[Block]]]
+    selected_batches: list[tuple[str, list[Block]]]
+
+
 def parse_blocks(markdown: str) -> list[Block]:
     matches = list(BLOCK_PATTERN.finditer(markdown))
     blocks = []
@@ -825,8 +835,10 @@ def write_artifacts(args: LocalDocumentEvaluationCommand, report: dict[str, Any]
         args.output_report_file.write_text(markdown_report(report), encoding="utf-8")
 
 
-def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
-    blocks = parse_blocks(args.markdown_file.read_text(encoding="utf-8"))
+def build_evaluation_plan(
+    blocks: list[Block],
+    args: LocalDocumentEvaluationCommand,
+) -> EvaluationPlan:
     table_evidence: dict[str, tuple[str | None, int | None]] = {}
     for block in blocks:
         if block.type not in {"table", "table_candidate"}:
@@ -853,6 +865,21 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
         batches.append(("local", local_blocks))
     batches.extend(("text_fallback", chunk) for chunk in fallback_chunks)
     selected_batches = batches[: args.max_chunks] if args.max_chunks else batches
+    return EvaluationPlan(
+        table_evidence=table_evidence,
+        local_blocks=local_blocks,
+        fallback_blocks=fallback_blocks,
+        fallback_chunks=fallback_chunks,
+        batches=batches,
+        selected_batches=selected_batches,
+    )
+
+
+def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
+    blocks = parse_blocks(args.markdown_file.read_text(encoding="utf-8"))
+    plan = build_evaluation_plan(blocks, args)
+    table_evidence = plan.table_evidence
+    selected_batches = plan.selected_batches
     if args.resume and args.output_file.exists() and json.loads(
         args.output_file.read_text(encoding="utf-8")
     ).get("evaluation_flow") == EVALUATION_FLOW:
@@ -877,10 +904,10 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
             "pdf_file": str(args.pdf_file),
             "block_count": len(blocks),
             "evaluation_flow": EVALUATION_FLOW,
-            "local_candidate_count": len(local_blocks),
-            "fallback_candidate_count": len(fallback_blocks),
-            "text_evaluator_call_count": len(fallback_chunks),
-            "chunk_count": len(batches),
+            "local_candidate_count": len(plan.local_blocks),
+            "fallback_candidate_count": len(plan.fallback_blocks),
+            "text_evaluator_call_count": len(plan.fallback_chunks),
+            "chunk_count": len(plan.batches),
             "evaluated_chunk_count": len(selected_batches),
             "chunks": [],
         }

@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: local document 평가 계획 분리
+
+- block 분류, table evidence, fallback chunk와 batch 제한을 명시적 `EvaluationPlan`으로 분리
+- 모델 호출과 resume 순서를 유지하고 문서 평가 테스트 36개 통과
+
+---
+
 ### refactor: 문서 복원 recovery 단계 분리
 
 - `recover_block`에서 deterministic 후보 선택, SLLM system message 결정, 결과 파일 저장 단계를 분리
