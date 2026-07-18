@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import uuid
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
@@ -22,19 +21,26 @@ from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     refs_in_text as _refs_in_text,
 )
 from app.modules.wiki_ingestion.infrastructure.concept_evidence import append_concept_evidence
-from app.modules.wiki_ingestion.infrastructure.embedding_units import (
-    clean_unit_text as _clean_unit_text,
-    extract_embedding_units as _extract_embedding_units,
-    hash_text as _hash_text,
-    unit_representation as _unit_representation,
-)
+from app.modules.wiki_ingestion.infrastructure.embedding_units import clean_unit_text as _clean_unit_text
 from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
     markdown_list_section as _markdown_list_section,
     markdown_section as _markdown_section,
 )
-from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object, write_text_object
+from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_schema import (
     initialize_wiki_schema,
+)
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
+    load_existing_concept_ids_by_slug as _load_existing_concept_ids_by_slug,
+    persist_embedding_units as _persist_embedding_units,
+    read_optional_text_object as _read_optional_text_object,
+    refresh_source_related_links as _refresh_source_related_links,
+    resolve_or_create_wiki_page_id as _resolve_or_create_wiki_page_id,
+    source_related_label as _source_related_label,
+    upload_wiki_markdown as _upload_wiki_markdown,
+    upsert_document_wiki_link as _upsert_document_wiki_link,
+    upsert_wiki_page as _upsert_wiki_page,
+    upsert_wiki_page_link as _upsert_wiki_page_link,
 )
 from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     markdown_title as _markdown_title,
@@ -44,9 +50,6 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     stored_manifest as _stored_manifest,
 )
 from app.modules.wiki_ingestion.infrastructure.wiki_lint_report import render_lint_log_markdown
-
-
-SOURCE_RELATED_THRESHOLD = 0.75
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:
@@ -710,74 +713,6 @@ def _persist_source_blocks(conn: psycopg.Connection, document_id: str, manifest:
         )
 
 
-def _persist_embedding_units(conn: psycopg.Connection, page_id: str, document_id: str, markdown: str) -> None:
-    if not markdown:
-        return
-    units = _extract_embedding_units(markdown)
-    conn.execute("DELETE FROM wiki_embedding_units WHERE page_id = %s", (page_id,))
-    for index, unit in enumerate(units, start=1):
-        representation_text = _unit_representation(unit["unit_type"], unit["text"])
-        representation_hash = _hash_text(representation_text)
-        vector_id = f"embedding:{representation_hash}"
-        unit_id = f"unit:{_hash_text('|'.join([page_id, unit['unit_type'], ','.join(unit['block_refs']), unit['text']]))[:24]}"
-        conn.execute(
-            """
-            INSERT INTO wiki_embedding_vectors (
-                id,
-                embedding_model,
-                representation_hash,
-                representation_text,
-                status,
-                updated_at
-            )
-            VALUES (%s, %s, %s, %s, 'pending', now())
-            ON CONFLICT (embedding_model, representation_hash) DO UPDATE SET
-                representation_text = EXCLUDED.representation_text,
-                updated_at = now()
-            """,
-            (vector_id, "canonical-text", representation_hash, representation_text),
-        )
-        conn.execute(
-            """
-            INSERT INTO wiki_embedding_units (
-                id,
-                embedding_vector_id,
-                page_id,
-                source_document_id,
-                unit_type,
-                block_refs,
-                text,
-                weight,
-                updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
-            ON CONFLICT (id) DO UPDATE SET
-                embedding_vector_id = EXCLUDED.embedding_vector_id,
-                page_id = EXCLUDED.page_id,
-                source_document_id = EXCLUDED.source_document_id,
-                unit_type = EXCLUDED.unit_type,
-                block_refs = EXCLUDED.block_refs,
-                text = EXCLUDED.text,
-                weight = EXCLUDED.weight,
-                updated_at = now()
-            """,
-            (
-                unit_id,
-                vector_id,
-                page_id,
-                document_id,
-                unit["unit_type"],
-                unit["block_refs"],
-                unit["text"],
-                unit["weight"],
-            ),
-        )
-
-
-def _upload_wiki_markdown(markdown: str, object_name: str) -> str:
-    return write_text_object(object_name, markdown)
-
-
 def _persist_meaning_cluster_artifacts(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> None:
     artifact = manifest.get("meaning_clusters")
     if not isinstance(artifact, dict):
@@ -799,13 +734,6 @@ def _persist_meaning_cluster_artifacts(conn: psycopg.Connection, document_id: st
         separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
         log_uri = write_text_object(log_path, f"{existing_log}{separator}{log_markdown}")
         artifact["log_uri"] = log_uri
-
-
-def _read_optional_text_object(object_name: str) -> str:
-    try:
-        return read_text_object(object_name)
-    except Exception:
-        return ""
 
 
 def _apply_concept_update_decisions(
@@ -856,189 +784,3 @@ def _apply_concept_update_decisions(
             continue
         write_text_object(row["markdown_uri"], updated_markdown)
         _persist_embedding_units(conn, row["id"], document_id, updated_markdown)
-
-
-def _refresh_source_related_links(conn: psycopg.Connection, user_id: str, workspace_id: str) -> None:
-    rows = conn.execute(
-        """
-        SELECT l.from_page_id AS source_id, l.to_page_id AS concept_id, c.title AS concept_title
-        FROM wiki_page_links l
-        JOIN wiki_pages s ON s.id = l.from_page_id
-        JOIN wiki_pages c ON c.id = l.to_page_id
-        WHERE l.link_type = 'source_mentions_concept'
-          AND s.page_type = 'source'
-          AND c.page_type = 'concept'
-          AND s.status = 'active'
-          AND c.status = 'active'
-          AND s.user_id = %s
-          AND s.workspace_id = %s
-          AND c.user_id = %s
-          AND c.workspace_id = %s
-        """,
-        (user_id, workspace_id, user_id, workspace_id),
-    ).fetchall()
-
-    conn.execute(
-        """
-        DELETE FROM wiki_page_links l
-        USING wiki_pages from_page, wiki_pages to_page
-        WHERE l.link_type = 'source_related_to'
-          AND from_page.id = l.from_page_id
-          AND to_page.id = l.to_page_id
-          AND from_page.page_type = 'source'
-          AND to_page.page_type = 'source'
-          AND from_page.user_id = %s
-          AND from_page.workspace_id = %s
-          AND to_page.user_id = %s
-          AND to_page.workspace_id = %s
-        """,
-        (user_id, workspace_id, user_id, workspace_id),
-    )
-    source_concepts: dict[str, dict[str, str]] = {}
-    concept_source_counts: dict[str, int] = {}
-    for row in rows:
-        source_id = row["source_id"]
-        concept_id = row["concept_id"]
-        source_concepts.setdefault(source_id, {})[concept_id] = row["concept_title"] or concept_id
-
-    for concepts in source_concepts.values():
-        for concept_id in concepts:
-            concept_source_counts[concept_id] = concept_source_counts.get(concept_id, 0) + 1
-
-    def concept_weight(concept_id: str) -> float:
-        return 1.0 / max(1, concept_source_counts.get(concept_id, 1))
-
-    source_ids = sorted(source_concepts)
-    for i, source_a in enumerate(source_ids):
-        concepts_a = source_concepts[source_a]
-        total_a = sum(concept_weight(concept_id) ** 2 for concept_id in concepts_a)
-        if total_a <= 0:
-            continue
-        for source_b in source_ids[i + 1 :]:
-            concepts_b = source_concepts[source_b]
-            shared_concepts = sorted(set(concepts_a).intersection(concepts_b))
-            if not shared_concepts:
-                continue
-            total_b = sum(concept_weight(concept_id) ** 2 for concept_id in concepts_b)
-            if total_b <= 0:
-                continue
-            shared_weight = sum(concept_weight(concept_id) ** 2 for concept_id in shared_concepts)
-            score = shared_weight / ((total_a * total_b) ** 0.5)
-            if score < SOURCE_RELATED_THRESHOLD:
-                continue
-            label = _source_related_label(shared_concepts, concepts_a)
-            _upsert_wiki_page_link(conn, source_a, source_b, "source_related_to", label, score)
-
-
-def _source_related_label(shared_concepts: list[str], concept_titles: dict[str, str]) -> str:
-    titles = [concept_titles.get(concept_id, concept_id) for concept_id in shared_concepts]
-    visible_titles = titles[:5]
-    suffix = f" 외 {len(titles) - len(visible_titles)}개" if len(titles) > len(visible_titles) else ""
-    return f"공유 concept: {', '.join(visible_titles)}{suffix}"
-
-
-def _load_existing_concept_ids_by_slug(conn: psycopg.Connection, user_id: str, workspace_id: str) -> dict[str, str]:
-    rows = conn.execute(
-        """
-        SELECT slug, id
-        FROM wiki_pages
-        WHERE page_type = 'concept'
-          AND status = 'active'
-          AND user_id = %s
-          AND workspace_id = %s
-        """,
-        (user_id, workspace_id),
-    ).fetchall()
-    return {row["slug"]: row["id"] for row in rows}
-
-
-def _resolve_or_create_wiki_page_id(
-    conn: psycopg.Connection,
-    user_id: str,
-    workspace_id: str,
-    page_type: str,
-    slug: str,
-) -> str:
-    row = conn.execute(
-        """
-        SELECT id
-        FROM wiki_pages
-        WHERE user_id = %s
-          AND workspace_id = %s
-          AND page_type = %s
-          AND slug = %s
-        """,
-        (user_id, workspace_id, page_type, slug),
-    ).fetchone()
-    if row:
-        return row["id"]
-    return f"wiki_page_{uuid.uuid4()}"
-
-
-def _upsert_wiki_page(
-    conn: psycopg.Connection,
-    page_id: str,
-    page_type: str,
-    title: str,
-    slug: str,
-    summary: str,
-    markdown_uri: str,
-    user_id: str,
-    workspace_id: str,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO wiki_pages (id, page_type, title, slug, summary, markdown_uri, user_id, workspace_id, status, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'active', now(), now())
-        ON CONFLICT (user_id, workspace_id, page_type, slug) DO UPDATE SET
-            page_type = EXCLUDED.page_type,
-            title = EXCLUDED.title,
-            slug = EXCLUDED.slug,
-            summary = EXCLUDED.summary,
-            markdown_uri = EXCLUDED.markdown_uri,
-            user_id = EXCLUDED.user_id,
-            workspace_id = EXCLUDED.workspace_id,
-            status = 'active',
-            updated_at = now()
-        """,
-        (page_id, page_type, title, slug, summary, markdown_uri, user_id, workspace_id),
-    )
-
-
-def _upsert_document_wiki_link(
-    conn: psycopg.Connection,
-    document_id: str,
-    wiki_page_id: str,
-    relation_type: str,
-    confidence: float | None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO document_wiki_links (document_id, wiki_page_id, relation_type, confidence, created_at)
-        VALUES (%s, %s, %s, %s, now())
-        ON CONFLICT (document_id, wiki_page_id, relation_type) DO UPDATE SET
-            confidence = EXCLUDED.confidence
-        """,
-        (document_id, wiki_page_id, relation_type, confidence),
-    )
-
-
-def _upsert_wiki_page_link(
-    conn: psycopg.Connection,
-    from_page_id: str,
-    to_page_id: str,
-    link_type: str,
-    label: str | None,
-    confidence: float | None,
-) -> None:
-    conn.execute(
-        """
-        INSERT INTO wiki_page_links (from_page_id, to_page_id, link_type, label, confidence, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, now(), now())
-        ON CONFLICT (from_page_id, to_page_id, link_type) DO UPDATE SET
-            label = EXCLUDED.label,
-            confidence = EXCLUDED.confidence,
-            updated_at = now()
-        """,
-        (from_page_id, to_page_id, link_type, label, confidence),
-    )

@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki PostgreSQL writer 경계 분리
+
+- page/link upsert, embedding unit 저장, source-related 갱신, object storage I/O를 공통 writer로 분리
+- 기존 repository private import 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
 ### refactor: Wiki PostgreSQL schema 초기화 분리
 
 - ingestion repository의 테이블·인덱스 생성 SQL을 `postgres_wiki_schema` 책임으로 분리
