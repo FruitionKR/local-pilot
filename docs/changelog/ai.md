@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: semantic note anchor 검증 통합
+
+- `_normalize_single_note`의 내부 anchor 변환 함수를 기존 `_anchor_refs`와 통합
+- unknown block 경고, limit, 중복 제거 순서를 유지하고 Wiki generation 테스트 69개 통과
+
+---
+
 ### refactor: meaning-cluster ingest 로그 렌더링 분리
 
 - artifact assembler에 섞여 있던 ingest 로그 Markdown 생성을 `meaning_cluster_log.py`의 순수 함수로 분리
