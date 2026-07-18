@@ -70,26 +70,42 @@ class FakeConceptResolutionClient:
 
 class WikiGenerationPipelineTest(unittest.TestCase):
     def test_assemble_meaning_clusters_handles_empty_candidates(self) -> None:
+        call_order = []
         with tempfile.TemporaryDirectory() as tmp_dir:
-            artifact, maintenance_summary = _assemble_meaning_clusters(
-                SimpleNamespace(user_id="user-1", workspace_id="workspace-1"),
-                api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
-                normalized={
-                    "concept_ledger": [],
-                    "existing_concept_index": [],
-                    "section_candidates": [],
-                    "mentions": [],
-                    "unresolved_related_concept_hints": [],
-                    "evidence_units": [],
-                },
-                existing_active_clusters="",
-                out=Path(tmp_dir),
-                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
-            )
+            with patch(
+                "run_lab._judge_concept_update_candidates",
+                side_effect=lambda **_kwargs: call_order.append("concept_judge") or [],
+            ):
+                with patch(
+                    "run_lab._read_existing_active_clusters",
+                    side_effect=lambda *_args: call_order.append("active_read") or "",
+                ):
+                    with patch(
+                        "run_lab._judge_meaning_cluster_candidates",
+                        side_effect=lambda **_kwargs: call_order.append("cluster_judge") or [],
+                    ):
+                        artifact, maintenance_summary = _assemble_meaning_clusters(
+                            SimpleNamespace(user_id="user-1", workspace_id="workspace-1"),
+                            api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                            normalized={
+                                "concept_ledger": [],
+                                "existing_concept_index": [],
+                                "section_candidates": [],
+                                "mentions": [],
+                                "unresolved_related_concept_hints": [],
+                                "evidence_units": [],
+                            },
+                            out=Path(tmp_dir),
+                            log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+                        )
 
         self.assertEqual(artifact["clusters"], [])
         self.assertEqual(maintenance_summary["promotion_candidate_count"], 0)
         self.assertEqual(maintenance_summary["relation_candidate_count"], 0)
+        self.assertEqual(
+            call_order,
+            ["concept_judge", "active_read", "cluster_judge"],
+        )
 
     def test_assemble_wiki_pages_keeps_skeleton_modes_without_api(self) -> None:
         normalized = {

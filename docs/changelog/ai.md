@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### fix: Meaning Cluster active 상태 읽기 순서 복원
+
+- concept update 판단 직후 active cluster Markdown을 읽도록 기존 ingest 순서 복원
+- 동시 ingest의 최신 상태 반영 시점을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
 ### refactor: Wiki evaluator 내부 타입 명시
 
 - 정규화 이후 evaluator 결과를 `GenerationEvaluation`으로 명시해 graph·repair·artifact port 계약 통합

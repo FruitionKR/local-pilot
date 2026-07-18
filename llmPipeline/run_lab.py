@@ -885,7 +885,6 @@ def _assemble_meaning_clusters(
     *,
     api_client: ChatCompletionsJsonClient,
     normalized: dict[str, Any],
-    existing_active_clusters: str,
     out: Path,
     log: PipelineLog,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -927,6 +926,10 @@ def _assemble_meaning_clusters(
             "relation_candidate 수": len(core_relation_decisions),
             "cluster judge 대상": len(cluster_judge_candidates),
         },
+    )
+    existing_active_clusters = _read_existing_active_clusters(
+        args.user_id,
+        args.workspace_id,
     )
     cluster_decisions = _judge_meaning_cluster_candidates(
         completion=api_client,
@@ -1116,12 +1119,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         log=log,
     )
 
-    existing_active_clusters = _read_existing_active_clusters(args.user_id, args.workspace_id)
     meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
         args,
         api_client=api_client,
         normalized=normalized,
-        existing_active_clusters=existing_active_clusters,
         out=out,
         log=log,
     )
