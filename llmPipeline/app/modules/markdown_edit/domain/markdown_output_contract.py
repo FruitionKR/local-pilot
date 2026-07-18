@@ -103,50 +103,65 @@ def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
 
 
 def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> list[str]:
-    failures: list[str] = []
     instruction = request.instruction.lower()
     nonempty_lines = [line for line in replacement.splitlines() if line.strip()]
+    failures = _edit_goal_shape_failures(request, replacement, nonempty_lines)
+    failures.extend(_requested_markdown_failures(instruction, replacement, nonempty_lines))
 
+    if request.edit_goal in PLAIN_TEXT_EDIT_GOALS and not _source_starts_with_list(request.markdown):
+        if re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", replacement):
+            failures.append("plain-text edit must not add a list marker")
+
+    if request.edit_goal in PROTECTED_EDIT_GOALS:
+        failures.extend(_protected_content_failures(request.markdown, replacement))
+
+    if request.edit_goal == "shorten":
+        failures.extend(_shortening_failures(request.markdown, instruction, replacement))
+
+    return failures
+
+
+def _edit_goal_shape_failures(
+    request: MarkdownEditRequest,
+    replacement: str,
+    nonempty_lines: list[str],
+) -> list[str]:
+    failures: list[str] = []
     if request.edit_goal == "checklist":
         if not nonempty_lines or not all(re.match(r"^- \[ \] ", line) for line in nonempty_lines):
             failures.append("checklist items must all start with `- [ ] `")
-
     if request.edit_goal == "insert_after":
         source_heading = next(iter(_atx_heading_lines(request.markdown)), "")
         if source_heading and source_heading in _atx_heading_lines(replacement):
             failures.append("insert_after output must not repeat the current section heading")
-
     if request.edit_goal == "bullet_list":
         if not nonempty_lines or not all(re.match(r"^\s*[-*+]\s+", line) for line in nonempty_lines):
             failures.append("bullet list items must use plain bullet markers")
         if any(re.match(r"^\s*[-*+]\s+\[[ xX]\]\s+", line) for line in nonempty_lines):
             failures.append("plain bullet list must not contain checkboxes")
+    return failures
 
+
+def _requested_markdown_failures(instruction: str, replacement: str, nonempty_lines: list[str]) -> list[str]:
+    failures: list[str] = []
     if _asks_for_numbered_list(instruction):
         if not nonempty_lines or not all(re.match(r"^\d+\.\s+", line) for line in nonempty_lines):
             failures.append("numbered list items must start directly with `1.`, `2.`, and so on")
-
     if _asks_for_blockquote(instruction) and not any(line.startswith("> ") for line in nonempty_lines):
         failures.append("blockquote marker `> ` must start its line")
-
     if _asks_for_heading(instruction) and not any(re.match(r"^#{1,6}\s+", line) for line in nonempty_lines):
         failures.append("heading must start with `# ` through `###### `")
-
     if _asks_for_bold(instruction) and not re.search(r"\*\*[^*\n]+\*\*", replacement):
         failures.append("bold text must use `**` delimiters")
-
     if _asks_for_italic(instruction) and not re.search(r"(?<!\*)\*[^*\n]+\*(?!\*)", replacement):
         failures.append("italic text must use `*` delimiters")
-
     if _asks_for_strikethrough(instruction) and not re.search(r"~~[^~\n]+~~", replacement):
         failures.append("strikethrough text must use `~~` delimiters")
-
     if _asks_for_display_math(instruction):
         if not re.search(r"\$\$[\s\S]+\$\$", replacement):
             failures.append("display math must use `$$` delimiters")
         if "```" in replacement or "~~~" in replacement:
             failures.append("display math must not be wrapped in a code fence")
-
     if "mermaid" in instruction:
         if not re.search(r"```mermaid\s+[\s\S]+```", replacement):
             failures.append("Mermaid output must use a `mermaid` code fence")
@@ -154,34 +169,34 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
             failures.append("Mermaid output must contain flowchart edges")
         if _asks_for_linear_sequence(instruction) and ("{" in replacement or "}" in replacement):
             failures.append("linear Mermaid sequence must not invent a decision branch")
-
     if _asks_for_meeting_notes(instruction):
         for heading in ("## 논의 사항", "## 결정 사항", "## 다음 작업"):
             if heading not in replacement:
                 failures.append(f"meeting notes must contain `{heading}`")
+    return failures
 
-    if request.edit_goal in PLAIN_TEXT_EDIT_GOALS and not _source_starts_with_list(request.markdown):
-        if re.match(r"^\s*(?:[-*+]\s+|\d+\.\s+)", replacement):
-            failures.append("plain-text edit must not add a list marker")
 
-    if request.edit_goal in PROTECTED_EDIT_GOALS:
-        for marker in set(re.findall(r"\[\^[^\]\n]+\]", request.markdown)):
-            if replacement.count(marker) < request.markdown.count(marker):
-                failures.append(f"footnote reference count must be preserved: {marker}")
-        if not re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", request.markdown) and re.search(
-            r"[\u3400-\u4dbf\u4e00-\u9fff]", replacement
-        ):
-            failures.append("Korean text edit must not introduce Han characters absent from the source")
+def _protected_content_failures(source: str, replacement: str) -> list[str]:
+    failures: list[str] = []
+    for marker in set(re.findall(r"\[\^[^\]\n]+\]", source)):
+        if replacement.count(marker) < source.count(marker):
+            failures.append(f"footnote reference count must be preserved: {marker}")
+    if not re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", source) and re.search(
+        r"[\u3400-\u4dbf\u4e00-\u9fff]", replacement
+    ):
+        failures.append("Korean text edit must not introduce Han characters absent from the source")
+    return failures
 
-    if request.edit_goal == "shorten":
-        if _asks_for_one_sentence(instruction) and "\n" not in request.markdown and "\n" in replacement.strip():
-            failures.append("one-sentence shortening must stay on one line")
-        if _asks_to_shorten(instruction) and len(replacement.strip()) >= len(request.markdown.strip()):
-            failures.append("shortening result must be shorter than the source")
-        for anchor in _literal_anchors(request.markdown):
-            if anchor not in replacement:
-                failures.append(f"shortening must preserve literal anchor: {anchor}")
 
+def _shortening_failures(source: str, instruction: str, replacement: str) -> list[str]:
+    failures: list[str] = []
+    if _asks_for_one_sentence(instruction) and "\n" not in source and "\n" in replacement.strip():
+        failures.append("one-sentence shortening must stay on one line")
+    if _asks_to_shorten(instruction) and len(replacement.strip()) >= len(source.strip()):
+        failures.append("shortening result must be shorter than the source")
+    for anchor in _literal_anchors(source):
+        if anchor not in replacement:
+            failures.append(f"shortening must preserve literal anchor: {anchor}")
     return failures
 
 

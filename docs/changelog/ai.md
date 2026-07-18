@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Markdown output validator 규칙 분리
+
+- 단일 함수에 모여 있던 edit goal 형상, 요청 문법, 보호 콘텐츠, 축약 검증을 명시적 규칙 함수로 분리
+- 오류 수집 순서와 외부 계약을 유지하고 Markdown edit 테스트 28개 통과
+
+---
+
 ### refactor: concept evidence Markdown 갱신 분리
 
 - concept 문서의 Evidence 섹션 추가·placeholder 제거·중복 방지 로직을 `concept_evidence.py`로 분리
