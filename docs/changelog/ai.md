@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Wiki graph traversal 경로 조립 통합
+
+- 신규 방문과 재방문 분기에 중복된 `TraversalEdge`·`TraversalPath` 생성을 공통 함수로 통합
+- 탐색·점수·stop reason 계약을 유지하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
 ### refactor: semantic note anchor 검증 통합
 
 - `_normalize_single_note`의 내부 anchor 변환 함수를 기존 `_anchor_refs`와 통합

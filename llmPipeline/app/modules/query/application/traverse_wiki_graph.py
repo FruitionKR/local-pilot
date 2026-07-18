@@ -74,48 +74,20 @@ class TraverseWikiGraphUseCase:
                 target = pages_by_id[target_id]
                 role = self._node_role(target, depth + 1)
                 previous = visited.get(target_id)
+                traversal_edge = self._traversal_edge(link)
+                edge_key = (traversal_edge.from_page_id, traversal_edge.to_page_id, traversal_edge.link_type)
+                edges_by_key[edge_key] = traversal_edge
                 if previous is not None and previous.score >= target_score:
-                    traversal_edge = TraversalEdge(
-                        from_page_id=link.from_page_id,
-                        to_page_id=link.to_page_id,
-                        link_type=link.link_type,
-                        role=edge_role(link.link_type),
-                        score=link.confidence,
-                    )
-                    edge_key = (traversal_edge.from_page_id, traversal_edge.to_page_id, traversal_edge.link_type)
-                    edges_by_key[edge_key] = traversal_edge
                     traversal_paths.append(
-                        TraversalPath(
-                            path_id=f"path_{len(traversal_paths) + 1}",
-                            role="primary_answer_path" if len(traversal_paths) == 0 else "candidate_path",
-                            nodes=[*path_nodes, target_id],
-                            edges=[*path_edges, traversal_edge],
-                            score=target_score,
-                        )
+                        self._traversal_path(traversal_paths, path_nodes, path_edges, target_id, traversal_edge, target_score)
                     )
                     continue
                 visited[target_id] = RetrievedPage(page=target, score=target_score, role=role, depth=depth + 1)
 
-                traversal_edge = TraversalEdge(
-                    from_page_id=link.from_page_id,
-                    to_page_id=link.to_page_id,
-                    link_type=link.link_type,
-                    role=edge_role(link.link_type),
-                    score=link.confidence,
-                )
-                edge_key = (traversal_edge.from_page_id, traversal_edge.to_page_id, traversal_edge.link_type)
-                edges_by_key[edge_key] = traversal_edge
-
                 next_path_nodes = [*path_nodes, target_id]
                 next_path_edges = [*path_edges, traversal_edge]
                 traversal_paths.append(
-                    TraversalPath(
-                        path_id=f"path_{len(traversal_paths) + 1}",
-                        role="primary_answer_path" if len(traversal_paths) == 0 else "candidate_path",
-                        nodes=next_path_nodes,
-                        edges=next_path_edges,
-                        score=target_score,
-                    )
+                    self._traversal_path(traversal_paths, path_nodes, path_edges, target_id, traversal_edge, target_score)
                 )
                 frontier.append((target_id, next_path_nodes, next_path_edges, next_score, depth + 1))
                 expanded += 1
@@ -128,6 +100,33 @@ class TraverseWikiGraphUseCase:
         related_pages = sorted(visited.values(), key=lambda item: item.score, reverse=True)
         graph_context = GraphContext(nodes=related_pages, edges=list(edges_by_key.values()))
         return graph_context, sorted(traversal_paths, key=lambda item: item.score, reverse=True), stop_reason
+
+    @staticmethod
+    def _traversal_edge(link: WikiPageLink) -> TraversalEdge:
+        return TraversalEdge(
+            from_page_id=link.from_page_id,
+            to_page_id=link.to_page_id,
+            link_type=link.link_type,
+            role=edge_role(link.link_type),
+            score=link.confidence,
+        )
+
+    @staticmethod
+    def _traversal_path(
+        existing_paths: list[TraversalPath],
+        path_nodes: list[str],
+        path_edges: list[TraversalEdge],
+        target_id: str,
+        traversal_edge: TraversalEdge,
+        target_score: float,
+    ) -> TraversalPath:
+        return TraversalPath(
+            path_id=f"path_{len(existing_paths) + 1}",
+            role="primary_answer_path" if not existing_paths else "candidate_path",
+            nodes=[*path_nodes, target_id],
+            edges=[*path_edges, traversal_edge],
+            score=target_score,
+        )
 
     def _build_adjacency(self, links: list[WikiPageLink]) -> dict[str, list[WikiPageLink]]:
         adjacency: dict[str, list[WikiPageLink]] = defaultdict(list)
