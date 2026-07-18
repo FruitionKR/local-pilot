@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Vision 복원 evidence clipping 규칙 통합
+
+- figure 복원과 block review가 공유하는 evidence 길이 제한과 clipping marker를 domain 함수로 통합
+- 관련 문서 복원 테스트 10개 통과
+
+---
+
 ### refactor: 문서 복원 좌표 판정과 Docling I/O 공통화
 
 **배경**

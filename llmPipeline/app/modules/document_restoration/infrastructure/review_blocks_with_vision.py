@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from app.modules.document_restoration.domain.evidence_text import clip_evidence
 from app.modules.document_restoration.domain.markdown_text import (
     has_balanced_braces,
     strip_markdown_fence,
@@ -27,9 +28,6 @@ MANIFEST_FILE = BASE_DIR / "layout" / "auto" / f"{DOCUMENT_SLUG}.docling_primary
 PROMPT_DIR = SCRIPT_PROMPT_DIR
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
 DEFAULT_MODEL = "qwen2.5vl:7b"
-MAX_EVIDENCE_CHARS = 2500
-
-
 def load_blocks() -> list[dict[str, Any]]:
     blocks = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
     return sorted(blocks, key=lambda block: (block["page"], block["order"]))
@@ -64,13 +62,6 @@ def read_optional(path: Path) -> str:
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8").strip()
-
-
-def clip_evidence(text: str, max_chars: int = MAX_EVIDENCE_CHARS) -> str:
-    if len(text) <= max_chars:
-        return text
-    half = max_chars // 2
-    return f"{text[:half]}\n...[evidence clipped]...\n{text[-half:]}"
 
 
 def candidate_image_files(block: dict[str, Any]) -> list[Path]:
