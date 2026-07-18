@@ -55,6 +55,15 @@ class _ScoredWikiCandidates:
     direct_concept_ids: list[str]
 
 
+@dataclass(frozen=True)
+class _InternalQueryContext:
+    query_context: QueryContext
+    related_pages: list[RetrievedPage]
+    graph_context: GraphContext
+    traversal_paths: list[TraversalPath]
+    stop_reason: str
+
+
 class AnswerQueryUseCase:
     def __init__(
         self,
@@ -161,6 +170,77 @@ class AnswerQueryUseCase:
             if fallback_answer is not None:
                 return fallback_answer
 
+        internal_context = self._build_internal_query_context(
+            original_question=query.normalized,
+            contextual_question=contextual_question,
+            conversation_context=conversation_context,
+            candidates=candidates,
+            event_publisher=event_publisher,
+        )
+        answer, evidence_snippets, evaluated_context, query_evaluation = self._query_evaluator_graph.run(
+            question=query.normalized,
+            query_context=internal_context.query_context,
+            stop_reason=internal_context.stop_reason,
+            event_publisher=event_publisher,
+        )
+        if query_evaluation is not None:
+            if query_evaluation.route == "web_fallback":
+                fallback_answer = self._answer_from_web_search(
+                    query.normalized,
+                    self._query_rewrite_for_web(query_rewrite, query_evaluation),
+                    event_publisher,
+                )
+                if fallback_answer is not None:
+                    return fallback_answer
+            if query_evaluation.route == "internal_web_augmented":
+                augmented_answer = self._answer_from_internal_web_augmented(
+                    question=query.normalized,
+                    query_rewrite=self._query_rewrite_for_web(query_rewrite, query_evaluation),
+                    query_context=internal_context.query_context,
+                    graph_context=internal_context.graph_context,
+                    traversal_paths=internal_context.traversal_paths,
+                    stop_reason="internal_web_augmented",
+                    event_publisher=event_publisher,
+                )
+                if augmented_answer is not None:
+                    return augmented_answer
+        answer, evidence_snippets, stop_reason = self._apply_evaluation_route(
+            query_evaluation,
+            answer,
+            evidence_snippets,
+            internal_context.stop_reason,
+        )
+
+        summary = build_retrieval_summary(
+            related_pages=internal_context.related_pages,
+            source_candidate_count=min(
+                len(candidates.source_pages),
+                self._source_candidate_limit,
+            ),
+            concept_candidate_count=min(
+                len(candidates.concept_pages),
+                self._concept_candidate_limit,
+            ),
+            stop_reason=stop_reason,
+        )
+        return QueryAnswer(
+            answer=answer,
+            related_pages=internal_context.related_pages,
+            evidence_snippets=evidence_snippets,
+            graph_context=internal_context.graph_context,
+            traversal_paths=internal_context.traversal_paths,
+            retrieval_summary=summary,
+        )
+
+    def _build_internal_query_context(
+        self,
+        *,
+        original_question: str,
+        contextual_question: str,
+        conversation_context: ConversationContext | None,
+        candidates: _ScoredWikiCandidates,
+        event_publisher: QueryEventPublisherPort | None,
+    ) -> _InternalQueryContext:
         seed_source_ids = self._query_page_scorer.select_seed_sources(
             candidates.source_pages,
             candidates.source_scores,
@@ -199,7 +279,6 @@ class AnswerQueryUseCase:
                 "direct_concept_ids": candidates.direct_concept_ids,
             },
         )
-
         graph_context, traversal_paths, stop_reason = self._traverse_wiki_graph.execute(
             pages_by_id=candidates.pages_by_id,
             links=candidates.links,
@@ -210,9 +289,16 @@ class AnswerQueryUseCase:
             event_publisher,
             "graph_traversed",
             "Wiki graph traversal을 완료했습니다.",
-            {"visited_node_count": len(graph_context.nodes), "path_count": len(traversal_paths), "stop_reason": stop_reason},
+            {
+                "visited_node_count": len(graph_context.nodes),
+                "path_count": len(traversal_paths),
+                "stop_reason": stop_reason,
+            },
         )
-        traversal_paths = select_answer_paths(traversal_paths, self._returned_path_limit)
+        traversal_paths = select_answer_paths(
+            traversal_paths,
+            self._returned_path_limit,
+        )
         related_pages = add_focus_concepts_to_related_pages(
             graph_context.nodes,
             candidates.direct_concept_ids,
@@ -240,82 +326,46 @@ class AnswerQueryUseCase:
             ]
         related_pages = self._load_markdown_for_related_pages(related_pages)
         graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        evidence_query = evidence_question(query.normalized, conversation_context, contextual_question)
         self._publish(
             event_publisher,
             "markdown_loaded",
             "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
-            {"loaded_markdown_count": len([item for item in related_pages if item.page.markdown])},
+            {
+                "loaded_markdown_count": len(
+                    [item for item in related_pages if item.page.markdown]
+                )
+            },
         )
-        embedding_units_by_page_id = self._load_embedding_units_for_related_pages(related_pages)
         query_context = self._build_query_context.execute(
             question=contextual_question,
             related_pages=related_pages,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
-            original_question=query.normalized,
-            evidence_question=evidence_query,
-            embedding_units_by_page_id=embedding_units_by_page_id,
+            original_question=original_question,
+            evidence_question=evidence_question(
+                original_question,
+                conversation_context,
+                contextual_question,
+            ),
+            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
+                related_pages
+            ),
         )
         self._publish(
             event_publisher,
             "context_built",
             "LLM 답변 입력 context를 구성했습니다.",
-            {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
+            {
+                "context_chars": len(query_context.answer_context),
+                "related_page_count": len(related_pages),
+            },
         )
-        answer, evidence_snippets, evaluated_context, query_evaluation = self._query_evaluator_graph.run(
-            question=query.normalized,
+        return _InternalQueryContext(
             query_context=query_context,
-            stop_reason=stop_reason,
-            event_publisher=event_publisher,
-        )
-        if query_evaluation is not None:
-            if query_evaluation.route == "web_fallback":
-                fallback_answer = self._answer_from_web_search(
-                    query.normalized,
-                    self._query_rewrite_for_web(query_rewrite, query_evaluation),
-                    event_publisher,
-                )
-                if fallback_answer is not None:
-                    return fallback_answer
-            if query_evaluation.route == "internal_web_augmented":
-                augmented_answer = self._answer_from_internal_web_augmented(
-                    question=query.normalized,
-                    query_rewrite=self._query_rewrite_for_web(query_rewrite, query_evaluation),
-                    query_context=query_context,
-                    graph_context=graph_context,
-                    traversal_paths=traversal_paths,
-                    stop_reason="internal_web_augmented",
-                    event_publisher=event_publisher,
-                )
-                if augmented_answer is not None:
-                    return augmented_answer
-        answer, evidence_snippets, stop_reason = self._apply_evaluation_route(
-            query_evaluation,
-            answer,
-            evidence_snippets,
-            stop_reason,
-        )
-
-        summary = build_retrieval_summary(
             related_pages=related_pages,
-            source_candidate_count=min(
-                len(candidates.source_pages),
-                self._source_candidate_limit,
-            ),
-            concept_candidate_count=min(
-                len(candidates.concept_pages),
-                self._concept_candidate_limit,
-            ),
-            stop_reason=stop_reason,
-        )
-        return QueryAnswer(
-            answer=answer,
-            related_pages=related_pages,
-            evidence_snippets=evidence_snippets,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
-            retrieval_summary=summary,
+            stop_reason=stop_reason,
         )
 
     def _score_wiki_candidates(
