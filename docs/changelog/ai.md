@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki output persistence orchestration 분리
+
+- manifest 해석과 source/concept/link/cluster 저장 순서를 `postgres_wiki_output_persistence`로 이동
+- 기존 `finish_pipeline_run` transaction과 저장 순서를 고정하고 관련 테스트 39개 통과
+
+---
+
 ### refactor: Wiki PostgreSQL writer 경계 분리
 
 - page/link upsert, embedding unit 저장, source-related 갱신, object storage I/O를 공통 writer로 분리
