@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: 문서 복원 deterministic validator 분리
+
+- 복원 결과의 공통 orchestration에서 table·equation 전용 오류 수집 규칙을 분리
+- 오류 문구와 판정 순서를 보존하고 관련 테스트 13개 통과
+
+---
+
 ### refactor: repository 오류 메시지 길이 제한 통합
 
 - Wiki ingestion과 embedding repository의 240자 오류 저장 규칙을 `app.core.error_text`로 통합

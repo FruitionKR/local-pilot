@@ -1885,7 +1885,6 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
     block_type = block["type"]
     cleaned = strip_markdown_fence(markdown)
     reasons: list[str] = []
-    lowered = cleaned.lower()
 
     if cleaned.startswith("[rejected:"):
         reasons.append("generator가 복원을 거부함")
@@ -1893,80 +1892,10 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
     if block_type == "figure_candidate":
         reasons.append("figure block은 Vision crop 검토가 필요함")
 
-    if block_type == "table_candidate" and not is_valid_markdown_table(cleaned):
-        reasons.append("Markdown table의 column 수가 일관되지 않음")
-    if block_type == "table_candidate" and is_valid_markdown_table(cleaned):
-        headers = table_header_values(cleaned)
-        body_cells = body_cell_values(cleaned)
-        numeric_header_count = sum(1 for header in headers if re.fullmatch(r"-?\d+(?:\.\d+)?%?", header))
-        if numeric_header_count == len(headers):
-            reasons.append("table header에 데이터 값이 들어감")
-        if any(re.search(r"([\"”]|==:|=:)", header) for header in headers):
-            reasons.append("table header에 OCR debris 또는 중복 label이 남아 있음")
-        if body_cells:
-            unclear_count = sum(1 for cell in body_cells if "[unclear]" in cell)
-            if unclear_count / len(body_cells) > 0.3:
-                reasons.append("table cell의 unclear 비율이 너무 높음")
-            if any(re.search(r"(==:|=:|~—|—|^\]$|^el$|^=\.|^\.0\.)", cell, flags=re.IGNORECASE) for cell in body_cells):
-                reasons.append("table numeric cell에 OCR debris가 남아 있음")
-        if re.search(r"(?m)^\|\s*\|\s*-?\d", cleaned):
-            reasons.append("table row가 여러 줄로 쪼개진 형태임")
-        if has_bad_index_sequence(cleaned):
-            reasons.append("table 첫 column의 index sequence가 깨져 있음")
-        if re.search(r"(?im)([A-Za-z][,;]{2,}|[\"”]|^\|[^|\n]*\]\s*\||\|\s*=\\?.)", cleaned):
-            reasons.append("table에 명백한 OCR artifact가 남아 있음")
-    if block_type == "equation_candidate" and "\\[" not in cleaned and "$$" not in cleaned:
-        reasons.append("수식 block인데 display math가 없음")
-    if block_type == "equation_candidate" and not has_balanced_braces(cleaned):
-        reasons.append("LaTeX 중괄호 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_latex_environments(cleaned):
-        reasons.append("LaTeX begin/end 환경 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_latex_environments_per_display(cleaned):
-        reasons.append("display math 내부 LaTeX begin/end 환경 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_left_right(cleaned):
-        reasons.append("LaTeX left/right delimiter 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_plain_parentheses_per_display(cleaned):
-        reasons.append("display math 내부 일반 괄호 짝이 맞지 않음")
-    if block_type == "equation_candidate" and has_bare_script_marker(cleaned):
-        reasons.append("밑첨자/윗첨자 대상이 비어 있는 깨진 LaTeX가 있음")
-    if block_type == "equation_candidate" and has_malformed_math_text_command(cleaned):
-        reasons.append("math text command 안에 깨진 첨자/괄호 구조가 남아 있음")
-    if block_type == "equation_candidate" and has_display_math_without_equation(cleaned):
-        reasons.append("등호 없는 display math 조각이 수식으로 섞여 있음")
-    if block_type == "equation_candidate" and has_duplicate_display_math(cleaned):
-        reasons.append("동일한 display math가 중복 복원됨")
-    if block_type == "equation_candidate" and has_polynomial_fraction(cleaned):
-        reasons.append("다항식 형태의 수식을 근거 없이 분수로 바꿈")
-    if block_type == "equation_candidate" and re.search(r"\\frac\{\s*[-+]?\d+(?:\.\d+)?\s*\}", cleaned) and len(re.findall(r"(?<!\^)[+\-−]", cleaned)) >= 3:
-        reasons.append("다항식 일부를 근거 없이 분수항으로 바꿈")
-    if block_type == "equation_candidate" and "\\begin{array}" in cleaned:
-        reasons.append("수식 후보가 표 row 배열처럼 복원됨")
-    if block_type == "equation_candidate" and len(re.findall(r"(?m)^\s*\d+\s+[01-]", cleaned)) >= 3:
-        reasons.append("수식 후보가 실험 결과 row처럼 복원됨")
-    if block_type == "equation_candidate" and re.search(r"(_\{\s*[,.;?]+\s*\}|[A-Za-z][,;?]{2,}|\\text\{\s*[A-Za-z]*[,.;?][^}]*\}|\?)", cleaned):
-        reasons.append("명백한 OCR artifact가 남아 있음")
-    if block_type == "equation_candidate" and has_bad_subscript_punctuation(cleaned):
-        reasons.append("subscript 안에 OCR punctuation artifact가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"\b[A-Za-z](?:\s+[A-Za-z]+){1,}\b", cleaned):
-        reasons.append("하나의 변수로 보이는 문자가 공백으로 쪼개져 있음")
-    if block_type == "equation_candidate" and re.search(r"(\\l\d|\\mathcal|\\mathbb|\\check|\\slash|\\rightarrow|\\downarrow|\\uparrow|\\rfloor|\\lfloor|\\it|\\mathrm\{\[)", cleaned):
-        reasons.append("image-to-LaTeX OCR의 깨진 command 또는 placeholder가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"([\"”]|Z\s*-\s*H|\\times\s*10\s+[A-Za-z]|\b[A-Za-z]\^\*)", cleaned):
-        reasons.append("수식에 OCR debris 또는 깨진 지수 표기가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"(\\cal\b|\\displaystyle\s*\\cal)", cleaned):
-        reasons.append("image-to-LaTeX OCR의 hallucinated symbol 또는 깨진 문자 인식이 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"\d+\.\d+\s+\d\b", cleaned):
-        reasons.append("계수 뒤에 변수 없이 숫자만 남은 깨진 항이 있음")
-    if block_type == "equation_candidate" and re.search(r"\d+\.\d+\^\{\d+\}", cleaned):
-        reasons.append("계수 뒤에 변수 없이 지수만 붙은 깨진 항이 있음")
-    if block_type == "equation_candidate" and has_equation_number_evidence(block, cleaned) and not has_equation_number_markdown(cleaned):
-        reasons.append("OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음")
-    if block_type == "equation_candidate" and len(re.findall(r"[A-Za-z\\]", cleaned)) == 0:
-        reasons.append("수식 변수 구조가 거의 복원되지 않음")
-    if block_type == "equation_candidate" and re.fullmatch(r"(?s)(?:\\\[\s*[-+0-9.\s]+\s*\\\]|\$\$\s*[-+0-9.\s]+\s*\$\$)", cleaned):
-        reasons.append("좌변 변수 없는 숫자 조각만 복원됨")
-    if block_type == "equation_candidate" and "[unclear]" in lowered and lowered.count("[unclear]") > 2:
-        reasons.append("unreadable term이 너무 많음")
+    if block_type == "table_candidate":
+        reasons.extend(table_evaluation_reasons(cleaned))
+    if block_type == "equation_candidate":
+        reasons.extend(equation_evaluation_reasons(block, cleaned))
     if re.search(r"\b[A-Za-z]+[,.;?]{2,}\b", cleaned):
         reasons.append("명백한 OCR artifact가 남아 있음")
     if "```" in cleaned:
@@ -1977,6 +1906,68 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
         "score": 1.0 if not reasons else 0.0,
         "reasons": reasons,
     }
+
+
+def table_evaluation_reasons(markdown: str) -> list[str]:
+    if not is_valid_markdown_table(markdown):
+        return ["Markdown table의 column 수가 일관되지 않음"]
+
+    reasons: list[str] = []
+    headers = table_header_values(markdown)
+    body_cells = body_cell_values(markdown)
+    numeric_header_count = sum(1 for header in headers if re.fullmatch(r"-?\d+(?:\.\d+)?%?", header))
+    if numeric_header_count == len(headers):
+        reasons.append("table header에 데이터 값이 들어감")
+    if any(re.search(r"([\"”]|==:|=:)", header) for header in headers):
+        reasons.append("table header에 OCR debris 또는 중복 label이 남아 있음")
+    if body_cells:
+        unclear_count = sum(1 for cell in body_cells if "[unclear]" in cell)
+        if unclear_count / len(body_cells) > 0.3:
+            reasons.append("table cell의 unclear 비율이 너무 높음")
+        if any(re.search(r"(==:|=:|~—|—|^\]$|^el$|^=\.|^\.0\.)", cell, flags=re.IGNORECASE) for cell in body_cells):
+            reasons.append("table numeric cell에 OCR debris가 남아 있음")
+    if re.search(r"(?m)^\|\s*\|\s*-?\d", markdown):
+        reasons.append("table row가 여러 줄로 쪼개진 형태임")
+    if has_bad_index_sequence(markdown):
+        reasons.append("table 첫 column의 index sequence가 깨져 있음")
+    if re.search(r"(?im)([A-Za-z][,;]{2,}|[\"”]|^\|[^|\n]*\]\s*\||\|\s*=\\?.)", markdown):
+        reasons.append("table에 명백한 OCR artifact가 남아 있음")
+    return reasons
+
+
+def equation_evaluation_reasons(block: dict[str, Any], markdown: str) -> list[str]:
+    reasons: list[str] = []
+    lowered = markdown.lower()
+    checks = (
+        ("\\[" not in markdown and "$$" not in markdown, "수식 block인데 display math가 없음"),
+        (not has_balanced_braces(markdown), "LaTeX 중괄호 짝이 맞지 않음"),
+        (not has_balanced_latex_environments(markdown), "LaTeX begin/end 환경 짝이 맞지 않음"),
+        (not has_balanced_latex_environments_per_display(markdown), "display math 내부 LaTeX begin/end 환경 짝이 맞지 않음"),
+        (not has_balanced_left_right(markdown), "LaTeX left/right delimiter 짝이 맞지 않음"),
+        (not has_balanced_plain_parentheses_per_display(markdown), "display math 내부 일반 괄호 짝이 맞지 않음"),
+        (has_bare_script_marker(markdown), "밑첨자/윗첨자 대상이 비어 있는 깨진 LaTeX가 있음"),
+        (has_malformed_math_text_command(markdown), "math text command 안에 깨진 첨자/괄호 구조가 남아 있음"),
+        (has_display_math_without_equation(markdown), "등호 없는 display math 조각이 수식으로 섞여 있음"),
+        (has_duplicate_display_math(markdown), "동일한 display math가 중복 복원됨"),
+        (has_polynomial_fraction(markdown), "다항식 형태의 수식을 근거 없이 분수로 바꿈"),
+        (bool(re.search(r"\\frac\{\s*[-+]?\d+(?:\.\d+)?\s*\}", markdown)) and len(re.findall(r"(?<!\^)[+\-−]", markdown)) >= 3, "다항식 일부를 근거 없이 분수항으로 바꿈"),
+        ("\\begin{array}" in markdown, "수식 후보가 표 row 배열처럼 복원됨"),
+        (len(re.findall(r"(?m)^\s*\d+\s+[01-]", markdown)) >= 3, "수식 후보가 실험 결과 row처럼 복원됨"),
+        (bool(re.search(r"(_\{\s*[,.;?]+\s*\}|[A-Za-z][,;?]{2,}|\\text\{\s*[A-Za-z]*[,.;?][^}]*\}|\?)", markdown)), "명백한 OCR artifact가 남아 있음"),
+        (has_bad_subscript_punctuation(markdown), "subscript 안에 OCR punctuation artifact가 남아 있음"),
+        (bool(re.search(r"\b[A-Za-z](?:\s+[A-Za-z]+){1,}\b", markdown)), "하나의 변수로 보이는 문자가 공백으로 쪼개져 있음"),
+        (bool(re.search(r"(\\l\d|\\mathcal|\\mathbb|\\check|\\slash|\\rightarrow|\\downarrow|\\uparrow|\\rfloor|\\lfloor|\\it|\\mathrm\{\[)", markdown)), "image-to-LaTeX OCR의 깨진 command 또는 placeholder가 남아 있음"),
+        (bool(re.search(r"([\"”]|Z\s*-\s*H|\\times\s*10\s+[A-Za-z]|\b[A-Za-z]\^\*)", markdown)), "수식에 OCR debris 또는 깨진 지수 표기가 남아 있음"),
+        (bool(re.search(r"(\\cal\b|\\displaystyle\s*\\cal)", markdown)), "image-to-LaTeX OCR의 hallucinated symbol 또는 깨진 문자 인식이 남아 있음"),
+        (bool(re.search(r"\d+\.\d+\s+\d\b", markdown)), "계수 뒤에 변수 없이 숫자만 남은 깨진 항이 있음"),
+        (bool(re.search(r"\d+\.\d+\^\{\d+\}", markdown)), "계수 뒤에 변수 없이 지수만 붙은 깨진 항이 있음"),
+        (has_equation_number_evidence(block, markdown) and not has_equation_number_markdown(markdown), "OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음"),
+        (len(re.findall(r"[A-Za-z\\]", markdown)) == 0, "수식 변수 구조가 거의 복원되지 않음"),
+        (bool(re.fullmatch(r"(?s)(?:\\\[\s*[-+0-9.\s]+\s*\\\]|\$\$\s*[-+0-9.\s]+\s*\$\$)", markdown)), "좌변 변수 없는 숫자 조각만 복원됨"),
+        ("[unclear]" in lowered and lowered.count("[unclear]") > 2, "unreadable term이 너무 많음"),
+    )
+    reasons.extend(reason for failed, reason in checks if failed)
+    return reasons
 
 
 def has_balanced_latex_environments(text: str) -> bool:

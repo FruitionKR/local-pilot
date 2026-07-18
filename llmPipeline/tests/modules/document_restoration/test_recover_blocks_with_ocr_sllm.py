@@ -73,3 +73,32 @@ class SllmRoutingTest(unittest.TestCase):
                 (evaluation_dir / "docling_table_p01_001.json").read_text(encoding="utf-8")
             )
             self.assertFalse(evaluation["accepted"])
+
+
+class DeterministicEvaluationTest(unittest.TestCase):
+    def test_collects_table_specific_reasons(self) -> None:
+        result = module.deterministic_evaluation(
+            {"type": "table_candidate"},
+            "| 1 | 2 |\n| --- | --- |\n| 3 | 4 |",
+        )
+
+        self.assertEqual(result["reasons"], ["table header에 데이터 값이 들어감"])
+
+    def test_accepts_well_formed_equation(self) -> None:
+        result = module.deterministic_evaluation(
+            {"type": "equation_candidate"},
+            "$$ x = 1 $$",
+        )
+
+        self.assertEqual(result, {"accepted": True, "score": 1.0, "reasons": []})
+
+    def test_keeps_common_rejection_reason_before_type_reasons(self) -> None:
+        result = module.deterministic_evaluation(
+            {"type": "figure_candidate"},
+            "[rejected: unreadable]",
+        )
+
+        self.assertEqual(
+            result["reasons"],
+            ["generator가 복원을 거부함", "figure block은 Vision crop 검토가 필요함"],
+        )
