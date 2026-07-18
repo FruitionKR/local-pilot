@@ -4,6 +4,15 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-19
+
+### fix: Wiki graph 최대 탐색 깊이 적용
+
+- `TraverseWikiGraphUseCase.max_depth`에 도달한 node에서 frontier 확장을 중단
+- retrieval summary가 실제 방문 깊이를 표시하도록 수정하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
 ## 2026-07-18
 
 ### refactor: Markdown table header 조립 분리
