@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Query evaluator 후속 route 처리 분리
+
+- `AnswerQueryUseCase.execute`에서 evaluator 결과에 따른 답변 대체·evidence 재번호·종료 사유 변경을 별도 메서드로 분리
+- web fallback 조기 반환 계약을 유지하고 Query 테스트 25개와 4개 subtest 통과
+
+---
+
 ### refactor: 문서 복원 deterministic validator 분리
 
 - 복원 결과의 공통 orchestration에서 table·equation 전용 오류 수집 규칙을 분리

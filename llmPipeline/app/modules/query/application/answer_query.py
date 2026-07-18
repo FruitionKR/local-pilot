@@ -273,19 +273,12 @@ class AnswerQueryUseCase:
                 )
                 if augmented_answer is not None:
                     return augmented_answer
-            if query_evaluation.route == "unsupported":
-                stop_reason = "query_evaluator_unsupported"
-                answer = self._unsupported_answer(evidence_snippets)
-                answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
-            elif query_evaluation.route == "revise_answer":
-                stop_reason = "query_evaluator_unresolved"
-                answer = self._unsupported_answer(evidence_snippets)
-                answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
-            elif query_evaluation.route == "internal_supported" and stop_reason == "no_relevant_seed":
-                stop_reason = "query_evaluator_internal_supported"
-        elif stop_reason == "no_relevant_seed":
-            answer = self._unsupported_answer(evidence_snippets)
-            answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
+        answer, evidence_snippets, stop_reason = self._apply_evaluation_route(
+            query_evaluation,
+            answer,
+            evidence_snippets,
+            stop_reason,
+        )
 
         summary = build_retrieval_summary(
             related_pages=related_pages,
@@ -312,6 +305,40 @@ class AnswerQueryUseCase:
         if not rewritten.retrieval_query.strip():
             return QueryRewrite(original_question=question, retrieval_query=question)
         return rewritten
+
+    def _apply_evaluation_route(
+        self,
+        evaluation: QueryEvaluation | None,
+        answer: GeneratedAnswer,
+        evidence_snippets: list[EvidenceSnippet],
+        stop_reason: str,
+    ) -> tuple[GeneratedAnswer, list[EvidenceSnippet], str]:
+        if evaluation is None:
+            if stop_reason != "no_relevant_seed":
+                return answer, evidence_snippets, stop_reason
+            unsupported = self._unsupported_answer(evidence_snippets)
+            unsupported, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(
+                unsupported,
+                evidence_snippets,
+            )
+            return unsupported, evidence_snippets, stop_reason
+
+        if evaluation.route == "internal_supported" and stop_reason == "no_relevant_seed":
+            return answer, evidence_snippets, "query_evaluator_internal_supported"
+        if evaluation.route not in {"unsupported", "revise_answer"}:
+            return answer, evidence_snippets, stop_reason
+
+        unsupported = self._unsupported_answer(evidence_snippets)
+        unsupported, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(
+            unsupported,
+            evidence_snippets,
+        )
+        routed_stop_reason = (
+            "query_evaluator_unsupported"
+            if evaluation.route == "unsupported"
+            else "query_evaluator_unresolved"
+        )
+        return unsupported, evidence_snippets, routed_stop_reason
 
     def _query_rewrite_for_web(self, query_rewrite: QueryRewrite, evaluation: QueryEvaluation) -> QueryRewrite:
         if not evaluation.web_query:
