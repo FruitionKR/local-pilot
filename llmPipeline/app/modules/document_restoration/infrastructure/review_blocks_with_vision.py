@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from app.modules.document_restoration.domain.markdown_text import strip_markdown_fence
 from app.modules.document_restoration.domain.text_quality import (
     looks_glyph_encoded as generic_looks_glyph_encoded,
 )
@@ -33,16 +34,6 @@ def load_blocks() -> list[dict[str, Any]]:
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", str(text)).strip()
-
-
-def strip_markdown_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
 
 
 def is_rejected_result(text: str) -> bool:

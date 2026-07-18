@@ -6,6 +6,24 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: 반복 검증과 Markdown 정규화 공통화
+
+**배경**
+
+여러 LLM adapter와 문서 복원 단계에서 동일한 guard clause와 정규화 함수가 중복되어, 같은 규칙을 호출부마다 따로 유지하고 있었습니다.
+
+**변경된 것**
+
+- candidate decision의 구조와 `candidate_id`를 검증하는 공통 함수 추가
+- schema prompt 결합 규칙을 `app.core`의 공통 함수로 통합
+- 문서 복원의 Markdown code fence 제거와 table 형태 검증을 domain 함수로 통합
+
+**검증**
+
+- `cd llmPipeline && .venv/bin/python -m pytest -q tests` — 346개 테스트와 28개 subtest 통과
+
+---
+
 ### feat: Wiki ingest evaluator를 LangGraph로 전환
 
 **배경**

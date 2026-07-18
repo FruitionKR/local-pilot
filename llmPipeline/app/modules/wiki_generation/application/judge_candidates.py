@@ -84,17 +84,9 @@ Schema:
         ],
     }
     raw = completion.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    decisions = raw.get("decisions", [])
-    if not isinstance(decisions, list):
-        return []
     valid_candidate_ids = {item["candidate_id"] for item in candidates}
     normalized_decisions: list[dict[str, Any]] = []
-    for item in decisions:
-        if not isinstance(item, dict):
-            continue
-        candidate_id = str(item.get("candidate_id") or "")
-        if candidate_id not in valid_candidate_ids:
-            continue
+    for item, candidate_id in _valid_candidate_decisions(raw, valid_candidate_ids):
         decision = str(item.get("decision") or "new_cluster")
         if decision not in {"same_cluster", "new_cluster", "needs_review"}:
             decision = "new_cluster"
@@ -171,18 +163,10 @@ Schema:
         ],
     }
     raw = completion.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-    decisions = raw.get("decisions", [])
-    if not isinstance(decisions, list):
-        return []
     valid_candidate_ids = {item["candidate_id"] for item in candidates}
     valid_concept_slugs = {str(concept.get("slug")) for concept in concepts if concept.get("slug")}
     normalized_decisions: list[dict[str, Any]] = []
-    for item in decisions:
-        if not isinstance(item, dict):
-            continue
-        candidate_id = str(item.get("candidate_id") or "")
-        if candidate_id not in valid_candidate_ids:
-            continue
+    for item, candidate_id in _valid_candidate_decisions(raw, valid_candidate_ids):
         decision = str(item.get("decision") or "not_same_concept")
         concept_slug = str(item.get("concept_slug") or "")
         relation = str(item.get("relation") or "")
@@ -214,3 +198,21 @@ Schema:
             }
         )
     return normalized_decisions
+
+
+def _valid_candidate_decisions(
+    raw: dict[str, Any],
+    valid_candidate_ids: set[str],
+) -> list[tuple[dict[str, Any], str]]:
+    decisions = raw.get("decisions", [])
+    if not isinstance(decisions, list):
+        return []
+
+    valid_decisions = []
+    for item in decisions:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = str(item.get("candidate_id") or "")
+        if candidate_id in valid_candidate_ids:
+            valid_decisions.append((item, candidate_id))
+    return valid_decisions
