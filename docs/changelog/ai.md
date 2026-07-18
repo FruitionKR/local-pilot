@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: meaning-cluster ingest 로그 렌더링 분리
+
+- artifact assembler에 섞여 있던 ingest 로그 Markdown 생성을 `meaning_cluster_log.py`의 순수 함수로 분리
+- 로그 경로와 제목의 날짜를 일치시키고 Wiki generation 테스트 69개 통과
+
+---
+
 ### refactor: Markdown output validator 규칙 분리
 
 - 단일 함수에 모여 있던 edit goal 형상, 요청 문법, 보호 콘텐츠, 축약 검증을 명시적 규칙 함수로 분리
