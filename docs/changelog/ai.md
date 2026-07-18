@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: 문서 복원 recovery 단계 분리
+
+- `recover_block`에서 deterministic 후보 선택, SLLM system message 결정, 결과 파일 저장 단계를 분리
+- retry와 fallback 순서를 보존하고 문서 복원 테스트 41개 통과
+
+---
+
 ### refactor: Query evaluator 후속 route 처리 분리
 
 - `AnswerQueryUseCase.execute`에서 evaluator 결과에 따른 답변 대체·evidence 재번호·종료 사유 변경을 별도 메서드로 분리

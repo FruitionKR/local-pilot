@@ -2184,6 +2184,72 @@ def count_display_math_blocks(text: str) -> int:
     return text.count("\\[") + len(re.findall(r"\$\$.*?\$\$", text, flags=re.DOTALL))
 
 
+def deterministic_recovery_candidate(
+    block: dict[str, Any],
+    ocr_text: str,
+) -> tuple[str, dict[str, Any] | None]:
+    if block["type"] == "table_candidate":
+        parser_markdown = structured_table_markdown(block, ocr_text)
+        if parser_markdown:
+            parser_evaluation = deterministic_evaluation(block, parser_markdown)
+            if parser_evaluation["accepted"]:
+                return parser_markdown, {
+                    **parser_evaluation,
+                    "recovery_source": "structured_table_parser",
+                }
+        return "", None
+
+    if block["type"] != "equation_candidate":
+        return "", None
+    layout_result = deterministic_layout_adjudication(block, ocr_text)
+    if layout_result:
+        return layout_result
+    parser_markdown = equation_parser_markdown(block, ocr_text)
+    if parser_markdown:
+        parser_evaluation = deterministic_evaluation(block, parser_markdown)
+        if parser_evaluation["accepted"]:
+            return parser_markdown, {
+                **parser_evaluation,
+                "recovery_source": "structured_equation_parser",
+            }
+    latex_candidate = latex_ocr_candidate_markdown(ocr_text, block)
+    if not latex_candidate:
+        return "", None
+    latex_candidate = normalize_equation_markdown(latex_candidate, block)
+    latex_evaluation = deterministic_evaluation(block, latex_candidate)
+    if not latex_evaluation["accepted"]:
+        return "", None
+    return latex_candidate, {
+        **latex_evaluation,
+        "recovery_source": "latex_ocr_cleanup",
+    }
+
+
+def sllm_system_message(block_type: str) -> str:
+    if block_type == "table_candidate":
+        return (
+            "You are a strict OCR-to-Markdown table transcriber. "
+            "The response must start with '|' for a Markdown table or '[rejected:' for rejection. "
+            "Do not explain, compare, summarize, or recommend anything."
+        )
+    if block_type == "equation_candidate":
+        return (
+            "You are a strict OCR-to-LaTeX equation transcriber. "
+            "Return only Markdown display math delimited by '$$' or a '[rejected:' line. "
+            "Do not explain, compare, summarize, or use code fences."
+        )
+    return "You reconstruct OCR blocks. Return only the requested Markdown. Never summarize."
+
+
+def write_recovery_result(block_id: str, markdown: str, evaluation: dict[str, Any]) -> None:
+    (OUTPUT_DIR / f"{block_id}.md").write_text(markdown.strip() + "\n", encoding="utf-8")
+    EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
+    (EVALUATION_DIR / f"{block_id}.json").write_text(
+        json.dumps(evaluation, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bool) -> None:
     asset = block.get("asset")
     if not asset:
@@ -2198,73 +2264,19 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
     if prompt:
         (OUTPUT_DIR / f"{block['id']}.prompt.md").write_text(prompt + "\n", encoding="utf-8")
 
-    markdown = ""
-    evaluation: dict[str, Any] | None = None
-    if block["type"] == "table_candidate":
-        parser_markdown = structured_table_markdown(block, ocr_text)
-        if parser_markdown:
-            parser_evaluation = deterministic_evaluation(block, parser_markdown)
-            if parser_evaluation["accepted"]:
-                markdown = parser_markdown
-                evaluation = {
-                    **parser_evaluation,
-                    "recovery_source": "structured_table_parser",
-                }
-    elif block["type"] == "equation_candidate":
-        layout_result = deterministic_layout_adjudication(block, ocr_text)
-        parser_markdown = None
-        if layout_result:
-            markdown, evaluation = layout_result
-        if not markdown:
-            parser_markdown = equation_parser_markdown(block, ocr_text)
-        if parser_markdown:
-            parser_evaluation = deterministic_evaluation(block, parser_markdown)
-            if parser_evaluation["accepted"]:
-                markdown = parser_markdown
-                evaluation = {
-                    **parser_evaluation,
-                    "recovery_source": "structured_equation_parser",
-                }
-        if not markdown:
-            latex_candidate = latex_ocr_candidate_markdown(ocr_text, block)
-            if latex_candidate:
-                latex_candidate = normalize_equation_markdown(latex_candidate, block)
-                latex_evaluation = deterministic_evaluation(block, latex_candidate)
-                if latex_evaluation["accepted"]:
-                    markdown = latex_candidate
-                    evaluation = {
-                        **latex_evaluation,
-                        "recovery_source": "latex_ocr_cleanup",
-                    }
+    markdown, evaluation = deterministic_recovery_candidate(block, ocr_text)
 
     if not markdown and not use_sllm_for_block:
         markdown = "\n".join(["```text", ocr_text, "```"])
     elif not markdown:
-        system_message = "You reconstruct OCR blocks. Return only the requested Markdown. Never summarize."
-        if block["type"] == "table_candidate":
-            system_message = (
-                "You are a strict OCR-to-Markdown table transcriber. "
-                "The response must start with '|' for a Markdown table or '[rejected:' for rejection. "
-                "Do not explain, compare, summarize, or recommend anything."
-            )
-        elif block["type"] == "equation_candidate":
-            system_message = (
-                "You are a strict OCR-to-LaTeX equation transcriber. "
-                "Return only Markdown display math delimited by '$$' or a '[rejected:' line. "
-                "Do not explain, compare, summarize, or use code fences."
-            )
+        system_message = sllm_system_message(block["type"])
         markdown = call_sllm(
             endpoint,
             model,
             prompt,
             system_message,
         )
-        if block["type"] == "equation_candidate":
-            markdown = normalize_equation_markdown(markdown, block)
-        elif block["type"] == "table_candidate":
-            markdown = repair_table_markdown_with_hint(markdown, block.get("source_text", ""))
-        elif block["type"] == "figure_candidate":
-            markdown = strip_markdown_fence(markdown)
+        markdown = normalize_recovered_markdown_for_block(block, markdown)
 
     if evaluation is None:
         evaluation = evaluate_block(block, ocr_text, markdown, endpoint, model, use_sllm_for_block)
@@ -2294,12 +2306,7 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
                     "recovery_source": "structured_table_fallback",
                 }
 
-    (OUTPUT_DIR / f"{block['id']}.md").write_text(markdown.strip() + "\n", encoding="utf-8")
-    EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
-    (EVALUATION_DIR / f"{block['id']}.json").write_text(
-        json.dumps(evaluation, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_recovery_result(block["id"], markdown, evaluation)
 
 
 def evaluate_existing_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bool) -> None:

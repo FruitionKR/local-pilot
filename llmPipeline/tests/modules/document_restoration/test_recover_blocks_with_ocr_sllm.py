@@ -102,3 +102,26 @@ class DeterministicEvaluationTest(unittest.TestCase):
             result["reasons"],
             ["generator가 복원을 거부함", "figure block은 Vision crop 검토가 필요함"],
         )
+
+
+class RecoveryStageTest(unittest.TestCase):
+    def test_uses_accepted_structured_table_candidate(self) -> None:
+        block = {"type": "table_candidate"}
+        with (
+            mock.patch.object(module, "structured_table_markdown", return_value="| A |\n| --- |"),
+            mock.patch.object(
+                module,
+                "deterministic_evaluation",
+                return_value={"accepted": True, "score": 1.0, "reasons": []},
+            ),
+        ):
+            markdown, evaluation = module.deterministic_recovery_candidate(block, "ocr")
+
+        self.assertEqual(markdown, "| A |\n| --- |")
+        self.assertEqual(evaluation["recovery_source"], "structured_table_parser")
+
+    def test_uses_equation_specific_system_message(self) -> None:
+        message = module.sllm_system_message("equation_candidate")
+
+        self.assertIn("OCR-to-LaTeX", message)
+        self.assertIn("$$", message)
