@@ -13,6 +13,7 @@ from run_lab import (
     PipelineLog,
     PipelinePrompts,
     _assemble_wiki_pages,
+    _assemble_meaning_clusters,
     _extract_pipeline_source,
     _load_pipeline_prompts,
     _prepare_concept_section_polish,
@@ -68,6 +69,28 @@ class FakeConceptResolutionClient:
 
 
 class WikiGenerationPipelineTest(unittest.TestCase):
+    def test_assemble_meaning_clusters_handles_empty_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            artifact, maintenance_summary = _assemble_meaning_clusters(
+                SimpleNamespace(user_id="user-1", workspace_id="workspace-1"),
+                api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                normalized={
+                    "concept_ledger": [],
+                    "existing_concept_index": [],
+                    "section_candidates": [],
+                    "mentions": [],
+                    "unresolved_related_concept_hints": [],
+                    "evidence_units": [],
+                },
+                existing_active_clusters="",
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(artifact["clusters"], [])
+        self.assertEqual(maintenance_summary["promotion_candidate_count"], 0)
+        self.assertEqual(maintenance_summary["relation_candidate_count"], 0)
+
     def test_assemble_wiki_pages_keeps_skeleton_modes_without_api(self) -> None:
         normalized = {
             "document": {

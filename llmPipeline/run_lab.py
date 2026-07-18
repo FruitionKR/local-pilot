@@ -880,6 +880,109 @@ def _assemble_wiki_pages(
     )
 
 
+def _assemble_meaning_clusters(
+    args: argparse.Namespace,
+    *,
+    api_client: ChatCompletionsJsonClient,
+    normalized: dict[str, Any],
+    existing_active_clusters: str,
+    out: Path,
+    log: PipelineLog,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    assembler = MeaningClusterArtifactAssembler()
+    candidates = assembler.candidate_claims(normalized)
+    concept_candidates = [
+        *normalized.get("concept_ledger", []),
+        *normalized.get("existing_concept_index", []),
+    ]
+    concept_update_decisions = _judge_concept_update_candidates(
+        completion=api_client,
+        concepts=concept_candidates,
+        candidates=candidates,
+    )
+    concept_update_by_candidate = {
+        item["candidate_id"]: item
+        for item in concept_update_decisions
+        if item.get("decision") == "same_concept"
+    }
+    candidates_by_id = {
+        candidate["candidate_id"]: candidate for candidate in candidates
+    }
+    core_relation_decisions = [
+        item
+        for item in concept_update_decisions
+        if item.get("decision") == "relation_candidate"
+    ]
+    cluster_judge_candidates = [
+        item
+        for item in candidates
+        if item["candidate_id"] not in concept_update_by_candidate
+    ]
+    log.emit(
+        "8-보조. Concept 갱신 후보 판단",
+        "section/mention evidence claim이 이미 존재하는 core concept에 속하는지 먼저 판단했습니다.",
+        {
+            "candidate 수": len(candidates),
+            "same_concept 수": len(concept_update_by_candidate),
+            "relation_candidate 수": len(core_relation_decisions),
+            "cluster judge 대상": len(cluster_judge_candidates),
+        },
+    )
+    cluster_decisions = _judge_meaning_cluster_candidates(
+        completion=api_client,
+        existing_active_markdown=existing_active_clusters,
+        candidates=cluster_judge_candidates,
+    )
+    log.emit(
+        "8-보조. Meaning Cluster 판단",
+        "section/mention evidence claim을 기존 active cluster와 비교해 생성 또는 갱신 대상을 판단했습니다.",
+        {
+            "candidate 수": len(cluster_judge_candidates),
+            "decision 수": len(cluster_decisions),
+            "기존 active 크기": len(existing_active_clusters),
+        },
+    )
+    artifact = assembler.assemble(
+        normalized,
+        out,
+        user_id=args.user_id,
+        workspace_id=args.workspace_id,
+        cluster_decisions=cluster_decisions,
+        core_relation_decisions=core_relation_decisions,
+        concept_update_decisions=[
+            {
+                **item,
+                "claim_id": candidates_by_id.get(item["candidate_id"], {}).get(
+                    "claim_id"
+                ),
+                "claim": candidates_by_id.get(item["candidate_id"], {}).get("claim"),
+                "refs": candidates_by_id.get(item["candidate_id"], {}).get("refs", []),
+                "candidate_type": candidates_by_id.get(item["candidate_id"], {}).get(
+                    "candidate_type"
+                ),
+            }
+            for item in concept_update_by_candidate.values()
+        ],
+    )
+    maintenance_summary = artifact.get("maintenance_summary", {})
+    log.emit(
+        "8. Meaning Cluster 생성",
+        "section/mention evidence claim 기반 active cluster와 ingest log artifact를 생성했습니다.",
+        {
+            "active": artifact["active_path"],
+            "log": artifact["log_path"],
+            "cluster 수": len(artifact["clusters"]),
+            "promotion 후보 수": maintenance_summary.get(
+                "promotion_candidate_count",
+                0,
+            ),
+            "relation 후보 수": maintenance_summary.get("relation_candidate_count", 0),
+            "invalid 후보 수": maintenance_summary.get("invalid_candidate_count", 0),
+        },
+    )
+    return artifact, maintenance_summary
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -1013,88 +1116,14 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         log=log,
     )
 
-    meaning_cluster_assembler = MeaningClusterArtifactAssembler()
-    meaning_cluster_candidates = meaning_cluster_assembler.candidate_claims(normalized)
-    concept_candidates = [
-        *normalized.get("concept_ledger", []),
-        *normalized.get("existing_concept_index", []),
-    ]
-    concept_update_decisions = _judge_concept_update_candidates(
-        completion=api_client,
-        concepts=concept_candidates,
-        candidates=meaning_cluster_candidates,
-    )
-    concept_update_by_candidate = {
-        item["candidate_id"]: item
-        for item in concept_update_decisions
-        if item.get("decision") == "same_concept"
-    }
-    candidates_by_id = {candidate["candidate_id"]: candidate for candidate in meaning_cluster_candidates}
-    core_relation_decisions = [
-        item
-        for item in concept_update_decisions
-        if item.get("decision") == "relation_candidate"
-    ]
-    cluster_judge_candidates = [
-        item
-        for item in meaning_cluster_candidates
-        if item["candidate_id"] not in concept_update_by_candidate
-    ]
-    log.emit(
-        "8-보조. Concept 갱신 후보 판단",
-        "section/mention evidence claim이 이미 존재하는 core concept에 속하는지 먼저 판단했습니다.",
-        {
-            "candidate 수": len(meaning_cluster_candidates),
-            "same_concept 수": len(concept_update_by_candidate),
-            "relation_candidate 수": len(core_relation_decisions),
-            "cluster judge 대상": len(cluster_judge_candidates),
-        },
-    )
     existing_active_clusters = _read_existing_active_clusters(args.user_id, args.workspace_id)
-    cluster_decisions = _judge_meaning_cluster_candidates(
-        completion=api_client,
-        existing_active_markdown=existing_active_clusters,
-        candidates=cluster_judge_candidates,
-    )
-    log.emit(
-        "8-보조. Meaning Cluster 판단",
-        "section/mention evidence claim을 기존 active cluster와 비교해 생성 또는 갱신 대상을 판단했습니다.",
-        {
-            "candidate 수": len(cluster_judge_candidates),
-            "decision 수": len(cluster_decisions),
-            "기존 active 크기": len(existing_active_clusters),
-        },
-    )
-    meaning_cluster_artifact = meaning_cluster_assembler.assemble(
-        normalized,
-        out,
-        user_id=args.user_id,
-        workspace_id=args.workspace_id,
-        cluster_decisions=cluster_decisions,
-        core_relation_decisions=core_relation_decisions,
-        concept_update_decisions=[
-            {
-                **item,
-                "claim_id": candidates_by_id.get(item["candidate_id"], {}).get("claim_id"),
-                "claim": candidates_by_id.get(item["candidate_id"], {}).get("claim"),
-                "refs": candidates_by_id.get(item["candidate_id"], {}).get("refs", []),
-                "candidate_type": candidates_by_id.get(item["candidate_id"], {}).get("candidate_type"),
-            }
-            for item in concept_update_by_candidate.values()
-        ],
-    )
-    maintenance_summary = meaning_cluster_artifact.get("maintenance_summary", {})
-    log.emit(
-        "8. Meaning Cluster 생성",
-        "section/mention evidence claim 기반 active cluster와 ingest log artifact를 생성했습니다.",
-        {
-            "active": meaning_cluster_artifact["active_path"],
-            "log": meaning_cluster_artifact["log_path"],
-            "cluster 수": len(meaning_cluster_artifact["clusters"]),
-            "promotion 후보 수": maintenance_summary.get("promotion_candidate_count", 0),
-            "relation 후보 수": maintenance_summary.get("relation_candidate_count", 0),
-            "invalid 후보 수": maintenance_summary.get("invalid_candidate_count", 0),
-        },
+    meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
+        args,
+        api_client=api_client,
+        normalized=normalized,
+        existing_active_clusters=existing_active_clusters,
+        out=out,
+        log=log,
     )
 
     manifest = {
