@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Markdown table header 조립 분리
+
+- 표 복원 함수에서 계층형 header 해석과 Markdown row escaping을 순수 함수로 분리
+- body 판정과 출력 계약을 유지하고 Document evaluation 테스트 36개 통과
+
+---
+
 ### refactor: Wiki graph traversal 경로 조립 통합
 
 - 신규 방문과 재방문 분기에 중복된 `TraversalEdge`·`TraversalPath` 생성을 공통 함수로 통합

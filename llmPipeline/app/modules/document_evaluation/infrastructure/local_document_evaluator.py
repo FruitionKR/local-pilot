@@ -411,6 +411,20 @@ def assemble_markdown_table(cell_rows: list[list[str]]) -> str | None:
         range(len(header_rows)),
         key=lambda index: sum(bool(cell) for cell in header_rows[index]),
     )
+    headers = _hierarchical_table_headers(header_rows, leaf_index, column_count)
+    if headers is None:
+        return None
+
+    lines = [_markdown_table_row(headers), _markdown_table_row(["---"] * column_count)]
+    lines.extend(_markdown_table_row(row) for row in body_rows)
+    return "\n".join(lines)
+
+
+def _hierarchical_table_headers(
+    header_rows: list[list[str]],
+    leaf_index: int,
+    column_count: int,
+) -> list[str] | None:
     leaf_row = header_rows[leaf_index]
     leaf_columns = [index for index, cell in enumerate(leaf_row) if cell]
     headers = ["" for _ in range(column_count)]
@@ -447,14 +461,12 @@ def assemble_markdown_table(cell_rows: list[list[str]]) -> str | None:
         headers[column] = " / ".join(parent_paths[column] + [leaf_row[column]])
     if any(not header for header in headers):
         return None
+    return headers
 
-    def markdown_row(cells: list[str]) -> str:
-        escaped = [cell.replace("|", "\\|").replace("\n", " ").strip() for cell in cells]
-        return "| " + " | ".join(escaped) + " |"
 
-    lines = [markdown_row(headers), markdown_row(["---"] * column_count)]
-    lines.extend(markdown_row(row) for row in body_rows)
-    return "\n".join(lines)
+def _markdown_table_row(cells: list[str]) -> str:
+    escaped = [cell.replace("|", "\\|").replace("\n", " ").strip() for cell in cells]
+    return "| " + " | ".join(escaped) + " |"
 
 
 def restore_table_from_text_layout(pdf_file: Path, block: Block) -> str | None:
