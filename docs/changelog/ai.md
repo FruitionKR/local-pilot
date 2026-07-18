@@ -6,6 +6,23 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Wiki ingestion unit text 정규화 통합
+
+**배경**
+
+active cluster claim과 embedding unit이 source reference와 Markdown marker를 같은 규칙으로 제거하면서도 구현을 각각 유지하고 있었습니다.
+
+**변경된 것**
+
+- unit text 정규화 규칙을 `wiki_ingestion.domain.unit_text`로 이동
+- active cluster와 embedding unit 생성이 동일한 정규화 함수를 사용하도록 변경
+
+**검증**
+
+- Wiki ingestion unit text와 concept index 관련 테스트 통과
+
+---
+
 ### refactor: 반복 검증과 Markdown 정규화 공통화
 
 **배경**
