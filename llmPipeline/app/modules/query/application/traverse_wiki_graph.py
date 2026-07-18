@@ -39,13 +39,10 @@ class TraverseWikiGraphUseCase:
             related_pages = sorted(visited.values(), key=lambda item: item.score, reverse=True)
             return GraphContext(nodes=related_pages), [], "no_relevant_seed"
 
-        stop_reason = "max_depth"
+        stop_reason = "no_frontier"
         depth_limit_reached = False
         while frontier:
             current_id, path_nodes, path_edges, base_score, depth = frontier.popleft()
-            if depth >= self._max_depth:
-                depth_limit_reached = True
-                continue
 
             next_candidates = []
             next_floor = base_score * self._relative_score_floor
@@ -65,6 +62,9 @@ class TraverseWikiGraphUseCase:
                 next_candidates.append((target_score, next_score, target_id, link))
 
             next_candidates.sort(key=lambda item: item[0], reverse=True)
+            if depth >= self._max_depth:
+                depth_limit_reached = depth_limit_reached or bool(next_candidates)
+                continue
             if not next_candidates and depth == 0:
                 stop_reason = "no_frontier"
 

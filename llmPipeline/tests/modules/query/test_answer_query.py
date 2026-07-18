@@ -1089,6 +1089,21 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(max(item.depth for item in graph_context.nodes), 2)
         self.assertEqual(stop_reason, "max_depth")
 
+    def test_reports_no_frontier_when_graph_ends_at_max_depth(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+        ]
+
+        _graph_context, _paths, stop_reason = TraverseWikiGraphUseCase(max_depth=1).execute(
+            pages_by_id={page.id: page for page in pages},
+            links=[WikiPageLink("source:seed", "concept:one", "source_mentions_concept")],
+            seed_page_ids=["source:seed"],
+            node_scores={page.id: 0.95 for page in pages},
+        )
+
+        self.assertEqual(stop_reason, "no_frontier")
+
     def test_rejects_blank_question(self) -> None:
         use_case = AnswerQueryUseCase(
             wiki_repository=InMemoryWikiRepository([], []),

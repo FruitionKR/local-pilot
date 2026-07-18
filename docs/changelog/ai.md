@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### fix: Wiki graph 깊이 제한 종료 사유 구분
+
+- 최대 깊이 node에 확장 가능한 후보가 있을 때만 `max_depth` 종료로 기록
+- graph가 제한 깊이에서 자연 종료하면 `no_frontier`를 유지하고 query spec을 현재 계약과 동기화
+
+---
+
 ### fix: Wiki graph 최대 탐색 깊이 적용
 
 - `TraverseWikiGraphUseCase.max_depth`에 도달한 node에서 frontier 확장을 중단
