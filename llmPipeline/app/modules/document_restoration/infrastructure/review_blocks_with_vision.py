@@ -10,7 +10,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from app.modules.document_restoration.domain.markdown_text import strip_markdown_fence
+from app.modules.document_restoration.domain.markdown_text import (
+    has_balanced_braces,
+    strip_markdown_fence,
+)
 from app.modules.document_restoration.domain.text_quality import (
     looks_glyph_encoded as generic_looks_glyph_encoded,
 )
@@ -177,25 +180,6 @@ def valid_markdown_table(text: str) -> bool:
     return len(counts) == 1
 
 
-def balanced_braces(text: str) -> bool:
-    depth = 0
-    escaped = False
-    for char in text:
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
-
-
 def balanced_plain_parentheses(text: str) -> bool:
     probe = re.sub(r"\\(?:left|right)?[()]", "", text)
     probe = re.sub(r"\\[A-Za-z]+\{[^{}]*\}", "", probe)
@@ -249,7 +233,7 @@ def evaluate_result(block: dict[str, Any], markdown: str) -> dict[str, Any]:
             reasons.append("display math delimiter가 없음")
         if text.count("$$") % 2 != 0:
             reasons.append("display math delimiter 균형이 맞지 않음")
-        if not balanced_braces(text):
+        if not has_balanced_braces(text):
             reasons.append("LaTeX brace 균형이 맞지 않음")
         if not balanced_plain_parentheses(text):
             reasons.append("display math 내부 일반 괄호 짝이 맞지 않음")

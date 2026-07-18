@@ -19,3 +19,22 @@ def is_valid_markdown_table(text: str) -> bool:
         return False
     separator = rows[1].replace("|", "").replace(":", "").replace("-", "").strip()
     return not separator
+
+
+def has_balanced_braces(text: str) -> bool:
+    depth = 0
+    escaped = False
+    for char in text:
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0

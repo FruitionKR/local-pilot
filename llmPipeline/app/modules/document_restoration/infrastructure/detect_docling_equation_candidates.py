@@ -9,6 +9,11 @@ from typing import Any
 
 import fitz
 
+from app.modules.document_restoration.domain.bounding_box import (
+    bbox_center_inside as center_inside,
+    bbox_overlap_ratio as overlap_ratio,
+)
+
 
 BBox = tuple[float, float, float, float]
 
@@ -87,19 +92,6 @@ def intersection(a: BBox, b: BBox) -> BBox:
         min(a[2], b[2]),
         min(a[3], b[3]),
     )
-
-
-def overlap_ratio(candidate: BBox, target: BBox) -> float:
-    candidate_area = area(candidate)
-    if candidate_area == 0:
-        return 0.0
-    return area(intersection(candidate, target)) / candidate_area
-
-
-def center_inside(inner: BBox, outer: BBox) -> bool:
-    x = (inner[0] + inner[2]) / 2
-    y = (inner[1] + inner[3]) / 2
-    return outer[0] <= x <= outer[2] and outer[1] <= y <= outer[3]
 
 
 def union_bbox(boxes: list[BBox]) -> BBox | None:

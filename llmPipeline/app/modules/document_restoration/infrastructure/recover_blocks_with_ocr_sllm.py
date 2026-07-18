@@ -17,6 +17,7 @@ from typing import Any
 from PIL import Image, ImageFilter, ImageOps
 
 from app.modules.document_restoration.domain.markdown_text import (
+    has_balanced_braces,
     is_valid_markdown_table,
     strip_markdown_fence,
 )
@@ -1976,25 +1977,6 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
         "score": 1.0 if not reasons else 0.0,
         "reasons": reasons,
     }
-
-
-def has_balanced_braces(text: str) -> bool:
-    depth = 0
-    escaped = False
-    for char in text:
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
 
 
 def has_balanced_latex_environments(text: str) -> bool:

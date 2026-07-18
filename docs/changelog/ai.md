@@ -6,6 +6,24 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: 문서 복원 좌표 판정과 Docling I/O 공통화
+
+**배경**
+
+문서 복원 단계마다 Markdown brace, bbox 겹침, Docling provenance와 PDF 경로를 같은 규칙으로 판정하면서 구현을 중복하고 있었습니다.
+
+**변경된 것**
+
+- Markdown brace 균형 검사를 문서 복원 domain 함수로 통합
+- bbox 중심·방향성 겹침·대칭 match score 계산을 순수 domain 함수로 분리
+- Docling JSON 로딩, PDF 탐색, provenance bbox 변환을 전용 infrastructure 모듈로 분리
+
+**검증**
+
+- 문서 복원과 Wiki ingestion 관련 테스트 52개 통과
+
+---
+
 ### refactor: Wiki ingestion unit text 정규화 통합
 
 **배경**
