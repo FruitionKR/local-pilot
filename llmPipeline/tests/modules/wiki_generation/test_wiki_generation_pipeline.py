@@ -15,6 +15,7 @@ from run_lab import (
     _load_pipeline_prompts,
     _prepare_concept_section_polish,
     _prepare_source_page_polish,
+    _resolve_pipeline_concepts,
     _run_wiki_generation_loop,
 )
 
@@ -48,6 +49,20 @@ class FakeSectionPolisher:
     def polish(self, payload: dict[str, object], blocks: list[FakeBlock]) -> dict[str, object]:
         self.payloads.append(payload)
         return self.raw
+
+
+class FakeConceptResolutionClient:
+    def complete_json(self, _system_prompt: str, _user_prompt: str) -> dict[str, object]:
+        return {
+            "resolutions": [
+                {
+                    "incoming_slug": "concept-a",
+                    "decision": "create_new",
+                    "canonical_slug": "concept-a",
+                }
+            ],
+            "hint_resolutions": [],
+        }
 
 
 class WikiGenerationPipelineTest(unittest.TestCase):
@@ -95,6 +110,39 @@ class WikiGenerationPipelineTest(unittest.TestCase):
         self.assertTrue(blocks)
         self.assertTrue(all(block.document_id == "requested-document" for block in blocks))
         self.assertEqual(source_block_records[0]["document_id"], "requested-document")
+
+    def test_resolve_pipeline_concepts_preserves_resolution_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized, context_blocks = _resolve_pipeline_concepts(
+                SimpleNamespace(
+                    existing_concept_index=[],
+                    existing_wiki_dir=None,
+                    selection_mode=None,
+                    save_debug_json=False,
+                ),
+                api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                concept_resolution_prompt="resolve",
+                normalized={
+                    "concept_ledger": [
+                        {
+                            "slug": "concept-a",
+                            "title": "Concept A",
+                            "aliases": [],
+                            "anchor_reference_ids": ["B0001"],
+                        }
+                    ],
+                    "evidence_units": [],
+                    "missing_related_concept_hints": [],
+                    "warnings": [],
+                },
+                existing_source_artifact=None,
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(normalized["concept_ledger"][0]["slug"], "concept-a")
+        self.assertEqual(normalized["concept_resolutions"][0]["decision"], "create_new")
+        self.assertEqual(context_blocks, [])
 
     def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
         normalized = {

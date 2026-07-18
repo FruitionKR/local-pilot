@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: pipeline concept resolution 단계 분리
+
+- concept resolution의 LLM 호출, 응답 정규화, same-source context 병합을 독립 함수로 분리
+- normalized 결과와 debug artifact 계약을 유지하고 전체 테스트 371개와 28개 subtest 통과
+
+---
+
 ### refactor: pipeline 입력 준비 단계 분리
 
 - `run_pipeline`의 prompt 로드, API client 준비, source block 추출을 책임별 함수로 분리

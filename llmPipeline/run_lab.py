@@ -595,6 +595,84 @@ def _extract_pipeline_source(
     return document, blocks, source_block_records
 
 
+def _resolve_pipeline_concepts(
+    args: argparse.Namespace,
+    *,
+    api_client: ChatCompletionsJsonClient,
+    concept_resolution_prompt: str,
+    normalized: dict[str, Any],
+    existing_source_artifact: dict[str, Any] | None,
+    out: Path,
+    log: PipelineLog,
+) -> tuple[dict[str, Any], list[SourceBlock]]:
+    existing_concepts = getattr(args, "existing_concept_index", None)
+    if existing_concepts is None:
+        existing_concepts = load_existing_concept_index(
+            getattr(args, "existing_wiki_dir", None)
+        )
+    missing_related_hints = normalized.get("missing_related_concept_hints", [])
+    raw_resolution = ApiConceptResolver(
+        api_client,
+        concept_resolution_prompt,
+    ).resolve(
+        normalized["concept_ledger"],
+        existing_concepts,
+        missing_related_hints,
+    )
+    if args.save_debug_json:
+        write_json(
+            ensure_dir(out / "raw_llm_outputs") / "concept_resolution.json",
+            raw_resolution,
+        )
+    resolutions = normalize_resolution_output(
+        raw_resolution,
+        normalized["concept_ledger"],
+        existing_concepts,
+        normalized.setdefault("warnings", []),
+    )
+    hint_resolutions = normalize_hint_resolution_output(
+        raw_resolution,
+        missing_related_hints,
+        normalized["concept_ledger"],
+        existing_concepts,
+        normalized.setdefault("warnings", []),
+    )
+    resolved = apply_concept_resolutions(
+        normalized,
+        resolutions,
+        existing_concepts,
+        hint_resolutions,
+    )
+    same_source_context_blocks: list[SourceBlock] = []
+    if getattr(args, "selection_mode", None) == "full" and existing_source_artifact:
+        resolved, same_source_context_blocks = apply_same_source_core_context(
+            resolved,
+            existing_source_artifact,
+        )
+    log.emit(
+        "4-보조. Concept Resolution",
+        "새 concept 후보끼리와 기존 concept page index, missing related hint를 비교해 canonical slug와 관련 링크를 확정했습니다.",
+        {
+            "기존 개념 수": len(existing_concepts),
+            "기존 source context": bool(existing_source_artifact),
+            "같은 source context 누적 수": len(resolved.get("same_source_context_merges", [])),
+            "해결 전 개념 수": len(resolutions),
+            "해결 후 개념 수": len(resolved["concept_ledger"]),
+            "missing hint 수": len(missing_related_hints),
+            "hint 해결 수": sum(
+                1
+                for item in hint_resolutions
+                if item.get("decision") not in {"unresolved", "promote_new_concept"}
+            ),
+            "병합 수": sum(
+                1 for item in resolutions if item.get("decision") == "merge_into"
+            ),
+            "링크 판단 수": sum(1 for item in resolutions if item.get("link_targets")),
+        },
+    )
+    return resolved, same_source_context_blocks
+
+
 def run_pipeline(args: argparse.Namespace) -> dict:
     load_env_file(args.env_file)
     resolve_api_defaults(args)
@@ -700,46 +778,15 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     )
 
     # 4a. Resolve incoming concepts against each other and existing wiki concepts before page generation.
-    existing_concepts = getattr(args, "existing_concept_index", None)
-    if existing_concepts is None:
-        existing_concepts = load_existing_concept_index(getattr(args, "existing_wiki_dir", None))
-    missing_related_hints = normalized.get("missing_related_concept_hints", [])
     assert api_client is not None
-    concept_resolver = ApiConceptResolver(api_client, prompts.concept_resolution)
-    raw_resolution = concept_resolver.resolve(normalized["concept_ledger"], existing_concepts, missing_related_hints)
-    if args.save_debug_json:
-        write_json(ensure_dir(out / "raw_llm_outputs") / "concept_resolution.json", raw_resolution)
-    resolutions = normalize_resolution_output(
-        raw_resolution,
-        normalized["concept_ledger"],
-        existing_concepts,
-        normalized.setdefault("warnings", []),
-    )
-    hint_resolutions = normalize_hint_resolution_output(
-        raw_resolution,
-        missing_related_hints,
-        normalized["concept_ledger"],
-        existing_concepts,
-        normalized.setdefault("warnings", []),
-    )
-    normalized = apply_concept_resolutions(normalized, resolutions, existing_concepts, hint_resolutions)
-    same_source_context_blocks = []
-    if getattr(args, "selection_mode", None) == "full" and existing_source_artifact:
-        normalized, same_source_context_blocks = apply_same_source_core_context(normalized, existing_source_artifact)
-    log.emit(
-        "4-보조. Concept Resolution",
-        "새 concept 후보끼리와 기존 concept page index, missing related hint를 비교해 canonical slug와 관련 링크를 확정했습니다.",
-        {
-            "기존 개념 수": len(existing_concepts),
-            "기존 source context": bool(existing_source_artifact),
-            "같은 source context 누적 수": len(normalized.get("same_source_context_merges", [])),
-            "해결 전 개념 수": len(resolutions),
-            "해결 후 개념 수": len(normalized["concept_ledger"]),
-            "missing hint 수": len(missing_related_hints),
-            "hint 해결 수": sum(1 for item in hint_resolutions if item.get("decision") not in {"unresolved", "promote_new_concept"}),
-            "병합 수": sum(1 for item in resolutions if item.get("decision") == "merge_into"),
-            "링크 판단 수": sum(1 for item in resolutions if item.get("link_targets")),
-        },
+    normalized, same_source_context_blocks = _resolve_pipeline_concepts(
+        args,
+        api_client=api_client,
+        concept_resolution_prompt=prompts.concept_resolution,
+        normalized=normalized,
+        existing_source_artifact=existing_source_artifact,
+        out=out,
+        log=log,
     )
     if args.save_debug_json:
         write_json(out / "normalized.json", normalized)
