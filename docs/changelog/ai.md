@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: repository 오류 메시지 길이 제한 통합
+
+- Wiki ingestion과 embedding repository의 240자 오류 저장 규칙을 `app.core.error_text`로 통합
+- 관련 core·Wiki embedding·ingestion 테스트 23개 통과
+
+---
+
 ### refactor: Vision 복원 evidence clipping 규칙 통합
 
 - figure 복원과 block review가 공유하는 evidence 길이 제한과 clipping marker를 domain 함수로 통합

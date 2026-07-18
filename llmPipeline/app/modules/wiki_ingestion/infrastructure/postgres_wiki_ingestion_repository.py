@@ -12,6 +12,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from app.core.error_text import truncate_error
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     MATERIALIZED_CORE_RELATIONS,
     cluster_relation_items as _cluster_relation_items,
@@ -288,7 +289,7 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
-    error_message = _truncate_error(error)
+    error_message = truncate_error(error)
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         if row and row["document_id"]:
@@ -1264,13 +1265,6 @@ def _upsert_wiki_page(
         """,
         (page_id, page_type, title, slug, summary, markdown_uri, user_id, workspace_id),
     )
-
-
-def _truncate_error(error: str, limit: int = 240) -> str:
-    text = str(error)
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
 
 
 def _upsert_document_wiki_link(
