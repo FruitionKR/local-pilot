@@ -18,7 +18,6 @@ class SemanticNormalizer:
         self.document = document
         self.blocks = blocks
         self.by_block_id = {b.block_id: b for b in blocks}
-        self.by_ref_id = {b.source_reference_id: b for b in blocks}
 
     def normalize_notes(self, notes: list[dict[str, Any]]) -> dict[str, Any]:
         warnings: list[str] = []

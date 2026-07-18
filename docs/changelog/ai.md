@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: SemanticNormalizer 미사용 인덱스 제거
+
+- 생성 후 사용되지 않던 `source_reference_id` 기반 `by_ref_id` 인덱스 제거
+- 실제 anchor 검증에 사용하는 `by_block_id` 계약은 유지
+
+---
+
 ### refactor: Wiki graph 폐기 설정 제거
 
 - 사용되지 않던 `min_node_score` 생성자 인자와 테스트 전달값 제거
