@@ -262,6 +262,7 @@ max_depth = 3
 no_relevant_seed
 no_frontier
 relative_score_floor
+max_depth
 concept_direct_match
 query_evaluator_unsupported
 query_evaluator_internal_supported

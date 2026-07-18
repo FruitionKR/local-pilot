@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### fix: Wiki evaluator 응답 형식 검증
+
+- 잘못된 `scores`, `issues`, `warnings`, 상태 필드를 안전한 평가 실패로 변환해 재시도 경로 유지
+- 누락 필드의 기존 기본값 계약을 보존하고 전체 테스트 368개와 28개 subtest 통과
+
+---
+
 ### refactor: 문서 복원 dead contract 제거
 
 - 항상 `False`를 반환하던 numeric header predicate와 무의미한 부정 조건 제거
