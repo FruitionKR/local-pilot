@@ -18,6 +18,7 @@ Wiki ingest와 Query evaluator의 평가 결과가 실제 생성 결과에 반�
 
 - evaluator가 내부 근거로 답변할 수 있지만 수정이 필요하다고 판단하면 `revise_answer`로 분기한다.
 - `internal_supported` 응답에 actionable feedback이 포함되면 방어적으로 `revise_answer`로 정규화한다.
+- 같은 내부 근거를 사용하는 답변 재생성은 `revise_answer`에만 적용하고 web/unsupported route는 즉시 후속 처리한다.
 - 최대 수정 횟수 후에도 평가를 통과하지 못하면 검증되지 않은 답변 대신 기존 unsupported 응답을 반환한다.
 
 ## Wiki ingest graph

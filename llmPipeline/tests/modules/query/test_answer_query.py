@@ -583,7 +583,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         query_evaluator = FakeQueryEvaluator(
             [
                 QueryEvaluation(
-                    route="unsupported",
+                    route="revise_answer",
                     evidence_relevance=0.2,
                     reason="근거 문장을 충분히 사용하지 않았습니다.",
                     feedback="근거 문장을 직접 반영해 답변하세요.",

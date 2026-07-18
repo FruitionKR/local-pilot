@@ -26,6 +26,7 @@ Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의�
 - patch에서 evaluator target과 무관한 semantic note와 의미 항목은 그대로 유지하고, 최대 시도 후 남은 issue는 manifest의 `generation_evaluation_status=unresolved`로 기록
 - Wiki evaluator 시도별 상세 결과를 pipeline manifest와 DB run manifest에 보관
 - Query evaluator에 `revise_answer` route를 추가하고, actionable feedback이 있는 답변은 재생성·재평가하도록 변경
+- Query 답변 재생성은 `revise_answer`에만 적용하고 web/unsupported route는 즉시 해당 후속 처리로 전달
 - Query 수정이 최대 시도 후에도 해결되지 않으면 검증되지 않은 답변 대신 unsupported 답변 반환
 - `LANGSMITH_TRACING=true`이더라도 `LANGSMITH_API_KEY`가 없으면 graph 실행은 유지하고 tracing만 생략
 - Query production·Studio graph에도 key 없는 tracing 차단을 적용해 LangSmith 경고와 네트워크 재시도를 방지

@@ -65,6 +65,8 @@ def route_after_evaluation(state: QueryEvaluatorStudioState) -> str:
     route = str(evaluation.get("route") or "internal_supported")
     if route == "internal_supported":
         return "accepted"
+    if route != "revise_answer":
+        return "finished"
     if int(state.get("attempt") or 1) >= int(state.get("max_attempts") or 1):
         return "finished"
     if not str(evaluation.get("feedback") or "").strip():
