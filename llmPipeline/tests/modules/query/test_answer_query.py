@@ -198,7 +198,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
             source_candidate_limit=1,
             event_publisher=event_publisher,
-            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+            traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
         result = use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
@@ -316,7 +316,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             text_search=EmptyTextSearch(),
             answer_generator=RecordingAnswerGenerator(),
             source_candidate_limit=1,
-            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+            traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
         result = use_case.execute("RAG랑 위키 그래프가 어떻게 이어져?")

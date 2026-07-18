@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki graph 폐기 설정 제거
+
+- 사용되지 않던 `min_node_score` 생성자 인자와 테스트 전달값 제거
+- seed 유효성 검사 뒤 다시 읽히지 않던 최고 점수 갱신 제거
+
+---
+
 ### fix: Wiki graph 깊이 제한 종료 사유 구분
 
 - 최대 깊이 node에 확장 가능한 후보가 있을 때만 `max_depth` 종료로 기록

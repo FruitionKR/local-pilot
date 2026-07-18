@@ -10,7 +10,6 @@ class TraverseWikiGraphUseCase:
         max_depth: int = 3,
         relative_score_floor: float = 0.95,
         frontier_limit: int = 8,
-        min_node_score: float | None = None,
     ) -> None:
         self._max_depth = max_depth
         self._relative_score_floor = relative_score_floor
@@ -28,14 +27,14 @@ class TraverseWikiGraphUseCase:
         edges_by_key: dict[tuple[str, str, str], TraversalEdge] = {}
         traversal_paths: list[TraversalPath] = []
         frontier = deque((seed_id, [seed_id], [], node_scores.get(seed_id, 0.0), 0) for seed_id in seed_page_ids)
-        best_observed_score = max((node_scores.get(seed_id, 0.0) for seed_id in seed_page_ids), default=0.0)
+        best_seed_score = max((node_scores.get(seed_id, 0.0) for seed_id in seed_page_ids), default=0.0)
 
         for seed_id in seed_page_ids:
             page = pages_by_id.get(seed_id)
             if page:
                 visited[seed_id] = RetrievedPage(page=page, score=node_scores.get(seed_id, 0.0), role=self._node_role(page, 0), depth=0)
 
-        if best_observed_score <= 0:
+        if best_seed_score <= 0:
             related_pages = sorted(visited.values(), key=lambda item: item.score, reverse=True)
             return GraphContext(nodes=related_pages), [], "no_relevant_seed"
 
@@ -69,9 +68,6 @@ class TraverseWikiGraphUseCase:
                 stop_reason = "no_frontier"
 
             expanded = 0
-            if next_candidates:
-                best_observed_score = max(best_observed_score, next_candidates[0][0])
-
             for target_score, next_score, target_id, link in next_candidates[: self._frontier_limit]:
                 if target_score < base_score * self._relative_score_floor:
                     continue
