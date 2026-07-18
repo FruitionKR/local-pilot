@@ -90,6 +90,18 @@ class WikiPageOutputs:
     concept_page_mode: str
 
 
+@dataclass(frozen=True)
+class _SourcePagePreparation:
+    normalized: dict[str, Any]
+    existing_context_blocks: list[SourceBlock]
+    polish: dict[str, Any]
+    key_points_for_concepts: list[dict[str, Any]]
+    mode: str
+    section_polisher: ApiSectionPolisher | None
+    raw_polish_dir: Path | None
+    invalid_polish_dir: Path
+
+
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Fruition v0.9 API pipeline lab v6 (Upstage Solar Pro 2 default)")
     ap.add_argument("--input", required=True, help="Input Markdown file")
@@ -683,19 +695,18 @@ def _resolve_pipeline_concepts(
     return resolved, same_source_context_blocks
 
 
-def _assemble_wiki_pages(
+def _prepare_source_page_assembly(
     args: argparse.Namespace,
     *,
     api_client: ChatCompletionsJsonClient | None,
     prompts: PipelinePrompts,
     normalized: dict[str, Any],
     blocks: list[SourceBlock],
-    same_source_context_blocks: list[SourceBlock],
     existing_source_artifact: dict[str, Any] | None,
     existing_source_markdown: str | None,
     out: Path,
     log: PipelineLog,
-) -> WikiPageOutputs:
+) -> _SourcePagePreparation:
     existing_source_artifact_with_markdown = (
         {**existing_source_artifact, "source_markdown": existing_source_markdown}
         if existing_source_artifact
@@ -765,7 +776,28 @@ def _assemble_wiki_pages(
             )
         )
 
-    concept_source_blocks_by_slug = {}
+    return _SourcePagePreparation(
+        normalized=source_page_normalized,
+        existing_context_blocks=existing_source_context_blocks,
+        polish=source_polish,
+        key_points_for_concepts=source_key_points_for_concepts,
+        mode=source_mode,
+        section_polisher=section_polisher,
+        raw_polish_dir=raw_polish_dir,
+        invalid_polish_dir=invalid_polish_dir,
+    )
+
+
+def _prepare_concept_source_blocks(
+    normalized: dict[str, Any],
+    *,
+    existing_source_context_blocks: list[SourceBlock],
+    blocks: list[SourceBlock],
+    same_source_context_blocks: list[SourceBlock],
+    source_key_points_for_concepts: list[dict[str, Any]],
+    log: PipelineLog,
+) -> dict[str, list[SourceBlock]]:
+    concept_source_blocks_by_slug: dict[str, list[SourceBlock]] = {}
     concept_input_blocks = [
         *existing_source_context_blocks,
         *blocks,
@@ -784,9 +816,17 @@ def _assemble_wiki_pages(
         "Source 누적 평가 결과를 반영해 전체 개념별 source block을 메모리에 모았습니다.",
         {"대상 개념 수": len(concept_source_blocks_by_slug)},
     )
+    return concept_source_blocks_by_slug
+
+
+def _assemble_source_page(
+    preparation: _SourcePagePreparation,
+    *,
+    log: PipelineLog,
+) -> dict[str, Any]:
     source_page = SourcePageAssembler().build(
-        source_page_normalized,
-        polish=source_polish,
+        preparation.normalized,
+        polish=preparation.polish,
     )
     log.emit(
         "5. Source Page 생성",
@@ -794,12 +834,28 @@ def _assemble_wiki_pages(
         {
             "source_page": source_page.get("markdown_path"),
             "source_json": bool(
-                source_page_normalized.get("source_extraction_artifact")
+                preparation.normalized.get("source_extraction_artifact")
             ),
-            "mode": source_mode,
+            "mode": preparation.mode,
         },
     )
+    return source_page
 
+
+def _assemble_concept_pages(
+    args: argparse.Namespace,
+    *,
+    api_client: ChatCompletionsJsonClient | None,
+    prompts: PipelinePrompts,
+    normalized: dict[str, Any],
+    concept_source_blocks_by_slug: dict[str, list[SourceBlock]],
+    source_key_points_for_concepts: list[dict[str, Any]],
+    section_polisher: ApiSectionPolisher | None,
+    raw_polish_dir: Path | None,
+    invalid_polish_dir: Path,
+    out: Path,
+    log: PipelineLog,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
     generated_concept_pages = []
     raw_concept_dir = (
         ensure_dir(out / "raw_llm_outputs" / "concept_page_generation")
@@ -860,6 +916,55 @@ def _assemble_wiki_pages(
             "Backend skeleton 방식으로 concept page markdown 데이터를 생성했습니다.",
             {"페이지 수": len(concept_pages)},
         )
+    return concept_pages, generated_concept_pages, concept_mode
+
+
+def _assemble_wiki_pages(
+    args: argparse.Namespace,
+    *,
+    api_client: ChatCompletionsJsonClient | None,
+    prompts: PipelinePrompts,
+    normalized: dict[str, Any],
+    blocks: list[SourceBlock],
+    same_source_context_blocks: list[SourceBlock],
+    existing_source_artifact: dict[str, Any] | None,
+    existing_source_markdown: str | None,
+    out: Path,
+    log: PipelineLog,
+) -> WikiPageOutputs:
+    source_preparation = _prepare_source_page_assembly(
+        args,
+        api_client=api_client,
+        prompts=prompts,
+        normalized=normalized,
+        blocks=blocks,
+        existing_source_artifact=existing_source_artifact,
+        existing_source_markdown=existing_source_markdown,
+        out=out,
+        log=log,
+    )
+    concept_source_blocks_by_slug = _prepare_concept_source_blocks(
+        normalized,
+        existing_source_context_blocks=source_preparation.existing_context_blocks,
+        blocks=blocks,
+        same_source_context_blocks=same_source_context_blocks,
+        source_key_points_for_concepts=source_preparation.key_points_for_concepts,
+        log=log,
+    )
+    source_page = _assemble_source_page(source_preparation, log=log)
+    concept_pages, generated_concept_pages, concept_mode = _assemble_concept_pages(
+        args,
+        api_client=api_client,
+        prompts=prompts,
+        normalized=normalized,
+        concept_source_blocks_by_slug=concept_source_blocks_by_slug,
+        source_key_points_for_concepts=source_preparation.key_points_for_concepts,
+        section_polisher=source_preparation.section_polisher,
+        raw_polish_dir=source_preparation.raw_polish_dir,
+        invalid_polish_dir=source_preparation.invalid_polish_dir,
+        out=out,
+        log=log,
+    )
 
     links = LinkBuilder().build(
         normalized,
@@ -872,10 +977,10 @@ def _assemble_wiki_pages(
     )
     return WikiPageOutputs(
         source_page=source_page,
-        source_page_normalized=source_page_normalized,
+        source_page_normalized=source_preparation.normalized,
         concept_pages=concept_pages,
         links=links,
-        source_page_mode=source_mode,
+        source_page_mode=source_preparation.mode,
         concept_page_mode=concept_mode,
     )
 

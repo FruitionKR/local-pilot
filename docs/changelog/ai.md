@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki page 조립 내부 책임 분리
+
+- Source page 준비, concept 입력 구성, source 조립, concept mode별 조립 책임 분리
+- 기존 Concept 입력 → Source Page → Concept Page 로그 순서를 고정하고 관련 테스트 12개 통과
+
+---
+
 ### fix: Meaning Cluster active 상태 읽기 순서 복원
 
 - concept update 판단 직후 active cluster Markdown을 읽도록 기존 ingest 순서 복원
