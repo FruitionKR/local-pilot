@@ -3,9 +3,9 @@ from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     parse_active_cluster_lint,
 )
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as repository
+from app.modules.wiki_ingestion.infrastructure.concept_evidence import append_concept_evidence
 from app.modules.wiki_ingestion.infrastructure.embedding_units import extract_embedding_units
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
-    _append_concept_evidence,
     _concept_index_from_markdown,
     _materialize_active_relation_candidates,
     _refresh_source_related_links,
@@ -62,7 +62,7 @@ Back EMF 정의
 - 관련 개념 없음
 """
 
-    updated_once = _append_concept_evidence(
+    updated_once = append_concept_evidence(
         markdown,
         [
             {
@@ -72,7 +72,7 @@ Back EMF 정의
             }
         ],
     )
-    updated_twice = _append_concept_evidence(
+    updated_twice = append_concept_evidence(
         updated_once,
         [
             {

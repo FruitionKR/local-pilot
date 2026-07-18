@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: concept evidence Markdown 갱신 분리
+
+- concept 문서의 Evidence 섹션 추가·placeholder 제거·중복 방지 로직을 `concept_evidence.py`로 분리
+- repository의 DB orchestration과 Markdown 변환 책임을 분리하고 Wiki ingestion 테스트 19개 통과
+
+---
+
 ### refactor: Wiki lint report 렌더링 분리
 
 - PostgreSQL repository에 섞여 있던 lint Markdown 렌더링을 `wiki_lint_report.py`로 분리
