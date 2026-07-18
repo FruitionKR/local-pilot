@@ -14,6 +14,16 @@ def langsmith_tracing_enabled() -> bool:
     return tracing.strip().lower() in {"1", "true", "yes", "on"} and bool(api_key.strip())
 
 
+def disable_unconfigured_langsmith_tracing() -> None:
+    if langsmith_tracing_enabled():
+        return
+    tracing = os.environ.get("LANGSMITH_TRACING", os.environ.get("LANGCHAIN_TRACING_V2", ""))
+    if tracing.strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    os.environ["LANGSMITH_TRACING"] = "false"
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
+
 @contextmanager
 def configured_langsmith_tracing() -> Iterator[None]:
     if tracing_context is None:

@@ -1,8 +1,12 @@
+from app.core.langsmith_tracing import disable_unconfigured_langsmith_tracing
 from app.modules.wiki_generation.application.run_generation_loop import (
     generation_evaluation_finished,
     generation_retry_block_ids,
     generation_retry_prompt,
 )
+
+
+disable_unconfigured_langsmith_tracing()
 from app.modules.wiki_generation.application.ports import JsonDict
 from app.modules.wiki_generation.infrastructure.wiki_generation_evaluator_graph import (
     WikiGenerationEvaluatorState,

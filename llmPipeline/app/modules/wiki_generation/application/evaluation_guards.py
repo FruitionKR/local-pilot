@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from typing import Any
 
 
@@ -92,11 +93,66 @@ def repair_normalized_from_evaluation(normalized: dict[str, Any], evaluation: di
     return repaired, operations
 
 
+def repair_notes_from_evaluation(notes: list[dict[str, Any]], evaluation: dict[str, Any]) -> list[dict[str, Any]]:
+    repairable_types = {"observation_missing_ref", "broken_observation", "duplicate_observation"}
+    issues = [issue for issue in evaluation.get("issues", []) if issue.get("type") in repairable_types]
+    if not issues:
+        return notes
+
+    repaired_notes = deepcopy(notes)
+    observations_by_id: dict[str, dict[str, Any]] = {}
+    observation_ids_by_location: dict[tuple[int, int], str] = {}
+    for note_index, note in enumerate(repaired_notes):
+        for item_index, observation in enumerate(note.get("observations", []) or []):
+            if not isinstance(observation, dict):
+                continue
+            if not str(observation.get("title") or "").strip() and not str(observation.get("summary") or "").strip():
+                continue
+            observation_id = f"O{len(observations_by_id) + 1:03d}"
+            observations_by_id[observation_id] = observation
+            observation_ids_by_location[(note_index, item_index)] = observation_id
+
+    remove_ids: set[str] = set()
+    duplicate_groups: list[list[str]] = []
+    for issue in issues:
+        targets = [str(target) for target in issue.get("target", []) if str(target)]
+        if issue.get("type") in {"observation_missing_ref", "broken_observation"}:
+            remove_ids.update(targets)
+        elif issue.get("type") == "duplicate_observation" and len(targets) > 1:
+            duplicate_groups.append(targets)
+
+    for ids in duplicate_groups:
+        candidates = [
+            observations_by_id[observation_id]
+            for observation_id in ids
+            if observation_id in observations_by_id and observation_id not in remove_ids
+        ]
+        if len(candidates) < 2:
+            continue
+        keeper = _select_observation_keeper(candidates)
+        for observation_id in ids:
+            if observation_id in remove_ids:
+                continue
+            candidate = observations_by_id.get(observation_id)
+            if candidate is None or candidate is keeper:
+                continue
+            _merge_observation(keeper, candidate)
+            remove_ids.add(observation_id)
+
+    for note_index, note in enumerate(repaired_notes):
+        note["observations"] = [
+            observation
+            for item_index, observation in enumerate(note.get("observations", []) or [])
+            if observation_ids_by_location.get((note_index, item_index)) not in remove_ids
+        ]
+    return repaired_notes
+
+
 def _select_observation_keeper(observations: list[dict[str, Any]]) -> dict[str, Any]:
     return max(
         observations,
         key=lambda item: (
-            len(item.get("anchor_reference_ids", []) or []),
+            len(_observation_anchors(item)),
             len(str(item.get("summary") or "")),
             len(item.get("claims", []) or []),
         ),
@@ -104,7 +160,8 @@ def _select_observation_keeper(observations: list[dict[str, Any]]) -> dict[str, 
 
 
 def _merge_observation(target: dict[str, Any], incoming: dict[str, Any]) -> None:
-    target["anchor_reference_ids"] = _unique((target.get("anchor_reference_ids", []) or []) + (incoming.get("anchor_reference_ids", []) or []))
+    anchor_field = "anchor_reference_ids" if "anchor_reference_ids" in target else "anchor_block_ids"
+    target[anchor_field] = _unique(_observation_anchors(target) + _observation_anchors(incoming))
     target["claims"] = _unique([str(item).strip() for item in (target.get("claims", []) or []) + (incoming.get("claims", []) or []) if str(item).strip()])
     target["related_concept_hints"] = _unique(
         [str(item).strip() for item in (target.get("related_concept_hints", []) or []) + (incoming.get("related_concept_hints", []) or []) if str(item).strip()]
@@ -112,6 +169,14 @@ def _merge_observation(target: dict[str, Any], incoming: dict[str, Any]) -> None
     for field in ("summary", "title", "query_text"):
         if len(str(incoming.get(field) or "")) > len(str(target.get(field) or "")):
             target[field] = incoming.get(field)
+
+
+def _observation_anchors(observation: dict[str, Any]) -> list[str]:
+    return list(
+        observation.get("anchor_reference_ids")
+        or observation.get("anchor_block_ids")
+        or []
+    )
 
 
 def _renumber_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:

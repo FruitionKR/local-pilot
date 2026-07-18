@@ -209,11 +209,16 @@ class LangGraphWikiGenerationEvaluator:
         }
 
     def _repair(self, state: WikiGenerationEvaluatorState) -> WikiGenerationEvaluatorState:
-        normalized, repair_operations = self.repairer.repair(
+        notes, normalized, repair_operations = self.repairer.repair(
+            state["notes"],
             state["normalized"],
             state["evaluation"],
         )
-        return {"normalized": normalized, "repair_operations": repair_operations}
+        return {
+            "notes": notes,
+            "normalized": normalized,
+            "repair_operations": repair_operations,
+        }
 
     def _reevaluate(self, state: WikiGenerationEvaluatorState) -> WikiGenerationEvaluatorState:
         evaluation = self.evaluator.evaluate(state["normalized"])

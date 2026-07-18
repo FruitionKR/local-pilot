@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.modules.wiki_generation.application.evaluation_guards import (
+    repair_notes_from_evaluation,
     repair_normalized_from_evaluation,
 )
 from app.modules.wiki_generation.application.ports import (
@@ -9,8 +10,15 @@ from app.modules.wiki_generation.application.ports import (
 
 
 class EvaluationGuardRepairer:
-    def repair(self, normalized: JsonDict, evaluation: JsonDict) -> tuple[JsonDict, list[str]]:
-        return repair_normalized_from_evaluation(normalized, evaluation)
+    def repair(
+        self,
+        notes: list[JsonDict],
+        normalized: JsonDict,
+        evaluation: JsonDict,
+    ) -> tuple[list[JsonDict], JsonDict, list[str]]:
+        repaired_normalized, operations = repair_normalized_from_evaluation(normalized, evaluation)
+        repaired_notes = repair_notes_from_evaluation(notes, evaluation) if operations else notes
+        return repaired_notes, repaired_normalized, operations
 
 
 def generation_evaluation_finished(evaluation: JsonDict, attempt: int, max_attempts: int) -> bool:

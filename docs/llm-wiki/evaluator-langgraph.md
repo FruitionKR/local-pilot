@@ -10,7 +10,7 @@ Wiki ingest와 Query evaluator의 평가 결과가 실제 생성 결과에 반�
 
 - 기존 Python 반복문을 LangGraph로 전환했다.
 - evaluator loop는 API와 CLI에서 기본 활성화한다.
-- 명확한 observation 오류는 deterministic repair 후 재평가한다.
+- 명확한 observation 오류는 raw semantic note와 normalized 결과에 deterministic repair를 함께 적용한 후 재평가한다.
 - concept, evidence, source block 문제는 전체 chunk를 바로 다시 만들지 않고 targeted patch를 먼저 실행한다.
 - 시도별 평가와 실제 반영 방식을 pipeline manifest에 기록한다.
 
@@ -147,6 +147,8 @@ Application 계층에서 다음 조건을 검증한 후 raw semantic note에 pat
 - target과 무관한 note와 collection item은 그대로 유지한다.
 
 Patch 적용 후 전체 note를 다시 normalize하고 evaluator를 재실행한다.
+
+앞선 deterministic repair에서 제거·병합한 observation은 raw semantic note에도 반영되므로, 이후 concept/evidence patch가 실행되어도 다음 normalize 단계에서 되살아나지 않는다.
 
 ### Fallback
 

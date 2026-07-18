@@ -70,7 +70,12 @@ class GenerationEvaluatorPort(Protocol):
 
 
 class GenerationRepairPort(Protocol):
-    def repair(self, normalized: JsonDict, evaluation: JsonDict) -> tuple[JsonDict, list[str]]:
+    def repair(
+        self,
+        notes: list[JsonDict],
+        normalized: JsonDict,
+        evaluation: JsonDict,
+    ) -> tuple[list[JsonDict], JsonDict, list[str]]:
         ...
 
 

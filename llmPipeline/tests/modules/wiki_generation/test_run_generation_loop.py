@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.modules.wiki_generation.application.run_generation_loop import (
+    EvaluationGuardRepairer,
     generation_evaluation_status,
     generation_retry_block_ids,
 )
@@ -16,6 +17,7 @@ class FakeSemanticGeneration:
         self.prompts: list[str] = []
         self.target_block_ids: list[list[str] | None] = []
         self.patch_calls = 0
+        self.patch_notes: list[list[dict[str, object]]] = []
 
     def generate(
         self,
@@ -37,6 +39,7 @@ class FakeSemanticGeneration:
         target_block_ids: list[str],
     ) -> tuple[list[dict[str, object]], list[dict[str, object]]] | None:
         self.patch_calls += 1
+        self.patch_notes.append(previous_notes)
         return (
             [{**previous_notes[0], "attempt": attempt, "patched": True}],
             [{"op": "replace"}],
@@ -73,12 +76,13 @@ class FakeRepairer:
 
     def repair(
         self,
+        notes: list[dict[str, object]],
         normalized: dict[str, object],
         evaluation: dict[str, object],
-    ) -> tuple[dict[str, object], list[str]]:
+    ) -> tuple[list[dict[str, object]], dict[str, object], list[str]]:
         if not self.operations:
-            return normalized, []
-        return {**normalized, "repaired": True}, self.operations
+            return notes, normalized, []
+        return notes, {**normalized, "repaired": True}, self.operations
 
 
 class FakeEvents:
@@ -261,6 +265,105 @@ class LangGraphWikiGenerationEvaluatorTest(unittest.TestCase):
         self.assertEqual(len(semantic_generation.prompts), 2)
         self.assertEqual(semantic_generation.target_block_ids[1], ["B0002"])
         self.assertEqual(evaluations[0]["retry_mode"], "targeted_chunk_regeneration")
+
+    def test_deterministic_repair_remains_removed_during_following_patch(self) -> None:
+        class ObservationSemanticGeneration(FakeSemanticGeneration):
+            def generate(
+                self,
+                system_prompt: str,
+                attempt: int,
+                source_context: dict[str, object] | None,
+                previous_notes: list[dict[str, object]] | None = None,
+                target_block_ids: list[str] | None = None,
+            ) -> list[dict[str, object]]:
+                self.prompts.append(system_prompt)
+                self.target_block_ids.append(target_block_ids)
+                return [
+                    {
+                        "attempt": attempt,
+                        "chunk_id": "chunk_0001",
+                        "observations": [
+                            {
+                                "type": "source_claim",
+                                "title": "깨진 관찰",
+                                "summary": "짧음",
+                                "anchor_block_ids": ["B0001"],
+                            }
+                        ],
+                    }
+                ]
+
+        class RepairAwareNormalizer:
+            def normalize_notes(self, notes: list[dict[str, object]]) -> dict[str, object]:
+                raw_observations = list(notes[0].get("observations", []))
+                normalized_observations = [
+                    {
+                        **observation,
+                        "anchor_reference_ids": observation.get("anchor_block_ids", []),
+                        "observation_id": f"O{index:03d}",
+                    }
+                    for index, observation in enumerate(raw_observations, start=1)
+                ]
+                return {
+                    "attempt": notes[0]["attempt"],
+                    "observations": normalized_observations,
+                    "semantic_notes": [
+                        {
+                            "chunk_id": "chunk_0001",
+                            "observations": [
+                                {
+                                    key: value
+                                    for key, value in observation.items()
+                                    if key != "observation_id"
+                                }
+                                for observation in normalized_observations
+                            ],
+                        }
+                    ],
+                    "concept_ledger": [
+                        {"slug": "target-concept", "anchor_reference_ids": ["B0002"]}
+                    ],
+                    "evidence_units": [],
+                }
+
+        semantic_generation = ObservationSemanticGeneration()
+        graph = LangGraphWikiGenerationEvaluator(
+            semantic_generation=semantic_generation,
+            normalizer=RepairAwareNormalizer(),
+            evaluator=FakeEvaluator(
+                [
+                    {
+                        "passed": False,
+                        "retry_recommended": True,
+                        "scores": {},
+                        "issues": [
+                            {"type": "broken_observation", "target": ["O001"]},
+                            {"type": "evidence_too_broad", "target": ["target-concept"]},
+                        ],
+                    },
+                    {
+                        "passed": False,
+                        "retry_recommended": True,
+                        "retry_feedback": "개념을 수정하세요.",
+                        "scores": {},
+                        "issues": [{"type": "evidence_too_broad", "target": ["target-concept"]}],
+                    },
+                    {"passed": True, "retry_recommended": False, "scores": {}, "issues": []},
+                ]
+            ),
+            repairer=EvaluationGuardRepairer(),
+            events=FakeEvents(),
+            evaluation_artifacts=FakeEvaluationArtifacts(),
+        )
+
+        graph.run(
+            semantic_system_prompt="기본 prompt",
+            source_context=None,
+            evaluation_enabled=True,
+            max_attempts=2,
+        )
+
+        self.assertEqual(semantic_generation.patch_notes[0][0]["observations"], [])
 
     def test_resolves_concept_and_evidence_targets_to_source_blocks(self) -> None:
         normalized = {

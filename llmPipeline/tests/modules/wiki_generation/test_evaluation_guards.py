@@ -4,6 +4,9 @@ from app.modules.wiki_generation.application.evaluation_guards import (
     apply_generation_evaluation_guards,
     repair_normalized_from_evaluation,
 )
+from app.modules.wiki_generation.application.run_generation_loop import (
+    EvaluationGuardRepairer,
+)
 
 
 class EvaluationGuardsTest(unittest.TestCase):
@@ -118,6 +121,62 @@ class EvaluationGuardsTest(unittest.TestCase):
         self.assertEqual(repaired["observations"][0]["related_concept_hints"], ["temperature", "back-emf"])
         self.assertEqual(len(repaired["semantic_notes"][0]["observations"]), 0)
         self.assertEqual(len(operations), 2)
+
+    def test_repairer_removes_observation_from_raw_notes_and_normalized_result(self) -> None:
+        notes = [
+            {
+                "chunk_id": "chunk_0001",
+                "observations": [
+                    {
+                        "type": "source_claim",
+                        "title": "깨진 관찰",
+                        "summary": "짧음",
+                        "claims": [],
+                        "related_concept_hints": [],
+                        "anchor_block_ids": ["B0001"],
+                    }
+                ],
+            }
+        ]
+        normalized_observation = {
+            "type": "source_claim",
+            "title": "깨진 관찰",
+            "query_text": None,
+            "summary": "짧음",
+            "claims": [],
+            "related_concept_hints": [],
+            "anchor_reference_ids": ["B0001"],
+            "observation_id": "O001",
+            "source_document_id": "doc-1",
+        }
+        normalized = {
+            "observations": [normalized_observation],
+            "semantic_notes": [
+                {
+                    "chunk_id": "chunk_0001",
+                    "observations": [
+                        {
+                            key: value
+                            for key, value in normalized_observation.items()
+                            if key not in {"observation_id", "source_document_id"}
+                        }
+                    ],
+                }
+            ],
+        }
+        evaluation = {
+            "issues": [{"type": "broken_observation", "target": ["O001"]}]
+        }
+
+        repaired_notes, repaired_normalized, operations = EvaluationGuardRepairer().repair(
+            notes,
+            normalized,
+            evaluation,
+        )
+
+        self.assertEqual(repaired_notes[0]["observations"], [])
+        self.assertEqual(repaired_normalized["observations"], [])
+        self.assertTrue(operations)
 
 
 if __name__ == "__main__":
