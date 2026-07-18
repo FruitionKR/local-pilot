@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Query Wiki scoring 단계 분리
+
+- Wiki page/link 로드, Markdown 보강, source/concept scoring 결과를 `_ScoredWikiCandidates`로 분리
+- 이벤트 순서와 web fallback 판단 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
 ### refactor: Meaning Cluster 조립 단계 분리
 
 - candidate 판단, 기존 cluster 비교, artifact·maintenance summary 생성을 독립 단계로 분리
