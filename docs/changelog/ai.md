@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Query graph 탐색과 context I/O 분리
+
+- seed·traversal·path 보정 결과를 `_InternalRetrievalGraph`로 명시하고 Markdown·embedding 로드와 분리
+- 기존 Query event 순서와 응답 계약을 유지하고 Query 테스트 57개 통과
+
+---
+
 ### refactor: Wiki page 조립 내부 책임 분리
 
 - Source page 준비, concept 입력 구성, source 조립, concept mode별 조립 책임 분리
