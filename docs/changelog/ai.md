@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Pipeline run application 경계 분리
+
+- run 등록·실행·성공/실패 저장·embedding 시작 순서를 `RunPipelineUseCase`와 port adapter로 이동
+- FastAPI 요청·응답 계약을 유지하고 API contract 16개와 application 상태 순서 테스트 2개 통과
+
+---
+
 ### refactor: Query graph 탐색과 context I/O 분리
 
 - seed·traversal·path 보정 결과를 `_InternalRetrievalGraph`로 명시하고 Markdown·embedding 로드와 분리

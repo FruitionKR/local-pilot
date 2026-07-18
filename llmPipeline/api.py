@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import threading
 import uuid
 from pathlib import Path
 from typing import Any, Literal
@@ -17,26 +16,35 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.query.interfaces.http.routes import router as query_router
 from app.modules.wiki_schema.interfaces.http.routes import router as wiki_schema_router
-from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase
-from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
-from app.modules.wiki_embedding.infrastructure.minio_markdown_reader import MinioMarkdownReader
-from app.modules.wiki_embedding.infrastructure.postgres_wiki_page_embedding_repository import PostgresWikiPageEmbeddingRepository
+from app.modules.wiki_embedding.infrastructure.threaded_wiki_embedding_job import (
+    ThreadedWikiEmbeddingJob,
+)
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_ingestion.application.run_pipeline import (
+    PipelineRunRegistration,
+    RunPipelineUseCase,
+)
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
+    PostgresPipelineRunRepository,
+    RunLabPipelineRunner,
+)
 from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
     build_promotion_concept_page as _promotion_concept_page,
     promotion_representative as _promotion_representative,
 )
 from app.modules.wiki_schema.infrastructure import postgres_wiki_schema_repository as wiki_schema_database
-from run_lab import run_pipeline
-
-
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
 app.include_router(agent_router)
 app.include_router(query_router)
 app.include_router(wiki_schema_router)
 logger = logging.getLogger("fruition.pipeline")
+pipeline_run_use_case = RunPipelineUseCase(
+    runner=RunLabPipelineRunner(),
+    repository=PostgresPipelineRunRepository(),
+    embedding_job=ThreadedWikiEmbeddingJob(logger),
+)
 
 DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
 CHAT_SEMANTIC_PROMPT = "prompts/chat_semantic_extraction.system.md"
@@ -272,37 +280,9 @@ def _validate_chat_inline_markdown(payload: ChatWikiRunIn, user_id: str, workspa
 
 def _execute_pipeline_run(run_id: str, args: argparse.Namespace) -> None:
     try:
-        manifest = run_pipeline(args)
-        page_ids = database.finish_pipeline_run(run_id, manifest)
-        _start_embedding_job(run_id, page_ids)
+        pipeline_run_use_case.execute(run_id, args)
     except Exception as exc:
-        database.fail_pipeline_run(run_id, str(exc))
         logger.error("ERROR: pipeline run failed run_id=%s error=%s", run_id, exc)
-
-
-def _start_embedding_job(run_id: str, page_ids: list[str]) -> None:
-    if not page_ids:
-        return
-    thread = threading.Thread(
-        target=_execute_embedding_job,
-        args=(run_id, page_ids),
-        name=f"wiki-page-embedding-{run_id}",
-        daemon=True,
-    )
-    thread.start()
-
-
-def _execute_embedding_job(run_id: str, page_ids: list[str]) -> None:
-    try:
-        use_case = BuildWikiPageEmbeddingsUseCase(
-            repository=PostgresWikiPageEmbeddingRepository(),
-            embedding_model=BgeM3EmbeddingModel(),
-            markdown_reader=MinioMarkdownReader(),
-        )
-        result = use_case.execute(page_ids)
-        logger.info("wiki page embedding job completed run_id=%s result=%s", run_id, result)
-    except Exception as exc:
-        logger.error("wiki page embedding job failed run_id=%s error=%s", run_id, exc)
 
 
 @app.get("/health")
@@ -505,7 +485,15 @@ def _run_pipeline_request(payload: PipelineRunIn | ChatWikiRunIn, background_tas
         input_markdown, input_source, input_name = _load_stored_document_input(document)
 
     try:
-        database.create_pipeline_run(run_id, document_id, input_source, str(out), payload.mode)
+        pipeline_run_use_case.register(
+            PipelineRunRegistration(
+                run_id=run_id,
+                document_id=document_id,
+                input_source=input_source,
+                output_dir=str(out),
+                mode=payload.mode,
+            )
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -527,11 +515,8 @@ def _run_pipeline_request(payload: PipelineRunIn | ChatWikiRunIn, background_tas
         return PipelineRunOut(run_id=run_id, status="running", manifest=None, output_dir=str(out), log_path=str(log_path))
 
     try:
-        manifest = run_pipeline(args)
-        page_ids = database.finish_pipeline_run(run_id, manifest)
-        _start_embedding_job(run_id, page_ids)
+        manifest = pipeline_run_use_case.execute(run_id, args)
     except Exception as exc:
-        database.fail_pipeline_run(run_id, str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return PipelineRunOut(run_id=run_id, status="succeeded", manifest=manifest, output_dir=str(out), log_path=str(log_path))
