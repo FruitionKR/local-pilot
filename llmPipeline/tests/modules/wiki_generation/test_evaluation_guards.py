@@ -168,14 +168,13 @@ class EvaluationGuardsTest(unittest.TestCase):
             "issues": [{"type": "broken_observation", "target": ["O001"]}]
         }
 
-        repaired_notes, repaired_normalized, operations = EvaluationGuardRepairer().repair(
+        repaired_notes, operations = EvaluationGuardRepairer().repair(
             notes,
             normalized,
             evaluation,
         )
 
         self.assertEqual(repaired_notes[0]["observations"], [])
-        self.assertEqual(repaired_normalized["observations"], [])
         self.assertTrue(operations)
 
 

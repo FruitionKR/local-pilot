@@ -61,7 +61,7 @@ Evaluator 출력은 문제의 필수 수정 여부를 다음처럼 구분한다.
 - 기존 `ev_0003` 값과 수정 가능한 `chunk_id`, collection, index
 - target block `B0002`와 앞뒤 block `B0001`, `B0003`
 
-같은 block을 사용하는 다른 observation이나 evidence는 evaluator가 직접 target으로 지정하지 않은 이상 수정 가능한 항목에 포함하지 않는다.
+evidence ID나 concept slug처럼 항목 식별자를 target으로 지정하면 해당 항목만 수정 가능하다. source block ID 자체를 target으로 지정하면 그 block에 직접 anchor된 항목들이 수정 후보가 된다.
 
 실제 Patch LLM user input은 다음 형태다.
 
@@ -159,17 +159,23 @@ targeted patch
 ```
 
 Fallback도 기존 evaluator feedback을 semantic extraction prompt에 포함한다.
+`Bxxxx` 형태라도 실제 문서의 source block 목록에 없는 target은 선택 재생성으로 기록하지 않고 전체 재생성으로 처리한다.
 
 ## 평가·반영 기록
 
-Pipeline manifest와 DB의 `pipeline_runs.manifest`에는 다음 필드를 보관한다.
+Pipeline manifest와 DB의 `pipeline_runs.manifest`에는 다음 최상위 필드를 보관한다.
 
 - `generation_evaluations`: 시도별 evaluator 결과
 - `generation_evaluation_status`: `disabled`, `passed`, `unresolved`
+
+재시도를 실행한 `generation_evaluations` 항목에는 다음 필드를 추가한다.
+
 - `retry_mode`: `targeted_patch`, `targeted_chunk_regeneration`, `full_regeneration`
 - `applied_patch_operations`: targeted patch에 실제 적용된 operation
 
 최대 시도 후 issue가 남아도 기존 page 생성과 저장 계약은 유지하고 `generation_evaluation_status=unresolved`로 기록한다.
+
+`save_debug_json=true`이면 최초 평가와 deterministic repair 결과 외에 `raw_llm_outputs/wiki_evaluation/attempt_NN.retry.json`도 생성한다. 이 파일에는 재시도 직전에 확정한 `retry_mode`와 targeted patch 성공 시 `applied_patch_operations`가 포함된다.
 
 ## LangSmith와 Studio
 
@@ -184,7 +190,7 @@ Studio graph는 production과 같은 topology builder를 사용하므로 `target
 
 ## Backend·Frontend 영향
 
-현재 pipeline 요청·응답, document status, page 저장 계약은 변경하지 않았다. 따라서 기존 동작을 위해 backend나 frontend를 수정할 필요는 없다.
+pipeline 요청·응답의 필드 형태, document status, page 저장 계약은 변경하지 않았다. 다만 기존 `wiki_evaluation_loop` 입력의 기본값은 `false`에서 `true`로 바뀌었다. backend가 이 필드를 생략해도 evaluator가 실행되며, 기존 동작을 강제로 유지해야 하는 호출만 `wiki_evaluation_loop=false`를 보내면 된다. frontend 수정은 필요 없다.
 
 `unresolved` 품질 상태를 사용자에게 보여주려면 후속으로 다음 projection을 추가할 수 있다.
 

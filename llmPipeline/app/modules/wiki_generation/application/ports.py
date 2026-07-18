@@ -75,7 +75,7 @@ class GenerationRepairPort(Protocol):
         notes: list[JsonDict],
         normalized: JsonDict,
         evaluation: JsonDict,
-    ) -> tuple[list[JsonDict], JsonDict, list[str]]:
+    ) -> tuple[list[JsonDict], list[str]]:
         ...
 
 

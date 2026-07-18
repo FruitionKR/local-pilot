@@ -207,6 +207,6 @@ class EvaluationArtifactAdapter:
     def write(self, attempt: int, kind: str, evaluation: dict[str, Any]) -> None:
         if not self.enabled:
             return
-        suffix = ".repair" if kind == "repair" else ""
+        suffix = {"repair": ".repair", "retry": ".retry"}.get(kind, "")
         path = ensure_dir(self.out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}{suffix}.json"
         write_json(path, evaluation)

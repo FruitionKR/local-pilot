@@ -86,6 +86,61 @@ Studio에서 `query_evaluator` 또는 `wiki_ingest_evaluator` graph를 선택할
 }
 ```
 
+`wiki_ingest_evaluator`는 production topology와 분기를 재현하는 Studio 시뮬레이션 graph입니다. 다음 입력은 첫 평가에서 `B0002` 문제를 발견해 `targeted_patch`로 이동한 뒤, 두 번째 평가에서 통과하는 흐름을 만든다.
+
+```json
+{
+  "semantic_system_prompt": "원문의 의미 구조를 추출하세요.",
+  "evaluation_enabled": true,
+  "max_attempts": 2,
+  "attempt": 1,
+  "notes": [
+    {
+      "chunk_id": "chunk_0001",
+      "evidence_claims": [
+        {
+          "claim": "하나의 넓은 주장",
+          "anchor_block_ids": ["B0002"]
+        }
+      ]
+    }
+  ],
+  "normalized": {
+    "semantic_notes": [],
+    "concept_ledger": [],
+    "evidence_units": [
+      {
+        "evidence_id": "ev_0001",
+        "anchor_reference_ids": ["B0002"]
+      }
+    ]
+  },
+  "evaluation_sequence": [
+    {
+      "passed": false,
+      "retry_recommended": true,
+      "retry_feedback": "ev_0001을 원자 주장으로 분리하세요.",
+      "scores": {"overall": 0.6},
+      "issues": [
+        {
+          "type": "evidence_too_broad",
+          "target": ["ev_0001"]
+        }
+      ]
+    },
+    {
+      "passed": true,
+      "retry_recommended": false,
+      "retry_feedback": "",
+      "scores": {"overall": 0.9},
+      "issues": []
+    }
+  ]
+}
+```
+
+여기서 `notes`와 `normalized`는 의미 추출·정규화 결과를 대신하고, `evaluation_sequence`는 evaluator가 차례로 반환할 결과를 대신한다. Studio 출력의 `evaluations`에서 분기별 평가와 `retry_mode`를 확인할 수 있다. 실제 문서·source block·모델 입출력으로 실행하려면 pipeline을 실행하고 LangSmith trace를 확인한다.
+
 ### CLI 실행
 
 `llmPipeline` 폴더에서 실행합니다.
@@ -218,6 +273,7 @@ generation loop port의 실제 LLM·debug artifact adapter입니다.
 - evaluator target 항목의 `replace/remove/add` patch 생성과 source anchor 검증
 - evaluator completion 호출
 - `--save-debug-json` 평가 산출물 기록
+- retry를 실행한 경우 `raw_llm_outputs/wiki_evaluation/attempt_NN.retry.json`에 최종 `retry_mode`와 적용한 patch operation 기록
 
 ### `app/modules/wiki_generation/infrastructure/pipeline_log.py`
 

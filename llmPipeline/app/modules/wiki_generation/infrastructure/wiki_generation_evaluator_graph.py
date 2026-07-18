@@ -107,6 +107,7 @@ class LangGraphWikiGenerationEvaluator:
         repairer: GenerationRepairPort,
         events: PipelineEventPort,
         evaluation_artifacts: EvaluationArtifactPort,
+        source_block_ids: list[str] | None = None,
     ) -> None:
         self.semantic_generation = semantic_generation
         self.normalizer = normalizer
@@ -114,6 +115,7 @@ class LangGraphWikiGenerationEvaluator:
         self.repairer = repairer
         self.events = events
         self.evaluation_artifacts = evaluation_artifacts
+        self.source_block_ids = source_block_ids
         self.graph = self._build_graph().compile()
 
     def run(
@@ -180,6 +182,7 @@ class LangGraphWikiGenerationEvaluator:
         )
         if patch_result is None:
             evaluation = {**state["evaluation"], "retry_mode": "targeted_chunk_regeneration"}
+            self.evaluation_artifacts.write(state["attempt"] - 1, "retry", evaluation)
             return {
                 "patch_applied": False,
                 "evaluation": evaluation,
@@ -191,6 +194,7 @@ class LangGraphWikiGenerationEvaluator:
             "retry_mode": "targeted_patch",
             "applied_patch_operations": operations,
         }
+        self.evaluation_artifacts.write(state["attempt"] - 1, "retry", evaluation)
         return {
             "notes": notes,
             "patch_applied": True,
@@ -209,10 +213,15 @@ class LangGraphWikiGenerationEvaluator:
         }
 
     def _repair(self, state: WikiGenerationEvaluatorState) -> WikiGenerationEvaluatorState:
-        notes, normalized, repair_operations = self.repairer.repair(
+        notes, repair_operations = self.repairer.repair(
             state["notes"],
             state["normalized"],
             state["evaluation"],
+        )
+        normalized = (
+            self.normalizer.normalize_notes(notes)
+            if repair_operations
+            else state["normalized"]
         )
         return {
             "notes": notes,
@@ -242,9 +251,12 @@ class LangGraphWikiGenerationEvaluator:
             return "finished"
         return "retry"
 
-    @staticmethod
-    def _prepare_retry(state: WikiGenerationEvaluatorState) -> WikiGenerationEvaluatorState:
-        retry_block_ids = generation_retry_block_ids(state["normalized"], state["evaluation"])
+    def _prepare_retry(self, state: WikiGenerationEvaluatorState) -> WikiGenerationEvaluatorState:
+        retry_block_ids = generation_retry_block_ids(
+            state["normalized"],
+            state["evaluation"],
+            self.source_block_ids,
+        )
         result: WikiGenerationEvaluatorState = {
             "attempt": state["attempt"] + 1,
             "prompt": generation_retry_prompt(state["semantic_system_prompt"], state["evaluation"]),
@@ -255,6 +267,7 @@ class LangGraphWikiGenerationEvaluator:
             evaluation = {**state["evaluation"], "retry_mode": "full_regeneration"}
             result["evaluation"] = evaluation
             result["evaluations"] = [*state["evaluations"][:-1], evaluation]
+            self.evaluation_artifacts.write(state["attempt"], "retry", evaluation)
         return result
 
     @staticmethod

@@ -15,10 +15,10 @@ class EvaluationGuardRepairer:
         notes: list[JsonDict],
         normalized: JsonDict,
         evaluation: JsonDict,
-    ) -> tuple[list[JsonDict], JsonDict, list[str]]:
-        repaired_normalized, operations = repair_normalized_from_evaluation(normalized, evaluation)
+    ) -> tuple[list[JsonDict], list[str]]:
+        _, operations = repair_normalized_from_evaluation(normalized, evaluation)
         repaired_notes = repair_notes_from_evaluation(notes, evaluation) if operations else notes
-        return repaired_notes, repaired_normalized, operations
+        return repaired_notes, operations
 
 
 def generation_evaluation_finished(evaluation: JsonDict, attempt: int, max_attempts: int) -> bool:
@@ -39,7 +39,11 @@ def generation_retry_prompt(semantic_system_prompt: str, evaluation: JsonDict) -
     )
 
 
-def generation_retry_block_ids(normalized: JsonDict, evaluation: JsonDict) -> list[str] | None:
+def generation_retry_block_ids(
+    normalized: JsonDict,
+    evaluation: JsonDict,
+    source_block_ids: list[str] | None = None,
+) -> list[str] | None:
     """모든 evaluator target을 source block으로 해석하며, None은 전체 재생성을 뜻합니다."""
     issues = evaluation.get("issues") or []
     if not issues:
@@ -63,6 +67,7 @@ def generation_retry_block_ids(normalized: JsonDict, evaluation: JsonDict) -> li
         for record in [*records, *normalized.get("semantic_notes", [])]
         for block_id in _record_anchor_ids(record)
     }
+    valid_source_block_ids = set(source_block_ids) if source_block_ids is not None else None
     resolved: list[str] = []
     for issue in issues:
         raw_targets = issue.get("target") or []
@@ -72,7 +77,11 @@ def generation_retry_block_ids(normalized: JsonDict, evaluation: JsonDict) -> li
             if not target:
                 return None
             target_block_ids: list[str] = []
-            if target in known_block_ids or (target.startswith("B") and target[1:].isdigit()):
+            direct_source_block = target.startswith("B") and target[1:].isdigit()
+            if target in known_block_ids or (
+                direct_source_block
+                and (valid_source_block_ids is None or target in valid_source_block_ids)
+            ):
                 target_block_ids.append(target)
             for record in records:
                 if target not in _record_identifiers(record):

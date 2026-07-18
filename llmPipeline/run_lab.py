@@ -269,6 +269,7 @@ def _run_wiki_generation_loop(
         repairer=EvaluationGuardRepairer(),
         events=log,
         evaluation_artifacts=EvaluationArtifactAdapter(out, save_debug_json),
+        source_block_ids=[block.block_id for block in blocks],
     ).run(
         semantic_system_prompt=semantic_system_prompt,
         source_context=source_context,
@@ -613,7 +614,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         blocks=blocks,
         out=out,
         save_debug_json=args.save_debug_json,
-        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", False),
+        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
         max_eval_attempts=max_eval_attempts,
         source_context=semantic_source_context,
         wiki_patch_system_prompt=wiki_patch_system_prompt,

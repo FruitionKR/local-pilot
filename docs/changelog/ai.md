@@ -19,9 +19,10 @@ Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의�
 - `POST /pipeline/runs`, `POST /chat-wiki/runs`, CLI의 evaluator loop를 기본 활성화하고 명시적 비활성화 옵션 유지
 - Wiki evaluator의 `issues`는 반드시 재시도하고 선택적 제안은 `warnings`로 분리하도록 평가 계약 보강
 - Wiki evaluator의 concept/evidence/source block target에 대해 target block 주변 문맥과 기존 target 항목만 전달하는 `replace/remove/add` patch 경로 추가
-- deterministic observation repair를 raw semantic note와 normalized 결과에 함께 반영해 후속 patch·normalize에서 제거 항목이 복원되지 않도록 보강
+- deterministic observation repair를 raw semantic note에 반영하고 다시 normalize해 최상위 registry와 `semantic_notes`가 일치하도록 보강
 - patch의 수정 path와 source anchor를 검증하고 실패 시 관련 packet 재생성, target 해석 실패 시 전체 재생성으로 fallback
 - 평가 기록에 `retry_mode`와 성공한 `applied_patch_operations`를 남겨 evaluator feedback의 실제 반영 내역을 추적
+- 실제 문서에 없는 source block target은 전체 재생성으로 처리하고, debug retry artifact에도 확정된 재시도 방식과 patch operation을 기록
 - patch에서 evaluator target과 무관한 semantic note와 의미 항목은 그대로 유지하고, 최대 시도 후 남은 issue는 manifest의 `generation_evaluation_status=unresolved`로 기록
 - Wiki evaluator 시도별 상세 결과를 pipeline manifest와 DB run manifest에 보관
 - Query evaluator에 `revise_answer` route를 추가하고, actionable feedback이 있는 답변은 재생성·재평가하도록 변경

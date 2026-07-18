@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from app.modules.wiki_generation.infrastructure.generation_loop_adapters import (
+    EvaluationArtifactAdapter,
     SemanticGenerationAdapter,
 )
 
@@ -130,6 +133,20 @@ class SemanticGenerationAdapterTest(unittest.TestCase):
         self.assertIn('"block_id": "B0003"', completion.user_prompt)
         self.assertNotIn('"block_id": "B0004"', completion.user_prompt)
         self.assertEqual(events.stages, ["3-수정. 의미 구조 patch"])
+
+
+class EvaluationArtifactAdapterTest(unittest.TestCase):
+    def test_writes_retry_decision_to_separate_artifact(self) -> None:
+        with TemporaryDirectory() as directory:
+            out = Path(directory)
+            adapter = EvaluationArtifactAdapter(out, True)
+
+            adapter.write(1, "evaluation", {"passed": False})
+            adapter.write(1, "retry", {"retry_mode": "targeted_patch"})
+
+            artifact_dir = out / "raw_llm_outputs" / "wiki_evaluation"
+            self.assertTrue((artifact_dir / "attempt_01.json").exists())
+            self.assertTrue((artifact_dir / "attempt_01.retry.json").exists())
 
 
 if __name__ == "__main__":
