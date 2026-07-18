@@ -149,6 +149,7 @@ def _evaluation_dict(evaluation: QueryEvaluation) -> dict[str, Any]:
         "reason": evaluation.reason,
         "feedback": evaluation.feedback,
         "web_query": evaluation.web_query,
+        "warnings": evaluation.warnings,
     }
 
 

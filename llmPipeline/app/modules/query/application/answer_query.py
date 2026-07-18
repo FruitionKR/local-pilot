@@ -277,6 +277,10 @@ class AnswerQueryUseCase:
                 stop_reason = "query_evaluator_unsupported"
                 answer = self._unsupported_answer(evidence_snippets)
                 answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
+            elif query_evaluation.route == "revise_answer":
+                stop_reason = "query_evaluator_unresolved"
+                answer = self._unsupported_answer(evidence_snippets)
+                answer, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(answer, evidence_snippets)
             elif query_evaluation.route == "internal_supported" and stop_reason == "no_relevant_seed":
                 stop_reason = "query_evaluator_internal_supported"
         elif stop_reason == "no_relevant_seed":

@@ -263,6 +263,7 @@ relative_score_floor
 concept_direct_match
 query_evaluator_unsupported
 query_evaluator_internal_supported
+query_evaluator_unresolved
 internal_web_augmented
 web_fallback
 ```
@@ -366,8 +367,10 @@ class AnswerGeneratorPort(Protocol):
 11. evidence snippet 선택
 12. answer context 구성
 13. LLM answer generation
-14. evaluator가 있으면 internal/web/unsupported route 판단
-15. Query response 반환
+14. evaluator가 있으면 internal/revise/web/unsupported route 판단
+15. revise_answer이면 feedback을 반영해 제한 횟수 안에서 답변 재생성·재평가
+16. revise_answer가 끝까지 해결되지 않으면 검증되지 않은 답변 대신 unsupported 답변 반환
+17. Query response 반환
 ```
 
 FastAPI route는 이 use case만 호출한다.

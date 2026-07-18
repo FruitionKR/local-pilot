@@ -4,123 +4,111 @@ from app.modules.wiki_generation.application.evaluation_guards import (
     repair_normalized_from_evaluation,
 )
 from app.modules.wiki_generation.application.ports import (
-    EvaluationArtifactPort,
-    GenerationEvaluatorPort,
-    GenerationRepairPort,
     JsonDict,
-    PipelineEventPort,
-    SemanticGenerationPort,
-    SemanticNormalizerPort,
 )
 
 
 class EvaluationGuardRepairer:
-    def repair(self, normalized: JsonDict, evaluation: JsonDict) -> tuple[JsonDict, list[JsonDict]]:
+    def repair(self, normalized: JsonDict, evaluation: JsonDict) -> tuple[JsonDict, list[str]]:
         return repair_normalized_from_evaluation(normalized, evaluation)
 
 
-class RunGenerationLoopUseCase:
-    def __init__(
-        self,
-        semantic_generation: SemanticGenerationPort,
-        normalizer: SemanticNormalizerPort,
-        evaluator: GenerationEvaluatorPort,
-        repairer: GenerationRepairPort,
-        events: PipelineEventPort,
-        evaluation_artifacts: EvaluationArtifactPort,
-    ) -> None:
-        self.semantic_generation = semantic_generation
-        self.normalizer = normalizer
-        self.evaluator = evaluator
-        self.repairer = repairer
-        self.events = events
-        self.evaluation_artifacts = evaluation_artifacts
+def generation_evaluation_finished(evaluation: JsonDict, attempt: int, max_attempts: int) -> bool:
+    return bool(
+        not evaluation.get("retry_recommended")
+        or evaluation.get("passed")
+        or attempt >= max_attempts
+    )
 
-    def execute(
-        self,
-        *,
-        semantic_system_prompt: str,
-        source_context: JsonDict | None,
-        evaluation_enabled: bool,
-        max_attempts: int,
-    ) -> tuple[list[JsonDict], JsonDict, list[JsonDict]]:
-        attempt = 1
-        prompt = semantic_system_prompt
-        evaluations: list[JsonDict] = []
 
-        while True:
-            notes = self.semantic_generation.generate(prompt, attempt, source_context)
-            self.events.emit(
-                "3. 의미 추출 완료",
-                "의미 노트 목록을 정규화 단계 입력으로 전달합니다.",
-                {"시도": attempt, "노트 수": len(notes)},
-            )
-            normalized = self.normalizer.normalize_notes(notes)
-            if not evaluation_enabled:
-                return notes, normalized, evaluations
+def generation_retry_prompt(semantic_system_prompt: str, evaluation: JsonDict) -> str:
+    feedback = str(evaluation.get("retry_feedback") or "")
+    return (
+        semantic_system_prompt
+        + "\n\nEvaluator feedback for retry:\n"
+        + feedback
+        + "\nApply this feedback strictly. Keep source anchors exact. Return the same JSON schema."
+    )
 
-            evaluation = self.evaluator.evaluate(normalized)
-            evaluations.append(evaluation)
-            self.evaluation_artifacts.write(attempt, "evaluation", evaluation)
-            self._emit_evaluation(attempt, evaluation)
 
-            repaired_normalized, repair_operations = self.repairer.repair(normalized, evaluation)
-            if repair_operations:
-                normalized = repaired_normalized
-                evaluation = self.evaluator.evaluate(normalized)
-                evaluation["repair_operations"] = repair_operations
-                evaluations.append(evaluation)
-                self.evaluation_artifacts.write(attempt, "repair", evaluation)
-                self._emit_repair(attempt, repair_operations, evaluation)
+def generation_retry_block_ids(normalized: JsonDict, evaluation: JsonDict) -> list[str] | None:
+    """모든 evaluator target을 source block으로 해석하며, None은 전체 재생성을 뜻합니다."""
+    issues = evaluation.get("issues") or []
+    if not issues:
+        return None
 
-            if self._is_finished(evaluation, attempt, max_attempts):
-                return notes, normalized, evaluations
+    records = [
+        *normalized.get("concept_ledger", []),
+        *normalized.get("evidence_units", []),
+        *normalized.get("observations", []),
+        *normalized.get("section_candidates", []),
+        *normalized.get("mentions", []),
+        *normalized.get("categories", []),
+    ]
+    evidence_by_id = {
+        str(item.get("evidence_id")): item
+        for item in normalized.get("evidence_units", [])
+        if item.get("evidence_id")
+    }
+    known_block_ids = {
+        str(block_id)
+        for record in [*records, *normalized.get("semantic_notes", [])]
+        for block_id in _record_anchor_ids(record)
+    }
+    resolved: list[str] = []
+    for issue in issues:
+        raw_targets = issue.get("target") or []
+        targets = raw_targets if isinstance(raw_targets, list) else [raw_targets]
+        for raw_target in targets:
+            target = str(raw_target).strip()
+            if not target:
+                return None
+            target_block_ids: list[str] = []
+            if target in known_block_ids or (target.startswith("B") and target[1:].isdigit()):
+                target_block_ids.append(target)
+            for record in records:
+                if target not in _record_identifiers(record):
+                    continue
+                target_block_ids.extend(_record_anchor_ids(record))
+                for evidence_id in record.get("evidence_claim_ids", []) or []:
+                    target_block_ids.extend(_record_anchor_ids(evidence_by_id.get(str(evidence_id), {})))
+            if not target_block_ids:
+                return None
+            resolved.extend(target_block_ids)
+    return _unique(resolved)
 
-            feedback = str(evaluation.get("retry_feedback") or "")
-            prompt = (
-                semantic_system_prompt
-                + "\n\nEvaluator feedback for retry:\n"
-                + feedback
-                + "\nApply this feedback strictly. Keep source anchors exact. Return the same JSON schema."
-            )
-            attempt += 1
 
-    def _emit_evaluation(self, attempt: int, evaluation: JsonDict) -> None:
-        self.events.emit(
-            "3-평가. Wiki 생성 평가",
-            "정규화된 의미 구조를 평가했습니다.",
-            {
-                "시도": attempt,
-                "passed": evaluation.get("passed"),
-                "retry": evaluation.get("retry_recommended"),
-                "overall": (evaluation.get("scores") or {}).get("overall"),
-                "issue 수": len(evaluation.get("issues", [])),
-            },
-        )
+def generation_evaluation_status(evaluations: list[JsonDict]) -> str:
+    if not evaluations:
+        return "disabled"
+    final = evaluations[-1]
+    return "passed" if final.get("passed") and not final.get("issues") else "unresolved"
 
-    def _emit_repair(
-        self,
-        attempt: int,
-        repair_operations: list[JsonDict],
-        evaluation: JsonDict,
-    ) -> None:
-        self.events.emit(
-            "3-평가-보정. Wiki 생성 보정",
-            "평가 issue를 바탕으로 명확한 observation 문제를 자동 보정하고 다시 평가했습니다.",
-            {
-                "시도": attempt,
-                "보정 수": len(repair_operations),
-                "passed": evaluation.get("passed"),
-                "retry": evaluation.get("retry_recommended"),
-                "overall": (evaluation.get("scores") or {}).get("overall"),
-                "issue 수": len(evaluation.get("issues", [])),
-            },
-        )
 
-    @staticmethod
-    def _is_finished(evaluation: JsonDict, attempt: int, max_attempts: int) -> bool:
-        return bool(
-            not evaluation.get("retry_recommended")
-            or evaluation.get("passed")
-            or attempt >= max_attempts
-        )
+def _record_identifiers(record: JsonDict) -> set[str]:
+    return {
+        str(record.get(field)).strip()
+        for field in ("slug", "title", "name", "term", "evidence_id", "observation_id", "chunk_id")
+        if record.get(field)
+    }
+
+
+def _record_anchor_ids(record: JsonDict) -> list[str]:
+    anchors = list(record.get("anchor_reference_ids") or [])
+    for field in (
+        "key_points",
+        "observations",
+        "categories",
+        "core_concepts",
+        "section_candidates",
+        "mentions",
+        "concept_candidates",
+        "evidence_claims",
+    ):
+        for item in record.get(field, []) or []:
+            anchors.extend(item.get("anchor_reference_ids") or [])
+    return _unique([str(anchor) for anchor in anchors if str(anchor)])
+
+
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))

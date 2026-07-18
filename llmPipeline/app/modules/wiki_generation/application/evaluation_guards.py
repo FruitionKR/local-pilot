@@ -28,7 +28,7 @@ def apply_generation_evaluation_guards(evaluation: dict[str, Any], normalized: d
             },
         )
     _apply_observation_evaluation_guards(evaluation, normalized)
-    if any(issue.get("severity") in {"medium", "high"} for issue in evaluation.get("issues", [])):
+    if evaluation.get("issues"):
         evaluation["passed"] = False
         evaluation["retry_recommended"] = True
         scores = evaluation.setdefault("scores", {})

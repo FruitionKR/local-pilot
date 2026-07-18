@@ -44,6 +44,7 @@ def test_pipeline_run_accepts_legacy_document_scope_fields() -> None:
 
     assert payload.user_id == "request-user"
     assert payload.workspace_id == "request-workspace"
+    assert payload.wiki_evaluation_loop is True
 
 
 def test_chat_wiki_run_accepts_selection_mode() -> None:
@@ -51,6 +52,7 @@ def test_chat_wiki_run_accepts_selection_mode() -> None:
 
     assert payload.document_id == "chat_document_1"
     assert payload.selection_mode == "full"
+    assert payload.wiki_evaluation_loop is True
 
 
 def test_chat_wiki_run_accepts_optional_input_markdown() -> None:

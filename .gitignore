@@ -56,5 +56,6 @@ pnpm-debug.log*
 # LLM pipeline generated outputs
 pipeline_api/runs/
 llmPipeline/runs/
+llmPipeline/.langgraph_api/
 /tmp/
 /paddle_cache/

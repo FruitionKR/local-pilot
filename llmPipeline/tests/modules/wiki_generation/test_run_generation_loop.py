@@ -3,27 +3,60 @@ from __future__ import annotations
 import unittest
 
 from app.modules.wiki_generation.application.run_generation_loop import (
-    RunGenerationLoopUseCase,
+    generation_evaluation_status,
+    generation_retry_block_ids,
+)
+from app.modules.wiki_generation.infrastructure.wiki_generation_evaluator_graph import (
+    LangGraphWikiGenerationEvaluator,
 )
 
 
 class FakeSemanticGeneration:
     def __init__(self) -> None:
         self.prompts: list[str] = []
+        self.target_block_ids: list[list[str] | None] = []
+        self.patch_calls = 0
 
     def generate(
         self,
         system_prompt: str,
         attempt: int,
         source_context: dict[str, object] | None,
+        previous_notes: list[dict[str, object]] | None = None,
+        target_block_ids: list[str] | None = None,
     ) -> list[dict[str, object]]:
         self.prompts.append(system_prompt)
-        return [{"attempt": attempt, "source_context": source_context}]
+        self.target_block_ids.append(target_block_ids)
+        return [{"attempt": attempt, "source_context": source_context, "chunk_id": "chunk_0001"}]
+
+    def patch(
+        self,
+        attempt: int,
+        previous_notes: list[dict[str, object]],
+        evaluation: dict[str, object],
+        target_block_ids: list[str],
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]] | None:
+        self.patch_calls += 1
+        return (
+            [{**previous_notes[0], "attempt": attempt, "patched": True}],
+            [{"op": "replace"}],
+        )
 
 
 class FakeNormalizer:
     def normalize_notes(self, notes: list[dict[str, object]]) -> dict[str, object]:
         return {"attempt": notes[0]["attempt"]}
+
+
+class TargetNormalizer:
+    def normalize_notes(self, notes: list[dict[str, object]]) -> dict[str, object]:
+        return {
+            "attempt": notes[0]["attempt"],
+            "concept_ledger": [
+                {"slug": "target-concept", "anchor_reference_ids": ["B0002"]}
+            ],
+            "evidence_units": [],
+        }
 
 
 class FakeEvaluator:
@@ -35,14 +68,14 @@ class FakeEvaluator:
 
 
 class FakeRepairer:
-    def __init__(self, operations: list[dict[str, object]] | None = None) -> None:
+    def __init__(self, operations: list[str] | None = None) -> None:
         self.operations = operations or []
 
     def repair(
         self,
         normalized: dict[str, object],
         evaluation: dict[str, object],
-    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+    ) -> tuple[dict[str, object], list[str]]:
         if not self.operations:
             return normalized, []
         return {**normalized, "repaired": True}, self.operations
@@ -64,15 +97,15 @@ class FakeEvaluationArtifacts:
         self.items.append((attempt, kind, evaluation))
 
 
-class RunGenerationLoopUseCaseTest(unittest.TestCase):
-    def build_use_case(
+class LangGraphWikiGenerationEvaluatorTest(unittest.TestCase):
+    def build_graph(
         self,
         evaluations: list[dict[str, object]],
-        operations: list[dict[str, object]] | None = None,
-    ) -> tuple[RunGenerationLoopUseCase, FakeSemanticGeneration, FakeEvaluationArtifacts]:
+        operations: list[str] | None = None,
+    ) -> tuple[LangGraphWikiGenerationEvaluator, FakeSemanticGeneration, FakeEvaluationArtifacts]:
         semantic_generation = FakeSemanticGeneration()
         artifacts = FakeEvaluationArtifacts()
-        use_case = RunGenerationLoopUseCase(
+        graph = LangGraphWikiGenerationEvaluator(
             semantic_generation=semantic_generation,
             normalizer=FakeNormalizer(),
             evaluator=FakeEvaluator(evaluations),
@@ -80,12 +113,12 @@ class RunGenerationLoopUseCaseTest(unittest.TestCase):
             events=FakeEvents(),
             evaluation_artifacts=artifacts,
         )
-        return use_case, semantic_generation, artifacts
+        return graph, semantic_generation, artifacts
 
     def test_returns_after_normalization_when_evaluation_is_disabled(self) -> None:
-        use_case, semantic_generation, artifacts = self.build_use_case([])
+        graph, semantic_generation, artifacts = self.build_graph([])
 
-        notes, normalized, evaluations = use_case.execute(
+        notes, normalized, evaluations = graph.run(
             semantic_system_prompt="기본 prompt",
             source_context={"source": "기존"},
             evaluation_enabled=False,
@@ -99,14 +132,14 @@ class RunGenerationLoopUseCaseTest(unittest.TestCase):
         self.assertEqual(artifacts.items, [])
 
     def test_retries_with_evaluator_feedback(self) -> None:
-        use_case, semantic_generation, artifacts = self.build_use_case(
+        graph, semantic_generation, artifacts = self.build_graph(
             [
                 {"passed": False, "retry_recommended": True, "retry_feedback": "근거를 보강하세요.", "scores": {}, "issues": []},
                 {"passed": True, "retry_recommended": False, "scores": {}, "issues": []},
             ]
         )
 
-        notes, normalized, evaluations = use_case.execute(
+        notes, normalized, evaluations = graph.run(
             semantic_system_prompt="기본 prompt",
             source_context=None,
             evaluation_enabled=True,
@@ -120,15 +153,15 @@ class RunGenerationLoopUseCaseTest(unittest.TestCase):
         self.assertEqual([item[:2] for item in artifacts.items], [(1, "evaluation"), (2, "evaluation")])
 
     def test_uses_repaired_normalized_result(self) -> None:
-        use_case, _, artifacts = self.build_use_case(
+        graph, _, artifacts = self.build_graph(
             [
                 {"passed": False, "retry_recommended": True, "scores": {}, "issues": []},
                 {"passed": True, "retry_recommended": False, "scores": {}, "issues": []},
             ],
-            operations=[{"operation": "replace"}],
+            operations=["replaced observation"],
         )
 
-        _, normalized, evaluations = use_case.execute(
+        _, normalized, evaluations = graph.run(
             semantic_system_prompt="기본 prompt",
             source_context=None,
             evaluation_enabled=True,
@@ -138,3 +171,140 @@ class RunGenerationLoopUseCaseTest(unittest.TestCase):
         self.assertTrue(normalized["repaired"])
         self.assertEqual(len(evaluations), 2)
         self.assertEqual([item[:2] for item in artifacts.items], [(1, "evaluation"), (1, "repair")])
+
+    def test_exposes_evaluator_nodes_as_langgraph_nodes(self) -> None:
+        graph, _, _ = self.build_graph([])
+
+        node_names = set(graph.graph.get_graph().nodes)
+
+        self.assertTrue(
+            {"semantic_generation", "normalize", "evaluate", "repair", "reevaluate", "prepare_retry", "targeted_patch"}.issubset(node_names)
+        )
+
+    def test_uses_targeted_patch_without_regenerating_chunk(self) -> None:
+        semantic_generation = FakeSemanticGeneration()
+
+        graph = LangGraphWikiGenerationEvaluator(
+            semantic_generation=semantic_generation,
+            normalizer=TargetNormalizer(),
+            evaluator=FakeEvaluator(
+                [
+                    {
+                        "passed": False,
+                        "retry_recommended": True,
+                        "retry_feedback": "개념을 수정하세요.",
+                        "scores": {},
+                        "issues": [{"target": ["target-concept"]}],
+                    },
+                    {"passed": True, "retry_recommended": False, "scores": {}, "issues": []},
+                ]
+            ),
+            repairer=FakeRepairer(),
+            events=FakeEvents(),
+            evaluation_artifacts=FakeEvaluationArtifacts(),
+        )
+
+        notes, _, evaluations = graph.run(
+            semantic_system_prompt="기본 prompt",
+            source_context=None,
+            evaluation_enabled=True,
+            max_attempts=2,
+        )
+
+        self.assertTrue(notes[0]["patched"])
+        self.assertEqual(semantic_generation.patch_calls, 1)
+        self.assertEqual(len(semantic_generation.prompts), 1)
+        self.assertEqual(evaluations[0]["retry_mode"], "targeted_patch")
+        self.assertEqual(evaluations[0]["applied_patch_operations"], [{"op": "replace"}])
+
+    def test_regenerates_targeted_chunk_when_patch_fails(self) -> None:
+        class FailingPatchSemanticGeneration(FakeSemanticGeneration):
+            def patch(
+                self,
+                attempt: int,
+                previous_notes: list[dict[str, object]],
+                evaluation: dict[str, object],
+                target_block_ids: list[str],
+            ) -> None:
+                self.patch_calls += 1
+                return None
+
+        semantic_generation = FailingPatchSemanticGeneration()
+        graph = LangGraphWikiGenerationEvaluator(
+            semantic_generation=semantic_generation,
+            normalizer=TargetNormalizer(),
+            evaluator=FakeEvaluator(
+                [
+                    {
+                        "passed": False,
+                        "retry_recommended": True,
+                        "retry_feedback": "개념을 수정하세요.",
+                        "scores": {},
+                        "issues": [{"target": ["target-concept"]}],
+                    },
+                    {"passed": True, "retry_recommended": False, "scores": {}, "issues": []},
+                ]
+            ),
+            repairer=FakeRepairer(),
+            events=FakeEvents(),
+            evaluation_artifacts=FakeEvaluationArtifacts(),
+        )
+
+        _, _, evaluations = graph.run(
+            semantic_system_prompt="기본 prompt",
+            source_context=None,
+            evaluation_enabled=True,
+            max_attempts=2,
+        )
+
+        self.assertEqual(semantic_generation.patch_calls, 1)
+        self.assertEqual(len(semantic_generation.prompts), 2)
+        self.assertEqual(semantic_generation.target_block_ids[1], ["B0002"])
+        self.assertEqual(evaluations[0]["retry_mode"], "targeted_chunk_regeneration")
+
+    def test_resolves_concept_and_evidence_targets_to_source_blocks(self) -> None:
+        normalized = {
+            "concept_ledger": [
+                {
+                    "slug": "target-concept",
+                    "anchor_reference_ids": ["B0002"],
+                    "evidence_claim_ids": ["ev_0001"],
+                }
+            ],
+            "evidence_units": [
+                {"evidence_id": "ev_0001", "anchor_reference_ids": ["B0003"]}
+            ],
+        }
+        evaluation = {
+            "issues": [{"target": ["target-concept"]}, {"target": ["ev_0001"]}]
+        }
+
+        self.assertEqual(
+            generation_retry_block_ids(normalized, evaluation),
+            ["B0002", "B0003"],
+        )
+
+    def test_falls_back_to_full_regeneration_for_unresolved_target(self) -> None:
+        self.assertIsNone(
+            generation_retry_block_ids(
+                {"concept_ledger": [], "evidence_units": []},
+                {"issues": [{"target": ["unknown-concept"]}]},
+            )
+        )
+
+    def test_accepts_direct_source_block_target(self) -> None:
+        self.assertEqual(
+            generation_retry_block_ids({}, {"issues": [{"target": ["B0007"]}]}),
+            ["B0007"],
+        )
+
+    def test_records_unresolved_status_for_remaining_actionable_issue(self) -> None:
+        self.assertEqual(generation_evaluation_status([]), "disabled")
+        self.assertEqual(
+            generation_evaluation_status([{"passed": True, "issues": []}]),
+            "passed",
+        )
+        self.assertEqual(
+            generation_evaluation_status([{"passed": False, "issues": [{"target": ["B0001"]}]}]),
+            "unresolved",
+        )

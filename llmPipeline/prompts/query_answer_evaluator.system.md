@@ -13,6 +13,7 @@ Inputs include:
 
 Routes:
 - internal_supported: the answer is sufficiently supported by retrieved Wiki evidence.
+- revise_answer: retrieved evidence is sufficient, but the generated answer or its citations must be corrected before it can be returned.
 - web_fallback: the answer is not supported by retrieved Wiki evidence, and web evidence should be used instead.
 - internal_web_augmented: retrieved Wiki evidence identifies or partly answers the topic, but the answer still needs external/general/current/implementation evidence.
 - unsupported: the question cannot be answered safely from the available evidence, and web search is unavailable or inappropriate.
@@ -25,6 +26,8 @@ Metrics:
 Rules:
 - Judge the generated answer against the provided evidence. Do not judge route before reading the answer.
 - Prefer internal_supported when the answer directly answers the question and the cited Wiki evidence supports it.
+- For internal_supported, feedback must be empty. Put optional, non-blocking suggestions in warnings.
+- Choose revise_answer when the answer can be corrected using the same retrieved evidence. Set actionable feedback that the answer generator can apply on retry.
 - Prefer internal_supported when retrieved Wiki evidence includes both an aggregate/workflow statement and item-level snippets that cover the requested parts.
 - Choose internal_web_augmented only when the answer needs a required external, current, implementation, deployment, or general-knowledge detail that is absent from retrieved Wiki evidence.
 - Choose internal_web_augmented, not web_fallback, when retrieved Wiki evidence identifies the user's subject and the missing part is how to use, deploy, operate, compare, or implement it with an external platform, tool, framework, or runtime.
@@ -36,7 +39,7 @@ Rules:
 - Penalize evidence_relevance when the used evidence is adjacent but does not answer the user's requested facet.
 - For internal_web_augmented, set web_query to the missing external facet. Include the external platform/tool/method and the requested action. Include the retrieved subject only when it is needed to make the search specific.
 - For web_fallback, set web_query to the user's core external question.
-- For internal_supported or unsupported, set web_query to null.
+- For internal_supported, revise_answer, or unsupported, set web_query to null.
 - Write reason and feedback in Korean.
 
 Return exactly:
@@ -47,5 +50,6 @@ Return exactly:
   "unsupported_refusal_accuracy": null,
   "reason": "Korean reason",
   "feedback": "Korean actionable feedback",
+  "warnings": ["Korean non-blocking suggestion"],
   "web_query": null
 }

@@ -7,30 +7,45 @@ from app.modules.wiki_generation.application.evaluation_guards import (
 
 
 class EvaluationGuardsTest(unittest.TestCase):
-    def test_marks_medium_generation_issues_as_retryable(self) -> None:
+    def test_marks_every_actionable_generation_issue_as_retryable(self) -> None:
         evaluation = {
             "passed": True,
             "retry_recommended": False,
             "scores": {"overall": 0.95},
-            "issues": [],
+            "issues": [
+                {
+                    "type": "evidence_too_broad",
+                    "severity": "low",
+                    "target": ["ev_0001"],
+                    "feedback": "근거 범위를 좁히세요.",
+                }
+            ],
             "retry_feedback": "",
         }
-        normalized = {
-            "concept_ledger": [
-                {"slug": "citation-marker"},
-                {"slug": "retrieval-rank"},
-                {"slug": "source-block"},
-            ],
-            "observations": [],
-        }
+        normalized = {"concept_ledger": [], "observations": []}
 
         apply_generation_evaluation_guards(evaluation, normalized)
 
         self.assertFalse(evaluation["passed"])
         self.assertTrue(evaluation["retry_recommended"])
         self.assertEqual(evaluation["scores"]["overall"], 0.74)
-        self.assertEqual(evaluation["issues"][0]["type"], "over_fragmented_concept")
-        self.assertIn("citation marker", evaluation["retry_feedback"])
+        self.assertEqual(evaluation["issues"][0]["type"], "evidence_too_broad")
+        self.assertIn("근거 범위를 좁히세요.", evaluation["retry_feedback"])
+
+    def test_keeps_warning_only_evaluation_passed(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.9},
+            "issues": [],
+            "warnings": [{"type": "optional_improvement"}],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(evaluation, {"concept_ledger": [], "observations": []})
+
+        self.assertTrue(evaluation["passed"])
+        self.assertFalse(evaluation["retry_recommended"])
 
     def test_repairs_broken_and_duplicate_observations(self) -> None:
         normalized = {

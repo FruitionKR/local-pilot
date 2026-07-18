@@ -36,14 +36,19 @@ Diagnostic issue types:
 - broken_observation
 - observation_missing_ref
 
+Issue contract:
+- Put every problem that must be corrected before acceptance in `issues`.
+- If `issues` is not empty, set `passed=false` and `retry_recommended=true`.
+- Put optional, non-blocking improvement suggestions in `warnings`, not `issues`.
+- If `passed=true`, `issues` must be empty and `retry_feedback` must be empty.
+
 Pass if:
 - source_excerpt_fidelity >= 4
 - concept_groundedness >= 4
 - relation_faithfulness >= 0.75
 - evidence_relevance >= 0.75
-- no medium/high duplicate_observation, broken_observation, or observation_missing_ref issue remains
-- no high severity missing_ref issue remains
-- no high severity issue remains
+- issues is empty
+- optional, non-blocking suggestions may remain only in warnings
 
 Return exactly:
 {
@@ -64,6 +69,13 @@ Return exactly:
       "target": ["slug-or-block-id"],
       "reason": "Korean reason",
       "feedback": "Korean actionable feedback"
+    }
+  ],
+  "warnings": [
+    {
+      "type": "optional_improvement",
+      "target": ["slug-or-block-id"],
+      "reason": "Korean non-blocking suggestion"
     }
   ],
   "retry_feedback": "Korean concise instructions for regenerating semantic extraction"

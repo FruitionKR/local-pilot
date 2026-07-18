@@ -10,7 +10,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import Chat
 
 
 DEFAULT_QUERY_EVALUATOR_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "query_answer_evaluator.system.md"
-ALLOWED_ROUTES = {"internal_supported", "web_fallback", "internal_web_augmented", "unsupported"}
+ALLOWED_ROUTES = {"internal_supported", "revise_answer", "web_fallback", "internal_web_augmented", "unsupported"}
 
 
 class QueryAnswerEvaluator(QueryEvaluatorPort):
@@ -95,14 +95,18 @@ def _normalize_evaluation(value: dict[str, Any]) -> QueryEvaluation:
     route = str(value.get("route") or "internal_supported").strip()
     if route not in ALLOWED_ROUTES:
         route = "internal_supported"
+    feedback = str(value.get("feedback") or "").strip()
+    if route == "internal_supported" and feedback:
+        route = "revise_answer"
     return QueryEvaluation(
         route=route,
         evidence_relevance=_bounded_float(value.get("evidence_relevance"), 0.0),
         citation_evidence_alignment=_optional_bounded_float(value.get("citation_evidence_alignment")),
         unsupported_refusal_accuracy=_optional_bounded_float(value.get("unsupported_refusal_accuracy")),
         reason=str(value.get("reason") or ""),
-        feedback=str(value.get("feedback") or ""),
+        feedback=feedback,
         web_query=_optional_text(value.get("web_query")),
+        warnings=[str(item).strip() for item in value.get("warnings", []) if str(item).strip()],
     )
 
 
