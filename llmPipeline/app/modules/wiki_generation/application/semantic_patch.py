@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.application.ports import JsonDict
 from app.modules.wiki_generation.domain.text_utils import slugify
 
@@ -22,7 +23,7 @@ ANCHORED_COLLECTIONS = set(PATCH_COLLECTIONS) - {"categories"}
 
 def build_semantic_patch_targets(
     notes: list[JsonDict],
-    evaluation: JsonDict,
+    evaluation: GenerationEvaluation,
     target_block_ids: list[str],
 ) -> list[JsonDict]:
     evaluator_targets = {

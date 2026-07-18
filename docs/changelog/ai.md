@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Wiki evaluator 내부 타입 명시
+
+- 정규화 이후 evaluator 결과를 `GenerationEvaluation`으로 명시해 graph·repair·artifact port 계약 통합
+- 숫자가 아닌 score를 안전한 평가 실패로 변환하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
 ### refactor: Query 내부 context 조립 단계 분리
 
 - seed 선택, graph traversal, Markdown·embedding 로드, answer context 생성을 `_InternalQueryContext`로 분리

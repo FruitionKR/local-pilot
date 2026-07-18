@@ -7,6 +7,7 @@ from typing import Any
 from app.modules.wiki_generation.application.evaluation_guards import (
     apply_generation_evaluation_guards,
 )
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.application.ports import JsonCompletionPort
 
 
@@ -17,7 +18,7 @@ def evaluate_generation(
     document: Any,
     blocks: list[Any],
     normalized: dict[str, Any],
-) -> dict[str, Any]:
+) -> GenerationEvaluation:
     payload = {
         "document": asdict(document),
         "source_blocks": [
@@ -35,7 +36,7 @@ def evaluate_generation(
             "warnings": normalized.get("warnings", []),
         },
     }
-    evaluation = completion.complete_json(
+    evaluation: GenerationEvaluation = completion.complete_json(
         evaluator_prompt,
         json.dumps(payload, ensure_ascii=False, indent=2),
     )
@@ -44,7 +45,7 @@ def evaluate_generation(
     return evaluation
 
 
-def _normalize_evaluation(evaluation: dict[str, Any]) -> None:
+def _normalize_evaluation(evaluation: GenerationEvaluation) -> None:
     invalid_fields: list[str] = []
     defaults = {
         "scores": {},
@@ -59,6 +60,16 @@ def _normalize_evaluation(evaluation: dict[str, Any]) -> None:
             continue
         evaluation[field] = default
         invalid_fields.append(field)
+
+    scores = evaluation["scores"]
+    numeric_scores = {
+        str(metric): score
+        for metric, score in scores.items()
+        if isinstance(score, int | float) and not isinstance(score, bool)
+    }
+    if len(numeric_scores) != len(scores):
+        evaluation["scores"] = numeric_scores
+        invalid_fields.append("scores")
 
     retry_recommended = evaluation.setdefault(
         "retry_recommended",

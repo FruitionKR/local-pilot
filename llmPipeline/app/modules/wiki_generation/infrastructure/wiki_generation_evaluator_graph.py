@@ -6,6 +6,7 @@ from typing import TypedDict
 from langgraph.graph import END, StateGraph
 
 from app.core.langsmith_tracing import configured_langsmith_tracing
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.application.ports import (
     EvaluationArtifactPort,
     GenerationEvaluatorPort,
@@ -31,10 +32,10 @@ class WikiGenerationEvaluatorState(TypedDict, total=False):
     attempt: int
     notes: list[JsonDict]
     normalized: JsonDict
-    evaluation: JsonDict
-    evaluations: list[JsonDict]
+    evaluation: GenerationEvaluation
+    evaluations: list[GenerationEvaluation]
     repair_operations: list[str]
-    evaluation_sequence: list[JsonDict]
+    evaluation_sequence: list[GenerationEvaluation]
     evaluation_index: int
     retry_block_ids: list[str] | None
     patch_applied: bool
@@ -125,7 +126,7 @@ class LangGraphWikiGenerationEvaluator:
         source_context: JsonDict | None,
         evaluation_enabled: bool,
         max_attempts: int,
-    ) -> tuple[list[JsonDict], JsonDict, list[JsonDict]]:
+    ) -> tuple[list[JsonDict], JsonDict, list[GenerationEvaluation]]:
         initial_state: WikiGenerationEvaluatorState = {
             "semantic_system_prompt": semantic_system_prompt,
             "prompt": semantic_system_prompt,
@@ -278,7 +279,11 @@ class LangGraphWikiGenerationEvaluator:
     def _route_after_targeted_patch(state: WikiGenerationEvaluatorState) -> str:
         return "normalize" if state.get("patch_applied") else "regenerate"
 
-    def _emit_evaluation(self, attempt: int, evaluation: JsonDict) -> None:
+    def _emit_evaluation(
+        self,
+        attempt: int,
+        evaluation: GenerationEvaluation,
+    ) -> None:
         self.events.emit(
             "3-평가. Wiki 생성 평가",
             "정규화된 의미 구조를 평가했습니다.",
@@ -295,7 +300,7 @@ class LangGraphWikiGenerationEvaluator:
         self,
         attempt: int,
         repair_operations: list[str],
-        evaluation: JsonDict,
+        evaluation: GenerationEvaluation,
     ) -> None:
         self.events.emit(
             "3-평가-보정. Wiki 생성 보정",

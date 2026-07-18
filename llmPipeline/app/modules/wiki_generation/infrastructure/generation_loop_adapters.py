@@ -7,6 +7,7 @@ from typing import Any
 from app.modules.wiki_generation.application.evaluate_generation import (
     evaluate_generation,
 )
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.application.ports import (
     JsonCompletionPort,
     PipelineEventPort,
@@ -97,7 +98,7 @@ class SemanticGenerationAdapter:
         self,
         attempt: int,
         previous_notes: list[dict[str, Any]],
-        evaluation: dict[str, Any],
+        evaluation: GenerationEvaluation,
         target_block_ids: list[str],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
         if not self.patch_system_prompt:
@@ -189,7 +190,7 @@ class GenerationEvaluatorAdapter:
         self.document = document
         self.blocks = blocks
 
-    def evaluate(self, normalized: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(self, normalized: dict[str, Any]) -> GenerationEvaluation:
         return evaluate_generation(
             completion=self.completion,
             evaluator_prompt=self.evaluator_prompt,
@@ -204,7 +205,12 @@ class EvaluationArtifactAdapter:
         self.out = out
         self.enabled = enabled
 
-    def write(self, attempt: int, kind: str, evaluation: dict[str, Any]) -> None:
+    def write(
+        self,
+        attempt: int,
+        kind: str,
+        evaluation: GenerationEvaluation,
+    ) -> None:
         if not self.enabled:
             return
         suffix = {"repair": ".repair", "retry": ".retry"}.get(kind, "")
