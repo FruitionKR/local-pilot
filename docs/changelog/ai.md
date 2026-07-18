@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-18
 
+### refactor: Wiki lint report 렌더링 분리
+
+- PostgreSQL repository에 섞여 있던 lint Markdown 렌더링을 `wiki_lint_report.py`로 분리
+- 로그 경로와 제목에 같은 날짜를 사용하도록 고정하고 Wiki ingestion 테스트 19개 통과
+
+---
+
 ### refactor: concept resolution ledger 병합 분리
 
 - incoming concept의 canonical slug 병합·alias·근거 합산을 `merge_concept_ledger`로 분리
