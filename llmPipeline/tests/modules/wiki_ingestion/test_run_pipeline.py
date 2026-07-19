@@ -1,6 +1,7 @@
 import unittest
 
 from app.modules.wiki_ingestion.application.run_pipeline import (
+    PipelineRunCommand,
     PipelineRunRegistration,
     RunPipelineUseCase,
 )
@@ -11,8 +12,8 @@ class FakeRunner:
         self.calls = calls
         self.error = error
 
-    def run(self, args: object) -> dict[str, object]:
-        self.calls.append(("run", args))
+    def run(self, command: PipelineRunCommand) -> dict[str, object]:
+        self.calls.append(("run", command))
         if self.error is not None:
             raise self.error
         return {"manifest": "value"}
@@ -65,10 +66,17 @@ class RunPipelineUseCaseTest(unittest.TestCase):
             output_dir="runs/run-1",
             mode="api",
         )
-        args = object()
+        command = PipelineRunCommand(
+            run_id="run-1",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+        )
 
         use_case.register(registration)
-        manifest = use_case.execute("run-1", args)
+        manifest = use_case.execute("run-1", command)
 
         self.assertEqual(manifest, {"manifest": "value"})
         self.assertEqual(
@@ -82,7 +90,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                     "runs/run-1",
                     "api",
                 ),
-                ("run", args),
+                ("run", command),
                 ("finish", "run-1", {"manifest": "value"}),
                 ("embedding", "run-1", ["page-1"]),
             ],
@@ -95,15 +103,22 @@ class RunPipelineUseCaseTest(unittest.TestCase):
             repository=FakeRepository(calls),
             embedding_job=FakeEmbeddingJob(calls),
         )
-        args = object()
+        command = PipelineRunCommand(
+            run_id="run-1",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+        )
 
         with self.assertRaisesRegex(RuntimeError, "pipeline failed"):
-            use_case.execute("run-1", args)
+            use_case.execute("run-1", command)
 
         self.assertEqual(
             calls,
             [
-                ("run", args),
+                ("run", command),
                 ("fail", "run-1", "pipeline failed"),
             ],
         )

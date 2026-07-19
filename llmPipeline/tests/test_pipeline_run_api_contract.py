@@ -1,10 +1,41 @@
 from pathlib import Path
+from unittest.mock import Mock
 
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import api
+from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.interfaces.http import routes as pipeline_routes
+from app.modules.wiki_ingestion.interfaces.http.schemas import (
+    CHAT_APPEND_SEMANTIC_PROMPT,
+    CHAT_SEMANTIC_PROMPT,
+)
+
+
+def _repository(
+    *,
+    document: dict | None = None,
+    source_context: dict | None = None,
+) -> Mock:
+    repository = Mock()
+    repository.get_document.return_value = document
+    repository.latest_source_page_context.return_value = source_context
+    repository.list_active_concept_index.return_value = []
+    return repository
+
+
+def _source_reader(markdown: str = "# Document") -> Mock:
+    reader = Mock()
+    reader.read_text.return_value = markdown
+    return reader
+
+
+def _use_case() -> Mock:
+    use_case = Mock(spec=RunPipelineUseCase)
+    use_case.execute.return_value = {"manifest": "value"}
+    return use_case
 
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:
@@ -66,21 +97,15 @@ def test_chat_wiki_run_accepts_optional_input_markdown() -> None:
     assert payload.input_markdown.startswith("# Chat Export")
 
 
-def test_chat_wiki_inline_markdown_rejects_partial(monkeypatch) -> None:
-    monkeypatch.setattr(
-        api.database,
-        "get_document",
-        lambda document_id: {
-            "id": document_id,
+def test_chat_wiki_inline_markdown_rejects_partial() -> None:
+    repository = _repository(
+        document={
+            "id": "chat_document_1",
             "user_id": "user_1",
             "workspace_id": "workspace_1",
         },
-    )
-    monkeypatch.setattr(
-        api.database,
-        "latest_source_page_context",
-        lambda document_id, user_id, workspace_id: {
-            "artifact": {"document_id": document_id},
+        source_context={
+            "artifact": {"document_id": "chat_document_1"},
             "source_markdown": "# Existing Source",
         },
     )
@@ -91,7 +116,13 @@ def test_chat_wiki_inline_markdown_rejects_partial(monkeypatch) -> None:
     )
 
     try:
-        api._run_pipeline_request(payload, BackgroundTasks())
+        pipeline_routes._run_pipeline_request(
+            payload,
+            BackgroundTasks(),
+            _use_case(),
+            repository,
+            _source_reader(),
+        )
     except HTTPException as exc:
         assert exc.status_code == 422
         assert "only allowed for full" in str(exc.detail)
@@ -99,17 +130,14 @@ def test_chat_wiki_inline_markdown_rejects_partial(monkeypatch) -> None:
         raise AssertionError("partial chat run should reject inline input_markdown")
 
 
-def test_chat_wiki_inline_markdown_rejects_full_without_existing_source(monkeypatch) -> None:
-    monkeypatch.setattr(
-        api.database,
-        "get_document",
-        lambda document_id: {
-            "id": document_id,
+def test_chat_wiki_inline_markdown_rejects_full_without_existing_source() -> None:
+    repository = _repository(
+        document={
+            "id": "chat_document_1",
             "user_id": "user_1",
             "workspace_id": "workspace_1",
         },
     )
-    monkeypatch.setattr(api.database, "latest_source_page_context", lambda _document_id, _user_id, _workspace_id: None)
     payload = api.ChatWikiRunIn(
         document_id="chat_document_1",
         selection_mode="full",
@@ -117,7 +145,13 @@ def test_chat_wiki_inline_markdown_rejects_full_without_existing_source(monkeypa
     )
 
     try:
-        api._run_pipeline_request(payload, BackgroundTasks())
+        pipeline_routes._run_pipeline_request(
+            payload,
+            BackgroundTasks(),
+            _use_case(),
+            repository,
+            _source_reader(),
+        )
     except HTTPException as exc:
         assert exc.status_code == 422
         assert "requires an existing source page" in str(exc.detail)
@@ -143,14 +177,13 @@ def test_chat_wiki_run_requires_document_id() -> None:
         raise AssertionError("chat wiki run should require document_id")
 
 
-def test_pipeline_args_include_selection_mode(monkeypatch) -> None:
-    monkeypatch.setattr(api, "_load_existing_concept_index_for_run", lambda _user_id, _workspace_id: [])
+def test_pipeline_command_includes_selection_mode() -> None:
+    repository = _repository()
     payload = api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="partial")
 
-    args = api._build_pipeline_args(
+    command = pipeline_routes._build_pipeline_command(
         payload,
         run_id="run_1",
-        input_path=None,
         input_markdown="# Chat Export",
         input_name="chat.md",
         out=Path("runs/test"),
@@ -158,28 +191,25 @@ def test_pipeline_args_include_selection_mode(monkeypatch) -> None:
         source_document_id="chat_document_1",
         user_id="user_1",
         workspace_id="workspace_1",
+        repository=repository,
     )
 
-    assert args.selection_mode == "partial"
-    assert args.system_prompt == api.CHAT_SEMANTIC_PROMPT
+    assert command.selection_mode == "partial"
+    assert command.system_prompt == CHAT_SEMANTIC_PROMPT
 
 
-def test_pipeline_args_load_existing_source_context_for_full(monkeypatch) -> None:
-    monkeypatch.setattr(api, "_load_existing_concept_index_for_run", lambda _user_id, _workspace_id: [])
-    monkeypatch.setattr(
-        api.database,
-        "latest_source_page_context",
-        lambda document_id, user_id, workspace_id: {
-            "artifact": {"document_id": document_id},
+def test_pipeline_command_loads_existing_source_context_for_full() -> None:
+    repository = _repository(
+        source_context={
+            "artifact": {"document_id": "chat_document_1"},
             "source_markdown": "# Existing Source",
         },
     )
     payload = api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="full")
 
-    args = api._build_pipeline_args(
+    command = pipeline_routes._build_pipeline_command(
         payload,
         run_id="run_1",
-        input_path=None,
         input_markdown="# Chat Export",
         input_name="chat.md",
         out=Path("runs/test"),
@@ -187,11 +217,12 @@ def test_pipeline_args_load_existing_source_context_for_full(monkeypatch) -> Non
         source_document_id="chat_document_1",
         user_id="user_1",
         workspace_id="workspace_1",
+        repository=repository,
     )
 
-    assert args.existing_source_artifact == {"document_id": "chat_document_1"}
-    assert args.existing_source_markdown == "# Existing Source"
-    assert args.system_prompt == api.CHAT_APPEND_SEMANTIC_PROMPT
+    assert command.existing_source_artifact == {"document_id": "chat_document_1"}
+    assert command.existing_source_markdown == "# Existing Source"
+    assert command.system_prompt == CHAT_APPEND_SEMANTIC_PROMPT
 
 
 def test_pipeline_endpoint_rejects_selection_mode() -> None:
@@ -210,70 +241,20 @@ def test_chat_wiki_endpoint_requires_selection_mode() -> None:
     assert response.status_code == 422
 
 
-def test_chat_wiki_inline_markdown_uses_document_id_as_source_key(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    monkeypatch.setattr(
-        api.database,
-        "latest_source_page_context",
-        lambda document_id, user_id, workspace_id: {
-            "artifact": {"document_id": document_id},
-            "source_markdown": "# Existing Source",
-        },
-    )
-    monkeypatch.setattr(
-        api.database,
-        "get_document",
-        lambda document_id: {
-            "id": document_id,
+def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
+    repository = _repository(
+        document={
+            "id": "chat_document_1",
             "user_id": "user_1",
             "workspace_id": "workspace_1",
         },
+        source_context={
+            "artifact": {"document_id": "chat_document_1"},
+            "source_markdown": "# Existing Source",
+        },
     )
-    monkeypatch.setattr(
-        api,
-        "_load_document_markdown",
-        lambda _document: (_ for _ in ()).throw(AssertionError("stored document should not be loaded")),
-    )
-    monkeypatch.setattr(
-        api.database,
-        "create_pipeline_run",
-        lambda run_id, document_id, input_source, output_dir, mode: captured.update(
-            {
-                "run_id": run_id,
-                "document_id": document_id,
-                "input_source": input_source,
-                "output_dir": output_dir,
-                "mode": mode,
-            }
-        ),
-    )
-
-    def fake_build_args(
-        payload,
-        run_id,
-        input_path,
-        input_markdown,
-        input_name,
-        out,
-        log_path,
-        source_document_id,
-        user_id,
-        workspace_id,
-    ):
-        captured.update(
-            {
-                "input_path": input_path,
-                "input_markdown": input_markdown,
-                "input_name": input_name,
-                "source_document_id": source_document_id,
-                "user_id": user_id,
-                "workspace_id": workspace_id,
-            }
-        )
-        return object()
-
-    monkeypatch.setattr(api, "_build_pipeline_args", fake_build_args)
+    use_case = _use_case()
+    source_reader = _source_reader()
 
     payload = api.ChatWikiRunIn(
         document_id="chat_document_1",
@@ -284,28 +265,28 @@ def test_chat_wiki_inline_markdown_uses_document_id_as_source_key(monkeypatch) -
         workspace_id="request-workspace",
     )
 
-    response = api._run_pipeline_request(payload, BackgroundTasks())
+    response = pipeline_routes._run_pipeline_request(
+        payload,
+        BackgroundTasks(),
+        use_case,
+        repository,
+        source_reader,
+    )
 
     assert response.status == "running"
-    assert captured["document_id"] == "chat_document_1"
-    assert captured["source_document_id"] == "chat_document_1"
-    assert captured["user_id"] == "user_1"
-    assert captured["workspace_id"] == "workspace_1"
-    assert captured["input_source"] == "inline:filtered-chat.md"
-    assert captured["input_path"] is None
-    assert captured["input_markdown"] == payload.input_markdown
+    registration = use_case.register.call_args.args[0]
+    assert registration.document_id == "chat_document_1"
+    assert registration.input_source == "inline:filtered-chat.md"
+    source_reader.read_text.assert_not_called()
 
 
-def test_chat_wiki_inline_markdown_requires_existing_document(monkeypatch) -> None:
-    monkeypatch.setattr(
-        api.database,
-        "latest_source_page_context",
-        lambda document_id, user_id, workspace_id: {
-            "artifact": {"document_id": document_id},
+def test_chat_wiki_inline_markdown_requires_existing_document() -> None:
+    repository = _repository(
+        source_context={
+            "artifact": {"document_id": "missing_document"},
             "source_markdown": "# Existing Source",
         },
     )
-    monkeypatch.setattr(api.database, "get_document", lambda _document_id: None)
     payload = api.ChatWikiRunIn(
         document_id="missing_document",
         selection_mode="full",
@@ -313,7 +294,13 @@ def test_chat_wiki_inline_markdown_requires_existing_document(monkeypatch) -> No
     )
 
     try:
-        api._run_pipeline_request(payload, BackgroundTasks())
+        pipeline_routes._run_pipeline_request(
+            payload,
+            BackgroundTasks(),
+            _use_case(),
+            repository,
+            _source_reader(),
+        )
     except HTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Document not found"

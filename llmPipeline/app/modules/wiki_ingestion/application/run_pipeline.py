@@ -1,20 +1,14 @@
-from dataclasses import dataclass
 from typing import Any
 
+from app.modules.wiki_ingestion.application.models import (
+    PipelineRunCommand,
+    PipelineRunRegistration,
+)
 from app.modules.wiki_ingestion.application.ports import (
     PipelineRunnerPort,
     PipelineRunRepositoryPort,
     WikiEmbeddingJobPort,
 )
-
-
-@dataclass(frozen=True)
-class PipelineRunRegistration:
-    run_id: str
-    document_id: str | None
-    input_source: str
-    output_dir: str
-    mode: str
 
 
 class RunPipelineUseCase:
@@ -37,9 +31,9 @@ class RunPipelineUseCase:
             registration.mode,
         )
 
-    def execute(self, run_id: str, args: Any) -> dict[str, Any]:
+    def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
         try:
-            manifest = self._runner.run(args)
+            manifest = self._runner.run(command)
             page_ids = self._repository.finish(run_id, manifest)
             self._embedding_job.start(run_id, page_ids)
             return manifest

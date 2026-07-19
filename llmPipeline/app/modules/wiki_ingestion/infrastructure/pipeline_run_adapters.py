@@ -1,14 +1,19 @@
+import argparse
+from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
+from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
+from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from run_lab import run_pipeline
 
 
 class RunLabPipelineRunner:
-    def run(self, args: Any) -> dict[str, Any]:
-        return run_pipeline(args)
+    def run(self, command: PipelineRunCommand) -> dict[str, Any]:
+        return run_pipeline(argparse.Namespace(**asdict(command)))
 
 
 class PostgresPipelineRunRepository:
@@ -33,3 +38,41 @@ class PostgresPipelineRunRepository:
 
     def fail(self, run_id: str, error: str) -> None:
         database.fail_pipeline_run(run_id, error)
+
+    def get_document(self, document_id: str) -> dict[str, Any] | None:
+        return database.get_document(document_id)
+
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        return database.get_pipeline_run(run_id)
+
+    def list_active_concept_index(
+        self,
+        user_id: str,
+        workspace_id: str,
+    ) -> list[dict[str, Any]]:
+        return database.list_active_concept_index(user_id, workspace_id)
+
+    def latest_source_page_context(
+        self,
+        document_id: str,
+        user_id: str,
+        workspace_id: str,
+    ) -> dict[str, Any] | None:
+        return database.latest_source_page_context(
+            document_id,
+            user_id,
+            workspace_id,
+        )
+
+
+class ObjectStoragePipelineSourceReader:
+    def read_text(self, object_uri: str) -> str:
+        return read_text_object(object_uri)
+
+
+class LocalPipelineLogReader:
+    def read_text(self, path: str) -> str:
+        log_path = Path(path)
+        if not log_path.exists():
+            return ""
+        return log_path.read_text(encoding="utf-8")

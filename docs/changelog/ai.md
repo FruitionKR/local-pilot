@@ -6,6 +6,14 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Pipeline HTTP와 application 입력 경계 분리
+
+- Pipeline·Chat Wiki 실행 schema와 route, dependency 조립을 `wiki_ingestion/interfaces/http`로 이동
+- `PipelineRunCommand`로 application 입력을 명시하고 infrastructure에서만 `argparse.Namespace`로 변환
+- 기존 HTTP 계약을 유지하고 전체 테스트 378개와 28개 subtest 통과
+
+---
+
 ### refactor: Wiki output persistence orchestration 분리
 
 - manifest 해석과 source/concept/link/cluster 저장 순서를 `postgres_wiki_output_persistence`로 이동
