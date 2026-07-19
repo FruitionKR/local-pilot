@@ -36,6 +36,159 @@ router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
 
 
+@router.post("/pipeline/runs", response_model=PipelineRunOut)
+def run_pipeline_endpoint(
+    payload: PipelineRunIn,
+    background_tasks: BackgroundTasks,
+    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
+    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
+    source_reader: PipelineSourceReaderPort = Depends(get_pipeline_source_reader),
+) -> PipelineRunOut:
+    return _run_pipeline_request(
+        payload,
+        background_tasks,
+        use_case,
+        repository,
+        source_reader,
+    )
+
+
+@router.post("/chat-wiki/runs", response_model=PipelineRunOut)
+def run_chat_wiki_endpoint(
+    payload: ChatWikiRunIn,
+    background_tasks: BackgroundTasks,
+    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
+    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
+    source_reader: PipelineSourceReaderPort = Depends(get_pipeline_source_reader),
+) -> PipelineRunOut:
+    return _run_pipeline_request(
+        payload,
+        background_tasks,
+        use_case,
+        repository,
+        source_reader,
+    )
+
+
+@router.get("/pipeline/runs/{run_id}")
+def get_pipeline_run(
+    run_id: str,
+    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
+) -> dict[str, Any]:
+    try:
+        row = repository.get_run(run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+    return row
+
+
+@router.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
+def get_pipeline_logs(
+    run_id: str,
+    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
+    log_reader: PipelineLogReaderPort = Depends(get_pipeline_log_reader),
+) -> str:
+    try:
+        row = repository.get_run(run_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Pipeline run not found")
+
+    manifest = row.get("manifest") or {}
+    log_path = manifest.get("pipeline_log") or str(
+        Path(row["output_dir"]) / "pipeline.log"
+    )
+    return log_reader.read_text(log_path)
+
+
+def _run_pipeline_request(
+    payload: PipelineRunIn | ChatWikiRunIn,
+    background_tasks: BackgroundTasks,
+    use_case: RunPipelineUseCase,
+    repository: PipelineRunRepositoryPort,
+    source_reader: PipelineSourceReaderPort,
+) -> PipelineRunOut:
+    run_id = str(uuid.uuid4())
+    out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
+    log_path = out / "pipeline.log"
+    document = _load_document(payload.document_id, repository)
+    user_id = str(document["user_id"])
+    workspace_id = str(document["workspace_id"])
+    input_name = payload.input_name or "inline.md"
+
+    if isinstance(payload, ChatWikiRunIn):
+        input_markdown, input_source, input_name = _resolve_chat_wiki_input(
+            payload,
+            document,
+            user_id,
+            workspace_id,
+            repository,
+            source_reader,
+        )
+    else:
+        input_markdown, input_source, input_name = _load_stored_document_input(
+            document,
+            source_reader,
+        )
+
+    try:
+        use_case.register(
+            PipelineRunRegistration(
+                run_id=run_id,
+                document_id=payload.document_id,
+                input_source=input_source,
+                output_dir=str(out),
+                mode=payload.mode,
+            )
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    command = _build_pipeline_command(
+        payload,
+        run_id,
+        input_markdown,
+        input_name,
+        out,
+        log_path,
+        payload.document_id,
+        user_id,
+        workspace_id,
+        repository,
+    )
+
+    if not payload.wait:
+        background_tasks.add_task(
+            _execute_pipeline_run,
+            run_id,
+            command,
+            use_case,
+        )
+        return PipelineRunOut(
+            run_id=run_id,
+            status="running",
+            manifest=None,
+            output_dir=str(out),
+            log_path=str(log_path),
+        )
+
+    try:
+        manifest = use_case.execute(run_id, command)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return PipelineRunOut(
+        run_id=run_id,
+        status="succeeded",
+        manifest=manifest,
+        output_dir=str(out),
+        log_path=str(log_path),
+    )
+
+
 def _build_pipeline_command(
     payload: PipelineRunIn | ChatWikiRunIn,
     run_id: str,
@@ -275,156 +428,3 @@ def _execute_pipeline_run(
         use_case.execute(run_id, command)
     except Exception as exc:
         logger.error("ERROR: pipeline run failed run_id=%s error=%s", run_id, exc)
-
-
-@router.post("/pipeline/runs", response_model=PipelineRunOut)
-def run_pipeline_endpoint(
-    payload: PipelineRunIn,
-    background_tasks: BackgroundTasks,
-    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
-    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
-    source_reader: PipelineSourceReaderPort = Depends(get_pipeline_source_reader),
-) -> PipelineRunOut:
-    return _run_pipeline_request(
-        payload,
-        background_tasks,
-        use_case,
-        repository,
-        source_reader,
-    )
-
-
-@router.post("/chat-wiki/runs", response_model=PipelineRunOut)
-def run_chat_wiki_endpoint(
-    payload: ChatWikiRunIn,
-    background_tasks: BackgroundTasks,
-    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
-    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
-    source_reader: PipelineSourceReaderPort = Depends(get_pipeline_source_reader),
-) -> PipelineRunOut:
-    return _run_pipeline_request(
-        payload,
-        background_tasks,
-        use_case,
-        repository,
-        source_reader,
-    )
-
-
-def _run_pipeline_request(
-    payload: PipelineRunIn | ChatWikiRunIn,
-    background_tasks: BackgroundTasks,
-    use_case: RunPipelineUseCase,
-    repository: PipelineRunRepositoryPort,
-    source_reader: PipelineSourceReaderPort,
-) -> PipelineRunOut:
-    run_id = str(uuid.uuid4())
-    out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
-    log_path = out / "pipeline.log"
-    document = _load_document(payload.document_id, repository)
-    user_id = str(document["user_id"])
-    workspace_id = str(document["workspace_id"])
-    input_name = payload.input_name or "inline.md"
-
-    if isinstance(payload, ChatWikiRunIn):
-        input_markdown, input_source, input_name = _resolve_chat_wiki_input(
-            payload,
-            document,
-            user_id,
-            workspace_id,
-            repository,
-            source_reader,
-        )
-    else:
-        input_markdown, input_source, input_name = _load_stored_document_input(
-            document,
-            source_reader,
-        )
-
-    try:
-        use_case.register(
-            PipelineRunRegistration(
-                run_id=run_id,
-                document_id=payload.document_id,
-                input_source=input_source,
-                output_dir=str(out),
-                mode=payload.mode,
-            )
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    command = _build_pipeline_command(
-        payload,
-        run_id,
-        input_markdown,
-        input_name,
-        out,
-        log_path,
-        payload.document_id,
-        user_id,
-        workspace_id,
-        repository,
-    )
-
-    if not payload.wait:
-        background_tasks.add_task(
-            _execute_pipeline_run,
-            run_id,
-            command,
-            use_case,
-        )
-        return PipelineRunOut(
-            run_id=run_id,
-            status="running",
-            manifest=None,
-            output_dir=str(out),
-            log_path=str(log_path),
-        )
-
-    try:
-        manifest = use_case.execute(run_id, command)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return PipelineRunOut(
-        run_id=run_id,
-        status="succeeded",
-        manifest=manifest,
-        output_dir=str(out),
-        log_path=str(log_path),
-    )
-
-
-@router.get("/pipeline/runs/{run_id}")
-def get_pipeline_run(
-    run_id: str,
-    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
-) -> dict[str, Any]:
-    try:
-        row = repository.get_run(run_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="Pipeline run not found")
-    return row
-
-
-@router.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
-def get_pipeline_logs(
-    run_id: str,
-    repository: PipelineRunRepositoryPort = Depends(get_pipeline_run_repository),
-    log_reader: PipelineLogReaderPort = Depends(get_pipeline_log_reader),
-) -> str:
-    try:
-        row = repository.get_run(run_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="Pipeline run not found")
-
-    manifest = row.get("manifest") or {}
-    log_path = manifest.get("pipeline_log") or str(
-        Path(row["output_dir"]) / "pipeline.log"
-    )
-    return log_reader.read_text(log_path)

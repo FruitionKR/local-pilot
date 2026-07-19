@@ -1,4 +1,6 @@
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 from unittest.mock import Mock
 
 from fastapi import BackgroundTasks, HTTPException
@@ -36,6 +38,39 @@ def _use_case() -> Mock:
     use_case = Mock(spec=RunPipelineUseCase)
     use_case.execute.return_value = {"manifest": "value"}
     return use_case
+
+
+@contextmanager
+def _pipeline_client(
+    *,
+    use_case: Mock | None = None,
+    repository: Mock | None = None,
+    source_reader: Mock | None = None,
+    log_reader: Mock | None = None,
+) -> Iterator[TestClient]:
+    previous_overrides = dict(api.app.dependency_overrides)
+    if use_case is not None:
+        api.app.dependency_overrides[pipeline_routes.get_pipeline_run_use_case] = (
+            lambda: use_case
+        )
+    if repository is not None:
+        api.app.dependency_overrides[pipeline_routes.get_pipeline_run_repository] = (
+            lambda: repository
+        )
+    if source_reader is not None:
+        api.app.dependency_overrides[pipeline_routes.get_pipeline_source_reader] = (
+            lambda: source_reader
+        )
+    if log_reader is not None:
+        api.app.dependency_overrides[pipeline_routes.get_pipeline_log_reader] = (
+            lambda: log_reader
+        )
+    try:
+        with TestClient(api.app) as client:
+            yield client
+    finally:
+        api.app.dependency_overrides.clear()
+        api.app.dependency_overrides.update(previous_overrides)
 
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:
@@ -239,6 +274,104 @@ def test_chat_wiki_endpoint_requires_selection_mode() -> None:
     response = client.post("/chat-wiki/runs", json={"document_id": "chat_document_1"})
 
     assert response.status_code == 422
+
+
+def test_pipeline_endpoint_runs_stored_document_in_background() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "source_uri": "documents/document_1.md",
+            "extracted_text_uri": None,
+            "mime_type": "text/markdown",
+            "filename": "document.md",
+        },
+    )
+    use_case = _use_case()
+    source_reader = _source_reader("# Stored Document")
+
+    with _pipeline_client(
+        use_case=use_case,
+        repository=repository,
+        source_reader=source_reader,
+    ) as client:
+        response = client.post("/pipeline/runs", json={"document_id": "document_1"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+    assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
+    registration = use_case.register.call_args.args[0]
+    command = use_case.execute.call_args.args[1]
+    assert registration.input_source == "storage:documents/document_1.md"
+    assert command.input_markdown == "# Stored Document"
+    assert command.source_document_id == "document_1"
+
+
+def test_pipeline_endpoint_waits_for_synchronous_result() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "source_uri": "documents/document_1.md",
+            "extracted_text_uri": None,
+            "mime_type": "text/markdown",
+            "filename": "document.md",
+        },
+    )
+    use_case = _use_case()
+    source_reader = _source_reader("# Stored Document")
+
+    with _pipeline_client(
+        use_case=use_case,
+        repository=repository,
+        source_reader=source_reader,
+    ) as client:
+        response = client.post(
+            "/pipeline/runs",
+            json={"document_id": "document_1", "wait": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    assert response.json()["manifest"] == {"manifest": "value"}
+    assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
+
+
+def test_pipeline_run_status_uses_repository_dependency() -> None:
+    repository = _repository()
+    repository.get_run.return_value = {
+        "id": "run-1",
+        "status": "succeeded",
+        "output_dir": "runs/run-1",
+    }
+
+    with _pipeline_client(repository=repository) as client:
+        response = client.get("/pipeline/runs/run-1")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "succeeded"
+    repository.get_run.assert_called_once_with("run-1")
+
+
+def test_pipeline_run_logs_use_manifest_log_path() -> None:
+    repository = _repository()
+    repository.get_run.return_value = {
+        "id": "run-1",
+        "status": "succeeded",
+        "output_dir": "runs/run-1",
+        "manifest": {"pipeline_log": "runs/custom/pipeline.log"},
+    }
+    log_reader = Mock()
+    log_reader.read_text.return_value = "파이프라인 완료"
+
+    with _pipeline_client(repository=repository, log_reader=log_reader) as client:
+        response = client.get("/pipeline/runs/run-1/logs")
+
+    assert response.status_code == 200
+    assert response.text == "파이프라인 완료"
+    log_reader.read_text.assert_called_once_with("runs/custom/pipeline.log")
 
 
 def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
