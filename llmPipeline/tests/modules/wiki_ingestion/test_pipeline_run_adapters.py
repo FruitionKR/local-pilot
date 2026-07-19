@@ -1,4 +1,3 @@
-import argparse
 from unittest.mock import patch
 
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
@@ -7,7 +6,7 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
 )
 
 
-def test_run_lab_pipeline_runner_converts_command_at_infrastructure_boundary() -> None:
+def test_run_lab_pipeline_runner_passes_typed_command_without_conversion() -> None:
     command = PipelineRunCommand(
         run_id="run-1",
         input="input.md",
@@ -24,8 +23,5 @@ def test_run_lab_pipeline_runner_converts_command_at_infrastructure_boundary() -
     ) as run_pipeline:
         result = RunLabPipelineRunner().run(command)
 
-    args = run_pipeline.call_args.args[0]
-    assert isinstance(args, argparse.Namespace)
-    assert args.run_id == "run-1"
-    assert args.selection_mode == "partial"
+    run_pipeline.assert_called_once_with(command)
     assert result == {"manifest": "value"}

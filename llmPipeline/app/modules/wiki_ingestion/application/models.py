@@ -13,7 +13,7 @@ class PipelineRunRegistration:
 
 @dataclass(frozen=True)
 class PipelineRunCommand:
-    run_id: str
+    run_id: str | None
     input: str
     input_name: str
     out: str

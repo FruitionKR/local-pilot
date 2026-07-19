@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,7 @@ from app.modules.wiki_generation.infrastructure.source_context_merge import (
     source_context_blocks,
     source_page_context_normalized,
 )
+from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 
@@ -178,26 +179,37 @@ def load_env_file(path_like: str | None) -> None:
             os.environ[key] = value
 
 
-def resolve_api_defaults(args: argparse.Namespace) -> None:
+def resolve_api_defaults(command: PipelineRunCommand) -> PipelineRunCommand:
     """Resolve provider-specific API defaults after optional .env loading."""
-    if args.provider == "upstage":
-        args.api_base_url = (
-            args.api_base_url
+    if command.provider == "upstage":
+        api_base_url = (
+            command.api_base_url
             or os.environ.get("UPSTAGE_BASE_URL")
             or os.environ.get("LLM_BASE_URL")
             or "https://api.upstage.ai/v1"
         )
-        args.api_key_env = args.api_key_env or "UPSTAGE_API_KEY"
-        args.model = (
-            args.model
+        api_key_env = command.api_key_env or "UPSTAGE_API_KEY"
+        model = (
+            command.model
             or os.environ.get("UPSTAGE_MODEL")
             or os.environ.get("LLM_MODEL")
             or "solar-pro2"
         )
     else:
-        args.api_base_url = args.api_base_url or os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1"
-        args.api_key_env = args.api_key_env or "LLM_API_KEY"
-        args.model = args.model or os.environ.get("LLM_MODEL")
+        api_base_url = (
+            command.api_base_url
+            or os.environ.get("LLM_BASE_URL")
+            or "https://api.openai.com/v1"
+        )
+        api_key_env = command.api_key_env or "LLM_API_KEY"
+        model = command.model or os.environ.get("LLM_MODEL")
+    return replace(
+        command,
+        api_base_url=api_base_url,
+        api_key_env=api_key_env,
+        model=model,
+    )
+
 
 def read_prompt(path_like: str) -> str:
     prompt_path = Path(path_like)
@@ -208,13 +220,13 @@ def read_prompt(path_like: str) -> str:
     return prompt_path.read_text(encoding="utf-8")
 
 
-def resolve_endpoint(args: argparse.Namespace) -> str:
+def resolve_endpoint(args: PipelineRunCommand) -> str:
     if args.endpoint:
         return args.endpoint
     return args.api_base_url.rstrip("/") + "/chat/completions"
 
 
-def load_api_client(args: argparse.Namespace) -> ChatCompletionsJsonClient:
+def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
     api_key = args.api_key or os.environ.get(args.api_key_env)
     if not api_key:
         raise SystemExit(f"Missing API key. Set {args.api_key_env}=... or pass --api-key")
@@ -233,13 +245,13 @@ def load_api_client(args: argparse.Namespace) -> ChatCompletionsJsonClient:
     )
 
 
-def concept_page_mode(args: argparse.Namespace) -> str:
+def concept_page_mode(args: PipelineRunCommand) -> str:
     if args.concept_page_mode != "auto":
         return args.concept_page_mode
     return "skeleton"
 
 
-def source_page_mode(args: argparse.Namespace) -> str:
+def source_page_mode(args: PipelineRunCommand) -> str:
     if getattr(args, "source_page_mode", "auto") != "auto":
         return args.source_page_mode
     return "section-polish" if args.mode in {"api", "generic-chat"} else "skeleton"
@@ -313,7 +325,7 @@ def _run_wiki_generation_loop(
 
 
 def _prepare_source_page_polish(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     normalized: dict[str, Any],
     blocks: list[Any],
     section_polisher: ApiSectionPolisher | None,
@@ -411,7 +423,7 @@ def _evaluate_source_accumulation(
 
 
 def _prepare_concept_section_polish(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     normalized: dict[str, Any],
     concept_source_blocks_by_slug: dict[str, list[Any]],
     source_key_points_for_concepts: list[dict[str, Any]],
@@ -494,7 +506,7 @@ def _prepare_concept_section_polish(
     return concept_pages, generated_concept_pages
 
 
-def _load_pipeline_prompts(args: argparse.Namespace, log: PipelineLog) -> PipelinePrompts:
+def _load_pipeline_prompts(args: PipelineRunCommand, log: PipelineLog) -> PipelinePrompts:
     wiki_patch_path = getattr(
         args,
         "wiki_patch_system_prompt",
@@ -526,7 +538,7 @@ def _load_pipeline_prompts(args: argparse.Namespace, log: PipelineLog) -> Pipeli
 
 
 def _prepare_api_client(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     out: Path,
     log: PipelineLog,
 ) -> ChatCompletionsJsonClient | None:
@@ -568,7 +580,7 @@ def _prepare_api_client(
 
 
 def _extract_pipeline_source(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     input_text: str | None,
     input_source_name: str,
@@ -618,7 +630,7 @@ def _extract_pipeline_source(
 
 
 def _resolve_pipeline_concepts(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     api_client: ChatCompletionsJsonClient,
     concept_resolution_prompt: str,
@@ -696,7 +708,7 @@ def _resolve_pipeline_concepts(
 
 
 def _prepare_source_page_assembly(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     api_client: ChatCompletionsJsonClient | None,
     prompts: PipelinePrompts,
@@ -843,7 +855,7 @@ def _assemble_source_page(
 
 
 def _assemble_concept_pages(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     api_client: ChatCompletionsJsonClient | None,
     prompts: PipelinePrompts,
@@ -920,7 +932,7 @@ def _assemble_concept_pages(
 
 
 def _assemble_wiki_pages(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     api_client: ChatCompletionsJsonClient | None,
     prompts: PipelinePrompts,
@@ -986,7 +998,7 @@ def _assemble_wiki_pages(
 
 
 def _assemble_meaning_clusters(
-    args: argparse.Namespace,
+    args: PipelineRunCommand,
     *,
     api_client: ChatCompletionsJsonClient,
     normalized: dict[str, Any],
@@ -1091,9 +1103,9 @@ def _assemble_meaning_clusters(
     return artifact, maintenance_summary
 
 
-def run_pipeline(args: argparse.Namespace) -> dict:
-    load_env_file(args.env_file)
-    resolve_api_defaults(args)
+def run_pipeline(command: PipelineRunCommand) -> dict:
+    load_env_file(command.env_file)
+    args = resolve_api_defaults(command)
     input_text = getattr(args, "input_markdown", None)
     input_source_name = getattr(args, "input_name", None) or getattr(args, "input", None) or "inline.md"
     input_path = Path(args.input) if getattr(args, "input", None) else Path(input_source_name)
@@ -1275,8 +1287,20 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     return _json_safe(manifest)
 
 
+def pipeline_command_from_cli_args(args: argparse.Namespace) -> PipelineRunCommand:
+    values = vars(args).copy()
+    input_value = values.pop("input")
+    return PipelineRunCommand(
+        run_id=None,
+        input=input_value,
+        input_name=input_value,
+        **values,
+    )
+
+
 def main() -> None:
-    manifest = run_pipeline(parse_args())
+    command = pipeline_command_from_cli_args(parse_args())
+    manifest = run_pipeline(command)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 

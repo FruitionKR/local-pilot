@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping
 
 import psycopg
 
@@ -16,6 +18,14 @@ from app.modules.wiki_ingestion.infrastructure.object_storage import (
 
 
 SOURCE_RELATED_THRESHOLD = 0.75
+
+
+@dataclass(frozen=True)
+class SourceRelatedLink:
+    from_page_id: str
+    to_page_id: str
+    label: str
+    confidence: float
 
 
 def persist_embedding_units(
@@ -138,6 +148,20 @@ def refresh_source_related_links(
         """,
         (user_id, workspace_id, user_id, workspace_id),
     )
+    for link in build_source_related_links(rows):
+        upsert_wiki_page_link(
+            conn,
+            link.from_page_id,
+            link.to_page_id,
+            "source_related_to",
+            link.label,
+            link.confidence,
+        )
+
+
+def build_source_related_links(
+    rows: Iterable[Mapping[str, Any]],
+) -> list[SourceRelatedLink]:
     source_concepts: dict[str, dict[str, str]] = {}
     concept_source_counts: dict[str, int] = {}
     for row in rows:
@@ -156,6 +180,7 @@ def refresh_source_related_links(
     def concept_weight(concept_id: str) -> float:
         return 1.0 / max(1, concept_source_counts.get(concept_id, 1))
 
+    links: list[SourceRelatedLink] = []
     source_ids = sorted(source_concepts)
     for index, source_a in enumerate(source_ids):
         concepts_a = source_concepts[source_a]
@@ -179,14 +204,15 @@ def refresh_source_related_links(
             if score < SOURCE_RELATED_THRESHOLD:
                 continue
             label = source_related_label(shared_concepts, concepts_a)
-            upsert_wiki_page_link(
-                conn,
-                source_a,
-                source_b,
-                "source_related_to",
-                label,
-                score,
+            links.append(
+                SourceRelatedLink(
+                    from_page_id=source_a,
+                    to_page_id=source_b,
+                    label=label,
+                    confidence=score,
+                )
             )
+    return links
 
 
 def source_related_label(

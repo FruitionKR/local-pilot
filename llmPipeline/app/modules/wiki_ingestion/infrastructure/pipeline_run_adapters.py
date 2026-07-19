@@ -1,5 +1,3 @@
-import argparse
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +11,7 @@ from run_lab import run_pipeline
 
 class RunLabPipelineRunner:
     def run(self, command: PipelineRunCommand) -> dict[str, Any]:
-        return run_pipeline(argparse.Namespace(**asdict(command)))
+        return run_pipeline(command)
 
 
 class PostgresPipelineRunRepository:
