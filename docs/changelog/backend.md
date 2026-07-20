@@ -8,21 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
-### fix: 워크스페이스 초기 노트 생성을 best-effort로 전환하고 파이프라인 등록 제거
+### fix: 파이프라인 스키마를 Flyway 관리 대상으로 통합
 
 **배경**
 
-- PR #89 코드리뷰 지적: `createInitialNote`가 워크스페이스 트랜잭션 안에서 실패 시 예외를 던져, MinIO/DB 오류가 나면 워크스페이스 생성(회원가입 기본 워크스페이스 포함) 전체가 롤백되는 새 결합이 생겼다.
-- 또한 빈 초기 노트(`# 새 노트`)까지 처리 큐에 등록해 워크스페이스 생성마다 사실상 빈 문서에 대한 LLM ingest·임베딩 작업이 불필요하게 실행됐다.
+FastAPI lifespan이 공용·파이프라인 테이블을 직접 생성해, Backend Flyway보다 먼저 실행되면 baseline 판정과 migration 순서가 깨질 수 있었습니다.
 
 **변경된 것**
 
-- `DocumentService.createInitialNote` — 저장 실패 시 예외를 던지지 않고 `log.warn`만 남겨 워크스페이스 생성을 막지 않도록 변경(best-effort).
-- `DocumentService.createInitialNote` — `requestProcessingAfterCommit` 호출 제거. 초기 노트는 원본 조회(getOriginal)만으로 열람 가능하므로 파이프라인 처리 큐에 올리지 않는다.
+- `V4__add_pipeline_schema.sql`에서 `pipeline_runs`, 임베딩 테이블, `wiki_schemas`를 생성하고 버전을 관리합니다.
+- Flyway V1~V3 적용 후 Python 초기화로 pipeline 테이블이 생성된 DB도 수용하도록 비파괴 migration으로 작성했습니다.
+- Flyway 이력 없이 Python이 공용 테이블 일부만 만든 로컬 DB는 V3를 적용할 수 없으므로 기존 Flyway 안내대로 volume을 한 번 리셋해야 합니다.
+- Backend 통합 테스트에서 Flyway 적용 후 파이프라인 테이블 5개의 존재를 확인합니다.
 
 **검증**
 
-- `./gradlew test --tests DocumentServiceBlocksTest --tests WorkspaceServiceTest`
+- 격리된 PostgreSQL에서 V1 → V4 순차 적용 및 V4 재실행
+- `BackendApplicationTests` 실행 시도: 로컬 Java runtime 부재로 미실행
 
 ## 2026-07-20
 

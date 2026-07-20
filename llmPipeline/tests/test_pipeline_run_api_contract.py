@@ -67,8 +67,7 @@ def _pipeline_client(
         )
     try:
         with (
-            patch.object(api.database, "init_db"),
-            patch.object(api.wiki_schema_database, "init_db"),
+            patch.object(api.database, "verify_schema"),
             TestClient(api.app) as client,
         ):
             yield client
@@ -77,16 +76,14 @@ def _pipeline_client(
         api.app.dependency_overrides.update(previous_overrides)
 
 
-def test_pipeline_lifespan_initializes_owned_tables() -> None:
+def test_pipeline_lifespan_verifies_flyway_schema() -> None:
     with (
-        patch.object(api.database, "init_db") as init_database,
-        patch.object(api.wiki_schema_database, "init_db") as init_wiki_schema,
+        patch.object(api.database, "verify_schema") as verify_schema,
         TestClient(api.app),
     ):
         pass
 
-    init_database.assert_called_once_with()
-    init_wiki_schema.assert_called_once_with()
+    verify_schema.assert_called_once_with()
 
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:
