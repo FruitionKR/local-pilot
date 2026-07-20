@@ -24,7 +24,12 @@
 
 ### 인증
 
-`/api/auth/**`(로그인/회원가입/토큰 재발급/OAuth 교환)와 `/oauth2/**`(OAuth 리다이렉트 시작)를 제외한 나머지 `/api/**` 요청은 `Authorization` 헤더에 access token이 필요하다.
+현재 Spring Security 설정 기준 인증 필수 경로는 다음과 같다.
+
+- `GET /api/auth/me`
+- `/api/workspaces/**`
+
+위 경로는 `Authorization` 헤더에 access token이 필요하다.
 
 ```text
 Authorization: Bearer {access_token}
@@ -33,6 +38,8 @@ Authorization: Bearer {access_token}
 - access token은 JWT(HS256), 짧은 만료 시간(기본 900초)을 가진다.
 - 만료되면 `POST /api/auth/refresh`로 재발급받는다.
 - 인증이 없거나 유효하지 않으면 `401 Unauthorized`를 반환한다.
+- `/api/auth/signup`, `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/oauth/exchange`, `/oauth2/**`는 인증 없이 호출한다.
+- `/api/documents/{document_id}/status`, `/api/documents/{document_id}/pipeline-events`, `/api/query/runs/**`는 내부 콜백/비동기 run 조회용 flat 경로이며 현재 보안 설정상 인증 없이 접근 가능하다.
 
 ### 워크스페이스 소유권
 
@@ -248,8 +255,10 @@ member
 ```text
 sources/documents/{document_id}/original
 sources/documents/{document_id}/extracted.txt
-wiki/sources/{document_slug}.md
-wiki/concepts/{concept_slug}.md
+wiki/{user_id}/{workspace_id}/sources/{document_slug}.md
+wiki/{user_id}/{workspace_id}/concepts/{concept_slug}.md
+wiki/{user_id}/{workspace_id}/clusters/active.md
+wiki/{user_id}/{workspace_id}/logs/{yyyy-mm-dd}.md
 ```
 
 ## 4. API 목록
@@ -281,10 +290,10 @@ GET    /api/workspaces/{workspace_id}/documents/{document_id}/blocks
 PATCH  /api/workspaces/{workspace_id}/documents/{document_id}/rename
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
 
-# Wiki (워크스페이스 격리 미적용 — 알려진 이슈, 5.8 참고)
-GET    /api/wiki/graph
-GET    /api/wiki/pages/{wiki_page_id}
-PATCH  /api/wiki/pages/{wiki_page_id}/rename
+# Wiki (workspace 하위)
+GET    /api/workspaces/{workspace_id}/wiki/graph
+GET    /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}
+PATCH  /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}/rename
 
 # Chat Sessions (workspace 하위)
 POST   /api/workspaces/{workspace_id}/chat/sessions
@@ -565,7 +574,8 @@ Response: `204 No Content`.
 처리 규칙:
 
 - 소속 `documents`, `chat_sessions`(및 그 하위 메시지/참조/관련페이지)를 함께 삭제한다.
-- `wiki_pages`는 아직 workspace 격리가 안 되어 있어 삭제 대상에서 제외된다(6.4의 알려진 이슈, "8. Wiki API" 참고).
+- 소속 문서는 애플리케이션 레벨에서 삭제되며, 문서 삭제 로직을 통해 source Wiki page와 관련 링크, Object Storage 원본도 정리한다.
+- concept Wiki page는 여러 문서가 공유할 수 있으므로 문서 삭제 과정에서 함께 삭제하지 않는다.
 
 주요 error code (6.3, 6.4 공통):
 
@@ -679,7 +689,7 @@ Response (`200`):
   "processing_stage": "5. Source Page 생성",
   "wiki_pages": [
     {
-      "id": "source:doc_24ec7500",
+      "id": "wiki_page_11111111-1111-1111-1111-111111111111",
       "page_type": "source",
       "title": "lecture_01",
       "slug": "lecture-01",
@@ -687,7 +697,7 @@ Response (`200`):
       "confidence": 1.0
     },
     {
-      "id": "concept:self-attention",
+      "id": "wiki_page_22222222-2222-2222-2222-222222222222",
       "page_type": "concept",
       "title": "Self-Attention",
       "slug": "self-attention",
@@ -773,7 +783,7 @@ Response (`200`):
   "status": "completed",
   "renamed_at": "2026-07-03T10:20:00Z",
   "source_page": {
-    "id": "source:doc_24ec7500",
+    "id": "wiki_page_11111111-1111-1111-1111-111111111111",
     "title": "lecture_01",
     "renamed": false
   }
@@ -810,16 +820,53 @@ PATCH /api/documents/{document_id}/status
 POST  /api/documents/{document_id}/pipeline-events
 ```
 
-문서 처리 상태 갱신과 진행 이벤트 수신용으로 llmPipeline이 호출하는 flat 경로다. 인증 방식과 payload는 프론트 계약 범위 밖이며, `fruition.document.controller.DocumentPipelineController` 참고.
+문서 처리 상태 갱신과 진행 이벤트 수신용으로 llmPipeline이 호출하는 flat 경로다. 프론트는 직접 호출하지 않는다.
+
+`PATCH /api/documents/{document_id}/status` payload:
+
+```json
+{
+  "status": "completed",
+  "extracted_text_uri": "sources/documents/doc_24ec7500/extracted.txt",
+  "processed_at": "2026-07-03T10:01:20Z",
+  "error_message": null
+}
+```
+
+`POST /api/documents/{document_id}/pipeline-events` payload:
+
+```json
+{
+  "run_id": "51ef53b4-7f84-4cec-9f3c-125239e4b4f2",
+  "timestamp": "2026-07-11 08:18:14",
+  "stage": "4. 정규화",
+  "message": "의미 노트를 concept ledger와 evidence unit으로 정규화했습니다.",
+  "data": {
+    "core concept 수": "3",
+    "근거 수": "3"
+  }
+}
+```
+
+처리 규칙:
+
+- `run_id`가 문서의 `pipeline_run_id`와 다르면 이벤트를 무시한다.
+- `stage`는 `documents.processing_stage`에 저장되어 문서 목록/상세 응답의 `processing_stage`로 내려간다.
+- `message`, `timestamp`, `data`는 현재 진행 로그 관측용으로 수신하지만 문서 응답 DTO에는 저장하지 않는다.
 
 ## 8. Wiki API
 
-**알려진 이슈: 워크스페이스 격리가 아직 안 되어 있다.** `wiki_pages`는 workspace_id를 갖지 않으며(문서-워크스페이스 연결과 달리), concept 타입 페이지의 id(`concept:{slug}`)는 전역적으로 유일하다. 즉 서로 다른 워크스페이스가 같은 개념을 다루면 페이지를 공유하게 되고, 그래프 조회 API는 워크스페이스 구분 없이 전체 Wiki를 반환한다. 이 경로는 아직 `workspace_id`를 파라미터로 받지 않는다.
+Wiki API는 workspace-scoped 경로를 사용한다. 모든 요청은 `{workspace_id}`에 대한 멤버십을 확인하고, 조회/변경 대상도 해당 workspace 안의 `wiki_pages`로 제한한다. 다른 workspace의 Wiki page ID로 상세 조회나 이름 변경을 요청하면 `404 WIKI_PAGE_NOT_FOUND`가 반환된다.
+
+`wiki_page_id`는 `wiki_page_{uuid}` 형태의 opaque ID다. page 의미는 ID 문자열이 아니라 `page_type`, `slug`, `source_document` 필드로 판단한다.
+
+`wiki_page_links`에는 `workspace_id` 컬럼이 없으므로 graph 조회 시 먼저 해당 workspace의 page id 집합을 만들고, from/to 양 끝점이 모두 그 집합에 포함된 link만 응답한다.
 
 ### 8.1 Wiki graph 조회
 
 ```http
-GET /api/wiki/graph
+GET /api/workspaces/{workspace_id}/wiki/graph
+Authorization: Bearer {access_token}
 ```
 
 Response (`200`):
@@ -828,7 +875,7 @@ Response (`200`):
 {
   "nodes": [
     {
-      "id": "source:doc_24ec7500",
+      "id": "wiki_page_11111111-1111-1111-1111-111111111111",
       "page_type": "source",
       "title": "lecture_01",
       "slug": "lecture-01",
@@ -837,7 +884,7 @@ Response (`200`):
       "source_document": { "id": "doc_24ec7500", "filename": "lecture_01.pdf" }
     },
     {
-      "id": "concept:self-attention",
+      "id": "wiki_page_22222222-2222-2222-2222-222222222222",
       "page_type": "concept",
       "title": "Self-Attention",
       "slug": "self-attention",
@@ -847,8 +894,8 @@ Response (`200`):
   ],
   "edges": [
     {
-      "from_page_id": "source:doc_24ec7500",
-      "to_page_id": "concept:self-attention",
+      "from_page_id": "wiki_page_11111111-1111-1111-1111-111111111111",
+      "to_page_id": "wiki_page_22222222-2222-2222-2222-222222222222",
       "link_type": "source_mentions_concept",
       "label": "mentions",
       "confidence": 0.92
@@ -865,19 +912,20 @@ Response (`200`):
 ### 8.2 Wiki page 상세 조회
 
 ```http
-GET /api/wiki/pages/{wiki_page_id}
+GET /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}
+Authorization: Bearer {access_token}
 ```
 
 Response (`200`):
 
 ```json
 {
-  "id": "concept:self-attention",
+  "id": "wiki_page_22222222-2222-2222-2222-222222222222",
   "page_type": "concept",
   "title": "Self-Attention",
   "slug": "self-attention",
   "summary": "토큰 간 관계를 계산하는 Transformer의 핵심 메커니즘입니다.",
-  "markdown_uri": "wiki/concepts/self-attention.md",
+  "markdown_uri": "wiki/user_1f9a74af/ws_abc123/concepts/self-attention.md",
   "markdown": "# Self-Attention\n\n## Definition\n...",
   "status": "active",
   "created_at": "2026-07-03T10:01:10Z",
@@ -893,7 +941,7 @@ Response (`200`):
   ],
   "related_pages": [
     {
-      "id": "concept:transformer",
+      "id": "wiki_page_33333333-3333-3333-3333-333333333333",
       "page_type": "concept",
       "title": "Transformer",
       "slug": "transformer",
@@ -916,7 +964,8 @@ source page 상세의 경우 `source_documents`에는 대응되는 원본 문서
 ### 8.3 Wiki page 이름 변경
 
 ```http
-PATCH /api/wiki/pages/{wiki_page_id}/rename
+PATCH /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}/rename
+Authorization: Bearer {access_token}
 Content-Type: application/json
 ```
 
@@ -933,7 +982,7 @@ Response (`200`):
 
 ```json
 {
-  "id": "concept:self-attention",
+  "id": "wiki_page_22222222-2222-2222-2222-222222222222",
   "page_type": "concept",
   "title": "Self-Attention 개념 정리",
   "previous_title": "Self-Attention",
@@ -1069,7 +1118,7 @@ Response (`200`):
       "created_at": "2026-07-03T10:05:03Z",
       "related_pages": [
         {
-          "wiki_page_id": "concept:self-attention",
+          "wiki_page_id": "wiki_page_22222222-2222-2222-2222-222222222222",
           "page_type": "concept",
           "title": "Self-Attention",
           "slug": "self-attention",
@@ -1089,7 +1138,7 @@ Response (`200`):
           "text": "Self-attention computes relationships between tokens."
         }
       ],
-      "wiki_page_id": "source:chatdoc_abc123",
+      "wiki_page_id": "wiki_page_44444444-4444-4444-4444-444444444444",
       "partial_wiki_page_ids": []
     }
   ]
@@ -1200,7 +1249,7 @@ Response (`200`):
   },
   "related_pages": [
     {
-      "id": "concept:self-attention",
+      "id": "wiki_page_22222222-2222-2222-2222-222222222222",
       "page_type": "concept",
       "title": "Self-Attention",
       "slug": "self-attention",
@@ -1209,7 +1258,7 @@ Response (`200`):
       "depth": 1
     },
     {
-      "id": "source:doc_24ec7500",
+      "id": "wiki_page_11111111-1111-1111-1111-111111111111",
       "page_type": "source",
       "title": "lecture_01",
       "slug": "lecture-01",
@@ -1229,7 +1278,7 @@ Response (`200`):
   "graph_context": {
     "nodes": [
       {
-        "id": "source:doc_24ec7500",
+        "id": "wiki_page_11111111-1111-1111-1111-111111111111",
         "page_type": "source",
         "title": "lecture_01",
         "slug": "lecture-01",
@@ -1240,8 +1289,8 @@ Response (`200`):
     ],
     "edges": [
       {
-        "from_page_id": "source:doc_24ec7500",
-        "to_page_id": "concept:self-attention",
+        "from_page_id": "wiki_page_11111111-1111-1111-1111-111111111111",
+        "to_page_id": "wiki_page_22222222-2222-2222-2222-222222222222",
         "link_type": "source_mentions_concept",
         "role": "forward",
         "score": 0.88
@@ -1255,11 +1304,14 @@ Response (`200`):
       "used_for_answer": true,
       "score": 0.91,
       "stop_reason": "answer_context_selected",
-      "nodes": ["source:doc_24ec7500", "concept:self-attention"],
+      "nodes": [
+        "wiki_page_11111111-1111-1111-1111-111111111111",
+        "wiki_page_22222222-2222-2222-2222-222222222222"
+      ],
       "edges": [
         {
-          "from_page_id": "source:doc_24ec7500",
-          "to_page_id": "concept:self-attention",
+          "from_page_id": "wiki_page_11111111-1111-1111-1111-111111111111",
+          "to_page_id": "wiki_page_22222222-2222-2222-2222-222222222222",
           "link_type": "source_mentions_concept",
           "role": "forward",
           "score": 0.88
@@ -1332,7 +1384,7 @@ Response (`200`):
 ```json
 {
   "request_id": "query_a1b2c3d4",
-  "status": "succeeded",
+  "status": "completed",
   "result": { "...": "10.1 Response와 동일한 QueryResponse 형식" }
 }
 ```
@@ -1354,13 +1406,61 @@ Accept: text/event-stream
 
 파이프라인 진행 로그를 실시간 스트리밍한다. 프론트는 이걸로 "탐색 중..." 같은 진행 상태 UI를 그릴 수 있다.
 
+SSE event:
+
+```text
+event: query.log
+data: {
+  "request_id": "query_a1b2c3d4",
+  "sequence": 1,
+  "received_at": "2026-07-13T10:00:00Z",
+  "stage": "retrieval",
+  "message": "관련 Wiki page를 검색했습니다.",
+  "data": { "page_count": 3 }
+}
+
+event: query.completed
+data: { "request_id": "query_a1b2c3d4", "status": "completed" }
+
+event: query.failed
+data: { "request_id": "query_a1b2c3d4", "status": "failed", "error": "..." }
+```
+
+처리 규칙:
+
+- 이벤트는 backend `QueryEventBroker`가 request_id별 in-memory buffer에 최대 200개까지 보관한다.
+- 구독 시 이미 buffer에 쌓인 이벤트를 먼저 전송한 뒤 새 이벤트를 이어서 전송한다.
+- `query.completed` 또는 `query.failed` 전송 후 emitter를 닫는다.
+
 ### 10.5 Query Run 콜백 (llmPipeline 전용, 프론트 미사용)
 
 ```http
 POST /api/query/runs/{request_id}/events/callback
 ```
 
-llmPipeline이 진행 이벤트를 push하는 내부 endpoint다.
+llmPipeline이 진행 이벤트를 push하는 내부 endpoint다. 프론트는 직접 호출하지 않는다.
+
+Request:
+
+```json
+{
+  "event_type": "query.log",
+  "request_id": "query_a1b2c3d4",
+  "sequence": 1,
+  "timestamp": "2026-07-13T10:00:00Z",
+  "stage": "retrieval",
+  "message": "관련 Wiki page를 검색했습니다.",
+  "data": {
+    "page_count": 3
+  }
+}
+```
+
+처리 규칙:
+
+- path의 `{request_id}`로 run 존재 여부를 확인한다. body의 `request_id`는 forward-compatible 필드이며 현재 dispatch 기준은 path variable이다.
+- backend는 callback body의 `sequence`/`timestamp`를 그대로 쓰지 않고, run 단위 `sequence`와 `received_at`을 새로 부여해 SSE `query.log` 이벤트로 발행한다.
+- callback은 진행 로그만 받는다. 완료/실패 이벤트는 backend가 pipeline 호출 결과에 따라 `query.completed`/`query.failed`로 직접 발행한다.
 
 ## 11. 프론트 화면 매핑
 
@@ -1426,9 +1526,9 @@ error_message
 사용 API:
 
 ```text
-GET   /api/wiki/graph
-GET   /api/wiki/pages/{wiki_page_id}
-PATCH /api/wiki/pages/{wiki_page_id}/rename
+GET   /api/workspaces/{workspace_id}/wiki/graph
+GET   /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}
+PATCH /api/workspaces/{workspace_id}/wiki/pages/{wiki_page_id}/rename
 ```
 
 표시 데이터:
@@ -1478,5 +1578,4 @@ traversal_paths
 
 ## 13. 알려진 이슈
 
-- **Wiki workspace 격리 미적용**: `wiki_pages`가 workspace_id를 갖지 않아 concept 페이지가 워크스페이스 간 전역 공유된다. `docs/backlog/issue-2026-07-02.md` 참고.
 - **채팅 세션의 유저별 프라이빗 처리 미적용**: 지금은 워크스페이스 멤버가 1명(owner)뿐이라 드러나지 않지만, 조회 로직이 `workspace_id`만 확인하고 세션 소유자(`user_id`)는 확인하지 않는다. 워크스페이스 공유 기능이 들어가기 전에 고쳐야 한다.
