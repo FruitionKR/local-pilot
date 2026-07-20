@@ -50,11 +50,12 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
   );
 
   return (
-    <div className="agent-header" ref={rootRef}>
+    <div className="agent-header" ref={rootRef} onMouseLeave={() => setIsListOpen(false)}>
       <button
         type="button"
         className="agent-session-title"
         aria-expanded={isListOpen}
+        onMouseEnter={() => setIsListOpen(true)}
         onClick={() => setIsListOpen((open) => !open)}
       >
         <span>{sessionTitle}</span>

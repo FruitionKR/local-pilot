@@ -19,6 +19,17 @@
   left: 0;
 }
 
+/* 홈 메인 문서 뷰: 사이드바와 에이전트 패널 사이 남은 영역 전체를 채운다 */
+.source-preview-panel.is-main {
+  right: 360px;
+  width: auto;
+  border-top-left-radius: 24px;
+}
+
+.workspace.is-agent-collapsed .source-preview-panel.is-main {
+  right: 0;
+}
+
 .source-preview-resize-handle {
   position: absolute;
   top: 0;

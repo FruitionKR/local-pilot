@@ -6,6 +6,31 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-20
 
+### feat: 홈/그래프 화면 분리 및 워크스페이스·문서 추가 hover 인터랙션 (Figma 426:2115 / 500:6597 / 500:6692)
+
+**변경 배경**
+
+- 메인(홈) 화면이 항상 그래프를 렌더해 그래프 메뉴가 무의미했다. Figma 시안 기준으로 홈은 Obsidian처럼 최근 문서를 열람하는 화면, 그래프는 메뉴 선택 시에만 보이도록 분리한다.
+- 워크스페이스 전환과 채팅 세션 선택, 문서 추가(+) 진입점을 hover 인터랙션으로 시안(500:6597 / 513:11057 / 500:6692)에 맞춘다.
+
+**추가/변경된 내용**
+
+- `HomeWorkspace.tsx`: `<Graph>`를 `activeView === "graph"`일 때만 렌더. 홈 진입 시 `uploaded_at` 최신 문서를 자동 선택해 문서 뷰로 여는 로직 추가(최초 1회, 기존 선택/해제 시 유지). 홈=문서 뷰(문서 없으면 빈 화면), 그래프=그래프, 나머지 메뉴=빈 화면. Agent 패널은 홈·그래프 양쪽 유지. 문서 메인 상태에 `is-document-main` 클래스 부여.
+- `SourcePreviewPanel.tsx`: `fillMain` prop 추가. 홈 메인 문서 뷰에서 고정폭/리사이즈 대신 사이드바~Agent 패널 사이 영역을 채운다.
+- `source-preview.css`: `.source-preview-panel.is-main` 영역 채움 규칙(에이전트 접힘 대응).
+- `SidebarWorkspaceHeader.tsx` + `chrome.css`: 워크스페이스 헤더 hover 드롭다운. 항목 클릭 시 `setSelectedWorkspaceId` 후 새로고침으로 전환, "새 워크스페이스"는 `createWorkspace` 후 전환.
+- `AgentHeader.tsx` + `agent-panel/shell.css`: 채팅 세션 드롭다운을 hover로 열고 시안 513:11057 스타일로 보정.
+- `project-section.css`: 첫 프로젝트 헤더의 + 버튼을 라운드 박스 안에 배치하고, 폴더 행 hover/focus 시에만 나타나도록 변경.
+
+**검증 결과**
+
+- `tsc --noEmit` 통과.
+- 브라우저에서 홈→빈 화면(문서 0건), 그래프 메뉴→`.graph-stage` 렌더, 워크스페이스/채팅 hover 드롭다운, +버튼 hover 표시를 확인했다.
+
+**주의사항**
+
+- 최근 문서 자동 열람과 `is-main` 영역 채움 레이아웃은 로그인+문서 보유 상태에서의 실물 확인이 남아 있다(검증 세션이 로그아웃/문서 0건 상태였음).
+
 ### feat: Figma 시안 기반 메인 화면 개편 (사이드바/프로필/채팅 패널) 및 모달 2종 추가
 
 **변경 배경**

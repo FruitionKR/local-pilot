@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
@@ -13,7 +13,7 @@ import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
-import { buildGraphFromBackend } from "../../_lib/graph";
+import { buildGraphFromBackend, makeRawId } from "../../_lib/graph";
 import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
@@ -58,7 +58,31 @@ export function HomeWorkspace() {
   const graphData = useMemo(() => buildGraphFromBackend(documents, wikiGraph), [documents, wikiGraph]);
   const selection = useTreeSelection(projectTree.projects, graphData.nodes);
   const isHomeView = activeView === "home";
+  const isGraphView = activeView === "graph";
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
+  // 홈에서 문서가 메인 영역을 채우는 상태(Obsidian식 최근 문서 열람)
+  const isDocumentMain = isHomeView && hasSourcePreview;
+
+  // 가장 최근 업로드된 문서(Obsidian처럼 홈 진입 시 기본으로 열 대상)
+  const latestDocument = useMemo(() => {
+    if (documents.length === 0) return null;
+    return [...documents].sort((left, right) =>
+      (right.uploaded_at ?? "").localeCompare(left.uploaded_at ?? "")
+    )[0];
+  }, [documents]);
+
+  // 홈 진입 후 선택이 비어 있으면 최근 문서를 자동으로 연다(최초 1회).
+  const didAutoOpenRef = useRef(false);
+  useEffect(() => {
+    if (!isHomeView || didAutoOpenRef.current || !latestDocument) return;
+    if (selection.selectedDocumentId || selection.selectedPreviewTarget) return;
+    didAutoOpenRef.current = true;
+    selection.selectTreeGraphNode({
+      id: makeRawId(latestDocument.id),
+      label: latestDocument.filename,
+      documentId: latestDocument.id
+    });
+  }, [isHomeView, latestDocument, selection]);
 
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
     const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
@@ -79,9 +103,10 @@ export function HomeWorkspace() {
     <main
       className={cx(
         "workspace",
-        isHomeView && !isAgentPanelOpen && "is-agent-collapsed",
+        (isHomeView || isGraphView) && !isAgentPanelOpen && "is-agent-collapsed",
         !isDocumentSidebarOpen && "is-sidebar-collapsed",
-        hasSourcePreview && "has-source-preview"
+        hasSourcePreview && "has-source-preview",
+        isDocumentMain && "is-document-main"
       )}
       style={{
         "--sidebar-width": `${sidebarResize.width}px`,
@@ -140,41 +165,48 @@ export function HomeWorkspace() {
         </button>
       )}
 
-      {isHomeView ? (
-        <>
-          {selection.selectedDocumentTitle && (
-            <SourcePreviewPanel
-              title={selection.selectedDocumentTitle}
-              pageId={selection.selectedPreviewTarget?.pageId ?? null}
-              pageType={selection.selectedPreviewTarget?.pageType ?? null}
-              documentId={selection.selectedDocumentId}
-              sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
-              width={sourcePreviewResize.width}
-              onResizeStart={sourcePreviewResize.start}
-            />
-          )}
-
-          <Graph
-            nodes={graphData.nodes}
-            links={graphData.links}
-            rawDocumentCount={documents.length}
-            focusedNodeId={selection.focusedGraphNodeId}
-            onOpenNodePreview={selection.openGraphNodePreview}
-            onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
-            loading={isGraphLoading}
-            errorMessage={apiError}
+      {/* 홈: 최근 문서를 메인으로 여는 문서 열람 화면. 문서가 없으면 빈 화면. */}
+      {isHomeView && (
+        selection.selectedDocumentTitle ? (
+          <SourcePreviewPanel
+            title={selection.selectedDocumentTitle}
+            pageId={selection.selectedPreviewTarget?.pageId ?? null}
+            pageType={selection.selectedPreviewTarget?.pageType ?? null}
+            documentId={selection.selectedDocumentId}
+            sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
+            width={sourcePreviewResize.width}
+            onResizeStart={sourcePreviewResize.start}
+            fillMain
           />
+        ) : (
+          <section className="blank-view" aria-label="홈 빈 화면" />
+        )
+      )}
 
-          {isAgentPanelOpen && (
-            <AgentPanel
-              onClose={() => setIsAgentPanelOpen(false)}
-              onOpenWikiPage={selection.openWikiPagePreview}
-              onOpenSourceBlocks={openSourceBlocks}
-              nodes={graphData.nodes}
-            />
-          )}
-        </>
-      ) : (
+      {/* 그래프: 메뉴에서 그래프를 선택했을 때만 그래프 화면을 보여준다. */}
+      {isGraphView && (
+        <Graph
+          nodes={graphData.nodes}
+          links={graphData.links}
+          rawDocumentCount={documents.length}
+          focusedNodeId={selection.focusedGraphNodeId}
+          onOpenNodePreview={selection.openGraphNodePreview}
+          onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
+          loading={isGraphLoading}
+          errorMessage={apiError}
+        />
+      )}
+
+      {(isHomeView || isGraphView) && isAgentPanelOpen && (
+        <AgentPanel
+          onClose={() => setIsAgentPanelOpen(false)}
+          onOpenWikiPage={selection.openWikiPagePreview}
+          onOpenSourceBlocks={openSourceBlocks}
+          nodes={graphData.nodes}
+        />
+      )}
+
+      {!isHomeView && !isGraphView && (
         <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
       )}
 

@@ -11,7 +11,8 @@ export function SourcePreviewPanel({
   documentId,
   sourceBlockHighlights,
   width,
-  onResizeStart
+  onResizeStart,
+  fillMain = false
 }: {
   title: string;
   pageId: string | null;
@@ -20,6 +21,8 @@ export function SourcePreviewPanel({
   sourceBlockHighlights?: SourceBlockHighlight[];
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
+  fillMain?: boolean;
 }) {
   const [page, setPage] = useState<WikiPageDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -102,8 +105,8 @@ export function SourcePreviewPanel({
 
   return (
     <section
-      className="source-preview-panel"
-      style={{ width }}
+      className={`source-preview-panel${fillMain ? " is-main" : ""}`}
+      style={fillMain ? undefined : { width }}
       aria-label="원본문서 미리보기"
       onClick={(event) => event.stopPropagation()}
     >
@@ -148,12 +151,14 @@ export function SourcePreviewPanel({
         )}
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
       </div>
-      <button
-        type="button"
-        className="source-preview-resize-handle"
-        aria-label="원본문서 패널 폭 조절"
-        onPointerDown={onResizeStart}
-      />
+      {!fillMain && (
+        <button
+          type="button"
+          className="source-preview-resize-handle"
+          aria-label="원본문서 패널 폭 조절"
+          onPointerDown={onResizeStart}
+        />
+      )}
     </section>
   );
 }
