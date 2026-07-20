@@ -13,6 +13,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - FastAPI `lifespan` 핸들러를 추가해 앱 시작 시 `database.init_db()`·`wiki_schema_database.init_db()`를 자동 실행 (`CREATE TABLE IF NOT EXISTS` 기반이라 멱등)
 - pipeline-api 재빌드 후 `pipeline_runs`·`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units` 생성 확인
 
+### test: lifespan DB 초기화와 API 계약 테스트 격리
+
+- API 계약 테스트의 `TestClient` startup에서 실제 PostgreSQL 초기화를 호출해 `DATABASE_URL` 없이 실패하던 문제 수정
+- 공통 test client에서 schema 초기화를 mock하고, 별도 lifespan 테스트로 두 `init_db()` 호출을 검증
+- 문서 복원 전용 의존성 테스트를 제외한 llmPipeline 테스트 `348 passed`, `28 subtests passed`
+
 ---
 
 ## 2026-07-19
