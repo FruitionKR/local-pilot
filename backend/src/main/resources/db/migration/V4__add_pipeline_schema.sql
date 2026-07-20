@@ -1,6 +1,8 @@
 -- llmPipeline이 사용하되 Flyway가 버전을 관리하는 테이블을 추가한다.
--- 기존 개발 DB에서 Python init_db()가 먼저 만든 테이블도 수용하기 위해
--- CREATE TABLE/INDEX IF NOT EXISTS를 사용한다.
+-- Flyway V1~V3가 적용된 뒤 Python init_db()가 pipeline 테이블을 만든 DB도
+-- 수용하기 위해 CREATE TABLE/INDEX IF NOT EXISTS를 사용한다.
+-- Flyway 이력 없이 Python이 공용 테이블 일부만 만든 DB는 V3 이전에 실패하므로
+-- 로컬 DB를 리셋하거나 환경별 데이터 복구 절차를 거쳐야 한다.
 
 CREATE TABLE IF NOT EXISTS public.pipeline_runs (
     id uuid PRIMARY KEY,
