@@ -18,7 +18,6 @@ class SemanticNormalizer:
         self.document = document
         self.blocks = blocks
         self.by_block_id = {b.block_id: b for b in blocks}
-        self.by_ref_id = {b.source_reference_id: b for b in blocks}
 
     def normalize_notes(self, notes: list[dict[str, Any]]) -> dict[str, Any]:
         warnings: list[str] = []
@@ -113,24 +112,13 @@ class SemanticNormalizer:
         }
 
     def _normalize_single_note(self, note: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
-        def map_anchor_ids(ids: Iterable[str], limit: int = 3) -> list[str]:
-            out = []
-            for bid in ids or []:
-                if bid not in self.by_block_id:
-                    warnings.append(f"unknown anchor_block_id: {bid}")
-                    continue
-                out.append(bid)
-                if len(out) >= limit:
-                    break
-            return unique_keep_order(out)
-
         return {
             "chunk_id": note.get("chunk_id"),
             "semantic_summary": note.get("semantic_summary", ""),
             "key_points": [
                 {
                     "text": kp.get("text", ""),
-                    "anchor_reference_ids": map_anchor_ids(kp.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(kp.get("anchor_block_ids", []), warnings, limit=3),
                 }
                 for kp in note.get("key_points", [])
             ],
@@ -142,7 +130,7 @@ class SemanticNormalizer:
                     "summary": str(obs.get("summary", "")).strip(),
                     "claims": [str(claim).strip() for claim in obs.get("claims", []) if str(claim).strip()],
                     "related_concept_hints": [slugify(x) for x in obs.get("related_concept_hints", [])],
-                    "anchor_reference_ids": map_anchor_ids(obs.get("anchor_block_ids", []), limit=5),
+                    "anchor_reference_ids": self._anchor_refs(obs.get("anchor_block_ids", []), warnings, limit=5),
                 }
                 for obs in note.get("observations", [])
                 if str(obs.get("title", "")).strip() or str(obs.get("summary", "")).strip()
@@ -152,7 +140,9 @@ class SemanticNormalizer:
                     "term": str(item.get("name", "")).strip(),
                     "name": str(item.get("name", "")).strip(),
                     "slug": slugify(item.get("slug_hint") or item.get("name", "")),
-                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(
+                        item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), warnings, limit=3
+                    ),
                 }
                 for item in note.get("categories", [])
                 if str(item.get("name", "")).strip()
@@ -162,7 +152,9 @@ class SemanticNormalizer:
                     "term": c.get("title", ""),
                     "title": c.get("title", ""),
                     "slug": slugify(c.get("slug_hint") or c.get("title", "")),
-                    "anchor_reference_ids": map_anchor_ids(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(
+                        c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), warnings, limit=3
+                    ),
                 }
                 for c in (note.get("core_concepts") or note.get("concept_candidates", []))
             ],
@@ -172,7 +164,9 @@ class SemanticNormalizer:
                     "title": item.get("title", ""),
                     "slug": slugify(item.get("slug_hint") or item.get("title", "")),
                     "context": item.get("context") or item.get("summary", ""),
-                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(
+                        item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), warnings, limit=3
+                    ),
                 }
                 for item in note.get("section_candidates", [])
                 if item.get("title") or item.get("slug_hint")
@@ -183,7 +177,9 @@ class SemanticNormalizer:
                     "name": item.get("name", ""),
                     "slug": slugify(item.get("slug_hint") or item.get("name", "")),
                     "context": item.get("context", ""),
-                    "anchor_reference_ids": map_anchor_ids(item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(
+                        item.get("evidence_block_ids", []) or item.get("anchor_block_ids", []), warnings, limit=3
+                    ),
                 }
                 for item in note.get("mentions", [])
                 if item.get("name") or item.get("slug_hint")
@@ -192,14 +188,16 @@ class SemanticNormalizer:
                 {
                     "title": c.get("title", ""),
                     "slug": slugify(c.get("slug_hint") or c.get("title", "")),
-                    "anchor_reference_ids": map_anchor_ids(c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(
+                        c.get("evidence_block_ids", []) or c.get("anchor_block_ids", []), warnings, limit=3
+                    ),
                 }
                 for c in (note.get("core_concepts") or note.get("concept_candidates", []))
             ],
             "evidence_claims": [
                 {
                     "claim": ev.get("claim", ""),
-                    "anchor_reference_ids": map_anchor_ids(ev.get("anchor_block_ids", []), limit=3),
+                    "anchor_reference_ids": self._anchor_refs(ev.get("anchor_block_ids", []), warnings, limit=3),
                     "related_concept_hints": [slugify(x) for x in ev.get("related_concept_hints", [])],
                     "confidence": ev.get("confidence", 0.0),
                 }

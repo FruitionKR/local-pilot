@@ -400,6 +400,33 @@ mixedCaseTOKENLLLLfragment
         self.assertFalse(MODULE.needs_text_fallback(incomplete))
         self.assertFalse(MODULE.needs_text_fallback(normal))
 
+    def test_builds_evaluation_plan_before_model_execution(self) -> None:
+        table = MODULE.Block(
+            "docling_table_p01_001",
+            "table_candidate",
+            1,
+            (1, 2, 3, 4),
+            "| Column 1 | Column 2 |\n| --- | --- |\n| 1 | 2 |",
+        )
+        normal = MODULE.Block(
+            "docling_text_p01_002",
+            "paragraph",
+            1,
+            (1, 2, 3, 4),
+            "This is a complete technical sentence.",
+        )
+        args = SimpleNamespace(pdf_file=Path("input.pdf"), max_blocks=12, max_chars=6000, max_chunks=0)
+
+        with (
+            mock.patch.object(MODULE, "restore_table_from_text_layout", return_value=None),
+            mock.patch.object(MODULE, "detect_table_column_count", return_value=2),
+        ):
+            plan = MODULE.build_evaluation_plan([table, normal], args)
+
+        self.assertEqual([block.id for block in plan.local_blocks], [table.id])
+        self.assertEqual(plan.fallback_blocks, [])
+        self.assertEqual(plan.selected_batches, [("local", [table])])
+
     def test_evaluate_sends_ambiguous_table_directly_to_vision(self) -> None:
         markdown = """<!-- docling_table_p01_001 type=table_candidate bbox=[1, 2, 3, 4] confidence=x -->
 | Column 1 | Column 2 |

@@ -4,6 +4,104 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-21
+
+### fix: 채팅 위키 내보내기 selection_mode 값 교정 및 워크스페이스 이름 중복 조회 제거
+
+**배경**
+
+- PR #89 코드리뷰 지적: `exportChatWiki`가 `selection_mode: "all"`을 보내는데 백엔드는 `full`/`partial`만 허용하고 그 외 값은 400으로 거부해, 채팅 위키 내보내기가 항상 실패했다.
+- `useWorkspaceName`이 `AgentHeader`와 `SidebarWorkspaceHeader`에서 각각 호출되어 홈 진입 시 `GET /api/workspaces`가 중복 호출됐다.
+
+**변경된 내용**
+
+- `api.ts` — `exportChatWiki` 요청 body의 `selection_mode`를 `"all"`에서 `"full"`(세션 전체)로 교정. `pair_ids: []`는 full에서 무시된다.
+- `useWorkspaceName.ts` — 진행 중인 `fetchWorkspaces` Promise를 모듈 스코프에서 공유해 이름 조회의 중복 호출을 제거. 워크스페이스 전환·생성은 전체 페이지 리로드를 하므로 캐시는 자연히 초기화된다.
+
+**검증**
+
+- `tsc --noEmit` 통과.
+
+## 2026-07-20
+
+### feat: 프로젝트 관리와 그래프 사이드바 사용성 개선
+
+**변경 배경**
+
+- 프로젝트는 추가만 가능하고 삭제할 수 없었으며, 프로젝트가 하나여도 파일 드롭 영역이 프로젝트 섹션으로 제한되어 있었다.
+- 그래프 상단의 임시 breadcrumb 문구와 Agent 패널 축소 시 오른쪽에 붙는 복원 버튼을 정리할 필요가 있었다.
+
+**변경된 내용**
+
+- 프로젝트 우클릭 메뉴에서 프로젝트를 삭제할 수 있도록 로컬 프로젝트 상태 삭제를 연결했다.
+- 프로젝트가 하나면 왼쪽 사이드바 전체를 해당 프로젝트의 파일 드롭 영역으로 사용하도록 변경했다.
+- 그래프 왼쪽 상단 breadcrumb를 제거하고, Agent 패널 축소 상태의 복원 버튼에 오른쪽 여백 `20px`를 적용했다.
+
+**검증 결과**
+
+- `npm run lint` 통과.
+- `./node_modules/.bin/tsc --noEmit` 통과.
+- `npm run build` 통과.
+
+### feat: 문서 삭제·이름 변경을 백엔드 API에 연결
+
+- 기존에는 사이드바 트리의 문서 삭제/이름 변경이 로컬 React 상태만 바꾸고 서버에 반영되지 않아 새로고침 시 원복되던 문제 수정
+- `api.ts`에 `deleteDocument`(`DELETE /api/workspaces/{workspace_id}/documents/{document_id}`), `renameDocument`(`PATCH .../documents/{document_id}/rename`) 추가
+- `useProjectTree`의 `deleteContextTarget`·`commitEditing`에서 대상 트리 아이템에 `documentId`가 있으면 실제 문서로 간주해 API를 호출하도록 배선
+- 성공·실패 모두 `refreshBackendData`로 서버 상태와 재동기화. 삭제 실패 시 문서가 트리에 다시 나타나고, 이름 변경 실패 시 이전 이름으로 원복
+- `useProjectTree`가 `useBackendData`보다 먼저 생성되는 순서 문제로 `refreshBackendData`는 `refreshRef`(ref)로 주입
+- 빈 문서 생성은 백엔드에 대응 endpoint가 없어 미구현. 백엔드 이슈로 기록: `docs/issue/backend/2026-07-20.md` 이슈 1
+
+## 2026-07-20
+
+### feat: 홈/그래프 화면 분리 및 워크스페이스·문서 추가 hover 인터랙션 (Figma 426:2115 / 500:6597 / 500:6692)
+
+**변경 배경**
+
+- 메인(홈) 화면이 항상 그래프를 렌더해 그래프 메뉴가 무의미했다. Figma 시안 기준으로 홈은 Obsidian처럼 최근 문서를 열람하는 화면, 그래프는 메뉴 선택 시에만 보이도록 분리한다.
+- 워크스페이스 전환과 채팅 세션 선택, 문서 추가(+) 진입점을 hover 인터랙션으로 시안(500:6597 / 513:11057 / 500:6692)에 맞춘다.
+
+**추가/변경된 내용**
+
+- `HomeWorkspace.tsx`: `<Graph>`를 `activeView === "graph"`일 때만 렌더. 홈 진입 시 `uploaded_at` 최신 문서를 자동 선택해 문서 뷰로 여는 로직 추가(최초 1회, 기존 선택/해제 시 유지). 홈=문서 뷰(문서 없으면 빈 화면), 그래프=그래프, 나머지 메뉴=빈 화면. Agent 패널은 홈·그래프 양쪽 유지. 문서 메인 상태에 `is-document-main` 클래스 부여.
+- `SourcePreviewPanel.tsx`: `fillMain` prop 추가. 홈 메인 문서 뷰에서 고정폭/리사이즈 대신 사이드바~Agent 패널 사이 영역을 채운다.
+- `source-preview.css`: `.source-preview-panel.is-main` 영역 채움 규칙(에이전트 접힘 대응).
+- `SidebarWorkspaceHeader.tsx` + `chrome.css`: 워크스페이스 헤더 hover 드롭다운. 항목 클릭 시 `setSelectedWorkspaceId` 후 새로고침으로 전환, "새 워크스페이스"는 `createWorkspace` 후 전환.
+- `AgentHeader.tsx` + `agent-panel/shell.css`: 채팅 세션 드롭다운을 hover로 열고 시안 513:11057 스타일로 보정.
+- `project-section.css`: 첫 프로젝트 헤더의 + 버튼을 라운드 박스 안에 배치하고, 폴더 행 hover/focus 시에만 나타나도록 변경.
+
+**검증 결과**
+
+- `tsc --noEmit` 통과.
+- 브라우저에서 홈→빈 화면(문서 0건), 그래프 메뉴→`.graph-stage` 렌더, 워크스페이스/채팅 hover 드롭다운, +버튼 hover 표시를 확인했다.
+
+**주의사항**
+
+- 최근 문서 자동 열람과 `is-main` 영역 채움 레이아웃은 로그인+문서 보유 상태에서의 실물 확인이 남아 있다(검증 세션이 로그아웃/문서 0건 상태였음).
+
+### feat: Figma 시안 기반 메인 화면 개편 (사이드바/프로필/채팅 패널) 및 모달 2종 추가
+
+**변경 배경**
+
+- Figma 시안(426:2115, 512:10781) 기준으로 메인 화면의 사이드바, 프로필, 채팅 패널 구조가 변경되어 프론트엔드를 맞췄다.
+- 미지원 파일 업로드 시 아무 피드백 없이 무시되던 문제와, 채팅 내용을 위키 문서로 내보내는 흐름의 UI가 없던 문제를 함께 해결했다.
+
+**추가/변경된 내용**
+
+- 사이드바 개편: 워크스페이스 헤더(아바타+이름), 가로 아이콘 메뉴 줄(기존 RailNavigation 대체), 파일 트리 타입 배지(PDF/MD/TXT)와 "Modify" 상태 태그, "채팅 시작" 버튼, 프로필 푸터(display_name/온라인/로그아웃) 추가. 기존 TopBar 렌더 제거.
+- 사이드바 메뉴바를 시안(404:5256)에 맞춰 보정: 두 번째 항목을 "공유"에서 "그래프"로 변경(`RailView` id `share`→`graph`), 메뉴 버튼을 캡슐형(pill) 라운드로 조정.
+- 채팅 패널 개편: 우측 풀하이트 360px 컬럼, 세션 제목 헤더 + "채팅 검색" 세션 드롭다운(`GET /api/workspaces/{id}/chat/sessions`), 답변 작성 중 점 애니메이션, 컴포저 재작성([+]/[↑] 버튼).
+- 업로드 에러 모달: 미지원 파일 드롭/선택 시 "지원하지 않는 파일입니다" 모달 표시. 지원 확장자에 `.txt` 추가.
+- 위키 내보내기 확인 팝업: `POST …/wiki/preview` 미리보기 → 수락 시 `POST …/wiki` 호출하는 취소/수락 카드와 트리거 버튼 추가.
+- wiki API 경로 버그 수정: `/api/wiki/graph`, `/api/wiki/pages/{id}` → workspace 스코프 경로로 교체(404 해소).
+- 신규 API 함수: `fetchMe`, `fetchChatSessions`, `fetchChatWikiExportPreview`, `exportChatWiki`.
+
+**검증 결과 / 남은 주의사항**
+
+- `tsc --noEmit`, `eslint` 통과. 브라우저에서 업로드 에러 모달 표시/닫힘, 세션 드롭다운 열림/필터, 메인 레이아웃 렌더 확인.
+- 위키 내보내기 수락 흐름은 어시스턴트 답변이 있어야 노출되어 LLM 질의 포함 E2E는 미수행.
+- TopBar.tsx와 workspace.css의 구 topbar 스타일은 미사용 상태로 보존됨.
+
 ## 2026-07-17
 
 ### feat: 로그인/회원가입 화면 개편 및 소셜 로그인 UI 추가

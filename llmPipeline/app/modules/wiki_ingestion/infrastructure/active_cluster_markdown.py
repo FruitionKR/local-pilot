@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.modules.wiki_ingestion.domain.unit_text import clean_unit_text
+
 
 ALLOWED_CORE_RELATIONS = {
     "part_of",
@@ -311,14 +313,6 @@ def section_from_heading(lines: list[str], heading: str) -> list[str]:
         if in_section:
             out.append(line)
     return out
-
-
-def clean_unit_text(text: str) -> str:
-    ref_pattern = r"(?:[A-Za-z0-9_.-]+:)?B\d{4}"
-    cleaned = re.sub(rf"\s*\[(?:{ref_pattern})(?:\s*,\s*(?:{ref_pattern}))*\]", "", text)
-    cleaned = re.sub(r"^[-*]\s+", "", cleaned.strip())
-    cleaned = re.sub(r"^(?:\[[A-Za-z0-9_,\s-]+\]\s*)+", "", cleaned)
-    return cleaned.strip()
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:

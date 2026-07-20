@@ -11,8 +11,14 @@ from app.modules.wiki_generation.infrastructure.chat_source_accumulation import 
 )
 from run_lab import (
     PipelineLog,
+    PipelinePrompts,
+    _assemble_wiki_pages,
+    _assemble_meaning_clusters,
+    _extract_pipeline_source,
+    _load_pipeline_prompts,
     _prepare_concept_section_polish,
     _prepare_source_page_polish,
+    _resolve_pipeline_concepts,
     _run_wiki_generation_loop,
 )
 
@@ -48,7 +54,185 @@ class FakeSectionPolisher:
         return self.raw
 
 
+class FakeConceptResolutionClient:
+    def complete_json(self, _system_prompt: str, _user_prompt: str) -> dict[str, object]:
+        return {
+            "resolutions": [
+                {
+                    "incoming_slug": "concept-a",
+                    "decision": "create_new",
+                    "canonical_slug": "concept-a",
+                }
+            ],
+            "hint_resolutions": [],
+        }
+
+
 class WikiGenerationPipelineTest(unittest.TestCase):
+    def test_assemble_meaning_clusters_handles_empty_candidates(self) -> None:
+        call_order = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch(
+                "run_lab._judge_concept_update_candidates",
+                side_effect=lambda **_kwargs: call_order.append("concept_judge") or [],
+            ):
+                with patch(
+                    "run_lab._read_existing_active_clusters",
+                    side_effect=lambda *_args: call_order.append("active_read") or "",
+                ):
+                    with patch(
+                        "run_lab._judge_meaning_cluster_candidates",
+                        side_effect=lambda **_kwargs: call_order.append("cluster_judge") or [],
+                    ):
+                        artifact, maintenance_summary = _assemble_meaning_clusters(
+                            SimpleNamespace(user_id="user-1", workspace_id="workspace-1"),
+                            api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                            normalized={
+                                "concept_ledger": [],
+                                "existing_concept_index": [],
+                                "section_candidates": [],
+                                "mentions": [],
+                                "unresolved_related_concept_hints": [],
+                                "evidence_units": [],
+                            },
+                            out=Path(tmp_dir),
+                            log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+                        )
+
+        self.assertEqual(artifact["clusters"], [])
+        self.assertEqual(maintenance_summary["promotion_candidate_count"], 0)
+        self.assertEqual(maintenance_summary["relation_candidate_count"], 0)
+        self.assertEqual(
+            call_order,
+            ["concept_judge", "active_read", "cluster_judge"],
+        )
+
+    def test_assemble_wiki_pages_keeps_skeleton_modes_without_api(self) -> None:
+        normalized = {
+            "document": {
+                "document_id": "doc-1",
+                "title": "문서",
+                "source_path": "document.md",
+            },
+            "semantic_notes": [],
+            "concept_ledger": [],
+            "evidence_units": [],
+            "warnings": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "pipeline.log"
+            outputs = _assemble_wiki_pages(
+                SimpleNamespace(
+                    mode="offline",
+                    source_page_mode="auto",
+                    concept_page_mode="auto",
+                    selection_mode=None,
+                    save_debug_json=False,
+                ),
+                api_client=None,
+                prompts=PipelinePrompts("", "", "", "", "", "", ""),
+                normalized=normalized,
+                blocks=[],
+                same_source_context_blocks=[],
+                existing_source_artifact=None,
+                existing_source_markdown=None,
+                out=Path(tmp_dir),
+                log=PipelineLog(log_path),
+            )
+            log_text = log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(outputs.source_page_mode, "skeleton")
+        self.assertEqual(outputs.concept_page_mode, "skeleton")
+        self.assertEqual(outputs.source_page["title"], "문서")
+        self.assertEqual(outputs.concept_pages, [])
+        self.assertEqual(outputs.links, [])
+        self.assertLess(
+            log_text.index("[5-보조. Concept 입력 준비]"),
+            log_text.index("[5. Source Page 생성]"),
+        )
+        self.assertLess(
+            log_text.index("[5. Source Page 생성]"),
+            log_text.index("[6. Concept Page 생성]"),
+        )
+
+    def test_load_pipeline_prompts_returns_named_prompt_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prompt_paths = {}
+            for name in (
+                "system_prompt",
+                "concept_system_prompt",
+                "concept_resolution_system_prompt",
+                "section_polish_system_prompt",
+                "source_accumulation_system_prompt",
+                "wiki_evaluator_system_prompt",
+                "wiki_patch_system_prompt",
+            ):
+                path = Path(tmp_dir) / f"{name}.md"
+                path.write_text(name, encoding="utf-8")
+                prompt_paths[name] = str(path)
+
+            prompts = _load_pipeline_prompts(
+                SimpleNamespace(**prompt_paths),
+                PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(prompts.semantic, "system_prompt")
+        self.assertEqual(prompts.concept, "concept_system_prompt")
+        self.assertEqual(prompts.wiki_patch, "wiki_patch_system_prompt")
+
+    def test_extract_pipeline_source_applies_requested_document_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            document, blocks, source_block_records = _extract_pipeline_source(
+                SimpleNamespace(
+                    selection_mode=None,
+                    source_document_id="requested-document",
+                    save_debug_json=False,
+                ),
+                input_text="# 문서\n\n본문입니다.",
+                input_source_name="inline.md",
+                input_path=Path("inline.md"),
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(document.document_id, "requested-document")
+        self.assertTrue(blocks)
+        self.assertTrue(all(block.document_id == "requested-document" for block in blocks))
+        self.assertEqual(source_block_records[0]["document_id"], "requested-document")
+
+    def test_resolve_pipeline_concepts_preserves_resolution_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            normalized, context_blocks = _resolve_pipeline_concepts(
+                SimpleNamespace(
+                    existing_concept_index=[],
+                    existing_wiki_dir=None,
+                    selection_mode=None,
+                    save_debug_json=False,
+                ),
+                api_client=FakeConceptResolutionClient(),  # type: ignore[arg-type]
+                concept_resolution_prompt="resolve",
+                normalized={
+                    "concept_ledger": [
+                        {
+                            "slug": "concept-a",
+                            "title": "Concept A",
+                            "aliases": [],
+                            "anchor_reference_ids": ["B0001"],
+                        }
+                    ],
+                    "evidence_units": [],
+                    "missing_related_concept_hints": [],
+                    "warnings": [],
+                },
+                existing_source_artifact=None,
+                out=Path(tmp_dir),
+                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+            )
+
+        self.assertEqual(normalized["concept_ledger"][0]["slug"], "concept-a")
+        self.assertEqual(normalized["concept_resolutions"][0]["decision"], "create_new")
+        self.assertEqual(context_blocks, [])
+
     def test_build_chat_source_accumulation_payload_uses_existing_source_context(self) -> None:
         normalized = {
             "document": {"document_id": "chat-doc-1"},
@@ -90,7 +274,14 @@ class WikiGenerationPipelineTest(unittest.TestCase):
             },
         ]
 
-        def fake_semantic_extraction(_self, system_prompt, attempt, _source_context):
+        def fake_semantic_extraction(
+            _self,
+            system_prompt,
+            attempt,
+            _source_context,
+            _previous_notes=None,
+            _target_block_ids=None,
+        ):
             prompts.append(system_prompt)
             return [{"attempt": attempt}]
 

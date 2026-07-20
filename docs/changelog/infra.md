@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-20
+
+### fix: dev-up backend readiness 확인 복구
+
+**배경**
+
+사용자용 Document API가 `/api/workspaces/{workspace_id}/documents`로 이동한 뒤에도 `scripts/dev-up.sh`가 제거된 `GET /api/documents`를 확인하고 있었습니다. 백엔드가 정상 기동해도 이 요청이 `405 Method Not Allowed`를 반환해 스크립트가 60초 후 실패하고 프론트엔드를 시작하지 못했습니다.
+
+빈 PostgreSQL에서도 pipeline API가 backend보다 먼저 공용 테이블을 생성하면서 Flyway가 schema를 기존 DB로 판단해 V1을 건너뛰었고, V3가 존재하지 않는 `workspaces` 테이블을 참조해 backend 기동이 실패했습니다.
+
+**변경된 것**
+
+- `scripts/dev-up.sh` — backend readiness 확인 URL을 업무 API와 분리된 `GET /actuator/health`로 변경
+- `scripts/dev-up.sh` — PostgreSQL/MinIO → backend Flyway → pipeline API → frontend 순서로 변경해 backend와 pipeline의 schema 초기화 race 제거
+- `docs/local-runbook.md` — 자동·수동 실행의 backend 확인 URL과 정상 응답 문서화
+- `backend/README.md` — health endpoint와 현재 workspace 기반 Document API 경로 반영
+
+**검증**
+
+- `bash -n scripts/dev-up.sh`
+- `./gradlew test`
+- `./scripts/dev-up.sh`로 PostgreSQL/MinIO, pipeline API, 백엔드, 프론트엔드 기동 확인
+
 ## 2026-07-04
 
 ### ci: web-services workflow 검증 강화

@@ -131,16 +131,24 @@ frontend에서 추가로 검토할 부분:
 
 ## Pipeline Run 평가 루프 검토 항목
 
-채팅 원문을 Wiki page로 만들 때는 `run_lab.py` 기준으로 evaluator/repair loop를 사용할 수 있다.
-다만 실제 backend 문서 처리 경로는 FastAPI `POST /pipeline/runs` 계약을 사용하므로, backend에서 이 기능을 켜려면 API 입력 필드와 기본값을 확인해야 한다.
+채팅 원문을 Wiki page로 만들 때는 `run_lab.py`의 LangGraph evaluator/repair loop를 사용한다.
+FastAPI `POST /pipeline/runs`, `POST /chat-wiki/runs` 모두 evaluator loop를 기본 활성화하며 필요하면 요청의 `wiki_evaluation_loop=false`로 끌 수 있다.
 
-검토 대상:
+현재 계약:
 
-- `wiki_evaluation_loop`를 API 요청으로 받을지, pipeline 기본값으로 켤지 결정한다.
-- `max_eval_attempts` 기본값을 정한다. 실험에서는 재시도 비용과 품질 개선 폭을 함께 봐야 한다.
+- `wiki_evaluation_loop` 기본값은 `true`다.
+- `max_eval_attempts` 기본값은 `2`다. evaluator 결과에 따라 LLM 호출 비용과 실행시간이 늘어날 수 있다.
+- evaluator `issues`는 반드시 재생성·재평가하고, 통과 가능한 선택 제안은 `warnings`로 분리한다.
+- concept/evidence/source block target을 source block으로 해석할 수 있으면 target block과 앞뒤 block, 기존 target 항목, evaluator feedback만 LLM에 전달해 `replace/remove/add` patch를 생성한다.
+- patch는 evaluator가 지정한 기존 항목과 함께 전달된 source anchor만 수정할 수 있다. 적용 후 전체 semantic note를 다시 정규화하고 평가한다.
+- patch 호출·계약 검증에 실패하면 해당 block을 포함한 packet 재생성으로 fallback하고, 모든 target을 해석할 수 없으면 전체 packet을 재생성한다.
+- target과 무관한 semantic note와 의미 항목은 이전 결과를 그대로 유지한다.
+- 시도별 `generation_evaluations`는 pipeline manifest와 DB run manifest에 저장한다.
+- 재시도 평가에는 `retry_mode`를 기록하고 targeted patch 성공 시 `applied_patch_operations`도 함께 저장해 평가 반영 방식을 추적할 수 있게 한다.
+- 최종 actionable issue가 남으면 page 생성·저장 계약은 유지하되 manifest의 `generation_evaluation_status`를 `unresolved`로 저장한다. 평가 비활성화는 `disabled`, 통과는 `passed`다.
 - `json_mode=true`가 채팅 source/concept 생성 품질에 필요한지 확인한다.
 - evaluator prompt 경로를 외부 설정으로 열지, 고정 prompt를 사용할지 결정한다.
-- evaluation/repair 결과를 manifest 또는 debug artifact로 저장해 재현 가능하게 만든다.
+- `save_debug_json=true`이면 evaluation/repair 결과를 별도 debug artifact로도 저장한다.
 
 ## 로컬 실행
 

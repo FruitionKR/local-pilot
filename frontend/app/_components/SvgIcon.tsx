@@ -1,38 +1,43 @@
 import type { StaticImageData } from "next/image";
 import Image from "next/image";
 import type { ReactElement } from "react";
-import arrowIcon from "../../svg/arrow.svg";
-import chatCheckIcon from "../../svg/chat_check.svg";
-import collectionIcon from "../../svg/CollectionOutLine.svg";
-import conceptPageIcon from "../../svg/conceptpage.svg";
-import fileIcon from "../../svg/file.svg";
-import frameIcon from "../../svg/Frame.svg";
-import homeIcon from "../../svg/home.svg";
-import lightningIcon from "../../svg/LightningBoltOutline.svg";
-import rawPageIcon from "../../svg/raw.svg";
-import searchIcon from "../../svg/search.svg";
-import sideboxIcon from "../../svg/sidebox.svg";
-import sourceIcon from "../../svg/source.svg";
-import sourcePageIcon from "../../svg/source_page.svg";
-import sparkleIcon from "../../svg/icon.svg";
-import settingIcon from "../../svg/uil_setting.svg";
-import switchIcon from "../../svg/switch.svg";
-import toggleIcon from "../../svg/toggle.svg";
-import userCircleIcon from "../../svg/UserCircle.svg";
+import arrowIcon from "../../svg/document/arrow.svg";
+import chatCheckIcon from "../../svg/agent/chat_check.svg";
+import collectionIcon from "../../svg/navigation/menu_log.svg";
+import conceptPageIcon from "../../svg/graph/conceptpage.svg";
+import fileIcon from "../../svg/document/file.svg";
+import folderPlusIcon from "../../svg/navigation/menu_new.svg";
+import homeIcon from "../../svg/navigation/menu_home.svg";
+import lightningIcon from "../../svg/navigation/menu_schema.svg";
+import rawPageIcon from "../../svg/graph/raw.svg";
+import searchIcon from "../../svg/workspace/search.svg";
+import sideboxIcon from "../../svg/workspace/sidebox.svg";
+import sourceIcon from "../../svg/document/source.svg";
+import sourcePageIcon from "../../svg/graph/source_page.svg";
+import settingIcon from "../../svg/navigation/menu_setting.svg";
+import shareIcon from "../../svg/navigation/menu_graph.svg";
+import toggleIcon from "../../svg/workspace/toggle.svg";
+import userCircleIcon from "../../svg/workspace/UserCircle.svg";
 
 // svg 파일 없이 인라인 SVG로만 렌더링하는 아이콘 식별자
 const archiveIcon = { inlineIcon: "archive" } as const;
+const chatBubbleIcon = { inlineIcon: "chatBubble" } as const;
 
-export type SvgAsset = StaticImageData | typeof archiveIcon;
+export type SvgAsset =
+  | StaticImageData
+  | typeof archiveIcon
+  | typeof chatBubbleIcon;
 
 export {
   archiveIcon,
   arrowIcon,
+  chatBubbleIcon,
+  folderPlusIcon,
+  shareIcon,
   chatCheckIcon,
   collectionIcon,
   conceptPageIcon,
   fileIcon,
-  frameIcon,
   homeIcon,
   lightningIcon,
   rawPageIcon,
@@ -40,9 +45,7 @@ export {
   sideboxIcon,
   sourceIcon,
   sourcePageIcon,
-  sparkleIcon,
   settingIcon,
-  switchIcon,
   toggleIcon,
   userCircleIcon
 };
@@ -57,16 +60,16 @@ const inlineIconRenderers = new Map<SvgAsset, (iconClassName: string) => ReactEl
       <rect x="1.87498" y="5.15607" width="12.2499" height="0.796814" fill="currentColor" />
     </svg>
   )],
+  [chatBubbleIcon, (iconClassName) => (
+    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
+      <path d="M8 2.2C4.6 2.2 1.9 4.5 1.9 7.4C1.9 8.9 2.6 10.2 3.8 11.1L3.2 13.6L5.9 12.2C6.6 12.4 7.3 12.5 8 12.5C11.4 12.5 14.1 10.2 14.1 7.4C14.1 4.5 11.4 2.2 8 2.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )],
   [userCircleIcon, (iconClassName) => (
     <svg aria-hidden className={iconClassName} viewBox="0 0 28 28" fill="none">
       <path fillRule="evenodd" clipRule="evenodd" d="M27.7667 13.8833C27.7667 17.5654 26.304 21.0967 23.7003 23.7003C21.0967 26.304 17.5654 27.7667 13.8833 27.7667C10.2012 27.7667 6.66996 26.304 4.06633 23.7003C1.4627 21.0967 0 17.5654 0 13.8833C0 10.2012 1.4627 6.66996 4.06633 4.06633C6.66996 1.4627 10.2012 0 13.8833 0C17.5654 0 21.0967 1.4627 23.7003 4.06633C26.304 6.66996 27.7667 10.2012 27.7667 13.8833Z" fill="currentColor" opacity="0.55" />
       <path d="M16.999 13.2058C17.7679 12.4369 18.1999 11.394 18.1999 10.3067C18.1999 9.21926 17.7679 8.17641 16.999 7.40751C16.2301 6.63861 15.1873 6.20665 14.0999 6.20665C13.0125 6.20665 11.9696 6.63861 11.2007 7.40751C10.4318 8.17641 9.99988 9.21926 9.99988 10.3067C9.99988 11.394 10.4318 12.4369 11.2007 13.2058C11.9696 13.9747 13.0125 14.4067 14.0999 14.4067C15.1873 14.4067 16.2301 13.9747 16.999 13.2058Z" fill="currentColor" />
       <path d="M8.65361 18.0829C10.249 17.049 12.1047 16.4997 14.0001 16.5001C15.8955 16.4997 17.7512 17.049 19.3466 18.0829C20.5706 18.876 21.602 19.6344 22.3726 20.7306C22.8182 21.3644 22.6896 22.2199 22.1277 22.7533C21.1937 23.6397 20.1216 24.3692 18.9516 24.911C17.3982 25.6304 15.709 26.0019 14.0001 26C12.2912 26.0019 10.6021 25.6304 9.04863 24.911C7.87868 24.3692 6.80652 23.6397 5.87259 22.7533C5.3106 22.2199 5.18207 21.3644 5.62768 20.7306C6.39828 19.6344 7.4296 18.876 8.65361 18.0829Z" fill="currentColor" />
-    </svg>
-  )],
-  [sparkleIcon, (iconClassName) => (
-    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
-      <path d="M4.64443 0.327192C5.26616 0.175049 5.8942 0.55616 6.04677 1.17778L6.79677 4.24223L11.7645 1.39164C12.3199 1.07278 13.0297 1.26499 13.3485 1.82036C13.667 2.37564 13.475 3.0846 12.9198 3.40336L9.1288 5.57914L11.9257 6.49028C12.5345 6.68871 12.8672 7.34432 12.6688 7.95317C12.4703 8.56169 11.8156 8.89451 11.2069 8.69633L7.60048 7.52055L9.25478 14.2706C9.40688 14.8922 9.02657 15.5192 8.40517 15.6719C7.78329 15.8243 7.15441 15.4441 7.00185 14.8223L5.27821 7.78911L2.19423 9.56157C1.63901 9.88012 0.930117 9.68787 0.611222 9.13286C0.292662 8.57764 0.483935 7.86875 1.03896 7.54985L3.44521 6.16801L1.75185 5.61625C1.14328 5.4178 0.810602 4.76303 1.00868 4.15434C1.20707 3.54566 1.86185 3.2121 2.4706 3.4102L4.35536 4.02348L3.79384 1.72954C3.64174 1.10777 4.02273 0.479682 4.64443 0.327192Z" fill="currentColor" />
     </svg>
   )]
 ]);

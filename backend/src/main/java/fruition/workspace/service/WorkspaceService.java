@@ -84,6 +84,7 @@ public class WorkspaceService {
 
         WorkspaceMember owner = new WorkspaceMember(workspace, userRepository.getReferenceById(userId), WorkspaceMember.ROLE_OWNER);
         workspaceMemberRepository.save(owner);
+        documentService.createInitialNote(workspaceId, userId);
 
         return workspace;
     }

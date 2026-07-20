@@ -46,6 +46,49 @@
   gap: 4px;
 }
 
+/* 첫 번째 프로젝트: 밝은 라운드 헤더. 이름과 + 버튼이 한 박스 안에 들어간다 */
+.project-section.is-primary .project-title {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  gap: 6px;
+  padding: 0 8px 0 0;
+  background: #3a3a3a;
+  border-radius: 8px;
+}
+
+.project-section.is-primary .project-toggle {
+  color: var(--ink);
+  background: transparent;
+}
+
+.project-add-file {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* + 버튼은 폴더 행에 마우스를 올리거나 포커스가 갈 때만 나타난다 */
+.project-section.is-primary:hover .project-add-file,
+.project-section.is-primary:focus-within .project-add-file {
+  opacity: 1;
+}
+
+.project-add-file:hover,
+.project-add-file:focus-visible {
+  color: var(--ink);
+  background: #323232;
+}
+
 .project-arrow,
 .tree-arrow {
   width: 5px;
@@ -77,8 +120,9 @@
 
 .project-toggle {
   min-width: 0;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 8px;
+  color: #e2e2e2;
   text-align: left;
 }
 

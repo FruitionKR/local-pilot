@@ -9,53 +9,15 @@ from typing import Any
 
 import fitz
 
-
+from app.modules.document_restoration.domain.bounding_box import bbox_match_score
+from app.modules.document_restoration.infrastructure.docling_io import (
+    item_page_and_bbox,
+    load_docling,
+    resolve_pdf_file,
+)
 from app.modules.document_restoration.infrastructure.process_auto_layout_blocks import (
-    docling_bbox_to_top_left,
     normalize_text,
 )
-
-
-def load_docling(base_dir: Path) -> dict[str, Any]:
-    docling_file = base_dir / "layout" / "auto" / "docling_ocr_baseline" / "docling.json"
-    return json.loads(docling_file.read_text(encoding="utf-8"))
-
-
-def resolve_pdf_file(base_dir: Path, docling: dict[str, Any], document_slug: str) -> Path:
-    filename = (docling.get("origin") or {}).get("filename") or f"{document_slug}.pdf"
-    candidates = [base_dir.parent / filename, base_dir / filename]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"PDF file not found for {document_slug}: {filename}")
-
-
-def bbox_overlap_ratio(candidate: tuple[float, float, float, float], target: tuple[float, float, float, float]) -> float:
-    area = max(0.0, candidate[2] - candidate[0]) * max(0.0, candidate[3] - candidate[1])
-    if area == 0:
-        return 0.0
-    overlap = (
-        max(0.0, min(candidate[2], target[2]) - max(candidate[0], target[0]))
-        * max(0.0, min(candidate[3], target[3]) - max(candidate[1], target[1]))
-    )
-    return overlap / area
-
-
-def bbox_match_score(first: tuple[float, float, float, float], second: tuple[float, float, float, float]) -> float:
-    return max(bbox_overlap_ratio(first, second), bbox_overlap_ratio(second, first))
-
-
-def item_page_and_bbox(item: dict[str, Any], pages: dict[str, Any]) -> tuple[int, tuple[float, float, float, float]] | None:
-    prov = item.get("prov") or []
-    if not prov:
-        return None
-    page = int(prov[0].get("page_no", 0))
-    page_info = pages.get(str(page), {})
-    page_height = float((page_info.get("size") or {}).get("height", 0.0))
-    bbox = docling_bbox_to_top_left(prov[0].get("bbox") or {}, page_height)
-    if not bbox:
-        return None
-    return page, bbox
 
 
 def union_bbox(boxes: list[tuple[float, float, float, float]]) -> tuple[float, float, float, float]:

@@ -1,5 +1,6 @@
 import psycopg
 
+from app.core.error_text import truncate_error
 from app.modules.wiki_embedding.application.ports import WikiPageEmbeddingRepositoryPort
 from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
@@ -80,7 +81,7 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
             )
 
     def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str, error: str) -> None:
-        error_message = self._truncate(error)
+        error_message = truncate_error(error)
         with database.connect() as conn:
             try:
                 conn.execute(
@@ -109,9 +110,3 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
                 )
             except psycopg.Error:
                 return
-
-    def _truncate(self, error: str, limit: int = 240) -> str:
-        text = str(error)
-        if len(text) <= limit:
-            return text
-        return text[: limit - 3] + "..."

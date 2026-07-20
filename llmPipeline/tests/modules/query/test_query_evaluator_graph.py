@@ -45,7 +45,7 @@ class QueryEvaluatorGraphTest(unittest.TestCase):
         query_evaluator = FakeQueryEvaluator(
             [
                 QueryEvaluation(
-                    route="unsupported",
+                    route="revise_answer",
                     evidence_relevance=0.2,
                     reason="근거 반영이 부족합니다.",
                     feedback="근거 문장을 직접 반영하세요.",
@@ -93,6 +93,44 @@ class QueryEvaluatorGraphTest(unittest.TestCase):
         self.assertEqual(evidence_snippets[0].source_block_ids, ["B0001"])
         self.assertEqual(evaluated_context.question, context.question)
         self.assertEqual(evaluation.route if evaluation else None, "internal_supported")
+
+    def test_does_not_retry_terminal_route_even_with_feedback(self) -> None:
+        answer_generator = SequencedAnswerGenerator(["초안 답변입니다. [1]"])
+        query_evaluator = FakeQueryEvaluator(
+            [
+                QueryEvaluation(
+                    route="unsupported",
+                    evidence_relevance=0.0,
+                    reason="현재 근거로 답할 수 없습니다.",
+                    feedback="외부 근거를 찾으세요.",
+                )
+            ]
+        )
+        graph = LangGraphQueryEvaluatorGraph(
+            query_answer_assembler=QueryAnswerAssembler(answer_generator),
+            query_evaluator=query_evaluator,
+            web_search_available=False,
+            max_attempts=2,
+        )
+        context = QueryContext(
+            question="비공개 정보를 알려줘",
+            graph_context=GraphContext(),
+            traversal_paths=[],
+            related_pages=[],
+            evidence_snippets=[],
+            answer_context="",
+        )
+
+        _, _, _, evaluation = graph.run(
+            question=context.question,
+            query_context=context,
+            stop_reason="no_relevant_seed",
+            event_publisher=None,
+        )
+
+        self.assertEqual(len(query_evaluator.calls), 1)
+        self.assertEqual(len(answer_generator.contexts), 1)
+        self.assertEqual(evaluation.route if evaluation else None, "unsupported")
 
 
 if __name__ == "__main__":

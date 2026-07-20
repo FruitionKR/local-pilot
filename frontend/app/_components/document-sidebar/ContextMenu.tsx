@@ -19,7 +19,7 @@ export function ContextMenu({
     >
       <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
       <button type="button" onClick={onAddFolderFromContext}>새 폴더</button>
-      {contextMenu.itemId !== null && <button type="button" className="danger" onClick={onDeleteContextTarget}>삭제</button>}
+      <button type="button" className="danger" onClick={onDeleteContextTarget}>삭제</button>
     </div>
   );
 }

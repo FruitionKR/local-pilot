@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from app.core.langsmith_tracing import langsmith_tracing_enabled
+from app.core.llm_prompt import with_schema_prompt
 from app.modules.wiki_generation.application.ports import (
     ConceptPageGenerator,
     ConceptResolver,
@@ -89,7 +91,7 @@ class ChatCompletionsJsonClient:
         return self._complete_text_with_optional_trace(body)
 
     def _complete_text_with_optional_trace(self, body: JsonDict) -> str:
-        if traceable is None or not _langsmith_tracing_enabled():
+        if traceable is None or not langsmith_tracing_enabled():
             return self._send_chat_completion(body)
         traced = traceable(
             name="upstage_chat_completions",
@@ -151,7 +153,7 @@ class GenericChatCompletionsExtractor:
 
     def extract(self, packet: SemanticPacket) -> JsonDict:
         return self.client.complete_json(
-            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("ingest")),
+            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("ingest")),
             render_semantic_user_prompt(packet, self.source_context),
         )
 
@@ -169,7 +171,7 @@ class GenericChatCompletionsConceptPageGenerator:
 
     def generate(self, concept: JsonDict, evidence_units: list[JsonDict], source_blocks: Sequence[SourceBlock]) -> JsonDict:
         return self.client.complete_json(
-            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
+            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_page_user_prompt(concept, evidence_units, source_blocks),
         )
 
@@ -192,7 +194,7 @@ class GenericChatCompletionsConceptResolver:
         missing_related_hints: list[JsonDict] | None = None,
     ) -> JsonDict:
         return self.client.complete_json(
-            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
+            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("concept")),
             render_concept_resolution_user_prompt(incoming_concepts, existing_concepts, missing_related_hints),
         )
 
@@ -210,7 +212,7 @@ class GenericChatCompletionsSectionPolisher:
 
     def polish(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
         content = self.client.complete_text(
-            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
+            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
             render_section_polish_user_prompt(payload, source_blocks),
         )
         return parse_section_polish_object(content)
@@ -229,19 +231,9 @@ class GenericChatCompletionsSourceAccumulator:
 
     def evaluate(self, payload: JsonDict, source_blocks: Sequence[SourceBlock]) -> JsonDict:
         return self.client.complete_json(
-            _with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
+            with_schema_prompt(self.system_prompt, self.schema_prompt_provider("edit")),
             render_source_accumulation_user_prompt(payload, source_blocks),
         )
-
-
-def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
-    if not schema_prompt.strip():
-        return system_prompt
-    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
-
-
-def _langsmith_tracing_enabled() -> bool:
-    return os.environ.get("LANGSMITH_TRACING", os.environ.get("LANGCHAIN_TRACING_V2", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 # Backwards-compatible aliases.

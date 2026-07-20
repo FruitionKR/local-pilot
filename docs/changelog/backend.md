@@ -26,6 +26,62 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 로컬 DB에 중복 (workspace_id, content_hash)이 없어 복합 UNIQUE 전환은 무충돌.
 
+### fix: 파이프라인 스키마를 Flyway 관리 대상으로 통합
+
+**배경**
+
+FastAPI lifespan이 공용·파이프라인 테이블을 직접 생성해, Backend Flyway보다 먼저 실행되면 baseline 판정과 migration 순서가 깨질 수 있었습니다.
+
+**변경된 것**
+
+- `V4__add_pipeline_schema.sql`에서 `pipeline_runs`, 임베딩 테이블, `wiki_schemas`를 생성하고 버전을 관리합니다.
+- Flyway V1~V3 적용 후 Python 초기화로 pipeline 테이블이 생성된 DB도 수용하도록 비파괴 migration으로 작성했습니다.
+- Flyway 이력 없이 Python이 공용 테이블 일부만 만든 로컬 DB는 V3를 적용할 수 없으므로 기존 Flyway 안내대로 volume을 한 번 리셋해야 합니다.
+- Backend 통합 테스트에서 Flyway 적용 후 파이프라인 테이블 5개의 존재를 확인합니다.
+
+**검증**
+
+- 격리된 PostgreSQL에서 V1 → V4 순차 적용 및 V4 재실행
+- `BackendApplicationTests` 실행 시도: 로컬 Java runtime 부재로 미실행
+
+## 2026-07-20
+
+### feat: 워크스페이스 초기 노트 자동 생성
+
+**배경**
+
+새 워크스페이스가 비어 있어 첫 진입 시 바로 확인할 문서가 없었다.
+
+**변경된 것**
+
+- 기본 워크스페이스와 사용자가 추가한 워크스페이스 생성 시 실제 Markdown 문서 `새 노트.md`를 함께 저장한다.
+- 초기 노트는 일반 문서와 같은 저장소와 처리 큐를 사용하며, 워크스페이스별 콘텐츠 해시 충돌을 피하도록 식별 주석을 포함한다.
+- 워크스페이스 생성 연결과 워크스페이스별 고유 문서 저장을 단위 테스트로 검증한다.
+
+**검증**
+
+- `./gradlew test`
+
+### fix: 로컬 기동용 health endpoint 추가
+
+**배경**
+
+`scripts/dev-up.sh`가 제거된 사용자용 `GET /api/documents`를 backend readiness 확인에 사용해, 서버가 정상 기동해도 `405 Method Not Allowed`를 실패로 판단했습니다. readiness 확인을 인증·workspace·업무 API 계약과 분리할 endpoint가 필요했습니다.
+
+**변경된 것**
+
+- `backend/build.gradle` — `spring-boot-starter-actuator` 의존성 추가
+- `scripts/dev-up.sh` — backend Flyway가 공용 스키마를 먼저 생성하도록 pipeline API보다 backend를 먼저 시작
+- `SecurityConfig` — `GET /actuator/health`를 인증 없이 호출할 수 있도록 명시
+- `BackendApplicationTests` — 비인증 health 요청이 `200 OK`, `{"status":"UP"}`를 반환하는 통합 테스트 추가
+- `backend/README.md`, `docs/spec/document-upload.md`, `docs/spec/backend-mvp-erd.md` — health endpoint와 현재 workspace 기반 Document API 경로 반영
+
+**검증**
+
+- `./gradlew test`
+- 빈 PostgreSQL volume에서 backend가 Flyway V1~V3를 적용한 뒤 pipeline API 기동
+- `curl http://localhost:8080/actuator/health`
+
 ## 2026-07-16
 
 ### refactor: displayName 결정 규칙을 공용 유틸로 추출 + OAuth 닉네임 길이 상한

@@ -1,0 +1,288 @@
+
+/* 사이드바 상단 워크스페이스 헤더 */
+.sidebar-workspace {
+  position: relative;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sidebar-workspace-trigger {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.sidebar-workspace-mark {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--bg);
+  border: 1px solid var(--soft);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-workspace-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-workspace-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-workspace-toggle {
+  width: 18px;
+  height: 18px;
+  transition: transform 120ms ease;
+}
+
+.sidebar-workspace-toggle.is-open {
+  transform: rotate(180deg);
+}
+
+.sidebar-workspace-trigger:focus-visible {
+  outline: 2px solid var(--line);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* 클릭 시 열리는 워크스페이스 전환 드롭다운 (Figma 500:6597) */
+.workspace-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 24px;
+  z-index: 12;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 0 6px rgba(63, 63, 63, 0.8);
+}
+
+.workspace-dropdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.workspace-dropdown-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--bg);
+  border: 1px solid var(--soft);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-dropdown-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-dropdown-item:hover .workspace-dropdown-label,
+.workspace-dropdown-item:focus-visible .workspace-dropdown-label {
+  color: #fff;
+}
+
+.workspace-dropdown-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 8px;
+  color: var(--subdued);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-dropdown-new:hover,
+.workspace-dropdown-new:focus-visible {
+  color: var(--yellow);
+  background: var(--soft);
+}
+
+.workspace-dropdown-error {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 가로 아이콘 메뉴 줄 */
+.sidebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 20px 16px 16px 24px;
+}
+
+.sidebar-menu-item {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 0;
+}
+
+.sidebar-menu-item span {
+  line-height: 1;
+}
+
+.sidebar-menu-item:hover,
+.sidebar-menu-item:focus-visible,
+.sidebar-menu-item.is-active {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+.sidebar-menu-item.is-active {
+  width: auto;
+  gap: 0;
+  padding: 0 12px 0 0;
+  border: 0.5px solid var(--line);
+  border-radius: 100px;
+}
+
+.sidebar-menu-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.sidebar-menu-add {
+  margin-left: auto;
+  border-radius: 6px;
+}
+
+/* 채팅 시작 버튼 */
+.sidebar-chat-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 12px;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-chat-start:hover,
+.sidebar-chat-start:focus-visible {
+  background: var(--soft);
+}
+
+.sidebar-chat-start .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* 프로필 푸터 */
+.sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sidebar-profile-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a0a0a;
+  background: #d7d7d7;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sidebar-profile-info {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-profile-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.sidebar-profile-info small {
+  color: #54c26a;
+  font-size: 10px;
+}
+
+.sidebar-logout {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+}
+
+.sidebar-logout:hover,
+.sidebar-logout:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+}

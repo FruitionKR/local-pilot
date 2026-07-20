@@ -55,6 +55,7 @@ class WorkspaceServiceTest {
         assertThat(workspace.getName()).isEqualTo("tes의 워크스페이스");
         assertThat(workspace.getId()).startsWith("ws_");
         verify(workspaceMemberRepository).save(any());
+        verify(documentService).createInitialNote(workspace.getId(), "user_1f9a74af");
     }
 
     @Test
@@ -65,6 +66,7 @@ class WorkspaceServiceTest {
 
         assertThat(response.name()).isEqualTo("팀 워크스페이스");
         assertThat(response.id()).startsWith("ws_");
+        verify(documentService).createInitialNote(response.id(), "user_1f9a74af");
     }
 
     @Test

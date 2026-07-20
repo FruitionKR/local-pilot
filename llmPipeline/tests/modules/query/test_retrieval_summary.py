@@ -18,9 +18,9 @@ class RetrievalSummaryTest(unittest.TestCase):
     def test_builds_counts_from_related_pages(self) -> None:
         summary = build_retrieval_summary(
             related_pages=[
-                RetrievedPage(page=page("source:a", "source"), score=0.9, role="seed"),
-                RetrievedPage(page=page("concept:a", "concept"), score=0.8, role="focus_concept"),
-                RetrievedPage(page=page("web:a", "web"), score=0.7, role="web_search_result"),
+                RetrievedPage(page=page("source:a", "source"), score=0.9, role="seed", depth=0),
+                RetrievedPage(page=page("concept:a", "concept"), score=0.8, role="focus_concept", depth=2),
+                RetrievedPage(page=page("web:a", "web"), score=0.7, role="web_search_result", depth=1),
             ],
             source_candidate_count=3,
             concept_candidate_count=2,
@@ -33,7 +33,7 @@ class RetrievalSummaryTest(unittest.TestCase):
         self.assertEqual(summary.returned_node_count, 3)
         self.assertEqual(summary.used_source_count, 1)
         self.assertEqual(summary.used_concept_count, 1)
-        self.assertEqual(summary.max_depth, 0)
+        self.assertEqual(summary.max_depth, 2)
         self.assertEqual(summary.stop_reason, "internal_web_augmented")
 
 

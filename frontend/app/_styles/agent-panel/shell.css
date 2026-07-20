@@ -1,28 +1,167 @@
 
 .agent-panel {
   position: absolute;
-  inset: 93px 24px 28px auto;
+  inset: 0 0 0 auto;
   z-index: 7;
-  width: 380px;
+  width: 360px;
   min-width: 0;
   display: grid;
-  grid-template-rows: 83px 1fr 77px;
+  grid-template-rows: 52px 1fr auto auto;
   overflow: hidden;
   color: #f0f0f0;
-  background: #1e1e1e;
-  border: 1px solid #4f4f4f;
-  border-radius: 32px;
+  background: #0a0a0a;
+  border-left: 1px solid #4f4f4f;
+  border-radius: 0;
   box-shadow: none;
 }
 
+.workspace.is-graph-view .agent-panel {
+  inset: 72px 24px 24px auto;
+  width: 380px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 32px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
 .agent-header {
+  position: relative;
   min-width: 0;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) 28px 28px;
   align-items: center;
-  gap: 12px;
-  padding: 24px 18px 24px 22px;
-  border-bottom: 1px solid #4f4f4f;
+  gap: 4px;
+  padding: 12px 12px 12px 16px;
+}
+
+/* 헤더 좌측 세션 제목 버튼 */
+.agent-session-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: #f0f0f0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.agent-session-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-title svg {
+  flex: 0 0 auto;
+  color: #a7a7a7;
+}
+
+/* 헤더 아래 겹쳐 뜨는 채팅 세션 드롭다운 */
+.chat-session-dropdown {
+  position: absolute;
+  top: 46px;
+  left: 12px;
+  z-index: 12;
+  width: 240px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+  padding: 12px 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 0 12px #000;
+}
+
+.chat-session-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: var(--muted);
+  background: var(--soft);
+  border-radius: 8px;
+}
+
+.chat-session-search svg {
+  flex: 0 0 auto;
+}
+
+.chat-session-search input {
+  min-width: 0;
+  width: 100%;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+
+.chat-session-search input::placeholder {
+  color: var(--muted);
+}
+
+.chat-session-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.chat-session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--ink);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.chat-session-item span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-session-item svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.chat-session-item:hover,
+.chat-session-item:focus-visible {
+  background: var(--soft);
+}
+
+.chat-session-item:hover svg,
+.chat-session-item:focus-visible svg {
+  opacity: 1;
+}
+
+.chat-session-empty,
+.chat-session-error {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-session-error {
+  color: #ff8f87;
 }
 
 .agent-mark,
@@ -87,8 +226,8 @@
 
 .agent-restore {
   position: absolute;
-  top: 80px;
-  right: 20px;
+  top: 16px;
+  right: 16px;
   z-index: 7;
   width: 40px;
   height: 40px;
@@ -109,7 +248,7 @@
 
 .agent-body {
   min-width: 0;
-  padding: 31px 22px 0;
+  padding: 16px 16px 0;
   overflow-x: hidden;
   overflow-y: auto;
 }

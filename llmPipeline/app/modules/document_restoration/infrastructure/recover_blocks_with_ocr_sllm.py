@@ -16,6 +16,12 @@ from typing import Any
 
 from PIL import Image, ImageFilter, ImageOps
 
+from app.modules.document_restoration.domain.markdown_text import (
+    has_balanced_braces,
+    is_valid_markdown_table,
+    strip_markdown_fence,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 PROMPTS_ROOT = Path(__file__).resolve().parents[4] / "prompts" / "document_restoration"
@@ -626,27 +632,6 @@ def call_sllm(endpoint: str, model: str, prompt: str, system_message: str) -> st
     return data["choices"][0]["message"]["content"].strip()
 
 
-def strip_markdown_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
-
-
-def is_valid_markdown_table(text: str) -> bool:
-    rows = [line.strip() for line in text.splitlines() if line.strip().startswith("|")]
-    if len(rows) < 2:
-        return False
-    column_counts = [row.count("|") for row in rows]
-    if len(set(column_counts)) != 1:
-        return False
-    separator = rows[1].replace("|", "").replace(":", "").replace("-", "").strip()
-    return not separator
-
-
 def body_cell_values(text: str) -> list[str]:
     rows = [line.strip() for line in text.splitlines() if line.strip().startswith("|")]
     if len(rows) <= 2:
@@ -1033,7 +1018,7 @@ def first_data_row_index(rows: list[list[str]]) -> int | None:
     for index, row in enumerate(rows):
         if looks_like_table_header_row(row):
             continue
-        if row_has_numeric_value(row) and len(row) >= 2 and not looks_like_numeric_header_row(row):
+        if row_has_numeric_value(row) and len(row) >= 2:
             return index
     return None
 
@@ -1041,10 +1026,6 @@ def first_data_row_index(rows: list[list[str]]) -> int | None:
 def looks_like_table_header_row(row: list[str]) -> bool:
     joined = " ".join(row).lower()
     return "table" in joined or "parameter" in joined or "level" in joined
-
-
-def looks_like_numeric_header_row(row: list[str]) -> bool:
-    return False
 
 
 def row_has_numeric_value(row: list[str]) -> bool:
@@ -1900,7 +1881,6 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
     block_type = block["type"]
     cleaned = strip_markdown_fence(markdown)
     reasons: list[str] = []
-    lowered = cleaned.lower()
 
     if cleaned.startswith("[rejected:"):
         reasons.append("generator가 복원을 거부함")
@@ -1908,80 +1888,10 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
     if block_type == "figure_candidate":
         reasons.append("figure block은 Vision crop 검토가 필요함")
 
-    if block_type == "table_candidate" and not is_valid_markdown_table(cleaned):
-        reasons.append("Markdown table의 column 수가 일관되지 않음")
-    if block_type == "table_candidate" and is_valid_markdown_table(cleaned):
-        headers = table_header_values(cleaned)
-        body_cells = body_cell_values(cleaned)
-        numeric_header_count = sum(1 for header in headers if re.fullmatch(r"-?\d+(?:\.\d+)?%?", header))
-        if numeric_header_count == len(headers):
-            reasons.append("table header에 데이터 값이 들어감")
-        if any(re.search(r"([\"”]|==:|=:)", header) for header in headers):
-            reasons.append("table header에 OCR debris 또는 중복 label이 남아 있음")
-        if body_cells:
-            unclear_count = sum(1 for cell in body_cells if "[unclear]" in cell)
-            if unclear_count / len(body_cells) > 0.3:
-                reasons.append("table cell의 unclear 비율이 너무 높음")
-            if any(re.search(r"(==:|=:|~—|—|^\]$|^el$|^=\.|^\.0\.)", cell, flags=re.IGNORECASE) for cell in body_cells):
-                reasons.append("table numeric cell에 OCR debris가 남아 있음")
-        if re.search(r"(?m)^\|\s*\|\s*-?\d", cleaned):
-            reasons.append("table row가 여러 줄로 쪼개진 형태임")
-        if has_bad_index_sequence(cleaned):
-            reasons.append("table 첫 column의 index sequence가 깨져 있음")
-        if re.search(r"(?im)([A-Za-z][,;]{2,}|[\"”]|^\|[^|\n]*\]\s*\||\|\s*=\\?.)", cleaned):
-            reasons.append("table에 명백한 OCR artifact가 남아 있음")
-    if block_type == "equation_candidate" and "\\[" not in cleaned and "$$" not in cleaned:
-        reasons.append("수식 block인데 display math가 없음")
-    if block_type == "equation_candidate" and not has_balanced_braces(cleaned):
-        reasons.append("LaTeX 중괄호 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_latex_environments(cleaned):
-        reasons.append("LaTeX begin/end 환경 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_latex_environments_per_display(cleaned):
-        reasons.append("display math 내부 LaTeX begin/end 환경 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_left_right(cleaned):
-        reasons.append("LaTeX left/right delimiter 짝이 맞지 않음")
-    if block_type == "equation_candidate" and not has_balanced_plain_parentheses_per_display(cleaned):
-        reasons.append("display math 내부 일반 괄호 짝이 맞지 않음")
-    if block_type == "equation_candidate" and has_bare_script_marker(cleaned):
-        reasons.append("밑첨자/윗첨자 대상이 비어 있는 깨진 LaTeX가 있음")
-    if block_type == "equation_candidate" and has_malformed_math_text_command(cleaned):
-        reasons.append("math text command 안에 깨진 첨자/괄호 구조가 남아 있음")
-    if block_type == "equation_candidate" and has_display_math_without_equation(cleaned):
-        reasons.append("등호 없는 display math 조각이 수식으로 섞여 있음")
-    if block_type == "equation_candidate" and has_duplicate_display_math(cleaned):
-        reasons.append("동일한 display math가 중복 복원됨")
-    if block_type == "equation_candidate" and has_polynomial_fraction(cleaned):
-        reasons.append("다항식 형태의 수식을 근거 없이 분수로 바꿈")
-    if block_type == "equation_candidate" and re.search(r"\\frac\{\s*[-+]?\d+(?:\.\d+)?\s*\}", cleaned) and len(re.findall(r"(?<!\^)[+\-−]", cleaned)) >= 3:
-        reasons.append("다항식 일부를 근거 없이 분수항으로 바꿈")
-    if block_type == "equation_candidate" and "\\begin{array}" in cleaned:
-        reasons.append("수식 후보가 표 row 배열처럼 복원됨")
-    if block_type == "equation_candidate" and len(re.findall(r"(?m)^\s*\d+\s+[01-]", cleaned)) >= 3:
-        reasons.append("수식 후보가 실험 결과 row처럼 복원됨")
-    if block_type == "equation_candidate" and re.search(r"(_\{\s*[,.;?]+\s*\}|[A-Za-z][,;?]{2,}|\\text\{\s*[A-Za-z]*[,.;?][^}]*\}|\?)", cleaned):
-        reasons.append("명백한 OCR artifact가 남아 있음")
-    if block_type == "equation_candidate" and has_bad_subscript_punctuation(cleaned):
-        reasons.append("subscript 안에 OCR punctuation artifact가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"\b[A-Za-z](?:\s+[A-Za-z]+){1,}\b", cleaned):
-        reasons.append("하나의 변수로 보이는 문자가 공백으로 쪼개져 있음")
-    if block_type == "equation_candidate" and re.search(r"(\\l\d|\\mathcal|\\mathbb|\\check|\\slash|\\rightarrow|\\downarrow|\\uparrow|\\rfloor|\\lfloor|\\it|\\mathrm\{\[)", cleaned):
-        reasons.append("image-to-LaTeX OCR의 깨진 command 또는 placeholder가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"([\"”]|Z\s*-\s*H|\\times\s*10\s+[A-Za-z]|\b[A-Za-z]\^\*)", cleaned):
-        reasons.append("수식에 OCR debris 또는 깨진 지수 표기가 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"(\\cal\b|\\displaystyle\s*\\cal)", cleaned):
-        reasons.append("image-to-LaTeX OCR의 hallucinated symbol 또는 깨진 문자 인식이 남아 있음")
-    if block_type == "equation_candidate" and re.search(r"\d+\.\d+\s+\d\b", cleaned):
-        reasons.append("계수 뒤에 변수 없이 숫자만 남은 깨진 항이 있음")
-    if block_type == "equation_candidate" and re.search(r"\d+\.\d+\^\{\d+\}", cleaned):
-        reasons.append("계수 뒤에 변수 없이 지수만 붙은 깨진 항이 있음")
-    if block_type == "equation_candidate" and has_equation_number_evidence(block, cleaned) and not has_equation_number_markdown(cleaned):
-        reasons.append("OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음")
-    if block_type == "equation_candidate" and len(re.findall(r"[A-Za-z\\]", cleaned)) == 0:
-        reasons.append("수식 변수 구조가 거의 복원되지 않음")
-    if block_type == "equation_candidate" and re.fullmatch(r"(?s)(?:\\\[\s*[-+0-9.\s]+\s*\\\]|\$\$\s*[-+0-9.\s]+\s*\$\$)", cleaned):
-        reasons.append("좌변 변수 없는 숫자 조각만 복원됨")
-    if block_type == "equation_candidate" and "[unclear]" in lowered and lowered.count("[unclear]") > 2:
-        reasons.append("unreadable term이 너무 많음")
+    if block_type == "table_candidate":
+        reasons.extend(table_evaluation_reasons(cleaned))
+    if block_type == "equation_candidate":
+        reasons.extend(equation_evaluation_reasons(block, cleaned))
     if re.search(r"\b[A-Za-z]+[,.;?]{2,}\b", cleaned):
         reasons.append("명백한 OCR artifact가 남아 있음")
     if "```" in cleaned:
@@ -1994,23 +1904,66 @@ def deterministic_evaluation(block: dict[str, Any], markdown: str) -> dict[str, 
     }
 
 
-def has_balanced_braces(text: str) -> bool:
-    depth = 0
-    escaped = False
-    for char in text:
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
+def table_evaluation_reasons(markdown: str) -> list[str]:
+    if not is_valid_markdown_table(markdown):
+        return ["Markdown table의 column 수가 일관되지 않음"]
+
+    reasons: list[str] = []
+    headers = table_header_values(markdown)
+    body_cells = body_cell_values(markdown)
+    numeric_header_count = sum(1 for header in headers if re.fullmatch(r"-?\d+(?:\.\d+)?%?", header))
+    if numeric_header_count == len(headers):
+        reasons.append("table header에 데이터 값이 들어감")
+    if any(re.search(r"([\"”]|==:|=:)", header) for header in headers):
+        reasons.append("table header에 OCR debris 또는 중복 label이 남아 있음")
+    if body_cells:
+        unclear_count = sum(1 for cell in body_cells if "[unclear]" in cell)
+        if unclear_count / len(body_cells) > 0.3:
+            reasons.append("table cell의 unclear 비율이 너무 높음")
+        if any(re.search(r"(==:|=:|~—|—|^\]$|^el$|^=\.|^\.0\.)", cell, flags=re.IGNORECASE) for cell in body_cells):
+            reasons.append("table numeric cell에 OCR debris가 남아 있음")
+    if re.search(r"(?m)^\|\s*\|\s*-?\d", markdown):
+        reasons.append("table row가 여러 줄로 쪼개진 형태임")
+    if has_bad_index_sequence(markdown):
+        reasons.append("table 첫 column의 index sequence가 깨져 있음")
+    if re.search(r"(?im)([A-Za-z][,;]{2,}|[\"”]|^\|[^|\n]*\]\s*\||\|\s*=\\?.)", markdown):
+        reasons.append("table에 명백한 OCR artifact가 남아 있음")
+    return reasons
+
+
+def equation_evaluation_reasons(block: dict[str, Any], markdown: str) -> list[str]:
+    reasons: list[str] = []
+    lowered = markdown.lower()
+    checks = (
+        ("\\[" not in markdown and "$$" not in markdown, "수식 block인데 display math가 없음"),
+        (not has_balanced_braces(markdown), "LaTeX 중괄호 짝이 맞지 않음"),
+        (not has_balanced_latex_environments(markdown), "LaTeX begin/end 환경 짝이 맞지 않음"),
+        (not has_balanced_latex_environments_per_display(markdown), "display math 내부 LaTeX begin/end 환경 짝이 맞지 않음"),
+        (not has_balanced_left_right(markdown), "LaTeX left/right delimiter 짝이 맞지 않음"),
+        (not has_balanced_plain_parentheses_per_display(markdown), "display math 내부 일반 괄호 짝이 맞지 않음"),
+        (has_bare_script_marker(markdown), "밑첨자/윗첨자 대상이 비어 있는 깨진 LaTeX가 있음"),
+        (has_malformed_math_text_command(markdown), "math text command 안에 깨진 첨자/괄호 구조가 남아 있음"),
+        (has_display_math_without_equation(markdown), "등호 없는 display math 조각이 수식으로 섞여 있음"),
+        (has_duplicate_display_math(markdown), "동일한 display math가 중복 복원됨"),
+        (has_polynomial_fraction(markdown), "다항식 형태의 수식을 근거 없이 분수로 바꿈"),
+        (bool(re.search(r"\\frac\{\s*[-+]?\d+(?:\.\d+)?\s*\}", markdown)) and len(re.findall(r"(?<!\^)[+\-−]", markdown)) >= 3, "다항식 일부를 근거 없이 분수항으로 바꿈"),
+        ("\\begin{array}" in markdown, "수식 후보가 표 row 배열처럼 복원됨"),
+        (len(re.findall(r"(?m)^\s*\d+\s+[01-]", markdown)) >= 3, "수식 후보가 실험 결과 row처럼 복원됨"),
+        (bool(re.search(r"(_\{\s*[,.;?]+\s*\}|[A-Za-z][,;?]{2,}|\\text\{\s*[A-Za-z]*[,.;?][^}]*\}|\?)", markdown)), "명백한 OCR artifact가 남아 있음"),
+        (has_bad_subscript_punctuation(markdown), "subscript 안에 OCR punctuation artifact가 남아 있음"),
+        (bool(re.search(r"\b[A-Za-z](?:\s+[A-Za-z]+){1,}\b", markdown)), "하나의 변수로 보이는 문자가 공백으로 쪼개져 있음"),
+        (bool(re.search(r"(\\l\d|\\mathcal|\\mathbb|\\check|\\slash|\\rightarrow|\\downarrow|\\uparrow|\\rfloor|\\lfloor|\\it|\\mathrm\{\[)", markdown)), "image-to-LaTeX OCR의 깨진 command 또는 placeholder가 남아 있음"),
+        (bool(re.search(r"([\"”]|Z\s*-\s*H|\\times\s*10\s+[A-Za-z]|\b[A-Za-z]\^\*)", markdown)), "수식에 OCR debris 또는 깨진 지수 표기가 남아 있음"),
+        (bool(re.search(r"(\\cal\b|\\displaystyle\s*\\cal)", markdown)), "image-to-LaTeX OCR의 hallucinated symbol 또는 깨진 문자 인식이 남아 있음"),
+        (bool(re.search(r"\d+\.\d+\s+\d\b", markdown)), "계수 뒤에 변수 없이 숫자만 남은 깨진 항이 있음"),
+        (bool(re.search(r"\d+\.\d+\^\{\d+\}", markdown)), "계수 뒤에 변수 없이 지수만 붙은 깨진 항이 있음"),
+        (has_equation_number_evidence(block) and not has_equation_number_markdown(markdown), "OCR/hint에 보이는 equation number가 Markdown 수식에 보존되지 않음"),
+        (len(re.findall(r"[A-Za-z\\]", markdown)) == 0, "수식 변수 구조가 거의 복원되지 않음"),
+        (bool(re.fullmatch(r"(?s)(?:\\\[\s*[-+0-9.\s]+\s*\\\]|\$\$\s*[-+0-9.\s]+\s*\$\$)", markdown)), "좌변 변수 없는 숫자 조각만 복원됨"),
+        ("[unclear]" in lowered and lowered.count("[unclear]") > 2, "unreadable term이 너무 많음"),
+    )
+    reasons.extend(reason for failed, reason in checks if failed)
+    return reasons
 
 
 def has_balanced_latex_environments(text: str) -> bool:
@@ -2081,7 +2034,7 @@ def has_duplicate_display_math(text: str) -> bool:
     return len(normalized) != len(set(normalized))
 
 
-def has_equation_number_evidence(block: dict[str, Any], markdown: str) -> bool:
+def has_equation_number_evidence(block: dict[str, Any]) -> bool:
     source_text = block.get("source_text", "")
     return bool(re.search(r"\(([1-9][0-9]?)\)", source_text, flags=re.MULTILINE))
 
@@ -2227,6 +2180,72 @@ def count_display_math_blocks(text: str) -> int:
     return text.count("\\[") + len(re.findall(r"\$\$.*?\$\$", text, flags=re.DOTALL))
 
 
+def deterministic_recovery_candidate(
+    block: dict[str, Any],
+    ocr_text: str,
+) -> tuple[str, dict[str, Any] | None]:
+    if block["type"] == "table_candidate":
+        parser_markdown = structured_table_markdown(block, ocr_text)
+        if parser_markdown:
+            parser_evaluation = deterministic_evaluation(block, parser_markdown)
+            if parser_evaluation["accepted"]:
+                return parser_markdown, {
+                    **parser_evaluation,
+                    "recovery_source": "structured_table_parser",
+                }
+        return "", None
+
+    if block["type"] != "equation_candidate":
+        return "", None
+    layout_result = deterministic_layout_adjudication(block, ocr_text)
+    if layout_result:
+        return layout_result
+    parser_markdown = equation_parser_markdown(block, ocr_text)
+    if parser_markdown:
+        parser_evaluation = deterministic_evaluation(block, parser_markdown)
+        if parser_evaluation["accepted"]:
+            return parser_markdown, {
+                **parser_evaluation,
+                "recovery_source": "structured_equation_parser",
+            }
+    latex_candidate = latex_ocr_candidate_markdown(ocr_text, block)
+    if not latex_candidate:
+        return "", None
+    latex_candidate = normalize_equation_markdown(latex_candidate, block)
+    latex_evaluation = deterministic_evaluation(block, latex_candidate)
+    if not latex_evaluation["accepted"]:
+        return "", None
+    return latex_candidate, {
+        **latex_evaluation,
+        "recovery_source": "latex_ocr_cleanup",
+    }
+
+
+def sllm_system_message(block_type: str) -> str:
+    if block_type == "table_candidate":
+        return (
+            "You are a strict OCR-to-Markdown table transcriber. "
+            "The response must start with '|' for a Markdown table or '[rejected:' for rejection. "
+            "Do not explain, compare, summarize, or recommend anything."
+        )
+    if block_type == "equation_candidate":
+        return (
+            "You are a strict OCR-to-LaTeX equation transcriber. "
+            "Return only Markdown display math delimited by '$$' or a '[rejected:' line. "
+            "Do not explain, compare, summarize, or use code fences."
+        )
+    return "You reconstruct OCR blocks. Return only the requested Markdown. Never summarize."
+
+
+def write_recovery_result(block_id: str, markdown: str, evaluation: dict[str, Any]) -> None:
+    (OUTPUT_DIR / f"{block_id}.md").write_text(markdown.strip() + "\n", encoding="utf-8")
+    EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
+    (EVALUATION_DIR / f"{block_id}.json").write_text(
+        json.dumps(evaluation, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bool) -> None:
     asset = block.get("asset")
     if not asset:
@@ -2241,73 +2260,19 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
     if prompt:
         (OUTPUT_DIR / f"{block['id']}.prompt.md").write_text(prompt + "\n", encoding="utf-8")
 
-    markdown = ""
-    evaluation: dict[str, Any] | None = None
-    if block["type"] == "table_candidate":
-        parser_markdown = structured_table_markdown(block, ocr_text)
-        if parser_markdown:
-            parser_evaluation = deterministic_evaluation(block, parser_markdown)
-            if parser_evaluation["accepted"]:
-                markdown = parser_markdown
-                evaluation = {
-                    **parser_evaluation,
-                    "recovery_source": "structured_table_parser",
-                }
-    elif block["type"] == "equation_candidate":
-        layout_result = deterministic_layout_adjudication(block, ocr_text)
-        parser_markdown = None
-        if layout_result:
-            markdown, evaluation = layout_result
-        if not markdown:
-            parser_markdown = equation_parser_markdown(block, ocr_text)
-        if parser_markdown:
-            parser_evaluation = deterministic_evaluation(block, parser_markdown)
-            if parser_evaluation["accepted"]:
-                markdown = parser_markdown
-                evaluation = {
-                    **parser_evaluation,
-                    "recovery_source": "structured_equation_parser",
-                }
-        if not markdown:
-            latex_candidate = latex_ocr_candidate_markdown(ocr_text, block)
-            if latex_candidate:
-                latex_candidate = normalize_equation_markdown(latex_candidate, block)
-                latex_evaluation = deterministic_evaluation(block, latex_candidate)
-                if latex_evaluation["accepted"]:
-                    markdown = latex_candidate
-                    evaluation = {
-                        **latex_evaluation,
-                        "recovery_source": "latex_ocr_cleanup",
-                    }
+    markdown, evaluation = deterministic_recovery_candidate(block, ocr_text)
 
     if not markdown and not use_sllm_for_block:
         markdown = "\n".join(["```text", ocr_text, "```"])
     elif not markdown:
-        system_message = "You reconstruct OCR blocks. Return only the requested Markdown. Never summarize."
-        if block["type"] == "table_candidate":
-            system_message = (
-                "You are a strict OCR-to-Markdown table transcriber. "
-                "The response must start with '|' for a Markdown table or '[rejected:' for rejection. "
-                "Do not explain, compare, summarize, or recommend anything."
-            )
-        elif block["type"] == "equation_candidate":
-            system_message = (
-                "You are a strict OCR-to-LaTeX equation transcriber. "
-                "Return only Markdown display math delimited by '$$' or a '[rejected:' line. "
-                "Do not explain, compare, summarize, or use code fences."
-            )
+        system_message = sllm_system_message(block["type"])
         markdown = call_sllm(
             endpoint,
             model,
             prompt,
             system_message,
         )
-        if block["type"] == "equation_candidate":
-            markdown = normalize_equation_markdown(markdown, block)
-        elif block["type"] == "table_candidate":
-            markdown = repair_table_markdown_with_hint(markdown, block.get("source_text", ""))
-        elif block["type"] == "figure_candidate":
-            markdown = strip_markdown_fence(markdown)
+        markdown = normalize_recovered_markdown_for_block(block, markdown)
 
     if evaluation is None:
         evaluation = evaluate_block(block, ocr_text, markdown, endpoint, model, use_sllm_for_block)
@@ -2337,12 +2302,7 @@ def recover_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bo
                     "recovery_source": "structured_table_fallback",
                 }
 
-    (OUTPUT_DIR / f"{block['id']}.md").write_text(markdown.strip() + "\n", encoding="utf-8")
-    EVALUATION_DIR.mkdir(parents=True, exist_ok=True)
-    (EVALUATION_DIR / f"{block['id']}.json").write_text(
-        json.dumps(evaluation, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_recovery_result(block["id"], markdown, evaluation)
 
 
 def evaluate_existing_block(block: dict[str, Any], endpoint: str, model: str, use_sllm: bool) -> None:

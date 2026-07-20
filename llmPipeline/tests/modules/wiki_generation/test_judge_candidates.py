@@ -104,3 +104,21 @@ class JudgeCandidatesTest(unittest.TestCase):
 
         self.assertEqual(result, [])
         self.assertEqual(completion.system_prompt, "")
+
+    def test_ignores_malformed_and_unknown_candidate_decisions(self) -> None:
+        completion = FakeCompletion(
+            {
+                "decisions": [
+                    "invalid",
+                    {"candidate_id": "unknown", "decision": "new_cluster"},
+                ]
+            }
+        )
+
+        result = judge_meaning_cluster_candidates(
+            completion=completion,
+            existing_active_markdown="# Active",
+            candidates=[candidate()],
+        )
+
+        self.assertEqual(result, [])

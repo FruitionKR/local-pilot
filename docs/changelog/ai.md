@@ -4,6 +4,375 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-21
+
+### fix: pipeline startup의 DB 생성 책임 제거
+
+- FastAPI lifespan에서 `CREATE TABLE`을 실행하지 않고 Flyway 필수 테이블 존재 여부만 확인하도록 변경
+- Python의 공용·파이프라인·Wiki schema DDL과 `POST /admin/init-db` 제거
+- Flyway가 적용되지 않은 환경은 누락 테이블을 표시하며 startup 단계에서 fail-fast
+- API 계약·schema readiness 테스트와 문서 복원 제외 전체 테스트 `349 passed`, `28 subtests passed`
+
+## 2026-07-20
+
+### fix: 앱 시작 시 DB 스키마 자동 초기화
+
+- `init_db()`가 수동 `POST /admin/init-db` 엔드포인트로만 노출되어, 호출 전에는 `pipeline_runs`·임베딩 테이블이 생성되지 않던 문제 수정
+- 테이블 부재로 `POST /pipeline/runs`가 `relation "pipeline_runs" does not exist` 500을 반환 → 백엔드가 문서를 `failed`로 마킹하던 원인 제거
+- FastAPI `lifespan` 핸들러를 추가해 앱 시작 시 `database.init_db()`·`wiki_schema_database.init_db()`를 자동 실행 (`CREATE TABLE IF NOT EXISTS` 기반이라 멱등)
+- pipeline-api 재빌드 후 `pipeline_runs`·`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units` 생성 확인
+
+### test: lifespan DB 초기화와 API 계약 테스트 격리
+
+- API 계약 테스트의 `TestClient` startup에서 실제 PostgreSQL 초기화를 호출해 `DATABASE_URL` 없이 실패하던 문제 수정
+- 공통 test client에서 schema 초기화를 mock하고, 별도 lifespan 테스트로 두 `init_db()` 호출을 검증
+- 문서 복원 전용 의존성 테스트를 제외한 llmPipeline 테스트 `348 passed`, `28 subtests passed`
+
+---
+
+## 2026-07-19
+
+### refactor: Pipeline typed 실행과 persistence 내부 흐름 정리
+
+- HTTP·CLI 입력을 `PipelineRunCommand`로 통일하고 `argparse.Namespace` 역변환 제거
+- Wiki output의 Source·Concept·link 저장 단계를 명시하고 source-related 점수 계산을 순수 함수로 분리
+- 기존 API·CLI·저장 순서를 유지하고 전체 테스트 388개와 28개 subtest 통과
+
+---
+
+### refactor: Pipeline HTTP와 application 입력 경계 분리
+
+- Pipeline·Chat Wiki 실행 schema와 route, dependency 조립을 `wiki_ingestion/interfaces/http`로 이동
+- `PipelineRunCommand`로 application 입력을 명시하고 infrastructure에서만 `argparse.Namespace`로 변환
+- 기존 HTTP 계약을 유지하고 전체 테스트 378개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki output persistence orchestration 분리
+
+- manifest 해석과 source/concept/link/cluster 저장 순서를 `postgres_wiki_output_persistence`로 이동
+- 기존 `finish_pipeline_run` transaction과 저장 순서를 고정하고 관련 테스트 39개 통과
+
+---
+
+### refactor: Wiki PostgreSQL writer 경계 분리
+
+- page/link upsert, embedding unit 저장, source-related 갱신, object storage I/O를 공통 writer로 분리
+- 기존 repository private import 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
+### refactor: Wiki PostgreSQL schema 초기화 분리
+
+- ingestion repository의 테이블·인덱스 생성 SQL을 `postgres_wiki_schema` 책임으로 분리
+- 기존 `init_db()` connection·transaction 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
+### refactor: Pipeline run application 경계 분리
+
+- run 등록·실행·성공/실패 저장·embedding 시작 순서를 `RunPipelineUseCase`와 port adapter로 이동
+- FastAPI 요청·응답 계약을 유지하고 API contract 16개와 application 상태 순서 테스트 2개 통과
+
+---
+
+### refactor: Query graph 탐색과 context I/O 분리
+
+- seed·traversal·path 보정 결과를 `_InternalRetrievalGraph`로 명시하고 Markdown·embedding 로드와 분리
+- 기존 Query event 순서와 응답 계약을 유지하고 Query 테스트 57개 통과
+
+---
+
+### refactor: Wiki page 조립 내부 책임 분리
+
+- Source page 준비, concept 입력 구성, source 조립, concept mode별 조립 책임 분리
+- 기존 Concept 입력 → Source Page → Concept Page 로그 순서를 고정하고 관련 테스트 12개 통과
+
+---
+
+### fix: Meaning Cluster active 상태 읽기 순서 복원
+
+- concept update 판단 직후 active cluster Markdown을 읽도록 기존 ingest 순서 복원
+- 동시 ingest의 최신 상태 반영 시점을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki evaluator 내부 타입 명시
+
+- 정규화 이후 evaluator 결과를 `GenerationEvaluation`으로 명시해 graph·repair·artifact port 계약 통합
+- 숫자가 아닌 score를 안전한 평가 실패로 변환하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Query 내부 context 조립 단계 분리
+
+- seed 선택, graph traversal, Markdown·embedding 로드, answer context 생성을 `_InternalQueryContext`로 분리
+- original/retrieval/evidence question 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Query Wiki scoring 단계 분리
+
+- Wiki page/link 로드, Markdown 보강, source/concept scoring 결과를 `_ScoredWikiCandidates`로 분리
+- 이벤트 순서와 web fallback 판단 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Meaning Cluster 조립 단계 분리
+
+- candidate 판단, 기존 cluster 비교, artifact·maintenance summary 생성을 독립 단계로 분리
+- 빈 candidate와 기존 출력 경로 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki page 조립 단계 분리
+
+- source page 누적·polish, concept page 생성, link 조립을 명시적 `WikiPageOutputs` 경계로 분리
+- skeleton/API mode와 source artifact 계약을 유지하고 전체 테스트 372개와 28개 subtest 통과
+
+---
+
+### refactor: pipeline concept resolution 단계 분리
+
+- concept resolution의 LLM 호출, 응답 정규화, same-source context 병합을 독립 함수로 분리
+- normalized 결과와 debug artifact 계약을 유지하고 전체 테스트 371개와 28개 subtest 통과
+
+---
+
+### refactor: pipeline 입력 준비 단계 분리
+
+- `run_pipeline`의 prompt 로드, API client 준비, source block 추출을 책임별 함수로 분리
+- 호출 순서와 로그·debug artifact 계약을 유지하고 전체 테스트 370개와 28개 subtest 통과
+
+---
+
+### fix: Wiki evaluator 응답 형식 검증
+
+- 잘못된 `scores`, `issues`, `warnings`, 상태 필드를 안전한 평가 실패로 변환해 재시도 경로 유지
+- 누락 필드의 기존 기본값 계약을 보존하고 전체 테스트 368개와 28개 subtest 통과
+
+---
+
+### refactor: 문서 복원 dead contract 제거
+
+- 항상 `False`를 반환하던 numeric header predicate와 무의미한 부정 조건 제거
+- equation number evidence 검사에서 사용하지 않던 `markdown` 인자 제거
+
+---
+
+### refactor: SemanticNormalizer 미사용 인덱스 제거
+
+- 생성 후 사용되지 않던 `source_reference_id` 기반 `by_ref_id` 인덱스 제거
+- 실제 anchor 검증에 사용하는 `by_block_id` 계약은 유지
+
+---
+
+### refactor: Wiki graph 폐기 설정 제거
+
+- 사용되지 않던 `min_node_score` 생성자 인자와 테스트 전달값 제거
+- seed 유효성 검사 뒤 다시 읽히지 않던 최고 점수 갱신 제거
+
+---
+
+### fix: Wiki graph 깊이 제한 종료 사유 구분
+
+- 최대 깊이 node에 확장 가능한 후보가 있을 때만 `max_depth` 종료로 기록
+- graph가 제한 깊이에서 자연 종료하면 `no_frontier`를 유지하고 query spec을 현재 계약과 동기화
+
+---
+
+### fix: Wiki graph 최대 탐색 깊이 적용
+
+- `TraverseWikiGraphUseCase.max_depth`에 도달한 node에서 frontier 확장을 중단
+- retrieval summary가 실제 방문 깊이를 표시하도록 수정하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
+## 2026-07-18
+
+### refactor: Markdown table header 조립 분리
+
+- 표 복원 함수에서 계층형 header 해석과 Markdown row escaping을 순수 함수로 분리
+- body 판정과 출력 계약을 유지하고 Document evaluation 테스트 36개 통과
+
+---
+
+### refactor: Wiki graph traversal 경로 조립 통합
+
+- 신규 방문과 재방문 분기에 중복된 `TraversalEdge`·`TraversalPath` 생성을 공통 함수로 통합
+- 탐색·점수·stop reason 계약을 유지하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
+### refactor: semantic note anchor 검증 통합
+
+- `_normalize_single_note`의 내부 anchor 변환 함수를 기존 `_anchor_refs`와 통합
+- unknown block 경고, limit, 중복 제거 순서를 유지하고 Wiki generation 테스트 69개 통과
+
+---
+
+### refactor: meaning-cluster ingest 로그 렌더링 분리
+
+- artifact assembler에 섞여 있던 ingest 로그 Markdown 생성을 `meaning_cluster_log.py`의 순수 함수로 분리
+- 로그 경로와 제목의 날짜를 일치시키고 Wiki generation 테스트 69개 통과
+
+---
+
+### refactor: Markdown output validator 규칙 분리
+
+- 단일 함수에 모여 있던 edit goal 형상, 요청 문법, 보호 콘텐츠, 축약 검증을 명시적 규칙 함수로 분리
+- 오류 수집 순서와 외부 계약을 유지하고 Markdown edit 테스트 28개 통과
+
+---
+
+### refactor: concept evidence Markdown 갱신 분리
+
+- concept 문서의 Evidence 섹션 추가·placeholder 제거·중복 방지 로직을 `concept_evidence.py`로 분리
+- repository의 DB orchestration과 Markdown 변환 책임을 분리하고 Wiki ingestion 테스트 19개 통과
+
+---
+
+### refactor: Wiki lint report 렌더링 분리
+
+- PostgreSQL repository에 섞여 있던 lint Markdown 렌더링을 `wiki_lint_report.py`로 분리
+- 로그 경로와 제목에 같은 날짜를 사용하도록 고정하고 Wiki ingestion 테스트 19개 통과
+
+---
+
+### refactor: concept resolution ledger 병합 분리
+
+- incoming concept의 canonical slug 병합·alias·근거 합산을 `merge_concept_ledger`로 분리
+- hint resolution과 evidence 연결 계약을 유지하고 Wiki generation 테스트 68개 통과
+
+---
+
+### refactor: local document 평가 계획 분리
+
+- block 분류, table evidence, fallback chunk와 batch 제한을 명시적 `EvaluationPlan`으로 분리
+- 모델 호출과 resume 순서를 유지하고 문서 평가 테스트 36개 통과
+
+---
+
+### refactor: 문서 복원 recovery 단계 분리
+
+- `recover_block`에서 deterministic 후보 선택, SLLM system message 결정, 결과 파일 저장 단계를 분리
+- retry와 fallback 순서를 보존하고 문서 복원 테스트 41개 통과
+
+---
+
+### refactor: Query evaluator 후속 route 처리 분리
+
+- `AnswerQueryUseCase.execute`에서 evaluator 결과에 따른 답변 대체·evidence 재번호·종료 사유 변경을 별도 메서드로 분리
+- web fallback 조기 반환 계약을 유지하고 Query 테스트 25개와 4개 subtest 통과
+
+---
+
+### refactor: 문서 복원 deterministic validator 분리
+
+- 복원 결과의 공통 orchestration에서 table·equation 전용 오류 수집 규칙을 분리
+- 오류 문구와 판정 순서를 보존하고 관련 테스트 13개 통과
+
+---
+
+### refactor: repository 오류 메시지 길이 제한 통합
+
+- Wiki ingestion과 embedding repository의 240자 오류 저장 규칙을 `app.core.error_text`로 통합
+- 관련 core·Wiki embedding·ingestion 테스트 23개 통과
+
+---
+
+### refactor: Vision 복원 evidence clipping 규칙 통합
+
+- figure 복원과 block review가 공유하는 evidence 길이 제한과 clipping marker를 domain 함수로 통합
+- 관련 문서 복원 테스트 10개 통과
+
+---
+
+### refactor: 문서 복원 좌표 판정과 Docling I/O 공통화
+
+**배경**
+
+문서 복원 단계마다 Markdown brace, bbox 겹침, Docling provenance와 PDF 경로를 같은 규칙으로 판정하면서 구현을 중복하고 있었습니다.
+
+**변경된 것**
+
+- Markdown brace 균형 검사를 문서 복원 domain 함수로 통합
+- bbox 중심·방향성 겹침·대칭 match score 계산을 순수 domain 함수로 분리
+- Docling JSON 로딩, PDF 탐색, provenance bbox 변환을 전용 infrastructure 모듈로 분리
+
+**검증**
+
+- 문서 복원과 Wiki ingestion 관련 테스트 52개 통과
+
+---
+
+### refactor: Wiki ingestion unit text 정규화 통합
+
+**배경**
+
+active cluster claim과 embedding unit이 source reference와 Markdown marker를 같은 규칙으로 제거하면서도 구현을 각각 유지하고 있었습니다.
+
+**변경된 것**
+
+- unit text 정규화 규칙을 `wiki_ingestion.domain.unit_text`로 이동
+- active cluster와 embedding unit 생성이 동일한 정규화 함수를 사용하도록 변경
+
+**검증**
+
+- Wiki ingestion unit text와 concept index 관련 테스트 통과
+
+---
+
+### refactor: 반복 검증과 Markdown 정규화 공통화
+
+**배경**
+
+여러 LLM adapter와 문서 복원 단계에서 동일한 guard clause와 정규화 함수가 중복되어, 같은 규칙을 호출부마다 따로 유지하고 있었습니다.
+
+**변경된 것**
+
+- candidate decision의 구조와 `candidate_id`를 검증하는 공통 함수 추가
+- schema prompt 결합 규칙을 `app.core`의 공통 함수로 통합
+- 문서 복원의 Markdown code fence 제거와 table 형태 검증을 domain 함수로 통합
+
+**검증**
+
+- `cd llmPipeline && .venv/bin/python -m pytest -q tests` — 346개 테스트와 28개 subtest 통과
+
+---
+
+### feat: Wiki ingest evaluator를 LangGraph로 전환
+
+**배경**
+
+Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의미 추출·평가·보정·재시도 흐름을 graph node 단위로 확인하기 어려웠고, API 기본값이 비활성화되어 evaluator가 요청마다 명시적으로 켜져야 했습니다.
+
+**변경된 것**
+
+- Wiki ingest evaluator loop를 `semantic_generation`, `normalize`, `evaluate`, `repair`, `reevaluate`, `prepare_retry` LangGraph node로 전환
+- production과 같은 topology builder를 사용하는 `wiki_ingest_evaluator` Studio graph entry 추가
+- `POST /pipeline/runs`, `POST /chat-wiki/runs`, CLI의 evaluator loop를 기본 활성화하고 명시적 비활성화 옵션 유지
+- Wiki evaluator의 `issues`는 반드시 재시도하고 선택적 제안은 `warnings`로 분리하도록 평가 계약 보강
+- Wiki evaluator의 concept/evidence/source block target에 대해 target block 주변 문맥과 기존 target 항목만 전달하는 `replace/remove/add` patch 경로 추가
+- deterministic observation repair를 raw semantic note에 반영하고 다시 normalize해 최상위 registry와 `semantic_notes`가 일치하도록 보강
+- patch의 수정 path와 source anchor를 검증하고 실패 시 관련 packet 재생성, target 해석 실패 시 전체 재생성으로 fallback
+- 평가 기록에 `retry_mode`와 성공한 `applied_patch_operations`를 남겨 evaluator feedback의 실제 반영 내역을 추적
+- 실제 문서에 없는 source block target은 전체 재생성으로 처리하고, debug retry artifact에도 확정된 재시도 방식과 patch operation을 기록
+- patch에서 evaluator target과 무관한 semantic note와 의미 항목은 그대로 유지하고, 최대 시도 후 남은 issue는 manifest의 `generation_evaluation_status=unresolved`로 기록
+- Wiki evaluator 시도별 상세 결과를 pipeline manifest와 DB run manifest에 보관
+- Query evaluator에 `revise_answer` route를 추가하고, actionable feedback이 있는 답변은 재생성·재평가하도록 변경
+- Query 답변 재생성은 `revise_answer`에만 적용하고 web/unsupported route는 즉시 해당 후속 처리로 전달
+- Query 수정이 최대 시도 후에도 해결되지 않으면 검증되지 않은 답변 대신 unsupported 답변 반환
+- `LANGSMITH_TRACING=true`이더라도 `LANGSMITH_API_KEY`가 없으면 graph 실행은 유지하고 tracing만 생략
+- Query production·Studio graph에도 key 없는 tracing 차단을 적용해 LangSmith 경고와 네트워크 재시도를 방지
+- LangGraph 로컬 실행 산출물인 `llmPipeline/.langgraph_api/`를 Git 추적 대상에서 제외
+
+**검증**
+
+- Wiki generation graph, target 기반 patch·fallback, API 계약, CLI 인자, LangSmith tracing guard 관련 테스트 통과
+
+---
+
 ## 2026-07-16
 
 ### feat: PDF 복원 흐름과 평가 기록 개선

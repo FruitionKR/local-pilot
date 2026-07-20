@@ -244,14 +244,16 @@ confidence = source_related_score
 ```text
 relative_score_floor = 0.95
 frontier_limit = 8
+max_depth = 3
 ```
 
-`TraverseWikiGraphUseCase` 생성자에는 `max_depth` 인자가 남아 있지만, 현재 구현에서는 명시적인 depth cutoff로 사용되지 않는다. depth 제한을 제품 계약으로 쓰려면 traversal 코드에서 먼저 enforcement를 추가해야 한다.
+`max_depth`는 seed node를 depth 0으로 보고 해당 깊이에 도달한 node의 후속 frontier 확장을 중단한다.
 
 멈춤 조건:
 
 - 다음 후보가 현재 path score의 `relative_score_floor`를 넘지 못한다.
 - 다음 frontier가 없다.
+- 설정한 `max_depth`에서 확장 가능한 후속 frontier가 남아 있다.
 - 시작 seed의 점수가 0 이하라 관련 seed가 없다고 판단한다.
 
 현재 구현의 대표 `stop_reason`:
@@ -260,9 +262,11 @@ frontier_limit = 8
 no_relevant_seed
 no_frontier
 relative_score_floor
+max_depth
 concept_direct_match
 query_evaluator_unsupported
 query_evaluator_internal_supported
+query_evaluator_unresolved
 internal_web_augmented
 web_fallback
 ```
@@ -366,8 +370,10 @@ class AnswerGeneratorPort(Protocol):
 11. evidence snippet 선택
 12. answer context 구성
 13. LLM answer generation
-14. evaluator가 있으면 internal/web/unsupported route 판단
-15. Query response 반환
+14. evaluator가 있으면 internal/revise/web/unsupported route 판단
+15. revise_answer이면 feedback을 반영해 제한 횟수 안에서 답변 재생성·재평가
+16. revise_answer가 끝까지 해결되지 않으면 검증되지 않은 답변 대신 unsupported 답변 반환
+17. Query response 반환
 ```
 
 FastAPI route는 이 use case만 호출한다.

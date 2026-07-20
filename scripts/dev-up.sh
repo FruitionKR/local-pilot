@@ -172,10 +172,15 @@ cleanup_stale_pipeline_orphans() {
 }
 
 start_infra() {
-  log "PostgreSQL, MinIO, pipeline API를 시작합니다."
-  cleanup_stale_pipeline_orphans
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build
+  log "PostgreSQL과 MinIO를 시작합니다."
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
   wait_for_postgres
+}
+
+start_pipeline() {
+  log "Pipeline API를 시작합니다."
+  cleanup_stale_pipeline_orphans
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api
   wait_for_url "http://localhost:8000/health" "Pipeline API" 120
 }
 
@@ -189,7 +194,7 @@ start_backend() {
   ) &
   BACKEND_PID="$!"
 
-  wait_for_url "http://localhost:8080/api/documents" "백엔드"
+  wait_for_url "http://localhost:8080/actuator/health" "백엔드"
 }
 
 start_frontend() {
@@ -223,6 +228,7 @@ main() {
 
   start_infra
   start_backend "$java21_home"
+  start_pipeline
   start_frontend
 
   cat <<'INFO'

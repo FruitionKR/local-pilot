@@ -10,6 +10,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from app.modules.document_restoration.domain.evidence_text import clip_evidence
+from app.modules.document_restoration.domain.markdown_text import strip_markdown_fence
 from app.modules.document_restoration.domain.text_quality import (
     looks_glyph_encoded as generic_looks_glyph_encoded,
 )
@@ -26,9 +28,6 @@ EVALUATION_DIR = BASE_DIR / "layout" / "auto" / "evaluations"
 PROMPT_DIR = SCRIPT_PROMPT_DIR
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434/v1/chat/completions"
 DEFAULT_MODEL = "qwen2.5vl:7b"
-MAX_EVIDENCE_CHARS = 2500
-
-
 def load_blocks() -> list[dict[str, Any]]:
     blocks = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
     return sorted(blocks, key=lambda block: (block["page"], block["order"]))
@@ -36,16 +35,6 @@ def load_blocks() -> list[dict[str, Any]]:
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
-
-
-def strip_markdown_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
 
 
 def looks_glyph_encoded_candidate(text: str) -> bool:
@@ -68,13 +57,6 @@ def read_optional_text(path: Path) -> str:
     if not path.exists():
         return ""
     return path.read_text(encoding="utf-8").strip()
-
-
-def clip_evidence(text: str, max_chars: int = MAX_EVIDENCE_CHARS) -> str:
-    if len(text) <= max_chars:
-        return text
-    half = max_chars // 2
-    return f"{text[:half]}\n...[evidence clipped]...\n{text[-half:]}"
 
 
 def sllm_candidate_for_block(block_id: str) -> str:
