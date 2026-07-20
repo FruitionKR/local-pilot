@@ -4,6 +4,17 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-20
+
+### fix: 앱 시작 시 DB 스키마 자동 초기화
+
+- `init_db()`가 수동 `POST /admin/init-db` 엔드포인트로만 노출되어, 호출 전에는 `pipeline_runs`·임베딩 테이블이 생성되지 않던 문제 수정
+- 테이블 부재로 `POST /pipeline/runs`가 `relation "pipeline_runs" does not exist` 500을 반환 → 백엔드가 문서를 `failed`로 마킹하던 원인 제거
+- FastAPI `lifespan` 핸들러를 추가해 앱 시작 시 `database.init_db()`·`wiki_schema_database.init_db()`를 자동 실행 (`CREATE TABLE IF NOT EXISTS` 기반이라 멱등)
+- pipeline-api 재빌드 후 `pipeline_runs`·`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units` 생성 확인
+
+---
+
 ## 2026-07-19
 
 ### refactor: Pipeline typed 실행과 persistence 내부 흐름 정리
