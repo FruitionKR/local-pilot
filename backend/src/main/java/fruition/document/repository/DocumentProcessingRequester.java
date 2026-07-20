@@ -35,6 +35,16 @@ public class DocumentProcessingRequester {
                                        String selectionMode, String inputMarkdown, boolean chatWiki) {
         String endpoint = chatWiki ? chatEndpoint : processingEndpoint;
         PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown);
+        log.info("[파이프라인 요청 데이터] endpoint={} documentId={} userId={} workspaceId={} chatWiki={} selectionMode={} callbackUrl={} inputMarkdownPresent={} inputMarkdownLength={}",
+                endpoint,
+                documentId,
+                userId,
+                workspaceId,
+                chatWiki,
+                selectionMode,
+                callbackUrl,
+                inputMarkdown != null,
+                inputMarkdown != null ? inputMarkdown.length() : 0);
         try {
             PipelineRunResponse response = restClient.post()
                     .uri(endpoint)

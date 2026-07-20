@@ -42,6 +42,7 @@ public class DocumentProcessingWorker {
         String documentId = transactionTemplate.execute(status ->
                 queueRepository.findFirstByStatusOrderByCreatedAtAsc("pending")
                         .map(item -> {
+                            log.info("[문서 처리 큐 선택] documentId={} status=pending->processing", item.getDocumentId());
                             item.setStatus("processing");
                             queueRepository.save(item);
                             return item.getDocumentId();
@@ -57,6 +58,7 @@ public class DocumentProcessingWorker {
             String finalDocumentId = documentId;
             transactionTemplate.execute(status -> {
                 queueRepository.deleteByDocumentId(finalDocumentId);
+                log.info("[문서 처리 큐 삭제] documentId={}", finalDocumentId);
                 return null;
             });
         }

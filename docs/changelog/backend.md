@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: query run·문서 파이프라인 이벤트 관측 로깅 보강
+
+**배경**
+
+query 비동기 run과 문서 처리 파이프라인 흐름에서 요청/응답·상태 전이·SSE 발행 시점을 추적할 로그가 부족해, 장애 원인 파악이 어려웠다.
+
+**변경된 것**
+
+- query 계열(`QueryController`, `QueryRunController`, `QueryService`, `QueryRunService`, `QueryRunStore`, `QueryEventBroker`, `PipelineQueryRequester`)에 요청 수신·run 상태 전이·파이프라인 호출/응답·SSE 구독/발행/완료·만료 제거 로그를 추가. 로그에는 원문 question 대신 `questionLength`만 남긴다.
+- 문서 처리 계열(`DocumentProcessingRequester`, `DocumentProcessingWorker`)에 파이프라인 요청 데이터·큐 선택/삭제 로그 추가.
+- `DocumentPipelineController`가 pipeline-events 콜백의 `message`/`data`를 `DocumentService.applyPipelineEvent`로 전달하도록 연결(관측용 수신, DTO 저장은 하지 않음).
+- `QueryService`는 근거/관련 페이지 저장 건수 로깅을 위해 지역 변수로 추출(동작 동일).
+
+**검증**
+
+- merge된 트리 `./gradlew compileJava` 통과.
+
 ### feat: document 중복 판별을 workspace 범위로 전환 (V5)
 
 **배경**

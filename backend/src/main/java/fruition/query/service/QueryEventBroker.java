@@ -2,6 +2,8 @@ package fruition.query.service;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Clock;
@@ -17,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 public class QueryEventBroker {
 
+    private static final Logger log = LoggerFactory.getLogger(QueryEventBroker.class);
     private static final int MAX_BUFFERED_EVENTS = 200;
 
     private final Clock clock;
@@ -30,6 +33,7 @@ public class QueryEventBroker {
         RunChannel channel = channels.computeIfAbsent(requestId, id -> new RunChannel());
         SseEmitter emitter = new SseEmitter(0L);
         channel.attach(emitter);
+        log.info("[질의 SSE emitter 연결] requestId={} bufferedEvents={}", requestId, channel.bufferSize());
         return emitter;
     }
 
@@ -44,22 +48,28 @@ public class QueryEventBroker {
         payload.put("message", message);
         payload.put("data", data == null ? Map.of() : data);
         channel.send("query.log", payload);
+        log.info("[질의 SSE 이벤트 발행] requestId={} sequence={} event=query.log stage={} dataKeys={} emitterCount={}",
+                requestId, sequence, stage, data != null ? data.keySet() : List.of(), channel.emitterCount());
     }
 
     public void complete(String requestId) {
         RunChannel channel = channels.computeIfAbsent(requestId, id -> new RunChannel());
         channel.send("query.completed", Map.of("request_id", requestId, "status", "completed"));
+        log.info("[질의 SSE 완료 이벤트 발행] requestId={} emitterCount={}", requestId, channel.emitterCount());
         channel.close();
     }
 
     public void fail(String requestId, String errorMessage) {
         RunChannel channel = channels.computeIfAbsent(requestId, id -> new RunChannel());
         channel.send("query.failed", Map.of("request_id", requestId, "status", "failed", "error", errorMessage));
+        log.warn("[질의 SSE 실패 이벤트 발행] requestId={} error={} emitterCount={}",
+                requestId, errorMessage, channel.emitterCount());
         channel.close();
     }
 
     public void dispose(String requestId) {
         channels.remove(requestId);
+        log.info("[질의 SSE 채널 제거] requestId={}", requestId);
     }
 
     public void sendHeartbeat() {
@@ -74,6 +84,14 @@ public class QueryEventBroker {
 
         long nextSequence() {
             return sequence.incrementAndGet();
+        }
+
+        int emitterCount() {
+            return emitters.size();
+        }
+
+        int bufferSize() {
+            return buffer.size();
         }
 
         synchronized void attach(SseEmitter emitter) {
