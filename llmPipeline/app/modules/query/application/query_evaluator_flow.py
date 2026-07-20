@@ -134,6 +134,8 @@ def route_after_evaluation(state: QueryEvaluationGraphState, max_attempts: int) 
     evaluation = state.get("evaluation")
     if evaluation is None or evaluation.route == "internal_supported":
         return "accepted"
+    if evaluation.route != "revise_answer":
+        return "finished"
     if int(state.get("attempt", 1)) >= max(1, max_attempts):
         return "finished"
     if not evaluation.feedback.strip():

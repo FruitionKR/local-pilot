@@ -16,6 +16,11 @@ from typing import Any
 
 from PIL import Image, ImageFilter, ImageOps
 
+from app.modules.document_restoration.domain.markdown_text import (
+    is_valid_markdown_table,
+    strip_markdown_fence,
+)
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 PROMPTS_ROOT = Path(__file__).resolve().parents[4] / "prompts" / "document_restoration"
@@ -624,27 +629,6 @@ def call_sllm(endpoint: str, model: str, prompt: str, system_message: str) -> st
     except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
         raise RuntimeError(f"SLLM endpoint request failed: {exc}") from exc
     return data["choices"][0]["message"]["content"].strip()
-
-
-def strip_markdown_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
-
-
-def is_valid_markdown_table(text: str) -> bool:
-    rows = [line.strip() for line in text.splitlines() if line.strip().startswith("|")]
-    if len(rows) < 2:
-        return False
-    column_counts = [row.count("|") for row in rows]
-    if len(set(column_counts)) != 1:
-        return False
-    separator = rows[1].replace("|", "").replace(":", "").replace("-", "").strip()
-    return not separator
 
 
 def body_cell_values(text: str) -> list[str]:

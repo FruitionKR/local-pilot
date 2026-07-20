@@ -583,7 +583,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         query_evaluator = FakeQueryEvaluator(
             [
                 QueryEvaluation(
-                    route="unsupported",
+                    route="revise_answer",
                     evidence_relevance=0.2,
                     reason="근거 문장을 충분히 사용하지 않았습니다.",
                     feedback="근거 문장을 직접 반영해 답변하세요.",
@@ -619,6 +619,51 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(len(answer_generator.contexts), 2)
         self.assertIn("근거 문장을 직접 반영해 답변하세요.", answer_generator.contexts[1].answer_context)
         self.assertIn("evaluator 피드백을 반영한 개선 답변입니다.", result.answer.content)
+
+    def test_query_evaluator_returns_unsupported_when_revision_remains_unresolved(self) -> None:
+        pages = [source_page("source:wiki", "LLM Wiki Source")]
+        answer_generator = SequencedAnswerGenerator(["초안 답변입니다. [1]", "수정 답변입니다. [1]"])
+        query_evaluator = FakeQueryEvaluator(
+            [
+                QueryEvaluation(
+                    route="revise_answer",
+                    evidence_relevance=0.8,
+                    reason="인용이 주장과 맞지 않습니다.",
+                    feedback="인용을 직접 근거와 일치시키세요.",
+                ),
+                QueryEvaluation(
+                    route="revise_answer",
+                    evidence_relevance=0.8,
+                    reason="인용 문제가 남아 있습니다.",
+                    feedback="인용을 다시 확인하세요.",
+                ),
+            ]
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({"LLM Wiki Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=answer_generator,
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:wiki.md": (
+                        "---\ndocument_id: doc_wiki\n---\n\n"
+                        "## Key Points\n"
+                        "- LLM Wiki Source는 내부 근거로 답변 생성에 사용됩니다. [B0001]\n"
+                    )
+                }
+            ),
+            query_evaluator=query_evaluator,
+            query_evaluator_max_attempts=2,
+        )
+
+        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?")
+
+        self.assertEqual(len(query_evaluator.calls), 2)
+        self.assertEqual(len(answer_generator.contexts), 2)
+        self.assertIn("인용을 직접 근거와 일치시키세요.", answer_generator.contexts[1].answer_context)
+        self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_unresolved")
+        self.assertNotIn("수정 답변입니다.", result.answer.content)
 
     def test_query_evaluator_can_request_web_fallback_after_reviewing_answer(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

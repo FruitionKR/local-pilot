@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,10 @@ from app.modules.wiki_generation.application.evaluate_generation import (
 from app.modules.wiki_generation.application.ports import (
     JsonCompletionPort,
     PipelineEventPort,
+)
+from app.modules.wiki_generation.application.semantic_patch import (
+    apply_semantic_patch,
+    build_semantic_patch_targets,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ApiSemanticExtractor,
@@ -23,25 +28,52 @@ class SemanticGenerationAdapter:
         packets: list[Any],
         raw_dir: Path | None,
         events: PipelineEventPort,
+        blocks: list[Any] | None = None,
+        patch_system_prompt: str = "",
     ) -> None:
         self.completion = completion
         self.packets = packets
         self.raw_dir = raw_dir
         self.events = events
+        self.blocks = blocks or []
+        self.patch_system_prompt = patch_system_prompt
 
     def generate(
         self,
         system_prompt: str,
         attempt: int,
         source_context: dict[str, Any] | None,
+        previous_notes: list[dict[str, Any]] | None = None,
+        target_block_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         extractor = ApiSemanticExtractor(
             self.completion,
             system_prompt,
             source_context=source_context,
         )
+        previous_by_chunk = {
+            str(note.get("chunk_id")): note
+            for note in previous_notes or []
+            if note.get("chunk_id")
+        }
+        target_blocks = set(target_block_ids or [])
+        targeted_retry = bool(
+            previous_notes is not None
+            and target_block_ids is not None
+            and any(target_blocks.intersection(packet.block_ids) for packet in self.packets)
+        )
         notes = []
         for packet in self.packets:
+            previous_note = previous_by_chunk.get(packet.chunk_id)
+            should_regenerate = not targeted_retry or bool(target_blocks.intersection(packet.block_ids))
+            if not should_regenerate and previous_note is not None:
+                notes.append(previous_note)
+                self.events.emit(
+                    "3. 의미 추출 재사용",
+                    "평가 target과 무관한 패킷의 기존 의미 노트를 유지했습니다.",
+                    {"시도": attempt, "패킷": packet.chunk_id},
+                )
+                continue
             note = extractor.extract(packet)
             notes.append(note)
             if self.raw_dir is not None:
@@ -60,6 +92,88 @@ class SemanticGenerationAdapter:
                 },
             )
         return notes
+
+    def patch(
+        self,
+        attempt: int,
+        previous_notes: list[dict[str, Any]],
+        evaluation: dict[str, Any],
+        target_block_ids: list[str],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+        if not self.patch_system_prompt:
+            return None
+        editable_targets = build_semantic_patch_targets(
+            previous_notes,
+            evaluation,
+            target_block_ids,
+        )
+        if not editable_targets:
+            return None
+        context_blocks = self._patch_context_blocks(target_block_ids)
+        if not context_blocks:
+            return None
+        payload = {
+            "evaluator_issues": evaluation.get("issues", []),
+            "retry_feedback": evaluation.get("retry_feedback", ""),
+            "editable_targets": editable_targets,
+            "source_blocks": [
+                {"block_id": block.block_id, "text": block.text}
+                for block in context_blocks
+            ],
+        }
+        try:
+            patch = self.completion.complete_json(
+                self.patch_system_prompt,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+            )
+        except Exception as exc:
+            self.events.emit(
+                "3-수정. 의미 구조 patch 호출 실패",
+                "Targeted patch LLM 호출에 실패해 해당 chunk 재생성으로 전환합니다.",
+                {"시도": attempt, "오류": str(exc)},
+            )
+            return None
+        if self.raw_dir is not None:
+            write_json(self.raw_dir / f"semantic_patch.attempt{attempt}.json", patch)
+        patched_notes = apply_semantic_patch(
+            previous_notes,
+            patch,
+            editable_targets,
+            [block.block_id for block in context_blocks],
+        )
+        if patched_notes is None:
+            self.events.emit(
+                "3-수정. 의미 구조 patch 실패",
+                "Patch 결과가 허용된 target 또는 source anchor 계약을 벗어나 해당 chunk 재생성으로 전환합니다.",
+                {"시도": attempt, "target blocks": target_block_ids},
+            )
+            return None
+        self.events.emit(
+            "3-수정. 의미 구조 patch",
+            "Evaluator target과 연결된 의미 항목만 수정했습니다.",
+            {
+                "target blocks": target_block_ids,
+                "시도": attempt,
+                "수정 가능 항목 수": len(editable_targets),
+                "operation 수": len(patch.get("operations", [])),
+            },
+        )
+        return patched_notes, list(patch.get("operations", []))
+
+    def _patch_context_blocks(self, target_block_ids: list[str]) -> list[Any]:
+        target_ids = set(target_block_ids)
+        target_indexes = [
+            index
+            for index, block in enumerate(self.blocks)
+            if block.block_id in target_ids
+        ]
+        context_indexes = {
+            neighbor
+            for index in target_indexes
+            for neighbor in (index - 1, index, index + 1)
+            if 0 <= neighbor < len(self.blocks)
+        }
+        return [self.blocks[index] for index in sorted(context_indexes)]
 
 
 class GenerationEvaluatorAdapter:
@@ -93,6 +207,6 @@ class EvaluationArtifactAdapter:
     def write(self, attempt: int, kind: str, evaluation: dict[str, Any]) -> None:
         if not self.enabled:
             return
-        suffix = ".repair" if kind == "repair" else ""
+        suffix = {"repair": ".repair", "retry": ".retry"}.get(kind, "")
         path = ensure_dir(self.out / "raw_llm_outputs" / "wiki_evaluation") / f"attempt_{attempt:02d}{suffix}.json"
         write_json(path, evaluation)

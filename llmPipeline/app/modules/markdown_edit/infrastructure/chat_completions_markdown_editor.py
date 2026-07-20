@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
+from app.core.llm_prompt import with_schema_prompt
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
     EditOperationType,
@@ -85,7 +86,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "markdown": protected.markdown,
             **_read_only_context_payload(scope),
         }
-        system_prompt = _with_schema_prompt(self._system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(self._system_prompt, self._schema_prompt_provider("edit"))
         result = self._complete_edit(system_prompt, payload, scoped_request, protected)
         if not result[1]:
             return result[0]
@@ -119,7 +120,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             **source_range_payload(plan),
             **_read_only_context_payload(scope),
         }
-        system_prompt = _with_schema_prompt(self._source_edit_system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(self._source_edit_system_prompt, self._schema_prompt_provider("edit"))
         result, failures, raw = self._complete_source_range_edit(system_prompt, payload, request, plan)
         if not failures:
             return result
@@ -190,7 +191,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "conversation_summary": request.conversation_summary,
             "reference_context": request.reference_context or {},
         }
-        system_prompt = _with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit"))
         result, failures, raw = self._complete_markdown_create(system_prompt, payload)
         if not failures:
             return result
@@ -242,12 +243,6 @@ def build_markdown_editor() -> MarkdownEditorPort:
         source_edit_system_prompt=source_edit_prompt_path.read_text(encoding="utf-8"),
         context_lines=_int_env("MARKDOWN_EDIT_CONTEXT_LINES", 20),
     )
-
-
-def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
-    if not schema_prompt.strip():
-        return system_prompt
-    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 def _read_only_context_payload(scope: MarkdownTargetScope) -> dict[str, object]:

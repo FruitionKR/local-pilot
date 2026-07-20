@@ -43,6 +43,7 @@ def evaluate_generation(
     evaluation.setdefault("passed", False)
     evaluation.setdefault("retry_recommended", not bool(evaluation.get("passed")))
     evaluation.setdefault("issues", [])
+    evaluation.setdefault("warnings", [])
     evaluation.setdefault("retry_feedback", "")
     apply_generation_evaluation_guards(evaluation, normalized)
     return evaluation

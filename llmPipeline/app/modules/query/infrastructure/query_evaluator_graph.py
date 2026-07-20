@@ -1,5 +1,6 @@
 from langgraph.graph import END, StateGraph
 
+from app.core.langsmith_tracing import configured_langsmith_tracing
 from app.modules.query.application.ports import QueryEvaluatorPort, QueryEventPublisherPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.application.query_evaluator_flow import (
@@ -46,7 +47,8 @@ class LangGraphQueryEvaluatorGraph:
             stop_reason=stop_reason,
             event_publisher=event_publisher,
         )
-        result = graph.compile().invoke(initial_query_evaluation_state(query_context))
+        with configured_langsmith_tracing():
+            result = graph.compile().invoke(initial_query_evaluation_state(query_context))
         return query_evaluation_result(result)
 
 

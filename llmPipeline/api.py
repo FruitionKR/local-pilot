@@ -80,7 +80,7 @@ class PipelineRunIn(BaseModel):
     source_accumulation_system_prompt: str = "prompts/source_accumulation_evaluator.system.md"
     wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     existing_wiki_dir: str | None = None
-    wiki_evaluation_loop: bool = False
+    wiki_evaluation_loop: bool = True
     max_eval_attempts: int = 2
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")
@@ -128,7 +128,7 @@ class ChatWikiRunIn(BaseModel):
     source_accumulation_system_prompt: str = "prompts/source_accumulation_evaluator.system.md"
     wiki_evaluator_system_prompt: str = "prompts/wiki_generation_evaluator.system.md"
     existing_wiki_dir: str | None = None
-    wiki_evaluation_loop: bool = False
+    wiki_evaluation_loop: bool = True
     max_eval_attempts: int = 2
     save_debug_json: bool = Field(default=False, description="True이면 raw LLM output, packet, block_map 같은 디버그 JSON을 저장합니다.")
     log_callback_url: str | None = Field(default=None, description="설정하면 pipeline.log 이벤트가 생길 때마다 이 URL로 JSON POST합니다.")

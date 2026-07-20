@@ -44,7 +44,18 @@ class SemanticGenerationPort(Protocol):
         system_prompt: str,
         attempt: int,
         source_context: JsonDict | None,
+        previous_notes: list[JsonDict] | None = None,
+        target_block_ids: list[str] | None = None,
     ) -> list[JsonDict]:
+        ...
+
+    def patch(
+        self,
+        attempt: int,
+        previous_notes: list[JsonDict],
+        evaluation: JsonDict,
+        target_block_ids: list[str],
+    ) -> tuple[list[JsonDict], list[JsonDict]] | None:
         ...
 
 
@@ -59,7 +70,12 @@ class GenerationEvaluatorPort(Protocol):
 
 
 class GenerationRepairPort(Protocol):
-    def repair(self, normalized: JsonDict, evaluation: JsonDict) -> tuple[JsonDict, list[JsonDict]]:
+    def repair(
+        self,
+        notes: list[JsonDict],
+        normalized: JsonDict,
+        evaluation: JsonDict,
+    ) -> tuple[list[JsonDict], list[str]]:
         ...
 
 

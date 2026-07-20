@@ -90,7 +90,14 @@ class WikiGenerationPipelineTest(unittest.TestCase):
             },
         ]
 
-        def fake_semantic_extraction(_self, system_prompt, attempt, _source_context):
+        def fake_semantic_extraction(
+            _self,
+            system_prompt,
+            attempt,
+            _source_context,
+            _previous_notes=None,
+            _target_block_ids=None,
+        ):
             prompts.append(system_prompt)
             return [{"attempt": attempt}]
 

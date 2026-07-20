@@ -9,12 +9,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from app.modules.wiki_generation.application.section_polish_mapping import (
-    map_polish_output as _map_polish_output,
-)
 from app.modules.wiki_generation.application.run_generation_loop import (
     EvaluationGuardRepairer,
-    RunGenerationLoopUseCase,
+    generation_evaluation_status,
+)
+from app.modules.wiki_generation.application.section_polish_mapping import (
+    map_polish_output as _map_polish_output,
 )
 from app.modules.wiki_generation.application.judge_candidates import (
     judge_concept_update_candidates as _judge_concept_update_candidates,
@@ -32,6 +32,9 @@ from app.modules.wiki_generation.infrastructure.generation_loop_adapters import 
     EvaluationArtifactAdapter,
     GenerationEvaluatorAdapter,
     SemanticGenerationAdapter,
+)
+from app.modules.wiki_generation.infrastructure.wiki_generation_evaluator_graph import (
+    LangGraphWikiGenerationEvaluator,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ApiConceptResolver,
@@ -109,8 +112,14 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--section-polish-system-prompt", default="prompts/section_polish.system.md")
     ap.add_argument("--source-accumulation-system-prompt", default="prompts/source_accumulation_evaluator.system.md")
     ap.add_argument("--wiki-evaluator-system-prompt", default="prompts/wiki_generation_evaluator.system.md")
+    ap.add_argument("--wiki-patch-system-prompt", default="prompts/wiki_generation_patch.system.md")
     ap.add_argument("--existing-wiki-dir", help="Optional existing wiki directory. If set, existing wiki/concepts/*.md pages are used for concept resolution before page generation.")
-    ap.add_argument("--wiki-evaluation-loop", action="store_true", help="Evaluate normalized wiki generation and retry semantic extraction with evaluator feedback when needed")
+    ap.add_argument(
+        "--wiki-evaluation-loop",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Evaluate normalized wiki generation and retry semantic extraction with evaluator feedback when needed",
+    )
     ap.add_argument("--max-eval-attempts", type=int, default=2)
     return ap.parse_args()
 
@@ -244,15 +253,24 @@ def _run_wiki_generation_loop(
     wiki_evaluation_loop: bool,
     max_eval_attempts: int,
     source_context: dict[str, Any] | None = None,
+    wiki_patch_system_prompt: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
-    return RunGenerationLoopUseCase(
-        semantic_generation=SemanticGenerationAdapter(api_client, packets, raw_dir, log),
+    return LangGraphWikiGenerationEvaluator(
+        semantic_generation=SemanticGenerationAdapter(
+            api_client,
+            packets,
+            raw_dir,
+            log,
+            blocks,
+            wiki_patch_system_prompt,
+        ),
         normalizer=normalizer,
         evaluator=GenerationEvaluatorAdapter(api_client, wiki_evaluator_system_prompt, document, blocks),
         repairer=EvaluationGuardRepairer(),
         events=log,
         evaluation_artifacts=EvaluationArtifactAdapter(out, save_debug_json),
-    ).execute(
+        source_block_ids=[block.block_id for block in blocks],
+    ).run(
         semantic_system_prompt=semantic_system_prompt,
         source_context=source_context,
         evaluation_enabled=wiki_evaluation_loop,
@@ -476,6 +494,12 @@ def run_pipeline(args: argparse.Namespace) -> dict:
     section_polish_system_prompt = read_prompt(args.section_polish_system_prompt)
     source_accumulation_system_prompt = read_prompt(args.source_accumulation_system_prompt)
     wiki_evaluator_system_prompt = read_prompt(args.wiki_evaluator_system_prompt)
+    wiki_patch_prompt_path = getattr(
+        args,
+        "wiki_patch_system_prompt",
+        "prompts/wiki_generation_patch.system.md",
+    )
+    wiki_patch_system_prompt = read_prompt(wiki_patch_prompt_path)
     log.emit(
         "프롬프트 로드",
         "시스템 프롬프트를 메모리에 로드했습니다.",
@@ -486,6 +510,7 @@ def run_pipeline(args: argparse.Namespace) -> dict:
             "section_polish": args.section_polish_system_prompt,
             "source_accumulation": args.source_accumulation_system_prompt,
             "wiki_evaluator": args.wiki_evaluator_system_prompt,
+            "wiki_patch": wiki_patch_prompt_path,
         },
     )
 
@@ -589,9 +614,10 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         blocks=blocks,
         out=out,
         save_debug_json=args.save_debug_json,
-        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", False),
+        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
         max_eval_attempts=max_eval_attempts,
         source_context=semantic_source_context,
+        wiki_patch_system_prompt=wiki_patch_system_prompt,
     )
 
     # 4. Backend normalize/merge/mention expansion.
@@ -883,6 +909,8 @@ def run_pipeline(args: argparse.Namespace) -> dict:
         "meaning_clusters": meaning_cluster_artifact,
         "maintenance_summary": maintenance_summary,
         "normalized": normalized,
+        "generation_evaluations": generation_evaluations,
+        "generation_evaluation_status": generation_evaluation_status(generation_evaluations),
         "pipeline_log": str(log.path),
         "log_callback_url": getattr(args, "log_callback_url", None),
         "save_debug_json": args.save_debug_json,

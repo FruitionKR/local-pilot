@@ -35,7 +35,7 @@ QUERY_EVALUATOR_MODE=llm
 QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 
-현재 LLM 호출은 Upstage OpenAI-compatible API를 사용합니다. `LANGSMITH_TRACING=true`이면 LangGraph node 실행과 `upstage_chat_completions` LLM span이 LangSmith project에 기록됩니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+현재 LLM 호출은 Upstage OpenAI-compatible API를 사용합니다. `LANGSMITH_TRACING=true`이고 `LANGSMITH_API_KEY`가 설정되어 있으면 query evaluator와 Wiki ingest evaluator의 LangGraph node 실행, `upstage_chat_completions` LLM span이 LangSmith project에 기록됩니다. API key가 없으면 graph 실행은 유지하고 tracing만 생략합니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
 
 LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 
@@ -48,7 +48,7 @@ LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 
 ### LangGraph Studio에서 evaluator graph 보기
 
-`langgraph.json`은 `llmPipeline/langgraph.json`에 있습니다. 이 설정은 `query_evaluator` graph를 Studio/Agent Server에 노출하고, 환경변수는 `../infra/.env`에서 읽습니다.
+`langgraph.json`은 `llmPipeline/langgraph.json`에 있습니다. 이 설정은 `query_evaluator`, `wiki_ingest_evaluator` graph를 Studio/Agent Server에 노출하고, 환경변수는 `../infra/.env`에서 읽습니다. `wiki_ingest_evaluator` Studio graph는 production과 같은 topology builder를 사용하며 구조와 retry 분기를 시각화·시뮬레이션합니다. 실제 LLM 입출력은 pipeline 실행 후 LangSmith trace에서 확인합니다.
 
 ```bash
 cd llmPipeline
@@ -56,7 +56,7 @@ cd llmPipeline
 ./.venv/bin/langgraph dev
 ```
 
-Studio에서 `query_evaluator` graph를 열고 아래 형태의 입력으로 실행할 수 있습니다.
+Studio에서 `query_evaluator` 또는 `wiki_ingest_evaluator` graph를 선택할 수 있습니다. `query_evaluator`는 아래 형태의 입력으로 실행할 수 있습니다.
 
 ```json
 {
@@ -86,6 +86,61 @@ Studio에서 `query_evaluator` graph를 열고 아래 형태의 입력으로 실
 }
 ```
 
+`wiki_ingest_evaluator`는 production topology와 분기를 재현하는 Studio 시뮬레이션 graph입니다. 다음 입력은 첫 평가에서 `B0002` 문제를 발견해 `targeted_patch`로 이동한 뒤, 두 번째 평가에서 통과하는 흐름을 만든다.
+
+```json
+{
+  "semantic_system_prompt": "원문의 의미 구조를 추출하세요.",
+  "evaluation_enabled": true,
+  "max_attempts": 2,
+  "attempt": 1,
+  "notes": [
+    {
+      "chunk_id": "chunk_0001",
+      "evidence_claims": [
+        {
+          "claim": "하나의 넓은 주장",
+          "anchor_block_ids": ["B0002"]
+        }
+      ]
+    }
+  ],
+  "normalized": {
+    "semantic_notes": [],
+    "concept_ledger": [],
+    "evidence_units": [
+      {
+        "evidence_id": "ev_0001",
+        "anchor_reference_ids": ["B0002"]
+      }
+    ]
+  },
+  "evaluation_sequence": [
+    {
+      "passed": false,
+      "retry_recommended": true,
+      "retry_feedback": "ev_0001을 원자 주장으로 분리하세요.",
+      "scores": {"overall": 0.6},
+      "issues": [
+        {
+          "type": "evidence_too_broad",
+          "target": ["ev_0001"]
+        }
+      ]
+    },
+    {
+      "passed": true,
+      "retry_recommended": false,
+      "retry_feedback": "",
+      "scores": {"overall": 0.9},
+      "issues": []
+    }
+  ]
+}
+```
+
+여기서 `notes`와 `normalized`는 의미 추출·정규화 결과를 대신하고, `evaluation_sequence`는 evaluator가 차례로 반환할 결과를 대신한다. Studio 출력의 `evaluations`에서 분기별 평가와 `retry_mode`를 확인할 수 있다. 실제 문서·source block·모델 입출력으로 실행하려면 pipeline을 실행하고 LangSmith trace를 확인한다.
+
 ### CLI 실행
 
 `llmPipeline` 폴더에서 실행합니다.
@@ -97,7 +152,6 @@ python run_lab.py \
   --mode api \
   --source-page-mode section-polish \
   --concept-page-mode skeleton \
-  --wiki-evaluation-loop \
   --max-eval-attempts 2 \
   --env-file ../infra/.env
 ```
@@ -106,6 +160,7 @@ python run_lab.py \
 
 - `source-page-mode=auto`: API 모드에서는 `section-polish`
 - `concept-page-mode=auto`: `skeleton`
+- Wiki evaluator loop는 기본 활성화되며, CLI에서 끄려면 `--no-wiki-evaluation-loop`를 사용
 - refs는 `B0001` 같은 짧은 block id로 통일
 - 중간 raw/debug JSON은 저장하지 않음
 - 디버깅이 필요하면 `--save-debug-json` 사용
@@ -178,18 +233,29 @@ FastAPI 서버입니다.
 - CLI/API 인자 해석
 - `.env` 로드와 OpenAI-compatible API 설정
 - block extraction, packet build, concept resolution, page assembly 단계 연결
-- 의미 추출·평가·보정·재시도 application use case에 infrastructure adapter 주입
+- 의미 추출·평가·보정·재시도 LangGraph에 infrastructure adapter 주입
 - `pipeline.log`, `normalized.json`, `manifest.json`, `wiki/links.json`, `review_report.md` 생성
 - `--save-debug-json`이 켜진 경우에만 raw LLM output과 packet/debug JSON 저장
 
 ### `app/modules/wiki_generation/application/run_generation_loop.py`
 
-의미 추출 결과의 정규화와 선택적 평가·보정·재시도 순서를 담당합니다.
+Wiki 생성 evaluator의 종료 조건, retry prompt, 명확한 observation 보정 정책을 담당합니다.
 
-- LLM, 파일, callback 구현을 application port 뒤에서 호출
-- evaluator feedback을 다음 의미 추출 prompt에 반영
-- 명확한 observation 보정 후 재평가
-- 최대 시도 횟수와 종료 조건 적용
+- evaluator feedback을 다음 의미 추출 prompt에 반영하는 정책 제공
+- 최대 시도 횟수와 종료 조건 제공
+- 명확한 observation 보정 정책 제공
+
+### `app/modules/wiki_generation/infrastructure/wiki_generation_evaluator_graph.py`
+
+Wiki ingest의 의미 추출·정규화·평가·보정·재시도를 LangGraph로 실행합니다.
+
+- `semantic_generation`, `normalize`, `evaluate`, `repair`, `reevaluate`, `prepare_retry`, `targeted_patch` node 구성
+- evaluator 통과 또는 최대 시도 도달 시 종료
+- actionable `issues`가 있으면 `passed=false`로 강제하고 target block 주변 문맥과 기존 target 항목만 사용해 patch·재평가
+- patch 생성이나 검증에 실패하면 관련 chunk 재생성, target을 해석하지 못하면 전체 재생성으로 fallback
+- 통과를 막지 않는 선택적 제안은 `warnings`로 분리
+- 시도별 상세 평가 결과를 pipeline manifest와 DB run manifest에 보관
+- LangSmith 설정이 유효하면 graph node와 하위 LLM span 기록
 
 ### `app/modules/wiki_generation/application/judge_candidates.py`
 
@@ -204,8 +270,10 @@ section/mention evidence candidate의 application 판단 정책입니다.
 generation loop port의 실제 LLM·debug artifact adapter입니다.
 
 - semantic packet별 LLM 추출
+- evaluator target 항목의 `replace/remove/add` patch 생성과 source anchor 검증
 - evaluator completion 호출
 - `--save-debug-json` 평가 산출물 기록
+- retry를 실행한 경우 `raw_llm_outputs/wiki_evaluation/attempt_NN.retry.json`에 최종 `retry_mode`와 적용한 patch operation 기록
 
 ### `app/modules/wiki_generation/infrastructure/pipeline_log.py`
 

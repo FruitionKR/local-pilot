@@ -4,33 +4,51 @@ from app.modules.wiki_generation.application.evaluation_guards import (
     apply_generation_evaluation_guards,
     repair_normalized_from_evaluation,
 )
+from app.modules.wiki_generation.application.run_generation_loop import (
+    EvaluationGuardRepairer,
+)
 
 
 class EvaluationGuardsTest(unittest.TestCase):
-    def test_marks_medium_generation_issues_as_retryable(self) -> None:
+    def test_marks_every_actionable_generation_issue_as_retryable(self) -> None:
         evaluation = {
             "passed": True,
             "retry_recommended": False,
             "scores": {"overall": 0.95},
-            "issues": [],
+            "issues": [
+                {
+                    "type": "evidence_too_broad",
+                    "severity": "low",
+                    "target": ["ev_0001"],
+                    "feedback": "근거 범위를 좁히세요.",
+                }
+            ],
             "retry_feedback": "",
         }
-        normalized = {
-            "concept_ledger": [
-                {"slug": "citation-marker"},
-                {"slug": "retrieval-rank"},
-                {"slug": "source-block"},
-            ],
-            "observations": [],
-        }
+        normalized = {"concept_ledger": [], "observations": []}
 
         apply_generation_evaluation_guards(evaluation, normalized)
 
         self.assertFalse(evaluation["passed"])
         self.assertTrue(evaluation["retry_recommended"])
         self.assertEqual(evaluation["scores"]["overall"], 0.74)
-        self.assertEqual(evaluation["issues"][0]["type"], "over_fragmented_concept")
-        self.assertIn("citation marker", evaluation["retry_feedback"])
+        self.assertEqual(evaluation["issues"][0]["type"], "evidence_too_broad")
+        self.assertIn("근거 범위를 좁히세요.", evaluation["retry_feedback"])
+
+    def test_keeps_warning_only_evaluation_passed(self) -> None:
+        evaluation = {
+            "passed": True,
+            "retry_recommended": False,
+            "scores": {"overall": 0.9},
+            "issues": [],
+            "warnings": [{"type": "optional_improvement"}],
+            "retry_feedback": "",
+        }
+
+        apply_generation_evaluation_guards(evaluation, {"concept_ledger": [], "observations": []})
+
+        self.assertTrue(evaluation["passed"])
+        self.assertFalse(evaluation["retry_recommended"])
 
     def test_repairs_broken_and_duplicate_observations(self) -> None:
         normalized = {
@@ -103,6 +121,61 @@ class EvaluationGuardsTest(unittest.TestCase):
         self.assertEqual(repaired["observations"][0]["related_concept_hints"], ["temperature", "back-emf"])
         self.assertEqual(len(repaired["semantic_notes"][0]["observations"]), 0)
         self.assertEqual(len(operations), 2)
+
+    def test_repairer_removes_observation_from_raw_notes_and_normalized_result(self) -> None:
+        notes = [
+            {
+                "chunk_id": "chunk_0001",
+                "observations": [
+                    {
+                        "type": "source_claim",
+                        "title": "깨진 관찰",
+                        "summary": "짧음",
+                        "claims": [],
+                        "related_concept_hints": [],
+                        "anchor_block_ids": ["B0001"],
+                    }
+                ],
+            }
+        ]
+        normalized_observation = {
+            "type": "source_claim",
+            "title": "깨진 관찰",
+            "query_text": None,
+            "summary": "짧음",
+            "claims": [],
+            "related_concept_hints": [],
+            "anchor_reference_ids": ["B0001"],
+            "observation_id": "O001",
+            "source_document_id": "doc-1",
+        }
+        normalized = {
+            "observations": [normalized_observation],
+            "semantic_notes": [
+                {
+                    "chunk_id": "chunk_0001",
+                    "observations": [
+                        {
+                            key: value
+                            for key, value in normalized_observation.items()
+                            if key not in {"observation_id", "source_document_id"}
+                        }
+                    ],
+                }
+            ],
+        }
+        evaluation = {
+            "issues": [{"type": "broken_observation", "target": ["O001"]}]
+        }
+
+        repaired_notes, operations = EvaluationGuardRepairer().repair(
+            notes,
+            normalized,
+            evaluation,
+        )
+
+        self.assertEqual(repaired_notes[0]["observations"], [])
+        self.assertTrue(operations)
 
 
 if __name__ == "__main__":

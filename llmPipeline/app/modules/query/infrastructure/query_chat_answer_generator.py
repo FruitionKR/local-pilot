@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
+from app.core.llm_prompt import with_schema_prompt
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
@@ -40,7 +41,7 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         content = self._client.complete_text(
-            _with_schema_prompt(self._system_prompt, self._schema_prompt_provider("query")),
+            with_schema_prompt(self._system_prompt, self._schema_prompt_provider("query")),
             context.answer_context,
         ).strip()
         return GeneratedAnswer(content=content)
@@ -50,12 +51,6 @@ def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
     return QueryChatAnswerGenerator(
         ChatCompletionsJsonClient(_config_from_env()),
     )
-
-
-def _with_schema_prompt(system_prompt: str, schema_prompt: str) -> str:
-    if not schema_prompt.strip():
-        return system_prompt
-    return f"{system_prompt.rstrip()}\n\n{schema_prompt.strip()}\n"
 
 
 def _config_from_env() -> ChatClientConfig:

@@ -6,6 +6,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from app.modules.document_restoration.domain.markdown_text import (
+    is_valid_markdown_table,
+    strip_markdown_fence,
+)
 from app.modules.document_restoration.domain.text_quality import (
     looks_glyph_encoded as generic_looks_glyph_encoded,
 )
@@ -252,27 +256,6 @@ def bbox_overlap_ratio(candidate: tuple[float, float, float, float], target: tup
 
 def bbox_match_score(first: tuple[float, float, float, float], second: tuple[float, float, float, float]) -> float:
     return max(bbox_overlap_ratio(first, second), bbox_overlap_ratio(second, first))
-
-
-def strip_markdown_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    lines = stripped.splitlines()
-    if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
-
-
-def is_valid_markdown_table(text: str) -> bool:
-    rows = [line.strip() for line in text.splitlines() if line.strip().startswith("|")]
-    if len(rows) < 2:
-        return False
-    column_counts = [row.count("|") for row in rows]
-    if len(set(column_counts)) != 1:
-        return False
-    separator = rows[1].replace("|", "").replace(":", "").replace("-", "").strip()
-    return not separator
 
 
 def process_heading(block: dict[str, Any]) -> list[str]:
