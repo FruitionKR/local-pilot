@@ -4,6 +4,15 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-21
+
+### fix: pipeline startup의 DB 생성 책임 제거
+
+- FastAPI lifespan에서 `CREATE TABLE`을 실행하지 않고 Flyway 필수 테이블 존재 여부만 확인하도록 변경
+- Python의 공용·파이프라인·Wiki schema DDL과 `POST /admin/init-db` 제거
+- Flyway가 적용되지 않은 환경은 누락 테이블을 표시하며 startup 단계에서 fail-fast
+- API 계약·schema readiness 테스트와 문서 복원 제외 전체 테스트 `349 passed`, `28 subtests passed`
+
 ## 2026-07-20
 
 ### fix: 앱 시작 시 DB 스키마 자동 초기화

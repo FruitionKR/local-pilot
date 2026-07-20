@@ -24,9 +24,6 @@ from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
     markdown_section as _markdown_section,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
-from app.modules.wiki_ingestion.infrastructure.postgres_wiki_schema import (
-    initialize_wiki_schema,
-)
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
     persist_wiki_outputs as _persist_wiki_outputs,
 )
@@ -72,10 +69,37 @@ def connect() -> psycopg.Connection:
     return psycopg.connect(database_url(), row_factory=dict_row)
 
 
-def init_db() -> None:
-    """Create pipeline-owned tables and a Spring-compatible documents table if absent."""
+REQUIRED_TABLES = (
+    "documents",
+    "wiki_pages",
+    "document_wiki_links",
+    "source_blocks",
+    "wiki_page_links",
+    "pipeline_runs",
+    "wiki_page_embeddings",
+    "wiki_embedding_vectors",
+    "wiki_embedding_units",
+    "wiki_schemas",
+)
+
+
+def verify_schema() -> None:
+    """Flyway가 pipeline 필수 테이블을 모두 적용했는지 확인한다."""
     with connect() as conn:
-        initialize_wiki_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = ANY(%s)
+            """,
+            (list(REQUIRED_TABLES),),
+        ).fetchall()
+    existing_tables = {row["table_name"] for row in rows}
+    missing_tables = sorted(set(REQUIRED_TABLES) - existing_tables)
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(f"Flyway migration is required; missing tables: {missing}")
 
 
 def get_document(document_id: str) -> dict | None:

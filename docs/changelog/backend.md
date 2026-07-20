@@ -6,6 +6,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-21
+
+### fix: 파이프라인 스키마를 Flyway 관리 대상으로 통합
+
+**배경**
+
+FastAPI lifespan이 공용·파이프라인 테이블을 직접 생성해, Backend Flyway보다 먼저 실행되면 baseline 판정과 migration 순서가 깨질 수 있었습니다.
+
+**변경된 것**
+
+- `V4__add_pipeline_schema.sql`에서 `pipeline_runs`, 임베딩 테이블, `wiki_schemas`를 생성하고 버전을 관리합니다.
+- 기존 Python 초기화로 테이블이 생성된 개발 DB도 수용하도록 비파괴 migration으로 작성했습니다.
+- Backend 통합 테스트에서 Flyway 적용 후 파이프라인 테이블 5개의 존재를 확인합니다.
+
+**검증**
+
+- 격리된 PostgreSQL에서 V1 → V4 순차 적용 및 V4 재실행
+- `BackendApplicationTests` 실행 시도: 로컬 Java runtime 부재로 미실행
+
 ## 2026-07-20
 
 ### feat: 워크스페이스 초기 노트 자동 생성
