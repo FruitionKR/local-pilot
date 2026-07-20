@@ -12,6 +12,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
+from app.core.error_text import truncate_error
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     MATERIALIZED_CORE_RELATIONS,
     cluster_relation_items as _cluster_relation_items,
@@ -20,6 +21,7 @@ from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     parse_active_cluster_lint as _parse_active_cluster_lint,
     refs_in_text as _refs_in_text,
 )
+from app.modules.wiki_ingestion.infrastructure.concept_evidence import append_concept_evidence
 from app.modules.wiki_ingestion.infrastructure.embedding_units import (
     clean_unit_text as _clean_unit_text,
     extract_embedding_units as _extract_embedding_units,
@@ -38,6 +40,7 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     source_summary as _source_summary,
     stored_manifest as _stored_manifest,
 )
+from app.modules.wiki_ingestion.infrastructure.wiki_lint_report import render_lint_log_markdown
 
 
 SOURCE_RELATED_THRESHOLD = 0.75
@@ -288,7 +291,7 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
-    error_message = _truncate_error(error)
+    error_message = truncate_error(error)
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         if row and row["document_id"]:
@@ -421,7 +424,8 @@ def lint_wiki_workspace(
     write_log: bool = True,
 ) -> dict[str, Any]:
     active_path = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
-    log_path = f"wiki/{user_id}/{workspace_id}/logs/{_today_iso()}.md"
+    lint_date = _today_iso()
+    log_path = f"wiki/{user_id}/{workspace_id}/logs/{lint_date}.md"
     active_markdown = _read_optional_text_object(active_path)
     clusters = _parse_active_cluster_lint(active_markdown)
     source_refs = _unique_keep_order(
@@ -501,7 +505,7 @@ def lint_wiki_workspace(
     if write_log:
         existing_log = _read_optional_text_object(log_path)
         separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
-        write_text_object(log_path, f"{existing_log}{separator}{_lint_log_markdown(result)}")
+        write_text_object(log_path, f"{existing_log}{separator}{render_lint_log_markdown(result, lint_date)}")
     return result
 
 
@@ -649,7 +653,7 @@ def _merge_promotion_into_existing_concept(
         }
         for claim in claims
     ]
-    updated_markdown = _append_concept_evidence(markdown, updates)
+    updated_markdown = append_concept_evidence(markdown, updates)
     if updated_markdown == markdown:
         return True
     write_text_object(row["markdown_uri"], updated_markdown)
@@ -754,68 +758,6 @@ def _append_archived_clusters(user_id: str, workspace_id: str, sections: list[st
     existing = _read_optional_text_object(archive_path)
     separator = "\n\n" if existing and not existing.endswith("\n\n") else ""
     write_text_object(archive_path, f"{existing}{separator}" + "\n\n".join(sections).rstrip() + "\n")
-
-
-def _lint_log_markdown(result: dict[str, Any]) -> str:
-    lines = [
-        f"## {_today_iso()} lint: {result['workspace_id']}",
-        "",
-        f"user: {result['user_id']}",
-        f"workspace: {result['workspace_id']}",
-        f"active: {result['active_path']}",
-        "",
-        "### Orphan Risks",
-    ]
-    orphan_refs = result.get("orphan_refs", [])
-    lines.extend(f"- {ref}" for ref in orphan_refs) if orphan_refs else lines.append("- orphan risk 없음")
-    lines.extend(["", "### Promotion Queue"])
-    promotions = result.get("promotion_candidates", [])
-    lines.extend(f"- cluster:{cluster_id}" for cluster_id in promotions) if promotions else lines.append("- promotion candidate 없음")
-    lines.extend(["", "### Needs Review"])
-    needs_review = result.get("needs_review", [])
-    lines.extend(f"- cluster:{cluster_id}" for cluster_id in needs_review) if needs_review else lines.append("- needs_review 없음")
-    lines.extend(["", "### Relation Candidate Queue"])
-    relation_candidates = result.get("relation_candidates", [])
-    if relation_candidates:
-        for item in relation_candidates:
-            lines.append(f"- cluster:{item.get('cluster_id')} -> {item.get('target')}")
-            lines.append(f"  relation: {item.get('relation')}")
-            lines.append(f"  evidence: [{', '.join(item.get('evidence', []))}]")
-    else:
-        lines.append("- relation candidate 없음")
-    lines.extend(["", "### Invalid Relation Candidates"])
-    invalid_relations = result.get("invalid_relations", [])
-    if invalid_relations:
-        for item in invalid_relations:
-            lines.append(f"- cluster:{item.get('cluster_id')} -> {item.get('target') or '-'}")
-            lines.append(f"  relation: {item.get('relation') or '-'}")
-            lines.append(f"  evidence: [{', '.join(item.get('evidence', []))}]")
-            lines.append(f"  missing: [{', '.join(item.get('missing', []))}]")
-    else:
-        lines.append("- invalid relation candidate 없음")
-    lines.extend(["", "### Invalid Promotions"])
-    invalid_promotions = result.get("invalid_promotions", [])
-    if invalid_promotions:
-        for item in invalid_promotions:
-            lines.append(f"- cluster:{item.get('cluster_id')}")
-            lines.append(f"  reason: {item.get('reason')}")
-    else:
-        lines.append("- invalid promotion 없음")
-    lines.extend(["", "### Materialized Changes"])
-    materialized_promotions = result.get("materialized_promotions", [])
-    merged_promotions = result.get("merged_promotions", [])
-    materialized_relations = result.get("materialized_relations", [])
-    if materialized_promotions:
-        for item in materialized_promotions:
-            lines.append(f"- promoted: cluster:{item.get('cluster_id')} -> concept:{item.get('concept_slug')}")
-    if merged_promotions:
-        for item in merged_promotions:
-            lines.append(f"- merged: cluster:{item.get('cluster_id')} -> concept:{item.get('concept_slug')}")
-    if materialized_relations:
-        for item in materialized_relations:
-            lines.append(f"- linked: concept:{item.get('from')} -[{item.get('relation')}]-> concept:{item.get('to')}")
-    lines.append("- updated: logs/{yyyy-mm-dd}.md")
-    return "\n".join(lines) + "\n"
 
 
 def _persist_wiki_outputs(conn: psycopg.Connection, document_id: str, manifest: dict[str, Any]) -> list[str]:
@@ -1066,57 +1008,11 @@ def _apply_concept_update_decisions(
         markdown = _read_optional_text_object(row["markdown_uri"])
         if not markdown:
             continue
-        updated_markdown = _append_concept_evidence(markdown, updates)
+        updated_markdown = append_concept_evidence(markdown, updates)
         if updated_markdown == markdown:
             continue
         write_text_object(row["markdown_uri"], updated_markdown)
         _persist_embedding_units(conn, row["id"], document_id, updated_markdown)
-
-
-def _append_concept_evidence(markdown: str, updates: list[dict[str, Any]]) -> str:
-    evidence_lines = [_concept_evidence_line(update) for update in updates]
-    evidence_lines = [line for line in evidence_lines if line]
-    if not evidence_lines:
-        return markdown
-    lines = markdown.splitlines()
-    heading_index = next((index for index, line in enumerate(lines) if line.strip() == "## Evidence"), -1)
-    if heading_index < 0:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.extend(["## Evidence", *evidence_lines])
-        return "\n".join(lines).rstrip() + "\n"
-    end_index = heading_index + 1
-    while end_index < len(lines) and not lines[end_index].startswith("## "):
-        end_index += 1
-    existing = {line.strip() for line in lines[heading_index + 1 : end_index] if line.strip()}
-    if "- 아직 연결된 evidence claim 없음" in existing:
-        remove_index = next(
-            (index for index in range(heading_index + 1, end_index) if lines[index].strip() == "- 아직 연결된 evidence claim 없음"),
-            -1,
-        )
-        if remove_index >= 0:
-            lines.pop(remove_index)
-            end_index -= 1
-            existing.remove("- 아직 연결된 evidence claim 없음")
-    insert_at = end_index
-    for evidence_line in evidence_lines:
-        if evidence_line.strip() in existing:
-            continue
-        lines.insert(insert_at, evidence_line)
-        insert_at += 1
-        existing.add(evidence_line.strip())
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _concept_evidence_line(update: dict[str, Any]) -> str:
-    claim = str(update.get("claim") or "").strip()
-    if not claim:
-        return ""
-    refs = [str(ref) for ref in update.get("refs", []) if ref]
-    suffix = f" [{', '.join(refs)}]" if refs else ""
-    claim_id = str(update.get("claim_id") or "").strip()
-    prefix = f"{claim_id}: " if claim_id else ""
-    return f"- {prefix}{claim}{suffix}"
 
 
 def _refresh_source_related_links(conn: psycopg.Connection, user_id: str, workspace_id: str) -> None:
@@ -1264,13 +1160,6 @@ def _upsert_wiki_page(
         """,
         (page_id, page_type, title, slug, summary, markdown_uri, user_id, workspace_id),
     )
-
-
-def _truncate_error(error: str, limit: int = 240) -> str:
-    text = str(error)
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
 
 
 def _upsert_document_wiki_link(

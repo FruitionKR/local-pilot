@@ -4,7 +4,184 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-19
+
+### fix: Wiki evaluator 응답 형식 검증
+
+- 잘못된 `scores`, `issues`, `warnings`, 상태 필드를 안전한 평가 실패로 변환해 재시도 경로 유지
+- 누락 필드의 기존 기본값 계약을 보존하고 전체 테스트 368개와 28개 subtest 통과
+
+---
+
+### refactor: 문서 복원 dead contract 제거
+
+- 항상 `False`를 반환하던 numeric header predicate와 무의미한 부정 조건 제거
+- equation number evidence 검사에서 사용하지 않던 `markdown` 인자 제거
+
+---
+
+### refactor: SemanticNormalizer 미사용 인덱스 제거
+
+- 생성 후 사용되지 않던 `source_reference_id` 기반 `by_ref_id` 인덱스 제거
+- 실제 anchor 검증에 사용하는 `by_block_id` 계약은 유지
+
+---
+
+### refactor: Wiki graph 폐기 설정 제거
+
+- 사용되지 않던 `min_node_score` 생성자 인자와 테스트 전달값 제거
+- seed 유효성 검사 뒤 다시 읽히지 않던 최고 점수 갱신 제거
+
+---
+
+### fix: Wiki graph 깊이 제한 종료 사유 구분
+
+- 최대 깊이 node에 확장 가능한 후보가 있을 때만 `max_depth` 종료로 기록
+- graph가 제한 깊이에서 자연 종료하면 `no_frontier`를 유지하고 query spec을 현재 계약과 동기화
+
+---
+
+### fix: Wiki graph 최대 탐색 깊이 적용
+
+- `TraverseWikiGraphUseCase.max_depth`에 도달한 node에서 frontier 확장을 중단
+- retrieval summary가 실제 방문 깊이를 표시하도록 수정하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
 ## 2026-07-18
+
+### refactor: Markdown table header 조립 분리
+
+- 표 복원 함수에서 계층형 header 해석과 Markdown row escaping을 순수 함수로 분리
+- body 판정과 출력 계약을 유지하고 Document evaluation 테스트 36개 통과
+
+---
+
+### refactor: Wiki graph traversal 경로 조립 통합
+
+- 신규 방문과 재방문 분기에 중복된 `TraversalEdge`·`TraversalPath` 생성을 공통 함수로 통합
+- 탐색·점수·stop reason 계약을 유지하고 Query 테스트 62개와 4개 subtest 통과
+
+---
+
+### refactor: semantic note anchor 검증 통합
+
+- `_normalize_single_note`의 내부 anchor 변환 함수를 기존 `_anchor_refs`와 통합
+- unknown block 경고, limit, 중복 제거 순서를 유지하고 Wiki generation 테스트 69개 통과
+
+---
+
+### refactor: meaning-cluster ingest 로그 렌더링 분리
+
+- artifact assembler에 섞여 있던 ingest 로그 Markdown 생성을 `meaning_cluster_log.py`의 순수 함수로 분리
+- 로그 경로와 제목의 날짜를 일치시키고 Wiki generation 테스트 69개 통과
+
+---
+
+### refactor: Markdown output validator 규칙 분리
+
+- 단일 함수에 모여 있던 edit goal 형상, 요청 문법, 보호 콘텐츠, 축약 검증을 명시적 규칙 함수로 분리
+- 오류 수집 순서와 외부 계약을 유지하고 Markdown edit 테스트 28개 통과
+
+---
+
+### refactor: concept evidence Markdown 갱신 분리
+
+- concept 문서의 Evidence 섹션 추가·placeholder 제거·중복 방지 로직을 `concept_evidence.py`로 분리
+- repository의 DB orchestration과 Markdown 변환 책임을 분리하고 Wiki ingestion 테스트 19개 통과
+
+---
+
+### refactor: Wiki lint report 렌더링 분리
+
+- PostgreSQL repository에 섞여 있던 lint Markdown 렌더링을 `wiki_lint_report.py`로 분리
+- 로그 경로와 제목에 같은 날짜를 사용하도록 고정하고 Wiki ingestion 테스트 19개 통과
+
+---
+
+### refactor: concept resolution ledger 병합 분리
+
+- incoming concept의 canonical slug 병합·alias·근거 합산을 `merge_concept_ledger`로 분리
+- hint resolution과 evidence 연결 계약을 유지하고 Wiki generation 테스트 68개 통과
+
+---
+
+### refactor: local document 평가 계획 분리
+
+- block 분류, table evidence, fallback chunk와 batch 제한을 명시적 `EvaluationPlan`으로 분리
+- 모델 호출과 resume 순서를 유지하고 문서 평가 테스트 36개 통과
+
+---
+
+### refactor: 문서 복원 recovery 단계 분리
+
+- `recover_block`에서 deterministic 후보 선택, SLLM system message 결정, 결과 파일 저장 단계를 분리
+- retry와 fallback 순서를 보존하고 문서 복원 테스트 41개 통과
+
+---
+
+### refactor: Query evaluator 후속 route 처리 분리
+
+- `AnswerQueryUseCase.execute`에서 evaluator 결과에 따른 답변 대체·evidence 재번호·종료 사유 변경을 별도 메서드로 분리
+- web fallback 조기 반환 계약을 유지하고 Query 테스트 25개와 4개 subtest 통과
+
+---
+
+### refactor: 문서 복원 deterministic validator 분리
+
+- 복원 결과의 공통 orchestration에서 table·equation 전용 오류 수집 규칙을 분리
+- 오류 문구와 판정 순서를 보존하고 관련 테스트 13개 통과
+
+---
+
+### refactor: repository 오류 메시지 길이 제한 통합
+
+- Wiki ingestion과 embedding repository의 240자 오류 저장 규칙을 `app.core.error_text`로 통합
+- 관련 core·Wiki embedding·ingestion 테스트 23개 통과
+
+---
+
+### refactor: Vision 복원 evidence clipping 규칙 통합
+
+- figure 복원과 block review가 공유하는 evidence 길이 제한과 clipping marker를 domain 함수로 통합
+- 관련 문서 복원 테스트 10개 통과
+
+---
+
+### refactor: 문서 복원 좌표 판정과 Docling I/O 공통화
+
+**배경**
+
+문서 복원 단계마다 Markdown brace, bbox 겹침, Docling provenance와 PDF 경로를 같은 규칙으로 판정하면서 구현을 중복하고 있었습니다.
+
+**변경된 것**
+
+- Markdown brace 균형 검사를 문서 복원 domain 함수로 통합
+- bbox 중심·방향성 겹침·대칭 match score 계산을 순수 domain 함수로 분리
+- Docling JSON 로딩, PDF 탐색, provenance bbox 변환을 전용 infrastructure 모듈로 분리
+
+**검증**
+
+- 문서 복원과 Wiki ingestion 관련 테스트 52개 통과
+
+---
+
+### refactor: Wiki ingestion unit text 정규화 통합
+
+**배경**
+
+active cluster claim과 embedding unit이 source reference와 Markdown marker를 같은 규칙으로 제거하면서도 구현을 각각 유지하고 있었습니다.
+
+**변경된 것**
+
+- unit text 정규화 규칙을 `wiki_ingestion.domain.unit_text`로 이동
+- active cluster와 embedding unit 생성이 동일한 정규화 함수를 사용하도록 변경
+
+**검증**
+
+- Wiki ingestion unit text와 concept index 관련 테스트 통과
+
+---
 
 ### refactor: 반복 검증과 Markdown 정규화 공통화
 

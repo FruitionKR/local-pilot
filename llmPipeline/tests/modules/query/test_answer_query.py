@@ -198,7 +198,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
             source_candidate_limit=1,
             event_publisher=event_publisher,
-            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+            traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
         result = use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
@@ -316,7 +316,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             text_search=EmptyTextSearch(),
             answer_generator=RecordingAnswerGenerator(),
             source_candidate_limit=1,
-            traverse_wiki_graph=TraverseWikiGraphUseCase(min_node_score=0.10),
+            traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
         result = use_case.execute("RAG랑 위키 그래프가 어떻게 이어져?")
@@ -1061,7 +1061,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
                 self.assertEqual(result.related_pages[0].page.id, "source:target")
 
-    def test_traverses_without_configured_max_depth_limit(self) -> None:
+    def test_stops_traversal_at_configured_max_depth(self) -> None:
         pages = [
             source_page("source:seed", "Seed Source"),
             concept_page("concept:one", "Concept One"),
@@ -1075,30 +1075,34 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             WikiPageLink("concept:two", "concept:three", "concept_related_to", confidence=0.99),
             WikiPageLink("concept:three", "concept:four", "concept_related_to", confidence=0.99),
         ]
-        use_case = AnswerQueryUseCase(
-            wiki_repository=InMemoryWikiRepository(pages, links),
-            embedding_search=ScoreSearch(
-                {
-                    "Seed Source": 0.95,
-                    "Concept One": 0.95,
-                    "Concept Two": 0.95,
-                    "Concept Three": 0.95,
-                    "Concept Four": 0.95,
-                }
-            ),
-            text_search=EmptyTextSearch(),
-            answer_generator=RecordingAnswerGenerator(),
-            source_candidate_limit=1,
-            traverse_wiki_graph=TraverseWikiGraphUseCase(max_depth=2, min_node_score=0.10),
+        graph_context, _paths, stop_reason = TraverseWikiGraphUseCase(max_depth=2).execute(
+            pages_by_id={page.id: page for page in pages},
+            links=links,
+            seed_page_ids=["source:seed"],
+            node_scores={page.id: 0.95 for page in pages},
         )
 
-        result = use_case.execute("깊이 제한 해제 확인")
-
-        related_ids = {item.page.id for item in result.related_pages}
+        related_ids = {item.page.id for item in graph_context.nodes}
         self.assertIn("concept:two", related_ids)
-        self.assertIn("concept:three", related_ids)
-        self.assertIn("concept:four", related_ids)
-        self.assertEqual(result.retrieval_summary.max_depth, 0)
+        self.assertNotIn("concept:three", related_ids)
+        self.assertNotIn("concept:four", related_ids)
+        self.assertEqual(max(item.depth for item in graph_context.nodes), 2)
+        self.assertEqual(stop_reason, "max_depth")
+
+    def test_reports_no_frontier_when_graph_ends_at_max_depth(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+        ]
+
+        _graph_context, _paths, stop_reason = TraverseWikiGraphUseCase(max_depth=1).execute(
+            pages_by_id={page.id: page for page in pages},
+            links=[WikiPageLink("source:seed", "concept:one", "source_mentions_concept")],
+            seed_page_ids=["source:seed"],
+            node_scores={page.id: 0.95 for page in pages},
+        )
+
+        self.assertEqual(stop_reason, "no_frontier")
 
     def test_rejects_blank_question(self) -> None:
         use_case = AnswerQueryUseCase(

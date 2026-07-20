@@ -151,42 +151,13 @@ def apply_concept_resolutions(
     existing_by_slug = {concept["slug"]: concept for concept in existing_concepts if concept.get("slug")}
     resolution_by_slug = {item["incoming_slug"]: item for item in resolutions}
     slug_map = {concept["slug"]: resolution_by_slug.get(concept["slug"], {}).get("canonical_slug", concept["slug"]) for concept in ledger}
+    result["concept_ledger"] = merge_concept_ledger(
+        ledger,
+        resolution_by_slug,
+        slug_map,
+        existing_by_slug,
+    )
 
-    merged_by_slug: dict[str, dict[str, Any]] = {}
-    for concept in ledger:
-        original_slug = concept["slug"]
-        resolution = resolution_by_slug.get(original_slug, {})
-        canonical_slug = slug_map.get(original_slug, original_slug)
-        target = merged_by_slug.get(canonical_slug)
-        if target is None:
-            target = copy.deepcopy(concept)
-            target["slug"] = canonical_slug
-            if resolution.get("decision") == "merge_into" and canonical_slug in existing_by_slug:
-                existing = existing_by_slug[canonical_slug]
-                target["title"] = existing.get("title") or target.get("title")
-                if existing.get("summary") and not target.get("definition"):
-                    target["definition"] = existing["summary"]
-            target["aliases"] = unique_keep_order(target.get("aliases", []) + [original_slug])
-            merged_by_slug[canonical_slug] = target
-        else:
-            target["aliases"] = unique_keep_order(target.get("aliases", []) + concept.get("aliases", []) + [concept.get("title"), original_slug])
-            target["anchor_reference_ids"] = unique_keep_order(target.get("anchor_reference_ids", []) + concept.get("anchor_reference_ids", []))
-            target["mention_reference_ids"] = unique_keep_order(target.get("mention_reference_ids", []) + concept.get("mention_reference_ids", []))
-            target["display_reference_ids"] = unique_keep_order(target.get("display_reference_ids", []) + concept.get("display_reference_ids", []))
-            target["source_document_ids"] = unique_keep_order(target.get("source_document_ids", []) + concept.get("source_document_ids", []))
-            target["evidence_claim_ids"] = unique_keep_order(target.get("evidence_claim_ids", []) + concept.get("evidence_claim_ids", []))
-            target["mention_count"] = len(target.get("mention_reference_ids", []))
-            target["importance_score"] = target.get("importance_score", 0) + concept.get("importance_score", 0)
-            if len(concept.get("definition", "")) > len(target.get("definition", "")):
-                target["definition"] = concept.get("definition", "")
-            if len(concept.get("why_page_worthy", "")) > len(target.get("why_page_worthy", "")):
-                target["why_page_worthy"] = concept.get("why_page_worthy", "")
-
-        alias_to_add = resolution.get("alias_to_add")
-        if alias_to_add:
-            target["aliases"] = unique_keep_order(target.get("aliases", []) + [alias_to_add])
-
-    result["concept_ledger"] = sorted(merged_by_slug.values(), key=lambda c: (-c.get("importance_score", 0), c.get("slug", "")))
     final_ledger_slugs = {concept["slug"] for concept in result["concept_ledger"]}
     existing_slugs = {concept["slug"] for concept in existing_concepts if concept.get("slug")}
     hint_map: dict[str, str] = {}
@@ -233,6 +204,48 @@ def apply_concept_resolutions(
     result["warnings"] = _remaining_related_hint_warnings(result, final_ledger_slugs | existing_slugs)
     result["existing_concept_index"] = existing_concepts
     return result
+
+
+def merge_concept_ledger(
+    ledger: list[dict[str, Any]],
+    resolution_by_slug: dict[str, dict[str, Any]],
+    slug_map: dict[str, str],
+    existing_by_slug: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged_by_slug: dict[str, dict[str, Any]] = {}
+    for concept in ledger:
+        original_slug = concept["slug"]
+        resolution = resolution_by_slug.get(original_slug, {})
+        canonical_slug = slug_map.get(original_slug, original_slug)
+        target = merged_by_slug.get(canonical_slug)
+        if target is None:
+            target = copy.deepcopy(concept)
+            target["slug"] = canonical_slug
+            if resolution.get("decision") == "merge_into" and canonical_slug in existing_by_slug:
+                existing = existing_by_slug[canonical_slug]
+                target["title"] = existing.get("title") or target.get("title")
+                if existing.get("summary") and not target.get("definition"):
+                    target["definition"] = existing["summary"]
+            target["aliases"] = unique_keep_order(target.get("aliases", []) + [original_slug])
+            merged_by_slug[canonical_slug] = target
+        else:
+            target["aliases"] = unique_keep_order(target.get("aliases", []) + concept.get("aliases", []) + [concept.get("title"), original_slug])
+            target["anchor_reference_ids"] = unique_keep_order(target.get("anchor_reference_ids", []) + concept.get("anchor_reference_ids", []))
+            target["mention_reference_ids"] = unique_keep_order(target.get("mention_reference_ids", []) + concept.get("mention_reference_ids", []))
+            target["display_reference_ids"] = unique_keep_order(target.get("display_reference_ids", []) + concept.get("display_reference_ids", []))
+            target["source_document_ids"] = unique_keep_order(target.get("source_document_ids", []) + concept.get("source_document_ids", []))
+            target["evidence_claim_ids"] = unique_keep_order(target.get("evidence_claim_ids", []) + concept.get("evidence_claim_ids", []))
+            target["mention_count"] = len(target.get("mention_reference_ids", []))
+            target["importance_score"] = target.get("importance_score", 0) + concept.get("importance_score", 0)
+            if len(concept.get("definition", "")) > len(target.get("definition", "")):
+                target["definition"] = concept.get("definition", "")
+            if len(concept.get("why_page_worthy", "")) > len(target.get("why_page_worthy", "")):
+                target["why_page_worthy"] = concept.get("why_page_worthy", "")
+
+        alias_to_add = resolution.get("alias_to_add")
+        if alias_to_add:
+            target["aliases"] = unique_keep_order(target.get("aliases", []) + [alias_to_add])
+    return sorted(merged_by_slug.values(), key=lambda concept: (-concept.get("importance_score", 0), concept.get("slug", "")))
 
 
 def _remaining_related_hint_warnings(normalized: dict[str, Any], known_slugs: set[str]) -> list[str]:

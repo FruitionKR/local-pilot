@@ -63,6 +63,15 @@ Avoid functions that:
 - Mutate `dict[str, Any]` across many stages.
 - Require tests to know too much about internal state.
 
+### Guard Clause and Function Extraction Rules
+
+- Keep `return` and `continue` guard clauses when they make rejection or skip conditions explicit and keep the main path flat.
+- Do not extract a function only because several places use the same `if`, `return`, or `continue` shape.
+- Extract shared logic when the repeated code has the same input contract, validation conditions, failure meaning, and output shape.
+- Preserve validation order, short-circuit behavior, and the distinction between skipping an item and rejecting the whole operation.
+- Name extracted functions after their domain responsibility, not generic mechanics such as `handle_condition` or `process_items`.
+- Add focused tests for extracted pure logic and rerun every affected caller's tests.
+
 ## Class Rules
 
 Use classes only when state, dependency injection, or a clear role justifies them.
