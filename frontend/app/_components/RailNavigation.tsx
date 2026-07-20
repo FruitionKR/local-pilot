@@ -8,11 +8,11 @@ import {
   SvgIcon
 } from "./SvgIcon";
 
-export type RailView = "home" | "share" | "rules" | "logs" | "settings";
+export type RailView = "home" | "graph" | "rules" | "logs" | "settings";
 
 export const railItems: { id: RailView; label: string; icon: SvgAsset; isLarge?: boolean }[] = [
   { id: "home", label: "홈", icon: homeIcon },
-  { id: "share", label: "공유", icon: shareIcon },
+  { id: "graph", label: "그래프", icon: shareIcon },
   { id: "rules", label: "규칙", icon: lightningIcon },
   { id: "logs", label: "로그", icon: collectionIcon, isLarge: true },
   { id: "settings", label: "설정", icon: settingIcon }

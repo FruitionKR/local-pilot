@@ -61,7 +61,7 @@
   padding: 0 7px;
   color: var(--muted);
   background: transparent;
-  border-radius: 8px;
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
   line-height: 0;
@@ -76,6 +76,10 @@
 .sidebar-menu-item.is-active {
   color: var(--ink);
   background: var(--soft);
+}
+
+.sidebar-menu-item.is-active {
+  padding: 0 12px;
 }
 
 .sidebar-menu-icon {
