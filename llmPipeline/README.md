@@ -204,7 +204,6 @@ uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 
 ```text
 GET  /health
-POST /admin/init-db
 GET  /documents/{document_id}
 POST /pipeline/runs
 GET  /pipeline/runs/{run_id}
@@ -212,6 +211,7 @@ GET  /pipeline/runs/{run_id}/logs
 ```
 
 `POST /documents`는 없습니다. 문서 업로드와 `documents` row 생성은 Spring이 담당합니다.
+DB 스키마 생성과 버전 관리는 Backend Flyway가 담당합니다. pipeline API는 시작할 때 필수 테이블이 적용됐는지만 확인하므로 Backend migration을 먼저 실행해야 합니다.
 
 ## 코드파일별 하는 일
 

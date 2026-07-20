@@ -28,21 +28,18 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
     build_promotion_concept_page as _promotion_concept_page,
     promotion_representative as _promotion_representative,
 )
-from app.modules.wiki_schema.infrastructure import postgres_wiki_schema_repository as wiki_schema_database
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 앱 시작 시 파이프라인 소유 테이블(pipeline_runs, 임베딩 등)을 생성한다.
-    # CREATE TABLE IF NOT EXISTS 기반이라 멱등하다.
+    # 스키마 버전 관리는 Spring Flyway가 담당하고 pipeline은 준비 상태만 확인한다.
     try:
-        database.init_db()
-        wiki_schema_database.init_db()
-        logger.info("[startup] DB 스키마 초기화 완료")
+        database.verify_schema()
+        logger.info("[startup] Flyway DB 스키마 확인 완료")
     except Exception:
-        logger.exception("[startup] DB 스키마 초기화 실패")
+        logger.exception("[startup] Flyway DB 스키마 확인 실패")
         raise
     yield
 
@@ -73,16 +70,6 @@ class WikiLintIn(BaseModel):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.post("/admin/init-db")
-def init_db() -> dict[str, str]:
-    try:
-        database.init_db()
-        wiki_schema_database.init_db()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"status": "initialized"}
 
 
 @app.post("/wiki/maintenance/lint")
