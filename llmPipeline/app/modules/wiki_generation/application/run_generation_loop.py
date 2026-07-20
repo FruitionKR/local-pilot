@@ -4,6 +4,7 @@ from app.modules.wiki_generation.application.evaluation_guards import (
     repair_notes_from_evaluation,
     repair_normalized_from_evaluation,
 )
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.application.ports import (
     JsonDict,
 )
@@ -14,14 +15,18 @@ class EvaluationGuardRepairer:
         self,
         notes: list[JsonDict],
         normalized: JsonDict,
-        evaluation: JsonDict,
+        evaluation: GenerationEvaluation,
     ) -> tuple[list[JsonDict], list[str]]:
         _, operations = repair_normalized_from_evaluation(normalized, evaluation)
         repaired_notes = repair_notes_from_evaluation(notes, evaluation) if operations else notes
         return repaired_notes, operations
 
 
-def generation_evaluation_finished(evaluation: JsonDict, attempt: int, max_attempts: int) -> bool:
+def generation_evaluation_finished(
+    evaluation: GenerationEvaluation,
+    attempt: int,
+    max_attempts: int,
+) -> bool:
     return bool(
         not evaluation.get("retry_recommended")
         or evaluation.get("passed")
@@ -29,7 +34,10 @@ def generation_evaluation_finished(evaluation: JsonDict, attempt: int, max_attem
     )
 
 
-def generation_retry_prompt(semantic_system_prompt: str, evaluation: JsonDict) -> str:
+def generation_retry_prompt(
+    semantic_system_prompt: str,
+    evaluation: GenerationEvaluation,
+) -> str:
     feedback = str(evaluation.get("retry_feedback") or "")
     return (
         semantic_system_prompt
@@ -41,7 +49,7 @@ def generation_retry_prompt(semantic_system_prompt: str, evaluation: JsonDict) -
 
 def generation_retry_block_ids(
     normalized: JsonDict,
-    evaluation: JsonDict,
+    evaluation: GenerationEvaluation,
     source_block_ids: list[str] | None = None,
 ) -> list[str] | None:
     """모든 evaluator target을 source block으로 해석하며, None은 전체 재생성을 뜻합니다."""
@@ -95,7 +103,7 @@ def generation_retry_block_ids(
     return _unique(resolved)
 
 
-def generation_evaluation_status(evaluations: list[JsonDict]) -> str:
+def generation_evaluation_status(evaluations: list[GenerationEvaluation]) -> str:
     if not evaluations:
         return "disabled"
     final = evaluations[-1]

@@ -6,6 +6,62 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### fix: Meaning Cluster active 상태 읽기 순서 복원
+
+- concept update 판단 직후 active cluster Markdown을 읽도록 기존 ingest 순서 복원
+- 동시 ingest의 최신 상태 반영 시점을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki evaluator 내부 타입 명시
+
+- 정규화 이후 evaluator 결과를 `GenerationEvaluation`으로 명시해 graph·repair·artifact port 계약 통합
+- 숫자가 아닌 score를 안전한 평가 실패로 변환하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Query 내부 context 조립 단계 분리
+
+- seed 선택, graph traversal, Markdown·embedding 로드, answer context 생성을 `_InternalQueryContext`로 분리
+- original/retrieval/evidence question 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Query Wiki scoring 단계 분리
+
+- Wiki page/link 로드, Markdown 보강, source/concept scoring 결과를 `_ScoredWikiCandidates`로 분리
+- 이벤트 순서와 web fallback 판단 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Meaning Cluster 조립 단계 분리
+
+- candidate 판단, 기존 cluster 비교, artifact·maintenance summary 생성을 독립 단계로 분리
+- 빈 candidate와 기존 출력 경로 계약을 유지하고 전체 테스트 373개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki page 조립 단계 분리
+
+- source page 누적·polish, concept page 생성, link 조립을 명시적 `WikiPageOutputs` 경계로 분리
+- skeleton/API mode와 source artifact 계약을 유지하고 전체 테스트 372개와 28개 subtest 통과
+
+---
+
+### refactor: pipeline concept resolution 단계 분리
+
+- concept resolution의 LLM 호출, 응답 정규화, same-source context 병합을 독립 함수로 분리
+- normalized 결과와 debug artifact 계약을 유지하고 전체 테스트 371개와 28개 subtest 통과
+
+---
+
+### refactor: pipeline 입력 준비 단계 분리
+
+- `run_pipeline`의 prompt 로드, API client 준비, source block 추출을 책임별 함수로 분리
+- 호출 순서와 로그·debug artifact 계약을 유지하고 전체 테스트 370개와 28개 subtest 통과
+
+---
+
 ### fix: Wiki evaluator 응답 형식 검증
 
 - 잘못된 `scores`, `issues`, `warnings`, 상태 필드를 안전한 평가 실패로 변환해 재시도 경로 유지

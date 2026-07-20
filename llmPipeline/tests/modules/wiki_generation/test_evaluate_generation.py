@@ -7,7 +7,7 @@ from app.modules.wiki_generation.domain.entities import SourceBlock, SourceDocum
 class MalformedEvaluationCompletion:
     def complete_json(self, _system_prompt: str, _user_prompt: str) -> dict:
         return {
-            "scores": [],
+            "scores": {"overall": "high", "concept_groundedness": 0.5},
             "passed": "true",
             "retry_recommended": "false",
             "issues": ["invalid issue"],
@@ -45,7 +45,7 @@ class EvaluateGenerationTest(unittest.TestCase):
             normalized={"concept_ledger": [], "observations": []},
         )
 
-        self.assertEqual(evaluation["scores"], {})
+        self.assertEqual(evaluation["scores"], {"concept_groundedness": 0.5})
         self.assertFalse(evaluation["passed"])
         self.assertTrue(evaluation["retry_recommended"])
         self.assertEqual(evaluation["warnings"], [])

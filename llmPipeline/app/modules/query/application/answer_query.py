@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.conversation_context_resolver import contextualize_question, evidence_question
@@ -39,8 +39,29 @@ from app.modules.query.domain.entities import (
     RetrievedPage,
     TraversalPath,
     WikiPage,
+    WikiPageLink,
 )
 from app.modules.query.domain.value_objects import Question
+
+
+@dataclass(frozen=True)
+class _ScoredWikiCandidates:
+    pages_by_id: dict[str, WikiPage]
+    links: list[WikiPageLink]
+    source_pages: list[WikiPage]
+    concept_pages: list[WikiPage]
+    source_scores: dict[str, float]
+    concept_scores: dict[str, float]
+    direct_concept_ids: list[str]
+
+
+@dataclass(frozen=True)
+class _InternalQueryContext:
+    query_context: QueryContext
+    related_pages: list[RetrievedPage]
+    graph_context: GraphContext
+    traversal_paths: list[TraversalPath]
+    stop_reason: str
 
 
 class AnswerQueryUseCase:
@@ -136,120 +157,30 @@ class AnswerQueryUseCase:
                 "검색용 질의를 정제했습니다.",
                 {"retrieval_query": query_rewrite.retrieval_query, "keywords": query_rewrite.keywords},
             )
-        pages = self._wiki_repository.list_active_pages()
-        links = self._wiki_repository.list_active_links()
-        self._publish(event_publisher, "wiki_loaded", "활성 Wiki page/link를 로드했습니다.", {"page_count": len(pages), "link_count": len(links)})
-        pages = self._load_markdown_for_scoring(pages)
-        self._publish(
+        candidates = self._score_wiki_candidates(
+            query_rewrite,
             event_publisher,
-            "retrieval_markdown_loaded",
-            "검색용 Wiki Markdown 본문을 로드했습니다.",
-            {"loaded_markdown_count": len([page for page in pages if page.markdown])},
         )
-        pages_by_id = {page.id: page for page in pages}
-        source_pages = [page for page in pages if page.is_source]
-        concept_pages = [page for page in pages if page.is_concept]
 
-        source_scores = self._query_page_scorer.score_pages(query_rewrite, source_pages, embedding_weight=0.8)
-        concept_scores = self._query_page_scorer.score_pages(query_rewrite, concept_pages, embedding_weight=0.8)
-        self._publish(
-            event_publisher,
-            "retrieval_scored",
-            "source/concept 후보 점수를 계산했습니다.",
-            {
-                "source_count": len(source_scores),
-                "concept_count": len(concept_scores),
-                "top_source_id": self._top_id(source_scores),
-                "top_concept_id": self._top_id(concept_scores),
-                "top_sources": self._top_scores(source_scores),
-                "top_concepts": self._top_scores(concept_scores),
-            },
-        )
-        node_scores = {**source_scores, **concept_scores}
-        direct_concept_ids = self._query_page_scorer.select_direct_match_concepts(query_rewrite, concept_pages)
-
-        if self._query_evaluator is None and self._should_use_web_fallback(source_scores, concept_scores):
+        if self._query_evaluator is None and self._should_use_web_fallback(
+            candidates.source_scores,
+            candidates.concept_scores,
+        ):
             fallback_answer = self._answer_from_web_search(query.normalized, query_rewrite, event_publisher)
             if fallback_answer is not None:
                 return fallback_answer
 
-        seed_source_ids = self._query_page_scorer.select_seed_sources(source_pages, source_scores)
-        focus_concept_ids = self._query_page_scorer.select_focus_concepts(concept_pages, concept_scores)
-        if direct_concept_ids and max(source_scores.values(), default=0.0) < self._focus_concept_threshold:
-            seed_source_ids = add_sources_connected_to_focus_concepts(seed_source_ids, direct_concept_ids, links)
-        seed_page_ids = list(dict.fromkeys([*seed_source_ids, *focus_concept_ids, *direct_concept_ids]))
-        self._publish(
-            event_publisher,
-            "seeds_selected",
-            "탐색 시작 source와 focus concept hint를 선택했습니다.",
-            {
-                "seed_page_ids": seed_page_ids,
-                "seed_source_ids": seed_source_ids,
-                "focus_concept_ids": focus_concept_ids,
-                "direct_concept_ids": direct_concept_ids,
-            },
-        )
-
-        graph_context, traversal_paths, stop_reason = self._traverse_wiki_graph.execute(
-            pages_by_id=pages_by_id,
-            links=links,
-            seed_page_ids=seed_page_ids,
-            node_scores=node_scores,
-        )
-        self._publish(
-            event_publisher,
-            "graph_traversed",
-            "Wiki graph traversal을 완료했습니다.",
-            {"visited_node_count": len(graph_context.nodes), "path_count": len(traversal_paths), "stop_reason": stop_reason},
-        )
-        traversal_paths = select_answer_paths(traversal_paths, self._returned_path_limit)
-        related_pages = add_focus_concepts_to_related_pages(graph_context.nodes, direct_concept_ids, pages_by_id, concept_scores)
-        if direct_concept_ids and {item.page.id for item in related_pages} & set(direct_concept_ids):
-            stop_reason = "concept_direct_match"
-        graph_context, traversal_paths = backfill_direct_concept_paths(
-            graph_context=GraphContext(nodes=related_pages, edges=graph_context.edges),
-            traversal_paths=traversal_paths,
-            links=links,
-            direct_concept_ids=direct_concept_ids,
-            source_scores=source_scores,
-            concept_scores=concept_scores,
-        )
-        if stop_reason == "concept_direct_match":
-            traversal_paths = [
-                replace(path, stop_reason="concept_direct_match")
-                if set(path.nodes) & set(direct_concept_ids)
-                else path
-                for path in traversal_paths
-            ]
-        related_pages = self._load_markdown_for_related_pages(related_pages)
-        graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        evidence_query = evidence_question(query.normalized, conversation_context, contextual_question)
-        self._publish(
-            event_publisher,
-            "markdown_loaded",
-            "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
-            {"loaded_markdown_count": len([item for item in related_pages if item.page.markdown])},
-        )
-        embedding_units_by_page_id = self._load_embedding_units_for_related_pages(related_pages)
-        query_context = self._build_query_context.execute(
-            question=contextual_question,
-            related_pages=related_pages,
-            graph_context=graph_context,
-            traversal_paths=traversal_paths,
+        internal_context = self._build_internal_query_context(
             original_question=query.normalized,
-            evidence_question=evidence_query,
-            embedding_units_by_page_id=embedding_units_by_page_id,
-        )
-        self._publish(
-            event_publisher,
-            "context_built",
-            "LLM 답변 입력 context를 구성했습니다.",
-            {"context_chars": len(query_context.answer_context), "related_page_count": len(related_pages)},
+            contextual_question=contextual_question,
+            conversation_context=conversation_context,
+            candidates=candidates,
+            event_publisher=event_publisher,
         )
         answer, evidence_snippets, evaluated_context, query_evaluation = self._query_evaluator_graph.run(
             question=query.normalized,
-            query_context=query_context,
-            stop_reason=stop_reason,
+            query_context=internal_context.query_context,
+            stop_reason=internal_context.stop_reason,
             event_publisher=event_publisher,
         )
         if query_evaluation is not None:
@@ -265,9 +196,9 @@ class AnswerQueryUseCase:
                 augmented_answer = self._answer_from_internal_web_augmented(
                     question=query.normalized,
                     query_rewrite=self._query_rewrite_for_web(query_rewrite, query_evaluation),
-                    query_context=query_context,
-                    graph_context=graph_context,
-                    traversal_paths=traversal_paths,
+                    query_context=internal_context.query_context,
+                    graph_context=internal_context.graph_context,
+                    traversal_paths=internal_context.traversal_paths,
                     stop_reason="internal_web_augmented",
                     event_publisher=event_publisher,
                 )
@@ -277,22 +208,222 @@ class AnswerQueryUseCase:
             query_evaluation,
             answer,
             evidence_snippets,
-            stop_reason,
+            internal_context.stop_reason,
         )
 
         summary = build_retrieval_summary(
-            related_pages=related_pages,
-            source_candidate_count=min(len(source_pages), self._source_candidate_limit),
-            concept_candidate_count=min(len(concept_pages), self._concept_candidate_limit),
+            related_pages=internal_context.related_pages,
+            source_candidate_count=min(
+                len(candidates.source_pages),
+                self._source_candidate_limit,
+            ),
+            concept_candidate_count=min(
+                len(candidates.concept_pages),
+                self._concept_candidate_limit,
+            ),
             stop_reason=stop_reason,
         )
         return QueryAnswer(
             answer=answer,
-            related_pages=related_pages,
+            related_pages=internal_context.related_pages,
             evidence_snippets=evidence_snippets,
+            graph_context=internal_context.graph_context,
+            traversal_paths=internal_context.traversal_paths,
+            retrieval_summary=summary,
+        )
+
+    def _build_internal_query_context(
+        self,
+        *,
+        original_question: str,
+        contextual_question: str,
+        conversation_context: ConversationContext | None,
+        candidates: _ScoredWikiCandidates,
+        event_publisher: QueryEventPublisherPort | None,
+    ) -> _InternalQueryContext:
+        seed_source_ids = self._query_page_scorer.select_seed_sources(
+            candidates.source_pages,
+            candidates.source_scores,
+        )
+        focus_concept_ids = self._query_page_scorer.select_focus_concepts(
+            candidates.concept_pages,
+            candidates.concept_scores,
+        )
+        if (
+            candidates.direct_concept_ids
+            and max(candidates.source_scores.values(), default=0.0)
+            < self._focus_concept_threshold
+        ):
+            seed_source_ids = add_sources_connected_to_focus_concepts(
+                seed_source_ids,
+                candidates.direct_concept_ids,
+                candidates.links,
+            )
+        seed_page_ids = list(
+            dict.fromkeys(
+                [
+                    *seed_source_ids,
+                    *focus_concept_ids,
+                    *candidates.direct_concept_ids,
+                ]
+            )
+        )
+        self._publish(
+            event_publisher,
+            "seeds_selected",
+            "탐색 시작 source와 focus concept hint를 선택했습니다.",
+            {
+                "seed_page_ids": seed_page_ids,
+                "seed_source_ids": seed_source_ids,
+                "focus_concept_ids": focus_concept_ids,
+                "direct_concept_ids": candidates.direct_concept_ids,
+            },
+        )
+        graph_context, traversal_paths, stop_reason = self._traverse_wiki_graph.execute(
+            pages_by_id=candidates.pages_by_id,
+            links=candidates.links,
+            seed_page_ids=seed_page_ids,
+            node_scores={**candidates.source_scores, **candidates.concept_scores},
+        )
+        self._publish(
+            event_publisher,
+            "graph_traversed",
+            "Wiki graph traversal을 완료했습니다.",
+            {
+                "visited_node_count": len(graph_context.nodes),
+                "path_count": len(traversal_paths),
+                "stop_reason": stop_reason,
+            },
+        )
+        traversal_paths = select_answer_paths(
+            traversal_paths,
+            self._returned_path_limit,
+        )
+        related_pages = add_focus_concepts_to_related_pages(
+            graph_context.nodes,
+            candidates.direct_concept_ids,
+            candidates.pages_by_id,
+            candidates.concept_scores,
+        )
+        if candidates.direct_concept_ids and {
+            item.page.id for item in related_pages
+        } & set(candidates.direct_concept_ids):
+            stop_reason = "concept_direct_match"
+        graph_context, traversal_paths = backfill_direct_concept_paths(
+            graph_context=GraphContext(nodes=related_pages, edges=graph_context.edges),
+            traversal_paths=traversal_paths,
+            links=candidates.links,
+            direct_concept_ids=candidates.direct_concept_ids,
+            source_scores=candidates.source_scores,
+            concept_scores=candidates.concept_scores,
+        )
+        if stop_reason == "concept_direct_match":
+            traversal_paths = [
+                replace(path, stop_reason="concept_direct_match")
+                if set(path.nodes) & set(candidates.direct_concept_ids)
+                else path
+                for path in traversal_paths
+            ]
+        related_pages = self._load_markdown_for_related_pages(related_pages)
+        graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
+        self._publish(
+            event_publisher,
+            "markdown_loaded",
+            "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
+            {
+                "loaded_markdown_count": len(
+                    [item for item in related_pages if item.page.markdown]
+                )
+            },
+        )
+        query_context = self._build_query_context.execute(
+            question=contextual_question,
+            related_pages=related_pages,
             graph_context=graph_context,
             traversal_paths=traversal_paths,
-            retrieval_summary=summary,
+            original_question=original_question,
+            evidence_question=evidence_question(
+                original_question,
+                conversation_context,
+                contextual_question,
+            ),
+            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
+                related_pages
+            ),
+        )
+        self._publish(
+            event_publisher,
+            "context_built",
+            "LLM 답변 입력 context를 구성했습니다.",
+            {
+                "context_chars": len(query_context.answer_context),
+                "related_page_count": len(related_pages),
+            },
+        )
+        return _InternalQueryContext(
+            query_context=query_context,
+            related_pages=related_pages,
+            graph_context=graph_context,
+            traversal_paths=traversal_paths,
+            stop_reason=stop_reason,
+        )
+
+    def _score_wiki_candidates(
+        self,
+        query_rewrite: QueryRewrite,
+        event_publisher: QueryEventPublisherPort | None,
+    ) -> _ScoredWikiCandidates:
+        pages = self._wiki_repository.list_active_pages()
+        links = self._wiki_repository.list_active_links()
+        self._publish(
+            event_publisher,
+            "wiki_loaded",
+            "활성 Wiki page/link를 로드했습니다.",
+            {"page_count": len(pages), "link_count": len(links)},
+        )
+        pages = self._load_markdown_for_scoring(pages)
+        self._publish(
+            event_publisher,
+            "retrieval_markdown_loaded",
+            "검색용 Wiki Markdown 본문을 로드했습니다.",
+            {"loaded_markdown_count": len([page for page in pages if page.markdown])},
+        )
+        source_pages = [page for page in pages if page.is_source]
+        concept_pages = [page for page in pages if page.is_concept]
+        source_scores = self._query_page_scorer.score_pages(
+            query_rewrite,
+            source_pages,
+            embedding_weight=0.8,
+        )
+        concept_scores = self._query_page_scorer.score_pages(
+            query_rewrite,
+            concept_pages,
+            embedding_weight=0.8,
+        )
+        self._publish(
+            event_publisher,
+            "retrieval_scored",
+            "source/concept 후보 점수를 계산했습니다.",
+            {
+                "source_count": len(source_scores),
+                "concept_count": len(concept_scores),
+                "top_source_id": self._top_id(source_scores),
+                "top_concept_id": self._top_id(concept_scores),
+                "top_sources": self._top_scores(source_scores),
+                "top_concepts": self._top_scores(concept_scores),
+            },
+        )
+        return _ScoredWikiCandidates(
+            pages_by_id={page.id: page for page in pages},
+            links=links,
+            source_pages=source_pages,
+            concept_pages=concept_pages,
+            source_scores=source_scores,
+            concept_scores=concept_scores,
+            direct_concept_ids=self._query_page_scorer.select_direct_match_concepts(
+                query_rewrite,
+                concept_pages,
+            ),
         )
 
     def _rewrite_query(self, question: str) -> QueryRewrite:

@@ -4,8 +4,13 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 
-def apply_generation_evaluation_guards(evaluation: dict[str, Any], normalized: dict[str, Any]) -> None:
+
+def apply_generation_evaluation_guards(
+    evaluation: GenerationEvaluation,
+    normalized: dict[str, Any],
+) -> None:
     core_slugs = {str(item.get("slug")) for item in normalized.get("concept_ledger", [])}
     metadata_fragments = {
         "citation-marker",
@@ -39,7 +44,10 @@ def apply_generation_evaluation_guards(evaluation: dict[str, Any], normalized: d
         evaluation["retry_feedback"] = " ".join(_unique(feedbacks))
 
 
-def repair_normalized_from_evaluation(normalized: dict[str, Any], evaluation: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def repair_normalized_from_evaluation(
+    normalized: dict[str, Any],
+    evaluation: GenerationEvaluation,
+) -> tuple[dict[str, Any], list[str]]:
     repairable_types = {"observation_missing_ref", "broken_observation", "duplicate_observation"}
     issues = [issue for issue in evaluation.get("issues", []) if issue.get("type") in repairable_types]
     if not issues:
@@ -93,7 +101,10 @@ def repair_normalized_from_evaluation(normalized: dict[str, Any], evaluation: di
     return repaired, operations
 
 
-def repair_notes_from_evaluation(notes: list[dict[str, Any]], evaluation: dict[str, Any]) -> list[dict[str, Any]]:
+def repair_notes_from_evaluation(
+    notes: list[dict[str, Any]],
+    evaluation: GenerationEvaluation,
+) -> list[dict[str, Any]]:
     repairable_types = {"observation_missing_ref", "broken_observation", "duplicate_observation"}
     issues = [issue for issue in evaluation.get("issues", []) if issue.get("type") in repairable_types]
     if not issues:
@@ -197,7 +208,10 @@ def _observation_content_signature(observation: dict[str, Any]) -> str:
     )
 
 
-def _apply_observation_evaluation_guards(evaluation: dict[str, Any], normalized: dict[str, Any]) -> None:
+def _apply_observation_evaluation_guards(
+    evaluation: GenerationEvaluation,
+    normalized: dict[str, Any],
+) -> None:
     observations = normalized.get("observations", [])
     for observation in observations:
         observation_id = str(observation.get("observation_id") or "unknown")
@@ -295,7 +309,10 @@ def _compact_observation_text(text: str) -> str:
     return text
 
 
-def _append_eval_issue(evaluation: dict[str, Any], issue: dict[str, Any]) -> None:
+def _append_eval_issue(
+    evaluation: GenerationEvaluation,
+    issue: dict[str, Any],
+) -> None:
     issues = evaluation.setdefault("issues", [])
     signature = (issue.get("type"), tuple(issue.get("target", [])))
     for existing in issues:

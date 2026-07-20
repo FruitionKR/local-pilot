@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Sequence
 
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.domain.entities import SemanticPacket, SourceBlock
 
 
@@ -53,7 +54,7 @@ class SemanticGenerationPort(Protocol):
         self,
         attempt: int,
         previous_notes: list[JsonDict],
-        evaluation: JsonDict,
+        evaluation: GenerationEvaluation,
         target_block_ids: list[str],
     ) -> tuple[list[JsonDict], list[JsonDict]] | None:
         ...
@@ -65,7 +66,7 @@ class SemanticNormalizerPort(Protocol):
 
 
 class GenerationEvaluatorPort(Protocol):
-    def evaluate(self, normalized: JsonDict) -> JsonDict:
+    def evaluate(self, normalized: JsonDict) -> GenerationEvaluation:
         ...
 
 
@@ -74,7 +75,7 @@ class GenerationRepairPort(Protocol):
         self,
         notes: list[JsonDict],
         normalized: JsonDict,
-        evaluation: JsonDict,
+        evaluation: GenerationEvaluation,
     ) -> tuple[list[JsonDict], list[str]]:
         ...
 
@@ -85,5 +86,5 @@ class PipelineEventPort(Protocol):
 
 
 class EvaluationArtifactPort(Protocol):
-    def write(self, attempt: int, kind: str, evaluation: JsonDict) -> None:
+    def write(self, attempt: int, kind: str, evaluation: GenerationEvaluation) -> None:
         ...

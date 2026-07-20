@@ -7,7 +7,7 @@ from app.modules.wiki_generation.application.run_generation_loop import (
 
 
 disable_unconfigured_langsmith_tracing()
-from app.modules.wiki_generation.application.ports import JsonDict
+from app.modules.wiki_generation.application.models import GenerationEvaluation
 from app.modules.wiki_generation.infrastructure.wiki_generation_evaluator_graph import (
     WikiGenerationEvaluatorState,
     build_wiki_generation_evaluator_graph,
@@ -113,7 +113,9 @@ def route_after_evaluation(state: WikiGenerationEvaluatorState) -> str:
     return "retry"
 
 
-def _next_evaluation(state: WikiGenerationEvaluatorState) -> tuple[JsonDict, int]:
+def _next_evaluation(
+    state: WikiGenerationEvaluatorState,
+) -> tuple[GenerationEvaluation, int]:
     sequence = state.get("evaluation_sequence") or [
         {
             "passed": True,
