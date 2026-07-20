@@ -6,6 +6,64 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-19
 
+### refactor: Pipeline typed 실행과 persistence 내부 흐름 정리
+
+- HTTP·CLI 입력을 `PipelineRunCommand`로 통일하고 `argparse.Namespace` 역변환 제거
+- Wiki output의 Source·Concept·link 저장 단계를 명시하고 source-related 점수 계산을 순수 함수로 분리
+- 기존 API·CLI·저장 순서를 유지하고 전체 테스트 388개와 28개 subtest 통과
+
+---
+
+### refactor: Pipeline HTTP와 application 입력 경계 분리
+
+- Pipeline·Chat Wiki 실행 schema와 route, dependency 조립을 `wiki_ingestion/interfaces/http`로 이동
+- `PipelineRunCommand`로 application 입력을 명시하고 infrastructure에서만 `argparse.Namespace`로 변환
+- 기존 HTTP 계약을 유지하고 전체 테스트 378개와 28개 subtest 통과
+
+---
+
+### refactor: Wiki output persistence orchestration 분리
+
+- manifest 해석과 source/concept/link/cluster 저장 순서를 `postgres_wiki_output_persistence`로 이동
+- 기존 `finish_pipeline_run` transaction과 저장 순서를 고정하고 관련 테스트 39개 통과
+
+---
+
+### refactor: Wiki PostgreSQL writer 경계 분리
+
+- page/link upsert, embedding unit 저장, source-related 갱신, object storage I/O를 공통 writer로 분리
+- 기존 repository private import 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
+### refactor: Wiki PostgreSQL schema 초기화 분리
+
+- ingestion repository의 테이블·인덱스 생성 SQL을 `postgres_wiki_schema` 책임으로 분리
+- 기존 `init_db()` connection·transaction 경로를 유지하고 Wiki ingestion 테스트 22개 통과
+
+---
+
+### refactor: Pipeline run application 경계 분리
+
+- run 등록·실행·성공/실패 저장·embedding 시작 순서를 `RunPipelineUseCase`와 port adapter로 이동
+- FastAPI 요청·응답 계약을 유지하고 API contract 16개와 application 상태 순서 테스트 2개 통과
+
+---
+
+### refactor: Query graph 탐색과 context I/O 분리
+
+- seed·traversal·path 보정 결과를 `_InternalRetrievalGraph`로 명시하고 Markdown·embedding 로드와 분리
+- 기존 Query event 순서와 응답 계약을 유지하고 Query 테스트 57개 통과
+
+---
+
+### refactor: Wiki page 조립 내부 책임 분리
+
+- Source page 준비, concept 입력 구성, source 조립, concept mode별 조립 책임 분리
+- 기존 Concept 입력 → Source Page → Concept Page 로그 순서를 고정하고 관련 테스트 12개 통과
+
+---
+
 ### fix: Meaning Cluster active 상태 읽기 순서 복원
 
 - concept update 판단 직후 active cluster Markdown을 읽도록 기존 ingest 순서 복원

@@ -56,6 +56,14 @@ class _ScoredWikiCandidates:
 
 
 @dataclass(frozen=True)
+class _InternalRetrievalGraph:
+    related_pages: list[RetrievedPage]
+    graph_context: GraphContext
+    traversal_paths: list[TraversalPath]
+    stop_reason: str
+
+
+@dataclass(frozen=True)
 class _InternalQueryContext:
     query_context: QueryContext
     related_pages: list[RetrievedPage]
@@ -241,6 +249,64 @@ class AnswerQueryUseCase:
         candidates: _ScoredWikiCandidates,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _InternalQueryContext:
+        retrieval_graph = self._build_internal_retrieval_graph(
+            candidates,
+            event_publisher,
+        )
+        related_pages = self._load_markdown_for_related_pages(
+            retrieval_graph.related_pages
+        )
+        graph_context = GraphContext(
+            nodes=related_pages,
+            edges=retrieval_graph.graph_context.edges,
+        )
+        self._publish(
+            event_publisher,
+            "markdown_loaded",
+            "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
+            {
+                "loaded_markdown_count": len(
+                    [item for item in related_pages if item.page.markdown]
+                )
+            },
+        )
+        query_context = self._build_query_context.execute(
+            question=contextual_question,
+            related_pages=related_pages,
+            graph_context=graph_context,
+            traversal_paths=retrieval_graph.traversal_paths,
+            original_question=original_question,
+            evidence_question=evidence_question(
+                original_question,
+                conversation_context,
+                contextual_question,
+            ),
+            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
+                related_pages
+            ),
+        )
+        self._publish(
+            event_publisher,
+            "context_built",
+            "LLM 답변 입력 context를 구성했습니다.",
+            {
+                "context_chars": len(query_context.answer_context),
+                "related_page_count": len(related_pages),
+            },
+        )
+        return _InternalQueryContext(
+            query_context=query_context,
+            related_pages=related_pages,
+            graph_context=graph_context,
+            traversal_paths=retrieval_graph.traversal_paths,
+            stop_reason=retrieval_graph.stop_reason,
+        )
+
+    def _build_internal_retrieval_graph(
+        self,
+        candidates: _ScoredWikiCandidates,
+        event_publisher: QueryEventPublisherPort | None,
+    ) -> _InternalRetrievalGraph:
         seed_source_ids = self._query_page_scorer.select_seed_sources(
             candidates.source_pages,
             candidates.source_scores,
@@ -324,46 +390,12 @@ class AnswerQueryUseCase:
                 else path
                 for path in traversal_paths
             ]
-        related_pages = self._load_markdown_for_related_pages(related_pages)
-        graph_context = GraphContext(nodes=related_pages, edges=graph_context.edges)
-        self._publish(
-            event_publisher,
-            "markdown_loaded",
-            "선택된 Wiki page의 Markdown 본문을 로드했습니다.",
-            {
-                "loaded_markdown_count": len(
-                    [item for item in related_pages if item.page.markdown]
-                )
-            },
-        )
-        query_context = self._build_query_context.execute(
-            question=contextual_question,
+        return _InternalRetrievalGraph(
             related_pages=related_pages,
-            graph_context=graph_context,
-            traversal_paths=traversal_paths,
-            original_question=original_question,
-            evidence_question=evidence_question(
-                original_question,
-                conversation_context,
-                contextual_question,
+            graph_context=GraphContext(
+                nodes=related_pages,
+                edges=graph_context.edges,
             ),
-            embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
-                related_pages
-            ),
-        )
-        self._publish(
-            event_publisher,
-            "context_built",
-            "LLM 답변 입력 context를 구성했습니다.",
-            {
-                "context_chars": len(query_context.answer_context),
-                "related_page_count": len(related_pages),
-            },
-        )
-        return _InternalQueryContext(
-            query_context=query_context,
-            related_pages=related_pages,
-            graph_context=graph_context,
             traversal_paths=traversal_paths,
             stop_reason=stop_reason,
         )

@@ -120,6 +120,7 @@ class WikiGenerationPipelineTest(unittest.TestCase):
             "warnings": [],
         }
         with tempfile.TemporaryDirectory() as tmp_dir:
+            log_path = Path(tmp_dir) / "pipeline.log"
             outputs = _assemble_wiki_pages(
                 SimpleNamespace(
                     mode="offline",
@@ -136,14 +137,23 @@ class WikiGenerationPipelineTest(unittest.TestCase):
                 existing_source_artifact=None,
                 existing_source_markdown=None,
                 out=Path(tmp_dir),
-                log=PipelineLog(Path(tmp_dir) / "pipeline.log"),
+                log=PipelineLog(log_path),
             )
+            log_text = log_path.read_text(encoding="utf-8")
 
         self.assertEqual(outputs.source_page_mode, "skeleton")
         self.assertEqual(outputs.concept_page_mode, "skeleton")
         self.assertEqual(outputs.source_page["title"], "문서")
         self.assertEqual(outputs.concept_pages, [])
         self.assertEqual(outputs.links, [])
+        self.assertLess(
+            log_text.index("[5-보조. Concept 입력 준비]"),
+            log_text.index("[5. Source Page 생성]"),
+        )
+        self.assertLess(
+            log_text.index("[5. Source Page 생성]"),
+            log_text.index("[6. Concept Page 생성]"),
+        )
 
     def test_load_pipeline_prompts_returns_named_prompt_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
