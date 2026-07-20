@@ -42,11 +42,6 @@
 }
 
 .rail-icon .svg-icon {
-  width: 23px;
-  height: 23px;
-}
-
-.rail-icon.is-large .svg-icon {
   width: 36px;
   height: 36px;
 }
@@ -64,7 +59,11 @@
 
 .blank-view {
   position: absolute;
-  inset: 65px 0 0 60px;
+  inset: 0 0 0 var(--sidebar-width, 320px);
   z-index: 1;
   background: #0a0a0a;
+}
+
+.workspace.is-sidebar-collapsed .blank-view {
+  left: 0;
 }

@@ -1,7 +1,7 @@
 
 .source-preview-panel {
   position: absolute;
-  inset: 65px auto 0 calc(60px + var(--sidebar-width, 260px));
+  inset: 0 auto 0 var(--sidebar-width, 320px);
   z-index: 8;
   padding: 32px;
   overflow: hidden;
@@ -16,7 +16,18 @@
 }
 
 .workspace.is-sidebar-collapsed .source-preview-panel {
-  left: 60px;
+  left: 0;
+}
+
+/* 홈 메인 문서 뷰: 사이드바와 에이전트 패널 사이 남은 영역 전체를 채운다 */
+.source-preview-panel.is-main {
+  right: 360px;
+  width: auto;
+  border-top-left-radius: 24px;
+}
+
+.workspace.is-agent-collapsed .source-preview-panel.is-main {
+  right: 0;
 }
 
 .source-preview-resize-handle {

@@ -1,5 +1,5 @@
 import { getAccessToken, getSelectedWorkspaceId } from "./auth";
-import type { BackendData, ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse, WorkspaceListResponse, WorkspaceResponse } from "./types";
+import type { BackendData, ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, UserMeResponse, WikiGraphResponse, WikiPageDetailResponse, WorkspaceListResponse, WorkspaceResponse } from "./types";
 
 // 공통 에러 메시지 상수
 const ERROR_MESSAGES = {
@@ -9,14 +9,19 @@ const ERROR_MESSAGES = {
   workspaceRequired: "워크스페이스를 선택해주세요.",
   workspaceCreateFailed: "워크스페이스 생성에 실패했습니다.",
   uploadFailed: "문서 업로드에 실패했습니다.",
+  documentDeleteFailed: "문서 삭제에 실패했습니다.",
+  documentRenameFailed: "문서 이름 변경에 실패했습니다.",
+  documentOriginalLoadFailed: "원본 문서를 불러오지 못했습니다.",
   queryFailed: "질의에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
   chatSessionFailed: "채팅 세션을 준비하지 못했습니다.",
   documentBlocksLoadFailed: "원본 문서 block을 불러오지 못했습니다.",
   documentsLoadFailed: "문서 목록을 불러오지 못했습니다.",
+  wikiExportFailed: "위키 내보내기에 실패했습니다.",
   wikiGraphLoadFailed: "Wiki graph를 불러오지 못했습니다.",
   wikiPageLoadFailed: "Wiki page를 불러오지 못했습니다.",
-  workspaceLoadFailed: "워크스페이스를 불러오지 못했습니다."
+  workspaceLoadFailed: "워크스페이스를 불러오지 못했습니다.",
+  meLoadFailed: "사용자 정보를 불러오지 못했습니다."
 } as const;
 
 // HTTP 응답에서 에러 메시지를 추출하는 공통 헬퍼
@@ -93,6 +98,12 @@ export async function signupWithEmail(email: string, password: string): Promise<
   }
 }
 
+/** 로그인한 사용자 정보를 가져온다. */
+export async function fetchMe(): Promise<UserMeResponse> {
+  const response = await apiFetch("/api/auth/me", { cache: "no-store" });
+  return parseJsonOrThrow<UserMeResponse>(response, ERROR_MESSAGES.meLoadFailed);
+}
+
 export async function fetchWorkspaces(): Promise<WorkspaceListResponse> {
   const response = await apiFetch("/api/workspaces", { cache: "no-store" });
   return parseJsonOrThrow<WorkspaceListResponse>(response, ERROR_MESSAGES.workspaceLoadFailed);
@@ -123,6 +134,13 @@ let sessionCache: { workspaceId: string; promise: Promise<string> } | null = nul
 /** 로그아웃 시 이전 계정의 세션 캐시가 재사용되지 않도록 초기화한다. */
 export function clearSessionCache() {
   sessionCache = null;
+}
+
+/** 현재 워크스페이스의 채팅 세션 목록을 가져온다. */
+export async function fetchChatSessions(): Promise<ChatSessionListResponse> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, { cache: "no-store" });
+  return parseJsonOrThrow<ChatSessionListResponse>(response, ERROR_MESSAGES.chatSessionFailed);
 }
 
 async function resolveSessionId(workspaceId: string): Promise<string> {
@@ -165,11 +183,39 @@ export async function uploadDocumentFile(file: File) {
   return parseJsonOrThrow<DocumentUploadResponse>(response, ERROR_MESSAGES.uploadFailed);
 }
 
+/** 문서를 삭제한다. 성공 시 204를 반환한다. */
+export async function deleteDocument(documentId: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentDeleteFailed));
+  }
+}
+
+/** 문서 표시명을 변경한다. */
+export async function renameDocument(documentId: string, filename: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/rename`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentRenameFailed));
+  }
+}
+
 export async function fetchBackendData(): Promise<BackendData> {
   const workspaceId = getWorkspaceId();
   const [documentsResponse, graphResponse] = await Promise.all([
     apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, { cache: "no-store" }),
-    apiFetch("/api/wiki/graph", { cache: "no-store" })
+    apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/wiki/graph`, { cache: "no-store" })
   ]);
 
   const documents = await parseJsonOrThrow<DocumentListResponse>(documentsResponse, ERROR_MESSAGES.documentsLoadFailed);
@@ -192,7 +238,11 @@ export async function queryWiki(question: string): Promise<QueryResponse> {
 }
 
 export async function fetchWikiPage(pageId: string): Promise<WikiPageDetailResponse> {
-  const response = await apiFetch(`/api/wiki/pages/${encodeURIComponent(pageId)}`, { cache: "no-store" });
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/wiki/pages/${encodeURIComponent(pageId)}`,
+    { cache: "no-store" }
+  );
 
   return parseJsonOrThrow<WikiPageDetailResponse>(response, ERROR_MESSAGES.wikiPageLoadFailed);
 }
@@ -205,6 +255,52 @@ export async function fetchDocumentBlocks(documentId: string): Promise<DocumentB
   );
 
   return parseJsonOrThrow<DocumentBlocksResponse>(response, ERROR_MESSAGES.documentBlocksLoadFailed);
+}
+
+/** 현재 워크스페이스의 원본 문서를 인증된 요청으로 가져온다. */
+export async function fetchDocumentOriginal(documentId: string): Promise<Blob> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/original`,
+    { cache: "no-store" }
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentOriginalLoadFailed));
+  }
+  return response.blob();
+}
+
+export type ChatWikiExportResponse = {
+  exportDocumentId: string;
+  status: string;
+};
+
+/** 현재 채팅 세션 내용을 위키 문서로 내보내기 전 미리보기 Markdown을 받는다. */
+export async function fetchChatWikiExportPreview(): Promise<string> {
+  const { workspaceId, sessionId } = await getSessionContext();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/wiki/preview`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.wikiExportFailed));
+  }
+  return response.text();
+}
+
+/** 미리보기를 수락하면 채팅 내용을 위키 문서로 내보낸다. */
+export async function exportChatWiki(): Promise<ChatWikiExportResponse> {
+  const { workspaceId, sessionId } = await getSessionContext();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}/wiki`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection_mode: "all", pair_ids: [] })
+    }
+  );
+  return parseJsonOrThrow<ChatWikiExportResponse>(response, ERROR_MESSAGES.wikiExportFailed);
 }
 
 export async function fetchChatMessages(): Promise<ChatMessagesResponse> {

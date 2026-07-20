@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,7 +29,25 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
     promotion_representative as _promotion_representative,
 )
 from app.modules.wiki_schema.infrastructure import postgres_wiki_schema_repository as wiki_schema_database
-app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0")
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 앱 시작 시 파이프라인 소유 테이블(pipeline_runs, 임베딩 등)을 생성한다.
+    # CREATE TABLE IF NOT EXISTS 기반이라 멱등하다.
+    try:
+        database.init_db()
+        wiki_schema_database.init_db()
+        logger.info("[startup] DB 스키마 초기화 완료")
+    except Exception:
+        logger.exception("[startup] DB 스키마 초기화 실패")
+        raise
+    yield
+
+
+app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0", lifespan=lifespan)
 app.include_router(agent_router)
 app.include_router(query_router)
 app.include_router(pipeline_router)

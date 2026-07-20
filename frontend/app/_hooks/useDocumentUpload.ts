@@ -1,5 +1,5 @@
 import type { ChangeEvent as ReactChangeEvent } from "react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { uploadDocumentFile } from "../_lib/api";
 import {
   appendItemsToFolder,
@@ -23,6 +23,7 @@ export function useDocumentUpload({
 }) {
   const uploadPickerTargetRef = useRef<UploadPickerTarget | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [hasRejectedFiles, setHasRejectedFiles] = useState(false);
 
   function openUploadPicker(projectId: string, folderId: string | null) {
     uploadPickerTargetRef.current = { projectId, folderId };
@@ -40,6 +41,7 @@ export function useDocumentUpload({
   function dropUploadFiles(projectId: string, folderId: string | null, files: File[]) {
     const uploadFiles = files.filter(isSupportedUploadFile);
     setFileDropTarget(null);
+    if (uploadFiles.length < files.length) setHasRejectedFiles(true);
     if (uploadFiles.length === 0) return;
 
     // 파일과 업로드 항목을 쌍으로 묶어 인덱스 기반 병렬 배열 접근을 피한다.
@@ -85,6 +87,8 @@ export function useDocumentUpload({
     uploadInputRef,
     openUploadPicker,
     handleUploadPickerChange,
-    dropUploadFiles
+    dropUploadFiles,
+    hasRejectedFiles,
+    clearRejectedFiles: () => setHasRejectedFiles(false)
   };
 }

@@ -1,27 +1,30 @@
-"use client";
+import Link from "next/link";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { HomeWorkspace } from "./_components/home-workspace/HomeWorkspace";
-import { getAccessToken, getSelectedWorkspaceId } from "./_lib/auth";
+export default function LandingPage() {
+  return (
+    <main className="landing-page">
+      <nav className="landing-nav" aria-label="주요 메뉴">
+        <span className="landing-brand">Fruition</span>
+        <Link className="landing-login-link" href="/login">
+          로그인
+        </Link>
+      </nav>
 
-export default function HomePage() {
-  const router = useRouter();
-  const [isReady, setIsReady] = useState(false);
-
-  // 임시 가드: 토큰 없으면 로그인, 워크스페이스 미선택이면 선택 화면으로 보낸다.
-  useEffect(() => {
-    if (!getAccessToken()) {
-      router.replace("/login");
-      return;
-    }
-    if (!getSelectedWorkspaceId()) {
-      router.replace("/workspaces");
-      return;
-    }
-    setIsReady(true);
-  }, [router]);
-
-  if (!isReady) return null;
-  return <HomeWorkspace />;
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <p className="landing-eyebrow">AI RESEARCH WORKSPACE</p>
+        <h1 id="landing-title">자료를 연결하고, 생각을 완성하세요.</h1>
+        <p className="landing-description">
+          문서와 지식을 한곳에 모아 탐색하고, AI와 함께 더 빠르게 인사이트를 발견하세요.
+        </p>
+        <div className="landing-actions">
+          <Link className="landing-primary-action" href="/login">
+            시작하기
+          </Link>
+          <Link className="landing-secondary-action" href="/login?view=signup">
+            회원가입
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
 }

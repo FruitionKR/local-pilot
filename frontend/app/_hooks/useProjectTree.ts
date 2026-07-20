@@ -1,5 +1,6 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
+import { deleteDocument, renameDocument } from "../_lib/api";
 import {
   appendFolderToFolder,
   findTreeItem,
@@ -13,7 +14,7 @@ import {
 } from "../_lib/tree";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../_lib/types";
 
-export function useProjectTree() {
+export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<() => Promise<void>> }) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [draggedItem, setDraggedItem] = useState<{ projectId: string; itemId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
@@ -136,13 +137,29 @@ export function useProjectTree() {
   }
 
   function deleteContextTarget() {
-    if (!contextMenu || contextMenu.itemId === null) return;
+    if (!contextMenu) return;
+    if (contextMenu.itemId === null) {
+      const projectId = contextMenu.projectId;
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setContextMenu(null);
+      return;
+    }
     const itemId = contextMenu.itemId;
+    const projectId = contextMenu.projectId;
+    const project = projects.find((project) => project.id === projectId);
+    const documentId = project ? findTreeItem(project.items, itemId)?.documentId : undefined;
     setProjects((current) => current.map((project) => {
-      if (project.id !== contextMenu.projectId) return project;
+      if (project.id !== projectId) return project;
       return { ...project, items: removeTreeItem(project.items, itemId).items };
     }));
     setContextMenu(null);
+    // 실제 문서면 서버에서도 삭제한다. 성공·실패 모두 서버 상태로 재동기화한다
+    // (실패 시 문서가 트리에 다시 나타난다).
+    if (documentId) {
+      void deleteDocument(documentId)
+        .then(() => refreshRef.current())
+        .catch(() => refreshRef.current());
+    }
   }
 
   function commitEditing() {
@@ -158,10 +175,26 @@ export function useProjectTree() {
         updateProjectTitle(editing.projectId, nextLabel);
       } else {
         const itemId = editing.itemId;
+        const projectId = editing.projectId;
+        const project = projects.find((project) => project.id === projectId);
+        const target = project ? findTreeItem(project.items, itemId) : null;
+        const documentId = target?.documentId;
+        const previousLabel = target?.label ?? nextLabel;
         setProjects((current) => current.map((project) => {
-          if (project.id !== editing.projectId) return project;
+          if (project.id !== projectId) return project;
           return { ...project, items: updateTreeItemLabel(project.items, itemId, nextLabel) };
         }));
+        // 실제 문서면 서버 표시명도 변경한다. 실패 시 이전 이름으로 원복한다.
+        if (documentId) {
+          void renameDocument(documentId, nextLabel)
+            .then(() => refreshRef.current())
+            .catch(() => {
+              setProjects((current) => current.map((project) => {
+                if (project.id !== projectId) return project;
+                return { ...project, items: updateTreeItemLabel(project.items, itemId, previousLabel) };
+              }));
+            });
+        }
       }
     }
     setEditing(null);

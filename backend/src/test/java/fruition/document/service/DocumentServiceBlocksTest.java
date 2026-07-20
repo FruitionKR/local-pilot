@@ -16,6 +16,7 @@ import fruition.wiki.repository.WikiPageRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -121,6 +123,27 @@ class DocumentServiceBlocksTest {
 
         assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("초기 노트는 워크스페이스별 고유 Markdown 문서로 저장한다")
+    void createInitialNote_savesUniqueMarkdownPerWorkspace() throws Exception {
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+
+        documentService.createInitialNote("ws_first", USER_ID);
+        documentService.createInitialNote("ws_second", USER_ID);
+
+        ArgumentCaptor<Document> documents = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepository, times(2)).save(documents.capture());
+        verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
+        assertThat(documents.getAllValues())
+                .allSatisfy(document -> {
+                    assertThat(document.getFilename()).isEqualTo("새 노트.md");
+                    assertThat(document.getMimeType()).isEqualTo("text/markdown");
+                    assertThat(document.getByteSize()).isPositive();
+                });
+        assertThat(documents.getAllValues().get(0).getContentHash())
+                .isNotEqualTo(documents.getAllValues().get(1).getContentHash());
     }
 
     @Test

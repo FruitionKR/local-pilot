@@ -47,7 +47,9 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     return kinds.includes("raw") && kinds.includes("source");
   }
 
-  function nodeSize() {
+  function nodeSize(node: GraphNode) {
+    if (node.kind === "raw") return 12;
+    if (node.kind === "source") return 16;
     return FIXED_NODE_SIZE;
   }
 
@@ -336,7 +338,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     for (let index = visibleNodeCountRef.current - 1; index >= 0; index -= 1) {
       const node = nodes[index];
       const screenPosition = graphToCanvas(getNodePosition(node.id), canvas);
-      const radius = FIXED_NODE_SIZE / 2;
+      const radius = nodeSize(node) / 2;
       const distance = Math.hypot(pointerX - screenPosition.x, pointerY - screenPosition.y);
       if (distance <= radius + 2) return node;
     }

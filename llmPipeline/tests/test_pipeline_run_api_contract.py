@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
@@ -66,11 +66,27 @@ def _pipeline_client(
             lambda: log_reader
         )
     try:
-        with TestClient(api.app) as client:
+        with (
+            patch.object(api.database, "init_db"),
+            patch.object(api.wiki_schema_database, "init_db"),
+            TestClient(api.app) as client,
+        ):
             yield client
     finally:
         api.app.dependency_overrides.clear()
         api.app.dependency_overrides.update(previous_overrides)
+
+
+def test_pipeline_lifespan_initializes_owned_tables() -> None:
+    with (
+        patch.object(api.database, "init_db") as init_database,
+        patch.object(api.wiki_schema_database, "init_db") as init_wiki_schema,
+        TestClient(api.app),
+    ):
+        pass
+
+    init_database.assert_called_once_with()
+    init_wiki_schema.assert_called_once_with()
 
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:

@@ -71,6 +71,7 @@ public class SecurityConfig {
                 .formLogin(formLogin -> formLogin.disable())
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/workspaces/**").authenticated()
                         .anyRequest().permitAll())

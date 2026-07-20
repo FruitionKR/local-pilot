@@ -1,7 +1,7 @@
 
 .filter-chips {
   position: absolute;
-  top: 28px;
+  top: 24px;
   right: 0;
   left: auto;
   z-index: 4;
@@ -10,14 +10,18 @@
   gap: 12px;
 }
 
+.workspace.is-agent-collapsed .filter-chips {
+  right: 20px;
+}
+
 .filter-chips span,
 .filter-chip-action {
-  min-height: 36px;
+  min-height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #e2e2e2;
-  background: #1e1e1e;
+  background: rgba(255, 255, 255, 0.12);
   border: 1px solid #4f4f4f;
   border-radius: 32px;
   box-shadow: none;
@@ -25,7 +29,7 @@
 
 .filter-chips span {
   gap: 6px;
-  padding: 10px 14px;
+  padding: 9px 14px;
   font-size: 12px;
 }
 

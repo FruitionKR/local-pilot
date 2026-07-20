@@ -1,53 +1,57 @@
 
 @media (max-width: 1300px) {
   .agent-panel {
-    right: 12px;
     width: 330px;
   }
 
   .graph-stage {
-    right: 342px;
+    right: 330px;
+  }
+
+  .workspace.is-graph-view .agent-panel {
+    right: 16px;
+    width: 330px;
+  }
+
+  .workspace.is-graph-view .graph-stage {
+    right: 362px;
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: calc(60px + var(--sidebar-width, 260px));
+    left: var(--sidebar-width, 320px);
   }
 
   .source-preview-panel {
-    left: calc(60px + var(--sidebar-width, 260px));
+    left: var(--sidebar-width, 320px);
   }
 }
 
 @media (max-width: 1080px) {
-  .search-box {
-    left: 54%;
-    width: min(360px, calc(100vw - 480px));
-  }
-
-  .profile div {
-    display: none;
-  }
-
   .agent-panel {
-    right: 10px;
     width: 300px;
   }
 
   .graph-stage {
-    right: 310px;
+    right: 300px;
+  }
+
+  .workspace.is-graph-view .agent-panel {
+    width: 300px;
+  }
+
+  .workspace.is-graph-view .graph-stage {
+    right: 332px;
   }
 
   .workspace.has-source-preview .graph-stage {
-    left: calc(60px + var(--sidebar-width, 260px));
+    left: var(--sidebar-width, 320px);
   }
 
   .source-preview-panel {
-    left: calc(60px + var(--sidebar-width, 260px));
+    left: var(--sidebar-width, 320px);
   }
 }
 
-@media (max-width: 920px) {
-  .search-box {
-    display: none;
-  }
+.workspace.is-graph-view.is-agent-collapsed .graph-stage {
+  right: 0;
 }

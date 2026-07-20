@@ -21,7 +21,7 @@ export function canvasWorldScale(canvas: HTMLCanvasElement, zoom: number) {
   const cssHeight = canvas.clientHeight || canvas.height;
   const fitWidth = Math.max(1, cssWidth - GRAPH_VIEW_PADDING * 2) / GRAPH_WIDTH;
   const fitHeight = Math.max(1, cssHeight - GRAPH_VIEW_PADDING * 2) / GRAPH_HEIGHT;
-  return Math.max(0.1, Math.min(fitWidth, fitHeight)) * zoom;
+  return Math.max(0.1, Math.min(fitWidth, fitHeight, 1)) * zoom;
 }
 
 export function clampGraphPan({
