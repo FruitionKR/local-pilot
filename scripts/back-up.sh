@@ -4,21 +4,17 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
 BACKEND_DIR="$ROOT_DIR/backend"
-FRONTEND_DIR="$ROOT_DIR/frontend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
-PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
-
 BACKEND_PID=""
-FRONTEND_PID=""
 
 log() {
-  printf '[dev-up] %s\n' "$*"
+  printf '[back-up] %s\n' "$*"
 }
 
 fail() {
-  printf '[dev-up] ERROR: %s\n' "$*" >&2
+  printf '[back-up] ERROR: %s\n' "$*" >&2
   exit 1
 }
 
@@ -27,15 +23,10 @@ need_cmd() {
 }
 
 cleanup() {
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
-    kill "$FRONTEND_PID" >/dev/null 2>&1 || true
-  fi
   if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
     kill "$BACKEND_PID" >/dev/null 2>&1 || true
   fi
 }
-
-trap cleanup INT TERM EXIT
 
 ensure_env_file() {
   if [[ -f "$ENV_FILE" ]]; then
@@ -44,7 +35,7 @@ ensure_env_file() {
 
   [[ -f "$ENV_EXAMPLE" ]] || fail "환경변수 예시 파일이 없습니다: $ENV_EXAMPLE"
   cp "$ENV_EXAMPLE" "$ENV_FILE"
-  log "infra/.env가 없어 infra/.env.example에서 복사했습니다. LLM 기능을 쓰려면 API 키를 채워야 합니다."
+  log "infra/.env가 없어 infra/.env.example에서 복사했습니다."
 }
 
 ensure_docker() {
@@ -76,7 +67,7 @@ ensure_docker() {
     export DOCKER_HOST="unix://$colima_socket"
   fi
 
-  docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다. Docker Desktop 또는 Colima가 실행 중인지 확인하세요."
+  docker info >/dev/null 2>&1 || fail "Docker daemon에 연결할 수 없습니다."
 }
 
 java_home_version() {
@@ -91,7 +82,7 @@ find_java21_home() {
   for candidate in "${JAVA_HOME_21:-}" "${JAVA_HOME:-}"; do
     if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
       printf '%s\n' "$candidate"
-      return 0
+      return
     fi
   done
 
@@ -99,7 +90,7 @@ find_java21_home() {
     candidate="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
     if [[ -n "$candidate" ]] && java_home_version "$candidate"; then
       printf '%s\n' "$candidate"
-      return 0
+      return
     fi
   fi
 
@@ -115,27 +106,11 @@ find_java21_home() {
   for candidate in "${common_paths[@]}"; do
     if [[ -d "$candidate" ]] && java_home_version "$candidate"; then
       printf '%s\n' "$candidate"
-      return 0
+      return
     fi
   done
 
   return 1
-}
-
-wait_for_url() {
-  local url="$1"
-  local label="$2"
-  local attempts="${3:-60}"
-
-  for _ in $(seq 1 "$attempts"); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
-      log "$label 응답 확인: $url"
-      return 0
-    fi
-    sleep 1
-  done
-
-  fail "$label 응답을 확인하지 못했습니다: $url"
 }
 
 wait_for_postgres() {
@@ -145,7 +120,7 @@ wait_for_postgres() {
     status="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' fruition-postgresql-dev 2>/dev/null || true)"
     if [[ "$status" == "healthy" || "$status" == "running" ]]; then
       log "PostgreSQL 컨테이너 상태 확인: $status"
-      return 0
+      return
     fi
     sleep 1
   done
@@ -153,39 +128,38 @@ wait_for_postgres() {
   fail "PostgreSQL 컨테이너가 준비되지 않았습니다."
 }
 
-cleanup_stale_pipeline_orphans() {
-  local container_ids
+wait_for_backend() {
+  for _ in $(seq 1 60); do
+    if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1; then
+      log "백엔드 응답 확인: http://localhost:8080/actuator/health"
+      return
+    fi
 
-  container_ids="$(docker ps -aq \
-    --filter "label=com.docker.compose.project=fruition-mvp-dev" \
-    --filter "label=com.docker.compose.service=pipeline-api" \
-    --filter "status=created" \
-    --filter "status=exited" \
-    --filter "status=dead")"
+    kill -0 "$BACKEND_PID" >/dev/null 2>&1 || fail "백엔드 프로세스가 시작 중 종료되었습니다."
+    sleep 1
+  done
 
-  if [[ -z "$container_ids" ]]; then
+  fail "백엔드 응답을 확인하지 못했습니다: http://localhost:8080/actuator/health"
+}
+
+main() {
+  need_cmd curl
+  ensure_env_file
+  ensure_docker
+
+  if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1; then
+    log "백엔드가 이미 실행 중입니다: http://localhost:8080"
     return
   fi
 
-  log "중지된 pipeline-api 컨테이너를 정리합니다."
-  docker rm $container_ids >/dev/null
-}
+  local java21_home
+  java21_home="$(find_java21_home)" || fail "Java 21을 찾지 못했습니다. JAVA_HOME_21을 지정하거나 JDK 21을 설치하세요."
 
-start_infra() {
   log "PostgreSQL과 MinIO를 시작합니다."
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
   wait_for_postgres
-}
 
-start_pipeline() {
-  log "Pipeline API를 시작합니다."
-  cleanup_stale_pipeline_orphans
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api
-  wait_for_url "http://localhost:8000/health" "Pipeline API" 120
-}
-
-start_backend() {
-  local java21_home="$1"
+  trap cleanup INT TERM EXIT
 
   log "백엔드를 시작합니다. Java 21: $java21_home"
   (
@@ -194,56 +168,9 @@ start_backend() {
   ) &
   BACKEND_PID="$!"
 
-  wait_for_url "http://localhost:8080/actuator/health" "백엔드"
-}
-
-start_frontend() {
-  need_cmd node
-  need_cmd npm
-
-  if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-    log "프론트엔드 의존성이 없어 npm install을 실행합니다."
-    (cd "$FRONTEND_DIR" && npm install)
-  fi
-
-  log "프론트엔드를 시작합니다."
-  (
-    cd "$FRONTEND_DIR"
-    npm run dev
-  ) &
-  FRONTEND_PID="$!"
-
-  wait_for_url "http://localhost:3000" "프론트엔드"
-}
-
-main() {
-  "$ROOT_DIR/scripts/bootstrap.sh"
-
-  need_cmd curl
-  ensure_env_file
-  ensure_docker
-
-  local java21_home
-  java21_home="$(find_java21_home)" || fail "Java 21을 찾지 못했습니다. JAVA_HOME_21을 지정하거나 JDK 21을 설치하세요."
-
-  start_infra
-  start_backend "$java21_home"
-  start_pipeline
-  start_frontend
-
-  cat <<'INFO'
-
-[dev-up] 로컬 개발 서버가 실행 중입니다.
-  - Frontend: http://localhost:3000
-  - Backend:  http://localhost:8080
-  - Pipeline: http://localhost:8000
-  - Swagger:  http://localhost:8080/swagger-ui.html
-  - MinIO:    http://localhost:9001
-
-[dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
-INFO
-
-  wait "$BACKEND_PID" "$FRONTEND_PID"
+  wait_for_backend
+  log "종료하려면 Ctrl-C를 누르거나 scripts/back-down.sh를 실행하세요."
+  wait "$BACKEND_PID"
 }
 
 main "$@"

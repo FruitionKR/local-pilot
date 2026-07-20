@@ -37,6 +37,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const hasHandledOAuth = useRef(false);
   const isCompletingSignup = useRef(false);
+  const isLoginRequestInFlight = useRef(false);
   const view = resolveAuthView(searchParams.get("view"));
   const isVerificationView = view === "signup-verification" || view === "forgot-password";
   const { buttonLabel, clearRequest, isTemporaryCode, isWaiting, startRequest } =
@@ -111,8 +112,9 @@ function LoginPageContent() {
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || isLoginRequestInFlight.current) return;
 
+    isLoginRequestInFlight.current = true;
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -121,6 +123,7 @@ function LoginPageContent() {
       saveTokens(tokens.access_token, tokens.refresh_token);
       router.replace("/workspaces");
     } catch {
+      isLoginRequestInFlight.current = false;
       setErrorMessage(INVALID_CREDENTIALS_MESSAGE);
       setIsSubmitting(false);
     }

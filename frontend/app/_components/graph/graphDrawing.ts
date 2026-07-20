@@ -1,6 +1,6 @@
 import type { GraphLink, GraphNode, NodePosition } from "../../_lib/types";
 import { GRAPH_COLORS, hexToRgb, mixHexColor } from "./graphColors";
-import rawNodeIcon from "../../../svg/raw.svg";
+import rawNodeIcon from "../../../svg/graph/raw.svg";
 
 const RAW_NODE_ICON_SRC = rawNodeIcon.src;
 
@@ -203,8 +203,12 @@ function computeLinkedHoverAmounts({
 }
 
 export function drawNodeLabel(context: CanvasRenderingContext2D, node: GraphNode, x: number, y: number, radius: number) {
-  const labelY = y + radius + 16;
-  context.font = node.kind === "source" ? "600 12px Inter, sans-serif" : "11px Inter, sans-serif";
+  const labelY = node.kind === "source" ? y + 24 : node.kind === "raw" ? y + 15 : y + 20;
+  context.font = node.kind === "source"
+    ? "600 14px Pretendard, Inter, sans-serif"
+    : node.kind === "raw"
+      ? "500 10px Pretendard, Inter, sans-serif"
+      : "500 12px Pretendard, Inter, sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
 
@@ -247,4 +251,3 @@ function getRawNodeImage() {
 
   return rawNodeImage.complete ? rawNodeImage : null;
 }
-

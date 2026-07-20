@@ -11,6 +11,7 @@ const ERROR_MESSAGES = {
   uploadFailed: "문서 업로드에 실패했습니다.",
   documentDeleteFailed: "문서 삭제에 실패했습니다.",
   documentRenameFailed: "문서 이름 변경에 실패했습니다.",
+  documentOriginalLoadFailed: "원본 문서를 불러오지 못했습니다.",
   queryFailed: "질의에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
   chatSessionFailed: "채팅 세션을 준비하지 못했습니다.",
@@ -254,6 +255,20 @@ export async function fetchDocumentBlocks(documentId: string): Promise<DocumentB
   );
 
   return parseJsonOrThrow<DocumentBlocksResponse>(response, ERROR_MESSAGES.documentBlocksLoadFailed);
+}
+
+/** 현재 워크스페이스의 원본 문서를 인증된 요청으로 가져온다. */
+export async function fetchDocumentOriginal(documentId: string): Promise<Blob> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/original`,
+    { cache: "no-store" }
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentOriginalLoadFailed));
+  }
+  return response.blob();
 }
 
 export type ChatWikiExportResponse = {

@@ -6,6 +6,44 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-20
+
+### feat: 워크스페이스 초기 노트 자동 생성
+
+**배경**
+
+새 워크스페이스가 비어 있어 첫 진입 시 바로 확인할 문서가 없었다.
+
+**변경된 것**
+
+- 기본 워크스페이스와 사용자가 추가한 워크스페이스 생성 시 실제 Markdown 문서 `새 노트.md`를 함께 저장한다.
+- 초기 노트는 일반 문서와 같은 저장소와 처리 큐를 사용하며, 워크스페이스별 콘텐츠 해시 충돌을 피하도록 식별 주석을 포함한다.
+- 워크스페이스 생성 연결과 워크스페이스별 고유 문서 저장을 단위 테스트로 검증한다.
+
+**검증**
+
+- `./gradlew test`
+
+### fix: 로컬 기동용 health endpoint 추가
+
+**배경**
+
+`scripts/dev-up.sh`가 제거된 사용자용 `GET /api/documents`를 backend readiness 확인에 사용해, 서버가 정상 기동해도 `405 Method Not Allowed`를 실패로 판단했습니다. readiness 확인을 인증·workspace·업무 API 계약과 분리할 endpoint가 필요했습니다.
+
+**변경된 것**
+
+- `backend/build.gradle` — `spring-boot-starter-actuator` 의존성 추가
+- `scripts/dev-up.sh` — backend Flyway가 공용 스키마를 먼저 생성하도록 pipeline API보다 backend를 먼저 시작
+- `SecurityConfig` — `GET /actuator/health`를 인증 없이 호출할 수 있도록 명시
+- `BackendApplicationTests` — 비인증 health 요청이 `200 OK`, `{"status":"UP"}`를 반환하는 통합 테스트 추가
+- `backend/README.md`, `docs/spec/document-upload.md`, `docs/spec/backend-mvp-erd.md` — health endpoint와 현재 workspace 기반 Document API 경로 반영
+
+**검증**
+
+- `./gradlew test`
+- 빈 PostgreSQL volume에서 backend가 Flyway V1~V3를 적용한 뒤 pipeline API 기동
+- `curl http://localhost:8080/actuator/health`
+
 ## 2026-07-16
 
 ### refactor: displayName 결정 규칙을 공용 유틸로 추출 + OAuth 닉네임 길이 상한

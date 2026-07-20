@@ -1,4 +1,5 @@
 import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
+import { cx } from "../../_lib/classNames";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
 import { chatBubbleIcon, SvgIcon } from "../SvgIcon";
 import type { RailView } from "../RailNavigation";
@@ -8,6 +9,7 @@ import { SidebarMenuRow } from "./SidebarMenuRow";
 import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import type { SelectableTreeItem } from "./types";
+import { useFileDropZone } from "./useFileDropZone";
 
 export function DocumentSidebar({
   projects,
@@ -74,8 +76,27 @@ export function DocumentSidebar({
   onAddFolderFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
+  const onlyProject = projects.length === 1 ? projects[0] : null;
+  const isSidebarFileDropTarget = Boolean(
+    onlyProject
+    && fileDropTarget?.projectId === onlyProject.id
+    && fileDropTarget.folderId === null
+  );
+  const { handleDragOver, handleDragLeave, handleDrop } = useFileDropZone({
+    projectId: onlyProject?.id ?? "",
+    folderId: null,
+    onFileDragOver,
+    onFileDragLeave,
+    onDropFiles
+  });
+
   return (
-    <aside className="sidebar">
+    <aside
+      className={cx("sidebar", isSidebarFileDropTarget && "is-file-drop-target")}
+      onDragOver={onlyProject ? handleDragOver : undefined}
+      onDragLeave={onlyProject ? handleDragLeave : undefined}
+      onDrop={onlyProject ? handleDrop : undefined}
+    >
       <SidebarWorkspaceHeader />
       <SidebarMenuRow activeView={activeView} onViewChange={onViewChange} onAddProject={onAddProject} />
       <input
@@ -93,6 +114,7 @@ export function DocumentSidebar({
             key={project.id}
             project={project}
             isPrimary={index === 0}
+            useFullSidebarDropZone={Boolean(onlyProject)}
             onUploadToProject={onUploadToProject}
             draggedItemId={draggedItemId}
             selectedItemId={selectedItemId}

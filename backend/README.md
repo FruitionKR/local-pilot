@@ -185,15 +185,23 @@ Docker Compose 인프라 기동 시에도 동일한 파일을 사용하므로 �
 http://localhost:8080/swagger-ui.html
 ```
 
+### Health check
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+정상 응답은 `{"status":"UP"}`입니다.
+
 ### 엔드포인트 목록
 
 #### Documents
 
 | 메서드 | 경로 | 설명 | 상태 |
 |---|---|---|---|
-| `POST` | `/api/documents` | 문서 업로드 (PDF/Markdown) | 구현 완료 |
-| `GET` | `/api/documents` | 문서 목록 조회 | 구현 완료 |
-| `GET` | `/api/documents/{document_id}` | 문서 상세 조회 | 구현 완료 |
+| `POST` | `/api/workspaces/{workspace_id}/documents` | 문서 업로드 (PDF/Markdown) | 구현 완료 |
+| `GET` | `/api/workspaces/{workspace_id}/documents` | 문서 목록 조회 | 구현 완료 |
+| `GET` | `/api/workspaces/{workspace_id}/documents/{document_id}` | 문서 상세 조회 | 구현 완료 |
 | `PATCH` | `/api/documents/{document_id}/status` | FastAPI 콜백 — 처리 상태 업데이트 | 구현 완료 |
 
 #### Wiki
@@ -235,12 +243,13 @@ http://localhost:8080/swagger-ui.html
 
 ---
 
-### POST /api/documents — 문서 업로드
+### POST /api/workspaces/{workspace_id}/documents — 문서 업로드
 
 **요청**
 
 ```
-POST /api/documents
+POST /api/workspaces/{workspace_id}/documents
+Authorization: Bearer {access_token}
 Content-Type: multipart/form-data
 ```
 
@@ -251,7 +260,8 @@ Content-Type: multipart/form-data
 허용 형식: `application/pdf`, `text/markdown` / `text/x-markdown` (`.md`)
 
 ```bash
-curl -X POST http://localhost:8080/api/documents \
+curl -X POST http://localhost:8080/api/workspaces/{workspace_id}/documents \
+  -H "Authorization: Bearer {access_token}" \
   -F "file=@/path/to/document.pdf"
 ```
 
@@ -318,7 +328,7 @@ Content-Type: application/json
 ### FastAPI 연동 흐름
 
 ```text
-[Spring] POST /api/documents
+[Spring] POST /api/workspaces/{workspace_id}/documents
   → MinIO에 원본 파일 저장 (sources/documents/{id}/original)
   → documents 레코드 생성 (status=processing)
   → 사용자에게 201 응답

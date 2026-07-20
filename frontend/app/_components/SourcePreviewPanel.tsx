@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
-import { fetchWikiPage } from "../_lib/api";
+import { fetchDocumentOriginal, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "../_lib/errors";
 import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
@@ -28,6 +28,7 @@ export function SourcePreviewPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
+  const [rawDocumentUrl, setRawDocumentUrl] = useState<string | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
@@ -35,7 +36,6 @@ export function SourcePreviewPanel({
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
-  const rawDocumentUrl = documentId ? `/api/documents/${documentId}/original` : null;
 
   useEffect(() => {
     if (!pageId) {
@@ -65,22 +65,34 @@ export function SourcePreviewPanel({
   }, [pageId]);
 
   useEffect(() => {
-    if (!isMarkdownFile || !rawDocumentUrl) {
+    if (pageId || !documentId) {
       setRawMarkdown(null);
+      setRawDocumentUrl(null);
       return;
     }
 
     let ignore = false;
+    let objectUrl: string | null = null;
     setIsLoading(true);
     setErrorMessage(null);
+    setRawMarkdown(null);
+    setRawDocumentUrl(null);
 
-    fetch(rawDocumentUrl)
-      .then((res) => {
-        if (!res.ok) throw new Error(`문서를 불러오지 못했습니다. (${res.status})`);
-        return res.text();
-      })
-      .then((text) => {
-        if (!ignore) setRawMarkdown(text);
+    fetchDocumentOriginal(documentId)
+      .then(async (blob) => {
+        if (isMarkdownFile) {
+          const text = await blob.text();
+          if (!ignore) setRawMarkdown(text);
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(blob);
+        if (ignore) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+        setRawDocumentUrl(objectUrl);
       })
       .catch((error: unknown) => {
         if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
@@ -91,8 +103,9 @@ export function SourcePreviewPanel({
 
     return () => {
       ignore = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [isMarkdownFile, rawDocumentUrl]);
+  }, [documentId, isMarkdownFile, pageId]);
 
   useEffect(() => {
     if (!isMarkdownFile || selectedBlockHighlights.length === 0 || rawMarkdown === null) return;
@@ -126,7 +139,9 @@ export function SourcePreviewPanel({
             }}
           />
         )}
-        {isPdfOrOther && rawDocumentUrl && (
+        {isPdfOrOther && isLoading && <p>문서를 불러오는 중입니다.</p>}
+        {isPdfOrOther && errorMessage && <p>{errorMessage}</p>}
+        {isPdfOrOther && !isLoading && !errorMessage && rawDocumentUrl && (
           <iframe
             src={rawDocumentUrl}
             title={title}

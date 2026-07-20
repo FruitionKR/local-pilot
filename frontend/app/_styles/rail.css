@@ -42,11 +42,6 @@
 }
 
 .rail-icon .svg-icon {
-  width: 23px;
-  height: 23px;
-}
-
-.rail-icon.is-large .svg-icon {
   width: 36px;
   height: 36px;
 }

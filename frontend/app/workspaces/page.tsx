@@ -27,7 +27,7 @@ export default function WorkspacesPage() {
         const workspace = response.workspaces?.[0] ?? await createWorkspace(DEFAULT_WORKSPACE_NAME);
         clearSessionCache();
         setSelectedWorkspaceId(workspace.id);
-        router.replace("/");
+        router.replace("/home");
       })
       .catch((error: unknown) => {
         setErrorMessage(getErrorMessage(error, "워크스페이스를 준비하지 못했습니다."));

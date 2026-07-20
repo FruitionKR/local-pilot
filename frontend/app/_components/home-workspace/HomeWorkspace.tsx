@@ -1,5 +1,6 @@
 "use client";
 
+import { MoreHorizontal, PanelRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
@@ -18,7 +19,7 @@ import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
-const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MIN_WIDTH = 320;
 const SIDEBAR_MAX_WIDTH = 460;
 const SOURCE_PREVIEW_DEFAULT_WIDTH = 400;
 const SOURCE_PREVIEW_MIN_WIDTH = 300;
@@ -108,6 +109,7 @@ export function HomeWorkspace() {
     <main
       className={cx(
         "workspace",
+        isGraphView && "is-graph-view",
         (isHomeView || isGraphView) && !isAgentPanelOpen && "is-agent-collapsed",
         !isDocumentSidebarOpen && "is-sidebar-collapsed",
         hasSourcePreview && "has-source-preview",
@@ -190,16 +192,25 @@ export function HomeWorkspace() {
 
       {/* 그래프: 메뉴에서 그래프를 선택했을 때만 그래프 화면을 보여준다. */}
       {isGraphView && (
-        <Graph
-          nodes={graphData.nodes}
-          links={graphData.links}
-          rawDocumentCount={documents.length}
-          focusedNodeId={selection.focusedGraphNodeId}
-          onOpenNodePreview={selection.openGraphNodePreview}
-          onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
-          loading={isGraphLoading}
-          errorMessage={apiError}
-        />
+        <>
+          <header className="graph-topbar">
+            <div className="graph-topbar-actions">
+              <span>마지막 편집</span>
+              <button type="button" aria-label="패널 보기"><PanelRight size={14} /></button>
+              <button type="button" aria-label="그래프 옵션"><MoreHorizontal size={16} /></button>
+            </div>
+          </header>
+          <Graph
+            nodes={graphData.nodes}
+            links={graphData.links}
+            rawDocumentCount={documents.length}
+            focusedNodeId={selection.focusedGraphNodeId}
+            onOpenNodePreview={selection.openGraphNodePreview}
+            onRestoreAgentPanel={!isAgentPanelOpen ? () => setIsAgentPanelOpen(true) : undefined}
+            loading={isGraphLoading}
+            errorMessage={apiError}
+          />
+        </>
       )}
 
       {(isHomeView || isGraphView) && isAgentPanelOpen && (

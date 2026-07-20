@@ -137,7 +137,13 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
   }
 
   function deleteContextTarget() {
-    if (!contextMenu || contextMenu.itemId === null) return;
+    if (!contextMenu) return;
+    if (contextMenu.itemId === null) {
+      const projectId = contextMenu.projectId;
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setContextMenu(null);
+      return;
+    }
     const itemId = contextMenu.itemId;
     const projectId = contextMenu.projectId;
     const project = projects.find((project) => project.id === projectId);

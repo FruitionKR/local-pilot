@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SvgIcon, toggleIcon } from "../SvgIcon";
 import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
 import { createWorkspace, fetchWorkspaces } from "../../_lib/api";
@@ -13,7 +13,7 @@ function switchWorkspace(workspaceId: string) {
   window.location.reload();
 }
 
-/** 사이드바 상단 워크스페이스 헤더: 노란 아바타 + 워크스페이스명 + hover 시 전환 드롭다운 */
+/** 사이드바 상단 워크스페이스 헤더: 클릭하면 워크스페이스 전환 메뉴를 연다. */
 export function SidebarWorkspaceHeader() {
   const workspaceName = useWorkspaceName();
   const name = workspaceName ?? "워크스페이스";
@@ -21,11 +21,23 @@ export function SidebarWorkspaceHeader() {
   const [workspaces, setWorkspaces] = useState<WorkspaceResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
     let cancelled = false;
+    function handleOutsidePointerDown(event: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
     fetchWorkspaces()
       .then((response) => {
         if (cancelled) return;
@@ -38,6 +50,8 @@ export function SidebarWorkspaceHeader() {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("pointerdown", handleOutsidePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -54,21 +68,19 @@ export function SidebarWorkspaceHeader() {
   }
 
   return (
-    <div
-      className="sidebar-workspace"
-      onMouseEnter={() => setIsOpen(true)}
-      onMouseLeave={() => setIsOpen(false)}
-    >
-      <span className="sidebar-workspace-mark" aria-hidden>{name.charAt(0)}</span>
+    <div className="sidebar-workspace" ref={rootRef}>
       <button
         type="button"
-        className="sidebar-workspace-name"
+        className="sidebar-workspace-trigger"
         aria-label="워크스페이스 전환"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span>{name}</span>
-        <SvgIcon src={toggleIcon} className="sidebar-workspace-toggle" />
+        <span className="sidebar-workspace-mark" aria-hidden>{name.charAt(0)}</span>
+        <span className="sidebar-workspace-name">
+          <span>{name}</span>
+          <SvgIcon src={toggleIcon} className={`sidebar-workspace-toggle${isOpen ? " is-open" : ""}`} />
+        </span>
       </button>
 
       {isOpen && (
@@ -82,7 +94,10 @@ export function SidebarWorkspaceHeader() {
                   key={workspace.id}
                   type="button"
                   className="workspace-dropdown-item"
-                  onClick={() => switchWorkspace(workspace.id)}
+                  onClick={() => {
+                    setIsOpen(false);
+                    switchWorkspace(workspace.id);
+                  }}
                 >
                   <span className="workspace-dropdown-avatar" aria-hidden>{workspace.name.charAt(0)}</span>
                   <span className="workspace-dropdown-label">{workspace.name}</span>

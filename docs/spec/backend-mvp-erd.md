@@ -206,7 +206,7 @@ assistant 메시지의 근거 스니펫(evidence_snippets) 저장. pipeline 응�
 
 ### source_blocks
 
-원본 문서를 block 단위로 나눈 텍스트. llmPipeline ingestion이 적재하며, Spring은 `GET /api/documents/{document_id}/blocks`에서 읽기만 한다.
+원본 문서를 block 단위로 나눈 텍스트. llmPipeline ingestion이 적재하며, Spring은 `GET /api/workspaces/{workspace_id}/documents/{document_id}/blocks`에서 읽기만 한다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |

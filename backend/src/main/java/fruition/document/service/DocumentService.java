@@ -63,6 +63,7 @@ public class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     private static final int STALLED_THRESHOLD_SECONDS = 60;
+    private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
 
     private final DocumentRepository documentRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -167,6 +168,41 @@ public class DocumentService {
             throw e;
         } catch (Exception e) {
             throw new DocumentUploadException("파일 저장 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    /** 새 워크스페이스에 표시할 초기 Markdown 노트를 저장하고 처리 큐에 등록한다. */
+    @Transactional
+    public void createInitialNote(String workspaceId, String userId) {
+        String markdown = "<!-- fruition-workspace: " + workspaceId + " -->\n# 새 노트\n";
+        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        String objectPath = "sources/documents/" + documentId + "/original";
+
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectPath)
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+
+            Document document = new Document(
+                    documentId,
+                    workspaceId,
+                    userId,
+                    INITIAL_NOTE_FILENAME,
+                    "text/markdown",
+                    bytes.length,
+                    objectPath,
+                    sha256(bytes)
+            );
+            documentRepository.save(document);
+            requestProcessingAfterCommit(documentId);
+        } catch (Exception e) {
+            throw new DocumentUploadException("초기 노트 저장 중 오류가 발생했습니다.", e);
         }
     }
 

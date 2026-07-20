@@ -24,14 +24,15 @@ Fruition MVP는 원본 파일을 직접 그래프 노드로 사용하지 않는�
 업로드가 성공하면 프론트는 응답으로 받은 document id와 status를 사용해
 문서 목록에 해당 문서를 processing 상태로 표시한다.
 
-이후 프론트는 GET /api/documents를 polling하여 completed 또는 failed 상태를 확인한다.
+이후 프론트는 `GET /api/workspaces/{workspace_id}/documents`를 polling하여 completed 또는 failed 상태를 확인한다.
 
 ## 4. API 계약
 
 ### Request
 
 ```
-POST /api/documents
+POST /api/workspaces/{workspace_id}/documents
+Authorization: Bearer {access_token}
 Content-Type: multipart/form-data
 ```
 
@@ -68,6 +69,8 @@ field:
 8. API는 텍스트 추출과 Wiki 생성을 기다리지 않고 즉시 응답한다.
 9. 백그라운드 처리는 DocumentProcessingRequester를 통해 요청만 한다.
 10. 백그라운드 처리 실패는 이 API 응답 실패로 보지 않는다.
+11. 인증되지 않은 요청은 401을 반환한다.
+12. 사용자가 속하지 않은 workspace 요청은 404 WORKSPACE_NOT_FOUND를 반환한다.
 
 ## 6. 실패 응답
 
@@ -138,6 +141,7 @@ field:
 - 동일한 파일을 다시 업로드하면 409를 반환한다.
 - API 응답에는 workspace_id, content_hash 같은 내부 필드가 노출되지 않는다.
 - 업로드 API는 LLM 호출을 직접 수행하지 않는다.
+- 인증된 workspace 멤버만 문서를 업로드하고 목록을 조회할 수 있다.
 
 ## 8. 테스트 관점
 
@@ -147,6 +151,8 @@ field:
 - file이 없으면 400을 반환한다.
 - 지원하지 않는 Content-Type이면 415를 반환한다.
 - 성공 응답 JSON 구조가 API Contract와 일치한다.
+- 인증되지 않은 요청은 401을 반환한다.
+- 사용자가 속하지 않은 workspace 요청은 404를 반환한다.
 
 ### Service Test
 
@@ -169,7 +175,6 @@ field:
 - Source Page / Concept Page 생성
 - wiki_pages, wiki_page_links 저장
 - 작업 큐 / 재시도 API
-- 로그인 / 사용자별 workspace
 - S3 실서비스 연동
 
 ## 10. 열린 질문

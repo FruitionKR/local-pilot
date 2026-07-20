@@ -11,6 +11,7 @@ import type { TreeInteractionProps } from "./types";
 export function ProjectSection({
   project,
   isPrimary,
+  useFullSidebarDropZone,
   onUploadToProject,
   draggedItemId,
   selectedItemId,
@@ -34,6 +35,7 @@ export function ProjectSection({
   project: Project;
   /** 첫 번째 프로젝트는 시안처럼 밝은 pill 헤더 + 업로드 버튼을 표시한다 */
   isPrimary?: boolean;
+  useFullSidebarDropZone?: boolean;
   onUploadToProject: (projectId: string) => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
 } & TreeInteractionProps) {
@@ -50,11 +52,15 @@ export function ProjectSection({
 
   return (
     <section
-      className={cx("project-section", isPrimary && "is-primary", isRootFileDropTarget && "is-file-drop-target")}
+      className={cx(
+        "project-section",
+        isPrimary && "is-primary",
+        !useFullSidebarDropZone && isRootFileDropTarget && "is-file-drop-target"
+      )}
       onContextMenu={(event) => onContextMenuProject(event, project.id)}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragOver={useFullSidebarDropZone ? undefined : handleDragOver}
+      onDragLeave={useFullSidebarDropZone ? undefined : handleDragLeave}
+      onDrop={useFullSidebarDropZone ? undefined : handleDrop}
     >
       <div className="project-title">
         <button
