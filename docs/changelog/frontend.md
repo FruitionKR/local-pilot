@@ -6,6 +6,17 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-20
 
+### feat: 문서 삭제·이름 변경을 백엔드 API에 연결
+
+- 기존에는 사이드바 트리의 문서 삭제/이름 변경이 로컬 React 상태만 바꾸고 서버에 반영되지 않아 새로고침 시 원복되던 문제 수정
+- `api.ts`에 `deleteDocument`(`DELETE /api/workspaces/{workspace_id}/documents/{document_id}`), `renameDocument`(`PATCH .../documents/{document_id}/rename`) 추가
+- `useProjectTree`의 `deleteContextTarget`·`commitEditing`에서 대상 트리 아이템에 `documentId`가 있으면 실제 문서로 간주해 API를 호출하도록 배선
+- 성공·실패 모두 `refreshBackendData`로 서버 상태와 재동기화. 삭제 실패 시 문서가 트리에 다시 나타나고, 이름 변경 실패 시 이전 이름으로 원복
+- `useProjectTree`가 `useBackendData`보다 먼저 생성되는 순서 문제로 `refreshBackendData`는 `refreshRef`(ref)로 주입
+- 빈 문서 생성은 백엔드에 대응 endpoint가 없어 미구현. 백엔드 이슈로 기록: `docs/issue/backend/2026-07-20.md` 이슈 1
+
+## 2026-07-20
+
 ### feat: 홈/그래프 화면 분리 및 워크스페이스·문서 추가 hover 인터랙션 (Figma 426:2115 / 500:6597 / 500:6692)
 
 **변경 배경**

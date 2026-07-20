@@ -9,6 +9,8 @@ const ERROR_MESSAGES = {
   workspaceRequired: "워크스페이스를 선택해주세요.",
   workspaceCreateFailed: "워크스페이스 생성에 실패했습니다.",
   uploadFailed: "문서 업로드에 실패했습니다.",
+  documentDeleteFailed: "문서 삭제에 실패했습니다.",
+  documentRenameFailed: "문서 이름 변경에 실패했습니다.",
   queryFailed: "질의에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
   chatSessionFailed: "채팅 세션을 준비하지 못했습니다.",
@@ -178,6 +180,34 @@ export async function uploadDocumentFile(file: File) {
   });
 
   return parseJsonOrThrow<DocumentUploadResponse>(response, ERROR_MESSAGES.uploadFailed);
+}
+
+/** 문서를 삭제한다. 성공 시 204를 반환한다. */
+export async function deleteDocument(documentId: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentDeleteFailed));
+  }
+}
+
+/** 문서 표시명을 변경한다. */
+export async function renameDocument(documentId: string, filename: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/rename`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.documentRenameFailed));
+  }
 }
 
 export async function fetchBackendData(): Promise<BackendData> {

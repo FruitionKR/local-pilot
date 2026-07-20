@@ -40,7 +40,9 @@ export function HomeWorkspace() {
       window.innerWidth - sidebarResize.width - (isAgentPanelOpen ? AGENT_PANEL_WIDTH : AGENT_PANEL_COLLAPSED_WIDTH) - RESIZE_SAFETY_MARGIN
     )
   );
-  const projectTree = useProjectTree();
+  // useProjectTree가 useBackendData보다 먼저 생성되므로 refreshBackendData를 ref로 주입한다.
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const projectTree = useProjectTree({ refreshRef });
   const {
     documents,
     setDocuments,
@@ -49,6 +51,9 @@ export function HomeWorkspace() {
     apiError,
     refreshBackendData
   } = useBackendData({ setProjects: projectTree.setProjects });
+  useEffect(() => {
+    refreshRef.current = refreshBackendData;
+  }, [refreshBackendData]);
   const upload = useDocumentUpload({
     setProjects: projectTree.setProjects,
     setDocuments,
