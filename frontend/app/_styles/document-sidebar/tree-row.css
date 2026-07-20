@@ -85,27 +85,16 @@
   line-height: 1.2;
 }
 
+/* 시안의 "Modify ⋯" 태그: 처리 중/수정된 파일 */
 .tree-status.uploading,
 .tree-status.processing,
 .tree-status.uploaded {
   color: var(--yellow);
-  background: #323232;
-}
-
-.tree-status.uploading i,
-.tree-status.processing i,
-.tree-status.uploaded i {
-  width: 10px;
-  height: 10px;
-  border: 2px solid rgba(255, 193, 23, 0.28);
-  border-top-color: var(--yellow);
-  border-radius: 999px;
-  animation: processing-spin 0.78s linear infinite;
-}
-
-.tree-status.completed {
-  color: #e2e2e2;
-  background: #323232;
+  background: rgba(255, 193, 23, 0.14);
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .tree-status.failed {
@@ -113,10 +102,14 @@
   background: #3a1f1d;
 }
 
-@keyframes processing-spin {
-  to {
-    transform: rotate(360deg);
-  }
+/* 파일 행 우측 타입 배지 (PDF/TXT 등) */
+.tree-type-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--subdued);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 .tree-edit-input {

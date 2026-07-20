@@ -1,8 +1,12 @@
 import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
-import { switchIcon, SvgIcon } from "../SvgIcon";
+import { chatBubbleIcon, SvgIcon } from "../SvgIcon";
+import type { RailView } from "../RailNavigation";
 import { ContextMenu } from "./ContextMenu";
 import { ProjectSection } from "./ProjectSection";
+import { SidebarMenuRow } from "./SidebarMenuRow";
+import { SidebarProfile } from "./SidebarProfile";
+import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import type { SelectableTreeItem } from "./types";
 
 export function DocumentSidebar({
@@ -14,6 +18,10 @@ export function DocumentSidebar({
   editing,
   contextMenu,
   uploadInputRef,
+  activeView,
+  onViewChange,
+  onStartChat,
+  onUploadToProject,
   onAddProject,
   onResizeStart,
   onUploadPickerChange,
@@ -42,6 +50,10 @@ export function DocumentSidebar({
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement>;
+  activeView: RailView;
+  onViewChange: (view: RailView) => void;
+  onStartChat: () => void;
+  onUploadToProject: (projectId: string) => void;
   onAddProject: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
@@ -64,20 +76,8 @@ export function DocumentSidebar({
 }) {
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        <h1>자료 관리</h1>
-        <button
-          type="button"
-          className="sidebar-upload-button"
-          aria-label="프로젝트 추가"
-          onClick={(event) => {
-            event.stopPropagation();
-            onAddProject();
-          }}
-        >
-          <SvgIcon src={switchIcon} className="sidebar-upload-icon" />
-        </button>
-      </div>
+      <SidebarWorkspaceHeader />
+      <SidebarMenuRow activeView={activeView} onViewChange={onViewChange} onAddProject={onAddProject} />
       <input
         ref={uploadInputRef}
         className="upload-picker"
@@ -88,10 +88,12 @@ export function DocumentSidebar({
       />
 
       <div className="sidebar-content">
-        {projects.map((project) => (
+        {projects.map((project, index) => (
           <ProjectSection
             key={project.id}
             project={project}
+            isPrimary={index === 0}
+            onUploadToProject={onUploadToProject}
             draggedItemId={draggedItemId}
             selectedItemId={selectedItemId}
             dropTarget={dropTarget}
@@ -121,6 +123,18 @@ export function DocumentSidebar({
           />
         )}
       </div>
+      <button
+        type="button"
+        className="sidebar-chat-start"
+        onClick={(event) => {
+          event.stopPropagation();
+          onStartChat();
+        }}
+      >
+        <SvgIcon src={chatBubbleIcon} />
+        채팅 시작
+      </button>
+      <SidebarProfile />
       <button
         type="button"
         className="sidebar-resize-handle"

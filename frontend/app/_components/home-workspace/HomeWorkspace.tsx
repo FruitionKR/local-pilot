@@ -4,10 +4,10 @@ import { useMemo, useState, type CSSProperties, type PointerEvent as ReactPointe
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
-import { RailNavigation, railItems, type RailView } from "../RailNavigation";
+import { railItems, type RailView } from "../RailNavigation";
+import { UploadErrorModal } from "../modals/UploadErrorModal";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
 import { sideboxIcon, SvgIcon } from "../SvgIcon";
-import { TopBar } from "../TopBar";
 import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
@@ -17,13 +17,13 @@ import { buildGraphFromBackend } from "../../_lib/graph";
 import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
-const SIDEBAR_DEFAULT_WIDTH = 260;
+const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 460;
 const SOURCE_PREVIEW_DEFAULT_WIDTH = 400;
 const SOURCE_PREVIEW_MIN_WIDTH = 300;
 const SOURCE_PREVIEW_MAX_FLOOR = 360;
-const AGENT_PANEL_WIDTH = 430;
+const AGENT_PANEL_WIDTH = 360;
 const AGENT_PANEL_COLLAPSED_WIDTH = 24;
 const RESIZE_SAFETY_MARGIN = 120;
 
@@ -80,7 +80,7 @@ export function HomeWorkspace() {
       className={cx(
         "workspace",
         isHomeView && !isAgentPanelOpen && "is-agent-collapsed",
-        isHomeView && !isDocumentSidebarOpen && "is-sidebar-collapsed",
+        !isDocumentSidebarOpen && "is-sidebar-collapsed",
         hasSourcePreview && "has-source-preview"
       )}
       style={{
@@ -92,55 +92,56 @@ export function HomeWorkspace() {
       onPointerUp={handleResizePointerEnd}
       onPointerCancel={handleResizePointerEnd}
     >
-      <TopBar />
-      <RailNavigation activeView={activeView} onViewChange={setActiveView} />
+      {isDocumentSidebarOpen ? (
+        <DocumentSidebar
+          projects={projectTree.projects}
+          draggedItemId={projectTree.draggedItem?.itemId ?? null}
+          selectedItemId={selection.selectedTreeItemId}
+          dropTarget={projectTree.dropTarget}
+          fileDropTarget={projectTree.fileDropTarget}
+          editing={projectTree.editing}
+          contextMenu={projectTree.contextMenu}
+          uploadInputRef={upload.uploadInputRef}
+          activeView={activeView}
+          onViewChange={setActiveView}
+          onStartChat={() => setIsAgentPanelOpen(true)}
+          onUploadToProject={(projectId) => upload.openUploadPicker(projectId, null)}
+          onAddProject={projectTree.addProject}
+          onResizeStart={sidebarResize.start}
+          onUploadPickerChange={upload.handleUploadPickerChange}
+          onMoveItem={projectTree.moveTreeEntry}
+          onDropFiles={upload.dropUploadFiles}
+          onDragStart={projectTree.onDragStart}
+          onDragOverItem={projectTree.onDragOverItem}
+          onFileDragOver={projectTree.setFileDropTarget}
+          onFileDragLeave={projectTree.onFileDragLeave}
+          onDragEnd={projectTree.onDragEnd}
+          onContextMenuProject={projectTree.openProjectMenu}
+          onContextMenuItem={projectTree.openFolderMenu}
+          onSelectGraphNode={selection.selectTreeGraphNode}
+          onEditingChange={projectTree.onEditingChange}
+          onCommitEditing={projectTree.commitEditing}
+          onCancelEditing={projectTree.cancelEditing}
+          onRenameContextTarget={projectTree.renameContextTarget}
+          onAddFolderFromContext={projectTree.addFolderFromContext}
+          onDeleteContextTarget={projectTree.deleteContextTarget}
+        />
+      ) : (
+        <button
+          type="button"
+          className="sidebar-restore"
+          aria-label="자료 관리 보이기"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsDocumentSidebarOpen(true);
+          }}
+        >
+          <SvgIcon src={sideboxIcon} />
+        </button>
+      )}
 
       {isHomeView ? (
         <>
-          {isDocumentSidebarOpen ? (
-            <DocumentSidebar
-              projects={projectTree.projects}
-              draggedItemId={projectTree.draggedItem?.itemId ?? null}
-              selectedItemId={selection.selectedTreeItemId}
-              dropTarget={projectTree.dropTarget}
-              fileDropTarget={projectTree.fileDropTarget}
-              editing={projectTree.editing}
-              contextMenu={projectTree.contextMenu}
-              uploadInputRef={upload.uploadInputRef}
-              onAddProject={projectTree.addProject}
-              onResizeStart={sidebarResize.start}
-              onUploadPickerChange={upload.handleUploadPickerChange}
-              onMoveItem={projectTree.moveTreeEntry}
-              onDropFiles={upload.dropUploadFiles}
-              onDragStart={projectTree.onDragStart}
-              onDragOverItem={projectTree.onDragOverItem}
-              onFileDragOver={projectTree.setFileDropTarget}
-              onFileDragLeave={projectTree.onFileDragLeave}
-              onDragEnd={projectTree.onDragEnd}
-              onContextMenuProject={projectTree.openProjectMenu}
-              onContextMenuItem={projectTree.openFolderMenu}
-              onSelectGraphNode={selection.selectTreeGraphNode}
-              onEditingChange={projectTree.onEditingChange}
-              onCommitEditing={projectTree.commitEditing}
-              onCancelEditing={projectTree.cancelEditing}
-              onRenameContextTarget={projectTree.renameContextTarget}
-              onAddFolderFromContext={projectTree.addFolderFromContext}
-              onDeleteContextTarget={projectTree.deleteContextTarget}
-            />
-          ) : (
-            <button
-              type="button"
-              className="sidebar-restore"
-              aria-label="자료 관리 보이기"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsDocumentSidebarOpen(true);
-              }}
-            >
-              <SvgIcon src={sideboxIcon} />
-            </button>
-          )}
-
           {selection.selectedDocumentTitle && (
             <SourcePreviewPanel
               title={selection.selectedDocumentTitle}
@@ -176,6 +177,8 @@ export function HomeWorkspace() {
       ) : (
         <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
       )}
+
+      {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
     </main>
   );
 }

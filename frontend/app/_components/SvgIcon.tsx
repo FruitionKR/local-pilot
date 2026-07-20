@@ -22,12 +22,23 @@ import userCircleIcon from "../../svg/UserCircle.svg";
 
 // svg 파일 없이 인라인 SVG로만 렌더링하는 아이콘 식별자
 const archiveIcon = { inlineIcon: "archive" } as const;
+const shareIcon = { inlineIcon: "share" } as const;
+const folderPlusIcon = { inlineIcon: "folderPlus" } as const;
+const chatBubbleIcon = { inlineIcon: "chatBubble" } as const;
 
-export type SvgAsset = StaticImageData | typeof archiveIcon;
+export type SvgAsset =
+  | StaticImageData
+  | typeof archiveIcon
+  | typeof shareIcon
+  | typeof folderPlusIcon
+  | typeof chatBubbleIcon;
 
 export {
   archiveIcon,
   arrowIcon,
+  chatBubbleIcon,
+  folderPlusIcon,
+  shareIcon,
   chatCheckIcon,
   collectionIcon,
   conceptPageIcon,
@@ -55,6 +66,25 @@ const inlineIconRenderers = new Map<SvgAsset, (iconClassName: string) => ReactEl
       <path fillRule="evenodd" clipRule="evenodd" d="M1.87498 5.1064H14.125V12.1207C14.125 12.6522 13.9406 13.162 13.6124 13.5378C13.2842 13.9137 12.8391 14.1248 12.375 14.1248H3.62498C3.16086 14.1248 2.71574 13.9137 2.38755 13.5378C2.05936 13.162 1.87498 12.6522 1.87498 12.1207V5.1064Z" fill="currentColor" opacity="0.55" />
       <path d="M6.50627 8.25621C6.34217 8.4203 6.24998 8.64286 6.24998 8.87492C6.24998 9.10699 6.34217 9.32955 6.50627 9.49364C6.67036 9.65774 6.89292 9.74992 7.12498 9.74992H8.87498C9.10705 9.74992 9.32961 9.65774 9.4937 9.49364C9.6578 9.32955 9.74998 9.10699 9.74998 8.87492C9.74998 8.64286 9.6578 8.4203 9.4937 8.25621C9.32961 8.09211 9.10705 7.99992 8.87498 7.99992H7.12498C6.89292 7.99992 6.67036 8.09211 6.50627 8.25621Z" fill="currentColor" />
       <rect x="1.87498" y="5.15607" width="12.2499" height="0.796814" fill="currentColor" />
+    </svg>
+  )],
+  [shareIcon, (iconClassName) => (
+    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
+      <circle cx="12.2" cy="3.2" r="2.1" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="3.8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="12.2" cy="12.8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M5.7 7.05L10.3 4.15M5.7 8.95L10.3 11.85" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )],
+  [folderPlusIcon, (iconClassName) => (
+    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
+      <path d="M1.8 4.2C1.8 3.4 2.4 2.8 3.2 2.8H5.9L7.3 4.3H12.8C13.6 4.3 14.2 4.9 14.2 5.7V11.8C14.2 12.6 13.6 13.2 12.8 13.2H3.2C2.4 13.2 1.8 12.6 1.8 11.8V4.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 6.9V10.5M6.2 8.7H9.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )],
+  [chatBubbleIcon, (iconClassName) => (
+    <svg aria-hidden className={iconClassName} viewBox="0 0 16 16" fill="none">
+      <path d="M8 2.2C4.6 2.2 1.9 4.5 1.9 7.4C1.9 8.9 2.6 10.2 3.8 11.1L3.2 13.6L5.9 12.2C6.6 12.4 7.3 12.5 8 12.5C11.4 12.5 14.1 10.2 14.1 7.4C14.1 4.5 11.4 2.2 8 2.2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   )],
   [userCircleIcon, (iconClassName) => (

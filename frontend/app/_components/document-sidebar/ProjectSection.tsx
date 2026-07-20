@@ -10,6 +10,8 @@ import type { TreeInteractionProps } from "./types";
 
 export function ProjectSection({
   project,
+  isPrimary,
+  onUploadToProject,
   draggedItemId,
   selectedItemId,
   dropTarget,
@@ -30,6 +32,9 @@ export function ProjectSection({
   onCancelEditing
 }: {
   project: Project;
+  /** 첫 번째 프로젝트는 시안처럼 밝은 pill 헤더 + 업로드 버튼을 표시한다 */
+  isPrimary?: boolean;
+  onUploadToProject: (projectId: string) => void;
   onContextMenuProject: (event: ReactMouseEvent<HTMLElement>, projectId: string) => void;
 } & TreeInteractionProps) {
   const [isOpen, setIsOpen] = useState(true);
@@ -45,7 +50,7 @@ export function ProjectSection({
 
   return (
     <section
-      className={cx("project-section", isRootFileDropTarget && "is-file-drop-target")}
+      className={cx("project-section", isPrimary && "is-primary", isRootFileDropTarget && "is-file-drop-target")}
       onContextMenu={(event) => onContextMenuProject(event, project.id)}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -67,11 +72,24 @@ export function ProjectSection({
             />
           ) : (
             <>
-              <span>{project.title}</span>
               <SvgIcon src={arrowIcon} className={`project-arrow ${isOpen ? "is-open" : ""}`} />
+              <span>{project.title}</span>
             </>
           )}
         </button>
+        {isPrimary && (
+          <button
+            type="button"
+            className="project-add-file"
+            aria-label="파일 업로드"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUploadToProject(project.id);
+            }}
+          >
+            +
+          </button>
+        )}
       </div>
       {isOpen && (
         project.items.length > 0

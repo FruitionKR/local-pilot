@@ -1,13 +1,35 @@
 import { cx } from "../../_lib/classNames";
+import { isFileItem } from "../../_lib/tree";
 import type { DropTarget, TreeItem } from "../../_lib/types";
 import { InlineEditInput } from "./InlineEditInput";
 import { TreeNodeIcon } from "./TreeNodeIcon";
+import { TreeNodeStatus } from "./TreeNodeStatus";
 import type { TreeInteractionProps } from "./types";
 import { useTreeNodeDragDrop } from "./useTreeNodeDragDrop";
 
 // 트리 행 들여쓰기: 기본 패딩 + depth당 증가 폭 (px)
 const TREE_ROW_BASE_PADDING_PX = 10;
 const TREE_ROW_INDENT_PER_DEPTH_PX = 17;
+
+// mime type → 시안의 우측 파일 타입 배지 문구
+const MIME_TYPE_BADGES: [pattern: string, label: string][] = [
+  ["pdf", "PDF"],
+  ["markdown", "MD"],
+  ["plain", "TXT"]
+];
+
+/** 파일 항목의 우측에 표시할 타입 배지 문구를 구한다. 알 수 없으면 null */
+function fileTypeBadge(item: TreeItem): string | null {
+  if (!isFileItem(item)) return null;
+
+  const mimeType = item.mimeType ?? "";
+  const matched = MIME_TYPE_BADGES.find(([pattern]) => mimeType.includes(pattern));
+  if (matched) return matched[1];
+
+  const extension = item.label.includes(".") ? item.label.split(".").pop() ?? "" : "";
+  const fromExtension = MIME_TYPE_BADGES.find(([, label]) => label.toLowerCase() === extension.toLowerCase());
+  return fromExtension ? fromExtension[1] : null;
+}
 
 export function TreeNode({
   item,
@@ -101,6 +123,8 @@ export function TreeNode({
         ) : (
           <>
             <span>{item.label}</span>
+            <TreeNodeStatus status={item.status} />
+            {fileTypeBadge(item) && <small className="tree-type-badge">{fileTypeBadge(item)}</small>}
             {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
           </>
         )}

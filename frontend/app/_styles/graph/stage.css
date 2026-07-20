@@ -1,9 +1,9 @@
 
 .api-error-banner {
   position: absolute;
-  top: 81px;
-  left: 340px;
-  right: 430px;
+  top: 16px;
+  left: calc(var(--sidebar-width, 320px) + 20px);
+  right: 380px;
   z-index: 9;
   padding: 9px 12px;
   color: #ffb6ae;
@@ -15,31 +15,31 @@
 }
 
 .workspace.is-sidebar-collapsed .api-error-banner {
-  left: 80px;
+  left: 20px;
 }
 
 .graph-stage {
   position: absolute;
-  inset: 65px 428px 0 calc(60px + var(--sidebar-width, 260px));
+  inset: 0 360px 0 var(--sidebar-width, 320px);
   overflow: hidden;
   background: #0a0a0a;
 }
 
 .workspace.is-sidebar-collapsed .graph-stage {
-  left: 60px;
+  left: 0;
 }
 
 .workspace.has-source-preview .graph-stage {
-  left: calc(60px + var(--sidebar-width, 260px));
-  right: 428px;
+  left: var(--sidebar-width, 320px);
+  right: 360px;
 }
 
 .workspace.is-sidebar-collapsed.has-source-preview .graph-stage {
-  left: 60px;
+  left: 0;
 }
 
 .workspace.is-agent-collapsed .graph-stage {
-  right: 24px;
+  right: 0;
 }
 
 .graph-canvas {

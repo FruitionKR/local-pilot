@@ -64,7 +64,11 @@
 
 .blank-view {
   position: absolute;
-  inset: 65px 0 0 60px;
+  inset: 0 0 0 var(--sidebar-width, 320px);
   z-index: 1;
   background: #0a0a0a;
+}
+
+.workspace.is-sidebar-collapsed .blank-view {
+  left: 0;
 }

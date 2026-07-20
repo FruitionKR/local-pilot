@@ -56,6 +56,14 @@ export type UploadPickerTarget = {
 
 export type DocumentStatus = "uploaded" | "processing" | "completed" | "failed";
 
+// GET /api/auth/me 응답
+export type UserMeResponse = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  created_at: string;
+};
+
 export type WorkspaceResponse = {
   id: string;
   name: string;

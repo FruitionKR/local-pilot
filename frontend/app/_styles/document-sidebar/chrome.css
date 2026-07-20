@@ -1,0 +1,170 @@
+
+/* 사이드바 상단 워크스페이스 헤더 */
+.sidebar-workspace {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 10px;
+}
+
+.sidebar-workspace-mark {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a0a0a;
+  background: var(--yellow);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sidebar-workspace-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sidebar-workspace-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-workspace-toggle {
+  width: 14px;
+  height: 14px;
+}
+
+/* 가로 아이콘 메뉴 줄 */
+.sidebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sidebar-menu-item {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  color: var(--muted);
+  background: transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 0;
+}
+
+.sidebar-menu-item span {
+  line-height: 1;
+}
+
+.sidebar-menu-item:hover,
+.sidebar-menu-item:focus-visible,
+.sidebar-menu-item.is-active {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+.sidebar-menu-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-menu-add {
+  margin-left: auto;
+}
+
+/* 채팅 시작 버튼 */
+.sidebar-chat-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 12px;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-chat-start:hover,
+.sidebar-chat-start:focus-visible {
+  background: var(--soft);
+}
+
+.sidebar-chat-start .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* 프로필 푸터 */
+.sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sidebar-profile-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a0a0a;
+  background: #d7d7d7;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sidebar-profile-info {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-profile-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.sidebar-profile-info small {
+  color: #54c26a;
+  font-size: 10px;
+}
+
+.sidebar-logout {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+}
+
+.sidebar-logout:hover,
+.sidebar-logout:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+}

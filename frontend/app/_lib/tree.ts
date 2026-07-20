@@ -38,11 +38,12 @@ function isGeneratedGroup(item: TreeItem, groupId: string) {
 
 export function isSupportedUploadFile(file: File) {
   const name = file.name.toLowerCase();
-  return name.endsWith(".pdf") || name.endsWith(".md");
+  return name.endsWith(".pdf") || name.endsWith(".md") || name.endsWith(".txt");
 }
 
+// 미지원 파일 필터링은 dropUploadFiles에서 처리한다(거부 안내 모달 표시를 위해 원본 목록 유지).
 export function getDroppedFiles(event: ReactDragEvent<HTMLElement>) {
-  return Array.from(event.dataTransfer.files).filter(isSupportedUploadFile);
+  return Array.from(event.dataTransfer.files);
 }
 
 export function hasDroppedFiles(event: ReactDragEvent<HTMLElement>) {
