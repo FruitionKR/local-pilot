@@ -114,10 +114,17 @@ public class DocumentService {
         verifyWorkspaceOwnership(workspaceId, userId);
         try {
             byte[] bytes = file.getBytes();
+            log.info("[문서 업로드 요청] workspaceId={} userId={} filename={} contentType={} size={}",
+                    workspaceId, userId, file.getOriginalFilename(), file.getContentType(), file.getSize());
 
             // 1. content_hash 계산 및 중복 확인
             String contentHash = sha256(bytes);
-            documentRepository.findByContentHash(contentHash).ifPresent(existing -> {
+            Optional<Document> duplicate = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
+            log.info("[문서 중복 확인] contentHashPrefix={} duplicate={}",
+                    contentHashPrefix(contentHash), duplicate.isPresent());
+            duplicate.ifPresent(existing -> {
+                log.warn("[문서 중복 감지] documentId={} contentHashPrefix={}",
+                        existing.getId(), contentHashPrefix(contentHash));
                 throw new DuplicateDocumentException("이미 업로드된 문서입니다.");
             });
 
@@ -125,6 +132,8 @@ public class DocumentService {
             String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
             String objectPath = "sources/documents/" + documentId + "/original";
             String mimeType = resolveMimeType(file);
+            log.info("[문서 원본 저장 시작] documentId={} bucket={} objectPath={} mimeType={} byteSize={}",
+                    documentId, storageProps.getBucket(), objectPath, mimeType, bytes.length);
 
             try (InputStream inputStream = file.getInputStream()) {
                 minioClient.putObject(
@@ -136,6 +145,7 @@ public class DocumentService {
                                 .build()
                 );
             }
+            log.info("[문서 원본 저장 완료] documentId={} objectPath={}", documentId, objectPath);
 
             // 3. documents 레코드 생성 (status=processing)
             Document document = new Document(
@@ -149,6 +159,9 @@ public class DocumentService {
                     contentHash
             );
             documentRepository.save(document);
+            log.info("[문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} status={} sourceUri={}",
+                    document.getId(), document.getWorkspaceId(), document.getUserId(),
+                    document.getFilename(), document.getStatus(), document.getSourceUri());
 
             // 4. DB 커밋 이후 백그라운드 처리 요청 (실패해도 업로드 응답에 영향 없음)
             requestProcessingAfterCommit(documentId);
@@ -184,17 +197,21 @@ public class DocumentService {
 
     private void requestProcessingAfterCommit(String documentId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            log.info("[문서 처리 큐 즉시 등록] documentId={} transactionActive=false", documentId);
             transactionTemplate.execute(status -> {
                 queueRepository.save(new DocumentProcessingQueue(documentId));
+                log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
                 return null;
             });
             return;
         }
+        log.info("[문서 처리 큐 등록 예약] documentId={} afterCommit=true", documentId);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 transactionTemplate.execute(status -> {
                     queueRepository.save(new DocumentProcessingQueue(documentId));
+                    log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
                     return null;
                 });
             }
@@ -215,7 +232,7 @@ public class DocumentService {
         if (selectionMode == null || selectionMode.isBlank()) {
             throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
         }
-        Optional<Document> existing = documentRepository.findByContentHash(contentHash);
+        Optional<Document> existing = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
         if (existing.isPresent()) {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
@@ -242,6 +259,9 @@ public class DocumentService {
                 objectPath, contentHash, "chat_export");
         document.assignSelectionMode(selectionMode);
         documentRepository.save(document);
+        log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
+                document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
+                document.getSelectionMode(), document.getStatus(), document.getSourceUri());
 
         requestProcessingAfterCommit(documentId);
 
@@ -273,14 +293,24 @@ public class DocumentService {
         }
 
         document.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
+        log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
+                documentId, contentHashPrefix(fullContentHash), bytes.length,
+                deltaMarkdown != null ? deltaMarkdown.length() : 0);
         requestProcessingAfterCommit(documentId);
     }
 
     void doRequestProcessing(String documentId) {
         Document document = documentRepository.findById(documentId).orElse(null);
-        if (document == null) return;
+        if (document == null) {
+            log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
+            return;
+        }
         String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
         boolean chatWiki = "chat_export".equals(document.getOrigin());
+        log.info("[문서 처리 요청 시작] documentId={} origin={} chatWiki={} workspaceId={} userId={} callbackUrl={} selectionMode={} inputMarkdownPresent={} inputMarkdownLength={}",
+                documentId, document.getOrigin(), chatWiki, document.getWorkspaceId(), document.getUserId(),
+                callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown() != null,
+                document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
                     processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
@@ -291,6 +321,7 @@ public class DocumentService {
                 documentRepository.findById(documentId).ifPresent(doc -> doc.markPipelineStarted(runId, now));
                 return null;
             });
+            log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
         } catch (Exception e) {
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
@@ -298,17 +329,29 @@ public class DocumentService {
                         doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
                 return null;
             });
+            log.warn("[문서 처리 요청 실패 반영] documentId={} error={}", documentId, e.getMessage());
         }
     }
 
     @Transactional
-    public void applyPipelineEvent(String documentId, String runId, String stage) {
+    public void applyPipelineEvent(String documentId, String runId, String stage,
+                                   String message, Map<String, Object> data) {
         documentRepository.findById(documentId).ifPresent(doc -> {
+            log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
+                    documentId, runId, stage, message, data != null ? data.keySet() : List.of());
             if (runId != null && !runId.equals(doc.getPipelineRunId())) {
+                log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
+                        documentId, runId, doc.getPipelineRunId(), stage);
                 return;
             }
             doc.markProcessingHeartbeat(stage, Instant.now());
+            log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
         });
+    }
+
+    private String contentHashPrefix(String contentHash) {
+        if (contentHash == null) return null;
+        return contentHash.substring(0, Math.min(contentHash.length(), 16));
     }
 
     public DocumentListResponse findAll(String workspaceId, String userId) {

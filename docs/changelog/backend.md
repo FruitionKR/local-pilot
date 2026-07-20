@@ -6,6 +6,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-21
+
+### feat: document 중복 판별을 workspace 범위로 전환 (V5)
+
+**배경**
+
+지금까지 `content_hash`에 전역 UNIQUE가 걸려 있어, 다른 workspace가 같은 내용의 문서를 올려도 중복으로 막혔다. 중복 판별을 "같은 workspace 안에서만" 하도록 바꾼다.
+
+**변경된 것**
+
+- `V5__scope_document_content_hash_per_workspace.sql`로 전역 `content_hash UNIQUE`(Hibernate 생성명 `ukeafca5s6k4behm6am8avmcik3`)를 제거하고 `(workspace_id, content_hash)` 복합 UNIQUE(`uq_documents_workspace_content_hash`)로 교체.
+- `Document` 엔티티: `content_hash` 컬럼의 `unique=true` 제거, `@Table`에 복합 UNIQUE 명시.
+- `DocumentRepository.findByContentHash` → `findByWorkspaceIdAndContentHash`로 교체.
+- `DocumentService.upload()` / `createChatExportDocument()`의 중복 조회를 workspace 범위로 교체.
+- 판별 기준은 `content_hash`(내용 해시)만이며, 중복 시 업로드 거부. 파일명은 판별에 쓰지 않는다.
+
+**검증**
+
+- 로컬 DB에 중복 (workspace_id, content_hash)이 없어 복합 UNIQUE 전환은 무충돌.
+
 ## 2026-07-16
 
 ### refactor: displayName 결정 규칙을 공용 유틸로 추출 + OAuth 닉네임 길이 상한
