@@ -171,7 +171,11 @@ public class DocumentService {
         }
     }
 
-    /** 새 워크스페이스에 표시할 초기 Markdown 노트를 저장하고 처리 큐에 등록한다. */
+    /**
+     * 새 워크스페이스에 표시할 초기 Markdown 노트를 저장한다.
+     * 노트는 원본 조회(getOriginal)만으로 열람 가능하므로 파이프라인 처리 큐에는 올리지 않는다.
+     * 실패해도 워크스페이스 생성을 막지 않도록 예외를 삼키고 로그만 남긴다(best-effort).
+     */
     @Transactional
     public void createInitialNote(String workspaceId, String userId) {
         String markdown = "<!-- fruition-workspace: " + workspaceId + " -->\n# 새 노트\n";
@@ -200,9 +204,8 @@ public class DocumentService {
                     sha256(bytes)
             );
             documentRepository.save(document);
-            requestProcessingAfterCommit(documentId);
         } catch (Exception e) {
-            throw new DocumentUploadException("초기 노트 저장 중 오류가 발생했습니다.", e);
+            log.warn("초기 노트 저장 실패로 건너뜁니다. workspaceId={}", workspaceId, e);
         }
     }
 
