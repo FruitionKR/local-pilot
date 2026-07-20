@@ -6,6 +6,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-21
+
+### fix: 워크스페이스 초기 노트 생성을 best-effort로 전환하고 파이프라인 등록 제거
+
+**배경**
+
+- PR #89 코드리뷰 지적: `createInitialNote`가 워크스페이스 트랜잭션 안에서 실패 시 예외를 던져, MinIO/DB 오류가 나면 워크스페이스 생성(회원가입 기본 워크스페이스 포함) 전체가 롤백되는 새 결합이 생겼다.
+- 또한 빈 초기 노트(`# 새 노트`)까지 처리 큐에 등록해 워크스페이스 생성마다 사실상 빈 문서에 대한 LLM ingest·임베딩 작업이 불필요하게 실행됐다.
+
+**변경된 것**
+
+- `DocumentService.createInitialNote` — 저장 실패 시 예외를 던지지 않고 `log.warn`만 남겨 워크스페이스 생성을 막지 않도록 변경(best-effort).
+- `DocumentService.createInitialNote` — `requestProcessingAfterCommit` 호출 제거. 초기 노트는 원본 조회(getOriginal)만으로 열람 가능하므로 파이프라인 처리 큐에 올리지 않는다.
+
+**검증**
+
+- `./gradlew test --tests DocumentServiceBlocksTest --tests WorkspaceServiceTest`
+
 ## 2026-07-20
 
 ### feat: 워크스페이스 초기 노트 자동 생성

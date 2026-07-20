@@ -4,6 +4,24 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-21
+
+### fix: 채팅 위키 내보내기 selection_mode 값 교정 및 워크스페이스 이름 중복 조회 제거
+
+**배경**
+
+- PR #89 코드리뷰 지적: `exportChatWiki`가 `selection_mode: "all"`을 보내는데 백엔드는 `full`/`partial`만 허용하고 그 외 값은 400으로 거부해, 채팅 위키 내보내기가 항상 실패했다.
+- `useWorkspaceName`이 `AgentHeader`와 `SidebarWorkspaceHeader`에서 각각 호출되어 홈 진입 시 `GET /api/workspaces`가 중복 호출됐다.
+
+**변경된 내용**
+
+- `api.ts` — `exportChatWiki` 요청 body의 `selection_mode`를 `"all"`에서 `"full"`(세션 전체)로 교정. `pair_ids: []`는 full에서 무시된다.
+- `useWorkspaceName.ts` — 진행 중인 `fetchWorkspaces` Promise를 모듈 스코프에서 공유해 이름 조회의 중복 호출을 제거. 워크스페이스 전환·생성은 전체 페이지 리로드를 하므로 캐시는 자연히 초기화된다.
+
+**검증**
+
+- `tsc --noEmit` 통과.
+
 ## 2026-07-20
 
 ### feat: 프로젝트 관리와 그래프 사이드바 사용성 개선

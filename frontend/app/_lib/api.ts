@@ -297,7 +297,7 @@ export async function exportChatWiki(): Promise<ChatWikiExportResponse> {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selection_mode: "all", pair_ids: [] })
+      body: JSON.stringify({ selection_mode: "full", pair_ids: [] })
     }
   );
   return parseJsonOrThrow<ChatWikiExportResponse>(response, ERROR_MESSAGES.wikiExportFailed);
