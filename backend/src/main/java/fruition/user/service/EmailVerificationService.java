@@ -75,13 +75,15 @@ public class EmailVerificationService {
         String email = request.email().trim().toLowerCase();
         String purpose = request.purpose();
 
+        // 존재 노출(signup 409)도 throttle 대상이 되도록 rate limit을 먼저 적용한다.
+        // 단 per-(email, purpose) 범위라 서로 다른 이메일 대량 열거는 못 막으며, 그건 IP/전역 제한 영역이다.
+        enforceRateLimit(email, purpose);
+
         // 회원가입은 의도적으로 존재 여부를 노출한다. 비밀번호 재설정은 노출하지 않는다.
         if (PURPOSE_SIGNUP.equals(purpose) && userRepository.existsByEmail(email)) {
             log.warn("[인증 요청 거부] reason=duplicate_email email={}", email);
             throw new DuplicateEmailException(email);
         }
-
-        enforceRateLimit(email, purpose);
 
         // 새 코드 발급 전 같은 (email, purpose)의 미소비 코드를 폐기한다.
         for (EmailVerification previous : verificationRepository.findByEmailAndPurposeAndConsumedAtIsNull(email, purpose)) {
