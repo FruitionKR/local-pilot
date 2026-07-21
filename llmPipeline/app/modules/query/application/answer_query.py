@@ -143,6 +143,8 @@ class AnswerQueryUseCase:
     def execute(
         self,
         question: str,
+        *,
+        workspace_id: str,
         event_publisher: QueryEventPublisherPort | None = None,
         conversation_context: ConversationContext | None = None,
     ) -> QueryAnswer:
@@ -166,6 +168,7 @@ class AnswerQueryUseCase:
                 {"retrieval_query": query_rewrite.retrieval_query, "keywords": query_rewrite.keywords},
             )
         candidates = self._score_wiki_candidates(
+            workspace_id,
             query_rewrite,
             event_publisher,
         )
@@ -402,11 +405,12 @@ class AnswerQueryUseCase:
 
     def _score_wiki_candidates(
         self,
+        workspace_id: str,
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _ScoredWikiCandidates:
-        pages = self._wiki_repository.list_active_pages()
-        links = self._wiki_repository.list_active_links()
+        pages = self._wiki_repository.list_active_pages(workspace_id)
+        links = self._wiki_repository.list_active_links(workspace_id)
         self._publish(
             event_publisher,
             "wiki_loaded",

@@ -6,6 +6,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-21
 
+### fix: Query 검색 범위를 Workspace로 격리
+
+- `POST /query`가 필수 `workspace_id`를 받아 Query application과 repository까지 전달하도록 변경
+- active Wiki page와 link 조회를 요청 Workspace로 제한해 다른 Workspace 데이터를 검색 후보에서 제외
+- Workspace 요청 계약과 PostgreSQL 조회 조건을 추가하고 Query 테스트 61개 통과
+
 ### fix: pipeline startup의 DB 생성 책임 제거
 
 - FastAPI lifespan에서 `CREATE TABLE`을 실행하지 않고 Flyway 필수 테이블 존재 여부만 확인하도록 변경

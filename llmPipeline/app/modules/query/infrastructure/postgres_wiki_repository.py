@@ -4,15 +4,17 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 
 class PostgresWikiRepository(WikiRepositoryPort):
-    def list_active_pages(self) -> list[WikiPage]:
+    def list_active_pages(self, workspace_id: str) -> list[WikiPage]:
         with database.connect() as conn:
             rows = conn.execute(
                 """
                 SELECT id, page_type, title, slug, summary, markdown_uri
                 FROM wiki_pages
                 WHERE status = 'active'
+                  AND workspace_id = %s
                 ORDER BY updated_at DESC
-                """
+                """,
+                (workspace_id,),
             ).fetchall()
         return [
             WikiPage(
@@ -26,7 +28,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
             for row in rows
         ]
 
-    def list_active_links(self) -> list[WikiPageLink]:
+    def list_active_links(self, workspace_id: str) -> list[WikiPageLink]:
         with database.connect() as conn:
             rows = conn.execute(
                 """
@@ -36,7 +38,10 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 JOIN wiki_pages to_page ON to_page.id = l.to_page_id
                 WHERE from_page.status = 'active'
                   AND to_page.status = 'active'
-                """
+                  AND from_page.workspace_id = %s
+                  AND to_page.workspace_id = %s
+                """,
+                (workspace_id, workspace_id),
             ).fetchall()
         return [
             WikiPageLink(
