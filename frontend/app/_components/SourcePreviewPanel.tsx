@@ -1,3 +1,4 @@
+import { MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
@@ -16,6 +17,10 @@ export function SourcePreviewPanel({
   width,
   onResizeStart,
   onMarkdownEditContextChange,
+  parentLabel = "업로드 문서",
+  editedAt = null,
+  onExitDocument,
+  onOpenAgentPanel,
   fillMain = false
 }: {
   title: string;
@@ -26,6 +31,10 @@ export function SourcePreviewPanel({
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
+  parentLabel?: string;
+  editedAt?: string | null;
+  onExitDocument?: () => void;
+  onOpenAgentPanel?: () => void;
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
 }) {
@@ -46,6 +55,12 @@ export function SourcePreviewPanel({
     () => rawMarkdown === null ? null : splitEditableNoteMarkdown(rawMarkdown),
     [rawMarkdown]
   );
+  const lastEditedLabel = useMemo(() => {
+    if (!editedAt) return "마지막 편집";
+    const date = new Date(editedAt);
+    if (Number.isNaN(date.getTime())) return "마지막 편집";
+    return `${new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(date)} 마지막 편집`;
+  }, [editedAt]);
 
   useEffect(() => {
     if (!pageId) {
@@ -147,11 +162,25 @@ export function SourcePreviewPanel({
       aria-label="원본문서 미리보기"
       onClick={(event) => event.stopPropagation()}
     >
-      <header>
-        <h2>{title}</h2>
-        <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>
+      <header className="source-preview-topbar">
+        <nav aria-label="문서 위치">
+          <button type="button" onClick={onExitDocument}>{parentLabel}</button>
+          <span aria-hidden="true">/</span>
+          <strong>{title}</strong>
+        </nav>
+        <div className="source-preview-actions">
+          <span>{lastEditedLabel}</span>
+          <button type="button" aria-label="AI 편집 도우미 열기" onClick={onOpenAgentPanel}>
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
       </header>
-      <div className="source-preview-content">
+      <div className="source-preview-document">
+        <header className="source-preview-heading">
+          <h2>{title}{isMarkdownFile ? " - 원본문서" : ""}</h2>
+          {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
+        </header>
+        <div className="source-preview-content">
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
@@ -199,6 +228,7 @@ export function SourcePreviewPanel({
           </div>
         )}
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
+        </div>
       </div>
       {!fillMain && (
         <button

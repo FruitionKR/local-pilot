@@ -184,7 +184,10 @@ export function AgentPanel({
   }
 
   return (
-    <aside className="agent-panel" onClick={(event) => event.stopPropagation()}>
+    <aside
+      className={`agent-panel${editPreviewState?.preview ? " is-markdown-reviewing" : ""}`}
+      onClick={(event) => event.stopPropagation()}
+    >
       <AgentHeader sessionTitle={sessionTitle} onClose={onClose} />
       <AgentBody
         messages={messages}

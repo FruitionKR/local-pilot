@@ -6,6 +6,22 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: Figma 기준 Markdown 편집 화면 개편
+
+**변경된 내용**
+
+- Figma `512:10833`을 기준으로 문서 진입 시 사이드바와 Agent panel을 접고, 48px breadcrumb GNB와 900px 문서 본문을 사용하는 전체 화면 편집 레이아웃으로 변경했다.
+- 실제 상위 폴더명과 마지막 편집일을 표시하고, 상단 동작 버튼으로 AI 편집 도우미를 다시 열 수 있게 했다.
+- AI 편집 결과는 우하단 320px 수락/취소 카드로 표시하고, 본문을 펼치면 line diff, 렌더링 preview와 재생성을 확인할 수 있게 했다.
+- `fruition-note`뿐 아니라 Backend가 생성하는 `fruition-workspace` marker도 편집 본문에서 분리해 CodeMirror 편집기로 연다.
+- 720px 이하에서는 편집 여백과 제목 크기를 줄이고 AI 검토 카드를 화면 좌우 16px에 맞춘다.
+
+**검증 결과**
+
+- Playwright로 1024×1080과 390×844 viewport, AI 검토 카드의 축약·상세·취소 상태를 확인했다.
+- `npm run lint`, `npx tsc --noEmit`, `npm run test:markdown` 45건 통과.
+- Spring Agent endpoint가 아직 없어 AI 검토 상태는 network mock으로 검증했다.
+
 ### feat: Markdown AI 편집 검토와 안전 적용 완성
 
 **변경된 내용**

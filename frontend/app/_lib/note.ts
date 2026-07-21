@@ -1,4 +1,4 @@
-const NOTE_MARKER_PATTERN = /^(<!--\s*fruition-note:\s*[^\r\n]+?\s*-->)\r?\n?/;
+const NOTE_MARKER_PATTERN = /^(<!--\s*fruition-(?:note|workspace):\s*[^\r\n]+?\s*-->)\r?\n?/;
 
 export type EditableNoteMarkdown = {
   marker: string;
