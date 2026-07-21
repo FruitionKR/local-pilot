@@ -32,6 +32,11 @@ public class ChatMessageReference {
     @Column(name = "source_block_ids", columnDefinition = "TEXT")
     private List<String> sourceBlockIds;
 
+    // 하나의 rank가 여러 문서 block을 참조하는 경우를 구조화. legacy documentId/sourceBlockIds는 첫 문서 기준.
+    @Convert(converter = SourceRefListJsonConverter.class)
+    @Column(name = "source_refs", columnDefinition = "TEXT")
+    private List<SourceRef> sourceRefs;
+
     @Column(columnDefinition = "TEXT")
     private String quote;
 
@@ -39,13 +44,15 @@ public class ChatMessageReference {
 
     public ChatMessageReference(ChatMessage chatMessage, String referenceType,
                                  String documentId, Integer rank,
-                                 List<String> sourceBlockIds, String quote) {
+                                 List<String> sourceBlockIds, String quote,
+                                 List<SourceRef> sourceRefs) {
         this.chatMessage = chatMessage;
         this.referenceType = referenceType;
         this.documentId = documentId;
         this.rank = rank;
         this.sourceBlockIds = sourceBlockIds;
         this.quote = quote;
+        this.sourceRefs = sourceRefs;
     }
 
     public Long getId() { return id; }
@@ -55,4 +62,5 @@ public class ChatMessageReference {
     public Integer getRank() { return rank; }
     public List<String> getSourceBlockIds() { return sourceBlockIds; }
     public String getQuote() { return quote; }
+    public List<SourceRef> getSourceRefs() { return sourceRefs; }
 }
