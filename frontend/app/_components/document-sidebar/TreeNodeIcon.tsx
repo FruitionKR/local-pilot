@@ -1,7 +1,6 @@
 import type { TreeItem } from "../../_lib/types";
 import { isFileItem } from "../../_lib/tree";
 import {
-  archiveIcon,
   arrowIcon,
   fileIcon,
   sourceIcon,
@@ -20,6 +19,9 @@ export function TreeNodeIcon({
   if (isFileItem(item)) return <SvgIcon src={fileIcon} className="tree-asset raw" />;
   if (item.wikiKind === "source") return <SvgIcon src={sourceIcon} className="tree-asset source" />;
   if (item.wikiKind === "concept") return <SvgIcon src={fileIcon} className="tree-asset concept" />;
-  if (hasChildren) return <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />;
-  return <SvgIcon src={archiveIcon} className="tree-asset" />;
+  return (
+    <span className="tree-folder-slot" aria-hidden>
+      {hasChildren && <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />}
+    </span>
+  );
 }
