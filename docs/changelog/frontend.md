@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: Markdown 문서 전체 참조 문맥 보존
+
+**변경된 내용**
+
+- Markdown segment별 개별 렌더링을 문서 전체 단일 parse 방식으로 변경해 footnote와 reference-style link의 reference/definition을 같은 문맥에서 처리한다.
+- 원문 line 범위를 AST 출력에 매핑해 기존 `B0001` 형식의 source block ID와 citation highlight 동작을 유지한다.
+- frontmatter는 기존 Metadata UI로 분리해 표시하되, 본문 line 위치가 바뀌지 않도록 빈 줄로 치환한 뒤 렌더링한다.
+- footnote, reference-style link, frontmatter line 범위를 검증하는 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 9건, `npm run lint`, `npm run build` 통과.
+
 ### fix: 복합 Markdown 목록의 preview 문맥 보존
 
 **변경된 내용**

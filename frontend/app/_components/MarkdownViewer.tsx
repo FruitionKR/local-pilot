@@ -5,10 +5,12 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import type { Element } from "hast";
 import type { PhrasingContent, Root } from "mdast";
 import { visit } from "unist-util-visit";
 import { cx } from "../_lib/classNames";
-import { splitMarkdownBlocks } from "../_lib/markdownSegments";
+import { splitMarkdownBlockRanges } from "../_lib/markdownSegments";
+import { createRehypeSourceBlocks } from "../_lib/markdownSourceBlocks";
 import type { SourceBlockHighlight } from "../_lib/types";
 
 // citation 강조에 사용하는 색상 팔레트 개수
@@ -76,7 +78,6 @@ function remarkCustomTokens() {
 
 // 렌더마다 배열 참조가 바뀌면 react-markdown이 재파싱하므로 모듈 상수로 유지한다.
 const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkCustomTokens];
-const REHYPE_PLUGINS = [rehypeKatex];
 
 export function MarkdownViewer({
   markdown,
@@ -95,7 +96,28 @@ export function MarkdownViewer({
     () => new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank])),
     [highlightedBlocks]
   );
-  const segments = useMemo(() => splitMarkdownBlocks(markdown), [markdown]);
+  const sourceBlocks = useMemo(
+    () => splitMarkdownBlockRanges(markdown).map((segment, index) => ({
+      ...segment,
+      blockId: `B${String(index + 1).padStart(4, "0")}`
+    })),
+    [markdown]
+  );
+  const bodyMarkdown = useMemo(() => {
+    const lines = markdown.split("\n");
+    sourceBlocks
+      .filter((block) => block.kind === "frontmatter")
+      .forEach((block) => {
+        for (let line = block.startLine; line <= block.endLine; line += 1) {
+          lines[line - 1] = "";
+        }
+      });
+    return lines.join("\n");
+  }, [markdown, sourceBlocks]);
+  const rehypePlugins = useMemo(
+    () => [rehypeKatex, createRehypeSourceBlocks(sourceBlocks)],
+    [sourceBlocks]
+  );
 
   const components = useMemo(() => {
     function CitationRef({ rank, children }: { rank?: number; children?: ReactNode }) {
@@ -117,43 +139,61 @@ export function MarkdownViewer({
       );
     }
 
+    function SourceBlock({ node, children }: { node?: Element; children?: ReactNode }) {
+      const blockId = String(node?.properties?.dataBlockId ?? "");
+      const highlightedRank = highlightedBlockRankById.get(blockId);
+
+      return (
+        <div
+          className={cx(
+            "markdown-source-block",
+            highlightedRank && "is-highlighted",
+            highlightedRank && rankColorClass(highlightedRank)
+          )}
+          data-block-id={blockId}
+          data-citation-rank={highlightedRank}
+          ref={(element) => onBlockRef?.(blockId, element)}
+        >
+          {children}
+        </div>
+      );
+    }
+
     return {
       pre: ({ children }: { children?: ReactNode }) => <pre className="markdown-codeblock">{children}</pre>,
-      "citation-ref": CitationRef
+      "citation-ref": CitationRef,
+      "source-block": SourceBlock
     } as Components;
-  }, [canClickCitation, onCitationClick]);
+  }, [canClickCitation, highlightedBlockRankById, onBlockRef, onCitationClick]);
 
   return (
     <div className="markdown-viewer">
-      {segments.map((segment, segmentIndex) => {
-        const blockId = `B${String(segmentIndex + 1).padStart(4, "0")}`;
-        const highlightedRank = highlightedBlockRankById.get(blockId);
-
-        return (
+      {sourceBlocks
+        .filter((block) => block.kind === "frontmatter")
+        .map((block) => {
+          const highlightedRank = highlightedBlockRankById.get(block.blockId);
+          return (
           <div
             className={cx(
               "markdown-source-block",
               highlightedRank && "is-highlighted",
               highlightedRank && rankColorClass(highlightedRank)
             )}
-            data-block-id={blockId}
+            data-block-id={block.blockId}
             data-citation-rank={highlightedRank}
-            ref={(element) => onBlockRef?.(blockId, element)}
-            key={blockId}
+            ref={(element) => onBlockRef?.(block.blockId, element)}
+            key={block.blockId}
           >
-            {segment.kind === "frontmatter" ? (
-              <details className="markdown-frontmatter">
-                <summary>Metadata</summary>
-                <pre>{segment.content}</pre>
-              </details>
-            ) : (
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
-                {segment.content}
-              </ReactMarkdown>
-            )}
+            <details className="markdown-frontmatter">
+              <summary>Metadata</summary>
+              <pre>{block.content}</pre>
+            </details>
           </div>
-        );
-      })}
+          );
+        })}
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={rehypePlugins} components={components}>
+        {bodyMarkdown}
+      </ReactMarkdown>
     </div>
   );
 }

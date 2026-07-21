@@ -1,4 +1,5 @@
 export type MarkdownSegment = { kind: "frontmatter" | "markdown"; content: string };
+export type MarkdownSegmentRange = MarkdownSegment & { startLine: number; endLine: number };
 
 const LIST_ITEM_PATTERN = /^(?:[-+*]\s+|\d+[.)]\s+)/;
 const LIST_ITEM_WITH_INDENT_PATTERN = /^(\s*)(?:([-+*])\s+|(\d+[.)])\s+)/;
@@ -76,8 +77,8 @@ function collectListBlock(lines: string[], startIndex: number) {
  * 분할 순서가 백엔드 block ID(B0001, B0002, ...) 계약과 일치해야 하므로
  * 기존 파서와 동일한 경계 규칙을 유지한다.
  */
-export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
-  const segments: MarkdownSegment[] = [];
+export function splitMarkdownBlockRanges(markdown: string): MarkdownSegmentRange[] {
+  const segments: MarkdownSegmentRange[] = [];
   const lines = markdown.split("\n");
   let index = 0;
 
@@ -90,6 +91,7 @@ export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
     }
 
     if (trimmed === "---" && segments.length === 0) {
+      const startLine = index + 1;
       const frontmatter = [];
       index += 1;
       while (index < lines.length && lines[index].trim() !== "---") {
@@ -97,11 +99,17 @@ export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
         index += 1;
       }
       index += 1;
-      segments.push({ kind: "frontmatter", content: frontmatter.join("\n") });
+      segments.push({
+        kind: "frontmatter",
+        content: frontmatter.join("\n"),
+        startLine,
+        endLine: Math.min(index, lines.length)
+      });
       continue;
     }
 
     if (trimmed.startsWith("```")) {
+      const startLine = index + 1;
       const code = [lines[index]];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("```")) {
@@ -110,23 +118,40 @@ export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
       }
       code.push("```");
       index += 1;
-      segments.push({ kind: "markdown", content: code.join("\n") });
+      segments.push({
+        kind: "markdown",
+        content: code.join("\n"),
+        startLine,
+        endLine: Math.min(index, lines.length)
+      });
       continue;
     }
 
     if (/^#{1,3} /.test(trimmed) || trimmed === "---" || trimmed === "***") {
-      segments.push({ kind: "markdown", content: trimmed });
+      segments.push({
+        kind: "markdown",
+        content: trimmed,
+        startLine: index + 1,
+        endLine: index + 1
+      });
       index += 1;
       continue;
     }
 
     if (isListItem(lines[index])) {
+      const startLine = index + 1;
       const listBlock = collectListBlock(lines, index);
-      segments.push({ kind: "markdown", content: listBlock.content });
+      segments.push({
+        kind: "markdown",
+        content: listBlock.content,
+        startLine,
+        endLine: listBlock.nextIndex
+      });
       index = listBlock.nextIndex;
       continue;
     }
 
+    const startLine = index + 1;
     const paragraph = [trimmed];
     index += 1;
     while (index < lines.length) {
@@ -135,8 +160,17 @@ export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
       paragraph.push(nextLine);
       index += 1;
     }
-    segments.push({ kind: "markdown", content: paragraph.join("\n") });
+    segments.push({
+      kind: "markdown",
+      content: paragraph.join("\n"),
+      startLine,
+      endLine: index
+    });
   }
 
   return segments;
+}
+
+export function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
+  return splitMarkdownBlockRanges(markdown).map(({ kind, content }) => ({ kind, content }));
 }
