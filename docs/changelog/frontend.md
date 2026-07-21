@@ -6,6 +6,18 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: 복합 Markdown 목록의 preview 문맥 보존
+
+**변경된 내용**
+
+- 목록 항목에 속한 code block, 인용문과 여러 줄 본문을 목록과 같은 Markdown segment로 유지한다.
+- 목록 항목 사이의 빈 줄은 보존하되, 들여쓰지 않은 일반 문단에서는 목록 segment를 종료한다.
+- 복합 목록과 목록 밖 문단 경계를 검증하는 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 6건, `npm run lint`, `npm run build` 통과.
+
 ### fix: 중첩 Markdown 목록 미리보기 구조 보존
 
 **변경된 내용**

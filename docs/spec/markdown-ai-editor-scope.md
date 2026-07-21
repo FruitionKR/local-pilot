@@ -291,7 +291,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 - [ ] CommonMark + GFM을 공식 지원 범위로 선언
 - [x] 중첩 목록 들여쓰기 보존
-- [ ] 목록 안의 code block, 인용문과 하위 목록 지원
+- [x] 목록 안의 code block, 인용문과 하위 목록 지원
 - [ ] Footnote와 reference-style link 검증
 - [ ] H1~H6와 백틱/tilde code fence 검증
 - [ ] 표, task list, link, image 보존 fixture 추가
