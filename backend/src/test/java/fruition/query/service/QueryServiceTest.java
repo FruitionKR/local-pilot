@@ -26,8 +26,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +38,7 @@ import static org.mockito.Mockito.when;
 class QueryServiceTest {
 
     private static final String SESSION_ID = "session_1f9a74af";
+    private static final String WORKSPACE_ID = "ws_aaa11111";
     private static final String DOCUMENT_ID = "doc_1f9a74af";
 
     @Mock PipelineQueryRequester pipelineQueryRequester;
@@ -43,18 +46,24 @@ class QueryServiceTest {
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
+    @Mock QueryMessageRecorder queryMessageRecorder;
 
     QueryService queryService;
 
     @BeforeEach
     void setUp() {
         queryService = new QueryService(
-                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository, chatSessionRepository);
+                pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository,
+                chatSessionRepository, queryMessageRecorder);
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
+        lenient().when(chatMessageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(relatedPageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
-        lenient().when(chatSessionRepository.findById(SESSION_ID))
-                .thenReturn(Optional.of(new ChatSession(SESSION_ID, "ws_aaa11111", "user_1f9a74af", null)));
+        ChatSession session = new ChatSession(SESSION_ID, "ws_aaa11111", "user_1f9a74af", null);
+        lenient().when(chatSessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session));
+        lenient().when(chatMessageRepository.findById(anyString())).thenAnswer(invocation -> Optional.of(
+                new ChatMessage(invocation.getArgument(0), session, "pair_abc123", "assistant", "", "pending",
+                        java.time.Instant.now(), null)));
         lenient().when(chatSessionRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(i -> i.getArgument(0));
     }
 
@@ -62,9 +71,9 @@ class QueryServiceTest {
     @DisplayName("파이프라인 응답이 DTO에 담기고 DB에 저장되어 응답으로 반환된다")
     void query_pipelineResponse_savedAndReturned() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query("Self-Attention이 뭐야?")).thenReturn(mockResponse);
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?")).thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?");
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?");
 
         // 응답 형태 검증
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
@@ -76,15 +85,13 @@ class QueryServiceTest {
         assertThat(result.relatedPages().get(0).depth()).isEqualTo(0);
         assertThat(result.relatedPages().get(1).role()).isEqualTo("focus_concept");
 
-        // chat_messages 저장 검증
-        ArgumentCaptor<List<ChatMessage>> msgCaptor = ArgumentCaptor.forClass(List.class);
-        verify(chatMessageRepository).saveAll(msgCaptor.capture());
-        List<ChatMessage> savedMessages = msgCaptor.getValue();
-        assertThat(savedMessages).hasSize(2);
-        assertThat(savedMessages.get(0).getRole()).isEqualTo("user");
-        assertThat(savedMessages.get(0).getSessionId()).isEqualTo(SESSION_ID);
-        assertThat(savedMessages.get(1).getRole()).isEqualTo("assistant");
-        assertThat(savedMessages.get(0).getPairId()).isEqualTo(savedMessages.get(1).getPairId());
+        verify(queryMessageRecorder).createPendingPair(
+                eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any());
+        ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(chatMessageRepository).save(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getRole()).isEqualTo("assistant");
+        assertThat(messageCaptor.getValue().getStatus()).isEqualTo("completed");
+        assertThat(messageCaptor.getValue().getContent()).isEqualTo(mockResponse.answer());
 
         // chat_message_references 저장 검증 (원본 문서 block 기준)
         ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
@@ -122,39 +129,38 @@ class QueryServiceTest {
     @DisplayName("requestId가 있으면 PipelineQueryRequester의 run-aware overload를 호출한다")
     void query_withRequestId_callsRunAwarePipelineOverload() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
                 .thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
 
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
-        verify(pipelineQueryRequester).query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
+        verify(pipelineQueryRequester).query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
     }
 
     @Test
-    @DisplayName("파이프라인 실패 시 user/assistant 메시지가 failed 상태와 error_message로 저장되고 예외가 전파된다")
-    void query_pipelineFailure_savesFailedMessagesAndRethrows() {
+    @DisplayName("파이프라인 실패 시 pending assistant가 failed로 변경되고 예외가 전파된다")
+    void query_pipelineFailure_marksAssistantFailedAndRethrows() {
         PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
-        when(pipelineQueryRequester.query(anyString())).thenThrow(pipelineError);
+        when(pipelineQueryRequester.query(anyString(), anyString())).thenThrow(pipelineError);
 
-        assertThatThrownBy(() -> queryService.query(SESSION_ID, "Self-Attention이 뭐야?"))
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?"))
                 .isInstanceOf(PipelineQueryException.class);
 
-        ArgumentCaptor<List<ChatMessage>> msgCaptor = ArgumentCaptor.forClass(List.class);
-        verify(chatMessageRepository).saveAll(msgCaptor.capture());
+        verify(queryMessageRecorder).createPendingPair(
+                eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any());
+        verify(queryMessageRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
+    }
 
-        List<ChatMessage> savedMessages = msgCaptor.getValue();
-        assertThat(savedMessages).hasSize(2);
+    @Test
+    @DisplayName("예상 밖 오류 시 pending assistant가 일반화된 오류로 failed 처리된다")
+    void query_unexpectedFailure_marksAssistantFailedWithGeneralMessage() {
+        when(pipelineQueryRequester.query(anyString(), anyString())).thenThrow(new IllegalStateException("DB 연결 종료"));
 
-        ChatMessage userMsg = savedMessages.get(0);
-        assertThat(userMsg.getRole()).isEqualTo("user");
-        assertThat(userMsg.getStatus()).isEqualTo("failed");
-        assertThat(userMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "질문"))
+                .isInstanceOf(IllegalStateException.class);
 
-        ChatMessage assistantMsg = savedMessages.get(1);
-        assertThat(assistantMsg.getRole()).isEqualTo("assistant");
-        assertThat(assistantMsg.getStatus()).isEqualTo("failed");
-        assertThat(assistantMsg.getErrorMessage()).isEqualTo("{\"error\": \"service unavailable\"}");
+        verify(queryMessageRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
     }
 
     @Test
@@ -162,7 +168,7 @@ class QueryServiceTest {
     void query_unknownSession_throwsChatSessionNotFound() {
         when(chatSessionRepository.findById("session_unknown")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> queryService.query("session_unknown", "질문"))
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, "session_unknown", "질문"))
                 .isInstanceOf(ChatSessionNotFoundException.class);
     }
 

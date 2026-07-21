@@ -8,7 +8,9 @@ import java.time.Instant;
 // 파이프라인이 raw SQL로 같은 documents 행에 직접 쓰므로, backend는 변경한 컬럼만 UPDATE해 파이프라인 컬럼을 덮어쓰지 않는다.
 @DynamicUpdate
 @Table(name = "documents",
-        indexes = @Index(name = "idx_documents_reconcile", columnList = "origin, status, reconciled_at"))
+        indexes = @Index(name = "idx_documents_reconcile", columnList = "origin, status, reconciled_at"),
+        uniqueConstraints = @UniqueConstraint(name = "uq_documents_workspace_content_hash",
+                columnNames = {"workspace_id", "content_hash"}))
 public class Document {
 
     @Id
@@ -39,7 +41,7 @@ public class Document {
     @Column(name = "extracted_text_uri")
     private String extractedTextUri;
 
-    @Column(name = "content_hash", nullable = false, unique = true)
+    @Column(name = "content_hash", nullable = false)
     private String contentHash;
 
     @Column(name = "uploaded_at", nullable = false)

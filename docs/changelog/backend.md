@@ -8,6 +8,114 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: query pipeline 요청에 workspace_id 전달
+
+**배경**
+
+- Backend는 workspace URL에서 세션 소유권을 검증했지만 LLM Pipeline `POST /query` 본문에 workspace 식별자를 보내지 않아, Pipeline이 질의의 데이터 범위를 구분할 수 없었다.
+
+**변경된 것**
+
+- 동기·비동기 query 호출 경로에 `workspaceId`를 전달하고, Pipeline 요청 JSON에 `workspace_id`를 포함한다.
+- Pipeline 요청 로그에 `workspaceId`를 추가한다.
+- `llmPipeline` 코드와 내부 workspace 조회 로직은 변경하지 않았다.
+
+**검증**
+
+- query 관련 controller·service·requester 테스트 통과
+- Backend 전체 154개 중 비관련 기존 `DocumentServiceBlocksTest` 1개 실패(초기 노트 hash 기대값 불일치)
+
+### fix: query 비동기 run 타임아웃 정리와 SSE heartbeat 스케줄 연결
+
+**배경**
+
+- 응답 없이 파이프라인이 멈추면 run이 `RUNNING`에 영구히 남아, 화면은 "처리 중"으로 끝나지 않고 in-memory에도 누적됐다. 기존 정리(`evictExpired`)는 종료된(`COMPLETED`/`FAILED`) run만 대상이라 고착 run을 치우지 못했다.
+- `QueryEventBroker.sendHeartbeat()`는 구현돼 있으나 이를 주기 호출하는 스케줄러가 없어, 진행 이벤트가 뜸한 긴 질의에서 idle SSE 연결이 중간 네트워크 장비에 끊길 수 있었다.
+
+**변경된 것**
+
+- `QueryRunStore.failStuck(timeout, msg)` 추가: 미종료(`RUNNING`/`PENDING`)이고 생성 후 timeout을 넘긴 run을 `FAILED`로 전이(스캔 이후 정상 종료된 run은 덮어쓰지 않는 레이스 가드)하고 requestId 목록 반환.
+- `QueryRunService.failStuckRuns()`(`@Scheduled` 60초, `RUNNING_TIMEOUT=5분`): 고착 run을 실패 종결하고 `query.failed` SSE를 발행. 이후 기존 TTL 정리가 dispose.
+- `QueryEventBroker.sendHeartbeat()`에 `@Scheduled`(15초)를 부착해 idle SSE 연결에 주기적으로 `:ping`을 전송.
+
+**검증**
+
+- `QueryRunStoreTest`에 `failStuck` 케이스 2개 추가(오래된 미종료만 실패 처리 / 완료 run 무시).
+- `QueryRunStoreTest`, `QueryRunServiceTest`, `QueryEventBrokerTest` 통과.
+
+**남은 주의사항**
+
+- 여전히 in-memory 단일 인스턴스 전제다. 다중 인스턴스 확장 시의 run 공유는 별도 범위(`docs/design/query-sse-redis.md`).
+
+### fix: 초기 노트의 임시 주석 제거 및 status를 completed로 저장
+
+**배경**
+
+워크스페이스 생성 시 만드는 초기 노트(`새 노트.md`)는 본문이 모두 `# 새 노트`로 같아, 과거 전역 `content_hash` UNIQUE와 충돌하는 것을 피하려 `<!-- fruition-workspace: ws_... -->` 식별 주석을 넣어 해시를 워크스페이스마다 다르게 만들었다. 이 주석은 문서 내용이 아닌데 원본 Markdown에 섞여 미리보기에 내부 워크스페이스 ID가 노출됐다. 또한 초기 노트는 파이프라인 처리 큐에 올리지 않는데도 `status`가 `processing`으로 남았다.
+
+**변경된 것**
+
+- V5로 중복 판별이 `(workspace_id, content_hash)` 범위가 되면서 우회 주석이 불필요해져, `DocumentService.createInitialNote`의 본문을 `# 새 노트`로 정리(주석 제거).
+- 초기 노트를 저장 직전 `updateStatus(DocumentStatus.completed, null, now, null)`로 완료 처리 → 목록/상세의 `processing_state`도 `completed`로 일관.
+
+**남은 주의사항**
+
+- 이미 생성된 기존 초기 노트의 원본 오브젝트에는 주석이 남아 있다. 미리보기 노출 숨김(프론트) 처리는 별도 후속 작업으로 둔다.
+
+### fix: query 메시지 선저장과 실패 상태 전이 보장
+
+**배경**
+
+비동기 query가 끝난 뒤 user/assistant 메시지를 함께 저장해, 처리 중에는 사용자의 질문이 채팅 DB에 보이지 않았다. pipeline 실패 기록도 원래 query transaction과 함께 rollback될 수 있었고, 예상 밖 예외에서는 run이 `RUNNING`에 남을 수 있었다.
+
+**변경된 것**
+
+- `QueryRunService.start()`가 `202`를 반환하기 전에 같은 `pair_id`의 `user=completed`, `assistant=pending` 메시지를 `REQUIRES_NEW` transaction으로 commit한다.
+- 성공 시 기존 assistant를 `completed`와 최종 답변으로 갱신하고, pipeline 또는 예상 밖 오류 시 같은 assistant를 `failed`와 오류 메시지로 갱신한다.
+- 예상 밖 `Exception`도 run을 `FAILED`로 바꾸고 일반화된 `query.failed` SSE를 발행한다. 상세 stack trace는 서버 로그에만 남긴다.
+- 현재 인메모리 SSE 흐름과 Redis Pub/Sub·Streams 적용 기준을 `docs/design/query-sse-redis.md`에 시각화했다.
+
+**검증**
+
+- `202` 직후 SSE 연결 전 채팅 조회에서 `user=completed`, `assistant=pending` 확인
+- pipeline 403 종료 후 동일 assistant가 `failed`로 갱신된 것을 PostgreSQL에서 확인
+- `./gradlew test` 통과
+
+### feat: query run·문서 파이프라인 이벤트 관측 로깅 보강
+
+**배경**
+
+query 비동기 run과 문서 처리 파이프라인 흐름에서 요청/응답·상태 전이·SSE 발행 시점을 추적할 로그가 부족해, 장애 원인 파악이 어려웠다.
+
+**변경된 것**
+
+- query 계열(`QueryController`, `QueryRunController`, `QueryService`, `QueryRunService`, `QueryRunStore`, `QueryEventBroker`, `PipelineQueryRequester`)에 요청 수신·run 상태 전이·파이프라인 호출/응답·SSE 구독/발행/완료·만료 제거 로그를 추가. 로그에는 원문 question 대신 `questionLength`만 남긴다.
+- 문서 처리 계열(`DocumentProcessingRequester`, `DocumentProcessingWorker`)에 파이프라인 요청 데이터·큐 선택/삭제 로그 추가.
+- `DocumentPipelineController`가 pipeline-events 콜백의 `message`/`data`를 `DocumentService.applyPipelineEvent`로 전달하도록 연결(관측용 수신, DTO 저장은 하지 않음).
+- `QueryService`는 근거/관련 페이지 저장 건수 로깅을 위해 지역 변수로 추출(동작 동일).
+
+**검증**
+
+- merge된 트리 `./gradlew compileJava` 통과.
+
+### feat: document 중복 판별을 workspace 범위로 전환 (V5)
+
+**배경**
+
+지금까지 `content_hash`에 전역 UNIQUE가 걸려 있어, 다른 workspace가 같은 내용의 문서를 올려도 중복으로 막혔다. 중복 판별을 "같은 workspace 안에서만" 하도록 바꾼다.
+
+**변경된 것**
+
+- `V5__scope_document_content_hash_per_workspace.sql`로 전역 `content_hash UNIQUE`(Hibernate 생성명 `ukeafca5s6k4behm6am8avmcik3`)를 제거하고 `(workspace_id, content_hash)` 복합 UNIQUE(`uq_documents_workspace_content_hash`)로 교체.
+- `Document` 엔티티: `content_hash` 컬럼의 `unique=true` 제거, `@Table`에 복합 UNIQUE 명시.
+- `DocumentRepository.findByContentHash` → `findByWorkspaceIdAndContentHash`로 교체.
+- `DocumentService.upload()` / `createChatExportDocument()`의 중복 조회를 workspace 범위로 교체.
+- 판별 기준은 `content_hash`(내용 해시)만이며, 중복 시 업로드 거부. 파일명은 판별에 쓰지 않는다.
+
+**검증**
+
+- 로컬 DB에 중복 (workspace_id, content_hash)이 없어 복합 UNIQUE 전환은 무충돌.
+
 ### fix: 파이프라인 스키마를 Flyway 관리 대상으로 통합
 
 **배경**

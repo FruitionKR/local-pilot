@@ -67,7 +67,7 @@ class QueryControllerTest {
                 new QueryResponse.MessageSummary("chat_user_1", "user", "질문", "completed", Instant.now()),
                 new QueryResponse.MessageSummary("chat_assistant_1", "assistant", "답변", "completed", Instant.now()),
                 null, null, null, null);
-        when(queryService.query(eq(SESSION_ID), eq("질문"))).thenReturn(response);
+        when(queryService.query(eq(WORKSPACE_ID), eq(SESSION_ID), eq("질문"))).thenReturn(response);
 
         mockMvc.perform(post(basePath() + "/query")
                         .header("Authorization", bearerToken())
@@ -103,7 +103,7 @@ class QueryControllerTest {
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryRun run = QueryRun.pending("query_abc123", SESSION_ID, "질문", Instant.now());
-        when(queryRunService.start(SESSION_ID, "질문")).thenReturn(run);
+        when(queryRunService.start(WORKSPACE_ID, SESSION_ID, "질문")).thenReturn(run);
 
         mockMvc.perform(post(basePath() + "/query/runs")
                         .header("Authorization", bearerToken())

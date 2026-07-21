@@ -33,29 +33,42 @@ public class PipelineQueryRequester {
                 .build();
     }
 
-    public PipelineQueryResponse query(String question) {
-        return executeQuery(new QueryPayload(question, null, null));
+    public PipelineQueryResponse query(String workspaceId, String question) {
+        return executeQuery(new QueryPayload(workspaceId, question, null, null));
     }
 
-    public PipelineQueryResponse query(String question, String requestId, String logCallbackUrl) {
-        return executeQuery(new QueryPayload(question, requestId, logCallbackUrl));
+    public PipelineQueryResponse query(String workspaceId, String question, String requestId, String logCallbackUrl) {
+        return executeQuery(new QueryPayload(workspaceId, question, requestId, logCallbackUrl));
     }
 
     private PipelineQueryResponse executeQuery(QueryPayload payload) {
         try {
-            return restClient.post()
+            log.info("[쿼리 파이프라인 요청 데이터] endpoint={} workspaceId={} requestId={} callbackUrl={} questionLength={}",
+                    queryEndpoint,
+                    payload.workspaceId(),
+                    payload.requestId(),
+                    payload.logCallbackUrl(),
+                    payload.question().length());
+            PipelineQueryResponse response = restClient.post()
                     .uri(queryEndpoint)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
                     .retrieve()
                     .body(PipelineQueryResponse.class);
+            log.info("[쿼리 파이프라인 응답 완료] requestId={} answerLength={} relatedPageCount={} evidenceCount={}",
+                    payload.requestId(),
+                    response != null && response.answer() != null ? response.answer().length() : 0,
+                    response != null && response.relatedPages() != null ? response.relatedPages().size() : 0,
+                    response != null && response.evidenceSnippets() != null ? response.evidenceSnippets().size() : 0);
+            return response;
         } catch (ResourceAccessException e) {
-            log.warn("[쿼리 파이프라인 타임아웃] question={} error={}", payload.question(), e.getMessage());
+            log.warn("[쿼리 파이프라인 타임아웃] requestId={} questionLength={} error={}",
+                    payload.requestId(), payload.question().length(), e.getMessage());
             throw new PipelineQueryException("PIPELINE_TIMEOUT", "쿼리 파이프라인 응답 시간이 초과되었습니다.", 503, null);
         } catch (RestClientResponseException e) {
             String body = e.getResponseBodyAsString();
-            log.warn("[쿼리 파이프라인 오류] question={} httpStatus={} body={}",
-                    payload.question(), e.getStatusCode(), body);
+            log.warn("[쿼리 파이프라인 오류] requestId={} questionLength={} httpStatus={} body={}",
+                    payload.requestId(), payload.question().length(), e.getStatusCode(), body);
             if (e.getStatusCode().value() >= 500) {
                 throw new PipelineQueryException("PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, body);
             }
@@ -65,6 +78,7 @@ public class PipelineQueryRequester {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record QueryPayload(
+            @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("question") String question,
             @JsonProperty("request_id") String requestId,
             @JsonProperty("log_callback_url") String logCallbackUrl) {}

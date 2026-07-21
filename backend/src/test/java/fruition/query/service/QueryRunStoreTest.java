@@ -110,4 +110,32 @@ class QueryRunStoreTest {
         assertThat(store.evictExpired()).isEmpty();
         assertThat(store.find(finished.requestId())).isPresent();
     }
+
+    @Test
+    void failStuck_failsOnlyUnfinishedRunsOlderThanTimeout() {
+        QueryRun oldRunning = store.create("session_abc123", "멈춘 질문");
+        store.markRunning(oldRunning.requestId());
+
+        clock.advance(Duration.ofMinutes(6));
+        QueryRun recent = store.create("session_abc123", "최근 질문");
+
+        List<String> failed = store.failStuck(Duration.ofMinutes(5), "타임아웃");
+
+        assertThat(failed).containsExactly(oldRunning.requestId());
+        QueryRun timedOut = store.find(oldRunning.requestId()).orElseThrow();
+        assertThat(timedOut.status()).isEqualTo(QueryRunStatus.FAILED);
+        assertThat(timedOut.errorMessage()).isEqualTo("타임아웃");
+        assertThat(store.find(recent.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.PENDING);
+    }
+
+    @Test
+    void failStuck_ignoresFinishedRuns() {
+        QueryRun finished = store.create("session_abc123", "완료된 질문");
+        store.markCompleted(finished.requestId(), new QueryResponse(null, null, null, null, null, null));
+
+        clock.advance(Duration.ofMinutes(6));
+
+        assertThat(store.failStuck(Duration.ofMinutes(5), "타임아웃")).isEmpty();
+        assertThat(store.find(finished.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.COMPLETED);
+    }
 }
