@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: Markdown Agent turn 요청 연결
+
+**변경된 내용**
+
+- Agent panel에서 편집 중인 Markdown context가 있으면 기존 Wiki query 대신 `POST /api/workspaces/{workspace_id}/agent/turn`을 호출한다.
+- 요청 시점의 `documentId`, 최신 `baseVersion`, message, editor snapshot을 하나의 DTO로 고정한다.
+- Agent 응답은 원문에 적용하지 않고 결과 요약만 표시하며, 400/422 detail message를 실패 안내에 사용한다.
+- Spring backend endpoint는 아직 없으므로 실제 pipeline 연동은 backend 이슈로 유지한다.
+
+**검증 결과**
+
+- `npm run test:markdown` 29건, `npm run lint`, `npm run build` 통과.
+
 ### feat: Markdown editor AI 대상 snapshot 전달
 
 **변경된 내용**

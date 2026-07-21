@@ -11,6 +11,7 @@ export type MarkdownEditorSnapshot = {
 
 export type ActiveMarkdownEditContext = {
   documentId: string;
+  baseVersion: number;
   editorSnapshot: MarkdownEditorSnapshot;
 };
 

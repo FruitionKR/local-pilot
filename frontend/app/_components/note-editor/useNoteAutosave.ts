@@ -22,6 +22,7 @@ export function useNoteAutosave({
 }) {
   const [status, setStatus] = useState<NoteSaveStatus>("saved");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [contentVersion, setContentVersion] = useState(initialVersion);
   const versionRef = useRef(initialVersion);
   const revisionRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,6 +47,7 @@ export function useNoteAutosave({
     try {
       const saved = await saveNoteDraft(documentId, candidate.markdown, versionRef.current);
       versionRef.current = saved.content_version;
+      setContentVersion(saved.content_version);
       setStatus(candidate.revision === revisionRef.current ? "saved" : "dirty");
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
@@ -79,5 +81,5 @@ export function useNoteAutosave({
     }, AUTOSAVE_DELAY_MS);
   }
 
-  return { status, errorMessage, queueSave };
+  return { status, errorMessage, contentVersion, queueSave };
 }

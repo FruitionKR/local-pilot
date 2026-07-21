@@ -89,7 +89,7 @@
 
 `react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, strikethrough, table, task list를 추가한다. Footnote는 GFM spec이 아니라 현재 parser stack에서 지원하는 호환 확장으로 분류한다.
 
-현재 `NoteEditor`는 CodeMirror의 Markdown과 selection을 1-base inclusive line target으로 변환해 Agent panel까지 전달한다. selection이 없으면 cursor가 속한 ATX heading section을 `current_section`으로 계산하고, heading이 없으면 `whole_document`를 사용한다. Agent panel의 submit은 아직 기존 Wiki query 흐름이므로 `/agent/turn` 호출과 편집 결과 적용은 연결되지 않았다.
+현재 `NoteEditor`는 CodeMirror의 Markdown과 selection을 1-base inclusive line target으로 변환해 Agent panel까지 전달한다. selection이 없으면 cursor가 속한 ATX heading section을 `current_section`으로 계산하고, heading이 없으면 `whole_document`를 사용한다. Agent panel은 편집 context가 있으면 `POST /api/workspaces/{workspace_id}/agent/turn`으로 요청 snapshot을 보내고, 없으면 기존 Wiki query 흐름을 사용한다. Spring backend의 Agent endpoint가 아직 없으므로 실제 pipeline 응답과 diff 적용은 연결되지 않았다.
 
 ## 4. 기본 지원 범위
 
@@ -290,7 +290,8 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 ### 1단계: 현재 편집 기능 연결
 
 - [x] editor의 Markdown과 selection/current section 전달
-- [ ] `/agent/turn` 호출
+- [x] frontend `/agent/turn` client와 제출 분기
+- [ ] Spring backend Agent endpoint와 pipeline proxy
 - [ ] 원본과 `replacement_markdown` diff 표시
 - [ ] 사용자 승인 후 editor buffer에 Apply
 - [ ] 저장 전 document version 또는 checksum 확인

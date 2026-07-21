@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
@@ -32,14 +32,20 @@ export function NoteEditor({
 }) {
   const [body, setBody] = useState(initialBody);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  const { status, errorMessage, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
+  const { status, errorMessage, contentVersion, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
   const editorExtensions = useMemo(() => [markdown(), EditorView.lineWrapping], []);
+  const selectionRef = useRef({ from: 0, to: 0 });
   const publishMarkdownEditContext = useCallback((markdownValue: string, from: number, to: number) => {
     onMarkdownEditContextChange?.({
       documentId,
+      baseVersion: contentVersion,
       editorSnapshot: buildMarkdownEditorSnapshot(markdownValue, from, to)
     });
-  }, [documentId, onMarkdownEditContextChange]);
+  }, [contentVersion, documentId, onMarkdownEditContextChange]);
+
+  useEffect(() => {
+    publishMarkdownEditContext(body, selectionRef.current.from, selectionRef.current.to);
+  }, [body, publishMarkdownEditContext]);
 
   useEffect(() => () => onMarkdownEditContextChange?.(null), [onMarkdownEditContextChange]);
 
@@ -86,11 +92,13 @@ export function NoteEditor({
           }}
           onCreateEditor={(view) => {
             const selection = view.state.selection.main;
+            selectionRef.current = { from: selection.from, to: selection.to };
             publishMarkdownEditContext(view.state.doc.toString(), selection.from, selection.to);
           }}
           onUpdate={(viewUpdate) => {
             if (!viewUpdate.docChanged && !viewUpdate.selectionSet) return;
             const selection = viewUpdate.state.selection.main;
+            selectionRef.current = { from: selection.from, to: selection.to };
             publishMarkdownEditContext(viewUpdate.state.doc.toString(), selection.from, selection.to);
           }}
           onChange={(nextBody) => {

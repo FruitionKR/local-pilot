@@ -1,4 +1,5 @@
 import { getAccessToken, getSelectedWorkspaceId } from "./auth";
+import type { AgentTurnRequest, AgentTurnResponse } from "./markdownAgent";
 import type { BackendData, ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, NoteContentResponse, QueryResponse, UserMeResponse, WikiGraphResponse, WikiPageDetailResponse, WorkspaceListResponse, WorkspaceResponse } from "./types";
 
 // 공통 에러 메시지 상수
@@ -15,6 +16,7 @@ const ERROR_MESSAGES = {
   noteDraftSaveFailed: "노트 draft를 저장하지 못했습니다.",
   documentOriginalLoadFailed: "원본 문서를 불러오지 못했습니다.",
   queryFailed: "질의에 실패했습니다.",
+  agentTurnFailed: "AI 편집 요청에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
   chatSessionFailed: "채팅 세션을 준비하지 못했습니다.",
   documentBlocksLoadFailed: "원본 문서 block을 불러오지 못했습니다.",
@@ -29,8 +31,12 @@ const ERROR_MESSAGES = {
 // HTTP 응답에서 에러 메시지를 추출하는 공통 헬퍼
 async function parseErrorResponse(response: Response, fallback: string): Promise<string> {
   try {
-    const body = await response.json() as { error?: { message?: string }; detail?: string } | undefined;
-    return body?.error?.message || body?.detail || fallback;
+    const body = await response.json() as {
+      error?: { message?: string };
+      detail?: string | { message?: string };
+    } | undefined;
+    const detailMessage = typeof body?.detail === "string" ? body.detail : body?.detail?.message;
+    return body?.error?.message || detailMessage || fallback;
   } catch {
     return fallback;
   }
@@ -273,6 +279,16 @@ export async function queryWiki(question: string): Promise<QueryResponse> {
   );
 
   return parseJsonOrThrow<QueryResponse>(response, ERROR_MESSAGES.queryFailed);
+}
+
+export async function requestAgentTurn(request: AgentTurnRequest): Promise<AgentTurnResponse> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/agent/turn`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  return parseJsonOrThrow<AgentTurnResponse>(response, ERROR_MESSAGES.agentTurnFailed);
 }
 
 export async function fetchWikiPage(pageId: string): Promise<WikiPageDetailResponse> {

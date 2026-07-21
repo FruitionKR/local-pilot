@@ -6,8 +6,10 @@ import { AgentComposer } from "./AgentComposer";
 import { AgentHeader } from "./AgentHeader";
 import { useChatThread } from "./useChatThread";
 import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
-import { exportChatWiki, fetchChatWikiExportPreview } from "../../_lib/api";
+import { exportChatWiki, fetchChatWikiExportPreview, requestAgentTurn } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
+import { buildAgentTurnRequest, describeAgentTurnResult } from "../../_lib/markdownAgent";
+import type { AgentTurnResponse } from "../../_lib/markdownAgent";
 import { findLastUserMessage } from "../../_lib/messages";
 import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import type { GraphNode, SourceBlockHighlight } from "../../_lib/types";
@@ -43,7 +45,11 @@ export function AgentPanel({
   const [exportPreview, setExportPreview] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [agentTurnResponse, setAgentTurnResponse] = useState<AgentTurnResponse | null>(null);
+  const [agentTurnErrorMessage, setAgentTurnErrorMessage] = useState<string | null>(null);
+  const [isAgentTurnLoading, setIsAgentTurnLoading] = useState(false);
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
+  const isSubmitting = isLoading || isAgentTurnLoading;
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
   const sessionTitle = buildSessionTitle(activeTurn?.question ?? findLastUserMessage(messages)?.content);
   const composerPlaceholder = markdownEditContext
@@ -52,8 +58,20 @@ export function AgentPanel({
 
   function handleSubmit() {
     const question = composerValue.trim();
-    if (!question) return;
+    if (!question || isSubmitting) return;
     setComposerValue("");
+    if (markdownEditContext) {
+      setAgentTurnResponse(null);
+      setAgentTurnErrorMessage(null);
+      setIsAgentTurnLoading(true);
+      requestAgentTurn(buildAgentTurnRequest(question, markdownEditContext))
+        .then(setAgentTurnResponse)
+        .catch((error: unknown) => {
+          setAgentTurnErrorMessage(getErrorMessage(error, "AI 편집 요청에 실패했습니다."));
+        })
+        .finally(() => setIsAgentTurnLoading(false));
+      return;
+    }
     void submitQuery(question);
   }
 
@@ -79,15 +97,23 @@ export function AgentPanel({
       <AgentHeader sessionTitle={sessionTitle} onClose={onClose} />
       <AgentBody
         messages={messages}
-        isLoading={isLoading}
+        isLoading={isSubmitting}
         activeTurn={activeTurn}
-        queryErrorMessage={queryErrorMessage}
+        queryErrorMessage={agentTurnErrorMessage ?? queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
         onOpenWikiPage={onOpenWikiPage}
         onOpenSourceBlocks={onOpenSourceBlocks}
         nodes={nodes}
       />
+      {agentTurnResponse && (
+        <div className="agent-turn-notice" role="status">
+          <strong>{describeAgentTurnResult(agentTurnResponse.result)}</strong>
+          {agentTurnResponse.result.action === "markdown_edit" && (
+            <span>편집 결과는 아직 원문에 적용되지 않았습니다.</span>
+          )}
+        </div>
+      )}
       {hasAssistantMessage && (
         <div className="wiki-export-trigger">
           <button type="button" disabled={isExporting} onClick={openExportPreview}>
@@ -98,7 +124,7 @@ export function AgentPanel({
       )}
       <AgentComposer
         value={composerValue}
-        isLoading={isLoading}
+        isLoading={isSubmitting}
         placeholder={composerPlaceholder}
         onChange={setComposerValue}
         onSubmit={handleSubmit}
