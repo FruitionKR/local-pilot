@@ -4,6 +4,7 @@ import fruition.chat.domain.ChatMessage;
 import fruition.chat.domain.ChatMessageReference;
 import fruition.chat.domain.ChatMessageRelatedPage;
 import fruition.chat.domain.ChatSession;
+import fruition.chat.domain.SourceRef;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.repository.ChatMessageReferenceRepository;
 import fruition.chat.repository.ChatMessageRelatedPageRepository;
@@ -204,11 +205,19 @@ public class QueryService {
             refs.add(new ChatMessageReference(
                     assistantMessage, REFERENCE_TYPE_SOURCE_BLOCK,
                     snippet.sourceDocumentId(), snippet.rank(),
-                    snippet.sourceBlockIds(), snippet.text()
+                    snippet.sourceBlockIds(), snippet.text(),
+                    toDomainSourceRefs(snippet.sourceRefs())
             ));
         }
 
         return refs;
+    }
+
+    private List<SourceRef> toDomainSourceRefs(List<PipelineQueryResponse.SourceRef> sourceRefs) {
+        if (sourceRefs == null) return null;
+        return sourceRefs.stream()
+                .map(r -> new SourceRef(r.sourceDocumentId(), r.sourceBlockId()))
+                .toList();
     }
 
     public record QueryMessageContext(

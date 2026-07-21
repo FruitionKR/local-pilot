@@ -41,4 +41,36 @@ class PipelineQueryResponseTest {
         assertThat(snippet.sourceBlockIds()).isEqualTo(List.of("B0005", "B0006"));
         assertThat(snippet.text()).isEqualTo("원본 block citation이 붙어 있던 근거 문장");
     }
+
+    @Test
+    @DisplayName("evidence_snippets의 source_refs가 다중 문서 참조 배열로 역직렬화된다")
+    void deserialize_evidenceSnippets_sourceRefs() throws Exception {
+        String json = """
+                {
+                  "answer": "답변 [1]",
+                  "related_pages": [],
+                  "evidence_snippets": [
+                    {
+                      "rank": 1,
+                      "source_document_id": "doc_1f9a74af",
+                      "source_block_ids": ["B0005"],
+                      "source_refs": [
+                        { "source_document_id": "doc_1f9a74af", "source_block_id": "B0005" },
+                        { "source_document_id": "doc_cross", "source_block_id": "B0009" }
+                      ],
+                      "text": "근거 문장"
+                    }
+                  ],
+                  "graph_context": { "nodes": [], "edges": [] },
+                  "traversal_paths": []
+                }
+                """;
+
+        PipelineQueryResponse response = objectMapper.readValue(json, PipelineQueryResponse.class);
+
+        PipelineQueryResponse.EvidenceSnippet snippet = response.evidenceSnippets().get(0);
+        assertThat(snippet.sourceRefs()).containsExactly(
+                new PipelineQueryResponse.SourceRef("doc_1f9a74af", "B0005"),
+                new PipelineQueryResponse.SourceRef("doc_cross", "B0009"));
+    }
 }

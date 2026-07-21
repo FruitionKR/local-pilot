@@ -2,6 +2,7 @@ package fruition.chat.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import fruition.chat.domain.SourceRef;
 
 import java.util.List;
 
@@ -12,5 +13,6 @@ public record ChatMessageReference(
         Integer rank,
         @JsonProperty("source_document_id") String sourceDocumentId,
         @JsonProperty("source_block_ids") List<String> sourceBlockIds,
-        String text
+        String text,
+        @JsonProperty("source_refs") List<SourceRef> sourceRefs
 ) {}

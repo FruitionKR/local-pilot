@@ -150,7 +150,8 @@ public class ChatSessionController {
                                     r.getId(), r.getReferenceType(),
                                     r.getRank(), r.getDocumentId(),
                                     r.getSourceBlockIds(),
-                                    r.getQuote()
+                                    r.getQuote(),
+                                    r.getSourceRefs()
                             ))
                             .toList();
                     var relatedPages = relatedPagesByMessageId.getOrDefault(m.getId(), List.of());
