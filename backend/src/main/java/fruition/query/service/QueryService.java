@@ -34,17 +34,20 @@ public class QueryService {
     private final ChatMessageReferenceRepository referenceRepository;
     private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final ChatSessionRepository chatSessionRepository;
+    private final QueryMessageRecorder queryMessageRecorder;
 
     public QueryService(PipelineQueryRequester pipelineQueryClient,
                         ChatMessageRepository chatMessageRepository,
                         ChatMessageReferenceRepository referenceRepository,
                         ChatMessageRelatedPageRepository relatedPageRepository,
-                        ChatSessionRepository chatSessionRepository) {
+                        ChatSessionRepository chatSessionRepository,
+                        QueryMessageRecorder queryMessageRecorder) {
         this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
         this.referenceRepository = referenceRepository;
         this.relatedPageRepository = relatedPageRepository;
         this.chatSessionRepository = chatSessionRepository;
+        this.queryMessageRecorder = queryMessageRecorder;
     }
 
     public QueryResponse query(String sessionId, String question) {
@@ -53,6 +56,33 @@ public class QueryService {
 
     @Transactional
     public QueryResponse query(String sessionId, String question, String requestId, String logCallbackUrl) {
+        QueryMessageContext messageContext = prepareMessages(sessionId, question, requestId);
+        return query(sessionId, question, requestId, logCallbackUrl, messageContext);
+    }
+
+    public QueryMessageContext prepareMessages(String sessionId, String question, String requestId) {
+        Instant createdAt = Instant.now();
+        QueryMessageContext context = new QueryMessageContext(
+                UUID.randomUUID().toString(),
+                "chat_user_" + UUID.randomUUID(),
+                "chat_assistant_" + UUID.randomUUID(),
+                createdAt
+        );
+        log.info("[질의 메시지 ID 생성] requestId={} pairId={} userMessageId={} assistantMessageId={}",
+                requestId, context.pairId(), context.userMessageId(), context.assistantMessageId());
+        queryMessageRecorder.createPendingPair(
+                sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question, createdAt);
+        log.info("[질의 메시지 선저장 commit 완료] requestId={} pairId={} userStatus=completed assistantStatus=pending",
+                requestId, context.pairId());
+        return context;
+    }
+
+    @Transactional
+    public QueryResponse query(String sessionId,
+                               String question,
+                               String requestId,
+                               String logCallbackUrl,
+                               QueryMessageContext messageContext) {
         log.info("[질의 처리 시작] sessionId={} requestId={} async={} questionLength={} callbackUrl={}",
                 sessionId, requestId, requestId != null, question.length(), logCallbackUrl);
         ChatSession session = chatSessionRepository.findById(sessionId)
@@ -60,19 +90,15 @@ public class QueryService {
         log.info("[질의 세션 확인] sessionId={} workspaceId={} userId={}",
                 sessionId, session.getWorkspaceId(), session.getUserId());
 
-        Instant userCreatedAt = Instant.now();
+        String pairId = messageContext.pairId();
+        String userMessageId = messageContext.userMessageId();
+        String assistantMessageId = messageContext.assistantMessageId();
+        Instant userCreatedAt = messageContext.createdAt();
 
-        String pairId = UUID.randomUUID().toString();
-        String userMessageId = "chat_user_" + UUID.randomUUID();
-        String assistantMessageId = "chat_assistant_" + UUID.randomUUID();
-        log.info("[질의 메시지 ID 생성] requestId={} pairId={} userMessageId={} assistantMessageId={}",
-                requestId, pairId, userMessageId, assistantMessageId);
-
-        PipelineQueryResponse pipelineResponse;
         try {
             log.info("[질의 파이프라인 호출 시작] requestId={} callbackEnabled={}",
                     requestId, logCallbackUrl != null);
-            pipelineResponse = requestId == null
+            PipelineQueryResponse pipelineResponse = requestId == null
                     ? pipelineQueryClient.query(question)
                     : pipelineQueryClient.query(question, requestId, logCallbackUrl);
             log.info("[질의 파이프라인 응답 수신] requestId={} answerLength={} relatedPageCount={} evidenceCount={} traversalPathCount={}",
@@ -81,51 +107,63 @@ public class QueryService {
                     pipelineResponse.relatedPages() != null ? pipelineResponse.relatedPages().size() : 0,
                     pipelineResponse.evidenceSnippets() != null ? pipelineResponse.evidenceSnippets().size() : 0,
                     pipelineResponse.traversalPaths() != null ? pipelineResponse.traversalPaths().size() : 0);
+
+            ChatMessage assistantMessage = chatMessageRepository.findById(assistantMessageId)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "처리 중인 assistant 메시지를 찾을 수 없습니다: " + assistantMessageId));
+            assistantMessage.complete(pipelineResponse.answer());
+            chatMessageRepository.save(assistantMessage);
+            log.info("[질의 assistant 메시지 완료] requestId={} pairId={} assistantMessageId={}",
+                    requestId, pairId, assistantMessageId);
+
+            List<ChatMessageReference> references = buildReferences(assistantMessage, pipelineResponse);
+            List<ChatMessageRelatedPage> relatedPages = buildRelatedPages(assistantMessage, pipelineResponse);
+            referenceRepository.saveAll(references);
+            relatedPageRepository.saveAll(relatedPages);
+            log.info("[질의 근거/관련 페이지 DB 저장 완료] requestId={} referenceCount={} relatedPageCount={}",
+                    requestId, references.size(), relatedPages.size());
+            touchSessionLastMessageAt(session);
+            log.info("[질의 처리 완료] requestId={} pairId={}", requestId, pairId);
+
+            return new QueryResponse(
+                    new QueryResponse.MessageSummary(userMessageId, "user", question, "completed", userCreatedAt),
+                    new QueryResponse.MessageSummary(
+                            assistantMessageId, "assistant", pipelineResponse.answer(), "completed", assistantMessage.getCreatedAt()),
+                    pipelineResponse.relatedPages(),
+                    pipelineResponse.evidenceSnippets(),
+                    pipelineResponse.graphContext(),
+                    pipelineResponse.traversalPaths()
+            );
         } catch (PipelineQueryException e) {
             String errorBody = e.getPipelineErrorBody();
             String errorMessage = errorBody != null
                     ? errorBody.substring(0, Math.min(errorBody.length(), 255))
                     : e.getMessage();
-            log.warn("[질의 파이프라인 실패 저장] requestId={} pairId={} errorCode={} errorMessage={}",
+            log.warn("[질의 파이프라인 실패 반영] requestId={} pairId={} errorCode={} errorMessage={}",
                     requestId, pairId, e.getErrorCode(), errorMessage);
-            chatMessageRepository.saveAll(List.of(
-                    new ChatMessage(userMessageId, session, pairId, "user", question, "failed", userCreatedAt, errorMessage),
-                    new ChatMessage(assistantMessageId, session, pairId, "assistant", "", "failed", Instant.now(), errorMessage)
-            ));
-            touchSessionLastMessageAt(session);
-            log.info("[질의 실패 메시지 DB 저장 완료] requestId={} pairId={}", requestId, pairId);
+            markAssistantFailed(requestId, pairId, assistantMessageId, errorMessage, e);
+            throw e;
+        } catch (Exception e) {
+            log.error("[질의 처리 예상 밖 실패 반영] requestId={} pairId={}", requestId, pairId, e);
+            markAssistantFailed(requestId, pairId, assistantMessageId, "질의 처리 중 오류가 발생했습니다.", e);
             throw e;
         }
+    }
 
-        Instant assistantCreatedAt = Instant.now();
-
-        ChatMessage assistantMessage = new ChatMessage(
-                assistantMessageId, session, pairId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt, null);
-
-        chatMessageRepository.saveAll(List.of(
-                new ChatMessage(userMessageId, session, pairId, "user", question, "completed", userCreatedAt, null),
-                assistantMessage
-        ));
-        log.info("[질의 메시지 DB 저장 완료] requestId={} pairId={} userMessageId={} assistantMessageId={}",
-                requestId, pairId, userMessageId, assistantMessageId);
-
-        List<ChatMessageReference> references = buildReferences(assistantMessage, pipelineResponse);
-        List<ChatMessageRelatedPage> relatedPages = buildRelatedPages(assistantMessage, pipelineResponse);
-        referenceRepository.saveAll(references);
-        relatedPageRepository.saveAll(relatedPages);
-        log.info("[질의 근거/관련 페이지 DB 저장 완료] requestId={} referenceCount={} relatedPageCount={}",
-                requestId, references.size(), relatedPages.size());
-        touchSessionLastMessageAt(session);
-        log.info("[질의 처리 완료] requestId={} pairId={}", requestId, pairId);
-
-        return new QueryResponse(
-                new QueryResponse.MessageSummary(userMessageId, "user", question, "completed", userCreatedAt),
-                new QueryResponse.MessageSummary(assistantMessageId, "assistant", pipelineResponse.answer(), "completed", assistantCreatedAt),
-                pipelineResponse.relatedPages(),
-                pipelineResponse.evidenceSnippets(),
-                pipelineResponse.graphContext(),
-                pipelineResponse.traversalPaths()
-        );
+    private void markAssistantFailed(String requestId,
+                                     String pairId,
+                                     String assistantMessageId,
+                                     String errorMessage,
+                                     Exception originalException) {
+        try {
+            queryMessageRecorder.markFailed(assistantMessageId, errorMessage);
+            log.info("[질의 assistant 실패 상태 commit 완료] requestId={} pairId={} assistantMessageId={}",
+                    requestId, pairId, assistantMessageId);
+        } catch (Exception recordException) {
+            originalException.addSuppressed(recordException);
+            log.error("[질의 assistant 실패 상태 저장 실패] requestId={} pairId={} assistantMessageId={}",
+                    requestId, pairId, assistantMessageId, recordException);
+        }
     }
 
     private void touchSessionLastMessageAt(ChatSession session) {
@@ -167,4 +205,11 @@ public class QueryService {
 
         return refs;
     }
+
+    public record QueryMessageContext(
+            String pairId,
+            String userMessageId,
+            String assistantMessageId,
+            Instant createdAt
+    ) {}
 }

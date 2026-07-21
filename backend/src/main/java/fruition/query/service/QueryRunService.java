@@ -16,6 +16,7 @@ import java.util.concurrent.Executor;
 public class QueryRunService {
 
     private static final Logger log = LoggerFactory.getLogger(QueryRunService.class);
+    private static final String UNEXPECTED_ERROR_MESSAGE = "질의 처리 중 오류가 발생했습니다.";
 
     private final QueryRunStore queryRunStore;
     private final QueryEventBroker queryEventBroker;
@@ -40,18 +41,23 @@ public class QueryRunService {
         QueryRun run = queryRunStore.create(sessionId, question);
         log.info("[질의 run 생성] requestId={} sessionId={} questionLength={}",
                 run.requestId(), sessionId, question.length());
-        queryRunExecutor.execute(() -> runPipeline(run.requestId(), sessionId, question));
+        QueryService.QueryMessageContext messageContext =
+                queryService.prepareMessages(sessionId, question, run.requestId());
+        queryRunExecutor.execute(() -> runPipeline(run.requestId(), sessionId, question, messageContext));
         log.info("[질의 run 실행 예약] requestId={}", run.requestId());
         return run;
     }
 
-    private void runPipeline(String requestId, String sessionId, String question) {
+    private void runPipeline(String requestId,
+                             String sessionId,
+                             String question,
+                             QueryService.QueryMessageContext messageContext) {
         queryRunStore.markRunning(requestId);
         String logCallbackUrl = callbackBaseUrl + "/api/query/runs/" + requestId + "/events/callback";
         log.info("[질의 run 시작] requestId={} sessionId={} callbackUrl={} questionLength={}",
                 requestId, sessionId, logCallbackUrl, question.length());
         try {
-            QueryResponse result = queryService.query(sessionId, question, requestId, logCallbackUrl);
+            QueryResponse result = queryService.query(sessionId, question, requestId, logCallbackUrl, messageContext);
             queryRunStore.markCompleted(requestId, result);
             log.info("[질의 run 완료] requestId={} answerLength={} relatedPageCount={} evidenceCount={}",
                     requestId,
@@ -60,11 +66,18 @@ public class QueryRunService {
                     result != null && result.evidenceSnippets() != null ? result.evidenceSnippets().size() : 0);
             queryEventBroker.complete(requestId);
         } catch (PipelineQueryException e) {
-            queryRunStore.markFailed(requestId, e.getMessage());
             log.warn("[질의 run 실패] requestId={} errorCode={} message={}",
                     requestId, e.getErrorCode(), e.getMessage());
-            queryEventBroker.fail(requestId, e.getMessage());
+            failRun(requestId, e.getMessage());
+        } catch (Exception e) {
+            log.error("[질의 run 예상 밖 실패] requestId={}", requestId, e);
+            failRun(requestId, UNEXPECTED_ERROR_MESSAGE);
         }
+    }
+
+    private void failRun(String requestId, String errorMessage) {
+        queryRunStore.markFailed(requestId, errorMessage);
+        queryEventBroker.fail(requestId, errorMessage);
     }
 
     @Scheduled(fixedDelay = 60_000)

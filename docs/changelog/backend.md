@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: query 메시지 선저장과 실패 상태 전이 보장
+
+**배경**
+
+비동기 query가 끝난 뒤 user/assistant 메시지를 함께 저장해, 처리 중에는 사용자의 질문이 채팅 DB에 보이지 않았다. pipeline 실패 기록도 원래 query transaction과 함께 rollback될 수 있었고, 예상 밖 예외에서는 run이 `RUNNING`에 남을 수 있었다.
+
+**변경된 것**
+
+- `QueryRunService.start()`가 `202`를 반환하기 전에 같은 `pair_id`의 `user=completed`, `assistant=pending` 메시지를 `REQUIRES_NEW` transaction으로 commit한다.
+- 성공 시 기존 assistant를 `completed`와 최종 답변으로 갱신하고, pipeline 또는 예상 밖 오류 시 같은 assistant를 `failed`와 오류 메시지로 갱신한다.
+- 예상 밖 `Exception`도 run을 `FAILED`로 바꾸고 일반화된 `query.failed` SSE를 발행한다. 상세 stack trace는 서버 로그에만 남긴다.
+- 현재 인메모리 SSE 흐름과 Redis Pub/Sub·Streams 적용 기준을 `docs/design/query-sse-redis.md`에 시각화했다.
+
+**검증**
+
+- `202` 직후 SSE 연결 전 채팅 조회에서 `user=completed`, `assistant=pending` 확인
+- pipeline 403 종료 후 동일 assistant가 `failed`로 갱신된 것을 PostgreSQL에서 확인
+- `./gradlew test` 통과
+
 ### feat: query run·문서 파이프라인 이벤트 관측 로깅 보강
 
 **배경**
