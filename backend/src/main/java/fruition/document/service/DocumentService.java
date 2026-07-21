@@ -191,7 +191,9 @@ public class DocumentService {
      */
     @Transactional
     public void createInitialNote(String workspaceId, String userId) {
-        String markdown = "<!-- fruition-workspace: " + workspaceId + " -->\n# 새 노트\n";
+        // content_hash 중복 판별이 (workspace_id, content_hash) 범위로 바뀐 뒤로(V5),
+        // 워크스페이스마다 해시를 다르게 만들던 fruition-workspace 식별 주석은 필요 없다.
+        String markdown = "# 새 노트\n";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
         String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
@@ -216,6 +218,8 @@ public class DocumentService {
                     objectPath,
                     sha256(bytes)
             );
+            // 초기 노트는 파이프라인 처리 대상이 아니므로(큐에 올리지 않음) 곧바로 completed로 둔다.
+            document.updateStatus(DocumentStatus.completed, null, Instant.now(), null);
             documentRepository.save(document);
         } catch (Exception e) {
             log.warn("초기 노트 저장 실패로 건너뜁니다. workspaceId={}", workspaceId, e);

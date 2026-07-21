@@ -8,6 +8,21 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: 초기 노트의 임시 주석 제거 및 status를 completed로 저장
+
+**배경**
+
+워크스페이스 생성 시 만드는 초기 노트(`새 노트.md`)는 본문이 모두 `# 새 노트`로 같아, 과거 전역 `content_hash` UNIQUE와 충돌하는 것을 피하려 `<!-- fruition-workspace: ws_... -->` 식별 주석을 넣어 해시를 워크스페이스마다 다르게 만들었다. 이 주석은 문서 내용이 아닌데 원본 Markdown에 섞여 미리보기에 내부 워크스페이스 ID가 노출됐다. 또한 초기 노트는 파이프라인 처리 큐에 올리지 않는데도 `status`가 `processing`으로 남았다.
+
+**변경된 것**
+
+- V5로 중복 판별이 `(workspace_id, content_hash)` 범위가 되면서 우회 주석이 불필요해져, `DocumentService.createInitialNote`의 본문을 `# 새 노트`로 정리(주석 제거).
+- 초기 노트를 저장 직전 `updateStatus(DocumentStatus.completed, null, now, null)`로 완료 처리 → 목록/상세의 `processing_state`도 `completed`로 일관.
+
+**남은 주의사항**
+
+- 이미 생성된 기존 초기 노트의 원본 오브젝트에는 주석이 남아 있다. 미리보기 노출 숨김(프론트) 처리는 별도 후속 작업으로 둔다.
+
 ### fix: query 메시지 선저장과 실패 상태 전이 보장
 
 **배경**
