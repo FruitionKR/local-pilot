@@ -1,3 +1,4 @@
+from threading import Lock
 from typing import Any
 
 from app.modules.wiki_ingestion.application.models import (
@@ -21,6 +22,7 @@ class RunPipelineUseCase:
         self._runner = runner
         self._repository = repository
         self._embedding_job = embedding_job
+        self._execution_lock = Lock()
 
     def register(self, registration: PipelineRunRegistration) -> None:
         self._repository.create(
@@ -32,11 +34,15 @@ class RunPipelineUseCase:
         )
 
     def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
-        try:
-            manifest = self._runner.run(command)
-            page_ids = self._repository.finish(run_id, manifest)
-            self._embedding_job.start(run_id, page_ids)
-            return manifest
-        except Exception as exc:
-            self._repository.fail(run_id, str(exc))
-            raise
+        with self._execution_lock:
+            try:
+                manifest = self._runner.run(
+                    command,
+                    progress_callback=lambda: self._repository.touch(run_id),
+                )
+                page_ids = self._repository.finish(run_id, manifest)
+                self._embedding_job.start(run_id, page_ids)
+                return manifest
+            except Exception as exc:
+                self._repository.fail(run_id, str(exc))
+                raise

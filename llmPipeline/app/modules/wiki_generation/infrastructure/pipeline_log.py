@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,17 @@ from app.modules.wiki_ingestion.infrastructure.file_io import append_text
 
 
 class PipelineLog:
-    def __init__(self, path: str | Path, callback_url: str | None = None, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        callback_url: str | None = None,
+        run_id: str | None = None,
+        progress_callback: Callable[[], None] | None = None,
+    ) -> None:
         self.path = Path(path)
         self.callback_url = callback_url
         self.run_id = run_id
+        self.progress_callback = progress_callback
         if self.path.exists():
             self.path.unlink()
 
@@ -31,8 +39,16 @@ class PipelineLog:
         for key, value in event["data"].items():
             lines.append(f"  - {key}: {value}")
         append_text(self.path, "\n".join(lines) + "\n")
+        if self.progress_callback:
+            self._report_progress(event["timestamp"])
         if self.callback_url:
             self._post_event(event)
+
+    def _report_progress(self, timestamp: str) -> None:
+        try:
+            self.progress_callback()
+        except Exception as exc:
+            append_text(self.path, f"[{timestamp}] [heartbeat 갱신 실패] {exc}\n")
 
     def _post_event(self, event: dict[str, Any]) -> None:
         body = json.dumps(event, ensure_ascii=False).encode("utf-8")
