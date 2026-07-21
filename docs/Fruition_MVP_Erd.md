@@ -60,6 +60,7 @@ erDiagram
         TIMESTAMPTZ processing_started_at
         TIMESTAMPTZ processing_updated_at
         VARCHAR processing_stage
+        TIMESTAMPTZ reconciled_at
         VARCHAR origin
         VARCHAR selection_mode
         TEXT pipeline_input_markdown
@@ -130,6 +131,7 @@ erDiagram
         DOUBLE embedding_vector
         INTEGER embedding_dimension
         TEXT status
+        TEXT error
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
@@ -142,6 +144,7 @@ erDiagram
         DOUBLE embedding_vector
         INTEGER embedding_dimension
         TEXT status
+        TEXT error
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
@@ -159,6 +162,27 @@ erDiagram
         TIMESTAMPTZ updated_at
     }
 
+    wiki_schemas {
+        TEXT id PK
+        TEXT workspace_id
+        TEXT user_id
+        TEXT name
+        TEXT raw_markdown
+        TEXT sanitized_global_markdown
+        TEXT sanitized_query_markdown
+        TEXT sanitized_ingest_markdown
+        TEXT sanitized_edit_markdown
+        TEXT sanitized_concept_markdown
+        TEXT sanitized_template_markdown
+        TEXT preview_markdown
+        JSONB lint_result
+        TEXT status
+        TEXT schema_version
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+        TIMESTAMPTZ activated_at
+    }
+
     chat_sessions {
         VARCHAR id PK
         VARCHAR workspace_id FK
@@ -168,8 +192,8 @@ erDiagram
         TIMESTAMPTZ context_summary_updated_at
         TIMESTAMPTZ created_at
         TIMESTAMPTZ last_message_at
-        VARCHAR wiki_page_id
-        VARCHAR wiki_export_document_id
+        VARCHAR wiki_page_id FK
+        VARCHAR wiki_export_document_id FK
     }
 
     chat_messages {
@@ -181,14 +205,14 @@ erDiagram
         VARCHAR status
         TIMESTAMPTZ created_at
         VARCHAR error_message
-        VARCHAR wiki_page_id
+        VARCHAR wiki_page_id FK
     }
 
     chat_message_references {
         BIGINT id PK
         VARCHAR chat_message_id FK
         VARCHAR reference_type
-        VARCHAR document_id
+        VARCHAR document_id FK
         INTEGER rank
         TEXT source_block_ids
         TEXT quote
@@ -197,7 +221,7 @@ erDiagram
     chat_message_related_pages {
         BIGINT id PK
         VARCHAR chat_message_id FK
-        VARCHAR wiki_page_id
+        VARCHAR wiki_page_id FK
         VARCHAR page_type
         VARCHAR title
         VARCHAR slug
@@ -211,8 +235,8 @@ erDiagram
         VARCHAR id PK
         VARCHAR session_id FK
         VARCHAR pair_id
-        VARCHAR wiki_page_id
-        VARCHAR document_id
+        VARCHAR wiki_page_id FK
+        VARCHAR document_id FK
         TIMESTAMPTZ created_at
     }
 
@@ -239,10 +263,15 @@ erDiagram
     wiki_embedding_vectors ||--o{ wiki_embedding_units : "embedding_vector_id"
     chat_sessions ||--o{ chat_messages : "session_id"
     chat_sessions ||--o{ chat_partial_wiki : "session_id"
+    wiki_pages |o--o{ chat_sessions : "wiki_page_id"
+    documents |o--o{ chat_sessions : "wiki_export_document_id"
+    wiki_pages |o--o{ chat_messages : "wiki_page_id"
     wiki_pages ||--o{ chat_partial_wiki : "wiki_page_id"
     documents ||--o{ chat_partial_wiki : "document_id"
     chat_messages ||--o{ chat_message_references : "chat_message_id"
     chat_messages ||--o{ chat_message_related_pages : "chat_message_id"
+    documents |o--o{ chat_message_references : "document_id"
+    wiki_pages |o--o{ chat_message_related_pages : "wiki_page_id"
 ```
 
 ## 테이블 설명
@@ -269,6 +298,14 @@ erDiagram
 | `wiki_page_embeddings` | llmPipeline | Wiki 페이지 임베딩 벡터. 모델별 1개 행. query 검색에 사용 |
 | `wiki_embedding_vectors` | llmPipeline | 임베딩 벡터 풀. 동일 텍스트를 여러 페이지가 공유할 때 중복 연산 방지 |
 | `wiki_embedding_units` | llmPipeline | Wiki 페이지 내 검색 단위. `wiki_embedding_vectors`와 연결 |
+| `wiki_schemas` | llmPipeline | 워크스페이스·사용자별 Wiki 생성 규칙. 활성 스키마는 소유 범위마다 최대 1개 |
+
+## 관계 삭제 정책
+
+- 워크스페이스·사용자 소유 관계와 문서·Wiki·채팅의 필수 하위 관계는 부모 삭제 시 `ON DELETE CASCADE`로 함께 삭제된다.
+- `chat_sessions.wiki_page_id`, `chat_sessions.wiki_export_document_id`, `chat_messages.wiki_page_id`, `chat_message_references.document_id`, `chat_message_related_pages.wiki_page_id`는 참조 대상 삭제 시 `ON DELETE SET NULL`로 이력을 보존한다.
+- `pipeline_runs.document_id`도 문서 삭제 시 `ON DELETE SET NULL`이며, `wiki_embedding_units.embedding_vector_id`는 사용 중인 벡터 삭제를 `ON DELETE RESTRICT`로 막는다.
+- `wiki_schemas.workspace_id`, `wiki_schemas.user_id`에는 현재 물리 FK가 없다.
 
 ---
 
@@ -359,6 +396,7 @@ JWT Refresh Token 저장. 로그아웃 및 강제 만료 지원. `revoked_at`으
 | `processing_started_at` | TIMESTAMPTZ | pipeline run 시작 시각 |
 | `processing_updated_at` | TIMESTAMPTZ | 마지막 heartbeat 수신 시각. stalled 감지 기준 |
 | `processing_stage` | VARCHAR | 파이프라인 heartbeat의 현재 처리 단계 라벨(예: "5. Source Page 생성"). 진행 표시용 |
+| `reconciled_at` | TIMESTAMPTZ | 완료된 채팅 export 결과를 Spring 상태에 반영한 시각. 미반영 완료 건 탐색에 사용 |
 | `origin` | VARCHAR | 문서 출처. `upload`(일반 업로드) \| `chat_export`(채팅 Wiki page화). NULL은 기존 업로드로 간주 |
 | `selection_mode` | VARCHAR | 채팅 export 선택 모드. `full` \| `partial`. 일반 업로드는 NULL |
 | `pipeline_input_markdown` | TEXT | full 재생성 시 파이프라인에 inline으로 보낼 미편입 문답(delta) Markdown. 일반 업로드·첫 export는 NULL |
@@ -393,6 +431,37 @@ LLM pipeline이 생성하는 Wiki 페이지. `source`(원본 문서 추출)·`co
 | `status` | VARCHAR | `draft` \| `active` \| `failed` |
 | `created_at` | TIMESTAMPTZ | 생성 시각 |
 | `updated_at` | TIMESTAMPTZ | 최종 수정 시각 |
+
+---
+
+### wiki_schemas
+Wiki 생성·검색·편집 단계에 적용할 Markdown 규칙과 단계별 정제 결과를 저장한다. `workspace_id`, `user_id`는 논리적 소유 범위이며 현재 코드에는 물리 FK가 없다. 부분 unique index로 소유 범위마다 `active` 스키마를 최대 1개로 제한한다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | TEXT | 스키마 고유 식별자 |
+| `workspace_id` | TEXT | 적용 대상 워크스페이스 ID |
+| `user_id` | TEXT | 스키마 소유 사용자 ID |
+| `name` | TEXT | 스키마 이름 |
+| `raw_markdown` | TEXT | 사용자가 입력한 원본 스키마 Markdown |
+| `sanitized_global_markdown` | TEXT | 모든 단계에 적용할 정제된 공통 규칙 |
+| `sanitized_query_markdown` | TEXT | 검색 단계용 정제 규칙 |
+| `sanitized_ingest_markdown` | TEXT | 문서 편입 단계용 정제 규칙 |
+| `sanitized_edit_markdown` | TEXT | Wiki 편집 단계용 정제 규칙 |
+| `sanitized_concept_markdown` | TEXT | 개념 페이지 생성용 정제 규칙 |
+| `sanitized_template_markdown` | TEXT | 페이지 템플릿용 정제 규칙 |
+| `preview_markdown` | TEXT | 적용 결과 미리보기 Markdown |
+| `lint_result` | JSONB | 스키마 검사 결과와 이슈 목록 |
+| `status` | TEXT | `draft` \| `active` |
+| `schema_version` | TEXT | 스키마 형식 버전. 기본값 `1.0` |
+| `created_at` | TIMESTAMPTZ | 생성 시각 |
+| `updated_at` | TIMESTAMPTZ | 최종 수정 시각 |
+| `activated_at` | TIMESTAMPTZ | 활성화 시각. draft이면 NULL |
+
+인덱스:
+
+- `(workspace_id, user_id, status)` 일반 index
+- `(workspace_id, user_id) WHERE status = 'active'` unique index
 
 ---
 

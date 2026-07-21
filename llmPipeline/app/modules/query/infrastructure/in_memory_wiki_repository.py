@@ -7,9 +7,8 @@ class InMemoryWikiRepository(WikiRepositoryPort):
         self._pages = pages
         self._links = links
 
-    def list_active_pages(self) -> list[WikiPage]:
+    def list_active_pages(self, workspace_id: str) -> list[WikiPage]:
         return list(self._pages)
 
-    def list_active_links(self) -> list[WikiPageLink]:
+    def list_active_links(self, workspace_id: str) -> list[WikiPageLink]:
         return list(self._links)
-

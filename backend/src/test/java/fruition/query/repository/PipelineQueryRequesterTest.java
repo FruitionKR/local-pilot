@@ -44,9 +44,10 @@ class PipelineQueryRequesterTest {
 
     @Test
     void query_withoutRequestId_omitsRunFieldsFromRequestBody() {
-        requester().query("질문");
+        requester().query("ws_abc123", "질문");
 
         assertThat(capturedBody.get())
+                .contains("\"workspace_id\":\"ws_abc123\"")
                 .contains("\"question\":\"질문\"")
                 .doesNotContain("request_id")
                 .doesNotContain("log_callback_url");
@@ -54,9 +55,10 @@ class PipelineQueryRequesterTest {
 
     @Test
     void query_withRequestIdAndCallbackUrl_includesThemInRequestBody() {
-        requester().query("질문", "query_abc123", "http://backend:8080/api/query/runs/query_abc123/events/callback");
+        requester().query("ws_abc123", "질문", "query_abc123", "http://backend:8080/api/query/runs/query_abc123/events/callback");
 
         assertThat(capturedBody.get())
+                .contains("\"workspace_id\":\"ws_abc123\"")
                 .contains("\"question\":\"질문\"")
                 .contains("\"request_id\":\"query_abc123\"")
                 .contains("\"log_callback_url\":\"http://backend:8080/api/query/runs/query_abc123/events/callback\"");

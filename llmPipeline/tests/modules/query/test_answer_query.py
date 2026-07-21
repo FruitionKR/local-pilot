@@ -201,7 +201,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
-        result = use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
+        result = use_case.execute("토큰끼리 서로 보는 구조가 뭐야?", workspace_id="ws_test")
 
         related_ids = {item.page.id for item in result.related_pages}
         self.assertIn("source:attention", related_ids)
@@ -275,7 +275,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("토큰 관계 설명")
+        result = use_case.execute("토큰 관계 설명", workspace_id="ws_test")
 
         self.assertIn("[1]", result.answer.content)
         self.assertIn("[2]", result.answer.content)
@@ -319,7 +319,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             traverse_wiki_graph=TraverseWikiGraphUseCase(),
         )
 
-        result = use_case.execute("RAG랑 위키 그래프가 어떻게 이어져?")
+        result = use_case.execute("RAG랑 위키 그래프가 어떻게 이어져?", workspace_id="ws_test")
 
         related_ids = {item.page.id for item in result.related_pages}
         edge_types = {edge.link_type for edge in result.graph_context.edges}
@@ -350,7 +350,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             source_candidate_limit=1,
         )
 
-        result = use_case.execute("상대 점수 제한 확인")
+        result = use_case.execute("상대 점수 제한 확인", workspace_id="ws_test")
 
         related_ids = {item.page.id for item in result.related_pages}
         self.assertIn("concept:near", related_ids)
@@ -381,7 +381,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             returned_path_limit=1,
         )
 
-        result = use_case.execute("path 반환 제한 확인")
+        result = use_case.execute("path 반환 제한 확인", workspace_id="ws_test")
 
         self.assertEqual(len(result.traversal_paths), 1)
         self.assertEqual(result.traversal_paths[0].role, "primary_answer_path")
@@ -407,7 +407,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             source_candidate_limit=1,
         )
 
-        result = use_case.execute("관련 없는 질문")
+        result = use_case.execute("관련 없는 질문", workspace_id="ws_test")
 
         related_ids = {item.page.id for item in result.related_pages}
         self.assertEqual(related_ids, {"source:seed"})
@@ -435,7 +435,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_rewriter=FixedQueryRewriter("self attention token"),
         )
 
-        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?")
+        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?", workspace_id="ws_test")
 
         self.assertTrue(embedding_search.queries)
         self.assertTrue(all(query == "self attention token" for query in embedding_search.queries))
@@ -483,6 +483,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         result = use_case.execute(
             "그거랑 RAG 차이는?",
+            workspace_id="ws_test",
             conversation_context=ConversationContext(
                 recent_conversation_summary="사용자는 Persistent Wiki와 RAG의 차이를 이어서 묻고 있다.",
                 reference_context={
@@ -524,7 +525,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             min_internal_relevance_score=0.50,
         )
 
-        result = use_case.execute("RAG가 뭐야?")
+        result = use_case.execute("RAG가 뭐야?", workspace_id="ws_test")
 
         self.assertEqual(web_search.queries, ["rag external knowledge"])
         self.assertEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
@@ -563,7 +564,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_evaluator=query_evaluator,
         )
 
-        result = use_case.execute("index.md는 어떤 역할을 해?")
+        result = use_case.execute("index.md는 어떤 역할을 해?", workspace_id="ws_test")
 
         self.assertEqual(query_evaluator.calls[0][3], "no_relevant_seed")
         self.assertFalse(query_evaluator.calls[0][4])
@@ -613,7 +614,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_evaluator_max_attempts=2,
         )
 
-        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?")
+        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?", workspace_id="ws_test")
 
         self.assertEqual(len(query_evaluator.calls), 2)
         self.assertEqual(len(answer_generator.contexts), 2)
@@ -657,7 +658,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_evaluator_max_attempts=2,
         )
 
-        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?")
+        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?", workspace_id="ws_test")
 
         self.assertEqual(len(query_evaluator.calls), 2)
         self.assertEqual(len(answer_generator.contexts), 2)
@@ -695,7 +696,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             web_search=web_search,
         )
 
-        result = use_case.execute("외부 도구는 뭐야?")
+        result = use_case.execute("외부 도구는 뭐야?", workspace_id="ws_test")
 
         self.assertEqual(len(query_evaluator.calls), 1)
         self.assertTrue(query_evaluator.calls[0][4])
@@ -755,7 +756,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             web_search=web_search,
         )
 
-        result = use_case.execute("그거를 외부 배포 방식으로 운영하려면 어떻게 해?")
+        result = use_case.execute("그거를 외부 배포 방식으로 운영하려면 어떻게 해?", workspace_id="ws_test")
 
         self.assertEqual(len(query_evaluator.calls), 1)
         self.assertTrue(query_evaluator.calls[0][4])
@@ -813,7 +814,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             min_internal_relevance_score=0.50,
         )
 
-        result = use_case.execute("태양이 뭐야?")
+        result = use_case.execute("태양이 뭐야?", workspace_id="ws_test")
 
         self.assertEqual(result.retrieval_summary.stop_reason, "concept_direct_match")
         self.assertIn("concept:sun", {item.page.id for item in result.related_pages})
@@ -848,7 +849,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("LLM Wiki가 뭐야?")
+        result = use_case.execute("LLM Wiki가 뭐야?", workspace_id="ws_test")
 
         related = {item.page.id: item for item in result.related_pages}
         self.assertIn("concept:llm-wiki", related)
@@ -874,7 +875,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("원본에 연결된 근거는?")
+        result = use_case.execute("원본에 연결된 근거는?", workspace_id="ws_test")
 
         self.assertEqual(len(result.evidence_snippets), 1)
         self.assertEqual(result.evidence_snippets[0].source_document_id, "doc_seed")
@@ -902,7 +903,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("Obsidian Web Clipper 역할")
+        result = use_case.execute("Obsidian Web Clipper 역할", workspace_id="ws_test")
 
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0003"])
         self.assertIn("Obsidian Web Clipper", result.evidence_snippets[0].text)
@@ -932,7 +933,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("ingest, query, lint는 각각 어떤 역할을 해?")
+        result = use_case.execute("ingest, query, lint는 각각 어떤 역할을 해?", workspace_id="ws_test")
 
         self.assertIsNotNone(answer_generator.last_context)
         evidence_refs = [snippet.source_block_ids for snippet in answer_generator.last_context.evidence_snippets[:4]]
@@ -962,7 +963,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("Persistent Wiki RAG 차이")
+        result = use_case.execute("Persistent Wiki RAG 차이", workspace_id="ws_test")
 
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002"])
         self.assertIn("지속적으로 축적", result.evidence_snippets[0].text)
@@ -989,7 +990,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ),
         )
 
-        result = use_case.execute("LLM Wiki랑 RAG 차이는?")
+        result = use_case.execute("LLM Wiki랑 RAG 차이는?", workspace_id="ws_test")
 
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0002", "B0003"])
         self.assertIn("qa_episode", result.evidence_snippets[0].text)
@@ -1019,7 +1020,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             source_candidate_limit=1,
         )
 
-        result = use_case.execute("qmd")
+        result = use_case.execute("qmd", workspace_id="ws_test")
 
         self.assertEqual(result.related_pages[0].page.id, "source:qmd")
 
@@ -1057,7 +1058,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                     source_candidate_limit=1,
                 )
 
-                result = use_case.execute(question)
+                result = use_case.execute(question, workspace_id="ws_test")
 
                 self.assertEqual(result.related_pages[0].page.id, "source:target")
 
@@ -1113,7 +1114,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         )
 
         with self.assertRaises(InvalidQuestionError):
-            use_case.execute("   ")
+            use_case.execute("   ", workspace_id="ws_test")
 
 
 if __name__ == "__main__":

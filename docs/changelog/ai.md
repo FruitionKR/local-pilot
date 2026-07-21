@@ -13,6 +13,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 구조 오류를 기존 1회 재시도에 전달하고 재실패 결과는 기존 output contract error로 미적용
 - Markdown 편집 모듈 `60 passed`, `26 subtests passed`; 문서 복원 제외 전체 `357 passed`, `30 subtests passed`
 
+### fix: Query 검색 범위를 Workspace로 격리
+
+- `POST /query`가 필수 `workspace_id`를 받아 Query application과 repository까지 전달하도록 변경
+- active Wiki page와 link 조회를 요청 Workspace로 제한해 다른 Workspace 데이터를 검색 후보에서 제외
+- Workspace 요청 계약과 PostgreSQL 조회 조건을 추가하고 Query 테스트 61개 통과
+
 ### fix: pipeline startup의 DB 생성 책임 제거
 
 - FastAPI lifespan에서 `CREATE TABLE`을 실행하지 않고 Flyway 필수 테이블 존재 여부만 확인하도록 변경

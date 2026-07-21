@@ -11,7 +11,8 @@ import java.util.Optional;
 
 public interface DocumentRepository extends JpaRepository<Document, String> {
 
-    Optional<Document> findByContentHash(String contentHash);
+    /** 중복 판별: 같은 workspace 안에서만 동일 content_hash를 중복으로 본다. */
+    Optional<Document> findByWorkspaceIdAndContentHash(String workspaceId, String contentHash);
 
     /** 완료 후처리(reconcile) 대상: 아직 후처리 안 된(reconciled_at IS NULL) origin·status 문서. */
     List<Document> findAllByOriginAndStatusAndReconciledAtIsNull(String origin, DocumentStatus status);
