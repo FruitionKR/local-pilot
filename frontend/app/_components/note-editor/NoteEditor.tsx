@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
 import { MarkdownViewer } from "../MarkdownViewer";
+import { buildMarkdownEditorSnapshot } from "../../_lib/markdownEditContext";
+import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import { useNoteAutosave, type NoteSaveStatus } from "./useNoteAutosave";
 
 const STATUS_LABELS: Record<NoteSaveStatus, string> = {
@@ -19,17 +21,27 @@ export function NoteEditor({
   documentId,
   marker,
   initialBody,
-  initialVersion
+  initialVersion,
+  onMarkdownEditContextChange
 }: {
   documentId: string;
   marker: string;
   initialBody: string;
   initialVersion: number;
+  onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
 }) {
   const [body, setBody] = useState(initialBody);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const { status, errorMessage, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
   const editorExtensions = useMemo(() => [markdown(), EditorView.lineWrapping], []);
+  const publishMarkdownEditContext = useCallback((markdownValue: string, from: number, to: number) => {
+    onMarkdownEditContextChange?.({
+      documentId,
+      editorSnapshot: buildMarkdownEditorSnapshot(markdownValue, from, to)
+    });
+  }, [documentId, onMarkdownEditContextChange]);
+
+  useEffect(() => () => onMarkdownEditContextChange?.(null), [onMarkdownEditContextChange]);
 
   return (
     <div className="note-editor-shell">
@@ -71,6 +83,15 @@ export function NoteEditor({
             foldGutter: false,
             highlightActiveLine: false,
             highlightActiveLineGutter: false
+          }}
+          onCreateEditor={(view) => {
+            const selection = view.state.selection.main;
+            publishMarkdownEditContext(view.state.doc.toString(), selection.from, selection.to);
+          }}
+          onUpdate={(viewUpdate) => {
+            if (!viewUpdate.docChanged && !viewUpdate.selectionSet) return;
+            const selection = viewUpdate.state.selection.main;
+            publishMarkdownEditContext(viewUpdate.state.doc.toString(), selection.from, selection.to);
           }}
           onChange={(nextBody) => {
             setBody(nextBody);

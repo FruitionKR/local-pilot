@@ -6,6 +6,20 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: Markdown editor AI 대상 snapshot 전달
+
+**변경된 내용**
+
+- CodeMirror의 현재 Markdown과 문자 selection을 AI 편집용 1-base inclusive line target으로 변환한다.
+- selection이 없으면 cursor가 속한 ATX heading section을 계산하고, heading이 없으면 문서 전체를 대상으로 사용한다.
+- code fence와 frontmatter 내부의 heading 표시는 section 경계에서 제외한다.
+- editor snapshot을 `NoteEditor`에서 `HomeWorkspace`를 거쳐 Agent panel까지 전달하고 composer에서 활성 대상 범위를 안내한다.
+- 실제 `/agent/turn` 호출과 diff 적용은 후속 원자 기능으로 유지한다.
+
+**검증 결과**
+
+- `npm run test:markdown` 26건, `npm run lint`, `npm run build` 통과.
+
 ### fix: Markdown 제목과 code fence 경계 보존
 
 **변경된 내용**

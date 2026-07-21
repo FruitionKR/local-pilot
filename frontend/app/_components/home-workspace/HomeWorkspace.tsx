@@ -15,6 +15,7 @@ import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend, makeRawId } from "../../_lib/graph";
+import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
@@ -32,6 +33,7 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
+  const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
     SOURCE_PREVIEW_DEFAULT_WIDTH,
@@ -187,6 +189,7 @@ export function HomeWorkspace() {
             sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
             width={sourcePreviewResize.width}
             onResizeStart={sourcePreviewResize.start}
+            onMarkdownEditContextChange={setMarkdownEditContext}
             fillMain
           />
         ) : (
@@ -222,6 +225,7 @@ export function HomeWorkspace() {
           onClose={() => setIsAgentPanelOpen(false)}
           onOpenWikiPage={selection.openWikiPagePreview}
           onOpenSourceBlocks={openSourceBlocks}
+          markdownEditContext={markdownEditContext}
           nodes={graphData.nodes}
         />
       )}

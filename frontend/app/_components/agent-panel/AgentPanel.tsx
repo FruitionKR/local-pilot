@@ -9,6 +9,7 @@ import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
 import { exportChatWiki, fetchChatWikiExportPreview } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
 import { findLastUserMessage } from "../../_lib/messages";
+import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import type { GraphNode, SourceBlockHighlight } from "../../_lib/types";
 
 // 헤더 세션 제목으로 보여줄 마지막 질문의 최대 길이
@@ -29,11 +30,13 @@ export function AgentPanel({
   onClose,
   onOpenWikiPage,
   onOpenSourceBlocks,
+  markdownEditContext,
   nodes
 }: {
   onClose: () => void;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
+  markdownEditContext?: ActiveMarkdownEditContext | null;
   nodes?: GraphNode[];
 }) {
   const [composerValue, setComposerValue] = useState("");
@@ -43,6 +46,9 @@ export function AgentPanel({
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
   const sessionTitle = buildSessionTitle(activeTurn?.question ?? findLastUserMessage(messages)?.content);
+  const composerPlaceholder = markdownEditContext
+    ? `${markdownEditContext.editorSnapshot.target.type === "selection" ? "선택 영역" : markdownEditContext.editorSnapshot.target.type === "current_section" ? "현재 섹션" : "문서 전체"}을 어떻게 편집할까요?`
+    : "AI 에이전트에게 무엇이든 물어보세요.";
 
   function handleSubmit() {
     const question = composerValue.trim();
@@ -90,7 +96,13 @@ export function AgentPanel({
           {exportErrorMessage && <p role="alert">{exportErrorMessage}</p>}
         </div>
       )}
-      <AgentComposer value={composerValue} isLoading={isLoading} onChange={setComposerValue} onSubmit={handleSubmit} />
+      <AgentComposer
+        value={composerValue}
+        isLoading={isLoading}
+        placeholder={composerPlaceholder}
+        onChange={setComposerValue}
+        onSubmit={handleSubmit}
+      />
 
       {exportPreview !== null && (
         <WikiExportConfirmCard

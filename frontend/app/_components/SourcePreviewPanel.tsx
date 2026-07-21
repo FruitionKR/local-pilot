@@ -4,6 +4,7 @@ import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
 import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "../_lib/errors";
 import { splitEditableNoteMarkdown } from "../_lib/note";
+import type { ActiveMarkdownEditContext } from "../_lib/markdownEditContext";
 import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 export function SourcePreviewPanel({
@@ -14,6 +15,7 @@ export function SourcePreviewPanel({
   sourceBlockHighlights,
   width,
   onResizeStart,
+  onMarkdownEditContextChange,
   fillMain = false
 }: {
   title: string;
@@ -23,6 +25,7 @@ export function SourcePreviewPanel({
   sourceBlockHighlights?: SourceBlockHighlight[];
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
 }) {
@@ -158,6 +161,7 @@ export function SourcePreviewPanel({
             marker={editableNote.marker}
             initialBody={editableNote.body}
             initialVersion={noteContentVersion}
+            onMarkdownEditContextChange={onMarkdownEditContextChange}
           />
         )}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && !editableNote && (
