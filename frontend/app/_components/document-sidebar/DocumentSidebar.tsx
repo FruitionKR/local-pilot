@@ -42,6 +42,7 @@ export function DocumentSidebar({
   onCancelEditing,
   onRenameContextTarget,
   onAddFolderFromContext,
+  onAddMarkdownFromContext,
   onDeleteContextTarget
 }: {
   projects: Project[];
@@ -74,6 +75,7 @@ export function DocumentSidebar({
   onCancelEditing: () => void;
   onRenameContextTarget: () => void;
   onAddFolderFromContext: () => void;
+  onAddMarkdownFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
   const onlyProject = projects.length === 1 ? projects[0] : null;
@@ -141,6 +143,7 @@ export function DocumentSidebar({
             contextMenu={contextMenu}
             onRenameContextTarget={onRenameContextTarget}
             onAddFolderFromContext={onAddFolderFromContext}
+            onAddMarkdownFromContext={onAddMarkdownFromContext}
             onDeleteContextTarget={onDeleteContextTarget}
           />
         )}

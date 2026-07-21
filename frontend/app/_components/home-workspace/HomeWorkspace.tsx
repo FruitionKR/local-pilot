@@ -156,6 +156,10 @@ export function HomeWorkspace() {
           onCancelEditing={projectTree.cancelEditing}
           onRenameContextTarget={projectTree.renameContextTarget}
           onAddFolderFromContext={projectTree.addFolderFromContext}
+          onAddMarkdownFromContext={() => {
+            const target = projectTree.takeMarkdownTargetFromContext();
+            if (target) upload.createMarkdownFile(target.projectId, target.folderId);
+          }}
           onDeleteContextTarget={projectTree.deleteContextTarget}
         />
       ) : (
