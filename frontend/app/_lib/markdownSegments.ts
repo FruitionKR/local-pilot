@@ -9,6 +9,33 @@ type ListItem = {
   kind: "bullet" | "ordered";
 };
 
+type CodeFence = {
+  marker: "`" | "~";
+  length: number;
+};
+
+function parseOpeningCodeFence(line: string): CodeFence | null {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+  if (!match || (match[1][0] === "`" && match[2].includes("`"))) return null;
+  return {
+    marker: match[1][0] as CodeFence["marker"],
+    length: match[1].length
+  };
+}
+
+function isClosingCodeFence(line: string, openingFence: CodeFence) {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})[\t ]*$/);
+  return Boolean(
+    match
+    && match[1][0] === openingFence.marker
+    && match[1].length >= openingFence.length
+  );
+}
+
+function isAtxHeading(line: string) {
+  return /^ {0,3}#{1,6}(?:[\t ]+|$)/.test(line);
+}
+
 function isListItem(line: string) {
   return LIST_ITEM_PATTERN.test(line.trim());
 }
@@ -108,16 +135,17 @@ export function splitMarkdownBlockRanges(markdown: string): MarkdownSegmentRange
       continue;
     }
 
-    if (trimmed.startsWith("```")) {
+    const openingFence = parseOpeningCodeFence(lines[index]);
+    if (openingFence) {
       const startLine = index + 1;
       const code = [lines[index]];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+      while (index < lines.length) {
         code.push(lines[index]);
+        const reachedClosingFence = isClosingCodeFence(lines[index], openingFence);
         index += 1;
+        if (reachedClosingFence) break;
       }
-      code.push("```");
-      index += 1;
       segments.push({
         kind: "markdown",
         content: code.join("\n"),
@@ -127,7 +155,7 @@ export function splitMarkdownBlockRanges(markdown: string): MarkdownSegmentRange
       continue;
     }
 
-    if (/^#{1,3} /.test(trimmed) || trimmed === "---" || trimmed === "***") {
+    if (isAtxHeading(lines[index]) || trimmed === "---" || trimmed === "***") {
       segments.push({
         kind: "markdown",
         content: trimmed,
@@ -156,7 +184,13 @@ export function splitMarkdownBlockRanges(markdown: string): MarkdownSegmentRange
     index += 1;
     while (index < lines.length) {
       const nextLine = lines[index].trim();
-      if (!nextLine || /^(#{1,3} |[-*]{3}$|```)/.test(nextLine) || isListItem(lines[index])) break;
+      if (
+        !nextLine
+        || isAtxHeading(lines[index])
+        || /^[-*]{3}$/.test(nextLine)
+        || parseOpeningCodeFence(lines[index])
+        || isListItem(lines[index])
+      ) break;
       paragraph.push(nextLine);
       index += 1;
     }

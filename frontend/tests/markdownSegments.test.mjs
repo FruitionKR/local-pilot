@@ -81,3 +81,63 @@ test("목록 뒤의 일반 문단은 별도 문맥으로 분리한다", () => {
     { kind: "markdown", content: "목록 밖 문단" }
   ]);
 });
+
+test("H1부터 H6까지 각각 독립된 제목 block으로 분리한다", () => {
+  const markdown = [
+    "# H1",
+    "## H2",
+    "### H3",
+    "#### H4",
+    "##### H5",
+    "###### H6"
+  ].join("\n");
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: "# H1" },
+    { kind: "markdown", content: "## H2" },
+    { kind: "markdown", content: "### H3" },
+    { kind: "markdown", content: "#### H4" },
+    { kind: "markdown", content: "##### H5" },
+    { kind: "markdown", content: "###### H6" }
+  ]);
+});
+
+test("긴 backtick fence 안의 짧은 backtick 행을 본문으로 보존한다", () => {
+  const codeBlock = [
+    "````typescript",
+    "const marker = ```;",
+    "```",
+    "````"
+  ].join("\n");
+  const markdown = `${codeBlock}\n후속 문단`;
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: codeBlock },
+    { kind: "markdown", content: "후속 문단" }
+  ]);
+});
+
+test("tilde fenced code block을 원문 그대로 보존한다", () => {
+  const codeBlock = [
+    "~~~python",
+    "print(\"hello\")",
+    "~~~"
+  ].join("\n");
+  const markdown = `${codeBlock}\n후속 문단`;
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: codeBlock },
+    { kind: "markdown", content: "후속 문단" }
+  ]);
+});
+
+test("닫히지 않은 code fence에 임의의 닫힘 fence를 추가하지 않는다", () => {
+  const markdown = [
+    "```python",
+    "print(\"hello\")"
+  ].join("\n");
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: markdown }
+  ]);
+});

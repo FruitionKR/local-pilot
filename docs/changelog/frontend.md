@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: Markdown 제목과 code fence 경계 보존
+
+**변경된 내용**
+
+- H1부터 H6까지 각 ATX heading을 독립된 source block으로 식별한다.
+- backtick과 tilde fence를 모두 지원하고, 닫힘 fence가 열림과 같은 문자이면서 같은 길이 이상일 때만 code block을 종료한다.
+- 닫히지 않은 code fence는 임의의 닫힘 문법을 추가하지 않고 원문 그대로 보존한다.
+- 제목과 code fence의 block 분할, 실제 HTML 렌더링과 source block ID를 검증하는 회귀 테스트 6건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 15건, `npm run lint`, `npm run build` 통과.
+
 ### fix: Markdown 문서 전체 참조 문맥 보존
 
 **변경된 내용**
