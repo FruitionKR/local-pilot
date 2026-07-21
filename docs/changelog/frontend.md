@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: 중첩 Markdown 목록 미리보기 구조 보존
+
+**변경된 내용**
+
+- Markdown block 분할 과정에서 목록 행의 leading whitespace를 제거하지 않도록 수정했다.
+- 순서·비순서·체크리스트가 중첩된 목록을 하나의 parse context로 유지한다.
+- 분할 로직을 순수 모듈로 분리하고 중첩 목록 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown`, `npm run lint`, `npm run build` 통과.
+- 목록 안의 code block·인용문·여러 줄 본문 보존은 후속 작업으로 남아 있다.
+
 ### fix: Next.js 보안 패치와 React 19 적용
 
 **변경된 내용**

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:markdown": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/markdownSegments.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",

@@ -290,7 +290,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 ### 2단계: Markdown 기본 지원 안정화
 
 - [ ] CommonMark + GFM을 공식 지원 범위로 선언
-- [ ] 중첩 목록 들여쓰기 보존
+- [x] 중첩 목록 들여쓰기 보존
 - [ ] 목록 안의 code block, 인용문과 하위 목록 지원
 - [ ] Footnote와 reference-style link 검증
 - [ ] H1~H6와 백틱/tilde code fence 검증
