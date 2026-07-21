@@ -34,6 +34,7 @@ class AuthServiceTest {
 
     @Mock UserRepository userRepository;
     @Mock UserRefreshTokenRepository refreshTokenRepository;
+    @Mock EmailVerificationService emailVerificationService;
 
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(
@@ -44,7 +45,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtTokenProvider,
-                oAuthExchangeCodeStore, 1209600);
+                oAuthExchangeCodeStore, emailVerificationService, 1209600);
     }
 
     private User newUser(String rawPassword) {
