@@ -40,7 +40,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `email_verifications` 테이블(Flyway `V6`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
 - 재요청 cooldown·일일 상한(429), 코드 만료·오입력·시도 초과, 토큰 1회성·재사용 차단 정책을 적용. 관련 설정 키는 `app.auth.email-verification.*`. 존재 노출(signup 409)도 rate limit 게이트 뒤에 두어 동일하게 throttle 대상에 포함한다.
 - 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
-- 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요.
+- 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요. stub이 활성화된 채 부팅되면 인증번호 로그 노출 위험을 알리는 경고를 남긴다.
+- 일일 상한 초과 429의 `retry_after`는 윈도 내 최고령 요청이 24h를 벗어나는 시점 기준으로 계산한다.
 - 계약 상세는 `docs/spec/api/auth.md`, 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
 
 **검증**

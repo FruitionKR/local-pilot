@@ -15,5 +15,8 @@ public interface EmailVerificationRepository extends JpaRepository<EmailVerifica
 
     long countByEmailAndPurposeAndCreatedAtAfter(String email, String purpose, Instant since);
 
+    Optional<EmailVerification> findFirstByEmailAndPurposeAndCreatedAtAfterOrderByCreatedAtAsc(
+            String email, String purpose, Instant since);
+
     Optional<EmailVerification> findByTokenHash(String tokenHash);
 }

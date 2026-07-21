@@ -87,14 +87,21 @@ class EmailVerificationServiceTest {
     }
 
     @Test
-    void request_dailyLimitReached_throwsRateLimited() {
+    void request_dailyLimitReached_throwsRateLimitedWithWindowRetryAfter() {
         when(verificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(anyString(), anyString()))
                 .thenReturn(Optional.empty());
         when(verificationRepository.countByEmailAndPurposeAndCreatedAtAfter(anyString(), anyString(), any()))
                 .thenReturn(5L);
+        // 윈도 내 최고령 요청(방금 생성) 기준이면 retryAfter는 24h(=86400s)에 가깝다.
+        when(verificationRepository.findFirstByEmailAndPurposeAndCreatedAtAfterOrderByCreatedAtAsc(anyString(), anyString(), any()))
+                .thenReturn(Optional.of(verification("test@example.com", "password_reset", "123456",
+                        Instant.now().plusSeconds(300))));
 
         assertThatThrownBy(() -> service.request(new EmailVerificationRequest("test@example.com", "password_reset")))
-                .isInstanceOf(VerificationRateLimitedException.class);
+                .isInstanceOf(VerificationRateLimitedException.class)
+                .satisfies(e -> assertThat(((VerificationRateLimitedException) e).getRetryAfter())
+                        .isGreaterThan(0L)
+                        .isLessThanOrEqualTo(86400L));
     }
 
     @Test

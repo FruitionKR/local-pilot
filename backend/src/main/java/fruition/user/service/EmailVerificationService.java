@@ -162,10 +162,17 @@ public class EmailVerificationService {
                     }
                 });
 
-        long dayCount = verificationRepository.countByEmailAndPurposeAndCreatedAtAfter(
-                email, purpose, Instant.now().minus(Duration.ofDays(1)));
+        long dayWindowSeconds = Duration.ofDays(1).toSeconds();
+        Instant since = Instant.now().minusSeconds(dayWindowSeconds);
+        long dayCount = verificationRepository.countByEmailAndPurposeAndCreatedAtAfter(email, purpose, since);
         if (dayCount >= dailyLimit) {
-            throw new VerificationRateLimitedException(resendCooldownSeconds);
+            // 가장 오래된 요청이 24h 윈도를 벗어나야 카운트가 줄어드므로, 그 시점까지를 retryAfter로 준다.
+            long retryAfter = verificationRepository
+                    .findFirstByEmailAndPurposeAndCreatedAtAfterOrderByCreatedAtAsc(email, purpose, since)
+                    .map(oldest -> Duration.between(Instant.now(), oldest.getCreatedAt().plusSeconds(dayWindowSeconds)).getSeconds())
+                    .filter(seconds -> seconds > 0)
+                    .orElse(resendCooldownSeconds);
+            throw new VerificationRateLimitedException(retryAfter);
         }
     }
 
