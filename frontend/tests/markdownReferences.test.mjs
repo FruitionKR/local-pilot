@@ -4,7 +4,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { splitMarkdownBlockRanges } from "../app/_lib/markdownSegments.ts";
+import { splitMarkdownBlockRanges, splitMarkdownBlocks } from "../app/_lib/markdownSegments.ts";
 import { createRehypeSourceBlocks } from "../app/_lib/markdownSourceBlocks.ts";
 
 function renderMarkdown(markdown) {
@@ -109,4 +109,64 @@ test("backtick과 tilde fenced code block을 각각 렌더링한다", () => {
   assert.match(html, /<code class="language-python">/);
   assert.match(html, /data-block-id="B0001"/);
   assert.match(html, /data-block-id="B0002"/);
+});
+
+test("GFM table 원문과 table 구조를 보존한다", () => {
+  const markdown = [
+    "| 이름 | 상태 |",
+    "| --- | --- |",
+    "| API \\| SDK | 완료 |"
+  ].join("\n");
+
+  const html = renderMarkdown(markdown);
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: markdown }
+  ]);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th>이름<\/th>/);
+  assert.match(html, /<td>API \| SDK<\/td>/);
+  assert.match(html, /data-block-id="B0001"/);
+});
+
+test("GFM task list 원문과 checkbox 상태를 보존한다", () => {
+  const markdown = [
+    "- [ ] 미완료",
+    "- [x] 완료"
+  ].join("\n");
+
+  const html = renderMarkdown(markdown);
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: markdown }
+  ]);
+  assert.match(html, /class="contains-task-list"/);
+  assert.equal((html.match(/type="checkbox"/g) ?? []).length, 2);
+  assert.equal((html.match(/checked=""/g) ?? []).length, 1);
+  assert.match(html, /data-block-id="B0001"/);
+});
+
+test("Markdown link 원문과 URL을 보존한다", () => {
+  const markdown = "[공식 문서](https://example.com/docs \"문서\")";
+  const html = renderMarkdown(markdown);
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: markdown }
+  ]);
+  assert.match(html, /<a href="https:\/\/example\.com\/docs" title="문서">공식 문서<\/a>/);
+  assert.match(html, /data-block-id="B0001"/);
+});
+
+test("Markdown image 원문과 src·alt·title을 보존한다", () => {
+  const markdown = "![구조도](https://example.com/diagram.png \"시스템 구조\")";
+  const html = renderMarkdown(markdown);
+
+  assert.deepEqual(splitMarkdownBlocks(markdown), [
+    { kind: "markdown", content: markdown }
+  ]);
+  assert.match(
+    html,
+    /<img src="https:\/\/example\.com\/diagram\.png" alt="구조도" title="시스템 구조"\/?>/
+  );
+  assert.match(html, /data-block-id="B0001"/);
 });
