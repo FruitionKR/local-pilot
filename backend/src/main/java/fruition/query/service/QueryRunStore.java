@@ -63,6 +63,30 @@ public class QueryRunStore {
         });
     }
 
+    /**
+     * 종료되지 않은(RUNNING/PENDING) run이 생성 후 timeout을 넘겼으면 FAILED로 전이하고 그 requestId 목록을 반환한다.
+     * 스캔 이후 정상 종료됐을 수 있으므로 computeIfPresent 내부에서 상태를 재확인해 완료 run은 덮어쓰지 않는다.
+     */
+    public List<String> failStuck(Duration timeout, String errorMessage) {
+        Instant cutoff = clock.instant().minus(timeout);
+        List<String> failed = new ArrayList<>();
+        runs.forEach((id, run) -> {
+            if (!run.isFinished() && run.createdAt().isBefore(cutoff)) {
+                runs.computeIfPresent(id, (key, current) -> {
+                    if (current.isFinished()) {
+                        return current;
+                    }
+                    failed.add(key);
+                    return current.failed(errorMessage, clock.instant());
+                });
+            }
+        });
+        if (!failed.isEmpty()) {
+            log.warn("[질의 run 타임아웃 실패 처리] count={} requestIds={}", failed.size(), failed);
+        }
+        return failed;
+    }
+
     public List<String> evictExpired() {
         Instant cutoff = clock.instant().minus(FINISHED_RUN_TTL);
         List<String> expired = new ArrayList<>();

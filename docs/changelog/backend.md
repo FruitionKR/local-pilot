@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: query 비동기 run 타임아웃 정리와 SSE heartbeat 스케줄 연결
+
+**배경**
+
+- 응답 없이 파이프라인이 멈추면 run이 `RUNNING`에 영구히 남아, 화면은 "처리 중"으로 끝나지 않고 in-memory에도 누적됐다. 기존 정리(`evictExpired`)는 종료된(`COMPLETED`/`FAILED`) run만 대상이라 고착 run을 치우지 못했다.
+- `QueryEventBroker.sendHeartbeat()`는 구현돼 있으나 이를 주기 호출하는 스케줄러가 없어, 진행 이벤트가 뜸한 긴 질의에서 idle SSE 연결이 중간 네트워크 장비에 끊길 수 있었다.
+
+**변경된 것**
+
+- `QueryRunStore.failStuck(timeout, msg)` 추가: 미종료(`RUNNING`/`PENDING`)이고 생성 후 timeout을 넘긴 run을 `FAILED`로 전이(스캔 이후 정상 종료된 run은 덮어쓰지 않는 레이스 가드)하고 requestId 목록 반환.
+- `QueryRunService.failStuckRuns()`(`@Scheduled` 60초, `RUNNING_TIMEOUT=5분`): 고착 run을 실패 종결하고 `query.failed` SSE를 발행. 이후 기존 TTL 정리가 dispose.
+- `QueryEventBroker.sendHeartbeat()`에 `@Scheduled`(15초)를 부착해 idle SSE 연결에 주기적으로 `:ping`을 전송.
+
+**검증**
+
+- `QueryRunStoreTest`에 `failStuck` 케이스 2개 추가(오래된 미종료만 실패 처리 / 완료 run 무시).
+- `QueryRunStoreTest`, `QueryRunServiceTest`, `QueryEventBrokerTest` 통과.
+
+**남은 주의사항**
+
+- 여전히 in-memory 단일 인스턴스 전제다. 다중 인스턴스 확장 시의 run 공유는 별도 범위(`docs/design/query-sse-redis.md`).
+
 ### fix: 초기 노트의 임시 주석 제거 및 status를 completed로 저장
 
 **배경**

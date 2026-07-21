@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.concurrent.Executor;
 
 @Service
@@ -17,6 +18,8 @@ public class QueryRunService {
 
     private static final Logger log = LoggerFactory.getLogger(QueryRunService.class);
     private static final String UNEXPECTED_ERROR_MESSAGE = "질의 처리 중 오류가 발생했습니다.";
+    private static final Duration RUNNING_TIMEOUT = Duration.ofMinutes(5);
+    private static final String RUN_TIMEOUT_MESSAGE = "질의 처리 시간이 초과되었습니다.";
 
     private final QueryRunStore queryRunStore;
     private final QueryEventBroker queryEventBroker;
@@ -83,6 +86,13 @@ public class QueryRunService {
     @Scheduled(fixedDelay = 60_000)
     public void cleanupExpiredRuns() {
         queryRunStore.evictExpired().forEach(queryEventBroker::dispose);
+    }
+
+    /** 응답 없이 오래 멈춘(RUNNING/PENDING) run을 타임아웃 실패로 종결하고 query.failed를 발행한다. */
+    @Scheduled(fixedDelay = 60_000)
+    public void failStuckRuns() {
+        queryRunStore.failStuck(RUNNING_TIMEOUT, RUN_TIMEOUT_MESSAGE)
+                .forEach(id -> queryEventBroker.fail(id, RUN_TIMEOUT_MESSAGE));
     }
 
     private int answerLength(QueryResponse result) {

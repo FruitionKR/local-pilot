@@ -1,5 +1,6 @@
 package fruition.query.service;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.slf4j.Logger;
@@ -72,6 +73,8 @@ public class QueryEventBroker {
         log.info("[질의 SSE 채널 제거] requestId={}", requestId);
     }
 
+    /** idle SSE 연결이 중간 네트워크 장비에 끊기지 않도록 주기적으로 :ping comment를 보낸다. */
+    @Scheduled(fixedDelay = 15_000)
     public void sendHeartbeat() {
         channels.values().forEach(RunChannel::heartbeat);
     }
