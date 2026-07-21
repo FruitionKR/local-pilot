@@ -170,3 +170,20 @@ test("Markdown image 원문과 src·alt·title을 보존한다", () => {
   );
   assert.match(html, /data-block-id="B0001"/);
 });
+
+test("GFM autolink literal과 strikethrough를 렌더링한다", () => {
+  const markdown = [
+    "https://example.com/docs",
+    "",
+    "~~삭제된 내용~~"
+  ].join("\n");
+  const html = renderMarkdown(markdown);
+
+  assert.match(
+    html,
+    /<a href="https:\/\/example\.com\/docs">https:\/\/example\.com\/docs<\/a>/
+  );
+  assert.match(html, /<del>삭제된 내용<\/del>/);
+  assert.match(html, /data-block-id="B0001"/);
+  assert.match(html, /data-block-id="B0002"/);
+});

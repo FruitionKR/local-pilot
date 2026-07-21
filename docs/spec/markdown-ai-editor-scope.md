@@ -82,17 +82,26 @@
 
 - `react-markdown`
 - `remark-gfm`
+- `remark-math` + `rehype-katex`
 - 프로젝트 전용 Wiki link와 citation token plugin
 - fenced code block용 custom `pre` component
 - YAML frontmatter를 접힌 Metadata 영역으로 표시하는 별도 처리
 
-`react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, footnote, strikethrough, table, task list를 추가한다.
+`react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, strikethrough, table, task list를 추가한다. Footnote는 GFM spec이 아니라 현재 parser stack에서 지원하는 호환 확장으로 분류한다.
 
 현재 Agent panel은 `/agent/turn` 편집 응답을 적용하는 UI가 아니라 기존 Wiki query 흐름을 사용한다. 따라서 pipeline의 편집 기능이 사용자 editor까지 연결된 상태는 아니다.
 
 ## 4. 기본 지원 범위
 
 기본 지원 기준은 `CommonMark + GFM`으로 고정한다. “모든 Markdown”처럼 구현체마다 의미가 달라지는 표현은 사용하지 않는다.
+
+공식 지원 계약은 다음과 같다.
+
+- 저장 원본은 변환하지 않은 raw Markdown 텍스트다.
+- 기본 block/inline 문법과 parsing 규칙은 CommonMark를 따른다.
+- GFM 확장 중 autolink literal, strikethrough, table, task list를 기본 지원한다.
+- Footnote, math, Wiki link, citation과 frontmatter는 GFM 자체가 아니라 Fruition 호환 확장으로 구분한다.
+- Raw HTML과 MDX는 공식 지원 범위에서 제외하며 renderer 실행 경로에 포함하지 않는다.
 
 ### 4.1 바로 지원할 문법
 
@@ -118,7 +127,7 @@
 | Citation | `[1]` | 프로젝트 plugin으로 가능 | 높음 |
 | Frontmatter | `---`로 감싼 metadata | 별도 UI로 가능 | 높음 |
 
-“가능”은 underlying renderer가 문법을 지원한다는 뜻이다. 현재 custom 분할 로직이 복합 문서 구조를 손상시키는 경우는 5절의 보완이 선행되어야 한다.
+“가능”은 renderer와 현재 회귀 fixture가 해당 문법을 보존한다는 뜻이다. 문서는 전체 parse context에서 처리하고, source block ID는 AST 원문 위치를 기준으로 부여한다.
 
 ### 4.2 편집 도우미가 제공할 수 있는 요청
 
@@ -289,7 +298,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 ### 2단계: Markdown 기본 지원 안정화
 
-- [ ] CommonMark + GFM을 공식 지원 범위로 선언
+- [x] CommonMark + GFM을 공식 지원 범위로 선언
 - [x] 중첩 목록 들여쓰기 보존
 - [x] 목록 안의 code block, 인용문과 하위 목록 지원
 - [x] Footnote와 reference-style link 검증
