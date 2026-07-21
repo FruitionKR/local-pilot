@@ -40,11 +40,11 @@ class QueryRunServiceTest {
         QueryService.QueryMessageContext messageContext = messageContext();
         when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
         QueryResponse result = new QueryResponse(null, null, null, null, null, null);
-        when(queryService.query("session_abc123", "질문", "query_abc123",
+        when(queryService.query("ws_abc123", "session_abc123", "질문", "query_abc123",
                 "http://backend:8080/api/query/runs/query_abc123/events/callback", messageContext))
                 .thenReturn(result);
 
-        QueryRun returned = queryRunService.start("session_abc123", "질문");
+        QueryRun returned = queryRunService.start("ws_abc123", "session_abc123", "질문");
 
         assertThat(returned).isEqualTo(pending);
         verify(queryRunStore).markRunning("query_abc123");
@@ -60,11 +60,11 @@ class QueryRunServiceTest {
         when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
         PipelineQueryException error = new PipelineQueryException(
                 "PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, null);
-        when(queryService.query(eq("session_abc123"), eq("질문"), eq("query_abc123"),
+        when(queryService.query(eq("ws_abc123"), eq("session_abc123"), eq("질문"), eq("query_abc123"),
                 eq("http://backend:8080/api/query/runs/query_abc123/events/callback"), eq(messageContext)))
                 .thenThrow(error);
 
-        queryRunService.start("session_abc123", "질문");
+        queryRunService.start("ws_abc123", "session_abc123", "질문");
 
         verify(queryRunStore).markRunning("query_abc123");
         verify(queryRunStore).markFailed("query_abc123", "쿼리 파이프라인을 사용할 수 없습니다.");
@@ -77,11 +77,11 @@ class QueryRunServiceTest {
         when(queryRunStore.create("session_abc123", "질문")).thenReturn(pending);
         QueryService.QueryMessageContext messageContext = messageContext();
         when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
-        when(queryService.query(eq("session_abc123"), eq("질문"), eq("query_abc123"),
+        when(queryService.query(eq("ws_abc123"), eq("session_abc123"), eq("질문"), eq("query_abc123"),
                 eq("http://backend:8080/api/query/runs/query_abc123/events/callback"), eq(messageContext)))
                 .thenThrow(new IllegalStateException("DB 연결 종료"));
 
-        queryRunService.start("session_abc123", "질문");
+        queryRunService.start("ws_abc123", "session_abc123", "질문");
 
         verify(queryRunStore).markRunning("query_abc123");
         verify(queryRunStore).markFailed("query_abc123", "질의 처리 중 오류가 발생했습니다.");

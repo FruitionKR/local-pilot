@@ -33,18 +33,19 @@ public class PipelineQueryRequester {
                 .build();
     }
 
-    public PipelineQueryResponse query(String question) {
-        return executeQuery(new QueryPayload(question, null, null));
+    public PipelineQueryResponse query(String workspaceId, String question) {
+        return executeQuery(new QueryPayload(workspaceId, question, null, null));
     }
 
-    public PipelineQueryResponse query(String question, String requestId, String logCallbackUrl) {
-        return executeQuery(new QueryPayload(question, requestId, logCallbackUrl));
+    public PipelineQueryResponse query(String workspaceId, String question, String requestId, String logCallbackUrl) {
+        return executeQuery(new QueryPayload(workspaceId, question, requestId, logCallbackUrl));
     }
 
     private PipelineQueryResponse executeQuery(QueryPayload payload) {
         try {
-            log.info("[쿼리 파이프라인 요청 데이터] endpoint={} requestId={} callbackUrl={} questionLength={}",
+            log.info("[쿼리 파이프라인 요청 데이터] endpoint={} workspaceId={} requestId={} callbackUrl={} questionLength={}",
                     queryEndpoint,
+                    payload.workspaceId(),
                     payload.requestId(),
                     payload.logCallbackUrl(),
                     payload.question().length());
@@ -77,6 +78,7 @@ public class PipelineQueryRequester {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record QueryPayload(
+            @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("question") String question,
             @JsonProperty("request_id") String requestId,
             @JsonProperty("log_callback_url") String logCallbackUrl) {}

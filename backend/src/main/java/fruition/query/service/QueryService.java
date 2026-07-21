@@ -50,14 +50,18 @@ public class QueryService {
         this.queryMessageRecorder = queryMessageRecorder;
     }
 
-    public QueryResponse query(String sessionId, String question) {
-        return query(sessionId, question, null, null);
+    public QueryResponse query(String workspaceId, String sessionId, String question) {
+        return query(workspaceId, sessionId, question, null, null);
     }
 
     @Transactional
-    public QueryResponse query(String sessionId, String question, String requestId, String logCallbackUrl) {
+    public QueryResponse query(String workspaceId,
+                               String sessionId,
+                               String question,
+                               String requestId,
+                               String logCallbackUrl) {
         QueryMessageContext messageContext = prepareMessages(sessionId, question, requestId);
-        return query(sessionId, question, requestId, logCallbackUrl, messageContext);
+        return query(workspaceId, sessionId, question, requestId, logCallbackUrl, messageContext);
     }
 
     public QueryMessageContext prepareMessages(String sessionId, String question, String requestId) {
@@ -78,7 +82,8 @@ public class QueryService {
     }
 
     @Transactional
-    public QueryResponse query(String sessionId,
+    public QueryResponse query(String workspaceId,
+                               String sessionId,
                                String question,
                                String requestId,
                                String logCallbackUrl,
@@ -99,8 +104,8 @@ public class QueryService {
             log.info("[질의 파이프라인 호출 시작] requestId={} callbackEnabled={}",
                     requestId, logCallbackUrl != null);
             PipelineQueryResponse pipelineResponse = requestId == null
-                    ? pipelineQueryClient.query(question)
-                    : pipelineQueryClient.query(question, requestId, logCallbackUrl);
+                    ? pipelineQueryClient.query(workspaceId, question)
+                    : pipelineQueryClient.query(workspaceId, question, requestId, logCallbackUrl);
             log.info("[질의 파이프라인 응답 수신] requestId={} answerLength={} relatedPageCount={} evidenceCount={} traversalPathCount={}",
                     requestId,
                     pipelineResponse.answer() != null ? pipelineResponse.answer().length() : 0,

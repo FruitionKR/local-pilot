@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: query pipeline 요청에 workspace_id 전달
+
+**배경**
+
+- Backend는 workspace URL에서 세션 소유권을 검증했지만 LLM Pipeline `POST /query` 본문에 workspace 식별자를 보내지 않아, Pipeline이 질의의 데이터 범위를 구분할 수 없었다.
+
+**변경된 것**
+
+- 동기·비동기 query 호출 경로에 `workspaceId`를 전달하고, Pipeline 요청 JSON에 `workspace_id`를 포함한다.
+- Pipeline 요청 로그에 `workspaceId`를 추가한다.
+- `llmPipeline` 코드와 내부 workspace 조회 로직은 변경하지 않았다.
+
+**검증**
+
+- query 관련 controller·service·requester 테스트 통과
+- Backend 전체 154개 중 비관련 기존 `DocumentServiceBlocksTest` 1개 실패(초기 노트 hash 기대값 불일치)
+
 ### fix: query 비동기 run 타임아웃 정리와 SSE heartbeat 스케줄 연결
 
 **배경**

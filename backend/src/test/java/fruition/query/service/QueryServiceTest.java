@@ -38,6 +38,7 @@ import static org.mockito.Mockito.when;
 class QueryServiceTest {
 
     private static final String SESSION_ID = "session_1f9a74af";
+    private static final String WORKSPACE_ID = "ws_aaa11111";
     private static final String DOCUMENT_ID = "doc_1f9a74af";
 
     @Mock PipelineQueryRequester pipelineQueryRequester;
@@ -70,9 +71,9 @@ class QueryServiceTest {
     @DisplayName("파이프라인 응답이 DTO에 담기고 DB에 저장되어 응답으로 반환된다")
     void query_pipelineResponse_savedAndReturned() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query("Self-Attention이 뭐야?")).thenReturn(mockResponse);
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?")).thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?");
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?");
 
         // 응답 형태 검증
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
@@ -128,22 +129,22 @@ class QueryServiceTest {
     @DisplayName("requestId가 있으면 PipelineQueryRequester의 run-aware overload를 호출한다")
     void query_withRequestId_callsRunAwarePipelineOverload() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
                 .thenReturn(mockResponse);
 
-        QueryResponse result = queryService.query(SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
 
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
-        verify(pipelineQueryRequester).query("Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
+        verify(pipelineQueryRequester).query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
     }
 
     @Test
     @DisplayName("파이프라인 실패 시 pending assistant가 failed로 변경되고 예외가 전파된다")
     void query_pipelineFailure_marksAssistantFailedAndRethrows() {
         PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
-        when(pipelineQueryRequester.query(anyString())).thenThrow(pipelineError);
+        when(pipelineQueryRequester.query(anyString(), anyString())).thenThrow(pipelineError);
 
-        assertThatThrownBy(() -> queryService.query(SESSION_ID, "Self-Attention이 뭐야?"))
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?"))
                 .isInstanceOf(PipelineQueryException.class);
 
         verify(queryMessageRecorder).createPendingPair(
@@ -154,9 +155,9 @@ class QueryServiceTest {
     @Test
     @DisplayName("예상 밖 오류 시 pending assistant가 일반화된 오류로 failed 처리된다")
     void query_unexpectedFailure_marksAssistantFailedWithGeneralMessage() {
-        when(pipelineQueryRequester.query(anyString())).thenThrow(new IllegalStateException("DB 연결 종료"));
+        when(pipelineQueryRequester.query(anyString(), anyString())).thenThrow(new IllegalStateException("DB 연결 종료"));
 
-        assertThatThrownBy(() -> queryService.query(SESSION_ID, "질문"))
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "질문"))
                 .isInstanceOf(IllegalStateException.class);
 
         verify(queryMessageRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
@@ -167,7 +168,7 @@ class QueryServiceTest {
     void query_unknownSession_throwsChatSessionNotFound() {
         when(chatSessionRepository.findById("session_unknown")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> queryService.query("session_unknown", "질문"))
+        assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, "session_unknown", "질문"))
                 .isInstanceOf(ChatSessionNotFoundException.class);
     }
 

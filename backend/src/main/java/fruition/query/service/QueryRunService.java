@@ -40,18 +40,19 @@ public class QueryRunService {
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
-    public QueryRun start(String sessionId, String question) {
+    public QueryRun start(String workspaceId, String sessionId, String question) {
         QueryRun run = queryRunStore.create(sessionId, question);
         log.info("[질의 run 생성] requestId={} sessionId={} questionLength={}",
                 run.requestId(), sessionId, question.length());
         QueryService.QueryMessageContext messageContext =
                 queryService.prepareMessages(sessionId, question, run.requestId());
-        queryRunExecutor.execute(() -> runPipeline(run.requestId(), sessionId, question, messageContext));
+        queryRunExecutor.execute(() -> runPipeline(run.requestId(), workspaceId, sessionId, question, messageContext));
         log.info("[질의 run 실행 예약] requestId={}", run.requestId());
         return run;
     }
 
     private void runPipeline(String requestId,
+                             String workspaceId,
                              String sessionId,
                              String question,
                              QueryService.QueryMessageContext messageContext) {
@@ -60,7 +61,8 @@ public class QueryRunService {
         log.info("[질의 run 시작] requestId={} sessionId={} callbackUrl={} questionLength={}",
                 requestId, sessionId, logCallbackUrl, question.length());
         try {
-            QueryResponse result = queryService.query(sessionId, question, requestId, logCallbackUrl, messageContext);
+            QueryResponse result = queryService.query(
+                    workspaceId, sessionId, question, requestId, logCallbackUrl, messageContext);
             queryRunStore.markCompleted(requestId, result);
             log.info("[질의 run 완료] requestId={} answerLength={} relatedPageCount={} evidenceCount={}",
                     requestId,
