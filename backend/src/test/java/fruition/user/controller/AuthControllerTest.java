@@ -8,18 +8,25 @@ import fruition.security.oauth.service.CustomOAuth2UserService;
 import fruition.security.oauth.handler.OAuth2AuthenticationFailureHandler;
 import fruition.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import fruition.security.oauth.OAuthExchangeCodeStore;
+import fruition.user.dto.EmailVerificationRequest;
+import fruition.user.dto.EmailVerificationResponse;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
 import fruition.user.dto.OAuthExchangeRequest;
+import fruition.user.dto.PasswordResetRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
+import fruition.user.dto.VerificationConfirmRequest;
+import fruition.user.dto.VerificationConfirmResponse;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.InvalidCredentialsException;
 import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
+import fruition.user.exception.InvalidVerificationCodeException;
 import fruition.user.service.AuthService;
+import fruition.user.service.EmailVerificationService;
 import fruition.user.service.UserService;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -49,6 +56,7 @@ class AuthControllerTest {
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean UserService userService;
     @MockBean AuthService authService;
+    @MockBean EmailVerificationService emailVerificationService;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     @Test
@@ -59,10 +67,20 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupRequest("test@example.com", "password123"))))
+                                new SignupRequest("test@example.com", "password123", null, "verification-token"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("user_1f9a74af"))
                 .andExpect(jsonPath("$.email").value("test@example.com"));
+    }
+
+    @Test
+    void signup_missingVerificationToken_returns400() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupRequest("test@example.com", "password123"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
     }
 
     @Test
@@ -72,9 +90,65 @@ class AuthControllerTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new SignupRequest("test@example.com", "password123"))))
+                                new SignupRequest("test@example.com", "password123", null, "verification-token"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("DUPLICATE_EMAIL"));
+    }
+
+    @Test
+    void requestEmailVerification_valid_returns202() throws Exception {
+        when(emailVerificationService.request(any())).thenReturn(
+                new EmailVerificationResponse("ev_abc123", 300, 60));
+
+        mockMvc.perform(post("/api/auth/email-verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailVerificationRequest("test@example.com", "signup"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.verification_id").value("ev_abc123"))
+                .andExpect(jsonPath("$.expires_in").value(300));
+    }
+
+    @Test
+    void requestEmailVerification_invalidPurpose_returns400() throws Exception {
+        mockMvc.perform(post("/api/auth/email-verifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new EmailVerificationRequest("test@example.com", "unknown"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void confirmEmailVerification_valid_returns200() throws Exception {
+        when(emailVerificationService.confirm(any(), any())).thenReturn(
+                new VerificationConfirmResponse("verification-token", 600));
+
+        mockMvc.perform(post("/api/auth/email-verifications/ev_abc123/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new VerificationConfirmRequest("123456"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verification_token").value("verification-token"));
+    }
+
+    @Test
+    void confirmEmailVerification_wrongCode_returns400() throws Exception {
+        when(emailVerificationService.confirm(any(), any())).thenThrow(new InvalidVerificationCodeException());
+
+        mockMvc.perform(post("/api/auth/email-verifications/ev_abc123/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new VerificationConfirmRequest("000000"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_VERIFICATION_CODE"));
+    }
+
+    @Test
+    void resetPassword_valid_returns204() throws Exception {
+        mockMvc.perform(post("/api/auth/password-reset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new PasswordResetRequest("test@example.com", "newpassword123", "verification-token"))))
+                .andExpect(status().isNoContent());
     }
 
     @Test

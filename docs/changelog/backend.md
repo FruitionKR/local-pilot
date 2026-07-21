@@ -8,6 +8,32 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: 이메일 인증 기반 회원가입·비밀번호 재설정 API 추가
+
+**배경**
+
+- 회원가입·비밀번호 재설정 화면에 필요한 이메일 인증 API가 없어, 프론트가 임시 인증번호(9700)와 인증 전 signup 선호출로 우회하고 있었다.
+
+**변경된 것**
+
+- 인증번호 발급 `POST /api/auth/email-verifications`(purpose=signup|password_reset), 검증 `POST /api/auth/email-verifications/{id}/confirm`, 비밀번호 재설정 `POST /api/auth/password-reset` 추가.
+- `POST /api/auth/signup`에 `verification_token`을 필수로 추가하고, 중복 검사 후 토큰을 검증·소비하도록 변경.
+- `email_verifications` 테이블(Flyway `V6`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
+- 재요청 cooldown·일일 상한(429), 코드 만료·오입력·시도 초과, 토큰 1회성·재사용 차단 정책을 적용. 관련 설정 키는 `app.auth.email-verification.*`.
+- 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
+- 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요.
+- 계약 상세는 `docs/spec/api/auth.md`, 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
+
+**검증**
+
+- user 패키지 테스트 54개 통과(`EmailVerificationServiceTest` 13, `AuthControllerTest` 20 포함).
+- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V6` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
+
+**남은 주의사항**
+
+- 운영 전 `dev-fixed-code`는 빈값 유지, 발송 sender를 실제 메일 발송으로 교체.
+- 프론트엔드의 임시 인증번호·인증 전 signup 선호출 제거 및 발급→검증→가입 재배선 필요(프론트 팀).
+
 ### fix: query pipeline 요청에 workspace_id 전달
 
 **배경**
