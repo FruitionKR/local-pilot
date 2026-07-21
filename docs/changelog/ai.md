@@ -382,6 +382,13 @@ Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의�
 
 ## 2026-07-16
 
+### fix: pipeline 입력 문서 생성 책임을 Backend로 일원화
+
+- 일반 `POST /pipeline/runs`는 Backend가 먼저 생성한 `document_id`를 입력으로 사용하고 llmPipeline의 직접 `documents` 생성 경로를 제거했다.
+- `/chat-wiki/runs`의 `input_markdown`은 기존 source page에 새 대화만 누적하는 delta 입력으로 유지했다.
+- Wiki 저장 범위의 `user_id`, `workspace_id`는 `document_id`로 기존 `documents` row에서 조회하도록 정리했다.
+- llmPipeline 운영 접근 제한 후속은 `docs/issue/infra/2026-07-21.md`로 이관했다.
+
 ### feat: PDF 복원 흐름과 평가 기록 개선
 
 **배경**
