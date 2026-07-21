@@ -6,6 +6,20 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: Markdown AI 편집 검토와 안전 적용 완성
+
+**변경된 내용**
+
+- `markdown_edit` 응답의 document, base version, operation과 target을 요청 snapshot과 검증한 뒤 line diff와 렌더링 preview를 표시한다.
+- Apply 직전에 현재 editor Markdown을 요청 원문과 다시 비교하고, 일치할 때만 buffer를 한 번 교체한 뒤 기존 autosave에 전달한다.
+- 취소와 최신 snapshot 기반 재생성을 지원하며, 요청 후 사용자가 문서를 수정한 stale 결과는 적용하지 않는다.
+- `markdown_create` 결과를 preview한 뒤 editable Markdown 파일로 저장하고 새 문서로 연다.
+- 요약, 번역, 문체 변경, Markdown 정리, 표, checklist, 회의록 replacement fixture를 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 42건, `npm run lint`, `npm run build` 통과.
+
 ### feat: Markdown Agent turn 요청 연결
 
 **변경된 내용**

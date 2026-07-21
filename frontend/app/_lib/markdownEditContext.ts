@@ -13,6 +13,7 @@ export type ActiveMarkdownEditContext = {
   documentId: string;
   baseVersion: number;
   editorSnapshot: MarkdownEditorSnapshot;
+  applyMarkdown: (expectedMarkdown: string, nextMarkdown: string) => boolean;
 };
 
 type MarkdownHeading = {

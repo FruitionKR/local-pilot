@@ -89,7 +89,7 @@
 
 `react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, strikethrough, table, task list를 추가한다. Footnote는 GFM spec이 아니라 현재 parser stack에서 지원하는 호환 확장으로 분류한다.
 
-현재 `NoteEditor`는 CodeMirror의 Markdown과 selection을 1-base inclusive line target으로 변환해 Agent panel까지 전달한다. selection이 없으면 cursor가 속한 ATX heading section을 `current_section`으로 계산하고, heading이 없으면 `whole_document`를 사용한다. Agent panel은 편집 context가 있으면 `POST /api/workspaces/{workspace_id}/agent/turn`으로 요청 snapshot을 보내고, 없으면 기존 Wiki query 흐름을 사용한다. Spring backend의 Agent endpoint가 아직 없으므로 실제 pipeline 응답과 diff 적용은 연결되지 않았다.
+현재 `NoteEditor`는 CodeMirror의 Markdown과 selection을 1-base inclusive line target으로 변환해 Agent panel까지 전달한다. selection이 없으면 cursor가 속한 ATX heading section을 `current_section`으로 계산하고, heading이 없으면 `whole_document`를 사용한다. Agent panel은 편집 context가 있으면 `POST /api/workspaces/{workspace_id}/agent/turn`으로 요청 snapshot을 보내고, 없으면 기존 Wiki query 흐름을 사용한다. `markdown_edit` 응답은 line diff와 렌더링 preview에서 Apply/취소/재생성을 제공하고, document·base version·target·현재 buffer가 모두 유효할 때만 editor와 autosave에 반영한다. `markdown_create` 응답은 새 editable Markdown 문서로 저장해 연다. Spring backend의 Agent endpoint는 아직 구현되지 않았다.
 
 ## 4. 기본 지원 범위
 
@@ -292,10 +292,11 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 - [x] editor의 Markdown과 selection/current section 전달
 - [x] frontend `/agent/turn` client와 제출 분기
 - [ ] Spring backend Agent endpoint와 pipeline proxy
-- [ ] 원본과 `replacement_markdown` diff 표시
-- [ ] 사용자 승인 후 editor buffer에 Apply
-- [ ] 저장 전 document version 또는 checksum 확인
-- [ ] 요약, 번역, 어조 변경, cleanup, 표, checklist, 회의록 fixture 검증
+- [x] 원본과 `replacement_markdown` line diff·렌더링 preview 표시
+- [x] Apply/취소/최신 snapshot 재생성
+- [x] 사용자 승인 후 editor buffer 교체와 autosave 연결
+- [x] 적용 전 document·base version·target·현재 buffer 검증
+- [x] 요약, 번역, 어조 변경, cleanup, 표, checklist, 회의록 frontend fixture 검증
 
 ### 2단계: Markdown 기본 지원 안정화
 

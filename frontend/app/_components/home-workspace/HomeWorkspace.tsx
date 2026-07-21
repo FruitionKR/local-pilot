@@ -15,7 +15,11 @@ import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend, makeRawId } from "../../_lib/graph";
+import { uploadDocumentFile } from "../../_lib/api";
+import { buildGeneratedMarkdownFilename } from "../../_lib/markdownAgent";
+import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
+import { createClientId } from "../../_lib/tree";
 import { useResizeHandle } from "./useResizeHandle";
 import type { SourceBlockHighlight } from "../../_lib/types";
 
@@ -95,6 +99,24 @@ export function HomeWorkspace() {
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
     const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
     selection.openSourceBlockPreview(documentId, documentTitle, highlights);
+  }
+
+  async function createGeneratedMarkdownDocument(draft: GeneratedMarkdownDraft) {
+    const noteId = createClientId("ai-note");
+    const body = draft.markdown.endsWith("\n") ? draft.markdown : `${draft.markdown}\n`;
+    const file = new File(
+      [`<!-- fruition-note: ${noteId} -->\n${body}`],
+      buildGeneratedMarkdownFilename(draft.title),
+      { type: "text/markdown" }
+    );
+    const created = await uploadDocumentFile(file);
+    setDocuments((current) => [
+      ...current.filter((document) => document.id !== created.id),
+      created
+    ]);
+    void refreshBackendData();
+    setActiveView("home");
+    selection.openSourceBlockPreview(created.id, created.filename, []);
   }
 
   function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
@@ -225,6 +247,7 @@ export function HomeWorkspace() {
           onClose={() => setIsAgentPanelOpen(false)}
           onOpenWikiPage={selection.openWikiPagePreview}
           onOpenSourceBlocks={openSourceBlocks}
+          onCreateMarkdownDocument={createGeneratedMarkdownDocument}
           markdownEditContext={markdownEditContext}
           nodes={graphData.nodes}
         />

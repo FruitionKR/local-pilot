@@ -35,13 +35,27 @@ export function NoteEditor({
   const { status, errorMessage, contentVersion, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
   const editorExtensions = useMemo(() => [markdown(), EditorView.lineWrapping], []);
   const selectionRef = useRef({ from: 0, to: 0 });
+  const bodyRef = useRef(body);
+  const queueSaveRef = useRef(queueSave);
+  const programmaticBodyRef = useRef<string | null>(null);
+  queueSaveRef.current = queueSave;
+  const applyMarkdown = useCallback((expectedMarkdown: string, nextMarkdown: string) => {
+    if (bodyRef.current !== expectedMarkdown) return false;
+    bodyRef.current = nextMarkdown;
+    programmaticBodyRef.current = nextMarkdown;
+    setBody(nextMarkdown);
+    setMode("edit");
+    queueSaveRef.current(nextMarkdown);
+    return true;
+  }, []);
   const publishMarkdownEditContext = useCallback((markdownValue: string, from: number, to: number) => {
     onMarkdownEditContextChange?.({
       documentId,
       baseVersion: contentVersion,
-      editorSnapshot: buildMarkdownEditorSnapshot(markdownValue, from, to)
+      editorSnapshot: buildMarkdownEditorSnapshot(markdownValue, from, to),
+      applyMarkdown
     });
-  }, [contentVersion, documentId, onMarkdownEditContextChange]);
+  }, [applyMarkdown, contentVersion, documentId, onMarkdownEditContextChange]);
 
   useEffect(() => {
     publishMarkdownEditContext(body, selectionRef.current.from, selectionRef.current.to);
@@ -102,7 +116,13 @@ export function NoteEditor({
             publishMarkdownEditContext(viewUpdate.state.doc.toString(), selection.from, selection.to);
           }}
           onChange={(nextBody) => {
+            bodyRef.current = nextBody;
             setBody(nextBody);
+            if (programmaticBodyRef.current === nextBody) {
+              programmaticBodyRef.current = null;
+              return;
+            }
+            programmaticBodyRef.current = null;
             queueSave(nextBody);
           }}
         />

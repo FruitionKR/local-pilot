@@ -355,6 +355,6 @@ Frontend는 `result.action`에 따라 처리한다.
 | --- | --- | --- |
 | `llmPipeline` | 구현됨 | routing, Markdown 편집·생성, 검증과 오류 응답 |
 | Spring backend | 미구현 | 인증·권한, DTO 변환, 문서 버전과 오류 전달 |
-| frontend | 일부 구현 | editor snapshot, public DTO 호출과 결과 요약. diff와 Apply/Reject는 미구현 |
+| frontend | 구현됨 | editor snapshot, public DTO 호출, action별 preview, diff, Apply/취소/재생성, 새 Markdown draft 저장 |
 
 현재 operation은 `replace`와 `insert_after`를 지원한다. `insert_after`는 `current_section` target이 있을 때만 생성하며, target이 없거나 다른 유형이면 현재 섹션 선택을 요청하는 `clarify`를 반환한다.
