@@ -295,7 +295,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 - [x] Footnote와 reference-style link 검증
 - [x] H1~H6와 백틱/tilde code fence 검증
 - [x] 표, task list, link, image 보존 fixture 추가
-- [ ] sLLM 출력 Markdown parse 검증
+- [x] sLLM 출력 Markdown parse 검증
 
 ### 3단계: 선택적 renderer 확장
 

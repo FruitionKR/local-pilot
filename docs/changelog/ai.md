@@ -6,6 +6,13 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-21
 
+### fix: sLLM Markdown 출력 구조 검증
+
+- 생성형 Markdown edit와 새 문서 create 결과를 `markdown-it-py`의 CommonMark+table parser로 검증
+- 닫히지 않은 backtick/tilde code fence, frontmatter와 display math를 구조 오류로 판정
+- 구조 오류를 기존 1회 재시도에 전달하고 재실패 결과는 기존 output contract error로 미적용
+- Markdown 편집 모듈 `60 passed`, `26 subtests passed`; 문서 복원 제외 전체 `357 passed`, `30 subtests passed`
+
 ### fix: pipeline startup의 DB 생성 책임 제거
 
 - FastAPI lifespan에서 `CREATE TABLE`을 실행하지 않고 Flyway 필수 테이블 존재 여부만 확인하도록 변경
