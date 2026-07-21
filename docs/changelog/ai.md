@@ -8,7 +8,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ### fix: pipeline run 동시 실행 방지와 heartbeat 추가
 
-- cached `RunPipelineUseCase`의 process-wide lock으로 문서·Chat Wiki pipeline이 동시에 실행되지 않게 변경
+- module-level process-wide lock으로 문서·Chat Wiki pipeline과 서로 다른 use case 인스턴스의 동시 실행을 방지
 - Flyway V6로 `pipeline_runs.updated_at`을 추가하고 각 pipeline log event에서 실행 시각 갱신
 - heartbeat DB 갱신 실패는 pipeline 실행을 중단하지 않고 `pipeline.log`에 기록
 - 동시 실행 요청이 앞선 run의 완료·실패 처리를 마칠 때까지 대기하는 회귀 테스트 추가

@@ -162,7 +162,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
 
         self.assertEqual(calls[0], ("touch", "run-1"))
 
-    def test_execute_serializes_concurrent_pipeline_runs(self) -> None:
+    def test_execute_serializes_runs_across_use_case_instances(self) -> None:
         first_entered = Event()
         release_first = Event()
         second_entered = Event()
@@ -181,13 +181,18 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                 return {"manifest": command.run_id}
 
         calls: list[object] = []
-        use_case = RunPipelineUseCase(
+        first_use_case = RunPipelineUseCase(
+            runner=BlockingRunner(),
+            repository=FakeRepository(calls),
+            embedding_job=FakeEmbeddingJob(calls),
+        )
+        second_use_case = RunPipelineUseCase(
             runner=BlockingRunner(),
             repository=FakeRepository(calls),
             embedding_job=FakeEmbeddingJob(calls),
         )
         first = Thread(
-            target=use_case.execute,
+            target=first_use_case.execute,
             args=(
                 "run-1",
                 PipelineRunCommand(
@@ -201,7 +206,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
             ),
         )
         second = Thread(
-            target=use_case.execute,
+            target=second_use_case.execute,
             args=(
                 "run-2",
                 PipelineRunCommand(

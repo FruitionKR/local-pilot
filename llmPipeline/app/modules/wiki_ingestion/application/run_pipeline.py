@@ -12,6 +12,9 @@ from app.modules.wiki_ingestion.application.ports import (
 )
 
 
+_PIPELINE_EXECUTION_LOCK = Lock()
+
+
 class RunPipelineUseCase:
     def __init__(
         self,
@@ -22,7 +25,6 @@ class RunPipelineUseCase:
         self._runner = runner
         self._repository = repository
         self._embedding_job = embedding_job
-        self._execution_lock = Lock()
 
     def register(self, registration: PipelineRunRegistration) -> None:
         self._repository.create(
@@ -34,7 +36,7 @@ class RunPipelineUseCase:
         )
 
     def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
-        with self._execution_lock:
+        with _PIPELINE_EXECUTION_LOCK:
             try:
                 manifest = self._runner.run(
                     command,
