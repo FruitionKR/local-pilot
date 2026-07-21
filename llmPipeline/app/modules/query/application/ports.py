@@ -4,10 +4,10 @@ from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, 
 
 
 class WikiRepositoryPort(Protocol):
-    def list_active_pages(self) -> list[WikiPage]:
+    def list_active_pages(self, workspace_id: str) -> list[WikiPage]:
         ...
 
-    def list_active_links(self) -> list[WikiPageLink]:
+    def list_active_links(self, workspace_id: str) -> list[WikiPageLink]:
         ...
 
     def list_embedding_units_by_page_ids(self, page_ids: list[str]) -> dict[str, list[WikiEmbeddingUnit]]:
