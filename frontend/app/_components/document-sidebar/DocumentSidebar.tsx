@@ -52,7 +52,7 @@ export function DocumentSidebar({
   fileDropTarget: FileDropTarget | null;
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
-  uploadInputRef: RefObject<HTMLInputElement>;
+  uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
   onViewChange: (view: RailView) => void;
   onStartChat: () => void;

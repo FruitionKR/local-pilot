@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
-import { fetchDocumentOriginal, fetchWikiPage } from "../_lib/api";
+import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
+import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "../_lib/errors";
+import { splitEditableNoteMarkdown } from "../_lib/note";
 import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 export function SourcePreviewPanel({
@@ -28,6 +30,7 @@ export function SourcePreviewPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
+  const [noteContentVersion, setNoteContentVersion] = useState(0);
   const [rawDocumentUrl, setRawDocumentUrl] = useState<string | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
@@ -36,6 +39,10 @@ export function SourcePreviewPanel({
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
+  const editableNote = useMemo(
+    () => rawMarkdown === null ? null : splitEditableNoteMarkdown(rawMarkdown),
+    [rawMarkdown]
+  );
 
   useEffect(() => {
     if (!pageId) {
@@ -67,6 +74,7 @@ export function SourcePreviewPanel({
   useEffect(() => {
     if (pageId || !documentId) {
       setRawMarkdown(null);
+      setNoteContentVersion(0);
       setRawDocumentUrl(null);
       return;
     }
@@ -76,24 +84,37 @@ export function SourcePreviewPanel({
     setIsLoading(true);
     setErrorMessage(null);
     setRawMarkdown(null);
+    setNoteContentVersion(0);
     setRawDocumentUrl(null);
 
-    fetchDocumentOriginal(documentId)
-      .then(async (blob) => {
-        if (isMarkdownFile) {
-          const text = await blob.text();
-          if (!ignore) setRawMarkdown(text);
+    const loadDocument = async () => {
+      if (isMarkdownFile) {
+        const draft = await fetchNoteDraft(documentId);
+        if (draft) {
+          if (!ignore) {
+            setRawMarkdown(draft.markdown);
+            setNoteContentVersion(draft.content_version);
+          }
           return;
         }
 
-        objectUrl = URL.createObjectURL(blob);
-        if (ignore) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
-          return;
-        }
-        setRawDocumentUrl(objectUrl);
-      })
+        const blob = await fetchDocumentOriginal(documentId);
+        const text = await blob.text();
+        if (!ignore) setRawMarkdown(text);
+        return;
+      }
+
+      const blob = await fetchDocumentOriginal(documentId);
+      objectUrl = URL.createObjectURL(blob);
+      if (ignore) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+        return;
+      }
+      setRawDocumentUrl(objectUrl);
+    };
+
+    void loadDocument()
       .catch((error: unknown) => {
         if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
       })
@@ -125,12 +146,21 @@ export function SourcePreviewPanel({
     >
       <header>
         <h2>{title}</h2>
-        <span>{pageId ? pageTypeLabel : "Raw"}</span>
+        <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>
       </header>
       <div className="source-preview-content">
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
-        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && (
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
+          <DynamicNoteEditor
+            key={documentId}
+            documentId={documentId}
+            marker={editableNote.marker}
+            initialBody={editableNote.body}
+            initialVersion={noteContentVersion}
+          />
+        )}
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && !editableNote && (
           <MarkdownViewer
             markdown={rawMarkdown}
             highlightedBlocks={selectedBlockHighlights}

@@ -6,6 +6,8 @@
 
 목표는 Notion의 block 구조를 복제하는 것이 아니다. 사용자가 선택 영역, 현재 섹션 또는 문서 전체를 자연어로 편집하고, 결과를 검토한 뒤 적용하는 문서 AI 경험을 제공하는 것이 목표다.
 
+사용자가 직접 편집하는 Obsidian식 Markdown editor 프로토타입은 이 문서의 범위가 아니다. 해당 UI와 local mock 저장 계약은 `docs/spec/note-editor-prototype.md`를 따른다.
+
 ## 2. 결론
 
 현재 `llmPipeline`에는 다음 기능의 생성 로직과 응답 계약이 이미 있다.
@@ -334,7 +336,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 ### 현재 목표에서 제외하는 범위
 
-- Notion식 block editor
+- Notion식 block editor와 database UI (`docs/spec/note-editor-prototype.md`의 Markdown 원문 편집 UI와는 별도)
 - block drag and drop
 - Callout, Column, Synced block 복제
 - Raw HTML과 MDX 실행

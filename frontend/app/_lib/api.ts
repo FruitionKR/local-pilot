@@ -1,5 +1,5 @@
 import { getAccessToken, getSelectedWorkspaceId } from "./auth";
-import type { BackendData, ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, QueryResponse, UserMeResponse, WikiGraphResponse, WikiPageDetailResponse, WorkspaceListResponse, WorkspaceResponse } from "./types";
+import type { BackendData, ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse, DocumentBlocksResponse, DocumentListResponse, DocumentUploadResponse, NoteContentResponse, QueryResponse, UserMeResponse, WikiGraphResponse, WikiPageDetailResponse, WorkspaceListResponse, WorkspaceResponse } from "./types";
 
 // 공통 에러 메시지 상수
 const ERROR_MESSAGES = {
@@ -11,6 +11,8 @@ const ERROR_MESSAGES = {
   uploadFailed: "문서 업로드에 실패했습니다.",
   documentDeleteFailed: "문서 삭제에 실패했습니다.",
   documentRenameFailed: "문서 이름 변경에 실패했습니다.",
+  noteDraftLoadFailed: "노트 draft를 불러오지 못했습니다.",
+  noteDraftSaveFailed: "노트 draft를 저장하지 못했습니다.",
   documentOriginalLoadFailed: "원본 문서를 불러오지 못했습니다.",
   queryFailed: "질의에 실패했습니다.",
   chatLoadFailed: "채팅 기록을 불러오지 못했습니다.",
@@ -181,6 +183,42 @@ export async function uploadDocumentFile(file: File) {
   });
 
   return parseJsonOrThrow<DocumentUploadResponse>(response, ERROR_MESSAGES.uploadFailed);
+}
+
+export class NoteContentConflictError extends Error {}
+
+/** local profile mock에 저장된 노트 draft를 조회한다. 없으면 원본 문서를 사용하도록 null을 반환한다. */
+export async function fetchNoteDraft(documentId: string): Promise<NoteContentResponse | null> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/content`,
+    { cache: "no-store" }
+  );
+  if (response.status === 404) return null;
+  return parseJsonOrThrow<NoteContentResponse>(response, ERROR_MESSAGES.noteDraftLoadFailed);
+}
+
+export async function saveNoteDraft(
+  documentId: string,
+  markdown: string,
+  expectedContentVersion: number
+): Promise<NoteContentResponse> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/content`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        markdown,
+        expected_content_version: expectedContentVersion
+      })
+    }
+  );
+  if (response.status === 409) {
+    throw new NoteContentConflictError(await parseErrorResponse(response, "다른 편집 내용이 먼저 저장되었습니다."));
+  }
+  return parseJsonOrThrow<NoteContentResponse>(response, ERROR_MESSAGES.noteDraftSaveFailed);
 }
 
 /** 문서를 삭제한다. 성공 시 204를 반환한다. */

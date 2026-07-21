@@ -8,6 +8,21 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### feat: 새 노트 편집용 local 저장 mock 추가
+
+**변경된 것**
+
+- `local` profile에서만 등록되는 노트 본문 메모리 mock controller를 추가했다.
+- `GET/PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`로 draft 조회와 version 기반 저장을 제공한다.
+- 이전 version으로 저장하면 `409 Conflict`를 반환하며 DB, MinIO, pipeline, Wiki 데이터는 변경하지 않는다.
+- frontend의 `PUT` 요청을 허용하도록 CORS method에 `PUT`을 추가했다.
+
+**검증 및 주의사항**
+
+- controller test에서 미저장 `404`, 저장/version 증가, 충돌 시 기존 draft 유지, 비인증 `401`을 검증했다.
+- Colima 환경에서 Docker 소켓과 Testcontainers override를 지정해 전체 151개 테스트가 통과했다.
+- 이 API는 frontend 프로토타입용이며 production 저장 계약을 대체하지 않는다.
+
 ### fix: 파이프라인 스키마를 Flyway 관리 대상으로 통합
 
 **배경**

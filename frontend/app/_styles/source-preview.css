@@ -108,6 +108,150 @@
   font-family: inherit;
 }
 
+.note-editor-shell {
+  min-height: 100%;
+  padding: 0 clamp(0px, 3vw, 44px) 48px;
+}
+
+.note-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.note-editor-modes {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.note-editor-modes button {
+  position: relative;
+  padding: 8px 0 9px;
+  color: var(--subdued);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.note-editor-modes button:hover,
+.note-editor-modes button.is-active {
+  color: #f0f0f0;
+}
+
+.note-editor-modes button.is-active::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  background: #f0f0f0;
+}
+
+.note-save-status {
+  color: var(--subdued);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.note-save-status.is-saving,
+.note-save-status.is-dirty {
+  color: var(--yellow);
+}
+
+.note-save-status.is-error,
+.note-save-status.is-conflict {
+  color: #ff8f87;
+}
+
+.note-markdown-editor .cm-editor {
+  color: #e7e7e7;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.note-markdown-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.note-markdown-editor .cm-scroller,
+.note-markdown-editor .cm-gutters {
+  background: transparent;
+}
+
+.note-markdown-editor .cm-content {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 0 120px;
+  caret-color: var(--yellow);
+}
+
+.note-markdown-editor .cm-line {
+  padding: 0;
+}
+
+.note-markdown-editor .cm-selectionBackground,
+.note-markdown-editor .cm-content ::selection {
+  background: rgba(255, 193, 23, 0.22) !important;
+}
+
+.note-markdown-editor .cm-cursor {
+  border-left-color: var(--yellow);
+}
+
+.note-markdown-preview {
+  max-width: 760px;
+  margin: 0 auto;
+  padding-bottom: 120px;
+}
+
+.note-markdown-preview .markdown-viewer {
+  color: #d7d7d7;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.note-markdown-preview .markdown-viewer h1 {
+  margin-bottom: 28px;
+  padding: 0;
+  border: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.note-markdown-preview .markdown-viewer h2 {
+  margin-top: 34px;
+  padding: 0;
+  border: 0;
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+
+.note-markdown-preview .markdown-viewer h3 {
+  margin-top: 28px;
+  font-size: 19px;
+}
+
+.note-markdown-preview .markdown-viewer p {
+  margin-bottom: 12px;
+}
+
+.note-markdown-preview .katex-display {
+  margin: 24px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .markdown-viewer {
   color: #d0d7de;
   font-size: 14px;

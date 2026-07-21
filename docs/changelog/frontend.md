@@ -6,6 +6,38 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
+### fix: Next.js 보안 패치와 React 19 적용
+
+**변경된 내용**
+
+- Next.js를 `14.2.35`에서 보안 패치가 포함된 `15.5.20`으로 올리고 `eslint-config-next` 버전을 맞췄다.
+- React와 React DOM을 `19.2.7`, 타입 패키지를 React 19 계열로 갱신했다.
+- Next.js가 사용하는 PostCSS를 `8.5.10`으로 override해 기존 XSS advisory를 제거했다.
+- React 19의 nullable ref 타입에 맞춰 문서 업로드 input ref prop 선언을 보정했다.
+
+**검증 결과**
+
+- `npm audit`, `npm audit --omit=dev` 모두 취약점 0건.
+- `npm run lint`, `npm run build` 통과.
+- 브라우저에서 로그인, backend rewrite, 이미지 화면, Markdown 자동 저장·복원, LaTeX 미리보기를 확인했다.
+- `next lint`는 Next 15에서 동작하지만 Next 16에서 제거될 예정이므로 추후 ESLint CLI 전환이 필요하다.
+
+### feat: 새 노트용 Markdown 편집기 프로토타입 추가
+
+**변경된 내용**
+
+- `fruition-note` 식별 주석이 있는 새 노트만 CodeMirror 원문 편집기로 열고, 일반 Markdown·PDF·Wiki는 기존 읽기 전용 화면을 유지한다.
+- Obsidian처럼 Markdown 문법을 직접 편집하고, Notion 문서 스타일의 미리보기로 전환할 수 있다.
+- GFM과 LaTeX 미리보기를 지원하며 Notion database·property·board와 block 전용 UI는 포함하지 않는다.
+- 마지막 입력 800ms 후 local mock API에 자동 저장하고 `편집됨`, `저장 중`, `저장됨`, `저장 실패`, `충돌` 상태를 표시한다.
+- version 충돌 시 자동 재시도를 중단하고 현재 editor buffer를 유지한다.
+
+**검증 및 주의사항**
+
+- `npm run build` 통과.
+- editor와 저장 사이에 block 변환을 두지 않아 Markdown 원문을 그대로 유지한다.
+- 저장은 local profile의 메모리 mock이며 backend 재시작 시 사라진다. production 저장 후속 작업은 `docs/issue/backend/2026-07-21.md`에 남겨두었다.
+
 ### fix: 사이드바 메뉴 hover 박스 제거
 
 - 홈·그래프·규칙·로그·설정 및 프로젝트 추가 버튼의 hover 배경을 제거했다.

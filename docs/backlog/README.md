@@ -23,5 +23,6 @@
 - `issue-2026-07-10.md` — Chat Wiki API 계약 확정·검증 완료 기록. 계약 원본은 `docs/spec/chat-to-wiki-contract.md`.
 - `issue-2026-07-14.md` — 복원 플로우 최적화 v5~v8 완료 기록(변경 기록). 요약은 `docs/changelog/ai.md` 2026-07-14 항목.
 - `issue-2026-07-16.md` — wiki_pages 잔재 constraint 해결·Flyway 도입 완료 기록. 요약은 `docs/changelog/backend.md` 2026-07-16 항목.
-- `issue-2026-07-21.md` — 새 노트 생성을 기존 Markdown 업로드 API로 해결한 기록. 본문 저장 API 잔여분은 `docs/issue/backend/2026-07-21.md`.
+- `issue-2026-07-20.md` — dev-up backend readiness 해결 기록. content_hash 잔여분은 `docs/issue/backend/2026-07-21.md`, pipeline 스키마 해결 기록은 `issue-2026-07-21.md`로 이관.
+- `issue-2026-07-21.md` — 새 노트 생성과 pipeline schema 소유권 충돌 해결 기록. 노트 본문 저장 API 잔여분은 `docs/issue/backend/2026-07-21.md`.
 - `Fruition_MVP_API_Contract.md` — 로그인 없이 단일 기본 workspace만 쓰던 시절 API 계약. 현재 API 계약은 `docs/Fruition_MVP_API_Contract.md`.

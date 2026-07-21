@@ -190,7 +190,8 @@ start_backend() {
   log "백엔드를 시작합니다. Java 21: $java21_home"
   (
     cd "$BACKEND_DIR"
-    ./gradlew bootRun -Porg.gradle.java.installations.paths="$java21_home"
+    SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
+      ./gradlew bootRun -Porg.gradle.java.installations.paths="$java21_home"
   ) &
   BACKEND_PID="$!"
 

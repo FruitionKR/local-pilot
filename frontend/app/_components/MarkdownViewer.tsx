@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import type { PhrasingContent, Root } from "mdast";
 import { visit } from "unist-util-visit";
 import { cx } from "../_lib/classNames";
@@ -72,7 +74,8 @@ function remarkCustomTokens() {
 }
 
 // 렌더마다 배열 참조가 바뀌면 react-markdown이 재파싱하므로 모듈 상수로 유지한다.
-const REMARK_PLUGINS = [remarkGfm, remarkCustomTokens];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkCustomTokens];
+const REHYPE_PLUGINS = [rehypeKatex];
 
 type MarkdownSegment = { kind: "frontmatter" | "markdown"; content: string };
 
@@ -226,7 +229,7 @@ export function MarkdownViewer({
                 <pre>{segment.content}</pre>
               </details>
             ) : (
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
                 {segment.content}
               </ReactMarkdown>
             )}
