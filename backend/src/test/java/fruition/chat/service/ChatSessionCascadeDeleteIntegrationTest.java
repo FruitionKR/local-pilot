@@ -57,7 +57,7 @@ class ChatSessionCascadeDeleteIntegrationTest {
         // document_id/wiki_page_id는 이 테스트의 관심사(세션 CASCADE)가 아니므로,
         // FK(SET NULL) 대상 부모를 만들지 않고 null로 둔다.
         referenceRepository.save(new ChatMessageReference(
-                assistantMessage, "source_block", null, 1, List.of("B0001"), "인용문"));
+                assistantMessage, "source_block", null, 1, List.of("B0001"), "인용문", List.of()));
         relatedPageRepository.save(new ChatMessageRelatedPage(
                 assistantMessage, null, "source", "제목", "slug", 1.0, "seed_source", 0, 1));
 

@@ -25,7 +25,13 @@ public record PipelineQueryResponse(
             int rank,
             @JsonProperty("source_document_id") String sourceDocumentId,
             @JsonProperty("source_block_ids") List<String> sourceBlockIds,
+            @JsonProperty("source_refs") List<SourceRef> sourceRefs,
             String text
+    ) {}
+
+    public record SourceRef(
+            @JsonProperty("source_document_id") String sourceDocumentId,
+            @JsonProperty("source_block_id") String sourceBlockId
     ) {}
 
     public record GraphContext(

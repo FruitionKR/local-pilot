@@ -105,6 +105,10 @@ class QueryServiceTest {
         assertThat(firstRef.getDocumentId()).isEqualTo(DOCUMENT_ID);
         assertThat(firstRef.getSourceBlockIds()).isEqualTo(List.of("B0005", "B0006"));
         assertThat(firstRef.getQuote()).isEqualTo("원본 block citation이 붙어 있던 근거 문장");
+        // source_refs는 대표 문서(DOCUMENT_ID) 외 다른 문서(doc_cross) block까지 보존한다.
+        assertThat(firstRef.getSourceRefs()).containsExactly(
+                new fruition.chat.domain.SourceRef(DOCUMENT_ID, "B0005"),
+                new fruition.chat.domain.SourceRef("doc_cross", "B0009"));
 
         ChatMessageReference secondRef = savedRefs.stream()
                 .filter(r -> r.getRank() == 2).findFirst().orElseThrow();
@@ -186,9 +190,12 @@ class QueryServiceTest {
         List<PipelineQueryResponse.EvidenceSnippet> evidenceSnippets = List.of(
                 new PipelineQueryResponse.EvidenceSnippet(
                         1, DOCUMENT_ID, List.of("B0005", "B0006"),
+                        List.of(new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0005"),
+                                new PipelineQueryResponse.SourceRef("doc_cross", "B0009")),
                         "원본 block citation이 붙어 있던 근거 문장"),
                 new PipelineQueryResponse.EvidenceSnippet(
                         2, "doc_2a8b91cc", List.of("B0010"),
+                        List.of(new PipelineQueryResponse.SourceRef("doc_2a8b91cc", "B0010")),
                         "두 번째 근거 block 본문")
         );
 

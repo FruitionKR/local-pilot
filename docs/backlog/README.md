@@ -22,7 +22,7 @@
 - `issue-2026-07-09.md` — chat inline markdown 계약(PR 72/73) 해소 기록. processing_stage 폴링 잔여분은 `docs/issue/frontend/2026-07-15.md`.
 - `issue-2026-07-10.md` — Chat Wiki API 계약 확정·검증 완료 기록. 계약 원본은 `docs/spec/chat-to-wiki-contract.md`.
 - `issue-2026-07-14.md` — 복원 플로우 최적화 v5~v8 완료 기록(변경 기록). 요약은 `docs/changelog/ai.md` 2026-07-14 항목.
-- `issue-2026-07-15.md` — pipeline run 동시 실행 방지·heartbeat·Markdown 편집 계약 완료 기록.
+- `issue-2026-07-15.md` — 2026-07-15 해결 이슈 기록: 백엔드(query evidence source_refs 노출, documents/wiki_pages FK CASCADE + Flyway 도입)와 AI/Pipeline(pipeline run 동시 실행 방지·heartbeat·Markdown 편집 계약). 미해결분(wiki maintenance lint proxy, Kakao OAuth)은 `docs/issue/backend/2026-07-15.md`.
 - `issue-2026-07-16.md` — wiki_pages 잔재 constraint 해결·Flyway 도입 완료 기록. 요약은 `docs/changelog/backend.md` 2026-07-16 항목.
 - `ai-issue-2026-07-16.md` — llmPipeline 입력 책임·재실행 검증·PDF 복원 개선 완료 기록.
 - `issue-2026-07-18.md` — Wiki ingest evaluator의 선택적 patch, fallback, retry 기록, unresolved 상태 구현 완료 기록.
