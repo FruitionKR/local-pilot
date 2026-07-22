@@ -1,7 +1,14 @@
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from app.modules.wiki_ingestion.application.models import PipelineRunCommand
+from app.modules.wiki_ingestion.application.models import (
+    PipelineRunCommand,
+    WikiMaintenanceCommand,
+)
+
+
+class WikiMaintenancePort(Protocol):
+    def lint(self, command: WikiMaintenanceCommand) -> dict[str, Any]: ...
 
 
 class PipelineRunnerPort(Protocol):

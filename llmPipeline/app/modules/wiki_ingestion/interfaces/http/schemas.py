@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+
 
 DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
 CHAT_SEMANTIC_PROMPT = "prompts/chat_semantic_extraction.system.md"
@@ -93,3 +95,39 @@ class PipelineRunOut(BaseModel):
     manifest: dict[str, Any] | None = None
     output_dir: str
     log_path: str
+
+
+class WikiLintIn(BaseModel):
+    user_id: str = "local-user"
+    workspace_id: str = "local-workspace"
+    materialize_promotions: bool = False
+    dry_run: bool = True
+    provider: Literal["upstage", "generic"] = "upstage"
+    endpoint: str | None = None
+    api_base_url: str | None = None
+    api_key_env: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+    max_tokens: int | None = None
+
+    def to_command(self) -> WikiMaintenanceCommand:
+        return WikiMaintenanceCommand(**self.model_dump())
+
+
+class WikiLintOut(BaseModel):
+    user_id: str
+    workspace_id: str
+    active_path: str
+    cluster_count: int
+    source_ref_count: int
+    orphan_refs: list[str]
+    promotion_candidates: list[str]
+    needs_review: list[str]
+    relation_candidates: list[dict[str, Any]]
+    invalid_relations: list[dict[str, Any]]
+    invalid_promotions: list[dict[str, Any]]
+    materialized_promotions: list[dict[str, Any]]
+    merged_promotions: list[dict[str, Any]]
+    materialized_relations: list[dict[str, Any]]

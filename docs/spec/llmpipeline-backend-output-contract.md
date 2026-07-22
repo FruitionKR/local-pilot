@@ -687,7 +687,7 @@ null
 ## 5. Lint
 
 Wiki maintenance용 lint 기능이다.
-폴더상 별도 bounded context로 보이지 않고, 현재는 `llmPipeline/api.py`의 `POST /wiki/maintenance/lint`가 `wiki_ingestion` repository의 `lint_wiki_workspace()` 결과를 그대로 반환한다.
+`llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py`의 `POST /wiki/maintenance/lint`가 workspace 범위 lint 결과를 반환한다. PostgreSQL과 promotion LLM 실행은 `WikiMaintenancePort`를 통해 infrastructure 경계에서 처리한다.
 
 이 기능은 active meaning cluster 문서를 검사해 다음을 확인한다.
 

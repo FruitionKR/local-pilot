@@ -3,6 +3,7 @@ from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
 
@@ -119,5 +120,5 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
     return MarkdownEditTarget(
         type="whole_document",
         start_line=1,
-        end_line=max(1, len(markdown.splitlines())),
+        end_line=max(1, markdown_line_count(markdown)),
     )
