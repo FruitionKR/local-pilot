@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-21
+
+### chore: 로컬 노트 저장 mock profile 활성화
+
+- `scripts/dev-up.sh`가 별도 profile 지정이 없을 때 backend를 `local` profile로 실행하도록 변경했다.
+- 외부에서 `SPRING_PROFILES_ACTIVE`를 지정하면 해당 값을 유지한다.
+- `bash -n scripts/dev-up.sh` 통과.
+
 ## 2026-07-20
 
 ### fix: dev-up backend readiness 확인 복구

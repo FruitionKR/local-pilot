@@ -136,6 +136,18 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     setContextMenu(null);
   }
 
+  function takeMarkdownTargetFromContext(): FileDropTarget | null {
+    if (!contextMenu) return null;
+    const project = projects.find((project) => project.id === contextMenu.projectId);
+    const item = contextMenu.itemId && project ? findTreeItem(project.items, contextMenu.itemId) : null;
+    const target = {
+      projectId: contextMenu.projectId,
+      folderId: item && !isFileItem(item) && !isWikiItem(item) ? item.id : null
+    };
+    setContextMenu(null);
+    return target;
+  }
+
   function deleteContextTarget() {
     if (!contextMenu) return;
     if (contextMenu.itemId === null) {
@@ -243,6 +255,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     openProjectMenu,
     renameContextTarget,
     addFolderFromContext,
+    takeMarkdownTargetFromContext,
     deleteContextTarget,
     commitEditing,
     cancelEditing,

@@ -181,7 +181,15 @@
 }
 
 .sidebar-menu-item:hover,
-.sidebar-menu-item:focus-visible,
+.sidebar-menu-item:focus-visible {
+  color: var(--ink);
+}
+
+.sidebar-menu-item:focus-visible {
+  outline: 2px solid var(--line);
+  outline-offset: 2px;
+}
+
 .sidebar-menu-item.is-active {
   color: var(--ink);
   background: var(--soft);

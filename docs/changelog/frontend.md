@@ -4,7 +4,187 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-22
+
+### fix: 노트 편집기 컨텍스트 발행과 draft 조회 최적화
+
+**변경된 내용**
+
+- `NoteEditor`가 키 입력·selection마다 `useEffect`와 `onUpdate` 두 경로로 편집 컨텍스트를 중복 발행하던 것을 `onUpdate` 한 경로로 정리해 입력당 상위 리렌더를 1회로 줄였다.
+- 저장 완료로 `baseVersion`(content_version)이 바뀔 때만 컨텍스트를 재발행하도록 남겨 baseVersion 정확성을 유지했다.
+- `SourcePreviewPanel`이 Markdown 파일을 열 때 원본을 먼저 읽어 note marker를 확인하고, marker가 없는 일반 Markdown은 draft를 조회하지 않아 불필요한 404 요청을 제거했다.
+
+**검증 결과**
+
+- `npm run lint`, `npx tsc --noEmit`, `npm run test:markdown` 45건 통과.
+
 ## 2026-07-21
+
+### feat: Figma 기준 Markdown 편집 화면 개편
+
+**변경된 내용**
+
+- Figma `512:10833`을 기준으로 문서 진입 시 사이드바와 Agent panel을 접고, 48px breadcrumb GNB와 900px 문서 본문을 사용하는 전체 화면 편집 레이아웃으로 변경했다.
+- 실제 상위 폴더명과 마지막 편집일을 표시하고, 상단 동작 버튼으로 AI 편집 도우미를 다시 열 수 있게 했다.
+- AI 편집 결과는 우하단 320px 수락/취소 카드로 표시하고, 본문을 펼치면 line diff, 렌더링 preview와 재생성을 확인할 수 있게 했다.
+- `fruition-note`뿐 아니라 Backend가 생성하는 `fruition-workspace` marker도 편집 본문에서 분리해 CodeMirror 편집기로 연다.
+- 720px 이하에서는 편집 여백과 제목 크기를 줄이고 AI 검토 카드를 화면 좌우 16px에 맞춘다.
+
+**검증 결과**
+
+- Playwright로 1024×1080과 390×844 viewport, AI 검토 카드의 축약·상세·취소 상태를 확인했다.
+- `npm run lint`, `npx tsc --noEmit`, `npm run test:markdown` 45건 통과.
+- Spring Agent endpoint가 아직 없어 AI 검토 상태는 network mock으로 검증했다.
+
+### feat: Markdown AI 편집 검토와 안전 적용 완성
+
+**변경된 내용**
+
+- `markdown_edit` 응답의 document, base version, operation과 target을 요청 snapshot과 검증한 뒤 line diff와 렌더링 preview를 표시한다.
+- Apply 직전에 현재 editor Markdown을 요청 원문과 다시 비교하고, 일치할 때만 buffer를 한 번 교체한 뒤 기존 autosave에 전달한다.
+- 취소와 최신 snapshot 기반 재생성을 지원하며, 요청 후 사용자가 문서를 수정한 stale 결과는 적용하지 않는다.
+- `markdown_create` 결과를 preview한 뒤 editable Markdown 파일로 저장하고 새 문서로 연다.
+- 요약, 번역, 문체 변경, Markdown 정리, 표, checklist, 회의록 replacement fixture를 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 42건, `npm run lint`, `npm run build` 통과.
+
+### feat: Markdown Agent turn 요청 연결
+
+**변경된 내용**
+
+- Agent panel에서 편집 중인 Markdown context가 있으면 기존 Wiki query 대신 `POST /api/workspaces/{workspace_id}/agent/turn`을 호출한다.
+- 요청 시점의 `documentId`, 최신 `baseVersion`, message, editor snapshot을 하나의 DTO로 고정한다.
+- Agent 응답은 원문에 적용하지 않고 결과 요약만 표시하며, 400/422 detail message를 실패 안내에 사용한다.
+- Spring backend endpoint는 아직 없으므로 실제 pipeline 연동은 backend 이슈로 유지한다.
+
+**검증 결과**
+
+- `npm run test:markdown` 29건, `npm run lint`, `npm run build` 통과.
+
+### feat: Markdown editor AI 대상 snapshot 전달
+
+**변경된 내용**
+
+- CodeMirror의 현재 Markdown과 문자 selection을 AI 편집용 1-base inclusive line target으로 변환한다.
+- selection이 없으면 cursor가 속한 ATX heading section을 계산하고, heading이 없으면 문서 전체를 대상으로 사용한다.
+- code fence와 frontmatter 내부의 heading 표시는 section 경계에서 제외한다.
+- editor snapshot을 `NoteEditor`에서 `HomeWorkspace`를 거쳐 Agent panel까지 전달하고 composer에서 활성 대상 범위를 안내한다.
+- 실제 `/agent/turn` 호출과 diff 적용은 후속 원자 기능으로 유지한다.
+
+**검증 결과**
+
+- `npm run test:markdown` 26건, `npm run lint`, `npm run build` 통과.
+
+### fix: Markdown 제목과 code fence 경계 보존
+
+**변경된 내용**
+
+- H1부터 H6까지 각 ATX heading을 독립된 source block으로 식별한다.
+- backtick과 tilde fence를 모두 지원하고, 닫힘 fence가 열림과 같은 문자이면서 같은 길이 이상일 때만 code block을 종료한다.
+- 닫히지 않은 code fence는 임의의 닫힘 문법을 추가하지 않고 원문 그대로 보존한다.
+- 제목과 code fence의 block 분할, 실제 HTML 렌더링과 source block ID를 검증하는 회귀 테스트 6건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 15건, `npm run lint`, `npm run build` 통과.
+
+### fix: Markdown 문서 전체 참조 문맥 보존
+
+**변경된 내용**
+
+- Markdown segment별 개별 렌더링을 문서 전체 단일 parse 방식으로 변경해 footnote와 reference-style link의 reference/definition을 같은 문맥에서 처리한다.
+- 원문 line 범위를 AST 출력에 매핑해 기존 `B0001` 형식의 source block ID와 citation highlight 동작을 유지한다.
+- frontmatter는 기존 Metadata UI로 분리해 표시하되, 본문 line 위치가 바뀌지 않도록 빈 줄로 치환한 뒤 렌더링한다.
+- footnote, reference-style link, frontmatter line 범위를 검증하는 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 9건, `npm run lint`, `npm run build` 통과.
+
+### fix: 복합 Markdown 목록의 preview 문맥 보존
+
+**변경된 내용**
+
+- 목록 항목에 속한 code block, 인용문과 여러 줄 본문을 목록과 같은 Markdown segment로 유지한다.
+- 목록 항목 사이의 빈 줄은 보존하되, 들여쓰지 않은 일반 문단에서는 목록 segment를 종료한다.
+- 복합 목록과 목록 밖 문단 경계를 검증하는 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown` 6건, `npm run lint`, `npm run build` 통과.
+
+### fix: 중첩 Markdown 목록 미리보기 구조 보존
+
+**변경된 내용**
+
+- Markdown block 분할 과정에서 목록 행의 leading whitespace를 제거하지 않도록 수정했다.
+- 순서·비순서·체크리스트가 중첩된 목록을 하나의 parse context로 유지한다.
+- 분할 로직을 순수 모듈로 분리하고 중첩 목록 회귀 테스트 3건을 추가했다.
+
+**검증 결과**
+
+- `npm run test:markdown`, `npm run lint`, `npm run build` 통과.
+- 목록 안의 code block·인용문·여러 줄 본문 보존은 후속 작업으로 남아 있다.
+
+### fix: Next.js 보안 패치와 React 19 적용
+
+**변경된 내용**
+
+- Next.js를 `14.2.35`에서 보안 패치가 포함된 `15.5.20`으로 올리고 `eslint-config-next` 버전을 맞췄다.
+- React와 React DOM을 `19.2.7`, 타입 패키지를 React 19 계열로 갱신했다.
+- Next.js가 사용하는 PostCSS를 `8.5.10`으로 override해 기존 XSS advisory를 제거했다.
+- React 19의 nullable ref 타입에 맞춰 문서 업로드 input ref prop 선언을 보정했다.
+
+**검증 결과**
+
+- `npm audit`, `npm audit --omit=dev` 모두 취약점 0건.
+- `npm run lint`, `npm run build` 통과.
+- 브라우저에서 로그인, backend rewrite, 이미지 화면, Markdown 자동 저장·복원, LaTeX 미리보기를 확인했다.
+- `next lint`는 Next 15에서 동작하지만 Next 16에서 제거될 예정이므로 추후 ESLint CLI 전환이 필요하다.
+
+### feat: 새 노트용 Markdown 편집기 프로토타입 추가
+
+**변경된 내용**
+
+- `fruition-note` 식별 주석이 있는 새 노트만 CodeMirror 원문 편집기로 열고, 일반 Markdown·PDF·Wiki는 기존 읽기 전용 화면을 유지한다.
+- Obsidian처럼 Markdown 문법을 직접 편집하고, Notion 문서 스타일의 미리보기로 전환할 수 있다.
+- GFM과 LaTeX 미리보기를 지원하며 Notion database·property·board와 block 전용 UI는 포함하지 않는다.
+- 마지막 입력 800ms 후 local mock API에 자동 저장하고 `편집됨`, `저장 중`, `저장됨`, `저장 실패`, `충돌` 상태를 표시한다.
+- version 충돌 시 자동 재시도를 중단하고 현재 editor buffer를 유지한다.
+
+**검증 및 주의사항**
+
+- `npm run build` 통과.
+- editor와 저장 사이에 block 변환을 두지 않아 Markdown 원문을 그대로 유지한다.
+- 저장은 local profile의 메모리 mock이며 backend 재시작 시 사라진다. production 저장 후속 작업은 `docs/issue/backend/2026-07-21.md`에 남겨두었다.
+
+### fix: 사이드바 메뉴 hover 박스 제거
+
+- 홈·그래프·규칙·로그·설정 및 프로젝트 추가 버튼의 hover 배경을 제거했다.
+- hover에서는 아이콘 색상만 변경하고, 현재 선택된 메뉴의 pill 배경과 키보드 `focus-visible` outline은 유지한다.
+- `npm run build` 통과.
+
+### fix: 폴더 행 정렬을 업로드 문서와 통일
+
+- 폴더의 글꼴·행 높이·패딩은 기존 업로드 문서와 동일한 `.tree-row` 스타일을 유지했다.
+- 폴더 앞에 업로드 문서 아이콘과 같은 `18px` 공간을 확보하고, 자식이 있을 때만 중앙에 펼침 화살표를 표시한다.
+- 빈 폴더에는 박스 아이콘을 표시하지 않으면서 문서명과 폴더명의 시작 위치를 맞췄다.
+- `npm run build` 통과.
+
+### feat: 사이드바 새 노트 생성 기능 추가
+
+**변경된 내용**
+
+- 프로젝트·폴더 우클릭 메뉴를 `새 폴더`, `새 노트`, `이름 변경`, `삭제` 순서로 정리했다.
+- `새 노트` 선택 시 고유 식별 주석과 `# 새 문서` 제목을 가진 `새 문서.md`를 생성해 기존 문서 업로드 API로 저장한다.
+- 폴더에서 생성한 노트는 해당 폴더 아래에 배치하고, 프로젝트·파일에서 생성하면 프로젝트 루트에 배치한다.
+
+**검증 및 주의사항**
+
+- `npm run build` 통과.
+- 노트 본문을 다시 저장하는 API는 아직 없어 편집기 연동은 후속 backend 계약이 필요하다. `docs/issue/backend/2026-07-21.md`의 `2. 노트 본문 저장 API 부재`에 기록했다.
 
 ### fix: 인증 정보 URL 노출과 중복 이메일 가입 흐름 교정
 
