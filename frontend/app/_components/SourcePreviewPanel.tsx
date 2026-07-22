@@ -1,7 +1,11 @@
+import { MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
-import { fetchDocumentOriginal, fetchWikiPage } from "../_lib/api";
+import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
+import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "../_lib/errors";
+import { splitEditableNoteMarkdown } from "../_lib/note";
+import type { ActiveMarkdownEditContext } from "../_lib/markdownEditContext";
 import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 export function SourcePreviewPanel({
@@ -12,6 +16,11 @@ export function SourcePreviewPanel({
   sourceBlockHighlights,
   width,
   onResizeStart,
+  onMarkdownEditContextChange,
+  parentLabel = "업로드 문서",
+  editedAt = null,
+  onExitDocument,
+  onOpenAgentPanel,
   fillMain = false
 }: {
   title: string;
@@ -21,6 +30,11 @@ export function SourcePreviewPanel({
   sourceBlockHighlights?: SourceBlockHighlight[];
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
+  parentLabel?: string;
+  editedAt?: string | null;
+  onExitDocument?: () => void;
+  onOpenAgentPanel?: () => void;
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
 }) {
@@ -28,6 +42,7 @@ export function SourcePreviewPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
+  const [noteContentVersion, setNoteContentVersion] = useState(0);
   const [rawDocumentUrl, setRawDocumentUrl] = useState<string | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
@@ -36,6 +51,16 @@ export function SourcePreviewPanel({
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
+  const editableNote = useMemo(
+    () => rawMarkdown === null ? null : splitEditableNoteMarkdown(rawMarkdown),
+    [rawMarkdown]
+  );
+  const lastEditedLabel = useMemo(() => {
+    if (!editedAt) return "마지막 편집";
+    const date = new Date(editedAt);
+    if (Number.isNaN(date.getTime())) return "마지막 편집";
+    return `${new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(date)} 마지막 편집`;
+  }, [editedAt]);
 
   useEffect(() => {
     if (!pageId) {
@@ -67,6 +92,7 @@ export function SourcePreviewPanel({
   useEffect(() => {
     if (pageId || !documentId) {
       setRawMarkdown(null);
+      setNoteContentVersion(0);
       setRawDocumentUrl(null);
       return;
     }
@@ -76,24 +102,38 @@ export function SourcePreviewPanel({
     setIsLoading(true);
     setErrorMessage(null);
     setRawMarkdown(null);
+    setNoteContentVersion(0);
     setRawDocumentUrl(null);
 
-    fetchDocumentOriginal(documentId)
-      .then(async (blob) => {
-        if (isMarkdownFile) {
-          const text = await blob.text();
+    const loadDocument = async () => {
+      if (isMarkdownFile) {
+        const blob = await fetchDocumentOriginal(documentId);
+        const text = await blob.text();
+        // note marker가 없는 일반 Markdown은 draft를 조회하지 않아 불필요한 404를 피한다.
+        if (!splitEditableNoteMarkdown(text)) {
           if (!ignore) setRawMarkdown(text);
           return;
         }
 
-        objectUrl = URL.createObjectURL(blob);
-        if (ignore) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
-          return;
+        const draft = await fetchNoteDraft(documentId);
+        if (!ignore) {
+          setRawMarkdown(draft ? draft.markdown : text);
+          setNoteContentVersion(draft ? draft.content_version : 0);
         }
-        setRawDocumentUrl(objectUrl);
-      })
+        return;
+      }
+
+      const blob = await fetchDocumentOriginal(documentId);
+      objectUrl = URL.createObjectURL(blob);
+      if (ignore) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+        return;
+      }
+      setRawDocumentUrl(objectUrl);
+    };
+
+    void loadDocument()
       .catch((error: unknown) => {
         if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
       })
@@ -123,14 +163,38 @@ export function SourcePreviewPanel({
       aria-label="원본문서 미리보기"
       onClick={(event) => event.stopPropagation()}
     >
-      <header>
-        <h2>{title}</h2>
-        <span>{pageId ? pageTypeLabel : "Raw"}</span>
+      <header className="source-preview-topbar">
+        <nav aria-label="문서 위치">
+          <button type="button" onClick={onExitDocument}>{parentLabel}</button>
+          <span aria-hidden="true">/</span>
+          <strong>{title}</strong>
+        </nav>
+        <div className="source-preview-actions">
+          <span>{lastEditedLabel}</span>
+          <button type="button" aria-label="AI 편집 도우미 열기" onClick={onOpenAgentPanel}>
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
       </header>
-      <div className="source-preview-content">
+      <div className="source-preview-document">
+        <header className="source-preview-heading">
+          <h2>{title}{isMarkdownFile ? " - 원본문서" : ""}</h2>
+          {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
+        </header>
+        <div className="source-preview-content">
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
-        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && (
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
+          <DynamicNoteEditor
+            key={documentId}
+            documentId={documentId}
+            marker={editableNote.marker}
+            initialBody={editableNote.body}
+            initialVersion={noteContentVersion}
+            onMarkdownEditContextChange={onMarkdownEditContextChange}
+          />
+        )}
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && !editableNote && (
           <MarkdownViewer
             markdown={rawMarkdown}
             highlightedBlocks={selectedBlockHighlights}
@@ -165,6 +229,7 @@ export function SourcePreviewPanel({
           </div>
         )}
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
+        </div>
       </div>
       {!fillMain && (
         <button

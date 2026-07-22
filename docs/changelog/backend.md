@@ -18,22 +18,37 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 인증번호 발급 `POST /api/auth/email-verifications`(purpose=signup|password_reset), 검증 `POST /api/auth/email-verifications/{id}/confirm`, 비밀번호 재설정 `POST /api/auth/password-reset` 추가.
 - `POST /api/auth/signup`에 `verification_token`을 필수로 추가하고, 중복 검사 후 토큰을 검증·소비하도록 변경.
-- `email_verifications` 테이블(Flyway `V6`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
+- `email_verifications` 테이블(Flyway `V7`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
 - 재요청 cooldown·일일 상한(429), 코드 만료·오입력·시도 초과, 토큰 1회성·재사용 차단 정책을 적용. 관련 설정 키는 `app.auth.email-verification.*`. 존재 노출(signup 409)도 rate limit 게이트 뒤에 두어 동일하게 throttle 대상에 포함한다.
 - 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
 - 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요. stub이 활성화된 채 부팅되면 인증번호 로그 노출 위험을 알리는 경고를 남긴다.
 - 일일 상한 초과 429의 `retry_after`는 윈도 내 최고령 요청이 24h를 벗어나는 시점 기준으로 계산한다.
-- 계약 상세는 `docs/spec/api/auth.md`, 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
+- 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
 
 **검증**
 
 - user 패키지 테스트 54개 통과(`EmailVerificationServiceTest` 13, `AuthControllerTest` 20 포함).
-- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V6` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
+- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V7` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
 
 **남은 주의사항**
 
 - 운영 전 `dev-fixed-code`는 빈값 유지, 발송 sender를 실제 메일 발송으로 교체.
 - 프론트엔드의 임시 인증번호·인증 전 signup 선호출 제거 및 발급→검증→가입 재배선 필요(프론트 팀).
+
+### feat: 새 노트 편집용 local 저장 mock 추가
+
+**변경된 것**
+
+- `local` profile에서만 등록되는 노트 본문 메모리 mock controller를 추가했다.
+- `GET/PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`로 draft 조회와 version 기반 저장을 제공한다.
+- 이전 version으로 저장하면 `409 Conflict`를 반환하며 DB, MinIO, pipeline, Wiki 데이터는 변경하지 않는다.
+- frontend의 `PUT` 요청을 허용하도록 CORS method에 `PUT`을 추가했다.
+
+**검증 및 주의사항**
+
+- controller test에서 미저장 `404`, 저장/version 증가, 충돌 시 기존 draft 유지, 비인증 `401`을 검증했다.
+- Colima 환경에서 Docker 소켓과 Testcontainers override를 지정해 전체 151개 테스트가 통과했다.
+- 이 API는 frontend 프로토타입용이며 production 저장 계약을 대체하지 않는다.
 
 ### fix: query pipeline 요청에 workspace_id 전달
 

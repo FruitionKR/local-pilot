@@ -6,6 +6,20 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-21
 
+### fix: sLLM Markdown 출력 구조 검증
+
+- 생성형 Markdown edit와 새 문서 create 결과를 `markdown-it-py`의 CommonMark+table parser로 검증
+- 닫히지 않은 backtick/tilde code fence, frontmatter와 display math를 구조 오류로 판정
+- 구조 오류를 기존 1회 재시도에 전달하고 재실패 결과는 기존 output contract error로 미적용
+- Markdown 편집 모듈 `60 passed`, `26 subtests passed`; 문서 복원 제외 전체 `357 passed`, `30 subtests passed`
+
+### fix: pipeline run 동시 실행 방지와 heartbeat 추가
+
+- module-level process-wide lock으로 문서·Chat Wiki pipeline과 서로 다른 use case 인스턴스의 동시 실행을 방지
+- Flyway V6로 `pipeline_runs.updated_at`을 추가하고 각 pipeline log event에서 실행 시각 갱신
+- heartbeat DB 갱신 실패는 pipeline 실행을 중단하지 않고 `pipeline.log`에 기록
+- 동시 실행 요청이 앞선 run의 완료·실패 처리를 마칠 때까지 대기하는 회귀 테스트 추가
+
 ### fix: Query 검색 범위를 Workspace로 격리
 
 - `POST /query`가 필수 `workspace_id`를 받아 Query application과 repository까지 전달하도록 변경
@@ -380,6 +394,13 @@ Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의�
 ---
 
 ## 2026-07-16
+
+### fix: pipeline 입력 문서 생성 책임을 Backend로 일원화
+
+- 일반 `POST /pipeline/runs`는 Backend가 먼저 생성한 `document_id`를 입력으로 사용하고 llmPipeline의 직접 `documents` 생성 경로를 제거했다.
+- `/chat-wiki/runs`의 `input_markdown`은 기존 source page에 새 대화만 누적하는 delta 입력으로 유지했다.
+- Wiki 저장 범위의 `user_id`, `workspace_id`는 `document_id`로 기존 `documents` row에서 조회하도록 정리했다.
+- llmPipeline 운영 접근 제한 후속은 `docs/issue/infra/2026-07-21.md`로 이관했다.
 
 ### feat: PDF 복원 흐름과 평가 기록 개선
 

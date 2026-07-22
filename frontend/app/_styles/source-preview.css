@@ -3,16 +3,14 @@
   position: absolute;
   inset: 0 auto 0 var(--sidebar-width, 320px);
   z-index: 8;
-  padding: 32px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   color: #f0f0f0;
-  background: #1e1e1e;
-  border-top: 1px solid #4f4f4f;
+  background: #0a0a0a;
   border-right: 1px solid #4f4f4f;
   border-left: 0;
-  border-top-right-radius: 24px;
+  font-family: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
 
 .workspace.is-sidebar-collapsed .source-preview-panel {
@@ -23,10 +21,17 @@
 .source-preview-panel.is-main {
   right: 360px;
   width: auto;
-  border-top-left-radius: 24px;
 }
 
 .workspace.is-agent-collapsed .source-preview-panel.is-main {
+  right: 0;
+}
+
+.workspace.is-document-main .source-preview-panel.is-main {
+  left: 0;
+}
+
+.workspace.is-document-main:has(.agent-panel.is-markdown-reviewing) .source-preview-panel.is-main {
   right: 0;
 }
 
@@ -52,22 +57,108 @@
   background: transparent;
 }
 
-.source-preview-panel header {
+.source-preview-topbar {
   flex: 0 0 auto;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 20px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 24px;
 }
 
-.source-preview-panel h2 {
-  margin: 0;
-  color: var(--subdued);
-  font-size: 28px;
+.source-preview-topbar nav,
+.source-preview-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f0f0f0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.source-preview-topbar nav button {
+  padding: 0;
+  color: #f0f0f0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.source-preview-topbar nav button:hover,
+.source-preview-topbar nav button:focus-visible {
+  color: #ffc117;
+}
+
+.source-preview-topbar nav strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
-  line-height: 1.2;
 }
 
-.source-preview-panel header span {
+.source-preview-actions {
+  flex: 0 0 auto;
+  gap: 16px;
+  color: #8a8a8a;
+}
+
+.source-preview-actions > span {
+  font-weight: 500;
+}
+
+.source-preview-actions button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  color: #8a8a8a;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.source-preview-actions button:hover,
+.source-preview-actions button:focus-visible {
+  color: #f0f0f0;
+  background: #1e1e1e;
+}
+
+.source-preview-document {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  padding-top: 80px;
+}
+
+.source-preview-heading {
+  width: min(900px, 100%);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  margin-bottom: 24px;
+}
+
+.source-preview-heading h2 {
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.source-preview-heading > span {
   width: fit-content;
   padding: 4px 9px;
   color: #0a0a0a;
@@ -78,15 +169,16 @@
 }
 
 .source-preview-content {
+  width: min(900px, 100%);
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  margin-right: -32px;
-  padding-right: 32px;
+  padding: 0 24px 80px;
   color: #f0f0f0;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .source-preview-content strong {
@@ -106,6 +198,168 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: inherit;
+}
+
+.note-editor-shell {
+  position: relative;
+  min-height: 100%;
+  padding: 0 0 48px;
+}
+
+.note-editor-toolbar {
+  position: absolute;
+  top: -56px;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: #1e1e1e;
+  border: 1px solid #323232;
+  border-radius: 8px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+}
+
+.note-editor-shell:hover .note-editor-toolbar,
+.note-editor-shell:focus-within .note-editor-toolbar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.note-editor-modes {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.note-editor-modes button {
+  position: relative;
+  padding: 8px 0 9px;
+  color: var(--subdued);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.note-editor-modes button:hover,
+.note-editor-modes button.is-active {
+  color: #f0f0f0;
+}
+
+.note-editor-modes button.is-active::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1px;
+  background: #ffc117;
+}
+
+.note-save-status {
+  color: var(--subdued);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.note-save-status.is-saving,
+.note-save-status.is-dirty {
+  color: var(--yellow);
+}
+
+.note-save-status.is-error,
+.note-save-status.is-conflict {
+  color: #ff8f87;
+}
+
+.note-markdown-editor .cm-editor {
+  color: #e7e7e7;
+  background: transparent;
+  font-family: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.note-markdown-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.note-markdown-editor .cm-scroller,
+.note-markdown-editor .cm-gutters {
+  background: transparent;
+}
+
+.note-markdown-editor .cm-content {
+  max-width: none;
+  padding: 0 0 120px;
+  caret-color: var(--yellow);
+}
+
+.note-markdown-editor .cm-line {
+  padding: 0;
+}
+
+.note-markdown-editor .cm-selectionBackground,
+.note-markdown-editor .cm-content ::selection {
+  background: rgba(255, 193, 23, 0.22) !important;
+}
+
+.note-markdown-editor .cm-cursor {
+  border-left-color: var(--yellow);
+}
+
+.note-markdown-preview {
+  max-width: none;
+  padding-bottom: 120px;
+}
+
+.note-markdown-preview .markdown-viewer {
+  color: #d7d7d7;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.note-markdown-preview .markdown-viewer h1 {
+  margin-bottom: 28px;
+  padding: 0;
+  border: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.note-markdown-preview .markdown-viewer h2 {
+  margin-top: 34px;
+  padding: 0;
+  border: 0;
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+
+.note-markdown-preview .markdown-viewer h3 {
+  margin-top: 28px;
+  font-size: 19px;
+}
+
+.note-markdown-preview .markdown-viewer p {
+  margin-bottom: 12px;
+}
+
+.note-markdown-preview .katex-display {
+  margin: 24px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .markdown-viewer {

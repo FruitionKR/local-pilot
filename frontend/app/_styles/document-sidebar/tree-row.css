@@ -164,6 +164,15 @@
   height: 18px;
 }
 
+.tree-folder-slot {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .tree-asset.raw,
 .tree-row.is-selected .tree-asset.raw {
   color: #c4c4c4;
