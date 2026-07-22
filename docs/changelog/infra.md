@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-23
+
+### fix: 로컬 이메일 인증 profile 기본값 정리
+
+- `./gradlew bootRun`이 별도 지정이 없을 때 `local` profile로 실행되도록 하고, 외부 `SPRING_PROFILES_ACTIVE`는 유지한다.
+- `infra/.env.example`에 로컬 전용 `AUTH_EMAIL_DEV_FIXED_CODE=9700` 예시를 추가했다.
+- production 공통 설정은 고정 코드가 없는 기존 기본값을 유지한다.
+
 ## 2026-07-22
 
 ### fix: 프론트엔드 의존성 취약점 자동 수정

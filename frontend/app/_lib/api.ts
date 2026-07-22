@@ -67,6 +67,17 @@ export type AuthTokensResponse = {
   refresh_token: string;
 };
 
+export type EmailVerificationResponse = {
+  verification_id: string;
+  expires_in: number;
+  retry_after: number;
+};
+
+export type VerificationConfirmResponse = {
+  verification_token: string;
+  expires_in: number;
+};
+
 export type OAuthProvider = "google" | "naver" | "kakao";
 
 export async function loginWithEmail(email: string, password: string): Promise<AuthTokensResponse> {
@@ -94,15 +105,74 @@ export async function exchangeOAuthCode(code: string): Promise<AuthTokensRespons
   return parseJsonOrThrow<AuthTokensResponse>(response, ERROR_MESSAGES.loginFailed);
 }
 
-export async function signupWithEmail(email: string, password: string): Promise<void> {
+export async function requestEmailVerification(
+  email: string,
+  purpose: "signup" | "password_reset"
+): Promise<EmailVerificationResponse> {
+  const response = await fetch("/api/auth/email-verifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, purpose })
+  });
+
+  return parseJsonOrThrow<EmailVerificationResponse>(response, "인증번호 요청에 실패했습니다.");
+}
+
+export async function confirmEmailVerification(
+  verificationId: string,
+  code: string
+): Promise<VerificationConfirmResponse> {
+  const response = await fetch(
+    `/api/auth/email-verifications/${encodeURIComponent(verificationId)}/confirm`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code })
+    }
+  );
+
+  return parseJsonOrThrow<VerificationConfirmResponse>(response, "인증번호 확인에 실패했습니다.");
+}
+
+export async function signupWithEmail(
+  email: string,
+  password: string,
+  displayName: string,
+  verificationToken: string
+): Promise<void> {
   const response = await fetch("/api/auth/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({
+      email,
+      password,
+      display_name: displayName,
+      verification_token: verificationToken
+    })
   });
 
   if (!response.ok) {
     throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.signupFailed));
+  }
+}
+
+export async function resetPasswordWithVerification(
+  email: string,
+  newPassword: string,
+  verificationToken: string
+): Promise<void> {
+  const response = await fetch("/api/auth/password-reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email,
+      new_password: newPassword,
+      verification_token: verificationToken
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, "비밀번호 재설정에 실패했습니다."));
   }
 }
 

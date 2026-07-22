@@ -20,7 +20,7 @@ export default function LandingPage() {
           <Link className="landing-primary-action" href="/login">
             시작하기
           </Link>
-          <Link className="landing-secondary-action" href="/login?view=signup">
+          <Link className="landing-secondary-action" href="/signup">
             회원가입
           </Link>
         </div>

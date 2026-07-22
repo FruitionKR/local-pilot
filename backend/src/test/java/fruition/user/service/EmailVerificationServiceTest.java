@@ -123,6 +123,23 @@ class EmailVerificationServiceTest {
         verify(sender).send(eq("test@example.com"), eq("signup"), anyString());
     }
 
+    @Test
+    void request_withDevFixedCode_sendsFixedCode() {
+        service = new EmailVerificationService(
+                verificationRepository, userRepository, sender,
+                300, 600, 60, 5, 5, "9700");
+        when(verificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(verificationRepository.countByEmailAndPurposeAndCreatedAtAfter(anyString(), anyString(), any()))
+                .thenReturn(0L);
+        when(verificationRepository.findByEmailAndPurposeAndConsumedAtIsNull(anyString(), anyString()))
+                .thenReturn(List.of());
+
+        service.request(new EmailVerificationRequest("test@example.com", "password_reset"));
+
+        verify(sender).send("test@example.com", "password_reset", "9700");
+    }
+
     // ----- confirm -----
 
     @Test
