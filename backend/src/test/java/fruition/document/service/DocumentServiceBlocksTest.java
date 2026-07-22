@@ -126,8 +126,8 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("초기 노트는 워크스페이스별 고유 Markdown 문서로 저장한다")
-    void createInitialNote_savesUniqueMarkdownPerWorkspace() throws Exception {
+    @DisplayName("초기 노트는 워크스페이스마다 동일 Markdown 문서로 저장한다")
+    void createInitialNote_savesIdenticalMarkdownPerWorkspace() throws Exception {
         when(storageProps.getBucket()).thenReturn("test-bucket");
 
         documentService.createInitialNote("ws_first", USER_ID);
@@ -142,8 +142,12 @@ class DocumentServiceBlocksTest {
                     assertThat(document.getMimeType()).isEqualTo("text/markdown");
                     assertThat(document.getByteSize()).isPositive();
                 });
+        // 중복 판별이 (workspace_id, content_hash)로 바뀐 뒤(V5), 초기 노트는 워크스페이스마다
+        // 동일한 Markdown을 저장하므로 content_hash도 같다. 저장은 각 워크스페이스로 라우팅된다.
+        assertThat(documents.getAllValues().get(0).getWorkspaceId()).isEqualTo("ws_first");
+        assertThat(documents.getAllValues().get(1).getWorkspaceId()).isEqualTo("ws_second");
         assertThat(documents.getAllValues().get(0).getContentHash())
-                .isNotEqualTo(documents.getAllValues().get(1).getContentHash());
+                .isEqualTo(documents.getAllValues().get(1).getContentHash());
     }
 
     @Test

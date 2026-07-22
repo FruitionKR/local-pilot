@@ -6,6 +6,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-23
+
+### test: 초기 노트 동일 Markdown 정책에 맞춰 실패 테스트 수정
+
+**배경**
+
+- `documents.content_hash` 중복 판별이 `(workspace_id, content_hash)` 복합 UNIQUE로 바뀌면서(V5), `DocumentService.createInitialNote`는 워크스페이스마다 동일한 `# 새 노트` Markdown을 저장한다. 그 결과 워크스페이스 간 content_hash가 같아졌는데, `DocumentServiceBlocksTest.createInitialNote_savesUniqueMarkdownPerWorkspace`는 여전히 hash가 서로 달라야 한다고 기대해 실패하고 있었다(`docs/issue/2026-07-21.md` 검증 note의 잔여 1건).
+
+**변경된 것**
+
+- 테스트 메서드·DisplayName을 `savesIdenticalMarkdownPerWorkspace`("동일 Markdown 문서로 저장")로 갱신.
+- content_hash 단언을 `isNotEqualTo` → `isEqualTo`로 교체. 워크스페이스 간 동일 내용 → 동일 hash가 정상임을 반영.
+- 각 문서가 입력 워크스페이스(`ws_first`, `ws_second`)로 저장되는지 `workspaceId` 단언을 추가해 "워크스페이스별 저장" 의미를 보존.
+- 테스트 전용 변경으로 프로덕션 코드·API 계약은 건드리지 않는다.
+
+**검증**
+
+- `./gradlew test --tests 'fruition.document.service.DocumentServiceBlocksTest'` → `BUILD SUCCESSFUL`.
+
 ## 2026-07-21
 
 ### feat: query 근거에 다중 문서 참조 source_refs 노출
