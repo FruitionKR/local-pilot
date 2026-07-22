@@ -17,15 +17,15 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **변경된 것**
 
 - `PipelineQueryResponse.EvidenceSnippet`에 `source_refs`(`[{source_document_id, source_block_id}]`)와 중첩 `SourceRef`를 추가해 파싱 유실을 복구. query API 즉시 응답(`QueryResponse.evidence_snippets`)에도 그대로 노출된다.
-- `chat_message_references`에 `source_refs` 컬럼(Flyway `V7`) 추가. `SourceRef`(도메인 값 타입) + `SourceRefListJsonConverter`로 JSON 저장. 기존 행은 NULL.
+- `chat_message_references`에 `source_refs` 컬럼(Flyway `V8`) 추가. `SourceRef`(도메인 값 타입) + `SourceRefListJsonConverter`로 JSON 저장. 기존 행은 NULL.
 - `ChatMessageReference` 도메인·응답 DTO에 `source_refs` 추가, `QueryService` 저장 매핑·`ChatSessionController` 조회 매핑 연결.
 - legacy `source_document_id`/`source_block_ids`(첫 문서 기준)는 그대로 유지 — 순수 additive 변경.
-- 스펙 반영: `docs/spec/api/query.md`, `docs/spec/api/chat.md`. 후속 프론트 소비는 `docs/issue/frontend/2026-07-15.md` #7.
+- 후속 프론트 소비는 `docs/issue/frontend/2026-07-15.md` #7.
 
 **검증**
 
 - query·chat 패키지 74개 테스트 통과. `PipelineQueryResponseTest`에 source_refs 다중 문서 역직렬화, `QueryServiceTest`에 대표 문서 외 문서 근거 보존 검증 추가.
-- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V7` 적용 + `ddl-auto=validate` 매핑 정합성 확인.
+- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V8` 적용 + `ddl-auto=validate` 매핑 정합성 확인.
 ### feat: 새 노트 편집용 local 저장 mock 추가
 
 **변경된 것**
