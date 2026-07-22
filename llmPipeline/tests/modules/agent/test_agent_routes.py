@@ -73,6 +73,11 @@ class InvalidMarkdownTargetUseCase:
         raise MarkdownTargetBoundaryError("fence", 2, 4)
 
 
+class UnexpectedFailureUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise RuntimeError("secret-internal-detail")
+
+
 class AgentRoutesTest(unittest.TestCase):
     def test_agent_turn_returns_insert_after_operation(self) -> None:
         response = handle_agent_turn(
@@ -134,6 +139,17 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 422)
         self.assertEqual(raised.exception.detail["code"], "markdown_target_crosses_structure")
         self.assertEqual(raised.exception.detail["start_line"], 2)
+
+    def test_agent_turn_hides_unexpected_failure_details(self) -> None:
+        with self.assertRaises(HTTPException) as raised:
+            handle_agent_turn(
+                AgentTurnRequestBody(message="문서를 다듬어줘"),
+                use_case=UnexpectedFailureUseCase(),  # type: ignore[arg-type]
+            )
+
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertEqual(raised.exception.detail["code"], "internal_server_error")
+        self.assertNotIn("secret-internal-detail", str(raised.exception.detail))
 
 
 if __name__ == "__main__":
