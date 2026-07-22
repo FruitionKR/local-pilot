@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-22
+
+### fix: 프론트엔드 의존성 취약점 자동 수정
+
+- `scripts/bootstrap.sh`가 `npm install` 후 `npm audit fix`를 실행하도록 변경했다.
+- breaking change를 피하기 위해 `--force`는 사용하지 않으며, 자동 수정되지 않은 취약점이 있어도 개발 서버 기동을 계속한다.
+- `bash -n scripts/bootstrap.sh`, `git diff --check` 통과.
+
 ## 2026-07-21
 
 ### chore: 로컬 노트 저장 mock profile 활성화
