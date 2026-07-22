@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -1103,7 +1104,10 @@ def _assemble_meaning_clusters(
     return artifact, maintenance_summary
 
 
-def run_pipeline(command: PipelineRunCommand) -> dict:
+def run_pipeline(
+    command: PipelineRunCommand,
+    progress_callback: Callable[[], None] | None = None,
+) -> dict:
     load_env_file(command.env_file)
     args = resolve_api_defaults(command)
     input_text = getattr(args, "input_markdown", None)
@@ -1117,6 +1121,7 @@ def run_pipeline(command: PipelineRunCommand) -> dict:
         getattr(args, "log_path", None) or out / "pipeline.log",
         callback_url=getattr(args, "log_callback_url", None),
         run_id=getattr(args, "run_id", None),
+        progress_callback=progress_callback,
     )
     log.emit(
         "시작",
