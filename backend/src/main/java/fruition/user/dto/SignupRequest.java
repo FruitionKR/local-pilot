@@ -16,9 +16,14 @@ public record SignupRequest(
 
         @JsonProperty("display_name")
         @Size(max = 50, message = "display_name은 50자 이하여야 합니다.")
-        String displayName
+        String displayName,
+
+        @JsonProperty("verification_token")
+        @NotBlank(message = "verification_token은 필수입니다.")
+        String verificationToken
 ) {
+        // 서비스 단위 테스트용 편의 생성자(인증 토큰 검증은 EmailVerificationService에서 별도 처리).
         public SignupRequest(String email, String password) {
-                this(email, password, null);
+                this(email, password, null, null);
         }
 }

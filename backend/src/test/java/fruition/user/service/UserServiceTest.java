@@ -23,13 +23,14 @@ class UserServiceTest {
 
     @Mock UserRepository userRepository;
     @Mock WorkspaceService workspaceService;
+    @Mock EmailVerificationService emailVerificationService;
 
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, passwordEncoder, workspaceService);
+        userService = new UserService(userRepository, passwordEncoder, workspaceService, emailVerificationService);
     }
 
     @Test
@@ -73,7 +74,7 @@ class UserServiceTest {
     void signup_displayNameProvided_usesTrimmedDisplayName() {
         when(userRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
 
-        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  제인  "));
+        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  제인  ", "vtoken"));
 
         assertThat(response.displayName()).isEqualTo("제인");
     }
@@ -82,7 +83,7 @@ class UserServiceTest {
     void signup_blankDisplayName_usesFirstThreeCharsOfEmail() {
         when(userRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
 
-        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  "));
+        SignupResponse response = userService.signup(new SignupRequest("jane.doe@example.com", "password123", "  ", "vtoken"));
 
         assertThat(response.displayName()).isEqualTo("jan");
     }

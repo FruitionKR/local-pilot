@@ -36,6 +36,11 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }

@@ -1,13 +1,19 @@
 package fruition.user.controller;
 
+import fruition.user.dto.EmailVerificationRequest;
+import fruition.user.dto.EmailVerificationResponse;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
 import fruition.user.dto.OAuthExchangeRequest;
+import fruition.user.dto.PasswordResetRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.dto.SignupRequest;
 import fruition.user.dto.SignupResponse;
+import fruition.user.dto.VerificationConfirmRequest;
+import fruition.user.dto.VerificationConfirmResponse;
 import fruition.user.service.AuthService;
+import fruition.user.service.EmailVerificationService;
 import fruition.user.service.UserService;
 import fruition.util.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,10 +40,59 @@ public class AuthController {
 
     private final UserService userService;
     private final AuthService authService;
+    private final EmailVerificationService emailVerificationService;
 
-    public AuthController(UserService userService, AuthService authService) {
+    public AuthController(UserService userService, AuthService authService,
+                          EmailVerificationService emailVerificationService) {
         this.userService = userService;
         this.authService = authService;
+        this.emailVerificationService = emailVerificationService;
+    }
+
+    @Operation(summary = "이메일 인증번호 발급", description = "회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "인증번호 발급",
+            content = @Content(schema = @Schema(implementation = EmailVerificationResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "이미 가입된 이메일(purpose=signup)",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "429", description = "재요청 제한 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/email-verifications")
+    public ResponseEntity<EmailVerificationResponse> requestEmailVerification(
+            @Valid @RequestBody EmailVerificationRequest request) {
+        EmailVerificationResponse response = emailVerificationService.request(request);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+    }
+
+    @Operation(summary = "이메일 인증번호 검증", description = "인증번호를 검증하고 1회용 verification_token을 발급합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "검증 성공",
+            content = @Content(schema = @Schema(implementation = VerificationConfirmResponse.class))),
+        @ApiResponse(responseCode = "400", description = "인증번호 불일치·만료·시도 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "인증 요청을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/email-verifications/{verification_id}/confirm")
+    public ResponseEntity<VerificationConfirmResponse> confirmEmailVerification(
+            @PathVariable("verification_id") String verificationId,
+            @Valid @RequestBody VerificationConfirmRequest request) {
+        return ResponseEntity.ok(emailVerificationService.confirm(verificationId, request));
+    }
+
+    @Operation(summary = "비밀번호 재설정", description = "verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "재설정 성공"),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청 또는 유효하지 않은 토큰",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/password-reset")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody PasswordResetRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(summary = "회원가입", description = "이메일/비밀번호로 신규 사용자를 생성합니다.")
