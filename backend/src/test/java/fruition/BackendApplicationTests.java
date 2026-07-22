@@ -51,6 +51,21 @@ class BackendApplicationTests {
 			);
 			assertThat(exists).as(table).isTrue();
 		}
+
+		Boolean updatedAtExists = jdbcTemplate.queryForObject(
+				"""
+				SELECT EXISTS (
+				    SELECT 1
+				    FROM information_schema.columns
+				    WHERE table_schema = 'public'
+				      AND table_name = 'pipeline_runs'
+				      AND column_name = 'updated_at'
+				      AND is_nullable = 'NO'
+				)
+				""",
+				Boolean.class
+		);
+		assertThat(updatedAtExists).isTrue();
 	}
 
 }

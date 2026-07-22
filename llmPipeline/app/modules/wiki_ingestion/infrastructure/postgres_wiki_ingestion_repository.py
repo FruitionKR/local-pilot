@@ -146,7 +146,8 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
         conn.execute(
             """
             UPDATE pipeline_runs
-            SET status = 'succeeded', manifest = %s, finished_at = now()
+            SET status = 'succeeded', manifest = %s,
+                updated_at = now(), finished_at = now()
             WHERE id = %s
             """,
             (Json(manifest), run_id),
@@ -170,10 +171,23 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
         conn.execute(
             """
             UPDATE pipeline_runs
-            SET status = 'failed', error = %s, finished_at = now()
+            SET status = 'failed', error = %s,
+                updated_at = now(), finished_at = now()
             WHERE id = %s
             """,
             (error_message, run_id),
+        )
+
+
+def touch_pipeline_run(run_id: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET updated_at = now()
+            WHERE id = %s AND status = 'running'
+            """,
+            (run_id,),
         )
 
 
@@ -181,7 +195,8 @@ def get_pipeline_run(run_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, document_id, input_source, output_dir, mode, status, manifest, error, created_at, finished_at
+            SELECT id, document_id, input_source, output_dir, mode, status,
+                   manifest, error, created_at, updated_at, finished_at
             FROM pipeline_runs
             WHERE id = %s
             """,
