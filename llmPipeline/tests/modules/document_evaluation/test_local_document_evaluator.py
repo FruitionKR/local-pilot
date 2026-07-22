@@ -232,6 +232,48 @@ kept
         self.assertIn("Positioned words extracted from the same source crop", vision)
         self.assertIn("text-layout detector found 2 vertical columns", vision)
 
+    def test_equation_candidate_is_always_reviewed_against_source_crop(self) -> None:
+        block = MODULE.Block(
+            "docling_equation_p01_001",
+            "equation_candidate",
+            1,
+            (1, 2, 3, 4),
+            "$$a = \\frac{b}{c}$$",
+        )
+        args = SimpleNamespace(pdf_file=Path("input.pdf"), max_blocks=12, max_chars=6000, max_chunks=0)
+
+        plan = MODULE.build_evaluation_plan([block], args)
+        prompt = MODULE.vision_prompt(block, "[equation_fidelity] 원본 수식 대조", 1)
+
+        self.assertEqual(plan.local_blocks, [block])
+        self.assertIn("every visible equation row", prompt)
+        self.assertIn("coefficients, operators, denominators", prompt)
+        self.assertIn("exponents, subscripts", prompt)
+        self.assertIn(block.markdown, prompt)
+
+    def test_select_requests_accepts_equation_fidelity_review(self) -> None:
+        block = MODULE.Block(
+            "docling_equation_p01_001",
+            "equation_candidate",
+            1,
+            (1, 2, 3, 4),
+            "$$a=b$$",
+        )
+
+        requests = MODULE.select_requests(
+            {
+                "requests": [
+                    {
+                        "block_id": block.id,
+                        "reason": "[equation_fidelity] 분모 누락 가능성",
+                    }
+                ]
+            },
+            [block],
+        )
+
+        self.assertEqual(requests[0]["block_id"], block.id)
+
     def test_broken_text_vision_prompt_omits_corrupted_ocr(self) -> None:
         corrupted = "known corrupted OCR"
         block = MODULE.Block("docling_text_p01_001", "paragraph", 1, (1, 2, 3, 4), corrupted)
@@ -300,6 +342,255 @@ kept
                 detected_column_count=3,
             )
         )
+
+    def test_table_result_preserves_values_from_source_crop(self) -> None:
+        positioned_words = [
+            {"x": 0.0, "y": 1.0, "text": "Maximum"},
+            {"x": 0.5, "y": 1.0, "text": "Voltage"},
+            {"x": 1.0, "y": 1.0, "text": "12.5"},
+            {"x": 2.0, "y": 1.0, "text": "-3"},
+            {"x": 3.0, "y": 1.0, "text": "±0.5"},
+        ]
+
+        self.assertTrue(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["A", "B"],
+                    "transcription": "| A | B |\n| --- | --- |\n| Maximum Voltage 12.5 | -3 ±0.5 |",
+                },
+                positioned_words=positioned_words,
+            )
+        )
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["A", "B"],
+                    "transcription": "| A | B |\n| --- | --- |\n| Voltage 12.5 | -3 ±0.5 |",
+                },
+                positioned_words=positioned_words,
+            )
+        )
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["A", "B"],
+                    "transcription": "| A | B |\n| --- | --- |\n| 12 | -3 ±0.5 |",
+                },
+                positioned_words=positioned_words,
+            )
+        )
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["A", "B"],
+                    "transcription": "| A | B |\n| --- | --- |\n| Maximum Voltage 12.5 | -3 0.5 |",
+                },
+                positioned_words=positioned_words,
+            )
+        )
+
+    def test_table_result_preserves_source_cell_positions(self) -> None:
+        positioned_words = [
+            {"x": 0.0, "y": 0.0, "text": "Parameter"},
+            {"x": 100.0, "y": 0.0, "text": "Unit"},
+            {"x": 200.0, "y": 0.0, "text": "Initial"},
+            {"x": 300.0, "y": 0.0, "text": "Optimised"},
+            {"x": 0.0, "y": 20.0, "text": "PM1ro"},
+            {"x": 100.0, "y": 20.0, "text": "mm"},
+            {"x": 200.0, "y": 20.0, "text": "102"},
+            {"x": 300.0, "y": 20.0, "text": "102"},
+        ]
+        evidence = MODULE.build_table_source_evidence(positioned_words, 4)
+
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["Parameter", "Unit", "Initial", "Optimised"],
+                    "transcription": (
+                        "| Parameter | Unit | Initial | Optimised |\n"
+                        "| --- | --- | --- | --- |\n"
+                        "| PM1ro | mm | 102 102 |  |"
+                    ),
+                },
+                detected_column_count=4,
+                source_evidence=evidence,
+            )
+        )
+
+        single_letter_evidence = MODULE.build_table_source_evidence(
+            [
+                {"x": 0.0, "y": 0.0, "text": "X"},
+                {"x": 0.0, "y": 20.0, "text": "1"},
+            ],
+            1,
+        )
+        self.assertTrue(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["X"],
+                    "transcription": "| X |\n| --- |\n| 1 |",
+                },
+                detected_column_count=1,
+                source_evidence=single_letter_evidence,
+            )
+        )
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["X"],
+                    "transcription": "| X |\n| --- |\n| 1 |\n| 1 |",
+                },
+                detected_column_count=1,
+                source_evidence=single_letter_evidence,
+            )
+        )
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["Parameter", "Unit", "Initial", "Optimised"],
+                    "transcription": (
+                        "| Parameter | Unit | Initial | Optimised |\n"
+                        "| --- | --- | --- | --- |\n"
+                        "| PM1ro | mm | 102 | 102 |\n"
+                        "| PM1ro | mm | 102 | 102 |"
+                    ),
+                },
+                detected_column_count=4,
+                source_evidence=evidence,
+            )
+        )
+
+    def test_table_result_preserves_image_only_plus_minus_evidence(self) -> None:
+        positioned_words = [
+            {"x": 0.0, "y": 0.0, "text": "Noise"},
+            {"x": 0.0, "y": 20.0, "text": "0.02"},
+        ]
+        ocr_words = [{"x": 0.0, "y": 20.0, "text": "+£0.02"}]
+        evidence = MODULE.build_table_source_evidence(positioned_words, 1, ocr_words)
+
+        self.assertFalse(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["Noise"],
+                    "transcription": "| Noise |\n| --- |\n| 0.02 |",
+                },
+                detected_column_count=1,
+                source_evidence=evidence,
+            )
+        )
+        self.assertTrue(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["Noise"],
+                    "transcription": "| Noise |\n| --- |\n| ±0.02 |",
+                },
+                detected_column_count=1,
+                source_evidence=evidence,
+            )
+        )
+        self.assertTrue(
+            MODULE.is_valid_table_result(
+                {
+                    "source_columns": ["Noise"],
+                    "transcription": "| Noise |\n| --- |\n| $\\pm 0.02$ |",
+                },
+                detected_column_count=1,
+                source_evidence=evidence,
+            )
+        )
+
+    def test_table_ocr_reports_execution_failure(self) -> None:
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=OSError):
+            result = MODULE.extract_table_ocr_words(b"png")
+
+        self.assertFalse(result.succeeded)
+        self.assertEqual(result.words, [])
+
+    def test_table_match_rejects_current_markdown_with_missing_source_value(self) -> None:
+        block = MODULE.Block(
+            "docling_table_p01_001",
+            "table_candidate",
+            1,
+            (1, 2, 3, 4),
+            "| Name | Value |\n| --- | --- |\n| Maximum Voltage | 12 |",
+        )
+
+        result = MODULE.review_with_vision(
+            block,
+            "[table_structure] 원본 값 대조",
+            1,
+            lambda _block, _padding: b"png",
+            lambda _prompt, _image: {
+                "status": "match",
+                "transcription": "",
+                "reason": "현재 표와 원본이 같음",
+            },
+            [
+                {"text": "Maximum"},
+                {"text": "Voltage"},
+                {"text": "12.5"},
+            ],
+            2,
+        )
+
+        self.assertEqual(result["result"]["status"], "uncertain")
+
+    def test_table_match_rejects_invalid_current_markdown_table(self) -> None:
+        block = MODULE.Block(
+            "docling_table_p01_001",
+            "table_candidate",
+            1,
+            (1, 2, 3, 4),
+            "| Name | Value |\n| broken | delimiter |\n| Maximum Voltage | 12.5 |",
+        )
+
+        result = MODULE.review_with_vision(
+            block,
+            "[table_structure] 깨진 delimiter",
+            1,
+            lambda _block, _padding: b"png",
+            lambda _prompt, _image: {
+                "status": "match",
+                "transcription": "",
+                "reason": "현재 표와 원본이 같음",
+            },
+            [
+                {"text": "Maximum"},
+                {"text": "Voltage"},
+                {"text": "12.5"},
+            ],
+            2,
+        )
+
+        self.assertEqual(result["result"]["status"], "uncertain")
+
+    def test_table_match_rejects_missing_plus_minus_sign(self) -> None:
+        block = MODULE.Block(
+            "docling_table_p01_001",
+            "table_candidate",
+            1,
+            (1, 2, 3, 4),
+            "| Name | Value |\n| --- | --- |\n| Noise | 0.5 |",
+        )
+
+        result = MODULE.review_with_vision(
+            block,
+            "[table_structure] 원본 부호 대조",
+            1,
+            lambda _block, _padding: b"png",
+            lambda _prompt, _image: {
+                "status": "match",
+                "transcription": "",
+                "reason": "현재 표와 원본이 같음",
+            },
+            [
+                {"text": "Noise"},
+                {"text": "±0.5"},
+            ],
+            2,
+        )
+
+        self.assertEqual(result["result"]["status"], "uncertain")
 
     def test_assemble_markdown_table_handles_single_header(self) -> None:
         grid = [
@@ -372,6 +663,76 @@ mixedCaseTOKENLLLLfragment
         decision = report["chunks"][0]["final_evaluation"]["decisions"][0]
         self.assertEqual(decision["decision"], "suggest_correction")
         self.assertEqual(decision["suggested_markdown"], "fixed")
+
+    def test_evaluate_rechecks_text_layout_table_when_ocr_fails(self) -> None:
+        markdown = """<!-- docling_table_p01_001 type=table_candidate bbox=[1, 2, 3, 4] confidence=x -->
+| Parameter | Unit | Initial | Optimised |
+| broken | delimiter |
+| PM1ro | mm | 102 102 | |
+"""
+        corrected = (
+            "| Parameter | Unit | Initial | Optimised |\n"
+            "| --- | --- | --- | --- |\n"
+            "| PM1ro | mm | 102 | 102 |"
+        )
+        positioned_words = [
+            {"x": 0.0, "y": 0.0, "text": "Parameter"},
+            {"x": 100.0, "y": 0.0, "text": "Unit"},
+            {"x": 200.0, "y": 0.0, "text": "Initial"},
+            {"x": 300.0, "y": 0.0, "text": "Optimised"},
+            {"x": 0.0, "y": 20.0, "text": "PM1ro"},
+            {"x": 100.0, "y": 20.0, "text": "mm"},
+            {"x": 200.0, "y": 20.0, "text": "102"},
+            {"x": 300.0, "y": 20.0, "text": "102"},
+        ]
+        prompts = []
+
+        def fake_call_model(_endpoint, _model, prompt, image=None):
+            prompts.append(prompt)
+            return {
+                "status": "corrected",
+                "source_columns": ["Parameter", "Unit", "Initial", "Optimised"],
+                "transcription": corrected,
+                "reason": "cell 위치를 복원함",
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            markdown_file = temp_path / "input.md"
+            markdown_file.write_text(markdown, encoding="utf-8")
+            args = SimpleNamespace(
+                markdown_file=markdown_file,
+                pdf_file=temp_path / "input.pdf",
+                max_blocks=12,
+                max_chars=6000,
+                max_chunks=0,
+                resume=False,
+                output_file=temp_path / "output.json",
+                dry_run=False,
+                max_vision_requests=0,
+                endpoint="http://localhost",
+                evaluator_model="text-model",
+                vision_model="vision-model",
+                max_vision_attempts=2,
+            )
+            with (
+                mock.patch.object(MODULE, "restore_table_from_text_layout", return_value=corrected),
+                mock.patch.object(MODULE, "detect_table_column_count", return_value=4),
+                mock.patch.object(MODULE, "extract_positioned_words", return_value=positioned_words),
+                mock.patch.object(
+                    MODULE,
+                    "extract_table_ocr_words",
+                    return_value=MODULE.TableOcrResult(words=[], succeeded=False),
+                ),
+                mock.patch.object(MODULE, "render_crop", return_value=b"png"),
+                mock.patch.object(MODULE, "call_model", side_effect=fake_call_model),
+                mock.patch.object(MODULE, "write_artifacts"),
+            ):
+                report = MODULE.evaluate(args)
+
+        decision = report["chunks"][0]["final_evaluation"]["decisions"][0]
+        self.assertEqual(decision["suggested_markdown"], corrected)
+        self.assertIn("Tesseract TSV", prompts[0])
 
     def test_text_fallback_only_includes_ambiguous_tables(self) -> None:
         valid_table = MODULE.Block(

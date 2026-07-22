@@ -8,6 +8,7 @@ from app.modules.wiki_ingestion.application.ports import (
     PipelineLogReaderPort,
     PipelineRunRepositoryPort,
     PipelineSourceReaderPort,
+    WikiMaintenancePort,
 )
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
 from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
@@ -16,6 +17,7 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     PostgresPipelineRunRepository,
     RunLabPipelineRunner,
 )
+from app.modules.wiki_ingestion.infrastructure.wiki_maintenance import PostgresWikiMaintenance
 
 
 logger = logging.getLogger("fruition.pipeline")
@@ -43,3 +45,8 @@ def get_pipeline_source_reader() -> PipelineSourceReaderPort:
 @lru_cache(maxsize=1)
 def get_pipeline_log_reader() -> PipelineLogReaderPort:
     return LocalPipelineLogReader()
+
+
+@lru_cache(maxsize=1)
+def get_wiki_maintenance() -> WikiMaintenancePort:
+    return PostgresWikiMaintenance()

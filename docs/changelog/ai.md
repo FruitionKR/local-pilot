@@ -4,6 +4,24 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-22
+
+### fix: Agent 전체 편집과 오류 응답 보강
+
+- target 없는 전체 편집의 line 계산을 `markdown_line_count()`로 통일해 후행 `\n`·`\r\n` 범위를 보존
+- 예상하지 못한 Agent 예외의 내부 문자열은 server log에만 남기고 HTTP 500은 안정된 `internal_server_error` 응답으로 변환
+
+### refactor: Wiki maintenance HTTP 경계 분리
+
+- `POST /wiki/maintenance/lint`를 `wiki_ingestion/interfaces/http`로 이동하고 DB·LLM 실행을 `WikiMaintenancePort` 뒤로 분리
+- 기존 lint top-level 응답 계약을 `WikiLintOut` response model로 명시
+
+### fix: PDF evaluator 원본 보존 검증 강화
+
+- 모든 `equation_candidate`를 원본 crop 필수 검토 대상으로 지정하고 수식 행·항·계수·연산자·분모·지수·첨자·부호를 대조
+- 표 `corrected`·`match`·text-layout 결과가 PDF word 좌표의 행·열별 cell token과 OCR에서 확인한 이미지 부호를 누락하면 채택하지 않도록 공통 검증하고, OCR 실행 실패 시 text-layout 결과를 Vision 검증으로 이관
+- 전체 `llmPipeline` 테스트 `424 passed`, `32 subtests passed`
+
 ## 2026-07-21
 
 ### fix: sLLM Markdown 출력 구조 검증

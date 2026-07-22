@@ -202,6 +202,39 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.edit.target, target)
         self.assertEqual(editor.requests[0].target, target)
 
+    def test_whole_document_target_counts_trailing_empty_line(self) -> None:
+        for markdown in ("# 제목\n", "# 제목\r\n"):
+            with self.subTest(markdown=repr(markdown)):
+                target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=2)
+                editor = RecordingMarkdownEditor(
+                    MarkdownEditResult(
+                        edit=MarkdownEditOperation(
+                            operation="replace",
+                            target=target,
+                            summary="문서 전체를 정리했습니다.",
+                            replacement_markdown="# 정리된 문서",
+                        )
+                    )
+                )
+                use_case = HandleAgentTurnUseCase(
+                    router=FixedRouter(
+                        AgentTurnRoute(action="markdown_edit", confidence=0.8, reason="edit request")
+                    ),
+                    query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+                    markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+                    markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+                )
+
+                result = use_case.execute(
+                    AgentTurnRequest(
+                        message="문서 전체를 정리해줘",
+                        active_markdown_context=ActiveMarkdownContext(markdown=markdown),
+                    )
+                )
+
+                self.assertEqual(result.edit.target, target)
+                self.assertEqual(editor.requests[0].target, target)
+
     def test_asks_for_document_when_edit_has_no_markdown(self) -> None:
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(

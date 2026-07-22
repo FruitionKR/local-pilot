@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
@@ -20,6 +22,7 @@ from app.modules.query.interfaces.http.routes import _to_response as query_to_re
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/turn", response_model=AgentTurnResponse)
@@ -59,7 +62,14 @@ def handle_agent_turn(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Agent turn 처리 중 예상하지 못한 오류가 발생했습니다.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "internal_server_error",
+                "message": "요청을 처리하지 못했습니다.",
+            },
+        ) from exc
     return _to_response(result)
 
 
