@@ -8,24 +8,33 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-21
 
-### feat: query 근거에 다중 문서 참조 source_refs 노출
+### feat: 이메일 인증 기반 회원가입·비밀번호 재설정 API 추가
 
 **배경**
 
-- llmPipeline은 evidence마다 `source_refs`(문서·블록 쌍 배열)를 보내지만, backend `PipelineQueryResponse.EvidenceSnippet`에 필드가 없어 Jackson 역직렬화 단계에서 조용히 버려졌다. 그 결과 하나의 rank가 대표 문서 외 다른 문서 block을 참조하는 경우 두 번째 이후 문서 근거가 저장·노출되지 않았다.
+- 회원가입·비밀번호 재설정 화면에 필요한 이메일 인증 API가 없어, 프론트가 임시 인증번호(9700)와 인증 전 signup 선호출로 우회하고 있었다.
 
 **변경된 것**
 
-- `PipelineQueryResponse.EvidenceSnippet`에 `source_refs`(`[{source_document_id, source_block_id}]`)와 중첩 `SourceRef`를 추가해 파싱 유실을 복구. query API 즉시 응답(`QueryResponse.evidence_snippets`)에도 그대로 노출된다.
-- `chat_message_references`에 `source_refs` 컬럼(Flyway `V8`) 추가. `SourceRef`(도메인 값 타입) + `SourceRefListJsonConverter`로 JSON 저장. 기존 행은 NULL.
-- `ChatMessageReference` 도메인·응답 DTO에 `source_refs` 추가, `QueryService` 저장 매핑·`ChatSessionController` 조회 매핑 연결.
-- legacy `source_document_id`/`source_block_ids`(첫 문서 기준)는 그대로 유지 — 순수 additive 변경.
-- 후속 프론트 소비는 `docs/issue/frontend/2026-07-15.md` #7.
+- 인증번호 발급 `POST /api/auth/email-verifications`(purpose=signup|password_reset), 검증 `POST /api/auth/email-verifications/{id}/confirm`, 비밀번호 재설정 `POST /api/auth/password-reset` 추가.
+- `POST /api/auth/signup`에 `verification_token`을 필수로 추가하고, 중복 검사 후 토큰을 검증·소비하도록 변경.
+- `email_verifications` 테이블(Flyway `V7`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
+- 재요청 cooldown·일일 상한(429), 코드 만료·오입력·시도 초과, 토큰 1회성·재사용 차단 정책을 적용. 관련 설정 키는 `app.auth.email-verification.*`. 존재 노출(signup 409)도 rate limit 게이트 뒤에 두어 동일하게 throttle 대상에 포함한다.
+- 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
+- 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요. stub이 활성화된 채 부팅되면 인증번호 로그 노출 위험을 알리는 경고를 남긴다.
+- 일일 상한 초과 429의 `retry_after`는 윈도 내 최고령 요청이 24h를 벗어나는 시점 기준으로 계산한다.
+- 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
 
 **검증**
 
-- query·chat 패키지 74개 테스트 통과. `PipelineQueryResponseTest`에 source_refs 다중 문서 역직렬화, `QueryServiceTest`에 대표 문서 외 문서 근거 보존 검증 추가.
-- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V8` 적용 + `ddl-auto=validate` 매핑 정합성 확인.
+- user 패키지 테스트 54개 통과(`EmailVerificationServiceTest` 13, `AuthControllerTest` 20 포함).
+- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V7` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
+
+**남은 주의사항**
+
+- 운영 전 `dev-fixed-code`는 빈값 유지, 발송 sender를 실제 메일 발송으로 교체.
+- 프론트엔드의 임시 인증번호·인증 전 signup 선호출 제거 및 발급→검증→가입 재배선 필요(프론트 팀).
+
 ### feat: 새 노트 편집용 local 저장 mock 추가
 
 **변경된 것**

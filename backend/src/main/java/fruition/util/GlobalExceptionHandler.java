@@ -12,11 +12,17 @@ import fruition.chat.exception.InvalidChatWikiExportRequestException;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
 import fruition.user.exception.DuplicateEmailException;
+import fruition.user.exception.EmailVerificationNotFoundException;
 import fruition.user.exception.InvalidCredentialsException;
 import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
+import fruition.user.exception.InvalidVerificationCodeException;
+import fruition.user.exception.InvalidVerificationTokenException;
 import fruition.user.exception.OAuthEmailNotProvidedException;
 import fruition.user.exception.UserNotFoundException;
+import fruition.user.exception.VerificationCodeAttemptsExceededException;
+import fruition.user.exception.VerificationCodeExpiredException;
+import fruition.user.exception.VerificationRateLimitedException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
@@ -195,5 +201,48 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("CHAT_SESSION_LIMIT_EXCEEDED", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmailVerificationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleEmailVerificationNotFound(EmailVerificationNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("VERIFICATION_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidVerificationCodeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidVerificationCode(InvalidVerificationCodeException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_VERIFICATION_CODE", e.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationCodeExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationCodeExpired(VerificationCodeExpiredException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VERIFICATION_CODE_EXPIRED", e.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationCodeAttemptsExceededException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationCodeAttemptsExceeded(VerificationCodeAttemptsExceededException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("VERIFICATION_CODE_ATTEMPTS_EXCEEDED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidVerificationTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidVerificationToken(InvalidVerificationTokenException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_VERIFICATION_TOKEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(VerificationRateLimitedException.class)
+    public ResponseEntity<ErrorResponse> handleVerificationRateLimited(VerificationRateLimitedException e) {
+        return ResponseEntity
+                .status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getRetryAfter()))
+                .body(ErrorResponse.of("VERIFICATION_RATE_LIMITED", e.getMessage()));
     }
 }

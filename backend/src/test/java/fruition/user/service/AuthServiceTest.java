@@ -7,10 +7,12 @@ import fruition.user.domain.UserRefreshToken;
 import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.OAuthExchangeRequest;
+import fruition.user.dto.PasswordResetRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.exception.InvalidCredentialsException;
 import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
+import fruition.user.exception.InvalidVerificationTokenException;
 import fruition.user.repository.UserRefreshTokenRepository;
 import fruition.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,11 +24,13 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +38,7 @@ class AuthServiceTest {
 
     @Mock UserRepository userRepository;
     @Mock UserRefreshTokenRepository refreshTokenRepository;
+    @Mock EmailVerificationService emailVerificationService;
 
     PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(
@@ -44,7 +49,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, jwtTokenProvider,
-                oAuthExchangeCodeStore, 1209600);
+                oAuthExchangeCodeStore, emailVerificationService, 1209600);
     }
 
     private User newUser(String rawPassword) {
@@ -88,6 +93,40 @@ class AuthServiceTest {
 
         assertThat(response.accessToken()).isNotBlank();
         assertThat(existing.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void resetPassword_validToken_changesPasswordAndRevokesRefreshTokens() {
+        User user = newUser("old-password");
+        UserRefreshToken active = new UserRefreshToken("user_1f9a74af", "hash", Instant.now().plusSeconds(3600));
+        when(userRepository.findByEmail("test@example.com")).thenReturn(Optional.of(user));
+        when(refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull("user_1f9a74af"))
+                .thenReturn(List.of(active));
+
+        authService.resetPassword(new PasswordResetRequest("test@example.com", "new-password123", "vtoken"));
+
+        assertThat(passwordEncoder.matches("new-password123", user.getPasswordHash())).isTrue();
+        assertThat(active.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void resetPassword_unknownEmail_throwsInvalidVerificationToken() {
+        // 토큰은 소비됐지만 계정이 없을 때 계정 존재 여부를 노출하지 않도록 토큰 오류로 처리한다.
+        when(userRepository.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new PasswordResetRequest("nobody@example.com", "new-password123", "vtoken")))
+                .isInstanceOf(InvalidVerificationTokenException.class);
+    }
+
+    @Test
+    void resetPassword_invalidToken_propagatesTokenError() {
+        doThrow(new InvalidVerificationTokenException())
+                .when(emailVerificationService).consumeForPasswordReset("test@example.com", "bad-token");
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new PasswordResetRequest("test@example.com", "new-password123", "bad-token")))
+                .isInstanceOf(InvalidVerificationTokenException.class);
     }
 
     @Test

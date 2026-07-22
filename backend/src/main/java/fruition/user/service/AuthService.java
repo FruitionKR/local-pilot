@@ -8,8 +8,10 @@ import fruition.user.dto.LoginRequest;
 import fruition.user.dto.LoginResponse;
 import fruition.user.dto.MeResponse;
 import fruition.user.dto.OAuthExchangeRequest;
+import fruition.user.dto.PasswordResetRequest;
 import fruition.user.dto.RefreshRequest;
 import fruition.user.exception.InvalidCredentialsException;
+import fruition.user.exception.InvalidVerificationTokenException;
 import fruition.user.exception.InvalidOAuthCodeException;
 import fruition.user.exception.InvalidRefreshTokenException;
 import fruition.user.exception.UserNotFoundException;
@@ -39,6 +41,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final OAuthExchangeCodeStore oAuthExchangeCodeStore;
+    private final EmailVerificationService emailVerificationService;
     private final long refreshTokenExpirationSeconds;
 
     public AuthService(UserRepository userRepository,
@@ -46,12 +49,14 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        JwtTokenProvider jwtTokenProvider,
                        OAuthExchangeCodeStore oAuthExchangeCodeStore,
+                       EmailVerificationService emailVerificationService,
                        @Value("${app.jwt.refresh-token-expiration-seconds}") long refreshTokenExpirationSeconds) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.oAuthExchangeCodeStore = oAuthExchangeCodeStore;
+        this.emailVerificationService = emailVerificationService;
         this.refreshTokenExpirationSeconds = refreshTokenExpirationSeconds;
     }
 
@@ -126,6 +131,25 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
         return new MeResponse(user.getId(), user.getEmail(), user.getDisplayName(), user.getCreatedAt());
+    }
+
+    @Transactional
+    public void resetPassword(PasswordResetRequest request) {
+        String email = request.email().trim().toLowerCase();
+        emailVerificationService.consumeForPasswordReset(email, request.verificationToken());
+
+        // 토큰이 유효하려면 실제 발송된 코드가 필요하므로 미가입 이메일은 정상 흐름에서 도달 불가.
+        // 도달 시에도 계정 존재 여부를 노출하지 않도록 동일한 토큰 오류로 처리한다.
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(InvalidVerificationTokenException::new);
+
+        user.changePassword(passwordEncoder.encode(request.newPassword()));
+
+        // 비밀번호 변경 시 기존 세션(refresh token)을 모두 폐기한다.
+        for (UserRefreshToken token : refreshTokenRepository.findAllByUserIdAndRevokedAtIsNull(user.getId())) {
+            token.revoke();
+        }
+        log.info("[비밀번호 재설정 성공] userId={} email={}", user.getId(), user.getEmail());
     }
 
     private LoginResponse issueTokenPair(User user) {
