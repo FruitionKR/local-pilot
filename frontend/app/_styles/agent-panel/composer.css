@@ -67,3 +67,17 @@
 .composer-send:disabled {
   opacity: 0.4;
 }
+.agent-turn-notice {
+  display: grid;
+  gap: 4px;
+  margin: 0 20px 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(64, 116, 255, 0.08);
+  color: #273044;
+  font-size: 13px;
+}
+
+.agent-turn-notice span {
+  color: #667085;
+}

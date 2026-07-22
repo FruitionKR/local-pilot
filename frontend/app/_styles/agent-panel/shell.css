@@ -15,6 +15,21 @@
   box-shadow: none;
 }
 
+.agent-panel.is-markdown-reviewing {
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  display: block;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.agent-panel.is-markdown-reviewing > :not(.markdown-edit-preview) {
+  display: none;
+}
+
 .workspace.is-graph-view .agent-panel {
   inset: 72px 24px 24px auto;
   width: 380px;

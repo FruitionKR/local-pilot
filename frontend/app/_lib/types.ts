@@ -106,6 +106,13 @@ export type DocumentListResponse = {
   documents: DocumentItemResponse[];
 };
 
+export type NoteContentResponse = {
+  document_id: string;
+  markdown: string;
+  content_version: number;
+  updated_at: string;
+};
+
 export type WikiGraphNodeResponse = {
   id: string;
   page_type: "source" | "concept" | string;
