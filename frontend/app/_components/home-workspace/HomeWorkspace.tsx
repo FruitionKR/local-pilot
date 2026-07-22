@@ -15,8 +15,13 @@ import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
 import { buildGraphFromBackend, makeRawId } from "../../_lib/graph";
+import { uploadDocumentFile } from "../../_lib/api";
+import { buildGeneratedMarkdownFilename } from "../../_lib/markdownAgent";
+import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";
+import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
+import { createClientId } from "../../_lib/tree";
 import { useResizeHandle } from "./useResizeHandle";
-import type { SourceBlockHighlight } from "../../_lib/types";
+import type { SourceBlockHighlight, TreeItem } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 320;
@@ -28,10 +33,22 @@ const AGENT_PANEL_WIDTH = 360;
 const AGENT_PANEL_COLLAPSED_WIDTH = 24;
 const RESIZE_SAFETY_MARGIN = 120;
 
+function findParentLabel(items: TreeItem[], itemId: string, parentLabel: string): string | null {
+  for (const item of items) {
+    if (item.id === itemId) return parentLabel;
+    const nestedLabel = item.children?.length
+      ? findParentLabel(item.children, itemId, item.label)
+      : null;
+    if (nestedLabel) return nestedLabel;
+  }
+  return null;
+}
+
 export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
+  const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
     SOURCE_PREVIEW_DEFAULT_WIDTH,
@@ -68,6 +85,27 @@ export function HomeWorkspace() {
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
   // 홈에서 문서가 메인 영역을 채우는 상태(Obsidian식 최근 문서 열람)
   const isDocumentMain = isHomeView && hasSourcePreview;
+  const wasDocumentMainRef = useRef(false);
+
+  const selectedDocumentParentLabel = useMemo(() => {
+    if (!selection.selectedTreeItemId) return "업로드 문서";
+    for (const project of projectTree.projects) {
+      const parentLabel = findParentLabel(project.items, selection.selectedTreeItemId, project.title);
+      if (parentLabel) return parentLabel;
+    }
+    return "업로드 문서";
+  }, [projectTree.projects, selection.selectedTreeItemId]);
+
+  const selectedDocumentEditedAt = useMemo(() => {
+    if (!selection.selectedDocumentId) return null;
+    const document = documents.find((item) => item.id === selection.selectedDocumentId);
+    return document?.processed_at ?? document?.uploaded_at ?? null;
+  }, [documents, selection.selectedDocumentId]);
+
+  useEffect(() => {
+    if (isDocumentMain && !wasDocumentMainRef.current) setIsAgentPanelOpen(false);
+    wasDocumentMainRef.current = isDocumentMain;
+  }, [isDocumentMain]);
 
   // 가장 최근 업로드된 문서(Obsidian처럼 홈 진입 시 기본으로 열 대상)
   const latestDocument = useMemo(() => {
@@ -93,6 +131,24 @@ export function HomeWorkspace() {
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
     const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
     selection.openSourceBlockPreview(documentId, documentTitle, highlights);
+  }
+
+  async function createGeneratedMarkdownDocument(draft: GeneratedMarkdownDraft) {
+    const noteId = createClientId("ai-note");
+    const body = draft.markdown.endsWith("\n") ? draft.markdown : `${draft.markdown}\n`;
+    const file = new File(
+      [`<!-- fruition-note: ${noteId} -->\n${body}`],
+      buildGeneratedMarkdownFilename(draft.title),
+      { type: "text/markdown" }
+    );
+    const created = await uploadDocumentFile(file);
+    setDocuments((current) => [
+      ...current.filter((document) => document.id !== created.id),
+      created
+    ]);
+    void refreshBackendData();
+    setActiveView("home");
+    selection.openSourceBlockPreview(created.id, created.filename, []);
   }
 
   function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
@@ -124,7 +180,7 @@ export function HomeWorkspace() {
       onPointerUp={handleResizePointerEnd}
       onPointerCancel={handleResizePointerEnd}
     >
-      {isDocumentSidebarOpen ? (
+      {!isDocumentMain && (isDocumentSidebarOpen ? (
         <DocumentSidebar
           projects={projectTree.projects}
           draggedItemId={projectTree.draggedItem?.itemId ?? null}
@@ -156,6 +212,10 @@ export function HomeWorkspace() {
           onCancelEditing={projectTree.cancelEditing}
           onRenameContextTarget={projectTree.renameContextTarget}
           onAddFolderFromContext={projectTree.addFolderFromContext}
+          onAddMarkdownFromContext={() => {
+            const target = projectTree.takeMarkdownTargetFromContext();
+            if (target) upload.createMarkdownFile(target.projectId, target.folderId);
+          }}
           onDeleteContextTarget={projectTree.deleteContextTarget}
         />
       ) : (
@@ -170,7 +230,7 @@ export function HomeWorkspace() {
         >
           <SvgIcon src={sideboxIcon} />
         </button>
-      )}
+      ))}
 
       {/* 홈: 최근 문서를 메인으로 여는 문서 열람 화면. 문서가 없으면 빈 화면. */}
       {isHomeView && (
@@ -183,6 +243,11 @@ export function HomeWorkspace() {
             sourceBlockHighlights={selection.selectedPreviewTarget?.sourceBlockHighlights ?? []}
             width={sourcePreviewResize.width}
             onResizeStart={sourcePreviewResize.start}
+            onMarkdownEditContextChange={setMarkdownEditContext}
+            parentLabel={selectedDocumentParentLabel}
+            editedAt={selectedDocumentEditedAt}
+            onExitDocument={selection.clearTreeGraphSelection}
+            onOpenAgentPanel={() => setIsAgentPanelOpen(true)}
             fillMain
           />
         ) : (
@@ -218,6 +283,8 @@ export function HomeWorkspace() {
           onClose={() => setIsAgentPanelOpen(false)}
           onOpenWikiPage={selection.openWikiPagePreview}
           onOpenSourceBlocks={openSourceBlocks}
+          onCreateMarkdownDocument={createGeneratedMarkdownDocument}
+          markdownEditContext={markdownEditContext}
           nodes={graphData.nodes}
         />
       )}

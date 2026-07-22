@@ -3,9 +3,14 @@ import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import type { Element } from "hast";
 import type { PhrasingContent, Root } from "mdast";
 import { visit } from "unist-util-visit";
 import { cx } from "../_lib/classNames";
+import { splitMarkdownBlockRanges } from "../_lib/markdownSegments";
+import { createRehypeSourceBlocks } from "../_lib/markdownSourceBlocks";
 import type { SourceBlockHighlight } from "../_lib/types";
 
 // citation 강조에 사용하는 색상 팔레트 개수
@@ -72,90 +77,7 @@ function remarkCustomTokens() {
 }
 
 // 렌더마다 배열 참조가 바뀌면 react-markdown이 재파싱하므로 모듈 상수로 유지한다.
-const REMARK_PLUGINS = [remarkGfm, remarkCustomTokens];
-
-type MarkdownSegment = { kind: "frontmatter" | "markdown"; content: string };
-
-/**
- * markdown을 블록 단위 문자열로 분할한다.
- * 분할 순서가 백엔드 block ID(B0001, B0002, ...) 계약과 일치해야 하므로
- * 기존 파서와 동일한 경계 규칙을 유지한다.
- */
-function splitMarkdownBlocks(markdown: string): MarkdownSegment[] {
-  const segments: MarkdownSegment[] = [];
-  const lines = markdown.split("\n");
-  let index = 0;
-
-  while (index < lines.length) {
-    const trimmed = lines[index].trim();
-
-    if (!trimmed) {
-      index += 1;
-      continue;
-    }
-
-    if (trimmed === "---" && segments.length === 0) {
-      const frontmatter = [];
-      index += 1;
-      while (index < lines.length && lines[index].trim() !== "---") {
-        frontmatter.push(lines[index]);
-        index += 1;
-      }
-      index += 1;
-      segments.push({ kind: "frontmatter", content: frontmatter.join("\n") });
-      continue;
-    }
-
-    if (trimmed.startsWith("```")) {
-      const code = [lines[index]];
-      index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
-        code.push(lines[index]);
-        index += 1;
-      }
-      code.push("```");
-      index += 1;
-      segments.push({ kind: "markdown", content: code.join("\n") });
-      continue;
-    }
-
-    if (/^#{1,3} /.test(trimmed) || trimmed === "---" || trimmed === "***") {
-      segments.push({ kind: "markdown", content: trimmed });
-      index += 1;
-      continue;
-    }
-
-    if (/^- /.test(trimmed)) {
-      const items = [];
-      while (index < lines.length && /^- /.test(lines[index].trim())) {
-        items.push(lines[index].trim());
-        index += 1;
-      }
-      segments.push({ kind: "markdown", content: items.join("\n") });
-      continue;
-    }
-
-    if (/^\d+\. /.test(trimmed)) {
-      const items = [];
-      while (index < lines.length && /^\d+\. /.test(lines[index].trim())) {
-        items.push(lines[index].trim());
-        index += 1;
-      }
-      segments.push({ kind: "markdown", content: items.join("\n") });
-      continue;
-    }
-
-    const paragraph = [trimmed];
-    index += 1;
-    while (index < lines.length && lines[index].trim() && !/^(#{1,3} |[-*]{3}$|- |\d+\. |```)/.test(lines[index].trim())) {
-      paragraph.push(lines[index].trim());
-      index += 1;
-    }
-    segments.push({ kind: "markdown", content: paragraph.join("\n") });
-  }
-
-  return segments;
-}
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkCustomTokens];
 
 export function MarkdownViewer({
   markdown,
@@ -174,7 +96,28 @@ export function MarkdownViewer({
     () => new Map((highlightedBlocks ?? []).map((block) => [block.block_id, block.rank])),
     [highlightedBlocks]
   );
-  const segments = useMemo(() => splitMarkdownBlocks(markdown), [markdown]);
+  const sourceBlocks = useMemo(
+    () => splitMarkdownBlockRanges(markdown).map((segment, index) => ({
+      ...segment,
+      blockId: `B${String(index + 1).padStart(4, "0")}`
+    })),
+    [markdown]
+  );
+  const bodyMarkdown = useMemo(() => {
+    const lines = markdown.split("\n");
+    sourceBlocks
+      .filter((block) => block.kind === "frontmatter")
+      .forEach((block) => {
+        for (let line = block.startLine; line <= block.endLine; line += 1) {
+          lines[line - 1] = "";
+        }
+      });
+    return lines.join("\n");
+  }, [markdown, sourceBlocks]);
+  const rehypePlugins = useMemo(
+    () => [rehypeKatex, createRehypeSourceBlocks(sourceBlocks)],
+    [sourceBlocks]
+  );
 
   const components = useMemo(() => {
     function CitationRef({ rank, children }: { rank?: number; children?: ReactNode }) {
@@ -196,43 +139,61 @@ export function MarkdownViewer({
       );
     }
 
+    function SourceBlock({ node, children }: { node?: Element; children?: ReactNode }) {
+      const blockId = String(node?.properties?.dataBlockId ?? "");
+      const highlightedRank = highlightedBlockRankById.get(blockId);
+
+      return (
+        <div
+          className={cx(
+            "markdown-source-block",
+            highlightedRank && "is-highlighted",
+            highlightedRank && rankColorClass(highlightedRank)
+          )}
+          data-block-id={blockId}
+          data-citation-rank={highlightedRank}
+          ref={(element) => onBlockRef?.(blockId, element)}
+        >
+          {children}
+        </div>
+      );
+    }
+
     return {
       pre: ({ children }: { children?: ReactNode }) => <pre className="markdown-codeblock">{children}</pre>,
-      "citation-ref": CitationRef
+      "citation-ref": CitationRef,
+      "source-block": SourceBlock
     } as Components;
-  }, [canClickCitation, onCitationClick]);
+  }, [canClickCitation, highlightedBlockRankById, onBlockRef, onCitationClick]);
 
   return (
     <div className="markdown-viewer">
-      {segments.map((segment, segmentIndex) => {
-        const blockId = `B${String(segmentIndex + 1).padStart(4, "0")}`;
-        const highlightedRank = highlightedBlockRankById.get(blockId);
-
-        return (
+      {sourceBlocks
+        .filter((block) => block.kind === "frontmatter")
+        .map((block) => {
+          const highlightedRank = highlightedBlockRankById.get(block.blockId);
+          return (
           <div
             className={cx(
               "markdown-source-block",
               highlightedRank && "is-highlighted",
               highlightedRank && rankColorClass(highlightedRank)
             )}
-            data-block-id={blockId}
+            data-block-id={block.blockId}
             data-citation-rank={highlightedRank}
-            ref={(element) => onBlockRef?.(blockId, element)}
-            key={blockId}
+            ref={(element) => onBlockRef?.(block.blockId, element)}
+            key={block.blockId}
           >
-            {segment.kind === "frontmatter" ? (
-              <details className="markdown-frontmatter">
-                <summary>Metadata</summary>
-                <pre>{segment.content}</pre>
-              </details>
-            ) : (
-              <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
-                {segment.content}
-              </ReactMarkdown>
-            )}
+            <details className="markdown-frontmatter">
+              <summary>Metadata</summary>
+              <pre>{block.content}</pre>
+            </details>
           </div>
-        );
-      })}
+          );
+        })}
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={rehypePlugins} components={components}>
+        {bodyMarkdown}
+      </ReactMarkdown>
     </div>
   );
 }

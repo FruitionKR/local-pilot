@@ -4,11 +4,13 @@ export function ContextMenu({
   contextMenu,
   onRenameContextTarget,
   onAddFolderFromContext,
+  onAddMarkdownFromContext,
   onDeleteContextTarget
 }: {
   contextMenu: ContextMenuState;
   onRenameContextTarget: () => void;
   onAddFolderFromContext: () => void;
+  onAddMarkdownFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
   return (
@@ -17,8 +19,9 @@ export function ContextMenu({
       style={{ left: contextMenu.x, top: contextMenu.y }}
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
       <button type="button" onClick={onAddFolderFromContext}>새 폴더</button>
+      <button type="button" onClick={onAddMarkdownFromContext}>새 노트</button>
+      <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
       <button type="button" className="danger" onClick={onDeleteContextTarget}>삭제</button>
     </div>
   );
