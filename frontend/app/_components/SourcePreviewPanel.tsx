@@ -107,18 +107,19 @@ export function SourcePreviewPanel({
 
     const loadDocument = async () => {
       if (isMarkdownFile) {
-        const draft = await fetchNoteDraft(documentId);
-        if (draft) {
-          if (!ignore) {
-            setRawMarkdown(draft.markdown);
-            setNoteContentVersion(draft.content_version);
-          }
+        const blob = await fetchDocumentOriginal(documentId);
+        const text = await blob.text();
+        // note marker가 없는 일반 Markdown은 draft를 조회하지 않아 불필요한 404를 피한다.
+        if (!splitEditableNoteMarkdown(text)) {
+          if (!ignore) setRawMarkdown(text);
           return;
         }
 
-        const blob = await fetchDocumentOriginal(documentId);
-        const text = await blob.text();
-        if (!ignore) setRawMarkdown(text);
+        const draft = await fetchNoteDraft(documentId);
+        if (!ignore) {
+          setRawMarkdown(draft ? draft.markdown : text);
+          setNoteContentVersion(draft ? draft.content_version : 0);
+        }
         return;
       }
 

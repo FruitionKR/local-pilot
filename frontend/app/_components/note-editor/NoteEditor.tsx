@@ -57,9 +57,11 @@ export function NoteEditor({
     });
   }, [applyMarkdown, contentVersion, documentId, onMarkdownEditContextChange]);
 
+  // baseVersion(contentVersion)이 바뀔 때만 컨텍스트를 재발행한다.
+  // 키 입력·selection 변경은 onUpdate에서만 발행해 매 입력 상위 리렌더를 피한다.
   useEffect(() => {
-    publishMarkdownEditContext(body, selectionRef.current.from, selectionRef.current.to);
-  }, [body, publishMarkdownEditContext]);
+    publishMarkdownEditContext(bodyRef.current, selectionRef.current.from, selectionRef.current.to);
+  }, [publishMarkdownEditContext]);
 
   useEffect(() => () => onMarkdownEditContextChange?.(null), [onMarkdownEditContextChange]);
 

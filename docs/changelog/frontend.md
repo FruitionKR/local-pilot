@@ -4,6 +4,20 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-22
+
+### fix: 노트 편집기 컨텍스트 발행과 draft 조회 최적화
+
+**변경된 내용**
+
+- `NoteEditor`가 키 입력·selection마다 `useEffect`와 `onUpdate` 두 경로로 편집 컨텍스트를 중복 발행하던 것을 `onUpdate` 한 경로로 정리해 입력당 상위 리렌더를 1회로 줄였다.
+- 저장 완료로 `baseVersion`(content_version)이 바뀔 때만 컨텍스트를 재발행하도록 남겨 baseVersion 정확성을 유지했다.
+- `SourcePreviewPanel`이 Markdown 파일을 열 때 원본을 먼저 읽어 note marker를 확인하고, marker가 없는 일반 Markdown은 draft를 조회하지 않아 불필요한 404 요청을 제거했다.
+
+**검증 결과**
+
+- `npm run lint`, `npx tsc --noEmit`, `npm run test:markdown` 45건 통과.
+
 ## 2026-07-21
 
 ### feat: Figma 기준 Markdown 편집 화면 개편
