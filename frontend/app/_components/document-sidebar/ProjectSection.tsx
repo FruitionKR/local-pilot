@@ -1,6 +1,7 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useState } from "react";
 import { cx } from "../../_lib/classNames";
+import { hasDroppedFiles } from "../../_lib/tree";
 import type { Project } from "../../_lib/types";
 import { arrowIcon, SvgIcon } from "../SvgIcon";
 import { InlineEditInput } from "./InlineEditInput";
@@ -41,6 +42,7 @@ export function ProjectSection({
 } & TreeInteractionProps) {
   const [isOpen, setIsOpen] = useState(true);
   const isRootFileDropTarget = fileDropTarget?.projectId === project.id && fileDropTarget.folderId === null;
+  const isTreeRootDropTarget = dropTarget?.projectId === project.id && dropTarget.targetId === null;
   const isProjectEditing = editing?.projectId === project.id && editing.itemId === null;
   const { handleDragOver, handleDragLeave, handleDrop } = useFileDropZone({
     projectId: project.id,
@@ -49,6 +51,21 @@ export function ProjectSection({
     onFileDragLeave,
     onDropFiles
   });
+
+  function handleTreeDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    if (hasDroppedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    onDragOverItem({ projectId: project.id, targetId: null, position: "inside" });
+  }
+
+  function handleTreeDrop(event: ReactDragEvent<HTMLDivElement>) {
+    if (hasDroppedFiles(event) || !draggedItemId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onMoveItem({ projectId: project.id, targetId: null, position: "inside" });
+  }
 
   return (
     <section
@@ -62,7 +79,11 @@ export function ProjectSection({
       onDragLeave={useFullSidebarDropZone ? undefined : handleDragLeave}
       onDrop={useFullSidebarDropZone ? undefined : handleDrop}
     >
-      <div className="project-title">
+      <div
+        className={cx("project-title", isTreeRootDropTarget && "is-tree-drop-target")}
+        onDragOver={handleTreeDragOver}
+        onDrop={handleTreeDrop}
+      >
         <button
           type="button"
           className="project-toggle"
@@ -83,19 +104,17 @@ export function ProjectSection({
             </>
           )}
         </button>
-        {isPrimary && (
-          <button
-            type="button"
-            className="project-add-file"
-            aria-label="파일 업로드"
-            onClick={(event) => {
-              event.stopPropagation();
-              onUploadToProject(project.id);
-            }}
-          >
-            +
-          </button>
-        )}
+        <button
+          type="button"
+          className="project-add-file"
+          aria-label={`${project.title}에 파일 업로드`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onUploadToProject(project.id);
+          }}
+        >
+          +
+        </button>
       </div>
       {isOpen && (
         project.items.length > 0

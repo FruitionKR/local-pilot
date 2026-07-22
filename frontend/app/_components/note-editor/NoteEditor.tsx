@@ -22,21 +22,25 @@ export function NoteEditor({
   marker,
   initialBody,
   initialVersion,
-  onMarkdownEditContextChange
+  onMarkdownEditContextChange,
+  onRequestLint
 }: {
   documentId: string;
   marker: string;
   initialBody: string;
   initialVersion: number;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
+  onRequestLint?: (context: ActiveMarkdownEditContext) => void;
 }) {
   const [body, setBody] = useState(initialBody);
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const [hasLintCandidate, setHasLintCandidate] = useState(false);
   const { status, errorMessage, contentVersion, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
   const editorExtensions = useMemo(() => [markdown(), EditorView.lineWrapping], []);
   const selectionRef = useRef({ from: 0, to: 0 });
   const bodyRef = useRef(body);
   const queueSaveRef = useRef(queueSave);
+  const editBaselineRef = useRef(initialBody);
   const programmaticBodyRef = useRef<string | null>(null);
   queueSaveRef.current = queueSave;
   const applyMarkdown = useCallback((expectedMarkdown: string, nextMarkdown: string) => {
@@ -44,6 +48,8 @@ export function NoteEditor({
     bodyRef.current = nextMarkdown;
     programmaticBodyRef.current = nextMarkdown;
     setBody(nextMarkdown);
+    editBaselineRef.current = expectedMarkdown;
+    setHasLintCandidate(false);
     setMode("edit");
     queueSaveRef.current(nextMarkdown);
     return true;
@@ -65,6 +71,38 @@ export function NoteEditor({
 
   useEffect(() => () => onMarkdownEditContextChange?.(null), [onMarkdownEditContextChange]);
 
+  function startEditing() {
+    if (mode === "edit") return;
+    editBaselineRef.current = bodyRef.current;
+    setHasLintCandidate(false);
+    setMode("edit");
+  }
+
+  function finishEditing() {
+    if (mode !== "edit") return;
+    setHasLintCandidate(bodyRef.current !== editBaselineRef.current);
+    setMode("preview");
+  }
+
+  function requestLint() {
+    if (status !== "saved") return;
+    const markdownValue = bodyRef.current;
+    onRequestLint?.({
+      documentId,
+      baseVersion: contentVersion,
+      editorSnapshot: {
+        markdown: markdownValue,
+        target: {
+          type: "whole_document",
+          startLine: 1,
+          endLine: markdownValue.split("\n").length
+        }
+      },
+      applyMarkdown
+    });
+    setHasLintCandidate(false);
+  }
+
   return (
     <div className="note-editor-shell">
       <div className="note-editor-toolbar">
@@ -73,7 +111,7 @@ export function NoteEditor({
             type="button"
             className={mode === "edit" ? "is-active" : undefined}
             aria-pressed={mode === "edit"}
-            onClick={() => setMode("edit")}
+            onClick={startEditing}
           >
             편집
           </button>
@@ -81,7 +119,7 @@ export function NoteEditor({
             type="button"
             className={mode === "preview" ? "is-active" : undefined}
             aria-pressed={mode === "preview"}
-            onClick={() => setMode("preview")}
+            onClick={finishEditing}
           >
             미리보기
           </button>
@@ -93,6 +131,16 @@ export function NoteEditor({
         >
           {STATUS_LABELS[status]}
         </div>
+        {hasLintCandidate && onRequestLint && (
+          <button
+            type="button"
+            className="note-lint-request"
+            disabled={status !== "saved"}
+            onClick={requestLint}
+          >
+            {status === "saved" ? "Lint 요청" : "저장 후 Lint"}
+          </button>
+        )}
       </div>
       {mode === "edit" ? (
         <CodeMirror

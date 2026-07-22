@@ -1,18 +1,62 @@
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { deleteDocument, renameDocument } from "../_lib/api";
+import { getSelectedWorkspaceId } from "../_lib/auth";
 import {
-  appendFolderToFolder,
   findTreeItem,
   initialProjects,
   isFileItem,
   isWikiItem,
-  mergeTreeItemsIntoFolder,
-  moveTreeItem,
+  moveProjectTreeItem,
   removeTreeItem,
   updateTreeItemLabel
 } from "../_lib/tree";
-import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../_lib/types";
+import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project, TreeItem } from "../_lib/types";
+
+const PROJECT_TREE_STORAGE_PREFIX = "fruition.project_tree.";
+
+function isPersistedTreeItem(value: unknown): value is TreeItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<TreeItem>;
+  return typeof item.id === "string"
+    && typeof item.label === "string"
+    && (item.children === undefined || (Array.isArray(item.children) && item.children.every(isPersistedTreeItem)));
+}
+
+function isPersistedProject(value: unknown): value is Project {
+  if (!value || typeof value !== "object") return false;
+  const project = value as Partial<Project>;
+  return typeof project.id === "string"
+    && typeof project.title === "string"
+    && Array.isArray(project.items)
+    && project.items.every(isPersistedTreeItem);
+}
+
+function projectTreeStorageKey(): string | null {
+  const workspaceId = getSelectedWorkspaceId();
+  return workspaceId ? `${PROJECT_TREE_STORAGE_PREFIX}${workspaceId}` : null;
+}
+
+function loadPersistedProjects(): Project[] | null {
+  const key = projectTreeStorageKey();
+  if (!key) return null;
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(key) ?? "null");
+    return Array.isArray(parsed) && parsed.length > 0 && parsed.every(isPersistedProject) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistProjects(projects: Project[]) {
+  const key = projectTreeStorageKey();
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(projects));
+  } catch {
+    // 저장 공간을 사용할 수 없어도 현재 세션의 트리 편집은 유지한다.
+  }
+}
 
 export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<() => Promise<void>> }) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
@@ -21,7 +65,18 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
   const [fileDropTarget, setFileDropTarget] = useState<FileDropTarget | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
+  const [isPersistenceReady, setIsPersistenceReady] = useState(false);
   const editingCancelRef = useRef(false);
+
+  useEffect(() => {
+    const persisted = loadPersistedProjects();
+    if (persisted) setProjects(persisted);
+    setIsPersistenceReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (isPersistenceReady) persistProjects(projects);
+  }, [isPersistenceReady, projects]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -54,50 +109,26 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
       ...current,
       {
         id: projectId,
-        title: `새 프로젝트 ${current.length + 1}`,
+        title: `새 폴더 ${current.length + 1}`,
         items: []
       }
     ]);
     editingCancelRef.current = false;
     setContextMenu(null);
-    setEditing({ projectId, itemId: null, label: `새 프로젝트 ${projects.length + 1}` });
+    setEditing({ projectId, itemId: null, label: `새 폴더 ${projects.length + 1}` });
   }
 
-  function addFolder(projectId: string, folderId: string | null = null) {
-    setProjects((current) => current.map((project) => {
-      if (project.id !== projectId) return project;
-      const parent = folderId ? findTreeItem(project.items, folderId) : null;
-      const siblingCount = parent?.children?.length ?? project.items.length;
-      const nextFolder = {
-        id: `${project.id}-folder-${Date.now()}`,
-        label: `새 폴더 ${siblingCount + 1}`,
-        type: "folder" as const
-      };
-      return {
-        ...project,
-        items: appendFolderToFolder(project.items, folderId, nextFolder)
-      };
-    }));
-  }
-
-  function moveTreeEntry(projectId: string, itemId: string, target: DropTarget) {
-    if (draggedItem?.projectId !== projectId || draggedItem.projectId !== target.projectId) {
+  function moveTreeEntry(target: DropTarget) {
+    if (!draggedItem) {
       setDropTarget(null);
       return;
     }
-
-    setProjects((current) => current.map((project) => {
-      if (project.id !== projectId) return project;
-      const dragged = findTreeItem(project.items, itemId);
-      const targetItem = findTreeItem(project.items, target.targetId);
-      if (target.position === "inside" && dragged && targetItem && isFileItem(dragged) && isFileItem(targetItem)) {
-        return { ...project, items: mergeTreeItemsIntoFolder(project.items, itemId, target.targetId) };
-      }
-      const normalizedTarget = target.position === "inside" && targetItem && isFileItem(targetItem)
-        ? { ...target, position: "after" as const }
-        : target;
-      return { ...project, items: moveTreeItem(project.items, itemId, normalizedTarget) };
-    }));
+    setProjects((current) => moveProjectTreeItem(
+      current,
+      draggedItem.projectId,
+      draggedItem.itemId,
+      target
+    ));
     setDropTarget(null);
     setDraggedItem(null);
   }
@@ -125,14 +156,6 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
       if (!item || item.generated) return;
       setEditing({ projectId: contextMenu.projectId, itemId: contextMenu.itemId, label: item.label });
     }
-    setContextMenu(null);
-  }
-
-  function addFolderFromContext() {
-    if (!contextMenu) return;
-    const project = projects.find((project) => project.id === contextMenu.projectId);
-    const item = contextMenu.itemId && project ? findTreeItem(project.items, contextMenu.itemId) : null;
-    addFolder(contextMenu.projectId, item && !isFileItem(item) && !isWikiItem(item) ? item.id : null);
     setContextMenu(null);
   }
 
@@ -223,7 +246,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
   }
 
   function onDragOverItem(target: DropTarget) {
-    if (draggedItem?.projectId === target.projectId) setDropTarget(target);
+    if (draggedItem) setDropTarget(target);
   }
 
   function onFileDragLeave() {
@@ -254,7 +277,6 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     openFolderMenu,
     openProjectMenu,
     renameContextTarget,
-    addFolderFromContext,
     takeMarkdownTargetFromContext,
     deleteContextTarget,
     commitEditing,

@@ -1,4 +1,4 @@
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, PanelRight } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
 import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
@@ -17,9 +17,11 @@ export function SourcePreviewPanel({
   width,
   onResizeStart,
   onMarkdownEditContextChange,
+  onRequestLint,
   parentLabel = "업로드 문서",
   editedAt = null,
   onExitDocument,
+  isAgentPanelOpen,
   onOpenAgentPanel,
   fillMain = false
 }: {
@@ -31,9 +33,11 @@ export function SourcePreviewPanel({
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
+  onRequestLint?: (context: ActiveMarkdownEditContext) => void;
   parentLabel?: string;
   editedAt?: string | null;
   onExitDocument?: () => void;
+  isAgentPanelOpen: boolean;
   onOpenAgentPanel?: () => void;
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
@@ -51,10 +55,13 @@ export function SourcePreviewPanel({
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
-  const editableNote = useMemo(
-    () => rawMarkdown === null ? null : splitEditableNoteMarkdown(rawMarkdown),
-    [rawMarkdown]
-  );
+  const editableNote = useMemo(() => {
+    if (rawMarkdown === null || !documentId) return null;
+    return splitEditableNoteMarkdown(rawMarkdown) ?? {
+      marker: `<!-- fruition-note: ${documentId} -->`,
+      body: rawMarkdown
+    };
+  }, [documentId, rawMarkdown]);
   const lastEditedLabel = useMemo(() => {
     if (!editedAt) return "마지막 편집";
     const date = new Date(editedAt);
@@ -109,12 +116,6 @@ export function SourcePreviewPanel({
       if (isMarkdownFile) {
         const blob = await fetchDocumentOriginal(documentId);
         const text = await blob.text();
-        // note marker가 없는 일반 Markdown은 draft를 조회하지 않아 불필요한 404를 피한다.
-        if (!splitEditableNoteMarkdown(text)) {
-          if (!ignore) setRawMarkdown(text);
-          return;
-        }
-
         const draft = await fetchNoteDraft(documentId);
         if (!ignore) {
           setRawMarkdown(draft ? draft.markdown : text);
@@ -171,7 +172,12 @@ export function SourcePreviewPanel({
         </nav>
         <div className="source-preview-actions">
           <span>{lastEditedLabel}</span>
-          <button type="button" aria-label="AI 편집 도우미 열기" onClick={onOpenAgentPanel}>
+          {!isAgentPanelOpen && (
+            <button type="button" aria-label="AI 사이드바 열기" onClick={onOpenAgentPanel}>
+              <PanelRight size={14} />
+            </button>
+          )}
+          <button type="button" aria-label="문서 옵션">
             <MoreHorizontal size={16} />
           </button>
         </div>
@@ -192,15 +198,7 @@ export function SourcePreviewPanel({
             initialBody={editableNote.body}
             initialVersion={noteContentVersion}
             onMarkdownEditContextChange={onMarkdownEditContextChange}
-          />
-        )}
-        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && !editableNote && (
-          <MarkdownViewer
-            markdown={rawMarkdown}
-            highlightedBlocks={selectedBlockHighlights}
-            onBlockRef={(blockId, node) => {
-              blockRefs.current[blockId] = node;
-            }}
+            onRequestLint={onRequestLint}
           />
         )}
         {isPdfOrOther && isLoading && <p>문서를 불러오는 중입니다.</p>}

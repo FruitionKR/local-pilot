@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentBody } from "./AgentBody";
 import { AgentComposer } from "./AgentComposer";
 import { AgentHeader } from "./AgentHeader";
@@ -8,7 +8,7 @@ import { MarkdownCreatePreview } from "./MarkdownCreatePreview";
 import { MarkdownEditPreview } from "./MarkdownEditPreview";
 import { useChatThread } from "./useChatThread";
 import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
-import { exportChatWiki, fetchChatWikiExportPreview, requestAgentTurn } from "../../_lib/api";
+import { exportChatWiki, fetchChatWikiExportPreview, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
 import {
   buildAgentTurnRequest,
@@ -41,6 +41,8 @@ export function AgentPanel({
   onOpenSourceBlocks,
   onCreateMarkdownDocument,
   markdownEditContext,
+  lintRequest,
+  onDocumentExported,
   nodes
 }: {
   onClose: () => void;
@@ -48,6 +50,8 @@ export function AgentPanel({
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
   onCreateMarkdownDocument: (draft: GeneratedMarkdownDraft) => Promise<void>;
   markdownEditContext?: ActiveMarkdownEditContext | null;
+  lintRequest?: { id: number; message: string; context: ActiveMarkdownEditContext } | null;
+  onDocumentExported?: (response: ChatWikiExportResponse) => Promise<void> | void;
   nodes?: GraphNode[];
 }) {
   const [composerValue, setComposerValue] = useState("");
@@ -61,6 +65,7 @@ export function AgentPanel({
   const [isAgentTurnLoading, setIsAgentTurnLoading] = useState(false);
   const [isCreatingMarkdown, setIsCreatingMarkdown] = useState(false);
   const [markdownCreateErrorMessage, setMarkdownCreateErrorMessage] = useState<string | null>(null);
+  const handledLintRequestIdRef = useRef<number | null>(null);
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
   const isSubmitting = isLoading || isAgentTurnLoading || isCreatingMarkdown;
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
@@ -89,7 +94,7 @@ export function AgentPanel({
     }
   }, [agentTurnRequest, agentTurnResponse, markdownEditContext]);
 
-  function submitAgentTurn(question: string, context: ActiveMarkdownEditContext) {
+  const submitAgentTurn = useCallback((question: string, context: ActiveMarkdownEditContext) => {
     const request = buildAgentTurnRequest(question, context);
     setAgentTurnRequest(request);
     setAgentTurnResponse(null);
@@ -103,7 +108,13 @@ export function AgentPanel({
         setAgentTurnErrorMessage(getErrorMessage(error, "AI 편집 요청에 실패했습니다."));
       })
       .finally(() => setIsAgentTurnLoading(false));
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!lintRequest || handledLintRequestIdRef.current === lintRequest.id) return;
+    handledLintRequestIdRef.current = lintRequest.id;
+    submitAgentTurn(lintRequest.message, lintRequest.context);
+  }, [lintRequest, submitAgentTurn]);
 
   function handleSubmit() {
     const question = composerValue.trim();
@@ -171,15 +182,20 @@ export function AgentPanel({
     setIsExporting(true);
     fetchChatWikiExportPreview()
       .then(setExportPreview)
-      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "위키 내보내기에 실패했습니다.")))
+      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "채팅 문서 미리보기에 실패했습니다.")))
       .finally(() => setIsExporting(false));
   }
 
   function acceptExport() {
+    setExportErrorMessage(null);
     setIsExporting(true);
     exportChatWiki()
-      .then(() => setExportPreview(null))
-      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "위키 내보내기에 실패했습니다.")))
+      .then(async (response) => {
+        setExportPreview(null);
+        await onDocumentExported?.(response);
+        setAgentTurnSuccessMessage("채팅을 문서로 편입해 AI 처리 파이프라인에 전달했습니다.");
+      })
+      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "채팅을 문서로 편입하지 못했습니다.")))
       .finally(() => setIsExporting(false));
   }
 
@@ -241,7 +257,7 @@ export function AgentPanel({
       {hasAssistantMessage && (
         <div className="wiki-export-trigger">
           <button type="button" disabled={isExporting} onClick={openExportPreview}>
-            논문 작업 자료 바로 만들어줘
+            채팅을 문서로 편입
           </button>
           {exportErrorMessage && <p role="alert">{exportErrorMessage}</p>}
         </div>
@@ -256,7 +272,7 @@ export function AgentPanel({
 
       {exportPreview !== null && (
         <WikiExportConfirmCard
-          title="채팅 내용을 문서로 내보낼까요?"
+          title="채팅 내용을 문서로 편입할까요?"
           previewContent={exportPreview}
           isSubmitting={isExporting}
           onCancel={() => setExportPreview(null)}

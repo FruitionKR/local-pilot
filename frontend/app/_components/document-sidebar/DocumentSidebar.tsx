@@ -41,7 +41,6 @@ export function DocumentSidebar({
   onCommitEditing,
   onCancelEditing,
   onRenameContextTarget,
-  onAddFolderFromContext,
   onAddMarkdownFromContext,
   onDeleteContextTarget
 }: {
@@ -60,7 +59,7 @@ export function DocumentSidebar({
   onAddProject: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
-  onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
+  onMoveItem: (target: DropTarget) => void;
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
   onDragStart: (projectId: string, itemId: string) => void;
   onDragOverItem: (target: DropTarget) => void;
@@ -74,7 +73,6 @@ export function DocumentSidebar({
   onCommitEditing: () => void;
   onCancelEditing: () => void;
   onRenameContextTarget: () => void;
-  onAddFolderFromContext: () => void;
   onAddMarkdownFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
@@ -142,7 +140,7 @@ export function DocumentSidebar({
           <ContextMenu
             contextMenu={contextMenu}
             onRenameContextTarget={onRenameContextTarget}
-            onAddFolderFromContext={onAddFolderFromContext}
+            onAddProject={onAddProject}
             onAddMarkdownFromContext={onAddMarkdownFromContext}
             onDeleteContextTarget={onDeleteContextTarget}
           />

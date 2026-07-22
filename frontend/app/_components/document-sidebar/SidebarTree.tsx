@@ -55,7 +55,7 @@ export function SidebarTree({
 
   function handleDropItem(target: DropTarget) {
     if (!draggedItemId) return;
-    onMoveItem(projectId, draggedItemId, target);
+    onMoveItem(target);
   }
 
   return (

@@ -6,6 +6,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-22
+
+### feat: Markdown Agent turn Spring 프록시 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/agent/turn`을 추가해 인증된 workspace 문서의 Agent 요청을 `llmPipeline`의 `POST /agent/turn`으로 전달한다.
+- 문서 접근 권한과 Markdown 형식, line target 범위를 pipeline 호출 전에 확인한다.
+- frontend의 camelCase editor snapshot을 pipeline의 `active_markdown_context` snake_case 계약으로 변환하고, 결과에 `documentId`, `baseVersion`, `requestId`를 붙여 반환한다.
+- pipeline의 HTTP 400/422 응답 본문을 보존하며 timeout·연결 실패는 503으로 변환한다.
+- `AGENT_ENDPOINT`, `AGENT_TIMEOUT_SECONDS` 설정을 추가했다.
+
+**검증**
+
+- Agent controller·service·requester 테스트 7건 통과.
+- Backend 전체 190건 중 183건 통과. Testcontainers Docker 연결 환경 6건과 이번 변경과 무관한 초기 노트 hash 기대값 1건이 실패했다.
+
+**남은 주의사항**
+
+- production 문서 content 영속화가 준비되기 전까지 Backend는 요청의 `baseVersion`을 보존하지만 현재 저장 version과 직접 비교하지 않는다.
+- 실제 chat session 요약·reference context 구성은 `docs/issue/backend/2026-07-22.md`의 후속 작업으로 유지한다.
+
 ## 2026-07-21
 
 ### feat: 이메일 인증 기반 회원가입·비밀번호 재설정 API 추가

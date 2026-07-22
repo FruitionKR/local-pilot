@@ -3,13 +3,13 @@ import type { ContextMenuState } from "../../_lib/types";
 export function ContextMenu({
   contextMenu,
   onRenameContextTarget,
-  onAddFolderFromContext,
+  onAddProject,
   onAddMarkdownFromContext,
   onDeleteContextTarget
 }: {
   contextMenu: ContextMenuState;
   onRenameContextTarget: () => void;
-  onAddFolderFromContext: () => void;
+  onAddProject: () => void;
   onAddMarkdownFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
@@ -19,7 +19,7 @@ export function ContextMenu({
       style={{ left: contextMenu.x, top: contextMenu.y }}
       onClick={(event) => event.stopPropagation()}
     >
-      <button type="button" onClick={onAddFolderFromContext}>새 폴더</button>
+      <button type="button" onClick={onAddProject}>새 폴더</button>
       <button type="button" onClick={onAddMarkdownFromContext}>새 노트</button>
       <button type="button" onClick={onRenameContextTarget}>이름 변경</button>
       <button type="button" className="danger" onClick={onDeleteContextTarget}>삭제</button>

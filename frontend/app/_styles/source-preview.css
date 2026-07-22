@@ -27,10 +27,6 @@
   right: 0;
 }
 
-.workspace.is-document-main .source-preview-panel.is-main {
-  left: 0;
-}
-
 .workspace.is-document-main:has(.agent-panel.is-markdown-reviewing) .source-preview-panel.is-main {
   right: 0;
 }
@@ -207,30 +203,21 @@
 }
 
 .note-editor-toolbar {
-  position: absolute;
-  top: -56px;
+  position: sticky;
+  top: 12px;
   right: 0;
   z-index: 3;
+  width: max-content;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   min-height: 36px;
+  margin: 0 0 20px auto;
   padding: 0 10px;
   background: #1e1e1e;
   border: 1px solid #323232;
   border-radius: 8px;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 140ms ease, transform 140ms ease;
-  pointer-events: none;
-}
-
-.note-editor-shell:hover .note-editor-toolbar,
-.note-editor-shell:focus-within .note-editor-toolbar {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 .note-editor-modes {
@@ -280,6 +267,22 @@
 .note-save-status.is-error,
 .note-save-status.is-conflict {
   color: #ff8f87;
+}
+
+.note-lint-request {
+  padding: 5px 8px;
+  color: #0a0a0a;
+  background: var(--yellow);
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.note-lint-request:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .note-markdown-editor .cm-editor {

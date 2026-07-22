@@ -27,7 +27,7 @@ export type DropPosition = "before" | "inside" | "after";
 
 export type DropTarget = {
   projectId: string;
-  targetId: string;
+  targetId: string | null;
   position: DropPosition;
 };
 
