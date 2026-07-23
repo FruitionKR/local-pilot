@@ -28,6 +28,22 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-22
 
+### fix: 인증 route 분리와 이메일 검증 API 연결
+
+**변경된 내용**
+
+- query 기반 인증 화면을 `/login`, `/signup`, `/signup/verify`, `/forgot-password`, `/reset-password` route로 분리했다.
+- 회원가입을 인증번호 발급 → 번호 확인 → `verification_token` 포함 가입 → 로그인 순서로 연결하고, 닉네임을 `display_name`으로 전달한다.
+- 비밀번호 재설정을 인증번호 발급·확인 후 1회용 token으로 변경하도록 연결했다.
+- 개발 환경에서는 인증번호 `9700` 입력을 감지해 확인 버튼 없이 검증 API를 호출한다. production build에서는 자동 감지를 비활성화한다.
+- 비밀번호와 인증 token은 URL이나 브라우저 저장소에 남기지 않고 인증 route 공통 layout의 메모리 상태로만 전달한다.
+- 기존 `/login?view=...` 주소는 대응하는 새 route로 이동해 이전 링크와의 호환성을 유지한다.
+
+**검증 결과**
+
+- ESLint, `npx tsc --noEmit --incremental false`, `npm run build`, `npm run test:markdown` 45건 통과.
+- Playwright API mock으로 회원가입 발급·`9700` 자동 검증·가입·로그인 요청 순서와 독립 route 이동을 확인했다.
+
 ### feat: Figma 기준 문서 탐색·편집·채팅 연동 개선
 
 **변경된 내용**

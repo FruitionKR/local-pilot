@@ -8,6 +8,22 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-22
 
+### fix: 로컬 이메일 인증 고정 코드 복구
+
+**변경된 것**
+
+- `local` profile의 이메일 인증번호 기본값을 임시 코드 `9700`으로 설정하고 `AUTH_EMAIL_DEV_FIXED_CODE`로 덮어쓸 수 있게 했다.
+- `./gradlew bootRun`도 별도 profile 지정이 없으면 `local`로 실행되게 해 개발 실행 방식에 따라 고정 코드가 누락되지 않도록 했다.
+- 공통 설정의 고정 코드 기본값은 빈 값으로 유지해 production에는 `9700`이 적용되지 않게 했다.
+
+**남은 주의사항**
+
+- 운영 메일 서버 연동과 dev 발송 stub 제거 작업은 `docs/issue/backend/2026-07-23.md`의 `3. 운영 이메일 인증 메일 서버 연동`에서 관리한다.
+
+**검증**
+
+- `EmailVerificationServiceTest`에서 개발 고정 코드 `9700`이 발송 코드로 사용되는 회귀 테스트를 포함해 통과했다.
+
 ### feat: Markdown Agent turn Spring 프록시 추가
 
 **변경된 것**
