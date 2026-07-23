@@ -8,6 +8,7 @@ import { ProjectSection } from "./ProjectSection";
 import { SidebarMenuRow } from "./SidebarMenuRow";
 import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
+import { DocumentSearch } from "../search/DocumentSearch";
 import type { SelectableTreeItem } from "./types";
 import { useFileDropZone } from "./useFileDropZone";
 
@@ -101,6 +102,7 @@ export function DocumentSidebar({
     >
       <SidebarWorkspaceHeader />
       <SidebarMenuRow activeView={activeView} onViewChange={onViewChange} onAddProject={onAddProject} />
+      <DocumentSearch projects={projects} onSelectGraphNode={onSelectGraphNode} />
       <input
         ref={uploadInputRef}
         className="upload-picker"

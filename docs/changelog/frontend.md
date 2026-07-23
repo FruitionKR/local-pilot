@@ -25,6 +25,95 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - 브라우저 구동 확인: 세션 전환(제목·active 이동), FilterChips 토글(노드 숨김/empty state), `패널 보기` 토글, `그래프 옵션`·`⋯` 메뉴 표시.
 - **미검증(외부 블로커)**: Query SSE·부분 편입 end-to-end는 Upstage LLM API 키 정지(403 insufficient credit)로 파이프라인이 정지 상태라 실동작 확인 불가. LLM 키 복구 후 별도 테스트 필요.
 
+### fix: 비밀번호 입력 눈 아이콘 표시/숨김 토글 동작 복구
+
+**변경 배경**
+
+- 로그인·회원가입·비밀번호 재설정의 비밀번호 입력 눈 아이콘이 클릭해도 원본이 보이지 않았다.
+- 원인은 두 겹이었다: `AuthControls.tsx`의 눈 아이콘이 onClick·상태 없는 정적 `<Image>`였고, `auth.css`의 `.auth-password-icon`에 `pointer-events: none`이 걸려 클릭 자체가 막혀 있었다.
+
+**변경된 내용**
+
+- `AuthControls.tsx`의 `AuthField`에 `useState` 기반 표시/숨김 토글을 추가했다(`"use client"` 명시). 눈 아이콘을 `<button>`으로 바꿔 클릭 시 input `type`을 `password`↔`text`로 전환하고, 상태에 따라 아이콘과 `aria-label`(비밀번호 표시/숨기기)·`aria-pressed`를 갱신한다.
+- `auth.css`에서 토글 버튼(`.auth-password-toggle`)을 클릭 가능하도록 위치·`pointer-events`·`cursor`를 분리 정의하고, `.auth-password-icon`은 크기만 담당하도록 정리했다.
+- 표시 상태용 뜬눈 아이콘 `svg/auth/auth-password-visible.svg`를 추가했다(기존엔 감은눈만 존재).
+
+**검증**
+
+- `npm run lint` / `tsc --noEmit` / `npm run build` 통과.
+- 로컬(`/login`) 브라우저에서 클릭 시 `type=password`→`text`로 원본 노출·아이콘/`aria` 전환, 재클릭 시 복귀 확인.
+
+### docs: 로그인 "아이디 찾기" 비활성 사유 주석 추가
+
+**변경된 내용**
+
+- `login/page.tsx`의 "아이디 찾기" 버튼에 비활성 유지 사유를 코드 주석으로 명시했다. 이 서비스는 이메일=아이디이며 이메일 외 고유 2차 식별자(전화번호 등)를 수집하지 않아 아이디/이메일 조회 기능이 성립하지 않는다.
+- 동작 변경 없음(주석만). 인증 4흐름(로그인·회원가입·비밀번호 찾기·재설정) 화면↔API 정합성을 코드로 재검증했고 `lint`/`tsc --noEmit`/`build` 모두 통과했다.
+- 라이브 4흐름 브라우저 검증(Backend 기동 필요)과 가입 후 자동 로그인 실패 UX는 `docs/issue/frontend/2026-07-23.md` §11로 이관했다.
+
+### fix: 문서명 검색 접근성·결과 잘림 표시 개선 (PR #104 리뷰 반영)
+
+**변경된 내용**
+
+- `DocumentSearch`의 검색 결과에서 키보드 탐색을 지원하지 않는 `role="listbox"`/`role="option"`/`aria-selected`를 제거했다. 결과 항목은 `<button>`이라 Tab·Enter로 접근되며, 컨테이너는 `role="group"`으로 라벨만 유지한다.
+- 매칭이 `MAX_RESULTS`(8)를 초과하면 조용히 잘리던 문제를 개선해, "외 N개 더 있습니다. 검색어를 좁혀 주세요." 안내를 노출한다. `document-sidebar/search.css`에 `.sidebar-search-more` 스타일 추가.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build` 통과.
+
+### feat: 문서 처리 상태 뱃지 강화 (stream2 P1, 이슈 #2)
+
+**변경 배경**
+
+- 백엔드 문서 목록 응답은 `processing_state`(starting/running/stalled/completed/failed)와 `processing_stage`(파이프라인 진행 단계 문자열)를 내려주지만 프론트 타입·트리에서 소비하지 않아, 사이드바 뱃지가 처리 중/실패를 구분하지 않고 "Modify ⋯" 단일 표기만 했다.
+
+**추가/변경된 내용**
+
+- `DocumentItemResponse`에 `processing_state`/`processing_stage`, `TreeItem`에 `processingState`/`processingStage`를 추가하고 `DocumentProcessingState` 타입을 정의했다.
+- `tree/sync.ts`가 두 필드를 트리에 전파하고 동등성 비교에 포함시켜, 3초 폴링 갱신이 뱃지에 반영되도록 했다.
+- `TreeNodeStatus`를 상태별 뱃지로 개편했다: **처리 중 / 지연(stalled) / 실패** (우선순위 failed > stalled > processing). 진행 단계(stage) 문자열은 뱃지 tooltip으로 노출한다. 기존 "Modify ⋯"(영문) 표기를 한글화했다.
+- 스타일: `tree-row.css`에 `.tree-status.stalled` 주황 경고 톤 추가, 처리 중/실패 톤 유지.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build`, `npm run test:markdown`(46건) 통과.
+- 상태 전이(업로드→처리 중→완료/실패, 지연 감지) 실제 표시는 전체 스택(Next dev + Spring + 파이프라인) 기동이 필요해 브라우저 검증은 후속으로 남긴다.
+
+### feat: 워크스페이스 삭제 확인 모달 + 문서명 검색 (stream2 P0)
+
+**변경 배경**
+
+- 사이드바 컨텍스트 메뉴의 삭제가 확인 없이 즉시 서버 삭제되어 실수로 문서/폴더를 잃을 위험이 있었다.
+- 전역/문서 검색이 없어(`TopBar` 검색바는 미렌더 dead code) 문서가 많아지면 트리에서 직접 찾아야 했다.
+
+**추가/변경된 내용**
+
+- 삭제 확인 모달(`_components/modals/DeleteConfirmModal.tsx`) 추가. `useProjectTree.deleteContextTarget`을 즉시 삭제에서 확인 모달 열기로 변경하고 `confirmDelete`/`cancelDelete`/`deleteConfirm` 상태를 도입했다. 취소 시 서버 호출이 발생하지 않고, 확인 시에만 기존 삭제·재동기화 로직을 실행한다. 폴더/문서에 따라 문구를 구분한다.
+- 사이드바 문서명 검색(`_components/search/DocumentSearch.tsx`) 추가. 트리를 평탄화해 문서/노트 라벨을 클라이언트 필터링하고, 결과 클릭 시 해당 문서를 연다. `DocumentSidebar` 헤더 하단에 마운트했다.
+- 스타일: `modal.css`에 취소/삭제 2버튼 액션 줄, `document-sidebar/search.css` 신규 추가.
+- 공유 파일 `HomeWorkspace.tsx`는 모달 렌더 한 줄만 최소 편집했다.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build`, `npm run test:markdown`(46건) 통과.
+- 전문 검색(내용 기반)은 백엔드 검색 API 유무 확인 후 별도 상호참조 이슈로 남긴다(현재 1차 문서명 필터만).
+
+### feat: 문서 변경 기록(스냅샷 diff/롤백) + 스킬(스키마) 임시 UI (stream4)
+
+**변경된 내용**
+
+- **로그(스냅샷/diff/롤백, 클라이언트측)**
+  - `_components/history/` 신규: `snapshotStore.ts`(문서별 스냅샷, 메모리+localStorage, 최근 30건), `useSnapshots.ts`(훅), `lineDiff.ts`(LCS diff), `HistoryPanel.tsx`(목록 + snapshot↔현재 `+/−` diff + 롤백).
+  - `markdownAgent.ts`의 `lineDiff`는 export되지 않고 수정 금지(스트림3 공유)라, 동일 LCS를 `history/lineDiff.ts`에 재구현하고 `MarkdownDiffLine` 타입만 재사용했다.
+  - `HomeWorkspace.tsx` 최소 편집: AgentPanel에 넘기는 편집 컨텍스트를 wrap해 AI 편집 적용 직전 원본을 "AI 편집 전" 스냅샷으로 남기고, 롤백 시 "롤백 전" 현재 본문도 남긴 뒤 `applyMarkdown`으로 복원한다. 홈 문서 화면에 "변경 기록" 오버레이 패널을 추가했다.
+- **스킬(스키마) 임시 UI (목업 데이터)**
+  - `_lib/types/schema.ts`, `_lib/api/schema.ts` 신규. `schema.ts`는 llmPipeline `wiki_schema` 계약을 흉내낸 **클라이언트 목업**(preview/draft/activate/list/active, localStorage 저장, 인젝션·비밀정보 issue 규칙)이다. Java 프록시 완료 시 함수 본문만 `apiFetch`로 교체.
+  - `_components/schema/` 신규: `SchemaWorkspace`(컨테이너), `SchemaEditorForm`(name + markdown), `SchemaPreviewCard`(정리 조각 + SchemaIssue 경고 + activate), `SchemaList`(활성/draft 배지 + 활성화). rail "규칙" 뷰에 마운트.
+  - `_styles/history.css`, `_styles/schema.css` 신규 + `globals.css` @import, `_lib/api.ts`·`_lib/types.ts` 배럴에 schema re-export 1줄씩.
+- 검증: `tsc --noEmit`, `next lint`, `next build`, `test:markdown`(46 pass) 통과.
+- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 상호참조 이슈로 정리: `docs/issue/backend/2026-07-23.md`, `docs/issue/ai/2026-07-23.md`, `docs/issue/frontend/2026-07-23.md`(항목 10).
+
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 
 **변경된 내용**

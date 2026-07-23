@@ -9,3 +9,4 @@ export * from "./api/note";
 export * from "./api/wiki";
 export * from "./api/agent";
 export * from "./api/export";
+export * from "./api/schema";
