@@ -6,6 +6,24 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### refactor: 프론트엔드 폴더 구조를 Feature-Sliced Design으로 전환
+
+**변경된 내용**
+
+- 공식 FSD 스펙(레이어→슬라이스→세그먼트, 하위 레이어로만 import)에 맞춰 147개 파일을 `frontend/src/` 아래 6개 레이어로 재배치했다.
+  - `shared`(api/client, lib, ui, types), `entities`(document·chat·wiki·schema·workspace·user·graph·tree), `features`(agent-chat·note-editing·schema-manage·document-history·document-search·document-upload·wiki-export), `widgets`(workspace·document-sidebar·graph·agent-panel·source-preview·rail-navigation·top-bar), `pages`(landing·home·login·workspaces·auth), `app`(providers).
+- Next.js app router 충돌은 공식 가이드대로 처리: FSD는 `src/`에 두고, Next `app/**/page.tsx`는 `@/pages/*`를 re-export 하는 얇은 라우팅 껍데기로만 유지.
+- `tsconfig.json`에 `@/*` → `./src/*` alias 도입. 슬라이스별 `index.ts` public API 추가. 임시 배럴(`_lib/api·types·tree`) shim을 단계적으로 제거하고 모든 참조를 canonical alias로 연결.
+- 5단계(shared→entities→features→widgets→pages/app)로 나눠 각 단계 커밋 + `tsc --noEmit` green 검증.
+
+**검증**
+
+- 각 단계 `tsc --noEmit` exit 0. 최종적으로 dev 서버에서 `/`, `/login`, `/workspaces`, `/home`, `/signup` 등 전 라우트 200 확인.
+
+**남은 작업(2차)**
+
+- CSS는 이번 단계에서 `app/_styles/`에 그대로 두었다(콜로케이트는 2차). 파일명 kebab-case 정규화, 슬라이스 public API 정리도 2차 대상.
+
 ### feat: 규칙·그래프·채팅 패널 Figma 정합 정리
 
 **변경된 내용**
