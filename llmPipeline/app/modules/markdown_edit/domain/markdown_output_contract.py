@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 
 from app.modules.markdown_edit.domain.entities import GeneratedMarkdownDocument, MarkdownEditRequest
@@ -114,6 +115,7 @@ def validate_markdown_output(request: MarkdownEditRequest, replacement: str) -> 
 
     if request.edit_goal in PROTECTED_EDIT_GOALS:
         failures.extend(_protected_content_failures(request.markdown, replacement))
+        failures.extend(_protected_fragment_failures(request, replacement))
 
     if request.edit_goal == "shorten":
         failures.extend(_shortening_failures(request.markdown, instruction, replacement))
@@ -185,6 +187,24 @@ def _protected_content_failures(source: str, replacement: str) -> list[str]:
         r"[\u3400-\u4dbf\u4e00-\u9fff]", replacement
     ):
         failures.append("Korean text edit must not introduce Han characters absent from the source")
+    return failures
+
+
+def _protected_fragment_failures(
+    request: MarkdownEditRequest,
+    replacement: str,
+) -> list[str]:
+    expected = Counter(
+        (fragment.kind, fragment.markdown)
+        for fragment in protect_markdown(request).fragments
+    )
+    failures: list[str] = []
+    for (kind, markdown), expected_count in expected.items():
+        actual_count = replacement.count(markdown)
+        if actual_count != expected_count:
+            failures.append(
+                f"protected {kind} count must be preserved: expected {expected_count}, got {actual_count}"
+            )
     return failures
 
 

@@ -396,11 +396,18 @@ Markdown 편집은 독립 endpoint가 아니라 `POST /agent/turn`의 한 action
   "chat": null,
   "edit": {
     "operation": "replace",
-    "target": {
+    "requested_target": {
       "type": "selection",
       "start_line": 3,
       "end_line": 8
     },
+    "actual_target": {
+      "type": "selection",
+      "start_line": 2,
+      "end_line": 9
+    },
+    "scope_expanded": true,
+    "changed": true,
     "summary": "선택 영역을 더 짧은 설명으로 정리했습니다.",
     "replacement_markdown": "교체될 Markdown 본문"
   },
@@ -431,11 +438,14 @@ Markdown 편집은 독립 endpoint가 아니라 `POST /agent/turn`의 한 action
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
 | `operation` | string | `replace` 또는 `insert_after`다. |
-| `target` | object | 교체 또는 삽입 기준이 되는 line 범위다. |
+| `requested_target` | object | 사용자가 요청한 line 범위다. |
+| `actual_target` | object | 실제 교체 또는 삽입 기준이 되는 line 범위다. |
+| `scope_expanded` | boolean | `actual_target`이 `requested_target`을 벗어나면 `true`다. |
+| `changed` | boolean | 편집 결과가 요청 당시 Markdown과 다르면 `true`다. |
 | `summary` | string | 편집 결과 요약이다. |
-| `replacement_markdown` | string | `replace`에서는 `target`을 대체하고, `insert_after`에서는 `target` 뒤에 삽입할 Markdown 조각이다. |
+| `replacement_markdown` | string | `replace`에서는 `actual_target`을 대체하고, `insert_after`에서는 `actual_target` 뒤에 삽입할 Markdown 조각이다. |
 
-`edit.target` 필드:
+`edit.requested_target`, `edit.actual_target` 필드:
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
@@ -445,10 +455,11 @@ Markdown 편집은 독립 endpoint가 아니라 `POST /agent/turn`의 한 action
 
 operation별 계약은 다음과 같다.
 
-- `replace`는 `selection`, `current_section`, `whole_document` target을 지원한다. `replacement_markdown`은 해당 범위를 대체할 조각이다.
-- `insert_after`는 `current_section` target에만 사용한다. `replacement_markdown`은 현재 섹션을 반복하지 않고 섹션 뒤에 추가할 새 Markdown만 포함한다.
+- `replace`는 `selection`, `current_section`, `whole_document` target을 지원한다. `replacement_markdown`은 `actual_target` 범위를 대체할 조각이다.
+- `insert_after`는 `current_section` target에만 사용한다. `replacement_markdown`은 `actual_target`을 반복하지 않고 해당 섹션 뒤에 추가할 새 Markdown만 포함한다.
 - `insert_after` 요청에 `current_section` target이 없으면 `llmPipeline`은 편집 결과를 만들지 않고 `action="clarify"`, `edit=null`과 현재 섹션 선택 안내 `message`를 반환한다.
-- 두 operation 모두 응답 target은 요청 target과 일치해야 하며, 빈 `replacement_markdown`은 성공 결과로 반환하지 않는다.
+- `requested_target`은 요청 target과 일치한다. `actual_target`은 bounded editable context 안에서 Markdown 구조를 보존하는 범위로 확장할 수 있다.
+- 유효하지 않은 `actual_target`과 빈 `replacement_markdown`은 성공 결과로 반환하지 않는다.
 
 ### 3.2 Markdown Create
 

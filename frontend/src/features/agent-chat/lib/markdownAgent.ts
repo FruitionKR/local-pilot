@@ -11,11 +11,18 @@ export type AgentTurnAction = "chat_answer" | "markdown_edit" | "markdown_create
 
 export type AgentTurnEdit = {
   operation: "replace" | "insert_after";
-  target: {
+  requested_target: {
     type: "selection" | "current_section" | "whole_document";
     start_line: number;
     end_line: number;
   };
+  actual_target: {
+    type: "selection" | "current_section" | "whole_document";
+    start_line: number;
+    end_line: number;
+  };
+  scope_expanded: boolean;
+  changed: boolean;
   summary: string;
   replacement_markdown: string;
 };
@@ -102,9 +109,9 @@ export function buildGeneratedMarkdownFilename(title: string): string {
 
 function targetsMatch(request: AgentTurnRequest, edit: AgentTurnEdit): boolean {
   const requestTarget = request.editorSnapshot.target;
-  return requestTarget.type === edit.target.type
-    && requestTarget.startLine === edit.target.start_line
-    && requestTarget.endLine === edit.target.end_line;
+  return requestTarget.type === edit.requested_target.type
+    && requestTarget.startLine === edit.requested_target.start_line
+    && requestTarget.endLine === edit.requested_target.end_line;
 }
 
 function lineDiff(before: string, after: string): MarkdownDiffLine[] {
@@ -173,27 +180,28 @@ export function prepareMarkdownEditPreview(
     throw new Error("응답의 편집 대상이 요청 범위와 일치하지 않습니다.");
   }
   const edit = response.result.edit;
+  const actualTarget = edit.actual_target;
   if (!edit.replacement_markdown.trim()) {
     throw new Error("비어 있는 Markdown 편집 결과는 적용할 수 없습니다.");
   }
-  if (edit.operation === "insert_after" && edit.target.type !== "current_section") {
+  if (edit.operation === "insert_after" && actualTarget.type !== "current_section") {
     throw new Error("이어 쓰기는 현재 section에서만 적용할 수 있습니다.");
   }
 
   const sourceLines = request.editorSnapshot.markdown.split("\n");
-  if (edit.target.start_line < 1
-    || edit.target.end_line < edit.target.start_line
-    || edit.target.end_line > sourceLines.length) {
+  if (actualTarget.start_line < 1
+    || actualTarget.end_line < actualTarget.start_line
+    || actualTarget.end_line > sourceLines.length) {
     throw new Error("Markdown 편집 범위가 문서 경계를 벗어났습니다.");
   }
 
   const replacementLines = edit.replacement_markdown.split("\n");
-  const originalLines = sourceLines.slice(edit.target.start_line - 1, edit.target.end_line);
+  const originalLines = sourceLines.slice(actualTarget.start_line - 1, actualTarget.end_line);
   const nextLines = [...sourceLines];
   if (edit.operation === "replace") {
-    nextLines.splice(edit.target.start_line - 1, originalLines.length, ...replacementLines);
+    nextLines.splice(actualTarget.start_line - 1, originalLines.length, ...replacementLines);
   } else {
-    nextLines.splice(edit.target.end_line, 0, ...replacementLines);
+    nextLines.splice(actualTarget.end_line, 0, ...replacementLines);
   }
 
   return {

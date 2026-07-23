@@ -92,13 +92,22 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
 def _edit_to_response(result: AgentTurnResult) -> MarkdownEditOperationResponse | None:
     if result.edit is None:
         return None
+    requested_target = result.edit.effective_requested_target
+    actual_target = result.edit.actual_target
     return MarkdownEditOperationResponse(
         operation=result.edit.operation,
-        target=MarkdownEditTargetResponse(
-            type=result.edit.target.type,
-            start_line=result.edit.target.start_line,
-            end_line=result.edit.target.end_line,
+        requested_target=MarkdownEditTargetResponse(
+            type=requested_target.type,
+            start_line=requested_target.start_line,
+            end_line=requested_target.end_line,
         ),
+        actual_target=MarkdownEditTargetResponse(
+            type=actual_target.type,
+            start_line=actual_target.start_line,
+            end_line=actual_target.end_line,
+        ),
+        scope_expanded=result.edit.scope_expanded,
+        changed=result.edit.changed,
         summary=result.edit.summary,
         replacement_markdown=result.edit.replacement_markdown,
     )

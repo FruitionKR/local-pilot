@@ -6,7 +6,7 @@ import {
   describeAgentTurnResult,
   prepareMarkdownEditPreview,
   validateMarkdownEditApplication
-} from "../app/_lib/markdownAgent.ts";
+} from "../src/features/agent-chat/lib/markdownAgent.ts";
 
 const markdownEditContext = {
   documentId: "document-1",
@@ -37,11 +37,18 @@ test("Markdown 편집 응답의 summary를 안내 문구로 사용한다", () =>
     chat: null,
     edit: {
       operation: "replace",
-      target: {
+      requested_target: {
         type: "current_section",
         start_line: 1,
         end_line: 3
       },
+      actual_target: {
+        type: "current_section",
+        start_line: 1,
+        end_line: 3
+      },
+      scope_expanded: false,
+      changed: true,
       summary: "현재 섹션을 간결하게 정리했습니다.",
       replacement_markdown: "# 제목\n\n짧은 본문"
     },
@@ -82,11 +89,18 @@ function markdownEditResponse(overrides = {}) {
       chat: null,
       edit: {
         operation: "replace",
-        target: {
+        requested_target: {
           type: "current_section",
           start_line: 1,
           end_line: 3
         },
+        actual_target: {
+          type: "current_section",
+          start_line: 1,
+          end_line: 3
+        },
+        scope_expanded: false,
+        changed: true,
         summary: "본문을 정리했습니다.",
         replacement_markdown: "# 제목\n\n정리한 본문"
       },
@@ -116,11 +130,18 @@ test("insert_after는 현재 section 뒤에 새 Markdown을 추가한다", () =>
       ...markdownEditResponse().result,
       edit: {
         operation: "insert_after",
-        target: {
+        requested_target: {
           type: "current_section",
           start_line: 1,
           end_line: 3
         },
+        actual_target: {
+          type: "current_section",
+          start_line: 1,
+          end_line: 3
+        },
+        scope_expanded: false,
+        changed: true,
         summary: "절을 추가했습니다.",
         replacement_markdown: "\n## 다음\n\n추가 본문"
       }
@@ -138,14 +159,14 @@ test("insert_after는 현재 section 뒤에 새 Markdown을 추가한다", () =>
   ]);
 });
 
-test("응답 target이 요청 target과 다르면 preview를 만들지 않는다", () => {
+test("응답 requested target이 요청 target과 다르면 preview를 만들지 않는다", () => {
   const request = buildAgentTurnRequest("본문을 다듬어줘", markdownEditContext);
   const response = markdownEditResponse({
     result: {
       ...markdownEditResponse().result,
       edit: {
         ...markdownEditResponse().result.edit,
-        target: {
+        requested_target: {
           type: "selection",
           start_line: 2,
           end_line: 3
@@ -157,6 +178,46 @@ test("응답 target이 요청 target과 다르면 preview를 만들지 않는다
   assert.throws(
     () => prepareMarkdownEditPreview(request, response),
     /편집 대상이 요청 범위와 일치하지 않습니다/
+  );
+});
+
+test("확장된 actual target을 기준으로 preview를 만든다", () => {
+  const context = {
+    ...markdownEditContext,
+    editorSnapshot: {
+      ...markdownEditContext.editorSnapshot,
+      target: {
+        type: "selection",
+        startLine: 3,
+        endLine: 3
+      }
+    }
+  };
+  const request = buildAgentTurnRequest("문맥을 포함해 다듬어줘", context);
+  const response = markdownEditResponse({
+    result: {
+      ...markdownEditResponse().result,
+      edit: {
+        ...markdownEditResponse().result.edit,
+        requested_target: {
+          type: "selection",
+          start_line: 3,
+          end_line: 3
+        },
+        actual_target: {
+          type: "selection",
+          start_line: 1,
+          end_line: 3
+        },
+        scope_expanded: true,
+        replacement_markdown: "# 제목\n\n문맥을 포함해 정리한 본문"
+      }
+    }
+  });
+
+  assert.equal(
+    prepareMarkdownEditPreview(request, response).nextMarkdown,
+    "# 제목\n\n문맥을 포함해 정리한 본문"
   );
 });
 

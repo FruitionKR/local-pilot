@@ -58,7 +58,18 @@ class SchemaPromptInjectionTest(unittest.TestCase):
         self.assertIn("## query", client.calls[0][0])
 
     def test_markdown_editor_injects_edit_schema_prompt(self) -> None:
-        client = FakeJsonClient({"operation": "replace", "summary": "수정", "replacement_markdown": "결과"})
+        client = FakeJsonClient(
+            {
+                "operation": "replace",
+                "actual_target": {
+                    "type": "selection",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+                "summary": "수정",
+                "replacement_markdown": "결과",
+            }
+        )
         editor = ChatCompletionsMarkdownEditor(
             client=client,  # type: ignore[arg-type]
             system_prompt="edit system",

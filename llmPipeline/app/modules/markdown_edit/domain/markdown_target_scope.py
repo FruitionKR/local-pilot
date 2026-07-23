@@ -11,6 +11,8 @@ class MarkdownTargetScope:
     markdown: str
     context_before: str
     context_after: str
+    start_line: int
+    end_line: int
 
 
 class MarkdownTargetBoundaryError(ValueError):
@@ -31,7 +33,13 @@ def build_markdown_target_scope(
         raise ValueError("target.end_line must not exceed the Markdown line count.")
 
     if target.type == "whole_document":
-        return MarkdownTargetScope(markdown=markdown, context_before="", context_after="")
+        return MarkdownTargetScope(
+            markdown=markdown,
+            context_before="",
+            context_after="",
+            start_line=1,
+            end_line=len(lines),
+        )
 
     start_index = target.start_line - 1
     end_index = target.end_line
@@ -42,6 +50,8 @@ def build_markdown_target_scope(
         markdown="\n".join(lines[start_index:end_index]),
         context_before="\n".join(lines[context_start:start_index]),
         context_after="\n".join(lines[end_index:context_end]),
+        start_line=context_start + 1,
+        end_line=context_end,
     )
 
 

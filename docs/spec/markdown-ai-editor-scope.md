@@ -50,15 +50,24 @@
 ```json
 {
   "operation": "replace",
-  "target": {
+  "requested_target": {
     "type": "selection",
     "start_line": 3,
     "end_line": 5
   },
+  "actual_target": {
+    "type": "selection",
+    "start_line": 2,
+    "end_line": 6
+  },
+  "scope_expanded": true,
+  "changed": true,
   "summary": "선택 영역을 짧게 정리했습니다.",
   "replacement_markdown": "교체할 Markdown"
 }
 ```
+
+`requested_target`은 사용자가 요청한 범위이고 `actual_target`은 실제 교체 범위다. Markdown 구조 보존을 위해 범위가 확장되면 `scope_expanded=true`이며, 결과가 원문과 같으면 `changed=false`다.
 
 관련 계약은 `docs/spec/agent-markdown-contract.md`의 `기존 문서 편집` 절에서 확인할 수 있다.
 

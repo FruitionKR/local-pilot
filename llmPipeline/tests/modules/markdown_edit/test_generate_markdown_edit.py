@@ -97,6 +97,107 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
         self.assertIn("| 항목 | 내용 |", result.edit.replacement_markdown)
         self.assertEqual(editor.requests[0].instruction, "표로 바꿔줘")
 
+    def test_allows_actual_target_to_expand_beyond_requested_target(self) -> None:
+        requested_target = MarkdownEditTarget(type="selection", start_line=2, end_line=2)
+        actual_target = MarkdownEditTarget(type="selection", start_line=1, end_line=3)
+        use_case = GenerateMarkdownEditUseCase(
+            FakeMarkdownEditor(
+                MarkdownEditResult(
+                    edit=MarkdownEditOperation(
+                        operation="replace",
+                        target=actual_target,
+                        summary="문맥을 포함해 문단을 정리했습니다.",
+                        replacement_markdown="정리한 문단",
+                    )
+                )
+            )
+        )
+
+        result = use_case.execute(
+            MarkdownEditRequest(
+                instruction="이 문장을 문맥에 맞게 정리해줘.",
+                markdown="앞 문장\n대상 문장\n뒤 문장",
+                target=requested_target,
+            )
+        )
+
+        self.assertEqual(result.edit.target, actual_target)
+
+    def test_rejects_actual_target_outside_document(self) -> None:
+        requested_target = MarkdownEditTarget(type="selection", start_line=2, end_line=2)
+        use_case = GenerateMarkdownEditUseCase(
+            FakeMarkdownEditor(
+                MarkdownEditResult(
+                    edit=MarkdownEditOperation(
+                        operation="replace",
+                        target=MarkdownEditTarget(type="selection", start_line=1, end_line=4),
+                        summary="문단을 정리했습니다.",
+                        replacement_markdown="정리한 문단",
+                    )
+                )
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "actual_target.end_line"):
+            use_case.execute(
+                MarkdownEditRequest(
+                    instruction="이 문장을 문맥에 맞게 정리해줘.",
+                    markdown="앞 문장\n대상 문장\n뒤 문장",
+                    target=requested_target,
+                )
+            )
+
+    def test_marks_unchanged_replace_result(self) -> None:
+        target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
+        use_case = GenerateMarkdownEditUseCase(
+            FakeMarkdownEditor(
+                MarkdownEditResult(
+                    edit=MarkdownEditOperation(
+                        operation="replace",
+                        target=target,
+                        summary="변경할 내용이 없습니다.",
+                        replacement_markdown="같은 문장",
+                    )
+                )
+            )
+        )
+
+        result = use_case.execute(
+            MarkdownEditRequest(
+                instruction="문장을 확인해줘.",
+                markdown="같은 문장",
+                target=target,
+            )
+        )
+
+        self.assertFalse(result.edit.changed)
+
+    def test_marks_crlf_replace_result_as_unchanged(self) -> None:
+        target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=2)
+        markdown = "# 제목\r\n본문"
+        use_case = GenerateMarkdownEditUseCase(
+            FakeMarkdownEditor(
+                MarkdownEditResult(
+                    edit=MarkdownEditOperation(
+                        operation="replace",
+                        target=target,
+                        summary="변경할 내용이 없습니다.",
+                        replacement_markdown=markdown,
+                    )
+                )
+            )
+        )
+
+        result = use_case.execute(
+            MarkdownEditRequest(
+                instruction="문서를 확인해줘.",
+                markdown=markdown,
+                target=target,
+            )
+        )
+
+        self.assertFalse(result.edit.changed)
+
     def test_rejects_empty_replacement_markdown(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
         use_case = GenerateMarkdownEditUseCase(

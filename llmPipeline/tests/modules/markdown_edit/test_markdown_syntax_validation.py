@@ -54,6 +54,37 @@ class MarkdownSyntaxValidationTest(unittest.TestCase):
             ["display math opened at line 5 must be closed"],
         )
 
+    def test_rejects_raw_html_and_mdx(self) -> None:
+        cases = (
+            "<script>alert('xss')</script>",
+            "<Callout>내용</Callout>",
+            "import Callout from './Callout'",
+            "export const metadata = { title: '문서' }",
+            "본문 {user.name}",
+        )
+
+        for markdown in cases:
+            with self.subTest(markdown=markdown):
+                self.assertIn(
+                    "raw HTML and MDX are not supported",
+                    validate_markdown_syntax(markdown),
+                )
+
+    def test_allows_html_and_mdx_examples_inside_code_fence(self) -> None:
+        markdown = "```mdx\n<Callout>{user.name}</Callout>\n```"
+
+        self.assertEqual(validate_markdown_syntax(markdown), [])
+
+    def test_allows_plain_text_that_starts_with_import_or_export(self) -> None:
+        cases = (
+            "import data from the source",
+            "export data after validation",
+        )
+
+        for markdown in cases:
+            with self.subTest(markdown=markdown):
+                self.assertEqual(validate_markdown_syntax(markdown), [])
+
 
 if __name__ == "__main__":
     unittest.main()

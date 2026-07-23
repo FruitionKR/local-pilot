@@ -55,6 +55,33 @@ class FixedInsertAfterUseCase:
         )
 
 
+class FixedExpandedTargetUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        return AgentTurnResult(
+            action="markdown_edit",
+            route=AgentTurnRoute(
+                action="markdown_edit",
+                confidence=1.0,
+                reason="expanded edit request",
+            ),
+            edit=MarkdownEditOperation(
+                operation="replace",
+                requested_target=MarkdownEditTarget(
+                    type="selection",
+                    start_line=2,
+                    end_line=2,
+                ),
+                target=MarkdownEditTarget(
+                    type="selection",
+                    start_line=1,
+                    end_line=3,
+                ),
+                summary="문맥을 포함해 수정했습니다.",
+                replacement_markdown="수정 결과",
+            ),
+        )
+
+
 class FailingMarkdownEditUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise MarkdownOutputContractError(
@@ -87,7 +114,9 @@ class AgentRoutesTest(unittest.TestCase):
 
         body = response.model_dump()
         self.assertEqual(body["edit"]["operation"], "insert_after")
-        self.assertEqual(body["edit"]["target"]["type"], "current_section")
+        self.assertEqual(body["edit"]["requested_target"]["type"], "current_section")
+        self.assertEqual(body["edit"]["actual_target"]["type"], "current_section")
+        self.assertFalse(body["edit"]["scope_expanded"])
 
     def test_agent_turn_returns_generated_markdown(self) -> None:
         response = handle_agent_turn(
@@ -106,6 +135,17 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(body["route"]["edit_goal"], "create_from_chat")
         self.assertEqual(body["generated_markdown"]["title"], "Agent 설계 메모")
         self.assertIn("# Agent 설계 메모", body["generated_markdown"]["markdown"])
+
+    def test_agent_turn_distinguishes_requested_and_expanded_actual_target(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(message="문맥을 포함해 다듬어줘"),
+            use_case=FixedExpandedTargetUseCase(),  # type: ignore[arg-type]
+        )
+
+        edit = response.model_dump()["edit"]
+        self.assertEqual(edit["requested_target"]["start_line"], 2)
+        self.assertEqual(edit["actual_target"]["start_line"], 1)
+        self.assertTrue(edit["scope_expanded"])
 
     def test_agent_turn_maps_markdown_contract_failure_without_internal_details(self) -> None:
         with self.assertRaises(HTTPException) as raised:

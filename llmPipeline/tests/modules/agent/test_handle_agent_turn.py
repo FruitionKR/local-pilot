@@ -84,6 +84,36 @@ class RecordingMarkdownEditor:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_returns_reject_action_without_running_other_use_cases(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="사용하지 않는 결과",
+                    replacement_markdown="사용하지 않는 결과",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="reject",
+                    confidence=1.0,
+                    reason="unsupported request",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+        )
+
+        result = use_case.execute(AgentTurnRequest(message="지원하지 않는 작업을 해줘"))
+
+        self.assertEqual(result.action, "reject")
+        self.assertIsNotNone(result.message)
+        self.assertEqual(editor.requests, [])
+
     def test_executes_markdown_edit_action(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=3, end_line=5)
         editor = RecordingMarkdownEditor(

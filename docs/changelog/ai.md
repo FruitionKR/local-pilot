@@ -4,6 +4,14 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-24
+
+### feat: Markdown AI 편집 응답 계약 확장
+
+- 편집 응답을 `requested_target`, `actual_target`, `scope_expanded`, `changed`로 구분하고 bounded context 안의 범위 확장을 허용
+- 범위 확장 시 Markdown 구조·보호 조각·HTML·MDX를 검증하고 JSON 파싱 실패를 모델 원문이 노출되지 않는 1회 계약 보정으로 처리
+- 동일한 LF·CRLF 결과를 변경 없음으로 판정하고 llmPipeline 전체 테스트 `449 passed`, `39 subtests passed`
+
 ## 2026-07-22
 
 ### fix: Agent 전체 편집과 오류 응답 보강
