@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { diffMarkdownLines } from "../lib/lineDiff";
 import type { DocumentSnapshot } from "../model/snapshotStore";
+import styles from "./HistoryPanel.module.css";
 
 const DIFF_MARKERS = {
   context: " ",
@@ -40,25 +41,25 @@ export function HistoryPanel({
   const hasChanges = diffLines.some((line) => line.type !== "context");
 
   return (
-    <aside className="history-panel" aria-label="문서 변경 기록" onClick={(event) => event.stopPropagation()}>
-      <header className="history-panel-header">
+    <aside className={styles["history-panel"]} aria-label="문서 변경 기록" onClick={(event) => event.stopPropagation()}>
+      <header className={styles["history-panel-header"]}>
         <strong>변경 기록</strong>
         <button type="button" aria-label="기록 닫기" onClick={onClose}>✕</button>
       </header>
 
       {snapshots.length === 0 ? (
-        <p className="history-empty">아직 저장된 스냅샷이 없습니다. AI 편집을 적용하면 편집 전 상태가 자동으로 기록됩니다.</p>
+        <p className={styles["history-empty"]}>아직 저장된 스냅샷이 없습니다. AI 편집을 적용하면 편집 전 상태가 자동으로 기록됩니다.</p>
       ) : (
-        <ol className="history-list">
+        <ol className={styles["history-list"]}>
           {snapshots.map((snapshot) => (
             <li key={snapshot.id}>
               <button
                 type="button"
-                className={`history-item${snapshot.id === selectedId ? " is-selected" : ""}`}
+                className={`${styles["history-item"]}${snapshot.id === selectedId ? ` ${styles["is-selected"]}` : ""}`}
                 onClick={() => setSelectedId(snapshot.id)}
               >
-                <span className="history-item-label">{snapshot.label}</span>
-                <span className="history-item-time">{formatTimestamp(snapshot.createdAt)}</span>
+                <span className={styles["history-item-label"]}>{snapshot.label}</span>
+                <span className={styles["history-item-time"]}>{formatTimestamp(snapshot.createdAt)}</span>
               </button>
             </li>
           ))}
@@ -66,22 +67,22 @@ export function HistoryPanel({
       )}
 
       {selected && (
-        <section className="history-detail" aria-label="스냅샷과 현재 문서 비교">
-          <div className="history-diff">
+        <section className={styles["history-detail"]} aria-label="스냅샷과 현재 문서 비교">
+          <div className={styles["history-diff"]}>
             {hasChanges ? (
               diffLines.map((line, index) => (
-                <code className={`is-${line.type}`} key={`${line.type}-${index}`}>
+                <code className={styles[`is-${line.type}`]} key={`${line.type}-${index}`}>
                   <span aria-hidden="true">{DIFF_MARKERS[line.type]}</span>
                   {line.text || " "}
                 </code>
               ))
             ) : (
-              <p className="history-nodiff">이 스냅샷과 현재 문서가 동일합니다.</p>
+              <p className={styles["history-nodiff"]}>이 스냅샷과 현재 문서가 동일합니다.</p>
             )}
           </div>
           <button
             type="button"
-            className="history-restore"
+            className={styles["history-restore"]}
             disabled={!hasChanges}
             onClick={() => onRestore(selected)}
           >

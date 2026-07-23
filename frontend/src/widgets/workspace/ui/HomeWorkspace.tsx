@@ -5,6 +5,7 @@ import { AgentPanel } from "@/widgets/agent-panel/ui/AgentPanel";
 import { DocumentSidebar } from "@/widgets/document-sidebar/ui/DocumentSidebar";
 import { Graph } from "@/widgets/graph/ui/Graph";
 import { HistoryPanel } from "@/features/document-history/ui/HistoryPanel";
+import historyStyles from "@/features/document-history/ui/HistoryPanel.module.css";
 import { useSnapshots } from "@/features/document-history/model/useSnapshots";
 import type { DocumentSnapshot } from "@/features/document-history/model/snapshotStore";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
@@ -349,7 +350,7 @@ export function HomeWorkspace() {
       )}
 
       {isDocumentMain && (
-        <button type="button" className="history-trigger" onClick={() => setIsHistoryOpen((open) => !open)}>
+        <button type="button" className={historyStyles["history-trigger"]} onClick={() => setIsHistoryOpen((open) => !open)}>
           변경 기록
         </button>
       )}
