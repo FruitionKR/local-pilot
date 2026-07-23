@@ -6,6 +6,27 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### feat: 워크스페이스 삭제 확인 모달 + 문서명 검색 (stream2 P0)
+
+**변경 배경**
+
+- 사이드바 컨텍스트 메뉴의 삭제가 확인 없이 즉시 서버 삭제되어 실수로 문서/폴더를 잃을 위험이 있었다.
+- 전역/문서 검색이 없어(`TopBar` 검색바는 미렌더 dead code) 문서가 많아지면 트리에서 직접 찾아야 했다.
+
+**추가/변경된 내용**
+
+- 삭제 확인 모달(`_components/modals/DeleteConfirmModal.tsx`) 추가. `useProjectTree.deleteContextTarget`을 즉시 삭제에서 확인 모달 열기로 변경하고 `confirmDelete`/`cancelDelete`/`deleteConfirm` 상태를 도입했다. 취소 시 서버 호출이 발생하지 않고, 확인 시에만 기존 삭제·재동기화 로직을 실행한다. 폴더/문서에 따라 문구를 구분한다.
+- 사이드바 문서명 검색(`_components/search/DocumentSearch.tsx`) 추가. 트리를 평탄화해 문서/노트 라벨을 클라이언트 필터링하고, 결과 클릭 시 해당 문서를 연다. `DocumentSidebar` 헤더 하단에 마운트했다.
+- 스타일: `modal.css`에 취소/삭제 2버튼 액션 줄, `document-sidebar/search.css` 신규 추가.
+- 공유 파일 `HomeWorkspace.tsx`는 모달 렌더 한 줄만 최소 편집했다.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build`, `npm run test:markdown`(46건) 통과.
+- 전문 검색(내용 기반)은 백엔드 검색 API 유무 확인 후 별도 상호참조 이슈로 남긴다(현재 1차 문서명 필터만).
+
+## 2026-07-23
+
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 
 **변경된 내용**

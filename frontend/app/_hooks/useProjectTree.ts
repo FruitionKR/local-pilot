@@ -17,6 +17,15 @@ import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Projec
 
 const PROJECT_TREE_STORAGE_PREFIX = "fruition.project_tree.";
 
+/** 삭제 확인 모달이 필요로 하는 대상 정보. contextMenu가 닫힌 뒤에도 삭제를 실행할 수 있도록 스냅샷한다. */
+type DeleteConfirmTarget = {
+  projectId: string;
+  itemId: string | null;
+  documentId?: string;
+  label: string;
+  kind: "folder" | "document";
+};
+
 function isPersistedTreeItem(value: unknown): value is TreeItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<TreeItem>;
@@ -67,6 +76,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
   const [fileDropTarget, setFileDropTarget] = useState<FileDropTarget | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmTarget | null>(null);
   const [isPersistenceReady, setIsPersistenceReady] = useState(false);
   const editingCancelRef = useRef(false);
 
@@ -173,23 +183,40 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     return target;
   }
 
+  // 컨텍스트 메뉴의 삭제는 즉시 실행하지 않고 확인 모달을 연다. 실제 삭제는 confirmDelete에서 수행한다.
   function deleteContextTarget() {
     if (!contextMenu) return;
+    const projectId = contextMenu.projectId;
+    const project = projects.find((project) => project.id === projectId);
     if (contextMenu.itemId === null) {
-      const projectId = contextMenu.projectId;
-      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setDeleteConfirm({ projectId, itemId: null, label: project?.title ?? "폴더", kind: "folder" });
       setContextMenu(null);
       return;
     }
-    const itemId = contextMenu.itemId;
-    const projectId = contextMenu.projectId;
-    const project = projects.find((project) => project.id === projectId);
-    const documentId = project ? findTreeItem(project.items, itemId)?.documentId : undefined;
+    const item = project ? findTreeItem(project.items, contextMenu.itemId) : null;
+    const isFolder = item ? (!isFileItem(item) && !isWikiItem(item)) : false;
+    setDeleteConfirm({
+      projectId,
+      itemId: contextMenu.itemId,
+      documentId: item?.documentId,
+      label: item?.label ?? "항목",
+      kind: isFolder ? "folder" : "document"
+    });
+    setContextMenu(null);
+  }
+
+  function confirmDelete() {
+    if (!deleteConfirm) return;
+    const { projectId, itemId, documentId } = deleteConfirm;
+    if (itemId === null) {
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setDeleteConfirm(null);
+      return;
+    }
     setProjects((current) => current.map((project) => {
       if (project.id !== projectId) return project;
       return { ...project, items: removeTreeItem(project.items, itemId).items };
     }));
-    setContextMenu(null);
     // 실제 문서면 서버에서도 삭제한다. 성공·실패 모두 서버 상태로 재동기화한다
     // (실패 시 문서가 트리에 다시 나타난다).
     if (documentId) {
@@ -197,6 +224,11 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
         .then(() => refreshRef.current())
         .catch(() => refreshRef.current());
     }
+    setDeleteConfirm(null);
+  }
+
+  function cancelDelete() {
+    setDeleteConfirm(null);
   }
 
   function commitEditing() {
@@ -295,6 +327,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     fileDropTarget,
     contextMenu,
     editing,
+    deleteConfirm,
     setFileDropTarget,
     addProject,
     moveTreeEntry,
@@ -303,6 +336,8 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     renameContextTarget,
     takeMarkdownTargetFromContext,
     deleteContextTarget,
+    confirmDelete,
+    cancelDelete,
     commitEditing,
     cancelEditing,
     renameDocumentById,

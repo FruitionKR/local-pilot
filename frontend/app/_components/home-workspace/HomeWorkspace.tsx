@@ -7,6 +7,7 @@ import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
 import { railItems, type RailView } from "../RailNavigation";
 import { UploadErrorModal } from "../modals/UploadErrorModal";
+import { DeleteConfirmModal } from "../modals/DeleteConfirmModal";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
 import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
@@ -328,6 +329,13 @@ export function HomeWorkspace() {
       )}
 
       {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
+      {projectTree.deleteConfirm && (
+        <DeleteConfirmModal
+          target={projectTree.deleteConfirm}
+          onConfirm={projectTree.confirmDelete}
+          onCancel={projectTree.cancelDelete}
+        />
+      )}
     </main>
   );
 }
