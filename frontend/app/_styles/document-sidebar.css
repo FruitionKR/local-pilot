@@ -1,5 +1,6 @@
 @import "./document-sidebar/shell.css";
 @import "./document-sidebar/chrome.css";
+@import "./document-sidebar/search.css";
 @import "./document-sidebar/project-section.css";
 @import "./document-sidebar/tree-row.css";
 @import "./document-sidebar/context-menu.css";

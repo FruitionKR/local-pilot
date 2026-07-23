@@ -5,8 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
+import { HistoryPanel } from "../history/HistoryPanel";
+import { useSnapshots } from "../history/useSnapshots";
+import type { DocumentSnapshot } from "../history/snapshotStore";
+import { SchemaWorkspace } from "../schema/SchemaWorkspace";
 import { railItems, type RailView } from "../RailNavigation";
 import { UploadErrorModal } from "../modals/UploadErrorModal";
+import { DeleteConfirmModal } from "../modals/DeleteConfirmModal";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
 import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
@@ -56,6 +61,8 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const [lintRequest, setLintRequest] = useState<{
     id: number;
@@ -137,6 +144,29 @@ export function HomeWorkspace() {
     didAutoOpenRef.current = true;
     selection.selectTreeGraphNode(firstSidebarNote);
   }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
+
+  // AgentPanel에 넘길 편집 컨텍스트를 감싸, AI 편집이 적용되기 직전 원본을 스냅샷으로 남긴다.
+  const agentEditContext = useMemo<ActiveMarkdownEditContext | null>(() => {
+    if (!markdownEditContext) return null;
+    const raw = markdownEditContext;
+    return {
+      ...raw,
+      applyMarkdown: (expectedMarkdown: string, nextMarkdown: string) => {
+        const applied = raw.applyMarkdown(expectedMarkdown, nextMarkdown);
+        if (applied) snapshots.capture(expectedMarkdown, "AI 편집 전");
+        return applied;
+      }
+    };
+  }, [markdownEditContext, snapshots]);
+
+  // 스냅샷 시점으로 롤백. 롤백 직전 현재 본문도 스냅샷으로 남기고 raw applyMarkdown으로 복원한다.
+  const handleRestoreSnapshot = useCallback((snapshot: DocumentSnapshot) => {
+    if (!markdownEditContext) return;
+    const current = markdownEditContext.editorSnapshot.markdown;
+    if (current === snapshot.markdown) return;
+    snapshots.capture(current, "롤백 전");
+    markdownEditContext.applyMarkdown(current, snapshot.markdown);
+  }, [markdownEditContext, snapshots]);
 
   function handleViewChange(view: RailView) {
     setActiveView(view);
@@ -316,7 +346,7 @@ export function HomeWorkspace() {
           onOpenWikiPage={selection.openWikiPagePreview}
           onOpenSourceBlocks={openSourceBlocks}
           onCreateMarkdownDocument={createGeneratedMarkdownDocument}
-          markdownEditContext={markdownEditContext}
+          markdownEditContext={agentEditContext}
           lintRequest={lintRequest}
           onDocumentExported={handleChatDocumentExported}
           nodes={graphData.nodes}
@@ -324,10 +354,35 @@ export function HomeWorkspace() {
       )}
 
       {!isHomeView && !isGraphView && (
-        <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
+        activeView === "rules" ? (
+          <SchemaWorkspace />
+        ) : (
+          <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
+        )
+      )}
+
+      {isDocumentMain && (
+        <button type="button" className="history-trigger" onClick={() => setIsHistoryOpen((open) => !open)}>
+          변경 기록
+        </button>
+      )}
+      {isDocumentMain && isHistoryOpen && markdownEditContext && (
+        <HistoryPanel
+          snapshots={snapshots.snapshots}
+          currentMarkdown={markdownEditContext.editorSnapshot.markdown}
+          onRestore={handleRestoreSnapshot}
+          onClose={() => setIsHistoryOpen(false)}
+        />
       )}
 
       {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
+      {projectTree.deleteConfirm && (
+        <DeleteConfirmModal
+          target={projectTree.deleteConfirm}
+          onConfirm={projectTree.confirmDelete}
+          onCancel={projectTree.cancelDelete}
+        />
+      )}
     </main>
   );
 }

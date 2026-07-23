@@ -1,0 +1,109 @@
+/* 사이드바 문서명 검색 */
+.sidebar-search {
+  position: relative;
+  padding: 0 16px 8px 24px;
+}
+
+.sidebar-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.sidebar-search-box:focus-within {
+  border-color: var(--soft);
+}
+
+.sidebar-search-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.sidebar-search-box input {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+}
+
+.sidebar-search-box input::placeholder {
+  color: var(--muted);
+}
+
+.sidebar-search-box input:focus-visible {
+  outline: none;
+}
+
+/* 결과 드롭다운 */
+.sidebar-search-results {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 24px;
+  right: 16px;
+  z-index: 12;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.sidebar-search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: transparent;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.sidebar-search-result:hover,
+.sidebar-search-result:focus-visible {
+  background: var(--soft);
+}
+
+.sidebar-search-result-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-search-result-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sidebar-search-empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sidebar-search-more {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}

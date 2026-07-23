@@ -126,6 +126,9 @@ export function TreeNode({
             <span>{item.label}</span>
             <TreeNodeStatus
               status={item.status}
+              processingState={item.processingState}
+              processingStage={item.processingStage}
+              errorMessage={item.errorMessage}
               editState={item.documentId ? noteEditStates[item.documentId] : undefined}
             />
             {fileTypeBadge(item) && <small className="tree-type-badge">{fileTypeBadge(item)}</small>}

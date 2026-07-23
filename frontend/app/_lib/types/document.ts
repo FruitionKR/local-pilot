@@ -1,4 +1,4 @@
-import type { DocumentStatus } from "./tree";
+import type { DocumentProcessingState, DocumentStatus } from "./tree";
 
 export type DocumentUploadResponse = {
   id: string;
@@ -14,6 +14,8 @@ export type DocumentItemResponse = DocumentUploadResponse & {
   extracted_text_uri?: string;
   processed_at?: string;
   error_message?: string;
+  processing_state?: DocumentProcessingState;
+  processing_stage?: string;
 };
 
 export type DocumentListResponse = {
