@@ -1,10 +1,14 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import type { ChangeEventHandler, HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute } from "react";
 import errorIcon from "../../../svg/auth/auth-error-circle.svg";
 import googleLogo from "../../../svg/auth/auth-google-logo.svg";
 import kakaoLogo from "../../../svg/auth/auth-kakao-logo.svg";
 import naverLogo from "../../../svg/auth/auth-naver-logo.svg";
 import passwordHiddenIcon from "../../../svg/auth/auth-password-hidden.svg";
+import passwordVisibleIcon from "../../../svg/auth/auth-password-visible.svg";
 import { getOAuthAuthorizationUrl } from "../../_lib/api";
 
 type AuthFieldProps = {
@@ -33,6 +37,8 @@ export function AuthField({
   value
 }: AuthFieldProps) {
   const isPassword = type === "password";
+  const [isPasswordRevealed, setIsPasswordRevealed] = useState(false);
+  const inputType = isPassword && isPasswordRevealed ? "text" : type;
 
   return (
     <label className="auth-field">
@@ -45,12 +51,25 @@ export function AuthField({
           placeholder={placeholder}
           readOnly={readOnly}
           required={required}
-          type={type}
+          type={inputType}
           value={value}
         />
         {timer ? <span aria-hidden className="auth-field-timer">{timer}</span> : null}
         {isPassword ? (
-          <Image alt="" aria-hidden className="auth-password-icon" src={passwordHiddenIcon} />
+          <button
+            aria-label={isPasswordRevealed ? "비밀번호 숨기기" : "비밀번호 표시"}
+            aria-pressed={isPasswordRevealed}
+            className="auth-password-toggle"
+            onClick={() => setIsPasswordRevealed((revealed) => !revealed)}
+            type="button"
+          >
+            <Image
+              alt=""
+              aria-hidden
+              className="auth-password-icon"
+              src={isPasswordRevealed ? passwordVisibleIcon : passwordHiddenIcon}
+            />
+          </button>
         ) : null}
       </span>
     </label>

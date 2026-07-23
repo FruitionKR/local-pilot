@@ -128,14 +128,26 @@
   border-color: var(--auth-accent);
 }
 
-.auth-password-icon,
 .auth-field-timer {
   position: absolute;
   right: 16px;
   pointer-events: none;
 }
 
+.auth-password-toggle {
+  position: absolute;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
 .auth-password-icon {
+  display: block;
   width: 16px;
   height: 16px;
 }
