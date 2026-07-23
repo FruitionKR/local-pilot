@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchWorkspaces } from "../_lib/api";
+import { fetchWorkspaces } from "@/entities/workspace/api/workspace";
 import { getSelectedWorkspaceId } from "@/shared/lib/auth";
-import type { WorkspaceListResponse } from "../_lib/types";
+import type { WorkspaceListResponse } from "@/entities/workspace/model/workspace";
 
 // 여러 컴포넌트(AgentHeader·SidebarWorkspaceHeader)가 동시에 이름을 조회해도
 // GET /api/workspaces가 중복 호출되지 않도록 진행 중인 요청을 공유한다.

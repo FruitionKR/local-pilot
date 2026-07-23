@@ -1,4 +1,4 @@
-import type { DocumentProcessingState, DocumentStatus } from "./tree";
+import type { DocumentProcessingState, DocumentStatus } from "@/entities/tree/model/tree";
 
 export type DocumentUploadResponse = {
   id: string;

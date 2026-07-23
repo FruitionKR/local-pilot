@@ -3,7 +3,7 @@ import { select } from "d3-selection";
 import { zoom, ZoomTransform } from "d3-zoom";
 import type { ZoomBehavior } from "d3-zoom";
 import type { GraphCache, GraphLink, GraphNode, NodePosition } from "../../_lib/types";
-import { GRAPH_CENTER, GRAPH_ZOOM, linkKey } from "../../_lib/graph";
+import { GRAPH_CENTER, GRAPH_ZOOM, linkKey } from "@/entities/graph/lib/graph";
 import { readStoredGraphCache, writeStoredGraphCache } from "./graphCache";
 import { drawGraphFrame } from "./graphDrawing";
 import { canvasToGraphPosition, clampGraphPan, clampGraphPosition, clampGraphZoom, graphToCanvasPosition } from "./graphGeometry";

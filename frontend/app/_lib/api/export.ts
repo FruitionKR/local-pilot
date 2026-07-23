@@ -1,5 +1,5 @@
 import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
-import { getSessionContext } from "./chat";
+import { getSessionContext } from "@/entities/chat/api/chat";
 
 export type ChatWikiExportResponse = {
   exportDocumentId: string;

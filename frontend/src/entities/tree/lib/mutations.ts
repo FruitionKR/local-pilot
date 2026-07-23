@@ -1,5 +1,6 @@
-import { makeRawId } from "../graph";
-import type { DocumentUploadResponse, DropTarget, Project, TreeItem } from "../types";
+import { makeRawId } from "@/entities/graph/lib/graph";
+import type { DropTarget, Project, TreeItem } from "@/entities/tree/model/tree";
+import type { DocumentUploadResponse } from "@/entities/document/model/document";
 import { createClientId, isFileItem, isWikiItem } from "./guards";
 import { findTreeItem } from "./queries";
 

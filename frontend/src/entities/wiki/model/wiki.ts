@@ -1,4 +1,4 @@
-import type { DocumentItemResponse } from "./document";
+import type { DocumentItemResponse } from "@/entities/document/model/document";
 import type { RelatedPageBase } from "@/shared/types/shared";
 
 export type WikiGraphNodeResponse = {

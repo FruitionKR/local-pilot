@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NoteContentConflictError, saveNoteDraft } from "../../_lib/api";
-import { composeEditableNoteMarkdown } from "../../_lib/note";
+import { composeEditableNoteMarkdown } from "@/entities/document/lib/note";
 import type { NoteSaveStatus } from "../../_lib/types";
 
 type PendingSave = {

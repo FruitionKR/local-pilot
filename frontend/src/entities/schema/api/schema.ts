@@ -1,5 +1,5 @@
-import { createClientId } from "../tree";
-import type { SchemaFragments, SchemaIssue, WikiSchema, WikiSchemaPreview } from "../types/schema";
+import { createClientId } from "@/entities/tree/lib/guards";
+import type { SchemaFragments, SchemaIssue, WikiSchema, WikiSchemaPreview } from "@/entities/schema/model/schema";
 
 // [임시 목업] wiki-schema Java 프록시가 아직 없으므로 클라이언트 목업으로 화면을 구동한다.
 // 실제 배선 시 이 파일의 함수 본문만 apiFetch 호출로 교체하면 된다(시그니처 유지).

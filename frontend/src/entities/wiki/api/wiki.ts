@@ -1,6 +1,7 @@
 import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import { getSessionContext } from "./chat";
-import type { BackendData, DocumentListResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "../types";
+import { getSessionContext } from "@/entities/chat/api/chat";
+import type { BackendData, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "@/entities/wiki/model/wiki";
+import type { DocumentListResponse } from "@/entities/document/model/document";
 
 export async function fetchBackendData(): Promise<BackendData> {
   const workspaceId = getWorkspaceId();

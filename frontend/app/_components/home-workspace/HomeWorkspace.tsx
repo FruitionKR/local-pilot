@@ -17,7 +17,7 @@ import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
-import { buildGraphFromBackend } from "../../_lib/graph";
+import { buildGraphFromBackend } from "@/entities/graph/lib/graph";
 import { uploadDocumentFile } from "../../_lib/api";
 import { buildGeneratedMarkdownFilename } from "../../_lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";

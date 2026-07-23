@@ -2,7 +2,7 @@ import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucid
 import { useEffect, useRef, useState } from "react";
 import { createChatSession, fetchChatSessions } from "../../_lib/api";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
+import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import type { ChatSessionResponse } from "../../_lib/types";
 import { sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 

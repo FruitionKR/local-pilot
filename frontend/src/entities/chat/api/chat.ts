@@ -1,5 +1,5 @@
 import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse } from "../types";
+import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse } from "@/entities/chat/model/chat";
 
 // 세션 선택 UI 도입 전까지 가장 최근 세션을 사용한다(없으면 생성).
 // 워크스페이스가 바뀌면 캐시를 새로 만든다.

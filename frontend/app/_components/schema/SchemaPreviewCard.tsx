@@ -1,6 +1,6 @@
 "use client";
 
-import type { SchemaFragments, WikiSchemaPreview } from "../../_lib/types/schema";
+import type { SchemaFragments, WikiSchemaPreview } from "@/entities/schema/model/schema";
 
 // 조각 키 → 사람이 읽는 라벨. 비어 있지 않은 조각만 표시한다.
 const FRAGMENT_LABELS: { key: keyof SchemaFragments; label: string }[] = [

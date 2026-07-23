@@ -9,9 +9,9 @@ import {
   createWikiSchemaDraft,
   listWikiSchemas,
   previewWikiSchema
-} from "../../_lib/api/schema";
+} from "@/entities/schema/api/schema";
 import { getErrorMessage } from "@/shared/lib/errors";
-import type { WikiSchema, WikiSchemaPreview } from "../../_lib/types/schema";
+import type { WikiSchema, WikiSchemaPreview } from "@/entities/schema/model/schema";
 
 // 스킬(스키마) 관리 임시 화면. rail "규칙" 뷰에 마운트된다.
 // 데이터는 목업(_lib/api/schema.ts)으로 구동하며, 실제 배선은 상호참조 이슈로 정리한다.

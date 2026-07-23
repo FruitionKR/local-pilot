@@ -1,5 +1,5 @@
 import type { GraphNode, NodePosition } from "../../_lib/types";
-import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_ZOOM } from "../../_lib/graph";
+import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_WIDTH, GRAPH_ZOOM } from "@/entities/graph/lib/graph";
 
 const GRAPH_VIEW_PADDING = 80;
 const GRAPH_PAN_MARGIN = 48;

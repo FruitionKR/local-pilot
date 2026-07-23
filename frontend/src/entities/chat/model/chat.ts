@@ -1,4 +1,4 @@
-import type { QueryMessageSummary } from "./wiki";
+import type { QueryMessageSummary } from "@/entities/wiki/model/wiki";
 import type { RelatedPageBase } from "@/shared/types/shared";
 
 export type ChatSessionResponse = {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { WikiSchema } from "../../_lib/types/schema";
+import type { WikiSchema } from "@/entities/schema/model/schema";
 
 const STATUS_LABELS: Record<WikiSchema["status"], string> = {
   active: "활성",

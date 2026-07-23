@@ -1,5 +1,7 @@
-import { makeRawId } from "../graph";
-import type { DocumentItemResponse, Project, TreeItem, WikiGraphResponse } from "../types";
+import { makeRawId } from "@/entities/graph/lib/graph";
+import type { Project, TreeItem } from "@/entities/tree/model/tree";
+import type { DocumentItemResponse } from "@/entities/document/model/document";
+import type { WikiGraphResponse } from "@/entities/wiki/model/wiki";
 
 // 백엔드 wiki graph에서 자동 생성되는 그룹 폴더 ID
 const WIKI_SOURCE_GROUP_ID = "wiki-source-pages";

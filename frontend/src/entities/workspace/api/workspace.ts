@@ -1,5 +1,5 @@
 import { apiFetch, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
-import type { WorkspaceListResponse, WorkspaceResponse } from "../types";
+import type { WorkspaceListResponse, WorkspaceResponse } from "@/entities/workspace/model/workspace";
 
 export async function fetchWorkspaces(): Promise<WorkspaceListResponse> {
   const response = await apiFetch("/api/workspaces", { cache: "no-store" });

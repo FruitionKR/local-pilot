@@ -1,5 +1,5 @@
 import type { DragEvent as ReactDragEvent } from "react";
-import type { Project, TreeItem } from "../types";
+import type { Project, TreeItem } from "@/entities/tree/model/tree";
 
 export const initialProjects: Project[] = [
   {

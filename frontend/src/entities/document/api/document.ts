@@ -1,5 +1,5 @@
 import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import type { DocumentBlocksResponse, DocumentUploadResponse } from "../types";
+import type { DocumentBlocksResponse, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();

@@ -4,7 +4,7 @@ import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
 import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "../_lib/note";
+import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
 import type { ActiveMarkdownEditContext } from "../_lib/markdownEditContext";
 import type { NoteEditState, NoteSaveStatus, SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 

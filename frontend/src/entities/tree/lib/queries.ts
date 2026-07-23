@@ -1,4 +1,4 @@
-import type { TreeItem } from "../types";
+import type { TreeItem } from "@/entities/tree/model/tree";
 
 export function findTreeItem(items: TreeItem[], itemId: string): TreeItem | null {
   for (const item of items) {

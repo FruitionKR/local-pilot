@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { findSourceNodeByDocumentId, makeRawId, rawNodeIdToDocumentId } from "../_lib/graph";
+import { findSourceNodeByDocumentId, makeRawId, rawNodeIdToDocumentId } from "@/entities/graph/lib/graph";
 import { findTreeItem, findTreeItemByGraphNodeId } from "../_lib/tree";
 import type { GraphNode, Project, SourceBlockHighlight } from "../_lib/types";
 

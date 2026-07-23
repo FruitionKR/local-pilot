@@ -1,7 +1,7 @@
 import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SvgIcon, toggleIcon } from "@/shared/ui/SvgIcon";
-import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
+import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import { createWorkspace, fetchWorkspaces } from "../../_lib/api";
 import { setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";

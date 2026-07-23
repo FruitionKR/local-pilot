@@ -1,4 +1,5 @@
-import type { DocumentItemResponse, GraphLink, GraphNode, WikiGraphResponse } from "./types";
+import type { DocumentItemResponse } from "@/entities/document/model/document";
+import type { GraphLink, GraphNode, WikiGraphResponse } from "@/entities/wiki/model/wiki";
 
 // 노드 ID 접두사 상수 (raw 노드만 프론트에서 합성한다. source/concept 노드는 백엔드 wiki page ID를 그대로 쓴다)
 export const NODE_PREFIX = {

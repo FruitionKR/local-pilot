@@ -1,7 +1,7 @@
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
 import type { Simulation, SimulationLinkDatum } from "d3-force";
 import type { GraphLink, GraphNode, NodePosition, NodePositionMap } from "../../_lib/types";
-import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH } from "../../_lib/graph";
+import { GRAPH_CENTER, GRAPH_HEIGHT, GRAPH_PHYSICS, GRAPH_WIDTH } from "@/entities/graph/lib/graph";
 import { clampGraphPosition } from "./graphGeometry";
 
 export const FIXED_NODE_SIZE = 14;

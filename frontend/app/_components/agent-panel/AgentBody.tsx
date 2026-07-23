@@ -6,7 +6,7 @@ import { StatusList } from "./StatusList";
 import type { StatusStep } from "./agentData";
 import type { QueryStageEvent } from "../../_lib/api";
 import type { ActiveAgentTurn } from "./AgentPanel";
-import { findSourceNodeByDocumentId } from "../../_lib/graph";
+import { findSourceNodeByDocumentId } from "@/entities/graph/lib/graph";
 import { findLastUserMessage } from "@/shared/lib/messages";
 import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "./agentFormatters";
 import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";

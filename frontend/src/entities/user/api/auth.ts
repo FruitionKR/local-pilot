@@ -1,5 +1,5 @@
 import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
-import type { UserMeResponse } from "../types";
+import type { UserMeResponse } from "@/entities/user/model/auth";
 
 export type AuthTokensResponse = {
   access_token: string;
