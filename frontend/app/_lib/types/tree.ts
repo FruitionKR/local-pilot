@@ -6,6 +6,8 @@ export type TreeItem = {
   generated?: boolean;
   customLabel?: boolean;
   status?: "uploading" | DocumentStatus;
+  processingState?: DocumentProcessingState;
+  processingStage?: string;
   errorMessage?: string;
   documentId?: string;
   mimeType?: string;
@@ -55,6 +57,9 @@ export type UploadPickerTarget = {
 };
 
 export type DocumentStatus = "uploaded" | "processing" | "completed" | "failed";
+
+// 파이프라인 처리 진행 상태(백엔드 processing_state). status보다 세분화된 진행 신호.
+export type DocumentProcessingState = "starting" | "running" | "stalled" | "completed" | "failed";
 
 export type NoteSaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
 

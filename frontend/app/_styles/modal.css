@@ -56,6 +56,40 @@
   background: var(--line-soft);
 }
 
+/* 삭제 확인 등 취소/실행 2버튼 액션 줄 */
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-actions button {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-cancel-button {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.modal-cancel-button:hover {
+  background: var(--line-soft);
+}
+
+.modal-delete-button {
+  background: #f04452;
+  color: #fff;
+}
+
+.modal-delete-button:hover {
+  filter: brightness(1.05);
+}
+
 /* 위키 내보내기 확인 팝업 (Figma 513:10878) — 문서 영역 하단에 뜬다 */
 .wiki-export-card {
   position: fixed;
