@@ -5,9 +5,29 @@ import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse
 // 워크스페이스가 바뀌면 캐시를 새로 만든다.
 let sessionCache: { workspaceId: string; promise: Promise<string> } | null = null;
 
+// 드롭다운에서 사용자가 명시적으로 고른 세션. 있으면 자동 최신 선택보다 우선한다.
+let selectedSession: { workspaceId: string; sessionId: string } | null = null;
+
+/** 드롭다운에서 고른 세션을 활성 세션으로 지정한다. query·messages·export가 이 세션을 대상으로 한다. */
+export function setActiveChatSession(sessionId: string) {
+  selectedSession = { workspaceId: getWorkspaceId(), sessionId };
+}
+
 /** 로그아웃 시 이전 계정의 세션 캐시가 재사용되지 않도록 초기화한다. */
 export function clearSessionCache() {
   sessionCache = null;
+  selectedSession = null;
+}
+
+/** 새 채팅 세션을 만든다. 생성된 세션을 반환한다(활성 전환은 호출측에서 처리). */
+export async function createChatSession(title?: string): Promise<ChatSessionResponse> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(title ? { title } : {})
+  });
+  return parseJsonOrThrow<ChatSessionResponse>(response, ERROR_MESSAGES.chatSessionFailed);
 }
 
 /** 현재 워크스페이스의 채팅 세션 목록을 가져온다. */
@@ -35,6 +55,9 @@ async function resolveSessionId(workspaceId: string): Promise<string> {
 /** 워크스페이스별 최근 채팅 세션 컨텍스트를 확보한다. query/export 등에서 공유한다. */
 export async function getSessionContext(): Promise<{ workspaceId: string; sessionId: string }> {
   const workspaceId = getWorkspaceId();
+  if (selectedSession?.workspaceId === workspaceId) {
+    return { workspaceId, sessionId: selectedSession.sessionId };
+  }
   if (sessionCache?.workspaceId !== workspaceId) {
     const promise = resolveSessionId(workspaceId).catch((error: unknown) => {
       sessionCache = null;

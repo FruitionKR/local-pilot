@@ -1,21 +1,40 @@
-import { conceptPageIcon, rawPageIcon, sideboxIcon, sourcePageIcon, SvgIcon } from "../SvgIcon";
+import { conceptPageIcon, rawPageIcon, sideboxIcon, sourcePageIcon, SvgIcon, type SvgAsset } from "../SvgIcon";
+import type { GraphFilterKind } from "../../_lib/types";
 
 export function GraphFilterChips({
   rawDocumentCount,
   sourceNodeCount,
   conceptNodeCount,
+  visibleKinds,
+  onToggleKind,
   onRestoreAgentPanel
 }: {
   rawDocumentCount: number;
   sourceNodeCount: number;
   conceptNodeCount: number;
+  visibleKinds: Record<GraphFilterKind, boolean>;
+  onToggleKind: (kind: GraphFilterKind) => void;
   onRestoreAgentPanel?: () => void;
 }) {
+  const chip = (kind: GraphFilterKind, icon: SvgAsset, iconClass: string, label: string, count: number) => (
+    <button
+      type="button"
+      className={`filter-chip${visibleKinds[kind] ? "" : " is-inactive"}`}
+      aria-pressed={visibleKinds[kind]}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggleKind(kind);
+      }}
+    >
+      <SvgIcon src={icon} className={`chip-icon ${iconClass}`} />{label} {count}
+    </button>
+  );
+
   return (
     <div className="filter-chips">
-      <span><SvgIcon src={rawPageIcon} className="chip-icon raw" />원본 raw {rawDocumentCount}</span>
-      <span><SvgIcon src={sourcePageIcon} className="chip-icon source" />source page {sourceNodeCount}</span>
-      <span><SvgIcon src={conceptPageIcon} className="chip-icon concept" />concept page {conceptNodeCount}</span>
+      {chip("raw", rawPageIcon, "raw", "원본 raw", rawDocumentCount)}
+      {chip("source", sourcePageIcon, "source", "source page", sourceNodeCount)}
+      {chip("concept", conceptPageIcon, "concept", "concept page", conceptNodeCount)}
       {onRestoreAgentPanel && (
         <button
           type="button"

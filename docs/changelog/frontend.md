@@ -6,6 +6,25 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### feat: 그래프·채팅 배선(세션 전환·SSE 진행·부분 편입·필터/메뉴 동작)
+
+**배경**
+
+- 그래프·채팅(agent-panel) 리디자인 화면의 미연결·no-op 지점을 실제 동작으로 배선한다(stream3 그래프+채팅).
+
+**변경된 내용**
+
+- 다중 세션 전환 배선: `chat.ts`에 선택 세션 override(`setActiveChatSession`)를 추가해 `getSessionContext` 기반 messages·query·export가 선택 세션을 대상으로 하도록 하고, `AgentHeader` 세션 항목 클릭을 `onSelectSession`으로 연결, `AgentPanel`이 active 세션을 보유해 `useChatThread`가 전환 시 해당 세션 메시지로 교체한다.
+- Query 진행 SSE 전환: `wiki.ts`에 `runQueryStream`(POST `/query/runs` → GET `/api/query/runs/{id}/events` SSE fetch 스트림 → GET run 상태로 최종 결과) 추가, `useChatThread`가 실시간 단계(`query.log`)를 수집하고 `AgentBody`/`StatusList`가 `setTimeout` 가짜 연출 대신 실제 단계를 표시한다.
+- 채팅→문서 부분 편입: `exportChatWiki(pairIds)`가 선택이 있으면 `selection_mode:"partial"`+`pair_ids`, 없으면 `full`을 전송하고, `AgentPanel`에 문답(pair) 선택 UI를 추가했다(미리보기는 백엔드가 full만 지원해 전체 표시).
+- no-op 정리: `GraphFilterChips` 실제 필터 토글(raw/source/concept 표시 on/off), graph-topbar `패널 보기`(Agent 패널 토글)·`그래프 옵션` 메뉴(레이아웃 초기화, 신규 `GraphOptionsMenu`), `AgentHeader ⋯` 메뉴(새 채팅) 동작 연결.
+
+**검증**
+
+- `npm exec tsc -- --noEmit`, `npm run lint`, `npm run build` 통과.
+- 브라우저 구동 확인: 세션 전환(제목·active 이동), FilterChips 토글(노드 숨김/empty state), `패널 보기` 토글, `그래프 옵션`·`⋯` 메뉴 표시.
+- **미검증(외부 블로커)**: Query SSE·부분 편입 end-to-end는 Upstage LLM API 키 정지(403 insufficient credit)로 파이프라인이 정지 상태라 실동작 확인 불가. LLM 키 복구 후 별도 테스트 필요.
+
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 
 **변경된 내용**

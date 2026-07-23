@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { MarkdownViewer } from "../MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
 import { StatusList } from "./StatusList";
+import type { StatusStep } from "./agentData";
+import type { QueryStageEvent } from "../../_lib/api";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { findSourceNodeByDocumentId } from "../../_lib/graph";
 import { findLastUserMessage } from "../../_lib/messages";
@@ -11,8 +13,6 @@ import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../..
 import { useSmoothScroll } from "./useSmoothScroll";
 
 const SCROLL_OFFSET_PX = 20;
-const REVEAL_RESULTS_DELAY_MS = 1000;
-const REVEAL_ANSWER_DELAY_MS = 2000;
 const MAX_RESULT_CARDS = 3;
 const SEARCH_STATUS_TITLE = "서치 명령 실행 중";
 
@@ -78,6 +78,7 @@ export function AgentBody({
   queryErrorMessage,
   chatLoadErrorMessage,
   animatedMessageId,
+  queryStages = [],
   onOpenWikiPage,
   onOpenSourceBlocks,
   nodes
@@ -88,6 +89,7 @@ export function AgentBody({
   queryErrorMessage: string | null;
   chatLoadErrorMessage: string | null;
   animatedMessageId: string | null;
+  queryStages?: QueryStageEvent[];
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
   nodes?: GraphNode[];
@@ -117,20 +119,9 @@ export function AgentBody({
     scrollToPosition(targetTop, { immediate });
   }, [scrollToPosition]);
 
+  // 진행 단계는 SSE StatusList로 실시간 표시하므로, 답변 도착 시 지연 연출 없이 전체를 공개한다.
   useEffect(() => {
-    if (!animatedMessageId) {
-      setVisibleAnswerStage(STAGE_ANSWER);
-      return;
-    }
-
-    setVisibleAnswerStage(STAGE_STATUS);
-    const revealResults = window.setTimeout(() => setVisibleAnswerStage(STAGE_RESULTS), REVEAL_RESULTS_DELAY_MS);
-    const revealAnswer = window.setTimeout(() => setVisibleAnswerStage(STAGE_ANSWER), REVEAL_ANSWER_DELAY_MS);
-
-    return () => {
-      window.clearTimeout(revealResults);
-      window.clearTimeout(revealAnswer);
-    };
+    setVisibleAnswerStage(STAGE_ANSWER);
   }, [animatedMessageId]);
 
   useLayoutEffect(() => {
@@ -177,8 +168,20 @@ export function AgentBody({
   const messagesToRender = activeTurn
     ? messages.filter((message) => message.id !== activeTurn.userMessageId && message.id !== activeTurn.assistantMessage?.id)
     : messages;
+  // SSE로 받은 실제 진행 단계를 상태 목록으로 표시한다. 마지막 단계는 아직 진행 중이면 active로 둔다.
+  const stageSteps: StatusStep[] = queryStages.map((stage, index): StatusStep => [
+    stage.message || stage.stage,
+    index === queryStages.length - 1 && isLoading ? "active" : "done"
+  ]);
   const pendingStatusThread = (
-    <div className="agent-thread"><StatusList title={SEARCH_STATUS_TITLE} isLoading={isLoading} hasResponse={false} /></div>
+    <div className="agent-thread">
+      <StatusList
+        title={SEARCH_STATUS_TITLE}
+        isLoading={isLoading}
+        hasResponse={false}
+        steps={stageSteps.length > 0 ? stageSteps : undefined}
+      />
+    </div>
   );
 
   return (

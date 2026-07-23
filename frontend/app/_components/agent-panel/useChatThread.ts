@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchChatMessages, queryWiki } from "../../_lib/api";
+import { fetchChatMessages, runQueryStream, setActiveChatSession, type QueryStageEvent } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
 import { findLastUserMessage } from "../../_lib/messages";
 import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
@@ -63,13 +63,14 @@ function buildNextActiveTurn(
  * 채팅 스레드 페칭·폴링·질의 상태를 관리하는 훅.
  * AgentPanel에서 추출했습니다.
  */
-export function useChatThread() {
+export function useChatThread(activeSessionId?: string | null) {
   const [messages, setMessages] = useState<ChatMessageResponse[]>([]);
   const [queryErrorMessage, setQueryErrorMessage] = useState<string | null>(null);
   const [chatLoadErrorMessage, setChatLoadErrorMessage] = useState<string | null>(null);
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const [activeTurn, setActiveTurn] = useState<ActiveAgentTurn | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [queryStages, setQueryStages] = useState<QueryStageEvent[]>([]);
 
   async function refreshMessages() {
     const response = await fetchChatMessages();
@@ -79,18 +80,25 @@ export function useChatThread() {
     return nextMessages;
   }
 
+  // 선택 세션이 바뀌면 해당 세션 메시지로 교체하고 이전 세션의 진행 상태를 초기화한다.
   useEffect(() => {
+    if (activeSessionId) setActiveChatSession(activeSessionId);
+    setActiveTurn(null);
+    setAnimatedMessageId(null);
+    setQueryErrorMessage(null);
+    setQueryStages([]);
     void refreshMessages().catch((error: unknown) => {
       setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeSessionId]);
 
   async function submitQuery(question: string) {
     if (!question || isLoading) return;
 
     setQueryErrorMessage(null);
     setAnimatedMessageId(null);
+    setQueryStages([]);
     setActiveTurn({ question });
     setIsLoading(true);
     const previousAssistantMessageIds = new Set(
@@ -100,7 +108,9 @@ export function useChatThread() {
     let querySucceeded = false;
     let queryRelatedPages: QueryRelatedPageResponse[] = [];
     try {
-      const queryResponse = await queryWiki(question);
+      const queryResponse = await runQueryStream(question, {
+        onStage: (event) => setQueryStages((current) => [...current, event])
+      });
       querySucceeded = true;
       queryRelatedPages = queryResponse.related_pages ?? [];
     } catch (error) {
@@ -121,5 +131,5 @@ export function useChatThread() {
     });
   }
 
-  return { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery };
+  return { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, queryStages, submitQuery };
 }
