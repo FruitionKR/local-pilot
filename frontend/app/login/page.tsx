@@ -120,6 +120,12 @@ function LoginPageContent() {
             <nav aria-label="계정 도움말" className="auth-login-links">
               <button onClick={() => router.push("/forgot-password")} type="button">비밀번호 찾기</button>
               <span />
+              {/*
+                아이디 찾기: 이 서비스는 이메일 = 아이디이며 로그인·가입·인증이 모두 이메일 기반이다.
+                별도 아이디가 없고, 이메일 외 조회에 쓸 고유 2차 식별자(전화번호 등)도 수집하지 않으므로
+                "아이디/이메일 찾기" 조회 기능이 성립하지 않는다. 그래서 버튼을 비활성으로 유지한다.
+                추후 전화번호 등 2차 식별자를 가입에 추가하면 해당 시점에 조회 화면/API를 구현한다.
+              */}
               <button aria-disabled="true" className="is-disabled" type="button">아이디 찾기</button>
               <span />
               <button onClick={() => router.push("/signup")} type="button">회원가입</button>
