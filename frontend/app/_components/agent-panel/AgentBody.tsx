@@ -1,13 +1,13 @@
 import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { MarkdownViewer } from "../MarkdownViewer";
+import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { AgentResultCard } from "./AgentResultCard";
 import { StatusList } from "./StatusList";
 import type { StatusStep } from "./agentData";
 import type { QueryStageEvent } from "../../_lib/api";
 import type { ActiveAgentTurn } from "./AgentPanel";
 import { findSourceNodeByDocumentId } from "../../_lib/graph";
-import { findLastUserMessage } from "../../_lib/messages";
+import { findLastUserMessage } from "@/shared/lib/messages";
 import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTitle } from "./agentFormatters";
 import type { ChatMessageResponse, GraphNode, SourceBlockHighlight } from "../../_lib/types";
 import { useSmoothScroll } from "./useSmoothScroll";

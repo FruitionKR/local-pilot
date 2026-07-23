@@ -1,10 +1,10 @@
 import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createChatSession, fetchChatSessions } from "../../_lib/api";
-import { getErrorMessage } from "../../_lib/errors";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
 import type { ChatSessionResponse } from "../../_lib/types";
-import { sideboxIcon, SvgIcon } from "../SvgIcon";
+import { sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 
 /** 채팅 패널 헤더: 세션 제목 + 세션 목록 드롭다운 + 패널 닫기 버튼 */
 export function AgentHeader({

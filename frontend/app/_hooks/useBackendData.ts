@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchBackendData } from "../_lib/api";
-import { getErrorMessage } from "../_lib/errors";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { mergeBackendDataIntoProjects } from "../_lib/tree";
 import type { BackendData, DocumentItemResponse, Project, WikiGraphResponse } from "../_lib/types";
 

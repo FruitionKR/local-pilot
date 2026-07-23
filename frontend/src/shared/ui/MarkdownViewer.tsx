@@ -8,10 +8,10 @@ import rehypeKatex from "rehype-katex";
 import type { Element } from "hast";
 import type { PhrasingContent, Root } from "mdast";
 import { visit } from "unist-util-visit";
-import { cx } from "../_lib/classNames";
-import { splitMarkdownBlockRanges } from "../_lib/markdownSegments";
-import { createRehypeSourceBlocks } from "../_lib/markdownSourceBlocks";
-import type { SourceBlockHighlight } from "../_lib/types";
+import { cx } from "@/shared/lib/classNames";
+import { splitMarkdownBlockRanges } from "@/shared/lib/markdownSegments";
+import { createRehypeSourceBlocks } from "@/shared/lib/markdownSourceBlocks";
+import type { SourceBlockHighlight } from "../../../app/_lib/types";
 
 // citation 강조에 사용하는 색상 팔레트 개수
 const CITATION_COLOR_COUNT = 5;

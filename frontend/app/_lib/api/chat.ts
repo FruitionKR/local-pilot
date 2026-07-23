@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse } from "../types";
 
 // 세션 선택 UI 도입 전까지 가장 최근 세션을 사용한다(없으면 생성).

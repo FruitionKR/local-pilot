@@ -10,7 +10,7 @@ import {
   listWikiSchemas,
   previewWikiSchema
 } from "../../_lib/api/schema";
-import { getErrorMessage } from "../../_lib/errors";
+import { getErrorMessage } from "@/shared/lib/errors";
 import type { WikiSchema, WikiSchemaPreview } from "../../_lib/types/schema";
 
 // 스킬(스키마) 관리 임시 화면. rail "규칙" 뷰에 마운트된다.

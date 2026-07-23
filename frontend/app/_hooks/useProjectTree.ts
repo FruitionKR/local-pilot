@@ -1,7 +1,7 @@
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { deleteDocument, renameDocument } from "../_lib/api";
-import { getSelectedWorkspaceId } from "../_lib/auth";
+import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import {
   findTreeItem,
   findTreeItemByDocumentId,

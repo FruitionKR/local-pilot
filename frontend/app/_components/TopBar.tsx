@@ -1,4 +1,4 @@
-import { searchIcon, SvgIcon, toggleIcon, userCircleIcon } from "./SvgIcon";
+import { searchIcon, SvgIcon, toggleIcon, userCircleIcon } from "@/shared/ui/SvgIcon";
 
 export function TopBar() {
   return (

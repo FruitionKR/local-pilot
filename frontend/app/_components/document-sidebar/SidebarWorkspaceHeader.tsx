@@ -1,10 +1,10 @@
 import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { SvgIcon, toggleIcon } from "../SvgIcon";
+import { SvgIcon, toggleIcon } from "@/shared/ui/SvgIcon";
 import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
 import { createWorkspace, fetchWorkspaces } from "../../_lib/api";
-import { setSelectedWorkspaceId } from "../../_lib/auth";
-import { getErrorMessage } from "../../_lib/errors";
+import { setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getErrorMessage } from "@/shared/lib/errors";
 import type { WorkspaceResponse } from "../../_lib/types";
 
 /** 선택한 워크스페이스로 전환하고 화면을 새로 그린다 */

@@ -1,7 +1,7 @@
 import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
-import { cx } from "../../_lib/classNames";
+import { cx } from "@/shared/lib/classNames";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, NoteEditState, Project } from "../../_lib/types";
-import { chatBubbleIcon, SvgIcon } from "../SvgIcon";
+import { chatBubbleIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { RailView } from "../RailNavigation";
 import { ContextMenu } from "./ContextMenu";
 import { ProjectSection } from "./ProjectSection";

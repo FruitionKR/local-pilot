@@ -1,9 +1,9 @@
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useState } from "react";
-import { cx } from "../../_lib/classNames";
+import { cx } from "@/shared/lib/classNames";
 import { hasDroppedFiles } from "../../_lib/tree";
 import type { Project } from "../../_lib/types";
-import { arrowIcon, SvgIcon } from "../SvgIcon";
+import { arrowIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { InlineEditInput } from "./InlineEditInput";
 import { SidebarTree } from "./SidebarTree";
 import { useFileDropZone } from "./useFileDropZone";

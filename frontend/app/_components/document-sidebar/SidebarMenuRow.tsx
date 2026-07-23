@@ -1,6 +1,6 @@
-import { cx } from "../../_lib/classNames";
+import { cx } from "@/shared/lib/classNames";
 import { railItems, type RailView } from "../RailNavigation";
-import { folderPlusIcon, SvgIcon } from "../SvgIcon";
+import { folderPlusIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 
 /** 사이드바 가로 아이콘 메뉴 줄. 활성 항목만 라벨이 있는 pill로 표시한다. */
 export function SidebarMenuRow({

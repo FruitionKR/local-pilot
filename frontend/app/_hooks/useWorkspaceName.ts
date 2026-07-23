@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchWorkspaces } from "../_lib/api";
-import { getSelectedWorkspaceId } from "../_lib/auth";
+import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import type { WorkspaceListResponse } from "../_lib/types";
 
 // 여러 컴포넌트(AgentHeader·SidebarWorkspaceHeader)가 동시에 이름을 조회해도

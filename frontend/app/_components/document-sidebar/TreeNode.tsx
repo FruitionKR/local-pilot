@@ -1,4 +1,4 @@
-import { cx } from "../../_lib/classNames";
+import { cx } from "@/shared/lib/classNames";
 import { isFileItem } from "../../_lib/tree";
 import type { DropTarget, TreeItem } from "../../_lib/types";
 import { InlineEditInput } from "./InlineEditInput";

@@ -1,4 +1,4 @@
-import { MarkdownViewer } from "../MarkdownViewer";
+import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";
 
 export function MarkdownCreatePreview({

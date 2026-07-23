@@ -1,5 +1,5 @@
 import type { QueryMessageSummary } from "./wiki";
-import type { RelatedPageBase } from "./shared";
+import type { RelatedPageBase } from "@/shared/types/shared";
 
 export type ChatSessionResponse = {
   id: string;

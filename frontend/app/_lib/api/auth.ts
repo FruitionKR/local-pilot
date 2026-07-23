@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseErrorResponse, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
 import type { UserMeResponse } from "../types";
 
 export type AuthTokensResponse = {

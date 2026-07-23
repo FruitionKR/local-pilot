@@ -1,4 +1,4 @@
-import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import type { DocumentBlocksResponse, DocumentUploadResponse } from "../types";
 
 export async function uploadDocumentFile(file: File) {

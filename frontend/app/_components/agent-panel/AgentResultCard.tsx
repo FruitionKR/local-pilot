@@ -1,4 +1,4 @@
-import { fileIcon, sourceIcon, SvgIcon } from "../SvgIcon";
+import { fileIcon, sourceIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { capitalize } from "./agentFormatters";
 
 // 카드 스타일이 정의된 page type 목록. 그 외 값은 source로 취급한다.

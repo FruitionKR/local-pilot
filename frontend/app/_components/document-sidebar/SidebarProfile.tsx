@@ -1,7 +1,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearSessionCache, fetchMe } from "../../_lib/api";
-import { clearAuth } from "../../_lib/auth";
+import { clearAuth } from "@/shared/lib/auth";
 
 /** 사이드바 하단 프로필 푸터: 아바타 + 이름/온라인 + 로그아웃 */
 export function SidebarProfile() {

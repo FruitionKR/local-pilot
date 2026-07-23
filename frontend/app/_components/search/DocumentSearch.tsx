@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { searchIcon, SvgIcon } from "../SvgIcon";
+import { searchIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { SelectableTreeItem } from "../document-sidebar/types";
 import type { Project, TreeItem } from "../../_lib/types";
 

@@ -1,4 +1,4 @@
-import { getAccessToken, getSelectedWorkspaceId } from "../auth";
+import { getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
 
 // 공통 에러 메시지 상수
 export const ERROR_MESSAGES = {

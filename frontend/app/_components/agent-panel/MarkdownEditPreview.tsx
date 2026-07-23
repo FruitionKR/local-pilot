@@ -1,4 +1,4 @@
-import { MarkdownViewer } from "../MarkdownViewer";
+import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import type { MarkdownEditPreview as MarkdownEditPreviewData } from "../../_lib/markdownAgent";
 
 const DIFF_MARKERS = {

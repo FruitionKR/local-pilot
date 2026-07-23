@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearSessionCache, createWorkspace, fetchWorkspaces } from "../_lib/api";
-import { getAccessToken, setSelectedWorkspaceId } from "../_lib/auth";
-import { getErrorMessage } from "../_lib/errors";
+import { getAccessToken, setSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getErrorMessage } from "@/shared/lib/errors";
 
 const DEFAULT_WORKSPACE_NAME = "나의 워크스페이스";
 

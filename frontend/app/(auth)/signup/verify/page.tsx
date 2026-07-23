@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { confirmEmailVerification, loginWithEmail, signupWithEmail } from "../../../_lib/api";
-import { saveTokens } from "../../../_lib/auth";
-import { getErrorMessage } from "../../../_lib/errors";
+import { saveTokens } from "@/shared/lib/auth";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "../../AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "../../_components/AuthControls";
 import { useDevelopmentVerificationCode } from "../../_hooks/useDevelopmentVerificationCode";

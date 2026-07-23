@@ -1,4 +1,4 @@
-import type { SvgAsset } from "./SvgIcon";
+import type { SvgAsset } from "@/shared/ui/SvgIcon";
 import {
   collectionIcon,
   homeIcon,
@@ -6,7 +6,7 @@ import {
   settingIcon,
   shareIcon,
   SvgIcon
-} from "./SvgIcon";
+} from "@/shared/ui/SvgIcon";
 
 export type RailView = "home" | "graph" | "rules" | "logs" | "settings";
 

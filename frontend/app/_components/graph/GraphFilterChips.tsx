@@ -1,4 +1,4 @@
-import { conceptPageIcon, rawPageIcon, sideboxIcon, sourcePageIcon, SvgIcon, type SvgAsset } from "../SvgIcon";
+import { conceptPageIcon, rawPageIcon, sideboxIcon, sourcePageIcon, SvgIcon, type SvgAsset } from "@/shared/ui/SvgIcon";
 import type { GraphFilterKind } from "../../_lib/types";
 
 export function GraphFilterChips({

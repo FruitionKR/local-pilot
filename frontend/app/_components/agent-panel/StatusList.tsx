@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { chatCheckIcon, rawPageIcon, SvgIcon } from "../SvgIcon";
+import { chatCheckIcon, rawPageIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { buildStatusSteps, type StatusStep } from "./agentData";
 
 export function StatusList({

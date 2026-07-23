@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import { getSessionContext } from "./chat";
 import type { BackendData, DocumentListResponse, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "../types";
 

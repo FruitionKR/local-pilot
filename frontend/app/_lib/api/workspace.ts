@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseJsonOrThrow, ERROR_MESSAGES } from "@/shared/api/client";
 import type { WorkspaceListResponse, WorkspaceResponse } from "../types";
 
 export async function fetchWorkspaces(): Promise<WorkspaceListResponse> {

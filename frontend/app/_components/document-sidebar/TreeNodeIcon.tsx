@@ -5,7 +5,7 @@ import {
   fileIcon,
   sourceIcon,
   SvgIcon
-} from "../SvgIcon";
+} from "@/shared/ui/SvgIcon";
 
 export function TreeNodeIcon({
   item,

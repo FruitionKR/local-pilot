@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { resetPasswordWithVerification } from "../../_lib/api";
-import { getErrorMessage } from "../../_lib/errors";
+import { getErrorMessage } from "@/shared/lib/errors";
 import { useAuthFlow } from "../AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "../_components/AuthControls";
 

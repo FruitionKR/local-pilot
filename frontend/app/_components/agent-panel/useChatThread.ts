@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchChatMessages, runQueryStream, setActiveChatSession, type QueryStageEvent } from "../../_lib/api";
 import { getSessionContext } from "../../_lib/api/chat";
-import { getErrorMessage } from "../../_lib/errors";
-import { findLastUserMessage } from "../../_lib/messages";
+import { getErrorMessage } from "@/shared/lib/errors";
+import { findLastUserMessage } from "@/shared/lib/messages";
 import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
 
 export type ActiveAgentTurn = {

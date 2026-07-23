@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "./client";
+import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import type { AgentTurnRequest, AgentTurnResponse } from "../markdownAgent";
 
 export async function requestAgentTurn(request: AgentTurnRequest): Promise<AgentTurnResponse> {

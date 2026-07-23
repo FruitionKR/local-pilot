@@ -9,7 +9,7 @@ import { MarkdownEditPreview } from "./MarkdownEditPreview";
 import { useChatThread } from "./useChatThread";
 import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
 import { exportChatWiki, fetchChatWikiExportPreview, fetchCurrentChatSessionId, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
-import { getErrorMessage } from "../../_lib/errors";
+import { getErrorMessage } from "@/shared/lib/errors";
 import {
   buildAgentTurnRequest,
   describeAgentTurnResult,
@@ -17,7 +17,7 @@ import {
   validateMarkdownEditApplication
 } from "../../_lib/markdownAgent";
 import type { AgentTurnRequest, AgentTurnResponse, GeneratedMarkdownDraft, MarkdownEditPreview as MarkdownEditPreviewData } from "../../_lib/markdownAgent";
-import { findLastUserMessage } from "../../_lib/messages";
+import { findLastUserMessage } from "@/shared/lib/messages";
 import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import type { GraphNode, SourceBlockHighlight } from "../../_lib/types";
 

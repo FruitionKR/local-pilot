@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HomeWorkspace } from "../_components/home-workspace/HomeWorkspace";
-import { getAccessToken, getSelectedWorkspaceId } from "../_lib/auth";
+import { getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
 
 export default function HomePage() {
   const router = useRouter();

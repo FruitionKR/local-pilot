@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { exchangeOAuthCode, loginWithEmail } from "../_lib/api";
-import { saveTokens } from "../_lib/auth";
+import { saveTokens } from "@/shared/lib/auth";
 import { AuthError, AuthField, AuthSubmitButton, SocialLoginButtons } from "../(auth)/_components/AuthControls";
 
 const INVALID_CREDENTIALS_MESSAGE = "가입하지 않은 아이디거나, 잘못된 비밀번호입니다.";
