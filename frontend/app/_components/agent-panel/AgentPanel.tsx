@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentBody } from "./AgentBody";
-import { AgentComposer } from "./AgentComposer";
-import { AgentHeader } from "./AgentHeader";
-import { MarkdownCreatePreview } from "./MarkdownCreatePreview";
-import { MarkdownEditPreview } from "./MarkdownEditPreview";
-import { useChatThread } from "./useChatThread";
-import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
+import { AgentBody } from "@/features/agent-chat/ui/AgentBody";
+import { AgentComposer } from "@/features/agent-chat/ui/AgentComposer";
+import { AgentHeader } from "@/features/agent-chat/ui/AgentHeader";
+import { MarkdownCreatePreview } from "@/features/agent-chat/ui/MarkdownCreatePreview";
+import { MarkdownEditPreview } from "@/features/agent-chat/ui/MarkdownEditPreview";
+import { useChatThread } from "@/features/agent-chat/model/useChatThread";
+import { WikiExportConfirmCard } from "@/features/wiki-export/ui/WikiExportConfirmCard";
 import { exportChatWiki, fetchChatWikiExportPreview, fetchCurrentChatSessionId, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
 import { getErrorMessage } from "@/shared/lib/errors";
 import {
@@ -15,10 +15,10 @@ import {
   describeAgentTurnResult,
   prepareMarkdownEditPreview,
   validateMarkdownEditApplication
-} from "../../_lib/markdownAgent";
-import type { AgentTurnRequest, AgentTurnResponse, GeneratedMarkdownDraft, MarkdownEditPreview as MarkdownEditPreviewData } from "../../_lib/markdownAgent";
+} from "@/features/agent-chat/lib/markdownAgent";
+import type { AgentTurnRequest, AgentTurnResponse, GeneratedMarkdownDraft, MarkdownEditPreview as MarkdownEditPreviewData } from "@/features/agent-chat/lib/markdownAgent";
 import { findLastUserMessage } from "@/shared/lib/messages";
-import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
+import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { GraphNode, SourceBlockHighlight } from "../../_lib/types";
 
 // 헤더 세션 제목으로 보여줄 마지막 질문의 최대 길이
@@ -33,7 +33,7 @@ function buildSessionTitle(question: string | undefined): string {
 }
 
 // AgentBody 등이 이 파일에서 ActiveAgentTurn을 import하므로 re-export 유지
-export type { ActiveAgentTurn } from "./useChatThread";
+export type { ActiveAgentTurn } from "@/features/agent-chat/model/useChatThread";
 
 export function AgentPanel({
   onClose,

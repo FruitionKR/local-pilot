@@ -8,7 +8,7 @@ import { ProjectSection } from "./ProjectSection";
 import { SidebarMenuRow } from "./SidebarMenuRow";
 import { SidebarProfile } from "./SidebarProfile";
 import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
-import { DocumentSearch } from "../search/DocumentSearch";
+import { DocumentSearch } from "@/features/document-search/ui/DocumentSearch";
 import type { SelectableTreeItem } from "./types";
 import { useFileDropZone } from "./useFileDropZone";
 

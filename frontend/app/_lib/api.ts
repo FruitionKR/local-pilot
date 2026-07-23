@@ -5,8 +5,8 @@ export * from "@/entities/workspace/api/workspace";
 // getSessionContext는 wiki·export 모듈이 직접 import하는 내부 헬퍼라 배럴에서 제외한다.
 export { clearSessionCache, setActiveChatSession, createChatSession, fetchChatSessions, fetchCurrentChatSessionId, fetchChatMessages } from "@/entities/chat/api/chat";
 export * from "@/entities/document/api/document";
-export * from "./api/note";
+export * from "@/features/note-editing/api/note";
 export * from "@/entities/wiki/api/wiki";
-export * from "./api/agent";
-export * from "./api/export";
+export * from "@/features/agent-chat/api/agent";
+export * from "@/features/wiki-export/api/export";
 export * from "@/entities/schema/api/schema";

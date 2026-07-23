@@ -1,11 +1,11 @@
 import { MoreHorizontal, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
-import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
+import { DynamicNoteEditor } from "@/features/note-editing/ui/DynamicNoteEditor";
 import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
-import type { ActiveMarkdownEditContext } from "../_lib/markdownEditContext";
+import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { NoteEditState, NoteSaveStatus, SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
 
 const SAVE_STATUS_LABELS: Partial<Record<NoteSaveStatus, string>> = {
