@@ -1,11 +1,9 @@
 "use client";
 
-import { PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
-import { GraphOptionsMenu } from "../graph/GraphOptionsMenu";
 import { HistoryPanel } from "../history/HistoryPanel";
 import { useSnapshots } from "../history/useSnapshots";
 import type { DocumentSnapshot } from "../history/snapshotStore";
@@ -107,7 +105,6 @@ export function HomeWorkspace() {
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
   // 홈에서 문서가 메인 영역을 채우는 상태(Obsidian식 최근 문서 열람)
   const isDocumentMain = isHomeView && hasSourcePreview;
-  const wasDocumentMainRef = useRef(false);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
@@ -123,11 +120,6 @@ export function HomeWorkspace() {
     const document = documents.find((item) => item.id === selection.selectedDocumentId);
     return document?.processed_at ?? document?.uploaded_at ?? null;
   }, [documents, selection.selectedDocumentId]);
-  useEffect(() => {
-    if (isDocumentMain && !wasDocumentMainRef.current) setIsAgentPanelOpen(false);
-    wasDocumentMainRef.current = isDocumentMain;
-  }, [isDocumentMain]);
-
   const firstSidebarNote = useMemo(() => {
     const documentIds = new Set(documents.map((document) => document.id));
     for (const project of projectTree.projects) {
@@ -321,20 +313,6 @@ export function HomeWorkspace() {
       {/* 그래프: 메뉴에서 그래프를 선택했을 때만 그래프 화면을 보여준다. */}
       {isGraphView && (
         <>
-          <header className="graph-topbar">
-            <div className="graph-topbar-actions">
-              <span>마지막 편집</span>
-              <button
-                type="button"
-                aria-label="패널 보기"
-                aria-pressed={isAgentPanelOpen}
-                onClick={() => setIsAgentPanelOpen((open) => !open)}
-              >
-                <PanelRight size={14} />
-              </button>
-              <GraphOptionsMenu />
-            </div>
-          </header>
           <Graph
             nodes={graphData.nodes}
             links={graphData.links}

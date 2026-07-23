@@ -1,12 +1,18 @@
 /* 스킬(스키마) 관리 임시 화면. rail "규칙" 뷰. */
 .schema-workspace {
+  position: absolute;
+  inset: 0 0 0 var(--sidebar-width, 320px);
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 24px;
-  height: 100%;
   padding: 32px;
   overflow: auto;
-  background: #f7f8fa;
+  background: #0a0a0a;
+}
+
+.workspace.is-sidebar-collapsed .schema-workspace {
+  left: 0;
 }
 
 .schema-column {
@@ -20,25 +26,25 @@
   margin: 0 0 4px;
   font-size: 20px;
   font-weight: 700;
-  color: #101828;
+  color: #f0f0f0;
 }
 
 .schema-header p {
   margin: 0;
   font-size: 12px;
-  color: #667085;
+  color: #a7a7a7;
   line-height: 1.5;
 }
 
 .schema-error {
   margin: 0;
-  color: #d92d20;
+  color: #ff8f87;
   font-size: 12px;
 }
 
 .schema-muted {
   margin: 0;
-  color: #98a2b3;
+  color: #a7a7a7;
   font-size: 12px;
 }
 
@@ -64,9 +70,9 @@
   gap: 8px;
   flex: 1 1 auto;
   padding: 10px 12px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #4f4f4f;
   border-radius: 10px;
-  background: #fff;
+  background: #1e1e1e;
   cursor: pointer;
   text-align: left;
 }
@@ -79,7 +85,7 @@
 .schema-list-name {
   font-size: 13px;
   font-weight: 500;
-  color: #101828;
+  color: #f0f0f0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -88,10 +94,10 @@
 .schema-list-activate {
   flex: none;
   padding: 6px 10px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid #4f4f4f;
   border-radius: 8px;
-  background: #fff;
-  color: #344054;
+  background: #1e1e1e;
+  color: #f0f0f0;
   cursor: pointer;
   font-size: 11px;
 }
@@ -110,19 +116,19 @@
 }
 
 .schema-badge.is-active {
-  background: #ecfdf3;
-  color: #067647;
+  background: #0f2e1d;
+  color: #6ce9a6;
 }
 
 .schema-badge.is-draft {
-  background: #eef2f6;
-  color: #475467;
+  background: #2a2a2a;
+  color: #a7a7a7;
 }
 
 .schema-badge.is-rejected,
 .schema-badge.is-blocked {
-  background: #fef3f2;
-  color: #b42318;
+  background: #3a1a17;
+  color: #ff8f87;
 }
 
 .schema-form {
@@ -130,9 +136,9 @@
   flex-direction: column;
   gap: 14px;
   padding: 20px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #4f4f4f;
   border-radius: 14px;
-  background: #fff;
+  background: #1e1e1e;
 }
 
 .schema-field {
@@ -141,17 +147,18 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #344054;
+  color: #a7a7a7;
 }
 
 .schema-field input,
 .schema-field textarea {
   padding: 10px 12px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid #4f4f4f;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 400;
-  color: #101828;
+  color: #f0f0f0;
+  background: #323232;
   font-family: inherit;
   resize: vertical;
 }
@@ -176,10 +183,10 @@
 
 .schema-form-actions button {
   padding: 8px 16px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid #4f4f4f;
   border-radius: 8px;
-  background: #fff;
-  color: #344054;
+  background: #1e1e1e;
+  color: #f0f0f0;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -202,9 +209,9 @@
   gap: 14px;
   margin-top: 16px;
   padding: 20px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #4f4f4f;
   border-radius: 14px;
-  background: #fff;
+  background: #1e1e1e;
 }
 
 .schema-preview header {
@@ -215,7 +222,7 @@
 
 .schema-preview header strong {
   font-size: 14px;
-  color: #101828;
+  color: #f0f0f0;
 }
 
 .schema-fragments {
@@ -233,7 +240,7 @@
 .schema-fragment-label {
   font-size: 11px;
   font-weight: 700;
-  color: #475467;
+  color: #a7a7a7;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -242,8 +249,8 @@
   margin: 0;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f8fafc;
-  color: #273044;
+  background: #2a2a2a;
+  color: #f0f0f0;
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -267,11 +274,11 @@
 }
 
 .schema-issue.is-blocked {
-  background: #fef3f2;
+  background: #3a1a17;
 }
 
 .schema-issue.is-unclear {
-  background: #fffaeb;
+  background: #33270a;
 }
 
 .schema-issue-tag {
@@ -284,27 +291,27 @@
 }
 
 .schema-issue.is-blocked .schema-issue-tag {
-  background: #fee4e2;
-  color: #b42318;
+  background: #5a221d;
+  color: #ff8f87;
 }
 
 .schema-issue.is-unclear .schema-issue-tag {
-  background: #fef0c7;
-  color: #b54708;
+  background: #4a3610;
+  color: #fdb022;
 }
 
 .schema-issue-text {
   margin: 0 0 2px;
   font-size: 12px;
   font-weight: 500;
-  color: #101828;
+  color: #f0f0f0;
   overflow-wrap: anywhere;
 }
 
 .schema-issue-reason {
   margin: 0;
   font-size: 11px;
-  color: #667085;
+  color: #a7a7a7;
 }
 
 .schema-activate {
@@ -321,7 +328,7 @@
 
 .schema-activate:disabled {
   cursor: not-allowed;
-  border-color: #d0d5dd;
-  background: #f2f4f7;
-  color: #98a2b3;
+  border-color: #4f4f4f;
+  background: #2a2a2a;
+  color: #667085;
 }

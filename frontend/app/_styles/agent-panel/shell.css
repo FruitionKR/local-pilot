@@ -30,15 +30,6 @@
   display: none;
 }
 
-.workspace.is-graph-view .agent-panel {
-  inset: 72px 24px 24px auto;
-  width: 380px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 32px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
-}
-
 .agent-header {
   position: relative;
   min-width: 0;

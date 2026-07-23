@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### feat: 규칙·그래프·채팅 패널 Figma 정합 정리
+
+**변경된 내용**
+
+- 규칙(스킬) 화면(`SchemaWorkspace`): 라이트 하드코딩 색상을 셸 다크 팔레트(#0a0a0a/#1e1e1e/#4f4f4f/#f0f0f0)로 교체하고, `position: absolute` + `inset` 좌측 오프셋을 적용해 왼쪽 사이드바에 가려지던 문제를 해결한다. (`_styles/schema.css`)
+- 그래프 뷰 상단 GNB(`.graph-topbar`) 제거: Figma 그래프 시안(node 599-4903)에 없는 "마지막 편집" 라벨·패널 토글·옵션 메뉴를 삭제한다. 패널 재열기는 `GraphFilterChips`가 담당하므로 기능 손실 없음. `GraphOptionsMenu`(레이아웃 초기화)도 함께 삭제. `.graph-stage` top을 0으로 조정. (`HomeWorkspace.tsx`, `_styles/graph/stage.css`, `GraphOptionsMenu.tsx` 삭제)
+- 채팅 패널 자동 닫힘 제거: 문서를 열면 오른쪽 채팅 패널을 강제로 닫던 로직을 삭제해, Figma 편집기 시안(node 426-2115)처럼 문서와 채팅 패널이 함께 열리도록 한다. 레이아웃은 기존 예약 폭(우측 360px)을 그대로 사용. (`HomeWorkspace.tsx`)
+- 그래프 뷰 채팅 패널 스타일 통일: 그래프 전용으로 떠있는 둥근 카드(radius 32, 여백 inset)로 override하던 CSS를 제거해, 편집기 화면과 동일한 전체높이 우측 밀착 패널(360px)로 맞춘다. `.graph-stage` 우측 예약폭도 428→360으로 정렬. (`_styles/agent-panel/shell.css`, `_styles/graph/stage.css`, `_styles/responsive.css`)
+
+**검증**
+
+- `tsc --noEmit` 통과. Playwright 런타임으로 규칙 화면 겹침 해소, 그래프 GNB 제거, 문서+채팅 공존, 편집기·그래프 채팅 패널 픽셀 일치(left 1152/width 360/radius 0) 확인.
+
 ### fix: 채팅 세션 전환 상태 누수·중복 로드 정리 (PR #107 리뷰 반영)
 
 **변경된 내용**

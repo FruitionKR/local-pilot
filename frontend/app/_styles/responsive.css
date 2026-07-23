@@ -8,15 +8,6 @@
     right: 330px;
   }
 
-  .workspace.is-graph-view .agent-panel {
-    right: 16px;
-    width: 330px;
-  }
-
-  .workspace.is-graph-view .graph-stage {
-    right: 362px;
-  }
-
   .workspace.has-source-preview .graph-stage {
     left: var(--sidebar-width, 320px);
   }
@@ -33,14 +24,6 @@
 
   .graph-stage {
     right: 300px;
-  }
-
-  .workspace.is-graph-view .agent-panel {
-    width: 300px;
-  }
-
-  .workspace.is-graph-view .graph-stage {
-    right: 332px;
   }
 
   .workspace.has-source-preview .graph-stage {

@@ -20,7 +20,7 @@
 
 .graph-stage {
   position: absolute;
-  inset: 48px 428px 0 var(--sidebar-width, 320px);
+  inset: 0 360px 0 var(--sidebar-width, 320px);
   overflow: hidden;
   background: #0a0a0a;
 }
@@ -40,81 +40,6 @@
 
 .workspace.is-agent-collapsed .graph-stage {
   right: 0;
-}
-
-.graph-topbar {
-  position: absolute;
-  inset: 0 0 auto var(--sidebar-width, 320px);
-  z-index: 8;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  color: var(--muted);
-  background: var(--bg);
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 10px;
-}
-
-.workspace.is-sidebar-collapsed .graph-topbar {
-  left: 0;
-}
-
-.graph-topbar-actions {
-  display: flex;
-  align-items: center;
-}
-
-.graph-topbar-actions {
-  gap: 10px;
-  margin-left: auto;
-}
-
-.graph-topbar-actions button {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--muted);
-  background: transparent;
-  border-radius: 6px;
-}
-
-.graph-topbar-actions button:hover,
-.graph-topbar-actions button:focus-visible {
-  color: var(--ink);
-  background: var(--soft);
-}
-
-.graph-options {
-  position: relative;
-  display: inline-flex;
-}
-
-.graph-options-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 6;
-  min-width: 140px;
-  padding: 4px;
-  background: var(--panel, #1c1c1c);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
-.graph-options-menu button {
-  width: 100%;
-  height: auto;
-  justify-content: flex-start;
-  padding: 8px 10px;
-  font-size: 13px;
-  color: var(--ink);
-  border-radius: 6px;
 }
 
 .graph-canvas {
