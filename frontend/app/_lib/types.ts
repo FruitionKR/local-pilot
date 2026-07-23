@@ -6,3 +6,4 @@ export * from "./types/workspace";
 export * from "./types/document";
 export * from "./types/wiki";
 export * from "./types/chat";
+export * from "./types/schema";
