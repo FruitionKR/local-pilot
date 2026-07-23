@@ -236,6 +236,8 @@ export function AgentPanel({
         onSelectSession={(sessionId, title) => {
           setActiveSessionId(sessionId);
           setActiveSessionTitle(title);
+          // 이전 세션에서 고른 부분 편입 선택이 새 세션으로 새어나가지 않도록 초기화한다.
+          setSelectedPairIds(new Set());
         }}
       />
       <AgentBody

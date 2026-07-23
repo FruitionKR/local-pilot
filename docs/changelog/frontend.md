@@ -6,6 +6,17 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### fix: 채팅 세션 전환 상태 누수·중복 로드 정리 (PR #107 리뷰 반영)
+
+**변경된 내용**
+
+- `AgentPanel`: 세션 전환 시 `selectedPairIds`를 초기화한다. 이전 세션에서 고른 부분 편입(pair) 선택이 남아, 전환 후 export가 다른 세션의 `pair_id`로 나가던 문제를 막는다.
+- `useChatThread`: 세션 전환 이펙트에 `cancelled` 가드를 추가해 빠른 전환 시 이전 세션 응답이 뒤늦게 반영되는 stale 렌더를 방지한다. 또한 `getSessionContext`로 확정 세션을 비교(`loadedSessionRef`)해, 마운트 시 `null`→현재 세션 확정으로 발생하던 메시지 중복 GET을 제거한다.
+
+**검증**
+
+- `npm exec tsc -- --noEmit`, `npm run lint`, `npm run build` 통과.
+
 ### feat: 그래프·채팅 배선(세션 전환·SSE 진행·부분 편입·필터/메뉴 동작)
 
 **배경**

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchChatMessages, runQueryStream, setActiveChatSession, type QueryStageEvent } from "../../_lib/api";
+import { getSessionContext } from "../../_lib/api/chat";
 import { getErrorMessage } from "../../_lib/errors";
 import { findLastUserMessage } from "../../_lib/messages";
 import type { ChatMessageRelatedPageResponse, ChatMessageResponse, QueryRelatedPageResponse } from "../../_lib/types";
@@ -71,6 +72,8 @@ export function useChatThread(activeSessionId?: string | null) {
   const [activeTurn, setActiveTurn] = useState<ActiveAgentTurn | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [queryStages, setQueryStages] = useState<QueryStageEvent[]>([]);
+  // 마지막으로 메시지를 로드한 세션. 초기 자동 로드와 확정 세션이 같으면 중복 요청을 막는다.
+  const loadedSessionRef = useRef<string | null>(null);
 
   async function refreshMessages() {
     const response = await fetchChatMessages();
@@ -82,14 +85,31 @@ export function useChatThread(activeSessionId?: string | null) {
 
   // 선택 세션이 바뀌면 해당 세션 메시지로 교체하고 이전 세션의 진행 상태를 초기화한다.
   useEffect(() => {
-    if (activeSessionId) setActiveChatSession(activeSessionId);
-    setActiveTurn(null);
-    setAnimatedMessageId(null);
-    setQueryErrorMessage(null);
-    setQueryStages([]);
-    void refreshMessages().catch((error: unknown) => {
+    let cancelled = false;
+
+    async function loadSessionMessages() {
+      if (activeSessionId) setActiveChatSession(activeSessionId);
+      // 실제 대상 세션을 확정한다. 이미 이 세션을 로드했으면(null→id 확정 등) 재요청하지 않는다.
+      const { sessionId } = await getSessionContext();
+      if (cancelled || loadedSessionRef.current === sessionId) return;
+
+      setActiveTurn(null);
+      setAnimatedMessageId(null);
+      setQueryErrorMessage(null);
+      setQueryStages([]);
+      await refreshMessages();
+      if (cancelled) return;
+      loadedSessionRef.current = sessionId;
+    }
+
+    loadSessionMessages().catch((error: unknown) => {
+      if (cancelled) return;
       setChatLoadErrorMessage(getErrorMessage(error, "채팅 기록을 불러오지 못했습니다."));
     });
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId]);
 
