@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { useAuthFlow } from "@/pages/auth/model/AuthFlowContext";
+import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
 
 export default function SignupPage() {

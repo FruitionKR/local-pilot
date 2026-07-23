@@ -1,6 +1,6 @@
 # 프론트엔드 Feature-Sliced Design 마이그레이션 매핑안 (검토용)
 
-> 상태: **검토 대기**. 이 문서는 코드 이동 전에 폴더/슬라이스 구조를 합의하기 위한 계획서다. 승인 전에는 파일을 이동하지 않는다.
+> 상태: **적용 완료** (`next build` 검증). 실제 구현 시 변경점: FSD `pages` 레이어는 Next.js `pages/`(레거시 Pages Router) 충돌 때문에 **`views`로 명명**했다. 전역 스타일은 슬라이스 콜로케이트 대신 `src/app/styles/`(app 레이어)로 이관했다(Next 전역 CSS 제약). 아래 계획서의 `pages`는 실제로는 `views`로 읽는다.
 > 기준: [feature-sliced.design](https://feature-sliced.design) 공식 스펙 (레이어 → 슬라이스 → 세그먼트, 하위 레이어로만 import, 슬라이스별 `index.ts` public API).
 
 ## 1. 결정 사항 (합의됨)

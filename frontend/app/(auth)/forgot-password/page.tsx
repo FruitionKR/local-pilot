@@ -1,1 +1,1 @@
-export { default } from "@/pages/auth/ui/ForgotPasswordPage";
+export { ForgotPasswordPage as default } from "@/views/auth";

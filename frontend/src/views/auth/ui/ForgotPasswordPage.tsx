@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { confirmEmailVerification, requestEmailVerification } from "@/entities/user";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { useAuthFlow } from "@/pages/auth/model/AuthFlowContext";
+import { useAuthFlow } from "@/views/auth/model/AuthFlowContext";
 import { AuthError, AuthField, AuthSubmitButton } from "@/shared/ui/AuthControls";
-import { useDevelopmentVerificationCode } from "@/pages/auth/lib/useDevelopmentVerificationCode";
-import { useExpiryCountdown } from "@/pages/auth/lib/useExpiryCountdown";
+import { useDevelopmentVerificationCode } from "@/views/auth/lib/useDevelopmentVerificationCode";
+import { useExpiryCountdown } from "@/views/auth/lib/useExpiryCountdown";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();

@@ -1,1 +1,1 @@
-export { default } from "@/pages/workspaces/ui/WorkspacesPage";
+export { default } from "@/views/workspaces";

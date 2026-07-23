@@ -11,18 +11,20 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **변경된 내용**
 
 - 공식 FSD 스펙(레이어→슬라이스→세그먼트, 하위 레이어로만 import)에 맞춰 147개 파일을 `frontend/src/` 아래 6개 레이어로 재배치했다.
-  - `shared`(api/client, lib, ui, types), `entities`(document·chat·wiki·schema·workspace·user·graph·tree), `features`(agent-chat·note-editing·schema-manage·document-history·document-search·document-upload·wiki-export), `widgets`(workspace·document-sidebar·graph·agent-panel·source-preview·rail-navigation·top-bar), `pages`(landing·home·login·workspaces·auth), `app`(providers).
-- Next.js app router 충돌은 공식 가이드대로 처리: FSD는 `src/`에 두고, Next `app/**/page.tsx`는 `@/pages/*`를 re-export 하는 얇은 라우팅 껍데기로만 유지.
+  - `shared`(api/client, lib, ui, types), `entities`(document·chat·wiki·schema·workspace·user·graph·tree), `features`(agent-chat·note-editing·schema-manage·document-history·document-search·document-upload·wiki-export), `widgets`(workspace·document-sidebar·graph·agent-panel·source-preview·rail-navigation·top-bar), `views`(landing·home·login·workspaces·auth), `app`(providers, styles).
+- Next.js app router 충돌은 공식 가이드대로 처리: FSD는 `src/`에 두고, Next `app/**/page.tsx`는 `@/views/*`를 re-export 하는 얇은 라우팅 껍데기로만 유지.
+- **FSD `pages` 레이어는 `views`로 명명**: Next.js가 `src/pages/`를 레거시 Pages Router로 인식해 app router와 라우트가 충돌하므로, 공식 권장대로 레이어명을 `views`로 사용한다.
+- 전역 스타일은 `app` 레이어(`src/app/styles/`)로 이관. (프로젝트가 전역 className 방식이고 Next는 전역 CSS를 layout에서만 import 허용하므로, 슬라이스별 CSS Module 콜로케이트 대신 app 레이어 집約이 맞다.)
 - `tsconfig.json`에 `@/*` → `./src/*` alias 도입. 슬라이스별 `index.ts` public API 추가. 임시 배럴(`_lib/api·types·tree`) shim을 단계적으로 제거하고 모든 참조를 canonical alias로 연결.
-- 5단계(shared→entities→features→widgets→pages/app)로 나눠 각 단계 커밋 + `tsc --noEmit` green 검증.
+- 단계(shared→entities→features→widgets→views/app→styles)로 나눠 각 단계 커밋 + `tsc --noEmit` green 검증.
 
 **검증**
 
-- 각 단계 `tsc --noEmit` exit 0. 최종적으로 dev 서버에서 `/`, `/login`, `/workspaces`, `/home`, `/signup` 등 전 라우트 200 확인.
+- 각 단계 `tsc --noEmit` exit 0. 최종 `next build` 성공(9개 라우트 전부 컴파일·프리렌더).
 
-**남은 작업(2차)**
+**남은 작업(선택)**
 
-- CSS는 이번 단계에서 `app/_styles/`에 그대로 두었다(콜로케이트는 2차). 파일명 kebab-case 정규화, 슬라이스 public API 정리도 2차 대상.
+- 파일명 kebab-case 정규화는 보류: 컴포넌트 파일은 React 관례상 PascalCase가 일반적이라 약 100개 일괄 개명은 이득 대비 변경·리스크가 커 권장하지 않음(필요 시 별도 진행).
 
 ### feat: 규칙·그래프·채팅 패널 Figma 정합 정리
 

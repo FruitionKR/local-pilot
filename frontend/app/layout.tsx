@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "katex/dist/katex.min.css";
 import { Providers } from "@/app/providers";
-import "./_styles/globals.css";
+import "@/app/styles/globals.css";
 
 export const metadata: Metadata = {
   title: "Fruition Agent",
