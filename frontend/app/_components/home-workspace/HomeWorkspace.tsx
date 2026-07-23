@@ -1,10 +1,11 @@
 "use client";
 
-import { MoreHorizontal, PanelRight } from "lucide-react";
+import { PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
+import { GraphOptionsMenu } from "../graph/GraphOptionsMenu";
 import { HistoryPanel } from "../history/HistoryPanel";
 import { useSnapshots } from "../history/useSnapshots";
 import type { DocumentSnapshot } from "../history/snapshotStore";
@@ -323,8 +324,15 @@ export function HomeWorkspace() {
           <header className="graph-topbar">
             <div className="graph-topbar-actions">
               <span>마지막 편집</span>
-              <button type="button" aria-label="패널 보기"><PanelRight size={14} /></button>
-              <button type="button" aria-label="그래프 옵션"><MoreHorizontal size={16} /></button>
+              <button
+                type="button"
+                aria-label="패널 보기"
+                aria-pressed={isAgentPanelOpen}
+                onClick={() => setIsAgentPanelOpen((open) => !open)}
+              >
+                <PanelRight size={14} />
+              </button>
+              <GraphOptionsMenu />
             </div>
           </header>
           <Graph

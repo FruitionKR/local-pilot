@@ -50,6 +50,8 @@ export type QueryMessageSummary = {
   content: string;
   status: string;
   created_at: string;
+  // 같은 문답(Q&A) 쌍을 묶는 id. 채팅 부분 편입(partial export)에서 pair 선택 단위로 쓴다.
+  pair_id?: string;
 };
 
 export type QueryResponse = {
@@ -97,6 +99,9 @@ export type GraphNode = {
   // raw/source 노드가 연결된 문서 ID
   documentId?: string;
 };
+
+// FilterChips에서 켜고 끌 수 있는 노드 종류.
+export type GraphFilterKind = "raw" | "source" | "concept";
 
 export type GraphLink = {
   from: string;

@@ -8,7 +8,7 @@ import { MarkdownCreatePreview } from "./MarkdownCreatePreview";
 import { MarkdownEditPreview } from "./MarkdownEditPreview";
 import { useChatThread } from "./useChatThread";
 import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
-import { exportChatWiki, fetchChatWikiExportPreview, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
+import { exportChatWiki, fetchChatWikiExportPreview, fetchCurrentChatSessionId, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
 import {
   buildAgentTurnRequest,
@@ -58,6 +58,7 @@ export function AgentPanel({
   const [exportPreview, setExportPreview] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [selectedPairIds, setSelectedPairIds] = useState<Set<string>>(new Set());
   const [agentTurnResponse, setAgentTurnResponse] = useState<AgentTurnResponse | null>(null);
   const [agentTurnRequest, setAgentTurnRequest] = useState<AgentTurnRequest | null>(null);
   const [agentTurnErrorMessage, setAgentTurnErrorMessage] = useState<string | null>(null);
@@ -66,10 +67,33 @@ export function AgentPanel({
   const [isCreatingMarkdown, setIsCreatingMarkdown] = useState(false);
   const [markdownCreateErrorMessage, setMarkdownCreateErrorMessage] = useState<string | null>(null);
   const handledLintRequestIdRef = useRef<number | null>(null);
-  const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionTitle, setActiveSessionTitle] = useState<string | null>(null);
+  const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, queryStages, submitQuery } = useChatThread(activeSessionId);
   const isSubmitting = isLoading || isAgentTurnLoading || isCreatingMarkdown;
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
-  const sessionTitle = buildSessionTitle(activeTurn?.question ?? findLastUserMessage(messages)?.content);
+  // 채팅→문서 부분 편입용 문답(pair) 목록. 각 pair는 user 질문으로 라벨링한다.
+  const exportPairs = useMemo(() => {
+    const byPair = new Map<string, { pairId: string; question: string }>();
+    for (const message of messages) {
+      if (!message.pair_id || byPair.has(message.pair_id)) continue;
+      if (message.role === "user") byPair.set(message.pair_id, { pairId: message.pair_id, question: message.content });
+    }
+    return [...byPair.values()];
+  }, [messages]);
+  const togglePair = (pairId: string) =>
+    setSelectedPairIds((current) => {
+      const next = new Set(current);
+      if (next.has(pairId)) next.delete(pairId);
+      else next.add(pairId);
+      return next;
+    });
+  // 마운트 시 현재 활성 세션을 확보해 헤더 강조·메시지 로드의 기준으로 삼는다.
+  useEffect(() => {
+    fetchCurrentChatSessionId().then(setActiveSessionId).catch(() => undefined);
+  }, []);
+  const lastQuestion = activeTurn?.question ?? findLastUserMessage(messages)?.content;
+  const sessionTitle = lastQuestion ? buildSessionTitle(lastQuestion) : (activeSessionTitle ?? "새 채팅");
   const composerPlaceholder = markdownEditContext
     ? `${markdownEditContext.editorSnapshot.target.type === "selection" ? "선택 영역" : markdownEditContext.editorSnapshot.target.type === "current_section" ? "현재 섹션" : "문서 전체"}을 어떻게 편집할까요?`
     : "AI 에이전트에게 무엇이든 물어보세요.";
@@ -189,9 +213,10 @@ export function AgentPanel({
   function acceptExport() {
     setExportErrorMessage(null);
     setIsExporting(true);
-    exportChatWiki()
+    exportChatWiki([...selectedPairIds])
       .then(async (response) => {
         setExportPreview(null);
+        setSelectedPairIds(new Set());
         await onDocumentExported?.(response);
         setAgentTurnSuccessMessage("채팅을 문서로 편입해 AI 처리 파이프라인에 전달했습니다.");
       })
@@ -204,7 +229,17 @@ export function AgentPanel({
       className={`agent-panel${editPreviewState?.preview ? " is-markdown-reviewing" : ""}`}
       onClick={(event) => event.stopPropagation()}
     >
-      <AgentHeader sessionTitle={sessionTitle} onClose={onClose} />
+      <AgentHeader
+        sessionTitle={sessionTitle}
+        onClose={onClose}
+        activeSessionId={activeSessionId}
+        onSelectSession={(sessionId, title) => {
+          setActiveSessionId(sessionId);
+          setActiveSessionTitle(title);
+          // 이전 세션에서 고른 부분 편입 선택이 새 세션으로 새어나가지 않도록 초기화한다.
+          setSelectedPairIds(new Set());
+        }}
+      />
       <AgentBody
         messages={messages}
         isLoading={isSubmitting}
@@ -212,6 +247,7 @@ export function AgentPanel({
         queryErrorMessage={agentTurnErrorMessage ?? queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
+        queryStages={queryStages}
         onOpenWikiPage={onOpenWikiPage}
         onOpenSourceBlocks={onOpenSourceBlocks}
         nodes={nodes}
@@ -256,8 +292,27 @@ export function AgentPanel({
       )}
       {hasAssistantMessage && (
         <div className="wiki-export-trigger">
+          {exportPairs.length > 1 && (
+            <details className="wiki-export-selection">
+              <summary>부분 선택 {selectedPairIds.size > 0 ? `(${selectedPairIds.size}개 문답)` : "(전체)"}</summary>
+              <ul>
+                {exportPairs.map((pair) => (
+                  <li key={pair.pairId}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={selectedPairIds.has(pair.pairId)}
+                        onChange={() => togglePair(pair.pairId)}
+                      />
+                      <span>{pair.question}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           <button type="button" disabled={isExporting} onClick={openExportPreview}>
-            채팅을 문서로 편입
+            채팅을 문서로 편입{selectedPairIds.size > 0 ? ` (${selectedPairIds.size}개 선택)` : ""}
           </button>
           {exportErrorMessage && <p role="alert">{exportErrorMessage}</p>}
         </div>

@@ -49,6 +49,42 @@
   padding: 10px 12px 10px 16px;
 }
 
+/* 헤더 우측 ⋯ 메뉴 (새 채팅 등) */
+.agent-header-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-header-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 0 12px #000;
+}
+
+.agent-header-menu-list button {
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  color: #f0f0f0;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.agent-header-menu-list button:hover,
+.agent-header-menu-list button:focus-visible {
+  background: var(--soft, #2a2a2a);
+}
+
 /* 헤더 좌측 세션 제목 버튼 */
 .agent-session-title {
   min-width: 0;

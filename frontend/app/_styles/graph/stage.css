@@ -89,6 +89,34 @@
   background: var(--soft);
 }
 
+.graph-options {
+  position: relative;
+  display: inline-flex;
+}
+
+.graph-options-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--panel, #1c1c1c);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.graph-options-menu button {
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  border-radius: 6px;
+}
+
 .graph-canvas {
   position: absolute;
   inset: 20px;
