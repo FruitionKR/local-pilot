@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { searchIcon, SvgIcon } from "@/shared/ui/SvgIcon";
-import type { SelectableTreeItem } from "../../../../app/_components/document-sidebar/types";
+import type { SelectableTreeItem } from "@/widgets/document-sidebar/model/types";
 import type { Project, TreeItem } from "@/entities/tree/model/tree";
 
 // 드롭다운에 최대로 노출할 결과 수

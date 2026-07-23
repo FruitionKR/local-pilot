@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { HomeWorkspace } from "../_components/home-workspace/HomeWorkspace";
+import { HomeWorkspace } from "@/widgets/workspace";
 import { getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
 
 export default function HomePage() {
