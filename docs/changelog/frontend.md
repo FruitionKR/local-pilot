@@ -6,6 +6,24 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### refactor: `_lib` God 파일을 도메인 모듈로 분할
+
+**변경된 내용**
+
+- `_lib/api.ts`(443줄)를 도메인별 파일(`api/client·auth·workspace·chat·document·note·wiki·agent·export.ts`)로 분리하고, 기존 `_lib/api` import 경로는 배럴(re-export)로 유지했다.
+- `_lib/types.ts`(282줄)를 `types/tree·auth·workspace·document·wiki·chat.ts`로, `_lib/tree.ts`(369줄)를 `tree/guards·queries·mutations·sync.ts`로 분리하고 각각 배럴로 유지했다.
+- 코드 로직 변경 없는 순수 이동이며, importer(api 19·types 35·tree 10) 파일은 수정하지 않았다.
+- 목적: 여러 프론트 기능을 병렬 개발할 때 한 파일에 집중되던 merge conflict를 줄이고, 도메인별 코드 탐색을 쉽게 한다.
+
+**검증**
+
+- `npm exec tsc -- --noEmit`, `npm run lint`, `npm run test:markdown`(46건), `npm run build` 통과.
+
+**참고**
+
+- `markdownAgent.ts` 분할은 raw-node `--experimental-strip-types` 유닛테스트와 tsc(bundler) 확장자 요구가 충돌해 단일 파일로 유지했다.
+- 계획 문서: `docs/issue/frontend/2026-07-23-parallel-dev-refactor.md`.
+
 ### feat: Markdown 문서 편집 경험 개선
 
 **변경된 내용**
