@@ -1,4 +1,4 @@
-import type { ChatMessageResponse } from "../../../app/_lib/types";
+import type { ChatMessageResponse } from "@/entities/chat";
 
 /**
  * 메시지 목록에서 마지막 user 역할 메시지를 반환합니다.

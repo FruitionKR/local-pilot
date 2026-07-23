@@ -11,7 +11,7 @@ import { visit } from "unist-util-visit";
 import { cx } from "@/shared/lib/classNames";
 import { splitMarkdownBlockRanges } from "@/shared/lib/markdownSegments";
 import { createRehypeSourceBlocks } from "@/shared/lib/markdownSourceBlocks";
-import type { SourceBlockHighlight } from "../../../app/_lib/types";
+import type { SourceBlockHighlight } from "@/entities/document";
 
 // citation 강조에 사용하는 색상 팔레트 개수
 const CITATION_COLOR_COUNT = 5;

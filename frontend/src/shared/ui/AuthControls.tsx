@@ -9,7 +9,7 @@ import kakaoLogo from "../../../svg/auth/auth-kakao-logo.svg";
 import naverLogo from "../../../svg/auth/auth-naver-logo.svg";
 import passwordHiddenIcon from "../../../svg/auth/auth-password-hidden.svg";
 import passwordVisibleIcon from "../../../svg/auth/auth-password-visible.svg";
-import { getOAuthAuthorizationUrl } from "../../_lib/api";
+import { getOAuthAuthorizationUrl } from "@/entities/user";
 
 type AuthFieldProps = {
   autoComplete?: HTMLInputAutoCompleteAttribute;
