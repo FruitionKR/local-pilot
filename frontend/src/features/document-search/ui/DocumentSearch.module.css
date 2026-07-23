@@ -1,4 +1,5 @@
-/* 사이드바 문서명 검색 */
+/* 사이드바 문서명 검색 (기존 app/styles/document-sidebar/search.css).
+   실제 소비처가 이 feature이므로 여기로 콜로케이트했다. */
 .sidebar-search {
   position: relative;
   padding: 0 16px 8px 24px;

@@ -1,4 +1,6 @@
 import type { DocumentProcessingState, NoteEditState, TreeItem } from "@/entities/tree";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./DocumentSidebar.module.css";
 
 type BadgeKind = "processing" | "stalled" | "failed";
 
@@ -55,13 +57,13 @@ export function TreeNodeStatus({
   return (
     <>
       {badgeKind && (
-        <small className={`tree-status ${badgeKind}`} title={badgeTitle(badgeKind, processingStage, errorMessage)}>
+        <small className={cx(styles["tree-status"], styles[badgeKind])} title={badgeTitle(badgeKind, processingStage, errorMessage)}>
           {BADGE_LABEL[badgeKind]}
         </small>
       )}
       {localStatus && (
         <small
-          className={`tree-edit-status is-${localStatus}`}
+          className={cx(styles["tree-edit-status"], styles[`is-${localStatus}`])}
           aria-label={localStatus === "error" ? "저장 문제 있음" : "수정 사항 있음"}
           title={localStatus === "error" ? "저장 문제 있음" : "수정 사항 또는 AI 점검 대기"}
         />

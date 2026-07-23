@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { GraphFilterKind, GraphLink, GraphNode } from "@/entities/wiki";
 import { GraphCanvas } from "./GraphCanvas";
 import { GraphFilterChips } from "./GraphFilterChips";
+import styles from "./Graph.module.css";
 
 function nodeFilterKind(node: GraphNode): GraphFilterKind {
   return node.kind === "source" ? "source" : node.kind === "raw" ? "raw" : "concept";
@@ -46,7 +47,7 @@ export function Graph({
   }, [nodes, links, visibleKinds]);
 
   return (
-    <section className="graph-stage" aria-label="자료 관계 그래프">
+    <section className={styles["graph-stage"]} aria-label="자료 관계 그래프">
       <GraphFilterChips
         rawDocumentCount={rawDocumentCount}
         sourceNodeCount={sourceNodeCount}

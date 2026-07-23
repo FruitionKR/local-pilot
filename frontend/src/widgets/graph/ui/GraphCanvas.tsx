@@ -1,6 +1,7 @@
 import type { GraphLink, GraphNode } from "@/entities/wiki";
 import { GraphEmptyState } from "./GraphEmptyState";
 import { useGraphCanvas } from "../model/useGraphCanvas";
+import styles from "./Graph.module.css";
 
 export function GraphCanvas({
   nodes = [],
@@ -20,8 +21,8 @@ export function GraphCanvas({
   const { canvasRef, graphCanvasProps } = useGraphCanvas({ nodes, links, focusedNodeId, onOpenNodePreview });
 
   return (
-    <div className="graph-canvas" {...graphCanvasProps} style={{ touchAction: "none" }}>
-      <canvas ref={canvasRef} className="graph-surface" aria-label="자료 관계 그래프 캔버스" />
+    <div className={styles["graph-canvas"]} {...graphCanvasProps} style={{ touchAction: "none" }}>
+      <canvas ref={canvasRef} className={styles["graph-surface"]} aria-label="자료 관계 그래프 캔버스" />
       {nodes.length === 0 && <GraphEmptyState loading={loading} errorMessage={errorMessage} />}
     </div>
   );

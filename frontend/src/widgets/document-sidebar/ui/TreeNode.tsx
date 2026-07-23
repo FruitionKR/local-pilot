@@ -6,6 +6,7 @@ import { TreeNodeIcon } from "./TreeNodeIcon";
 import { TreeNodeStatus } from "./TreeNodeStatus";
 import type { TreeInteractionProps } from "../model/types";
 import { useTreeNodeDragDrop } from "../lib/useTreeNodeDragDrop";
+import styles from "./DocumentSidebar.module.css";
 
 // 트리 행 들여쓰기: 기본 패딩 + depth당 증가 폭 (px)
 const TREE_ROW_BASE_PADDING_PX = 8;
@@ -89,13 +90,13 @@ export function TreeNode({
       <button
         type="button"
         className={cx(
-          "tree-row",
-          item.active && "is-active",
-          selectedItemId === item.id && "is-selected",
-          draggedItemId === item.id && "is-dragging",
-          isFileDropTarget && "is-file-drop-target",
-          item.type === "folder" ? "is-folder" : "is-note",
-          isDropTarget && `is-drop-${dropTarget.position}`
+          styles["tree-row"],
+          item.active && styles["is-active"],
+          selectedItemId === item.id && styles["is-selected"],
+          draggedItemId === item.id && styles["is-dragging"],
+          isFileDropTarget && styles["is-file-drop-target"],
+          item.type === "folder" ? styles["is-folder"] : styles["is-note"],
+          isDropTarget && styles[`is-drop-${dropTarget.position}`]
         )}
         style={{ paddingLeft: TREE_ROW_BASE_PADDING_PX + depth * TREE_ROW_INDENT_PER_DEPTH_PX }}
         title={item.errorMessage ?? item.sourceUri}
@@ -131,8 +132,8 @@ export function TreeNode({
               errorMessage={item.errorMessage}
               editState={item.documentId ? noteEditStates[item.documentId] : undefined}
             />
-            {fileTypeBadge(item) && <small className="tree-type-badge">{fileTypeBadge(item)}</small>}
-            {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
+            {fileTypeBadge(item) && <small className={styles["tree-type-badge"]}>{fileTypeBadge(item)}</small>}
+            {isFileDropTarget && <small className={styles["tree-drop-hint"]}>여기에 추가</small>}
           </>
         )}
       </button>

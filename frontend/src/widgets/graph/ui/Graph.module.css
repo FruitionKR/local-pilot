@@ -1,0 +1,354 @@
+/* graph 위젯 스타일 (기존 app/styles/graph/{stage,filters,lines,nodes}.css + responsive.css graph 소유분 병합) */
+
+/* --- stage --- */
+.api-error-banner {
+  position: absolute;
+  top: 16px;
+  left: calc(var(--sidebar-width, 320px) + 20px);
+  right: 380px;
+  z-index: 9;
+  padding: 9px 12px;
+  color: #ffb6ae;
+  background: #2a1614;
+  border: 1px solid #6f2d29;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:global(.workspace.is-sidebar-collapsed) .api-error-banner {
+  left: 20px;
+}
+
+.graph-stage {
+  position: absolute;
+  inset: 0 360px 0 var(--sidebar-width, 320px);
+  overflow: hidden;
+  background: #0a0a0a;
+}
+
+:global(.workspace.is-sidebar-collapsed) .graph-stage {
+  left: 0;
+}
+
+:global(.workspace.has-source-preview) .graph-stage {
+  left: var(--sidebar-width, 320px);
+  right: 360px;
+}
+
+:global(.workspace.is-sidebar-collapsed.has-source-preview) .graph-stage {
+  left: 0;
+}
+
+:global(.workspace.is-agent-collapsed) .graph-stage {
+  right: 0;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 20px;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.graph-canvas:active {
+  cursor: grabbing;
+}
+
+.graph-surface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.graph-empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 14px;
+  color: #a7a7a7;
+  background: #1e1e1e;
+  border: 1px solid #4f4f4f;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.graph-empty.is-error {
+  max-width: min(520px, calc(100% - 48px));
+  border-radius: 8px;
+  color: #ff8f87;
+  background: #3a1f1d;
+  border-color: #6f2d29;
+  text-align: center;
+  white-space: normal;
+}
+
+/* --- filters --- */
+.filter-chips {
+  position: absolute;
+  top: 24px;
+  right: 0;
+  left: auto;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+:global(.workspace.is-agent-collapsed) .filter-chips {
+  right: 20px;
+}
+
+.filter-chips .filter-chip,
+.filter-chip-action {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #e2e2e2;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid #4f4f4f;
+  border-radius: 32px;
+  box-shadow: none;
+}
+
+.filter-chips .filter-chip {
+  gap: 6px;
+  padding: 9px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+
+.filter-chips .filter-chip:hover,
+.filter-chips .filter-chip:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 필터에서 끈 종류: 흐리게 표시해 토글 상태를 드러낸다. */
+.filter-chips .filter-chip.is-inactive {
+  opacity: 0.4;
+}
+
+.filter-chip-action {
+  width: 44px;
+  padding: 0;
+}
+
+.filter-chip-action:hover,
+.filter-chip-action:focus-visible {
+  background: #323232;
+}
+
+.filter-chip-action :global(.svg-icon) {
+  width: 28px;
+  height: 28px;
+}
+
+.chip-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.chip-icon.raw,
+.chip-icon.concept {
+  color: #a7a7a7;
+}
+
+.chip-icon.source {
+  color: var(--source-page);
+}
+
+/* --- lines (canvas 렌더용, 현재 DOM 미사용 pre-existing dead CSS) --- */
+.graph-lines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.graph-lines line {
+  stroke: #9da8b8;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.graph-lines line.is-dashed {
+  stroke-dasharray: 4 3;
+  stroke: #aeb7c5;
+}
+
+.graph-lines line.is-active {
+  stroke: #e7a400;
+  stroke-width: 1.8;
+}
+
+/* --- nodes (canvas 렌더용, 현재 DOM 미사용 pre-existing dead CSS) --- */
+.graph-node {
+  position: absolute;
+  z-index: 2;
+  width: var(--node-size);
+  height: var(--node-size);
+  transform: translate(-50%, -50%);
+  animation: node-pop 180ms ease-out both;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #627085;
+  background: transparent;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.2;
+  cursor: grab;
+  touch-action: none;
+  --selection-ring-strong: rgba(48, 56, 68, 0.18);
+  --selection-ring-soft: rgba(48, 56, 68, 0.08);
+}
+
+@keyframes node-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.72);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.graph-node:active {
+  cursor: grabbing;
+}
+
+.graph-node:hover .node-dot,
+.graph-node:focus-visible .node-dot {
+  outline: 3px solid var(--selection-ring-strong);
+  outline-offset: 3px;
+}
+
+.graph-node:focus-visible {
+  outline: 0;
+}
+
+.graph-node:hover .node-label strong,
+.graph-node:focus-visible .node-label strong,
+.graph-node.is-selected .node-label strong {
+  box-shadow: 0 4px 12px rgba(43, 52, 66, 0.16);
+}
+
+.node-label {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 9px);
+  transform: translateX(-50%);
+  display: block;
+  width: max-content;
+  pointer-events: none;
+}
+
+.node-dot {
+  position: relative;
+  width: var(--node-size);
+  height: var(--node-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #38414d;
+  background: #303844;
+  border-radius: 50%;
+}
+
+.graph-node.source .node-dot {
+  background: var(--source-page);
+}
+
+.graph-node.source {
+  --selection-ring-strong: rgba(187, 207, 108, 0.28);
+  --selection-ring-soft: rgba(187, 207, 108, 0.12);
+}
+
+.graph-node.raw .node-dot {
+  background: transparent;
+  border: 1px dashed #98a4b5;
+}
+
+.graph-node.raw {
+  --selection-ring-strong: rgba(152, 164, 181, 0.34);
+  --selection-ring-soft: rgba(152, 164, 181, 0.15);
+}
+
+.graph-node.is-selected .node-dot {
+  outline: 0;
+  box-shadow: 0 0 0 12px var(--selection-ring-strong), 0 0 0 26px var(--selection-ring-soft);
+}
+
+.graph-node.raw.is-selected .node-dot {
+  box-shadow: none;
+  outline: 2px dashed #98a4b5;
+  outline-offset: 8px;
+}
+
+.graph-node.raw.is-selected .node-dot::after {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  border: 1px dashed rgba(152, 164, 181, 0.55);
+  border-radius: 50%;
+}
+
+.node-dot b {
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.graph-node strong {
+  display: block;
+  padding: 8px 17px;
+  color: #39414d;
+  background: #fff;
+  border-radius: 999px;
+  box-shadow: 0 2px 7px rgba(43, 52, 66, 0.08);
+  font-size: 14px;
+  font-style: normal;
+}
+
+.graph-node em {
+  display: block;
+  color: #627085;
+  font-style: normal;
+}
+
+/* --- responsive (기존 responsive.css graph 소유분) --- */
+:global(.workspace.is-graph-view.is-agent-collapsed) .graph-stage {
+  right: 0;
+}
+
+@media (max-width: 1300px) {
+  .graph-stage {
+    right: 330px;
+  }
+
+  :global(.workspace.has-source-preview) .graph-stage {
+    left: var(--sidebar-width, 320px);
+  }
+}
+
+@media (max-width: 1080px) {
+  .graph-stage {
+    right: 300px;
+  }
+
+  :global(.workspace.has-source-preview) .graph-stage {
+    left: var(--sidebar-width, 320px);
+  }
+}

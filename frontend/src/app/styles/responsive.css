@@ -4,14 +4,6 @@
     width: 330px;
   }
 
-  .graph-stage {
-    right: 330px;
-  }
-
-  .workspace.has-source-preview .graph-stage {
-    left: var(--sidebar-width, 320px);
-  }
-
   .source-preview-panel {
     left: var(--sidebar-width, 320px);
   }
@@ -22,21 +14,9 @@
     width: 300px;
   }
 
-  .graph-stage {
-    right: 300px;
-  }
-
-  .workspace.has-source-preview .graph-stage {
-    left: var(--sidebar-width, 320px);
-  }
-
   .source-preview-panel {
     left: var(--sidebar-width, 320px);
   }
-}
-
-.workspace.is-graph-view.is-agent-collapsed .graph-stage {
-  right: 0;
 }
 
 @media (max-width: 720px) {

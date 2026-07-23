@@ -6,6 +6,8 @@ import {
   sourceIcon,
   SvgIcon
 } from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./DocumentSidebar.module.css";
 
 export function TreeNodeIcon({
   item,
@@ -17,13 +19,13 @@ export function TreeNodeIcon({
   isOpen: boolean;
 }) {
   if (isFileItem(item)) {
-    return <span className="tree-folder-slot" aria-hidden />;
+    return <span className={styles["tree-folder-slot"]} aria-hidden />;
   }
-  if (item.wikiKind === "source") return <SvgIcon src={sourceIcon} className="tree-asset source" />;
-  if (item.wikiKind === "concept") return <SvgIcon src={fileIcon} className="tree-asset concept" />;
+  if (item.wikiKind === "source") return <SvgIcon src={sourceIcon} className={cx(styles["tree-asset"], styles.source)} />;
+  if (item.wikiKind === "concept") return <SvgIcon src={fileIcon} className={cx(styles["tree-asset"], styles.concept)} />;
   return (
-    <span className="tree-folder-slot" aria-hidden>
-      {hasChildren && <SvgIcon src={arrowIcon} className={`tree-arrow ${isOpen ? "is-open" : ""}`} />}
+    <span className={styles["tree-folder-slot"]} aria-hidden>
+      {hasChildren && <SvgIcon src={arrowIcon} className={cx(styles["tree-arrow"], isOpen && styles["is-open"])} />}
     </span>
   );
 }

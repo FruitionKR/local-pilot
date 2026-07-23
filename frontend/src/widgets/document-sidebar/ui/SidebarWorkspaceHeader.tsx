@@ -6,6 +6,8 @@ import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
 import type { WorkspaceResponse } from "@/entities/workspace";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./DocumentSidebar.module.css";
 
 /** 선택한 워크스페이스로 전환하고 화면을 새로 그린다 */
 function switchWorkspace(workspaceId: string) {
@@ -68,46 +70,46 @@ export function SidebarWorkspaceHeader() {
   }
 
   return (
-    <div className="sidebar-workspace" ref={rootRef}>
+    <div className={styles["sidebar-workspace"]} ref={rootRef}>
       <button
         type="button"
-        className="sidebar-workspace-trigger"
+        className={styles["sidebar-workspace-trigger"]}
         aria-label="워크스페이스 전환"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((open) => !open)}
       >
-        <span className="sidebar-workspace-mark" aria-hidden>{name.charAt(0)}</span>
-        <span className="sidebar-workspace-name">
+        <span className={styles["sidebar-workspace-mark"]} aria-hidden>{name.charAt(0)}</span>
+        <span className={styles["sidebar-workspace-name"]}>
           <span>{name}</span>
-          <SvgIcon src={toggleIcon} className={`sidebar-workspace-toggle${isOpen ? " is-open" : ""}`} />
+          <SvgIcon src={toggleIcon} className={cx(styles["sidebar-workspace-toggle"], isOpen && styles["is-open"])} />
         </span>
       </button>
 
       {isOpen && (
-        <div className="workspace-dropdown">
+        <div className={styles["workspace-dropdown"]}>
           {loadErrorMessage ? (
-            <p className="workspace-dropdown-error" role="alert">{loadErrorMessage}</p>
+            <p className={styles["workspace-dropdown-error"]} role="alert">{loadErrorMessage}</p>
           ) : (
-            <div className="workspace-dropdown-list">
+            <div className={styles["workspace-dropdown-list"]}>
               {workspaces.map((workspace) => (
                 <button
                   key={workspace.id}
                   type="button"
-                  className="workspace-dropdown-item"
+                  className={styles["workspace-dropdown-item"]}
                   onClick={() => {
                     setIsOpen(false);
                     switchWorkspace(workspace.id);
                   }}
                 >
-                  <span className="workspace-dropdown-avatar" aria-hidden>{workspace.name.charAt(0)}</span>
-                  <span className="workspace-dropdown-label">{workspace.name}</span>
+                  <span className={styles["workspace-dropdown-avatar"]} aria-hidden>{workspace.name.charAt(0)}</span>
+                  <span className={styles["workspace-dropdown-label"]}>{workspace.name}</span>
                 </button>
               ))}
             </div>
           )}
           <button
             type="button"
-            className="workspace-dropdown-new"
+            className={styles["workspace-dropdown-new"]}
             onClick={handleCreateWorkspace}
             disabled={isCreating}
           >

@@ -7,6 +7,8 @@ import {
   shareIcon,
   SvgIcon
 } from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./RailNavigation.module.css";
 
 export type RailView = "home" | "graph" | "rules" | "logs" | "settings";
 
@@ -20,16 +22,16 @@ export const railItems: { id: RailView; label: string; icon: SvgAsset }[] = [
 
 export function RailNavigation({ activeView, onViewChange }: { activeView: RailView; onViewChange: (view: RailView) => void }) {
   return (
-    <aside className="rail">
+    <aside className={styles.rail}>
       {railItems.map((item) => (
         <button
           key={item.id}
-          className={`rail-item ${activeView === item.id ? "is-active" : ""}`}
+          className={cx(styles["rail-item"], activeView === item.id && styles["is-active"])}
           aria-label={item.label}
           aria-pressed={activeView === item.id}
           onClick={() => onViewChange(item.id)}
         >
-          <span className="rail-icon">
+          <span className={styles["rail-icon"]}>
             <SvgIcon src={item.icon} />
           </span>
           <span>{item.label}</span>

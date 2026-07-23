@@ -1,6 +1,7 @@
 import { cx } from "@/shared/lib/classNames";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { folderPlusIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import styles from "./DocumentSidebar.module.css";
 
 /** 사이드바 가로 아이콘 메뉴 줄. 활성 항목만 라벨이 있는 pill로 표시한다. */
 export function SidebarMenuRow({
@@ -13,12 +14,12 @@ export function SidebarMenuRow({
   onAddProject: () => void;
 }) {
   return (
-    <nav className="sidebar-menu" aria-label="워크스페이스 메뉴">
+    <nav className={styles["sidebar-menu"]} aria-label="워크스페이스 메뉴">
       {railItems.map((item) => (
         <button
           key={item.id}
           type="button"
-          className={cx("sidebar-menu-item", activeView === item.id && "is-active")}
+          className={cx(styles["sidebar-menu-item"], activeView === item.id && styles["is-active"])}
           aria-label={item.label}
           aria-pressed={activeView === item.id}
           onClick={(event) => {
@@ -26,20 +27,20 @@ export function SidebarMenuRow({
             onViewChange(item.id);
           }}
         >
-          <SvgIcon src={item.icon} className="sidebar-menu-icon" />
+          <SvgIcon src={item.icon} className={styles["sidebar-menu-icon"]} />
           {activeView === item.id && <span>{item.label}</span>}
         </button>
       ))}
       <button
         type="button"
-        className="sidebar-menu-item sidebar-menu-add"
+        className={cx(styles["sidebar-menu-item"], styles["sidebar-menu-add"])}
         aria-label="새 폴더 생성"
         onClick={(event) => {
           event.stopPropagation();
           onAddProject();
         }}
       >
-        <SvgIcon src={folderPlusIcon} className="sidebar-menu-icon" />
+        <SvgIcon src={folderPlusIcon} className={styles["sidebar-menu-icon"]} />
       </button>
     </nav>
   );

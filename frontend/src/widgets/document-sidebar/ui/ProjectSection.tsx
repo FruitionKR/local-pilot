@@ -8,6 +8,7 @@ import { InlineEditInput } from "./InlineEditInput";
 import { SidebarTree } from "./SidebarTree";
 import { useFileDropZone } from "../lib/useFileDropZone";
 import type { TreeInteractionProps } from "../model/types";
+import styles from "./DocumentSidebar.module.css";
 
 export function ProjectSection({
   project,
@@ -71,9 +72,9 @@ export function ProjectSection({
   return (
     <section
       className={cx(
-        "project-section",
-        isPrimary && "is-primary",
-        !useFullSidebarDropZone && isRootFileDropTarget && "is-file-drop-target"
+        styles["project-section"],
+        isPrimary && styles["is-primary"],
+        !useFullSidebarDropZone && isRootFileDropTarget && styles["is-file-drop-target"]
       )}
       onContextMenu={(event) => onContextMenuProject(event, project.id)}
       onDragOver={useFullSidebarDropZone ? undefined : handleDragOver}
@@ -81,13 +82,13 @@ export function ProjectSection({
       onDrop={useFullSidebarDropZone ? undefined : handleDrop}
     >
       <div
-        className={cx("project-title", isTreeRootDropTarget && "is-tree-drop-target")}
+        className={cx(styles["project-title"], isTreeRootDropTarget && styles["is-tree-drop-target"])}
         onDragOver={handleTreeDragOver}
         onDrop={handleTreeDrop}
       >
         <button
           type="button"
-          className="project-toggle"
+          className={styles["project-toggle"]}
           aria-expanded={isOpen}
           onClick={() => setIsOpen((open) => !open)}
         >
@@ -100,14 +101,14 @@ export function ProjectSection({
             />
           ) : (
             <>
-              <SvgIcon src={arrowIcon} className={`project-arrow ${isOpen ? "is-open" : ""}`} />
+              <SvgIcon src={arrowIcon} className={cx(styles["project-arrow"], isOpen && styles["is-open"])} />
               <span>{project.title}</span>
             </>
           )}
         </button>
         <button
           type="button"
-          className="project-add-file"
+          className={styles["project-add-file"]}
           aria-label={`${project.title}에 파일 업로드`}
           onClick={(event) => {
             event.stopPropagation();
@@ -143,7 +144,7 @@ export function ProjectSection({
               onCancelEditing={onCancelEditing}
             />
           )
-          : <p className="project-empty">폴더가 없습니다.</p>
+          : <p className={styles["project-empty"]}>폴더가 없습니다.</p>
       )}
     </section>
   );

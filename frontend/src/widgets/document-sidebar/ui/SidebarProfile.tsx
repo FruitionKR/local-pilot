@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { clearSessionCache } from "@/entities/chat";
 import { fetchMe } from "@/entities/user";
 import { clearAuth } from "@/shared/lib/auth";
+import styles from "./DocumentSidebar.module.css";
 
 /** 사이드바 하단 프로필 푸터: 아바타 + 이름/온라인 + 로그아웃 */
 export function SidebarProfile() {
@@ -33,13 +34,13 @@ export function SidebarProfile() {
   const name = displayName ?? "사용자";
 
   return (
-    <footer className="sidebar-profile">
-      <span className="sidebar-profile-avatar" aria-hidden>{name.charAt(0)}</span>
-      <span className="sidebar-profile-info">
+    <footer className={styles["sidebar-profile"]}>
+      <span className={styles["sidebar-profile-avatar"]} aria-hidden>{name.charAt(0)}</span>
+      <span className={styles["sidebar-profile-info"]}>
         <strong>{name}</strong>
         <small>온라인</small>
       </span>
-      <button type="button" className="sidebar-logout" onClick={handleLogout}>로그아웃</button>
+      <button type="button" className={styles["sidebar-logout"]} onClick={handleLogout}>로그아웃</button>
     </footer>
   );
 }

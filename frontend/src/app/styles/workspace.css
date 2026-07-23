@@ -128,3 +128,15 @@
   height: 28px;
   color: #a7a7a7;
 }
+
+/* 워크스페이스 빈 화면 (HomeWorkspace 렌더). 기존 rail.css에서 이동. */
+.blank-view {
+  position: absolute;
+  inset: 0 0 0 var(--sidebar-width, 320px);
+  z-index: 1;
+  background: #0a0a0a;
+}
+
+.workspace.is-sidebar-collapsed .blank-view {
+  left: 0;
+}

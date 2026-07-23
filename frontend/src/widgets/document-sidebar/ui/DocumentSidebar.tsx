@@ -11,6 +11,7 @@ import { SidebarWorkspaceHeader } from "./SidebarWorkspaceHeader";
 import { DocumentSearch } from "@/features/document-search/ui/DocumentSearch";
 import type { SelectableTreeItem } from "../model/types";
 import { useFileDropZone } from "../lib/useFileDropZone";
+import styles from "./DocumentSidebar.module.css";
 
 export function DocumentSidebar({
   projects,
@@ -95,7 +96,7 @@ export function DocumentSidebar({
 
   return (
     <aside
-      className={cx("sidebar", isSidebarFileDropTarget && "is-file-drop-target")}
+      className={cx(styles.sidebar, isSidebarFileDropTarget && styles["is-file-drop-target"])}
       onDragOver={onlyProject ? handleDragOver : undefined}
       onDragLeave={onlyProject ? handleDragLeave : undefined}
       onDrop={onlyProject ? handleDrop : undefined}
@@ -105,14 +106,14 @@ export function DocumentSidebar({
       <DocumentSearch projects={projects} onSelectGraphNode={onSelectGraphNode} />
       <input
         ref={uploadInputRef}
-        className="upload-picker"
+        className={styles["upload-picker"]}
         type="file"
         accept=".pdf,.md,application/pdf,text/markdown,text/plain"
         multiple
         onChange={onUploadPickerChange}
       />
 
-      <div className="sidebar-content">
+      <div className={styles["sidebar-content"]}>
         {projects.map((project, index) => (
           <ProjectSection
             key={project.id}
@@ -153,7 +154,7 @@ export function DocumentSidebar({
       </div>
       <button
         type="button"
-        className="sidebar-chat-start"
+        className={styles["sidebar-chat-start"]}
         onClick={(event) => {
           event.stopPropagation();
           onStartChat();
@@ -165,7 +166,7 @@ export function DocumentSidebar({
       <SidebarProfile />
       <button
         type="button"
-        className="sidebar-resize-handle"
+        className={styles["sidebar-resize-handle"]}
         aria-label="자료 관리 사이드바 폭 조절"
         onPointerDown={onResizeStart}
       />

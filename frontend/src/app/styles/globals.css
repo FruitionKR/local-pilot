@@ -1,8 +1,5 @@
 @import "./base.css";
 @import "./workspace.css";
-@import "./rail.css";
-@import "./document-sidebar.css";
-@import "./graph.css";
 @import "./agent-panel.css";
 @import "./responsive.css";
 @import "./source-preview.css";

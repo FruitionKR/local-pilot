@@ -1,4 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import styles from "./DocumentSidebar.module.css";
 
 export function InlineEditInput({
   value,
@@ -18,7 +19,7 @@ export function InlineEditInput({
 
   return (
     <input
-      className="tree-edit-input"
+      className={styles["tree-edit-input"]}
       value={value}
       autoFocus
       onChange={(event) => onChange(event.target.value)}

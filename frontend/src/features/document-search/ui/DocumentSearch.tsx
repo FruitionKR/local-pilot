@@ -4,6 +4,7 @@ import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { searchIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { SelectableTreeItem } from "@/widgets/document-sidebar/model/types";
 import type { Project, TreeItem } from "@/entities/tree/model/tree";
+import styles from "./DocumentSearch.module.css";
 
 // 드롭다운에 최대로 노출할 결과 수
 const MAX_RESULTS = 8;
@@ -57,9 +58,9 @@ export function DocumentSearch({
   }
 
   return (
-    <div className="sidebar-search" onClick={(event) => event.stopPropagation()}>
-      <label className="sidebar-search-box">
-        <SvgIcon src={searchIcon} className="sidebar-search-icon" />
+    <div className={styles["sidebar-search"]} onClick={(event) => event.stopPropagation()}>
+      <label className={styles["sidebar-search-box"]}>
+        <SvgIcon src={searchIcon} className={styles["sidebar-search-icon"]} />
         <input
           type="search"
           placeholder="문서명 검색"
@@ -68,26 +69,26 @@ export function DocumentSearch({
         />
       </label>
       {normalizedQuery && (
-        <div className="sidebar-search-results" role="group" aria-label="문서 검색 결과">
+        <div className={styles["sidebar-search-results"]} role="group" aria-label="문서 검색 결과">
           {results.length > 0 ? (
             <>
               {results.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className="sidebar-search-result"
+                  className={styles["sidebar-search-result"]}
                   onClick={(event) => handleSelect(event, item)}
                 >
-                  <span className="sidebar-search-result-label">{item.label}</span>
-                  <span className="sidebar-search-result-project">{item.projectTitle}</span>
+                  <span className={styles["sidebar-search-result-label"]}>{item.label}</span>
+                  <span className={styles["sidebar-search-result-project"]}>{item.projectTitle}</span>
                 </button>
               ))}
               {overflowCount > 0 ? (
-                <p className="sidebar-search-more">외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
+                <p className={styles["sidebar-search-more"]}>외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
               ) : null}
             </>
           ) : (
-            <p className="sidebar-search-empty">검색 결과가 없습니다.</p>
+            <p className={styles["sidebar-search-empty"]}>검색 결과가 없습니다.</p>
           )}
         </div>
       )}
