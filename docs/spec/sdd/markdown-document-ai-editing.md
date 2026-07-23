@@ -98,6 +98,7 @@ AI는 문서를 직접 저장하지 않는다. 소유자가 diff를 검토하고
 
 - `requested_target`은 사용자가 요청한 범위다.
 - `actual_target`은 AI가 실제로 변경하려는 범위다.
+- `actual_target`은 `requested_target`을 포함해야 한다.
 - actual target이 요청 범위를 벗어나도 제안을 자동 거절하지 않는다.
 - 전체 문서 후보와 diff를 생성하고 `scope_expanded=true`를 표시한다.
 - 프론트엔드는 범위 확장 경고를 표시한다.

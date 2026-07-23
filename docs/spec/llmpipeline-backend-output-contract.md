@@ -458,7 +458,7 @@ operation별 계약은 다음과 같다.
 - `replace`는 `selection`, `current_section`, `whole_document` target을 지원한다. `replacement_markdown`은 `actual_target` 범위를 대체할 조각이다.
 - `insert_after`는 `current_section` target에만 사용한다. `replacement_markdown`은 `actual_target`을 반복하지 않고 해당 섹션 뒤에 추가할 새 Markdown만 포함한다.
 - `insert_after` 요청에 `current_section` target이 없으면 `llmPipeline`은 편집 결과를 만들지 않고 `action="clarify"`, `edit=null`과 현재 섹션 선택 안내 `message`를 반환한다.
-- `requested_target`은 요청 target과 일치한다. `actual_target`은 bounded editable context 안에서 Markdown 구조를 보존하는 범위로 확장할 수 있다.
+- `requested_target`은 요청 target과 일치한다. `actual_target`은 `requested_target`을 포함한 채 bounded editable context 안에서 Markdown 구조를 보존하는 범위로 확장할 수 있다.
 - 유효하지 않은 `actual_target`과 빈 `replacement_markdown`은 성공 결과로 반환하지 않는다.
 
 ### 3.2 Markdown Create

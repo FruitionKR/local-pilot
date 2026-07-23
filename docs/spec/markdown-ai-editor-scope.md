@@ -67,7 +67,7 @@
 }
 ```
 
-`requested_target`은 사용자가 요청한 범위이고 `actual_target`은 실제 교체 범위다. Markdown 구조 보존을 위해 범위가 확장되면 `scope_expanded=true`이며, 결과가 원문과 같으면 `changed=false`다.
+`requested_target`은 사용자가 요청한 범위이고 `actual_target`은 실제 교체 범위다. `actual_target`은 `requested_target`을 포함하며, Markdown 구조 보존을 위해 범위가 확장되면 `scope_expanded=true`다. 결과가 원문과 같으면 `changed=false`다.
 
 관련 계약은 `docs/spec/agent-markdown-contract.md`의 `기존 문서 편집` 절에서 확인할 수 있다.
 

@@ -254,7 +254,7 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 - `replace`의 `replacement_markdown`은 문서 전체가 아니라 `actual_target` 범위를 대체할 조각이다.
 - `insert_after`는 `current_section` target에만 사용하며, `replacement_markdown`은 `actual_target` 뒤에 삽입할 새 Markdown만 포함한다.
 - 요청에 target이 없으면 `llmPipeline`은 전체 문서를 `whole_document`의 `requested_target`과 `actual_target`으로 반환한다.
-- `actual_target`은 Markdown 구조를 보존하기 위해 bounded editable context 안에서만 확장할 수 있다.
+- `actual_target`은 `requested_target`을 포함한 채 Markdown 구조를 보존하기 위해 bounded editable context 안에서만 확장할 수 있다.
 - 이 응답만으로 문서를 자동 저장하지 않는다.
 
 ### 4.4 `generated_markdown`
