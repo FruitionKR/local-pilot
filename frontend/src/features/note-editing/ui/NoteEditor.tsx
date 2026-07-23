@@ -13,6 +13,7 @@ import { buildMarkdownEditorSnapshot } from "@/features/agent-chat/lib/markdownE
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
 import { useNoteAutosave } from "../model/useNoteAutosave";
+import styles from "./NoteEditor.module.css";
 
 export function NoteEditor({
   documentId,
@@ -140,10 +141,10 @@ export function NoteEditor({
   }, [documentId, sourceMode]);
 
   return (
-    <div className="note-editor-shell">
+    <div className={styles["note-editor-shell"]}>
       {sourceMode ? (
         <CodeMirror
-          className="note-markdown-editor"
+          className={styles["note-markdown-editor"]}
           value={body}
           minHeight="420px"
           extensions={editorExtensions}
@@ -177,7 +178,7 @@ export function NoteEditor({
           }}
         />
       ) : (
-        <div ref={wysiwygRootRef} className="note-wysiwyg-editor" />
+        <div ref={wysiwygRootRef} className={styles["note-wysiwyg-editor"]} />
       )}
     </div>
   );

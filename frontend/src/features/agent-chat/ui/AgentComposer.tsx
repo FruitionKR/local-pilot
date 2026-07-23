@@ -1,5 +1,6 @@
 import { ArrowUp } from "lucide-react";
 import type { FormEvent } from "react";
+import styles from "./AgentChat.module.css";
 
 export function AgentComposer({
   value = "",
@@ -20,17 +21,17 @@ export function AgentComposer({
   }
 
   return (
-    <form className="composer" onSubmit={submitComposer}>
+    <form className={styles.composer} onSubmit={submitComposer}>
       <input
         value={value}
         placeholder={placeholder}
         disabled={isLoading}
         onChange={(event) => onChange(event.target.value)}
       />
-      <div className="composer-actions">
+      <div className={styles["composer-actions"]}>
         <button
           type="submit"
-          className="composer-send"
+          className={styles["composer-send"]}
           aria-label="전송"
           disabled={isLoading || value.trim().length === 0}
         >

@@ -1,5 +1,7 @@
 import { fileIcon, sourceIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
 import { capitalize } from "../lib/agentFormatters";
+import styles from "./AgentChat.module.css";
 
 // 카드 스타일이 정의된 page type 목록. 그 외 값은 source로 취급한다.
 const KNOWN_PAGE_TYPES = ["raw", "source", "concept"] as const;
@@ -22,10 +24,10 @@ export function AgentResultCard({
   const icon = normalizedPageType === "source" ? sourceIcon : fileIcon;
 
   return (
-    <button className={`result-card ${normalizedPageType}`} type="button" onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}>
-      <span className={`file-box ${normalizedPageType}`}><SvgIcon src={icon} /></span>
+    <button className={styles["result-card"]} type="button" onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}>
+      <span className={cx(styles["file-box"], styles[normalizedPageType])}><SvgIcon src={icon} /></span>
       <span><strong>{title}</strong><small>{meta}</small></span>
-      <b className={normalizedPageType}>{label}</b>
+      <b>{label}</b>
     </button>
   );
 }

@@ -7,6 +7,8 @@ import { fetchWikiPage } from "@/entities/wiki";
 import { fetchNoteDraft } from "@/features/note-editing";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "@/entities/document/lib/note";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./SourcePreviewPanel.module.css";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { NoteEditState, NoteSaveStatus } from "@/entities/tree";
@@ -266,21 +268,21 @@ export function SourcePreviewPanel({
 
   return (
     <section
-      className={`source-preview-panel${fillMain ? " is-main" : ""}`}
+      className={cx(styles["source-preview-panel"], fillMain && styles["is-main"])}
       style={fillMain ? undefined : { width }}
       aria-label="원본문서 미리보기"
       onClick={(event) => event.stopPropagation()}
     >
-      <header className="source-preview-topbar">
+      <header className={styles["source-preview-topbar"]}>
         <nav aria-label="문서 위치">
           <button type="button" onClick={onExitDocument}>{parentLabel}</button>
           <span aria-hidden="true">/</span>
           <strong>{title}</strong>
         </nav>
-        <div className="source-preview-actions">
+        <div className={styles["source-preview-actions"]}>
           {saveStatusLabel && (
             <span
-              className={`source-preview-save-status is-${noteSaveStatus}`}
+              className={cx(styles["source-preview-save-status"], styles[`is-${noteSaveStatus}`])}
               role={noteSaveStatus === "error" || noteSaveStatus === "conflict" ? "alert" : "status"}
               title={noteSaveError ?? undefined}
             >
@@ -293,7 +295,7 @@ export function SourcePreviewPanel({
               <PanelRight size={14} />
             </button>
           )}
-          <div className="source-preview-options" ref={optionsRef}>
+          <div className={styles["source-preview-options"]} ref={optionsRef}>
             <button
               type="button"
               aria-label="문서 옵션"
@@ -303,7 +305,7 @@ export function SourcePreviewPanel({
               <MoreHorizontal size={16} />
             </button>
             {isOptionsOpen && isMarkdownFile && (
-              <div className="source-preview-options-menu">
+              <div className={styles["source-preview-options-menu"]}>
                 <button
                   type="button"
                   onClick={() => {
@@ -318,11 +320,11 @@ export function SourcePreviewPanel({
           </div>
         </div>
       </header>
-      <div className="source-preview-document">
-        <header className="source-preview-heading">
+      <div className={styles["source-preview-document"]}>
+        <header className={styles["source-preview-heading"]}>
           {isMarkdownFile ? (
             <input
-              className="source-preview-title-input"
+              className={styles["source-preview-title-input"]}
               aria-label="문서 이름"
               value={titleInput}
               disabled={isRenaming}
@@ -344,10 +346,10 @@ export function SourcePreviewPanel({
           {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
         </header>
         {isMarkdownFile && (
-          <div className="source-preview-document-controls">
+          <div className={styles["source-preview-document-controls"]}>
             <button
               type="button"
-              className="document-review-button"
+              className={styles["document-review-button"]}
               disabled={!onRequestLint || !needsReview || noteSaveStatus !== "saved"}
               onClick={requestDocumentReview}
             >
@@ -356,7 +358,7 @@ export function SourcePreviewPanel({
             {renameError && <span role="alert">{renameError}</span>}
           </div>
         )}
-        <div className="source-preview-content">
+        <div className={styles["source-preview-content"]}>
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
@@ -390,7 +392,7 @@ export function SourcePreviewPanel({
           <p>본문 markdown을 찾지 못했습니다. 연결된 원본 문서 정보만 표시합니다.</p>
         )}
         {pageId && !isLoading && !errorMessage && sourceDocuments.length > 0 && (
-          <div className="source-preview-meta">
+          <div className={styles["source-preview-meta"]}>
             <strong>원본 문서</strong>
             {sourceDocuments.map((document) => (
               <span key={document.id}>{document.filename || document.id}</span>
@@ -403,7 +405,7 @@ export function SourcePreviewPanel({
       {!fillMain && (
         <button
           type="button"
-          className="source-preview-resize-handle"
+          className={styles["source-preview-resize-handle"]}
           aria-label="원본문서 패널 폭 조절"
           onPointerDown={onResizeStart}
         />

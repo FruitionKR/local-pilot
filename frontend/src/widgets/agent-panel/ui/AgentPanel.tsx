@@ -23,6 +23,7 @@ import { findLastUserMessage } from "@/shared/lib/messages";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { GraphNode } from "@/entities/wiki";
+import styles from "@/features/agent-chat/ui/AgentChat.module.css";
 
 // 헤더 세션 제목으로 보여줄 마지막 질문의 최대 길이
 const SESSION_TITLE_MAX_LENGTH = 12;
@@ -258,7 +259,7 @@ export function AgentPanel({
       {agentTurnResponse
         && agentTurnResponse.result.action !== "markdown_edit"
         && agentTurnResponse.result.action !== "markdown_create" && (
-        <div className="agent-turn-notice" role="status">
+        <div className={styles["agent-turn-notice"]} role="status">
           <strong>{describeAgentTurnResult(agentTurnResponse.result)}</strong>
         </div>
       )}
@@ -283,13 +284,13 @@ export function AgentPanel({
         />
       )}
       {editPreviewState && !editPreviewState.preview && (
-        <div className="agent-turn-notice" role="alert">
+        <div className={styles["agent-turn-notice"]} role="alert">
           <strong>{editPreviewState.validationError}</strong>
           <span>원문은 변경되지 않았습니다. 최신 문서에서 다시 요청해주세요.</span>
         </div>
       )}
       {agentTurnSuccessMessage && (
-        <div className="agent-turn-notice" role="status">
+        <div className={styles["agent-turn-notice"]} role="status">
           <strong>{agentTurnSuccessMessage}</strong>
         </div>
       )}

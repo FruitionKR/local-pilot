@@ -5,6 +5,8 @@ import { getErrorMessage } from "@/shared/lib/errors";
 import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
 import { sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./AgentChat.module.css";
 
 /** 채팅 패널 헤더: 세션 제목 + 세션 목록 드롭다운 + 패널 닫기 버튼 */
 export function AgentHeader({
@@ -83,23 +85,23 @@ export function AgentHeader({
   );
 
   return (
-    <div className="agent-header" ref={rootRef}>
+    <div className={styles["agent-header"]} ref={rootRef}>
       <button
         type="button"
-        className="agent-session-title"
+        className={styles["agent-session-title"]}
         aria-expanded={isListOpen}
         onClick={() => setIsListOpen((open) => !open)}
       >
         <span>{sessionTitle}</span>
         <ChevronDown size={12} />
       </button>
-      <button className="panel-action" aria-label="Agent 패널 숨기기" onClick={onClose}>
+      <button className={styles["panel-action"]} aria-label="Agent 패널 숨기기" onClick={onClose}>
         <SvgIcon src={sideboxIcon} />
       </button>
-      <div className="agent-header-menu" ref={menuRef}>
+      <div className={styles["agent-header-menu"]} ref={menuRef}>
         <button
           type="button"
-          className="panel-action"
+          className={styles["panel-action"]}
           aria-label="채팅 옵션"
           aria-expanded={isMenuOpen}
           onClick={() => setIsMenuOpen((open) => !open)}
@@ -107,15 +109,15 @@ export function AgentHeader({
           <MoreHorizontal size={16} />
         </button>
         {isMenuOpen && (
-          <div className="agent-header-menu-list" role="menu">
+          <div className={styles["agent-header-menu-list"]} role="menu">
             <button type="button" role="menuitem" onClick={startNewChat}>새 채팅</button>
           </div>
         )}
       </div>
 
       {isListOpen && (
-        <div className="chat-session-dropdown">
-          <label className="chat-session-search">
+        <div className={styles["chat-session-dropdown"]}>
+          <label className={styles["chat-session-search"]}>
             <Search size={12} />
             <input
               aria-label="채팅 검색"
@@ -125,18 +127,18 @@ export function AgentHeader({
             />
           </label>
           {loadErrorMessage ? (
-            <p className="chat-session-error" role="alert">{loadErrorMessage}</p>
+            <p className={styles["chat-session-error"]} role="alert">{loadErrorMessage}</p>
           ) : visibleSessions.length === 0 ? (
-            <p className="chat-session-empty">채팅 세션이 없습니다.</p>
+            <p className={styles["chat-session-empty"]}>채팅 세션이 없습니다.</p>
           ) : (
-            <div className="chat-session-list">
+            <div className={styles["chat-session-list"]}>
               {visibleSessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 return (
                 <button
                   key={session.id}
                   type="button"
-                  className={`chat-session-item${isActive ? " is-active" : ""}`}
+                  className={cx(styles["chat-session-item"], isActive && styles["is-active"])}
                   onClick={() => {
                     onSelectSession(session.id, session.title ?? fallbackTitle);
                     setIsListOpen(false);
@@ -144,8 +146,8 @@ export function AgentHeader({
                 >
                   <span>{session.title ?? fallbackTitle}</span>
                   {isActive
-                    ? <MoreVertical className="chat-session-item-more" size={12} />
-                    : <Folder className="chat-session-item-folder" size={12} />}
+                    ? <MoreVertical className={styles["chat-session-item-more"]} size={12} />
+                    : <Folder size={12} />}
                 </button>
                 );
               })}

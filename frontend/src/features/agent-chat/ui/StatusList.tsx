@@ -1,6 +1,8 @@
 import { ChevronDown } from "lucide-react";
 import { chatCheckIcon, rawPageIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
 import { buildStatusSteps, type StatusStep } from "../lib/agentData";
+import styles from "./AgentChat.module.css";
 
 export function StatusList({
   title,
@@ -17,11 +19,11 @@ export function StatusList({
   const resolvedSteps = steps ?? buildStatusSteps(isLoading, hasResponse);
 
   return (
-    <div className="status-list">
+    <div className={styles["status-list"]}>
       <button type="button">{title} <ChevronDown size={14} /></button>
-      <div className="status-steps">
+      <div className={styles["status-steps"]}>
         {resolvedSteps.map(([label, state]) => (
-          <div className={`status-row ${state}`} key={`${title}-${label}`}>
+          <div className={cx(styles["status-row"], styles[state])} key={`${title}-${label}`}>
             <span>{state === "done" && <SvgIcon src={chatCheckIcon} />}{state === "pending" && <SvgIcon src={rawPageIcon} />}</span>
             <p>{label}</p>
           </div>

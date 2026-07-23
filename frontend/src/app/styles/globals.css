@@ -1,8 +1,7 @@
 @import "./base.css";
 @import "./workspace.css";
-@import "./agent-panel.css";
-@import "./responsive.css";
-@import "./source-preview.css";
+@import "./agent-panel-shell.css";
+@import "./markdown.css";
 @import "./auth.css";
 @import "./modal.css";
 @import "./landing.css";

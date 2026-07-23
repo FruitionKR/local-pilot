@@ -12,7 +12,9 @@ import { citedRanks, formatAnswerMarkdown, formatReferenceMeta, formatWikiPageTi
 import type { ChatMessageResponse } from "@/entities/chat/model/chat";
 import type { GraphNode } from "@/entities/wiki/model/wiki";
 import type { SourceBlockHighlight } from "@/entities/document/model/document";
+import { cx } from "@/shared/lib/classNames";
 import { useSmoothScroll } from "../lib/useSmoothScroll";
+import styles from "./AgentChat.module.css";
 
 const SCROLL_OFFSET_PX = 20;
 const MAX_RESULT_CARDS = 3;
@@ -176,7 +178,7 @@ export function AgentBody({
     index === queryStages.length - 1 && isLoading ? "active" : "done"
   ]);
   const pendingStatusThread = (
-    <div className="agent-thread">
+    <div className={styles["agent-thread"]}>
       <StatusList
         title={SEARCH_STATUS_TITLE}
         isLoading={isLoading}
@@ -187,11 +189,11 @@ export function AgentBody({
   );
 
   return (
-    <div className="agent-body" ref={bodyRef}>
+    <div className={styles["agent-body"]} ref={bodyRef}>
       {messagesToRender.map((message) => (
         message.role === "user" ? (
           <div
-            className="question-bubble"
+            className={styles["question-bubble"]}
             key={message.id}
             ref={message.id === animatedQuestionId ? animatedQuestionRef : undefined}
           >
@@ -212,7 +214,7 @@ export function AgentBody({
 
       {activeTurn && (
         <>
-          <div className="question-bubble" ref={activeQuestionRef}>{activeTurn.question}</div>
+          <div className={styles["question-bubble"]} ref={activeQuestionRef}>{activeTurn.question}</div>
           {activeAssistantMessage
             ? (
               <AssistantThread
@@ -229,11 +231,11 @@ export function AgentBody({
       )}
       {showAgentStatus && pendingStatusThread}
 
-      {queryErrorMessage && <p className="query-error">{queryErrorMessage}</p>}
-      {chatLoadErrorMessage && <p className="query-error">{chatLoadErrorMessage}</p>}
+      {queryErrorMessage && <p className={styles["query-error"]}>{queryErrorMessage}</p>}
+      {chatLoadErrorMessage && <p className={styles["query-error"]}>{chatLoadErrorMessage}</p>}
 
-      {isLoading && <div className="typing"><i /><i /><i /> 답변을 작성하고 있어요…</div>}
-      {shouldReserveScrollSpace && <div className="agent-scroll-reserve" aria-hidden />}
+      {isLoading && <div className={styles.typing}><i /><i /><i /> 답변을 작성하고 있어요…</div>}
+      {shouldReserveScrollSpace && <div className={styles["agent-scroll-reserve"]} aria-hidden />}
     </div>
   );
 }
@@ -270,15 +272,15 @@ function AssistantThread({
   };
 
   return (
-    <div className="agent-thread">
+    <div className={styles["agent-thread"]}>
       {(!isAnimated || visibleAnswerStage >= STAGE_STATUS) && (
-        <div className={isAnimated ? "agent-stage" : undefined}>
+        <div className={isAnimated ? styles["agent-stage"] : undefined}>
           <StatusList title={SEARCH_STATUS_TITLE} isLoading={false} hasResponse />
         </div>
       )}
 
       {resultCards.length > 0 && (!isAnimated || visibleAnswerStage >= STAGE_RESULTS) && (
-        <div className={`results ${isAnimated ? "agent-stage" : ""}`}>
+        <div className={cx(styles.results, isAnimated && styles["agent-stage"])}>
           <p>찾은 자료 {resultCards.length}건</p>
           {resultCards.map((card) => (
             <AgentResultCard
@@ -293,8 +295,8 @@ function AssistantThread({
       )}
 
       {(!isAnimated || visibleAnswerStage >= STAGE_ANSWER) && (
-        <section className={`agent-answer ${isAnimated ? "agent-stage" : ""}`} aria-label="실행 중 발견 사항">
-          <div className="answer-section-title">
+        <section className={cx(styles["agent-answer"], isAnimated && styles["agent-stage"])} aria-label="실행 중 발견 사항">
+          <div className={styles["answer-section-title"]}>
             <span>실행 중 발견 사항</span>
             <ChevronDown size={8} />
           </div>
