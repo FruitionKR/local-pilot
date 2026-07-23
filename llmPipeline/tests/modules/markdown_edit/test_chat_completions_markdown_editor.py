@@ -656,6 +656,33 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             any("protected link count must be preserved" in failure for failure in retry_failures)
         )
 
+    def test_preserves_crlf_table_when_validating_actual_target(self) -> None:
+        table = "| A | B |\r\n| --- | --- |\r\n| 1 | 2 |"
+        client = SequenceJsonClient(
+            [
+                response(
+                    "{{FRUITION_PROTECTED_0001}}\r\n짧은 문장",
+                    actual_target={
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 4,
+                    },
+                )
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="설명 문장을 짧게 정리해줘.",
+            markdown=f"{table}\r\n아주 길고 반복적인 설명 문장입니다.",
+            target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=4),
+            edit_goal="shorten",
+        )
+
+        result = editor.generate_edit(request)
+
+        self.assertEqual(result.edit.replacement_markdown, f"{table}\r\n짧은 문장")
+        self.assertEqual(len(client.calls), 1)
+
     def test_retries_raw_html_output(self) -> None:
         client = SequenceJsonClient(
             [

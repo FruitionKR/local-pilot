@@ -47,9 +47,17 @@ def build_markdown_target_scope(
     context_start = max(0, start_index - context_lines)
     context_end = min(len(lines), end_index + context_lines)
     return MarkdownTargetScope(
-        markdown="\n".join(lines[start_index:end_index]),
-        context_before="\n".join(lines[context_start:start_index]),
-        context_after="\n".join(lines[end_index:context_end]),
+        markdown=markdown_line_range(markdown, target.start_line, target.end_line),
+        context_before=(
+            markdown_line_range(markdown, context_start + 1, start_index)
+            if context_start < start_index
+            else ""
+        ),
+        context_after=(
+            markdown_line_range(markdown, end_index + 1, context_end)
+            if end_index < context_end
+            else ""
+        ),
         start_line=context_start + 1,
         end_line=context_end,
     )
@@ -57,3 +65,11 @@ def build_markdown_target_scope(
 
 def markdown_line_count(markdown: str) -> int:
     return len(re.split(r"\r\n|\r|\n", markdown))
+
+
+def markdown_line_range(markdown: str, start_line: int, end_line: int) -> str:
+    separators = list(re.finditer(r"\r\n|\r|\n", markdown))
+    line_starts = [0, *(match.end() for match in separators)]
+    start_index = line_starts[start_line - 1]
+    end_index = separators[end_line - 1].start() if end_line <= len(separators) else len(markdown)
+    return markdown[start_index:end_index]

@@ -27,6 +27,16 @@ class MarkdownTargetScopeTest(unittest.TestCase):
         self.assertEqual(scope.context_before, "")
         self.assertEqual(scope.context_after, "")
 
+    def test_keeps_crlf_in_selection_and_context(self) -> None:
+        markdown = "첫 줄\r\n둘째 줄\r\n셋째 줄\r\n넷째 줄"
+        target = MarkdownEditTarget(type="selection", start_line=2, end_line=3)
+
+        scope = build_markdown_target_scope(markdown, target, context_lines=1)
+
+        self.assertEqual(scope.markdown, "둘째 줄\r\n셋째 줄")
+        self.assertEqual(scope.context_before, "첫 줄")
+        self.assertEqual(scope.context_after, "넷째 줄")
+
     def test_rejects_target_past_document_end(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=2, end_line=3)
 

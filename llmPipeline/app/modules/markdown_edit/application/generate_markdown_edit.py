@@ -1,9 +1,8 @@
-import re
 from dataclasses import replace
 
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditResult, operation_for_edit_goal
-from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
+from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count, markdown_line_range
 
 
 class GenerateMarkdownEditUseCase:
@@ -49,7 +48,7 @@ class GenerateMarkdownEditUseCase:
         if not result.edit.replacement_markdown.strip():
             raise ValueError("replacement_markdown must not be empty.")
 
-        actual_markdown = _markdown_line_range(
+        actual_markdown = markdown_line_range(
             request.markdown,
             actual_target.start_line,
             actual_target.end_line,
@@ -63,11 +62,3 @@ class GenerateMarkdownEditUseCase:
                 changed=changed,
             ),
         )
-
-
-def _markdown_line_range(markdown: str, start_line: int, end_line: int) -> str:
-    separators = list(re.finditer(r"\r\n|\r|\n", markdown))
-    line_starts = [0, *(match.end() for match in separators)]
-    start_index = line_starts[start_line - 1]
-    end_index = separators[end_line - 1].start() if end_line <= len(separators) else len(markdown)
-    return markdown[start_index:end_index]

@@ -33,6 +33,7 @@ from app.modules.markdown_edit.domain.markdown_target_scope import (
     MarkdownTargetBoundaryError,
     MarkdownTargetScope,
     build_markdown_target_scope,
+    markdown_line_range,
 )
 from app.modules.markdown_edit.infrastructure.markdown_source_range import (
     MarkdownSourceRangePlan,
@@ -415,7 +416,7 @@ def _actual_target_request(
     safe_end = max(safe_start, min(actual_target.end_line, len(lines)))
     return replace(
         request,
-        markdown="\n".join(lines[safe_start - 1 : safe_end]),
+        markdown=markdown_line_range(request.markdown, safe_start, safe_end),
         target=actual_target,
     )
 
