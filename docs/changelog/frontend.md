@@ -6,6 +6,21 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### feat: 문서 변경 기록(스냅샷 diff/롤백) + 스킬(스키마) 임시 UI (stream4)
+
+**변경된 내용**
+
+- **로그(스냅샷/diff/롤백, 클라이언트측)**
+  - `_components/history/` 신규: `snapshotStore.ts`(문서별 스냅샷, 메모리+localStorage, 최근 30건), `useSnapshots.ts`(훅), `lineDiff.ts`(LCS diff), `HistoryPanel.tsx`(목록 + snapshot↔현재 `+/−` diff + 롤백).
+  - `markdownAgent.ts`의 `lineDiff`는 export되지 않고 수정 금지(스트림3 공유)라, 동일 LCS를 `history/lineDiff.ts`에 재구현하고 `MarkdownDiffLine` 타입만 재사용했다.
+  - `HomeWorkspace.tsx` 최소 편집: AgentPanel에 넘기는 편집 컨텍스트를 wrap해 AI 편집 적용 직전 원본을 "AI 편집 전" 스냅샷으로 남기고, 롤백 시 "롤백 전" 현재 본문도 남긴 뒤 `applyMarkdown`으로 복원한다. 홈 문서 화면에 "변경 기록" 오버레이 패널을 추가했다.
+- **스킬(스키마) 임시 UI (목업 데이터)**
+  - `_lib/types/schema.ts`, `_lib/api/schema.ts` 신규. `schema.ts`는 llmPipeline `wiki_schema` 계약을 흉내낸 **클라이언트 목업**(preview/draft/activate/list/active, localStorage 저장, 인젝션·비밀정보 issue 규칙)이다. Java 프록시 완료 시 함수 본문만 `apiFetch`로 교체.
+  - `_components/schema/` 신규: `SchemaWorkspace`(컨테이너), `SchemaEditorForm`(name + markdown), `SchemaPreviewCard`(정리 조각 + SchemaIssue 경고 + activate), `SchemaList`(활성/draft 배지 + 활성화). rail "규칙" 뷰에 마운트.
+  - `_styles/history.css`, `_styles/schema.css` 신규 + `globals.css` @import, `_lib/api.ts`·`_lib/types.ts` 배럴에 schema re-export 1줄씩.
+- 검증: `tsc --noEmit`, `next lint`, `next build`, `test:markdown`(46 pass) 통과.
+- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 상호참조 이슈로 정리: `docs/issue/backend/2026-07-23.md`, `docs/issue/ai/2026-07-23.md`, `docs/issue/frontend/2026-07-23.md`(항목 10).
+
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 
 **변경된 내용**
