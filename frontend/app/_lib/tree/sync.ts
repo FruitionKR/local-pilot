@@ -23,6 +23,8 @@ function syncDocumentItems(items: TreeItem[], documents: DocumentItemResponse[])
       ...item,
       label: item.customLabel ? item.label : document.filename,
       status: document.status,
+      processingState: document.processing_state,
+      processingStage: document.processing_stage,
       errorMessage: document.error_message,
       mimeType: document.mime_type,
       byteSize: document.byte_size,
@@ -55,6 +57,8 @@ function areTreeItemsShallowEqual(left: TreeItem, right: TreeItem): boolean {
     && left.generated === right.generated
     && left.customLabel === right.customLabel
     && left.status === right.status
+    && left.processingState === right.processingState
+    && left.processingStage === right.processingStage
     && left.errorMessage === right.errorMessage
     && left.documentId === right.documentId
     && left.mimeType === right.mimeType
@@ -84,6 +88,8 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     label: document.filename,
     type: "file" as const,
     status: document.status,
+    processingState: document.processing_state,
+    processingStage: document.processing_stage,
     documentId: document.id,
     graphNodeId: makeRawId(document.id),
     mimeType: document.mime_type,

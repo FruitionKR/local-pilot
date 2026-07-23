@@ -90,18 +90,29 @@
   line-height: 1.2;
 }
 
-/* 시안의 "Modify ⋯" 태그: 처리 중/수정된 파일 */
-.tree-status.uploading,
+/* 처리 진행 뱃지 공통 형태 */
 .tree-status.processing,
-.tree-status.uploaded {
-  color: var(--yellow);
-  background: rgba(255, 193, 23, 0.14);
+.tree-status.stalled,
+.tree-status.failed {
   border-radius: 5px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
+/* 처리 중: 노란 톤 */
+.tree-status.processing {
+  color: var(--yellow);
+  background: rgba(255, 193, 23, 0.14);
+}
+
+/* 지연(stalled): 주황 경고 톤 */
+.tree-status.stalled {
+  color: #ffb454;
+  background: rgba(255, 145, 40, 0.16);
+}
+
+/* 실패: 붉은 톤 */
 .tree-status.failed {
   color: #ff8f87;
   background: #3a1f1d;

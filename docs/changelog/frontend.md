@@ -6,6 +6,24 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### feat: 문서 처리 상태 뱃지 강화 (stream2 P1, 이슈 #2)
+
+**변경 배경**
+
+- 백엔드 문서 목록 응답은 `processing_state`(starting/running/stalled/completed/failed)와 `processing_stage`(파이프라인 진행 단계 문자열)를 내려주지만 프론트 타입·트리에서 소비하지 않아, 사이드바 뱃지가 처리 중/실패를 구분하지 않고 "Modify ⋯" 단일 표기만 했다.
+
+**추가/변경된 내용**
+
+- `DocumentItemResponse`에 `processing_state`/`processing_stage`, `TreeItem`에 `processingState`/`processingStage`를 추가하고 `DocumentProcessingState` 타입을 정의했다.
+- `tree/sync.ts`가 두 필드를 트리에 전파하고 동등성 비교에 포함시켜, 3초 폴링 갱신이 뱃지에 반영되도록 했다.
+- `TreeNodeStatus`를 상태별 뱃지로 개편했다: **처리 중 / 지연(stalled) / 실패** (우선순위 failed > stalled > processing). 진행 단계(stage) 문자열은 뱃지 tooltip으로 노출한다. 기존 "Modify ⋯"(영문) 표기를 한글화했다.
+- 스타일: `tree-row.css`에 `.tree-status.stalled` 주황 경고 톤 추가, 처리 중/실패 톤 유지.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build`, `npm run test:markdown`(46건) 통과.
+- 상태 전이(업로드→처리 중→완료/실패, 지연 감지) 실제 표시는 전체 스택(Next dev + Spring + 파이프라인) 기동이 필요해 브라우저 검증은 후속으로 남긴다.
+
 ### feat: 워크스페이스 삭제 확인 모달 + 문서명 검색 (stream2 P0)
 
 **변경 배경**
