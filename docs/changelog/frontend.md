@@ -6,6 +6,25 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### refactor: 전역 CSS를 CSS Module로 하이브리드 전환
+
+**변경된 내용**
+
+- 슬라이스별 스타일 격리를 위해 전역 className 스타일시트를 CSS Module로 전환했다(하이브리드 전략).
+  - 스코프(module): `schema-manage`, `graph`, `document-sidebar`, `rail-navigation`, `document-search`, `agent-chat`(agent-panel 7개 서브 css 병합), `source-preview`, `note-editing`, `landing`, `document-history`. 클래스명은 kebab 유지, TSX는 `styles["kebab"]` 접근.
+  - 전역 유지(app 레이어, `src/app/styles/`): 디자인 토큰(`base.css` `:root`), 워크스페이스 루트 상태 클래스(`workspace`, `is-*`), 레이아웃 앵커(`agent-panel-shell.css`의 `.agent-panel`), 그리고 여러 슬라이스가 공유하는 **콘텐츠 어휘**(`markdown.css`) 및 cross-component 폼/오버레이 어휘(`auth.css`, `modal.css`).
+- cross-component 상태 반응은 `:global(.workspace.is-X) .localClass` 패턴으로 유지. 서드파티 DOM 클래스(milkdown `.milkdown/.ProseMirror`, codemirror `.cm-*`, 공용 `.svg-icon`)는 `:global()`로 참조.
+- CSS Module의 pure-selector 제약(로컬 클래스 없는 순수 전역 셀렉터 불가)에 따라 레이아웃 앵커 자기 규칙은 전역 파일로 분리.
+
+**설계 판단**
+
+- 이 프로젝트는 전역 className 방식이고 Next App Router는 전역 CSS를 layout에서만 import 허용한다. 따라서 "모든 클래스 스코프"(순수 방식)는 cross-component 조정 클래스를 깨뜨리므로, 조정/공유 어휘는 전역으로 남기고 컴포넌트 내부 시각 스타일만 스코프하는 하이브리드가 정답.
+
+**검증**
+
+- 각 슬라이스 그룹 전환 후 dev 서버에서 스크린샷 회귀(홈·규칙·그래프·랜딩)로 baseline 대비 시각 동일 확인. CSS Module pure 위반은 dev 빌드가 즉시 검출(tsc는 못 잡음)해 전역 분리로 해결.
+- 최종 `next build` 성공(9개 라우트 프리렌더, 전 CSS Module 컴파일 통과).
+
 ### refactor: 프론트엔드 폴더 구조를 Feature-Sliced Design으로 전환
 
 **변경된 내용**
