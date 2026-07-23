@@ -3,6 +3,7 @@ import unittest
 from fastapi import HTTPException
 
 from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.routes import handle_agent_turn
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
 from app.modules.markdown_edit.domain.entities import (
@@ -105,6 +106,11 @@ class UnexpectedFailureUseCase:
         raise RuntimeError("secret-internal-detail")
 
 
+class FailingAgentRouteUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise AgentTurnRouteContractError(["secret-internal-detail"])
+
+
 class AgentRoutesTest(unittest.TestCase):
     def test_agent_turn_returns_insert_after_operation(self) -> None:
         response = handle_agent_turn(
@@ -180,16 +186,29 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(raised.exception.detail["code"], "markdown_target_crosses_structure")
         self.assertEqual(raised.exception.detail["start_line"], 2)
 
-    def test_agent_turn_hides_unexpected_failure_details(self) -> None:
+    def test_agent_turn_maps_route_contract_failure_without_internal_details(self) -> None:
         with self.assertRaises(HTTPException) as raised:
             handle_agent_turn(
                 AgentTurnRequestBody(message="문서를 다듬어줘"),
-                use_case=UnexpectedFailureUseCase(),  # type: ignore[arg-type]
+                use_case=FailingAgentRouteUseCase(),  # type: ignore[arg-type]
             )
+
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(raised.exception.detail["code"], "agent_turn_route_contract_failed")
+        self.assertNotIn("secret-internal-detail", str(raised.exception.detail))
+
+    def test_agent_turn_hides_unexpected_failure_details(self) -> None:
+        with self.assertLogs("app.modules.agent.interfaces.http.routes", level="ERROR") as captured:
+            with self.assertRaises(HTTPException) as raised:
+                handle_agent_turn(
+                    AgentTurnRequestBody(message="문서를 다듬어줘"),
+                    use_case=UnexpectedFailureUseCase(),  # type: ignore[arg-type]
+                )
 
         self.assertEqual(raised.exception.status_code, 500)
         self.assertEqual(raised.exception.detail["code"], "internal_server_error")
         self.assertNotIn("secret-internal-detail", str(raised.exception.detail))
+        self.assertNotIn("secret-internal-detail", "\n".join(captured.output))
 
 
 if __name__ == "__main__":

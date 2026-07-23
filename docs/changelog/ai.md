@@ -10,7 +10,8 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 - 편집 응답을 `requested_target`, `actual_target`, `scope_expanded`, `changed`로 구분하고 bounded context 안의 범위 확장을 허용
 - 범위 확장 시 Markdown 구조·보호 조각·HTML·MDX를 검증하고 JSON 파싱 실패를 모델 원문이 노출되지 않는 1회 계약 보정으로 처리
-- 동일한 LF·CRLF 결과를 변경 없음으로 판정하고 llmPipeline 전체 테스트 `449 passed`, `39 subtests passed`
+- Agent router의 JSON·필수 action 계약도 1회 보정하고 대화 context prompt injection과 오류 로그 원문 노출을 차단
+- 동일한 LF·CRLF 결과와 생성형 GFM target 경계를 검증하고 llmPipeline 전체 테스트 `456 passed`, `43 subtests passed`
 
 ## 2026-07-22
 

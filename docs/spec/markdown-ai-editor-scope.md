@@ -592,7 +592,7 @@ Source-range 전용 prompt는 최초 867자였으며 번역 필수 segment 규�
 
 #### 오류 계약
 
-두 번째 출력도 Markdown 계약을 통과하지 못하면 `/agent/turn`은 HTTP 422와 `markdown_output_contract_failed` code를 반환한다. 내부 token 이름, 실패 세부 내용과 잘못된 model 출력은 응답에 노출하지 않는다. 성공 응답 계약은 변경하지 않았다.
+두 번째 router 출력도 action 계약을 통과하지 못하면 `/agent/turn`은 HTTP 422와 `agent_turn_route_contract_failed` code를 반환한다. 두 번째 편집 출력이 Markdown 계약을 통과하지 못하면 `markdown_output_contract_failed` code를 반환한다. 내부 token 이름, 실패 세부 내용과 잘못된 model 출력은 응답과 기본 로그에 노출하지 않는다. 성공 응답 계약은 변경하지 않았다.
 
 평가 case는 17개에서 structured translation과 anchor-preserving shortening을 포함한 19개로 늘었다. 당시 `qwen2.5:7b` router→editor 3회 반복 결과는 56/57, 98.2%였다. 18개 case는 모두 3/3 통과했다. 유일한 실패는 축약에서 `시작 안내`를 `시작 방법`으로 바꾼 결과를 exact 문자열 evaluator가 정보 누락으로 본 것으로, Markdown 구조나 literal anchor 위반은 아니었다.
 

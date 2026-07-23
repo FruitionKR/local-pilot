@@ -366,7 +366,7 @@ Frontend는 `result.action`에 따라 처리한다.
 | 504 | `AI_RESPONSE_TIMEOUT` | pipeline 응답이 60초를 초과 | 원본 유지 후 재시도 안내 |
 
 오류가 발생하면 frontend는 replacement를 preview하거나 적용하지 않는다.
-pipeline의 `markdown_output_contract_failed`, `markdown_create_output_contract_failed`, `markdown_target_crosses_structure`는 Spring 외부 응답에 그대로 노출하지 않는다.
+pipeline의 `agent_turn_route_contract_failed`, `markdown_output_contract_failed`, `markdown_create_output_contract_failed`, `markdown_target_crosses_structure`는 Spring 외부 응답에 그대로 노출하지 않는다.
 
 ## 8. 구현 상태
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
 from app.modules.agent.domain.entities import AgentTurnResult
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.schemas import (
     AgentTurnRequestBody,
@@ -48,6 +49,14 @@ def handle_agent_turn(
                 "message": "Markdown 생성 결과가 필수 출력 조건을 충족하지 못했습니다.",
             },
         ) from exc
+    except AgentTurnRouteContractError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "agent_turn_route_contract_failed",
+                "message": "Agent 요청 분류 결과가 필수 출력 조건을 충족하지 못했습니다.",
+            },
+        ) from exc
     except MarkdownTargetBoundaryError as exc:
         raise HTTPException(
             status_code=422,
@@ -62,7 +71,10 @@ def handle_agent_turn(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("Agent turn 처리 중 예상하지 못한 오류가 발생했습니다.")
+        logger.error(
+            "Agent turn 처리 실패: error_code=internal_server_error error_type=%s",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=500,
             detail={

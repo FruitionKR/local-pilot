@@ -506,6 +506,7 @@ operation별 계약은 다음과 같다.
 
 | HTTP / code | 의미 | backend 처리 |
 | --- | --- | --- |
+| `422 / agent_turn_route_contract_failed` | 두 번째 분류 결과도 필수 action·confidence·reason 계약을 만족하지 못했다. | action을 임의 추정하지 않고 생성 실패로 정규화한다. |
 | `422 / markdown_output_contract_failed` | 두 번째 편집 결과도 Markdown 출력 계약을 만족하지 못했다. | 잘못된 결과를 저장하거나 frontend에 적용안으로 전달하지 않는다. |
 | `422 / markdown_create_output_contract_failed` | 두 번째 생성 결과도 `title`, `summary`, `markdown` 필수 계약을 만족하지 못했다. | 새 draft를 만들지 않고 오류를 전달한다. |
 | `422 / markdown_target_crosses_structure` | target이 fenced code, table 등 여러 줄 구조의 일부만 포함한다. | target 재선택을 안내하고 원본을 유지한다. |

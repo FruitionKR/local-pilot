@@ -63,6 +63,42 @@ class MarkdownTargetScopeTest(unittest.TestCase):
 
         validate_markdown_target_boundary(markdown, target)
 
+    def test_property_rejects_every_partial_protected_block_range(self) -> None:
+        blocks = (
+            ("```bash\necho ok\n```", "fence"),
+            ("| A | B |\n| --- | --- |\n| 1 | 2 |", "table_open"),
+            ("$$\nE = mc^2\n$$", "display_math"),
+        )
+
+        for block, structure in blocks:
+            for prefix_count in range(3):
+                for suffix_count in range(3):
+                    lines = [
+                        *(f"앞 {index}" for index in range(prefix_count)),
+                        *block.splitlines(),
+                        *([""] if suffix_count else []),
+                        *(f"뒤 {index}" for index in range(suffix_count)),
+                    ]
+                    markdown = "\n".join(lines)
+                    block_start = prefix_count + 1
+                    block_end = block_start + len(block.splitlines()) - 1
+
+                    for start_line in range(1, len(lines) + 1):
+                        for end_line in range(start_line, len(lines) + 1):
+                            target = MarkdownEditTarget(
+                                type="selection",
+                                start_line=start_line,
+                                end_line=end_line,
+                            )
+                            overlaps = start_line <= block_end and end_line >= block_start
+                            contains = start_line <= block_start and end_line >= block_end
+                            if overlaps and not contains:
+                                with self.assertRaises(MarkdownTargetBoundaryError) as raised:
+                                    validate_markdown_target_boundary(markdown, target)
+                                self.assertEqual(raised.exception.structure, structure)
+                            else:
+                                validate_markdown_target_boundary(markdown, target)
+
 
 if __name__ == "__main__":
     unittest.main()

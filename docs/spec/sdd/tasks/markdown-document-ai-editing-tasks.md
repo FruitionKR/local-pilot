@@ -29,12 +29,13 @@
   - `selection`, `current_section`, `whole_document` 범위와 `replace`, `insert_after` 연산 단위 테스트가 존재한다.
   - raw HTML과 MDX import/export·component·expression 결과를 계약 오류로 거절한다.
   - 일부 범위만 지정한 `whole_document`와 `insert_after`의 잘못된 target type도 계약 오류로 보정한다.
-  - JSON 파싱 실패도 편집·source-range·생성 경로에서 안전한 계약 실패로 바꿔 1회 보정한다.
+  - JSON 파싱 실패와 필수 action 누락·미지원 action을 router·편집·source-range·생성 경로에서 안전한 계약 실패로 바꿔 1회 보정한다.
   - 범위 확장 시 actual target 안의 link·image·table·code 등 보호 구조를 다시 검증한다.
   - replacement의 원문 공백을 보존해 동일한 전체 문서 결과를 `changed=false`로 판정한다.
   - 계약 보정은 1회만 수행하며 재실패 응답은 모델 원문과 내부 예외를 노출하지 않는다.
   - pipeline 내부 오류 코드는 유지하며 Spring이 외부 `AI_EDIT_GENERATION_FAILED`로 정규화할 수 있게 내부 상세를 노출하지 않는다.
-  - 2026-07-24 기준 llmPipeline 전체 테스트가 `449 passed, 39 subtests passed`로 통과했다.
+  - Agent router 재실패도 내부 action과 모델 원문을 숨기는 `422 agent_turn_route_contract_failed`로 반환한다.
+  - 2026-07-24 기준 llmPipeline 전체 테스트가 `456 passed, 43 subtests passed`로 통과했다.
 - 완료 조건:
   - [x] `selection`, `current_section`, `whole_document` fixture 통과
   - [x] `replace`, `insert_after` fixture 통과
@@ -162,12 +163,17 @@
   - GFM fixture와 기존 query 회귀 테스트
   - 요구사항–테스트 추적표와 API 문서 갱신
 - 현재 llmPipeline 구현 근거:
-  - 일반 Markdown 재생성, 구조 보존 source-range, 새 Markdown 생성 경로 모두 Markdown·대화 내용을 비신뢰 입력으로 취급하도록 system prompt에 명시했다.
-  - prompt injection 문구가 system prompt와 분리된 user payload로만 전달되는 회귀 테스트가 세 경로에 존재한다.
+  - Agent router, 일반 Markdown 재생성, 구조 보존 source-range, 새 Markdown 생성 경로 모두 Markdown·대화 내용을 비신뢰 입력으로 취급하도록 system prompt에 명시했다.
+  - prompt injection 문구가 system prompt와 분리된 user payload로만 전달되는 회귀 테스트가 네 경로에 존재한다.
+  - 예상하지 못한 Agent 오류 로그에는 예외 원문과 traceback 대신 안정된 오류 코드와 예외 타입만 기록한다.
+  - fenced code·table·display math의 모든 생성 가능한 line range를 순회해 구조 일부만 포함하는 actual target을 거절한다.
   - `docs/spec/agent-markdown-contract.md`, `docs/spec/markdown-ai-editor-scope.md`, `docs/spec/llmpipeline-backend-output-contract.md`를 requested/actual target 계약과 동기화했다.
-  - bounded context 벤치마크를 포함한 llmPipeline 전체 테스트가 `449 passed, 39 subtests passed`로 통과했다.
+  - bounded context 벤치마크를 포함한 llmPipeline 전체 테스트가 `456 passed, 43 subtests passed`로 통과했다.
 - llmPipeline 범위 완료 조건:
-  - [x] 편집·source-range·생성 prompt injection 회귀 테스트
+  - [x] router·편집·source-range·생성 prompt injection 회귀 테스트
+  - [x] router JSON·필수 action 계약 검증·1회 보정·재실패 내부 오류
+  - [x] Agent 기본 오류 로그의 Markdown·모델 원문 미노출
+  - [x] GFM 구조·actual target 생성형 property 테스트
   - [x] GFM·HTML·MDX 출력 계약 회귀 테스트
   - [x] 기존 `chat_answer`, `clarify`, `reject` 회귀 테스트
   - [x] llmPipeline API 문서와 요구사항 추적 근거 갱신
