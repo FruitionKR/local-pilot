@@ -43,12 +43,12 @@ export function DocumentSearch({
   }, [projects]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const results = useMemo(() => {
+  const matched = useMemo(() => {
     if (!normalizedQuery) return [];
-    return allItems
-      .filter((item) => item.label.toLowerCase().includes(normalizedQuery))
-      .slice(0, MAX_RESULTS);
+    return allItems.filter((item) => item.label.toLowerCase().includes(normalizedQuery));
   }, [allItems, normalizedQuery]);
+  const results = matched.slice(0, MAX_RESULTS);
+  const overflowCount = matched.length - results.length;
 
   function handleSelect(event: ReactMouseEvent<HTMLButtonElement>, item: SearchHit) {
     event.stopPropagation();
@@ -68,21 +68,24 @@ export function DocumentSearch({
         />
       </label>
       {normalizedQuery && (
-        <div className="sidebar-search-results" role="listbox" aria-label="문서 검색 결과">
+        <div className="sidebar-search-results" role="group" aria-label="문서 검색 결과">
           {results.length > 0 ? (
-            results.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="option"
-                aria-selected={false}
-                className="sidebar-search-result"
-                onClick={(event) => handleSelect(event, item)}
-              >
-                <span className="sidebar-search-result-label">{item.label}</span>
-                <span className="sidebar-search-result-project">{item.projectTitle}</span>
-              </button>
-            ))
+            <>
+              {results.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="sidebar-search-result"
+                  onClick={(event) => handleSelect(event, item)}
+                >
+                  <span className="sidebar-search-result-label">{item.label}</span>
+                  <span className="sidebar-search-result-project">{item.projectTitle}</span>
+                </button>
+              ))}
+              {overflowCount > 0 ? (
+                <p className="sidebar-search-more">외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
+              ) : null}
+            </>
           ) : (
             <p className="sidebar-search-empty">검색 결과가 없습니다.</p>
           )}

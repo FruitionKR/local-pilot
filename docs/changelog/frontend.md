@@ -6,6 +6,17 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### fix: 문서명 검색 접근성·결과 잘림 표시 개선 (PR #104 리뷰 반영)
+
+**변경된 내용**
+
+- `DocumentSearch`의 검색 결과에서 키보드 탐색을 지원하지 않는 `role="listbox"`/`role="option"`/`aria-selected`를 제거했다. 결과 항목은 `<button>`이라 Tab·Enter로 접근되며, 컨테이너는 `role="group"`으로 라벨만 유지한다.
+- 매칭이 `MAX_RESULTS`(8)를 초과하면 조용히 잘리던 문제를 개선해, "외 N개 더 있습니다. 검색어를 좁혀 주세요." 안내를 노출한다. `document-sidebar/search.css`에 `.sidebar-search-more` 스타일 추가.
+
+**검증**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build` 통과.
+
 ### feat: 문서 처리 상태 뱃지 강화 (stream2 P1, 이슈 #2)
 
 **변경 배경**
