@@ -6,6 +6,32 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### fix: 비밀번호 입력 눈 아이콘 표시/숨김 토글 동작 복구
+
+**변경 배경**
+
+- 로그인·회원가입·비밀번호 재설정의 비밀번호 입력 눈 아이콘이 클릭해도 원본이 보이지 않았다.
+- 원인은 두 겹이었다: `AuthControls.tsx`의 눈 아이콘이 onClick·상태 없는 정적 `<Image>`였고, `auth.css`의 `.auth-password-icon`에 `pointer-events: none`이 걸려 클릭 자체가 막혀 있었다.
+
+**변경된 내용**
+
+- `AuthControls.tsx`의 `AuthField`에 `useState` 기반 표시/숨김 토글을 추가했다(`"use client"` 명시). 눈 아이콘을 `<button>`으로 바꿔 클릭 시 input `type`을 `password`↔`text`로 전환하고, 상태에 따라 아이콘과 `aria-label`(비밀번호 표시/숨기기)·`aria-pressed`를 갱신한다.
+- `auth.css`에서 토글 버튼(`.auth-password-toggle`)을 클릭 가능하도록 위치·`pointer-events`·`cursor`를 분리 정의하고, `.auth-password-icon`은 크기만 담당하도록 정리했다.
+- 표시 상태용 뜬눈 아이콘 `svg/auth/auth-password-visible.svg`를 추가했다(기존엔 감은눈만 존재).
+
+**검증**
+
+- `npm run lint` / `tsc --noEmit` / `npm run build` 통과.
+- 로컬(`/login`) 브라우저에서 클릭 시 `type=password`→`text`로 원본 노출·아이콘/`aria` 전환, 재클릭 시 복귀 확인.
+
+### docs: 로그인 "아이디 찾기" 비활성 사유 주석 추가
+
+**변경된 내용**
+
+- `login/page.tsx`의 "아이디 찾기" 버튼에 비활성 유지 사유를 코드 주석으로 명시했다. 이 서비스는 이메일=아이디이며 이메일 외 고유 2차 식별자(전화번호 등)를 수집하지 않아 아이디/이메일 조회 기능이 성립하지 않는다.
+- 동작 변경 없음(주석만). 인증 4흐름(로그인·회원가입·비밀번호 찾기·재설정) 화면↔API 정합성을 코드로 재검증했고 `lint`/`tsc --noEmit`/`build` 모두 통과했다.
+- 라이브 4흐름 브라우저 검증(Backend 기동 필요)과 가입 후 자동 로그인 실패 UX는 `docs/issue/frontend/2026-07-23.md` §11로 이관했다.
+
 ### fix: 문서명 검색 접근성·결과 잘림 표시 개선 (PR #104 리뷰 반영)
 
 **변경된 내용**
