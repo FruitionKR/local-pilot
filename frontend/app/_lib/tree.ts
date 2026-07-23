@@ -99,6 +99,7 @@ function replaceTreeItem(items: TreeItem[], itemId: string, replacement: TreeIte
 }
 
 function insertTreeItem(items: TreeItem[], movedItem: TreeItem, target: DropTarget): TreeItem[] {
+  if (target.targetId === null) return [...items, movedItem];
   return items.flatMap((item) => {
     if (item.id === target.targetId) {
       if (target.position === "before") return [movedItem, item];
@@ -117,6 +118,7 @@ function insertTreeItem(items: TreeItem[], movedItem: TreeItem, target: DropTarg
 export function moveTreeItem(items: TreeItem[], itemId: string, target: DropTarget): TreeItem[] {
   const result = removeTreeItem(items, itemId);
   if (!result.removed) return items;
+  if (target.targetId === null) return [...result.items, result.removed];
   if (result.removed.id === target.targetId || itemContainsId(result.removed, target.targetId)) return items;
   return insertTreeItem(result.items, result.removed, target);
 }
@@ -139,14 +141,95 @@ export function mergeTreeItemsIntoFolder(items: TreeItem[], draggedId: string, t
   return replaceTreeItem(result.items, targetId, folder);
 }
 
+/** 문서나 폴더를 같은 프로젝트 또는 다른 프로젝트의 지정 위치로 이동한다. */
+export function moveProjectTreeItem(
+  projects: Project[],
+  sourceProjectId: string,
+  itemId: string,
+  target: DropTarget
+): Project[] {
+  const sourceProject = projects.find((project) => project.id === sourceProjectId);
+  const targetProject = projects.find((project) => project.id === target.projectId);
+  if (!sourceProject || !targetProject) return projects;
+
+  if (sourceProjectId === target.projectId) {
+    const dragged = findTreeItem(sourceProject.items, itemId);
+    const targetItem = target.targetId ? findTreeItem(sourceProject.items, target.targetId) : null;
+    let nextItems: TreeItem[];
+    if (target.position === "inside" && target.targetId && dragged && targetItem && isFileItem(dragged) && isFileItem(targetItem)) {
+      nextItems = mergeTreeItemsIntoFolder(sourceProject.items, itemId, target.targetId);
+    } else {
+      const normalizedTarget = target.position === "inside" && targetItem && isFileItem(targetItem)
+        ? { ...target, position: "after" as const }
+        : target;
+      nextItems = moveTreeItem(sourceProject.items, itemId, normalizedTarget);
+    }
+    if (nextItems === sourceProject.items) return projects;
+    return projects.map((project) => project.id === sourceProjectId ? { ...project, items: nextItems } : project);
+  }
+
+  const sourceResult = removeTreeItem(sourceProject.items, itemId);
+  const movedItem = sourceResult.removed;
+  if (!movedItem || isWikiItem(movedItem)) return projects;
+
+  let nextTargetItems: TreeItem[];
+  if (target.targetId === null) {
+    nextTargetItems = [...targetProject.items, movedItem];
+  } else {
+    const targetItem = findTreeItem(targetProject.items, target.targetId);
+    if (!targetItem) return projects;
+    if (target.position === "inside" && isFileItem(movedItem) && isFileItem(targetItem)) {
+      const folder: TreeItem = {
+        id: createClientId("merged-folder"),
+        label: "새 문서 묶음",
+        type: "folder",
+        children: [targetItem, movedItem]
+      };
+      nextTargetItems = replaceTreeItem(targetProject.items, target.targetId, folder);
+    } else {
+      const normalizedTarget = target.position === "inside" && isFileItem(targetItem)
+        ? { ...target, position: "after" as const }
+        : target;
+      nextTargetItems = insertTreeItem(targetProject.items, movedItem, normalizedTarget);
+    }
+  }
+
+  return projects.map((project) => {
+    if (project.id === sourceProjectId) return { ...project, items: sourceResult.items };
+    if (project.id === target.projectId) return { ...project, items: nextTargetItems };
+    return project;
+  });
+}
+
 export function updateTreeItemLabel(items: TreeItem[], itemId: string, label: string): TreeItem[] {
   return mapTreeItemById(items, itemId, (item) => ({ ...item, label, customLabel: true }));
+}
+
+export function updateDocumentItemLabel(items: TreeItem[], documentId: string, label: string): TreeItem[] {
+  return items.map((item) => {
+    const nextItem = item.documentId === documentId
+      ? { ...item, label, customLabel: false }
+      : item;
+    if (nextItem.children?.length) {
+      return { ...nextItem, children: updateDocumentItemLabel(nextItem.children, documentId, label) };
+    }
+    return nextItem;
+  });
 }
 
 export function findTreeItem(items: TreeItem[], itemId: string): TreeItem | null {
   for (const item of items) {
     if (item.id === itemId) return item;
     const found = item.children ? findTreeItem(item.children, itemId) : null;
+    if (found) return found;
+  }
+  return null;
+}
+
+export function findTreeItemByDocumentId(items: TreeItem[], documentId: string): TreeItem | null {
+  for (const item of items) {
+    if (item.documentId === documentId) return item;
+    const found = item.children ? findTreeItemByDocumentId(item.children, documentId) : null;
     if (found) return found;
   }
   return null;
@@ -248,7 +331,17 @@ function areTreeItemsShallowEqual(left: TreeItem, right: TreeItem): boolean {
 }
 
 export function mergeBackendDataIntoProjects(projects: Project[], documents: DocumentItemResponse[], graph: WikiGraphResponse) {
-  const knownDocumentIds = collectDocumentIds(projects.flatMap((project) => project.items));
+  const backendDocumentIds = new Set(documents.map((document) => document.id));
+  const removeMissingDocuments = (items: TreeItem[]): TreeItem[] => items.flatMap((item) => {
+    if (item.documentId && !backendDocumentIds.has(item.documentId) && item.status !== "uploading") return [];
+    if (!item.children?.length) return [item];
+    return [{ ...item, children: removeMissingDocuments(item.children) }];
+  });
+  const reconciledProjects = projects.map((project) => ({
+    ...project,
+    items: removeMissingDocuments(project.items)
+  }));
+  const knownDocumentIds = collectDocumentIds(reconciledProjects.flatMap((project) => project.items));
   const missingDocuments = documents.filter((document) => !knownDocumentIds.has(document.id));
   const backendItems = missingDocuments.map((document) => ({
     id: `document-file-${document.id}`,
@@ -263,12 +356,14 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     uploadedAt: document.uploaded_at,
     errorMessage: document.error_message
   }));
-  const nextProjects = projects.map((project, index) => {
+  const nextProjects = reconciledProjects.map((project, index) => {
     const syncedItems = syncDocumentItems(removeGeneratedWikiGroups(project.items), documents);
     const nextItems = index === 0 ? [...syncedItems, ...backendItems] : syncedItems;
     if (areTreeItemsEqual(project.items, nextItems)) return project;
     return { ...project, items: nextItems };
   });
 
-  return nextProjects.every((project, index) => project === projects[index]) ? projects : nextProjects;
+  return nextProjects.every((project, index) => areTreeItemsEqual(project.items, projects[index]?.items ?? []))
+    ? projects
+    : nextProjects;
 }

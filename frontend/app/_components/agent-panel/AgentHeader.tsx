@@ -1,6 +1,6 @@
-import { ChevronDown, MoreHorizontal, MoreVertical, Search } from "lucide-react";
+import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { fetchChatSessions } from "../../_lib/api";
+import { fetchChatSessions, fetchCurrentChatSessionId } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
 import { useWorkspaceName } from "../../_hooks/useWorkspaceName";
 import type { ChatSessionResponse } from "../../_lib/types";
@@ -11,6 +11,7 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
   const [isListOpen, setIsListOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
   const workspaceName = useWorkspaceName();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -19,10 +20,11 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
     if (!isListOpen) return;
 
     let cancelled = false;
-    fetchChatSessions()
-      .then((response) => {
+    Promise.all([fetchChatSessions(), fetchCurrentChatSessionId()])
+      .then(([response, sessionId]) => {
         if (cancelled) return;
         setSessions(response.sessions ?? []);
+        setActiveSessionId(sessionId);
         setLoadErrorMessage(null);
       })
       .catch((error: unknown) => {
@@ -50,12 +52,11 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
   );
 
   return (
-    <div className="agent-header" ref={rootRef} onMouseLeave={() => setIsListOpen(false)}>
+    <div className="agent-header" ref={rootRef}>
       <button
         type="button"
         className="agent-session-title"
         aria-expanded={isListOpen}
-        onMouseEnter={() => setIsListOpen(true)}
         onClick={() => setIsListOpen((open) => !open)}
       >
         <span>{sessionTitle}</span>
@@ -74,6 +75,7 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
           <label className="chat-session-search">
             <Search size={12} />
             <input
+              aria-label="채팅 검색"
               value={searchTerm}
               placeholder="채팅 검색"
               onChange={(event) => setSearchTerm(event.target.value)}
@@ -85,17 +87,22 @@ export function AgentHeader({ sessionTitle, onClose }: { sessionTitle: string; o
             <p className="chat-session-empty">채팅 세션이 없습니다.</p>
           ) : (
             <div className="chat-session-list">
-              {visibleSessions.map((session) => (
+              {visibleSessions.map((session) => {
+                const isActive = session.id === activeSessionId;
+                return (
                 <button
                   key={session.id}
                   type="button"
-                  className="chat-session-item"
+                  className={`chat-session-item${isActive ? " is-active" : ""}`}
                   onClick={() => setIsListOpen(false)}
                 >
                   <span>{session.title ?? fallbackTitle}</span>
-                  <MoreVertical size={12} />
+                  {isActive
+                    ? <MoreVertical className="chat-session-item-more" size={12} />
+                    : <Folder className="chat-session-item-folder" size={12} />}
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import {
   appendItemsToFolder,
   applyUploadedDocument,
   createClientId,
+  findTreeItem,
   isSupportedUploadFile,
   updateTreeItemStatus
 } from "../_lib/tree";
@@ -69,14 +70,14 @@ export function useDocumentUpload({
             return [...withoutCurrent, response];
           });
           setProjects((current) => current.map((project) => {
-            if (project.id !== projectId) return project;
+            if (!findTreeItem(project.items, item.id)) return project;
             return { ...project, items: applyUploadedDocument(project.items, item.id, response) };
           }));
           void refreshBackendData();
         })
         .catch((error: Error) => {
           setProjects((current) => current.map((project) => {
-            if (project.id !== projectId) return project;
+            if (!findTreeItem(project.items, item.id)) return project;
             return { ...project, items: updateTreeItemStatus(project.items, item.id, "failed", error.message) };
           }));
         });

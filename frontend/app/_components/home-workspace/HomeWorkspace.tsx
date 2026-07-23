@@ -1,27 +1,26 @@
 "use client";
 
 import { MoreHorizontal, PanelRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
 import { railItems, type RailView } from "../RailNavigation";
 import { UploadErrorModal } from "../modals/UploadErrorModal";
 import { SourcePreviewPanel } from "../SourcePreviewPanel";
-import { sideboxIcon, SvgIcon } from "../SvgIcon";
 import { cx } from "../../_lib/classNames";
 import { useBackendData } from "../../_hooks/useBackendData";
 import { useDocumentUpload } from "../../_hooks/useDocumentUpload";
 import { useProjectTree } from "../../_hooks/useProjectTree";
 import { useTreeSelection } from "../../_hooks/useTreeSelection";
-import { buildGraphFromBackend, makeRawId } from "../../_lib/graph";
+import { buildGraphFromBackend } from "../../_lib/graph";
 import { uploadDocumentFile } from "../../_lib/api";
 import { buildGeneratedMarkdownFilename } from "../../_lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import { createClientId } from "../../_lib/tree";
 import { useResizeHandle } from "./useResizeHandle";
-import type { SourceBlockHighlight, TreeItem } from "../../_lib/types";
+import type { NoteEditState, SourceBlockHighlight, TreeItem } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 320;
@@ -44,11 +43,26 @@ function findParentLabel(items: TreeItem[], itemId: string, parentLabel: string)
   return null;
 }
 
+function findFirstSelectableNote(items: TreeItem[], documentIds: Set<string>): TreeItem | null {
+  for (const item of items) {
+    if ((item.documentId && documentIds.has(item.documentId)) || (!item.documentId && item.graphNodeId)) return item;
+    const nested = item.children?.length ? findFirstSelectableNote(item.children, documentIds) : null;
+    if (nested) return nested;
+  }
+  return null;
+}
+
 export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
-  const [isDocumentSidebarOpen, setIsDocumentSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
+  const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
+  const [lintRequest, setLintRequest] = useState<{
+    id: number;
+    message: string;
+    context: ActiveMarkdownEditContext;
+  } | null>(null);
+  const lintRequestIdRef = useRef(0);
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
     SOURCE_PREVIEW_DEFAULT_WIDTH,
@@ -101,32 +115,33 @@ export function HomeWorkspace() {
     const document = documents.find((item) => item.id === selection.selectedDocumentId);
     return document?.processed_at ?? document?.uploaded_at ?? null;
   }, [documents, selection.selectedDocumentId]);
-
   useEffect(() => {
     if (isDocumentMain && !wasDocumentMainRef.current) setIsAgentPanelOpen(false);
     wasDocumentMainRef.current = isDocumentMain;
   }, [isDocumentMain]);
 
-  // 가장 최근 업로드된 문서(Obsidian처럼 홈 진입 시 기본으로 열 대상)
-  const latestDocument = useMemo(() => {
-    if (documents.length === 0) return null;
-    return [...documents].sort((left, right) =>
-      (right.uploaded_at ?? "").localeCompare(left.uploaded_at ?? "")
-    )[0];
-  }, [documents]);
+  const firstSidebarNote = useMemo(() => {
+    const documentIds = new Set(documents.map((document) => document.id));
+    for (const project of projectTree.projects) {
+      const note = findFirstSelectableNote(project.items, documentIds);
+      if (note) return note;
+    }
+    return null;
+  }, [documents, projectTree.projects]);
 
-  // 홈 진입 후 선택이 비어 있으면 최근 문서를 자동으로 연다(최초 1회).
+  // 최초 데이터 로딩 후 선택이 비어 있으면 사이드바에서 가장 위에 있는 노트를 연다.
   const didAutoOpenRef = useRef(false);
   useEffect(() => {
-    if (!isHomeView || didAutoOpenRef.current || !latestDocument) return;
+    if (!isHomeView || isGraphLoading || didAutoOpenRef.current || !firstSidebarNote) return;
     if (selection.selectedDocumentId || selection.selectedPreviewTarget) return;
     didAutoOpenRef.current = true;
-    selection.selectTreeGraphNode({
-      id: makeRawId(latestDocument.id),
-      label: latestDocument.filename,
-      documentId: latestDocument.id
-    });
-  }, [isHomeView, latestDocument, selection]);
+    selection.selectTreeGraphNode(firstSidebarNote);
+  }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
+
+  function handleViewChange(view: RailView) {
+    setActiveView(view);
+    if (view === "home" && firstSidebarNote) selection.selectTreeGraphNode(firstSidebarNote);
+  }
 
   function openSourceBlocks(documentId: string, title: string, highlights: SourceBlockHighlight[]) {
     const documentTitle = documents.find((document) => document.id === documentId)?.filename ?? title;
@@ -151,6 +166,34 @@ export function HomeWorkspace() {
     selection.openSourceBlockPreview(created.id, created.filename, []);
   }
 
+  function requestDocumentLint(context: ActiveMarkdownEditContext) {
+    lintRequestIdRef.current += 1;
+    setLintRequest({
+      id: lintRequestIdRef.current,
+      message: "문서 전체의 문법, 문장 흐름, Markdown 구조를 점검하고 필요한 부분만 교정해줘.",
+      context
+    });
+    setIsAgentPanelOpen(true);
+  }
+
+  const handleNoteEditStateChange = useCallback((documentId: string, state: NoteEditState | null) => {
+    setNoteEditStates((current) => {
+      if (state) {
+        const previous = current[documentId];
+        if (previous?.saveStatus === state.saveStatus && previous.needsReview === state.needsReview) return current;
+        return { ...current, [documentId]: state };
+      }
+      if (!current[documentId]) return current;
+      const next = { ...current };
+      delete next[documentId];
+      return next;
+    });
+  }, []);
+
+  async function handleChatDocumentExported() {
+    await refreshBackendData();
+  }
+
   function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
     if (sidebarResize.update(event)) return;
     sourcePreviewResize.update(event);
@@ -167,7 +210,6 @@ export function HomeWorkspace() {
         "workspace",
         isGraphView && "is-graph-view",
         (isHomeView || isGraphView) && !isAgentPanelOpen && "is-agent-collapsed",
-        !isDocumentSidebarOpen && "is-sidebar-collapsed",
         hasSourcePreview && "has-source-preview",
         isDocumentMain && "is-document-main"
       )}
@@ -180,57 +222,43 @@ export function HomeWorkspace() {
       onPointerUp={handleResizePointerEnd}
       onPointerCancel={handleResizePointerEnd}
     >
-      {!isDocumentMain && (isDocumentSidebarOpen ? (
-        <DocumentSidebar
-          projects={projectTree.projects}
-          draggedItemId={projectTree.draggedItem?.itemId ?? null}
-          selectedItemId={selection.selectedTreeItemId}
-          dropTarget={projectTree.dropTarget}
-          fileDropTarget={projectTree.fileDropTarget}
-          editing={projectTree.editing}
-          contextMenu={projectTree.contextMenu}
-          uploadInputRef={upload.uploadInputRef}
-          activeView={activeView}
-          onViewChange={setActiveView}
-          onStartChat={() => setIsAgentPanelOpen(true)}
-          onUploadToProject={(projectId) => upload.openUploadPicker(projectId, null)}
-          onAddProject={projectTree.addProject}
-          onResizeStart={sidebarResize.start}
-          onUploadPickerChange={upload.handleUploadPickerChange}
-          onMoveItem={projectTree.moveTreeEntry}
-          onDropFiles={upload.dropUploadFiles}
-          onDragStart={projectTree.onDragStart}
-          onDragOverItem={projectTree.onDragOverItem}
-          onFileDragOver={projectTree.setFileDropTarget}
-          onFileDragLeave={projectTree.onFileDragLeave}
-          onDragEnd={projectTree.onDragEnd}
-          onContextMenuProject={projectTree.openProjectMenu}
-          onContextMenuItem={projectTree.openFolderMenu}
-          onSelectGraphNode={selection.selectTreeGraphNode}
-          onEditingChange={projectTree.onEditingChange}
-          onCommitEditing={projectTree.commitEditing}
-          onCancelEditing={projectTree.cancelEditing}
-          onRenameContextTarget={projectTree.renameContextTarget}
-          onAddFolderFromContext={projectTree.addFolderFromContext}
-          onAddMarkdownFromContext={() => {
-            const target = projectTree.takeMarkdownTargetFromContext();
-            if (target) upload.createMarkdownFile(target.projectId, target.folderId);
-          }}
-          onDeleteContextTarget={projectTree.deleteContextTarget}
-        />
-      ) : (
-        <button
-          type="button"
-          className="sidebar-restore"
-          aria-label="자료 관리 보이기"
-          onClick={(event) => {
-            event.stopPropagation();
-            setIsDocumentSidebarOpen(true);
-          }}
-        >
-          <SvgIcon src={sideboxIcon} />
-        </button>
-      ))}
+      <DocumentSidebar
+        projects={projectTree.projects}
+        draggedItemId={projectTree.draggedItem?.itemId ?? null}
+        selectedItemId={selection.selectedTreeItemId}
+        dropTarget={projectTree.dropTarget}
+        fileDropTarget={projectTree.fileDropTarget}
+        editing={projectTree.editing}
+        contextMenu={projectTree.contextMenu}
+        uploadInputRef={upload.uploadInputRef}
+        activeView={activeView}
+        noteEditStates={noteEditStates}
+        onViewChange={handleViewChange}
+        onStartChat={() => setIsAgentPanelOpen(true)}
+        onUploadToProject={(projectId) => upload.openUploadPicker(projectId, null)}
+        onAddProject={projectTree.addProject}
+        onResizeStart={sidebarResize.start}
+        onUploadPickerChange={upload.handleUploadPickerChange}
+        onMoveItem={projectTree.moveTreeEntry}
+        onDropFiles={upload.dropUploadFiles}
+        onDragStart={projectTree.onDragStart}
+        onDragOverItem={projectTree.onDragOverItem}
+        onFileDragOver={projectTree.setFileDropTarget}
+        onFileDragLeave={projectTree.onFileDragLeave}
+        onDragEnd={projectTree.onDragEnd}
+        onContextMenuProject={projectTree.openProjectMenu}
+        onContextMenuItem={projectTree.openFolderMenu}
+        onSelectGraphNode={selection.selectTreeGraphNode}
+        onEditingChange={projectTree.onEditingChange}
+        onCommitEditing={projectTree.commitEditing}
+        onCancelEditing={projectTree.cancelEditing}
+        onRenameContextTarget={projectTree.renameContextTarget}
+        onAddMarkdownFromContext={() => {
+          const target = projectTree.takeMarkdownTargetFromContext();
+          if (target) upload.createMarkdownFile(target.projectId, target.folderId);
+        }}
+        onDeleteContextTarget={projectTree.deleteContextTarget}
+      />
 
       {/* 홈: 최근 문서를 메인으로 여는 문서 열람 화면. 문서가 없으면 빈 화면. */}
       {isHomeView && (
@@ -244,9 +272,13 @@ export function HomeWorkspace() {
             width={sourcePreviewResize.width}
             onResizeStart={sourcePreviewResize.start}
             onMarkdownEditContextChange={setMarkdownEditContext}
+            onRequestLint={requestDocumentLint}
+            onRenameDocument={projectTree.renameDocumentById}
+            onNoteEditStateChange={handleNoteEditStateChange}
             parentLabel={selectedDocumentParentLabel}
             editedAt={selectedDocumentEditedAt}
             onExitDocument={selection.clearTreeGraphSelection}
+            isAgentPanelOpen={isAgentPanelOpen}
             onOpenAgentPanel={() => setIsAgentPanelOpen(true)}
             fillMain
           />
@@ -285,6 +317,8 @@ export function HomeWorkspace() {
           onOpenSourceBlocks={openSourceBlocks}
           onCreateMarkdownDocument={createGeneratedMarkdownDocument}
           markdownEditContext={markdownEditContext}
+          lintRequest={lintRequest}
+          onDocumentExported={handleChatDocumentExported}
           nodes={graphData.nodes}
         />
       )}

@@ -27,7 +27,7 @@ export type DropPosition = "before" | "inside" | "after";
 
 export type DropTarget = {
   projectId: string;
-  targetId: string;
+  targetId: string | null;
   position: DropPosition;
 };
 
@@ -55,6 +55,13 @@ export type UploadPickerTarget = {
 };
 
 export type DocumentStatus = "uploaded" | "processing" | "completed" | "failed";
+
+export type NoteSaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
+
+export type NoteEditState = {
+  saveStatus: NoteSaveStatus;
+  needsReview: boolean;
+};
 
 // GET /api/auth/me 응답
 export type UserMeResponse = {

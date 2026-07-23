@@ -1,5 +1,7 @@
 package fruition.util;
 
+import fruition.agent.exception.PipelineAgentException;
+import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -28,6 +30,7 @@ import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +41,22 @@ import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(PipelineAgentException.class)
+    public ResponseEntity<?> handlePipelineAgent(PipelineAgentException e) {
+        if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBody());
+        }
+        return ResponseEntity.status(e.getHttpStatus())
+                .body(ErrorResponse.of("AGENT_PIPELINE_UNAVAILABLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidAgentTurnRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidAgentTurnRequest(InvalidAgentTurnRequestException e) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_REQUEST", e.getMessage()));
+    }
 
     @ExceptionHandler(MultipartException.class)
     public ResponseEntity<ErrorResponse> handleMultipartException(MultipartException e) {

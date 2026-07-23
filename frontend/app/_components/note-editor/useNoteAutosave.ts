@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NoteContentConflictError, saveNoteDraft } from "../../_lib/api";
 import { composeEditableNoteMarkdown } from "../../_lib/note";
-
-export type NoteSaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
+import type { NoteSaveStatus } from "../../_lib/types";
 
 type PendingSave = {
   markdown: string;

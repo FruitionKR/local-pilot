@@ -1,6 +1,6 @@
 import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { cx } from "../../_lib/classNames";
-import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
+import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, NoteEditState, Project } from "../../_lib/types";
 import { chatBubbleIcon, SvgIcon } from "../SvgIcon";
 import type { RailView } from "../RailNavigation";
 import { ContextMenu } from "./ContextMenu";
@@ -21,6 +21,7 @@ export function DocumentSidebar({
   contextMenu,
   uploadInputRef,
   activeView,
+  noteEditStates,
   onViewChange,
   onStartChat,
   onUploadToProject,
@@ -41,7 +42,6 @@ export function DocumentSidebar({
   onCommitEditing,
   onCancelEditing,
   onRenameContextTarget,
-  onAddFolderFromContext,
   onAddMarkdownFromContext,
   onDeleteContextTarget
 }: {
@@ -54,13 +54,14 @@ export function DocumentSidebar({
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
+  noteEditStates: Record<string, NoteEditState>;
   onViewChange: (view: RailView) => void;
   onStartChat: () => void;
   onUploadToProject: (projectId: string) => void;
   onAddProject: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onUploadPickerChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
-  onMoveItem: (projectId: string, itemId: string, target: DropTarget) => void;
+  onMoveItem: (target: DropTarget) => void;
   onDropFiles: (projectId: string, folderId: string | null, files: File[]) => void;
   onDragStart: (projectId: string, itemId: string) => void;
   onDragOverItem: (target: DropTarget) => void;
@@ -74,7 +75,6 @@ export function DocumentSidebar({
   onCommitEditing: () => void;
   onCancelEditing: () => void;
   onRenameContextTarget: () => void;
-  onAddFolderFromContext: () => void;
   onAddMarkdownFromContext: () => void;
   onDeleteContextTarget: () => void;
 }) {
@@ -123,6 +123,7 @@ export function DocumentSidebar({
             dropTarget={dropTarget}
             fileDropTarget={fileDropTarget}
             editing={editing}
+            noteEditStates={noteEditStates}
             onMoveItem={onMoveItem}
             onDropFiles={onDropFiles}
             onDragStart={onDragStart}
@@ -142,7 +143,7 @@ export function DocumentSidebar({
           <ContextMenu
             contextMenu={contextMenu}
             onRenameContextTarget={onRenameContextTarget}
-            onAddFolderFromContext={onAddFolderFromContext}
+            onAddProject={onAddProject}
             onAddMarkdownFromContext={onAddMarkdownFromContext}
             onDeleteContextTarget={onDeleteContextTarget}
           />

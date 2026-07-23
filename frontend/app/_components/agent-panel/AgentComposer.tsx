@@ -1,4 +1,4 @@
-import { ArrowUp, Plus } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import type { FormEvent } from "react";
 
 export function AgentComposer({
@@ -28,10 +28,6 @@ export function AgentComposer({
         onChange={(event) => onChange(event.target.value)}
       />
       <div className="composer-actions">
-        {/* 시안의 첨부 버튼 자리 — 동작은 아직 없음 */}
-        <button type="button" className="composer-attach" aria-label="파일 첨부">
-          <Plus size={16} />
-        </button>
         <button
           type="submit"
           className="composer-send"

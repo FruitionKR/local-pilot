@@ -16,7 +16,9 @@ export function TreeNodeIcon({
   hasChildren: boolean;
   isOpen: boolean;
 }) {
-  if (isFileItem(item)) return <SvgIcon src={fileIcon} className="tree-asset raw" />;
+  if (isFileItem(item)) {
+    return <span className="tree-folder-slot" aria-hidden />;
+  }
   if (item.wikiKind === "source") return <SvgIcon src={sourceIcon} className="tree-asset source" />;
   if (item.wikiKind === "concept") return <SvgIcon src={fileIcon} className="tree-asset concept" />;
   return (

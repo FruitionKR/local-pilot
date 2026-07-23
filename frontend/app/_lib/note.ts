@@ -17,3 +17,13 @@ export function splitEditableNoteMarkdown(markdown: string): EditableNoteMarkdow
 export function composeEditableNoteMarkdown(marker: string, body: string) {
   return `${marker}\n${body}${body.endsWith("\n") ? "" : "\n"}`;
 }
+
+export function getMarkdownDocumentTitle(filename: string) {
+  return filename.replace(/\.(?:md|markdown)$/i, "");
+}
+
+export function buildMarkdownDocumentFilename(title: string, currentFilename: string) {
+  const extension = currentFilename.match(/\.(md|markdown)$/i)?.[0] ?? ".md";
+  const normalizedTitle = title.trim().replace(/\.(?:md|markdown)$/i, "");
+  return normalizedTitle ? `${normalizedTitle}${extension}` : currentFilename;
+}

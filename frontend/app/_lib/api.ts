@@ -178,6 +178,11 @@ async function getSessionContext(): Promise<{ workspaceId: string; sessionId: st
   return { workspaceId, sessionId: await sessionCache.promise };
 }
 
+/** 세션 드롭다운에서 현재 사용 중인 채팅을 표시한다. */
+export async function fetchCurrentChatSessionId(): Promise<string> {
+  return (await getSessionContext()).sessionId;
+}
+
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();
   const formData = new FormData();

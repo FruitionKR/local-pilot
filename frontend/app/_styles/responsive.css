@@ -70,11 +70,13 @@
   }
 
   .source-preview-heading,
+  .source-preview-document-controls,
   .source-preview-content {
     padding-inline: 20px;
   }
 
-  .source-preview-heading h2 {
+  .source-preview-heading h2,
+  .source-preview-title-input {
     font-size: 28px;
   }
 

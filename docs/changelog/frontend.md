@@ -4,7 +4,50 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-23
+
+### feat: Markdown 문서 편집 경험 개선
+
+**변경된 내용**
+
+- Markdown 문서를 Milkdown 기반 WYSIWYG 편집기로 열고 옵션 메뉴에서 Markdown 원문 편집 모드로 전환할 수 있게 했다.
+- 문서 제목을 확장자 없이 편집하고 기존 `.md` 또는 `.markdown` 확장자를 유지한 채 Backend rename API에 반영한다.
+- 자동 저장 상태와 충돌·실패를 문서 상단에 표시하고, 수정 또는 AI 점검 대기 상태를 사이드바 문서 행에 표시한다.
+- 저장이 완료된 변경 문서만 AI 문서 점검을 요청할 수 있도록 편집 상태와 Agent context를 연결했다.
+- Agent 입력창과 문서 미리보기 레이아웃을 새 편집 흐름에 맞게 보정했다.
+
+**검증 결과**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build` 통과.
+- `npm run test:markdown` 46건 통과.
+
+**남은 주의사항**
+
+- Backend는 업로드 직후 pipeline을 자동 실행하므로 수동·일괄 Ingest UI는 포함하지 않았다.
+- 업로드와 Ingest 분리 및 편집 Markdown 재처리는 `docs/issue/backend/2026-07-23.md`의 `4. 문서 업로드와 Ingest 분리 및 편집 Markdown 재처리`에 남겼다.
+
 ## 2026-07-22
+
+### feat: Figma 기준 문서 탐색·편집·채팅 연동 개선
+
+**변경된 내용**
+
+- 왼쪽 사이드바를 항상 유지하고 프로젝트·폴더·노트의 폰트와 행 배치, 아이콘, hover, 생성 메뉴를 Figma 기준으로 정리했다.
+- 프로젝트 사이에서 문서와 하위 폴더를 이동할 수 있게 하고, 프로젝트 헤더 drop line과 workspace별 `localStorage` 임시 트리 복원을 추가했다.
+- 최초 진입과 홈 재선택 시 사이드바의 첫 번째 노트를 자동으로 열고, 업로드 중 이동한 문서도 실제 업로드 응답으로 올바르게 갱신한다.
+- Markdown 문서는 미리보기로 열고 `편집`을 선택해야 CodeMirror로 전환한다. 편집 전후 내용이 다르고 자동 저장이 끝난 경우에만 문서 전체 `Lint 요청`을 Agent로 전달한다.
+- 채팅 제목을 클릭하면 Figma `513:11045` 기준 검색·세션 드롭다운이 열리며, 활성 세션과 일반 세션 아이콘을 구분한다.
+- `채팅을 문서로 편입` 미리보기·수락 버튼을 기존 Backend/AI chat export 흐름에 연결하고 완료 후 문서·Wiki 데이터를 새로고침한다.
+- 브라우저 검증 중 발견된 편집 툴바와 문서 편입 확인 카드의 pointer layer 충돌을 수정했다.
+
+**검증 결과**
+
+- ESLint, `npx tsc --noEmit`, `npm run test:markdown` 45건 통과.
+- Playwright API mock으로 기본 미리보기 → 편집·저장 → Lint diff 검토, 채팅 세션 드롭다운, 채팅 문서 편입 수락·완료 흐름을 확인했다.
+
+**남은 주의사항**
+
+- 폴더 트리는 Backend API가 없어 현재 workspace별 `localStorage`에 임시 저장한다. production 영속화 작업은 `docs/issue/backend/2026-07-22.md`에 유지한다.
 
 ### fix: 노트 편집기 컨텍스트 발행과 draft 조회 최적화
 
