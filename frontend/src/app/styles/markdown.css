@@ -1,0 +1,201 @@
+/* Markdown 렌더 공용 어휘. MarkdownViewer가 붙이는 클래스라 전역으로 유지한다.
+   (기존 source-preview.css의 markdown-* 규칙 + agent-panel/answer.css의 markdown-citation 규칙 통합) */
+
+.markdown-viewer {
+  color: #d0d7de;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.markdown-viewer h1,
+.markdown-viewer h2,
+.markdown-viewer h3 {
+  margin: 24px 0 12px;
+  color: #f0f0f0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-viewer h1:first-child,
+.markdown-viewer h2:first-child,
+.markdown-viewer h3:first-child,
+.markdown-source-block:first-child h1,
+.markdown-source-block:first-child h2,
+.markdown-source-block:first-child h3 {
+  margin-top: 0;
+}
+
+.markdown-viewer h1 {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #4f4f4f;
+  font-size: 24px;
+}
+
+.markdown-viewer h2 {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 19px;
+}
+
+.markdown-viewer h3 {
+  font-size: 16px;
+}
+
+.markdown-viewer p {
+  margin: 0 0 8px;
+}
+
+.markdown-viewer ul,
+.markdown-viewer ol {
+  margin: 0 0 16px;
+  padding-left: 24px;
+}
+
+.markdown-viewer li {
+  margin: 4px 0;
+}
+
+.markdown-viewer code {
+  padding: 2px 5px;
+  color: #f0f0f0;
+  background: #323232;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.markdown-codeblock,
+.markdown-frontmatter pre {
+  margin: 0 0 16px;
+  overflow-x: auto;
+  color: #d0d7de;
+  background: #0a0a0a;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.markdown-codeblock {
+  padding: 2px 2px 2px 6px;
+}
+
+.markdown-viewer p + .markdown-codeblock {
+  margin-top: -4px;
+}
+
+.markdown-codeblock code {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  line-height: inherit;
+}
+
+.markdown-frontmatter {
+  margin: 0 0 18px;
+  color: #a7a7a7;
+}
+
+.markdown-frontmatter summary {
+  width: fit-content;
+  margin-bottom: 8px;
+  cursor: pointer;
+  color: #a7a7a7;
+  font-size: 12px;
+}
+
+.markdown-viewer hr {
+  height: 1px;
+  margin: 24px 0;
+  background: #4f4f4f;
+  border: 0;
+}
+
+.markdown-wikilink {
+  color: #58a6ff;
+}
+
+.markdown-source-block.is-highlighted {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  color: #f0f0f0;
+  background: var(--citation-bg-soft);
+  border-left: 3px solid var(--citation-color);
+  border-radius: 8px;
+}
+
+.markdown-citation {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 6px;
+  color: #0a0a0a;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.markdown-citation.citation-rank-1 {
+  background: var(--yellow);
+}
+
+.markdown-citation.citation-rank-2 {
+  background: #58a6ff;
+}
+
+.markdown-citation.citation-rank-3 {
+  background: #7ee787;
+}
+
+.markdown-citation.citation-rank-4 {
+  background: #ff9b72;
+}
+
+.markdown-citation.citation-rank-5 {
+  background: #d2a8ff;
+}
+
+.markdown-citation:hover {
+  filter: brightness(1.12);
+}
+
+.markdown-citation:focus-visible {
+  outline: 2px solid #f0f0f0;
+  outline-offset: 2px;
+}
+
+.citation-rank-1 {
+  --citation-color: var(--yellow);
+  --citation-bg-soft: rgba(255, 193, 23, 0.12);
+}
+
+.citation-rank-2 {
+  --citation-color: #58a6ff;
+  --citation-bg-soft: rgba(88, 166, 255, 0.14);
+}
+
+.citation-rank-3 {
+  --citation-color: #7ee787;
+  --citation-bg-soft: rgba(126, 231, 135, 0.14);
+}
+
+.citation-rank-4 {
+  --citation-color: #ff9b72;
+  --citation-bg-soft: rgba(255, 155, 114, 0.14);
+}
+
+.citation-rank-5 {
+  --citation-color: #d2a8ff;
+  --citation-bg-soft: rgba(210, 168, 255, 0.14);
+}

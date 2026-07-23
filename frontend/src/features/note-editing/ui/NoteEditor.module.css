@@ -1,0 +1,89 @@
+/* note-editing 슬라이스 스타일. 기존 app/styles/source-preview.css의 note-editor-shell /
+   note-wysiwyg-editor(milkdown) / note-markdown-editor(codemirror) 규칙을 분리했다.
+   milkdown/.ProseMirror/.cm-* 는 서드파티 DOM이 붙이는 전역 클래스라 :global 로 참조한다. */
+
+.note-editor-shell {
+  position: relative;
+  min-height: 100%;
+  padding: 0 0 48px;
+}
+
+.note-wysiwyg-editor :global(.milkdown) {
+  --crepe-color-background: transparent;
+  --crepe-color-surface: #161616;
+  --crepe-color-surface-low: #1e1e1e;
+  --crepe-color-primary: var(--yellow);
+  --crepe-color-selected: rgba(255, 193, 23, 0.2);
+  --crepe-font-title: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --crepe-font-default: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  color: #d7d7d7;
+  background: transparent;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror) {
+  min-height: 420px;
+  padding: 0 0 120px;
+  color: #d7d7d7;
+  background: transparent;
+  caret-color: var(--yellow);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror:focus) {
+  outline: none;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h1) {
+  margin: 0 0 28px;
+  font-size: 34px;
+  letter-spacing: -0.025em;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h2) {
+  margin: 34px 0 12px;
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h3) {
+  margin: 28px 0 10px;
+  font-size: 19px;
+}
+
+.note-markdown-editor :global(.cm-editor) {
+  color: #e7e7e7;
+  background: transparent;
+  font-family: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.note-markdown-editor :global(.cm-editor.cm-focused) {
+  outline: none;
+}
+
+.note-markdown-editor :global(.cm-scroller),
+.note-markdown-editor :global(.cm-gutters) {
+  background: transparent;
+}
+
+.note-markdown-editor :global(.cm-content) {
+  max-width: none;
+  padding: 0 0 120px;
+  caret-color: var(--yellow);
+}
+
+.note-markdown-editor :global(.cm-line) {
+  padding: 0;
+}
+
+.note-markdown-editor :global(.cm-selectionBackground),
+.note-markdown-editor :global(.cm-content ::selection) {
+  background: rgba(255, 193, 23, 0.22) !important;
+}
+
+.note-markdown-editor :global(.cm-cursor) {
+  border-left-color: var(--yellow);
+}

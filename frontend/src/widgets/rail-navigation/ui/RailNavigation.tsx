@@ -1,0 +1,42 @@
+import type { SvgAsset } from "@/shared/ui/SvgIcon";
+import {
+  collectionIcon,
+  homeIcon,
+  lightningIcon,
+  settingIcon,
+  shareIcon,
+  SvgIcon
+} from "@/shared/ui/SvgIcon";
+import { cx } from "@/shared/lib/classNames";
+import styles from "./RailNavigation.module.css";
+
+export type RailView = "home" | "graph" | "rules" | "logs" | "settings";
+
+export const railItems: { id: RailView; label: string; icon: SvgAsset }[] = [
+  { id: "home", label: "홈", icon: homeIcon },
+  { id: "graph", label: "그래프", icon: shareIcon },
+  { id: "rules", label: "규칙", icon: lightningIcon },
+  { id: "logs", label: "로그", icon: collectionIcon },
+  { id: "settings", label: "설정", icon: settingIcon }
+];
+
+export function RailNavigation({ activeView, onViewChange }: { activeView: RailView; onViewChange: (view: RailView) => void }) {
+  return (
+    <aside className={styles.rail}>
+      {railItems.map((item) => (
+        <button
+          key={item.id}
+          className={cx(styles["rail-item"], activeView === item.id && styles["is-active"])}
+          aria-label={item.label}
+          aria-pressed={activeView === item.id}
+          onClick={() => onViewChange(item.id)}
+        >
+          <span className={styles["rail-icon"]}>
+            <SvgIcon src={item.icon} />
+          </span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </aside>
+  );
+}

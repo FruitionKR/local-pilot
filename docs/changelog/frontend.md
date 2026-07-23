@@ -6,6 +6,58 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-23
 
+### refactor: 전역 CSS를 CSS Module로 하이브리드 전환
+
+**변경된 내용**
+
+- 슬라이스별 스타일 격리를 위해 전역 className 스타일시트를 CSS Module로 전환했다(하이브리드 전략).
+  - 스코프(module): `schema-manage`, `graph`, `document-sidebar`, `rail-navigation`, `document-search`, `agent-chat`(agent-panel 7개 서브 css 병합), `source-preview`, `note-editing`, `landing`, `document-history`. 클래스명은 kebab 유지, TSX는 `styles["kebab"]` 접근.
+  - 전역 유지(app 레이어, `src/app/styles/`): 디자인 토큰(`base.css` `:root`), 워크스페이스 루트 상태 클래스(`workspace`, `is-*`), 레이아웃 앵커(`agent-panel-shell.css`의 `.agent-panel`), 그리고 여러 슬라이스가 공유하는 **콘텐츠 어휘**(`markdown.css`) 및 cross-component 폼/오버레이 어휘(`auth.css`, `modal.css`).
+- cross-component 상태 반응은 `:global(.workspace.is-X) .localClass` 패턴으로 유지. 서드파티 DOM 클래스(milkdown `.milkdown/.ProseMirror`, codemirror `.cm-*`, 공용 `.svg-icon`)는 `:global()`로 참조.
+- CSS Module의 pure-selector 제약(로컬 클래스 없는 순수 전역 셀렉터 불가)에 따라 레이아웃 앵커 자기 규칙은 전역 파일로 분리.
+
+**설계 판단**
+
+- 이 프로젝트는 전역 className 방식이고 Next App Router는 전역 CSS를 layout에서만 import 허용한다. 따라서 "모든 클래스 스코프"(순수 방식)는 cross-component 조정 클래스를 깨뜨리므로, 조정/공유 어휘는 전역으로 남기고 컴포넌트 내부 시각 스타일만 스코프하는 하이브리드가 정답.
+
+**검증**
+
+- 각 슬라이스 그룹 전환 후 dev 서버에서 스크린샷 회귀(홈·규칙·그래프·랜딩)로 baseline 대비 시각 동일 확인. CSS Module pure 위반은 dev 빌드가 즉시 검출(tsc는 못 잡음)해 전역 분리로 해결.
+- 최종 `next build` 성공(9개 라우트 프리렌더, 전 CSS Module 컴파일 통과).
+
+### refactor: 프론트엔드 폴더 구조를 Feature-Sliced Design으로 전환
+
+**변경된 내용**
+
+- 공식 FSD 스펙(레이어→슬라이스→세그먼트, 하위 레이어로만 import)에 맞춰 147개 파일을 `frontend/src/` 아래 6개 레이어로 재배치했다.
+  - `shared`(api/client, lib, ui, types), `entities`(document·chat·wiki·schema·workspace·user·graph·tree), `features`(agent-chat·note-editing·schema-manage·document-history·document-search·document-upload·wiki-export), `widgets`(workspace·document-sidebar·graph·agent-panel·source-preview·rail-navigation·top-bar), `views`(landing·home·login·workspaces·auth), `app`(providers, styles).
+- Next.js app router 충돌은 공식 가이드대로 처리: FSD는 `src/`에 두고, Next `app/**/page.tsx`는 `@/views/*`를 re-export 하는 얇은 라우팅 껍데기로만 유지.
+- **FSD `pages` 레이어는 `views`로 명명**: Next.js가 `src/pages/`를 레거시 Pages Router로 인식해 app router와 라우트가 충돌하므로, 공식 권장대로 레이어명을 `views`로 사용한다.
+- 전역 스타일은 `app` 레이어(`src/app/styles/`)로 이관. (프로젝트가 전역 className 방식이고 Next는 전역 CSS를 layout에서만 import 허용하므로, 슬라이스별 CSS Module 콜로케이트 대신 app 레이어 집約이 맞다.)
+- `tsconfig.json`에 `@/*` → `./src/*` alias 도입. 슬라이스별 `index.ts` public API 추가. 임시 배럴(`_lib/api·types·tree`) shim을 단계적으로 제거하고 모든 참조를 canonical alias로 연결.
+- 단계(shared→entities→features→widgets→views/app→styles)로 나눠 각 단계 커밋 + `tsc --noEmit` green 검증.
+
+**검증**
+
+- 각 단계 `tsc --noEmit` exit 0. 최종 `next build` 성공(9개 라우트 전부 컴파일·프리렌더).
+
+**남은 작업(선택)**
+
+- 파일명 kebab-case 정규화는 보류: 컴포넌트 파일은 React 관례상 PascalCase가 일반적이라 약 100개 일괄 개명은 이득 대비 변경·리스크가 커 권장하지 않음(필요 시 별도 진행).
+
+### feat: 규칙·그래프·채팅 패널 Figma 정합 정리
+
+**변경된 내용**
+
+- 규칙(스킬) 화면(`SchemaWorkspace`): 라이트 하드코딩 색상을 셸 다크 팔레트(#0a0a0a/#1e1e1e/#4f4f4f/#f0f0f0)로 교체하고, `position: absolute` + `inset` 좌측 오프셋을 적용해 왼쪽 사이드바에 가려지던 문제를 해결한다. (`_styles/schema.css`)
+- 그래프 뷰 상단 GNB(`.graph-topbar`) 제거: Figma 그래프 시안(node 599-4903)에 없는 "마지막 편집" 라벨·패널 토글·옵션 메뉴를 삭제한다. 패널 재열기는 `GraphFilterChips`가 담당하므로 기능 손실 없음. `GraphOptionsMenu`(레이아웃 초기화)도 함께 삭제. `.graph-stage` top을 0으로 조정. (`HomeWorkspace.tsx`, `_styles/graph/stage.css`, `GraphOptionsMenu.tsx` 삭제)
+- 채팅 패널 자동 닫힘 제거: 문서를 열면 오른쪽 채팅 패널을 강제로 닫던 로직을 삭제해, Figma 편집기 시안(node 426-2115)처럼 문서와 채팅 패널이 함께 열리도록 한다. 레이아웃은 기존 예약 폭(우측 360px)을 그대로 사용. (`HomeWorkspace.tsx`)
+- 그래프 뷰 채팅 패널 스타일 통일: 그래프 전용으로 떠있는 둥근 카드(radius 32, 여백 inset)로 override하던 CSS를 제거해, 편집기 화면과 동일한 전체높이 우측 밀착 패널(360px)로 맞춘다. `.graph-stage` 우측 예약폭도 428→360으로 정렬. (`_styles/agent-panel/shell.css`, `_styles/graph/stage.css`, `_styles/responsive.css`)
+
+**검증**
+
+- `tsc --noEmit` 통과. Playwright 런타임으로 규칙 화면 겹침 해소, 그래프 GNB 제거, 문서+채팅 공존, 편집기·그래프 채팅 패널 픽셀 일치(left 1152/width 360/radius 0) 확인.
+
 ### fix: 채팅 세션 전환 상태 누수·중복 로드 정리 (PR #107 리뷰 반영)
 
 **변경된 내용**
