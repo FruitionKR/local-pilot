@@ -174,11 +174,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         )
         replacement, failures = apply_source_range_response(plan, raw.get("edits"))
         failures.extend(validate_markdown_output(request, replacement))
+        summary = _contract_string(raw.get("summary"), "summary", failures).strip()
+        if not summary:
+            failures.append("summary must not be empty")
         result = MarkdownEditResult(
             edit=MarkdownEditOperation(
                 operation="replace",
                 target=request.target,
-                summary=str(raw.get("summary") or "").strip(),
+                summary=summary,
                 replacement_markdown=replacement,
             )
         )
@@ -256,8 +259,9 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         payload: dict[str, object],
     ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
         raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-        result = _normalize_create_result(raw)
-        failures = validate_markdown_create_output(result.document)
+        failures: list[str] = []
+        result = _normalize_create_result(raw, failures)
+        failures.extend(validate_markdown_create_output(result.document))
         failures.extend(validate_markdown_syntax(result.document.markdown))
         return result, failures, raw
 
@@ -327,17 +331,19 @@ def _normalize_edit_result(
         requested_target,
         failures,
     )
+    summary = _contract_string(value.get("summary"), "summary", failures).strip()
+    replacement_markdown = _contract_string(
+        value.get("replacement_markdown") or value.get("replacementMarkdown"),
+        "replacement_markdown",
+        failures,
+    )
     result = MarkdownEditResult(
         edit=MarkdownEditOperation(
             operation=requested_operation,
             target=actual_target,
             requested_target=requested_target,
-            summary=str(value.get("summary") or "").strip(),
-            replacement_markdown=str(
-                value.get("replacement_markdown")
-                or value.get("replacementMarkdown")
-                or ""
-            ),
+            summary=summary,
+            replacement_markdown=replacement_markdown,
         )
     )
     if not result.edit.summary:
@@ -391,6 +397,11 @@ def _actual_target_request(
         failures.append("actual_target.end_line must be greater than or equal to actual_target.start_line")
     if actual_target.end_line > len(lines):
         failures.append("actual_target.end_line must not exceed the Markdown line count")
+    if (
+        actual_target.start_line > request.target.start_line
+        or actual_target.end_line < request.target.end_line
+    ):
+        failures.append("actual_target must contain requested_target")
     if actual_target.type == "whole_document" and (
         actual_target.start_line != 1 or actual_target.end_line != len(lines)
     ):
@@ -421,14 +432,32 @@ def _actual_target_request(
     )
 
 
-def _normalize_create_result(value: dict[str, Any]) -> MarkdownCreateResult:
+def _normalize_create_result(
+    value: dict[str, Any],
+    failures: list[str],
+) -> MarkdownCreateResult:
     return MarkdownCreateResult(
         document=GeneratedMarkdownDocument(
-            title=str(value.get("title") or "").strip(),
-            summary=str(value.get("summary") or "").strip(),
-            markdown=str(value.get("markdown") or value.get("content") or "").strip(),
+            title=_contract_string(value.get("title"), "title", failures).strip(),
+            summary=_contract_string(value.get("summary"), "summary", failures).strip(),
+            markdown=_contract_string(
+                value.get("markdown") or value.get("content"),
+                "markdown",
+                failures,
+            ).strip(),
         )
     )
+
+
+def _contract_string(
+    value: object,
+    field: str,
+    failures: list[str],
+) -> str:
+    if not isinstance(value, str):
+        failures.append(f"{field} must be a string")
+        return ""
+    return value
 
 
 def _endpoint() -> str:

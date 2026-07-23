@@ -307,6 +307,35 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn("summary must not be empty", retry_payload["contract_failures"])
 
+    def test_retries_markdown_create_with_non_string_required_fields(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {
+                    "title": {"text": "대화 정리"},
+                    "summary": ["대화를 정리했습니다."],
+                    "markdown": {"text": "# 대화 정리"},
+                },
+                {
+                    "title": "대화 정리",
+                    "summary": "대화를 정리했습니다.",
+                    "markdown": "# 대화 정리",
+                },
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client,
+            "system",
+            create_system_prompt="create",
+        )  # type: ignore[arg-type]
+
+        result = editor.generate_markdown(MarkdownCreateRequest(instruction="대화를 문서로 만들어줘."))
+
+        self.assertEqual(result.document.markdown, "# 대화 정리")
+        retry_failures = json.loads(client.calls[1][1])["contract_failures"]
+        self.assertIn("title must be a string", retry_failures)
+        self.assertIn("summary must be a string", retry_failures)
+        self.assertIn("markdown must be a string", retry_failures)
+
     def test_retries_markdown_create_with_syntax_failures(self) -> None:
         client = SequenceJsonClient(
             [
@@ -362,6 +391,28 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(payload["read_only_context"]["after"], "마지막 문장입니다.")
         self.assertEqual(result.edit.replacement_markdown, "선택한 문장입니다.")
         self.assertEqual(result.edit.target, request.target)
+
+    def test_retries_source_range_when_summary_is_missing(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {"edits": [{"id": "text-0001", "replacement": "정리한 문장"}]},
+                source_range_response("text-0001", "정리한 문장"),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="문장을 자연스럽게 정리해줘.",
+            markdown="정리할 문장",
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+
+        result = editor.generate_edit(request)
+
+        self.assertEqual(result.edit.replacement_markdown, "정리한 문장")
+        retry_failures = json.loads(client.calls[1][1])["contract_failures"]
+        self.assertIn("summary must be a string", retry_failures)
+        self.assertIn("summary must not be empty", retry_failures)
 
     def test_structure_conversion_receives_only_selected_markdown(self) -> None:
         client = SequenceJsonClient(
@@ -457,6 +508,41 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             "actual_target must stay within editable_context",
             retry_payload["contract_failures"],
         )
+
+    def test_retries_actual_target_that_does_not_contain_requested_target(self) -> None:
+        client = SequenceJsonClient(
+            [
+                response(
+                    "일부만 정리한 문장",
+                    actual_target={
+                        "type": "selection",
+                        "start_line": 2,
+                        "end_line": 2,
+                    },
+                ),
+                response(
+                    "전체를 정리한 문장",
+                    actual_target={
+                        "type": "selection",
+                        "start_line": 1,
+                        "end_line": 2,
+                    },
+                ),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="선택 범위를 정리해줘.",
+            markdown="첫 문장\n둘째 문장",
+            target=MarkdownEditTarget(type="selection", start_line=1, end_line=2),
+            edit_goal="convert_format",
+        )
+
+        result = editor.generate_edit(request)
+
+        self.assertEqual(result.edit.replacement_markdown, "전체를 정리한 문장")
+        retry_failures = json.loads(client.calls[1][1])["contract_failures"]
+        self.assertIn("actual_target must contain requested_target", retry_failures)
 
     def test_retries_partial_whole_document_actual_target(self) -> None:
         client = SequenceJsonClient(
@@ -682,6 +768,37 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
 
         self.assertEqual(result.edit.replacement_markdown, f"{table}\r\n짧은 문장")
         self.assertEqual(len(client.calls), 1)
+
+    def test_retries_edit_with_non_string_required_fields(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {
+                    "operation": "replace",
+                    "actual_target": {
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 1,
+                    },
+                    "summary": {"text": "수정했습니다."},
+                    "replacement_markdown": {"text": "안전한 결과"},
+                },
+                response("안전한 결과"),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="문장을 정리해줘.",
+            markdown="원문",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+
+        result = editor.generate_edit(request)
+
+        self.assertEqual(result.edit.replacement_markdown, "안전한 결과")
+        retry_failures = json.loads(client.calls[1][1])["contract_failures"]
+        self.assertIn("summary must be a string", retry_failures)
+        self.assertIn("replacement_markdown must be a string", retry_failures)
 
     def test_retries_raw_html_output(self) -> None:
         client = SequenceJsonClient(

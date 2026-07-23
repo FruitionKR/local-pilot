@@ -39,6 +39,11 @@ class GenerateMarkdownEditUseCase:
             raise ValueError("actual_target.end_line must be greater than or equal to actual_target.start_line.")
         if actual_target.end_line > line_count:
             raise ValueError("actual_target.end_line must not exceed the Markdown line count.")
+        if (
+            actual_target.start_line > request.target.start_line
+            or actual_target.end_line < request.target.end_line
+        ):
+            raise ValueError("actual_target must contain the requested target.")
         if actual_target.type == "whole_document" and (
             actual_target.start_line != 1 or actual_target.end_line != line_count
         ):

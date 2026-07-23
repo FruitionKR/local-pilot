@@ -147,6 +147,30 @@ class GenerateMarkdownEditUseCaseTest(unittest.TestCase):
                 )
             )
 
+    def test_rejects_actual_target_that_does_not_contain_requested_target(self) -> None:
+        requested_target = MarkdownEditTarget(type="selection", start_line=1, end_line=2)
+        use_case = GenerateMarkdownEditUseCase(
+            FakeMarkdownEditor(
+                MarkdownEditResult(
+                    edit=MarkdownEditOperation(
+                        operation="replace",
+                        target=MarkdownEditTarget(type="selection", start_line=2, end_line=2),
+                        summary="일부만 정리했습니다.",
+                        replacement_markdown="둘째 문장",
+                    )
+                )
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "must contain"):
+            use_case.execute(
+                MarkdownEditRequest(
+                    instruction="선택 범위를 정리해줘.",
+                    markdown="첫 문장\n둘째 문장",
+                    target=requested_target,
+                )
+            )
+
     def test_marks_unchanged_replace_result(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
         use_case = GenerateMarkdownEditUseCase(
