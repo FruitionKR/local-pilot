@@ -1,5 +1,6 @@
 "use client";
 
+import styles from "./SchemaWorkspace.module.css";
 import type { WikiSchema } from "@/entities/schema/model/schema";
 
 const STATUS_LABELS: Record<WikiSchema["status"], string> = {
@@ -22,24 +23,24 @@ export function SchemaList({
   onActivate: (schema: WikiSchema) => void;
 }) {
   if (schemas.length === 0) {
-    return <p className="schema-muted">아직 만든 스킬이 없습니다. 오른쪽에서 새 스킬을 작성해보세요.</p>;
+    return <p className={styles["schema-muted"]}>아직 만든 스킬이 없습니다. 오른쪽에서 새 스킬을 작성해보세요.</p>;
   }
   return (
-    <ol className="schema-list">
+    <ol className={styles["schema-list"]}>
       {schemas.map((schema) => (
         <li key={schema.id}>
           <button
             type="button"
-            className={`schema-list-item${schema.id === selectedId ? " is-selected" : ""}`}
+            className={`${styles["schema-list-item"]}${schema.id === selectedId ? ` ${styles["is-selected"]}` : ""}`}
             onClick={() => onSelect(schema)}
           >
-            <span className="schema-list-name">{schema.name}</span>
-            <span className={`schema-badge is-${schema.status}`}>{STATUS_LABELS[schema.status]}</span>
+            <span className={styles["schema-list-name"]}>{schema.name}</span>
+            <span className={`${styles["schema-badge"]} ${styles[`is-${schema.status}`]}`}>{STATUS_LABELS[schema.status]}</span>
           </button>
           {schema.status !== "active" && (
             <button
               type="button"
-              className="schema-list-activate"
+              className={styles["schema-list-activate"]}
               disabled={isBusy || schema.hasBlockedIssues}
               onClick={() => onActivate(schema)}
             >

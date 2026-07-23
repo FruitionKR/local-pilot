@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "./SchemaWorkspace.module.css";
+
 export function SchemaEditorForm({
   name,
   rawMarkdown,
@@ -19,8 +21,8 @@ export function SchemaEditorForm({
 }) {
   const canSubmit = rawMarkdown.trim().length > 0 && !isBusy;
   return (
-    <form className="schema-form" onSubmit={(event) => event.preventDefault()}>
-      <label className="schema-field">
+    <form className={styles["schema-form"]} onSubmit={(event) => event.preventDefault()}>
+      <label className={styles["schema-field"]}>
         <span>스킬 이름</span>
         <input
           type="text"
@@ -29,7 +31,7 @@ export function SchemaEditorForm({
           onChange={(event) => onNameChange(event.target.value)}
         />
       </label>
-      <label className="schema-field">
+      <label className={styles["schema-field"]}>
         <span>스킬 내용 (Markdown)</span>
         <textarea
           value={rawMarkdown}
@@ -38,9 +40,9 @@ export function SchemaEditorForm({
           onChange={(event) => onMarkdownChange(event.target.value)}
         />
       </label>
-      <div className="schema-form-actions">
+      <div className={styles["schema-form-actions"]}>
         <button type="button" disabled={!canSubmit} onClick={onPreview}>미리보기</button>
-        <button type="button" className="is-primary" disabled={!canSubmit} onClick={onSaveDraft}>초안 저장</button>
+        <button type="button" className={styles["is-primary"]} disabled={!canSubmit} onClick={onSaveDraft}>초안 저장</button>
       </div>
     </form>
   );

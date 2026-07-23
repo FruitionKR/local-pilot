@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import styles from "./SchemaWorkspace.module.css";
 import { SchemaEditorForm } from "./SchemaEditorForm";
 import { SchemaList } from "./SchemaList";
 import { SchemaPreviewCard } from "./SchemaPreviewCard";
@@ -80,13 +81,13 @@ export function SchemaWorkspace() {
   }
 
   return (
-    <section className="schema-workspace" aria-label="스킬 관리">
-      <div className="schema-column schema-column-list">
-        <header className="schema-header">
+    <section className={styles["schema-workspace"]} aria-label="스킬 관리">
+      <div className={styles["schema-column"]}>
+        <header className={styles["schema-header"]}>
           <h2>스킬</h2>
           <p>원하는 형태로 스킬을 작성하면 AI 편집/생성에 반영됩니다. (현재 임시 화면)</p>
         </header>
-        {errorMessage && <p className="schema-error" role="alert">{errorMessage}</p>}
+        {errorMessage && <p className={styles["schema-error"]} role="alert">{errorMessage}</p>}
         <SchemaList
           schemas={schemas}
           selectedId={selectedId}
@@ -99,7 +100,7 @@ export function SchemaWorkspace() {
         />
       </div>
 
-      <div className="schema-column schema-column-editor">
+      <div className={styles["schema-column"]}>
         <SchemaEditorForm
           name={name}
           rawMarkdown={rawMarkdown}
