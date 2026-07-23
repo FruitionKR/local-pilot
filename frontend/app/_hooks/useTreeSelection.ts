@@ -29,13 +29,13 @@ export function useTreeSelection(projects: Project[], nodes: GraphNode[]) {
   const [selection, setSelection] = useState<TreeSelectionState>(EMPTY_SELECTION);
   const { focusedGraphNodeId, selectedTreeItemId, selectedPreviewTarget, selectedDocumentId } = selection;
   const selectedDocumentTitle = useMemo(() => {
-    if (selectedPreviewTarget) return selectedPreviewTarget.title;
-    if (!selectedTreeItemId) return null;
-    for (const project of projects) {
-      const item = findTreeItem(project.items, selectedTreeItemId);
-      if (item) return item.label;
+    if (selectedTreeItemId) {
+      for (const project of projects) {
+        const item = findTreeItem(project.items, selectedTreeItemId);
+        if (item) return item.label;
+      }
     }
-    return null;
+    return selectedPreviewTarget?.title ?? null;
   }, [projects, selectedPreviewTarget, selectedTreeItemId]);
 
   function findTreeItemIdByGraphNodeId(nodeId: string) {

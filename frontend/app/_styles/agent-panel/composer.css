@@ -1,5 +1,5 @@
 
-/* 시안형 컴포저: 어두운 라운드 박스 + 하단 [+] / 노란 [↑] 버튼 */
+/* 시안형 컴포저: 어두운 라운드 박스 + 하단 노란 [↑] 버튼 */
 .composer {
   min-width: 0;
   display: flex;
@@ -29,26 +29,7 @@
 .composer-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.composer-attach {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: #a7a7a7;
-  background: transparent;
-  border-radius: 50%;
-  line-height: 0;
-}
-
-.composer-attach:hover,
-.composer-attach:focus-visible {
-  color: #f0f0f0;
-  background: #323232;
+  justify-content: flex-end;
 }
 
 .composer-send {

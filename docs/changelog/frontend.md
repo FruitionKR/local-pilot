@@ -4,6 +4,28 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-23
+
+### feat: Markdown 문서 편집 경험 개선
+
+**변경된 내용**
+
+- Markdown 문서를 Milkdown 기반 WYSIWYG 편집기로 열고 옵션 메뉴에서 Markdown 원문 편집 모드로 전환할 수 있게 했다.
+- 문서 제목을 확장자 없이 편집하고 기존 `.md` 또는 `.markdown` 확장자를 유지한 채 Backend rename API에 반영한다.
+- 자동 저장 상태와 충돌·실패를 문서 상단에 표시하고, 수정 또는 AI 점검 대기 상태를 사이드바 문서 행에 표시한다.
+- 저장이 완료된 변경 문서만 AI 문서 점검을 요청할 수 있도록 편집 상태와 Agent context를 연결했다.
+- Agent 입력창과 문서 미리보기 레이아웃을 새 편집 흐름에 맞게 보정했다.
+
+**검증 결과**
+
+- `npm run lint`, `npm exec tsc -- --noEmit`, `npm run build` 통과.
+- `npm run test:markdown` 46건 통과.
+
+**남은 주의사항**
+
+- Backend는 업로드 직후 pipeline을 자동 실행하므로 수동·일괄 Ingest UI는 포함하지 않았다.
+- 업로드와 Ingest 분리 및 편집 Markdown 재처리는 `docs/issue/backend/2026-07-23.md`의 `4. 문서 업로드와 Ingest 분리 및 편집 Markdown 재처리`에 남겼다.
+
 ## 2026-07-22
 
 ### feat: Figma 기준 문서 탐색·편집·채팅 연동 개선

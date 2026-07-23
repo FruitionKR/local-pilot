@@ -56,6 +56,13 @@ export type UploadPickerTarget = {
 
 export type DocumentStatus = "uploaded" | "processing" | "completed" | "failed";
 
+export type NoteSaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
+
+export type NoteEditState = {
+  saveStatus: NoteSaveStatus;
+  needsReview: boolean;
+};
+
 // GET /api/auth/me 응답
 export type UserMeResponse = {
   id: string;

@@ -4,11 +4,13 @@ import { deleteDocument, renameDocument } from "../_lib/api";
 import { getSelectedWorkspaceId } from "../_lib/auth";
 import {
   findTreeItem,
+  findTreeItemByDocumentId,
   initialProjects,
   isFileItem,
   isWikiItem,
   moveProjectTreeItem,
   removeTreeItem,
+  updateDocumentItemLabel,
   updateTreeItemLabel
 } from "../_lib/tree";
 import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project, TreeItem } from "../_lib/types";
@@ -240,6 +242,28 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     setEditing(null);
   }
 
+  async function renameDocumentById(documentId: string, nextLabel: string) {
+    const previousLabel = projects
+      .map((project) => findTreeItemByDocumentId(project.items, documentId)?.label)
+      .find((label): label is string => Boolean(label));
+    setProjects((current) => current.map((project) => ({
+      ...project,
+      items: updateDocumentItemLabel(project.items, documentId, nextLabel)
+    })));
+    try {
+      await renameDocument(documentId, nextLabel);
+      await refreshRef.current();
+    } catch (error) {
+      if (previousLabel) {
+        setProjects((current) => current.map((project) => ({
+          ...project,
+          items: updateDocumentItemLabel(project.items, documentId, previousLabel)
+        })));
+      }
+      throw error;
+    }
+  }
+
   function onDragStart(projectId: string, itemId: string) {
     setDraggedItem({ projectId, itemId });
     setContextMenu(null);
@@ -281,6 +305,7 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     deleteContextTarget,
     commitEditing,
     cancelEditing,
+    renameDocumentById,
     onDragStart,
     onDragOverItem,
     onFileDragLeave,

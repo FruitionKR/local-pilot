@@ -1,7 +1,7 @@
 "use client";
 
 import { MoreHorizontal, PanelRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { AgentPanel } from "../agent-panel/AgentPanel";
 import { DocumentSidebar } from "../document-sidebar/DocumentSidebar";
 import { Graph } from "../graph/Graph";
@@ -20,7 +20,7 @@ import type { GeneratedMarkdownDraft } from "../../_lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import { createClientId } from "../../_lib/tree";
 import { useResizeHandle } from "./useResizeHandle";
-import type { SourceBlockHighlight, TreeItem } from "../../_lib/types";
+import type { NoteEditState, SourceBlockHighlight, TreeItem } from "../../_lib/types";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 320;
@@ -56,6 +56,7 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
+  const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const [lintRequest, setLintRequest] = useState<{
     id: number;
     message: string;
@@ -114,7 +115,6 @@ export function HomeWorkspace() {
     const document = documents.find((item) => item.id === selection.selectedDocumentId);
     return document?.processed_at ?? document?.uploaded_at ?? null;
   }, [documents, selection.selectedDocumentId]);
-
   useEffect(() => {
     if (isDocumentMain && !wasDocumentMainRef.current) setIsAgentPanelOpen(false);
     wasDocumentMainRef.current = isDocumentMain;
@@ -176,6 +176,20 @@ export function HomeWorkspace() {
     setIsAgentPanelOpen(true);
   }
 
+  const handleNoteEditStateChange = useCallback((documentId: string, state: NoteEditState | null) => {
+    setNoteEditStates((current) => {
+      if (state) {
+        const previous = current[documentId];
+        if (previous?.saveStatus === state.saveStatus && previous.needsReview === state.needsReview) return current;
+        return { ...current, [documentId]: state };
+      }
+      if (!current[documentId]) return current;
+      const next = { ...current };
+      delete next[documentId];
+      return next;
+    });
+  }, []);
+
   async function handleChatDocumentExported() {
     await refreshBackendData();
   }
@@ -218,6 +232,7 @@ export function HomeWorkspace() {
         contextMenu={projectTree.contextMenu}
         uploadInputRef={upload.uploadInputRef}
         activeView={activeView}
+        noteEditStates={noteEditStates}
         onViewChange={handleViewChange}
         onStartChat={() => setIsAgentPanelOpen(true)}
         onUploadToProject={(projectId) => upload.openUploadPicker(projectId, null)}
@@ -258,6 +273,8 @@ export function HomeWorkspace() {
             onResizeStart={sourcePreviewResize.start}
             onMarkdownEditContextChange={setMarkdownEditContext}
             onRequestLint={requestDocumentLint}
+            onRenameDocument={projectTree.renameDocumentById}
+            onNoteEditStateChange={handleNoteEditStateChange}
             parentLabel={selectedDocumentParentLabel}
             editedAt={selectedDocumentEditedAt}
             onExitDocument={selection.clearTreeGraphSelection}

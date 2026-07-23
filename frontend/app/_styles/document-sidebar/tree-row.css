@@ -107,6 +107,21 @@
   background: #3a1f1d;
 }
 
+.tree-edit-status {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: 1px;
+  background: var(--yellow);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 193, 23, 0.12);
+}
+
+.tree-edit-status.is-error {
+  background: #ff8f87;
+  box-shadow: 0 0 0 2px rgba(255, 143, 135, 0.12);
+}
+
 /* 파일 행 우측 타입 배지 (PDF/TXT 등) */
 .tree-type-badge {
   flex: 0 0 auto;

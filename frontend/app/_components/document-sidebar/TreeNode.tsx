@@ -41,6 +41,7 @@ export function TreeNode({
   dropTarget,
   fileDropTarget,
   editing,
+  noteEditStates,
   onDragStart,
   onDragOverItem,
   onFileDragOver,
@@ -123,7 +124,10 @@ export function TreeNode({
         ) : (
           <>
             <span>{item.label}</span>
-            <TreeNodeStatus status={item.status} />
+            <TreeNodeStatus
+              status={item.status}
+              editState={item.documentId ? noteEditStates[item.documentId] : undefined}
+            />
             {fileTypeBadge(item) && <small className="tree-type-badge">{fileTypeBadge(item)}</small>}
             {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
           </>
@@ -142,6 +146,7 @@ export function TreeNode({
           dropTarget={dropTarget}
           fileDropTarget={fileDropTarget}
           editing={editing}
+          noteEditStates={noteEditStates}
           onDragStart={onDragStart}
           onDragOverItem={onDragOverItem}
           onFileDragOver={onFileDragOver}

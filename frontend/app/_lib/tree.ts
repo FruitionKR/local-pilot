@@ -205,10 +205,31 @@ export function updateTreeItemLabel(items: TreeItem[], itemId: string, label: st
   return mapTreeItemById(items, itemId, (item) => ({ ...item, label, customLabel: true }));
 }
 
+export function updateDocumentItemLabel(items: TreeItem[], documentId: string, label: string): TreeItem[] {
+  return items.map((item) => {
+    const nextItem = item.documentId === documentId
+      ? { ...item, label, customLabel: false }
+      : item;
+    if (nextItem.children?.length) {
+      return { ...nextItem, children: updateDocumentItemLabel(nextItem.children, documentId, label) };
+    }
+    return nextItem;
+  });
+}
+
 export function findTreeItem(items: TreeItem[], itemId: string): TreeItem | null {
   for (const item of items) {
     if (item.id === itemId) return item;
     const found = item.children ? findTreeItem(item.children, itemId) : null;
+    if (found) return found;
+  }
+  return null;
+}
+
+export function findTreeItemByDocumentId(items: TreeItem[], documentId: string): TreeItem | null {
+  for (const item of items) {
+    if (item.documentId === documentId) return item;
+    const found = item.children ? findTreeItemByDocumentId(item.children, documentId) : null;
     if (found) return found;
   }
   return null;

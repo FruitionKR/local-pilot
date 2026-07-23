@@ -1,6 +1,6 @@
 import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { cx } from "../../_lib/classNames";
-import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "../../_lib/types";
+import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, NoteEditState, Project } from "../../_lib/types";
 import { chatBubbleIcon, SvgIcon } from "../SvgIcon";
 import type { RailView } from "../RailNavigation";
 import { ContextMenu } from "./ContextMenu";
@@ -21,6 +21,7 @@ export function DocumentSidebar({
   contextMenu,
   uploadInputRef,
   activeView,
+  noteEditStates,
   onViewChange,
   onStartChat,
   onUploadToProject,
@@ -53,6 +54,7 @@ export function DocumentSidebar({
   contextMenu: ContextMenuState | null;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
+  noteEditStates: Record<string, NoteEditState>;
   onViewChange: (view: RailView) => void;
   onStartChat: () => void;
   onUploadToProject: (projectId: string) => void;
@@ -121,6 +123,7 @@ export function DocumentSidebar({
             dropTarget={dropTarget}
             fileDropTarget={fileDropTarget}
             editing={editing}
+            noteEditStates={noteEditStates}
             onMoveItem={onMoveItem}
             onDropFiles={onDropFiles}
             onDragStart={onDragStart}

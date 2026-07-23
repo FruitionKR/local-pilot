@@ -19,6 +19,7 @@ export function ProjectSection({
   dropTarget,
   fileDropTarget,
   editing,
+  noteEditStates,
   onMoveItem,
   onDropFiles,
   onDragStart,
@@ -127,6 +128,7 @@ export function ProjectSection({
               dropTarget={dropTarget}
               fileDropTarget={fileDropTarget}
               editing={editing}
+              noteEditStates={noteEditStates}
               onMoveItem={onMoveItem}
               onDropFiles={onDropFiles}
               onDragStart={onDragStart}

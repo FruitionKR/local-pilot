@@ -124,6 +124,43 @@
   background: #1e1e1e;
 }
 
+.source-preview-save-status.is-dirty,
+.source-preview-save-status.is-saving {
+  color: var(--yellow);
+}
+
+.source-preview-save-status.is-error,
+.source-preview-save-status.is-conflict {
+  color: #ff8f87;
+}
+
+.source-preview-options {
+  position: relative;
+}
+
+.source-preview-options-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 8;
+  min-width: 180px;
+  padding: 5px;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+}
+
+.source-preview-actions .source-preview-options-menu button {
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  color: #e7e7e7;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .source-preview-document {
   flex: 1 1 auto;
   min-height: 0;
@@ -144,14 +181,32 @@
   margin-bottom: 24px;
 }
 
-.source-preview-heading h2 {
+.source-preview-heading h2,
+.source-preview-title-input {
+  min-width: 0;
+  width: 100%;
   margin: 0;
+  padding: 0;
   color: #8a8a8a;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  outline: 0;
+  font-family: inherit;
   font-size: 36px;
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+}
+
+.source-preview-title-input:hover,
+.source-preview-title-input:focus {
+  color: #f0f0f0;
+}
+
+.source-preview-title-input:focus {
+  box-shadow: 0 0 0 1px #4f4f4f;
 }
 
 .source-preview-heading > span {
@@ -162,6 +217,46 @@
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
+}
+
+.source-preview-document-controls {
+  width: min(900px, 100%);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 24px;
+  margin: -12px 0 18px;
+}
+
+.document-review-button {
+  padding: 6px 10px;
+  color: #d7d7d7;
+  background: transparent;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.document-review-button:hover:not(:disabled),
+.document-review-button:focus-visible:not(:disabled) {
+  color: #0a0a0a;
+  background: var(--yellow);
+  border-color: var(--yellow);
+}
+
+.document-review-button:disabled {
+  color: #696969;
+  cursor: default;
+}
+
+.source-preview-document-controls > span {
+  color: #ff8f87;
+  font-size: 11px;
 }
 
 .source-preview-content {
@@ -202,87 +297,47 @@
   padding: 0 0 48px;
 }
 
-.note-editor-toolbar {
-  position: sticky;
-  top: 12px;
-  right: 0;
-  z-index: 3;
-  width: max-content;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 36px;
-  margin: 0 0 20px auto;
-  padding: 0 10px;
-  background: #1e1e1e;
-  border: 1px solid #323232;
-  border-radius: 8px;
-}
-
-.note-editor-modes {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-}
-
-.note-editor-modes button {
-  position: relative;
-  padding: 8px 0 9px;
-  color: var(--subdued);
+.note-wysiwyg-editor .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-surface: #161616;
+  --crepe-color-surface-low: #1e1e1e;
+  --crepe-color-primary: var(--yellow);
+  --crepe-color-selected: rgba(255, 193, 23, 0.2);
+  --crepe-font-title: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --crepe-font-default: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  color: #d7d7d7;
   background: transparent;
-  border: 0;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
 }
 
-.note-editor-modes button:hover,
-.note-editor-modes button.is-active {
-  color: #f0f0f0;
+.note-wysiwyg-editor .milkdown .ProseMirror {
+  min-height: 420px;
+  padding: 0 0 120px;
+  color: #d7d7d7;
+  background: transparent;
+  caret-color: var(--yellow);
+  font-size: 15px;
+  line-height: 1.75;
 }
 
-.note-editor-modes button.is-active::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 1px;
-  background: #ffc117;
+.note-wysiwyg-editor .milkdown .ProseMirror:focus {
+  outline: none;
 }
 
-.note-save-status {
-  color: var(--subdued);
-  font-size: 11px;
-  font-weight: 600;
+.note-wysiwyg-editor .milkdown .ProseMirror h1 {
+  margin: 0 0 28px;
+  font-size: 34px;
+  letter-spacing: -0.025em;
 }
 
-.note-save-status.is-saving,
-.note-save-status.is-dirty {
-  color: var(--yellow);
+.note-wysiwyg-editor .milkdown .ProseMirror h2 {
+  margin: 34px 0 12px;
+  font-size: 24px;
+  letter-spacing: -0.015em;
 }
 
-.note-save-status.is-error,
-.note-save-status.is-conflict {
-  color: #ff8f87;
-}
-
-.note-lint-request {
-  padding: 5px 8px;
-  color: #0a0a0a;
-  background: var(--yellow);
-  border: 0;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.note-lint-request:disabled {
-  cursor: default;
-  opacity: 0.5;
+.note-wysiwyg-editor .milkdown .ProseMirror h3 {
+  margin: 28px 0 10px;
+  font-size: 19px;
 }
 
 .note-markdown-editor .cm-editor {
@@ -320,49 +375,6 @@
 
 .note-markdown-editor .cm-cursor {
   border-left-color: var(--yellow);
-}
-
-.note-markdown-preview {
-  max-width: none;
-  padding-bottom: 120px;
-}
-
-.note-markdown-preview .markdown-viewer {
-  color: #d7d7d7;
-  font-size: 15px;
-  line-height: 1.75;
-}
-
-.note-markdown-preview .markdown-viewer h1 {
-  margin-bottom: 28px;
-  padding: 0;
-  border: 0;
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-
-.note-markdown-preview .markdown-viewer h2 {
-  margin-top: 34px;
-  padding: 0;
-  border: 0;
-  font-size: 24px;
-  letter-spacing: -0.015em;
-}
-
-.note-markdown-preview .markdown-viewer h3 {
-  margin-top: 28px;
-  font-size: 19px;
-}
-
-.note-markdown-preview .markdown-viewer p {
-  margin-bottom: 12px;
-}
-
-.note-markdown-preview .katex-display {
-  margin: 24px 0;
-  overflow-x: auto;
-  overflow-y: hidden;
 }
 
 .markdown-viewer {
