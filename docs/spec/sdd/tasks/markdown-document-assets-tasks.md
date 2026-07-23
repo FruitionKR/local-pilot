@@ -4,7 +4,7 @@
 
 - 상태: Draft
 - 작성일: 2026-07-23
-- 기능 SDD: [`markdown-document-assets.md`](./markdown-document-assets.md)
+- 기능 SDD: [`markdown-document-assets.md`](../markdown-document-assets.md)
 
 ## 2. 실행 원칙
 
@@ -89,6 +89,8 @@
   - [ ] 전체 테스트와 `git diff --check` 통과
 
 ## 4. 실행 순서
+
+공유 token으로 이미지를 조회하는 endpoint와 공개 권한 검증은 [`markdown-document-sharing-tasks.md`](./markdown-document-sharing-tasks.md)의 `TASK-S007`에서 구현한다. 이 문서는 멤버 전용 asset 저장·조회까지 담당한다.
 
 ```text
 TASK-001 → TASK-002 → TASK-003 → TASK-004 → TASK-005

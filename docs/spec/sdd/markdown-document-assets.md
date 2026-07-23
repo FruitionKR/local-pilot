@@ -5,7 +5,7 @@
 - 상태: Draft
 - 작성일: 2026-07-23
 - 선행 SDD: [`markdown-document-core.md`](./markdown-document-core.md)
-- 구현 계획: [`markdown-document-assets-tasks.md`](./markdown-document-assets-tasks.md)
+- 구현 계획: [`markdown-document-assets-tasks.md`](./tasks/markdown-document-assets-tasks.md)
 
 상태 흐름: `Draft → Approved → In Progress → Verified`
 
@@ -42,7 +42,7 @@
 - SVG, 일반 파일 첨부, 이미지 편집·변환·썸네일
 - AI 이미지·대체 텍스트
 - 외부 이미지 다운로드·프록시
-- 공유 링크 이미지 접근
+- 공유 링크 이미지 접근. 상세는 [`markdown-document-sharing.md`](./markdown-document-sharing.md)에서 정의한다.
 - CDN 공개 배포
 
 ## 5. 요구사항
@@ -77,10 +77,11 @@
 
 `document_assets`는 asset ID, workspace, 업로더, 원본 파일명, 검증된 MIME, 크기, width·height, SHA-256, storage key, 생성 시각과 미참조 시각을 저장한다. storage key와 bucket은 사용자 응답·로그에 노출하지 않는다.
 
-### REQ-005 멤버 전용 조회
+### REQ-005 내부 인증 조회
 
 - `GET /api/workspaces/{workspace_id}/assets/{asset_id}/content`는 워크스페이스 멤버만 호출할 수 있다.
 - 비멤버·다른 workspace asset은 `404`로 처리한다.
+- 문서 guest의 참조 이미지와 웹 공유 이미지는 이 endpoint를 사용하지 않고 [`markdown-document-sharing.md`](./markdown-document-sharing.md)의 문서 범위 endpoint를 사용한다.
 - 응답은 검증된 MIME, `Content-Length`, `nosniff`, private cache와 ETag를 사용한다.
 - 현재 Bearer 인증 구조에서 renderer는 JWT fetch로 Blob을 받아 object URL로 표시하고 사용 후 revoke한다.
 
@@ -211,4 +212,4 @@ MinIO와 PostgreSQL은 단일 트랜잭션이 아니므로 object 선저장 후 
 
 - 검증일:
 - 최종 상태: Pending
-- 후속 작업: 공유 링크에서의 이미지 접근 계약
+- 후속 작업: [`markdown-document-sharing.md`](./markdown-document-sharing.md)의 token 기반 공개 이미지 접근 계약
