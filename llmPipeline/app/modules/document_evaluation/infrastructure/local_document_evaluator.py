@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import csv
 import difflib
 import http.client
+import io
 import json
 import re
 import socket
+import subprocess
 import time
 import unicodedata
 import urllib.error
@@ -30,7 +33,7 @@ BLOCK_PATTERN = re.compile(
     r"bbox=\[(?P<bbox>[^]]+)](?:\s+[^>]*)?-->"
 )
 PAGE_PATTERN = re.compile(r"_p(?P<page>\d+)_")
-EVALUATION_FLOW = "local_first_v8"
+EVALUATION_FLOW = "local_first_v10"
 TABLE_LAYOUT_SIMILARITY_THRESHOLD = 0.98
 TABLE_LAYOUT_QUALITY_TOLERANCE = 0.1
 
@@ -52,6 +55,21 @@ class EvaluationPlan:
     fallback_chunks: list[list[Block]]
     batches: list[tuple[str, list[Block]]]
     selected_batches: list[tuple[str, list[Block]]]
+
+
+@dataclass(frozen=True)
+class TableSourceEvidence:
+    positioned_words: list[dict[str, Any]]
+    cell_tokens: list[list[list[str]]]
+    row_count: int
+    visual_tokens: list[str]
+    ocr_succeeded: bool
+
+
+@dataclass(frozen=True)
+class TableOcrResult:
+    words: list[dict[str, Any]]
+    succeeded: bool
 
 
 def parse_blocks(markdown: str) -> list[Block]:
@@ -193,6 +211,8 @@ def needs_local_review(block: Block) -> bool:
         return has_suspicious_text_pattern(block.markdown)
     if block.type in {"table", "table_candidate"}:
         return not is_valid_markdown_table(block.markdown)
+    if block.type == "equation_candidate":
+        return True
     return False
 
 
@@ -274,6 +294,9 @@ def select_requests(initial: dict[str, Any], chunk: list[Block]) -> list[dict[st
         elif reason.startswith("[table_structure]"):
             if block.type not in {"table", "table_candidate"}:
                 continue
+        elif reason.startswith("[equation_fidelity]"):
+            if block.type != "equation_candidate":
+                continue
         else:
             continue
         requests.append({"block_id": block_id, "reason": reason})
@@ -289,6 +312,14 @@ def select_requests(initial: dict[str, Any], chunk: list[Block]) -> list[dict[st
                 {
                     "block_id": block.id,
                     "reason": "[broken_text] 문서 독립적 문자 품질 이상을 감지함",
+                }
+            )
+            selected_ids.add(block.id)
+        if block.id not in selected_ids and block.type == "equation_candidate":
+            requests.append(
+                {
+                    "block_id": block.id,
+                    "reason": "[equation_fidelity] 원본 crop과 수식 항을 대조함",
                 }
             )
             selected_ids.add(block.id)
@@ -309,7 +340,7 @@ def select_requests(initial: dict[str, Any], chunk: list[Block]) -> list[dict[st
 
 def evaluation_prompt(chunk: list[Block]) -> str:
     return """Inspect this chunk of blocks from a fully assembled PDF-to-Markdown result.
-Select only blocks that need a source crop for one of these two reasons:
+Select only blocks that need a source crop for one of these three reasons:
 
 1. `[broken_text]`: visible character-level OCR or encoding corruption such as mojibake, glyph debris,
    inconsistent mixed scripts, meaningless symbol runs, or a word split into character fragments.
@@ -319,8 +350,10 @@ Select only blocks that need a source crop for one of these two reasons:
    counts, generic `Column N` headers caused by flattening, words from one logical field spread across many
    cells, shifted headers, duplicated rows, or a caption/footnote embedded in the table. State the exact
    observed row/column defect in the Korean reason.
+3. `[equation_fidelity]`: an `equation_candidate` whose rows, terms, coefficients, operators, denominator,
+   exponent, subscript, or equation number must be compared with the source crop.
 
-Do not evaluate duplicates, continuity, grammar, punctuation, writing style, terminology, equations, or
+Do not evaluate duplicates, continuity, grammar, punctuation, writing style, terminology, or prose
 factual accuracy in this pass. A technical term, proper name, abbreviation, variable, unit, citation,
 hyphenated word, or sentence ending at a block boundary is not broken text. Do not invent evidence.
 Optimize for precision: omit ambiguous blocks and return an empty list when there is no exact evidence.
@@ -363,6 +396,42 @@ def extract_positioned_words(pdf_file: Path, block: Block) -> list[dict[str, Any
         ]
     finally:
         document.close()
+
+
+def extract_table_ocr_words(image: bytes) -> TableOcrResult:
+    try:
+        completed = subprocess.run(
+            ["tesseract", "stdin", "stdout", "--psm", "4", "tsv"],
+            input=image,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return TableOcrResult(words=[], succeeded=False)
+    if completed.returncode != 0:
+        return TableOcrResult(words=[], succeeded=False)
+
+    words = []
+    text = completed.stdout.decode("utf-8", errors="replace")
+    for row in csv.DictReader(io.StringIO(text), delimiter="\t"):
+        value = (row.get("text") or "").strip()
+        if not value:
+            continue
+        try:
+            left = float(row["left"])
+            top = float(row["top"])
+            width = float(row["width"])
+            height = float(row["height"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        words.append(
+            {
+                "x": left + width / 2,
+                "y": top + height / 2,
+                "text": value,
+            }
+        )
+    return TableOcrResult(words=words, succeeded=True)
 
 
 def detect_table_column_count(pdf_file: Path, block: Block) -> int | None:
@@ -515,6 +584,7 @@ def vision_prompt(
     attempt: int,
     positioned_words: list[dict[str, Any]] | None = None,
     detected_column_count: int | None = None,
+    validation_feedback: str | None = None,
 ) -> str:
     type_instruction = """For prose or a heading, read and transcribe visible characters independently from the image.
 The known-corrupted OCR text is deliberately omitted: do not reconstruct or echo it.
@@ -553,11 +623,27 @@ note, or surrounding prose. Never guess a cropped or unreadable row or cell; ide
                 f"{detected_column_count} vertical columns in this crop. "
                 "Use the image and positioned words to name and fill each column."
             )
+    elif block.type == "equation_candidate":
+        type_instruction = """For an equation, compare the current Markdown with the source image and
+transcribe every visible equation row. Preserve all visible terms, coefficients, operators, denominators,
+exponents, subscripts, brackets, signs, and equation numbers. Return `match` only when every visible item is
+already preserved. Return `corrected` with complete display math when the image supports a correction. Never
+invent a missing term or normalize the equation into a different mathematical form."""
+        review_context = (
+            "Review request category: [equation_fidelity]\nCurrent Markdown to verify:\n"
+            + block.markdown
+        )
 
     retry_instruction = ""
     if attempt > 1 and block.type in {"table", "table_candidate"}:
         retry_instruction = """A previous transcription was rejected because its declared source-column
 structure did not match its Markdown table. Reinspect the image and return a consistent result."""
+    if validation_feedback:
+        retry_instruction += (
+            "\nThe previous table result failed deterministic source validation: "
+            + validation_feedback
+            + " Reinspect every source row, column, value, and visible sign."
+        )
 
     return f"""Recover the selected block independently from this crop of the source PDF.
 Use only content actually visible in the image. Do not summarize, normalize, or supplement it.
@@ -570,7 +656,7 @@ Write the reason in Korean. This is review attempt {attempt}.
 
 JSON format:
 {{"status":"match|corrected|uncertain|unreadable","source_columns":["ordered leaf-header path"],"transcription":"image-grounded Markdown or an empty string","reason":"..."}}
-For prose or headings, return an empty `source_columns` array.
+For non-table blocks, return an empty `source_columns` array.
 
 block_id: {block.id}
 type: {block.type}
@@ -593,6 +679,8 @@ def is_valid_markdown_table(markdown: str) -> bool:
 def is_valid_table_result(
     result: dict[str, Any],
     detected_column_count: int | None = None,
+    positioned_words: list[dict[str, Any]] | None = None,
+    source_evidence: TableSourceEvidence | None = None,
 ) -> bool:
     markdown = str(result.get("transcription", ""))
     if not is_valid_markdown_table(markdown):
@@ -605,7 +693,188 @@ def is_valid_table_result(
     if detected_column_count is not None and len(source_columns) != detected_column_count:
         return False
     header = [cell.strip() for cell in markdown.strip().splitlines()[0].strip("|").split("|")]
-    return header == [column.strip() for column in source_columns]
+    if header != [column.strip() for column in source_columns]:
+        return False
+    evidence = source_evidence or build_table_source_evidence(
+        positioned_words or [],
+        detected_column_count,
+    )
+    return preserves_source_table_evidence(markdown, evidence)
+
+
+def build_table_source_evidence(
+    positioned_words: list[dict[str, Any]],
+    column_count: int | None,
+    ocr_words: list[dict[str, Any]] | None = None,
+    ocr_succeeded: bool = True,
+) -> TableSourceEvidence:
+    return TableSourceEvidence(
+        positioned_words=positioned_words,
+        cell_tokens=(
+            _positioned_table_cell_tokens(positioned_words, column_count)
+            if column_count is not None
+            else []
+        ),
+        row_count=(
+            _positioned_table_row_count(positioned_words)
+            if column_count is not None
+            else 0
+        ),
+        visual_tokens=[
+            token
+            for word in ocr_words or []
+            for token in _ocr_visual_tokens(str(word.get("text", "")))
+        ],
+        ocr_succeeded=ocr_succeeded,
+    )
+
+
+def preserves_source_table_evidence(
+    markdown: str,
+    evidence: TableSourceEvidence,
+) -> bool:
+    if not preserves_source_table_values(markdown, evidence.positioned_words):
+        return False
+    markdown_tokens = _markdown_table_token_counter(_stable_table_tokens(markdown))
+    if Counter(evidence.visual_tokens) - markdown_tokens:
+        return False
+
+    markdown_cells = _markdown_table_cell_tokens(markdown)
+    if evidence.row_count and len(markdown_cells) > evidence.row_count:
+        return False
+    if evidence.cell_tokens and len(evidence.cell_tokens) == len(markdown_cells):
+        for source_row, markdown_row in zip(evidence.cell_tokens, markdown_cells):
+            if len(source_row) != len(markdown_row):
+                return False
+            if any(
+                Counter(source_cell) - _markdown_table_token_counter(markdown_cell)
+                for source_cell, markdown_cell in zip(source_row, markdown_row)
+            ):
+                return False
+    return True
+
+
+def preserves_source_table_values(
+    markdown: str,
+    positioned_words: list[dict[str, Any]],
+) -> bool:
+    source_tokens = Counter(
+        token
+        for word in positioned_words
+        for token in _stable_table_tokens(str(word.get("text", "")))
+    )
+    markdown_tokens = _markdown_table_token_counter(_stable_table_tokens(markdown))
+    return not bool(source_tokens - markdown_tokens)
+
+
+def _stable_table_tokens(text: str) -> list[str]:
+    normalized = text.replace("−", "-").replace("–", "-")
+    normalized = re.sub(r"\\pm\s*(?=\d)", "±", normalized)
+    return [
+        (
+            token.replace(",", "")
+            if any(character.isdigit() for character in token)
+            else token.lower()
+        )
+        for token in re.findall(
+            r"(?<![A-Za-z])[-+±]?\d+(?:[.,]\d+)*(?:%|°)?|[A-Za-z]{2,}|[가-힣]+",
+            normalized,
+        )
+    ]
+
+
+def _positioned_table_cell_tokens(
+    positioned_words: list[dict[str, Any]],
+    column_count: int,
+) -> list[list[list[str]]]:
+    words = [
+        {
+            "x": float(word.get("x", 0.0)),
+            "y": float(word.get("y", 0.0)),
+            "tokens": _stable_table_tokens(str(word.get("text", ""))),
+        }
+        for word in positioned_words
+    ]
+    words = [word for word in words if word["tokens"]]
+    if not words or column_count < 1:
+        return []
+
+    anchors = _table_column_anchors([word["x"] for word in words], column_count)
+    rows: list[list[dict[str, Any]]] = []
+    for word in sorted(words, key=lambda item: (item["y"], item["x"])):
+        if not rows or abs(rows[-1][0]["y"] - word["y"]) > 4.0:
+            rows.append([word])
+        else:
+            rows[-1].append(word)
+
+    cell_rows = []
+    for row in rows:
+        cells: list[list[str]] = [[] for _ in range(column_count)]
+        for word in row:
+            column = min(
+                range(column_count),
+                key=lambda index: abs(anchors[index] - word["x"]),
+            )
+            cells[column].extend(word["tokens"])
+        cell_rows.append(cells)
+    return cell_rows
+
+
+def _positioned_table_row_count(positioned_words: list[dict[str, Any]]) -> int:
+    rows: list[float] = []
+    for y in sorted(float(word.get("y", 0.0)) for word in positioned_words):
+        if not rows or abs(rows[-1] - y) > 4.0:
+            rows.append(y)
+    return len(rows)
+
+
+def _table_column_anchors(values: list[float], column_count: int) -> list[float]:
+    if column_count == 1:
+        return [sum(values) / len(values)]
+    minimum = min(values)
+    maximum = max(values)
+    anchors = [
+        minimum + (maximum - minimum) * index / (column_count - 1)
+        for index in range(column_count)
+    ]
+    for _ in range(10):
+        groups: list[list[float]] = [[] for _ in range(column_count)]
+        for value in values:
+            index = min(
+                range(column_count),
+                key=lambda candidate: abs(anchors[candidate] - value),
+            )
+            groups[index].append(value)
+        updated = [
+            sum(group) / len(group) if group else anchors[index]
+            for index, group in enumerate(groups)
+        ]
+        if updated == anchors:
+            break
+        anchors = updated
+    return anchors
+
+
+def _markdown_table_cell_tokens(markdown: str) -> list[list[list[str]]]:
+    lines = [line.strip() for line in markdown.strip().splitlines() if line.strip()]
+    return [
+        [_stable_table_tokens(cell.strip()) for cell in line.strip("|").split("|")]
+        for index, line in enumerate(lines)
+        if index != 1
+    ]
+
+
+def _ocr_visual_tokens(text: str) -> list[str]:
+    normalized = re.sub(r"^(?:\+[/\\]-|\+£)(?=\d)", "±", text.strip())
+    return [token for token in _stable_table_tokens(normalized) if token.startswith("±")]
+
+
+def _markdown_table_token_counter(tokens: list[str]) -> Counter[str]:
+    values = Counter(tokens)
+    for token in tokens:
+        if re.fullmatch(r"[-+±]\d+(?:[.]\d+)*(?:%|°)?", token):
+            values[token[1:]] += 1
+    return values
 
 
 def review_with_vision(
@@ -616,8 +885,14 @@ def review_with_vision(
     ask: Callable[[str, bytes], dict[str, Any]],
     positioned_words: list[dict[str, Any]] | None = None,
     detected_column_count: int | None = None,
+    source_evidence: TableSourceEvidence | None = None,
+    validation_feedback: str | None = None,
 ) -> dict[str, Any]:
     attempts = []
+    evidence = source_evidence or build_table_source_evidence(
+        positioned_words or [],
+        detected_column_count,
+    )
     for attempt in range(1, max_attempts + 1):
         try:
             result = ask(
@@ -627,6 +902,7 @@ def review_with_vision(
                     attempt,
                     positioned_words,
                     detected_column_count,
+                    validation_feedback,
                 ),
                 render(block, 4.0 * attempt),
             )
@@ -636,16 +912,28 @@ def review_with_vision(
                 "transcription": "",
                 "reason": f"Vision tool 오류: {exc}",
             }
-        if (
-            block.type in {"table", "table_candidate"}
-            and result.get("status") == "corrected"
-            and not is_valid_table_result(result, detected_column_count)
-        ):
-            result = {
-                "status": "uncertain",
-                "transcription": "",
-                "reason": "Vision 표 결과가 순수하고 열 수가 일관된 Markdown 표가 아님",
-            }
+        if block.type in {"table", "table_candidate"}:
+            status = result.get("status")
+            invalid_correction = status == "corrected" and not is_valid_table_result(
+                result,
+                detected_column_count,
+                positioned_words,
+                evidence,
+            )
+            invalid_match = status == "match" and (
+                not is_valid_markdown_table(block.markdown)
+                or not preserves_source_table_evidence(
+                    block.markdown,
+                    evidence,
+                )
+            )
+            if invalid_correction or invalid_match:
+                validation_feedback = "원본의 cell 위치, 값 또는 이미지 부호가 누락됨"
+                result = {
+                    "status": "uncertain",
+                    "transcription": "",
+                    "reason": validation_feedback,
+                }
         result["attempt"] = attempt
         attempts.append(result)
         if result.get("status") not in {"uncertain"}:
@@ -948,7 +1236,11 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
                         "reason": (
                             "[table_structure] 문서 독립적 표 구조 이상을 감지함"
                             if block.type in {"table", "table_candidate"}
-                            else "[broken_text] 문서 독립적 문자 품질 이상을 감지함"
+                            else (
+                                "[equation_fidelity] 원본 crop과 수식 항을 대조함"
+                                if block.type == "equation_candidate"
+                                else "[broken_text] 문서 독립적 문자 품질 이상을 감지함"
+                            )
                         ),
                     }
                     for block in chunk
@@ -968,6 +1260,20 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
             if block.type in {"table", "table_candidate"} and block.id not in table_evidence:
                 restored_table = restore_table_from_text_layout(args.pdf_file, block)
                 detected_columns = detect_table_column_count(args.pdf_file, block)
+            positioned_words = []
+            source_evidence = None
+            validation_feedback = None
+            if block.type in {"table", "table_candidate"}:
+                positioned_words = extract_positioned_words(args.pdf_file, block)
+                ocr_result = extract_table_ocr_words(
+                    render_crop(args.pdf_file, block, 0.0)
+                )
+                source_evidence = build_table_source_evidence(
+                    positioned_words,
+                    detected_columns,
+                    ocr_result.words,
+                    ocr_result.succeeded,
+                )
             if restored_table and is_valid_markdown_table(restored_table):
                 source_columns = [
                     cell.strip()
@@ -981,15 +1287,26 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
                     "attempt": 1,
                     "method": "text_layout",
                 }
-                vision_results.append(
-                    {
-                        "block_id": block.id,
-                        "request_reason": request["reason"],
-                        "attempts": [result],
-                        "result": result,
-                    }
+                if source_evidence.ocr_succeeded and is_valid_table_result(
+                    result,
+                    detected_columns,
+                    positioned_words,
+                    source_evidence,
+                ):
+                    vision_results.append(
+                        {
+                            "block_id": block.id,
+                            "request_reason": request["reason"],
+                            "attempts": [result],
+                            "result": result,
+                        }
+                    )
+                    continue
+                validation_feedback = (
+                    "Tesseract TSV 원본 검증을 실행하지 못함"
+                    if not source_evidence.ocr_succeeded
+                    else "PDF text-layout 결과가 원본의 cell 위치, 값 또는 이미지 부호를 누락함"
                 )
-                continue
             vision_results.append(
                 review_with_vision(
                     block,
@@ -997,10 +1314,10 @@ def evaluate(args: LocalDocumentEvaluationCommand) -> dict[str, Any]:
                     args.max_vision_attempts,
                     lambda target, padding: render_crop(args.pdf_file, target, padding),
                     lambda prompt, image: call_model(args.endpoint, args.vision_model, prompt, image),
-                    extract_positioned_words(args.pdf_file, block)
-                    if block.type in {"table", "table_candidate"}
-                    else None,
+                    positioned_words or None,
                     detected_columns,
+                    source_evidence,
+                    validation_feedback,
                 )
             )
         final = {"decisions": []}

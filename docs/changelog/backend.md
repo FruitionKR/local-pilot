@@ -6,45 +6,45 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
-## 2026-07-23
+## 2026-07-22
 
-### test: 초기 노트 동일 Markdown 정책에 맞춰 실패 테스트 수정
-
-**배경**
-
-- `documents.content_hash` 중복 판별이 `(workspace_id, content_hash)` 복합 UNIQUE로 바뀌면서(V5), `DocumentService.createInitialNote`는 워크스페이스마다 동일한 `# 새 노트` Markdown을 저장한다. 그 결과 워크스페이스 간 content_hash가 같아졌는데, `DocumentServiceBlocksTest.createInitialNote_savesUniqueMarkdownPerWorkspace`는 여전히 hash가 서로 달라야 한다고 기대해 실패하고 있었다(`docs/issue/2026-07-21.md` 검증 note의 잔여 1건).
+### fix: 로컬 이메일 인증 고정 코드 복구
 
 **변경된 것**
 
-- 테스트 메서드·DisplayName을 `savesIdenticalMarkdownPerWorkspace`("동일 Markdown 문서로 저장")로 갱신.
-- content_hash 단언을 `isNotEqualTo` → `isEqualTo`로 교체. 워크스페이스 간 동일 내용 → 동일 hash가 정상임을 반영.
-- 각 문서가 입력 워크스페이스(`ws_first`, `ws_second`)로 저장되는지 `workspaceId` 단언을 추가해 "워크스페이스별 저장" 의미를 보존.
-- 테스트 전용 변경으로 프로덕션 코드·API 계약은 건드리지 않는다.
+- `local` profile의 이메일 인증번호 기본값을 임시 코드 `9700`으로 설정하고 `AUTH_EMAIL_DEV_FIXED_CODE`로 덮어쓸 수 있게 했다.
+- `./gradlew bootRun`도 별도 profile 지정이 없으면 `local`로 실행되게 해 개발 실행 방식에 따라 고정 코드가 누락되지 않도록 했다.
+- 공통 설정의 고정 코드 기본값은 빈 값으로 유지해 production에는 `9700`이 적용되지 않게 했다.
+
+**남은 주의사항**
+
+- 운영 메일 서버 연동과 dev 발송 stub 제거 작업은 `docs/issue/backend/2026-07-23.md`의 `3. 운영 이메일 인증 메일 서버 연동`에서 관리한다.
 
 **검증**
 
-- `./gradlew test --tests 'fruition.document.service.DocumentServiceBlocksTest'` → `BUILD SUCCESSFUL`.
+- `EmailVerificationServiceTest`에서 개발 고정 코드 `9700`이 발송 코드로 사용되는 회귀 테스트를 포함해 통과했다.
+
+### feat: Markdown Agent turn Spring 프록시 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/agent/turn`을 추가해 인증된 workspace 문서의 Agent 요청을 `llmPipeline`의 `POST /agent/turn`으로 전달한다.
+- 문서 접근 권한과 Markdown 형식, line target 범위를 pipeline 호출 전에 확인한다.
+- frontend의 camelCase editor snapshot을 pipeline의 `active_markdown_context` snake_case 계약으로 변환하고, 결과에 `documentId`, `baseVersion`, `requestId`를 붙여 반환한다.
+- pipeline의 HTTP 400/422 응답 본문을 보존하며 timeout·연결 실패는 503으로 변환한다.
+- `AGENT_ENDPOINT`, `AGENT_TIMEOUT_SECONDS` 설정을 추가했다.
+
+**검증**
+
+- Agent controller·service·requester 테스트 7건 통과.
+- Backend 전체 190건 중 183건 통과. Testcontainers Docker 연결 환경 6건과 이번 변경과 무관한 초기 노트 hash 기대값 1건이 실패했다.
+
+**남은 주의사항**
+
+- production 문서 content 영속화가 준비되기 전까지 Backend는 요청의 `baseVersion`을 보존하지만 현재 저장 version과 직접 비교하지 않는다.
+- 실제 chat session 요약·reference context 구성은 `docs/issue/backend/2026-07-22.md`의 후속 작업으로 유지한다.
 
 ## 2026-07-21
-
-### feat: query 근거에 다중 문서 참조 source_refs 노출
-
-**배경**
-
-- llmPipeline은 evidence마다 `source_refs`(문서·블록 쌍 배열)를 보내지만, backend `PipelineQueryResponse.EvidenceSnippet`에 필드가 없어 Jackson 역직렬화 단계에서 조용히 버려졌다. 그 결과 하나의 rank가 대표 문서 외 다른 문서 block을 참조하는 경우 두 번째 이후 문서 근거가 저장·노출되지 않았다.
-
-**변경된 것**
-
-- `PipelineQueryResponse.EvidenceSnippet`에 `source_refs`(`[{source_document_id, source_block_id}]`)와 중첩 `SourceRef`를 추가해 파싱 유실을 복구. query API 즉시 응답(`QueryResponse.evidence_snippets`)에도 그대로 노출된다.
-- `chat_message_references`에 `source_refs` 컬럼(Flyway `V7`) 추가. `SourceRef`(도메인 값 타입) + `SourceRefListJsonConverter`로 JSON 저장. 기존 행은 NULL.
-- `ChatMessageReference` 도메인·응답 DTO에 `source_refs` 추가, `QueryService` 저장 매핑·`ChatSessionController` 조회 매핑 연결.
-- legacy `source_document_id`/`source_block_ids`(첫 문서 기준)는 그대로 유지 — 순수 additive 변경.
-- 스펙 반영: `docs/spec/api/query.md`, `docs/spec/api/chat.md`. 후속 프론트 소비는 `docs/issue/frontend/2026-07-15.md` #7.
-
-**검증**
-
-- query·chat 패키지 74개 테스트 통과. `PipelineQueryResponseTest`에 source_refs 다중 문서 역직렬화, `QueryServiceTest`에 대표 문서 외 문서 근거 보존 검증 추가.
-- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V7` 적용 + `ddl-auto=validate` 매핑 정합성 확인.
 
 ### feat: 이메일 인증 기반 회원가입·비밀번호 재설정 API 추가
 
@@ -56,22 +56,37 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 인증번호 발급 `POST /api/auth/email-verifications`(purpose=signup|password_reset), 검증 `POST /api/auth/email-verifications/{id}/confirm`, 비밀번호 재설정 `POST /api/auth/password-reset` 추가.
 - `POST /api/auth/signup`에 `verification_token`을 필수로 추가하고, 중복 검사 후 토큰을 검증·소비하도록 변경.
-- `email_verifications` 테이블(Flyway `V6`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
+- `email_verifications` 테이블(Flyway `V7`) 추가. 인증번호와 `verification_token`은 SHA-256 해시만 저장하고, 새 코드 발급 시 같은 (email, purpose)의 미소비 코드를 폐기.
 - 재요청 cooldown·일일 상한(429), 코드 만료·오입력·시도 초과, 토큰 1회성·재사용 차단 정책을 적용. 관련 설정 키는 `app.auth.email-verification.*`. 존재 노출(signup 409)도 rate limit 게이트 뒤에 두어 동일하게 throttle 대상에 포함한다.
 - 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
 - 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요. stub이 활성화된 채 부팅되면 인증번호 로그 노출 위험을 알리는 경고를 남긴다.
 - 일일 상한 초과 429의 `retry_after`는 윈도 내 최고령 요청이 24h를 벗어나는 시점 기준으로 계산한다.
-- 계약 상세는 `docs/spec/api/auth.md`, 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
+- 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
 
 **검증**
 
 - user 패키지 테스트 54개 통과(`EmailVerificationServiceTest` 13, `AuthControllerTest` 20 포함).
-- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V6` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
+- 전체 컨텍스트 로딩 테스트 통과 — Testcontainers Postgres에 `V7` 적용 및 `ddl-auto=validate` 매핑 정합성 확인.
 
 **남은 주의사항**
 
 - 운영 전 `dev-fixed-code`는 빈값 유지, 발송 sender를 실제 메일 발송으로 교체.
 - 프론트엔드의 임시 인증번호·인증 전 signup 선호출 제거 및 발급→검증→가입 재배선 필요(프론트 팀).
+
+### feat: 새 노트 편집용 local 저장 mock 추가
+
+**변경된 것**
+
+- `local` profile에서만 등록되는 노트 본문 메모리 mock controller를 추가했다.
+- `GET/PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`로 draft 조회와 version 기반 저장을 제공한다.
+- 이전 version으로 저장하면 `409 Conflict`를 반환하며 DB, MinIO, pipeline, Wiki 데이터는 변경하지 않는다.
+- frontend의 `PUT` 요청을 허용하도록 CORS method에 `PUT`을 추가했다.
+
+**검증 및 주의사항**
+
+- controller test에서 미저장 `404`, 저장/version 증가, 충돌 시 기존 draft 유지, 비인증 `401`을 검증했다.
+- Colima 환경에서 Docker 소켓과 Testcontainers override를 지정해 전체 151개 테스트가 통과했다.
+- 이 API는 frontend 프로토타입용이며 production 저장 계약을 대체하지 않는다.
 
 ### fix: query pipeline 요청에 workspace_id 전달
 

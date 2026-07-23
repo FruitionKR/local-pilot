@@ -5,6 +5,7 @@ import {
   appendItemsToFolder,
   applyUploadedDocument,
   createClientId,
+  findTreeItem,
   isSupportedUploadFile,
   updateTreeItemStatus
 } from "../_lib/tree";
@@ -69,18 +70,25 @@ export function useDocumentUpload({
             return [...withoutCurrent, response];
           });
           setProjects((current) => current.map((project) => {
-            if (project.id !== projectId) return project;
+            if (!findTreeItem(project.items, item.id)) return project;
             return { ...project, items: applyUploadedDocument(project.items, item.id, response) };
           }));
           void refreshBackendData();
         })
         .catch((error: Error) => {
           setProjects((current) => current.map((project) => {
-            if (project.id !== projectId) return project;
+            if (!findTreeItem(project.items, item.id)) return project;
             return { ...project, items: updateTreeItemStatus(project.items, item.id, "failed", error.message) };
           }));
         });
     });
+  }
+
+  function createMarkdownFile(projectId: string, folderId: string | null) {
+    const noteId = createClientId("note");
+    const markdown = `<!-- fruition-note: ${noteId} -->\n# 새 문서\n`;
+    const file = new File([markdown], "새 문서.md", { type: "text/markdown" });
+    dropUploadFiles(projectId, folderId, [file]);
   }
 
   return {
@@ -88,6 +96,7 @@ export function useDocumentUpload({
     openUploadPicker,
     handleUploadPickerChange,
     dropUploadFiles,
+    createMarkdownFile,
     hasRejectedFiles,
     clearRejectedFiles: () => setHasRejectedFiles(false)
   };

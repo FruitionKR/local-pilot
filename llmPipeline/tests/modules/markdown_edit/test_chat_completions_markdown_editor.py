@@ -71,6 +71,26 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn("summary must not be empty", retry_payload["contract_failures"])
 
+    def test_retries_markdown_create_with_syntax_failures(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {"title": "예제", "summary": "코드 예제입니다.", "markdown": "```python\nprint(1)"},
+                {"title": "예제", "summary": "코드 예제입니다.", "markdown": "```python\nprint(1)\n```"},
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client,
+            "system",
+            create_system_prompt="create",
+        )  # type: ignore[arg-type]
+
+        result = editor.generate_markdown(MarkdownCreateRequest(instruction="Python 예제 문서를 만들어줘."))
+
+        self.assertEqual(result.document.markdown, "```python\nprint(1)\n```")
+        self.assertEqual(len(client.calls), 2)
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn("fenced code block opened at line 1 must be closed", retry_payload["contract_failures"])
+
     def test_raises_after_second_markdown_create_contract_failure(self) -> None:
         client = SequenceJsonClient(
             [
@@ -190,6 +210,28 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         retry_payload = json.loads(client.calls[1][1])
         self.assertIn("numbered list items must start directly", retry_payload["contract_failures"][0])
         self.assertEqual(retry_payload["previous_replacement_markdown"], "- 1. 설치\n- 2. 테스트")
+
+    def test_retries_edit_with_markdown_syntax_failures(self) -> None:
+        client = SequenceJsonClient(
+            [
+                response("```python\nprint(1)"),
+                response("```python\nprint(1)\n```"),
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+        request = MarkdownEditRequest(
+            instruction="Python code block으로 바꿔줘.",
+            markdown="print 1",
+            target=TARGET,
+            edit_goal="convert_format",
+        )
+
+        result = editor.generate_edit(request)
+
+        self.assertEqual(result.edit.replacement_markdown, "```python\nprint(1)\n```")
+        self.assertEqual(len(client.calls), 2)
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn("fenced code block opened at line 1 must be closed", retry_payload["contract_failures"])
 
     def test_raises_after_second_contract_failure(self) -> None:
         client = SequenceJsonClient(

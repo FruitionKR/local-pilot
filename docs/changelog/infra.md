@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-07-23
+
+### fix: 로컬 이메일 인증 profile 기본값 정리
+
+- `./gradlew bootRun`이 별도 지정이 없을 때 `local` profile로 실행되도록 하고, 외부 `SPRING_PROFILES_ACTIVE`는 유지한다.
+- `infra/.env.example`에 로컬 전용 `AUTH_EMAIL_DEV_FIXED_CODE=9700` 예시를 추가했다.
+- production 공통 설정은 고정 코드가 없는 기존 기본값을 유지한다.
+
+## 2026-07-22
+
+### fix: 프론트엔드 의존성 취약점 자동 수정
+
+- `scripts/bootstrap.sh`가 `npm install` 후 `npm audit fix`를 실행하도록 변경했다.
+- breaking change를 피하기 위해 `--force`는 사용하지 않으며, 자동 수정되지 않은 취약점이 있어도 개발 서버 기동을 계속한다.
+- `bash -n scripts/bootstrap.sh`, `git diff --check` 통과.
+
+## 2026-07-21
+
+### chore: 로컬 노트 저장 mock profile 활성화
+
+- `scripts/dev-up.sh`가 별도 profile 지정이 없을 때 backend를 `local` profile로 실행하도록 변경했다.
+- 외부에서 `SPRING_PROFILES_ACTIVE`를 지정하면 해당 값을 유지한다.
+- `bash -n scripts/dev-up.sh` 통과.
+
 ## 2026-07-20
 
 ### fix: dev-up backend readiness 확인 복구

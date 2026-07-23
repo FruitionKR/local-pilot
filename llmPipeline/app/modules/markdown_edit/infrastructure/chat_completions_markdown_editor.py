@@ -36,6 +36,7 @@ from app.modules.markdown_edit.infrastructure.markdown_source_range import (
     source_range_payload,
     validate_markdown_target_boundary,
 )
+from app.modules.markdown_edit.infrastructure.markdown_syntax_validation import validate_markdown_syntax
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 
 
@@ -175,6 +176,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         restored, failures = protected.restore(protected_replacement)
         restored = repair_markdown_output(request, restored)
         failures.extend(validate_markdown_output(request, restored))
+        failures.extend(validate_markdown_syntax(restored))
         restored_result = MarkdownEditResult(
             edit=MarkdownEditOperation(
                 operation=result.edit.operation,
@@ -214,7 +216,9 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
     ) -> tuple[MarkdownCreateResult, list[str], dict[str, Any]]:
         raw = self._client.complete_json(system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
         result = _normalize_create_result(raw)
-        return result, validate_markdown_create_output(result.document), raw
+        failures = validate_markdown_create_output(result.document)
+        failures.extend(validate_markdown_syntax(result.document.markdown))
+        return result, failures, raw
 
 
 def build_markdown_editor() -> MarkdownEditorPort:

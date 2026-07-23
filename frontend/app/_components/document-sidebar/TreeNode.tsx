@@ -8,13 +8,12 @@ import type { TreeInteractionProps } from "./types";
 import { useTreeNodeDragDrop } from "./useTreeNodeDragDrop";
 
 // 트리 행 들여쓰기: 기본 패딩 + depth당 증가 폭 (px)
-const TREE_ROW_BASE_PADDING_PX = 10;
-const TREE_ROW_INDENT_PER_DEPTH_PX = 17;
+const TREE_ROW_BASE_PADDING_PX = 8;
+const TREE_ROW_INDENT_PER_DEPTH_PX = 18;
 
 // mime type → 시안의 우측 파일 타입 배지 문구
 const MIME_TYPE_BADGES: [pattern: string, label: string][] = [
   ["pdf", "PDF"],
-  ["markdown", "MD"],
   ["plain", "TXT"]
 ];
 
@@ -42,6 +41,7 @@ export function TreeNode({
   dropTarget,
   fileDropTarget,
   editing,
+  noteEditStates,
   onDragStart,
   onDragOverItem,
   onFileDragOver,
@@ -94,6 +94,7 @@ export function TreeNode({
           selectedItemId === item.id && "is-selected",
           draggedItemId === item.id && "is-dragging",
           isFileDropTarget && "is-file-drop-target",
+          item.type === "folder" ? "is-folder" : "is-note",
           isDropTarget && `is-drop-${dropTarget.position}`
         )}
         style={{ paddingLeft: TREE_ROW_BASE_PADDING_PX + depth * TREE_ROW_INDENT_PER_DEPTH_PX }}
@@ -123,7 +124,10 @@ export function TreeNode({
         ) : (
           <>
             <span>{item.label}</span>
-            <TreeNodeStatus status={item.status} />
+            <TreeNodeStatus
+              status={item.status}
+              editState={item.documentId ? noteEditStates[item.documentId] : undefined}
+            />
             {fileTypeBadge(item) && <small className="tree-type-badge">{fileTypeBadge(item)}</small>}
             {isFileDropTarget && <small className="tree-drop-hint">여기에 추가</small>}
           </>
@@ -142,6 +146,7 @@ export function TreeNode({
           dropTarget={dropTarget}
           fileDropTarget={fileDropTarget}
           editing={editing}
+          noteEditStates={noteEditStates}
           onDragStart={onDragStart}
           onDragOverItem={onDragOverItem}
           onFileDragOver={onFileDragOver}

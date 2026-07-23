@@ -10,11 +10,13 @@ from fastapi.responses import PlainTextResponse
 from app.modules.wiki_ingestion.application.models import (
     PipelineRunCommand,
     PipelineRunRegistration,
+    WikiMaintenanceConfigurationError,
 )
 from app.modules.wiki_ingestion.application.ports import (
     PipelineLogReaderPort,
     PipelineRunRepositoryPort,
     PipelineSourceReaderPort,
+    WikiMaintenancePort,
 )
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
@@ -22,6 +24,7 @@ from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_run_repository,
     get_pipeline_run_use_case,
     get_pipeline_source_reader,
+    get_wiki_maintenance,
 )
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
     CHAT_APPEND_SEMANTIC_PROMPT,
@@ -29,11 +32,34 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     ChatWikiRunIn,
     PipelineRunIn,
     PipelineRunOut,
+    WikiLintIn,
+    WikiLintOut,
 )
 
 
 router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
+
+
+@router.post("/wiki/maintenance/lint", response_model=WikiLintOut)
+def lint_wiki_workspace(
+    payload: WikiLintIn,
+    maintenance: WikiMaintenancePort = Depends(get_wiki_maintenance),
+) -> WikiLintOut:
+    try:
+        result = maintenance.lint(payload.to_command())
+    except WikiMaintenanceConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Wiki maintenance lint 처리 중 예상하지 못한 오류가 발생했습니다.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "internal_server_error",
+                "message": "Wiki maintenance lint를 처리하지 못했습니다.",
+            },
+        ) from exc
+    return WikiLintOut.model_validate(result)
 
 
 @router.post("/pipeline/runs", response_model=PipelineRunOut)

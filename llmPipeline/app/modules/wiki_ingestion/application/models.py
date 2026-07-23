@@ -2,6 +2,27 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class WikiMaintenanceConfigurationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class WikiMaintenanceCommand:
+    user_id: str
+    workspace_id: str
+    materialize_promotions: bool = False
+    dry_run: bool = True
+    provider: str = "upstage"
+    endpoint: str | None = None
+    api_base_url: str | None = None
+    api_key_env: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    temperature: float = 0.2
+    timeout_seconds: int = 180
+    max_tokens: int | None = None
+
+
 @dataclass(frozen=True)
 class PipelineRunRegistration:
     run_id: str

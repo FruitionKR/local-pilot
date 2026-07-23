@@ -55,3 +55,34 @@
 .workspace.is-graph-view.is-agent-collapsed .graph-stage {
   right: 0;
 }
+
+@media (max-width: 720px) {
+  .source-preview-topbar {
+    padding-inline: 16px;
+  }
+
+  .source-preview-actions > span {
+    display: none;
+  }
+
+  .source-preview-document {
+    padding-top: 48px;
+  }
+
+  .source-preview-heading,
+  .source-preview-document-controls,
+  .source-preview-content {
+    padding-inline: 20px;
+  }
+
+  .source-preview-heading h2,
+  .source-preview-title-input {
+    font-size: 28px;
+  }
+
+  .agent-panel.is-markdown-reviewing .markdown-edit-preview {
+    right: 16px;
+    bottom: 16px;
+    width: calc(100% - 32px);
+  }
+}

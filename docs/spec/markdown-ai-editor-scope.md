@@ -6,6 +6,8 @@
 
 목표는 Notion의 block 구조를 복제하는 것이 아니다. 사용자가 선택 영역, 현재 섹션 또는 문서 전체를 자연어로 편집하고, 결과를 검토한 뒤 적용하는 문서 AI 경험을 제공하는 것이 목표다.
 
+사용자가 직접 편집하는 Obsidian식 Markdown editor 프로토타입은 이 문서의 범위가 아니다. 해당 UI와 local mock 저장 계약은 `docs/spec/note-editor-prototype.md`를 따른다.
+
 ## 2. 결론
 
 현재 `llmPipeline`에는 다음 기능의 생성 로직과 응답 계약이 이미 있다.
@@ -80,17 +82,26 @@
 
 - `react-markdown`
 - `remark-gfm`
+- `remark-math` + `rehype-katex`
 - 프로젝트 전용 Wiki link와 citation token plugin
 - fenced code block용 custom `pre` component
 - YAML frontmatter를 접힌 Metadata 영역으로 표시하는 별도 처리
 
-`react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, footnote, strikethrough, table, task list를 추가한다.
+`react-markdown`은 CommonMark를 지원하고, `remark-gfm`은 autolink literal, strikethrough, table, task list를 추가한다. Footnote는 GFM spec이 아니라 현재 parser stack에서 지원하는 호환 확장으로 분류한다.
 
-현재 Agent panel은 `/agent/turn` 편집 응답을 적용하는 UI가 아니라 기존 Wiki query 흐름을 사용한다. 따라서 pipeline의 편집 기능이 사용자 editor까지 연결된 상태는 아니다.
+현재 `NoteEditor`는 CodeMirror의 Markdown과 selection을 1-base inclusive line target으로 변환해 Agent panel까지 전달한다. selection이 없으면 cursor가 속한 ATX heading section을 `current_section`으로 계산하고, heading이 없으면 `whole_document`를 사용한다. Agent panel은 편집 context가 있으면 `POST /api/workspaces/{workspace_id}/agent/turn`으로 요청 snapshot을 보내고, 없으면 기존 Wiki query 흐름을 사용한다. `markdown_edit` 응답은 line diff와 렌더링 preview에서 Apply/취소/재생성을 제공하고, document·base version·target·현재 buffer가 모두 유효할 때만 editor와 autosave에 반영한다. `markdown_create` 응답은 새 editable Markdown 문서로 저장해 연다. Spring backend의 Agent endpoint는 아직 구현되지 않았다.
 
 ## 4. 기본 지원 범위
 
 기본 지원 기준은 `CommonMark + GFM`으로 고정한다. “모든 Markdown”처럼 구현체마다 의미가 달라지는 표현은 사용하지 않는다.
+
+공식 지원 계약은 다음과 같다.
+
+- 저장 원본은 변환하지 않은 raw Markdown 텍스트다.
+- 기본 block/inline 문법과 parsing 규칙은 CommonMark를 따른다.
+- GFM 확장 중 autolink literal, strikethrough, table, task list를 기본 지원한다.
+- Footnote, math, Wiki link, citation과 frontmatter는 GFM 자체가 아니라 Fruition 호환 확장으로 구분한다.
+- Raw HTML과 MDX는 공식 지원 범위에서 제외하며 renderer 실행 경로에 포함하지 않는다.
 
 ### 4.1 바로 지원할 문법
 
@@ -116,7 +127,7 @@
 | Citation | `[1]` | 프로젝트 plugin으로 가능 | 높음 |
 | Frontmatter | `---`로 감싼 metadata | 별도 UI로 가능 | 높음 |
 
-“가능”은 underlying renderer가 문법을 지원한다는 뜻이다. 현재 custom 분할 로직이 복합 문서 구조를 손상시키는 경우는 5절의 보완이 선행되어야 한다.
+“가능”은 renderer와 현재 회귀 fixture가 해당 문법을 보존한다는 뜻이다. 문서는 전체 parse context에서 처리하고, source block ID는 AST 원문 위치를 기준으로 부여한다.
 
 ### 4.2 편집 도우미가 제공할 수 있는 요청
 
@@ -278,22 +289,24 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 ### 1단계: 현재 편집 기능 연결
 
-- [ ] editor의 Markdown과 selection/current section 전달
-- [ ] `/agent/turn` 호출
-- [ ] 원본과 `replacement_markdown` diff 표시
-- [ ] 사용자 승인 후 editor buffer에 Apply
-- [ ] 저장 전 document version 또는 checksum 확인
-- [ ] 요약, 번역, 어조 변경, cleanup, 표, checklist, 회의록 fixture 검증
+- [x] editor의 Markdown과 selection/current section 전달
+- [x] frontend `/agent/turn` client와 제출 분기
+- [ ] Spring backend Agent endpoint와 pipeline proxy
+- [x] 원본과 `replacement_markdown` line diff·렌더링 preview 표시
+- [x] Apply/취소/최신 snapshot 재생성
+- [x] 사용자 승인 후 editor buffer 교체와 autosave 연결
+- [x] 적용 전 document·base version·target·현재 buffer 검증
+- [x] 요약, 번역, 어조 변경, cleanup, 표, checklist, 회의록 frontend fixture 검증
 
 ### 2단계: Markdown 기본 지원 안정화
 
-- [ ] CommonMark + GFM을 공식 지원 범위로 선언
-- [ ] 중첩 목록 들여쓰기 보존
-- [ ] 목록 안의 code block, 인용문과 하위 목록 지원
-- [ ] Footnote와 reference-style link 검증
-- [ ] H1~H6와 백틱/tilde code fence 검증
-- [ ] 표, task list, link, image 보존 fixture 추가
-- [ ] sLLM 출력 Markdown parse 검증
+- [x] CommonMark + GFM을 공식 지원 범위로 선언
+- [x] 중첩 목록 들여쓰기 보존
+- [x] 목록 안의 code block, 인용문과 하위 목록 지원
+- [x] Footnote와 reference-style link 검증
+- [x] H1~H6와 백틱/tilde code fence 검증
+- [x] 표, task list, link, image 보존 fixture 추가
+- [x] sLLM 출력 Markdown parse 검증
 
 ### 3단계: 선택적 renderer 확장
 
@@ -334,7 +347,7 @@ CommonMark/GFM 지원과 편집 operation은 별개의 문제다. 현재 `replac
 
 ### 현재 목표에서 제외하는 범위
 
-- Notion식 block editor
+- Notion식 block editor와 database UI (`docs/spec/note-editor-prototype.md`의 Markdown 원문 편집 UI와는 별도)
 - block drag and drop
 - Callout, Column, Synced block 복제
 - Raw HTML과 MDX 실행

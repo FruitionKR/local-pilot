@@ -1,10 +1,22 @@
+from collections.abc import Callable
 from typing import Any, Protocol
 
-from app.modules.wiki_ingestion.application.models import PipelineRunCommand
+from app.modules.wiki_ingestion.application.models import (
+    PipelineRunCommand,
+    WikiMaintenanceCommand,
+)
+
+
+class WikiMaintenancePort(Protocol):
+    def lint(self, command: WikiMaintenanceCommand) -> dict[str, Any]: ...
 
 
 class PipelineRunnerPort(Protocol):
-    def run(self, command: PipelineRunCommand) -> dict[str, Any]: ...
+    def run(
+        self,
+        command: PipelineRunCommand,
+        progress_callback: Callable[[], None] | None = None,
+    ) -> dict[str, Any]: ...
 
 
 class PipelineRunRepositoryPort(Protocol):
@@ -20,6 +32,8 @@ class PipelineRunRepositoryPort(Protocol):
     def finish(self, run_id: str, manifest: dict[str, Any]) -> list[str]: ...
 
     def fail(self, run_id: str, error: str) -> None: ...
+
+    def touch(self, run_id: str) -> None: ...
 
     def get_document(self, document_id: str) -> dict[str, Any] | None: ...
 

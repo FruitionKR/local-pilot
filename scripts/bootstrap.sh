@@ -143,6 +143,8 @@ install_frontend_deps() {
   if [[ ! -d "$FRONTEND_DIR/node_modules" || ! -f "$installed_lock" || "$package_file" -nt "$installed_lock" || "$lock_file" -nt "$installed_lock" ]]; then
     log "프론트엔드 의존성을 설치합니다."
     (cd "$FRONTEND_DIR" && npm install)
+    log "프론트엔드 의존성 취약점을 안전 범위에서 자동 수정합니다."
+    (cd "$FRONTEND_DIR" && npm audit fix) || log "자동 수정되지 않은 취약점이 있습니다. npm audit 결과를 확인하세요."
     return
   fi
 

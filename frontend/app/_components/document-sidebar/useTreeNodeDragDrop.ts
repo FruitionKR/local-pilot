@@ -47,6 +47,7 @@ export function useTreeNodeDragDrop({
 
   function handleDragOver(event: ReactDragEvent<HTMLButtonElement>) {
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = hasDroppedFiles(event) ? "copy" : "move";
     if (hasDroppedFiles(event) && !isFileItem(item) && !isWikiItem(item)) {
       event.stopPropagation();
@@ -72,6 +73,7 @@ export function useTreeNodeDragDrop({
 
   function handleDrop(event: ReactDragEvent<HTMLButtonElement>) {
     event.preventDefault();
+    event.stopPropagation();
     if (hasDroppedFiles(event)) {
       event.stopPropagation();
       onFileDragLeave();

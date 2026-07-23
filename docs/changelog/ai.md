@@ -4,7 +4,39 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-22
+
+### fix: Agent 전체 편집과 오류 응답 보강
+
+- target 없는 전체 편집의 line 계산을 `markdown_line_count()`로 통일해 후행 `\n`·`\r\n` 범위를 보존
+- 예상하지 못한 Agent 예외의 내부 문자열은 server log에만 남기고 HTTP 500은 안정된 `internal_server_error` 응답으로 변환
+
+### refactor: Wiki maintenance HTTP 경계 분리
+
+- `POST /wiki/maintenance/lint`를 `wiki_ingestion/interfaces/http`로 이동하고 DB·LLM 실행을 `WikiMaintenancePort` 뒤로 분리
+- 기존 lint top-level 응답 계약을 `WikiLintOut` response model로 명시
+
+### fix: PDF evaluator 원본 보존 검증 강화
+
+- 모든 `equation_candidate`를 원본 crop 필수 검토 대상으로 지정하고 수식 행·항·계수·연산자·분모·지수·첨자·부호를 대조
+- 표 `corrected`·`match`·text-layout 결과가 PDF word 좌표의 행·열별 cell token과 OCR에서 확인한 이미지 부호를 누락하면 채택하지 않도록 공통 검증하고, OCR 실행 실패 시 text-layout 결과를 Vision 검증으로 이관
+- 전체 `llmPipeline` 테스트 `424 passed`, `32 subtests passed`
+
 ## 2026-07-21
+
+### fix: sLLM Markdown 출력 구조 검증
+
+- 생성형 Markdown edit와 새 문서 create 결과를 `markdown-it-py`의 CommonMark+table parser로 검증
+- 닫히지 않은 backtick/tilde code fence, frontmatter와 display math를 구조 오류로 판정
+- 구조 오류를 기존 1회 재시도에 전달하고 재실패 결과는 기존 output contract error로 미적용
+- Markdown 편집 모듈 `60 passed`, `26 subtests passed`; 문서 복원 제외 전체 `357 passed`, `30 subtests passed`
+
+### fix: pipeline run 동시 실행 방지와 heartbeat 추가
+
+- module-level process-wide lock으로 문서·Chat Wiki pipeline과 서로 다른 use case 인스턴스의 동시 실행을 방지
+- Flyway V6로 `pipeline_runs.updated_at`을 추가하고 각 pipeline log event에서 실행 시각 갱신
+- heartbeat DB 갱신 실패는 pipeline 실행을 중단하지 않고 `pipeline.log`에 기록
+- 동시 실행 요청이 앞선 run의 완료·실패 처리를 마칠 때까지 대기하는 회귀 테스트 추가
 
 ### fix: Query 검색 범위를 Workspace로 격리
 
@@ -380,6 +412,13 @@ Wiki ingest evaluator가 일반 Python loop로 실행되어 LangSmith에서 의�
 ---
 
 ## 2026-07-16
+
+### fix: pipeline 입력 문서 생성 책임을 Backend로 일원화
+
+- 일반 `POST /pipeline/runs`는 Backend가 먼저 생성한 `document_id`를 입력으로 사용하고 llmPipeline의 직접 `documents` 생성 경로를 제거했다.
+- `/chat-wiki/runs`의 `input_markdown`은 기존 source page에 새 대화만 누적하는 delta 입력으로 유지했다.
+- Wiki 저장 범위의 `user_id`, `workspace_id`는 `document_id`로 기존 `documents` row에서 조회하도록 정리했다.
+- llmPipeline 운영 접근 제한 후속은 `docs/issue/infra/2026-07-21.md`로 이관했다.
 
 ### feat: PDF 복원 흐름과 평가 기록 개선
 

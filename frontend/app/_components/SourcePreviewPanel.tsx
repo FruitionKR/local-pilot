@@ -1,8 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { MoreHorizontal, PanelRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { MarkdownViewer } from "./MarkdownViewer";
-import { fetchDocumentOriginal, fetchWikiPage } from "../_lib/api";
+import { DynamicNoteEditor } from "./note-editor/DynamicNoteEditor";
+import { fetchDocumentOriginal, fetchNoteDraft, fetchWikiPage } from "../_lib/api";
 import { getErrorMessage } from "../_lib/errors";
-import type { SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
+import { buildMarkdownDocumentFilename, getMarkdownDocumentTitle, splitEditableNoteMarkdown } from "../_lib/note";
+import type { ActiveMarkdownEditContext } from "../_lib/markdownEditContext";
+import type { NoteEditState, NoteSaveStatus, SourceBlockHighlight, WikiPageDetailResponse } from "../_lib/types";
+
+const SAVE_STATUS_LABELS: Partial<Record<NoteSaveStatus, string>> = {
+  dirty: "변경됨",
+  saving: "저장 중",
+  error: "저장 실패",
+  conflict: "저장 충돌"
+};
 
 export function SourcePreviewPanel({
   title,
@@ -12,6 +23,15 @@ export function SourcePreviewPanel({
   sourceBlockHighlights,
   width,
   onResizeStart,
+  onMarkdownEditContextChange,
+  onRequestLint,
+  onRenameDocument,
+  onNoteEditStateChange,
+  parentLabel = "업로드 문서",
+  editedAt = null,
+  onExitDocument,
+  isAgentPanelOpen,
+  onOpenAgentPanel,
   fillMain = false
 }: {
   title: string;
@@ -21,6 +41,15 @@ export function SourcePreviewPanel({
   sourceBlockHighlights?: SourceBlockHighlight[];
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
+  onRequestLint?: (context: ActiveMarkdownEditContext) => void;
+  onRenameDocument?: (documentId: string, filename: string) => Promise<void>;
+  onNoteEditStateChange?: (documentId: string, state: NoteEditState | null) => void;
+  parentLabel?: string;
+  editedAt?: string | null;
+  onExitDocument?: () => void;
+  isAgentPanelOpen: boolean;
+  onOpenAgentPanel?: () => void;
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
 }) {
@@ -28,14 +57,120 @@ export function SourcePreviewPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [rawMarkdown, setRawMarkdown] = useState<string | null>(null);
+  const [noteContentVersion, setNoteContentVersion] = useState(0);
   const [rawDocumentUrl, setRawDocumentUrl] = useState<string | null>(null);
+  const [titleInput, setTitleInput] = useState(() => getMarkdownDocumentTitle(title));
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [sourceMode, setSourceMode] = useState(false);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
+  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
+  const [needsReview, setNeedsReview] = useState(false);
+  const [activeEditContext, setActiveEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const optionsRef = useRef<HTMLDivElement | null>(null);
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
   const sourceDocuments = page?.source_documents ?? [];
   const selectedBlockHighlights = useMemo(() => sourceBlockHighlights ?? [], [sourceBlockHighlights]);
   const isMarkdownFile = !pageId && !!documentId && /\.(md|markdown)$/i.test(title);
   const isPdfOrOther = !pageId && !!documentId && !isMarkdownFile;
+  const visibleTitle = isMarkdownFile ? getMarkdownDocumentTitle(title) : title;
+  const saveStatusLabel = SAVE_STATUS_LABELS[noteSaveStatus];
+  const editableNote = useMemo(() => {
+    if (rawMarkdown === null || !documentId) return null;
+    return splitEditableNoteMarkdown(rawMarkdown) ?? {
+      marker: `<!-- fruition-note: ${documentId} -->`,
+      body: rawMarkdown
+    };
+  }, [documentId, rawMarkdown]);
+  const lastEditedLabel = useMemo(() => {
+    if (!editedAt) return "마지막 편집";
+    const date = new Date(editedAt);
+    if (Number.isNaN(date.getTime())) return "마지막 편집";
+    return `${new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(date)} 마지막 편집`;
+  }, [editedAt]);
+
+  useEffect(() => {
+    setTitleInput(getMarkdownDocumentTitle(title));
+    setRenameError(null);
+  }, [title]);
+
+  useEffect(() => {
+    setSourceMode(false);
+    setIsOptionsOpen(false);
+    setNoteSaveStatus("saved");
+    setNoteSaveError(null);
+    setNeedsReview(false);
+    setActiveEditContext(null);
+  }, [documentId]);
+
+  useEffect(() => {
+    if (!isOptionsOpen) return;
+
+    function closeOptions(event: MouseEvent) {
+      if (!optionsRef.current?.contains(event.target as Node)) setIsOptionsOpen(false);
+    }
+    function closeOptionsWithEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOptionsOpen(false);
+    }
+
+    window.addEventListener("mousedown", closeOptions);
+    window.addEventListener("keydown", closeOptionsWithEscape);
+    return () => {
+      window.removeEventListener("mousedown", closeOptions);
+      window.removeEventListener("keydown", closeOptionsWithEscape);
+    };
+  }, [isOptionsOpen]);
+
+  useEffect(() => {
+    if (!isMarkdownFile || !documentId) return;
+    onNoteEditStateChange?.(documentId, { saveStatus: noteSaveStatus, needsReview });
+  }, [documentId, isMarkdownFile, needsReview, noteSaveStatus, onNoteEditStateChange]);
+
+  useEffect(() => () => {
+    if (documentId) onNoteEditStateChange?.(documentId, null);
+  }, [documentId, onNoteEditStateChange]);
+
+  const handleMarkdownEditContextChange = useCallback((context: ActiveMarkdownEditContext | null) => {
+    setActiveEditContext(context);
+    onMarkdownEditContextChange?.(context);
+  }, [onMarkdownEditContextChange]);
+
+  const handleSaveStatusChange = useCallback((status: NoteSaveStatus, message: string | null) => {
+    setNoteSaveStatus(status);
+    setNoteSaveError(message);
+  }, []);
+
+  const handleContentChanged = useCallback((body: string) => {
+    setNeedsReview(true);
+  }, []);
+
+  async function commitTitle() {
+    if (!isMarkdownFile || !documentId || !onRenameDocument || isRenaming) return;
+    const nextFilename = buildMarkdownDocumentFilename(titleInput, title);
+    if (nextFilename === title) {
+      setTitleInput(getMarkdownDocumentTitle(title));
+      return;
+    }
+    setIsRenaming(true);
+    setRenameError(null);
+    try {
+      await onRenameDocument(documentId, nextFilename);
+    } catch (error) {
+      setTitleInput(getMarkdownDocumentTitle(title));
+      setRenameError(getErrorMessage(error, "문서 이름을 변경하지 못했습니다."));
+    } finally {
+      setIsRenaming(false);
+    }
+  }
+
+  function requestDocumentReview() {
+    if (!activeEditContext || noteSaveStatus !== "saved" || !needsReview) return;
+    onRequestLint?.(activeEditContext);
+    setNeedsReview(false);
+  }
 
   useEffect(() => {
     if (!pageId) {
@@ -67,6 +202,7 @@ export function SourcePreviewPanel({
   useEffect(() => {
     if (pageId || !documentId) {
       setRawMarkdown(null);
+      setNoteContentVersion(0);
       setRawDocumentUrl(null);
       return;
     }
@@ -76,24 +212,32 @@ export function SourcePreviewPanel({
     setIsLoading(true);
     setErrorMessage(null);
     setRawMarkdown(null);
+    setNoteContentVersion(0);
     setRawDocumentUrl(null);
 
-    fetchDocumentOriginal(documentId)
-      .then(async (blob) => {
-        if (isMarkdownFile) {
-          const text = await blob.text();
-          if (!ignore) setRawMarkdown(text);
-          return;
+    const loadDocument = async () => {
+      if (isMarkdownFile) {
+        const blob = await fetchDocumentOriginal(documentId);
+        const text = await blob.text();
+        const draft = await fetchNoteDraft(documentId);
+        if (!ignore) {
+          setRawMarkdown(draft ? draft.markdown : text);
+          setNoteContentVersion(draft ? draft.content_version : 0);
         }
+        return;
+      }
 
-        objectUrl = URL.createObjectURL(blob);
-        if (ignore) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = null;
-          return;
-        }
-        setRawDocumentUrl(objectUrl);
-      })
+      const blob = await fetchDocumentOriginal(documentId);
+      objectUrl = URL.createObjectURL(blob);
+      if (ignore) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+        return;
+      }
+      setRawDocumentUrl(objectUrl);
+    };
+
+    void loadDocument()
       .catch((error: unknown) => {
         if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
       })
@@ -123,20 +267,105 @@ export function SourcePreviewPanel({
       aria-label="원본문서 미리보기"
       onClick={(event) => event.stopPropagation()}
     >
-      <header>
-        <h2>{title}</h2>
-        <span>{pageId ? pageTypeLabel : "Raw"}</span>
+      <header className="source-preview-topbar">
+        <nav aria-label="문서 위치">
+          <button type="button" onClick={onExitDocument}>{parentLabel}</button>
+          <span aria-hidden="true">/</span>
+          <strong>{title}</strong>
+        </nav>
+        <div className="source-preview-actions">
+          {saveStatusLabel && (
+            <span
+              className={`source-preview-save-status is-${noteSaveStatus}`}
+              role={noteSaveStatus === "error" || noteSaveStatus === "conflict" ? "alert" : "status"}
+              title={noteSaveError ?? undefined}
+            >
+              {saveStatusLabel}
+            </span>
+          )}
+          <span>{lastEditedLabel}</span>
+          {!isAgentPanelOpen && (
+            <button type="button" aria-label="AI 사이드바 열기" onClick={onOpenAgentPanel}>
+              <PanelRight size={14} />
+            </button>
+          )}
+          <div className="source-preview-options" ref={optionsRef}>
+            <button
+              type="button"
+              aria-label="문서 옵션"
+              aria-expanded={isOptionsOpen}
+              onClick={() => setIsOptionsOpen((open) => !open)}
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {isOptionsOpen && isMarkdownFile && (
+              <div className="source-preview-options-menu">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSourceMode((current) => !current);
+                    setIsOptionsOpen(false);
+                  }}
+                >
+                  {sourceMode ? "자동 미리보기로 전환" : "Markdown 원문 보기"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </header>
-      <div className="source-preview-content">
+      <div className="source-preview-document">
+        <header className="source-preview-heading">
+          {isMarkdownFile ? (
+            <input
+              className="source-preview-title-input"
+              aria-label="문서 이름"
+              value={titleInput}
+              disabled={isRenaming}
+              spellCheck={false}
+              onChange={(event) => setTitleInput(event.target.value)}
+              onBlur={() => void commitTitle()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                } else if (event.key === "Escape") {
+                  setTitleInput(visibleTitle);
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          ) : (
+            <h2>{visibleTitle}</h2>
+          )}
+          {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
+        </header>
+        {isMarkdownFile && (
+          <div className="source-preview-document-controls">
+            <button
+              type="button"
+              className="document-review-button"
+              disabled={!onRequestLint || !needsReview || noteSaveStatus !== "saved"}
+              onClick={requestDocumentReview}
+            >
+              {needsReview && noteSaveStatus !== "saved" ? "저장 후 AI 문서 점검" : "AI 문서 점검"}
+            </button>
+            {renameError && <span role="alert">{renameError}</span>}
+          </div>
+        )}
+        <div className="source-preview-content">
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
-        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && (
-          <MarkdownViewer
-            markdown={rawMarkdown}
-            highlightedBlocks={selectedBlockHighlights}
-            onBlockRef={(blockId, node) => {
-              blockRefs.current[blockId] = node;
-            }}
+        {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
+          <DynamicNoteEditor
+            key={documentId}
+            documentId={documentId}
+            marker={editableNote.marker}
+            initialBody={editableNote.body}
+            initialVersion={noteContentVersion}
+            sourceMode={sourceMode}
+            onMarkdownEditContextChange={handleMarkdownEditContextChange}
+            onSaveStatusChange={handleSaveStatusChange}
+            onContentChanged={handleContentChanged}
           />
         )}
         {isPdfOrOther && isLoading && <p>문서를 불러오는 중입니다.</p>}
@@ -165,6 +394,7 @@ export function SourcePreviewPanel({
           </div>
         )}
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
+        </div>
       </div>
       {!fillMain && (
         <button

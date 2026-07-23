@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentBody } from "./AgentBody";
 import { AgentComposer } from "./AgentComposer";
 import { AgentHeader } from "./AgentHeader";
+import { MarkdownCreatePreview } from "./MarkdownCreatePreview";
+import { MarkdownEditPreview } from "./MarkdownEditPreview";
 import { useChatThread } from "./useChatThread";
 import { WikiExportConfirmCard } from "../modals/WikiExportConfirmCard";
-import { exportChatWiki, fetchChatWikiExportPreview } from "../../_lib/api";
+import { exportChatWiki, fetchChatWikiExportPreview, requestAgentTurn, type ChatWikiExportResponse } from "../../_lib/api";
 import { getErrorMessage } from "../../_lib/errors";
+import {
+  buildAgentTurnRequest,
+  describeAgentTurnResult,
+  prepareMarkdownEditPreview,
+  validateMarkdownEditApplication
+} from "../../_lib/markdownAgent";
+import type { AgentTurnRequest, AgentTurnResponse, GeneratedMarkdownDraft, MarkdownEditPreview as MarkdownEditPreviewData } from "../../_lib/markdownAgent";
 import { findLastUserMessage } from "../../_lib/messages";
+import type { ActiveMarkdownEditContext } from "../../_lib/markdownEditContext";
 import type { GraphNode, SourceBlockHighlight } from "../../_lib/types";
 
 // 헤더 세션 제목으로 보여줄 마지막 질문의 최대 길이
@@ -29,26 +39,142 @@ export function AgentPanel({
   onClose,
   onOpenWikiPage,
   onOpenSourceBlocks,
+  onCreateMarkdownDocument,
+  markdownEditContext,
+  lintRequest,
+  onDocumentExported,
   nodes
 }: {
   onClose: () => void;
   onOpenWikiPage: (pageId: string, title: string, pageType: string) => void;
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
+  onCreateMarkdownDocument: (draft: GeneratedMarkdownDraft) => Promise<void>;
+  markdownEditContext?: ActiveMarkdownEditContext | null;
+  lintRequest?: { id: number; message: string; context: ActiveMarkdownEditContext } | null;
+  onDocumentExported?: (response: ChatWikiExportResponse) => Promise<void> | void;
   nodes?: GraphNode[];
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [exportPreview, setExportPreview] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+  const [agentTurnResponse, setAgentTurnResponse] = useState<AgentTurnResponse | null>(null);
+  const [agentTurnRequest, setAgentTurnRequest] = useState<AgentTurnRequest | null>(null);
+  const [agentTurnErrorMessage, setAgentTurnErrorMessage] = useState<string | null>(null);
+  const [agentTurnSuccessMessage, setAgentTurnSuccessMessage] = useState<string | null>(null);
+  const [isAgentTurnLoading, setIsAgentTurnLoading] = useState(false);
+  const [isCreatingMarkdown, setIsCreatingMarkdown] = useState(false);
+  const [markdownCreateErrorMessage, setMarkdownCreateErrorMessage] = useState<string | null>(null);
+  const handledLintRequestIdRef = useRef<number | null>(null);
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, submitQuery } = useChatThread();
+  const isSubmitting = isLoading || isAgentTurnLoading || isCreatingMarkdown;
   const hasAssistantMessage = messages.some((message) => message.role !== "user");
   const sessionTitle = buildSessionTitle(activeTurn?.question ?? findLastUserMessage(messages)?.content);
+  const composerPlaceholder = markdownEditContext
+    ? `${markdownEditContext.editorSnapshot.target.type === "selection" ? "선택 영역" : markdownEditContext.editorSnapshot.target.type === "current_section" ? "현재 섹션" : "문서 전체"}을 어떻게 편집할까요?`
+    : "AI 에이전트에게 무엇이든 물어보세요.";
+  const editPreviewState = useMemo<{
+    preview: MarkdownEditPreviewData | null;
+    validationError: string | null;
+  } | null>(() => {
+    if (!agentTurnRequest || !agentTurnResponse || agentTurnResponse.result.action !== "markdown_edit") return null;
+    try {
+      const preview = prepareMarkdownEditPreview(agentTurnRequest, agentTurnResponse);
+      if (!markdownEditContext) {
+        return { preview, validationError: "편집 중인 문서를 다시 열고 재생성해주세요." };
+      }
+      try {
+        validateMarkdownEditApplication(agentTurnRequest, agentTurnResponse, markdownEditContext);
+        return { preview, validationError: null };
+      } catch (error) {
+        return { preview, validationError: getErrorMessage(error, "편집 결과를 적용할 수 없습니다.") };
+      }
+    } catch (error) {
+      return { preview: null, validationError: getErrorMessage(error, "편집 응답 계약이 올바르지 않습니다.") };
+    }
+  }, [agentTurnRequest, agentTurnResponse, markdownEditContext]);
+
+  const submitAgentTurn = useCallback((question: string, context: ActiveMarkdownEditContext) => {
+    const request = buildAgentTurnRequest(question, context);
+    setAgentTurnRequest(request);
+    setAgentTurnResponse(null);
+    setAgentTurnErrorMessage(null);
+    setAgentTurnSuccessMessage(null);
+    setMarkdownCreateErrorMessage(null);
+    setIsAgentTurnLoading(true);
+    requestAgentTurn(request)
+      .then(setAgentTurnResponse)
+      .catch((error: unknown) => {
+        setAgentTurnErrorMessage(getErrorMessage(error, "AI 편집 요청에 실패했습니다."));
+      })
+      .finally(() => setIsAgentTurnLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!lintRequest || handledLintRequestIdRef.current === lintRequest.id) return;
+    handledLintRequestIdRef.current = lintRequest.id;
+    submitAgentTurn(lintRequest.message, lintRequest.context);
+  }, [lintRequest, submitAgentTurn]);
 
   function handleSubmit() {
     const question = composerValue.trim();
-    if (!question) return;
+    if (!question || isSubmitting) return;
     setComposerValue("");
+    if (markdownEditContext) {
+      submitAgentTurn(question, markdownEditContext);
+      return;
+    }
     void submitQuery(question);
+  }
+
+  function dismissAgentTurnResult() {
+    setAgentTurnRequest(null);
+    setAgentTurnResponse(null);
+    setAgentTurnErrorMessage(null);
+    setMarkdownCreateErrorMessage(null);
+  }
+
+  function regenerateAgentTurn() {
+    if (!agentTurnRequest || !markdownEditContext) {
+      setAgentTurnErrorMessage("편집 중인 문서를 다시 열고 재생성해주세요.");
+      return;
+    }
+    submitAgentTurn(agentTurnRequest.message, markdownEditContext);
+  }
+
+  function applyMarkdownEdit() {
+    if (!agentTurnRequest || !agentTurnResponse || !markdownEditContext || !editPreviewState?.preview) return;
+    try {
+      validateMarkdownEditApplication(agentTurnRequest, agentTurnResponse, markdownEditContext);
+      const applied = markdownEditContext.applyMarkdown(
+        agentTurnRequest.editorSnapshot.markdown,
+        editPreviewState.preview.nextMarkdown
+      );
+      if (!applied) throw new Error("적용 직전에 문서가 변경되었습니다. 최신 내용으로 재생성해주세요.");
+      setAgentTurnSuccessMessage("AI 편집 결과를 적용했으며 자동 저장을 시작했습니다.");
+      setAgentTurnRequest(null);
+      setAgentTurnResponse(null);
+      setAgentTurnErrorMessage(null);
+    } catch (error) {
+      setAgentTurnErrorMessage(getErrorMessage(error, "편집 결과를 적용하지 못했습니다."));
+    }
+  }
+
+  function createMarkdownDocument() {
+    const draft = agentTurnResponse?.result.generated_markdown;
+    if (!draft) return;
+    setIsCreatingMarkdown(true);
+    setMarkdownCreateErrorMessage(null);
+    onCreateMarkdownDocument(draft)
+      .then(() => {
+        setAgentTurnSuccessMessage("AI 초안을 새 Markdown 문서로 만들었습니다.");
+        setAgentTurnRequest(null);
+        setAgentTurnResponse(null);
+      })
+      .catch((error: unknown) => {
+        setMarkdownCreateErrorMessage(getErrorMessage(error, "새 Markdown 문서를 만들지 못했습니다."));
+      })
+      .finally(() => setIsCreatingMarkdown(false));
   }
 
   function openExportPreview() {
@@ -56,45 +182,97 @@ export function AgentPanel({
     setIsExporting(true);
     fetchChatWikiExportPreview()
       .then(setExportPreview)
-      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "위키 내보내기에 실패했습니다.")))
+      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "채팅 문서 미리보기에 실패했습니다.")))
       .finally(() => setIsExporting(false));
   }
 
   function acceptExport() {
+    setExportErrorMessage(null);
     setIsExporting(true);
     exportChatWiki()
-      .then(() => setExportPreview(null))
-      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "위키 내보내기에 실패했습니다.")))
+      .then(async (response) => {
+        setExportPreview(null);
+        await onDocumentExported?.(response);
+        setAgentTurnSuccessMessage("채팅을 문서로 편입해 AI 처리 파이프라인에 전달했습니다.");
+      })
+      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "채팅을 문서로 편입하지 못했습니다.")))
       .finally(() => setIsExporting(false));
   }
 
   return (
-    <aside className="agent-panel" onClick={(event) => event.stopPropagation()}>
+    <aside
+      className={`agent-panel${editPreviewState?.preview ? " is-markdown-reviewing" : ""}`}
+      onClick={(event) => event.stopPropagation()}
+    >
       <AgentHeader sessionTitle={sessionTitle} onClose={onClose} />
       <AgentBody
         messages={messages}
-        isLoading={isLoading}
+        isLoading={isSubmitting}
         activeTurn={activeTurn}
-        queryErrorMessage={queryErrorMessage}
+        queryErrorMessage={agentTurnErrorMessage ?? queryErrorMessage}
         chatLoadErrorMessage={chatLoadErrorMessage}
         animatedMessageId={animatedMessageId}
         onOpenWikiPage={onOpenWikiPage}
         onOpenSourceBlocks={onOpenSourceBlocks}
         nodes={nodes}
       />
+      {agentTurnResponse
+        && agentTurnResponse.result.action !== "markdown_edit"
+        && agentTurnResponse.result.action !== "markdown_create" && (
+        <div className="agent-turn-notice" role="status">
+          <strong>{describeAgentTurnResult(agentTurnResponse.result)}</strong>
+        </div>
+      )}
+      {agentTurnResponse?.result.action === "markdown_create" && agentTurnResponse.result.generated_markdown && (
+        <MarkdownCreatePreview
+          draft={agentTurnResponse.result.generated_markdown}
+          isSubmitting={isCreatingMarkdown}
+          errorMessage={markdownCreateErrorMessage}
+          onCancel={dismissAgentTurnResult}
+          onRegenerate={regenerateAgentTurn}
+          onCreate={createMarkdownDocument}
+        />
+      )}
+      {editPreviewState?.preview && (
+        <MarkdownEditPreview
+          preview={editPreviewState.preview}
+          validationError={editPreviewState.validationError}
+          isLoading={isAgentTurnLoading}
+          onApply={applyMarkdownEdit}
+          onCancel={dismissAgentTurnResult}
+          onRegenerate={regenerateAgentTurn}
+        />
+      )}
+      {editPreviewState && !editPreviewState.preview && (
+        <div className="agent-turn-notice" role="alert">
+          <strong>{editPreviewState.validationError}</strong>
+          <span>원문은 변경되지 않았습니다. 최신 문서에서 다시 요청해주세요.</span>
+        </div>
+      )}
+      {agentTurnSuccessMessage && (
+        <div className="agent-turn-notice" role="status">
+          <strong>{agentTurnSuccessMessage}</strong>
+        </div>
+      )}
       {hasAssistantMessage && (
         <div className="wiki-export-trigger">
           <button type="button" disabled={isExporting} onClick={openExportPreview}>
-            논문 작업 자료 바로 만들어줘
+            채팅을 문서로 편입
           </button>
           {exportErrorMessage && <p role="alert">{exportErrorMessage}</p>}
         </div>
       )}
-      <AgentComposer value={composerValue} isLoading={isLoading} onChange={setComposerValue} onSubmit={handleSubmit} />
+      <AgentComposer
+        value={composerValue}
+        isLoading={isSubmitting}
+        placeholder={composerPlaceholder}
+        onChange={setComposerValue}
+        onSubmit={handleSubmit}
+      />
 
       {exportPreview !== null && (
         <WikiExportConfirmCard
-          title="채팅 내용을 문서로 내보낼까요?"
+          title="채팅 내용을 문서로 편입할까요?"
           previewContent={exportPreview}
           isSubmitting={isExporting}
           onCancel={() => setExportPreview(null)}

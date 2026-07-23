@@ -21,7 +21,10 @@ export function SidebarMenuRow({
           className={cx("sidebar-menu-item", activeView === item.id && "is-active")}
           aria-label={item.label}
           aria-pressed={activeView === item.id}
-          onClick={() => onViewChange(item.id)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onViewChange(item.id);
+          }}
         >
           <SvgIcon src={item.icon} className="sidebar-menu-icon" />
           {activeView === item.id && <span>{item.label}</span>}
@@ -30,7 +33,7 @@ export function SidebarMenuRow({
       <button
         type="button"
         className="sidebar-menu-item sidebar-menu-add"
-        aria-label="프로젝트 추가"
+        aria-label="새 폴더 생성"
         onClick={(event) => {
           event.stopPropagation();
           onAddProject();

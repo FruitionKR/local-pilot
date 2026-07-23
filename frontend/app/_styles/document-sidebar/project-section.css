@@ -6,8 +6,12 @@
 
 .project-section {
   position: relative;
-  padding: 12px 10px 10px;
-  border-radius: 7px;
+  padding: 0 16px;
+  border-radius: 6px;
+}
+
+.project-section + .project-section {
+  margin-top: 12px;
 }
 
 .project-section.is-file-drop-target {
@@ -38,48 +42,58 @@
 }
 
 .project-title {
+  position: relative;
   width: 100%;
   height: 36px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 4px;
+  gap: 0;
+  padding-right: 8px;
+  border-radius: 6px;
 }
 
-/* 첫 번째 프로젝트: 밝은 라운드 헤더. 이름과 + 버튼이 한 박스 안에 들어간다 */
-.project-section.is-primary .project-title {
-  grid-template-columns: minmax(0, 1fr) 24px;
-  gap: 6px;
-  padding: 0 8px 0 0;
-  background: #3a3a3a;
-  border-radius: 8px;
+.project-title:hover,
+.project-title:focus-within,
+.project-title.is-tree-drop-target {
+  background: #323232;
+}
+
+.project-title.is-tree-drop-target::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 2px;
+  background: var(--yellow);
+  border-radius: 999px;
 }
 
 .project-section.is-primary .project-toggle {
-  color: var(--ink);
-  background: transparent;
+  color: #e2e2e2;
 }
 
 .project-add-file {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   color: var(--muted);
   background: transparent;
-  border-radius: 6px;
-  font-size: 15px;
+  border-radius: 4px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1;
   opacity: 0;
   transition: opacity 120ms ease;
 }
 
-/* + 버튼은 폴더 행에 마우스를 올리거나 포커스가 갈 때만 나타난다 */
-.project-section.is-primary:hover .project-add-file,
-.project-section.is-primary:focus-within .project-add-file {
+/* + 버튼은 해당 폴더 행에 마우스를 올리거나 포커스가 갈 때만 나타난다. */
+.project-title:hover .project-add-file,
+.project-title:focus-within .project-add-file {
   opacity: 1;
 }
 
@@ -91,9 +105,9 @@
 
 .project-arrow,
 .tree-arrow {
-  width: 5px;
+  width: 8px;
   height: 8px;
-  flex: 0 0 5px;
+  flex: 0 0 8px;
   transform-origin: center;
   transition: transform 120ms ease, opacity 120ms ease;
 }
@@ -113,7 +127,7 @@
   padding: 0 8px;
   color: var(--subdued);
   background: transparent;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
 }
@@ -121,8 +135,8 @@
 .project-toggle {
   min-width: 0;
   justify-content: flex-start;
-  gap: 8px;
-  color: #e2e2e2;
+  gap: 10px;
+  color: #8a8a8a;
   text-align: left;
 }
 
@@ -139,7 +153,11 @@
 .section-title:focus-visible,
 .section-title.muted {
   color: #e2e2e2;
-  background: #4f4f4f;
+}
+
+.project-toggle:hover,
+.project-toggle:focus-visible {
+  background: transparent;
 }
 
 .project-toggle:focus-visible,
@@ -164,8 +182,8 @@
 }
 
 .project-empty {
-  margin: 4px 0 0;
-  padding: 8px 10px;
+  margin: 0;
+  padding: 8px;
   color: var(--subdued);
   font-size: 12px;
 }

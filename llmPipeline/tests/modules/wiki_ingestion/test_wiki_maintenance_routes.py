@@ -1,0 +1,88 @@
+from fastapi import HTTPException
+
+import api
+from app.modules.wiki_ingestion.application.models import (
+    WikiMaintenanceCommand,
+    WikiMaintenanceConfigurationError,
+)
+from app.modules.wiki_ingestion.interfaces.http.routes import lint_wiki_workspace
+from app.modules.wiki_ingestion.interfaces.http.schemas import WikiLintIn
+
+
+class FakeWikiMaintenance:
+    def __init__(self) -> None:
+        self.commands: list[WikiMaintenanceCommand] = []
+
+    def lint(self, command: WikiMaintenanceCommand) -> dict:
+        self.commands.append(command)
+        return {
+            "user_id": command.user_id,
+            "workspace_id": command.workspace_id,
+            "active_path": "wiki/user-1/workspace-1/clusters/active.md",
+            "cluster_count": 2,
+            "source_ref_count": 3,
+            "orphan_refs": ["doc-1:B9999"],
+            "promotion_candidates": ["candidate-1"],
+            "needs_review": [],
+            "relation_candidates": [],
+            "invalid_relations": [],
+            "invalid_promotions": [],
+            "materialized_promotions": [],
+            "merged_promotions": [],
+            "materialized_relations": [],
+        }
+
+
+def test_wiki_maintenance_route_returns_workspace_result() -> None:
+    maintenance = FakeWikiMaintenance()
+
+    response = lint_wiki_workspace(
+        WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+        maintenance=maintenance,
+    )
+
+    assert maintenance.commands[0].dry_run is True
+    assert response.workspace_id == "workspace-1"
+    assert response.promotion_candidates == ["candidate-1"]
+    assert response.orphan_refs == ["doc-1:B9999"]
+
+
+def test_wiki_maintenance_route_is_registered_on_app() -> None:
+    operation = api.app.openapi()["paths"]["/wiki/maintenance/lint"]
+
+    assert "post" in operation
+
+
+def test_wiki_maintenance_route_hides_unexpected_failure_details() -> None:
+    class FailingWikiMaintenance:
+        def lint(self, command: WikiMaintenanceCommand) -> dict:
+            raise ValueError("secret-internal-detail")
+
+    try:
+        lint_wiki_workspace(
+            WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+            maintenance=FailingWikiMaintenance(),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 500
+        assert exc.detail["code"] == "internal_server_error"
+        assert "secret-internal-detail" not in str(exc.detail)
+    else:
+        raise AssertionError("unexpected lint failure should return HTTP 500")
+
+
+def test_wiki_maintenance_route_returns_configuration_error_as_bad_request() -> None:
+    class InvalidConfigurationWikiMaintenance:
+        def lint(self, command: WikiMaintenanceCommand) -> dict:
+            raise WikiMaintenanceConfigurationError("Missing API key")
+
+    try:
+        lint_wiki_workspace(
+            WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+            maintenance=InvalidConfigurationWikiMaintenance(),
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "Missing API key"
+    else:
+        raise AssertionError("invalid lint configuration should return HTTP 400")

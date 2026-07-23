@@ -1,11 +1,11 @@
 import Image from "next/image";
 import type { ChangeEventHandler, HTMLInputAutoCompleteAttribute, HTMLInputTypeAttribute } from "react";
-import errorIcon from "../../svg/auth/auth-error-circle.svg";
-import googleLogo from "../../svg/auth/auth-google-logo.svg";
-import kakaoLogo from "../../svg/auth/auth-kakao-logo.svg";
-import naverLogo from "../../svg/auth/auth-naver-logo.svg";
-import passwordHiddenIcon from "../../svg/auth/auth-password-hidden.svg";
-import { getOAuthAuthorizationUrl } from "../_lib/api";
+import errorIcon from "../../../svg/auth/auth-error-circle.svg";
+import googleLogo from "../../../svg/auth/auth-google-logo.svg";
+import kakaoLogo from "../../../svg/auth/auth-kakao-logo.svg";
+import naverLogo from "../../../svg/auth/auth-naver-logo.svg";
+import passwordHiddenIcon from "../../../svg/auth/auth-password-hidden.svg";
+import { getOAuthAuthorizationUrl } from "../../_lib/api";
 
 type AuthFieldProps = {
   autoComplete?: HTMLInputAutoCompleteAttribute;
@@ -13,6 +13,7 @@ type AuthFieldProps = {
   name: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
   placeholder: string;
+  readOnly?: boolean;
   required?: boolean;
   timer?: string;
   type?: HTMLInputTypeAttribute;
@@ -25,6 +26,7 @@ export function AuthField({
   name,
   onChange,
   placeholder,
+  readOnly = false,
   required = true,
   timer,
   type = "text",
@@ -41,6 +43,7 @@ export function AuthField({
           name={name}
           onChange={onChange}
           placeholder={placeholder}
+          readOnly={readOnly}
           required={required}
           type={type}
           value={value}

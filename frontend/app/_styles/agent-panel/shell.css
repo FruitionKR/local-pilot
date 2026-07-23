@@ -2,17 +2,32 @@
 .agent-panel {
   position: absolute;
   inset: 0 0 0 auto;
-  z-index: 7;
+  z-index: 9;
   width: 360px;
   min-width: 0;
   display: grid;
-  grid-template-rows: 52px 1fr auto auto;
+  grid-template-rows: 48px 1fr auto auto;
   overflow: hidden;
   color: #f0f0f0;
   background: #0a0a0a;
   border-left: 1px solid #4f4f4f;
   border-radius: 0;
   box-shadow: none;
+}
+
+.agent-panel.is-markdown-reviewing {
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  display: block;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.agent-panel.is-markdown-reviewing > :not(.markdown-edit-preview) {
+  display: none;
 }
 
 .workspace.is-graph-view .agent-panel {
@@ -31,7 +46,7 @@
   grid-template-columns: minmax(0, 1fr) 28px 28px;
   align-items: center;
   gap: 4px;
-  padding: 12px 12px 12px 16px;
+  padding: 10px 12px 10px 16px;
 }
 
 /* 헤더 좌측 세션 제목 버튼 */
@@ -62,7 +77,7 @@
 /* 헤더 아래 겹쳐 뜨는 채팅 세션 드롭다운 */
 .chat-session-dropdown {
   position: absolute;
-  top: 46px;
+  top: 48px;
   left: 12px;
   z-index: 12;
   width: 240px;
@@ -139,17 +154,16 @@
 .chat-session-item svg {
   flex: 0 0 auto;
   color: var(--muted);
-  opacity: 0;
 }
 
 .chat-session-item:hover,
-.chat-session-item:focus-visible {
+.chat-session-item:focus-visible,
+.chat-session-item.is-active {
   background: var(--soft);
 }
 
-.chat-session-item:hover svg,
-.chat-session-item:focus-visible svg {
-  opacity: 1;
+.chat-session-item-more {
+  color: var(--ink) !important;
 }
 
 .chat-session-empty,
