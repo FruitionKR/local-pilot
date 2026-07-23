@@ -18,7 +18,7 @@
 ## 3. 목표
 
 - 기존 `Document`를 업로드 파일과 Markdown 편집 문서의 통합 식별자로 유지한다.
-- Markdown 문서를 직접 생성하고 전체 본문을 자동·수동 저장한다.
+- Markdown 문서를 직접 생성하고 저장 버튼 또는 `Cmd/Ctrl+S`로 전체 본문을 수동 저장한다.
 - 변환이 필요한 원본은 파서가 Markdown을 생성한 뒤 편집 가능하게 한다.
 - 이름 변경, 복제, 소프트 삭제·복구, 검색·정렬, Markdown 내보내기를 제공한다.
 - 버전 번호로 오래된 편집이 최신 내용을 덮어쓰지 못하게 한다.
@@ -34,7 +34,7 @@
 - 전체 본문 저장, 이름 변경, 복제
 - 워크스페이스 공용 수동 정렬과 파일명 검색
 - 소프트 삭제, 휴지통, 복구
-- Markdown 및 이미지 bundle 내보내기
+- Markdown 원문 내보내기. 이미지 bundle 상세는 [`markdown-document-assets.md`](./markdown-document-assets.md)에서 정의한다.
 - 워크스페이스 멤버 권한과 낙관적 잠금
 
 ### 제외
@@ -46,6 +46,7 @@
 - PDF·HTML 내보내기
 - 파이프라인 재처리 결과와 사용자 편집본의 병합
 - 영구 삭제 정책
+- 목록 cursor 페이지네이션(후속 SDD `markdown-document-pagination.md`)
 
 ## 5. 요구사항
 
@@ -96,9 +97,7 @@
 - 본문과 소프트 삭제 문서는 일반 목록에서 제외한다.
 - 채팅 Wiki page화 export 문서(`origin='chat_export'`)는 기존과 동일하게 목록에서 제외한다(회귀 방지, 현재 `findVisibleByWorkspaceId` 규칙 유지).
 - 변환 중·실패 문서도 처리 상태와 함께 표시한다.
-- 20개 단위 cursor 페이지네이션을 제공한다.
-
-> **호환성**: 현재 `GET /documents`는 `{ "documents": [...] }` 전체 목록을 반환한다. cursor 페이지네이션 도입은 응답 형태를 바꾸는 breaking change이므로, 프론트 목록 소비 코드(`frontend/app/_lib/api.ts`, 문서 사이드바)를 같은 범위에서 함께 전환한다. 전환 전까지는 20개 초과 문서가 있는 워크스페이스에서 목록 누락이 발생할 수 있다.
+- 기존 `{ "documents": [...] }` 전체 목록 응답 형태를 유지한다(breaking change 없음). cursor 페이지네이션은 후속 SDD(`markdown-document-pagination.md`)로 분리한다.
 
 #### REQ-006 상세 조회
 
@@ -116,7 +115,7 @@
 
 - `display_name`과 실제 `filename`의 일부 문자열을 대소문자 구분 없이 검색한다.
 - 본문은 검색하지 않는다.
-- 검색 결과에도 공용 순서와 cursor 페이지네이션을 적용한다.
+- 검색 결과에도 공용 순서를 적용한다.
 
 #### REQ-008 공용 수동 정렬
 
@@ -129,10 +128,12 @@
 
 #### REQ-009 전체 본문 저장
 
-- 자동 저장과 `Cmd/Ctrl+S` 수동 저장은 같은 API를 사용한다.
-- 요청은 전체 `markdown`과 `base_version`을 전달한다.
+- 자동 저장은 제공하지 않는다. 저장 버튼과 `Cmd/Ctrl+S`만 같은 수동 저장 API를 사용한다.
+- 요청은 `multipart/form-data`로 전체 `markdown`, `base_version`, 신규 이미지 attachment를 전달한다. 이미지가 없으면 attachment part를 생략한다.
 - 현재 본문, 해시, 버전, 수정 시각을 하나의 DB 트랜잭션에서 갱신한다.
 - 업로드 원본과 원본 해시는 변경하지 않는다.
+- 미저장 내용은 서버·브라우저 draft로 보관하지 않는다. 문서 이동·새로고침·종료 시 프론트엔드가 이탈 경고를 제공한다.
+- 신규 이미지 placeholder 치환과 자산 저장 규칙은 assets SDD를 따른다.
 
 #### REQ-010 변경 없는 저장
 
@@ -143,6 +144,7 @@
 
 - `base_version`과 서버 `current_version`이 다르면 `409 Conflict`를 반환한다.
 - 충돌 시 기존 본문, 파일명, 버전을 변경하지 않는다.
+- 본문 저장 결과가 활성 문서의 파일명·내용 unique 제약을 위반하면 `409 Conflict`를 반환한다.
 
 #### REQ-012 본문 검증
 
@@ -213,11 +215,8 @@
 
 #### REQ-020 이미지 bundle
 
-- Fruition 관리 이미지가 있으면 `.md`와 `assets/`를 포함한 ZIP을 반환한다.
-- 관리 이미지 URL을 ZIP 내부 상대 경로로 바꾼다.
-- 같은 이미지는 한 번만 포함한다.
-- 외부 이미지 URL은 fetch하지 않고 그대로 유지한다.
-- 관리 이미지 하나라도 읽지 못하면 불완전한 ZIP 대신 전체 요청을 실패 처리한다.
+- 이미지 attachment 저장, 참조 추적, 멤버 전용 조회와 ZIP bundle은 [`markdown-document-assets.md`](./markdown-document-assets.md)에서 정의한다.
+- core 구현은 이미지가 없는 문서의 UTF-8 `.md` 내보내기만 독립적으로 완료할 수 있어야 한다.
 
 ## 6. 설계
 
@@ -251,7 +250,7 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 ### 편집 상태 생성(lazy)
 
-편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 markdown·변환 완료 문서는 최초 상세 조회 또는 최초 저장 시 원본 Markdown에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`). Flyway backfill은 순수 DB 컬럼(`normalized_filename`, `sort_order`, `current_version=1`)만 채운다.
+편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 markdown·변환 완료 문서는 최초 상세 조회 또는 최초 저장 시 원본 Markdown에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`). Flyway backfill은 순수 DB 컬럼(`normalized_filename`, `sort_order`, `current_version=1`)과 기존 문서의 `current_content_hash=content_hash`를 채운다. 변환 Markdown으로 편집 상태를 생성하면 `current_content_hash`를 해당 Markdown 해시로 교체한다.
 
 ### 저장과 낙관적 잠금
 
@@ -261,11 +260,11 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 ### 정렬
 
-`sort_order` 연속 정수를 사용한다. 이동 시 영향 범위를 트랜잭션에서 조정하고 목록 cursor는 `(sort_order, document_id)`를 opaque 값으로 인코딩한다.
+`sort_order` 연속 정수를 사용한다. 이동 시 영향 범위를 트랜잭션에서 조정한다. 목록은 `sort_order` 오름차순으로 전체를 반환한다(페이지네이션 cursor 설계는 후속 SDD `markdown-document-pagination.md`).
 
 ### 변환 계약
 
-파이프라인은 Markdown 본문을 callback JSON에 넣지 않고 MinIO의 `converted_markdown_uri`와 checksum을 전달한다. 백엔드는 이를 읽고 검증한 뒤 편집 상태를 생성한다. Wiki 생성 성공 여부는 편집 활성화 조건이 아니다.
+파이프라인은 Markdown 본문을 callback JSON에 넣지 않고 MinIO의 `converted_markdown_uri`, checksum, `run_id`를 전달한다. callback은 `X-Pipeline-Token` 서비스 토큰을 필수로 검증하고, 서버 설정값과 constant-time 비교한다. `run_id`는 현재 문서의 `pipeline_run_id`와 일치해야 하며, URI는 설정된 bucket의 `sources/documents/{document_id}/` prefix 내부로 제한한다. checksum 검증을 통과한 결과만 편집 상태로 생성하고 같은 run의 반복 callback은 멱등 처리한다. Wiki 생성 성공 여부는 편집 활성화 조건이 아니다.
 
 ### 주요 결정
 
@@ -280,10 +279,10 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 | Method | Endpoint | 역할 |
 |---|---|---|
-| `GET` | `/api/workspaces/{workspace_id}/documents` | 통합 목록·검색·cursor 조회 |
+| `GET` | `/api/workspaces/{workspace_id}/documents` | 통합 목록·검색 전체 조회 |
 | `GET` | `/api/workspaces/{workspace_id}/documents/{document_id}` | 상세와 현재 편집 상태 조회 |
 | `POST` | `/api/workspaces/{workspace_id}/documents/markdown` | Markdown 직접 생성 |
-| `PUT` | `/api/workspaces/{workspace_id}/documents/{document_id}/content` | 전체 Markdown 저장 |
+| `PUT` | `/api/workspaces/{workspace_id}/documents/{document_id}/content` | multipart 전체 Markdown·신규 이미지 수동 저장 |
 | `PATCH` | `/api/workspaces/{workspace_id}/documents/{document_id}/rename` | 표시 이름 변경 |
 | `PATCH` | `/api/workspaces/{workspace_id}/documents/{document_id}/position` | 공용 순서 변경 |
 | `POST` | `/api/workspaces/{workspace_id}/documents/{document_id}/duplicate` | 최신 편집본 복제 |
@@ -304,7 +303,7 @@ updated_at        TIMESTAMPTZ NOT NULL
 | 낙관적 잠금 | 동시 저장 Repository 통합 테스트 | Pending |
 | 변환 결과 등록 | MinIO·callback 통합 테스트 | Pending |
 | 삭제·복구 | 서비스·API 통합 테스트 | Pending |
-| Markdown bundle | 스토리지 통합 테스트 | Pending |
+| Markdown 원문 내보내기 | API 통합 테스트 | Pending |
 
 ```sh
 cd backend
@@ -315,7 +314,6 @@ cd backend
 ## 9. 미결정 사항
 
 - 파이프라인 재처리 결과와 사용자 편집본의 병합·교체 정책
-- 정렬 중 변경된 cursor 페이지의 snapshot 보장 여부
 - Unicode 파일명 정규화 수준
 - 영구 삭제 보존 기간과 실행 주체
 - 대용량 Markdown bundle의 동기 생성 상한
@@ -326,7 +324,7 @@ cd backend
 - 최종 상태: Pending
 - 남은 문제: 위 미결정 사항 및 후속 SDD
 - 후속 작업:
-  - `markdown-document-versioning.md`
-  - `markdown-document-assets.md`
+  - `markdown-document-pagination.md` — 목록 cursor 페이지네이션(응답 형태 breaking change, 프론트 동시 전환)
+  - [`markdown-document-assets.md`](./markdown-document-assets.md)
   - `markdown-document-sharing.md`
-  - `markdown-document-ai-editing.md`
+  - `markdown-document-ai-editing.md` — AI 전·후 snapshot과 원클릭 되돌리기 포함

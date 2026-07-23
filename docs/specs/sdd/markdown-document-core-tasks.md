@@ -29,13 +29,14 @@
   - `(workspace_id, normalized_filename, current_content_hash) WHERE deleted_at IS NULL` partial unique index 신설
   - `Document.java`의 `@UniqueConstraint(uq_documents_workspace_content_hash)` 제거(ddl-auto=validate 정합성)
   - `document_edit_states`(버전 없이 본문·해시·시각) 추가
-  - Flyway backfill은 순수 DB 컬럼만: `normalized_filename`, `sort_order`, `current_version=1` (편집 상태는 최초 조회·저장 시 lazy 생성)
+  - Flyway backfill: `normalized_filename`, `sort_order`, `current_version=1`, 기존 문서의 `current_content_hash=content_hash` (편집 상태는 최초 조회·저장 시 lazy 생성)
 - 완료 조건:
   - [ ] Flyway migration 검증 통과
   - [ ] 같은 내용·다른 파일명 문서 2건 생성 허용, 파일명·내용 동일 시 409
   - [ ] 소프트 삭제 문서는 partial index에서 제외되어 동일 조합 재생성 허용
   - [ ] 기존 데이터 손실 없음
   - [ ] 기존 markdown 업로드 문서가 마이그레이션 후 최초 조회 시 편집 가능해짐(lazy edit_state)
+  - [ ] 기존 문서와 파일명·내용이 같은 신규 요청을 partial unique index가 차단함
   - [ ] 편집 상태 1:1과 self-reference 제약 테스트 통과
   - [ ] 기존 업로드·조회 테스트 통과
 
@@ -61,7 +62,7 @@
 - 작업:
   - 기존 목록 응답에 표시 이름, 형식, 편집 가능 여부, 버전 추가
   - 삭제 문서 제외와 변환 상태 표시
-  - 파일명 검색과 20개 cursor 페이지네이션
+  - 파일명 검색(전체 목록 반환, cursor 페이지네이션은 후속 SDD)
   - 워크스페이스 공용 위치 변경 API
 - 완료 조건:
   - [ ] 업로드와 Markdown 문서가 한 목록에 표시됨
@@ -94,6 +95,7 @@
 - 변경 대상: pipeline callback DTO·controller·service와 변환 결과 계약
 - 작업:
   - `converted_markdown_uri`, checksum 계약 추가
+  - `X-Pipeline-Token`, `run_id`, bucket·document prefix 검증과 멱등 처리
   - 변환 Markdown 조회·checksum·5MB 검증
   - 같은 문서 ID에 최초 편집 상태 생성
   - Wiki 생성과 편집 활성화 분리
@@ -101,6 +103,7 @@
   - [ ] 처리 중에는 목록에 표시되지만 편집 불가
   - [ ] 완료 후 새 목록 항목 없이 편집 가능
   - [ ] checksum 불일치·크기 초과 시 편집 상태 미생성
+  - [ ] 인증 실패·run 불일치·허용 prefix 밖 URI 요청 거절
   - [ ] 원본 PDF 불변
 
 ### TASK-006 본문 저장·이름 변경 구현
@@ -108,7 +111,8 @@
 - 관련 요구사항: `REQ-009`~`REQ-014`
 - 변경 대상: `DocumentController`, `DocumentService`, 저장·이름 DTO, 충돌 예외
 - 작업:
-  - 전체 Markdown 저장
+  - 저장 버튼·`Cmd/Ctrl+S` 기반 multipart 전체 Markdown 수동 저장
+  - 신규 이미지 attachment 처리는 assets SDD와 연동
   - `base_version` 조건부 갱신
   - 동일 본문 no-op
   - 형식별 확장자를 유지하는 이름 변경
@@ -116,6 +120,7 @@
   - [ ] 정상 변경 시 버전 1 증가
   - [ ] 동일 본문·이름은 버전과 시각 유지
   - [ ] 오래된 버전은 `409 Conflict`
+  - [ ] 저장·이름 변경 unique 제약 위반은 `409 Conflict`
   - [ ] 본문 heading과 원본 파일 불변
 
 ### TASK-007 최신 편집본 복제 구현
@@ -147,19 +152,15 @@
   - [ ] 복구 후 기존 본문 유지
   - [ ] 충돌 문서가 있으면 복구 거절
 
-### TASK-009 Markdown·이미지 bundle 내보내기
+### TASK-009 Markdown 원문 내보내기
 
-- 관련 요구사항: `REQ-019`, `REQ-020`
-- 변경 대상: `DocumentController`, 신규 `DocumentExportService`, 이미지 조회 컴포넌트
+- 관련 요구사항: `REQ-019`
+- 변경 대상: `DocumentController`, 신규 `DocumentExportService`
 - 작업:
-  - 이미지 없는 `.md` 스트리밍
-  - 관리 이미지가 있는 ZIP 생성
-  - 관리 URL 상대 경로 변환
-  - 외부 URL fetch 차단과 누락 이미지 전체 실패
+  - 이미지 없는 문서의 UTF-8 `.md` 스트리밍
+  - 이미지 bundle은 assets SDD TASK-008로 위임
 - 완료 조건:
   - [ ] UTF-8 Markdown과 한글 파일명 다운로드
-  - [ ] ZIP 압축 해제 후 로컬 이미지 표시
-  - [ ] 외부 URL 네트워크 요청 없음
   - [ ] 내보내기가 문서를 변경하지 않음
 
 ### TASK-010 API 계약·회귀 검증
@@ -185,6 +186,8 @@ TASK-004/005 → TASK-006 → TASK-007 → TASK-008 → TASK-009
 전체 완료 → TASK-010
 ```
 
+신규 이미지를 포함한 multipart 저장과 ZIP 내보내기는 [`markdown-document-assets-tasks.md`](./markdown-document-assets-tasks.md)의 선행 TASK를 완료한 뒤 통합한다.
+
 ## 5. 검증 명령
 
 ```sh
@@ -197,7 +200,8 @@ Repository 통합 테스트는 기존 Testcontainers 구성을 사용한다.
 
 ## 6. 후속 SDD
 
-- `markdown-document-versioning.md`: 버전 이력, 과거 버전 조회·복원, 충돌 비교
-- `markdown-document-assets.md`: 이미지 업로드, 권한, 참조 수명주기
+- `markdown-document-pagination.md`: 목록 cursor 페이지네이션, 응답 형태 전환, 프론트 목록 소비 재배선
+- 범용 버전 이력은 보류하고 AI 전·후 snapshot은 AI editing SDD에서 정의
+- [`markdown-document-assets.md`](./markdown-document-assets.md): 이미지 attachment, 권한, 참조 수명주기
 - `markdown-document-sharing.md`: 공유 링크, 만료, 해제
 - `markdown-document-ai-editing.md`: AI 편집, Markdown 검증, diff·적용
