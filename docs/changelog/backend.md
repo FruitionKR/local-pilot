@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### fix: 비 Markdown 업로드의 불필요한 pipeline 요청 차단
+
+**변경된 것**
+
+- 업로드 형식은 제한하지 않되 비 Markdown 파일은 `uploaded`, `ORIGINAL`, `editable=false`인 원본 자료로 저장한다.
+- 비 Markdown 원본은 편집 상태와 처리 큐를 생성하지 않아 Markdown 입력만 받는 Wiki pipeline에 잘못 전달되지 않게 했다.
+- Markdown 업로드의 즉시 편집 상태 생성과 기존 Wiki pipeline 실행 흐름은 유지한다.
+
+**검증**
+
+- PDF 원본의 MinIO·DB 저장, `uploaded` 상태, 편집 상태 미생성과 처리 큐 미등록을 서비스 테스트로 검증했다.
+- `./gradlew clean test` 전체 217개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- PDF 복원 CLI 연동과 Markdown을 포함한 내보내기는 `docs/issue/backend/2026-07-24.md`에서 후속 관리한다.
+
 ### feat: Markdown 직접 생성과 즉시 편집 업로드 추가
 
 **변경된 것**

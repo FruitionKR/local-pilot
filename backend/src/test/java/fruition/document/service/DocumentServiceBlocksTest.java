@@ -52,6 +52,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
@@ -356,6 +357,30 @@ class DocumentServiceBlocksTest {
         assertThat(response.editable()).isTrue();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
         assertThat(response.currentVersion()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("비 Markdown 업로드는 원본만 저장하고 파이프라인을 요청하지 않는다")
+    void uploadNonMarkdown_storesOriginalWithoutProcessing() throws Exception {
+        stubOwnedWorkspace();
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+        when(documentRepository.findMaxRootSortOrder(WORKSPACE_ID, DocumentRole.ORIGINAL)).thenReturn(-1L);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        DocumentUploadResponse response =
+                documentService.upload(WORKSPACE_ID, USER_ID, "upload-pdf-key", file);
+
+        ArgumentCaptor<Document> storedDocument = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepository).save(storedDocument.capture());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(editStateRepository, never()).save(any(DocumentEditState.class));
+        verifyNoInteractions(queueRepository);
+        assertThat(storedDocument.getValue().getStatus()).isEqualTo(
+                fruition.document.domain.DocumentStatus.uploaded);
+        assertThat(storedDocument.getValue().getProcessedAt()).isNull();
+        assertThat(response.editable()).isFalse();
+        assertThat(response.documentRole()).isEqualTo(DocumentRole.ORIGINAL);
     }
 
     @Test
