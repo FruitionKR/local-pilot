@@ -6,6 +6,7 @@ import chatCheckIcon from "../../../svg/agent/chat_check.svg";
 import collectionIcon from "../../../svg/navigation/menu_log.svg";
 import conceptPageIcon from "../../../svg/graph/conceptpage.svg";
 import fileIcon from "../../../svg/document/file.svg";
+import fruitionLogo from "../../../svg/brand/fruition-logo.svg";
 import folderPlusIcon from "../../../svg/navigation/menu_new.svg";
 import homeIcon from "../../../svg/navigation/menu_home.svg";
 import lightningIcon from "../../../svg/navigation/menu_schema.svg";
@@ -38,6 +39,7 @@ export {
   collectionIcon,
   conceptPageIcon,
   fileIcon,
+  fruitionLogo,
   homeIcon,
   lightningIcon,
   rawPageIcon,

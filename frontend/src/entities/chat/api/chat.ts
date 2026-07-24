@@ -1,4 +1,4 @@
-import { apiFetch, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
+import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import type { ChatMessagesResponse, ChatSessionListResponse, ChatSessionResponse } from "@/entities/chat/model/chat";
 
 // 세션 선택 UI 도입 전까지 가장 최근 세션을 사용한다(없으면 생성).
@@ -28,6 +28,20 @@ export async function createChatSession(title?: string): Promise<ChatSessionResp
     body: JSON.stringify(title ? { title } : {})
   });
   return parseJsonOrThrow<ChatSessionResponse>(response, ERROR_MESSAGES.chatSessionFailed);
+}
+
+/** 채팅 세션을 삭제한다. 삭제한 세션이 활성 세션이면 캐시도 정리한다. */
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/chat/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, ERROR_MESSAGES.chatSessionFailed));
+  }
+  if (selectedSession?.sessionId === sessionId) selectedSession = null;
+  if (sessionCache?.workspaceId === workspaceId) sessionCache = null;
 }
 
 /** 현재 워크스페이스의 채팅 세션 목록을 가져온다. */

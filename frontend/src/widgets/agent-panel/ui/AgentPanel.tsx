@@ -98,9 +98,7 @@ export function AgentPanel({
   }, []);
   const lastQuestion = activeTurn?.question ?? findLastUserMessage(messages)?.content;
   const sessionTitle = lastQuestion ? buildSessionTitle(lastQuestion) : (activeSessionTitle ?? "새 채팅");
-  const composerPlaceholder = markdownEditContext
-    ? `${markdownEditContext.editorSnapshot.target.type === "selection" ? "선택 영역" : markdownEditContext.editorSnapshot.target.type === "current_section" ? "현재 섹션" : "문서 전체"}을 어떻게 편집할까요?`
-    : "AI 에이전트에게 무엇이든 물어보세요.";
+  const composerPlaceholder = "AI 에이전트에게 무엇이든 물어보세요.";
   const editPreviewState = useMemo<{
     preview: MarkdownEditPreviewData | null;
     validationError: string | null;

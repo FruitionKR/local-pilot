@@ -1,10 +1,10 @@
 import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createChatSession, fetchChatSessions } from "@/entities/chat/api/chat";
+import { createChatSession, deleteChatSession, fetchChatSessions, setActiveChatSession } from "@/entities/chat/api/chat";
+import { exportChatWiki } from "@/features/wiki-export";
 import { getErrorMessage } from "@/shared/lib/errors";
-import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import type { ChatSessionResponse } from "@/entities/chat/model/chat";
-import { sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { fruitionLogo, sideboxIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import { cx } from "@/shared/lib/classNames";
 import styles from "./AgentChat.module.css";
 
@@ -25,7 +25,7 @@ export function AgentHeader({
   const [searchTerm, setSearchTerm] = useState("");
   const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
-  const workspaceName = useWorkspaceName();
+  const [rowMenuSessionId, setRowMenuSessionId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -47,6 +47,34 @@ export function AgentHeader({
       onSelectSession(created.id, created.title);
     } catch (error: unknown) {
       setLoadErrorMessage(getErrorMessage(error, "새 채팅을 만들지 못했습니다."));
+    }
+  }
+
+  // 세션 삭제 후 남은 세션 중 첫 번째로 전환하고, 없으면 새 채팅을 만든다.
+  async function handleDeleteSession(sessionId: string) {
+    setRowMenuSessionId(null);
+    try {
+      await deleteChatSession(sessionId);
+      const response = await fetchChatSessions();
+      const remaining = response.sessions ?? [];
+      setSessions(remaining);
+      if (remaining[0]) onSelectSession(remaining[0].id, remaining[0].title);
+      else await startNewChat();
+    } catch (error: unknown) {
+      setLoadErrorMessage(getErrorMessage(error, "채팅을 삭제하지 못했습니다."));
+    }
+  }
+
+  // 세션 전체를 원본 문서(위키)로 내보낸다.
+  async function handleExportSession(sessionId: string) {
+    setRowMenuSessionId(null);
+    setIsListOpen(false);
+    try {
+      setActiveChatSession(sessionId);
+      await exportChatWiki();
+      setLoadErrorMessage(null);
+    } catch (error: unknown) {
+      setLoadErrorMessage(getErrorMessage(error, "원본 문서로 만들지 못했습니다."));
     }
   }
 
@@ -77,8 +105,8 @@ export function AgentHeader({
     };
   }, [isListOpen]);
 
-  // 세션 title이 없으면 워크스페이스명 기반 문구로 표시한다
-  const fallbackTitle = `${workspaceName ?? "워크스페이스"}의 채팅`;
+  // 세션 title이 없으면 헤더와 동일하게 "새 채팅"으로 표시한다
+  const fallbackTitle = "새 채팅";
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const visibleSessions = sessions.filter((session) =>
     (session.title ?? fallbackTitle).toLowerCase().includes(normalizedSearch)
@@ -135,20 +163,53 @@ export function AgentHeader({
               {visibleSessions.map((session) => {
                 const isActive = session.id === activeSessionId;
                 return (
-                <button
+                <div
                   key={session.id}
-                  type="button"
                   className={cx(styles["chat-session-item"], isActive && styles["is-active"])}
-                  onClick={() => {
-                    onSelectSession(session.id, session.title ?? fallbackTitle);
-                    setIsListOpen(false);
-                  }}
                 >
-                  <span>{session.title ?? fallbackTitle}</span>
-                  {isActive
-                    ? <MoreVertical className={styles["chat-session-item-more"]} size={12} />
-                    : <Folder size={12} />}
-                </button>
+                  <button
+                    type="button"
+                    className={styles["chat-session-select"]}
+                    onClick={() => {
+                      setRowMenuSessionId(null);
+                      onSelectSession(session.id, session.title ?? fallbackTitle);
+                      setIsListOpen(false);
+                    }}
+                  >
+                    {isActive
+                      ? <SvgIcon src={fruitionLogo} className={styles["chat-session-logo"]} />
+                      : <Folder size={12} />}
+                    <span>{session.title ?? fallbackTitle}</span>
+                  </button>
+                  {isActive && (
+                    <div className={styles["chat-session-menu"]}>
+                      <button
+                        type="button"
+                        className={styles["chat-session-more"]}
+                        aria-label="채팅 옵션"
+                        aria-expanded={rowMenuSessionId === session.id}
+                        onClick={() => setRowMenuSessionId((cur) => (cur === session.id ? null : session.id))}
+                      >
+                        <MoreVertical size={12} />
+                      </button>
+                      {rowMenuSessionId === session.id && (
+                        <div className={styles["chat-session-menu-list"]} role="menu">
+                          <button type="button" role="menuitem" onClick={() => handleExportSession(session.id)}>
+                            원본 문서로 생성
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className={styles["is-danger"]}
+                            onClick={() => handleDeleteSession(session.id)}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 );
               })}
             </div>
