@@ -6,6 +6,7 @@ import { clearSessionCache } from "@/entities/chat";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { getAccessToken, setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 
 const DEFAULT_WORKSPACE_NAME = "나의 워크스페이스";
 
@@ -35,7 +36,7 @@ export default function WorkspacesPage() {
       });
   }, [router]);
 
-  if (!errorMessage) return null;
+  if (!errorMessage) return <LoadingOverlay message="워크스페이스 준비 중…" />;
 
   return <p className="auth-error" role="alert">{errorMessage}</p>;
 }

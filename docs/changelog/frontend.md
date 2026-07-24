@@ -4,6 +4,14 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-24
+
+### feat: 워크스페이스 생성 로딩 오버레이 추가
+
+- 전체화면 `LoadingOverlay`(신규, `shared/ui`) 추가. `SidebarWorkspaceHeader`(생성 중)와 `WorkspacesPage`(자동 프로비저닝 중)에 배선.
+
+---
+
 ## 2026-07-23
 
 ### refactor: 전역 CSS를 CSS Module로 하이브리드 전환

@@ -5,6 +5,7 @@ import { useWorkspaceName } from "@/entities/workspace/model/useWorkspaceName";
 import { createWorkspace, fetchWorkspaces } from "@/entities/workspace";
 import { setSelectedWorkspaceId } from "@/shared/lib/auth";
 import { getErrorMessage } from "@/shared/lib/errors";
+import { LoadingOverlay } from "@/shared/ui/LoadingOverlay";
 import type { WorkspaceResponse } from "@/entities/workspace";
 import { cx } from "@/shared/lib/classNames";
 import styles from "./DocumentSidebar.module.css";
@@ -71,6 +72,7 @@ export function SidebarWorkspaceHeader() {
 
   return (
     <div className={styles["sidebar-workspace"]} ref={rootRef}>
+      {isCreating && <LoadingOverlay message="워크스페이스 생성 중…" />}
       <button
         type="button"
         className={styles["sidebar-workspace-trigger"]}
