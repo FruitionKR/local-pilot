@@ -10,6 +10,12 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 전체화면 `LoadingOverlay`(신규, `shared/ui`) 추가. `SidebarWorkspaceHeader`(생성 중)와 `WorkspacesPage`(자동 프로비저닝 중)에 배선.
 
+### fix: 편집기 undo·스크롤바·문서 점검 버튼 정리
+
+- undo 수정: Milkdown 프로그램적 전체 교체를 `addToHistory:false` 트랜잭션으로 바꿔 cmd+z 한 번에 문서 전체가 사라지던 문제 해결(`NoteEditor.tsx`, `replaceAll` → `editorViewCtx/parserCtx/Slice` 직접 dispatch).
+- 스크롤바 다크 처리: 전역 `base.css` 스크롤바 규칙이 해시된 CSS Module class에 안 붙던 문제를 `SourcePreviewPanel.module.css`에 직접 지정해 해결. 스크롤 컨테이너를 패널 전체 폭으로 두고 본문은 padding 중앙 정렬 → 세로 스크롤바가 항상 패널 맨 오른쪽(에이전트 패널 접힘/펼침 무관).
+- 제목 스크롤: 제목(heading)을 스크롤 컨테이너 내부로 이동해 본문과 함께 스크롤(Obsidian식). 제목-본문 사이 "AI 문서 점검" 버튼 제거(`renameError`만 조건부 유지).
+
 ---
 
 ## 2026-07-23

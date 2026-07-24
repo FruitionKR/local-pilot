@@ -172,11 +172,6 @@ export function SourcePreviewPanel({
     }
   }
 
-  function requestDocumentReview() {
-    if (!activeEditContext || noteSaveStatus !== "saved" || !needsReview) return;
-    onRequestLint?.(activeEditContext);
-    setNeedsReview(false);
-  }
 
   useEffect(() => {
     if (!pageId) {
@@ -321,6 +316,7 @@ export function SourcePreviewPanel({
         </div>
       </header>
       <div className={styles["source-preview-document"]}>
+        <div className={styles["source-preview-content"]}>
         <header className={styles["source-preview-heading"]}>
           {isMarkdownFile ? (
             <input
@@ -345,20 +341,11 @@ export function SourcePreviewPanel({
           )}
           {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
         </header>
-        {isMarkdownFile && (
+        {isMarkdownFile && renameError && (
           <div className={styles["source-preview-document-controls"]}>
-            <button
-              type="button"
-              className={styles["document-review-button"]}
-              disabled={!onRequestLint || !needsReview || noteSaveStatus !== "saved"}
-              onClick={requestDocumentReview}
-            >
-              {needsReview && noteSaveStatus !== "saved" ? "저장 후 AI 문서 점검" : "AI 문서 점검"}
-            </button>
-            {renameError && <span role="alert">{renameError}</span>}
+            <span role="alert">{renameError}</span>
           </div>
         )}
-        <div className={styles["source-preview-content"]}>
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (

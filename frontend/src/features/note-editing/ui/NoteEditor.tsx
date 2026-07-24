@@ -8,7 +8,8 @@ import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
-import { replaceAll } from "@milkdown/utils";
+import { editorViewCtx, parserCtx } from "@milkdown/core";
+import { Slice } from "@milkdown/prose/model";
 import { buildMarkdownEditorSnapshot } from "@/features/agent-chat/lib/markdownEditContext";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
@@ -58,7 +59,18 @@ export function NoteEditor({
     bodyRef.current = nextMarkdown;
     programmaticBodyRef.current = nextMarkdown;
     setBody(nextMarkdown);
-    crepeRef.current?.editor.action(replaceAll(nextMarkdown));
+    // 전체 문서 교체를 undo 히스토리에서 제외한다.
+    // (기본 replaceAll은 통째 트랜잭션이라 cmd+z 한 번에 문서 전체가 되돌려짐)
+    crepeRef.current?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const parser = ctx.get(parserCtx);
+      const doc = parser(nextMarkdown);
+      if (!doc) return;
+      const { state } = view;
+      const tr = state.tr.replace(0, state.doc.content.size, new Slice(doc.content, 0, 0));
+      tr.setMeta("addToHistory", false);
+      view.dispatch(tr);
+    });
     onContentChangedRef.current?.(nextMarkdown);
     queueSaveRef.current(nextMarkdown);
     return true;
