@@ -3,7 +3,10 @@ package fruition.document.repository;
 import fruition.TestcontainersConfiguration;
 import fruition.document.domain.DocumentRole;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.service.DocumentService;
+import fruition.workspace.repository.WorkspaceMemberRepository;
+import fruition.workspace.service.WorkspaceService;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
@@ -49,6 +52,12 @@ class DocumentEditingSchemaIntegrationTest {
     @Autowired
     DocumentService documentService;
 
+    @Autowired
+    WorkspaceService workspaceService;
+
+    @Autowired
+    WorkspaceMemberRepository workspaceMemberRepository;
+
     @Test
     void migration_createsDocumentEditingFoundation() {
         List<String> columns = jdbcTemplate.queryForList(
@@ -85,6 +94,22 @@ class DocumentEditingSchemaIntegrationTest {
             );
             assertThat(exists).as(table).isTrue();
         }
+    }
+
+    @Test
+    void migration_createsWorkspaceSoftDeleteColumns() {
+        List<String> columns = jdbcTemplate.queryForList(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'workspaces'
+                """,
+                String.class
+        );
+
+        assertThat(columns).contains("deleted_at", "deleted_by");
+        assertThat(columns).doesNotContain("current_version");
     }
 
     @Test
@@ -192,6 +217,163 @@ class DocumentEditingSchemaIntegrationTest {
         );
         assertThat(duplicateCount).isEqualTo(1);
         assertThat(idempotencyCount).isEqualTo(1);
+    }
+
+    @Test
+    void documentSoftDeleteAndRestore_preservesOriginalAndEditingState() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String documentId = "doc_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "original-hash", "EDITABLE");
+        jdbcTemplate.update(
+                """
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
+                VALUES (?, '# 보존 본문', ?, now(), now())
+                """,
+                documentId,
+                "b".repeat(64)
+        );
+
+        documentService.delete(
+                workspaceId,
+                userId,
+                documentId,
+                "delete-" + suffix,
+                new DocumentLifecycleRequest(1L)
+        );
+
+        Map<String, Object> deleted = jdbcTemplate.queryForMap(
+                """
+                SELECT current_version, content_hash, deleted_at, deleted_by
+                FROM documents WHERE id = ?
+                """,
+                documentId
+        );
+        assertThat(deleted.get("current_version")).isEqualTo(2L);
+        assertThat(deleted.get("content_hash")).isEqualTo("original-hash");
+        assertThat(deleted.get("deleted_at")).isNotNull();
+        assertThat(deleted.get("deleted_by")).isEqualTo(userId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT markdown FROM document_edit_states WHERE document_id = ?",
+                String.class,
+                documentId
+        )).isEqualTo("# 보존 본문");
+        assertThat(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                documentId, workspaceId)).isEmpty();
+
+        documentService.restore(
+                workspaceId,
+                userId,
+                documentId,
+                "restore-" + suffix,
+                new DocumentLifecycleRequest(2L)
+        );
+
+        Map<String, Object> restored = jdbcTemplate.queryForMap(
+                """
+                SELECT current_version, deleted_at, deleted_by, parent_document_id, source_folder_id
+                FROM documents WHERE id = ?
+                """,
+                documentId
+        );
+        assertThat(restored.get("current_version")).isEqualTo(3L);
+        assertThat(restored.get("deleted_at")).isNull();
+        assertThat(restored.get("deleted_by")).isNull();
+        assertThat(restored.get("parent_document_id")).isNull();
+        assertThat(restored.get("source_folder_id")).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT markdown FROM document_edit_states WHERE document_id = ?",
+                String.class,
+                documentId
+        )).isEqualTo("# 보존 본문");
+    }
+
+    @Test
+    void documentSoftDelete_sameIdempotencyKeyConcurrently_returnsOneResult() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String documentId = "doc_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "hash", "EDITABLE");
+
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> first = executor.submit(() -> {
+                start.await();
+                return documentService.delete(
+                        workspaceId,
+                        userId,
+                        documentId,
+                        "same-delete-key",
+                        new DocumentLifecycleRequest(1L)
+                );
+            });
+            Future<?> second = executor.submit(() -> {
+                start.await();
+                return documentService.delete(
+                        workspaceId,
+                        userId,
+                        documentId,
+                        "same-delete-key",
+                        new DocumentLifecycleRequest(1L)
+                );
+            });
+            start.countDown();
+
+            assertThat(first.get()).isEqualTo(second.get());
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_version FROM documents WHERE id = ?",
+                Long.class,
+                documentId
+        )).isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT count(*) FROM idempotency_records
+                WHERE user_id = ? AND idempotency_key = 'same-delete-key'
+                """,
+                Integer.class,
+                userId
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void workspaceSoftDeleteAndRestore_preservesChildrenAndControlsMembershipAccess() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String documentId = "doc_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "hash", "EDITABLE");
+
+        workspaceService.delete(userId, workspaceId, "workspace-delete-" + suffix);
+
+        assertThat(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(
+                workspaceId, userId)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM documents WHERE workspace_id = ?",
+                Integer.class,
+                workspaceId
+        )).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM workspace_members WHERE workspace_id = ?",
+                Integer.class,
+                workspaceId
+        )).isEqualTo(1);
+        assertThat(documentRepository.findByIdInActiveWorkspace(documentId)).isEmpty();
+
+        workspaceService.restore(userId, workspaceId, "workspace-restore-" + suffix);
+
+        assertThat(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(
+                workspaceId, userId)).isTrue();
+        assertThat(documentRepository.findByIdInActiveWorkspace(documentId)).isPresent();
     }
 
     @Test
@@ -522,6 +704,17 @@ class DocumentEditingSchemaIntegrationTest {
                 "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
                 workspaceId,
                 "workspace"
+        );
+    }
+
+    private void insertWorkspaceMember(String userId, String workspaceId) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
+                VALUES (now(), 'OWNER', ?, ?)
+                """,
+                userId,
+                workspaceId
         );
     }
 

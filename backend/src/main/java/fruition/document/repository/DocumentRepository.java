@@ -45,6 +45,28 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     Optional<Document> findByIdAndWorkspaceIdAndDeletedAtIsNull(String id, String workspaceId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.id = :documentId "
+            + "AND d.workspaceId = :workspaceId")
+    Optional<Document> findByIdAndWorkspaceIdForUpdate(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId
+    );
+
+    @Query("SELECT d FROM Document d WHERE d.id = :documentId "
+            + "AND d.deletedAt IS NULL "
+            + "AND EXISTS (SELECT w.id FROM Workspace w "
+            + "WHERE w.id = d.workspaceId AND w.deletedAt IS NULL)")
+    Optional<Document> findByIdInActiveWorkspace(
+            @Param("documentId") String documentId
+    );
+
+    Optional<Document> findByIdAndWorkspaceIdAndDeletedAtIsNotNull(String id, String workspaceId);
+
+    List<Document> findAllByWorkspaceIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(
+            String workspaceId
+    );
+
     @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
             + "WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = :documentRole "
@@ -66,6 +88,18 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     List<Document> findSiblingPagesForUpdate(
             @Param("workspaceId") String workspaceId,
             @Param("parentDocumentId") String parentDocumentId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND d.documentRole = :documentRole "
+            + "AND d.parentDocumentId IS NULL "
+            + "AND d.sourceFolderId IS NULL "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findRootItemsForUpdate(
+            @Param("workspaceId") String workspaceId,
+            @Param("documentRole") DocumentRole documentRole
     );
 
     @Modifying(flushAutomatically = true)
@@ -96,5 +130,35 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("displayName") String displayName,
             @Param("normalizedFilename") String normalizedFilename,
             @Param("updatedAt") Instant updatedAt
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.deletedAt = :deletedAt, d.deletedBy = :deletedBy, "
+            + "d.deleteOperationId = :deleteOperationId, d.updatedAt = :deletedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int softDeleteIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("deleteOperationId") java.util.UUID deleteOperationId
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, "
+            + "d.parentDocumentId = NULL, d.sourceFolderId = NULL, "
+            + "d.sortOrder = :sortOrder, d.updatedAt = :restoredAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NOT NULL AND d.currentVersion = :baseVersion")
+    int restoreIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("sortOrder") long sortOrder,
+            @Param("restoredAt") Instant restoredAt
     );
 }

@@ -15,6 +15,7 @@ import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.document.exception.InvalidDocumentVersionException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.IdempotencyConflictException;
 import fruition.document.exception.InvalidMarkdownContentException;
@@ -23,12 +24,15 @@ import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.dto.DocumentLifecycleResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.DocumentTrashResponse;
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentWikiPageRef;
@@ -515,6 +519,17 @@ public class DocumentService {
             String endpointScope,
             String idempotencyKey,
             String requestHash,
+            DocumentLifecycleResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
             DocumentUploadResponse response
     ) {
         saveIdempotencyRecord(
@@ -682,7 +697,7 @@ public class DocumentService {
     }
 
     void doRequestProcessing(String documentId) {
-        Document document = documentRepository.findById(documentId).orElse(null);
+        Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
         if (document == null) {
             log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
             return;
@@ -700,14 +715,15 @@ public class DocumentService {
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
-                documentRepository.findById(documentId).ifPresent(doc -> doc.markPipelineStarted(runId, now));
+                documentRepository.findByIdInActiveWorkspace(documentId)
+                        .ifPresent(doc -> doc.markPipelineStarted(runId, now));
                 return null;
             });
             log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
         } catch (Exception e) {
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
-                documentRepository.findById(documentId).ifPresent(doc ->
+                documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
                         doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
                 return null;
             });
@@ -718,17 +734,17 @@ public class DocumentService {
     @Transactional
     public void applyPipelineEvent(String documentId, String runId, String stage,
                                    String message, Map<String, Object> data) {
-        documentRepository.findById(documentId).ifPresent(doc -> {
-            log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
-                    documentId, runId, stage, message, data != null ? data.keySet() : List.of());
-            if (runId != null && !runId.equals(doc.getPipelineRunId())) {
-                log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
-                        documentId, runId, doc.getPipelineRunId(), stage);
-                return;
-            }
-            doc.markProcessingHeartbeat(stage, Instant.now());
-            log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
-        });
+        Document doc = documentRepository.findByIdInActiveWorkspace(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
+                documentId, runId, stage, message, data != null ? data.keySet() : List.of());
+        if (runId != null && !runId.equals(doc.getPipelineRunId())) {
+            log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
+                    documentId, runId, doc.getPipelineRunId(), stage);
+            return;
+        }
+        doc.markProcessingHeartbeat(stage, Instant.now());
+        log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
     }
 
     private String contentHashPrefix(String contentHash) {
@@ -778,7 +794,7 @@ public class DocumentService {
 
     @Transactional
     public void updateStatus(String documentId, DocumentStatusUpdateRequest request) {
-        Document document = documentRepository.findById(documentId)
+        Document document = documentRepository.findByIdInActiveWorkspace(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         document.updateStatus(
                 request.status(),
@@ -1017,11 +1033,138 @@ public class DocumentService {
     }
 
     @Transactional
-    public void delete(String workspaceId, String userId, String documentId) {
+    public DocumentLifecycleResponse delete(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey,
+            DocumentLifecycleRequest request
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+        validateIdempotencyKey(idempotencyKey);
+        validateLifecycleRequest(request);
+        Document document = documentRepository
+                .findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        deleteInternal(document);
+        verifyDocumentOwner(document, userId);
+        String endpointScope = "DELETE:/api/workspaces/" + workspaceId + "/documents";
+        String requestHash = requestHash(
+                documentId, "delete", Long.toString(request.baseVersion()));
+        Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        if (document.getDeletedAt() != null) {
+            throw new DocumentNotFoundException(documentId);
+        }
+        Instant deletedAt = Instant.now();
+        int updated = documentRepository.softDeleteIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                userId,
+                deletedAt,
+                UUID.randomUUID()
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+
+        DocumentLifecycleResponse response = new DocumentLifecycleResponse(
+                documentId,
+                request.baseVersion() + 1,
+                true,
+                deletedAt,
+                document.getSortOrder()
+        );
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
+    public DocumentTrashResponse trash(String workspaceId, String userId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        return new DocumentTrashResponse(
+                documentRepository
+                        .findAllByWorkspaceIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(workspaceId)
+                        .stream()
+                        .map(document -> new DocumentTrashResponse.DocumentTrashItem(
+                                document.getId(),
+                                document.getFilename(),
+                                document.getDisplayName(),
+                                document.getDocumentRole(),
+                                document.getCurrentVersion(),
+                                document.getDeletedAt(),
+                                document.getDeletedBy(),
+                                document.getDeleteOperationId(),
+                                document.getSourceDocumentId()
+                        ))
+                        .toList()
+        );
+    }
+
+    @Transactional
+    public DocumentLifecycleResponse restore(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey,
+            DocumentLifecycleRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        validateLifecycleRequest(request);
+        Document document = documentRepository
+                .findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        String endpointScope = "POST:/api/workspaces/" + workspaceId + "/documents/restore";
+        String requestHash = requestHash(
+                documentId, "restore", Long.toString(request.baseVersion()));
+        Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        if (document.getDeletedAt() == null) {
+            throw new DocumentNotFoundException(documentId);
+        }
+        List<Document> rootItems = documentRepository.findRootItemsForUpdate(
+                workspaceId, document.getDocumentRole());
+        long sortOrder = rootItems.stream()
+                .mapToLong(Document::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
+        Instant restoredAt = Instant.now();
+        int updated = documentRepository.restoreIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                sortOrder,
+                restoredAt
+        );
+        if (updated == 0) {
+            if (documentRepository
+                    .findByIdAndWorkspaceIdAndDeletedAtIsNotNull(documentId, workspaceId)
+                    .isPresent()) {
+                throw versionConflict();
+            }
+            throw new DocumentNotFoundException(documentId);
+        }
+
+        DocumentLifecycleResponse response = new DocumentLifecycleResponse(
+                documentId,
+                request.baseVersion() + 1,
+                false,
+                null,
+                sortOrder
+        );
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
     }
 
     /** 워크스페이스 삭제 시 소속 문서를 함께 정리한다. DB에 workspace_id FK CASCADE가 없어 애플리케이션에서 직접 처리한다. */
@@ -1068,6 +1211,23 @@ public class DocumentService {
                 }
             }
         });
+    }
+
+    private void validateLifecycleRequest(DocumentLifecycleRequest request) {
+        if (request == null || request.baseVersion() == null || request.baseVersion() < 1) {
+            throw new InvalidDocumentVersionException(
+                    "base_version은 1 이상의 정수여야 합니다.");
+        }
+    }
+
+    private DocumentLifecycleResponse toLifecycleResponse(Document document) {
+        return new DocumentLifecycleResponse(
+                document.getId(),
+                document.getCurrentVersion(),
+                document.getDeletedAt() != null,
+                document.getDeletedAt(),
+                document.getSortOrder()
+        );
     }
 
     private void deleteMinioObject(String uri) {

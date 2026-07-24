@@ -7,11 +7,14 @@ import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.dto.DocumentLifecycleResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.DocumentTrashResponse;
 import fruition.document.exception.InvalidDocumentVersionException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -184,20 +187,61 @@ public class DocumentController {
         return ResponseEntity.ok(documentService.blocks(workspaceId, userId, documentId));
     }
 
-    @Operation(summary = "문서 삭제", description = "문서와 연결된 source Wiki 페이지, MinIO 오브젝트를 삭제합니다. concept Wiki 페이지는 삭제되지 않습니다.")
+    @Operation(summary = "문서 삭제", description = "원본과 편집 상태를 유지한 채 문서를 소프트 삭제합니다.")
     @ApiResponses({
-        @ApiResponse(responseCode = "204", description = "삭제 성공"),
+        @ApiResponse(responseCode = "200", description = "삭제 성공",
+            content = @Content(schema = @Schema(implementation = DocumentLifecycleResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 base_version 또는 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "문서 version 또는 멱등 키 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @DeleteMapping("/{document_id}")
-    public ResponseEntity<Void> delete(
+    public ResponseEntity<DocumentLifecycleResponse> delete(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @Parameter(description = "문서 ID", example = "doc_abc12345")
-            @PathVariable("document_id") String documentId) {
-        documentService.delete(workspaceId, userId, documentId);
-        return ResponseEntity.noContent().build();
+            @PathVariable("document_id") String documentId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody DocumentLifecycleRequest request) {
+        return ResponseEntity.ok(documentService.delete(
+                workspaceId, userId, documentId, idempotencyKey, request));
+    }
+
+    @Operation(summary = "문서 휴지통", description = "워크스페이스에서 소프트 삭제된 문서를 반환합니다.")
+    @GetMapping("/trash")
+    public ResponseEntity<DocumentTrashResponse> trash(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(documentService.trash(workspaceId, userId));
+    }
+
+    @Operation(summary = "문서 복구", description = "삭제 문서를 역할별 최상위 마지막 위치에 복구합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "복구 성공",
+            content = @Content(schema = @Schema(implementation = DocumentLifecycleResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 base_version 또는 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "삭제 문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "문서 version 또는 멱등 키 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/restore")
+    public ResponseEntity<DocumentLifecycleResponse> restore(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody DocumentLifecycleRequest request) {
+        return ResponseEntity.ok(documentService.restore(
+                workspaceId, userId, documentId, idempotencyKey, request));
     }
 
     @Operation(summary = "문서 이름 변경", description = "Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목은 유지합니다.")

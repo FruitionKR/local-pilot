@@ -11,6 +11,7 @@ import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.util.GlobalExceptionHandler;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceListResponse;
+import fruition.workspace.dto.WorkspaceLifecycleResponse;
 import fruition.workspace.dto.WorkspaceRenameRequest;
 import fruition.workspace.dto.WorkspaceResponse;
 import fruition.workspace.exception.WorkspaceNotFoundException;
@@ -113,8 +114,30 @@ class WorkspaceControllerTest {
     }
 
     @Test
-    void delete_ownedWorkspace_returns204() throws Exception {
-        mockMvc.perform(delete("/api/workspaces/ws_aaa11111").header("Authorization", bearerToken()))
-                .andExpect(status().isNoContent());
+    void delete_ownedWorkspace_returnsSoftDeleteState() throws Exception {
+        when(workspaceService.delete(USER_ID, "ws_aaa11111", "delete-key"))
+                .thenReturn(new WorkspaceLifecycleResponse(
+                        "ws_aaa11111", true, Instant.now()));
+
+        mockMvc.perform(delete("/api/workspaces/ws_aaa11111")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "delete-key"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("ws_aaa11111"))
+                .andExpect(jsonPath("$.deleted").value(true));
+    }
+
+    @Test
+    void restore_deletedWorkspace_returnsActiveState() throws Exception {
+        when(workspaceService.restore(USER_ID, "ws_aaa11111", "restore-key"))
+                .thenReturn(new WorkspaceLifecycleResponse(
+                        "ws_aaa11111", false, null));
+
+        mockMvc.perform(post("/api/workspaces/ws_aaa11111/restore")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "restore-key"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deleted").value(false))
+                .andExpect(jsonPath("$.deleted_at").doesNotExist());
     }
 }

@@ -6,6 +6,30 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-25
+
+### feat: 문서와 workspace 소프트 삭제 추가
+
+**변경된 것**
+
+- 문서 삭제를 물리 삭제에서 `base_version` 기반 소프트 삭제로 전환하고 휴지통·복구 API를 추가했다.
+- 문서 복구는 원본, Markdown 편집 상태, Wiki와 block을 유지하며 역할별 최상위 마지막 위치에 배치한다.
+- workspace에 `deleted_at`, `deleted_by`를 추가하고 하위 문서·채팅·Wiki·멤버십을 변경하지 않는 소프트 삭제·복구를 구현했다.
+- 삭제 workspace는 공통 멤버십 조회에서 제외해 문서·채팅·Wiki API 접근을 `404`로 처리한다.
+- 삭제 workspace 또는 삭제 문서는 새 backend pipeline 요청과 status·heartbeat callback 대상에서 제외한다.
+- 문서·workspace 삭제와 복구에 `Idempotency-Key`를 적용하고 문서 수명주기는 행 잠금과 `current_version`으로 동시 요청을 제어한다.
+
+**검증**
+
+- service·controller 테스트에서 삭제·휴지통·복구, 소유권, version과 멱등 계약을 검증했다.
+- PostgreSQL 통합 테스트에서 원본·본문·하위 workspace 데이터 보존, 접근 차단·복구와 동시 문서 삭제를 검증했다.
+- `./gradlew clean test` 전체 242개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 페이지·원본 폴더 트리 삭제와 원래 위치 복구는 `docs/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 휴지통 UI는 `docs/issue/frontend/2026-07-25.md`, 실행 중 pipeline 중단은 `docs/issue/ai/2026-07-25.md`에서 관리한다.
+
 ## 2026-07-24
 
 ### feat: Markdown 최신 편집본 복제 추가

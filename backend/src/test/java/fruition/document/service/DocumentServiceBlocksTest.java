@@ -12,6 +12,9 @@ import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.dto.DocumentLifecycleResponse;
+import fruition.document.dto.DocumentTrashResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentRenameRequest;
@@ -61,6 +64,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
@@ -654,6 +658,92 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("문서 삭제는 version을 증가시키고 원본·편집 상태를 보존한다")
+    void delete_softDeletesWithoutRemovingDocumentData() throws Exception {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_delete", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 10,
+                "sources/documents/doc_delete/original", "original-hash");
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(documentRepository.softDeleteIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), eq(USER_ID), any(), any()))
+                .thenReturn(1);
+
+        DocumentLifecycleResponse response = documentService.delete(
+                WORKSPACE_ID,
+                USER_ID,
+                document.getId(),
+                "delete-key",
+                new DocumentLifecycleRequest(1L)
+        );
+
+        assertThat(response.deleted()).isTrue();
+        assertThat(response.currentVersion()).isEqualTo(2);
+        verify(documentRepository, never()).delete(any(Document.class));
+        verify(queueRepository, never()).deleteByDocumentId(anyString());
+        verify(sourceBlockRepository, never()).deleteByIdDocumentId(anyString());
+        verify(minioClient, never()).removeObject(any(RemoveObjectArgs.class));
+        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+    }
+
+    @Test
+    @DisplayName("삭제 문서는 version이 일치하면 최상위 마지막 위치로 복구된다")
+    void restore_deletedDocumentAtEndOfRoot() {
+        stubOwnedWorkspace();
+        Document deleted = mock(Document.class);
+        when(deleted.getId()).thenReturn("doc_restore");
+        when(deleted.getUserId()).thenReturn(USER_ID);
+        when(deleted.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
+        when(deleted.getDeletedAt()).thenReturn(java.time.Instant.now());
+        Document root = new Document(
+                "doc_root", WORKSPACE_ID, USER_ID, "기존.md", "text/markdown", 10,
+                null, null, "direct");
+        root.initializeDirectMarkdown("hash", 10, 4);
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(
+                deleted.getId(), WORKSPACE_ID)).thenReturn(Optional.of(deleted));
+        when(documentRepository.findRootItemsForUpdate(WORKSPACE_ID, DocumentRole.EDITABLE))
+                .thenReturn(List.of(root));
+        when(documentRepository.restoreIfVersionMatches(
+                eq(deleted.getId()), eq(WORKSPACE_ID), eq(2L), eq(5L), any()))
+                .thenReturn(1);
+
+        DocumentLifecycleResponse response = documentService.restore(
+                WORKSPACE_ID,
+                USER_ID,
+                deleted.getId(),
+                "restore-key",
+                new DocumentLifecycleRequest(2L)
+        );
+
+        assertThat(response.deleted()).isFalse();
+        assertThat(response.currentVersion()).isEqualTo(3);
+        assertThat(response.sortOrder()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("휴지통은 삭제 문서만 삭제 시각 역순으로 반환한다")
+    void trash_returnsDeletedDocuments() {
+        stubOwnedWorkspace();
+        Document deleted = mock(Document.class);
+        when(deleted.getId()).thenReturn("doc_deleted");
+        when(deleted.getFilename()).thenReturn("삭제 문서.md");
+        when(deleted.getDisplayName()).thenReturn("삭제 문서");
+        when(deleted.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
+        when(deleted.getCurrentVersion()).thenReturn(2L);
+        when(deleted.getDeletedAt()).thenReturn(java.time.Instant.now());
+        when(deleted.getDeletedBy()).thenReturn(USER_ID);
+        when(documentRepository.findAllByWorkspaceIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(
+                WORKSPACE_ID)).thenReturn(List.of(deleted));
+
+        DocumentTrashResponse response = documentService.trash(WORKSPACE_ID, USER_ID);
+
+        assertThat(response.documents()).hasSize(1);
+        assertThat(response.documents().get(0).id()).isEqualTo("doc_deleted");
+        assertThat(response.documents().get(0).currentVersion()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("MinIO 업로드 실패 시 문서와 멱등 기록을 저장하지 않는다")
     void upload_minioFailure_leavesNoDatabaseState() throws Exception {
         stubOwnedWorkspace();
@@ -693,7 +783,7 @@ class DocumentServiceBlocksTest {
         Document chatDoc = new Document("chatdoc_1", WORKSPACE_ID, USER_ID, "c.md", "text/markdown", 10L,
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
-        when(documentRepository.findById("chatdoc_1")).thenReturn(Optional.of(chatDoc));
+        when(documentRepository.findByIdInActiveWorkspace("chatdoc_1")).thenReturn(Optional.of(chatDoc));
         when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_1", "running", null, null));
 
@@ -710,7 +800,7 @@ class DocumentServiceBlocksTest {
     void doRequestProcessing_upload_routesGeneric() {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
-        when(documentRepository.findById("doc_up")).thenReturn(Optional.of(doc));
+        when(documentRepository.findByIdInActiveWorkspace("doc_up")).thenReturn(Optional.of(doc));
         when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_2", "running", null, null));
 
@@ -719,5 +809,16 @@ class DocumentServiceBlocksTest {
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         verify(processingRequester).request(any(), any(), any(), any(), any(), any(), chatWiki.capture());
         assertThat(chatWiki.getValue()).isFalse();
+    }
+
+    @Test
+    @DisplayName("삭제 workspace 문서는 새 pipeline 요청을 시작하지 않는다")
+    void doRequestProcessing_deletedWorkspace_skipsPipeline() {
+        when(documentRepository.findByIdInActiveWorkspace("doc_deleted_workspace"))
+                .thenReturn(Optional.empty());
+
+        documentService.doRequestProcessing("doc_deleted_workspace");
+
+        verifyNoInteractions(processingRequester);
     }
 }

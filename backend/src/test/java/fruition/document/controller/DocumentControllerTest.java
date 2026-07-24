@@ -5,6 +5,8 @@ import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.dto.DocumentLifecycleResponse;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
@@ -37,6 +39,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -185,6 +188,55 @@ class DocumentControllerTest {
 
         verify(documentService).duplicate(
                 WORKSPACE_ID, USER_ID, "doc_source", "duplicate-key");
+    }
+
+    @Test
+    void delete_passesBaseVersionAndIdempotencyKey() throws Exception {
+        when(documentService.delete(
+                eq(WORKSPACE_ID),
+                eq(USER_ID),
+                eq("doc_delete"),
+                eq("delete-key"),
+                any(DocumentLifecycleRequest.class)
+        )).thenReturn(new DocumentLifecycleResponse(
+                "doc_delete", 2, true, Instant.now(), 3));
+
+        mockMvc.perform(delete(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_delete")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "delete-key")
+                        .contentType("application/json")
+                        .content("""
+                                {"base_version":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.current_version").value(2))
+                .andExpect(jsonPath("$.deleted").value(true));
+    }
+
+    @Test
+    void restore_passesBaseVersionAndIdempotencyKey() throws Exception {
+        when(documentService.restore(
+                eq(WORKSPACE_ID),
+                eq(USER_ID),
+                eq("doc_restore"),
+                eq("restore-key"),
+                any(DocumentLifecycleRequest.class)
+        )).thenReturn(new DocumentLifecycleResponse(
+                "doc_restore", 3, false, null, 5));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_restore/restore")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "restore-key")
+                        .contentType("application/json")
+                        .content("""
+                                {"base_version":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.current_version").value(3))
+                .andExpect(jsonPath("$.deleted").value(false))
+                .andExpect(jsonPath("$.sort_order").value(5));
     }
 
     @Test
