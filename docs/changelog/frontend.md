@@ -6,6 +6,19 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: 채팅 편집 시 선택한 문답을 편집 맥락으로 전송
+
+- 마크다운 편집(agent/turn) 요청에 사용자가 선택한 채팅 문답(pair)을 `conversationContext.recentConversationSummary`로 실어 보내도록 배선. backend·pipeline은 이미 `recent_conversation_summary`를 소비하나 frontend가 미전송이던 gap을 채움.
+- 기존 문답 선택 체크박스(`selectedPairIds`, 채팅→위키 편입용)를 편집 맥락에도 공용으로 사용. 선택이 없으면 필드 자체를 생략(현행 무회귀).
+- `AgentTurnRequest`에 옵셔널 `conversationContext` 추가, `buildSelectedConversationSummary`(선택 문답 전사·4000자 상한) 헬퍼 추가, `<details>` 라벨을 "채팅 선택 (편집 맥락·편입 공용)"으로 조정. (`markdownAgent.ts`, `shared/lib/messages.ts`, `AgentPanel.tsx`)
+
+### feat: 사이드바 문서 처리 뱃지 라벨/툴팁 개선
+
+- 사이드바 문서 트리의 `stalled` 상태 뱃지 라벨을 "지연" → "작업 중"으로 변경하고, tooltip 문구도 "처리 지연: {stage}"/"처리가 지연되고 있습니다." → "작업 중: {stage}"/"작업 중입니다."로 맞춤. (`TreeNodeStatus.tsx`)
+- 네이티브 `title` 속성 tooltip을 커스텀 tooltip으로 교체. hover 0.2초 후 노출(`setTimeout`). 사이드바 스크롤 컨테이너(`.sidebar-content`의 `overflow` 클리핑)를 피하려 `createPortal`로 `document.body`에 `position: fixed` 렌더하고, 뱃지 `getBoundingClientRect` 기준으로 위 중앙에 배치. (`TreeNodeStatus.tsx`, `DocumentSidebar.module.css`의 `.tree-tooltip`)
+- tooltip에 업로드 시각(`uploadedAt`) 기준 경과 시간을 함께 표시("업로드 후 N분/시간/일 경과"). 렌더 시점 정적 계산이라 사이드바 리렌더 때 갱신됨. 백엔드가 stalled 시작 시각을 주지 않아 `uploadedAt`을 기준으로 사용. 모든 처리 뱃지(처리 중/작업 중/실패)에 적용. (`TreeNodeStatus.tsx`, `TreeNode.tsx`에서 `uploadedAt` 전달)
+- 접근성: portal tooltip은 hover 전용이라, 뱃지 `<small>`에 `aria-label`로 동일 문구(상태 + 경과시간)를 부여해 스크린리더 노출 유지.
+
 ### refactor: 미사용 문서 점검(document lint) 기능 제거
 
 - PR #111 리뷰 반영. "AI 문서 점검" 버튼 제거로 트리거가 사라져 도달 불가가 된 lint 배선을 전 구간 정리.

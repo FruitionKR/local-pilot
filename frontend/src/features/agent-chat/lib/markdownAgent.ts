@@ -4,6 +4,7 @@ export type AgentTurnRequest = {
   documentId: string;
   baseVersion: number;
   message: string;
+  conversationContext?: { recentConversationSummary: string };
   editorSnapshot: MarkdownEditorSnapshot;
 };
 
@@ -72,12 +73,16 @@ const MAX_LCS_CELLS = 250_000;
 
 export function buildAgentTurnRequest(
   message: string,
-  context: ActiveMarkdownEditContext
+  context: ActiveMarkdownEditContext,
+  recentConversationSummary?: string
 ): AgentTurnRequest {
+  const summary = recentConversationSummary?.trim();
   return {
     documentId: context.documentId,
     baseVersion: context.baseVersion,
     message,
+    // 선택한 채팅 맥락이 있을 때만 실어 보낸다. 비면 필드 자체를 생략(현행과 동일).
+    ...(summary ? { conversationContext: { recentConversationSummary: summary } } : {}),
     editorSnapshot: context.editorSnapshot
   };
 }
