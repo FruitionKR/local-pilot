@@ -6,10 +6,14 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-fruition}:${POSTGRES_PASSWORD:-fruition_dev_password}@postgresql:5432/${POSTGRES_DB:-fruition_mvp}
-      LLM_PROVIDER: upstage
+      LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
       UPSTAGE_API_KEY: ${UPSTAGE_API_KEY:-}
-      UPSTAGE_MODEL: ${UPSTAGE_MODEL:-solar-pro2}
-      UPSTAGE_BASE_URL: ${UPSTAGE_BASE_URL:-https://api.upstage.ai/v1}
+      UPSTAGE_MODEL: ${UPSTAGE_MODEL:-}
+      UPSTAGE_BASE_URL: ${UPSTAGE_BASE_URL:-}
+      # 범용 LLM 오버라이드(Gemini 등 OpenAI 호환 엔드포인트). infra/.env에서 지정.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-local-pilot-dev}

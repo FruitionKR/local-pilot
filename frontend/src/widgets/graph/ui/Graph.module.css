@@ -46,7 +46,7 @@
 
 .graph-canvas {
   position: absolute;
-  inset: 20px;
+  inset: 24px;
   overflow: hidden;
   cursor: grab;
   user-select: none;
@@ -95,7 +95,7 @@
 .filter-chips {
   position: absolute;
   top: 24px;
-  right: 0;
+  right: 24px;
   left: auto;
   z-index: 4;
   display: flex;
@@ -104,7 +104,7 @@
 }
 
 :global(.workspace.is-agent-collapsed) .filter-chips {
-  right: 20px;
+  right: 24px;
 }
 
 .filter-chips .filter-chip,

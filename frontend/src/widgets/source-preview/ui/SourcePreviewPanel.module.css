@@ -176,12 +176,11 @@
 }
 
 .source-preview-heading {
-  width: min(900px, 100%);
+  width: 100%;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 24px;
   margin-bottom: 24px;
 }
 
@@ -224,38 +223,13 @@
 }
 
 .source-preview-document-controls {
-  width: min(900px, 100%);
+  width: 100%;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 30px;
-  padding: 0 24px;
   margin: -12px 0 18px;
-}
-
-.document-review-button {
-  padding: 6px 10px;
-  color: #d7d7d7;
-  background: transparent;
-  border: 1px solid #3a3a3a;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.document-review-button:hover:not(:disabled),
-.document-review-button:focus-visible:not(:disabled) {
-  color: #0a0a0a;
-  background: var(--yellow);
-  border-color: var(--yellow);
-}
-
-.document-review-button:disabled {
-  color: #696969;
-  cursor: default;
 }
 
 .source-preview-document-controls > span {
@@ -264,16 +238,35 @@
 }
 
 .source-preview-content {
-  width: min(900px, 100%);
+  /* 스크롤 컨테이너를 패널 전체 폭으로 두고 본문은 padding으로 900px 중앙 정렬.
+     이렇게 하면 세로 스크롤바가 항상 패널 맨 오른쪽에 붙는다(에이전트 패널 접힘/펼침 무관). */
+  width: 100%;
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 0 24px 80px;
+  padding: 0 max(24px, calc((100% - 900px) / 2)) 80px;
   color: #f0f0f0;
   font-size: 16px;
   font-weight: 500;
   line-height: 1.4;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line, #4f4f4f) transparent;
+}
+
+/* 편집기 스크롤바 다크 처리. FSD 모듈화로 전역 base.css 규칙이 해시 class에 안 붙어 직접 지정한다. */
+.source-preview-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.source-preview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.source-preview-content::-webkit-scrollbar-thumb {
+  background: var(--line, #4f4f4f);
+  border: 2px solid #0a0a0a;
+  border-radius: 999px;
 }
 
 .source-preview-content strong {

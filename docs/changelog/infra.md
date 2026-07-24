@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-07-24
+
+### fix: pipeline 컨테이너에 범용 LLM env(LLM_*) 전달 추가
+
+**변경된 내용**
+
+- `docker-compose.pipeline.yml`의 pipeline-api 환경변수에 `LLM_API_KEY/LLM_BASE_URL/LLM_MODEL`을 추가 전달하고, `LLM_PROVIDER`를 `${LLM_PROVIDER:-upstage}`로 일반화했다. `UPSTAGE_MODEL/UPSTAGE_BASE_URL`의 강제 기본값(solar-pro2 / upstage v1)을 제거해 빈 값 pass-through로 바꿨다.
+
+**배경**
+
+- Upstage → Gemini(OpenAI 호환 엔드포인트) 전환 시, compose가 `LLM_*`를 컨테이너에 전달하지 않고 `UPSTAGE_BASE_URL` 기본값을 강제해 우선순위상 Upstage가 이겨 `agent/turn`이 503(RuntimeError: Missing API key)으로 실패했다. 이를 해결.
+
+**검증**
+
+- pipeline 컨테이너 재생성 후 `printenv`로 `LLM_*` 주입 확인. `agent/turn` 200 복구, Gemini가 실제 문서 편집 반영.
+
+**남은 주의사항**
+
+- 채팅→원본문서 편입의 wiki 생성(ingestion) 경로는 `run_lab.py`가 `UPSTAGE_API_KEY`를 별도로 강제해 여전히 실패한다. 원인·해결안은 `docs/issue/ai/2026-07-24.md` 참고(현 config로는 `infra/.env`의 `UPSTAGE_*`를 Gemini 값으로 채우면 우회 가능).
+
+**gitignore**
+
+- Playwright MCP 테스트 산출물(`.playwright-mcp/`, 루트 `*.png` 스크린샷)을 `.gitignore`에 추가.
+
+---
+
 ## 2026-07-23
 
 ### fix: 로컬 이메일 인증 profile 기본값 정리

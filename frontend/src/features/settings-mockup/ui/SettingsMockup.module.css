@@ -1,0 +1,136 @@
+/* 설정 임시 목업 화면. rail "설정" 뷰. */
+.settings {
+  position: absolute;
+  inset: 0 0 0 var(--sidebar-width, 320px);
+  z-index: 1;
+  overflow: auto;
+  padding: 32px;
+  background: #0a0a0a;
+  color: #f0f0f0;
+}
+
+:global(.workspace.is-sidebar-collapsed) .settings {
+  left: 0;
+}
+
+.settings-inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  margin-bottom: 28px;
+}
+
+.settings-header h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.settings-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.settings-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.settings-section {
+  margin-bottom: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.settings-section h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-field:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.settings-label {
+  min-width: 0;
+}
+
+.settings-label p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-label span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-value {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.settings-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--concept-page);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 읽기 전용 목업 토글 */
+.settings-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--soft);
+  flex: 0 0 auto;
+}
+
+.settings-toggle.is-on {
+  background: var(--source-page);
+}
+
+.settings-toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #0a0a0a;
+  transition: transform var(--duration-normal, 300ms) ease;
+}
+
+.settings-toggle.is-on::after {
+  transform: translateX(18px);
+}

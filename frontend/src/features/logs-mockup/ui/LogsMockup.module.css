@@ -1,0 +1,113 @@
+/* 로그 임시 목업 화면. rail "로그" 뷰. */
+.logs {
+  position: absolute;
+  inset: 0 0 0 var(--sidebar-width, 320px);
+  z-index: 1;
+  overflow: auto;
+  padding: 32px;
+  background: #0a0a0a;
+  color: #f0f0f0;
+}
+
+:global(.workspace.is-sidebar-collapsed) .logs {
+  left: 0;
+}
+
+.logs-inner {
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.logs-header {
+  margin-bottom: 24px;
+}
+
+.logs-header h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.logs-header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.logs-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.logs-row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.logs-row:last-child {
+  border-bottom: 0;
+}
+
+.logs-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.logs-dot.is-success {
+  background: var(--source-page);
+}
+
+.logs-dot.is-error {
+  background: #f04452;
+}
+
+.logs-dot.is-info {
+  background: var(--yellow);
+}
+
+.logs-main {
+  min-width: 0;
+}
+
+.logs-action {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.logs-target {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-time {
+  font-size: 12px;
+  color: var(--subdued);
+  white-space: nowrap;
+}

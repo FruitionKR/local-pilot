@@ -30,7 +30,6 @@ export function SourcePreviewPanel({
   width,
   onResizeStart,
   onMarkdownEditContextChange,
-  onRequestLint,
   onRenameDocument,
   onNoteEditStateChange,
   parentLabel = "업로드 문서",
@@ -48,7 +47,6 @@ export function SourcePreviewPanel({
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
-  onRequestLint?: (context: ActiveMarkdownEditContext) => void;
   onRenameDocument?: (documentId: string, filename: string) => Promise<void>;
   onNoteEditStateChange?: (documentId: string, state: NoteEditState | null) => void;
   parentLabel?: string;
@@ -73,7 +71,6 @@ export function SourcePreviewPanel({
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
-  const [activeEditContext, setActiveEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const optionsRef = useRef<HTMLDivElement | null>(null);
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
@@ -109,7 +106,6 @@ export function SourcePreviewPanel({
     setNoteSaveStatus("saved");
     setNoteSaveError(null);
     setNeedsReview(false);
-    setActiveEditContext(null);
   }, [documentId]);
 
   useEffect(() => {
@@ -140,7 +136,6 @@ export function SourcePreviewPanel({
   }, [documentId, onNoteEditStateChange]);
 
   const handleMarkdownEditContextChange = useCallback((context: ActiveMarkdownEditContext | null) => {
-    setActiveEditContext(context);
     onMarkdownEditContextChange?.(context);
   }, [onMarkdownEditContextChange]);
 
@@ -172,11 +167,6 @@ export function SourcePreviewPanel({
     }
   }
 
-  function requestDocumentReview() {
-    if (!activeEditContext || noteSaveStatus !== "saved" || !needsReview) return;
-    onRequestLint?.(activeEditContext);
-    setNeedsReview(false);
-  }
 
   useEffect(() => {
     if (!pageId) {
@@ -321,6 +311,7 @@ export function SourcePreviewPanel({
         </div>
       </header>
       <div className={styles["source-preview-document"]}>
+        <div className={styles["source-preview-content"]}>
         <header className={styles["source-preview-heading"]}>
           {isMarkdownFile ? (
             <input
@@ -345,20 +336,11 @@ export function SourcePreviewPanel({
           )}
           {!fillMain && <span>{pageId ? pageTypeLabel : editableNote ? "Note" : "Raw"}</span>}
         </header>
-        {isMarkdownFile && (
+        {isMarkdownFile && renameError && (
           <div className={styles["source-preview-document-controls"]}>
-            <button
-              type="button"
-              className={styles["document-review-button"]}
-              disabled={!onRequestLint || !needsReview || noteSaveStatus !== "saved"}
-              onClick={requestDocumentReview}
-            >
-              {needsReview && noteSaveStatus !== "saved" ? "저장 후 AI 문서 점검" : "AI 문서 점검"}
-            </button>
-            {renameError && <span role="alert">{renameError}</span>}
+            <span role="alert">{renameError}</span>
           </div>
         )}
-        <div className={styles["source-preview-content"]}>
         {isMarkdownFile && isLoading && <p>문서를 불러오는 중입니다.</p>}
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (

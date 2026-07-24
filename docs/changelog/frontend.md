@@ -4,6 +4,48 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-24
+
+### refactor: 미사용 문서 점검(document lint) 기능 제거
+
+- PR #111 리뷰 반영. "AI 문서 점검" 버튼 제거로 트리거가 사라져 도달 불가가 된 lint 배선을 전 구간 정리.
+- 제거: `SourcePreviewPanel`의 `onRequestLint` prop과 write-only가 된 `activeEditContext` state, `HomeWorkspace`의 `requestDocumentLint`·`lintRequest` state·`lintRequestIdRef`, `AgentPanel`의 `lintRequest` prop·`handledLintRequestIdRef`·전송 effect.
+- 유지: `needsReview`/`noteEditStates`는 사이드바 트리 상태 배지(`TreeNodeStatus`)에서 계속 사용되므로 건드리지 않음.
+
+### fix: 채팅 세션 목록 스크롤 복원 및 행 옵션 메뉴 portal 처리
+
+- PR #111 리뷰 반영. 행 옵션 메뉴가 잘리지 않게 `.chat-session-list`를 `overflow: visible`로 뒀던 탓에 세션이 많으면 목록 스크롤이 사라지고 dropdown(`max-height: 320px`) 밖으로 흘러넘치던 문제 수정.
+- `.chat-session-list`를 `overflow-y: auto`로 되돌려 스크롤 복원. 행 옵션 메뉴는 `createPortal`로 `document.body`에 `position: fixed`로 띄워(버튼 rect 기준 좌표) 스크롤 컨테이너 클리핑을 피함. 메뉴 `onMouseDown` 전파를 막아 목록이 먼저 닫히지 않게 하고, 목록이 닫히면 메뉴도 함께 정리.
+
+### feat: 워크스페이스 생성 로딩 오버레이 추가
+
+- 전체화면 `LoadingOverlay`(신규, `shared/ui`) 추가. `SidebarWorkspaceHeader`(생성 중)와 `WorkspacesPage`(자동 프로비저닝 중)에 배선.
+
+### fix: 편집기 undo·스크롤바·문서 점검 버튼 정리
+
+- undo 수정: Milkdown 프로그램적 전체 교체를 `addToHistory:false` 트랜잭션으로 바꿔 cmd+z 한 번에 문서 전체가 사라지던 문제 해결(`NoteEditor.tsx`, `replaceAll` → `editorViewCtx/parserCtx/Slice` 직접 dispatch).
+- 스크롤바 다크 처리: 전역 `base.css` 스크롤바 규칙이 해시된 CSS Module class에 안 붙던 문제를 `SourcePreviewPanel.module.css`에 직접 지정해 해결. 스크롤 컨테이너를 패널 전체 폭으로 두고 본문은 padding 중앙 정렬 → 세로 스크롤바가 항상 패널 맨 오른쪽(에이전트 패널 접힘/펼침 무관).
+- 제목 스크롤: 제목(heading)을 스크롤 컨테이너 내부로 이동해 본문과 함께 스크롤(Obsidian식). 제목-본문 사이 "AI 문서 점검" 버튼 제거(`renameError`만 조건부 유지).
+
+### feat: 채팅 세션 옵션 메뉴 추가 및 새 세션 제목 통일
+
+- 새 세션 fallback 제목을 헤더와 동일한 "새 채팅"으로 통일(불일치 버그).
+- 세션 행에 Fruition 로고(임시 SVG) + 옵션 메뉴(원본 문서로 생성 / 삭제) 추가. `deleteChatSession` 프론트 API 추가(기존 백엔드 DELETE 사용), 원본 문서화는 기존 `wiki-export` 재사용.
+- composer placeholder를 문서 열림 여부와 무관하게 항상 "AI 에이전트에게 무엇이든 물어보세요."로 고정.
+- 주의: 채팅→원본문서 편입의 wiki 생성 단계는 프론트 무관한 파이프라인 이슈로 실패(`docs/issue/ai/2026-07-24.md` 참고).
+
+### feat: 로그·설정 임시 목업 페이지 추가
+
+- 로그/설정 페이지 임시 목업 컴포넌트 추가(`features/logs-mockup`, `features/settings-mockup`). rail 뷰 배선은 `HomeWorkspace` 변경에서 함께 처리.
+
+### fix: 노트 사라짐 버그 수정 및 그래프 필터 인셋 조정
+
+- 노트 사라짐 버그: `<main onClick={clearTreeGraphSelection}>`이 자식에서 버블된 클릭까지 선택 해제해, 사이드바 여백·폴더 헤더 오클릭 시 편집기가 비던 문제를 `event.target === event.currentTarget` 가드로 해결(`HomeWorkspace`).
+- `HomeWorkspace`에 로그/설정 목업 rail 뷰 배선 및 메인 편집기 "변경 기록" 버튼 제거(orphan import/state 정리).
+- 그래프 필터: Figma(node 599:5832) 실측 반영해 필터칩·캔버스 인셋 20→24px.
+
+---
+
 ## 2026-07-23
 
 ### refactor: 전역 CSS를 CSS Module로 하이브리드 전환
