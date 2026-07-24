@@ -1,5 +1,6 @@
 import { ChevronDown, Folder, MoreHorizontal, MoreVertical, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createChatSession, deleteChatSession, fetchChatSessions, setActiveChatSession } from "@/entities/chat/api/chat";
 import { exportChatWiki } from "@/features/wiki-export";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -25,7 +26,8 @@ export function AgentHeader({
   const [searchTerm, setSearchTerm] = useState("");
   const [sessions, setSessions] = useState<ChatSessionResponse[]>([]);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
-  const [rowMenuSessionId, setRowMenuSessionId] = useState<string | null>(null);
+  // 행 옵션 메뉴는 스크롤 컨테이너에 클리핑되지 않도록 portal(fixed)로 띄운다.
+  const [rowMenu, setRowMenu] = useState<{ id: string; top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -52,7 +54,7 @@ export function AgentHeader({
 
   // 세션 삭제 후 남은 세션 중 첫 번째로 전환하고, 없으면 새 채팅을 만든다.
   async function handleDeleteSession(sessionId: string) {
-    setRowMenuSessionId(null);
+    setRowMenu(null);
     try {
       await deleteChatSession(sessionId);
       const response = await fetchChatSessions();
@@ -67,7 +69,7 @@ export function AgentHeader({
 
   // 세션 전체를 원본 문서(위키)로 내보낸다.
   async function handleExportSession(sessionId: string) {
-    setRowMenuSessionId(null);
+    setRowMenu(null);
     setIsListOpen(false);
     try {
       setActiveChatSession(sessionId);
@@ -77,6 +79,10 @@ export function AgentHeader({
       setLoadErrorMessage(getErrorMessage(error, "원본 문서로 만들지 못했습니다."));
     }
   }
+
+  useEffect(() => {
+    if (!isListOpen) setRowMenu(null);
+  }, [isListOpen]);
 
   useEffect(() => {
     if (!isListOpen) return;
@@ -171,7 +177,7 @@ export function AgentHeader({
                     type="button"
                     className={styles["chat-session-select"]}
                     onClick={() => {
-                      setRowMenuSessionId(null);
+                      setRowMenu(null);
                       onSelectSession(session.id, session.title ?? fallbackTitle);
                       setIsListOpen(false);
                     }}
@@ -187,26 +193,18 @@ export function AgentHeader({
                         type="button"
                         className={styles["chat-session-more"]}
                         aria-label="채팅 옵션"
-                        aria-expanded={rowMenuSessionId === session.id}
-                        onClick={() => setRowMenuSessionId((cur) => (cur === session.id ? null : session.id))}
+                        aria-expanded={rowMenu?.id === session.id}
+                        onClick={(event) => {
+                          if (rowMenu?.id === session.id) {
+                            setRowMenu(null);
+                            return;
+                          }
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setRowMenu({ id: session.id, top: rect.bottom + 4, left: rect.right - 132 });
+                        }}
                       >
                         <MoreVertical size={12} />
                       </button>
-                      {rowMenuSessionId === session.id && (
-                        <div className={styles["chat-session-menu-list"]} role="menu">
-                          <button type="button" role="menuitem" onClick={() => handleExportSession(session.id)}>
-                            원본 문서로 생성
-                          </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className={styles["is-danger"]}
-                            onClick={() => handleDeleteSession(session.id)}
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -215,6 +213,28 @@ export function AgentHeader({
             </div>
           )}
         </div>
+      )}
+
+      {rowMenu && createPortal(
+        <div
+          className={styles["chat-session-menu-list"]}
+          role="menu"
+          style={{ top: rowMenu.top, left: rowMenu.left }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => handleExportSession(rowMenu.id)}>
+            원본 문서로 생성
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles["is-danger"]}
+            onClick={() => handleDeleteSession(rowMenu.id)}
+          >
+            삭제
+          </button>
+        </div>,
+        document.body
       )}
     </div>
   );

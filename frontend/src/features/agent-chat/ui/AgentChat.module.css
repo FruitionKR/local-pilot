@@ -92,7 +92,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  overflow: visible;
+  overflow: hidden;
   padding: 12px 12px 16px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -131,11 +131,12 @@
 }
 
 .chat-session-list {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow: visible;
+  overflow-y: auto;
 }
 
 .chat-session-item {
@@ -213,10 +214,8 @@
 }
 
 .chat-session-menu-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 12;
+  position: fixed;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   min-width: 132px;

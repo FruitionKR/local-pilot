@@ -6,6 +6,11 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### fix: 채팅 세션 목록 스크롤 복원 및 행 옵션 메뉴 portal 처리
+
+- PR #111 리뷰 반영. 행 옵션 메뉴가 잘리지 않게 `.chat-session-list`를 `overflow: visible`로 뒀던 탓에 세션이 많으면 목록 스크롤이 사라지고 dropdown(`max-height: 320px`) 밖으로 흘러넘치던 문제 수정.
+- `.chat-session-list`를 `overflow-y: auto`로 되돌려 스크롤 복원. 행 옵션 메뉴는 `createPortal`로 `document.body`에 `position: fixed`로 띄워(버튼 rect 기준 좌표) 스크롤 컨테이너 클리핑을 피함. 메뉴 `onMouseDown` 전파를 막아 목록이 먼저 닫히지 않게 하고, 목록이 닫히면 메뉴도 함께 정리.
+
 ### feat: 워크스페이스 생성 로딩 오버레이 추가
 
 - 전체화면 `LoadingOverlay`(신규, `shared/ui`) 추가. `SidebarWorkspaceHeader`(생성 중)와 `WorkspacesPage`(자동 프로비저닝 중)에 배선.
