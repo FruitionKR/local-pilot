@@ -4,11 +4,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
 
-public record DocumentRenameResponse(
-        String id,
-        String filename,
-        @JsonProperty("display_name") String displayName,
+public record DocumentContentSaveResponse(
+        @JsonProperty("document_id") String documentId,
         @JsonProperty("current_version") long currentVersion,
+        @JsonProperty("content_hash") String contentHash,
         @JsonProperty("updated_at") Instant updatedAt,
         boolean changed
-) {}
+) {
+}

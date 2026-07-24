@@ -8,12 +8,17 @@ import fruition.document.domain.IdempotencyRecord;
 import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
+import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
+import fruition.document.dto.DocumentRenameRequest;
+import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.DocumentVersionConflictException;
+import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.IdempotencyConflictException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.MarkdownContentTooLargeException;
@@ -49,6 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -381,6 +387,129 @@ class DocumentServiceBlocksTest {
         assertThat(storedDocument.getValue().getProcessedAt()).isNull();
         assertThat(response.editable()).isFalse();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.ORIGINAL);
+    }
+
+    @Test
+    @DisplayName("Markdown 본문 저장은 편집 상태와 현재 버전을 함께 갱신한다")
+    void saveContent_changed_updatesContentAndVersion() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        DocumentContentSaveResponse response = documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L);
+
+        assertThat(response.changed()).isTrue();
+        assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
+        assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
+        assertThat(document.getContentHash()).isEqualTo("original-hash");
+    }
+
+    @Test
+    @DisplayName("동일 Markdown 저장은 버전과 수정 시각을 변경하지 않는다")
+    void saveContent_sameMarkdown_returnsNoOp() {
+        stubOwnedWorkspace();
+        String markdown = "# 동일\n";
+        String hash = DocumentEditingRules.markdown(markdown).contentHash();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown",
+                markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
+                "sources/documents/doc_edit/original", hash);
+        DocumentEditState editState = new DocumentEditState(document.getId(), markdown, hash);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+
+        DocumentContentSaveResponse response = documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L);
+
+        assertThat(response.changed()).isFalse();
+        assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.updatedAt()).isEqualTo(document.getUpdatedAt());
+        verify(documentRepository, never()).updateContentIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyString(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("오래된 본문 버전과 비소유자 저장은 거절한다")
+    void saveContent_rejectsStaleVersionAndNonOwner() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L))
+                .isInstanceOf(DocumentVersionConflictException.class);
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, "member_2"))
+                .thenReturn(true);
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, "member_2", document.getId(), "new", 1L))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("이름 변경은 확장자를 유지하고 본문과 Wiki 제목을 변경하지 않는다")
+    void rename_changesOnlyNotionStylePageTitle() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "기존.md", "text/markdown", 10,
+                "sources/documents/doc_edit/original", "hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(documentRepository.renameIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L),
+                eq("새 제목.md"), eq("새 제목"), eq("새 제목.md"), any()))
+                .thenReturn(1);
+
+        DocumentRenameResponse response = documentService.rename(
+                WORKSPACE_ID,
+                USER_ID,
+                document.getId(),
+                new DocumentRenameRequest(" 새 제목 ", 1L)
+        );
+
+        assertThat(response.changed()).isTrue();
+        assertThat(response.filename()).isEqualTo("새 제목.md");
+        assertThat(response.displayName()).isEqualTo("새 제목");
+        assertThat(response.currentVersion()).isEqualTo(2);
+        verifyNoInteractions(documentWikiLinkRepository);
+        verifyNoInteractions(wikiPageRepository);
+        verifyNoInteractions(editStateRepository);
+    }
+
+    @Test
+    @DisplayName("동일 이름 변경은 no-op이고 오래된 버전은 거절한다")
+    void rename_sameNameNoOpAndStaleVersionConflict() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "기존.md", "text/markdown", 10,
+                "sources/documents/doc_edit/original", "hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+
+        DocumentRenameResponse noOp = documentService.rename(
+                WORKSPACE_ID, USER_ID, document.getId(), new DocumentRenameRequest("기존", 1L));
+
+        assertThat(noOp.changed()).isFalse();
+        assertThat(noOp.updatedAt()).isEqualTo(document.getUpdatedAt());
+        assertThatThrownBy(() -> documentService.rename(
+                WORKSPACE_ID, USER_ID, document.getId(), new DocumentRenameRequest("새 제목", 2L)))
+                .isInstanceOf(DocumentVersionConflictException.class);
+        verify(documentRepository, never()).renameIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
 
     @Test

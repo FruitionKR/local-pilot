@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.sql.Connection;
@@ -123,6 +124,63 @@ class DocumentEditingSchemaIntegrationTest {
                 "UPDATE documents SET source_document_id = id WHERE id = ?",
                 "doc_original_" + suffix
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @Transactional
+    void conditionalUpdates_allowOnlyCurrentBaseVersion() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String documentId = "doc_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "기존.md", "hash-before", "EDITABLE");
+
+        Instant renamedAt = Instant.now();
+        int renamed = documentRepository.renameIfVersionMatches(
+                documentId,
+                workspaceId,
+                1,
+                "새 제목.md",
+                "새 제목",
+                "새 제목.md",
+                renamedAt
+        );
+        int staleRename = documentRepository.renameIfVersionMatches(
+                documentId,
+                workspaceId,
+                1,
+                "오래된 요청.md",
+                "오래된 요청",
+                "오래된 요청.md",
+                Instant.now()
+        );
+        int contentUpdated = documentRepository.updateContentIfVersionMatches(
+                documentId,
+                workspaceId,
+                2,
+                "hash-after",
+                42,
+                Instant.now()
+        );
+
+        assertThat(renamed).isEqualTo(1);
+        assertThat(staleRename).isZero();
+        assertThat(contentUpdated).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForMap(
+                """
+                SELECT filename, display_name, current_version, current_content_hash, byte_size
+                FROM documents
+                WHERE id = ?
+                """,
+                documentId
+        )).containsAllEntriesOf(Map.of(
+                "filename", "새 제목.md",
+                "display_name", "새 제목",
+                "current_version", 3L,
+                "current_content_hash", "hash-after",
+                "byte_size", 42L
+        ));
     }
 
     @Test

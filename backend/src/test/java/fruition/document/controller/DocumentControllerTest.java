@@ -3,6 +3,9 @@ package fruition.document.controller;
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentRenameRequest;
+import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
@@ -26,12 +29,15 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.time.Instant;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -145,5 +151,81 @@ class DocumentControllerTest {
 
         verify(documentService).createMarkdown(
                 eq(WORKSPACE_ID), eq(USER_ID), eq("create-key"), any(MarkdownDocumentCreateRequest.class));
+    }
+
+    @Test
+    void saveContent_multipartPassesMarkdownAndBaseVersion() throws Exception {
+        Instant updatedAt = Instant.now();
+        when(documentService.saveContent(
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L))
+                .thenReturn(new DocumentContentSaveResponse(
+                        "doc_edit", 4, "a".repeat(64), updatedAt, true));
+        MockMultipartFile markdown = new MockMultipartFile(
+                "markdown", "", "text/plain",
+                "# 변경\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile baseVersion = new MockMultipartFile(
+                "base_version", "", "text/plain",
+                "3".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        mockMvc.perform(multipart(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
+                        .file(markdown)
+                        .file(baseVersion)
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        })
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document_id").value("doc_edit"))
+                .andExpect(jsonPath("$.current_version").value(4))
+                .andExpect(jsonPath("$.changed").value(true));
+
+        verify(documentService).saveContent(
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L);
+    }
+
+    @Test
+    void saveContent_invalidBaseVersion_returns400() throws Exception {
+        MockMultipartFile markdown = new MockMultipartFile(
+                "markdown", "", "text/plain",
+                "# 본문\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile baseVersion = new MockMultipartFile(
+                "base_version", "", "text/plain",
+                "invalid".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        mockMvc.perform(multipart(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
+                        .file(markdown)
+                        .file(baseVersion)
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        })
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_DOCUMENT_VERSION"));
+    }
+
+    @Test
+    void rename_usesDisplayNameAndBaseVersion() throws Exception {
+        Instant updatedAt = Instant.now();
+        when(documentService.rename(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), any(DocumentRenameRequest.class)))
+                .thenReturn(new DocumentRenameResponse(
+                        "doc_edit", "새 제목.md", "새 제목", 2, updatedAt, true));
+
+        mockMvc.perform(patch(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/rename")
+                        .header("Authorization", bearerToken())
+                        .contentType("application/json")
+                        .content("""
+                                {"display_name":"새 제목","base_version":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.filename").value("새 제목.md"))
+                .andExpect(jsonPath("$.display_name").value("새 제목"))
+                .andExpect(jsonPath("$.current_version").value(2))
+                .andExpect(jsonPath("$.changed").value(true));
     }
 }

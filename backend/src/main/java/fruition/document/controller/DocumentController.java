@@ -3,6 +3,7 @@ package fruition.document.controller;
 import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
 import fruition.document.dto.DocumentBlocksResponse;
+import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
@@ -10,6 +11,7 @@ import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.exception.InvalidDocumentVersionException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -17,6 +19,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -45,7 +48,9 @@ public class DocumentController {
         this.documentService = documentService;
     }
 
-    @Operation(summary = "문서 업로드", description = "PDF 또는 Markdown 파일을 업로드합니다. 파일은 Object Storage에 저장되고 백그라운드에서 처리됩니다.")
+    @Operation(
+        summary = "문서 업로드",
+        description = "PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 처리 큐를 생성하고, PDF는 읽기 전용 원본으로만 저장합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "업로드 성공",
             content = @Content(schema = @Schema(implementation = DocumentUploadResponse.class))),
@@ -194,7 +199,7 @@ public class DocumentController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "문서 이름 변경", description = "문서 표시명을 변경합니다. sync_source_title=true이면 연결된 source Wiki 페이지 제목도 함께 변경됩니다.")
+    @Operation(summary = "문서 이름 변경", description = "Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목은 유지합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "이름 변경 성공",
             content = @Content(schema = @Schema(implementation = DocumentRenameResponse.class))),
@@ -209,7 +214,51 @@ public class DocumentController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId,
-            @RequestBody DocumentRenameRequest request) {
+            @Valid @RequestBody DocumentRenameRequest request) {
         return ResponseEntity.ok(documentService.rename(workspaceId, userId, documentId, request));
+    }
+
+    @Operation(
+        summary = "Markdown 본문 저장",
+        description = "전체 Markdown을 수동 저장합니다. base_version이 현재 version과 일치할 때만 반영합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "저장 성공 또는 동일 본문 no-op",
+            content = @Content(schema = @Schema(implementation = DocumentContentSaveResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Markdown 또는 base_version",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "문서 version 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "413", description = "Markdown 5MB 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PutMapping(path = "/{document_id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentContentSaveResponse> saveContent(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @Parameter(description = "저장할 전체 Markdown 본문", required = true)
+            @RequestPart("markdown") String markdown,
+            @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1", required = true)
+            @RequestPart("base_version") String baseVersion) {
+        return ResponseEntity.ok(
+                documentService.saveContent(
+                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion)));
+    }
+
+    private long parseBaseVersion(String baseVersion) {
+        try {
+            long parsed = Long.parseLong(baseVersion);
+            if (parsed < 1) {
+                throw new NumberFormatException();
+            }
+            return parsed;
+        } catch (NumberFormatException exception) {
+            throw new InvalidDocumentVersionException(
+                    "base_version은 1 이상의 정수여야 합니다.");
+        }
     }
 }

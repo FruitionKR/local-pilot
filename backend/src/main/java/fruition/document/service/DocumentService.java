@@ -12,12 +12,15 @@ import fruition.document.domain.IdempotencyRecord;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.DocumentVersionConflictException;
+import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.IdempotencyConflictException;
 import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
@@ -752,55 +755,137 @@ public class DocumentService {
     }
 
     @Transactional
-    public DocumentRenameResponse rename(String workspaceId, String userId, String documentId, DocumentRenameRequest request) {
+    public DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseVersion
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        validateFilename(request.filename());
+        if (baseVersion == null || baseVersion < 1) {
+            throw new InvalidMarkdownContentException("base_version은 1 이상이어야 합니다.");
+        }
 
         Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
+        }
+        if (document.getCurrentVersion() != baseVersion) {
+            throw versionConflict();
+        }
 
-        String previousFilename = document.getFilename();
-        String newFilename = request.filename().trim();
-        document.rename(newFilename);
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState editState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        if (content.hasSameContent(document.getCurrentContentHash())) {
+            return new DocumentContentSaveResponse(
+                    documentId,
+                    document.getCurrentVersion(),
+                    document.getCurrentContentHash(),
+                    document.getUpdatedAt(),
+                    false
+            );
+        }
 
-        Instant renamedAt = Instant.now();
-        boolean syncSourceTitle = Boolean.TRUE.equals(request.syncSourceTitle());
-
-        DocumentRenameResponse.SourcePageRef sourcePageRef = buildSourcePageRef(documentId, newFilename, syncSourceTitle);
-
-        return new DocumentRenameResponse(
-                document.getId(),
-                document.getFilename(),
-                previousFilename,
-                document.getSourceUri(),
-                document.getStatus(),
-                renamedAt,
-                sourcePageRef
+        Instant updatedAt = Instant.now();
+        int updated = documentRepository.updateContentIfVersionMatches(
+                documentId,
+                workspaceId,
+                baseVersion,
+                content.contentHash(),
+                content.bytes().length,
+                updatedAt
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+        editState.update(content.markdown(), content.contentHash(), updatedAt);
+        return new DocumentContentSaveResponse(
+                documentId,
+                baseVersion + 1,
+                content.contentHash(),
+                updatedAt,
+                true
         );
     }
 
-    private DocumentRenameResponse.SourcePageRef buildSourcePageRef(
-            String documentId, String newFilename, boolean syncSourceTitle) {
-        List<DocumentWikiLink> sourceLinks = documentWikiLinkRepository
-                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of);
-
-        if (sourceLinks.isEmpty()) {
-            return null;
+    @Transactional
+    public DocumentRenameResponse rename(
+            String workspaceId,
+            String userId,
+            String documentId,
+            DocumentRenameRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        if (request == null || request.baseVersion() == null || request.baseVersion() < 1) {
+            throw new InvalidDocumentFilenameException("base_version은 1 이상이어야 합니다.");
         }
 
-        String wikiPageId = sourceLinks.get(0).getWikiPageId();
-        WikiPage sourcePage = wikiPageRepository.findById(wikiPageId).orElse(null);
-        if (sourcePage == null) {
-            return null;
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getCurrentVersion() != request.baseVersion()) {
+            throw versionConflict();
         }
 
-        if (syncSourceTitle) {
-            String newTitle = stripExtension(newFilename);
-            sourcePage.renameTitle(newTitle);
-            return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), newTitle, true);
+        DocumentEditingRules.Filename filename =
+                DocumentEditingRules.rename(request.displayName(), document.getFilename());
+        if (filename.filename().equals(document.getFilename())) {
+            return new DocumentRenameResponse(
+                    documentId,
+                    document.getFilename(),
+                    document.getDisplayName(),
+                    document.getCurrentVersion(),
+                    document.getUpdatedAt(),
+                    false
+            );
         }
 
-        return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
+        Instant updatedAt = Instant.now();
+        int updated = documentRepository.renameIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                filename.filename(),
+                filename.displayName(),
+                filename.normalizedFilename(),
+                updatedAt
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+        return new DocumentRenameResponse(
+                documentId,
+                filename.filename(),
+                filename.displayName(),
+                request.baseVersion() + 1,
+                updatedAt,
+                true
+        );
+    }
+
+    private void verifyDocumentOwner(Document document, String userId) {
+        if (!document.getUserId().equals(userId)) {
+            throw new DocumentWriteForbiddenException("문서 소유자만 변경할 수 있습니다.");
+        }
+    }
+
+    private DocumentVersionConflictException versionConflict() {
+        return new DocumentVersionConflictException(
+                "다른 변경이 먼저 저장되었습니다. 최신 문서를 다시 조회해 주세요.");
+    }
+
+    private RuntimeException conditionalUpdateFailure(String workspaceId, String documentId) {
+        if (documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .isEmpty()) {
+            return new DocumentNotFoundException(documentId);
+        }
+        return versionConflict();
     }
 
     @Transactional

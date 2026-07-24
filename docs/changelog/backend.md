@@ -8,6 +8,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: Markdown 수동 저장과 Notion식 페이지 제목 변경 추가
+
+**변경된 것**
+
+- `PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`에서 전체 Markdown과 `base_version`을 multipart part로 받아 현재 편집 상태를 수동 저장한다.
+- 본문 저장과 `PATCH /rename`은 `documents.current_version` 조건부 update로 동시 변경을 차단하고, 실제 변경 시 version을 1 증가시킨다.
+- 동일 본문·동일 제목은 `changed=false`로 반환하며 version과 수정 시각을 유지한다.
+- rename은 `display_name`을 Notion식 page title로 사용하고 기존 확장자를 유지하며 Markdown heading, Wiki Source Page 제목과 업로드 원본은 변경하지 않는다.
+- 문서 소유자만 본문 저장과 rename을 수행할 수 있고, 비소유 workspace 멤버는 `403 DOCUMENT_WRITE_FORBIDDEN`을 받는다.
+- production 저장 API와 충돌하던 local 메모리 content mock을 제거했다.
+- Swagger가 실제 multipart body를 생성하도록 `markdown`, `base_version`을 `@RequestPart`로 명시하고 요청·오류 응답 설명을 갱신했다.
+
+**검증**
+
+- service·controller 테스트에서 정상 저장, no-op, version 충돌, 소유권, 확장자 유지와 Swagger multipart 요청을 검증했다.
+- PostgreSQL 통합 테스트에서 조건부 rename·본문 갱신과 오래된 version의 update 차단을 검증했다.
+- `./gradlew clean test` 전체 222개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- frontend의 저장·rename 계약 변경과 미저장 이탈 경고는 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+- 이미지 attachment 저장은 assets SDD의 후속 task에서 구현한다.
+
 ### fix: 비 Markdown 업로드의 불필요한 pipeline 요청 차단
 
 **변경된 것**

@@ -4,9 +4,11 @@ import fruition.document.domain.Document;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.domain.DocumentRole;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -50,5 +52,35 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     long findMaxRootSortOrder(
             @Param("workspaceId") String workspaceId,
             @Param("documentRole") DocumentRole documentRole
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.currentContentHash = :contentHash, d.byteSize = :byteSize, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int updateContentIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("contentHash") String contentHash,
+            @Param("byteSize") long byteSize,
+            @Param("updatedAt") Instant updatedAt
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.filename = :filename, d.displayName = :displayName, "
+            + "d.normalizedFilename = :normalizedFilename, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int renameIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("filename") String filename,
+            @Param("displayName") String displayName,
+            @Param("normalizedFilename") String normalizedFilename,
+            @Param("updatedAt") Instant updatedAt
     );
 }
