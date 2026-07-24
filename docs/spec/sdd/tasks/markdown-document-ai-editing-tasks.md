@@ -22,13 +22,28 @@
   - 응답에 requested/actual target 구분
   - 요청 범위 밖 actual target 허용
   - 문서 밖 범위와 구조 손상 검증 유지
-  - 계약 보정 1회와 외부 오류 매핑
+  - 계약 보정 1회와 모델 원문을 숨기는 내부 오류 응답
+- 현재 구현 근거:
+  - 응답이 `requested_target`, `actual_target`, `scope_expanded`, `changed`를 구분한다.
+  - actual target은 requested target을 포함한 채 bounded editable context 안에서 확장할 수 있고 원본 전체 문서 기준 경계와 Markdown 구조를 다시 검증한다.
+  - `selection`, `current_section`, `whole_document` 범위와 `replace`, `insert_after` 연산 단위 테스트가 존재한다.
+  - raw HTML과 MDX import/export·component·expression 결과를 계약 오류로 거절한다.
+  - 일부 범위만 지정한 `whole_document`와 `insert_after`의 잘못된 target type도 계약 오류로 보정한다.
+  - JSON 파싱 실패와 필수 action 누락·미지원 action을 router·편집·source-range·생성 경로에서 안전한 계약 실패로 바꿔 1회 보정한다.
+  - 편집·source-range·생성 응답의 필수 문자열 필드는 객체·배열을 문자열로 강제 변환하지 않고 계약 오류로 보정한다.
+  - 범위 확장 시 actual target 안의 link·image·table·code 등 보호 구조를 다시 검증한다.
+  - CRLF 문서에서도 actual target 원문과 table 보호 조각의 줄 구분자를 그대로 유지해 유효한 결과를 계약 오류로 오판하지 않는다.
+  - replacement의 원문 공백을 보존해 동일한 전체 문서 결과를 `changed=false`로 판정한다.
+  - 계약 보정은 1회만 수행하며 재실패 응답은 모델 원문과 내부 예외를 노출하지 않는다.
+  - pipeline 내부 오류 코드는 유지하며 Spring이 외부 `AI_EDIT_GENERATION_FAILED`로 정규화할 수 있게 내부 상세를 노출하지 않는다.
+  - Agent router 재실패도 내부 action과 모델 원문을 숨기는 `422 agent_turn_route_contract_failed`로 반환한다.
+  - 2026-07-24 기준 llmPipeline 전체 테스트가 `463 passed, 43 subtests passed`로 통과했다.
 - 완료 조건:
-  - [ ] `selection`, `current_section`, `whole_document` fixture 통과
-  - [ ] `replace`, `insert_after` fixture 통과
-  - [ ] 범위 확장 결과가 정상 응답됨
-  - [ ] 문서 밖·구조 손상·HTML·MDX 결과 거절
-  - [ ] 재실패 시 모델 원문 미노출
+  - [x] `selection`, `current_section`, `whole_document` fixture 통과
+  - [x] `replace`, `insert_after` fixture 통과
+  - [x] 범위 확장 결과가 정상 응답됨
+  - [x] 문서 밖·구조 손상·HTML·MDX 결과 거절
+  - [x] 재실패 시 모델 원문 미노출
 
 ### TASK-AI002 proposal·snapshot 데이터 모델
 
@@ -97,6 +112,14 @@
   - AI 초안 저장·수정·취소
   - 페이지 계층 위치 선택
   - 최종 제목·본문으로 멱등 생성
+- 현재 llmPipeline 구현 근거:
+  - `markdown_create`가 제목, 요약, Markdown 본문을 반환하며 기존 문서를 저장하거나 교체하지 않는다.
+  - 생성 결과의 필수 필드와 Markdown 문법을 검증하고 실패 이유를 포함해 1회 보정한다.
+  - 대화 요약과 reference context를 비신뢰 source data로 취급하며 system prompt와 분리해 전달한다.
+- llmPipeline 범위 완료 조건:
+  - [x] `markdown_create` 제목·요약·Markdown 응답 계약
+  - [x] 생성 결과 계약 검증·1회 보정·재실패 내부 오류
+  - [x] 생성 context prompt injection 회귀 테스트
 - 완료 조건:
   - [ ] 초안 생성만으로 문서 미생성
   - [ ] 수정된 제목·본문 저장
@@ -141,11 +164,27 @@
   - prompt injection·권한·로그 테스트
   - GFM fixture와 기존 query 회귀 테스트
   - 요구사항–테스트 추적표와 API 문서 갱신
+- 현재 llmPipeline 구현 근거:
+  - Agent router, 일반 Markdown 재생성, 구조 보존 source-range, 새 Markdown 생성 경로 모두 Markdown·대화 내용을 비신뢰 입력으로 취급하도록 system prompt에 명시했다.
+  - prompt injection 문구가 system prompt와 분리된 user payload로만 전달되는 회귀 테스트가 네 경로에 존재한다.
+  - 예상하지 못한 Agent 오류 로그에는 예외 원문과 traceback 대신 안정된 오류 코드와 예외 타입만 기록한다.
+  - fenced code·table·display math의 모든 생성 가능한 line range를 순회해 구조 일부만 포함하는 actual target을 거절한다.
+  - `docs/spec/agent-markdown-contract.md`, `docs/spec/markdown-ai-editor-scope.md`, `docs/spec/llmpipeline-backend-output-contract.md`를 requested/actual target 계약과 동기화했다.
+  - bounded context 벤치마크를 포함한 llmPipeline 전체 테스트가 `463 passed, 43 subtests passed`로 통과했다.
+- llmPipeline 범위 완료 조건:
+  - [x] router·편집·source-range·생성 prompt injection 회귀 테스트
+  - [x] router JSON·필수 action 계약 검증·1회 보정·재실패 내부 오류
+  - [x] Agent 기본 오류 로그의 Markdown·모델 원문 미노출
+  - [x] GFM 구조·actual target 생성형 property 테스트
+  - [x] GFM·HTML·MDX 출력 계약 회귀 테스트
+  - [x] 기존 `chat_answer`, `clarify`, `reject` 회귀 테스트
+  - [x] llmPipeline API 문서와 요구사항 추적 근거 갱신
+  - [x] llmPipeline 전체 테스트와 `git diff --check` 통과
 - 완료 조건:
-  - [ ] 기존 `chat_answer`, `clarify`, `reject` 회귀 없음
-  - [ ] GFM 보호 fixture 통과
+  - [x] 기존 `chat_answer`, `clarify`, `reject` 회귀 없음
+  - [x] GFM 보호 fixture 통과
   - [ ] 전체 backend·frontend·llmPipeline 테스트 통과
-  - [ ] `git diff --check` 통과
+  - [x] `git diff --check` 통과
 
 ## 4. 실행 순서
 

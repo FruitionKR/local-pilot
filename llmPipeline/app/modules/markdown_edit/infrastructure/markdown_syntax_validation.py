@@ -8,10 +8,12 @@ from markdown_it import MarkdownIt
 def validate_markdown_syntax(markdown: str) -> list[str]:
     failures: list[str] = []
     try:
-        _markdown_parser().parse(markdown)
+        tokens = _markdown_parser().parse(markdown)
     except Exception:  # pragma: no cover - markdown-it 내부 오류에 대한 안전 경계
         return ["Markdown parser rejected output"]
 
+    if _contains_raw_html_or_mdx(tokens):
+        failures.append("raw HTML and MDX are not supported")
     lines = markdown.splitlines()
     content_start, frontmatter_failures = _frontmatter_boundary(lines)
     failures.extend(frontmatter_failures)
@@ -21,6 +23,37 @@ def validate_markdown_syntax(markdown: str) -> list[str]:
 
 def _markdown_parser() -> MarkdownIt:
     return MarkdownIt("commonmark").enable("table")
+
+
+def _contains_raw_html_or_mdx(tokens: list[object]) -> bool:
+    for token in tokens:
+        token_type = getattr(token, "type", "")
+        if token_type in {"html_block", "html_inline"}:
+            return True
+        children = getattr(token, "children", None) or []
+        for child in children:
+            if child.type == "html_inline":
+                return True
+            if child.type != "text":
+                continue
+            text = child.content
+            if _is_mdx_esm(text):
+                return True
+            if re.search(r"(?<!\\)\{[A-Za-z_$][^{}\n]*\}", text):
+                return True
+    return False
+
+
+def _is_mdx_esm(text: str) -> bool:
+    import_declaration = re.match(
+        r"""^\s*import\s+(?:(?:[\w$*{},\s]+\s+from\s+)?["'][^"'\n]+["'])\s*;?\s*$""",
+        text,
+    )
+    export_declaration = re.match(
+        r"^\s*export\s+(?:default\b|(?:const|let|var|function|class|async\s+function)\b|\{|\*)",
+        text,
+    )
+    return import_declaration is not None or export_declaration is not None
 
 
 def _frontmatter_boundary(lines: list[str]) -> tuple[int, list[str]]:

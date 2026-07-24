@@ -121,13 +121,20 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
   "chat": null,
   "edit": {
     "operation": "replace",
-    "target": {
+    "requested_target": {
       "type": "selection",
       "start_line": 3,
       "end_line": 3
     },
+    "actual_target": {
+      "type": "selection",
+      "start_line": 2,
+      "end_line": 4
+    },
+    "scope_expanded": true,
+    "changed": true,
     "summary": "선택 문장을 자연스럽게 정리했습니다.",
-    "replacement_markdown": "다듬어진 문장"
+    "replacement_markdown": "문맥을 포함해 다듬어진 문장"
   },
   "generated_markdown": null
 }
@@ -234,16 +241,20 @@ Spring backend는 public DTO를 `llmPipeline`의 snake_case 요청으로 변환�
 | 필드 | 타입 | nullable | 설명 |
 | --- | --- | --- | --- |
 | `edit.operation` | enum string | 아니오 | `replace` 또는 `insert_after` |
-| `edit.target` | object | 아니오 | 교체 또는 삽입 기준이 되는 line 범위 |
-| `edit.target.type` | enum string | 아니오 | `selection`, `current_section`, `whole_document` 중 하나 |
-| `edit.target.start_line` | integer | 아니오 | 1-base 대상 시작 line |
-| `edit.target.end_line` | integer | 아니오 | 1-base, inclusive 대상 종료 line |
+| `edit.requested_target` | object | 아니오 | 사용자가 요청한 line 범위 |
+| `edit.actual_target` | object | 아니오 | 실제 교체 또는 삽입 기준이 되는 line 범위 |
+| `edit.requested_target.type`, `edit.actual_target.type` | enum string | 아니오 | `selection`, `current_section`, `whole_document` 중 하나 |
+| `edit.requested_target.start_line`, `edit.actual_target.start_line` | integer | 아니오 | 1-base 대상 시작 line |
+| `edit.requested_target.end_line`, `edit.actual_target.end_line` | integer | 아니오 | 1-base, inclusive 대상 종료 line |
+| `edit.scope_expanded` | boolean | 아니오 | `actual_target`이 `requested_target`을 벗어나면 `true` |
+| `edit.changed` | boolean | 아니오 | 편집 결과가 요청 당시 Markdown과 다르면 `true` |
 | `edit.summary` | string | 아니오 | 사용자에게 표시할 편집 결과 요약 |
-| `edit.replacement_markdown` | string | 아니오 | target을 대체하거나 target 뒤에 삽입할 Markdown 조각 |
+| `edit.replacement_markdown` | string | 아니오 | `actual_target`을 대체하거나 그 뒤에 삽입할 Markdown 조각 |
 
-- `replace`의 `replacement_markdown`은 문서 전체가 아니라 `target` 범위를 대체할 조각이다.
-- `insert_after`는 `current_section` target에만 사용하며, `replacement_markdown`은 해당 섹션 뒤에 삽입할 새 Markdown만 포함한다.
-- 요청에 target이 없으면 `llmPipeline`은 전체 문서를 `whole_document` target으로 반환한다.
+- `replace`의 `replacement_markdown`은 문서 전체가 아니라 `actual_target` 범위를 대체할 조각이다.
+- `insert_after`는 `current_section` target에만 사용하며, `replacement_markdown`은 `actual_target` 뒤에 삽입할 새 Markdown만 포함한다.
+- 요청에 target이 없으면 `llmPipeline`은 전체 문서를 `whole_document`의 `requested_target`과 `actual_target`으로 반환한다.
+- `actual_target`은 `requested_target`을 포함한 채 Markdown 구조를 보존하기 위해 bounded editable context 안에서만 확장할 수 있다.
 - 이 응답만으로 문서를 자동 저장하지 않는다.
 
 ### 4.4 `generated_markdown`
@@ -293,13 +304,20 @@ Spring backend는 pipeline 결과에 요청 당시 문서 정보와 correlation 
     "chat": null,
     "edit": {
       "operation": "replace",
-      "target": {
+      "requested_target": {
         "type": "selection",
         "start_line": 3,
         "end_line": 3
       },
+      "actual_target": {
+        "type": "selection",
+        "start_line": 2,
+        "end_line": 4
+      },
+      "scope_expanded": true,
+      "changed": true,
       "summary": "선택 문장을 자연스럽게 정리했습니다.",
-      "replacement_markdown": "다듬어진 문장"
+      "replacement_markdown": "문맥을 포함해 다듬어진 문장"
     },
     "generated_markdown": null
   }
@@ -311,8 +329,8 @@ Spring backend 책임:
 - 사용자 인증과 workspace·document 접근 권한을 확인한다.
 - 편집할 수 없는 문서 유형은 pipeline 호출 전에 차단한다.
 - 요청 당시 `documentId`와 `baseVersion`을 응답에 보존한다.
-- pipeline의 400/422 오류 detail을 generic 500으로 바꾸지 않고 전달한다.
-- pipeline 응답의 target이나 replacement를 임의로 보정하지 않는다.
+- pipeline의 내부 오류 detail은 관측 정보로만 보존하고 공개 API 오류 코드로 정규화한다.
+- pipeline 응답의 requested target, actual target, replacement를 임의로 보정하지 않는다.
 - `markdown_edit` 응답만으로 문서를 저장하지 않는다.
 - Apply 이후 별도 저장 API에서 optimistic locking으로 버전 충돌을 확인한다.
 
@@ -323,7 +341,7 @@ Frontend는 `result.action`에 따라 처리한다.
 | `action` | Frontend 처리 |
 | --- | --- |
 | `chat_answer` | `chat`을 기존 채팅 UI에 표시 |
-| `markdown_edit` | 원본 target과 replacement의 diff를 보여주고 Apply/Reject 제공 |
+| `markdown_edit` | `actual_target` 원문과 replacement의 diff를 보여주고 Apply/Reject 제공 |
 | `markdown_create` | `generated_markdown`을 새 editor draft로 열기 |
 | `clarify` | `message`를 표시하고 추가 입력 또는 target 선택 유도 |
 | `reject` | `message`를 표시하고 원본 유지 |
@@ -331,23 +349,24 @@ Frontend는 `result.action`에 따라 처리한다.
 `markdown_edit` Apply 조건:
 
 1. `edit.operation`이 `replace` 또는 `insert_after`다.
-2. 응답 target이 요청 snapshot의 target과 일치한다.
-3. 요청 이후 editor revision 또는 buffer checksum이 바뀌지 않았다.
-4. 사용자가 preview에서 Apply를 명시적으로 선택했다.
+2. `edit.requested_target`이 요청 snapshot의 target과 일치한다.
+3. `edit.actual_target`이 요청 snapshot의 문서 범위 안에 있고 분리할 수 없는 Markdown 구조를 깨뜨리지 않는다.
+4. 요청 이후 editor revision 또는 buffer checksum이 바뀌지 않았다.
+5. 사용자가 preview에서 Apply를 명시적으로 선택했다.
 
-조건을 만족하면 editor의 line-range API로 `replace` 또는 target 끝 line 뒤 `insert_after` transaction을 한 번 수행한다. 이후 저장은 별도 backend 문서 API를 호출한다. 요청 이후 editor가 변경됐다면 적용하지 않고 재요청을 유도한다.
+조건을 만족하면 editor의 line-range API로 `actual_target`을 `replace`하거나 `actual_target` 끝 line 뒤에 `insert_after` transaction을 한 번 수행한다. 이후 저장은 별도 backend 문서 API를 호출한다. 요청 이후 editor가 변경됐다면 적용하지 않고 재요청을 유도한다.
 
 ## 7. 오류 처리
 
-| HTTP | 조건 | Spring backend | Frontend |
+| HTTP | 공개 오류 코드 | 조건 | Frontend |
 | ---: | --- | --- | --- |
-| 400 | 빈 message 또는 잘못된 line 범위 | 요청 오류 전달 | snapshot과 target 재확인 |
-| 422 + `markdown_output_contract_failed` | 유효한 Markdown 편집안 생성 실패 | detail 보존, 저장 금지 | 원본 유지 후 재시도 안내 |
-| 422 + `markdown_create_output_contract_failed` | 필수 필드를 갖춘 Markdown 초안 생성 실패 | detail 보존, 저장 금지 | 새 draft를 열지 않고 재시도 안내 |
-| 422 + `markdown_target_crosses_structure` | target이 여러 줄 구조 일부만 포함 | detail 보존 | 구조 전체 선택 안내 |
-| 500 | pipeline 연결 실패 또는 예상하지 못한 오류 | `requestId`와 함께 서버 오류 처리 | 원본 유지 후 재시도 안내 |
+| 400 | `INVALID_AI_EDIT_REQUEST` | 빈 message 또는 잘못된 line 범위 | snapshot과 target 재확인 |
+| 422 | `AI_EDIT_GENERATION_FAILED` | 편집·생성 계약 보정 실패 또는 Markdown 구조 오류 | 원본 유지 후 재시도 안내 |
+| 503 | `AI_SERVICE_UNAVAILABLE` | pipeline 연결 실패 | 원본 유지 후 재시도 안내 |
+| 504 | `AI_RESPONSE_TIMEOUT` | pipeline 응답이 60초를 초과 | 원본 유지 후 재시도 안내 |
 
 오류가 발생하면 frontend는 replacement를 preview하거나 적용하지 않는다.
+pipeline의 `agent_turn_route_contract_failed`, `markdown_output_contract_failed`, `markdown_create_output_contract_failed`, `markdown_target_crosses_structure`는 Spring 외부 응답에 그대로 노출하지 않는다.
 
 ## 8. 구현 상태
 

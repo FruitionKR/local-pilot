@@ -6,7 +6,9 @@ from typing import Any
 from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
 from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.entities import AgentAction, AgentTurnRequest, AgentTurnRoute
+from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
 DEFAULT_AGENT_TURN_ROUTER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_turn_router.system.md"
@@ -16,6 +18,8 @@ TEMPLATE_DEFERRED_MARKERS = (
 )
 INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
 INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
+ALLOWED_ACTIONS = {"chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"}
+JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
 
 
 class ChatCompletionsTurnRouter(AgentTurnRouterPort):
@@ -53,7 +57,28 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 ),
             },
         }
-        raw = self._client.complete_json(self._system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
+        route, failures = self._complete_route(payload)
+        if not failures:
+            return route
+
+        retry_payload = {
+            **payload,
+            "contract_failures": failures,
+            "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
+        }
+        retried_route, retry_failures = self._complete_route(retry_payload)
+        if retry_failures:
+            raise AgentTurnRouteContractError(retry_failures)
+        return retried_route
+
+    def _complete_route(self, payload: dict[str, object]) -> tuple[AgentTurnRoute, list[str]]:
+        try:
+            raw = self._client.complete_json(
+                self._system_prompt,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+            )
+        except JsonParseError:
+            return _fallback_route(), [JSON_OBJECT_CONTRACT_FAILURE]
         return _normalize_route(raw)
 
 
@@ -101,21 +126,55 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     return None
 
 
-def _normalize_route(value: dict[str, Any]) -> AgentTurnRoute:
-    action = str(value.get("action") or value.get("intent") or "chat_answer").strip()
-    if action == "chat":
-        action = "chat_answer"
-    if action == "edit":
-        action = "markdown_edit"
-    if action == "create":
-        action = "markdown_create"
-    if action not in {"chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"}:
-        action = "chat_answer"
+def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
+    failures: list[str] = []
+    raw_action = value.get("action")
+    if not isinstance(raw_action, str) or raw_action not in ALLOWED_ACTIONS:
+        failures.append("action must be a supported value")
+        action: AgentAction = "chat_answer"
+    else:
+        action = raw_action
+
+    raw_confidence = value.get("confidence")
+    if (
+        not isinstance(raw_confidence, (int, float))
+        or isinstance(raw_confidence, bool)
+        or not 0.0 <= float(raw_confidence) <= 1.0
+    ):
+        failures.append("confidence must be a number between 0 and 1")
+        confidence = 0.0
+    else:
+        confidence = float(raw_confidence)
+
+    raw_reason = value.get("reason")
+    if not isinstance(raw_reason, str) or not raw_reason.strip():
+        failures.append("reason must be a non-empty string")
+        reason = ""
+    else:
+        reason = raw_reason.strip()
+
+    if "edit_goal" not in value:
+        failures.append("edit_goal is required")
+    raw_edit_goal = value.get("edit_goal")
+    if raw_edit_goal is not None and not isinstance(raw_edit_goal, str):
+        failures.append("edit_goal must be a string or null")
+        edit_goal = None
+    else:
+        edit_goal = _optional_text(raw_edit_goal)
+
     return AgentTurnRoute(
-        action=action,  # type: ignore[arg-type]
-        confidence=_bounded_float(value.get("confidence"), 0.0),
-        reason=str(value.get("reason") or ""),
-        edit_goal=_optional_text(value.get("edit_goal")),
+        action=action,
+        confidence=confidence,
+        reason=reason,
+        edit_goal=edit_goal,
+    ), failures
+
+
+def _fallback_route() -> AgentTurnRoute:
+    return AgentTurnRoute(
+        action="chat_answer",
+        confidence=0.0,
+        reason="",
     )
 
 
@@ -136,13 +195,6 @@ def _api_key() -> str | None:
 
 def _model() -> str:
     return model_from_env(("AGENT_ROUTER_LLM_MODEL", "QUERY_LLM_MODEL", "UPSTAGE_MODEL", "LLM_MODEL"), "solar-pro2")
-
-
-def _bounded_float(value: object, default: float) -> float:
-    try:
-        return max(0.0, min(1.0, float(value)))
-    except (TypeError, ValueError):
-        return default
 
 
 def _optional_text(value: object) -> str | None:

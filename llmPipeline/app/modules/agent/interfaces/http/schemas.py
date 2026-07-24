@@ -74,7 +74,10 @@ class MarkdownEditTargetResponse(BaseModel):
 
 class MarkdownEditOperationResponse(BaseModel):
     operation: Literal["replace", "insert_after"]
-    target: MarkdownEditTargetResponse
+    requested_target: MarkdownEditTargetResponse
+    actual_target: MarkdownEditTargetResponse
+    scope_expanded: bool
+    changed: bool
     summary: str
     replacement_markdown: str
 

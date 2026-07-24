@@ -32,6 +32,22 @@ class MarkdownEditOperation:
     target: MarkdownEditTarget
     summary: str
     replacement_markdown: str
+    requested_target: MarkdownEditTarget | None = None
+    changed: bool = True
+
+    @property
+    def actual_target(self) -> MarkdownEditTarget:
+        return self.target
+
+    @property
+    def effective_requested_target(self) -> MarkdownEditTarget:
+        return self.requested_target or self.target
+
+    @property
+    def scope_expanded(self) -> bool:
+        requested = self.effective_requested_target
+        actual = self.actual_target
+        return actual.start_line < requested.start_line or actual.end_line > requested.end_line
 
 
 @dataclass(frozen=True)
