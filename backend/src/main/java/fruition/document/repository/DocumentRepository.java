@@ -19,10 +19,24 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     List<Document> findAllByWorkspaceId(String workspaceId);
 
-    /** 사용자 문서 목록: 채팅 Wiki page화 export(origin=chat_export)는 제외한다. origin이 null인 기존 업로드는 포함. */
+    /** 호환 문서 목록: 활성 문서만 공용 순서로 조회하고 chat_export는 제외한다. */
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
-            + "AND (d.origin IS NULL OR d.origin <> 'chat_export')")
+            + "AND d.deletedAt IS NULL "
+            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
     List<Document> findVisibleByWorkspaceId(@Param("workspaceId") String workspaceId);
 
-    Optional<Document> findByIdAndWorkspaceId(String id, String workspaceId);
+    /** 파일명 검색은 본문을 조회하지 않는다. */
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL "
+            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
+            + "AND (LOWER(d.displayName) LIKE LOWER(CONCAT('%', :query, '%')) "
+            + "OR LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%'))) "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> searchVisibleByWorkspaceId(
+            @Param("workspaceId") String workspaceId,
+            @Param("query") String query
+    );
+
+    Optional<Document> findByIdAndWorkspaceIdAndDeletedAtIsNull(String id, String workspaceId);
 }

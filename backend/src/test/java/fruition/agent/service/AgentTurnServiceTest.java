@@ -88,7 +88,9 @@ class AgentTurnServiceTest {
         return new DocumentDetailResponse(
                 "doc_1", filename, mimeType, 10, DocumentStatus.completed,
                 "s3://source", null, Instant.now(), Instant.now(), null, List.of(),
-                null, null, null
+                null, null, null, filename.substring(0, filename.lastIndexOf('.')),
+                filename.substring(filename.lastIndexOf('.') + 1), null, false, 1,
+                null, Instant.now(), null
         );
     }
 }

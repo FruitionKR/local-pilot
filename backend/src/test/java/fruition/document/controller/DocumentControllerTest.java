@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -88,5 +89,19 @@ class DocumentControllerTest {
     void getBlocks_unauthenticated_returns401() throws Exception {
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/documents/doc_1f9a74af/blocks"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void list_withQuery_passesFilenameSearchQuery() throws Exception {
+        when(documentService.findAll(WORKSPACE_ID, USER_ID, "보고서"))
+                .thenReturn(new fruition.document.dto.DocumentListResponse(List.of()));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .queryParam("query", "보고서")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documents").isArray());
+
+        verify(documentService).findAll(WORKSPACE_ID, USER_ID, "보고서");
     }
 }

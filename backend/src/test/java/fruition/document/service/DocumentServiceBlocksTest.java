@@ -1,12 +1,17 @@
 package fruition.document.service;
 
 import fruition.document.domain.Document;
+import fruition.document.domain.DocumentEditState;
+import fruition.document.domain.DocumentRole;
 import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
+import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentListResponse;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
+import fruition.document.repository.DocumentEditStateRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.util.StorageProperties;
@@ -57,6 +62,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
+    @Mock DocumentEditStateRepository editStateRepository;
 
     DocumentService documentService;
 
@@ -65,7 +71,7 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer,
+                editStateInitializer, editStateRepository,
                 "http://localhost:8080");
     }
 
@@ -79,7 +85,8 @@ class DocumentServiceBlocksTest {
         stubOwnedWorkspace();
         Document document = new Document("doc_1f9a74af", WORKSPACE_ID, USER_ID, "original.md", "text/markdown", 100L,
                 "sources/documents/doc_1f9a74af/original", "hash1");
-        when(documentRepository.findByIdAndWorkspaceId("doc_1f9a74af", WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1f9a74af", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
         when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_1f9a74af")).thenReturn(List.of(
                 new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0005"), "다섯 번째 block 본문"),
                 new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0006"), "여섯 번째 block 본문")
@@ -100,7 +107,8 @@ class DocumentServiceBlocksTest {
         stubOwnedWorkspace();
         Document document = new Document("doc_empty", WORKSPACE_ID, USER_ID, "original.md", "text/markdown", 100L,
                 "sources/documents/doc_empty/original", "hash2");
-        when(documentRepository.findByIdAndWorkspaceId("doc_empty", WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_empty", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
         when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_empty")).thenReturn(List.of());
 
         DocumentBlocksResponse response = documentService.blocks(WORKSPACE_ID, USER_ID, "doc_empty");
@@ -112,7 +120,8 @@ class DocumentServiceBlocksTest {
     @DisplayName("문서가 존재하지 않으면 DocumentNotFoundException을 던진다")
     void blocks_unknownDocument_throws() {
         stubOwnedWorkspace();
-        when(documentRepository.findByIdAndWorkspaceId("doc_unknown", WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_unknown", WORKSPACE_ID))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_unknown"))
                 .isInstanceOf(DocumentNotFoundException.class);
@@ -141,13 +150,55 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_lazy/original",
                 "legacy-hash"
         );
-        when(documentRepository.findByIdAndWorkspaceId("doc_lazy", WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_lazy", WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(documentWikiLinkRepository.findAllByIdDocumentId("doc_lazy")).thenReturn(List.of());
+        when(editStateRepository.findById("doc_lazy"))
+                .thenReturn(Optional.of(new DocumentEditState("doc_lazy", "# 제목", "edit-hash")));
 
-        documentService.findById(WORKSPACE_ID, USER_ID, "doc_lazy");
+        DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, "doc_lazy");
 
         verify(editStateInitializer).initializeIfNeeded(document);
+        assertThat(response.markdown()).isEqualTo("# 제목");
+        assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.editable()).isTrue();
+        assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
+    }
+
+    @Test
+    @DisplayName("호환 목록은 페이지와 원본 자료 메타데이터를 구분해 반환한다")
+    void findAll_mapsPageAndSourceMetadata() {
+        stubOwnedWorkspace();
+        Document page = new Document("doc_page", WORKSPACE_ID, USER_ID, "노트.md", "text/markdown", 10,
+                "sources/documents/doc_page/original", "page-hash");
+        Document source = new Document("doc_source", WORKSPACE_ID, USER_ID, "자료.pdf", "application/pdf", 20,
+                "sources/documents/doc_source/original", "source-hash");
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(page, source));
+        when(editStateRepository.findAllById(List.of("doc_page", "doc_source")))
+                .thenReturn(List.of(new DocumentEditState("doc_page", "# 노트", "edit-hash")));
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).extracting(DocumentListResponse.DocumentItem::area)
+                .containsExactly("pages", "sources");
+        assertThat(response.documents()).extracting(DocumentListResponse.DocumentItem::itemKind)
+                .containsExactly("page", "source_file");
+        assertThat(response.documents().get(0).editable()).isTrue();
+        assertThat(response.documents().get(0).fileType()).isEqualTo("md");
+        assertThat(response.documents().get(1).editable()).isFalse();
+        assertThat(response.documents().get(1).fileType()).isEqualTo("pdf");
+    }
+
+    @Test
+    @DisplayName("검색어는 앞뒤 공백을 제거해 파일명 검색 repository에 전달한다")
+    void findAll_withQuery_usesFilenameSearch() {
+        stubOwnedWorkspace();
+        when(documentRepository.searchVisibleByWorkspaceId(WORKSPACE_ID, "보고서")).thenReturn(List.of());
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, "  보고서  ");
+
+        assertThat(response.documents()).isEmpty();
+        verify(documentRepository).searchVisibleByWorkspaceId(WORKSPACE_ID, "보고서");
     }
 
     @Test

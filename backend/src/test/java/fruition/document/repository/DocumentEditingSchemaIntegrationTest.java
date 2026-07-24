@@ -35,6 +35,9 @@ class DocumentEditingSchemaIntegrationTest {
     @Autowired
     PostgreSQLContainer<?> postgresContainer;
 
+    @Autowired
+    DocumentRepository documentRepository;
+
     @Test
     void migration_createsDocumentEditingFoundation() {
         List<String> columns = jdbcTemplate.queryForList(
@@ -119,6 +122,42 @@ class DocumentEditingSchemaIntegrationTest {
                 "UPDATE documents SET source_document_id = id WHERE id = ?",
                 "doc_original_" + suffix
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void visibleListAndSearchExcludeDeletedChatExportAndOtherWorkspaceDocuments() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String otherWorkspaceId = "ws_other_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertWorkspace(otherWorkspaceId, userId);
+
+        insertDocument("doc_visible_" + suffix, workspaceId, userId, "보고서.md", "visible-hash", "EDITABLE");
+        insertDocument("doc_deleted_" + suffix, workspaceId, userId, "보고서 삭제.md", "deleted-hash", "EDITABLE");
+        insertDocument("doc_chat_" + suffix, workspaceId, userId, "보고서 채팅.md", "chat-hash", "EDITABLE");
+        insertDocument("doc_other_" + suffix, otherWorkspaceId, userId, "보고서 외부.md", "other-hash", "EDITABLE");
+        jdbcTemplate.update(
+                "UPDATE documents SET deleted_at = now() WHERE id = ?",
+                "doc_deleted_" + suffix
+        );
+        jdbcTemplate.update(
+                "UPDATE documents SET origin = 'chat_export' WHERE id = ?",
+                "doc_chat_" + suffix
+        );
+
+        assertThat(documentRepository.findVisibleByWorkspaceId(workspaceId))
+                .extracting(fruition.document.domain.Document::getId)
+                .containsExactly("doc_visible_" + suffix);
+        assertThat(documentRepository.searchVisibleByWorkspaceId(workspaceId, "보고서"))
+                .extracting(fruition.document.domain.Document::getId)
+                .containsExactly("doc_visible_" + suffix);
+        assertThat(documentRepository.searchVisibleByWorkspaceId(workspaceId, "본문에만 있는 검색어"))
+                .isEmpty();
+        assertThat(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                "doc_deleted_" + suffix, workspaceId)).isEmpty();
+        assertThat(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                "doc_visible_" + suffix, otherWorkspaceId)).isEmpty();
     }
 
     @Test
@@ -354,6 +393,14 @@ class DocumentEditingSchemaIntegrationTest {
                 "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
                 workspaceId,
                 "workspace"
+        );
+    }
+
+    private void insertWorkspace(String workspaceId, String userId) {
+        jdbcTemplate.update(
+                "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
+                workspaceId,
+                "workspace-" + userId
         );
     }
 

@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: Markdown 문서 조회·파일명 검색 확장
+
+**변경된 것**
+
+- 기존 `GET /api/workspaces/{workspace_id}/documents` 호환 목록에 페이지·원본 영역, 항목 종류, 표시 이름, 파일 형식, 편집 가능 여부, 현재 version, 원본 참조와 수정 시각을 추가했다.
+- 목록에 선택적 `query`를 받아 `display_name`과 `filename`만 대소문자 구분 없이 검색하며, 본문은 검색하지 않는다.
+- 목록은 공용 `sort_order`를 적용하고 삭제 문서, 다른 workspace 문서, `origin=chat_export` 문서를 제외한다.
+- 문서 상세에 현재 Markdown과 `current_version`을 반환하고, 삭제 문서는 상세·원본·block API에서 조회되지 않게 했다.
+
+**검증**
+
+- 페이지·원본 구분, 검색어 전달, 현재 Markdown 상세 응답을 service·controller 테스트로 검증했다.
+- PostgreSQL 통합 테스트에서 삭제 문서, 다른 workspace, `chat_export` 제외와 본문 검색 제외를 검증했다.
+- `./gradlew clean test` 전체 208개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- `/navigation`, breadcrumb와 직계 자식 지연 조회는 hierarchy `TASK-H005`에서 구현한다.
+- production 본문 저장과 `base_version` 충돌 처리는 후속 Core TASK로 유지한다.
+
 ### feat: Markdown 문서 편집 입력 규칙 추가
 
 **변경된 것**

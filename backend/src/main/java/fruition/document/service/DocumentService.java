@@ -2,7 +2,9 @@ package fruition.document.service;
 
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
+import fruition.document.domain.DocumentEditState;
 import fruition.document.domain.DocumentProcessingState;
+import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
@@ -22,6 +24,7 @@ import fruition.document.dto.DocumentWikiPageRef;
 import fruition.document.domain.DocumentProcessingQueue;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
+import fruition.document.repository.DocumentEditStateRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
@@ -55,6 +58,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -77,6 +81,7 @@ public class DocumentService {
     private final DocumentProcessingQueueRepository queueRepository;
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
+    private final DocumentEditStateRepository editStateRepository;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -91,6 +96,7 @@ public class DocumentService {
                            DocumentProcessingQueueRepository queueRepository,
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
+                           DocumentEditStateRepository editStateRepository,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -104,6 +110,7 @@ public class DocumentService {
         this.queueRepository = queueRepository;
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
+        this.editStateRepository = editStateRepository;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -400,10 +407,18 @@ public class DocumentService {
         return contentHash.substring(0, Math.min(contentHash.length(), 16));
     }
 
-    public DocumentListResponse findAll(String workspaceId, String userId) {
+    public DocumentListResponse findAll(String workspaceId, String userId, String query) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<DocumentListResponse.DocumentItem> items = documentRepository.findVisibleByWorkspaceId(workspaceId).stream()
+        List<Document> documents = query == null || query.isBlank()
+                ? documentRepository.findVisibleByWorkspaceId(workspaceId)
+                : documentRepository.searchVisibleByWorkspaceId(workspaceId, query.trim());
+        Set<String> editableDocumentIds = editStateRepository.findAllById(
+                        documents.stream().map(Document::getId).toList()).stream()
+                .map(DocumentEditState::getDocumentId)
+                .collect(Collectors.toSet());
+
+        List<DocumentListResponse.DocumentItem> items = documents.stream()
                 .map(doc -> new DocumentListResponse.DocumentItem(
                         doc.getId(),
                         doc.getFilename(),
@@ -417,7 +432,16 @@ public class DocumentService {
                         doc.getErrorMessage(),
                         doc.getPipelineRunId(),
                         resolveProcessingState(doc),
-                        doc.getProcessingStage()
+                        doc.getProcessingStage(),
+                        areaOf(doc),
+                        itemKindOf(doc),
+                        doc.getDisplayName(),
+                        fileTypeOf(doc),
+                        doc.getDocumentRole(),
+                        isEditable(doc, editableDocumentIds.contains(doc.getId())),
+                        doc.getCurrentVersion(),
+                        doc.getSourceDocumentId(),
+                        doc.getUpdatedAt()
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -438,9 +462,10 @@ public class DocumentService {
     @Transactional
     public DocumentDetailResponse findById(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document doc = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document doc = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         editStateInitializer.initializeIfNeeded(doc);
+        Optional<DocumentEditState> editState = editStateRepository.findById(documentId);
 
         List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
         List<DocumentWikiPageRef> wikiPages = buildWikiPageRefs(links);
@@ -459,8 +484,49 @@ public class DocumentService {
                 wikiPages,
                 doc.getPipelineRunId(),
                 resolveProcessingState(doc),
-                doc.getProcessingStage()
+                doc.getProcessingStage(),
+                doc.getDisplayName(),
+                fileTypeOf(doc),
+                doc.getDocumentRole(),
+                isEditable(doc, editState.isPresent()),
+                doc.getCurrentVersion(),
+                doc.getSourceDocumentId(),
+                doc.getUpdatedAt(),
+                editState.map(DocumentEditState::getMarkdown).orElse(null)
         );
+    }
+
+    private String areaOf(Document document) {
+        return document.getDocumentRole() == DocumentRole.EDITABLE ? "pages" : "sources";
+    }
+
+    private String itemKindOf(Document document) {
+        return document.getDocumentRole() == DocumentRole.EDITABLE ? "page" : "source_file";
+    }
+
+    private boolean isEditable(Document document, boolean hasEditState) {
+        return document.getDeletedAt() == null
+                && document.getDocumentRole() == DocumentRole.EDITABLE
+                && hasEditState
+                && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
+    }
+
+    private boolean isMarkdown(Document document) {
+        String mimeType = document.getMimeType();
+        String filename = document.getFilename().toLowerCase(java.util.Locale.ROOT);
+        return "text/markdown".equals(mimeType)
+                || "text/x-markdown".equals(mimeType)
+                || filename.endsWith(".md")
+                || filename.endsWith(".markdown");
+    }
+
+    private String fileTypeOf(Document document) {
+        int extensionIndex = document.getFilename().lastIndexOf('.');
+        if (extensionIndex >= 0 && extensionIndex < document.getFilename().length() - 1) {
+            return document.getFilename().substring(extensionIndex + 1)
+                    .toLowerCase(java.util.Locale.ROOT);
+        }
+        return document.getMimeType();
     }
 
     private List<DocumentWikiPageRef> buildWikiPageRefs(List<DocumentWikiLink> links) {
@@ -492,7 +558,7 @@ public class DocumentService {
         verifyWorkspaceOwnership(workspaceId, userId);
         validateFilename(request.filename());
 
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String previousFilename = document.getFilename();
@@ -542,7 +608,7 @@ public class DocumentService {
     @Transactional
     public void delete(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         deleteInternal(document);
     }
@@ -610,7 +676,7 @@ public class DocumentService {
 
     public DocumentBlocksResponse blocks(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         List<DocumentBlockResponse> blocks = sourceBlockRepository
@@ -623,7 +689,7 @@ public class DocumentService {
 
     public DocumentOriginalResult getOriginal(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String objectKey = normalizeObjectKey(document.getSourceUri());

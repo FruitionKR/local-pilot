@@ -96,8 +96,9 @@ public class DocumentController {
     @GetMapping
     public ResponseEntity<DocumentListResponse> list(
             @PathVariable("workspace_id") String workspaceId,
-            @AuthenticationPrincipal String userId) {
-        return ResponseEntity.ok(documentService.findAll(workspaceId, userId));
+            @AuthenticationPrincipal String userId,
+            @RequestParam(value = "query", required = false) String query) {
+        return ResponseEntity.ok(documentService.findAll(workspaceId, userId, query));
     }
 
     @Operation(summary = "문서 상세 조회", description = "특정 문서의 상세 정보를 반환합니다. 연결된 Wiki 페이지 목록이 포함됩니다.")
