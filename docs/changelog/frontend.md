@@ -6,6 +6,12 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: 채팅 편집 시 선택한 문답을 편집 맥락으로 전송
+
+- 마크다운 편집(agent/turn) 요청에 사용자가 선택한 채팅 문답(pair)을 `conversationContext.recentConversationSummary`로 실어 보내도록 배선. backend·pipeline은 이미 `recent_conversation_summary`를 소비하나 frontend가 미전송이던 gap을 채움.
+- 기존 문답 선택 체크박스(`selectedPairIds`, 채팅→위키 편입용)를 편집 맥락에도 공용으로 사용. 선택이 없으면 필드 자체를 생략(현행 무회귀).
+- `AgentTurnRequest`에 옵셔널 `conversationContext` 추가, `buildSelectedConversationSummary`(선택 문답 전사·4000자 상한) 헬퍼 추가, `<details>` 라벨을 "채팅 선택 (편집 맥락·편입 공용)"으로 조정. (`markdownAgent.ts`, `shared/lib/messages.ts`, `AgentPanel.tsx`)
+
 ### feat: 사이드바 문서 처리 뱃지 라벨/툴팁 개선
 
 - 사이드바 문서 트리의 `stalled` 상태 뱃지 라벨을 "지연" → "작업 중"으로 변경하고, tooltip 문구도 "처리 지연: {stage}"/"처리가 지연되고 있습니다." → "작업 중: {stage}"/"작업 중입니다."로 맞춤. (`TreeNodeStatus.tsx`)

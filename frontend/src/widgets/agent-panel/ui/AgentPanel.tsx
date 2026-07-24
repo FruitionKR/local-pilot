@@ -19,7 +19,7 @@ import {
   validateMarkdownEditApplication
 } from "@/features/agent-chat/lib/markdownAgent";
 import type { AgentTurnRequest, AgentTurnResponse, GeneratedMarkdownDraft, MarkdownEditPreview as MarkdownEditPreviewData } from "@/features/agent-chat/lib/markdownAgent";
-import { findLastUserMessage } from "@/shared/lib/messages";
+import { findLastUserMessage, buildSelectedConversationSummary } from "@/shared/lib/messages";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { GraphNode } from "@/entities/wiki";
@@ -117,8 +117,12 @@ export function AgentPanel({
     }
   }, [agentTurnRequest, agentTurnResponse, markdownEditContext]);
 
-  const submitAgentTurn = useCallback((question: string, context: ActiveMarkdownEditContext) => {
-    const request = buildAgentTurnRequest(question, context);
+  const submitAgentTurn = useCallback((
+    question: string,
+    context: ActiveMarkdownEditContext,
+    recentConversationSummary: string
+  ) => {
+    const request = buildAgentTurnRequest(question, context, recentConversationSummary);
     setAgentTurnRequest(request);
     setAgentTurnResponse(null);
     setAgentTurnErrorMessage(null);
@@ -138,7 +142,7 @@ export function AgentPanel({
     if (!question || isSubmitting) return;
     setComposerValue("");
     if (markdownEditContext) {
-      submitAgentTurn(question, markdownEditContext);
+      submitAgentTurn(question, markdownEditContext, buildSelectedConversationSummary(messages, selectedPairIds));
       return;
     }
     void submitQuery(question);
@@ -156,7 +160,7 @@ export function AgentPanel({
       setAgentTurnErrorMessage("편집 중인 문서를 다시 열고 재생성해주세요.");
       return;
     }
-    submitAgentTurn(agentTurnRequest.message, markdownEditContext);
+    submitAgentTurn(agentTurnRequest.message, markdownEditContext, buildSelectedConversationSummary(messages, selectedPairIds));
   }
 
   function applyMarkdownEdit() {
@@ -287,7 +291,7 @@ export function AgentPanel({
         <div className="wiki-export-trigger">
           {exportPairs.length > 1 && (
             <details className="wiki-export-selection">
-              <summary>부분 선택 {selectedPairIds.size > 0 ? `(${selectedPairIds.size}개 문답)` : "(전체)"}</summary>
+              <summary>채팅 선택 (편집 맥락·편입 공용) {selectedPairIds.size > 0 ? `(${selectedPairIds.size}개 문답)` : "(전체)"}</summary>
               <ul>
                 {exportPairs.map((pair) => (
                   <li key={pair.pairId}>
