@@ -1,17 +1,26 @@
 package fruition.document.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentEditState;
 import fruition.document.domain.DocumentRole;
+import fruition.document.domain.IdempotencyRecord;
 import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.IdempotencyConflictException;
+import fruition.document.exception.InvalidIdempotencyKeyException;
+import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentEditStateRepository;
+import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.util.StorageProperties;
@@ -22,6 +31,7 @@ import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +40,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +52,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +75,7 @@ class DocumentServiceBlocksTest {
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     DocumentService documentService;
 
@@ -71,7 +84,8 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository,
+                editStateInitializer, editStateRepository, idempotencyRecordRepository,
+                new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
 
@@ -202,28 +216,180 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("초기 노트는 워크스페이스마다 동일 Markdown 문서로 저장한다")
-    void createInitialNote_savesIdenticalMarkdownPerWorkspace() throws Exception {
-        when(storageProps.getBucket()).thenReturn("test-bucket");
-
+    @DisplayName("초기 노트는 MinIO 없이 직접 생성 Markdown과 편집 상태로 저장한다")
+    void createInitialNote_savesDirectMarkdownWithoutMinio() throws Exception {
         documentService.createInitialNote("ws_first", USER_ID);
         documentService.createInitialNote("ws_second", USER_ID);
 
         ArgumentCaptor<Document> documents = ArgumentCaptor.forClass(Document.class);
+        ArgumentCaptor<DocumentEditState> editStates = ArgumentCaptor.forClass(DocumentEditState.class);
         verify(documentRepository, times(2)).save(documents.capture());
-        verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
+        verify(editStateRepository, times(2)).save(editStates.capture());
+        verify(minioClient, never()).putObject(any(PutObjectArgs.class));
         assertThat(documents.getAllValues())
                 .allSatisfy(document -> {
                     assertThat(document.getFilename()).isEqualTo("새 노트.md");
                     assertThat(document.getMimeType()).isEqualTo("text/markdown");
                     assertThat(document.getByteSize()).isPositive();
+                    assertThat(document.getSourceUri()).isNull();
+                    assertThat(document.getContentHash()).isNull();
+                    assertThat(document.getCurrentVersion()).isEqualTo(1);
+                    assertThat(document.getStatus()).isEqualTo(fruition.document.domain.DocumentStatus.completed);
                 });
-        // 중복 판별이 (workspace_id, content_hash)로 바뀐 뒤(V5), 초기 노트는 워크스페이스마다
-        // 동일한 Markdown을 저장하므로 content_hash도 같다. 저장은 각 워크스페이스로 라우팅된다.
         assertThat(documents.getAllValues().get(0).getWorkspaceId()).isEqualTo("ws_first");
         assertThat(documents.getAllValues().get(1).getWorkspaceId()).isEqualTo("ws_second");
-        assertThat(documents.getAllValues().get(0).getContentHash())
-                .isEqualTo(documents.getAllValues().get(1).getContentHash());
+        assertThat(editStates.getAllValues())
+                .extracting(DocumentEditState::getMarkdown)
+                .containsOnly("# 새 노트\n");
+    }
+
+    @Test
+    @DisplayName("빈 Markdown 직접 생성은 version 1 편집 문서와 멱등 기록을 저장한다")
+    void createMarkdown_emptyBody_createsEditableDocument() {
+        stubOwnedWorkspace();
+        when(documentRepository.findMaxRootSortOrder(WORKSPACE_ID, DocumentRole.EDITABLE)).thenReturn(-1L);
+
+        DocumentUploadResponse response = documentService.createMarkdown(
+                WORKSPACE_ID,
+                USER_ID,
+                "create-key",
+                new MarkdownDocumentCreateRequest(" 새 문서 ", "")
+        );
+
+        ArgumentCaptor<Document> document = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepository).save(document.capture());
+        verify(editStateRepository).save(any(DocumentEditState.class));
+        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        assertThat(document.getValue().getFilename()).isEqualTo("새 문서.md");
+        assertThat(document.getValue().getSourceUri()).isNull();
+        assertThat(document.getValue().getSortOrder()).isZero();
+        assertThat(response.editable()).isTrue();
+        assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
+    }
+
+    @Test
+    @DisplayName("직접 생성은 멱등 키를 필수로 받고 UTF-8 5MB 초과 본문을 거절한다")
+    void createMarkdown_validatesIdempotencyKeyAndBodySize() {
+        stubOwnedWorkspace();
+
+        assertThatThrownBy(() -> documentService.createMarkdown(
+                WORKSPACE_ID,
+                USER_ID,
+                null,
+                new MarkdownDocumentCreateRequest("문서", "")
+        )).isInstanceOf(InvalidIdempotencyKeyException.class);
+
+        assertThatThrownBy(() -> documentService.createMarkdown(
+                WORKSPACE_ID,
+                USER_ID,
+                "create-key",
+                new MarkdownDocumentCreateRequest("문서", "a".repeat(5 * 1024 * 1024 + 1))
+        )).isInstanceOf(MarkdownContentTooLargeException.class);
+
+        verify(documentRepository, never()).save(any(Document.class));
+        verify(editStateRepository, never()).save(any(DocumentEditState.class));
+    }
+
+    @Test
+    @DisplayName("동일한 멱등 키와 요청은 기존 문서를 반환하고 다시 저장하지 않는다")
+    void createMarkdown_sameIdempotencyRequest_replaysExistingDocument() {
+        stubOwnedWorkspace();
+        MarkdownDocumentCreateRequest request = new MarkdownDocumentCreateRequest("문서", "# 본문");
+
+        DocumentUploadResponse first =
+                documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", request);
+        ArgumentCaptor<IdempotencyRecord> record = ArgumentCaptor.forClass(IdempotencyRecord.class);
+        verify(idempotencyRecordRepository).save(record.capture());
+        verify(documentRepository).save(any(Document.class));
+
+        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                USER_ID,
+                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/markdown",
+                "same-key"
+        )).thenReturn(Optional.of(record.getValue()));
+        DocumentUploadResponse replay =
+                documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", request);
+
+        assertThat(replay).isEqualTo(first);
+        verify(documentRepository, times(1)).save(any(Document.class));
+        verify(editStateRepository, times(1)).save(any(DocumentEditState.class));
+    }
+
+    @Test
+    @DisplayName("같은 멱등 키에 다른 생성 요청은 충돌한다")
+    void createMarkdown_sameIdempotencyKeyDifferentRequest_conflicts() {
+        stubOwnedWorkspace();
+        MarkdownDocumentCreateRequest firstRequest = new MarkdownDocumentCreateRequest("문서", "# 본문");
+        documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", firstRequest);
+        ArgumentCaptor<IdempotencyRecord> record = ArgumentCaptor.forClass(IdempotencyRecord.class);
+        verify(idempotencyRecordRepository).save(record.capture());
+        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                USER_ID,
+                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/markdown",
+                "same-key"
+        )).thenReturn(Optional.of(record.getValue()));
+
+        assertThatThrownBy(() -> documentService.createMarkdown(
+                WORKSPACE_ID,
+                USER_ID,
+                "same-key",
+                new MarkdownDocumentCreateRequest("다른 문서", "# 본문")
+        )).isInstanceOf(IdempotencyConflictException.class);
+    }
+
+    @Test
+    @DisplayName("Markdown 업로드는 즉시 편집 상태를 만들고 editable을 반환한다")
+    void uploadMarkdown_createsEditStateImmediately() throws Exception {
+        stubOwnedWorkspace();
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+        when(documentRepository.findMaxRootSortOrder(WORKSPACE_ID, DocumentRole.EDITABLE)).thenReturn(-1L);
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "업로드.md", "text/markdown", "# 업로드".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        DocumentUploadResponse response =
+                documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file);
+
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(editStateRepository).save(any(DocumentEditState.class));
+        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        assertThat(response.editable()).isTrue();
+        assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
+        assertThat(response.currentVersion()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("MinIO 업로드 실패 시 문서와 멱등 기록을 저장하지 않는다")
+    void upload_minioFailure_leavesNoDatabaseState() throws Exception {
+        stubOwnedWorkspace();
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+        when(minioClient.putObject(any(PutObjectArgs.class))).thenThrow(new RuntimeException("storage failure"));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file))
+                .isInstanceOf(DocumentUploadException.class);
+
+        verify(documentRepository, never()).save(any(Document.class));
+        verify(editStateRepository, never()).save(any(DocumentEditState.class));
+        verify(idempotencyRecordRepository, never()).save(any(IdempotencyRecord.class));
+    }
+
+    @Test
+    @DisplayName("MinIO 저장 후 DB 실패 시 업로드 객체를 보상 삭제한다")
+    void upload_databaseFailure_removesStoredObject() throws Exception {
+        stubOwnedWorkspace();
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+        when(documentRepository.save(any(Document.class))).thenThrow(new RuntimeException("database failure"));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file))
+                .isInstanceOf(DocumentUploadException.class);
+
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(minioClient).removeObject(any(RemoveObjectArgs.class));
+        verify(idempotencyRecordRepository, never()).save(any(IdempotencyRecord.class));
     }
 
     @Test

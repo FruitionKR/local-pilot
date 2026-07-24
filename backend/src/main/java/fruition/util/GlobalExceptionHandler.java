@@ -9,6 +9,8 @@ import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
+import fruition.document.exception.InvalidIdempotencyKeyException;
+import fruition.document.exception.IdempotencyConflictException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.exception.EmptyChatWikiExportException;
@@ -110,6 +112,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("MARKDOWN_CONTENT_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidIdempotencyKeyException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidIdempotencyKey(InvalidIdempotencyKeyException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_IDEMPOTENCY_KEY", e.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyConflict(IdempotencyConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
     }
 
     @ExceptionHandler(EmptyChatWikiExportException.class)

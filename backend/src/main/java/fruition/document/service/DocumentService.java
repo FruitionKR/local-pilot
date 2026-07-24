@@ -1,18 +1,25 @@
 package fruition.document.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentEditState;
 import fruition.document.domain.DocumentProcessingState;
 import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
+import fruition.document.domain.IdempotencyRecord;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
-import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.document.exception.InvalidIdempotencyKeyException;
+import fruition.document.exception.IdempotencyConflictException;
+import fruition.document.exception.InvalidMarkdownContentException;
+import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
@@ -25,6 +32,7 @@ import fruition.document.domain.DocumentProcessingQueue;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentEditStateRepository;
+import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
@@ -82,6 +90,8 @@ public class DocumentService {
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
+    private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -97,6 +107,8 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
+                           IdempotencyRecordRepository idempotencyRecordRepository,
+                           ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -111,6 +123,8 @@ public class DocumentService {
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
+        this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -121,32 +135,43 @@ public class DocumentService {
     }
 
     @Transactional
-    public DocumentUploadResponse upload(String workspaceId, String userId, MultipartFile file) {
+    public DocumentUploadResponse upload(
+            String workspaceId,
+            String userId,
+            String idempotencyKey,
+            MultipartFile file
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        String objectPath = null;
+        boolean objectStored = false;
         try {
             byte[] bytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            validateFilename(filename);
+            String mimeType = resolveMimeType(file);
+            boolean markdownUpload = isMarkdown(filename, mimeType);
+            DocumentEditingRules.MarkdownContent markdownContent =
+                    markdownUpload ? DocumentEditingRules.markdown(bytes) : null;
+            String contentHash = markdownUpload ? markdownContent.contentHash() : sha256(bytes);
+            String endpointScope = uploadEndpointScope(workspaceId);
+            String requestHash = requestHash(filename.trim(), mimeType, contentHash);
+
+            Optional<DocumentUploadResponse> replay = replayIdempotentRequest(
+                    userId, endpointScope, idempotencyKey, requestHash);
+            if (replay.isPresent()) {
+                return replay.get();
+            }
+
             log.info("[문서 업로드 요청] workspaceId={} userId={} filename={} contentType={} size={}",
                     workspaceId, userId, file.getOriginalFilename(), file.getContentType(), file.getSize());
 
-            // 1. content_hash 계산 및 중복 확인
-            String contentHash = sha256(bytes);
-            Optional<Document> duplicate = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
-            log.info("[문서 중복 확인] contentHashPrefix={} duplicate={}",
-                    contentHashPrefix(contentHash), duplicate.isPresent());
-            duplicate.ifPresent(existing -> {
-                log.warn("[문서 중복 감지] documentId={} contentHashPrefix={}",
-                        existing.getId(), contentHashPrefix(contentHash));
-                throw new DuplicateDocumentException("이미 업로드된 문서입니다.");
-            });
-
-            // 2. MinIO에 원본 파일 저장
             String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
-            String objectPath = "sources/documents/" + documentId + "/original";
-            String mimeType = resolveMimeType(file);
+            objectPath = "sources/documents/" + documentId + "/original";
             log.info("[문서 원본 저장 시작] documentId={} bucket={} objectPath={} mimeType={} byteSize={}",
                     documentId, storageProps.getBucket(), objectPath, mimeType, bytes.length);
 
-            try (InputStream inputStream = file.getInputStream()) {
+            try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
                 minioClient.putObject(
                         PutObjectArgs.builder()
                                 .bucket(storageProps.getBucket())
@@ -156,81 +181,90 @@ public class DocumentService {
                                 .build()
                 );
             }
+            objectStored = true;
+            registerMinioRollbackCleanup(objectPath);
             log.info("[문서 원본 저장 완료] documentId={} objectPath={}", documentId, objectPath);
 
-            // 3. documents 레코드 생성 (status=processing)
             Document document = new Document(
                     documentId,
                     workspaceId,
                     userId,
-                    file.getOriginalFilename(),
+                    filename.trim(),
                     mimeType,
-                    file.getSize(),
+                    bytes.length,
                     objectPath,
                     contentHash
             );
+            document.placeAtRoot(nextRootSortOrder(workspaceId, document.getDocumentRole()));
             documentRepository.save(document);
+            if (markdownUpload) {
+                editStateRepository.save(new DocumentEditState(
+                        documentId, markdownContent.markdown(), markdownContent.contentHash()));
+            }
+            DocumentUploadResponse response = toUploadResponse(document, markdownUpload);
+            saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
             log.info("[문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} status={} sourceUri={}",
                     document.getId(), document.getWorkspaceId(), document.getUserId(),
                     document.getFilename(), document.getStatus(), document.getSourceUri());
 
-            // 4. DB 커밋 이후 백그라운드 처리 요청 (실패해도 업로드 응답에 영향 없음)
             requestProcessingAfterCommit(documentId);
-
-            return new DocumentUploadResponse(
-                    document.getId(),
-                    document.getFilename(),
-                    document.getMimeType(),
-                    document.getByteSize(),
-                    document.getStatus(),
-                    document.getSourceUri(),
-                    document.getUploadedAt()
-            );
-
-        } catch (DuplicateDocumentException e) {
+            return response;
+        } catch (InvalidDocumentFilenameException
+                 | InvalidIdempotencyKeyException
+                 | IdempotencyConflictException
+                 | InvalidMarkdownContentException
+                 | MarkdownContentTooLargeException e) {
             throw e;
         } catch (Exception e) {
+            if (objectStored) {
+                deleteMinioObject(objectPath);
+            }
             throw new DocumentUploadException("파일 저장 중 오류가 발생했습니다.", e);
         }
     }
 
-    /**
-     * 새 워크스페이스에 표시할 초기 Markdown 노트를 저장한다.
-     * 노트는 원본 조회(getOriginal)만으로 열람 가능하므로 파이프라인 처리 큐에는 올리지 않는다.
-     * 실패해도 워크스페이스 생성을 막지 않도록 예외를 삼키고 로그만 남긴다(best-effort).
-     */
+    @Transactional
+    public DocumentUploadResponse createMarkdown(
+            String workspaceId,
+            String userId,
+            String idempotencyKey,
+            MarkdownDocumentCreateRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        if (request == null) {
+            throw new InvalidMarkdownContentException("Markdown 생성 요청은 필수입니다.");
+        }
+
+        DocumentEditingRules.Filename filename =
+                DocumentEditingRules.rename(request.displayName(), "document.md");
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(request.markdown());
+        String endpointScope = markdownEndpointScope(workspaceId);
+        String requestHash = requestHash(filename.filename(), "text/markdown", content.contentHash());
+
+        Optional<DocumentUploadResponse> replay =
+                replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        DocumentUploadResponse response =
+                createMarkdownDocument(workspaceId, userId, filename.filename(), content, "direct");
+        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
+    /** 새 워크스페이스에 직접 생성 Markdown 노트를 저장한다. 실패는 기존처럼 best-effort로 처리한다. */
     @Transactional
     public void createInitialNote(String workspaceId, String userId) {
-        // content_hash 중복 판별이 (workspace_id, content_hash) 범위로 바뀐 뒤로(V5),
-        // 워크스페이스마다 해시를 다르게 만들던 fruition-workspace 식별 주석은 필요 없다.
-        String markdown = "# 새 노트\n";
-        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
-        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
-        String objectPath = "sources/documents/" + documentId + "/original";
-
-        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(storageProps.getBucket())
-                            .object(objectPath)
-                            .stream(inputStream, bytes.length, -1)
-                            .contentType("text/markdown")
-                            .build()
-            );
-
-            Document document = new Document(
-                    documentId,
+        try {
+            createMarkdownDocument(
                     workspaceId,
                     userId,
                     INITIAL_NOTE_FILENAME,
-                    "text/markdown",
-                    bytes.length,
-                    objectPath,
-                    sha256(bytes)
+                    DocumentEditingRules.markdown("# 새 노트\n"),
+                    "direct"
             );
-            // 초기 노트는 파이프라인 처리 대상이 아니므로(큐에 올리지 않음) 곧바로 completed로 둔다.
-            document.updateStatus(DocumentStatus.completed, null, Instant.now(), null);
-            documentRepository.save(document);
         } catch (Exception e) {
             log.warn("초기 노트 저장 실패로 건너뜁니다. workspaceId={}", workspaceId, e);
         }
@@ -242,10 +276,169 @@ public class DocumentService {
             return contentType;
         }
         String filename = file.getOriginalFilename();
-        if (filename != null && filename.endsWith(".md")) {
-            return "text/markdown";
+        if (filename != null) {
+            String normalizedFilename = filename.toLowerCase(java.util.Locale.ROOT);
+            if (normalizedFilename.endsWith(".md") || normalizedFilename.endsWith(".markdown")) {
+                return "text/markdown";
+            }
         }
         return contentType != null ? contentType : "application/octet-stream";
+    }
+
+    private DocumentUploadResponse createMarkdownDocument(
+            String workspaceId,
+            String userId,
+            String filename,
+            DocumentEditingRules.MarkdownContent content,
+            String origin
+    ) {
+        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        Document document = new Document(
+                documentId,
+                workspaceId,
+                userId,
+                filename,
+                "text/markdown",
+                content.bytes().length,
+                null,
+                null,
+                origin
+        );
+        document.initializeDirectMarkdown(
+                content.contentHash(),
+                content.bytes().length,
+                nextRootSortOrder(workspaceId, DocumentRole.EDITABLE)
+        );
+        documentRepository.save(document);
+        editStateRepository.save(new DocumentEditState(
+                documentId, content.markdown(), content.contentHash()));
+        return toUploadResponse(document, true);
+    }
+
+    private long nextRootSortOrder(String workspaceId, DocumentRole documentRole) {
+        return documentRepository.findMaxRootSortOrder(workspaceId, documentRole) + 1;
+    }
+
+    private boolean isMarkdown(String filename, String mimeType) {
+        String normalizedFilename = filename.toLowerCase(java.util.Locale.ROOT);
+        return "text/markdown".equals(mimeType)
+                || "text/x-markdown".equals(mimeType)
+                || normalizedFilename.endsWith(".md")
+                || normalizedFilename.endsWith(".markdown");
+    }
+
+    private DocumentUploadResponse toUploadResponse(Document document, boolean editable) {
+        return new DocumentUploadResponse(
+                document.getId(),
+                document.getFilename(),
+                document.getMimeType(),
+                document.getByteSize(),
+                document.getStatus(),
+                document.getSourceUri(),
+                document.getUploadedAt(),
+                editable,
+                document.getCurrentVersion(),
+                document.getDocumentRole()
+        );
+    }
+
+    private void validateIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 255) {
+            throw new InvalidIdempotencyKeyException("Idempotency-Key는 1자 이상 255자 이하여야 합니다.");
+        }
+    }
+
+    private Optional<DocumentUploadResponse> replayIdempotentRequest(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash
+    ) {
+        Optional<IdempotencyRecord> found =
+                idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                        userId, endpointScope, idempotencyKey);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+
+        IdempotencyRecord record = found.get();
+        if (!record.getExpiresAt().isAfter(Instant.now())) {
+            idempotencyRecordRepository.delete(record);
+            idempotencyRecordRepository.flush();
+            return Optional.empty();
+        }
+        if (!record.getRequestHash().equals(requestHash)) {
+            throw new IdempotencyConflictException("같은 Idempotency-Key를 다른 요청에 사용할 수 없습니다.");
+        }
+
+        if (record.getResponseBody() != null) {
+            try {
+                return Optional.of(objectMapper.readValue(
+                        record.getResponseBody(), DocumentUploadResponse.class));
+            } catch (JsonProcessingException exception) {
+                throw new IllegalStateException("멱등성 응답을 복원할 수 없습니다.", exception);
+            }
+        }
+
+        Document document = documentRepository.findById(record.getResourceId())
+                .orElseThrow(() -> new IdempotencyConflictException(
+                        "멱등성 기록의 기존 문서를 찾을 수 없습니다."));
+        return Optional.of(toUploadResponse(document, editStateRepository.existsById(document.getId())));
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentUploadResponse response
+    ) {
+        Instant now = Instant.now();
+        String responseBody;
+        try {
+            responseBody = objectMapper.writeValueAsString(response);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("멱등성 응답을 저장할 수 없습니다.", exception);
+        }
+        idempotencyRecordRepository.save(new IdempotencyRecord(
+                UUID.randomUUID(),
+                userId,
+                endpointScope,
+                idempotencyKey,
+                requestHash,
+                201,
+                response.id(),
+                responseBody,
+                now,
+                now.plusSeconds(24 * 60 * 60)
+        ));
+    }
+
+    private String uploadEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents";
+    }
+
+    private String markdownEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents/markdown";
+    }
+
+    private String requestHash(String filename, String mimeType, String contentHash) {
+        return sha256((filename + "\0" + mimeType + "\0" + contentHash)
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void registerMinioRollbackCleanup(String objectPath) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteMinioObject(objectPath);
+                }
+            }
+        });
     }
 
     private void requestProcessingAfterCommit(String documentId) {

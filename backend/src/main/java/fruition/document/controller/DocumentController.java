@@ -5,6 +5,7 @@ import fruition.document.service.DocumentService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
@@ -63,6 +64,7 @@ public class DocumentController {
     public ResponseEntity<?> upload(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestParam(value = "file", required = false) MultipartFile file) {
         if (file == null || file.isEmpty()) {
             return ResponseEntity
@@ -71,8 +73,11 @@ public class DocumentController {
         }
 
         String mimeType = file.getContentType();
-        boolean isMdByExtension = file.getOriginalFilename() != null
-                && file.getOriginalFilename().endsWith(".md");
+        String normalizedFilename = file.getOriginalFilename() == null
+                ? ""
+                : file.getOriginalFilename().toLowerCase(java.util.Locale.ROOT);
+        boolean isMdByExtension = normalizedFilename.endsWith(".md")
+                || normalizedFilename.endsWith(".markdown");
 
         if (!ALLOWED_MIME_TYPES.contains(mimeType) && !isMdByExtension) {
             return ResponseEntity
@@ -80,8 +85,18 @@ public class DocumentController {
                     .body(ErrorResponse.of("UNSUPPORTED_FILE_TYPE", "PDF 또는 Markdown 파일만 업로드할 수 있습니다."));
         }
 
-        DocumentUploadResponse response = documentService.upload(workspaceId, userId, file);
+        DocumentUploadResponse response = documentService.upload(workspaceId, userId, idempotencyKey, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping(path = "/markdown", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<DocumentUploadResponse> createMarkdown(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestBody MarkdownDocumentCreateRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(documentService.createMarkdown(workspaceId, userId, idempotencyKey, request));
     }
 
     @Operation(summary = "문서 목록 조회", description = "워크스페이스에 업로드된 모든 문서 목록을 반환합니다. 처리 상태 polling에 활용됩니다.")

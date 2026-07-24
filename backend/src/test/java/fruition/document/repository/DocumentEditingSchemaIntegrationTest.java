@@ -1,6 +1,7 @@
 package fruition.document.repository;
 
 import fruition.TestcontainersConfiguration;
+import fruition.document.domain.DocumentRole;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
@@ -158,6 +159,8 @@ class DocumentEditingSchemaIntegrationTest {
                 "doc_deleted_" + suffix, workspaceId)).isEmpty();
         assertThat(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
                 "doc_visible_" + suffix, otherWorkspaceId)).isEmpty();
+        assertThat(documentRepository.findMaxRootSortOrder(workspaceId, DocumentRole.EDITABLE))
+                .isZero();
     }
 
     @Test

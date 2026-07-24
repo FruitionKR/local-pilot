@@ -8,6 +8,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: Markdown 직접 생성과 즉시 편집 업로드 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/documents/markdown`으로 빈 본문을 포함한 Markdown 문서를 직접 생성할 수 있게 했다.
+- 직접 생성 문서는 MinIO 원본 없이 `source_uri=null`, `completed`, version 1인 편집 문서와 현재 편집 상태를 같은 transaction에서 생성한다.
+- Markdown 업로드는 원문으로 편집 상태를 즉시 생성하고 pipeline 완료 전에도 `editable=true`를 반환한다.
+- 생성·업로드에 `Idempotency-Key`를 적용하고 24시간 동안 같은 요청에는 저장된 최초 응답을 반환하며, 같은 key의 다른 요청은 `409`로 거절한다.
+- 동일한 파일명과 내용의 새로운 요청은 별도 문서로 허용하고, 새 문서는 역할별 최상위 마지막 순서에 배치한다.
+- MinIO 저장 후 DB transaction이 실패하면 업로드 객체를 보상 삭제하고, 초기 노트는 MinIO 없이 직접 생성 경로를 사용한다.
+
+**검증**
+
+- 빈 본문, UTF-8 5MB 초과, Markdown 즉시 편집, 최초 응답 replay와 key 충돌을 테스트했다.
+- MinIO 실패 시 DB 미저장과 DB 실패 시 MinIO 보상 삭제를 검증했다.
+- 초기 노트의 `source_uri=null`, 편집 상태 생성과 MinIO 미사용을 검증했다.
+- `./gradlew clean test` 전체 216개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 선택적 `parent_document_id`, `source_folder_id` 위치 연동은 hierarchy `TASK-H004`에서 구현한다.
+- production 본문 저장과 `base_version` 충돌 처리는 후속 Core TASK로 유지한다.
+
 ### feat: Markdown 문서 조회·파일명 검색 확장
 
 **변경된 것**

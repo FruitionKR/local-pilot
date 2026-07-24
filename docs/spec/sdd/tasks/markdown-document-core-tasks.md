@@ -87,16 +87,17 @@
   - `POST /documents/markdown`
   - 직접 생성 문서와 version `1` 편집 상태 저장
   - Markdown 업로드 원문으로 편집 상태 즉시 생성
-  - `Idempotency-Key` 기반 생성 재실행 방지와 계층 위치 배치
+  - `Idempotency-Key` 기반 생성 재실행 방지와 역할별 최상위 마지막 위치 배치
+  - 선택적 부모·원본 폴더 위치 연동은 hierarchy `TASK-H004`에서 구현
   - `DocumentService.createInitialNote`를 직접 생성 경로로 재배선(워크스페이스 생성 호출부 포함)
 - 완료 조건:
-  - [ ] 빈 Markdown 직접 생성 가능
-  - [ ] 5MB 초과 요청 거절
-  - [ ] Markdown 업로드 직후 `editable=true`
-  - [ ] 직접 생성 문서의 `source_uri`가 `null`
-  - [ ] 신규 워크스페이스 초기 노트가 직접 생성 문서(source_uri=null)로 만들어짐
-  - [ ] 동일한 키의 재요청에서 기존 생성 결과 반환
-  - [ ] DB 또는 MinIO 실패 시 불완전한 상태가 남지 않음
+  - [x] 빈 Markdown 직접 생성 가능
+  - [x] 5MB 초과 요청 거절
+  - [x] Markdown 업로드 직후 `editable=true`
+  - [x] 직접 생성 문서의 `source_uri`가 `null`
+  - [x] 신규 워크스페이스 초기 노트가 직접 생성 문서(source_uri=null)로 만들어짐
+  - [x] 동일한 키의 재요청에서 기존 생성 결과 반환
+  - [x] DB 또는 MinIO 실패 시 불완전한 상태가 남지 않음
 
 ### TASK-005 PDF 변환 결과 편집본 등록
 

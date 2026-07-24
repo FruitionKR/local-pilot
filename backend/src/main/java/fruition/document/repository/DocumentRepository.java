@@ -2,6 +2,7 @@ package fruition.document.repository;
 
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentStatus;
+import fruition.document.domain.DocumentRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -39,4 +40,15 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     );
 
     Optional<Document> findByIdAndWorkspaceIdAndDeletedAtIsNull(String id, String workspaceId);
+
+    @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
+            + "WHERE d.workspaceId = :workspaceId "
+            + "AND d.documentRole = :documentRole "
+            + "AND d.parentDocumentId IS NULL "
+            + "AND d.sourceFolderId IS NULL "
+            + "AND d.deletedAt IS NULL")
+    long findMaxRootSortOrder(
+            @Param("workspaceId") String workspaceId,
+            @Param("documentRole") DocumentRole documentRole
+    );
 }

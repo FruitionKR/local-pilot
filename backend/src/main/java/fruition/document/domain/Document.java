@@ -189,6 +189,20 @@ public class Document {
         this.updatedAt = Instant.now();
     }
 
+    public void initializeDirectMarkdown(String currentContentHash, long byteSize, long sortOrder) {
+        this.currentContentHash = currentContentHash;
+        this.byteSize = byteSize;
+        this.sortOrder = sortOrder;
+        this.status = DocumentStatus.completed;
+        this.processedAt = this.uploadedAt;
+    }
+
+    public void placeAtRoot(long sortOrder) {
+        this.sortOrder = sortOrder;
+        this.parentDocumentId = null;
+        this.sourceFolderId = null;
+    }
+
     /**
      * 채팅 full 재생성: 기존 export 문서를 갱신해 재처리한다. MinIO 원본은 세션 전체로 덮어쓴 뒤,
      * 그 전체 내용의 해시/크기로 갱신하고, 파이프라인엔 delta만 inline으로 보낸다.

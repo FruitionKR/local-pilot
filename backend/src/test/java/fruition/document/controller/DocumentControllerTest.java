@@ -2,6 +2,10 @@ package fruition.document.controller;
 
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
+import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
+import fruition.document.domain.DocumentRole;
+import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.service.DocumentService;
 import fruition.security.JwtAuthenticationFilter;
@@ -21,11 +25,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -103,5 +110,40 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.documents").isArray());
 
         verify(documentService).findAll(WORKSPACE_ID, USER_ID, "보고서");
+    }
+
+    @Test
+    void createMarkdown_passesIdempotencyKeyAndReturnsCreatedDocument() throws Exception {
+        DocumentUploadResponse response = new DocumentUploadResponse(
+                "doc_created",
+                "새 문서.md",
+                "text/markdown",
+                0,
+                DocumentStatus.completed,
+                null,
+                Instant.now(),
+                true,
+                1,
+                DocumentRole.EDITABLE
+        );
+        when(documentService.createMarkdown(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("create-key"), any(MarkdownDocumentCreateRequest.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/documents/markdown")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "create-key")
+                        .contentType("application/json")
+                        .content("""
+                                {"display_name":"새 문서","markdown":""}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("doc_created"))
+                .andExpect(jsonPath("$.editable").value(true))
+                .andExpect(jsonPath("$.current_version").value(1))
+                .andExpect(jsonPath("$.source_uri").doesNotExist());
+
+        verify(documentService).createMarkdown(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("create-key"), any(MarkdownDocumentCreateRequest.class));
     }
 }
