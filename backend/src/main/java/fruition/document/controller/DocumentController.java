@@ -2,10 +2,12 @@ package fruition.document.controller;
 
 import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
+import fruition.document.service.DocumentExportService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentExportResult;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.dto.DocumentLifecycleResponse;
@@ -26,6 +28,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +36,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 @RestController
@@ -47,9 +52,14 @@ public class DocumentController {
     );
 
     private final DocumentService documentService;
+    private final DocumentExportService documentExportService;
 
-    public DocumentController(DocumentService documentService) {
+    public DocumentController(
+            DocumentService documentService,
+            DocumentExportService documentExportService
+    ) {
         this.documentService = documentService;
+        this.documentExportService = documentExportService;
     }
 
     @Operation(
@@ -169,6 +179,33 @@ public class DocumentController {
 
     private boolean isInlineable(String mimeType) {
         return mimeType != null && (mimeType.startsWith("text/") || mimeType.equals("application/pdf"));
+    }
+
+    @Operation(
+        summary = "Markdown 원문 내보내기",
+        description = "요청 시점의 최신 Markdown 편집본을 UTF-8 .md 파일로 다운로드합니다."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Markdown 다운로드"),
+        @ApiResponse(responseCode = "404", description = "workspace, Markdown 문서 또는 편집 상태를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/export")
+    public ResponseEntity<InputStreamResource> export(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId) {
+        DocumentExportResult result =
+                documentExportService.exportMarkdown(workspaceId, userId, documentId);
+        ContentDisposition contentDisposition = ContentDisposition.attachment()
+                .filename(result.filename(), StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "markdown", StandardCharsets.UTF_8))
+                .contentLength(result.bytes().length)
+                .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+                .body(new InputStreamResource(new ByteArrayInputStream(result.bytes())));
     }
 
     @Operation(summary = "원본 문서 block 목록 조회", description = "원본 문서를 block 단위로 나눈 텍스트 목록을 반환합니다. 답변 인용 클릭 시 원본 block 하이라이트에 사용됩니다.")

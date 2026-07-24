@@ -343,7 +343,7 @@ Flyway는 기존 문서를 다음과 같이 backfill한다.
 | 낙관적 잠금 | 동시 저장 Repository 통합 테스트 | Pending |
 | 변환 결과 등록 | MinIO·callback 통합 테스트 | Pending |
 | 삭제·복구 | 서비스·API 통합 테스트 | Pending |
-| Markdown 원문 내보내기 | API 통합 테스트 | Pending |
+| Markdown 원문 내보내기 | API 통합 테스트 | Pass |
 
 ```sh
 cd backend

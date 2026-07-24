@@ -3,7 +3,9 @@ package fruition.document.repository;
 import fruition.TestcontainersConfiguration;
 import fruition.document.domain.DocumentRole;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentExportResult;
 import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.service.DocumentExportService;
 import fruition.document.service.DocumentService;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import fruition.workspace.service.WorkspaceService;
@@ -51,6 +53,9 @@ class DocumentEditingSchemaIntegrationTest {
 
     @Autowired
     DocumentService documentService;
+
+    @Autowired
+    DocumentExportService documentExportService;
 
     @Autowired
     WorkspaceService workspaceService;
@@ -289,6 +294,46 @@ class DocumentEditingSchemaIntegrationTest {
                 String.class,
                 documentId
         )).isEqualTo("# 보존 본문");
+    }
+
+    @Test
+    void markdownExport_readsLatestEditStateWithoutChangingDocument() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String documentId = "doc_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "회의 결과.md", "original-hash", "EDITABLE");
+        jdbcTemplate.update(
+                """
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
+                VALUES (?, '# 최신 회의 결과\n한글 본문', ?, now(), now())
+                """,
+                documentId,
+                "b".repeat(64)
+        );
+        Map<String, Object> before = jdbcTemplate.queryForMap(
+                """
+                SELECT current_version, updated_at
+                FROM documents WHERE id = ?
+                """,
+                documentId
+        );
+
+        DocumentExportResult result =
+                documentExportService.exportMarkdown(workspaceId, userId, documentId);
+
+        assertThat(result.filename()).isEqualTo("회의 결과.md");
+        assertThat(new String(result.bytes(), java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo("# 최신 회의 결과\n한글 본문");
+        assertThat(jdbcTemplate.queryForMap(
+                """
+                SELECT current_version, updated_at
+                FROM documents WHERE id = ?
+                """,
+                documentId
+        )).isEqualTo(before);
     }
 
     @Test

@@ -5,6 +5,7 @@ import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentExportResult;
 import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.dto.DocumentLifecycleResponse;
 import fruition.document.dto.DocumentRenameRequest;
@@ -14,6 +15,7 @@ import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.service.DocumentService;
+import fruition.document.service.DocumentExportService;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
 import fruition.security.SecurityConfig;
@@ -29,6 +31,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.HttpHeaders;
 
 import java.util.List;
 import java.time.Instant;
@@ -44,7 +47,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 
 @WebMvcTest(DocumentController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
@@ -57,6 +63,7 @@ class DocumentControllerTest {
     @Autowired MockMvc mockMvc;
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean DocumentService documentService;
+    @MockBean DocumentExportService documentExportService;
     @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     private String bearerToken() {
@@ -78,6 +85,25 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.blocks[0].block_id").value("B0005"))
                 .andExpect(jsonPath("$.blocks[0].text").value("원본 문서의 다섯 번째 block 본문"))
                 .andExpect(jsonPath("$.blocks[1].block_id").value("B0006"));
+    }
+
+    @Test
+    void export_returnsUtf8MarkdownWithEncodedKoreanFilename() throws Exception {
+        byte[] bytes = "# 최신 본문\n한글".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        when(documentExportService.exportMarkdown(
+                WORKSPACE_ID, USER_ID, "doc_export"))
+                .thenReturn(new DocumentExportResult("회의 결과.md", bytes));
+
+        mockMvc.perform(get(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_export/export")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/markdown;charset=UTF-8"))
+                .andExpect(content().bytes(bytes))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION, containsString("filename*=")));
     }
 
     @Test

@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: Markdown 원문 내보내기 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/documents/{document_id}/export`에서 활성 workspace 멤버가 최신 Markdown 편집본을 UTF-8 `.md` 파일로 내려받을 수 있게 했다.
+- 현재 표시 이름과 UTF-8 `Content-Disposition`을 사용하며 원본 자료, 삭제 문서, 편집 상태가 없는 문서는 `404`로 처리한다.
+- 내보내기는 문서 version·수정 시각·본문을 변경하지 않고 이미지 URL을 Markdown 문자열 그대로 유지한다.
+
+**검증**
+
+- service·controller 테스트에서 멤버 권한, UTF-8 본문, 한글 파일명과 오류 조건을 검증했다.
+- PostgreSQL 통합 테스트에서 최신 편집본 반환과 문서 상태 불변을 검증했다.
+- `./gradlew clean test` 전체 246개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 이미지 파일을 포함하는 ZIP 내보내기는 assets SDD TASK-008에서 후속 구현한다.
+- PDF 등 Markdown 외 내보내기 형식은 `docs/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 다운로드 연동은 `docs/issue/frontend/2026-07-25.md`에서 관리한다.
+
 ### feat: 문서와 workspace 소프트 삭제 추가
 
 **변경된 것**
