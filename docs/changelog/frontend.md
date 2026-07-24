@@ -23,6 +23,10 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - composer placeholder를 문서 열림 여부와 무관하게 항상 "AI 에이전트에게 무엇이든 물어보세요."로 고정.
 - 주의: 채팅→원본문서 편입의 wiki 생성 단계는 프론트 무관한 파이프라인 이슈로 실패(`docs/issue/ai/2026-07-24.md` 참고).
 
+### feat: 로그·설정 임시 목업 페이지 추가
+
+- 로그/설정 페이지 임시 목업 컴포넌트 추가(`features/logs-mockup`, `features/settings-mockup`). rail 뷰 배선은 `HomeWorkspace` 변경에서 함께 처리.
+
 ---
 
 ## 2026-07-23
