@@ -7,6 +7,8 @@ import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.document.exception.InvalidMarkdownContentException;
+import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.exception.EmptyChatWikiExportException;
@@ -94,6 +96,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_FILENAME", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidMarkdownContentException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMarkdownContent(InvalidMarkdownContentException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_MARKDOWN_CONTENT", e.getMessage()));
+    }
+
+    @ExceptionHandler(MarkdownContentTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleMarkdownContentTooLarge(MarkdownContentTooLargeException e) {
+        return ResponseEntity
+                .status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("MARKDOWN_CONTENT_TOO_LARGE", e.getMessage()));
     }
 
     @ExceptionHandler(EmptyChatWikiExportException.class)

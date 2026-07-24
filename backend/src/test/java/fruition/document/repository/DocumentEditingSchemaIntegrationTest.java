@@ -81,7 +81,7 @@ class DocumentEditingSchemaIntegrationTest {
         insertUserAndWorkspace(userId, workspaceId);
 
         insertDocument("doc_parent_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
-        insertDocument("doc_same_" + suffix, workspaceId, userId, "same.md", "same-hash", "EDITABLE");
+        insertDocument("doc_same_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
 
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM documents WHERE workspace_id = ? AND content_hash = ?",

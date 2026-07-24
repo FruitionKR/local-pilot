@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: Markdown 문서 편집 입력 규칙 추가
+
+**변경된 것**
+
+- 표시 이름의 앞뒤 공백과 금지 문자·제어문자·255자 제한을 검증하고, 이름 변경 시 기존 PDF·Markdown 확장자를 유지하는 규칙을 추가했다.
+- Markdown 본문은 빈 문자열을 허용하되 `null`, 잘못된 UTF-8, UTF-8 기준 5MB 초과를 구분해 거절한다.
+- 저장 전에 SHA-256 hash를 계산하고 현재 hash와 비교해 동일 본문 no-op을 판정할 수 있게 했다.
+- 기존 Markdown 편집 상태 lazy 생성도 같은 UTF-8·크기·hash 규칙을 사용한다.
+
+**검증**
+
+- PDF·Markdown 확장자 유지, 한글 UTF-8 5MB 경계, 빈 본문·`null`, 잘못된 UTF-8, SHA-256·no-op 테스트를 추가했다.
+- 같은 workspace에서 파일명과 내용이 모두 같은 문서를 생성할 수 있음을 PostgreSQL 통합 테스트로 검증했다.
+- `./gradlew clean test` 전체 204개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 이 규칙을 사용하는 production 본문 생성·저장 API와 `base_version` 충돌 처리는 후속 Core TASK에서 구현한다.
+
 ### feat: Markdown 문서 편집 Core 데이터 기반 추가
 
 **변경된 것**
