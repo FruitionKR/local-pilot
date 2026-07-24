@@ -27,6 +27,12 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 로그/설정 페이지 임시 목업 컴포넌트 추가(`features/logs-mockup`, `features/settings-mockup`). rail 뷰 배선은 `HomeWorkspace` 변경에서 함께 처리.
 
+### fix: 노트 사라짐 버그 수정 및 그래프 필터 인셋 조정
+
+- 노트 사라짐 버그: `<main onClick={clearTreeGraphSelection}>`이 자식에서 버블된 클릭까지 선택 해제해, 사이드바 여백·폴더 헤더 오클릭 시 편집기가 비던 문제를 `event.target === event.currentTarget` 가드로 해결(`HomeWorkspace`).
+- `HomeWorkspace`에 로그/설정 목업 rail 뷰 배선 및 메인 편집기 "변경 기록" 버튼 제거(orphan import/state 정리).
+- 그래프 필터: Figma(node 599:5832) 실측 반영해 필터칩·캔버스 인셋 20→24px.
+
 ---
 
 ## 2026-07-23

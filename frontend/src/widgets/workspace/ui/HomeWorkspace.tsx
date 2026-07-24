@@ -4,11 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { AgentPanel } from "@/widgets/agent-panel/ui/AgentPanel";
 import { DocumentSidebar } from "@/widgets/document-sidebar/ui/DocumentSidebar";
 import { Graph } from "@/widgets/graph/ui/Graph";
-import { HistoryPanel } from "@/features/document-history/ui/HistoryPanel";
-import historyStyles from "@/features/document-history/ui/HistoryPanel.module.css";
 import { useSnapshots } from "@/features/document-history/model/useSnapshots";
-import type { DocumentSnapshot } from "@/features/document-history/model/snapshotStore";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
+import { LogsMockup } from "@/features/logs-mockup";
+import { SettingsMockup } from "@/features/settings-mockup";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { UploadErrorModal } from "@/features/document-upload/ui/UploadErrorModal";
 import { DeleteConfirmModal } from "@/shared/ui/DeleteConfirmModal";
@@ -62,7 +61,6 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const [lintRequest, setLintRequest] = useState<{
@@ -154,15 +152,6 @@ export function HomeWorkspace() {
     };
   }, [markdownEditContext, snapshots]);
 
-  // 스냅샷 시점으로 롤백. 롤백 직전 현재 본문도 스냅샷으로 남기고 raw applyMarkdown으로 복원한다.
-  const handleRestoreSnapshot = useCallback((snapshot: DocumentSnapshot) => {
-    if (!markdownEditContext) return;
-    const current = markdownEditContext.editorSnapshot.markdown;
-    if (current === snapshot.markdown) return;
-    snapshots.capture(current, "롤백 전");
-    markdownEditContext.applyMarkdown(current, snapshot.markdown);
-  }, [markdownEditContext, snapshots]);
-
   function handleViewChange(view: RailView) {
     setActiveView(view);
     if (view === "home" && firstSidebarNote) selection.selectTreeGraphNode(firstSidebarNote);
@@ -242,7 +231,11 @@ export function HomeWorkspace() {
         "--sidebar-width": `${sidebarResize.width}px`,
         "--source-preview-width": `${sourcePreviewResize.width}px`
       } as CSSProperties}
-      onClick={selection.clearTreeGraphSelection}
+      onClick={(event) => {
+        // main 배경을 직접 클릭했을 때만 선택 해제. 자식(사이드바 여백·폴더 헤더 등)에서
+        // 버블된 클릭까지 해제하면 노트 선택이 풀려 편집기가 비어 보인다.
+        if (event.target === event.currentTarget) selection.clearTreeGraphSelection();
+      }}
       onPointerMove={handleResizePointerMove}
       onPointerUp={handleResizePointerEnd}
       onPointerCancel={handleResizePointerEnd}
@@ -344,23 +337,13 @@ export function HomeWorkspace() {
       {!isHomeView && !isGraphView && (
         activeView === "rules" ? (
           <SchemaWorkspace />
+        ) : activeView === "logs" ? (
+          <LogsMockup />
+        ) : activeView === "settings" ? (
+          <SettingsMockup />
         ) : (
           <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
         )
-      )}
-
-      {isDocumentMain && (
-        <button type="button" className={historyStyles["history-trigger"]} onClick={() => setIsHistoryOpen((open) => !open)}>
-          변경 기록
-        </button>
-      )}
-      {isDocumentMain && isHistoryOpen && markdownEditContext && (
-        <HistoryPanel
-          snapshots={snapshots.snapshots}
-          currentMarkdown={markdownEditContext.editorSnapshot.markdown}
-          onRestore={handleRestoreSnapshot}
-          onClose={() => setIsHistoryOpen(false)}
-        />
       )}
 
       {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
