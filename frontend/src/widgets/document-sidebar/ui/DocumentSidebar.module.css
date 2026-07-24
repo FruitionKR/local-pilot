@@ -702,10 +702,42 @@
 .tree-status.processing,
 .tree-status.stalled,
 .tree-status.failed {
+  position: relative;
   border-radius: 5px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* 커스텀 툴팁: hover 0.2초 후 노출, 경과 시간 포함 */
+.tree-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: max-content;
+  max-width: 220px;
+  padding: 5px 8px;
+  color: #e6e6e6;
+  background: #1c1c1c;
+  border: 1px solid #333;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: pre-line;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease 0ms, visibility 0ms linear 120ms;
+}
+
+.tree-status:hover .tree-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease 200ms, visibility 0ms linear 200ms;
 }
 
 /* 처리 중: 노란 톤 */

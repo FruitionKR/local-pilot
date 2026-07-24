@@ -7,7 +7,7 @@ type BadgeKind = "processing" | "stalled" | "failed";
 // 처리 상태 → 뱃지 문구. stage 세부값은 tooltip으로만 노출한다.
 const BADGE_LABEL: Record<BadgeKind, string> = {
   processing: "처리 중",
-  stalled: "지연",
+  stalled: "작업 중",
   failed: "실패"
 };
 
@@ -28,8 +28,33 @@ function resolveBadgeKind(
 
 function badgeTitle(kind: BadgeKind, processingStage?: string, errorMessage?: string): string | undefined {
   if (kind === "failed") return errorMessage ?? "처리에 실패했습니다.";
-  if (kind === "stalled") return processingStage ? `처리 지연: ${processingStage}` : "처리가 지연되고 있습니다.";
+  if (kind === "stalled") return processingStage ? `작업 중: ${processingStage}` : "작업 중입니다.";
   return processingStage || undefined;
+}
+
+// 업로드 시각 기준 경과 시간을 사람이 읽는 문구로 변환한다. 렌더 시점 기준 정적 계산.
+function formatElapsed(uploadedAt?: string): string | undefined {
+  if (!uploadedAt) return undefined;
+  const startedAt = new Date(uploadedAt).getTime();
+  if (Number.isNaN(startedAt)) return undefined;
+  const diffMin = Math.floor((Date.now() - startedAt) / 60000);
+  if (diffMin < 0) return undefined;
+  if (diffMin < 1) return "방금 업로드";
+  if (diffMin < 60) return `업로드 후 ${diffMin}분 경과`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `업로드 후 ${diffHour}시간 경과`;
+  return `업로드 후 ${Math.floor(diffHour / 24)}일 경과`;
+}
+
+// 뱃지 상태 문구 + 경과 시간을 합쳐 툴팁 본문을 만든다.
+function tooltipText(
+  kind: BadgeKind,
+  processingStage: string | undefined,
+  errorMessage: string | undefined,
+  uploadedAt: string | undefined
+): string | undefined {
+  const lines = [badgeTitle(kind, processingStage, errorMessage), formatElapsed(uploadedAt)].filter(Boolean);
+  return lines.length ? lines.join("\n") : undefined;
 }
 
 /** 문서 처리 진행 뱃지(처리 중/지연/실패) + 로컬 편집 상태 점을 표시한다. */
@@ -38,15 +63,18 @@ export function TreeNodeStatus({
   processingState,
   processingStage,
   errorMessage,
+  uploadedAt,
   editState
 }: {
   status: TreeItem["status"];
   processingState?: DocumentProcessingState;
   processingStage?: string;
   errorMessage?: string;
+  uploadedAt?: string;
   editState?: NoteEditState;
 }) {
   const badgeKind = resolveBadgeKind(status, processingState);
+  const badgeTooltip = badgeKind ? tooltipText(badgeKind, processingStage, errorMessage, uploadedAt) : undefined;
   const localStatus = editState?.saveStatus === "error" || editState?.saveStatus === "conflict"
     ? "error"
     : editState && (editState.saveStatus !== "saved" || editState.needsReview)
@@ -57,8 +85,11 @@ export function TreeNodeStatus({
   return (
     <>
       {badgeKind && (
-        <small className={cx(styles["tree-status"], styles[badgeKind])} title={badgeTitle(badgeKind, processingStage, errorMessage)}>
+        <small className={cx(styles["tree-status"], styles[badgeKind])}>
           {BADGE_LABEL[badgeKind]}
+          {badgeTooltip && (
+            <span className={styles["tree-tooltip"]} role="tooltip">{badgeTooltip}</span>
+          )}
         </small>
       )}
       {localStatus && (

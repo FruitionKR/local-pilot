@@ -130,6 +130,7 @@ export function TreeNode({
               processingState={item.processingState}
               processingStage={item.processingStage}
               errorMessage={item.errorMessage}
+              uploadedAt={item.uploadedAt}
               editState={item.documentId ? noteEditStates[item.documentId] : undefined}
             />
             {fileTypeBadge(item) && <small className={styles["tree-type-badge"]}>{fileTypeBadge(item)}</small>}

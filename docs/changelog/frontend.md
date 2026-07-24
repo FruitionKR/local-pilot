@@ -6,6 +6,12 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: 사이드바 문서 처리 뱃지 라벨/툴팁 개선
+
+- 사이드바 문서 트리의 `stalled` 상태 뱃지 라벨을 "지연" → "작업 중"으로 변경하고, tooltip 문구도 "처리 지연: {stage}"/"처리가 지연되고 있습니다." → "작업 중: {stage}"/"작업 중입니다."로 맞춤. (`TreeNodeStatus.tsx`)
+- 네이티브 `title` 속성 tooltip을 커스텀 CSS tooltip으로 교체. hover 0.2초 후 노출되도록 `transition-delay`로 제어. (`DocumentSidebar.module.css`의 `.tree-tooltip`)
+- tooltip에 업로드 시각(`uploadedAt`) 기준 경과 시간을 함께 표시("업로드 후 N분/시간/일 경과"). 렌더 시점 정적 계산이라 사이드바 리렌더 때 갱신됨. 백엔드가 stalled 시작 시각을 주지 않아 `uploadedAt`을 기준으로 사용. 모든 처리 뱃지(처리 중/작업 중/실패)에 적용. (`TreeNodeStatus.tsx`, `TreeNode.tsx`에서 `uploadedAt` 전달)
+
 ### refactor: 미사용 문서 점검(document lint) 기능 제거
 
 - PR #111 리뷰 반영. "AI 문서 점검" 버튼 제거로 트리거가 사라져 도달 불가가 된 lint 배선을 전 구간 정리.
