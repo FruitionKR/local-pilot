@@ -3,14 +3,14 @@ package fruition.document.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.DynamicUpdate;
 import java.time.Instant;
+import java.util.Locale;
+import java.util.UUID;
 
 @Entity
 // 파이프라인이 raw SQL로 같은 documents 행에 직접 쓰므로, backend는 변경한 컬럼만 UPDATE해 파이프라인 컬럼을 덮어쓰지 않는다.
 @DynamicUpdate
 @Table(name = "documents",
-        indexes = @Index(name = "idx_documents_reconcile", columnList = "origin, status, reconciled_at"),
-        uniqueConstraints = @UniqueConstraint(name = "uq_documents_workspace_content_hash",
-                columnNames = {"workspace_id", "content_hash"}))
+        indexes = @Index(name = "idx_documents_reconcile", columnList = "origin, status, reconciled_at"))
 public class Document {
 
     @Id
@@ -25,6 +25,12 @@ public class Document {
     @Column(nullable = false)
     private String filename;
 
+    @Column(name = "display_name", nullable = false)
+    private String displayName;
+
+    @Column(name = "normalized_filename", nullable = false)
+    private String normalizedFilename;
+
     @Column(name = "mime_type", nullable = false)
     private String mimeType;
 
@@ -35,14 +41,36 @@ public class Document {
     @Column(nullable = false)
     private DocumentStatus status;
 
-    @Column(name = "source_uri", nullable = false)
+    @Column(name = "source_uri")
     private String sourceUri;
 
     @Column(name = "extracted_text_uri")
     private String extractedTextUri;
 
-    @Column(name = "content_hash", nullable = false)
+    @Column(name = "content_hash")
     private String contentHash;
+
+    @Column(name = "source_document_id")
+    private String sourceDocumentId;
+
+    @Column(name = "current_content_hash", length = 64)
+    private String currentContentHash;
+
+    @Column(name = "current_version", nullable = false)
+    private long currentVersion;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_role", nullable = false)
+    private DocumentRole documentRole;
+
+    @Column(name = "parent_document_id")
+    private String parentDocumentId;
+
+    @Column(name = "source_folder_id")
+    private UUID sourceFolderId;
+
+    @Column(name = "sort_order", nullable = false)
+    private long sortOrder;
 
     @Column(name = "uploaded_at", nullable = false)
     private Instant uploadedAt;
@@ -85,6 +113,18 @@ public class Document {
     @Column(name = "reconciled_at")
     private Instant reconciledAt;
 
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by")
+    private String deletedBy;
+
+    @Column(name = "delete_operation_id")
+    private UUID deleteOperationId;
+
     protected Document() {}
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
@@ -98,12 +138,19 @@ public class Document {
         this.workspaceId = workspaceId;
         this.userId = userId;
         this.filename = filename;
+        this.displayName = displayNameOf(filename);
+        this.normalizedFilename = filename.toLowerCase(Locale.ROOT);
         this.mimeType = mimeType;
         this.byteSize = byteSize;
         this.status = DocumentStatus.processing;
         this.sourceUri = sourceUri;
         this.contentHash = contentHash;
+        this.currentContentHash = contentHash;
+        this.currentVersion = 1;
+        this.documentRole = isMarkdown(filename, mimeType) ? DocumentRole.EDITABLE : DocumentRole.ORIGINAL;
+        this.sortOrder = 0;
         this.uploadedAt = Instant.now();
+        this.updatedAt = this.uploadedAt;
         this.origin = origin;
     }
 
@@ -137,6 +184,9 @@ public class Document {
 
     public void rename(String filename) {
         this.filename = filename;
+        this.displayName = displayNameOf(filename);
+        this.normalizedFilename = filename.toLowerCase(Locale.ROOT);
+        this.updatedAt = Instant.now();
     }
 
     /**
@@ -162,12 +212,21 @@ public class Document {
     public String getWorkspaceId() { return workspaceId; }
     public String getUserId() { return userId; }
     public String getFilename() { return filename; }
+    public String getDisplayName() { return displayName; }
+    public String getNormalizedFilename() { return normalizedFilename; }
     public String getMimeType() { return mimeType; }
     public long getByteSize() { return byteSize; }
     public DocumentStatus getStatus() { return status; }
     public String getSourceUri() { return sourceUri; }
     public String getExtractedTextUri() { return extractedTextUri; }
     public String getContentHash() { return contentHash; }
+    public String getSourceDocumentId() { return sourceDocumentId; }
+    public String getCurrentContentHash() { return currentContentHash; }
+    public long getCurrentVersion() { return currentVersion; }
+    public DocumentRole getDocumentRole() { return documentRole; }
+    public String getParentDocumentId() { return parentDocumentId; }
+    public UUID getSourceFolderId() { return sourceFolderId; }
+    public long getSortOrder() { return sortOrder; }
     public Instant getUploadedAt() { return uploadedAt; }
     public Instant getProcessedAt() { return processedAt; }
     public String getErrorMessage() { return errorMessage; }
@@ -181,4 +240,22 @@ public class Document {
     public String getSelectionMode() { return selectionMode; }
     public String getPipelineInputMarkdown() { return pipelineInputMarkdown; }
     public Instant getReconciledAt() { return reconciledAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getDeletedAt() { return deletedAt; }
+    public String getDeletedBy() { return deletedBy; }
+    public UUID getDeleteOperationId() { return deleteOperationId; }
+
+    private static boolean isMarkdown(String filename, String mimeType) {
+        return "text/markdown".equals(mimeType)
+                || "text/x-markdown".equals(mimeType)
+                || filename.toLowerCase(Locale.ROOT).endsWith(".md");
+    }
+
+    private static String displayNameOf(String filename) {
+        int extensionIndex = filename.lastIndexOf('.');
+        if (extensionIndex <= 0) {
+            return filename;
+        }
+        return filename.substring(0, extensionIndex);
+    }
 }

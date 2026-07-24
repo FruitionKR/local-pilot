@@ -19,23 +19,32 @@
 
 - 관련 요구사항: `REQ-001`~`REQ-004`, `REQ-005`~`REQ-008`
 - 변경 대상:
-  - `backend/src/main/resources/db/migration/V8__add_document_editing.sql`
+  - `backend/src/main/resources/db/migration/V9__add_document_editing_core.sql`
   - `document/domain/Document.java`
-  - 신규 `DocumentEditState`, repository
+  - 신규 `DocumentEditState`, `SourceFolder`, `IdempotencyRecord`와 repository
 - 작업:
-  - 기존 `documents.user_id`를 문서 소유자로 유지하고 정규화 파일명, 원본 참조, 현재 해시, `current_version`, 정렬, 수정·삭제 필드 추가
+  - 기존 `documents.user_id`를 문서 소유자로 유지하고 `display_name`, 정규화 파일명, 원본 참조, 현재 해시, `current_version`, 수정·삭제 필드 추가
+  - `document_role`(`EDITABLE`, `ORIGINAL`), `parent_document_id`, `source_folder_id`, `sort_order`, `delete_operation_id` 추가
+  - hierarchy의 DB 기반인 `source_folders`와 self-reference를 생성하되 폴더 API는 hierarchy TASK에서 구현
+  - 역할에 맞지 않는 부모 사용과 두 부모 필드의 동시 사용을 막는 check constraint 추가
   - `source_uri`, 원본 `content_hash` nullable 전환
   - V5 제약 `uq_documents_workspace_content_hash` DROP
   - 파일명·내용 기반 대체 unique index를 만들지 않음
   - `Document.java`의 `@UniqueConstraint(uq_documents_workspace_content_hash)` 제거(ddl-auto=validate 정합성)
   - `document_edit_states`(버전 없이 본문·해시·시각) 추가
-  - Flyway backfill: `normalized_filename`, `sort_order`, `current_version=1`, 기존 문서의 `current_content_hash=content_hash` (편집 상태는 최초 조회·저장 시 lazy 생성)
+  - 사용자·endpoint·키 범위의 24시간 응답을 저장하는 `idempotency_records` 추가
+  - Flyway backfill: 파일명에서 `display_name` 생성, 기존 Markdown은 `EDITABLE`, 나머지는 `ORIGINAL`, 부모는 최상위, workspace·역할별 순서, `current_version=1`, `current_content_hash=content_hash`
+  - 편집 상태는 최초 조회·저장 시 lazy 생성
 - 완료 조건:
   - [ ] Flyway migration 검증 통과
   - [ ] 같은 파일명·내용 문서 2건 생성 허용
   - [ ] 기존 데이터 손실 없음
+  - [ ] 기존 문서의 `display_name`, `document_role`, 최상위 위치와 역할별 순서 backfill 검증
+  - [ ] `EDITABLE`의 원본 폴더 지정과 `ORIGINAL`의 부모 문서 지정을 DB가 거절
+  - [ ] `source_folders` self-reference와 workspace 관계 테스트 통과
   - [ ] 기존 markdown 업로드 문서가 마이그레이션 후 최초 조회 시 편집 가능해짐(lazy edit_state)
   - [ ] 같은 멱등성 키 재요청에서 문서가 한 건만 생성됨
+  - [ ] 같은 멱등성 키에 다른 요청 본문을 보내면 충돌
   - [ ] 기존 `user_id` 소유권 유지와 신규 문서 생성자 소유권 검증
   - [ ] 편집 상태 1:1과 self-reference 제약 테스트 통과
   - [ ] 기존 업로드·조회 테스트 통과

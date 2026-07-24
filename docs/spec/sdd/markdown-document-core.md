@@ -5,6 +5,7 @@
 - 상태: Draft
 - 작성일: 2026-07-23
 - 구현 계획: [`markdown-document-core-tasks.md`](./tasks/markdown-document-core-tasks.md)
+- 목표 ERD: [`markdown-document-erd.md`](./markdown-document-erd.md)
 - 관련 PR:
 
 상태 흐름: `Draft → Approved → In Progress → Verified`
@@ -239,16 +240,28 @@
 
 | 필드 | 설명 |
 |---|---|
+| `display_name` | 확장자를 제외하고 사용자에게 표시하는 이름 |
 | `normalized_filename` | 검색용 정규화 파일명 |
 | 기존 `user_id` | 문서 내용 CRUD와 AI 편집 권한을 가진 생성자. 문서 소유자로 사용 |
 | `source_document_id` | 복제본 또는 변환 편집본의 원본 문서 self-reference |
 | `current_content_hash` | 현재 편집 내용 또는 업로드 내용 해시 |
 | `current_version` | 문서 수명주기 낙관적 잠금 버전. 생성 시 `1`, rename·본문저장·삭제·복구 시 증가 |
-| `sort_order` | 워크스페이스 공용 순서 |
+| `document_role` | 문서 역할. 편집 문서는 `EDITABLE`, 불변 원본은 `ORIGINAL` |
+| `parent_document_id` | `EDITABLE` 문서의 상위 편집 문서. 최상위면 `null` |
+| `source_folder_id` | `ORIGINAL` 문서가 속한 원본 폴더. 최상위면 `null` |
+| `sort_order` | 현재 부모 문서 또는 원본 폴더 범위 안의 공용 순서 |
 | `updated_at` | 마지막 변경 시각 |
-| `deleted_at`, `deleted_by` | 소프트 삭제 정보 |
+| `deleted_at`, `deleted_by`, `delete_operation_id` | 소프트 삭제와 트리 복구 정보 |
 
 직접 생성 Markdown을 위해 기존 `source_uri`와 원본 `content_hash`는 nullable로 변경한다. 기존 `content_hash`는 업로드 원본의 불변 해시로 유지한다.
+
+`origin`은 `upload`, `direct`, `conversion`, `chat_export`, `ai_create`처럼 문서가 생성된 경로를 나타낸다. `document_role`은 생성 경로와 독립적으로 문서의 역할을 나타낸다. 업로드 Markdown은 `origin=upload`, `document_role=EDITABLE`이고 업로드 PDF는 `origin=upload`, `document_role=ORIGINAL`이다.
+
+`EDITABLE`은 `parent_document_id`만 사용하고 `source_folder_id`는 항상 `null`이다. `ORIGINAL`은 `source_folder_id`만 사용하고 `parent_document_id`는 항상 `null`이다. 최상위 항목은 역할에 해당하는 부모 필드가 `null`이다. 두 부모 필드의 동시 사용과 역할에 맞지 않는 부모 사용은 DB check constraint로 차단한다.
+
+Core 첫 migration에서 hierarchy의 DB 기반인 `source_folders`를 함께 생성한다. 폴더 CRUD·이동·정렬 API는 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 구현한다.
+
+생성·업로드·복제 요청의 24시간 멱등 결과를 저장하는 공통 `idempotency_records`를 추가한다. 식별 범위는 사용자·endpoint·`Idempotency-Key` 조합이며, 같은 키에 다른 요청 본문이 들어오면 충돌로 처리한다. 세부 컬럼과 정리 주기는 목표 ERD 문서에서 관리한다.
 
 `document_edit_states`를 추가한다. 버전은 `documents.current_version`으로 단일화하므로 이 테이블에는 두지 않는다.
 
@@ -264,7 +277,19 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 ### 편집 상태 생성(lazy)
 
-편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 기존 Markdown 문서는 최초 상세 조회 또는 최초 저장 시 원문에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`). Flyway backfill은 순수 DB 컬럼(`normalized_filename`, `sort_order`, `current_version=1`)과 기존 문서의 `current_content_hash=content_hash`를 채운다. 신규 변환 원본은 callback 시 별도 Markdown 페이지와 편집 상태를 생성한다.
+편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 기존 Markdown 문서는 최초 상세 조회 또는 최초 저장 시 원문에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`).
+
+Flyway는 기존 문서를 다음과 같이 backfill한다.
+
+- `display_name`: 기존 `filename`의 마지막 확장자를 제거한 값
+- `normalized_filename`: 기존 전체 `filename`의 검색 정규화 값
+- `document_role`: Markdown MIME 또는 `.md` 문서는 `EDITABLE`, 나머지 업로드 원본은 `ORIGINAL`
+- `parent_document_id`, `source_folder_id`: `null`
+- `sort_order`: workspace와 `document_role`별 `uploaded_at`, `id` 순서
+- `current_version`: `1`
+- `current_content_hash`: 기존 `content_hash`
+
+신규 변환 원본은 callback 시 `document_role=EDITABLE`인 별도 Markdown 문서와 편집 상태를 생성한다.
 
 ### 저장과 낙관적 잠금
 

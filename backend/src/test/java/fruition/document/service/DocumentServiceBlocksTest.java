@@ -56,6 +56,7 @@ class DocumentServiceBlocksTest {
     @Mock SourceBlockRepository sourceBlockRepository;
     @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock TransactionTemplate transactionTemplate;
+    @Mock DocumentEditStateInitializer editStateInitializer;
 
     DocumentService documentService;
 
@@ -64,6 +65,7 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
+                editStateInitializer,
                 "http://localhost:8080");
     }
 
@@ -123,6 +125,29 @@ class DocumentServiceBlocksTest {
 
         assertThatThrownBy(() -> documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("기존 Markdown 상세 조회 시 편집 상태를 lazy 초기화한다")
+    void findById_existingMarkdown_initializesEditState() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_lazy",
+                WORKSPACE_ID,
+                USER_ID,
+                "legacy.md",
+                "text/markdown",
+                10,
+                "sources/documents/doc_lazy/original",
+                "legacy-hash"
+        );
+        when(documentRepository.findByIdAndWorkspaceId("doc_lazy", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(documentWikiLinkRepository.findAllByIdDocumentId("doc_lazy")).thenReturn(List.of());
+
+        documentService.findById(WORKSPACE_ID, USER_ID, "doc_lazy");
+
+        verify(editStateInitializer).initializeIfNeeded(document);
     }
 
     @Test

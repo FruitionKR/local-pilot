@@ -76,6 +76,7 @@ public class DocumentService {
     private final SourceBlockRepository sourceBlockRepository;
     private final DocumentProcessingQueueRepository queueRepository;
     private final TransactionTemplate transactionTemplate;
+    private final DocumentEditStateInitializer editStateInitializer;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -89,6 +90,7 @@ public class DocumentService {
                            SourceBlockRepository sourceBlockRepository,
                            DocumentProcessingQueueRepository queueRepository,
                            TransactionTemplate transactionTemplate,
+                           DocumentEditStateInitializer editStateInitializer,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -101,6 +103,7 @@ public class DocumentService {
         this.sourceBlockRepository = sourceBlockRepository;
         this.queueRepository = queueRepository;
         this.transactionTemplate = transactionTemplate;
+        this.editStateInitializer = editStateInitializer;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -432,10 +435,12 @@ public class DocumentService {
         );
     }
 
+    @Transactional
     public DocumentDetailResponse findById(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
         Document doc = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        editStateInitializer.initializeIfNeeded(doc);
 
         List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
         List<DocumentWikiPageRef> wikiPages = buildWikiPageRefs(links);

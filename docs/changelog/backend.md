@@ -6,6 +6,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-24
+
+### feat: Markdown 문서 편집 Core 데이터 기반 추가
+
+**변경된 것**
+
+- Flyway `V9`에서 `documents`에 표시 이름, 문서 역할(`EDITABLE`/`ORIGINAL`), 현재 version·hash, 페이지·원본 폴더 관계, 정렬과 소프트 삭제 필드를 추가했다.
+- 동일 workspace의 같은 내용 문서를 허용하도록 기존 content hash UNIQUE 제약을 제거했다.
+- 현재 Markdown, 원본 폴더, 24시간 요청 멱등 결과를 위한 `document_edit_states`, `source_folders`, `idempotency_records`를 추가했다.
+- 기존 V8 문서를 역할별 최상위 위치와 순서로 backfill하고, 기존 Markdown은 최초 상세 조회 시 MinIO 원문으로 편집 상태를 lazy 생성한다.
+- 동시 최초 조회는 `INSERT ... ON CONFLICT DO NOTHING`으로 하나의 편집 상태만 생성한다.
+
+**검증**
+
+- V8 데이터를 별도 PostgreSQL database에서 V9로 올려 표시 이름, 역할, 순서, version·hash backfill을 검증했다.
+- 문서 역할별 부모 제약, 동일 hash 허용, 편집 상태 1:1, 폴더 self-reference와 멱등 키 UNIQUE 통합 테스트를 추가했다.
+- `./gradlew clean test` 전체 198개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 직접 생성·업로드·저장 API의 멱등 응답 처리와 파일명·본문 검증은 후속 Core TASK에서 구현한다.
+- 원본 폴더 CRUD·이동·정렬과 다른 workspace 부모 차단은 hierarchy TASK에서 구현한다.
+
 ## 2026-07-22
 
 ### fix: 로컬 이메일 인증 고정 코드 복구
