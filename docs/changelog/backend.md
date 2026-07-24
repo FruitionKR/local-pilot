@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### docs: Document API 계약과 core 추적표 정합화
+
+**변경된 것**
+
+- `docs/spec/api/document.md`를 현재 backend의 Markdown 생성·업로드·조회·저장·복제·소프트 삭제·내보내기 계약으로 갱신했다.
+- Swagger에 직접 생성, 휴지통, 권한·version 오류와 필수 `Idempotency-Key` 설명을 보강했다.
+- 비소유 workspace 멤버는 다른 소유자의 문서를 읽을 수 있지만 rename·삭제·복구할 수 없음을 서비스 테스트로 검증했다.
+- Core 요구사항을 구현 테스트 또는 PDF 변환·계층 이동·이미지 ZIP 후속 task와 연결했다.
+
+**검증**
+
+- `./gradlew clean test flywayValidate`가 통과했다.
+- 전체 backend 테스트 247개와 `git diff --check`가 통과했다.
+
+**남은 주의사항**
+
+- 직접 생성 Markdown의 레거시 `/original`은 현재 `404`이며 `docs/issue/backend/2026-07-25.md`에서 후속 관리한다.
+- 비소유 멤버의 문서 이동 허용은 hierarchy `TASK-H008`에서 검증한다.
+
 ### feat: Markdown 원문 내보내기 추가
 
 **변경된 것**

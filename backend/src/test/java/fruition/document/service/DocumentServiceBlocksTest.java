@@ -466,6 +466,49 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("워크스페이스 멤버는 다른 소유자의 문서를 읽지만 변경할 수 없다")
+    void workspaceMember_readsButCannotMutateOtherOwnersDocument() {
+        String memberId = "member_2";
+        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(
+                WORKSPACE_ID, memberId)).thenReturn(true);
+        Document document = new Document(
+                "doc_owned_by_other", WORKSPACE_ID, USER_ID, "공유 문서.md",
+                "text/markdown", 10, null, null, "direct");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "# 공유 본문", "edit-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentWikiLinkRepository.findAllByIdDocumentId(document.getId()))
+                .thenReturn(List.of());
+
+        DocumentDetailResponse detail =
+                documentService.findById(WORKSPACE_ID, memberId, document.getId());
+
+        assertThat(detail.markdown()).isEqualTo("# 공유 본문");
+        assertThatThrownBy(() -> documentService.rename(
+                WORKSPACE_ID, memberId, document.getId(),
+                new DocumentRenameRequest("변경 시도", 1L)))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+        assertThatThrownBy(() -> documentService.delete(
+                WORKSPACE_ID, memberId, document.getId(), "delete-key",
+                new DocumentLifecycleRequest(1L)))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+        assertThatThrownBy(() -> documentService.restore(
+                WORKSPACE_ID, memberId, document.getId(), "restore-key",
+                new DocumentLifecycleRequest(1L)))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+        verify(documentRepository, never()).renameIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+        verify(documentRepository, never()).softDeleteIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyString(), any(), any());
+        verify(documentRepository, never()).restoreIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyLong(), any());
+    }
+
+    @Test
     @DisplayName("이름 변경은 확장자를 유지하고 본문과 Wiki 제목을 변경하지 않는다")
     void rename_changesOnlyNotionStylePageTitle() {
         stubOwnedWorkspace();

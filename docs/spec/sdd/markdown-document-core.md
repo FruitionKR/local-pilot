@@ -115,6 +115,7 @@
 - `/original`: `source_uri`가 있으면 기존대로 MinIO 원본을 스트리밍한다. `source_uri`가 `null`인 직접 생성 문서는 편집 상태의 현재 Markdown을 `text/markdown`으로 반환한다. 편집 상태도 없으면 `404`.
 - `/blocks`: 파이프라인 source block이 없는 직접 생성 문서는 `200`에 빈 목록(`blocks: []`)을 반환한다.
 - 두 API는 기존 업로드·파이프라인 문서에서 회귀 없이 동작해야 한다.
+- 현재 구현은 `/blocks`의 빈 목록만 충족한다. `/original`은 `source_uri=null`이면 `404 DOCUMENT_ORIGINAL_NOT_FOUND`를 반환하며 후속 backend 이슈로 관리한다.
 
 #### REQ-007 파일명 검색
 
@@ -337,13 +338,40 @@ Flyway는 기존 문서를 다음과 같이 backfill한다.
 
 | 영역 | 검증 방법 | 결과 |
 |---|---|---|
-| DB migration과 제약 | Testcontainers Repository 통합 테스트 | Pending |
-| 파일명·본문 규칙 | 도메인/서비스 단위 테스트 | Pending |
-| 생성·조회·저장 API | Controller 통합 테스트 | Pending |
-| 낙관적 잠금 | 동시 저장 Repository 통합 테스트 | Pending |
-| 변환 결과 등록 | MinIO·callback 통합 테스트 | Pending |
-| 삭제·복구 | 서비스·API 통합 테스트 | Pending |
+| DB migration과 제약 | Testcontainers Repository 통합 테스트 | Pass |
+| 파일명·본문 규칙 | 도메인/서비스 단위 테스트 | Pass |
+| 생성·조회·저장 API | Controller·서비스 테스트 | Pass |
+| 낙관적 잠금 | Repository 통합 테스트 | Pass |
+| 변환 결과 등록 | MinIO·callback 통합 테스트 | Deferred — Core TASK-005 |
+| 삭제·복구 | 서비스·Repository 통합 테스트 | Pass |
 | Markdown 원문 내보내기 | API 통합 테스트 | Pass |
+
+### 8.1 요구사항 추적표
+
+| 요구사항 | 검증 테스트 또는 후속 task | 상태 |
+|---|---|---|
+| `REQ-001` Markdown 직접 생성 | `createMarkdown_emptyBody_createsEditableDocument`, `createInitialNote_savesDirectMarkdownWithoutMinio` | Pass |
+| `REQ-002` Markdown 업로드 | `uploadMarkdown_createsEditStateImmediately` | Pass |
+| `REQ-003` 변환 원본 편집 | Core `TASK-005 PDF 변환 결과 편집본 등록` | Deferred |
+| `REQ-004` 중복·멱등성 | `documents_allowSameContentAndEnforceRoleParentRules`, `createMarkdown_sameIdempotencyRequest_replaysExistingDocument`, `duplicate_sameIdempotencyKeyConcurrently_createsOneDocument` | Pass |
+| `REQ-005` 탐색 목록 | `findAll_mapsPageAndSourceMetadata`, `visibleListAndSearchExcludeDeletedChatExportAndOtherWorkspaceDocuments` | Pass |
+| `REQ-006` 상세 조회 | `findById_existingMarkdown_initializesEditState`, `workspaceMember_readsButCannotMutateOtherOwnersDocument` | Pass |
+| `REQ-006a` 레거시 원본 API | `blocks_noBlocks_returnsEmptyList`; 직접 생성 문서 `/original`은 backend 후속 이슈 | Partial |
+| `REQ-007` 파일명 검색 | `findAll_withQuery_usesFilenameSearch`, `list_withQuery_passesFilenameSearchQuery` | Pass |
+| `REQ-008` 공용 정렬·이동 | hierarchy `TASK-H002`, `TASK-H003`, `TASK-H008` | Deferred |
+| `REQ-009` 전체 본문 저장 | `saveContent_changed_updatesContentAndVersion`, `saveContent_multipartPassesMarkdownAndBaseVersion` | Pass |
+| `REQ-010` 변경 없는 저장 | `saveContent_sameMarkdown_returnsNoOp` | Pass |
+| `REQ-011` 저장 충돌 | `saveContent_rejectsStaleVersionAndNonOwner`, `conditionalUpdates_allowOnlyCurrentBaseVersion` | Pass |
+| `REQ-012` 본문 검증 | `DocumentEditingRulesTest.markdown_*` | Pass |
+| `REQ-013` 표시 이름 변경 | `rename_changesOnlyNotionStylePageTitle`, `rename_sameNameNoOpAndStaleVersionConflict` | Pass |
+| `REQ-014` 파일명 검증 | `DocumentEditingRulesTest.rename_*` | Pass |
+| `REQ-015` 최신 편집본 복제 | `duplicate_copiesLatestMarkdownAtEndOfSameParent` | Pass |
+| `REQ-016` 복제본 이름 | `duplicateFilename_selectsNextNumberAndTruncatesBase` | Pass |
+| `REQ-017` 소프트 삭제 | `delete_softDeletesWithoutRemovingDocumentData`, `documentSoftDeleteAndRestore_preservesOriginalAndEditingState` | Pass |
+| `REQ-018` 휴지통·복구 | `trash_returnsDeletedDocuments`, `restore_deletedDocumentAtEndOfRoot` | Pass |
+| `REQ-019` Markdown 내보내기 | `export_returnsUtf8MarkdownWithEncodedKoreanFilename`, `markdownExport_readsLatestEditStateWithoutChangingDocument` | Pass |
+| `REQ-020` 이미지 bundle | assets `TASK-008 ZIP 내보내기` | Deferred |
+| `REQ-021` 문서 소유권 | `workspaceMember_readsButCannotMutateOtherOwnersDocument`, `duplicate_rejectsOriginalAndNonOwner`, `DocumentExportServiceTest` | Pass |
 
 ```sh
 cd backend

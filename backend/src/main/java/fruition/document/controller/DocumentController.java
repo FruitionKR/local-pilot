@@ -42,7 +42,7 @@ import java.util.Set;
 
 @RestController
 @RequestMapping("/api/workspaces/{workspace_id}/documents")
-@Tag(name = "Documents", description = "문서 업로드 및 조회 API")
+@Tag(name = "Documents", description = "Markdown 편집 문서와 업로드 원본 관리 API")
 public class DocumentController {
 
     private static final Set<String> ALLOWED_MIME_TYPES = Set.of(
@@ -72,7 +72,7 @@ public class DocumentController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "이미 업로드된 문서",
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "415", description = "지원하지 않는 파일 형식",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
@@ -83,6 +83,7 @@ public class DocumentController {
     public ResponseEntity<?> upload(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestParam(value = "file", required = false) MultipartFile file) {
         if (file == null || file.isEmpty()) {
@@ -108,17 +109,34 @@ public class DocumentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @Operation(
+        summary = "Markdown 문서 생성",
+        description = "표시 이름과 전체 Markdown 본문으로 즉시 편집 가능한 문서를 생성합니다."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "생성 성공 또는 멱등 재요청",
+            content = @Content(schema = @Schema(implementation = DocumentUploadResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 본문 또는 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "413", description = "Markdown 5MB 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping(path = "/markdown", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<DocumentUploadResponse> createMarkdown(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody MarkdownDocumentCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(documentService.createMarkdown(workspaceId, userId, idempotencyKey, request));
     }
 
-    @Operation(summary = "문서 목록 조회", description = "워크스페이스에 업로드된 모든 문서 목록을 반환합니다. 처리 상태 polling에 활용됩니다.")
+    @Operation(summary = "문서 목록 조회", description = "활성 문서의 호환용 평면 목록을 반환하며 파일명 검색을 지원합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "목록 조회 성공",
             content = @Content(schema = @Schema(implementation = DocumentListResponse.class))),
@@ -243,13 +261,20 @@ public class DocumentController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "문서 ID", example = "doc_abc12345")
             @PathVariable("document_id") String documentId,
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DocumentLifecycleRequest request) {
         return ResponseEntity.ok(documentService.delete(
                 workspaceId, userId, documentId, idempotencyKey, request));
     }
 
-    @Operation(summary = "문서 휴지통", description = "워크스페이스에서 소프트 삭제된 문서를 반환합니다.")
+    @Operation(summary = "문서 휴지통", description = "워크스페이스에서 소프트 삭제된 문서를 삭제 시각 역순으로 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "휴지통 조회 성공",
+            content = @Content(schema = @Schema(implementation = DocumentTrashResponse.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @GetMapping("/trash")
     public ResponseEntity<DocumentTrashResponse> trash(
             @PathVariable("workspace_id") String workspaceId,
@@ -275,6 +300,7 @@ public class DocumentController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @PathVariable("document_id") String documentId,
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DocumentLifecycleRequest request) {
         return ResponseEntity.ok(documentService.restore(
@@ -287,7 +313,11 @@ public class DocumentController {
             content = @Content(schema = @Schema(implementation = DocumentRenameResponse.class))),
         @ApiResponse(responseCode = "400", description = "유효하지 않은 파일명",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "문서 version 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PatchMapping("/{document_id}/rename")
@@ -321,6 +351,7 @@ public class DocumentController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @PathVariable("document_id") String documentId,
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(documentService.duplicate(workspaceId, userId, documentId, idempotencyKey));
