@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentBody } from "@/features/agent-chat/ui/AgentBody";
 import { AgentComposer } from "@/features/agent-chat/ui/AgentComposer";
 import { AgentHeader } from "@/features/agent-chat/ui/AgentHeader";
@@ -45,7 +45,6 @@ export function AgentPanel({
   onOpenSourceBlocks,
   onCreateMarkdownDocument,
   markdownEditContext,
-  lintRequest,
   onDocumentExported,
   nodes
 }: {
@@ -54,7 +53,6 @@ export function AgentPanel({
   onOpenSourceBlocks: (documentId: string, title: string, highlights: SourceBlockHighlight[]) => void;
   onCreateMarkdownDocument: (draft: GeneratedMarkdownDraft) => Promise<void>;
   markdownEditContext?: ActiveMarkdownEditContext | null;
-  lintRequest?: { id: number; message: string; context: ActiveMarkdownEditContext } | null;
   onDocumentExported?: (response: ChatWikiExportResponse) => Promise<void> | void;
   nodes?: GraphNode[];
 }) {
@@ -70,7 +68,6 @@ export function AgentPanel({
   const [isAgentTurnLoading, setIsAgentTurnLoading] = useState(false);
   const [isCreatingMarkdown, setIsCreatingMarkdown] = useState(false);
   const [markdownCreateErrorMessage, setMarkdownCreateErrorMessage] = useState<string | null>(null);
-  const handledLintRequestIdRef = useRef<number | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSessionTitle, setActiveSessionTitle] = useState<string | null>(null);
   const { messages, queryErrorMessage, chatLoadErrorMessage, animatedMessageId, activeTurn, isLoading, queryStages, submitQuery } = useChatThread(activeSessionId);
@@ -135,12 +132,6 @@ export function AgentPanel({
       })
       .finally(() => setIsAgentTurnLoading(false));
   }, []);
-
-  useEffect(() => {
-    if (!lintRequest || handledLintRequestIdRef.current === lintRequest.id) return;
-    handledLintRequestIdRef.current = lintRequest.id;
-    submitAgentTurn(lintRequest.message, lintRequest.context);
-  }, [lintRequest, submitAgentTurn]);
 
   function handleSubmit() {
     const question = composerValue.trim();

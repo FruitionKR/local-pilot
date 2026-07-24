@@ -63,12 +63,6 @@ export function HomeWorkspace() {
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
-  const [lintRequest, setLintRequest] = useState<{
-    id: number;
-    message: string;
-    context: ActiveMarkdownEditContext;
-  } | null>(null);
-  const lintRequestIdRef = useRef(0);
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
     SOURCE_PREVIEW_DEFAULT_WIDTH,
@@ -180,16 +174,6 @@ export function HomeWorkspace() {
     selection.openSourceBlockPreview(created.id, created.filename, []);
   }
 
-  function requestDocumentLint(context: ActiveMarkdownEditContext) {
-    lintRequestIdRef.current += 1;
-    setLintRequest({
-      id: lintRequestIdRef.current,
-      message: "문서 전체의 문법, 문장 흐름, Markdown 구조를 점검하고 필요한 부분만 교정해줘.",
-      context
-    });
-    setIsAgentPanelOpen(true);
-  }
-
   const handleNoteEditStateChange = useCallback((documentId: string, state: NoteEditState | null) => {
     setNoteEditStates((current) => {
       if (state) {
@@ -290,7 +274,6 @@ export function HomeWorkspace() {
             width={sourcePreviewResize.width}
             onResizeStart={sourcePreviewResize.start}
             onMarkdownEditContextChange={setMarkdownEditContext}
-            onRequestLint={requestDocumentLint}
             onRenameDocument={projectTree.renameDocumentById}
             onNoteEditStateChange={handleNoteEditStateChange}
             parentLabel={selectedDocumentParentLabel}
@@ -328,7 +311,6 @@ export function HomeWorkspace() {
           onOpenSourceBlocks={openSourceBlocks}
           onCreateMarkdownDocument={createGeneratedMarkdownDocument}
           markdownEditContext={agentEditContext}
-          lintRequest={lintRequest}
           onDocumentExported={handleChatDocumentExported}
           nodes={graphData.nodes}
         />

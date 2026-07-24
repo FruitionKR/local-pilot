@@ -6,6 +6,12 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### refactor: 미사용 문서 점검(document lint) 기능 제거
+
+- PR #111 리뷰 반영. "AI 문서 점검" 버튼 제거로 트리거가 사라져 도달 불가가 된 lint 배선을 전 구간 정리.
+- 제거: `SourcePreviewPanel`의 `onRequestLint` prop과 write-only가 된 `activeEditContext` state, `HomeWorkspace`의 `requestDocumentLint`·`lintRequest` state·`lintRequestIdRef`, `AgentPanel`의 `lintRequest` prop·`handledLintRequestIdRef`·전송 effect.
+- 유지: `needsReview`/`noteEditStates`는 사이드바 트리 상태 배지(`TreeNodeStatus`)에서 계속 사용되므로 건드리지 않음.
+
 ### fix: 채팅 세션 목록 스크롤 복원 및 행 옵션 메뉴 portal 처리
 
 - PR #111 리뷰 반영. 행 옵션 메뉴가 잘리지 않게 `.chat-session-list`를 `overflow: visible`로 뒀던 탓에 세션이 많으면 목록 스크롤이 사라지고 dropdown(`max-height: 320px`) 밖으로 흘러넘치던 문제 수정.

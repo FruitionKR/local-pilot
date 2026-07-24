@@ -30,7 +30,6 @@ export function SourcePreviewPanel({
   width,
   onResizeStart,
   onMarkdownEditContextChange,
-  onRequestLint,
   onRenameDocument,
   onNoteEditStateChange,
   parentLabel = "업로드 문서",
@@ -48,7 +47,6 @@ export function SourcePreviewPanel({
   width: number;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
-  onRequestLint?: (context: ActiveMarkdownEditContext) => void;
   onRenameDocument?: (documentId: string, filename: string) => Promise<void>;
   onNoteEditStateChange?: (documentId: string, state: NoteEditState | null) => void;
   parentLabel?: string;
@@ -73,7 +71,6 @@ export function SourcePreviewPanel({
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
-  const [activeEditContext, setActiveEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const optionsRef = useRef<HTMLDivElement | null>(null);
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
@@ -109,7 +106,6 @@ export function SourcePreviewPanel({
     setNoteSaveStatus("saved");
     setNoteSaveError(null);
     setNeedsReview(false);
-    setActiveEditContext(null);
   }, [documentId]);
 
   useEffect(() => {
@@ -140,7 +136,6 @@ export function SourcePreviewPanel({
   }, [documentId, onNoteEditStateChange]);
 
   const handleMarkdownEditContextChange = useCallback((context: ActiveMarkdownEditContext | null) => {
-    setActiveEditContext(context);
     onMarkdownEditContextChange?.(context);
   }, [onMarkdownEditContextChange]);
 
