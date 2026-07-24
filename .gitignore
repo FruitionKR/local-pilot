@@ -59,3 +59,8 @@ llmPipeline/runs/
 llmPipeline/.langgraph_api/
 /tmp/
 /paddle_cache/
+
+# Playwright MCP test artifacts (스크린샷/스냅샷)
+.playwright-mcp/
+**/.playwright-mcp/
+/*.png
