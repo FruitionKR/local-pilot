@@ -10,6 +10,7 @@ import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
@@ -510,6 +511,146 @@ class DocumentServiceBlocksTest {
                 .isInstanceOf(DocumentVersionConflictException.class);
         verify(documentRepository, never()).renameIfVersionMatches(
                 anyString(), anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("최신 Markdown을 새 ID와 version 1로 같은 부모의 마지막에 복제한다")
+    void duplicate_copiesLatestMarkdownAtEndOfSameParent() {
+        stubOwnedWorkspace();
+        Document source = new Document(
+                "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
+                null, null, "direct");
+        source.initializeDuplicate("doc_origin", "doc_parent", "old-hash", 10, 2);
+        Document existingCopy = new Document(
+                "doc_existing", WORKSPACE_ID, USER_ID, "보고서 복사본.md",
+                "text/markdown", 10, null, null, "duplicate");
+        existingCopy.initializeDuplicate("doc_source", "doc_parent", "old-hash", 10, 3);
+        DocumentEditState sourceEditState = new DocumentEditState(
+                source.getId(), "# 최신 본문\n", DocumentEditingRules.markdown("# 최신 본문\n").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(source));
+        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, "doc_parent"))
+                .thenReturn(List.of(source, existingCopy));
+        when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
+
+        DocumentDuplicateResponse response = documentService.duplicate(
+                WORKSPACE_ID, USER_ID, source.getId(), "duplicate-key");
+
+        assertThat(response.id()).startsWith("doc_").isNotEqualTo(source.getId());
+        assertThat(response.filename()).isEqualTo("보고서 복사본 (2).md");
+        assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.parentDocumentId()).isEqualTo("doc_parent");
+        assertThat(response.sourceDocumentId()).isEqualTo(source.getId());
+        assertThat(response.sortOrder()).isEqualTo(4);
+
+        ArgumentCaptor<Document> documentCaptor = ArgumentCaptor.forClass(Document.class);
+        ArgumentCaptor<DocumentEditState> editStateCaptor = ArgumentCaptor.forClass(DocumentEditState.class);
+        verify(documentRepository).save(documentCaptor.capture());
+        verify(editStateRepository).save(editStateCaptor.capture());
+        assertThat(documentCaptor.getValue().getSourceUri()).isNull();
+        assertThat(documentCaptor.getValue().getContentHash()).isNull();
+        assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
+        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+    }
+
+    @Test
+    @DisplayName("같은 복제 요청을 재시도하면 최초 문서만 반환한다")
+    void duplicate_sameIdempotencyRequest_replaysFirstResult() {
+        stubOwnedWorkspace();
+        Document source = new Document(
+                "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
+                null, null, "direct");
+        DocumentEditState sourceEditState = new DocumentEditState(
+                source.getId(), "# 본문\n", DocumentEditingRules.markdown("# 본문\n").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(source));
+        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null))
+                .thenReturn(List.of(source));
+        when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
+
+        DocumentDuplicateResponse first = documentService.duplicate(
+                WORKSPACE_ID, USER_ID, source.getId(), "same-key");
+        ArgumentCaptor<IdempotencyRecord> recordCaptor =
+                ArgumentCaptor.forClass(IdempotencyRecord.class);
+        verify(idempotencyRecordRepository).save(recordCaptor.capture());
+        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                USER_ID,
+                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/duplicate",
+                "same-key"
+        )).thenReturn(Optional.of(recordCaptor.getValue()));
+
+        DocumentDuplicateResponse replay = documentService.duplicate(
+                WORKSPACE_ID, USER_ID, source.getId(), "same-key");
+
+        assertThat(replay).isEqualTo(first);
+        verify(documentRepository, times(1)).save(any(Document.class));
+        verify(editStateRepository, times(1)).save(any(DocumentEditState.class));
+        verify(idempotencyRecordRepository, times(1)).save(any(IdempotencyRecord.class));
+    }
+
+    @Test
+    @DisplayName("같은 멱등 키를 다른 문서 복제에 사용하면 충돌한다")
+    void duplicate_sameIdempotencyKeyForDifferentDocument_conflicts() {
+        stubOwnedWorkspace();
+        Document firstSource = new Document(
+                "doc_first", WORKSPACE_ID, USER_ID, "첫 문서.md", "text/markdown", 10,
+                null, null, "direct");
+        Document secondSource = new Document(
+                "doc_second", WORKSPACE_ID, USER_ID, "둘째 문서.md", "text/markdown", 10,
+                null, null, "direct");
+        DocumentEditState firstState = new DocumentEditState(
+                firstSource.getId(), "# 첫 문서", DocumentEditingRules.markdown("# 첫 문서").contentHash());
+        DocumentEditState secondState = new DocumentEditState(
+                secondSource.getId(), "# 둘째 문서", DocumentEditingRules.markdown("# 둘째 문서").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(firstSource.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(firstSource));
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(secondSource.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(secondSource));
+        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null))
+                .thenReturn(List.of(firstSource, secondSource));
+        when(editStateRepository.findById(firstSource.getId())).thenReturn(Optional.of(firstState));
+        when(editStateRepository.findById(secondSource.getId())).thenReturn(Optional.of(secondState));
+
+        documentService.duplicate(WORKSPACE_ID, USER_ID, firstSource.getId(), "reused-key");
+        ArgumentCaptor<IdempotencyRecord> recordCaptor =
+                ArgumentCaptor.forClass(IdempotencyRecord.class);
+        verify(idempotencyRecordRepository).save(recordCaptor.capture());
+        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                USER_ID,
+                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/duplicate",
+                "reused-key"
+        )).thenReturn(Optional.of(recordCaptor.getValue()));
+
+        assertThatThrownBy(() -> documentService.duplicate(
+                WORKSPACE_ID, USER_ID, secondSource.getId(), "reused-key"))
+                .isInstanceOf(IdempotencyConflictException.class);
+        verify(documentRepository, times(1)).save(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("원본 자료와 다른 소유자의 문서는 복제하지 않는다")
+    void duplicate_rejectsOriginalAndNonOwner() {
+        stubOwnedWorkspace();
+        Document original = new Document(
+                "doc_pdf", WORKSPACE_ID, USER_ID, "자료.pdf", "application/pdf", 10,
+                "sources/documents/doc_pdf/original", "hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(original.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(original));
+
+        assertThatThrownBy(() -> documentService.duplicate(
+                WORKSPACE_ID, USER_ID, original.getId(), "duplicate-key"))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+
+        Document otherOwner = new Document(
+                "doc_other", WORKSPACE_ID, "user_other", "문서.md", "text/markdown", 10,
+                null, null, "direct");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(otherOwner.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(otherOwner));
+
+        assertThatThrownBy(() -> documentService.duplicate(
+                WORKSPACE_ID, USER_ID, otherOwner.getId(), "duplicate-key-2"))
+                .isInstanceOf(DocumentWriteForbiddenException.class);
+        verify(documentRepository, never()).findSiblingPagesForUpdate(anyString(), any());
     }
 
     @Test

@@ -13,11 +13,17 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 final class DocumentEditingRules {
 
     static final int MAX_MARKDOWN_BYTES = 5 * 1024 * 1024;
     private static final int MAX_FILENAME_LENGTH = 255;
+    private static final String MARKDOWN_EXTENSION = ".md";
+    private static final Pattern COPY_SUFFIX =
+            Pattern.compile("^(.*) 복사본(?: \\((\\d+)\\))?$");
 
     private DocumentEditingRules() {
     }
@@ -55,6 +61,21 @@ final class DocumentEditingRules {
         }
     }
 
+    static Filename duplicateFilename(String currentDisplayName, Set<String> existingNormalizedFilenames) {
+        String baseName = copyBaseName(currentDisplayName);
+        for (int number = 1; ; number++) {
+            String suffix = number == 1 ? " 복사본" : " 복사본 (" + number + ")";
+            int maxBaseLength = MAX_FILENAME_LENGTH - suffix.length() - MARKDOWN_EXTENSION.length();
+            String truncatedBase = baseName.substring(0, Math.min(baseName.length(), maxBaseLength)).stripTrailing();
+            String displayName = truncatedBase + suffix;
+            String filename = displayName + MARKDOWN_EXTENSION;
+            String normalizedFilename = filename.toLowerCase(Locale.ROOT);
+            if (!existingNormalizedFilenames.contains(normalizedFilename)) {
+                return new Filename(displayName, filename, normalizedFilename);
+            }
+        }
+    }
+
     private static MarkdownContent markdown(String markdown, byte[] bytes) {
         if (bytes.length > MAX_MARKDOWN_BYTES) {
             throw new MarkdownContentTooLargeException("Markdown 본문은 UTF-8 기준 5MB 이하여야 합니다.");
@@ -73,6 +94,15 @@ final class DocumentEditingRules {
         if (normalized.indexOf('/') >= 0 || normalized.indexOf('\\') >= 0
                 || normalized.codePoints().anyMatch(Character::isISOControl)) {
             throw new InvalidDocumentFilenameException("문서 이름에 허용되지 않는 문자가 포함되어 있습니다.");
+        }
+        return normalized;
+    }
+
+    private static String copyBaseName(String displayName) {
+        String normalized = normalizeDisplayName(displayName);
+        Matcher matcher = COPY_SUFFIX.matcher(normalized);
+        if (matcher.matches() && !matcher.group(1).isBlank()) {
+            return matcher.group(1);
         }
         return normalized;
     }

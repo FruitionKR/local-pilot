@@ -197,6 +197,22 @@ public class Document {
         this.processedAt = this.uploadedAt;
     }
 
+    public void initializeDuplicate(
+            String sourceDocumentId,
+            String parentDocumentId,
+            String currentContentHash,
+            long byteSize,
+            long sortOrder
+    ) {
+        this.sourceDocumentId = sourceDocumentId;
+        this.parentDocumentId = parentDocumentId;
+        this.currentContentHash = currentContentHash;
+        this.byteSize = byteSize;
+        this.sortOrder = sortOrder;
+        this.status = DocumentStatus.completed;
+        this.processedAt = this.uploadedAt;
+    }
+
     public void placeAtRoot(long sortOrder) {
         this.sortOrder = sortOrder;
         this.parentDocumentId = null;

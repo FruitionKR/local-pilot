@@ -4,13 +4,34 @@ import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DocumentEditingRulesTest {
+
+    @Test
+    @DisplayName("복제 이름은 기존 복사본 번호를 이어가고 255자 안에서 본체를 줄인다")
+    void duplicateFilename_selectsNextNumberAndTruncatesBase() {
+        Set<String> existingNames = Set.of(
+                "보고서.md",
+                "보고서 복사본.md",
+                "보고서 복사본 (2).md"
+        );
+
+        assertThat(DocumentEditingRules.duplicateFilename("보고서", existingNames))
+                .isEqualTo(new DocumentEditingRules.Filename(
+                        "보고서 복사본 (3)", "보고서 복사본 (3).md", "보고서 복사본 (3).md"));
+        assertThat(DocumentEditingRules.duplicateFilename("보고서 복사본", existingNames).filename())
+                .isEqualTo("보고서 복사본 (3).md");
+        assertThat(DocumentEditingRules.duplicateFilename("가".repeat(255), Set.of()).filename())
+                .hasSize(255)
+                .endsWith(" 복사본.md");
+    }
 
     @Test
     void rename_preservesPdfAndMarkdownExtensions() {

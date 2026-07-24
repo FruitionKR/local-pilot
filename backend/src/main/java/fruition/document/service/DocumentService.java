@@ -21,6 +21,7 @@ import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
@@ -262,6 +263,77 @@ public class DocumentService {
         return response;
     }
 
+    @Transactional
+    public DocumentDuplicateResponse duplicate(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        Document source = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(source, userId);
+        if (source.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new DocumentWriteForbiddenException("편집 가능한 Markdown 문서만 복제할 수 있습니다.");
+        }
+
+        List<Document> siblings =
+                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getParentDocumentId());
+        editStateInitializer.initializeIfNeeded(source);
+        DocumentEditState sourceEditState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentWriteForbiddenException(
+                        "최신 Markdown 편집본이 있는 문서만 복제할 수 있습니다."));
+        String endpointScope = duplicateEndpointScope(workspaceId);
+        String requestHash = requestHash(documentId, "duplicate", "");
+        Optional<DocumentDuplicateResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentDuplicateResponse.class, this::toDuplicateResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        Set<String> existingNames = siblings.stream()
+                .map(Document::getNormalizedFilename)
+                .collect(Collectors.toSet());
+        DocumentEditingRules.Filename duplicateFilename =
+                DocumentEditingRules.duplicateFilename(source.getDisplayName(), existingNames);
+        long sortOrder = siblings.stream()
+                .mapToLong(Document::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
+        DocumentEditingRules.MarkdownContent content =
+                DocumentEditingRules.markdown(sourceEditState.getMarkdown());
+
+        String duplicateId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        Document duplicate = new Document(
+                duplicateId,
+                workspaceId,
+                userId,
+                duplicateFilename.filename(),
+                "text/markdown",
+                content.bytes().length,
+                null,
+                null,
+                "duplicate"
+        );
+        duplicate.initializeDuplicate(
+                source.getId(),
+                source.getParentDocumentId(),
+                content.contentHash(),
+                content.bytes().length,
+                sortOrder
+        );
+        documentRepository.save(duplicate);
+        editStateRepository.save(new DocumentEditState(
+                duplicateId, content.markdown(), content.contentHash()));
+
+        DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
+        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
     /** 새 워크스페이스에 직접 생성 Markdown 노트를 저장한다. 실패는 기존처럼 best-effort로 처리한다. */
     @Transactional
     public void createInitialNote(String workspaceId, String userId) {
@@ -356,11 +428,13 @@ public class DocumentService {
         }
     }
 
-    private Optional<DocumentUploadResponse> replayIdempotentRequest(
+    private <T> Optional<T> replayIdempotentRequest(
             String userId,
             String endpointScope,
             String idempotencyKey,
-            String requestHash
+            String requestHash,
+            Class<T> responseType,
+            java.util.function.Function<Document, T> fallback
     ) {
         Optional<IdempotencyRecord> found =
                 idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
@@ -382,7 +456,7 @@ public class DocumentService {
         if (record.getResponseBody() != null) {
             try {
                 return Optional.of(objectMapper.readValue(
-                        record.getResponseBody(), DocumentUploadResponse.class));
+                        record.getResponseBody(), responseType));
             } catch (JsonProcessingException exception) {
                 throw new IllegalStateException("멱등성 응답을 복원할 수 없습니다.", exception);
             }
@@ -391,7 +465,20 @@ public class DocumentService {
         Document document = documentRepository.findById(record.getResourceId())
                 .orElseThrow(() -> new IdempotencyConflictException(
                         "멱등성 기록의 기존 문서를 찾을 수 없습니다."));
-        return Optional.of(toUploadResponse(document, editStateRepository.existsById(document.getId())));
+        return Optional.of(fallback.apply(document));
+    }
+
+    private Optional<DocumentUploadResponse> replayIdempotentRequest(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash
+    ) {
+        return replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentUploadResponse.class,
+                document -> toUploadResponse(
+                        document, editStateRepository.existsById(document.getId())));
     }
 
     private void saveIdempotencyRecord(
@@ -399,7 +486,8 @@ public class DocumentService {
             String endpointScope,
             String idempotencyKey,
             String requestHash,
-            DocumentUploadResponse response
+            Object response,
+            String resourceId
     ) {
         Instant now = Instant.now();
         String responseBody;
@@ -415,11 +503,33 @@ public class DocumentService {
                 idempotencyKey,
                 requestHash,
                 201,
-                response.id(),
+                resourceId,
                 responseBody,
                 now,
                 now.plusSeconds(24 * 60 * 60)
         ));
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentUploadResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentDuplicateResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
     }
 
     private String uploadEndpointScope(String workspaceId) {
@@ -428,6 +538,24 @@ public class DocumentService {
 
     private String markdownEndpointScope(String workspaceId) {
         return "POST:/api/workspaces/" + workspaceId + "/documents/markdown";
+    }
+
+    private String duplicateEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents/duplicate";
+    }
+
+    private DocumentDuplicateResponse toDuplicateResponse(Document document) {
+        return new DocumentDuplicateResponse(
+                document.getId(),
+                document.getFilename(),
+                document.getDisplayName(),
+                document.getMimeType(),
+                document.getByteSize(),
+                document.getCurrentVersion(),
+                document.getParentDocumentId(),
+                document.getSourceDocumentId(),
+                document.getSortOrder()
+        );
     }
 
     private String requestHash(String filename, String mimeType, String contentHash) {

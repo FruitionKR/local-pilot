@@ -4,6 +4,7 @@ import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
@@ -151,6 +152,39 @@ class DocumentControllerTest {
 
         verify(documentService).createMarkdown(
                 eq(WORKSPACE_ID), eq(USER_ID), eq("create-key"), any(MarkdownDocumentCreateRequest.class));
+    }
+
+    @Test
+    void duplicate_passesIdempotencyKeyAndReturnsCreatedDocument() throws Exception {
+        when(documentService.duplicate(
+                WORKSPACE_ID, USER_ID, "doc_source", "duplicate-key"))
+                .thenReturn(new DocumentDuplicateResponse(
+                        "doc_copy",
+                        "보고서 복사본.md",
+                        "보고서 복사본",
+                        "text/markdown",
+                        12,
+                        1,
+                        "doc_parent",
+                        "doc_source",
+                        4
+                ));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_source/duplicate")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "duplicate-key"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("doc_copy"))
+                .andExpect(jsonPath("$.filename").value("보고서 복사본.md"))
+                .andExpect(jsonPath("$.display_name").value("보고서 복사본"))
+                .andExpect(jsonPath("$.current_version").value(1))
+                .andExpect(jsonPath("$.parent_document_id").value("doc_parent"))
+                .andExpect(jsonPath("$.source_document_id").value("doc_source"))
+                .andExpect(jsonPath("$.sort_order").value(4));
+
+        verify(documentService).duplicate(
+                WORKSPACE_ID, USER_ID, "doc_source", "duplicate-key");
     }
 
     @Test

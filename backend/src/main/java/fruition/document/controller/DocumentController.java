@@ -5,6 +5,7 @@ import fruition.document.service.DocumentService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
@@ -216,6 +217,32 @@ public class DocumentController {
             @PathVariable("document_id") String documentId,
             @Valid @RequestBody DocumentRenameRequest request) {
         return ResponseEntity.ok(documentService.rename(workspaceId, userId, documentId, request));
+    }
+
+    @Operation(
+        summary = "Markdown 문서 복제",
+        description = "문서 소유자가 최신 Markdown 편집본을 같은 부모의 마지막 위치에 새 문서로 복제합니다."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "복제 성공 또는 멱등 재요청",
+            content = @Content(schema = @Schema(implementation = DocumentDuplicateResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아니거나 편집 문서가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/duplicate")
+    public ResponseEntity<DocumentDuplicateResponse> duplicate(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(documentService.duplicate(workspaceId, userId, documentId, idempotencyKey));
     }
 
     @Operation(

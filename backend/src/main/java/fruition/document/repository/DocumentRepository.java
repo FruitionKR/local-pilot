@@ -4,10 +4,12 @@ import fruition.document.domain.Document;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.domain.DocumentRole;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +54,18 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     long findMaxRootSortOrder(
             @Param("workspaceId") String workspaceId,
             @Param("documentRole") DocumentRole documentRole
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND d.documentRole = fruition.document.domain.DocumentRole.EDITABLE "
+            + "AND ((:parentDocumentId IS NULL AND d.parentDocumentId IS NULL) "
+            + "OR d.parentDocumentId = :parentDocumentId) "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findSiblingPagesForUpdate(
+            @Param("workspaceId") String workspaceId,
+            @Param("parentDocumentId") String parentDocumentId
     );
 
     @Modifying(flushAutomatically = true)

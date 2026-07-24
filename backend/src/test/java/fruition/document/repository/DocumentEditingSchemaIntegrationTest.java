@@ -2,6 +2,8 @@ package fruition.document.repository;
 
 import fruition.TestcontainersConfiguration;
 import fruition.document.domain.DocumentRole;
+import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.service.DocumentService;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -39,6 +45,9 @@ class DocumentEditingSchemaIntegrationTest {
 
     @Autowired
     DocumentRepository documentRepository;
+
+    @Autowired
+    DocumentService documentService;
 
     @Test
     void migration_createsDocumentEditingFoundation() {
@@ -124,6 +133,65 @@ class DocumentEditingSchemaIntegrationTest {
                 "UPDATE documents SET source_document_id = id WHERE id = ?",
                 "doc_original_" + suffix
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void duplicate_sameIdempotencyKeyConcurrently_createsOneDocument() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String sourceId = "doc_source_" + suffix;
+        insertUserAndWorkspace(userId, workspaceId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
+                VALUES (now(), 'OWNER', ?, ?)
+                """,
+                userId,
+                workspaceId
+        );
+        insertDocument(sourceId, workspaceId, userId, "보고서.md", "source-hash", "EDITABLE");
+        jdbcTemplate.update(
+                """
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
+                VALUES (?, '# 최신 본문', ?, now(), now())
+                """,
+                sourceId,
+                "a".repeat(64)
+        );
+
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<DocumentDuplicateResponse> first = executor.submit(() -> {
+                start.await();
+                return documentService.duplicate(
+                        workspaceId, userId, sourceId, "concurrent-key");
+            });
+            Future<DocumentDuplicateResponse> second = executor.submit(() -> {
+                start.await();
+                return documentService.duplicate(
+                        workspaceId, userId, sourceId, "concurrent-key");
+            });
+            start.countDown();
+
+            assertThat(first.get().id()).isEqualTo(second.get().id());
+        }
+
+        Integer duplicateCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM documents WHERE workspace_id = ? AND origin = 'duplicate'",
+                Integer.class,
+                workspaceId
+        );
+        Integer idempotencyCount = jdbcTemplate.queryForObject(
+                """
+                SELECT count(*) FROM idempotency_records
+                WHERE user_id = ? AND idempotency_key = 'concurrent-key'
+                """,
+                Integer.class,
+                userId
+        );
+        assertThat(duplicateCount).isEqualTo(1);
+        assertThat(idempotencyCount).isEqualTo(1);
     }
 
     @Test

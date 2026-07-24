@@ -8,6 +8,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-24
 
+### feat: Markdown 최신 편집본 복제 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate`에서 문서 소유자가 최신 Markdown 편집본을 새 문서로 복제할 수 있게 했다.
+- 복제본은 새 ID, `text/markdown`, `completed`, version 1로 생성하고 원본과 같은 부모의 마지막 `sort_order`에 배치한다.
+- 서버가 `복사본`, `복사본 (N)` 이름을 선택하며 255자를 넘으면 `.md`와 접미사를 보존한 채 이름 본체를 줄인다.
+- 같은 부모의 활성 페이지를 잠가 이름과 순서를 원자적으로 결정하고, `Idempotency-Key` 재요청은 최초 결과를 반환한다.
+- 원본 파일, `source_uri`, 공유 설정과 이력은 복제하지 않으며 `source_document_id`로 복제 원본만 추적한다.
+
+**검증**
+
+- service·controller 테스트에서 최신 본문, 이름 증가, 부모·정렬 위치, 소유권과 원본 자료 거절을 검증했다.
+- PostgreSQL 통합 테스트에서 동일 멱등 키의 동시 복제가 문서와 멱등 기록을 각각 한 건만 생성하는지 검증했다.
+- `./gradlew clean test` 전체 229개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- PDF 원본의 `.md` 복제는 변환 편집본 등록 이후 연결하며 `docs/issue/backend/2026-07-24.md`에서 관리한다.
+- frontend 복제 UI와 응답 반영은 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+
 ### feat: Markdown 수동 저장과 Notion식 페이지 제목 변경 추가
 
 **변경된 것**
