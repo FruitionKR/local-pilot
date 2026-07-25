@@ -357,7 +357,7 @@ backend는 `POST /query` 응답을 받아 Spring API 응답과 채팅 저장 데
 | --- | --- | --- |
 | `from_page_id` | string | edge 시작 page id다. |
 | `to_page_id` | string | edge 도착 page id다. |
-| `link_type` | string | page 사이 관계 종류다. 예: `source_mentions_concept`, `source_related_to`, `part_of`. |
+| `link_type` | string | page 사이 원본 관계 종류다. 예: `source_mentions_concept`, `concept_related_to`, `part_of`. `source_related_to` 같은 파생 관계는 포함하지 않는다. |
 | `role` | string | 이 edge가 traversal 또는 답변에서 수행한 역할이다. |
 | `score` | number | edge 또는 traversal 판단 점수다. |
 

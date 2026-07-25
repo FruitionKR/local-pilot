@@ -20,6 +20,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - PostgreSQL lexical rank로 후보 pool을 제한한 뒤 기존 hybrid scoring과 evidence·related page·traversal path 계약 유지
 - Query 모듈 `68 passed`, `4 subtests passed`, llmPipeline 전체 `487 passed`, `43 subtests passed`
 
+### chore: Legacy source 관계 정리 절차 추가
+
+- Workspace/user별 legacy `source_related_to` row를 기본 dry-run으로 확인하고 `--apply`에서만 삭제하는 운영 명령 추가
+- Query Engine과 backend 출력 계약에서 `source_related_to` 원본 저장·traversal 설명을 제거하고 소비 계약 없는 관련 Source materialization을 보류
+- 정리 명령·기존 삭제 범위 테스트 `11 passed`, llmPipeline 전체 `489 passed`, `43 subtests passed`
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장

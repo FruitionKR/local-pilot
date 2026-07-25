@@ -32,7 +32,6 @@ raw document
   -> concept page
   -> source_mentions_concept
   -> concept_related_to
-  -> source_related_to
 ```
 
 따라서 Query Engine은 GraphRAG 전체를 새로 만드는 것이 아니라, 이미 만들어진 Wiki graph 위에서 검색, 탐색, 맥락 구성, 답변 생성을 수행한다.
@@ -108,7 +107,6 @@ Query Engine은 최소 아래 데이터를 사용한다.
 ```text
 source_mentions_concept
 concept_related_to
-source_related_to
 ```
 
 `concept_contrasts_with`는 계약상 존재할 수 있으나 MVP Query Engine의 기본 traversal 대상에서는 제외한다.
@@ -201,7 +199,6 @@ concept_hint_score =
 ```text
 source -> concept: source_mentions_concept
 concept -> concept: concept_related_to
-source -> source: source_related_to
 concept -> source: source_mentions_concept 역방향
 ```
 
@@ -209,33 +206,12 @@ concept -> source: source_mentions_concept 역방향
 
 ### 7.2 Source-source edge
 
-`source_related_to`는 top-k 제한으로 만들지 않는다. 높은 minimum score threshold를 통과한 관계만 저장한다.
+`source_related_to`는 Wiki 원본 link로 생성하거나 저장하지 않는다. 현재 Query
+Engine에도 관련 Source 전용 소비 계약이 없으므로 Source-source 파생 관계를
+미리 materialize하지 않는다.
 
-기본 생성 기준:
-
-```text
-source_related_score =
-  weighted shared concept cosine
-
-store if:
-  source_related_score >= 0.75
-```
-
-공유 concept이 너무 많은 hub concept일 경우 영향력을 줄이기 위해 concept source count 기반 weight를 적용한다.
-
-```text
-concept_weight = 1 / concept_source_count
-```
-
-DB 저장:
-
-```text
-from_page_id = source:A
-to_page_id = source:B
-link_type = source_related_to
-label = "공유 concept: ..."
-confidence = source_related_score
-```
+관련 Source 기능이 필요해지면 소비 endpoint, 결과 상한, 정렬 기준을 먼저
+정의하고 명시적인 Source→Concept link에서 요청 시 계산한다.
 
 ### 7.3 Traversal budget
 
