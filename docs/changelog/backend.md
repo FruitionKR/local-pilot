@@ -8,6 +8,193 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 폴더 하위 항목 개별 복구 (TASK-H006)
+
+**변경된 것**
+
+- 폴더 복구(`POST /folders/{folder_id}/restore`)를 삭제 작업(op) 전체 복구에서 **복구 대상 폴더의 하위 트리** 복구로 바꿨다. 대상 폴더와 그 하위에서 같은 삭제 작업으로 삭제된 폴더·문서만 되살린다.
+- 복구 대상의 원래 부모 폴더가 아직 삭제 상태이면 최상위의 마지막에 배치하고, 살아 있으면 원래 위치로 복구한다. 삭제 작업의 최상위 폴더를 복구하면 종전처럼 하위 트리 전체가 원위치로 복구된다.
+- 문서 개별 복구는 기존 `POST /documents/{document_id}/restore`가 `folder_id`를 최상위(null)로 되돌려 이미 지원한다.
+
+**검증**
+
+- 통합 테스트로 하위 폴더 개별 복구 시 최상위 배치(원래 부모는 삭제 유지)와 최상위 폴더 복구 시 전체 트리 원위치 복구를 검증했다.
+- `./gradlew test` 전체 통과.
+
+### feat: 폴더 트리 breadcrumb·이름 검색 추가 (TASK-H005)
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/navigation/breadcrumb`로 폴더 또는 문서의 최상위→현재 경로를 반환한다. `folder_id` 또는 `document_id` 중 하나만 지정하며, 문서는 상위 폴더 경로 뒤에 문서 노드를 붙인다. recursive CTE로 조상 폴더 경로를 계산한다.
+- `GET /api/workspaces/{workspace_id}/navigation/search?query=`로 폴더 이름과 문서 표시 이름·파일명을 평면 검색한다. 각 결과에 항목 종류·상위 폴더 breadcrumb를 포함하고, 소프트 삭제 항목과 `chat_export` 문서는 제외한다. 본문은 검색하지 않는다.
+- `folder_id`/`document_id`를 동시 지정하거나 빈 검색어는 `400 INVALID_HIERARCHY_REQUEST`, 없는 항목은 `404 HIERARCHY_ITEM_NOT_FOUND`다.
+
+**검증**
+
+- 통합 테스트로 중첩 폴더·문서의 root→현재 경로와 폴더·문서 혼합 검색·breadcrumb를 검증했고, 컨트롤러 테스트로 endpoint·인증을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 검색 결과별 breadcrumb를 항목마다 CTE로 계산하므로, 대량 결과의 성능 최적화(cursor 페이지네이션 포함)는 후속 과제다.
+
+### feat: 문서 생성·업로드에 folder_id 위치 지정 (TASK-H004)
+
+**변경된 것**
+
+- Markdown 생성(`POST /documents/markdown`)과 업로드(`POST /documents`)가 선택적 `folder_id`를 받아 문서를 해당 폴더 안에 생성한다. Markdown 생성은 요청 body의 `folder_id`, 업로드는 multipart `folder_id` part로 지정한다.
+- `folder_id`를 지정하면 폴더·문서 혼합 순서의 마지막에 배치하고, 생략하면 기존처럼 최상위에 배치한다.
+- 존재하지 않거나 다른 workspace의 `folder_id`는 `404 HIERARCHY_ITEM_NOT_FOUND`로 거절한다.
+- `Document.place(folderId, sortOrder)`를 추가하고 `DocumentService`가 폴더 존재 검증·혼합 배치를 수행하도록 `FolderRepository`를 주입했다. 복제는 원본과 같은 폴더 유지, 초기 노트는 최상위 생성을 유지한다.
+
+**검증**
+
+- 통합 테스트로 선택한 폴더에 문서 생성·배치와 없는 폴더 `404`를 검증했고, 컨트롤러 테스트로 업로드 `folder_id` part 전달을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 복제 대상 폴더 재지정과 원본 변환 편집본의 폴더 배치(변환 pipeline 연동 이후)는 후속 구현한다.
+
+### feat: 폴더 트리 최상위 조회·삭제·복구 API 추가 (TASK-H005/H006)
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/navigation`으로 폴더 트리 최상위 폴더·문서를 혼합 순서로 조회한다(`FolderService.children(..., null)` 재사용). 프론트가 전체 트리를 최상위부터 지연 조회할 수 있다.
+- `DELETE /api/workspaces/{workspace_id}/folders/{folder_id}`로 폴더 트리를 소프트 삭제한다. 루트 폴더와 하위 폴더·포함 문서를 recursive CTE로 같은 `delete_operation_id`로 소프트 삭제하고, 루트는 `current_version` 낙관적 잠금으로 충돌을 검사한다.
+- 빈 폴더는 모든 워크스페이스 멤버가 삭제할 수 있고, 내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있다(`403 HIERARCHY_WRITE_FORBIDDEN`).
+- `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore`로 같은 `delete_operation_id`의 폴더 트리를 원래 부모·순서로 복구한다. 소프트 삭제가 `parent_folder_id`·`sort_order`를 보존하므로 복구 시 원위치가 유지된다.
+- 삭제·복구는 `Idempotency-Key`로 재요청을 no-op 처리한다.
+
+**검증**
+
+- 통합 테스트(Testcontainers)로 하위 트리 전체 소프트 삭제(폴더·문서 동일 작업 ID), 원래 부모 아래 복구, 내용 있는 폴더의 비소유자 삭제 `403`, 빈 폴더의 멤버 삭제 허용을 검증했다. 컨트롤러 테스트로 navigation·삭제·복구 endpoint와 인증을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- breadcrumb와 이름 검색(TASK-H005 잔여), 하위 항목 개별 복구, 삭제된 부모 아래로의 복구 회피는 후속 구현한다.
+- frontend가 `localStorage` 대신 navigation·폴더 API로 트리를 복원하는 재배선은 TASK-H007(별도 frontend 작업)이다.
+
+### feat: 폴더·문서 이동 시 형제 위치(position) 지정 지원
+
+**변경된 것**
+
+- 폴더·문서 이동 API(`PATCH …/folders/{id}/position`, `PATCH …/documents/{id}/position`)에 `position`을 추가했다. 대상 부모의 폴더·문서 혼합 목록에서 0-based 목표 인덱스이며, 생략하면 기존처럼 맨 뒤에 배치한다.
+- 이동 시 대상 부모의 형제(폴더·문서)를 비관적 잠금으로 잠그고 `sort_order`를 재배열하는 `SiblingReorderer`를 추가해 폴더 이동과 문서 이동이 공유한다.
+- 이동 대상 항목만 `current_version`을 검사·증가시키고, 나머지 형제는 순서만 조정한다. 범위를 벗어난 `position`은 목록 끝으로 clamp한다.
+- TASK-H002·H003에서 "이동 시 대상 부모의 마지막에만 배치"하던 제약을 해소하고 SDD `REQ-H005`의 "대상 형제 위치"를 구현했다.
+
+**검증**
+
+- 단위·통합 테스트로 폴더를 지정 인덱스로 이동, 문서를 폴더 사이 위치로 이동, 혼합 `sort_order` 재배열을 검증했다.
+- `./gradlew test` 전체 통과.
+
+### feat: 문서 이동·정렬 API 추가 (TASK-H003)
+
+**변경된 것**
+
+- `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position`로 문서를 다른 폴더 또는 최상위로 이동한다. 워크스페이스 멤버는 소유자가 아니어도 읽기 가능한 문서를 이동할 수 있다.
+- 이동한 문서는 대상 폴더의 폴더·문서 혼합 순서 마지막에 배치한다.
+- `documents.current_version` 낙관적 잠금으로 오래된 이동을 `409 HIERARCHY_VERSION_CONFLICT`로 거절하고, `Idempotency-Key`로 재요청을 no-op 처리한다.
+- 대상 `folder_id`가 없는 폴더면 `404 HIERARCHY_ITEM_NOT_FOUND`다. `folder_id`는 UUID이므로 문서 id처럼 UUID가 아닌 값을 부모로 지정하면 역직렬화 단계에서 `400`이 된다(문서는 부모가 될 수 없음).
+- `DocumentController`/`DocumentService`를 건드리지 않도록 `DocumentPositionController`·`DocumentPlacementService`로 분리하고 H002의 `IdempotencyService`와 혼합 정렬을 재사용했다.
+
+**검증**
+
+- 단위(`DocumentPlacementServiceTest`)·컨트롤러(`DocumentPositionControllerTest`)·통합(`FolderServiceIntegrationTest`) 테스트로 최상위↔폴더 이동, 문서를 부모로 지정 시 400, 버전 충돌 409, 멱등 재요청을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 형제 사이 임의 위치(index) 재정렬은 아직 지원하지 않고 대상 폴더의 마지막에 배치한다.
+- 최상위 navigation·breadcrumb·검색(TASK-H005), 계층 삭제·복구(TASK-H006)는 후속 구현한다.
+
+### feat: 폴더 생성·이름변경·이동 API 추가 (TASK-H002)
+
+**변경된 것**
+
+- 파일탐색기식 폴더 트리의 폴더 조작 API를 추가했다.
+  - `POST /api/workspaces/{workspace_id}/folders` — 폴더 생성(최상위 또는 상위 폴더 아래, 형제 마지막에 배치)
+  - `PATCH …/folders/{folder_id}` — 폴더 이름 변경(`base_version` 낙관적 잠금)
+  - `PATCH …/folders/{folder_id}/position` — 폴더 이동(대상 부모로, 형제 마지막에 배치)
+  - `GET …/folders/{folder_id}/children` — 직계 하위 폴더·문서를 공용 정렬로 혼합 조회, 폴더는 `has_children` 포함
+- 폴더 이동은 recursive CTE로 대상 부모의 조상 경로를 조회해 자기 자신·하위 폴더로의 순환 이동을 `409 HIERARCHY_CYCLE`로 거절한다.
+- 오래된 버전의 이름변경·이동은 `409 HIERARCHY_VERSION_CONFLICT`, 없는 폴더는 `404 HIERARCHY_ITEM_NOT_FOUND`, 잘못된 요청은 `400 INVALID_HIERARCHY_REQUEST`로 응답한다.
+- 폴더·문서의 `sort_order`는 같은 부모 범위에서 하나의 혼합 순서를 공유한다(생성·이동 시 폴더와 문서 중 최대 순서 다음에 배치).
+- 동일 이름 폴더 생성을 허용하고, 생성·이름변경·이동은 `Idempotency-Key`로 재요청을 no-op 처리한다.
+- 여러 endpoint가 공유하는 `IdempotencyService`를 추가했다.
+
+**검증**
+
+- 단위(`FolderServiceTest`)·컨트롤러(`FolderControllerTest`)·통합(`FolderServiceIntegrationTest`, Testcontainers) 테스트로 동일 이름 허용, 혼합 정렬, 순환·버전 충돌, 멱등 재요청을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 형제 사이 임의 위치(index) 재정렬은 아직 지원하지 않고 이동 시 대상 부모의 마지막에 배치한다. 세밀한 드래그 순서는 후속 보완한다.
+- 문서 이동·정렬(TASK-H003), 최상위 navigation·breadcrumb·검색(TASK-H005), 계층 삭제·복구(TASK-H006)는 후속 구현한다.
+
+### feat: 문서 폴더 배치를 단일 folder_id로 통일 (V11)
+
+**변경된 것**
+
+- 문서 계층을 파일탐색기식 단일 폴더 트리로 통일하는 데이터 계층을 구현했다. 폴더가 유일한 컨테이너이고 문서는 leaf다.
+- migration `V11__unify_folder_tree.sql`: `source_folders`→`folders` 일반화, `documents.source_folder_id`→`folder_id`, `parent_document_id` 컬럼·FK 제거, 역할별 배치 check 제약과 역할별 인덱스 제거, 단일 배치 인덱스 `idx_documents_folder_order` 생성.
+- `SourceFolder`/`SourceFolderRepository`를 `Folder`/`FolderRepository`(table `folders`)로 일반화했다.
+- `Document`의 `parentDocumentId`+`sourceFolderId`를 단일 `folderId`(UUID)로 합쳤다. EDITABLE·ORIGINAL 모두 역할과 무관하게 폴더에 배치할 수 있다.
+- `DocumentDuplicateResponse`의 `parent_document_id`를 `folder_id`로 교체했다.
+
+**검증**
+
+- `DocumentEditingSchemaIntegrationTest`(Testcontainers)가 V1~V11 실제 적용 후 컬럼·폴더 테이블·backfill·복구·폴더 배치를 검증한다.
+- `./gradlew test` 전체 통과, `flywayValidate` 통과.
+
+**남은 주의사항**
+
+- 폴더 CRUD·이동·정렬 API(TASK-H002·H003)와 navigation·breadcrumb·검색(TASK-H005)은 후속 구현한다.
+- 역할별 root 정렬 범위는 이번 단계에서 보존했고, 폴더·문서 혼합 정렬은 이동 서비스(H002/H003)에서 구현한다.
+
+### feat: wiki maintenance lint Java 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `POST /wiki/maintenance/lint`를 workspace 범위 public API로 중계하는 Spring 프록시(`fruition.wikimaintenance`)를 추가했다.
+- `POST /api/workspaces/{workspace_id}/wiki/maintenance/lint`에서 `workspace_id`를 path, `user_id`를 `@AuthenticationPrincipal`에서 주입한다.
+- public body는 `{ materializePromotions, dryRun }`만 받고, LLM provider·model 등 pipeline 튜닝 knob은 노출하지 않는다. body를 생략하거나 옵션이 null이면 pipeline 기본값(`dry_run=true`, `materialize_promotions=false`)이 적용된다.
+- workspace 멤버십을 검증해 비멤버 요청을 `WorkspaceNotFoundException`(404)으로 차단한다.
+- pipeline의 400/422는 원본 detail을 보존하고, 그 외(500 포함)는 `503`(`WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE`)으로 매핑한다.
+- lint가 LLM을 호출하므로 프록시 read timeout 기본값을 200초로 두고 `app.wiki-maintenance.endpoint`(`WIKI_MAINTENANCE_ENDPOINT`)를 추가했다.
+
+**검증**
+
+- requester(user_id·workspace_id 주입, null 옵션·null 요청 시 payload 생략, 400 body 보존, 500→503), service(멤버십·위임·비멤버 차단), controller(body 있음·없음·미인증 401) 테스트를 추가했다.
+- `./gradlew test` 전체가 통과했다.
+
+**남은 주의사항**
+
+- 프론트 maintenance UI 연동은 `docs/issue/frontend/2026-07-23.md`의 `4. wiki maintenance UI`에서 관리한다.
+
+### feat: wiki-schema Java 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `wiki_schema` 모듈을 workspace 범위 public API로 중계하는 Spring 프록시(`fruition.wikischema`)를 추가했다.
+- `POST /api/workspaces/{workspace_id}/wiki-schema/preview`, `POST …/drafts`, `POST …/{schema_id}/activate`, `GET …/active` 4개 endpoint를 `AgentTurnController`/`PipelineAgentRequester` 패턴 그대로 구현했다.
+- `drafts`는 `workspace_id`를 path에서, `user_id`를 `@AuthenticationPrincipal`에서 주입하고, `active`는 활성 스키마가 없으면 pipeline의 `null`을 그대로 반환한다.
+- workspace 멤버십을 검증해 비멤버 요청을 `WorkspaceNotFoundException`(404)으로 차단한다.
+- pipeline의 400/422/404는 원본 detail을 보존하고, 그 외 오류는 `503`(`WIKI_SCHEMA_PIPELINE_UNAVAILABLE`)으로 매핑한다.
+- pipeline base URL 설정 `app.wiki-schema.endpoint`(`WIKI_SCHEMA_ENDPOINT`)와 timeout을 추가했다.
+
+**검증**
+
+- requester(snake_case 변환·null name 생략·활성 없음 시 `null` 통과·422/404 body 보존·500→503), service(멤버십·위임·비멤버 차단), controller(4개 endpoint·미인증 401·blank 입력 400) 테스트를 추가했다.
+- `./gradlew test` 전체가 통과했다.
+
+**남은 주의사항**
+
+- 프론트 목업(`frontend/app/_lib/api/schema.ts`, `frontend/app/_components/schema/`) 교체는 별도 Frontend 작업으로 남는다.
+
 ### docs: Document API 계약과 core 추적표 정합화
 
 **변경된 것**

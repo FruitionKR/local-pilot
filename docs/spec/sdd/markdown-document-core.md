@@ -12,7 +12,7 @@
 
 ## 2. 배경
 
-현재 `Document`는 PDF와 Markdown 업로드 파일, 초기 Markdown 노트를 하나의 식별 체계에서 관리한다. 저장 모델은 유지하되 탐색 UI는 Markdown `페이지`와 불변 `원본 자료` 영역으로 분리한다.
+현재 `Document`는 PDF와 Markdown 업로드 파일, 초기 Markdown 노트를 하나의 식별 체계에서 관리한다. 저장 모델은 유지하되 탐색 UI는 폴더가 유일한 컨테이너인 단일 파일탐색기식 폴더 트리로 관리한다. 계층 상세는 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 정의한다.
 
 업로드 원본은 재처리와 원본 조회의 기준이므로 변경하지 않는다. 사용자는 직접 만든 Markdown, 업로드한 Markdown, PDF 등에서 변환된 Markdown을 같은 편집기로 수정한다.
 
@@ -29,11 +29,11 @@
 
 ### 포함
 
-- 페이지·원본 자료 탐색과 문서 상세 조회
+- 단일 폴더 트리 탐색과 문서 상세 조회
 - Markdown 직접 생성 및 Markdown 파일 업로드 즉시 편집
 - PDF 등 원본의 Markdown 변환 완료 후 편집
 - 전체 본문 저장, 이름 변경, 복제
-- 페이지·원본 자료 이름 검색. 계층과 공용 정렬은 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 정의한다.
+- 폴더·문서 이름 검색. 계층과 공용 정렬은 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 정의한다.
 - 소프트 삭제, 휴지통, 복구
 - Markdown 원문 내보내기. 이미지 bundle 상세는 [`markdown-document-assets.md`](./markdown-document-assets.md)에서 정의한다.
 - 문서 소유자 CRUD·워크스페이스 멤버 읽기 권한과 낙관적 잠금
@@ -48,7 +48,7 @@
 - 파이프라인 재처리 결과와 사용자 편집본의 병합
 - 영구 삭제 정책
 - 목록 cursor 페이지네이션(후속 SDD `markdown-document-pagination.md`)
-- 페이지·원본 자료 계층의 상세 설계
+- 폴더 트리 계층의 상세 설계
 
 ## 5. 요구사항
 
@@ -96,9 +96,9 @@
 
 #### REQ-005 탐색 목록 조회
 
-- 탐색 목록은 `페이지`와 `원본 자료` 두 영역으로 분리하고 hierarchy SDD의 지연 조회 API를 사용한다.
+- 탐색 목록은 단일 폴더 트리로 hierarchy SDD의 지연 조회 API를 사용한다.
 - 저장 모델과 문서 상세 API는 기존 `Document.id`를 공통 식별자로 유지한다.
-- 항목에는 `id`, 영역, 항목 종류, `filename`, `display_name`, `file_type`, `mime_type`, 처리 상태, `editable`, `current_version`, 원본 참조, 생성·수정 시각을 포함한다.
+- 항목에는 `id`, 항목 종류, `filename`, `display_name`, `file_type`, `mime_type`, 처리 상태, `editable`, `current_version`, 원본 참조, 생성·수정 시각을 포함한다.
 - 본문과 소프트 삭제 문서는 일반 목록에서 제외한다.
 - 채팅 Wiki page화 export 문서(`origin='chat_export'`)는 기존과 동일하게 목록에서 제외한다(회귀 방지, 현재 `findVisibleByWorkspaceId` 규칙 유지).
 - 변환 중·실패 문서도 처리 상태와 함께 표시한다.
@@ -247,10 +247,9 @@
 | `source_document_id` | 복제본 또는 변환 편집본의 원본 문서 self-reference |
 | `current_content_hash` | 현재 편집 내용 또는 업로드 내용 해시 |
 | `current_version` | 문서 수명주기 낙관적 잠금 버전. 생성 시 `1`, rename·본문저장·삭제·복구 시 증가 |
-| `document_role` | 문서 역할. 편집 문서는 `EDITABLE`, 불변 원본은 `ORIGINAL` |
-| `parent_document_id` | `EDITABLE` 문서의 상위 편집 문서. 최상위면 `null` |
-| `source_folder_id` | `ORIGINAL` 문서가 속한 원본 폴더. 최상위면 `null` |
-| `sort_order` | 현재 부모 문서 또는 원본 폴더 범위 안의 공용 순서 |
+| `document_role` | 문서 역할. 편집 문서는 `EDITABLE`, 불변 원본은 `ORIGINAL`. 트리 배치가 아닌 동작만 구분 |
+| `folder_id` | 문서가 속한 폴더. 최상위면 `null` |
+| `sort_order` | 현재 부모 폴더 범위 안의 공용 순서 |
 | `updated_at` | 마지막 변경 시각 |
 | `deleted_at`, `deleted_by`, `delete_operation_id` | 소프트 삭제와 트리 복구 정보 |
 
@@ -258,9 +257,9 @@
 
 `origin`은 `upload`, `direct`, `conversion`, `chat_export`, `ai_create`처럼 문서가 생성된 경로를 나타낸다. `document_role`은 생성 경로와 독립적으로 문서의 역할을 나타낸다. 업로드 Markdown은 `origin=upload`, `document_role=EDITABLE`이고 업로드 PDF는 `origin=upload`, `document_role=ORIGINAL`이다.
 
-`EDITABLE`은 `parent_document_id`만 사용하고 `source_folder_id`는 항상 `null`이다. `ORIGINAL`은 `source_folder_id`만 사용하고 `parent_document_id`는 항상 `null`이다. 최상위 항목은 역할에 해당하는 부모 필드가 `null`이다. 두 부모 필드의 동시 사용과 역할에 맞지 않는 부모 사용은 DB check constraint로 차단한다.
+`EDITABLE`과 `ORIGINAL`은 모두 `folder_id`로 폴더에 배치하며 배치 규칙은 같다. `folder_id=null`이면 최상위다. 문서는 leaf이므로 다른 문서의 부모가 될 수 없고, 계층 컨테이너는 폴더뿐이다. 폴더와 문서의 workspace 일치는 서비스에서 검증한다.
 
-Core 첫 migration에서 hierarchy의 DB 기반인 `source_folders`를 함께 생성한다. 폴더 CRUD·이동·정렬 API는 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 구현한다.
+Core 첫 migration(V9)은 hierarchy의 DB 기반인 폴더 테이블을 함께 생성했다. 파일탐색기식 단일 폴더 트리로 통일하면서 `source_folders`→`folders`, `documents.source_folder_id`→`folder_id` rename과 `parent_document_id`·역할별 check constraint 제거는 후속 migration(V11)에서 반영한다. V11 이전 코드에는 V9의 구 스키마(`parent_document_id`, 역할별 check constraint)가 남아 있다. 폴더 CRUD·이동·정렬 API는 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 구현한다.
 
 생성·업로드·복제 요청의 24시간 멱등 결과를 저장하는 공통 `idempotency_records`를 추가한다. 식별 범위는 사용자·endpoint·`Idempotency-Key` 조합이며, 같은 키에 다른 요청 본문이 들어오면 충돌로 처리한다. 세부 컬럼과 정리 주기는 목표 ERD 문서에서 관리한다.
 
@@ -285,8 +284,8 @@ Flyway는 기존 문서를 다음과 같이 backfill한다.
 - `display_name`: 기존 `filename`의 마지막 확장자를 제거한 값
 - `normalized_filename`: 기존 전체 `filename`의 검색 정규화 값
 - `document_role`: Markdown MIME 또는 `.md` 문서는 `EDITABLE`, 나머지 업로드 원본은 `ORIGINAL`
-- `parent_document_id`, `source_folder_id`: `null`
-- `sort_order`: workspace와 `document_role`별 `uploaded_at`, `id` 순서
+- `folder_id`: `null` (모든 기존 문서는 최상위에서 시작)
+- `sort_order`: workspace 최상위의 `uploaded_at`, `id` 순서
 - `current_version`: `1`
 - `current_content_hash`: 기존 `content_hash`
 
@@ -315,7 +314,7 @@ Flyway는 기존 문서를 다음과 같이 backfill한다.
 - `DEC-005`: 파이프라인 상태와 소프트 삭제 상태를 분리한다.
 - `DEC-006`: 낙관적 잠금 버전은 `documents.current_version` 하나로 통일한다. 편집 상태 유무와 무관하게 모든 문서 수준 연산(rename·본문저장·삭제·복구)이 같은 버전을 쓴다.
 - `DEC-007`: 동일한 제목·파일명·내용의 문서를 허용하고 동일 쓰기 요청만 멱등성 키로 방지한다.
-- `DEC-008`: 저장 모델은 통합 `Document`를 유지하되 탐색은 페이지 계층과 원본 폴더 계층으로 분리한다.
+- `DEC-008`: 저장 모델은 통합 `Document`를 유지하고, 탐색은 폴더가 유일한 컨테이너인 단일 파일탐색기식 폴더 트리로 통일한다. 문서는 leaf이며 `document_role`은 배치가 아닌 편집 가능 여부만 구분한다(2026-07-25 개정).
 
 ## 7. API
 

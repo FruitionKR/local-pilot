@@ -184,6 +184,29 @@ class DocumentControllerTest {
     }
 
     @Test
+    void upload_passesFolderIdToService() throws Exception {
+        java.util.UUID folderId = java.util.UUID.fromString("55555555-5555-5555-5555-555555555555");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "노트.md", "text/markdown",
+                "# 본문".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        DocumentUploadResponse response = new DocumentUploadResponse(
+                "doc_uploaded", "노트.md", "text/markdown", 0, DocumentStatus.completed,
+                null, Instant.now(), true, 1, DocumentRole.EDITABLE);
+        when(documentService.upload(eq(WORKSPACE_ID), eq(USER_ID), eq("up-key"), eq(folderId), any()))
+                .thenReturn(response);
+
+        mockMvc.perform(multipart("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .file(file)
+                        .param("folder_id", folderId.toString())
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "up-key"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("doc_uploaded"));
+
+        verify(documentService).upload(eq(WORKSPACE_ID), eq(USER_ID), eq("up-key"), eq(folderId), any());
+    }
+
+    @Test
     void duplicate_passesIdempotencyKeyAndReturnsCreatedDocument() throws Exception {
         when(documentService.duplicate(
                 WORKSPACE_ID, USER_ID, "doc_source", "duplicate-key"))
@@ -194,7 +217,7 @@ class DocumentControllerTest {
                         "text/markdown",
                         12,
                         1,
-                        "doc_parent",
+                        java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"),
                         "doc_source",
                         4
                 ));
@@ -208,7 +231,7 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.filename").value("보고서 복사본.md"))
                 .andExpect(jsonPath("$.display_name").value("보고서 복사본"))
                 .andExpect(jsonPath("$.current_version").value(1))
-                .andExpect(jsonPath("$.parent_document_id").value("doc_parent"))
+                .andExpect(jsonPath("$.folder_id").value("11111111-1111-1111-1111-111111111111"))
                 .andExpect(jsonPath("$.source_document_id").value("doc_source"))
                 .andExpect(jsonPath("$.sort_order").value(4));
 

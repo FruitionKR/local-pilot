@@ -63,11 +63,8 @@ public class Document {
     @Column(name = "document_role", nullable = false)
     private DocumentRole documentRole;
 
-    @Column(name = "parent_document_id")
-    private String parentDocumentId;
-
-    @Column(name = "source_folder_id")
-    private UUID sourceFolderId;
+    @Column(name = "folder_id")
+    private UUID folderId;
 
     @Column(name = "sort_order", nullable = false)
     private long sortOrder;
@@ -199,13 +196,13 @@ public class Document {
 
     public void initializeDuplicate(
             String sourceDocumentId,
-            String parentDocumentId,
+            UUID folderId,
             String currentContentHash,
             long byteSize,
             long sortOrder
     ) {
         this.sourceDocumentId = sourceDocumentId;
-        this.parentDocumentId = parentDocumentId;
+        this.folderId = folderId;
         this.currentContentHash = currentContentHash;
         this.byteSize = byteSize;
         this.sortOrder = sortOrder;
@@ -215,8 +212,12 @@ public class Document {
 
     public void placeAtRoot(long sortOrder) {
         this.sortOrder = sortOrder;
-        this.parentDocumentId = null;
-        this.sourceFolderId = null;
+        this.folderId = null;
+    }
+
+    public void place(UUID folderId, long sortOrder) {
+        this.folderId = folderId;
+        this.sortOrder = sortOrder;
     }
 
     /**
@@ -254,8 +255,7 @@ public class Document {
     public String getCurrentContentHash() { return currentContentHash; }
     public long getCurrentVersion() { return currentVersion; }
     public DocumentRole getDocumentRole() { return documentRole; }
-    public String getParentDocumentId() { return parentDocumentId; }
-    public UUID getSourceFolderId() { return sourceFolderId; }
+    public UUID getFolderId() { return folderId; }
     public long getSortOrder() { return sortOrder; }
     public Instant getUploadedAt() { return uploadedAt; }
     public Instant getProcessedAt() { return processedAt; }

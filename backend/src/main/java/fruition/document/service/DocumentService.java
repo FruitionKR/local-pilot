@@ -42,6 +42,8 @@ import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentEditStateRepository;
 import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
+import fruition.document.repository.FolderRepository;
+import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.DocumentWikiRelationType;
@@ -86,6 +88,7 @@ public class DocumentService {
     private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
 
     private final DocumentRepository documentRepository;
+    private final FolderRepository folderRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
@@ -103,6 +106,7 @@ public class DocumentService {
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
+                           FolderRepository folderRepository,
                            WorkspaceMemberRepository workspaceMemberRepository,
                            MinioClient minioClient,
                            StorageProperties storageProps,
@@ -119,6 +123,7 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
+        this.folderRepository = folderRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
@@ -147,9 +152,11 @@ public class DocumentService {
             String workspaceId,
             String userId,
             String idempotencyKey,
+            UUID folderId,
             MultipartFile file
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
+        verifyFolder(workspaceId, folderId);
         validateIdempotencyKey(idempotencyKey);
         String objectPath = null;
         boolean objectStored = false;
@@ -203,7 +210,7 @@ public class DocumentService {
                     objectPath,
                     contentHash
             );
-            document.placeAtRoot(nextRootSortOrder(workspaceId, document.getDocumentRole()));
+            document.place(folderId, placementSortOrder(workspaceId, folderId, document.getDocumentRole()));
             if (!markdownUpload) {
                 document.updateStatus(DocumentStatus.uploaded, null, null, null);
             }
@@ -248,6 +255,7 @@ public class DocumentService {
         if (request == null) {
             throw new InvalidMarkdownContentException("Markdown 생성 요청은 필수입니다.");
         }
+        verifyFolder(workspaceId, request.folderId());
 
         DocumentEditingRules.Filename filename =
                 DocumentEditingRules.rename(request.displayName(), "document.md");
@@ -262,7 +270,7 @@ public class DocumentService {
         }
 
         DocumentUploadResponse response =
-                createMarkdownDocument(workspaceId, userId, filename.filename(), content, "direct");
+                createMarkdownDocument(workspaceId, userId, filename.filename(), content, "direct", request.folderId());
         saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
         return response;
     }
@@ -284,7 +292,7 @@ public class DocumentService {
         }
 
         List<Document> siblings =
-                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getParentDocumentId());
+                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getFolderId());
         editStateInitializer.initializeIfNeeded(source);
         DocumentEditState sourceEditState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentWriteForbiddenException(
@@ -324,7 +332,7 @@ public class DocumentService {
         );
         duplicate.initializeDuplicate(
                 source.getId(),
-                source.getParentDocumentId(),
+                source.getFolderId(),
                 content.contentHash(),
                 content.bytes().length,
                 sortOrder
@@ -347,7 +355,8 @@ public class DocumentService {
                     userId,
                     INITIAL_NOTE_FILENAME,
                     DocumentEditingRules.markdown("# 새 노트\n"),
-                    "direct"
+                    "direct",
+                    null
             );
         } catch (Exception e) {
             log.warn("초기 노트 저장 실패로 건너뜁니다. workspaceId={}", workspaceId, e);
@@ -374,7 +383,8 @@ public class DocumentService {
             String userId,
             String filename,
             DocumentEditingRules.MarkdownContent content,
-            String origin
+            String origin,
+            UUID folderId
     ) {
         String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
         Document document = new Document(
@@ -388,11 +398,13 @@ public class DocumentService {
                 null,
                 origin
         );
+        long sortOrder = placementSortOrder(workspaceId, folderId, DocumentRole.EDITABLE);
         document.initializeDirectMarkdown(
                 content.contentHash(),
                 content.bytes().length,
-                nextRootSortOrder(workspaceId, DocumentRole.EDITABLE)
+                sortOrder
         );
+        document.place(folderId, sortOrder);
         documentRepository.save(document);
         editStateRepository.save(new DocumentEditState(
                 documentId, content.markdown(), content.contentHash()));
@@ -401,6 +413,23 @@ public class DocumentService {
 
     private long nextRootSortOrder(String workspaceId, DocumentRole documentRole) {
         return documentRepository.findMaxRootSortOrder(workspaceId, documentRole) + 1;
+    }
+
+    /** 폴더 지정 시 폴더·문서 혼합 순서 마지막, 미지정 시 역할별 최상위 마지막에 배치한다. */
+    private long placementSortOrder(String workspaceId, UUID folderId, DocumentRole documentRole) {
+        if (folderId == null) {
+            return nextRootSortOrder(workspaceId, documentRole);
+        }
+        return Math.max(
+                folderRepository.findMaxSortOrder(workspaceId, folderId),
+                documentRepository.findMaxSortOrderInFolder(workspaceId, folderId)) + 1;
+    }
+
+    private void verifyFolder(String workspaceId, UUID folderId) {
+        if (folderId != null
+                && folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(folderId, workspaceId).isEmpty()) {
+            throw new HierarchyItemNotFoundException("대상 폴더를 찾을 수 없습니다.");
+        }
     }
 
     private boolean isMarkdown(String filename, String mimeType) {
@@ -567,7 +596,7 @@ public class DocumentService {
                 document.getMimeType(),
                 document.getByteSize(),
                 document.getCurrentVersion(),
-                document.getParentDocumentId(),
+                document.getFolderId(),
                 document.getSourceDocumentId(),
                 document.getSortOrder()
         );

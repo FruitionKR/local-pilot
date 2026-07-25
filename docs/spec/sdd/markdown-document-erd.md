@@ -16,8 +16,7 @@
 
 - 기존 `documents`를 업로드 원본과 Markdown 편집 문서의 통합 식별자로 유지한다.
 - `origin`은 생성 경로, `document_role`은 문서 역할을 나타낸다.
-- `document_role=EDITABLE`은 Markdown 편집 문서이며 페이지 부모 관계를 사용한다.
-- `document_role=ORIGINAL`은 불변 업로드 원본이며 원본 폴더 관계를 사용한다.
+- `document_role=EDITABLE`은 편집 가능한 Markdown 문서, `document_role=ORIGINAL`은 불변 업로드 원본이며, 두 역할 모두 단일 폴더 트리에 `folder_id`로 배치한다.
 - 현재 Markdown과 낙관적 잠금 버전은 각각 `document_edit_states`, `documents.current_version`에서 관리한다.
 - 일반 수동 편집의 범용 버전 이력은 만들지 않고 AI 적용·복원 시점만 snapshot으로 보관한다.
 - 소프트 삭제한 문서와 이미지 참조는 유지한다.
@@ -33,10 +32,9 @@ erDiagram
     USERS ||--o{ DOCUMENTS : owns
 
     DOCUMENTS o|--o{ DOCUMENTS : source_document
-    DOCUMENTS o|--o{ DOCUMENTS : parent_document
-    WORKSPACES ||--o{ SOURCE_FOLDERS : contains
-    SOURCE_FOLDERS o|--o{ SOURCE_FOLDERS : parent_folder
-    SOURCE_FOLDERS o|--o{ DOCUMENTS : contains_original
+    WORKSPACES ||--o{ FOLDERS : contains
+    FOLDERS o|--o{ FOLDERS : parent_folder
+    FOLDERS o|--o{ DOCUMENTS : contains_item
 
     DOCUMENTS ||--o| DOCUMENT_EDIT_STATES : has_current_markdown
     WORKSPACES ||--o{ DOCUMENT_ASSETS : owns
@@ -81,8 +79,7 @@ erDiagram
 | `source_uri` | VARCHAR(255) | Y |  | 불변 원본 Object Storage 경로 |
 | `content_hash` | VARCHAR(255) | Y | unique 아님 | 불변 원본 hash |
 | `source_document_id` | VARCHAR(255) | Y | FK → `documents.id` | 변환본·복제본의 원본 |
-| `parent_document_id` | VARCHAR(255) | Y | FK → `documents.id` | `EDITABLE`의 상위 편집 문서 |
-| `source_folder_id` | UUID | Y | FK → `source_folders.id` | `ORIGINAL`의 원본 폴더 |
+| `folder_id` | UUID | Y | FK → `folders.id` | 문서가 속한 폴더. 최상위면 `null` |
 | `sort_order` | BIGINT | N | 부모 범위 index | 공용 형제 순서 |
 | `current_content_hash` | VARCHAR(64) | Y |  | 현재 편집 Markdown hash |
 | `current_version` | BIGINT | N | 기본값 1 | 문서 수준 낙관적 잠금 |
@@ -94,14 +91,9 @@ erDiagram
 
 기존 파이프라인·처리 상태 컬럼은 유지한다. `UNIQUE(workspace_id, content_hash)`는 제거하고 제목·파일명·내용에 대체 unique constraint를 만들지 않는다.
 
-역할별 부모 제약은 다음과 같다.
+모든 문서는 역할과 무관하게 `folder_id`로 폴더에 배치한다. `folder_id=null`이면 최상위다.
 
-```text
-EDITABLE → source_folder_id IS NULL
-ORIGINAL → parent_document_id IS NULL
-```
-
-최상위 `EDITABLE`은 `parent_document_id=null`, 최상위 `ORIGINAL`은 `source_folder_id=null`이다. 부모 항목과 현재 항목의 workspace 일치 및 순환 여부는 서비스 transaction에서 검증한다.
+`document_role`은 편집 가능한 Markdown(`EDITABLE`)과 불변 원본(`ORIGINAL`)의 동작만 구분하고 트리 배치 위치를 제한하지 않는다. 문서는 leaf이므로 자식을 갖지 않으며, 순환 검사는 폴더 이동에만 적용한다. 폴더와 문서의 workspace 일치는 서비스 transaction에서 검증한다.
 
 ### 4.2 `workspace_members`
 
@@ -125,12 +117,14 @@ updated_at    TIMESTAMPTZ NOT NULL
 
 `documents`와 1:0..1 관계다. 버전은 중복 저장하지 않고 `documents.current_version`을 사용한다.
 
-### 5.2 `source_folders`
+### 5.2 `folders`
+
+워크스페이스 단위의 단일 폴더 트리다. 폴더는 하위 폴더와 문서(EDITABLE·ORIGINAL 모두)를 담는 유일한 컨테이너다.
 
 ```text
 id                  UUID PK
 workspace_id        VARCHAR(255) NOT NULL, FK → workspaces.id
-parent_folder_id    UUID NULL, FK → source_folders.id
+parent_folder_id    UUID NULL, FK → folders.id
 name                VARCHAR(255) NOT NULL
 sort_order          BIGINT NOT NULL
 current_version     BIGINT NOT NULL DEFAULT 1
@@ -141,7 +135,7 @@ created_at          TIMESTAMPTZ NOT NULL
 updated_at          TIMESTAMPTZ NOT NULL
 ```
 
-동일 부모 아래 같은 이름을 허용한다. 부모 폴더의 workspace 일치와 순환 여부는 서비스에서 검증한다.
+동일 부모 아래 같은 이름을 허용한다. 부모 폴더의 workspace 일치와 순환 여부는 서비스에서 검증한다. 기존 `source_folders`에서 이름을 일반화한 테이블로, V9 schema에서 후속 migration으로 전환한다.
 
 ### 5.3 `idempotency_records`
 
@@ -351,8 +345,8 @@ created_at      TIMESTAMPTZ NOT NULL
 2. `normalized_filename`은 기존 전체 `filename`의 검색 정규화 값으로 채운다.
 3. Markdown MIME 또는 `.md` 파일은 `document_role=EDITABLE`로 지정한다.
 4. 나머지 업로드 원본은 `document_role=ORIGINAL`로 지정한다.
-5. `parent_document_id`, `source_folder_id`, `delete_operation_id`는 `null`로 둔다.
-6. `sort_order`는 workspace와 역할별 `uploaded_at`, `id` 순서로 부여한다.
+5. `folder_id`, `delete_operation_id`는 `null`로 둔다(모든 기존 문서는 최상위에서 시작).
+6. `sort_order`는 workspace 최상위에서 `uploaded_at`, `id` 순서로 부여한다.
 7. `current_version`은 `1`, `current_content_hash`는 기존 `content_hash`로 채운다.
 8. `document_edit_states`는 SQL로 채우지 않고 기존 Markdown의 최초 상세 조회 또는 저장 시 lazy 생성한다.
 

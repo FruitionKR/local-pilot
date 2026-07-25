@@ -70,31 +70,126 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
             + "WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = :documentRole "
-            + "AND d.parentDocumentId IS NULL "
-            + "AND d.sourceFolderId IS NULL "
+            + "AND d.folderId IS NULL "
             + "AND d.deletedAt IS NULL")
     long findMaxRootSortOrder(
             @Param("workspaceId") String workspaceId,
             @Param("documentRole") DocumentRole documentRole
     );
 
+    @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
+            + "WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL")
+    long findMaxSortOrderInFolder(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findChildDocuments(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findChildDocumentsForUpdate(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Document d SET d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :id AND d.workspaceId = :workspaceId AND d.deletedAt IS NULL")
+    void updateSortOrder(
+            @Param("id") String id,
+            @Param("workspaceId") String workspaceId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
+
+    boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
+
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId AND d.deletedAt IS NULL "
+            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
+            + "AND (LOWER(d.displayName) LIKE :pattern OR d.normalizedFilename LIKE :pattern) "
+            + "ORDER BY d.displayName ASC, d.id ASC")
+    List<Document> searchByName(
+            @Param("workspaceId") String workspaceId,
+            @Param("pattern") String pattern
+    );
+
+    /** 루트 폴더와 그 하위 폴더에 속한 문서 전체를 같은 삭제 작업 ID로 소프트 삭제한다. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE id = :rootId "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id) "
+            + "UPDATE documents SET deleted_at = :deletedAt, deleted_by = :deletedBy, "
+            + "delete_operation_id = :operationId, current_version = current_version + 1, updated_at = :deletedAt "
+            + "WHERE folder_id IN (SELECT id FROM subtree) AND deleted_at IS NULL",
+            nativeQuery = true)
+    void softDeleteDocumentsInSubtree(
+            @Param("rootId") java.util.UUID rootId,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("operationId") java.util.UUID operationId
+    );
+
+    /** 복구 대상 폴더의 하위 트리에 속하고 같은 삭제 작업으로 삭제된 문서만 되살린다. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE id = :rootId "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id) "
+            + "UPDATE documents SET deleted_at = NULL, deleted_by = NULL, delete_operation_id = NULL, "
+            + "current_version = current_version + 1, updated_at = :restoredAt "
+            + "WHERE folder_id IN (SELECT id FROM subtree) "
+            + "AND deleted_at IS NOT NULL AND delete_operation_id = :operationId",
+            nativeQuery = true)
+    void restoreDocumentsInSubtree(
+            @Param("rootId") java.util.UUID rootId,
+            @Param("operationId") java.util.UUID operationId,
+            @Param("restoredAt") Instant restoredAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.folderId = :folderId, d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int moveIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("folderId") java.util.UUID folderId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = fruition.document.domain.DocumentRole.EDITABLE "
-            + "AND ((:parentDocumentId IS NULL AND d.parentDocumentId IS NULL) "
-            + "OR d.parentDocumentId = :parentDocumentId) "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) "
+            + "OR d.folderId = :folderId) "
             + "AND d.deletedAt IS NULL "
             + "ORDER BY d.sortOrder ASC, d.id ASC")
     List<Document> findSiblingPagesForUpdate(
             @Param("workspaceId") String workspaceId,
-            @Param("parentDocumentId") String parentDocumentId
+            @Param("folderId") java.util.UUID folderId
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = :documentRole "
-            + "AND d.parentDocumentId IS NULL "
-            + "AND d.sourceFolderId IS NULL "
+            + "AND d.folderId IS NULL "
             + "AND d.deletedAt IS NULL "
             + "ORDER BY d.sortOrder ASC, d.id ASC")
     List<Document> findRootItemsForUpdate(
@@ -150,7 +245,7 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
             + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, "
-            + "d.parentDocumentId = NULL, d.sourceFolderId = NULL, "
+            + "d.folderId = NULL, "
             + "d.sortOrder = :sortOrder, d.updatedAt = :restoredAt "
             + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NOT NULL AND d.currentVersion = :baseVersion")

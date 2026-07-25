@@ -9,8 +9,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "source_folders")
-public class SourceFolder {
+@Table(name = "folders")
+public class Folder {
 
     @Id
     private UUID id;
@@ -45,9 +45,9 @@ public class SourceFolder {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected SourceFolder() {}
+    protected Folder() {}
 
-    public SourceFolder(UUID id, String workspaceId, UUID parentFolderId, String name, long sortOrder) {
+    public Folder(UUID id, String workspaceId, UUID parentFolderId, String name, long sortOrder) {
         this.id = id;
         this.workspaceId = workspaceId;
         this.parentFolderId = parentFolderId;

@@ -25,7 +25,7 @@
 - 작업:
   - 기존 `documents.user_id`를 문서 소유자로 유지하고 `display_name`, 정규화 파일명, 원본 참조, 현재 해시, `current_version`, 수정·삭제 필드 추가
   - `document_role`(`EDITABLE`, `ORIGINAL`), `parent_document_id`, `source_folder_id`, `sort_order`, `delete_operation_id` 추가
-  - hierarchy의 DB 기반인 `source_folders`와 self-reference를 생성하되 폴더 API는 hierarchy TASK에서 구현
+  - hierarchy의 DB 기반인 `source_folders`와 self-reference를 생성하되 폴더 API는 hierarchy TASK에서 구현 (2026-07-25 개정: 파일탐색기식 단일 폴더 트리로 통일. `source_folders`→`folders`, `documents.source_folder_id`→`folder_id`, `parent_document_id`·역할별 check constraint 제거는 후속 migration V11에서 반영)
   - 역할에 맞지 않는 부모 사용과 두 부모 필드의 동시 사용을 막는 check constraint 추가
   - `source_uri`, 원본 `content_hash` nullable 전환
   - V5 제약 `uq_documents_workspace_content_hash` DROP
@@ -219,6 +219,6 @@ Repository 통합 테스트는 기존 Testcontainers 구성을 사용한다.
 - `markdown-document-pagination.md`: 목록 cursor 페이지네이션, 응답 형태 전환, 프론트 목록 소비 재배선
 - 범용 버전 이력은 보류하고 AI 전·후 snapshot은 AI editing SDD에서 정의
 - [`markdown-document-assets.md`](../markdown-document-assets.md): 이미지 attachment, 권한, 참조 수명주기
-- [`markdown-document-hierarchy.md`](../markdown-document-hierarchy.md): 페이지 계층, 원본 폴더, 이동·정렬
+- [`markdown-document-hierarchy.md`](../markdown-document-hierarchy.md): 단일 폴더 트리(폴더 컨테이너·문서 leaf), 이동·정렬 (2026-07-25 파일탐색기식으로 통일)
 - [`markdown-document-sharing.md`](../markdown-document-sharing.md): member·guest·웹 공유, 소유권 이전
 - [`markdown-document-ai-editing.md`](../markdown-document-ai-editing.md): AI 편집, Markdown 검증, diff·적용·선택 복원

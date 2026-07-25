@@ -82,16 +82,16 @@ class DocumentEditingSchemaIntegrationTest {
                 "current_content_hash",
                 "current_version",
                 "document_role",
-                "parent_document_id",
-                "source_folder_id",
+                "folder_id",
                 "sort_order",
                 "updated_at",
                 "deleted_at",
                 "deleted_by",
                 "delete_operation_id"
         );
+        assertThat(columns).doesNotContain("parent_document_id", "source_folder_id");
 
-        for (String table : List.of("document_edit_states", "source_folders", "idempotency_records")) {
+        for (String table : List.of("document_edit_states", "folders", "idempotency_records")) {
             Boolean exists = jdbcTemplate.queryForObject(
                     "SELECT to_regclass(?) IS NOT NULL",
                     Boolean.class,
@@ -118,7 +118,7 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void documents_allowSameContentAndEnforceRoleParentRules() {
+    void documents_allowSameContentAndFolderPlacement() {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
@@ -138,26 +138,32 @@ class DocumentEditingSchemaIntegrationTest {
         UUID folderId = UUID.randomUUID();
         jdbcTemplate.update(
                 """
-                INSERT INTO source_folders(
+                INSERT INTO folders(
                     id, workspace_id, parent_folder_id, name, sort_order, current_version, created_at, updated_at
                 ) VALUES (?, ?, NULL, ?, 0, 1, now(), now())
                 """,
                 folderId,
                 workspaceId,
-                "원본"
+                "폴더"
         );
-        assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE documents SET source_folder_id = ? WHERE id = ?",
+        // 통일 모델: 역할과 무관하게 folder_id로 폴더에 배치할 수 있다.
+        jdbcTemplate.update(
+                "UPDATE documents SET folder_id = ? WHERE id = ?",
                 folderId,
                 "doc_parent_" + suffix
-        )).isInstanceOf(DataIntegrityViolationException.class);
-
+        );
         insertDocument("doc_original_" + suffix, workspaceId, userId, "original.pdf", "pdf-hash", "ORIGINAL");
-        assertThatThrownBy(() -> jdbcTemplate.update(
-                "UPDATE documents SET parent_document_id = ? WHERE id = ?",
-                "doc_parent_" + suffix,
+        jdbcTemplate.update(
+                "UPDATE documents SET folder_id = ? WHERE id = ?",
+                folderId,
                 "doc_original_" + suffix
-        )).isInstanceOf(DataIntegrityViolationException.class);
+        );
+        Integer placed = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM documents WHERE folder_id = ?",
+                Integer.class,
+                folderId
+        );
+        assertThat(placed).isEqualTo(2);
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "UPDATE documents SET source_document_id = id WHERE id = ?",
@@ -279,7 +285,7 @@ class DocumentEditingSchemaIntegrationTest {
 
         Map<String, Object> restored = jdbcTemplate.queryForMap(
                 """
-                SELECT current_version, deleted_at, deleted_by, parent_document_id, source_folder_id
+                SELECT current_version, deleted_at, deleted_by, folder_id
                 FROM documents WHERE id = ?
                 """,
                 documentId
@@ -287,8 +293,7 @@ class DocumentEditingSchemaIntegrationTest {
         assertThat(restored.get("current_version")).isEqualTo(3L);
         assertThat(restored.get("deleted_at")).isNull();
         assertThat(restored.get("deleted_by")).isNull();
-        assertThat(restored.get("parent_document_id")).isNull();
-        assertThat(restored.get("source_folder_id")).isNull();
+        assertThat(restored.get("folder_id")).isNull();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT markdown FROM document_edit_states WHERE document_id = ?",
                 String.class,
@@ -548,7 +553,7 @@ class DocumentEditingSchemaIntegrationTest {
 
         jdbcTemplate.update(
                 """
-                INSERT INTO source_folders(
+                INSERT INTO folders(
                     id, workspace_id, parent_folder_id, name, sort_order, current_version, created_at, updated_at
                 ) VALUES (?, ?, NULL, ?, 0, 1, now(), now())
                 """,
@@ -558,7 +563,7 @@ class DocumentEditingSchemaIntegrationTest {
         );
         jdbcTemplate.update(
                 """
-                INSERT INTO source_folders(
+                INSERT INTO folders(
                     id, workspace_id, parent_folder_id, name, sort_order, current_version, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, 0, 1, now(), now())
                 """,
@@ -568,7 +573,7 @@ class DocumentEditingSchemaIntegrationTest {
                 "자식"
         );
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT parent_folder_id FROM source_folders WHERE id = ?",
+                "SELECT parent_folder_id FROM folders WHERE id = ?",
                 UUID.class,
                 childFolderId
         )).isEqualTo(parentFolderId);
@@ -672,7 +677,7 @@ class DocumentEditingSchemaIntegrationTest {
              ResultSet resultSet = statement.executeQuery(
                      """
                      SELECT id, display_name, normalized_filename, document_role,
-                            parent_document_id, source_folder_id, sort_order,
+                            folder_id, sort_order,
                             current_version, current_content_hash
                      FROM documents
                      ORDER BY id
@@ -687,8 +692,7 @@ class DocumentEditingSchemaIntegrationTest {
                         Map.entry("sortOrder", resultSet.getLong("sort_order")),
                         Map.entry("currentVersion", resultSet.getLong("current_version")),
                         Map.entry("currentContentHash", resultSet.getString("current_content_hash")),
-                        Map.entry("parentIsNull", resultSet.getObject("parent_document_id") == null),
-                        Map.entry("folderIsNull", resultSet.getObject("source_folder_id") == null)
+                        Map.entry("folderIsNull", resultSet.getObject("folder_id") == null)
                 ));
             }
 
@@ -707,7 +711,6 @@ class DocumentEditingSchemaIntegrationTest {
                         "sortOrder", 0L,
                         "currentVersion", 1L,
                         "currentContentHash", "hash-a",
-                        "parentIsNull", true,
                         "folderIsNull", true
                 ),
                 Map.of(
@@ -718,7 +721,6 @@ class DocumentEditingSchemaIntegrationTest {
                         "sortOrder", 1L,
                         "currentVersion", 1L,
                         "currentContentHash", "hash-b",
-                        "parentIsNull", true,
                         "folderIsNull", true
                 ),
                 Map.of(
@@ -729,7 +731,6 @@ class DocumentEditingSchemaIntegrationTest {
                         "sortOrder", 0L,
                         "currentVersion", 1L,
                         "currentContentHash", "hash-c",
-                        "parentIsNull", true,
                         "folderIsNull", true
                 )
         );
