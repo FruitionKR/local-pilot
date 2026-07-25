@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: wiki-schema Java 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `wiki_schema` 모듈을 workspace 범위 public API로 중계하는 Spring 프록시(`fruition.wikischema`)를 추가했다.
+- `POST /api/workspaces/{workspace_id}/wiki-schema/preview`, `POST …/drafts`, `POST …/{schema_id}/activate`, `GET …/active` 4개 endpoint를 `AgentTurnController`/`PipelineAgentRequester` 패턴 그대로 구현했다.
+- `drafts`는 `workspace_id`를 path에서, `user_id`를 `@AuthenticationPrincipal`에서 주입하고, `active`는 활성 스키마가 없으면 pipeline의 `null`을 그대로 반환한다.
+- workspace 멤버십을 검증해 비멤버 요청을 `WorkspaceNotFoundException`(404)으로 차단한다.
+- pipeline의 400/422/404는 원본 detail을 보존하고, 그 외 오류는 `503`(`WIKI_SCHEMA_PIPELINE_UNAVAILABLE`)으로 매핑한다.
+- pipeline base URL 설정 `app.wiki-schema.endpoint`(`WIKI_SCHEMA_ENDPOINT`)와 timeout을 추가했다.
+
+**검증**
+
+- requester(snake_case 변환·null name 생략·활성 없음 시 `null` 통과·422/404 body 보존·500→503), service(멤버십·위임·비멤버 차단), controller(4개 endpoint·미인증 401·blank 입력 400) 테스트를 추가했다.
+- `./gradlew test` 전체가 통과했다.
+
+**남은 주의사항**
+
+- 프론트 목업(`frontend/app/_lib/api/schema.ts`, `frontend/app/_components/schema/`) 교체는 별도 Frontend 작업으로 남는다.
+
 ### docs: Document API 계약과 core 추적표 정합화
 
 **변경된 것**
