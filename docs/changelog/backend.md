@@ -6,6 +6,215 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-25
+
+### docs: Document API 계약과 core 추적표 정합화
+
+**변경된 것**
+
+- `docs/spec/api/document.md`를 현재 backend의 Markdown 생성·업로드·조회·저장·복제·소프트 삭제·내보내기 계약으로 갱신했다.
+- Swagger에 직접 생성, 휴지통, 권한·version 오류와 필수 `Idempotency-Key` 설명을 보강했다.
+- 비소유 workspace 멤버는 다른 소유자의 문서를 읽을 수 있지만 rename·삭제·복구할 수 없음을 서비스 테스트로 검증했다.
+- Core 요구사항을 구현 테스트 또는 PDF 변환·계층 이동·이미지 ZIP 후속 task와 연결했다.
+
+**검증**
+
+- `./gradlew clean test flywayValidate`가 통과했다.
+- 전체 backend 테스트 247개와 `git diff --check`가 통과했다.
+
+**남은 주의사항**
+
+- 직접 생성 Markdown의 레거시 `/original`은 현재 `404`이며 `docs/issue/backend/2026-07-25.md`에서 후속 관리한다.
+- 비소유 멤버의 문서 이동 허용은 hierarchy `TASK-H008`에서 검증한다.
+
+### feat: Markdown 원문 내보내기 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/documents/{document_id}/export`에서 활성 workspace 멤버가 최신 Markdown 편집본을 UTF-8 `.md` 파일로 내려받을 수 있게 했다.
+- 현재 표시 이름과 UTF-8 `Content-Disposition`을 사용하며 원본 자료, 삭제 문서, 편집 상태가 없는 문서는 `404`로 처리한다.
+- 내보내기는 문서 version·수정 시각·본문을 변경하지 않고 이미지 URL을 Markdown 문자열 그대로 유지한다.
+
+**검증**
+
+- service·controller 테스트에서 멤버 권한, UTF-8 본문, 한글 파일명과 오류 조건을 검증했다.
+- PostgreSQL 통합 테스트에서 최신 편집본 반환과 문서 상태 불변을 검증했다.
+- `./gradlew clean test` 전체 246개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 이미지 파일을 포함하는 ZIP 내보내기는 assets SDD TASK-008에서 후속 구현한다.
+- PDF 등 Markdown 외 내보내기 형식은 `docs/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 다운로드 연동은 `docs/issue/frontend/2026-07-25.md`에서 관리한다.
+
+### feat: 문서와 workspace 소프트 삭제 추가
+
+**변경된 것**
+
+- 문서 삭제를 물리 삭제에서 `base_version` 기반 소프트 삭제로 전환하고 휴지통·복구 API를 추가했다.
+- 문서 복구는 원본, Markdown 편집 상태, Wiki와 block을 유지하며 역할별 최상위 마지막 위치에 배치한다.
+- workspace에 `deleted_at`, `deleted_by`를 추가하고 하위 문서·채팅·Wiki·멤버십을 변경하지 않는 소프트 삭제·복구를 구현했다.
+- 삭제 workspace는 공통 멤버십 조회에서 제외해 문서·채팅·Wiki API 접근을 `404`로 처리한다.
+- 삭제 workspace 또는 삭제 문서는 새 backend pipeline 요청과 status·heartbeat callback 대상에서 제외한다.
+- 문서·workspace 삭제와 복구에 `Idempotency-Key`를 적용하고 문서 수명주기는 행 잠금과 `current_version`으로 동시 요청을 제어한다.
+
+**검증**
+
+- service·controller 테스트에서 삭제·휴지통·복구, 소유권, version과 멱등 계약을 검증했다.
+- PostgreSQL 통합 테스트에서 원본·본문·하위 workspace 데이터 보존, 접근 차단·복구와 동시 문서 삭제를 검증했다.
+- `./gradlew clean test` 전체 242개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 페이지·원본 폴더 트리 삭제와 원래 위치 복구는 `docs/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 휴지통 UI는 `docs/issue/frontend/2026-07-25.md`, 실행 중 pipeline 중단은 `docs/issue/ai/2026-07-25.md`에서 관리한다.
+
+## 2026-07-24
+
+### feat: Markdown 최신 편집본 복제 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/documents/{document_id}/duplicate`에서 문서 소유자가 최신 Markdown 편집본을 새 문서로 복제할 수 있게 했다.
+- 복제본은 새 ID, `text/markdown`, `completed`, version 1로 생성하고 원본과 같은 부모의 마지막 `sort_order`에 배치한다.
+- 서버가 `복사본`, `복사본 (N)` 이름을 선택하며 255자를 넘으면 `.md`와 접미사를 보존한 채 이름 본체를 줄인다.
+- 같은 부모의 활성 페이지를 잠가 이름과 순서를 원자적으로 결정하고, `Idempotency-Key` 재요청은 최초 결과를 반환한다.
+- 원본 파일, `source_uri`, 공유 설정과 이력은 복제하지 않으며 `source_document_id`로 복제 원본만 추적한다.
+
+**검증**
+
+- service·controller 테스트에서 최신 본문, 이름 증가, 부모·정렬 위치, 소유권과 원본 자료 거절을 검증했다.
+- PostgreSQL 통합 테스트에서 동일 멱등 키의 동시 복제가 문서와 멱등 기록을 각각 한 건만 생성하는지 검증했다.
+- `./gradlew clean test` 전체 229개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- PDF 원본의 `.md` 복제는 변환 편집본 등록 이후 연결하며 `docs/issue/backend/2026-07-24.md`에서 관리한다.
+- frontend 복제 UI와 응답 반영은 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+
+### feat: Markdown 수동 저장과 Notion식 페이지 제목 변경 추가
+
+**변경된 것**
+
+- `PUT /api/workspaces/{workspace_id}/documents/{document_id}/content`에서 전체 Markdown과 `base_version`을 multipart part로 받아 현재 편집 상태를 수동 저장한다.
+- 본문 저장과 `PATCH /rename`은 `documents.current_version` 조건부 update로 동시 변경을 차단하고, 실제 변경 시 version을 1 증가시킨다.
+- 동일 본문·동일 제목은 `changed=false`로 반환하며 version과 수정 시각을 유지한다.
+- rename은 `display_name`을 Notion식 page title로 사용하고 기존 확장자를 유지하며 Markdown heading, Wiki Source Page 제목과 업로드 원본은 변경하지 않는다.
+- 문서 소유자만 본문 저장과 rename을 수행할 수 있고, 비소유 workspace 멤버는 `403 DOCUMENT_WRITE_FORBIDDEN`을 받는다.
+- production 저장 API와 충돌하던 local 메모리 content mock을 제거했다.
+- Swagger가 실제 multipart body를 생성하도록 `markdown`, `base_version`을 `@RequestPart`로 명시하고 요청·오류 응답 설명을 갱신했다.
+
+**검증**
+
+- service·controller 테스트에서 정상 저장, no-op, version 충돌, 소유권, 확장자 유지와 Swagger multipart 요청을 검증했다.
+- PostgreSQL 통합 테스트에서 조건부 rename·본문 갱신과 오래된 version의 update 차단을 검증했다.
+- `./gradlew clean test` 전체 222개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- frontend의 저장·rename 계약 변경과 미저장 이탈 경고는 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+- 이미지 attachment 저장은 assets SDD의 후속 task에서 구현한다.
+
+### fix: 비 Markdown 업로드의 불필요한 pipeline 요청 차단
+
+**변경된 것**
+
+- 업로드 형식은 제한하지 않되 비 Markdown 파일은 `uploaded`, `ORIGINAL`, `editable=false`인 원본 자료로 저장한다.
+- 비 Markdown 원본은 편집 상태와 처리 큐를 생성하지 않아 Markdown 입력만 받는 Wiki pipeline에 잘못 전달되지 않게 했다.
+- Markdown 업로드의 즉시 편집 상태 생성과 기존 Wiki pipeline 실행 흐름은 유지한다.
+
+**검증**
+
+- PDF 원본의 MinIO·DB 저장, `uploaded` 상태, 편집 상태 미생성과 처리 큐 미등록을 서비스 테스트로 검증했다.
+- `./gradlew clean test` 전체 217개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- PDF 복원 CLI 연동과 Markdown을 포함한 내보내기는 `docs/issue/backend/2026-07-24.md`에서 후속 관리한다.
+
+### feat: Markdown 직접 생성과 즉시 편집 업로드 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/documents/markdown`으로 빈 본문을 포함한 Markdown 문서를 직접 생성할 수 있게 했다.
+- 직접 생성 문서는 MinIO 원본 없이 `source_uri=null`, `completed`, version 1인 편집 문서와 현재 편집 상태를 같은 transaction에서 생성한다.
+- Markdown 업로드는 원문으로 편집 상태를 즉시 생성하고 pipeline 완료 전에도 `editable=true`를 반환한다.
+- 생성·업로드에 `Idempotency-Key`를 적용하고 24시간 동안 같은 요청에는 저장된 최초 응답을 반환하며, 같은 key의 다른 요청은 `409`로 거절한다.
+- 동일한 파일명과 내용의 새로운 요청은 별도 문서로 허용하고, 새 문서는 역할별 최상위 마지막 순서에 배치한다.
+- MinIO 저장 후 DB transaction이 실패하면 업로드 객체를 보상 삭제하고, 초기 노트는 MinIO 없이 직접 생성 경로를 사용한다.
+
+**검증**
+
+- 빈 본문, UTF-8 5MB 초과, Markdown 즉시 편집, 최초 응답 replay와 key 충돌을 테스트했다.
+- MinIO 실패 시 DB 미저장과 DB 실패 시 MinIO 보상 삭제를 검증했다.
+- 초기 노트의 `source_uri=null`, 편집 상태 생성과 MinIO 미사용을 검증했다.
+- `./gradlew clean test` 전체 216개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 선택적 `parent_document_id`, `source_folder_id` 위치 연동은 hierarchy `TASK-H004`에서 구현한다.
+- production 본문 저장과 `base_version` 충돌 처리는 후속 Core TASK로 유지한다.
+
+### feat: Markdown 문서 조회·파일명 검색 확장
+
+**변경된 것**
+
+- 기존 `GET /api/workspaces/{workspace_id}/documents` 호환 목록에 페이지·원본 영역, 항목 종류, 표시 이름, 파일 형식, 편집 가능 여부, 현재 version, 원본 참조와 수정 시각을 추가했다.
+- 목록에 선택적 `query`를 받아 `display_name`과 `filename`만 대소문자 구분 없이 검색하며, 본문은 검색하지 않는다.
+- 목록은 공용 `sort_order`를 적용하고 삭제 문서, 다른 workspace 문서, `origin=chat_export` 문서를 제외한다.
+- 문서 상세에 현재 Markdown과 `current_version`을 반환하고, 삭제 문서는 상세·원본·block API에서 조회되지 않게 했다.
+
+**검증**
+
+- 페이지·원본 구분, 검색어 전달, 현재 Markdown 상세 응답을 service·controller 테스트로 검증했다.
+- PostgreSQL 통합 테스트에서 삭제 문서, 다른 workspace, `chat_export` 제외와 본문 검색 제외를 검증했다.
+- `./gradlew clean test` 전체 208개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- `/navigation`, breadcrumb와 직계 자식 지연 조회는 hierarchy `TASK-H005`에서 구현한다.
+- production 본문 저장과 `base_version` 충돌 처리는 후속 Core TASK로 유지한다.
+
+### feat: Markdown 문서 편집 입력 규칙 추가
+
+**변경된 것**
+
+- 표시 이름의 앞뒤 공백과 금지 문자·제어문자·255자 제한을 검증하고, 이름 변경 시 기존 PDF·Markdown 확장자를 유지하는 규칙을 추가했다.
+- Markdown 본문은 빈 문자열을 허용하되 `null`, 잘못된 UTF-8, UTF-8 기준 5MB 초과를 구분해 거절한다.
+- 저장 전에 SHA-256 hash를 계산하고 현재 hash와 비교해 동일 본문 no-op을 판정할 수 있게 했다.
+- 기존 Markdown 편집 상태 lazy 생성도 같은 UTF-8·크기·hash 규칙을 사용한다.
+
+**검증**
+
+- PDF·Markdown 확장자 유지, 한글 UTF-8 5MB 경계, 빈 본문·`null`, 잘못된 UTF-8, SHA-256·no-op 테스트를 추가했다.
+- 같은 workspace에서 파일명과 내용이 모두 같은 문서를 생성할 수 있음을 PostgreSQL 통합 테스트로 검증했다.
+- `./gradlew clean test` 전체 204개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 이 규칙을 사용하는 production 본문 생성·저장 API와 `base_version` 충돌 처리는 후속 Core TASK에서 구현한다.
+
+### feat: Markdown 문서 편집 Core 데이터 기반 추가
+
+**변경된 것**
+
+- Flyway `V9`에서 `documents`에 표시 이름, 문서 역할(`EDITABLE`/`ORIGINAL`), 현재 version·hash, 페이지·원본 폴더 관계, 정렬과 소프트 삭제 필드를 추가했다.
+- 동일 workspace의 같은 내용 문서를 허용하도록 기존 content hash UNIQUE 제약을 제거했다.
+- 현재 Markdown, 원본 폴더, 24시간 요청 멱등 결과를 위한 `document_edit_states`, `source_folders`, `idempotency_records`를 추가했다.
+- 기존 V8 문서를 역할별 최상위 위치와 순서로 backfill하고, 기존 Markdown은 최초 상세 조회 시 MinIO 원문으로 편집 상태를 lazy 생성한다.
+- 동시 최초 조회는 `INSERT ... ON CONFLICT DO NOTHING`으로 하나의 편집 상태만 생성한다.
+
+**검증**
+
+- V8 데이터를 별도 PostgreSQL database에서 V9로 올려 표시 이름, 역할, 순서, version·hash backfill을 검증했다.
+- 문서 역할별 부모 제약, 동일 hash 허용, 편집 상태 1:1, 폴더 self-reference와 멱등 키 UNIQUE 통합 테스트를 추가했다.
+- `./gradlew clean test` 전체 198개 테스트가 통과했다.
+
+**남은 주의사항**
+
+- 직접 생성·업로드·저장 API의 멱등 응답 처리와 파일명·본문 검증은 후속 Core TASK에서 구현한다.
+- 원본 폴더 CRUD·이동·정렬과 다른 workspace 부모 차단은 hierarchy TASK에서 구현한다.
+
 ## 2026-07-22
 
 ### fix: 로컬 이메일 인증 고정 코드 복구

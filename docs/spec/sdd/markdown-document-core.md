@@ -5,6 +5,7 @@
 - 상태: Draft
 - 작성일: 2026-07-23
 - 구현 계획: [`markdown-document-core-tasks.md`](./tasks/markdown-document-core-tasks.md)
+- 목표 ERD: [`markdown-document-erd.md`](./markdown-document-erd.md)
 - 관련 PR:
 
 상태 흐름: `Draft → Approved → In Progress → Verified`
@@ -114,6 +115,7 @@
 - `/original`: `source_uri`가 있으면 기존대로 MinIO 원본을 스트리밍한다. `source_uri`가 `null`인 직접 생성 문서는 편집 상태의 현재 Markdown을 `text/markdown`으로 반환한다. 편집 상태도 없으면 `404`.
 - `/blocks`: 파이프라인 source block이 없는 직접 생성 문서는 `200`에 빈 목록(`blocks: []`)을 반환한다.
 - 두 API는 기존 업로드·파이프라인 문서에서 회귀 없이 동작해야 한다.
+- 현재 구현은 `/blocks`의 빈 목록만 충족한다. `/original`은 `source_uri=null`이면 `404 DOCUMENT_ORIGINAL_NOT_FOUND`를 반환하며 후속 backend 이슈로 관리한다.
 
 #### REQ-007 파일명 검색
 
@@ -239,16 +241,28 @@
 
 | 필드 | 설명 |
 |---|---|
+| `display_name` | 확장자를 제외하고 사용자에게 표시하는 이름 |
 | `normalized_filename` | 검색용 정규화 파일명 |
 | 기존 `user_id` | 문서 내용 CRUD와 AI 편집 권한을 가진 생성자. 문서 소유자로 사용 |
 | `source_document_id` | 복제본 또는 변환 편집본의 원본 문서 self-reference |
 | `current_content_hash` | 현재 편집 내용 또는 업로드 내용 해시 |
 | `current_version` | 문서 수명주기 낙관적 잠금 버전. 생성 시 `1`, rename·본문저장·삭제·복구 시 증가 |
-| `sort_order` | 워크스페이스 공용 순서 |
+| `document_role` | 문서 역할. 편집 문서는 `EDITABLE`, 불변 원본은 `ORIGINAL` |
+| `parent_document_id` | `EDITABLE` 문서의 상위 편집 문서. 최상위면 `null` |
+| `source_folder_id` | `ORIGINAL` 문서가 속한 원본 폴더. 최상위면 `null` |
+| `sort_order` | 현재 부모 문서 또는 원본 폴더 범위 안의 공용 순서 |
 | `updated_at` | 마지막 변경 시각 |
-| `deleted_at`, `deleted_by` | 소프트 삭제 정보 |
+| `deleted_at`, `deleted_by`, `delete_operation_id` | 소프트 삭제와 트리 복구 정보 |
 
 직접 생성 Markdown을 위해 기존 `source_uri`와 원본 `content_hash`는 nullable로 변경한다. 기존 `content_hash`는 업로드 원본의 불변 해시로 유지한다.
+
+`origin`은 `upload`, `direct`, `conversion`, `chat_export`, `ai_create`처럼 문서가 생성된 경로를 나타낸다. `document_role`은 생성 경로와 독립적으로 문서의 역할을 나타낸다. 업로드 Markdown은 `origin=upload`, `document_role=EDITABLE`이고 업로드 PDF는 `origin=upload`, `document_role=ORIGINAL`이다.
+
+`EDITABLE`은 `parent_document_id`만 사용하고 `source_folder_id`는 항상 `null`이다. `ORIGINAL`은 `source_folder_id`만 사용하고 `parent_document_id`는 항상 `null`이다. 최상위 항목은 역할에 해당하는 부모 필드가 `null`이다. 두 부모 필드의 동시 사용과 역할에 맞지 않는 부모 사용은 DB check constraint로 차단한다.
+
+Core 첫 migration에서 hierarchy의 DB 기반인 `source_folders`를 함께 생성한다. 폴더 CRUD·이동·정렬 API는 [`markdown-document-hierarchy.md`](./markdown-document-hierarchy.md)에서 구현한다.
+
+생성·업로드·복제 요청의 24시간 멱등 결과를 저장하는 공통 `idempotency_records`를 추가한다. 식별 범위는 사용자·endpoint·`Idempotency-Key` 조합이며, 같은 키에 다른 요청 본문이 들어오면 충돌로 처리한다. 세부 컬럼과 정리 주기는 목표 ERD 문서에서 관리한다.
 
 `document_edit_states`를 추가한다. 버전은 `documents.current_version`으로 단일화하므로 이 테이블에는 두지 않는다.
 
@@ -264,7 +278,19 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 ### 편집 상태 생성(lazy)
 
-편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 기존 Markdown 문서는 최초 상세 조회 또는 최초 저장 시 원문에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`). Flyway backfill은 순수 DB 컬럼(`normalized_filename`, `sort_order`, `current_version=1`)과 기존 문서의 `current_content_hash=content_hash`를 채운다. 신규 변환 원본은 callback 시 별도 Markdown 페이지와 편집 상태를 생성한다.
+편집 상태는 Flyway로 일괄 backfill하지 않는다(본문이 MinIO에 있어 SQL로 채울 수 없음). 편집 상태가 없는 기존 Markdown 문서는 최초 상세 조회 또는 최초 저장 시 원문에서 편집 상태를 lazy 생성한다(별도 트랜잭션, version `1`).
+
+Flyway는 기존 문서를 다음과 같이 backfill한다.
+
+- `display_name`: 기존 `filename`의 마지막 확장자를 제거한 값
+- `normalized_filename`: 기존 전체 `filename`의 검색 정규화 값
+- `document_role`: Markdown MIME 또는 `.md` 문서는 `EDITABLE`, 나머지 업로드 원본은 `ORIGINAL`
+- `parent_document_id`, `source_folder_id`: `null`
+- `sort_order`: workspace와 `document_role`별 `uploaded_at`, `id` 순서
+- `current_version`: `1`
+- `current_content_hash`: 기존 `content_hash`
+
+신규 변환 원본은 callback 시 `document_role=EDITABLE`인 별도 Markdown 문서와 편집 상태를 생성한다.
 
 ### 저장과 낙관적 잠금
 
@@ -312,13 +338,40 @@ updated_at        TIMESTAMPTZ NOT NULL
 
 | 영역 | 검증 방법 | 결과 |
 |---|---|---|
-| DB migration과 제약 | Testcontainers Repository 통합 테스트 | Pending |
-| 파일명·본문 규칙 | 도메인/서비스 단위 테스트 | Pending |
-| 생성·조회·저장 API | Controller 통합 테스트 | Pending |
-| 낙관적 잠금 | 동시 저장 Repository 통합 테스트 | Pending |
-| 변환 결과 등록 | MinIO·callback 통합 테스트 | Pending |
-| 삭제·복구 | 서비스·API 통합 테스트 | Pending |
-| Markdown 원문 내보내기 | API 통합 테스트 | Pending |
+| DB migration과 제약 | Testcontainers Repository 통합 테스트 | Pass |
+| 파일명·본문 규칙 | 도메인/서비스 단위 테스트 | Pass |
+| 생성·조회·저장 API | Controller·서비스 테스트 | Pass |
+| 낙관적 잠금 | Repository 통합 테스트 | Pass |
+| 변환 결과 등록 | MinIO·callback 통합 테스트 | Deferred — Core TASK-005 |
+| 삭제·복구 | 서비스·Repository 통합 테스트 | Pass |
+| Markdown 원문 내보내기 | API 통합 테스트 | Pass |
+
+### 8.1 요구사항 추적표
+
+| 요구사항 | 검증 테스트 또는 후속 task | 상태 |
+|---|---|---|
+| `REQ-001` Markdown 직접 생성 | `createMarkdown_emptyBody_createsEditableDocument`, `createInitialNote_savesDirectMarkdownWithoutMinio` | Pass |
+| `REQ-002` Markdown 업로드 | `uploadMarkdown_createsEditStateImmediately` | Pass |
+| `REQ-003` 변환 원본 편집 | Core `TASK-005 PDF 변환 결과 편집본 등록` | Deferred |
+| `REQ-004` 중복·멱등성 | `documents_allowSameContentAndEnforceRoleParentRules`, `createMarkdown_sameIdempotencyRequest_replaysExistingDocument`, `duplicate_sameIdempotencyKeyConcurrently_createsOneDocument` | Pass |
+| `REQ-005` 탐색 목록 | `findAll_mapsPageAndSourceMetadata`, `visibleListAndSearchExcludeDeletedChatExportAndOtherWorkspaceDocuments` | Pass |
+| `REQ-006` 상세 조회 | `findById_existingMarkdown_initializesEditState`, `workspaceMember_readsButCannotMutateOtherOwnersDocument` | Pass |
+| `REQ-006a` 레거시 원본 API | `blocks_noBlocks_returnsEmptyList`; 직접 생성 문서 `/original`은 backend 후속 이슈 | Partial |
+| `REQ-007` 파일명 검색 | `findAll_withQuery_usesFilenameSearch`, `list_withQuery_passesFilenameSearchQuery` | Pass |
+| `REQ-008` 공용 정렬·이동 | hierarchy `TASK-H002`, `TASK-H003`, `TASK-H008` | Deferred |
+| `REQ-009` 전체 본문 저장 | `saveContent_changed_updatesContentAndVersion`, `saveContent_multipartPassesMarkdownAndBaseVersion` | Pass |
+| `REQ-010` 변경 없는 저장 | `saveContent_sameMarkdown_returnsNoOp` | Pass |
+| `REQ-011` 저장 충돌 | `saveContent_rejectsStaleVersionAndNonOwner`, `conditionalUpdates_allowOnlyCurrentBaseVersion` | Pass |
+| `REQ-012` 본문 검증 | `DocumentEditingRulesTest.markdown_*` | Pass |
+| `REQ-013` 표시 이름 변경 | `rename_changesOnlyNotionStylePageTitle`, `rename_sameNameNoOpAndStaleVersionConflict` | Pass |
+| `REQ-014` 파일명 검증 | `DocumentEditingRulesTest.rename_*` | Pass |
+| `REQ-015` 최신 편집본 복제 | `duplicate_copiesLatestMarkdownAtEndOfSameParent` | Pass |
+| `REQ-016` 복제본 이름 | `duplicateFilename_selectsNextNumberAndTruncatesBase` | Pass |
+| `REQ-017` 소프트 삭제 | `delete_softDeletesWithoutRemovingDocumentData`, `documentSoftDeleteAndRestore_preservesOriginalAndEditingState` | Pass |
+| `REQ-018` 휴지통·복구 | `trash_returnsDeletedDocuments`, `restore_deletedDocumentAtEndOfRoot` | Pass |
+| `REQ-019` Markdown 내보내기 | `export_returnsUtf8MarkdownWithEncodedKoreanFilename`, `markdownExport_readsLatestEditStateWithoutChangingDocument` | Pass |
+| `REQ-020` 이미지 bundle | assets `TASK-008 ZIP 내보내기` | Deferred |
+| `REQ-021` 문서 소유권 | `workspaceMember_readsButCannotMutateOtherOwnersDocument`, `duplicate_rejectsOriginalAndNonOwner`, `DocumentExportServiceTest` | Pass |
 
 ```sh
 cd backend

@@ -19,15 +19,16 @@
 
 - 관련 요구사항: `REQ-H001`~`REQ-H009`, `REQ-H017`
 - 작업:
-  - `documents`에 `parent_document_id`, `source_folder_id`, `hierarchy_kind` 추가
-  - `source_folders`와 self-reference 추가
-  - 기존 Markdown은 `PAGE`, 나머지 업로드 원본은 `SOURCE`로 backfill
-  - 부모 범위별 `sort_order` backfill
-  - 두 부모 필드의 동시 사용을 막는 check constraint 추가
+  - core TASK-001에서 추가한 `document_role`, 두 부모 필드, `sort_order`, `source_folders` schema 재검증
+  - `document_role=EDITABLE`과 `ORIGINAL`별 repository 조회 기반 추가
+  - 기존 Markdown의 `EDITABLE`, 나머지 업로드 원본의 `ORIGINAL` backfill 결과 검증
+  - 부모 범위별 `sort_order` 조회·잠금 쿼리 추가
+  - 역할과 부모 필드 check constraint에 맞춘 서비스 검증 추가
 - 완료 조건:
-  - [ ] migration·rollback 검증 통과
+  - [ ] core migration·entity mapping 검증 통과
   - [ ] 기존 문서의 탐색 영역 backfill 검증
   - [ ] 동일 이름과 동일 내용에 unique 제약이 없음
+  - [ ] `EDITABLE`과 `ORIGINAL` 최상위 항목을 `document_role`로 구분
   - [ ] 다른 workspace 부모 지정 거절
 
 ### TASK-H002 페이지 계층 repository·서비스
@@ -65,7 +66,7 @@
 - 작업:
   - Markdown 생성·업로드·복제에 `parent_document_id` 추가
   - 원본 업로드에 `source_folder_id`, `converted_page_parent_id` 추가
-  - `.md` 업로드를 편집 가능한 `PAGE`로 직접 생성
+  - `.md` 업로드를 `document_role=EDITABLE`로 직접 생성
   - 변환 편집본을 선택한 페이지 위치 또는 최상위에 생성
 - 완료 조건:
   - [ ] `.md` 업로드가 원본 자료에 중복 표시되지 않음
@@ -118,6 +119,7 @@
 
 - 관련 요구사항: 전체 계층 요구사항
 - 작업:
+  - Core TASK-010에서 이관된 비소유 workspace 멤버의 페이지·원본 이동 허용 검증
   - API 문서와 오류 계약 갱신
   - Testcontainers 동시 이동·삭제 테스트
   - 기존 업로드·변환·편집 회귀 테스트

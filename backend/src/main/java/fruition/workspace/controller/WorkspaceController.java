@@ -3,8 +3,10 @@ package fruition.workspace.controller;
 import fruition.util.ErrorResponse;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceListResponse;
+import fruition.workspace.dto.WorkspaceLifecycleResponse;
 import fruition.workspace.dto.WorkspaceRenameRequest;
 import fruition.workspace.dto.WorkspaceResponse;
+import fruition.workspace.dto.WorkspaceTrashResponse;
 import fruition.workspace.service.WorkspaceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -70,18 +72,49 @@ public class WorkspaceController {
         return ResponseEntity.ok(workspaceService.rename(userId, workspaceId, request));
     }
 
-    @Operation(summary = "워크스페이스 삭제", description = "로그인한 사용자가 소유한 워크스페이스를 삭제합니다.")
+    @Operation(summary = "워크스페이스 삭제", description = "소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다.")
     @ApiResponses({
-        @ApiResponse(responseCode = "204", description = "삭제 성공"),
+        @ApiResponse(responseCode = "200", description = "삭제 성공",
+            content = @Content(schema = @Schema(implementation = WorkspaceLifecycleResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @DeleteMapping("/{workspace_id}")
-    public ResponseEntity<Void> delete(
+    public ResponseEntity<WorkspaceLifecycleResponse> delete(
             @AuthenticationPrincipal String userId,
             @Parameter(description = "워크스페이스 ID", example = "ws_abc12345")
-            @PathVariable("workspace_id") String workspaceId) {
-        workspaceService.delete(userId, workspaceId);
-        return ResponseEntity.noContent().build();
+            @PathVariable("workspace_id") String workspaceId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(workspaceService.delete(userId, workspaceId, idempotencyKey));
+    }
+
+    @Operation(summary = "삭제 워크스페이스 목록", description = "소유자가 삭제한 워크스페이스를 반환합니다.")
+    @GetMapping("/trash")
+    public ResponseEntity<WorkspaceTrashResponse> trash(
+            @AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(workspaceService.trash(userId));
+    }
+
+    @Operation(summary = "워크스페이스 복구", description = "소프트 삭제한 워크스페이스와 기존 하위 데이터의 접근을 복구합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "복구 성공",
+            content = @Content(schema = @Schema(implementation = WorkspaceLifecycleResponse.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "삭제 workspace 또는 소유권을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{workspace_id}/restore")
+    public ResponseEntity<WorkspaceLifecycleResponse> restore(
+            @AuthenticationPrincipal String userId,
+            @PathVariable("workspace_id") String workspaceId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.ok(workspaceService.restore(userId, workspaceId, idempotencyKey));
     }
 }

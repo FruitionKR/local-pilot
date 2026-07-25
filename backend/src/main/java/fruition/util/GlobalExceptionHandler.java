@@ -5,8 +5,15 @@ import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.DocumentVersionConflictException;
+import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.document.exception.InvalidDocumentVersionException;
+import fruition.document.exception.InvalidMarkdownContentException;
+import fruition.document.exception.MarkdownContentTooLargeException;
+import fruition.document.exception.InvalidIdempotencyKeyException;
+import fruition.document.exception.IdempotencyConflictException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.exception.EmptyChatWikiExportException;
@@ -82,6 +89,20 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
     }
 
+    @ExceptionHandler(DocumentWriteForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentWriteForbidden(DocumentWriteForbiddenException e) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("DOCUMENT_WRITE_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentVersionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentVersionConflict(DocumentVersionConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("DOCUMENT_VERSION_CONFLICT", e.getMessage()));
+    }
+
     @ExceptionHandler(DocumentOriginalNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentOriginalNotFound(DocumentOriginalNotFoundException e) {
         return ResponseEntity
@@ -94,6 +115,41 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_FILENAME", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidDocumentVersionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDocumentVersion(InvalidDocumentVersionException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_DOCUMENT_VERSION", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidMarkdownContentException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidMarkdownContent(InvalidMarkdownContentException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_MARKDOWN_CONTENT", e.getMessage()));
+    }
+
+    @ExceptionHandler(MarkdownContentTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleMarkdownContentTooLarge(MarkdownContentTooLargeException e) {
+        return ResponseEntity
+                .status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("MARKDOWN_CONTENT_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidIdempotencyKeyException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidIdempotencyKey(InvalidIdempotencyKeyException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_IDEMPOTENCY_KEY", e.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyConflict(IdempotencyConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
     }
 
     @ExceptionHandler(EmptyChatWikiExportException.class)

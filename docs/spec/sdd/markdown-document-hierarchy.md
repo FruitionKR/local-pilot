@@ -6,6 +6,7 @@
 - 작성일: 2026-07-23
 - 구현 계획: [`markdown-document-hierarchy-tasks.md`](./tasks/markdown-document-hierarchy-tasks.md)
 - 선행 SDD: [`markdown-document-core.md`](./markdown-document-core.md)
+- 목표 ERD: [`markdown-document-erd.md`](./markdown-document-erd.md)
 - 관련 PR:
 
 상태 흐름: `Draft → Approved → In Progress → Verified`
@@ -212,9 +213,14 @@
 | `parent_document_id` | Markdown 페이지의 부모 페이지. 최상위면 `null` |
 | `source_folder_id` | 업로드 원본의 원본 폴더. 최상위면 `null` |
 | `sort_order` | 현재 부모 범위 안의 공용 순서 |
-| `hierarchy_kind` | `PAGE` 또는 `SOURCE`; 기존 형식과 편집 상태로 backfill |
+| `document_role` | 문서 역할. 편집 가능한 Markdown은 `EDITABLE`, 불변 원본은 `ORIGINAL` |
+| `delete_operation_id` | 트리 삭제·복구 작업 식별자 |
 
-`parent_document_id`와 `source_folder_id`는 동시에 값을 가질 수 없다. `PAGE`는 `parent_document_id`만, `SOURCE`는 `source_folder_id`만 사용한다.
+`origin`은 문서의 생성 경로를 나타내고 `document_role`은 탐색과 수명주기에서의 역할을 나타낸다. 같은 `origin=upload`이어도 업로드 Markdown은 `EDITABLE`, 업로드 PDF는 `ORIGINAL`이다.
+
+`parent_document_id`와 `source_folder_id`는 동시에 값을 가질 수 없다. `EDITABLE`은 `parent_document_id`만 사용하고 `ORIGINAL`은 `source_folder_id`만 사용한다. 역할에 맞지 않는 부모 사용은 DB check constraint로 차단한다.
+
+기존 Markdown은 `EDITABLE`, 나머지 업로드 원본은 `ORIGINAL`로 backfill한다. 기존 문서는 각 역할 영역의 최상위에 두고, workspace와 역할별 `uploaded_at`, `id` 순서로 `sort_order`를 부여한다.
 
 `source_folders`를 추가한다.
 

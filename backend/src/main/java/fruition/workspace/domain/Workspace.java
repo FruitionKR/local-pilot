@@ -19,6 +19,12 @@ public class Workspace {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by")
+    private String deletedBy;
+
     protected Workspace() {}
 
     public Workspace(String id, String name) {
@@ -33,8 +39,22 @@ public class Workspace {
         this.updatedAt = Instant.now();
     }
 
+    public void softDelete(String userId, Instant deletedAt) {
+        this.deletedAt = deletedAt;
+        this.deletedBy = userId;
+        this.updatedAt = deletedAt;
+    }
+
+    public void restore(Instant restoredAt) {
+        this.deletedAt = null;
+        this.deletedBy = null;
+        this.updatedAt = restoredAt;
+    }
+
     public String getId() { return id; }
     public String getName() { return name; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getDeletedAt() { return deletedAt; }
+    public String getDeletedBy() { return deletedBy; }
 }

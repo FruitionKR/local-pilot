@@ -1,27 +1,46 @@
 package fruition.document.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
+import fruition.document.domain.DocumentEditState;
 import fruition.document.domain.DocumentProcessingState;
+import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
+import fruition.document.domain.IdempotencyRecord;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
-import fruition.document.exception.DuplicateDocumentException;
+import fruition.document.exception.DocumentVersionConflictException;
+import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.InvalidDocumentFilenameException;
+import fruition.document.exception.InvalidDocumentVersionException;
+import fruition.document.exception.InvalidIdempotencyKeyException;
+import fruition.document.exception.IdempotencyConflictException;
+import fruition.document.exception.InvalidMarkdownContentException;
+import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
+import fruition.document.dto.DocumentLifecycleRequest;
+import fruition.document.dto.DocumentLifecycleResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentOriginalResult;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.dto.DocumentStatusUpdateRequest;
 import fruition.document.dto.DocumentUploadResponse;
+import fruition.document.dto.DocumentTrashResponse;
 import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentWikiPageRef;
 import fruition.document.domain.DocumentProcessingQueue;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
+import fruition.document.repository.DocumentEditStateRepository;
+import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
@@ -55,6 +74,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -76,6 +96,10 @@ public class DocumentService {
     private final SourceBlockRepository sourceBlockRepository;
     private final DocumentProcessingQueueRepository queueRepository;
     private final TransactionTemplate transactionTemplate;
+    private final DocumentEditStateInitializer editStateInitializer;
+    private final DocumentEditStateRepository editStateRepository;
+    private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -89,6 +113,10 @@ public class DocumentService {
                            SourceBlockRepository sourceBlockRepository,
                            DocumentProcessingQueueRepository queueRepository,
                            TransactionTemplate transactionTemplate,
+                           DocumentEditStateInitializer editStateInitializer,
+                           DocumentEditStateRepository editStateRepository,
+                           IdempotencyRecordRepository idempotencyRecordRepository,
+                           ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -101,6 +129,10 @@ public class DocumentService {
         this.sourceBlockRepository = sourceBlockRepository;
         this.queueRepository = queueRepository;
         this.transactionTemplate = transactionTemplate;
+        this.editStateInitializer = editStateInitializer;
+        this.editStateRepository = editStateRepository;
+        this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -111,32 +143,43 @@ public class DocumentService {
     }
 
     @Transactional
-    public DocumentUploadResponse upload(String workspaceId, String userId, MultipartFile file) {
+    public DocumentUploadResponse upload(
+            String workspaceId,
+            String userId,
+            String idempotencyKey,
+            MultipartFile file
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        String objectPath = null;
+        boolean objectStored = false;
         try {
             byte[] bytes = file.getBytes();
+            String filename = file.getOriginalFilename();
+            validateFilename(filename);
+            String mimeType = resolveMimeType(file);
+            boolean markdownUpload = isMarkdown(filename, mimeType);
+            DocumentEditingRules.MarkdownContent markdownContent =
+                    markdownUpload ? DocumentEditingRules.markdown(bytes) : null;
+            String contentHash = markdownUpload ? markdownContent.contentHash() : sha256(bytes);
+            String endpointScope = uploadEndpointScope(workspaceId);
+            String requestHash = requestHash(filename.trim(), mimeType, contentHash);
+
+            Optional<DocumentUploadResponse> replay = replayIdempotentRequest(
+                    userId, endpointScope, idempotencyKey, requestHash);
+            if (replay.isPresent()) {
+                return replay.get();
+            }
+
             log.info("[문서 업로드 요청] workspaceId={} userId={} filename={} contentType={} size={}",
                     workspaceId, userId, file.getOriginalFilename(), file.getContentType(), file.getSize());
 
-            // 1. content_hash 계산 및 중복 확인
-            String contentHash = sha256(bytes);
-            Optional<Document> duplicate = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
-            log.info("[문서 중복 확인] contentHashPrefix={} duplicate={}",
-                    contentHashPrefix(contentHash), duplicate.isPresent());
-            duplicate.ifPresent(existing -> {
-                log.warn("[문서 중복 감지] documentId={} contentHashPrefix={}",
-                        existing.getId(), contentHashPrefix(contentHash));
-                throw new DuplicateDocumentException("이미 업로드된 문서입니다.");
-            });
-
-            // 2. MinIO에 원본 파일 저장
             String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
-            String objectPath = "sources/documents/" + documentId + "/original";
-            String mimeType = resolveMimeType(file);
+            objectPath = "sources/documents/" + documentId + "/original";
             log.info("[문서 원본 저장 시작] documentId={} bucket={} objectPath={} mimeType={} byteSize={}",
                     documentId, storageProps.getBucket(), objectPath, mimeType, bytes.length);
 
-            try (InputStream inputStream = file.getInputStream()) {
+            try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
                 minioClient.putObject(
                         PutObjectArgs.builder()
                                 .bucket(storageProps.getBucket())
@@ -146,81 +189,166 @@ public class DocumentService {
                                 .build()
                 );
             }
+            objectStored = true;
+            registerMinioRollbackCleanup(objectPath);
             log.info("[문서 원본 저장 완료] documentId={} objectPath={}", documentId, objectPath);
 
-            // 3. documents 레코드 생성 (status=processing)
             Document document = new Document(
                     documentId,
                     workspaceId,
                     userId,
-                    file.getOriginalFilename(),
+                    filename.trim(),
                     mimeType,
-                    file.getSize(),
+                    bytes.length,
                     objectPath,
                     contentHash
             );
+            document.placeAtRoot(nextRootSortOrder(workspaceId, document.getDocumentRole()));
+            if (!markdownUpload) {
+                document.updateStatus(DocumentStatus.uploaded, null, null, null);
+            }
             documentRepository.save(document);
+            if (markdownUpload) {
+                editStateRepository.save(new DocumentEditState(
+                        documentId, markdownContent.markdown(), markdownContent.contentHash()));
+            }
+            DocumentUploadResponse response = toUploadResponse(document, markdownUpload);
+            saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
             log.info("[문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} status={} sourceUri={}",
                     document.getId(), document.getWorkspaceId(), document.getUserId(),
                     document.getFilename(), document.getStatus(), document.getSourceUri());
 
-            // 4. DB 커밋 이후 백그라운드 처리 요청 (실패해도 업로드 응답에 영향 없음)
-            requestProcessingAfterCommit(documentId);
-
-            return new DocumentUploadResponse(
-                    document.getId(),
-                    document.getFilename(),
-                    document.getMimeType(),
-                    document.getByteSize(),
-                    document.getStatus(),
-                    document.getSourceUri(),
-                    document.getUploadedAt()
-            );
-
-        } catch (DuplicateDocumentException e) {
+            if (markdownUpload) {
+                requestProcessingAfterCommit(documentId);
+            }
+            return response;
+        } catch (InvalidDocumentFilenameException
+                 | InvalidIdempotencyKeyException
+                 | IdempotencyConflictException
+                 | InvalidMarkdownContentException
+                 | MarkdownContentTooLargeException e) {
             throw e;
         } catch (Exception e) {
+            if (objectStored) {
+                deleteMinioObject(objectPath);
+            }
             throw new DocumentUploadException("파일 저장 중 오류가 발생했습니다.", e);
         }
     }
 
-    /**
-     * 새 워크스페이스에 표시할 초기 Markdown 노트를 저장한다.
-     * 노트는 원본 조회(getOriginal)만으로 열람 가능하므로 파이프라인 처리 큐에는 올리지 않는다.
-     * 실패해도 워크스페이스 생성을 막지 않도록 예외를 삼키고 로그만 남긴다(best-effort).
-     */
+    @Transactional
+    public DocumentUploadResponse createMarkdown(
+            String workspaceId,
+            String userId,
+            String idempotencyKey,
+            MarkdownDocumentCreateRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        if (request == null) {
+            throw new InvalidMarkdownContentException("Markdown 생성 요청은 필수입니다.");
+        }
+
+        DocumentEditingRules.Filename filename =
+                DocumentEditingRules.rename(request.displayName(), "document.md");
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(request.markdown());
+        String endpointScope = markdownEndpointScope(workspaceId);
+        String requestHash = requestHash(filename.filename(), "text/markdown", content.contentHash());
+
+        Optional<DocumentUploadResponse> replay =
+                replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        DocumentUploadResponse response =
+                createMarkdownDocument(workspaceId, userId, filename.filename(), content, "direct");
+        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
+    @Transactional
+    public DocumentDuplicateResponse duplicate(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        Document source = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(source, userId);
+        if (source.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new DocumentWriteForbiddenException("편집 가능한 Markdown 문서만 복제할 수 있습니다.");
+        }
+
+        List<Document> siblings =
+                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getParentDocumentId());
+        editStateInitializer.initializeIfNeeded(source);
+        DocumentEditState sourceEditState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentWriteForbiddenException(
+                        "최신 Markdown 편집본이 있는 문서만 복제할 수 있습니다."));
+        String endpointScope = duplicateEndpointScope(workspaceId);
+        String requestHash = requestHash(documentId, "duplicate", "");
+        Optional<DocumentDuplicateResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentDuplicateResponse.class, this::toDuplicateResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        Set<String> existingNames = siblings.stream()
+                .map(Document::getNormalizedFilename)
+                .collect(Collectors.toSet());
+        DocumentEditingRules.Filename duplicateFilename =
+                DocumentEditingRules.duplicateFilename(source.getDisplayName(), existingNames);
+        long sortOrder = siblings.stream()
+                .mapToLong(Document::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
+        DocumentEditingRules.MarkdownContent content =
+                DocumentEditingRules.markdown(sourceEditState.getMarkdown());
+
+        String duplicateId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        Document duplicate = new Document(
+                duplicateId,
+                workspaceId,
+                userId,
+                duplicateFilename.filename(),
+                "text/markdown",
+                content.bytes().length,
+                null,
+                null,
+                "duplicate"
+        );
+        duplicate.initializeDuplicate(
+                source.getId(),
+                source.getParentDocumentId(),
+                content.contentHash(),
+                content.bytes().length,
+                sortOrder
+        );
+        documentRepository.save(duplicate);
+        editStateRepository.save(new DocumentEditState(
+                duplicateId, content.markdown(), content.contentHash()));
+
+        DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
+        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
+    /** 새 워크스페이스에 직접 생성 Markdown 노트를 저장한다. 실패는 기존처럼 best-effort로 처리한다. */
     @Transactional
     public void createInitialNote(String workspaceId, String userId) {
-        // content_hash 중복 판별이 (workspace_id, content_hash) 범위로 바뀐 뒤로(V5),
-        // 워크스페이스마다 해시를 다르게 만들던 fruition-workspace 식별 주석은 필요 없다.
-        String markdown = "# 새 노트\n";
-        byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
-        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
-        String objectPath = "sources/documents/" + documentId + "/original";
-
-        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
-            minioClient.putObject(
-                    PutObjectArgs.builder()
-                            .bucket(storageProps.getBucket())
-                            .object(objectPath)
-                            .stream(inputStream, bytes.length, -1)
-                            .contentType("text/markdown")
-                            .build()
-            );
-
-            Document document = new Document(
-                    documentId,
+        try {
+            createMarkdownDocument(
                     workspaceId,
                     userId,
                     INITIAL_NOTE_FILENAME,
-                    "text/markdown",
-                    bytes.length,
-                    objectPath,
-                    sha256(bytes)
+                    DocumentEditingRules.markdown("# 새 노트\n"),
+                    "direct"
             );
-            // 초기 노트는 파이프라인 처리 대상이 아니므로(큐에 올리지 않음) 곧바로 completed로 둔다.
-            document.updateStatus(DocumentStatus.completed, null, Instant.now(), null);
-            documentRepository.save(document);
         } catch (Exception e) {
             log.warn("초기 노트 저장 실패로 건너뜁니다. workspaceId={}", workspaceId, e);
         }
@@ -232,10 +360,236 @@ public class DocumentService {
             return contentType;
         }
         String filename = file.getOriginalFilename();
-        if (filename != null && filename.endsWith(".md")) {
-            return "text/markdown";
+        if (filename != null) {
+            String normalizedFilename = filename.toLowerCase(java.util.Locale.ROOT);
+            if (normalizedFilename.endsWith(".md") || normalizedFilename.endsWith(".markdown")) {
+                return "text/markdown";
+            }
         }
         return contentType != null ? contentType : "application/octet-stream";
+    }
+
+    private DocumentUploadResponse createMarkdownDocument(
+            String workspaceId,
+            String userId,
+            String filename,
+            DocumentEditingRules.MarkdownContent content,
+            String origin
+    ) {
+        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        Document document = new Document(
+                documentId,
+                workspaceId,
+                userId,
+                filename,
+                "text/markdown",
+                content.bytes().length,
+                null,
+                null,
+                origin
+        );
+        document.initializeDirectMarkdown(
+                content.contentHash(),
+                content.bytes().length,
+                nextRootSortOrder(workspaceId, DocumentRole.EDITABLE)
+        );
+        documentRepository.save(document);
+        editStateRepository.save(new DocumentEditState(
+                documentId, content.markdown(), content.contentHash()));
+        return toUploadResponse(document, true);
+    }
+
+    private long nextRootSortOrder(String workspaceId, DocumentRole documentRole) {
+        return documentRepository.findMaxRootSortOrder(workspaceId, documentRole) + 1;
+    }
+
+    private boolean isMarkdown(String filename, String mimeType) {
+        String normalizedFilename = filename.toLowerCase(java.util.Locale.ROOT);
+        return "text/markdown".equals(mimeType)
+                || "text/x-markdown".equals(mimeType)
+                || normalizedFilename.endsWith(".md")
+                || normalizedFilename.endsWith(".markdown");
+    }
+
+    private DocumentUploadResponse toUploadResponse(Document document, boolean editable) {
+        return new DocumentUploadResponse(
+                document.getId(),
+                document.getFilename(),
+                document.getMimeType(),
+                document.getByteSize(),
+                document.getStatus(),
+                document.getSourceUri(),
+                document.getUploadedAt(),
+                editable,
+                document.getCurrentVersion(),
+                document.getDocumentRole()
+        );
+    }
+
+    private void validateIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 255) {
+            throw new InvalidIdempotencyKeyException("Idempotency-Key는 1자 이상 255자 이하여야 합니다.");
+        }
+    }
+
+    private <T> Optional<T> replayIdempotentRequest(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            Class<T> responseType,
+            java.util.function.Function<Document, T> fallback
+    ) {
+        Optional<IdempotencyRecord> found =
+                idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
+                        userId, endpointScope, idempotencyKey);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+
+        IdempotencyRecord record = found.get();
+        if (!record.getExpiresAt().isAfter(Instant.now())) {
+            idempotencyRecordRepository.delete(record);
+            idempotencyRecordRepository.flush();
+            return Optional.empty();
+        }
+        if (!record.getRequestHash().equals(requestHash)) {
+            throw new IdempotencyConflictException("같은 Idempotency-Key를 다른 요청에 사용할 수 없습니다.");
+        }
+
+        if (record.getResponseBody() != null) {
+            try {
+                return Optional.of(objectMapper.readValue(
+                        record.getResponseBody(), responseType));
+            } catch (JsonProcessingException exception) {
+                throw new IllegalStateException("멱등성 응답을 복원할 수 없습니다.", exception);
+            }
+        }
+
+        Document document = documentRepository.findById(record.getResourceId())
+                .orElseThrow(() -> new IdempotencyConflictException(
+                        "멱등성 기록의 기존 문서를 찾을 수 없습니다."));
+        return Optional.of(fallback.apply(document));
+    }
+
+    private Optional<DocumentUploadResponse> replayIdempotentRequest(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash
+    ) {
+        return replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentUploadResponse.class,
+                document -> toUploadResponse(
+                        document, editStateRepository.existsById(document.getId())));
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            Object response,
+            String resourceId
+    ) {
+        Instant now = Instant.now();
+        String responseBody;
+        try {
+            responseBody = objectMapper.writeValueAsString(response);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("멱등성 응답을 저장할 수 없습니다.", exception);
+        }
+        idempotencyRecordRepository.save(new IdempotencyRecord(
+                UUID.randomUUID(),
+                userId,
+                endpointScope,
+                idempotencyKey,
+                requestHash,
+                201,
+                resourceId,
+                responseBody,
+                now,
+                now.plusSeconds(24 * 60 * 60)
+        ));
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentLifecycleResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentUploadResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+    }
+
+    private void saveIdempotencyRecord(
+            String userId,
+            String endpointScope,
+            String idempotencyKey,
+            String requestHash,
+            DocumentDuplicateResponse response
+    ) {
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+    }
+
+    private String uploadEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents";
+    }
+
+    private String markdownEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents/markdown";
+    }
+
+    private String duplicateEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents/duplicate";
+    }
+
+    private DocumentDuplicateResponse toDuplicateResponse(Document document) {
+        return new DocumentDuplicateResponse(
+                document.getId(),
+                document.getFilename(),
+                document.getDisplayName(),
+                document.getMimeType(),
+                document.getByteSize(),
+                document.getCurrentVersion(),
+                document.getParentDocumentId(),
+                document.getSourceDocumentId(),
+                document.getSortOrder()
+        );
+    }
+
+    private String requestHash(String filename, String mimeType, String contentHash) {
+        return sha256((filename + "\0" + mimeType + "\0" + contentHash)
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void registerMinioRollbackCleanup(String objectPath) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteMinioObject(objectPath);
+                }
+            }
+        });
     }
 
     private void requestProcessingAfterCommit(String documentId) {
@@ -343,7 +697,7 @@ public class DocumentService {
     }
 
     void doRequestProcessing(String documentId) {
-        Document document = documentRepository.findById(documentId).orElse(null);
+        Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
         if (document == null) {
             log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
             return;
@@ -361,14 +715,15 @@ public class DocumentService {
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
-                documentRepository.findById(documentId).ifPresent(doc -> doc.markPipelineStarted(runId, now));
+                documentRepository.findByIdInActiveWorkspace(documentId)
+                        .ifPresent(doc -> doc.markPipelineStarted(runId, now));
                 return null;
             });
             log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
         } catch (Exception e) {
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
-                documentRepository.findById(documentId).ifPresent(doc ->
+                documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
                         doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
                 return null;
             });
@@ -379,17 +734,17 @@ public class DocumentService {
     @Transactional
     public void applyPipelineEvent(String documentId, String runId, String stage,
                                    String message, Map<String, Object> data) {
-        documentRepository.findById(documentId).ifPresent(doc -> {
-            log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
-                    documentId, runId, stage, message, data != null ? data.keySet() : List.of());
-            if (runId != null && !runId.equals(doc.getPipelineRunId())) {
-                log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
-                        documentId, runId, doc.getPipelineRunId(), stage);
-                return;
-            }
-            doc.markProcessingHeartbeat(stage, Instant.now());
-            log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
-        });
+        Document doc = documentRepository.findByIdInActiveWorkspace(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
+                documentId, runId, stage, message, data != null ? data.keySet() : List.of());
+        if (runId != null && !runId.equals(doc.getPipelineRunId())) {
+            log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
+                    documentId, runId, doc.getPipelineRunId(), stage);
+            return;
+        }
+        doc.markProcessingHeartbeat(stage, Instant.now());
+        log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
     }
 
     private String contentHashPrefix(String contentHash) {
@@ -397,10 +752,18 @@ public class DocumentService {
         return contentHash.substring(0, Math.min(contentHash.length(), 16));
     }
 
-    public DocumentListResponse findAll(String workspaceId, String userId) {
+    public DocumentListResponse findAll(String workspaceId, String userId, String query) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<DocumentListResponse.DocumentItem> items = documentRepository.findVisibleByWorkspaceId(workspaceId).stream()
+        List<Document> documents = query == null || query.isBlank()
+                ? documentRepository.findVisibleByWorkspaceId(workspaceId)
+                : documentRepository.searchVisibleByWorkspaceId(workspaceId, query.trim());
+        Set<String> editableDocumentIds = editStateRepository.findAllById(
+                        documents.stream().map(Document::getId).toList()).stream()
+                .map(DocumentEditState::getDocumentId)
+                .collect(Collectors.toSet());
+
+        List<DocumentListResponse.DocumentItem> items = documents.stream()
                 .map(doc -> new DocumentListResponse.DocumentItem(
                         doc.getId(),
                         doc.getFilename(),
@@ -414,7 +777,16 @@ public class DocumentService {
                         doc.getErrorMessage(),
                         doc.getPipelineRunId(),
                         resolveProcessingState(doc),
-                        doc.getProcessingStage()
+                        doc.getProcessingStage(),
+                        areaOf(doc),
+                        itemKindOf(doc),
+                        doc.getDisplayName(),
+                        fileTypeOf(doc),
+                        doc.getDocumentRole(),
+                        isEditable(doc, editableDocumentIds.contains(doc.getId())),
+                        doc.getCurrentVersion(),
+                        doc.getSourceDocumentId(),
+                        doc.getUpdatedAt()
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -422,7 +794,7 @@ public class DocumentService {
 
     @Transactional
     public void updateStatus(String documentId, DocumentStatusUpdateRequest request) {
-        Document document = documentRepository.findById(documentId)
+        Document document = documentRepository.findByIdInActiveWorkspace(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         document.updateStatus(
                 request.status(),
@@ -432,10 +804,13 @@ public class DocumentService {
         );
     }
 
+    @Transactional
     public DocumentDetailResponse findById(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document doc = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document doc = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        editStateInitializer.initializeIfNeeded(doc);
+        Optional<DocumentEditState> editState = editStateRepository.findById(documentId);
 
         List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
         List<DocumentWikiPageRef> wikiPages = buildWikiPageRefs(links);
@@ -454,8 +829,49 @@ public class DocumentService {
                 wikiPages,
                 doc.getPipelineRunId(),
                 resolveProcessingState(doc),
-                doc.getProcessingStage()
+                doc.getProcessingStage(),
+                doc.getDisplayName(),
+                fileTypeOf(doc),
+                doc.getDocumentRole(),
+                isEditable(doc, editState.isPresent()),
+                doc.getCurrentVersion(),
+                doc.getSourceDocumentId(),
+                doc.getUpdatedAt(),
+                editState.map(DocumentEditState::getMarkdown).orElse(null)
         );
+    }
+
+    private String areaOf(Document document) {
+        return document.getDocumentRole() == DocumentRole.EDITABLE ? "pages" : "sources";
+    }
+
+    private String itemKindOf(Document document) {
+        return document.getDocumentRole() == DocumentRole.EDITABLE ? "page" : "source_file";
+    }
+
+    private boolean isEditable(Document document, boolean hasEditState) {
+        return document.getDeletedAt() == null
+                && document.getDocumentRole() == DocumentRole.EDITABLE
+                && hasEditState
+                && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
+    }
+
+    private boolean isMarkdown(Document document) {
+        String mimeType = document.getMimeType();
+        String filename = document.getFilename().toLowerCase(java.util.Locale.ROOT);
+        return "text/markdown".equals(mimeType)
+                || "text/x-markdown".equals(mimeType)
+                || filename.endsWith(".md")
+                || filename.endsWith(".markdown");
+    }
+
+    private String fileTypeOf(Document document) {
+        int extensionIndex = document.getFilename().lastIndexOf('.');
+        if (extensionIndex >= 0 && extensionIndex < document.getFilename().length() - 1) {
+            return document.getFilename().substring(extensionIndex + 1)
+                    .toLowerCase(java.util.Locale.ROOT);
+        }
+        return document.getMimeType();
     }
 
     private List<DocumentWikiPageRef> buildWikiPageRefs(List<DocumentWikiLink> links) {
@@ -483,63 +899,272 @@ public class DocumentService {
     }
 
     @Transactional
-    public DocumentRenameResponse rename(String workspaceId, String userId, String documentId, DocumentRenameRequest request) {
+    public DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseVersion
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        validateFilename(request.filename());
+        if (baseVersion == null || baseVersion < 1) {
+            throw new InvalidMarkdownContentException("base_version은 1 이상이어야 합니다.");
+        }
 
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
+        }
+        if (document.getCurrentVersion() != baseVersion) {
+            throw versionConflict();
+        }
 
-        String previousFilename = document.getFilename();
-        String newFilename = request.filename().trim();
-        document.rename(newFilename);
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState editState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        if (content.hasSameContent(document.getCurrentContentHash())) {
+            return new DocumentContentSaveResponse(
+                    documentId,
+                    document.getCurrentVersion(),
+                    document.getCurrentContentHash(),
+                    document.getUpdatedAt(),
+                    false
+            );
+        }
 
-        Instant renamedAt = Instant.now();
-        boolean syncSourceTitle = Boolean.TRUE.equals(request.syncSourceTitle());
-
-        DocumentRenameResponse.SourcePageRef sourcePageRef = buildSourcePageRef(documentId, newFilename, syncSourceTitle);
-
-        return new DocumentRenameResponse(
-                document.getId(),
-                document.getFilename(),
-                previousFilename,
-                document.getSourceUri(),
-                document.getStatus(),
-                renamedAt,
-                sourcePageRef
+        Instant updatedAt = Instant.now();
+        int updated = documentRepository.updateContentIfVersionMatches(
+                documentId,
+                workspaceId,
+                baseVersion,
+                content.contentHash(),
+                content.bytes().length,
+                updatedAt
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+        editState.update(content.markdown(), content.contentHash(), updatedAt);
+        return new DocumentContentSaveResponse(
+                documentId,
+                baseVersion + 1,
+                content.contentHash(),
+                updatedAt,
+                true
         );
     }
 
-    private DocumentRenameResponse.SourcePageRef buildSourcePageRef(
-            String documentId, String newFilename, boolean syncSourceTitle) {
-        List<DocumentWikiLink> sourceLinks = documentWikiLinkRepository
-                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of);
-
-        if (sourceLinks.isEmpty()) {
-            return null;
+    @Transactional
+    public DocumentRenameResponse rename(
+            String workspaceId,
+            String userId,
+            String documentId,
+            DocumentRenameRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        if (request == null || request.baseVersion() == null || request.baseVersion() < 1) {
+            throw new InvalidDocumentFilenameException("base_version은 1 이상이어야 합니다.");
         }
 
-        String wikiPageId = sourceLinks.get(0).getWikiPageId();
-        WikiPage sourcePage = wikiPageRepository.findById(wikiPageId).orElse(null);
-        if (sourcePage == null) {
-            return null;
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getCurrentVersion() != request.baseVersion()) {
+            throw versionConflict();
         }
 
-        if (syncSourceTitle) {
-            String newTitle = stripExtension(newFilename);
-            sourcePage.renameTitle(newTitle);
-            return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), newTitle, true);
+        DocumentEditingRules.Filename filename =
+                DocumentEditingRules.rename(request.displayName(), document.getFilename());
+        if (filename.filename().equals(document.getFilename())) {
+            return new DocumentRenameResponse(
+                    documentId,
+                    document.getFilename(),
+                    document.getDisplayName(),
+                    document.getCurrentVersion(),
+                    document.getUpdatedAt(),
+                    false
+            );
         }
 
-        return new DocumentRenameResponse.SourcePageRef(sourcePage.getId(), sourcePage.getTitle(), false);
+        Instant updatedAt = Instant.now();
+        int updated = documentRepository.renameIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                filename.filename(),
+                filename.displayName(),
+                filename.normalizedFilename(),
+                updatedAt
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+        return new DocumentRenameResponse(
+                documentId,
+                filename.filename(),
+                filename.displayName(),
+                request.baseVersion() + 1,
+                updatedAt,
+                true
+        );
+    }
+
+    private void verifyDocumentOwner(Document document, String userId) {
+        if (!document.getUserId().equals(userId)) {
+            throw new DocumentWriteForbiddenException("문서 소유자만 변경할 수 있습니다.");
+        }
+    }
+
+    private DocumentVersionConflictException versionConflict() {
+        return new DocumentVersionConflictException(
+                "다른 변경이 먼저 저장되었습니다. 최신 문서를 다시 조회해 주세요.");
+    }
+
+    private RuntimeException conditionalUpdateFailure(String workspaceId, String documentId) {
+        if (documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .isEmpty()) {
+            return new DocumentNotFoundException(documentId);
+        }
+        return versionConflict();
     }
 
     @Transactional
-    public void delete(String workspaceId, String userId, String documentId) {
+    public DocumentLifecycleResponse delete(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey,
+            DocumentLifecycleRequest request
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        validateIdempotencyKey(idempotencyKey);
+        validateLifecycleRequest(request);
+        Document document = documentRepository
+                .findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        deleteInternal(document);
+        verifyDocumentOwner(document, userId);
+        String endpointScope = "DELETE:/api/workspaces/" + workspaceId + "/documents";
+        String requestHash = requestHash(
+                documentId, "delete", Long.toString(request.baseVersion()));
+        Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        if (document.getDeletedAt() != null) {
+            throw new DocumentNotFoundException(documentId);
+        }
+        Instant deletedAt = Instant.now();
+        int updated = documentRepository.softDeleteIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                userId,
+                deletedAt,
+                UUID.randomUUID()
+        );
+        if (updated == 0) {
+            throw conditionalUpdateFailure(workspaceId, documentId);
+        }
+
+        DocumentLifecycleResponse response = new DocumentLifecycleResponse(
+                documentId,
+                request.baseVersion() + 1,
+                true,
+                deletedAt,
+                document.getSortOrder()
+        );
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
+    }
+
+    public DocumentTrashResponse trash(String workspaceId, String userId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        return new DocumentTrashResponse(
+                documentRepository
+                        .findAllByWorkspaceIdAndDeletedAtIsNotNullOrderByDeletedAtDesc(workspaceId)
+                        .stream()
+                        .map(document -> new DocumentTrashResponse.DocumentTrashItem(
+                                document.getId(),
+                                document.getFilename(),
+                                document.getDisplayName(),
+                                document.getDocumentRole(),
+                                document.getCurrentVersion(),
+                                document.getDeletedAt(),
+                                document.getDeletedBy(),
+                                document.getDeleteOperationId(),
+                                document.getSourceDocumentId()
+                        ))
+                        .toList()
+        );
+    }
+
+    @Transactional
+    public DocumentLifecycleResponse restore(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey,
+            DocumentLifecycleRequest request
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        validateLifecycleRequest(request);
+        Document document = documentRepository
+                .findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        String endpointScope = "POST:/api/workspaces/" + workspaceId + "/documents/restore";
+        String requestHash = requestHash(
+                documentId, "restore", Long.toString(request.baseVersion()));
+        Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
+                userId, endpointScope, idempotencyKey, requestHash,
+                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        if (document.getDeletedAt() == null) {
+            throw new DocumentNotFoundException(documentId);
+        }
+        List<Document> rootItems = documentRepository.findRootItemsForUpdate(
+                workspaceId, document.getDocumentRole());
+        long sortOrder = rootItems.stream()
+                .mapToLong(Document::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
+        Instant restoredAt = Instant.now();
+        int updated = documentRepository.restoreIfVersionMatches(
+                documentId,
+                workspaceId,
+                request.baseVersion(),
+                sortOrder,
+                restoredAt
+        );
+        if (updated == 0) {
+            if (documentRepository
+                    .findByIdAndWorkspaceIdAndDeletedAtIsNotNull(documentId, workspaceId)
+                    .isPresent()) {
+                throw versionConflict();
+            }
+            throw new DocumentNotFoundException(documentId);
+        }
+
+        DocumentLifecycleResponse response = new DocumentLifecycleResponse(
+                documentId,
+                request.baseVersion() + 1,
+                false,
+                null,
+                sortOrder
+        );
+        saveIdempotencyRecord(
+                userId, endpointScope, idempotencyKey, requestHash, response);
+        return response;
     }
 
     /** 워크스페이스 삭제 시 소속 문서를 함께 정리한다. DB에 workspace_id FK CASCADE가 없어 애플리케이션에서 직접 처리한다. */
@@ -588,6 +1213,23 @@ public class DocumentService {
         });
     }
 
+    private void validateLifecycleRequest(DocumentLifecycleRequest request) {
+        if (request == null || request.baseVersion() == null || request.baseVersion() < 1) {
+            throw new InvalidDocumentVersionException(
+                    "base_version은 1 이상의 정수여야 합니다.");
+        }
+    }
+
+    private DocumentLifecycleResponse toLifecycleResponse(Document document) {
+        return new DocumentLifecycleResponse(
+                document.getId(),
+                document.getCurrentVersion(),
+                document.getDeletedAt() != null,
+                document.getDeletedAt(),
+                document.getSortOrder()
+        );
+    }
+
     private void deleteMinioObject(String uri) {
         if (uri == null || uri.isBlank()) return;
         String objectKey = normalizeObjectKey(uri);
@@ -605,7 +1247,7 @@ public class DocumentService {
 
     public DocumentBlocksResponse blocks(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         List<DocumentBlockResponse> blocks = sourceBlockRepository
@@ -618,7 +1260,7 @@ public class DocumentService {
 
     public DocumentOriginalResult getOriginal(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceId(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String objectKey = normalizeObjectKey(document.getSourceUri());

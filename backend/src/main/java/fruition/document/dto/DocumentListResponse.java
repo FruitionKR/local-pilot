@@ -3,6 +3,7 @@ package fruition.document.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import fruition.document.domain.DocumentProcessingState;
+import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
 
 import java.time.Instant;
@@ -24,6 +25,15 @@ public record DocumentListResponse(List<DocumentItem> documents) {
             @JsonProperty("error_message") String errorMessage,
             @JsonProperty("pipeline_run_id") String pipelineRunId,
             @JsonProperty("processing_state") DocumentProcessingState processingState,
-            @JsonProperty("processing_stage") String processingStage
+            @JsonProperty("processing_stage") String processingStage,
+            String area,
+            @JsonProperty("item_kind") String itemKind,
+            @JsonProperty("display_name") String displayName,
+            @JsonProperty("file_type") String fileType,
+            @JsonProperty("document_role") DocumentRole documentRole,
+            boolean editable,
+            @JsonProperty("current_version") long currentVersion,
+            @JsonProperty("source_document_id") String sourceDocumentId,
+            @JsonProperty("updated_at") Instant updatedAt
     ) {}
 }

@@ -1,6 +1,8 @@
 package fruition.workspace.service;
 
-import fruition.chat.service.ChatSessionService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.document.domain.IdempotencyRecord;
+import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.service.DocumentService;
 import fruition.user.domain.User;
 import fruition.user.repository.UserRepository;
@@ -8,6 +10,8 @@ import fruition.workspace.domain.Workspace;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceRenameRequest;
 import fruition.workspace.dto.WorkspaceResponse;
+import fruition.workspace.dto.WorkspaceLifecycleResponse;
+import fruition.workspace.dto.WorkspaceTrashResponse;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import fruition.workspace.repository.WorkspaceRepository;
@@ -35,13 +39,20 @@ class WorkspaceServiceTest {
     @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock UserRepository userRepository;
     @Mock DocumentService documentService;
-    @Mock ChatSessionService chatSessionService;
+    @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     WorkspaceService workspaceService;
 
     @BeforeEach
     void setUp() {
-        workspaceService = new WorkspaceService(workspaceRepository, workspaceMemberRepository, userRepository, documentService, chatSessionService);
+        workspaceService = new WorkspaceService(
+                workspaceRepository,
+                workspaceMemberRepository,
+                userRepository,
+                documentService,
+                idempotencyRecordRepository,
+                new ObjectMapper().findAndRegisterModules()
+        );
         lenient().when(userRepository.getReferenceById(any()))
                 .thenAnswer(invocation -> new User(invocation.getArgument(0), "test@example.com", "test", null));
     }
@@ -83,8 +94,8 @@ class WorkspaceServiceTest {
     @Test
     void rename_ownedWorkspace_updatesName() {
         Workspace workspace = new Workspace("ws_aaa11111", "이전 이름");
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id("ws_aaa11111", "user_1f9a74af")).thenReturn(true);
-        when(workspaceRepository.findById("ws_aaa11111")).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
+                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
 
         WorkspaceResponse response = workspaceService.rename("user_1f9a74af", "ws_aaa11111", new WorkspaceRenameRequest("새 이름"));
 
@@ -93,33 +104,63 @@ class WorkspaceServiceTest {
 
     @Test
     void rename_notOwnedWorkspace_throwsNotFound() {
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id("ws_aaa11111", "user_other")).thenReturn(false);
-
         assertThatThrownBy(() -> workspaceService.rename("user_other", "ws_aaa11111", new WorkspaceRenameRequest("새 이름")))
                 .isInstanceOf(WorkspaceNotFoundException.class);
     }
 
     @Test
-    void delete_ownedWorkspace_cascadesToDocumentsAndChatSessionsThenRemovesWorkspace() {
+    void delete_ownedWorkspace_softDeletesWithoutChangingChildren() {
         Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스 A");
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id("ws_aaa11111", "user_1f9a74af")).thenReturn(true);
-        when(workspaceRepository.findById("ws_aaa11111")).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
+                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
 
-        workspaceService.delete("user_1f9a74af", "ws_aaa11111");
+        WorkspaceLifecycleResponse response = workspaceService.delete(
+                "user_1f9a74af", "ws_aaa11111", "delete-key");
 
-        verify(documentService).deleteAllByWorkspaceId("ws_aaa11111");
-        verify(chatSessionService).deleteAllByWorkspaceId("ws_aaa11111");
-        verify(workspaceRepository).delete(workspace);
+        assertThat(response.deleted()).isTrue();
+        assertThat(workspace.getDeletedAt()).isNotNull();
+        assertThat(workspace.getDeletedBy()).isEqualTo("user_1f9a74af");
+        verify(documentService, never()).deleteAllByWorkspaceId(any());
+        verify(workspaceRepository, never()).delete(any());
+        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
     }
 
     @Test
-    void delete_notOwnedWorkspace_throwsNotFoundWithoutCascading() {
-        when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id("ws_aaa11111", "user_other")).thenReturn(false);
-
-        assertThatThrownBy(() -> workspaceService.delete("user_other", "ws_aaa11111"))
+    void delete_notOwnedWorkspace_throwsNotFoundWithoutChangingChildren() {
+        assertThatThrownBy(() -> workspaceService.delete(
+                "user_other", "ws_aaa11111", "delete-key"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
 
         verify(documentService, never()).deleteAllByWorkspaceId(any());
-        verify(chatSessionService, never()).deleteAllByWorkspaceId(any());
+        verify(idempotencyRecordRepository, never()).save(any());
+    }
+
+    @Test
+    void restore_deletedWorkspace_preservesExistingWorkspace() {
+        Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스 A");
+        workspace.softDelete("user_1f9a74af", java.time.Instant.now());
+        when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
+                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
+
+        WorkspaceLifecycleResponse response = workspaceService.restore(
+                "user_1f9a74af", "ws_aaa11111", "restore-key");
+
+        assertThat(response.deleted()).isFalse();
+        assertThat(workspace.getDeletedAt()).isNull();
+        assertThat(workspace.getDeletedBy()).isNull();
+    }
+
+    @Test
+    void trash_returnsOnlyDeletedOwnedWorkspaces() {
+        Workspace deleted = new Workspace("ws_deleted", "삭제 workspace");
+        deleted.softDelete("user_1f9a74af", java.time.Instant.now());
+        when(workspaceMemberRepository.findDeletedOwnedWorkspaces("user_1f9a74af"))
+                .thenReturn(List.of(deleted));
+
+        WorkspaceTrashResponse response = workspaceService.trash("user_1f9a74af");
+
+        assertThat(response.workspaces()).hasSize(1);
+        assertThat(response.workspaces().get(0).id()).isEqualTo("ws_deleted");
+        assertThat(response.workspaces().get(0).deletedBy()).isEqualTo("user_1f9a74af");
     }
 }

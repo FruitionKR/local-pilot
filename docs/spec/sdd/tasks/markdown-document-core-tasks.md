@@ -19,26 +19,35 @@
 
 - 관련 요구사항: `REQ-001`~`REQ-004`, `REQ-005`~`REQ-008`
 - 변경 대상:
-  - `backend/src/main/resources/db/migration/V8__add_document_editing.sql`
+  - `backend/src/main/resources/db/migration/V9__add_document_editing_core.sql`
   - `document/domain/Document.java`
-  - 신규 `DocumentEditState`, repository
+  - 신규 `DocumentEditState`, `SourceFolder`, `IdempotencyRecord`와 repository
 - 작업:
-  - 기존 `documents.user_id`를 문서 소유자로 유지하고 정규화 파일명, 원본 참조, 현재 해시, `current_version`, 정렬, 수정·삭제 필드 추가
+  - 기존 `documents.user_id`를 문서 소유자로 유지하고 `display_name`, 정규화 파일명, 원본 참조, 현재 해시, `current_version`, 수정·삭제 필드 추가
+  - `document_role`(`EDITABLE`, `ORIGINAL`), `parent_document_id`, `source_folder_id`, `sort_order`, `delete_operation_id` 추가
+  - hierarchy의 DB 기반인 `source_folders`와 self-reference를 생성하되 폴더 API는 hierarchy TASK에서 구현
+  - 역할에 맞지 않는 부모 사용과 두 부모 필드의 동시 사용을 막는 check constraint 추가
   - `source_uri`, 원본 `content_hash` nullable 전환
   - V5 제약 `uq_documents_workspace_content_hash` DROP
   - 파일명·내용 기반 대체 unique index를 만들지 않음
   - `Document.java`의 `@UniqueConstraint(uq_documents_workspace_content_hash)` 제거(ddl-auto=validate 정합성)
   - `document_edit_states`(버전 없이 본문·해시·시각) 추가
-  - Flyway backfill: `normalized_filename`, `sort_order`, `current_version=1`, 기존 문서의 `current_content_hash=content_hash` (편집 상태는 최초 조회·저장 시 lazy 생성)
+  - 사용자·endpoint·키 범위의 24시간 응답을 저장하는 `idempotency_records` 추가
+  - Flyway backfill: 파일명에서 `display_name` 생성, 기존 Markdown은 `EDITABLE`, 나머지는 `ORIGINAL`, 부모는 최상위, workspace·역할별 순서, `current_version=1`, `current_content_hash=content_hash`
+  - 편집 상태는 최초 조회·저장 시 lazy 생성
 - 완료 조건:
-  - [ ] Flyway migration 검증 통과
-  - [ ] 같은 파일명·내용 문서 2건 생성 허용
-  - [ ] 기존 데이터 손실 없음
-  - [ ] 기존 markdown 업로드 문서가 마이그레이션 후 최초 조회 시 편집 가능해짐(lazy edit_state)
-  - [ ] 같은 멱등성 키 재요청에서 문서가 한 건만 생성됨
-  - [ ] 기존 `user_id` 소유권 유지와 신규 문서 생성자 소유권 검증
-  - [ ] 편집 상태 1:1과 self-reference 제약 테스트 통과
-  - [ ] 기존 업로드·조회 테스트 통과
+  - [x] Flyway migration 검증 통과
+  - [x] 같은 파일명·내용 문서 2건 생성 허용
+  - [x] 기존 데이터 손실 없음
+  - [x] 기존 문서의 `display_name`, `document_role`, 최상위 위치와 역할별 순서 backfill 검증
+  - [x] `EDITABLE`의 원본 폴더 지정과 `ORIGINAL`의 부모 문서 지정을 DB가 거절
+  - [x] `source_folders` self-reference와 workspace 관계 테스트 통과
+  - [x] 기존 markdown 업로드 문서가 마이그레이션 후 최초 조회 시 편집 가능해짐(lazy edit_state)
+  - [x] 같은 멱등성 키 재요청에서 문서가 한 건만 생성됨
+  - [x] 같은 멱등성 키에 다른 요청 본문을 보내면 충돌
+  - [x] 기존 `user_id` 소유권 유지와 신규 문서 생성자 소유권 검증
+  - [x] 편집 상태 1:1과 self-reference 제약 테스트 통과
+  - [x] 기존 업로드·조회 테스트 통과
 
 ### TASK-002 파일명·본문 규칙 구현
 
@@ -50,10 +59,10 @@
   - UTF-8 5MB 검증
   - SHA-256과 동일 본문 no-op 판정
 - 완료 조건:
-  - [ ] PDF·Markdown 확장자 유지 테스트 통과
-  - [ ] 한글 UTF-8 경계값 테스트 통과
-  - [ ] 빈 본문 허용, `null` 거절 테스트 통과
-  - [ ] 동일 제목·내용 문서 생성 허용 테스트 통과
+  - [x] PDF·Markdown 확장자 유지 테스트 통과
+  - [x] 한글 UTF-8 경계값 테스트 통과
+  - [x] 빈 본문 허용, `null` 거절 테스트 통과
+  - [x] 동일 제목·내용 문서 생성 허용 테스트 통과
 
 ### TASK-003 상세·검색과 탐색 전환 구현
 
@@ -62,12 +71,13 @@
 - 작업:
   - 기존 호환 목록 응답에 표시 이름, 형식, 편집 가능 여부, 버전 추가
   - 삭제 문서 제외와 변환 상태 표시
-  - 파일명 검색과 hierarchy navigation API 연결
+  - 호환 목록의 파일명 검색 연결
+  - hierarchy navigation API는 `markdown-document-hierarchy-tasks.md`의 `TASK-H005`에서 구현
 - 완료 조건:
-  - [ ] 페이지와 원본 자료가 구분되어 표시됨
-  - [ ] 검색이 본문을 대상으로 하지 않음
-  - [ ] 외부 워크스페이스와 삭제 문서가 노출되지 않음
-  - [ ] chat_export 문서가 통합 목록에 노출되지 않음(회귀 검증)
+  - [x] 페이지와 원본 자료가 구분되어 표시됨
+  - [x] 검색이 본문을 대상으로 하지 않음
+  - [x] 외부 워크스페이스와 삭제 문서가 노출되지 않음
+  - [x] chat_export 문서가 통합 목록에 노출되지 않음(회귀 검증)
 
 ### TASK-004 Markdown 직접 생성·업로드 구현
 
@@ -77,18 +87,21 @@
   - `POST /documents/markdown`
   - 직접 생성 문서와 version `1` 편집 상태 저장
   - Markdown 업로드 원문으로 편집 상태 즉시 생성
-  - `Idempotency-Key` 기반 생성 재실행 방지와 계층 위치 배치
+  - `Idempotency-Key` 기반 생성 재실행 방지와 역할별 최상위 마지막 위치 배치
+  - 선택적 부모·원본 폴더 위치 연동은 hierarchy `TASK-H004`에서 구현
   - `DocumentService.createInitialNote`를 직접 생성 경로로 재배선(워크스페이스 생성 호출부 포함)
 - 완료 조건:
-  - [ ] 빈 Markdown 직접 생성 가능
-  - [ ] 5MB 초과 요청 거절
-  - [ ] Markdown 업로드 직후 `editable=true`
-  - [ ] 직접 생성 문서의 `source_uri`가 `null`
-  - [ ] 신규 워크스페이스 초기 노트가 직접 생성 문서(source_uri=null)로 만들어짐
-  - [ ] 동일한 키의 재요청에서 기존 생성 결과 반환
-  - [ ] DB 또는 MinIO 실패 시 불완전한 상태가 남지 않음
+  - [x] 빈 Markdown 직접 생성 가능
+  - [x] 5MB 초과 요청 거절
+  - [x] Markdown 업로드 직후 `editable=true`
+  - [x] 직접 생성 문서의 `source_uri`가 `null`
+  - [x] 신규 워크스페이스 초기 노트가 직접 생성 문서(source_uri=null)로 만들어짐
+  - [x] 동일한 키의 재요청에서 기존 생성 결과 반환
+  - [x] DB 또는 MinIO 실패 시 불완전한 상태가 남지 않음
 
 ### TASK-005 PDF 변환 결과 편집본 등록
+
+> 현재 MVP에서는 PDF 변환을 구현하지 않기로 결정해 후속 작업으로 보류한다. 현재 backend는 PDF를 불변 `ORIGINAL`로만 저장한다.
 
 - 관련 요구사항: `REQ-003`
 - 변경 대상: pipeline callback DTO·controller·service와 변환 결과 계약
@@ -116,11 +129,11 @@
   - 동일 본문 no-op
   - 형식별 확장자를 유지하는 이름 변경
 - 완료 조건:
-  - [ ] 정상 변경 시 버전 1 증가
-  - [ ] 동일 본문·이름은 버전과 시각 유지
-  - [ ] 오래된 버전은 `409 Conflict`
-  - [ ] 동일한 이름의 다른 페이지가 있어도 이름 변경 허용
-  - [ ] 본문 heading과 원본 파일 불변
+  - [x] 정상 변경 시 버전 1 증가
+  - [x] 동일 본문·이름은 버전과 시각 유지
+  - [x] 오래된 버전은 `409 Conflict`
+  - [x] 동일한 이름의 다른 페이지가 있어도 이름 변경 허용
+  - [x] 본문 heading과 원본 파일 불변
 
 ### TASK-007 최신 편집본 복제 구현
 
@@ -131,10 +144,10 @@
   - `복사본 (N)` 이름 선택
   - 원본 참조와 같은 부모의 마지막 배치
 - 완료 조건:
-  - [ ] PDF 복제본이 `.md` 문서임
-  - [ ] 새 ID와 version `1`
-  - [ ] 원본 파일·이력·공유 설정 미복제
-  - [ ] 동일 멱등성 키의 동시 복제에서 한 건만 생성
+  - [x] 편집 가능한 Markdown 문서와 변환 편집본을 `.md`로 복제
+  - [x] 새 ID와 version `1`
+  - [x] 원본 파일·이력·공유 설정 미복제
+  - [x] 동일 멱등성 키의 동시 복제에서 한 건만 생성
 
 ### TASK-008 소프트 삭제·휴지통·복구 구현
 
@@ -146,10 +159,10 @@
   - hierarchy SDD에 따른 트리·개별 복구 위치 처리
   - 워크스페이스 전체 삭제용 내부 물리 삭제는 유지
 - 완료 조건:
-  - [ ] 삭제 문서가 일반 API에서 제외됨
-  - [ ] 원본·본문·버전·이미지 유지
-  - [ ] 복구 후 기존 본문 유지
-  - [ ] 동일 이름·내용 문서가 있어도 복구 허용
+  - [x] 삭제 문서가 일반 API에서 제외됨
+  - [x] 원본·본문·버전·Wiki·block 유지
+  - [x] 복구 후 기존 본문 유지
+  - [x] 동일 이름·내용 문서가 있어도 복구 허용
 
 ### TASK-009 Markdown 원문 내보내기
 
@@ -159,8 +172,8 @@
   - 이미지 없는 문서의 UTF-8 `.md` 스트리밍
   - 이미지 bundle은 assets SDD TASK-008로 위임
 - 완료 조건:
-  - [ ] UTF-8 Markdown과 한글 파일명 다운로드
-  - [ ] 내보내기가 문서를 변경하지 않음
+  - [x] UTF-8 Markdown과 한글 파일명 다운로드
+  - [x] 내보내기가 문서를 변경하지 않음
 
 ### TASK-010 API 계약·회귀 검증
 
@@ -169,14 +182,16 @@
 - 작업:
   - API·오류 계약 갱신
   - 요구사항–인수 조건–테스트 추적표 완성
-  - 소유자 CRUD·멤버 읽기·멤버 이동 권한 matrix 검증
+  - 소유자 CRUD·멤버 읽기 권한 matrix 검증
+  - 멤버 이동 권한 검증은 hierarchy 후속 task로 이관
   - 업로드·파이프라인·Wiki 회귀 테스트
 - 완료 조건:
-  - [ ] 모든 요구사항이 테스트와 연결됨
-  - [ ] API 문서와 DTO 일치
-  - [ ] 다른 멤버의 내용 수정·삭제는 거절되고 이동은 허용됨
-  - [ ] 전체 백엔드 테스트 통과
-  - [ ] `git diff --check` 통과
+  - [x] 모든 요구사항이 테스트 또는 명시적인 후속 task와 연결됨
+  - [x] API 문서와 DTO 일치
+  - [x] 다른 멤버의 내용 수정·삭제는 거절됨
+  - [x] 멤버 이동 허용은 hierarchy 후속 task에 연결됨
+  - [x] 전체 백엔드 테스트 통과
+  - [x] `git diff --check` 통과
 
 ## 4. 실행 순서
 
