@@ -5,6 +5,7 @@ import fruition.agent.dto.AgentTurnResponse;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.agent.repository.PipelineAgentRequester;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.service.DocumentService;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +29,11 @@ public class AgentTurnService {
         DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
         if (!isMarkdown(document)) {
             throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
+        }
+        // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
+        if (document.currentVersion() != request.baseVersion()) {
+            throw new DocumentVersionConflictException(
+                    "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
         }
         validateTarget(request.editorSnapshot());
 
