@@ -1,6 +1,8 @@
 package fruition.document.controller;
 
+import fruition.document.dto.BreadcrumbResponse;
 import fruition.document.dto.FolderChildrenResponse;
+import fruition.document.dto.HierarchySearchResponse;
 import fruition.document.service.FolderService;
 import fruition.security.JwtAuthenticationFilter;
 import fruition.security.JwtTokenProvider;
@@ -56,5 +58,35 @@ class NavigationControllerTest {
     void root_unauthenticatedReturns401() throws Exception {
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/navigation"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void breadcrumb_authenticatedReturnsPath() throws Exception {
+        when(folderService.breadcrumb(WORKSPACE_ID, USER_ID, null, "doc_1"))
+                .thenReturn(new BreadcrumbResponse(List.of(
+                        BreadcrumbResponse.Node.folder("33333333-3333-3333-3333-333333333333", "자료"),
+                        BreadcrumbResponse.Node.document("doc_1", "메모"))));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/navigation/breadcrumb")
+                        .param("document_id", "doc_1")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.path[0].type").value("folder"))
+                .andExpect(jsonPath("$.path[1].id").value("doc_1"));
+    }
+
+    @Test
+    void search_authenticatedReturnsMatches() throws Exception {
+        when(folderService.search(WORKSPACE_ID, USER_ID, "보고서"))
+                .thenReturn(new HierarchySearchResponse(List.of(
+                        new HierarchySearchResponse.Match("folder", "33333333-3333-3333-3333-333333333333",
+                                "보고서 폴더", List.of()))));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/navigation/search")
+                        .param("query", "보고서")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].type").value("folder"))
+                .andExpect(jsonPath("$.results[0].name").value("보고서 폴더"));
     }
 }

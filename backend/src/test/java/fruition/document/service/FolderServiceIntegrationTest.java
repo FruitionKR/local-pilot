@@ -3,8 +3,10 @@ package fruition.document.service;
 import fruition.TestcontainersConfiguration;
 import fruition.document.dto.DocumentPositionRequest;
 import fruition.document.dto.DocumentPositionResponse;
+import fruition.document.dto.BreadcrumbResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.FolderChildrenResponse;
+import fruition.document.dto.HierarchySearchResponse;
 import fruition.document.dto.FolderCreateRequest;
 import fruition.document.dto.FolderLifecycleResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
@@ -271,6 +273,46 @@ class FolderServiceIntegrationTest {
         assertThatThrownBy(() -> documentService.createMarkdown(workspaceId, userId, "cmk",
                 new MarkdownDocumentCreateRequest("메모", "# 본문", UUID.randomUUID())))
                 .isInstanceOf(HierarchyItemNotFoundException.class);
+    }
+
+    @Test
+    void breadcrumb_returnsPathFromRootToDocument() {
+        FolderResponse a = folderService.create(workspaceId, userId, "ka", new FolderCreateRequest("A", null));
+        FolderResponse b = folderService.create(workspaceId, userId, "kb", new FolderCreateRequest("B", a.id()));
+        DocumentUploadResponse doc = documentService.createMarkdown(workspaceId, userId, "cmk",
+                new MarkdownDocumentCreateRequest("메모", "# 본문", b.id()));
+
+        BreadcrumbResponse crumb = folderService.breadcrumb(workspaceId, userId, null, doc.id());
+
+        assertThat(crumb.path()).extracting(BreadcrumbResponse.Node::name)
+                .containsExactly("A", "B", "메모");
+        assertThat(crumb.path()).extracting(BreadcrumbResponse.Node::type)
+                .containsExactly("folder", "folder", "document");
+    }
+
+    @Test
+    void breadcrumb_returnsPathToFolder() {
+        FolderResponse a = folderService.create(workspaceId, userId, "ka", new FolderCreateRequest("A", null));
+        FolderResponse b = folderService.create(workspaceId, userId, "kb", new FolderCreateRequest("B", a.id()));
+
+        BreadcrumbResponse crumb = folderService.breadcrumb(workspaceId, userId, b.id(), null);
+
+        assertThat(crumb.path()).extracting(BreadcrumbResponse.Node::name).containsExactly("A", "B");
+    }
+
+    @Test
+    void search_findsFoldersAndDocumentsWithBreadcrumb() {
+        FolderResponse a = folderService.create(workspaceId, userId, "ka", new FolderCreateRequest("보고서 폴더", null));
+        documentService.createMarkdown(workspaceId, userId, "cmk",
+                new MarkdownDocumentCreateRequest("보고서 메모", "# 본문", a.id()));
+
+        HierarchySearchResponse result = folderService.search(workspaceId, userId, "보고서");
+
+        assertThat(result.results()).extracting(HierarchySearchResponse.Match::name)
+                .contains("보고서 폴더", "보고서 메모");
+        HierarchySearchResponse.Match docMatch = result.results().stream()
+                .filter(m -> m.type().equals("document")).findFirst().orElseThrow();
+        assertThat(docMatch.breadcrumb()).extracting(BreadcrumbResponse.Node::name).containsExactly("보고서 폴더");
     }
 
     private String insertMember(String role) {

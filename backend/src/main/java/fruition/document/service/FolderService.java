@@ -2,9 +2,11 @@ package fruition.document.service;
 
 import fruition.document.domain.Document;
 import fruition.document.domain.Folder;
+import fruition.document.dto.BreadcrumbResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
 import fruition.document.dto.FolderLifecycleResponse;
+import fruition.document.dto.HierarchySearchResponse;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
@@ -222,6 +224,57 @@ public class FolderService {
         items.sort(Comparator.comparingLong(FolderChildrenResponse.Item::sortOrder)
                 .thenComparing(FolderChildrenResponse.Item::id));
         return new FolderChildrenResponse(items);
+    }
+
+    @Transactional(readOnly = true)
+    public BreadcrumbResponse breadcrumb(String workspaceId, String userId, UUID folderId, String documentId) {
+        verifyMembership(workspaceId, userId);
+        if ((folderId == null) == (documentId == null)) {
+            throw new InvalidHierarchyRequestException("folder_id 또는 document_id 중 하나만 지정해야 합니다.");
+        }
+        if (documentId != null) {
+            Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                    .orElseThrow(() -> new HierarchyItemNotFoundException("문서를 찾을 수 없습니다."));
+            List<BreadcrumbResponse.Node> nodes = folderPathNodes(document.getFolderId());
+            nodes.add(BreadcrumbResponse.Node.document(document.getId(), document.getDisplayName()));
+            return new BreadcrumbResponse(nodes);
+        }
+        requireFolder(workspaceId, folderId);
+        return new BreadcrumbResponse(folderPathNodes(folderId));
+    }
+
+    @Transactional(readOnly = true)
+    public HierarchySearchResponse search(String workspaceId, String userId, String query) {
+        verifyMembership(workspaceId, userId);
+        String trimmed = query == null ? "" : query.trim();
+        if (trimmed.isEmpty()) {
+            throw new InvalidHierarchyRequestException("검색어를 입력해야 합니다.");
+        }
+        String pattern = "%" + trimmed.toLowerCase() + "%";
+        List<HierarchySearchResponse.Match> results = new ArrayList<>();
+        for (Folder folder : folderRepository.searchByName(workspaceId, pattern)) {
+            results.add(new HierarchySearchResponse.Match(
+                    "folder", folder.getId().toString(), folder.getName(),
+                    folderPathNodes(folder.getParentFolderId())));
+        }
+        for (Document document : documentRepository.searchByName(workspaceId, pattern)) {
+            results.add(new HierarchySearchResponse.Match(
+                    "document", document.getId(), document.getDisplayName(),
+                    folderPathNodes(document.getFolderId())));
+        }
+        return new HierarchySearchResponse(results);
+    }
+
+    /** 최상위부터 지정 폴더까지의 폴더 노드 목록. folderId가 null이면 빈 목록. */
+    private List<BreadcrumbResponse.Node> folderPathNodes(UUID folderId) {
+        List<BreadcrumbResponse.Node> nodes = new ArrayList<>();
+        if (folderId == null) {
+            return nodes;
+        }
+        for (Folder folder : folderRepository.findAncestorPath(folderId)) {
+            nodes.add(BreadcrumbResponse.Node.folder(folder.getId().toString(), folder.getName()));
+        }
+        return nodes;
     }
 
     private boolean hasChildren(String workspaceId, UUID folderId) {

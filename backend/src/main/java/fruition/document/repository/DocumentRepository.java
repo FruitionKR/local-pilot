@@ -117,6 +117,15 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
 
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId AND d.deletedAt IS NULL "
+            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
+            + "AND (LOWER(d.displayName) LIKE :pattern OR d.normalizedFilename LIKE :pattern) "
+            + "ORDER BY d.displayName ASC, d.id ASC")
+    List<Document> searchByName(
+            @Param("workspaceId") String workspaceId,
+            @Param("pattern") String pattern
+    );
+
     /** 루트 폴더와 그 하위 폴더에 속한 문서 전체를 같은 삭제 작업 ID로 소프트 삭제한다. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = "WITH RECURSIVE subtree AS ("

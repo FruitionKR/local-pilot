@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 폴더 트리 breadcrumb·이름 검색 추가 (TASK-H005)
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/navigation/breadcrumb`로 폴더 또는 문서의 최상위→현재 경로를 반환한다. `folder_id` 또는 `document_id` 중 하나만 지정하며, 문서는 상위 폴더 경로 뒤에 문서 노드를 붙인다. recursive CTE로 조상 폴더 경로를 계산한다.
+- `GET /api/workspaces/{workspace_id}/navigation/search?query=`로 폴더 이름과 문서 표시 이름·파일명을 평면 검색한다. 각 결과에 항목 종류·상위 폴더 breadcrumb를 포함하고, 소프트 삭제 항목과 `chat_export` 문서는 제외한다. 본문은 검색하지 않는다.
+- `folder_id`/`document_id`를 동시 지정하거나 빈 검색어는 `400 INVALID_HIERARCHY_REQUEST`, 없는 항목은 `404 HIERARCHY_ITEM_NOT_FOUND`다.
+
+**검증**
+
+- 통합 테스트로 중첩 폴더·문서의 root→현재 경로와 폴더·문서 혼합 검색·breadcrumb를 검증했고, 컨트롤러 테스트로 endpoint·인증을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 검색 결과별 breadcrumb를 항목마다 CTE로 계산하므로, 대량 결과의 성능 최적화(cursor 페이지네이션 포함)는 후속 과제다.
+
 ### feat: 문서 생성·업로드에 folder_id 위치 지정 (TASK-H004)
 
 **변경된 것**

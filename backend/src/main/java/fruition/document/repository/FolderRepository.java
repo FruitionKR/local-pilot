@@ -62,6 +62,23 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
             @Param("updatedAt") Instant updatedAt
     );
 
+    /** 최상위부터 대상 폴더까지의 조상 경로를 순서대로 반환한다(root 먼저, 대상 폴더 마지막). */
+    @Query(value = "WITH RECURSIVE path AS ("
+            + "SELECT id, parent_folder_id, 0 AS depth FROM folders WHERE id = :folderId AND deleted_at IS NULL "
+            + "UNION ALL "
+            + "SELECT f.id, f.parent_folder_id, p.depth + 1 FROM folders f "
+            + "JOIN path p ON f.id = p.parent_folder_id WHERE f.deleted_at IS NULL) "
+            + "SELECT fo.* FROM folders fo JOIN path ON fo.id = path.id ORDER BY path.depth DESC",
+            nativeQuery = true)
+    List<Folder> findAncestorPath(@Param("folderId") UUID folderId);
+
+    @Query("SELECT f FROM Folder f WHERE f.workspaceId = :workspaceId AND f.deletedAt IS NULL "
+            + "AND LOWER(f.name) LIKE :pattern ORDER BY f.name ASC, f.id ASC")
+    List<Folder> searchByName(
+            @Param("workspaceId") String workspaceId,
+            @Param("pattern") String pattern
+    );
+
     /** 대상 부모 폴더의 조상 경로(자기 자신 포함)에 이동 폴더가 있으면 순환이다. */
     @Query(value = "WITH RECURSIVE ancestors AS ("
             + "SELECT id, parent_folder_id FROM folders WHERE id = :targetParentId "
