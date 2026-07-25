@@ -143,11 +143,19 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("operationId") java.util.UUID operationId
     );
 
+    /** 복구 대상 폴더의 하위 트리에 속하고 같은 삭제 작업으로 삭제된 문서만 되살린다. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
-            + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, d.updatedAt = :restoredAt "
-            + "WHERE d.deleteOperationId = :operationId")
-    void restoreDocumentsByOperation(
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE id = :rootId "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id) "
+            + "UPDATE documents SET deleted_at = NULL, deleted_by = NULL, delete_operation_id = NULL, "
+            + "current_version = current_version + 1, updated_at = :restoredAt "
+            + "WHERE folder_id IN (SELECT id FROM subtree) "
+            + "AND deleted_at IS NOT NULL AND delete_operation_id = :operationId",
+            nativeQuery = true)
+    void restoreDocumentsInSubtree(
+            @Param("rootId") java.util.UUID rootId,
             @Param("operationId") java.util.UUID operationId,
             @Param("restoredAt") Instant restoredAt
     );

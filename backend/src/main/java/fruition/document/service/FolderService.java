@@ -181,6 +181,13 @@ public class FolderService {
                 .orElseThrow(() -> new HierarchyItemNotFoundException("삭제된 폴더를 찾을 수 없습니다."));
         UUID operationId = deleted.getDeleteOperationId();
 
+        // 원래 부모가 아직 살아 있으면 원위치로, 삭제 상태이거나 최상위였다면 최상위 마지막으로 복구한다.
+        UUID originalParent = deleted.getParentFolderId();
+        boolean parentActive = originalParent == null
+                || folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(originalParent, workspaceId).isPresent();
+        UUID targetParent = parentActive ? originalParent : null;
+        long targetSortOrder = parentActive ? deleted.getSortOrder() : nextSortOrder(workspaceId, null);
+
         String scope = "POST:/api/workspaces/" + workspaceId + "/folders/" + folderId + "/restore";
         String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
         Optional<FolderLifecycleResponse> replay =
@@ -190,13 +197,14 @@ public class FolderService {
         }
 
         Instant now = Instant.now();
-        int updated = folderRepository.restoreRootIfVersionMatches(folderId, workspaceId, baseVersion, now);
+        int updated = folderRepository.restoreRootIfVersionMatches(
+                folderId, workspaceId, baseVersion, targetParent, targetSortOrder, now);
         if (updated == 0) {
             throw new HierarchyVersionConflictException("폴더가 이미 변경되어 복구할 수 없습니다.");
         }
         if (operationId != null) {
-            folderRepository.restoreDescendantFolders(operationId, folderId, now);
-            documentRepository.restoreDocumentsByOperation(operationId, now);
+            folderRepository.restoreDescendantFolders(folderId, operationId, now);
+            documentRepository.restoreDocumentsInSubtree(folderId, operationId, now);
         }
 
         FolderLifecycleResponse response = new FolderLifecycleResponse(folderId, baseVersion + 1, false, null, null);

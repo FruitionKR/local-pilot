@@ -235,6 +235,24 @@ class FolderServiceIntegrationTest {
     }
 
     @Test
+    void folder_individualRestoreOfDescendantPlacesAtRoot() {
+        FolderResponse parent = folderService.create(workspaceId, userId, "kp", new FolderCreateRequest("부모", null));
+        FolderResponse child = folderService.create(workspaceId, userId, "kc", new FolderCreateRequest("자식", parent.id()));
+        folderService.delete(workspaceId, userId, parent.id(), "dk", parent.currentVersion());
+
+        // 자식만 개별 복구: 원래 부모가 아직 삭제 상태이므로 최상위로 배치된다.
+        folderService.restore(workspaceId, userId, child.id(), "rk", child.currentVersion() + 1);
+
+        List<String> rootIds = folderService.children(workspaceId, userId, null).items().stream()
+                .map(FolderChildrenResponse.Item::id).toList();
+        assertThat(rootIds).contains(child.id().toString());
+        assertThat(rootIds).doesNotContain(parent.id().toString());
+        UUID childParent = jdbcTemplate.queryForObject(
+                "SELECT parent_folder_id FROM folders WHERE id = ?", UUID.class, child.id());
+        assertThat(childParent).isNull();
+    }
+
+    @Test
     void folder_deleteNonEmptyByNonOwnerForbidden() {
         String memberId = insertMember("MEMBER");
         FolderResponse a = folderService.create(workspaceId, memberId, "ka", new FolderCreateRequest("A", null));

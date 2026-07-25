@@ -151,25 +151,37 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
             @Param("operationId") UUID operationId
     );
 
+    /** 복구 대상 폴더를 지정한 부모·순서로 되살린다. 원래 부모가 삭제 상태면 최상위(null)로 배치한다. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Folder f SET f.currentVersion = f.currentVersion + 1, "
-            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, f.updatedAt = :restoredAt "
+            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, "
+            + "f.parentFolderId = :parentFolderId, f.sortOrder = :sortOrder, f.updatedAt = :restoredAt "
             + "WHERE f.id = :id AND f.workspaceId = :workspaceId "
             + "AND f.deletedAt IS NOT NULL AND f.currentVersion = :baseVersion")
     int restoreRootIfVersionMatches(
             @Param("id") UUID id,
             @Param("workspaceId") String workspaceId,
             @Param("baseVersion") long baseVersion,
+            @Param("parentFolderId") UUID parentFolderId,
+            @Param("sortOrder") long sortOrder,
             @Param("restoredAt") Instant restoredAt
     );
 
+    /** 복구 대상 폴더의 하위 트리 중 같은 삭제 작업으로 삭제된 폴더만 되살린다(대상 폴더 자신은 제외). */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("UPDATE Folder f SET f.currentVersion = f.currentVersion + 1, "
-            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, f.updatedAt = :restoredAt "
-            + "WHERE f.deleteOperationId = :operationId AND f.id <> :rootId")
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE parent_folder_id = :rootId "
+            + "AND deleted_at IS NOT NULL AND delete_operation_id = :operationId "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id "
+            + "WHERE f.deleted_at IS NOT NULL AND f.delete_operation_id = :operationId) "
+            + "UPDATE folders SET deleted_at = NULL, deleted_by = NULL, delete_operation_id = NULL, "
+            + "current_version = current_version + 1, updated_at = :restoredAt "
+            + "WHERE id IN (SELECT id FROM subtree)",
+            nativeQuery = true)
     void restoreDescendantFolders(
-            @Param("operationId") UUID operationId,
             @Param("rootId") UUID rootId,
+            @Param("operationId") UUID operationId,
             @Param("restoredAt") Instant restoredAt
     );
 }
