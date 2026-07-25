@@ -1,6 +1,7 @@
 import hashlib
 
 from app.modules.query.application.ports import EmbeddingSearchPort
+from app.modules.query.domain.entities import SemanticQueryEmbedding
 from app.modules.query.infrastructure.bge_m3_embedding_search import BgeM3EmbeddingSearch
 from app.modules.wiki_embedding.infrastructure.bge_m3_embedding_model import BgeM3EmbeddingModel
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
@@ -17,6 +18,12 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
             model_name=self._embedding_model.model_name,
         )
 
+    def embed_query(self, query: str) -> SemanticQueryEmbedding:
+        return SemanticQueryEmbedding(
+            model_name=self._embedding_model.model_name,
+            vector=self._embedding_model.embed([query])[0],
+        )
+
     def score(self, query: str, documents: list[str]) -> list[float]:
         if not documents:
             return []
@@ -27,7 +34,7 @@ class StoredWikiPageEmbeddingSearch(EmbeddingSearchPort):
         missing_indexes = []
         missing_documents = []
 
-        query_vector = self._embedding_model.embed([query])[0]
+        query_vector = self.embed_query(query).vector
         for index, document_hash in enumerate(document_hashes):
             document_vector = stored_vectors.get(document_hash)
             if document_vector is None or len(document_vector) != len(query_vector):

@@ -1,5 +1,5 @@
 from app.modules.query.application.ports import WikiRepositoryPort
-from app.modules.query.domain.entities import WikiPage, WikiPageLink
+from app.modules.query.domain.entities import SemanticQueryEmbedding, WikiPage, WikiPageLink
 
 
 class InMemoryWikiRepository(WikiRepositoryPort):
@@ -13,8 +13,9 @@ class InMemoryWikiRepository(WikiRepositoryPort):
         query: str,
         source_limit: int,
         concept_limit: int,
+        semantic_query: SemanticQueryEmbedding | None = None,
     ) -> list[WikiPage]:
-        del workspace_id, query
+        del workspace_id, query, semantic_query
         source_pages = [page for page in self._pages if page.is_source][:source_limit]
         concept_pages = [page for page in self._pages if page.is_concept][:concept_limit]
         return source_pages + concept_pages

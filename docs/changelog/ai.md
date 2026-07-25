@@ -6,6 +6,16 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-07-26
 
+### fix: Query hybrid 후보와 탐색 기준 복원
+
+- lexical 후보를 먼저 제한해 의미만 유사한 page가 embedding 비교에서 누락되던 회귀를 수정하고, Workspace 전체 저장 page embedding의 semantic Top-K를 keyword Top-K와 합친 뒤 bounded Markdown만 로드
+- Source·Concept hybrid 비율을 `embedding 60% + keyword 40%`로 조정하고 정확한 이름 일치 보정은 유지
+- semantic-only Concept의 기존 통과 기준을 유지하도록 focus threshold를 `0.60`에서 `0.45`로 함께 보정
+- graph traversal의 상대 유사도 하한을 변하는 path score가 아니라 최초 최고 seed score의 95%로 고정해 여러 hop에서 relevance가 점진적으로 낮아지는 문제 차단
+- keyword 우선 순위, semantic 후보 전달, PostgreSQL exact cosine 후보, 최초 seed 하한 회귀 테스트 추가
+- vector·full-text index가 없어 PostgreSQL 내부 scan 비용은 운영 `EXPLAIN`이 필요한 미해결 성능 항목으로 유지
+- Query 모듈 `78 passed`, `4 subtests passed`, llmPipeline 전체 `509 passed`, `43 subtests passed`; PostgreSQL 16 array cosine·ranking CTE 문법 확인
+
 ### perf: PDF 복원 기본 경로를 Docling-only로 전환
 
 - 문서 복원 CLI 기본 mode를 `docling-only`로 변경해 Docling Markdown 생성 후 느린 crop OCR·Formula OCR·SLLM 단계를 실행하지 않도록 조정

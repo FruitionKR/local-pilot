@@ -40,6 +40,28 @@ def concept_page(page_id: str, title: str, markdown: str = "") -> WikiPage:
 
 
 class QueryPageScorerTest(unittest.TestCase):
+    def test_semantic_only_concept_can_pass_recalibrated_focus_threshold(self) -> None:
+        page = concept_page("concept:semantic", "Semantic Concept")
+        representation = "\n".join([page.title, page.summary])
+        scorer = QueryPageScorer(
+            embedding_search=ScoreSearch({representation: 0.75}),
+            text_search=EmptyTextSearch(),
+        )
+
+        scores = scorer.score_pages(
+            QueryRewrite(
+                original_question="표현이 다른 질문",
+                retrieval_query="표현이 다른 질문",
+            ),
+            [page],
+            embedding_weight=0.6,
+        )
+
+        self.assertEqual(
+            scorer.select_focus_concepts([page], scores),
+            ["concept:semantic"],
+        )
+
     def test_selects_all_seed_sources_near_top_score(self) -> None:
         pages = [
             source_page("source:first", "First Source"),

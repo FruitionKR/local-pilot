@@ -44,7 +44,7 @@ class TraverseWikiGraphUseCase:
             current_id, path_nodes, path_edges, base_score, depth = frontier.popleft()
 
             next_candidates = []
-            next_floor = base_score * self._relative_score_floor
+            next_floor = best_seed_score * self._relative_score_floor
             for link in adjacency.get(current_id, []):
                 target_id = link.to_page_id if link.from_page_id == current_id else link.from_page_id
                 if target_id in path_nodes or target_id not in pages_by_id:
@@ -69,8 +69,6 @@ class TraverseWikiGraphUseCase:
 
             expanded = 0
             for target_score, next_score, target_id, link in next_candidates[: self._frontier_limit]:
-                if target_score < base_score * self._relative_score_floor:
-                    continue
                 target = pages_by_id[target_id]
                 role = self._node_role(target, depth + 1)
                 previous = visited.get(target_id)

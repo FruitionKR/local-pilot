@@ -1,5 +1,5 @@
 from app.modules.query.application.ports import WikiRepositoryPort
-from app.modules.query.domain.entities import WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import SemanticQueryEmbedding, WikiEmbeddingUnit, WikiPage, WikiPageLink
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
@@ -10,10 +10,11 @@ class PostgresWikiRepository(WikiRepositoryPort):
         query: str,
         source_limit: int,
         concept_limit: int,
+        semantic_query: SemanticQueryEmbedding | None = None,
     ) -> list[WikiPage]:
         content_query = " OR ".join(query.split())
         with database.connect() as conn:
-            rows = conn.execute(
+            lexical_rows = conn.execute(
                 """
                 WITH metadata_ranked AS (
                     SELECT
@@ -185,6 +186,74 @@ class PostgresWikiRepository(WikiRepositoryPort):
                     concept_limit,
                 ),
             ).fetchall()
+            semantic_rows = (
+                conn.execute(
+                    """
+                    WITH semantic_scores AS (
+                        SELECT
+                            p.id,
+                            p.page_type,
+                            p.title,
+                            p.slug,
+                            p.summary,
+                            p.markdown_uri,
+                            p.updated_at,
+                            vector_score.similarity
+                        FROM wiki_pages p
+                        JOIN wiki_page_embeddings e ON e.page_id = p.id
+                        CROSS JOIN LATERAL (
+                            SELECT
+                                sum(stored.value * query_vector.value)
+                                / nullif(
+                                    sqrt(sum(stored.value * stored.value))
+                                    * sqrt(sum(query_vector.value * query_vector.value)),
+                                    0
+                                ) AS similarity
+                            FROM unnest(e.embedding_vector) WITH ORDINALITY
+                                AS stored(value, ordinal)
+                            JOIN unnest(%s::double precision[]) WITH ORDINALITY
+                                AS query_vector(value, ordinal)
+                                USING (ordinal)
+                        ) vector_score
+                        WHERE p.status = 'active'
+                          AND p.workspace_id = %s
+                          AND p.page_type IN ('source', 'concept')
+                          AND e.embedding_model = %s
+                          AND e.status = 'completed'
+                          AND e.embedding_dimension = %s
+                    ),
+                    semantic_ranked AS (
+                        SELECT
+                            *,
+                            row_number() OVER (
+                                PARTITION BY page_type
+                                ORDER BY similarity DESC, updated_at DESC
+                            ) AS type_rank
+                        FROM semantic_scores
+                        WHERE similarity IS NOT NULL
+                    )
+                    SELECT id, page_type, title, slug, summary, markdown_uri
+                    FROM semantic_ranked
+                    WHERE (page_type = 'source' AND type_rank <= %s)
+                       OR (page_type = 'concept' AND type_rank <= %s)
+                    ORDER BY similarity DESC, updated_at DESC
+                    """,
+                    (
+                        semantic_query.vector,
+                        workspace_id,
+                        semantic_query.model_name,
+                        len(semantic_query.vector),
+                        source_limit,
+                        concept_limit,
+                    ),
+                ).fetchall()
+                if semantic_query is not None and semantic_query.vector
+                else []
+            )
+        rows_by_id = {
+            row["id"]: row
+            for row in [*lexical_rows, *semantic_rows]
+        }
         return [
             WikiPage(
                 id=row["id"],
@@ -194,7 +263,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 summary=row["summary"] or "",
                 markdown_uri=row["markdown_uri"],
             )
-            for row in rows
+            for row in rows_by_id.values()
         ]
 
     def list_links_for_page_ids(

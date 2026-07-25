@@ -168,27 +168,33 @@ Sources:
 
 ### 6.4 Hybrid score
 
-초기 기본값은 BGE-M3 vector similarity를 주력으로 한다.
+embedding 유사도와 keyword 일치도를 함께 사용한다. 정확한 문서명·Concept명·
+고유명사 검색이 semantic 유사도에 묻히지 않도록 keyword 비중을 40%로 둔다.
 
 권장 source score:
 
 ```text
 source_retrieval_score =
-  0.80 * embedding_similarity
-+ 0.20 * bm25_score
+  0.60 * embedding_similarity
++ 0.40 * bm25_score
 ```
 
-테스트 결과, 한국어 우회 표현에서는 BGE-M3 source vector가 강하게 동작했다. BM25는 exact keyword, 고유명사, 짧은 질의에서 보조 역할로 사용한다.
+정확한 title·slug·Concept명 일치는 hybrid 계산 뒤 별도 name match 보정도
+적용한다. 한국어 우회 표현의 semantic 검색과 정확한 keyword 검색을 함께
+회귀 테스트하고, 운영 평가 없이 한쪽 비중을 추가로 높이지 않는다.
 
 Concept hint score:
 
 ```text
 concept_hint_score =
-  0.80 * concept_embedding_similarity
-+ 0.20 * concept_bm25_score
+  0.60 * concept_embedding_similarity
++ 0.40 * concept_bm25_score
 ```
 
-`concept_hint_score >= 0.60`이면 해당 concept과 연결된 source를 seed 후보에 추가한다. threshold는 평가 결과에 따라 조정한다.
+`concept_hint_score >= 0.45`이면 해당 concept과 연결된 source를 seed 후보에
+추가한다. 이는 keyword가 없는 semantic-only Concept도 embedding similarity
+0.75부터 기존과 동일하게 통과시키기 위한 60:40 가중치 기준값이다. threshold는
+평가 결과에 따라 조정한다.
 
 ## 7. Graph traversal 정책
 
@@ -227,7 +233,7 @@ max_depth = 3
 
 멈춤 조건:
 
-- 다음 후보가 현재 path score의 `relative_score_floor`를 넘지 못한다.
+- 다음 후보가 최초 최고 seed score의 `relative_score_floor`를 넘지 못한다.
 - 다음 frontier가 없다.
 - 설정한 `max_depth`에서 확장 가능한 후속 frontier가 남아 있다.
 - 시작 seed의 점수가 0 이하라 관련 seed가 없다고 판단한다.

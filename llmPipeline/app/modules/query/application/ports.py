@@ -1,6 +1,6 @@
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
-from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, SemanticQueryEmbedding, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
 
 
 class WikiRepositoryPort(Protocol):
@@ -10,6 +10,7 @@ class WikiRepositoryPort(Protocol):
         query: str,
         source_limit: int,
         concept_limit: int,
+        semantic_query: SemanticQueryEmbedding | None = None,
     ) -> list[WikiPage]:
         ...
 
@@ -40,6 +41,12 @@ class WikiMarkdownReaderPort(Protocol):
 
 class EmbeddingSearchPort(Protocol):
     def score(self, query: str, documents: list[str]) -> list[float]:
+        ...
+
+
+@runtime_checkable
+class SemanticQueryEmbeddingPort(Protocol):
+    def embed_query(self, query: str) -> SemanticQueryEmbedding:
         ...
 
 

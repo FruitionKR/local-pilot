@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from app.modules.query.domain.entities import SemanticQueryEmbedding
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
 
 
@@ -89,6 +90,34 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         sql, params = connection.calls[0]
         self.assertIn("websearch_to_tsquery('simple', %s)", sql)
         self.assertEqual(params.count("alpha OR beta"), 2)
+
+    def test_global_semantic_candidates_are_queried_independently(self) -> None:
+        connection = FakeConnection()
+
+        with patch(
+            "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
+            return_value=connection,
+        ):
+            PostgresWikiRepository().list_candidate_pages(
+                "ws_target",
+                "표현이 다른 질문",
+                source_limit=60,
+                concept_limit=40,
+                semantic_query=SemanticQueryEmbedding(
+                    model_name="test-model",
+                    vector=[1.0, 0.0],
+                ),
+            )
+
+        self.assertEqual(len(connection.calls), 2)
+        semantic_sql, semantic_params = connection.calls[1]
+        self.assertIn("JOIN wiki_page_embeddings", semantic_sql)
+        self.assertIn("unnest(e.embedding_vector)", semantic_sql)
+        self.assertIn("PARTITION BY page_type", semantic_sql)
+        self.assertEqual(
+            semantic_params,
+            ([1.0, 0.0], "ws_target", "test-model", 2, 60, 40),
+        )
 
     def test_active_links_include_bounded_neighbors_in_workspace(self) -> None:
         connection = FakeConnection()

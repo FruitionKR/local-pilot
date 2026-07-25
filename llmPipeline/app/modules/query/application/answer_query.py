@@ -9,6 +9,7 @@ from app.modules.query.application.ports import (
     QueryEvaluatorGraphPort,
     QueryEvaluatorPort,
     QueryRewritePort,
+    SemanticQueryEmbeddingPort,
     TextSearchPort,
     WebSearchPort,
     WikiMarkdownReaderPort,
@@ -92,7 +93,7 @@ class AnswerQueryUseCase:
         query_evaluator_graph: QueryEvaluatorGraphPort | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
-        focus_concept_threshold: float = 0.60,
+        focus_concept_threshold: float = 0.45,
         returned_path_limit: int = 5,
         min_internal_relevance_score: float = 0.0,
         query_evaluator_max_attempts: int = 2,
@@ -427,6 +428,11 @@ class AnswerQueryUseCase:
             query_rewrite.retrieval_query,
             self._source_candidate_limit * self._candidate_pool_multiplier,
             self._concept_candidate_limit * self._candidate_pool_multiplier,
+            semantic_query=(
+                self._embedding_search.embed_query(query_rewrite.retrieval_query)
+                if isinstance(self._embedding_search, SemanticQueryEmbeddingPort)
+                else None
+            ),
         )
         candidate_page_ids = [page.id for page in candidate_pages]
         seen_page_ids = set(candidate_page_ids)
@@ -490,12 +496,12 @@ class AnswerQueryUseCase:
         source_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_source],
-            embedding_weight=0.8,
+            embedding_weight=0.6,
         )
         concept_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_concept],
-            embedding_weight=0.8,
+            embedding_weight=0.6,
         )
         self._publish(
             event_publisher,

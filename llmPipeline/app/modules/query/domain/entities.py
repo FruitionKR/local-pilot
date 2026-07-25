@@ -42,6 +42,12 @@ class WikiEmbeddingUnit:
 
 
 @dataclass(frozen=True)
+class SemanticQueryEmbedding:
+    model_name: str
+    vector: list[float]
+
+
+@dataclass(frozen=True)
 class QueryRewrite:
     original_question: str
     retrieval_query: str
