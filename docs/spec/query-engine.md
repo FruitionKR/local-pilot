@@ -196,6 +196,12 @@ concept_hint_score =
 0.75부터 기존과 동일하게 통과시키기 위한 60:40 가중치 기준값이다. threshold는
 평가 결과에 따라 조정한다.
 
+후보 생성은 Workspace 전체 저장 page embedding의 exact cosine Top-K와
+keyword Top-K를 독립적으로 구한 뒤 합친다. 반환 후보와 Markdown 로드는
+bounded로 유지한다. 전역 비교 비용은 현재 검색 정확성을 위한 의도된
+동작이며, 실제 사용자 지연이나 운영 지표로 병목이 확인될 때 별도 성능
+이슈에서 index 필요성을 평가한다.
+
 ## 7. Graph traversal 정책
 
 ### 7.1 Traversal 대상 edge

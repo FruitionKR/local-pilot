@@ -13,7 +13,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - semantic-only Concept의 기존 통과 기준을 유지하도록 focus threshold를 `0.60`에서 `0.45`로 함께 보정
 - graph traversal의 상대 유사도 하한을 변하는 path score가 아니라 최초 최고 seed score의 95%로 고정해 여러 hop에서 relevance가 점진적으로 낮아지는 문제 차단
 - keyword 우선 순위, semantic 후보 전달, PostgreSQL exact cosine 후보, 최초 seed 하한 회귀 테스트 추가
-- vector·full-text index가 없어 PostgreSQL 내부 scan 비용은 운영 `EXPLAIN`이 필요한 미해결 성능 항목으로 유지
+- exact 전역 비교 비용은 현재 검색 정확성을 위한 의도된 동작으로 기록하고, 실제 사용자 지연이나 운영 지표가 확인되기 전에는 index 작업을 활성 이슈로 만들지 않음
 - Query 모듈 `78 passed`, `4 subtests passed`, llmPipeline 전체 `509 passed`, `43 subtests passed`; PostgreSQL 16 array cosine·ranking CTE 문법 확인
 
 ### perf: PDF 복원 기본 경로를 Docling-only로 전환
