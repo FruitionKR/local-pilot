@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 문서 이동·정렬 API 추가 (TASK-H003)
+
+**변경된 것**
+
+- `PATCH /api/workspaces/{workspace_id}/documents/{document_id}/position`로 문서를 다른 폴더 또는 최상위로 이동한다. 워크스페이스 멤버는 소유자가 아니어도 읽기 가능한 문서를 이동할 수 있다.
+- 이동한 문서는 대상 폴더의 폴더·문서 혼합 순서 마지막에 배치한다.
+- `documents.current_version` 낙관적 잠금으로 오래된 이동을 `409 HIERARCHY_VERSION_CONFLICT`로 거절하고, `Idempotency-Key`로 재요청을 no-op 처리한다.
+- 대상 `folder_id`가 없는 폴더면 `404 HIERARCHY_ITEM_NOT_FOUND`다. `folder_id`는 UUID이므로 문서 id처럼 UUID가 아닌 값을 부모로 지정하면 역직렬화 단계에서 `400`이 된다(문서는 부모가 될 수 없음).
+- `DocumentController`/`DocumentService`를 건드리지 않도록 `DocumentPositionController`·`DocumentPlacementService`로 분리하고 H002의 `IdempotencyService`와 혼합 정렬을 재사용했다.
+
+**검증**
+
+- 단위(`DocumentPlacementServiceTest`)·컨트롤러(`DocumentPositionControllerTest`)·통합(`FolderServiceIntegrationTest`) 테스트로 최상위↔폴더 이동, 문서를 부모로 지정 시 400, 버전 충돌 409, 멱등 재요청을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 형제 사이 임의 위치(index) 재정렬은 아직 지원하지 않고 대상 폴더의 마지막에 배치한다.
+- 최상위 navigation·breadcrumb·검색(TASK-H005), 계층 삭제·복구(TASK-H006)는 후속 구현한다.
+
 ### feat: 폴더 생성·이름변경·이동 API 추가 (TASK-H002)
 
 **변경된 것**

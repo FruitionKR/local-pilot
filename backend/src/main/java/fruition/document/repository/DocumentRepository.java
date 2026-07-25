@@ -97,6 +97,20 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
 
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.folderId = :folderId, d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int moveIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("folderId") java.util.UUID folderId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = fruition.document.domain.DocumentRole.EDITABLE "

@@ -1,12 +1,15 @@
 package fruition.document.service;
 
 import fruition.TestcontainersConfiguration;
+import fruition.document.dto.DocumentPositionRequest;
+import fruition.document.dto.DocumentPositionResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
 import fruition.document.exception.HierarchyCycleException;
+import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.document.exception.HierarchyVersionConflictException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class FolderServiceIntegrationTest {
 
     @Autowired FolderService folderService;
+    @Autowired DocumentPlacementService documentPlacementService;
     @Autowired JdbcTemplate jdbcTemplate;
 
     private String userId;
@@ -115,6 +119,40 @@ class FolderServiceIntegrationTest {
         assertThat(items.get(0).id()).isEqualTo(childFolder.id().toString());
         assertThat(items.get(1).type()).isEqualTo("document");
         assertThat(items.get(1).id()).isEqualTo("doc_mid");
+    }
+
+    @Test
+    void document_movesFromRootIntoFolder() {
+        FolderResponse folder = folderService.create(workspaceId, userId, "k1",
+                new FolderCreateRequest("자료", null));
+        insertDocumentInFolder("doc_move", "메모.md", "EDITABLE", null, 0);
+
+        DocumentPositionResponse moved = documentPlacementService.move(workspaceId, userId, "doc_move", "mk1",
+                new DocumentPositionRequest(folder.id(), 1L));
+
+        assertThat(moved.folderId()).isEqualTo(folder.id());
+        assertThat(moved.currentVersion()).isEqualTo(2);
+        UUID stored = jdbcTemplate.queryForObject(
+                "SELECT folder_id FROM documents WHERE id = ?", UUID.class, "doc_move");
+        assertThat(stored).isEqualTo(folder.id());
+    }
+
+    @Test
+    void document_moveConflictsOnStaleVersion() {
+        insertDocumentInFolder("doc_stale", "메모.md", "EDITABLE", null, 0);
+
+        assertThatThrownBy(() -> documentPlacementService.move(workspaceId, userId, "doc_stale", "mk1",
+                new DocumentPositionRequest(null, 999L)))
+                .isInstanceOf(HierarchyVersionConflictException.class);
+    }
+
+    @Test
+    void document_moveToMissingFolderIsNotFound() {
+        insertDocumentInFolder("doc_orphan", "메모.md", "EDITABLE", null, 0);
+
+        assertThatThrownBy(() -> documentPlacementService.move(workspaceId, userId, "doc_orphan", "mk1",
+                new DocumentPositionRequest(UUID.randomUUID(), 1L)))
+                .isInstanceOf(HierarchyItemNotFoundException.class);
     }
 
     private void insertDocumentInFolder(String documentId, String filename, String role, UUID folderId, long sortOrder) {
