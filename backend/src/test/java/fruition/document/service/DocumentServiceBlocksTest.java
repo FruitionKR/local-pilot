@@ -75,6 +75,7 @@ class DocumentServiceBlocksTest {
     private static final String WORKSPACE_ID = "ws_aaa11111";
 
     @Mock DocumentRepository documentRepository;
+    @Mock fruition.document.repository.FolderRepository folderRepository;
     @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
@@ -93,7 +94,7 @@ class DocumentServiceBlocksTest {
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
+        documentService = new DocumentService(documentRepository, folderRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
                 editStateInitializer, editStateRepository, idempotencyRecordRepository,
@@ -265,7 +266,7 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID,
                 USER_ID,
                 "create-key",
-                new MarkdownDocumentCreateRequest(" 새 문서 ", "")
+                new MarkdownDocumentCreateRequest(" 새 문서 ", "", null)
         );
 
         ArgumentCaptor<Document> document = ArgumentCaptor.forClass(Document.class);
@@ -289,14 +290,14 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID,
                 USER_ID,
                 null,
-                new MarkdownDocumentCreateRequest("문서", "")
+                new MarkdownDocumentCreateRequest("문서", "", null)
         )).isInstanceOf(InvalidIdempotencyKeyException.class);
 
         assertThatThrownBy(() -> documentService.createMarkdown(
                 WORKSPACE_ID,
                 USER_ID,
                 "create-key",
-                new MarkdownDocumentCreateRequest("문서", "a".repeat(5 * 1024 * 1024 + 1))
+                new MarkdownDocumentCreateRequest("문서", "a".repeat(5 * 1024 * 1024 + 1), null)
         )).isInstanceOf(MarkdownContentTooLargeException.class);
 
         verify(documentRepository, never()).save(any(Document.class));
@@ -307,7 +308,7 @@ class DocumentServiceBlocksTest {
     @DisplayName("동일한 멱등 키와 요청은 기존 문서를 반환하고 다시 저장하지 않는다")
     void createMarkdown_sameIdempotencyRequest_replaysExistingDocument() {
         stubOwnedWorkspace();
-        MarkdownDocumentCreateRequest request = new MarkdownDocumentCreateRequest("문서", "# 본문");
+        MarkdownDocumentCreateRequest request = new MarkdownDocumentCreateRequest("문서", "# 본문", null);
 
         DocumentUploadResponse first =
                 documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", request);
@@ -332,7 +333,7 @@ class DocumentServiceBlocksTest {
     @DisplayName("같은 멱등 키에 다른 생성 요청은 충돌한다")
     void createMarkdown_sameIdempotencyKeyDifferentRequest_conflicts() {
         stubOwnedWorkspace();
-        MarkdownDocumentCreateRequest firstRequest = new MarkdownDocumentCreateRequest("문서", "# 본문");
+        MarkdownDocumentCreateRequest firstRequest = new MarkdownDocumentCreateRequest("문서", "# 본문", null);
         documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", firstRequest);
         ArgumentCaptor<IdempotencyRecord> record = ArgumentCaptor.forClass(IdempotencyRecord.class);
         verify(idempotencyRecordRepository).save(record.capture());
@@ -346,7 +347,7 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID,
                 USER_ID,
                 "same-key",
-                new MarkdownDocumentCreateRequest("다른 문서", "# 본문")
+                new MarkdownDocumentCreateRequest("다른 문서", "# 본문", null)
         )).isInstanceOf(IdempotencyConflictException.class);
     }
 
@@ -360,7 +361,7 @@ class DocumentServiceBlocksTest {
                 "file", "업로드.md", "text/markdown", "# 업로드".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         DocumentUploadResponse response =
-                documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file);
+                documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", null, file);
 
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(editStateRepository).save(any(DocumentEditState.class));
@@ -380,7 +381,7 @@ class DocumentServiceBlocksTest {
                 "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
 
         DocumentUploadResponse response =
-                documentService.upload(WORKSPACE_ID, USER_ID, "upload-pdf-key", file);
+                documentService.upload(WORKSPACE_ID, USER_ID, "upload-pdf-key", null, file);
 
         ArgumentCaptor<Document> storedDocument = ArgumentCaptor.forClass(Document.class);
         verify(documentRepository).save(storedDocument.capture());
@@ -796,7 +797,7 @@ class DocumentServiceBlocksTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
 
-        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file))
+        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", null, file))
                 .isInstanceOf(DocumentUploadException.class);
 
         verify(documentRepository, never()).save(any(Document.class));
@@ -813,7 +814,7 @@ class DocumentServiceBlocksTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
 
-        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", file))
+        assertThatThrownBy(() -> documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", null, file))
                 .isInstanceOf(DocumentUploadException.class);
 
         verify(minioClient).putObject(any(PutObjectArgs.class));

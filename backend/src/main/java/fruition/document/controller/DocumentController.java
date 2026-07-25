@@ -85,6 +85,7 @@ public class DocumentController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestParam(value = "folder_id", required = false) java.util.UUID folderId,
             @RequestParam(value = "file", required = false) MultipartFile file) {
         if (file == null || file.isEmpty()) {
             return ResponseEntity
@@ -105,7 +106,7 @@ public class DocumentController {
                     .body(ErrorResponse.of("UNSUPPORTED_FILE_TYPE", "PDF 또는 Markdown 파일만 업로드할 수 있습니다."));
         }
 
-        DocumentUploadResponse response = documentService.upload(workspaceId, userId, idempotencyKey, file);
+        DocumentUploadResponse response = documentService.upload(workspaceId, userId, idempotencyKey, folderId, file);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

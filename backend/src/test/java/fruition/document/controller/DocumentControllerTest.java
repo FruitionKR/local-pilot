@@ -184,6 +184,29 @@ class DocumentControllerTest {
     }
 
     @Test
+    void upload_passesFolderIdToService() throws Exception {
+        java.util.UUID folderId = java.util.UUID.fromString("55555555-5555-5555-5555-555555555555");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "노트.md", "text/markdown",
+                "# 본문".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        DocumentUploadResponse response = new DocumentUploadResponse(
+                "doc_uploaded", "노트.md", "text/markdown", 0, DocumentStatus.completed,
+                null, Instant.now(), true, 1, DocumentRole.EDITABLE);
+        when(documentService.upload(eq(WORKSPACE_ID), eq(USER_ID), eq("up-key"), eq(folderId), any()))
+                .thenReturn(response);
+
+        mockMvc.perform(multipart("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .file(file)
+                        .param("folder_id", folderId.toString())
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "up-key"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value("doc_uploaded"));
+
+        verify(documentService).upload(eq(WORKSPACE_ID), eq(USER_ID), eq("up-key"), eq(folderId), any());
+    }
+
+    @Test
     void duplicate_passesIdempotencyKeyAndReturnsCreatedDocument() throws Exception {
         when(documentService.duplicate(
                 WORKSPACE_ID, USER_ID, "doc_source", "duplicate-key"))

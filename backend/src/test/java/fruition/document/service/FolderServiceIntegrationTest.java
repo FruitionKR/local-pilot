@@ -3,9 +3,11 @@ package fruition.document.service;
 import fruition.TestcontainersConfiguration;
 import fruition.document.dto.DocumentPositionRequest;
 import fruition.document.dto.DocumentPositionResponse;
+import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
 import fruition.document.dto.FolderLifecycleResponse;
+import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
@@ -32,6 +34,7 @@ class FolderServiceIntegrationTest {
 
     @Autowired FolderService folderService;
     @Autowired DocumentPlacementService documentPlacementService;
+    @Autowired DocumentService documentService;
     @Autowired JdbcTemplate jdbcTemplate;
 
     private String userId;
@@ -247,6 +250,27 @@ class FolderServiceIntegrationTest {
         FolderLifecycleResponse res = folderService.delete(workspaceId, memberId, a.id(), "dk", a.currentVersion());
 
         assertThat(res.deleted()).isTrue();
+    }
+
+    @Test
+    void createMarkdown_placesDocumentInSelectedFolder() {
+        FolderResponse folder = folderService.create(workspaceId, userId, "kf", new FolderCreateRequest("자료", null));
+
+        DocumentUploadResponse created = documentService.createMarkdown(workspaceId, userId, "cmk",
+                new MarkdownDocumentCreateRequest("메모", "# 본문", folder.id()));
+
+        UUID stored = jdbcTemplate.queryForObject(
+                "SELECT folder_id FROM documents WHERE id = ?", UUID.class, created.id());
+        assertThat(stored).isEqualTo(folder.id());
+        assertThat(folderService.children(workspaceId, userId, folder.id()).items())
+                .extracting(FolderChildrenResponse.Item::id).contains(created.id());
+    }
+
+    @Test
+    void createMarkdown_rejectsMissingFolder() {
+        assertThatThrownBy(() -> documentService.createMarkdown(workspaceId, userId, "cmk",
+                new MarkdownDocumentCreateRequest("메모", "# 본문", UUID.randomUUID())))
+                .isInstanceOf(HierarchyItemNotFoundException.class);
     }
 
     private String insertMember(String role) {

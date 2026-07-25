@@ -8,6 +8,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 문서 생성·업로드에 folder_id 위치 지정 (TASK-H004)
+
+**변경된 것**
+
+- Markdown 생성(`POST /documents/markdown`)과 업로드(`POST /documents`)가 선택적 `folder_id`를 받아 문서를 해당 폴더 안에 생성한다. Markdown 생성은 요청 body의 `folder_id`, 업로드는 multipart `folder_id` part로 지정한다.
+- `folder_id`를 지정하면 폴더·문서 혼합 순서의 마지막에 배치하고, 생략하면 기존처럼 최상위에 배치한다.
+- 존재하지 않거나 다른 workspace의 `folder_id`는 `404 HIERARCHY_ITEM_NOT_FOUND`로 거절한다.
+- `Document.place(folderId, sortOrder)`를 추가하고 `DocumentService`가 폴더 존재 검증·혼합 배치를 수행하도록 `FolderRepository`를 주입했다. 복제는 원본과 같은 폴더 유지, 초기 노트는 최상위 생성을 유지한다.
+
+**검증**
+
+- 통합 테스트로 선택한 폴더에 문서 생성·배치와 없는 폴더 `404`를 검증했고, 컨트롤러 테스트로 업로드 `folder_id` part 전달을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 복제 대상 폴더 재지정과 원본 변환 편집본의 폴더 배치(변환 pipeline 연동 이후)는 후속 구현한다.
+
 ### feat: 폴더 트리 최상위 조회·삭제·복구 API 추가 (TASK-H005/H006)
 
 **변경된 것**

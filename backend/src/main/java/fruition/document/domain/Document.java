@@ -215,6 +215,11 @@ public class Document {
         this.folderId = null;
     }
 
+    public void place(UUID folderId, long sortOrder) {
+        this.folderId = folderId;
+        this.sortOrder = sortOrder;
+    }
+
     /**
      * 채팅 full 재생성: 기존 export 문서를 갱신해 재처리한다. MinIO 원본은 세션 전체로 덮어쓴 뒤,
      * 그 전체 내용의 해시/크기로 갱신하고, 파이프라인엔 delta만 inline으로 보낸다.
