@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 문서 폴더 배치를 단일 folder_id로 통일 (V11)
+
+**변경된 것**
+
+- 문서 계층을 파일탐색기식 단일 폴더 트리로 통일하는 데이터 계층을 구현했다. 폴더가 유일한 컨테이너이고 문서는 leaf다.
+- migration `V11__unify_folder_tree.sql`: `source_folders`→`folders` 일반화, `documents.source_folder_id`→`folder_id`, `parent_document_id` 컬럼·FK 제거, 역할별 배치 check 제약과 역할별 인덱스 제거, 단일 배치 인덱스 `idx_documents_folder_order` 생성.
+- `SourceFolder`/`SourceFolderRepository`를 `Folder`/`FolderRepository`(table `folders`)로 일반화했다.
+- `Document`의 `parentDocumentId`+`sourceFolderId`를 단일 `folderId`(UUID)로 합쳤다. EDITABLE·ORIGINAL 모두 역할과 무관하게 폴더에 배치할 수 있다.
+- `DocumentDuplicateResponse`의 `parent_document_id`를 `folder_id`로 교체했다.
+
+**검증**
+
+- `DocumentEditingSchemaIntegrationTest`(Testcontainers)가 V1~V11 실제 적용 후 컬럼·폴더 테이블·backfill·복구·폴더 배치를 검증한다.
+- `./gradlew test` 전체 통과, `flywayValidate` 통과.
+
+**남은 주의사항**
+
+- 폴더 CRUD·이동·정렬 API(TASK-H002·H003)와 navigation·breadcrumb·검색(TASK-H005)은 후속 구현한다.
+- 역할별 root 정렬 범위는 이번 단계에서 보존했고, 폴더·문서 혼합 정렬은 이동 서비스(H002/H003)에서 구현한다.
+
 ### feat: wiki maintenance lint Java 프록시 추가
 
 **변경된 것**

@@ -284,7 +284,7 @@ public class DocumentService {
         }
 
         List<Document> siblings =
-                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getParentDocumentId());
+                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getFolderId());
         editStateInitializer.initializeIfNeeded(source);
         DocumentEditState sourceEditState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentWriteForbiddenException(
@@ -324,7 +324,7 @@ public class DocumentService {
         );
         duplicate.initializeDuplicate(
                 source.getId(),
-                source.getParentDocumentId(),
+                source.getFolderId(),
                 content.contentHash(),
                 content.bytes().length,
                 sortOrder
@@ -567,7 +567,7 @@ public class DocumentService {
                 document.getMimeType(),
                 document.getByteSize(),
                 document.getCurrentVersion(),
-                document.getParentDocumentId(),
+                document.getFolderId(),
                 document.getSourceDocumentId(),
                 document.getSortOrder()
         );

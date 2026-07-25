@@ -561,22 +561,23 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("최신 Markdown을 새 ID와 version 1로 같은 부모의 마지막에 복제한다")
+    @DisplayName("최신 Markdown을 새 ID와 version 1로 같은 폴더의 마지막에 복제한다")
     void duplicate_copiesLatestMarkdownAtEndOfSameParent() {
         stubOwnedWorkspace();
+        java.util.UUID folderId = java.util.UUID.fromString("11111111-1111-1111-1111-111111111111");
         Document source = new Document(
                 "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
                 null, null, "direct");
-        source.initializeDuplicate("doc_origin", "doc_parent", "old-hash", 10, 2);
+        source.initializeDuplicate("doc_origin", folderId, "old-hash", 10, 2);
         Document existingCopy = new Document(
                 "doc_existing", WORKSPACE_ID, USER_ID, "보고서 복사본.md",
                 "text/markdown", 10, null, null, "duplicate");
-        existingCopy.initializeDuplicate("doc_source", "doc_parent", "old-hash", 10, 3);
+        existingCopy.initializeDuplicate("doc_source", folderId, "old-hash", 10, 3);
         DocumentEditState sourceEditState = new DocumentEditState(
                 source.getId(), "# 최신 본문\n", DocumentEditingRules.markdown("# 최신 본문\n").contentHash());
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
-        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, "doc_parent"))
+        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, folderId))
                 .thenReturn(List.of(source, existingCopy));
         when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
 
@@ -586,7 +587,7 @@ class DocumentServiceBlocksTest {
         assertThat(response.id()).startsWith("doc_").isNotEqualTo(source.getId());
         assertThat(response.filename()).isEqualTo("보고서 복사본 (2).md");
         assertThat(response.currentVersion()).isEqualTo(1);
-        assertThat(response.parentDocumentId()).isEqualTo("doc_parent");
+        assertThat(response.folderId()).isEqualTo(folderId);
         assertThat(response.sourceDocumentId()).isEqualTo(source.getId());
         assertThat(response.sortOrder()).isEqualTo(4);
 

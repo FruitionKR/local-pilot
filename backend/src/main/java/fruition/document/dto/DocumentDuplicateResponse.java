@@ -2,6 +2,8 @@ package fruition.document.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.UUID;
+
 public record DocumentDuplicateResponse(
         String id,
         String filename,
@@ -9,7 +11,7 @@ public record DocumentDuplicateResponse(
         @JsonProperty("mime_type") String mimeType,
         @JsonProperty("byte_size") long byteSize,
         @JsonProperty("current_version") long currentVersion,
-        @JsonProperty("parent_document_id") String parentDocumentId,
+        @JsonProperty("folder_id") UUID folderId,
         @JsonProperty("source_document_id") String sourceDocumentId,
         @JsonProperty("sort_order") long sortOrder
 ) {
