@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: wiki maintenance lint Java 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `POST /wiki/maintenance/lint`를 workspace 범위 public API로 중계하는 Spring 프록시(`fruition.wikimaintenance`)를 추가했다.
+- `POST /api/workspaces/{workspace_id}/wiki/maintenance/lint`에서 `workspace_id`를 path, `user_id`를 `@AuthenticationPrincipal`에서 주입한다.
+- public body는 `{ materializePromotions, dryRun }`만 받고, LLM provider·model 등 pipeline 튜닝 knob은 노출하지 않는다. body를 생략하거나 옵션이 null이면 pipeline 기본값(`dry_run=true`, `materialize_promotions=false`)이 적용된다.
+- workspace 멤버십을 검증해 비멤버 요청을 `WorkspaceNotFoundException`(404)으로 차단한다.
+- pipeline의 400/422는 원본 detail을 보존하고, 그 외(500 포함)는 `503`(`WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE`)으로 매핑한다.
+- lint가 LLM을 호출하므로 프록시 read timeout 기본값을 200초로 두고 `app.wiki-maintenance.endpoint`(`WIKI_MAINTENANCE_ENDPOINT`)를 추가했다.
+
+**검증**
+
+- requester(user_id·workspace_id 주입, null 옵션·null 요청 시 payload 생략, 400 body 보존, 500→503), service(멤버십·위임·비멤버 차단), controller(body 있음·없음·미인증 401) 테스트를 추가했다.
+- `./gradlew test` 전체가 통과했다.
+
+**남은 주의사항**
+
+- 프론트 maintenance UI 연동은 `docs/issue/frontend/2026-07-23.md`의 `4. wiki maintenance UI`에서 관리한다.
+
 ### feat: wiki-schema Java 프록시 추가
 
 **변경된 것**
