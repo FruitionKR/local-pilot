@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 폴더 트리 최상위 조회·삭제·복구 API 추가 (TASK-H005/H006)
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/navigation`으로 폴더 트리 최상위 폴더·문서를 혼합 순서로 조회한다(`FolderService.children(..., null)` 재사용). 프론트가 전체 트리를 최상위부터 지연 조회할 수 있다.
+- `DELETE /api/workspaces/{workspace_id}/folders/{folder_id}`로 폴더 트리를 소프트 삭제한다. 루트 폴더와 하위 폴더·포함 문서를 recursive CTE로 같은 `delete_operation_id`로 소프트 삭제하고, 루트는 `current_version` 낙관적 잠금으로 충돌을 검사한다.
+- 빈 폴더는 모든 워크스페이스 멤버가 삭제할 수 있고, 내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있다(`403 HIERARCHY_WRITE_FORBIDDEN`).
+- `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore`로 같은 `delete_operation_id`의 폴더 트리를 원래 부모·순서로 복구한다. 소프트 삭제가 `parent_folder_id`·`sort_order`를 보존하므로 복구 시 원위치가 유지된다.
+- 삭제·복구는 `Idempotency-Key`로 재요청을 no-op 처리한다.
+
+**검증**
+
+- 통합 테스트(Testcontainers)로 하위 트리 전체 소프트 삭제(폴더·문서 동일 작업 ID), 원래 부모 아래 복구, 내용 있는 폴더의 비소유자 삭제 `403`, 빈 폴더의 멤버 삭제 허용을 검증했다. 컨트롤러 테스트로 navigation·삭제·복구 endpoint와 인증을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- breadcrumb와 이름 검색(TASK-H005 잔여), 하위 항목 개별 복구, 삭제된 부모 아래로의 복구 회피는 후속 구현한다.
+- frontend가 `localStorage` 대신 navigation·폴더 API로 트리를 복원하는 재배선은 TASK-H007(별도 frontend 작업)이다.
+
 ### feat: 폴더·문서 이동 시 형제 위치(position) 지정 지원
 
 **변경된 것**

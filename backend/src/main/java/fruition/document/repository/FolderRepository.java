@@ -17,6 +17,8 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
 
     Optional<Folder> findByIdAndWorkspaceIdAndDeletedAtIsNull(UUID id, String workspaceId);
 
+    Optional<Folder> findByIdAndWorkspaceIdAndDeletedAtIsNotNull(UUID id, String workspaceId);
+
     boolean existsByWorkspaceIdAndParentFolderIdAndDeletedAtIsNull(String workspaceId, UUID parentFolderId);
 
     @Query("SELECT COALESCE(MAX(f.sortOrder), -1) FROM Folder f "
@@ -98,5 +100,59 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
             @Param("parentFolderId") UUID parentFolderId,
             @Param("sortOrder") long sortOrder,
             @Param("updatedAt") Instant updatedAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Folder f SET f.currentVersion = f.currentVersion + 1, "
+            + "f.deletedAt = :deletedAt, f.deletedBy = :deletedBy, f.deleteOperationId = :operationId, "
+            + "f.updatedAt = :deletedAt "
+            + "WHERE f.id = :id AND f.workspaceId = :workspaceId "
+            + "AND f.deletedAt IS NULL AND f.currentVersion = :baseVersion")
+    int softDeleteRootIfVersionMatches(
+            @Param("id") UUID id,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("operationId") UUID operationId
+    );
+
+    /** 루트 폴더의 하위 폴더 전체를 같은 삭제 작업 ID로 소프트 삭제한다(루트 자신은 제외). */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE parent_folder_id = :rootId AND deleted_at IS NULL "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id WHERE f.deleted_at IS NULL) "
+            + "UPDATE folders SET deleted_at = :deletedAt, deleted_by = :deletedBy, "
+            + "delete_operation_id = :operationId, current_version = current_version + 1, updated_at = :deletedAt "
+            + "WHERE id IN (SELECT id FROM subtree)",
+            nativeQuery = true)
+    void softDeleteDescendantFolders(
+            @Param("rootId") UUID rootId,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("operationId") UUID operationId
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Folder f SET f.currentVersion = f.currentVersion + 1, "
+            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, f.updatedAt = :restoredAt "
+            + "WHERE f.id = :id AND f.workspaceId = :workspaceId "
+            + "AND f.deletedAt IS NOT NULL AND f.currentVersion = :baseVersion")
+    int restoreRootIfVersionMatches(
+            @Param("id") UUID id,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("restoredAt") Instant restoredAt
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Folder f SET f.currentVersion = f.currentVersion + 1, "
+            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, f.updatedAt = :restoredAt "
+            + "WHERE f.deleteOperationId = :operationId AND f.id <> :rootId")
+    void restoreDescendantFolders(
+            @Param("operationId") UUID operationId,
+            @Param("rootId") UUID rootId,
+            @Param("restoredAt") Instant restoredAt
     );
 }

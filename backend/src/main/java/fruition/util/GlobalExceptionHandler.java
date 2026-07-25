@@ -20,6 +20,7 @@ import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.document.exception.HierarchyVersionConflictException;
 import fruition.document.exception.HierarchyCycleException;
 import fruition.document.exception.InvalidHierarchyRequestException;
+import fruition.document.exception.HierarchyWriteForbiddenException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.exception.EmptyChatWikiExportException;
@@ -206,6 +207,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("HIERARCHY_CYCLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(HierarchyWriteForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleHierarchyWriteForbidden(HierarchyWriteForbiddenException e) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("HIERARCHY_WRITE_FORBIDDEN", e.getMessage()));
     }
 
     @ExceptionHandler(EmptyChatWikiExportException.class)

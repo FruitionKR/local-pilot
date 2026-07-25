@@ -1,7 +1,9 @@
 package fruition.document.controller;
 
+import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
+import fruition.document.dto.FolderLifecycleResponse;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
@@ -10,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -67,5 +70,27 @@ public class FolderController {
             @AuthenticationPrincipal String userId,
             @PathVariable("folder_id") UUID folderId) {
         return ResponseEntity.ok(folderService.children(workspaceId, userId, folderId));
+    }
+
+    @DeleteMapping("/{folder_id}")
+    public ResponseEntity<FolderLifecycleResponse> delete(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("folder_id") UUID folderId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody DocumentLifecycleRequest request) {
+        return ResponseEntity.ok(
+                folderService.delete(workspaceId, userId, folderId, idempotencyKey, request.baseVersion()));
+    }
+
+    @PostMapping("/{folder_id}/restore")
+    public ResponseEntity<FolderLifecycleResponse> restore(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("folder_id") UUID folderId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody DocumentLifecycleRequest request) {
+        return ResponseEntity.ok(
+                folderService.restore(workspaceId, userId, folderId, idempotencyKey, request.baseVersion()));
     }
 }

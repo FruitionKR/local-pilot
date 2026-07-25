@@ -117,6 +117,32 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
 
+    /** 루트 폴더와 그 하위 폴더에 속한 문서 전체를 같은 삭제 작업 ID로 소프트 삭제한다. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = "WITH RECURSIVE subtree AS ("
+            + "SELECT id FROM folders WHERE id = :rootId "
+            + "UNION ALL "
+            + "SELECT f.id FROM folders f JOIN subtree s ON f.parent_folder_id = s.id) "
+            + "UPDATE documents SET deleted_at = :deletedAt, deleted_by = :deletedBy, "
+            + "delete_operation_id = :operationId, current_version = current_version + 1, updated_at = :deletedAt "
+            + "WHERE folder_id IN (SELECT id FROM subtree) AND deleted_at IS NULL",
+            nativeQuery = true)
+    void softDeleteDocumentsInSubtree(
+            @Param("rootId") java.util.UUID rootId,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("operationId") java.util.UUID operationId
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, d.updatedAt = :restoredAt "
+            + "WHERE d.deleteOperationId = :operationId")
+    void restoreDocumentsByOperation(
+            @Param("operationId") java.util.UUID operationId,
+            @Param("restoredAt") Instant restoredAt
+    );
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
             + "d.folderId = :folderId, d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "

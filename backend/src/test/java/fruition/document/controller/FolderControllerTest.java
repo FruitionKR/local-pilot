@@ -1,8 +1,10 @@
 package fruition.document.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
+import fruition.document.dto.FolderLifecycleResponse;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
 import fruition.document.service.FolderService;
@@ -29,6 +31,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -115,6 +118,36 @@ class FolderControllerTest {
                 .andExpect(jsonPath("$.items[0].type").value("folder"))
                 .andExpect(jsonPath("$.items[1].type").value("document"))
                 .andExpect(jsonPath("$.items[1].id").value("doc_1"));
+    }
+
+    @Test
+    void delete_authenticatedReturnsOk() throws Exception {
+        when(folderService.delete(eq(WORKSPACE_ID), eq(USER_ID), eq(FOLDER_ID), eq("dk"), eq(3L)))
+                .thenReturn(new FolderLifecycleResponse(FOLDER_ID, 4, true, Instant.now(), UUID.randomUUID()));
+
+        mockMvc.perform(delete("/api/workspaces/" + WORKSPACE_ID + "/folders/" + FOLDER_ID)
+                        .header("Authorization", bearer())
+                        .header("Idempotency-Key", "dk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DocumentLifecycleRequest(3L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deleted").value(true))
+                .andExpect(jsonPath("$.current_version").value(4));
+    }
+
+    @Test
+    void restore_authenticatedReturnsOk() throws Exception {
+        when(folderService.restore(eq(WORKSPACE_ID), eq(USER_ID), eq(FOLDER_ID), eq("rk"), eq(4L)))
+                .thenReturn(new FolderLifecycleResponse(FOLDER_ID, 5, false, null, null));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/folders/" + FOLDER_ID + "/restore")
+                        .header("Authorization", bearer())
+                        .header("Idempotency-Key", "rk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new DocumentLifecycleRequest(4L))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deleted").value(false))
+                .andExpect(jsonPath("$.current_version").value(5));
     }
 
     private String bearer() {

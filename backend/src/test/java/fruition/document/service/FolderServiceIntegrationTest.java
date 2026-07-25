@@ -5,12 +5,14 @@ import fruition.document.dto.DocumentPositionRequest;
 import fruition.document.dto.DocumentPositionResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
+import fruition.document.dto.FolderLifecycleResponse;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
 import fruition.document.exception.HierarchyCycleException;
 import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.document.exception.HierarchyVersionConflictException;
+import fruition.document.exception.HierarchyWriteForbiddenException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -185,6 +187,78 @@ class FolderServiceIntegrationTest {
                 .containsExactly(a.id().toString(), "doc_reorder", b.id().toString());
         assertThat(items).extracting(FolderChildrenResponse.Item::sortOrder)
                 .containsExactly(0L, 1L, 2L);
+    }
+
+    @Test
+    void folder_deleteSoftDeletesSubtreeWithSharedOperation() {
+        FolderResponse parent = folderService.create(workspaceId, userId, "kp", new FolderCreateRequest("부모", null));
+        FolderResponse child = folderService.create(workspaceId, userId, "kc", new FolderCreateRequest("자식", parent.id()));
+        insertDocumentInFolder("doc_p", "p.md", "EDITABLE", parent.id(), 5);
+        insertDocumentInFolder("doc_c", "c.md", "EDITABLE", child.id(), 6);
+
+        FolderLifecycleResponse res = folderService.delete(workspaceId, userId, parent.id(), "dk",
+                parent.currentVersion());
+
+        assertThat(res.deleted()).isTrue();
+        assertThat(folderService.children(workspaceId, userId, null).items()).isEmpty();
+        UUID op = res.deleteOperationId();
+        Integer deletedFolders = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM folders WHERE delete_operation_id = ? AND deleted_at IS NOT NULL",
+                Integer.class, op);
+        Integer deletedDocuments = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM documents WHERE delete_operation_id = ? AND deleted_at IS NOT NULL",
+                Integer.class, op);
+        assertThat(deletedFolders).isEqualTo(2);
+        assertThat(deletedDocuments).isEqualTo(2);
+    }
+
+    @Test
+    void folder_restoreRestoresSubtreeUnderOriginalParent() {
+        FolderResponse parent = folderService.create(workspaceId, userId, "kp", new FolderCreateRequest("부모", null));
+        folderService.create(workspaceId, userId, "kc", new FolderCreateRequest("자식", parent.id()));
+        insertDocumentInFolder("doc_p2", "p.md", "EDITABLE", parent.id(), 5);
+        FolderLifecycleResponse deleted = folderService.delete(workspaceId, userId, parent.id(), "dk",
+                parent.currentVersion());
+
+        FolderLifecycleResponse restored = folderService.restore(workspaceId, userId, parent.id(), "rk",
+                deleted.currentVersion());
+
+        assertThat(restored.deleted()).isFalse();
+        assertThat(folderService.children(workspaceId, userId, null).items())
+                .extracting(FolderChildrenResponse.Item::id).contains(parent.id().toString());
+        assertThat(folderService.children(workspaceId, userId, parent.id()).items()).hasSize(2);
+    }
+
+    @Test
+    void folder_deleteNonEmptyByNonOwnerForbidden() {
+        String memberId = insertMember("MEMBER");
+        FolderResponse a = folderService.create(workspaceId, memberId, "ka", new FolderCreateRequest("A", null));
+        folderService.create(workspaceId, memberId, "kb", new FolderCreateRequest("하위", a.id()));
+
+        assertThatThrownBy(() -> folderService.delete(workspaceId, memberId, a.id(), "dk", a.currentVersion()))
+                .isInstanceOf(HierarchyWriteForbiddenException.class);
+    }
+
+    @Test
+    void folder_deleteEmptyByMemberAllowed() {
+        String memberId = insertMember("MEMBER");
+        FolderResponse a = folderService.create(workspaceId, memberId, "ka", new FolderCreateRequest("A", null));
+
+        FolderLifecycleResponse res = folderService.delete(workspaceId, memberId, a.id(), "dk", a.currentVersion());
+
+        assertThat(res.deleted()).isTrue();
+    }
+
+    private String insertMember(String role) {
+        String memberId = "member_" + UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, NULL, now(), now())",
+                memberId, memberId + "@example.com", "member");
+        jdbcTemplate.update(
+                "INSERT INTO workspace_members(joined_at, role, user_id, workspace_id) VALUES (now(), ?, ?, ?)",
+                role, memberId, workspaceId);
+        return memberId;
     }
 
     private void insertDocumentInFolder(String documentId, String filename, String role, UUID folderId, long sortOrder) {

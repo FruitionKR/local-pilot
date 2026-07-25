@@ -4,12 +4,14 @@ import fruition.document.domain.Document;
 import fruition.document.domain.Folder;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
+import fruition.document.dto.FolderLifecycleResponse;
 import fruition.document.dto.FolderPositionRequest;
 import fruition.document.dto.FolderRenameRequest;
 import fruition.document.dto.FolderResponse;
 import fruition.document.exception.HierarchyCycleException;
 import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.document.exception.HierarchyVersionConflictException;
+import fruition.document.exception.HierarchyWriteForbiddenException;
 import fruition.document.exception.InvalidHierarchyRequestException;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.FolderRepository;
@@ -135,6 +137,71 @@ public class FolderService {
         return response;
     }
 
+    @Transactional
+    public FolderLifecycleResponse delete(String workspaceId, String userId, UUID folderId,
+                                          String idempotencyKey, long baseVersion) {
+        verifyMembership(workspaceId, userId);
+        idempotencyService.validateKey(idempotencyKey);
+        requireFolder(workspaceId, folderId);
+        if (hasChildren(workspaceId, folderId) && !isWorkspaceOwner(workspaceId, userId)) {
+            throw new HierarchyWriteForbiddenException("내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있습니다.");
+        }
+
+        String scope = "DELETE:/api/workspaces/" + workspaceId + "/folders/" + folderId;
+        String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
+        Optional<FolderLifecycleResponse> replay =
+                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        UUID operationId = UUID.randomUUID();
+        Instant now = Instant.now();
+        int updated = folderRepository.softDeleteRootIfVersionMatches(
+                folderId, workspaceId, baseVersion, userId, now, operationId);
+        if (updated == 0) {
+            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 삭제할 수 없습니다.");
+        }
+        folderRepository.softDeleteDescendantFolders(folderId, userId, now, operationId);
+        documentRepository.softDeleteDocumentsInSubtree(folderId, userId, now, operationId);
+
+        FolderLifecycleResponse response = new FolderLifecycleResponse(folderId, baseVersion + 1, true, now, operationId);
+        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
+        return response;
+    }
+
+    @Transactional
+    public FolderLifecycleResponse restore(String workspaceId, String userId, UUID folderId,
+                                           String idempotencyKey, long baseVersion) {
+        verifyMembership(workspaceId, userId);
+        idempotencyService.validateKey(idempotencyKey);
+        Folder deleted = folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNotNull(folderId, workspaceId)
+                .orElseThrow(() -> new HierarchyItemNotFoundException("삭제된 폴더를 찾을 수 없습니다."));
+        UUID operationId = deleted.getDeleteOperationId();
+
+        String scope = "POST:/api/workspaces/" + workspaceId + "/folders/" + folderId + "/restore";
+        String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
+        Optional<FolderLifecycleResponse> replay =
+                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        Instant now = Instant.now();
+        int updated = folderRepository.restoreRootIfVersionMatches(folderId, workspaceId, baseVersion, now);
+        if (updated == 0) {
+            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 복구할 수 없습니다.");
+        }
+        if (operationId != null) {
+            folderRepository.restoreDescendantFolders(operationId, folderId, now);
+            documentRepository.restoreDocumentsByOperation(operationId, now);
+        }
+
+        FolderLifecycleResponse response = new FolderLifecycleResponse(folderId, baseVersion + 1, false, null, null);
+        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
+        return response;
+    }
+
     @Transactional(readOnly = true)
     public FolderChildrenResponse children(String workspaceId, String userId, UUID folderId) {
         verifyMembership(workspaceId, userId);
@@ -184,6 +251,12 @@ public class FolderService {
         if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
             throw new WorkspaceNotFoundException(workspaceId);
         }
+    }
+
+    private boolean isWorkspaceOwner(String workspaceId, String userId) {
+        return workspaceMemberRepository.findByWorkspace_IdAndUser_Id(workspaceId, userId)
+                .map(member -> "OWNER".equals(member.getRole()))
+                .orElse(false);
     }
 
     private String normalizeName(String rawName) {
