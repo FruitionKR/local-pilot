@@ -9,7 +9,10 @@ from app.modules.document_restoration.application.models import (
 from app.modules.document_restoration.application.restore_document import (
     RestoreDocumentUseCase,
 )
-from app.modules.document_restoration.domain.entities import RestorationStage
+from app.modules.document_restoration.domain.entities import (
+    RestorationMode,
+    RestorationStage,
+)
 
 
 class FakeStages:
@@ -22,6 +25,7 @@ class FakeStages:
         return PreparedRestoration(
             pdf_file=command.pdf_file,
             docling_json=Path("docling.json"),
+            docling_markdown=Path("docling.md"),
             manifest_file=Path("manifest.json"),
         )
 
@@ -47,7 +51,7 @@ class FakeStages:
 
 
 class RestoreDocumentUseCaseTest(unittest.TestCase):
-    def test_runs_canonical_stages_without_optional_vision(self) -> None:
+    def test_runs_docling_only_by_default(self) -> None:
         stages = FakeStages(needs_docling_baseline=False)
 
         RestoreDocumentUseCase(stages).execute(
@@ -55,6 +59,24 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
                 pdf_file=Path("paper.pdf"),
                 output_dir=Path("output"),
                 document_slug="paper",
+            )
+        )
+
+        self.assertEqual(
+            stages.stages,
+            [RestorationStage.PUBLISH_DOCLING_MARKDOWN],
+        )
+        self.assertEqual(len(stages.written_timings), 1)
+
+    def test_runs_full_repair_stages_when_requested(self) -> None:
+        stages = FakeStages(needs_docling_baseline=False)
+
+        RestoreDocumentUseCase(stages).execute(
+            RestoreDocumentCommand(
+                pdf_file=Path("paper.pdf"),
+                output_dir=Path("output"),
+                document_slug="paper",
+                mode=RestorationMode.FULL_REPAIR,
             )
         )
 
@@ -69,7 +91,36 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
                 RestorationStage.ASSEMBLE_MARKDOWN,
             ],
         )
-        self.assertEqual(len(stages.written_timings), 6)
+
+    def test_runs_selective_repair_without_legacy_recovery_stages(self) -> None:
+        stages = FakeStages(needs_docling_baseline=False)
+
+        RestoreDocumentUseCase(stages).execute(
+            RestoreDocumentCommand(
+                pdf_file=Path("paper.pdf"),
+                output_dir=Path("output"),
+                document_slug="paper",
+                mode=RestorationMode.SELECTIVE_REPAIR,
+            )
+        )
+
+        self.assertEqual(
+            stages.stages,
+            [
+                RestorationStage.DETECT_LAYOUT_BLOCKS,
+                RestorationStage.DETECT_EQUATION_CANDIDATES,
+                RestorationStage.BUILD_PRIMARY_MANIFEST,
+                RestorationStage.AUGMENT_TEXT_CANDIDATES,
+                RestorationStage.ASSEMBLE_DETECTED_MARKDOWN,
+                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.ASSEMBLE_MARKDOWN,
+            ],
+        )
+        self.assertNotIn(RestorationStage.RECOVER_BLOCKS, stages.stages)
+        self.assertNotIn(
+            RestorationStage.REVIEW_BLOCKS_WITH_VISION,
+            stages.stages,
+        )
 
     def test_adds_docling_and_vision_stages_when_requested(self) -> None:
         stages = FakeStages(needs_docling_baseline=True)
@@ -79,6 +130,7 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
                 pdf_file=Path("paper.pdf"),
                 output_dir=Path("output"),
                 document_slug="paper",
+                mode=RestorationMode.FULL_REPAIR,
                 use_local_vision=True,
             )
         )

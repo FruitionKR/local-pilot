@@ -34,6 +34,7 @@ REPORT_FILE = BASE_DIR / "layout" / "auto" / f"{DOCUMENT_SLUG}.block_processing_
 DOCUMENT_TITLE = DOCUMENT_SLUG.replace("_", " ")
 SOURCE_NAME = f"{DOCUMENT_SLUG}.pdf"
 DOCLING_FORMULAS: list[dict[str, Any]] | None = None
+USE_RECOVERED_RESULTS = True
 
 
 def load_blocks() -> list[dict[str, Any]]:
@@ -50,7 +51,7 @@ def looks_glyph_encoded_candidate(text: str) -> bool:
 
 
 def accepted_text_recovery(block: dict[str, Any]) -> str | None:
-    if block["type"] not in {"paragraph", "heading"}:
+    if not USE_RECOVERED_RESULTS or block["type"] not in {"paragraph", "heading"}:
         return None
     evaluation_file = TEXT_EVALUATION_DIR / f"{block['id']}.json"
     recovered_file = TEXT_RECOVERED_DIR / f"{block['id']}.md"
@@ -119,6 +120,8 @@ def split_subheading_body(text: str) -> tuple[str, str | None]:
 
 
 def recovered_markdown(block: dict[str, Any]) -> str | None:
+    if not USE_RECOVERED_RESULTS:
+        return None
     evaluation_file = EVALUATION_DIR / f"{block['id']}.json"
     if not evaluation_file.exists():
         return None
@@ -156,6 +159,8 @@ def normalize_display_math(text: str) -> str:
 
 
 def skip_layout_adjudicated_block(block: dict[str, Any]) -> bool:
+    if not USE_RECOVERED_RESULTS:
+        return False
     if block["type"] not in {"equation_candidate", "table_candidate"}:
         return False
     evaluation_file = EVALUATION_DIR / f"{block['id']}.json"
@@ -166,6 +171,8 @@ def skip_layout_adjudicated_block(block: dict[str, Any]) -> bool:
 
 
 def layout_decision(block: dict[str, Any]) -> str:
+    if not USE_RECOVERED_RESULTS:
+        return ""
     if block["type"] not in {"equation_candidate", "table_candidate"}:
         return ""
     evaluation_file = EVALUATION_DIR / f"{block['id']}.json"
@@ -176,6 +183,8 @@ def layout_decision(block: dict[str, Any]) -> str:
 
 
 def layout_reason(block: dict[str, Any]) -> str:
+    if not USE_RECOVERED_RESULTS:
+        return ""
     if block["type"] not in {"equation_candidate", "table_candidate"}:
         return ""
     evaluation_file = EVALUATION_DIR / f"{block['id']}.json"
@@ -232,6 +241,8 @@ def skip_duplicate_docling_formula_equation(block: dict[str, Any]) -> bool:
 
 def process_heading(block: dict[str, Any]) -> list[str]:
     text = block_source_text(block)
+    if re.match(r"^#{1,6}\s+\S", text):
+        return [block_comment(block), text]
     heading, body = split_subheading_body(text)
     markdown = f"## {heading}" if re.match(r"^[IVX]+\.\s+", heading) else f"### {heading}"
     lines = [block_comment(block), markdown]
@@ -389,7 +400,7 @@ def write_report(blocks: list[dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    global BASE_DIR, DOCUMENT_SLUG, MANIFEST_FILE, RECOVERED_BLOCK_DIR, EVALUATION_DIR, TEXT_RECOVERED_DIR, TEXT_EVALUATION_DIR, OUTPUT_FILE, REPORT_FILE, DOCUMENT_TITLE, SOURCE_NAME
+    global BASE_DIR, DOCUMENT_SLUG, MANIFEST_FILE, RECOVERED_BLOCK_DIR, EVALUATION_DIR, TEXT_RECOVERED_DIR, TEXT_EVALUATION_DIR, OUTPUT_FILE, REPORT_FILE, DOCUMENT_TITLE, SOURCE_NAME, USE_RECOVERED_RESULTS
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=BASE_DIR)
@@ -399,6 +410,7 @@ def main() -> None:
     parser.add_argument("--report-file", type=Path)
     parser.add_argument("--title")
     parser.add_argument("--source-name")
+    parser.add_argument("--ignore-recovered-results", action="store_true")
     args = parser.parse_args()
 
     BASE_DIR = args.output_dir.resolve()
@@ -412,6 +424,7 @@ def main() -> None:
     REPORT_FILE = args.report_file.resolve() if args.report_file else BASE_DIR / "layout" / "auto" / f"{DOCUMENT_SLUG}.block_processing_report.md"
     DOCUMENT_TITLE = args.title or DOCUMENT_SLUG.replace("_", " ")
     SOURCE_NAME = args.source_name or f"{DOCUMENT_SLUG}.pdf"
+    USE_RECOVERED_RESULTS = not args.ignore_recovered_results
 
     blocks = load_blocks()
     write_processed_draft(blocks)

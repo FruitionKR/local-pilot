@@ -4,6 +4,26 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-26
+
+### perf: PDF 복원 기본 경로를 Docling-only로 전환
+
+- 문서 복원 CLI 기본 mode를 `docling-only`로 변경해 Docling Markdown 생성 후 느린 crop OCR·Formula OCR·SLLM 단계를 실행하지 않도록 조정
+- `selective-repair` mode에서 기존 코드가 찾은 표·수식·손상 본문만 페이지별로 `gpt-5.6-terra low` Responses API에 병렬 요청하고 block ID·Markdown 형식을 검증한 뒤 병합
+- display math replacement의 `$$...$$`와 `\[...\]` 표기를 동일하게 허용하고 최종 조립 전 `$$...$$`로 정규화
+- 그림은 선택 복원 대상에서 제외해 Docling image asset과 caption을 그대로 보존
+- 기존 복원 pipeline은 `--mode full-repair`로 명시한 경우에만 실행하도록 유지
+- 캐시된 Docling JSON·Markdown 동시 입력과 최종 `restored.md` 게시 단계를 추가하고 timing JSON에 실행 mode 기록
+- 재실행 전에 이전 mode의 평가·복원 산출물을 전체 정리해 local OCR·Vision을 포함한 stale 결과가 최종 조립에 섞이는 문제 방지
+- `detected.md` 조립에서는 이전 recovery와 layout decision을 모두 무시해 stale 결과를 모델 입력으로 다시 사용하는 재실행 오류 차단
+- 캐시된 Docling JSON·Markdown은 항상 한 쌍으로 받도록 검증해 서로 다른 실행의 stale baseline 조합 방지
+- OpenAI가 교정한 heading의 Markdown 계층을 최종 조립에서 보존하고 여러 줄 heading 결과는 거부
+- Responses API 오류는 HTTP status만 전달해 provider 오류 본문과 문서 내용 노출 방지
+- 30페이지 benchmark에서 미선택 349 block 중 107개 false-negative를 확인해 코드 detector 기반 선택 복원은 최종 품질 경로로 부적합하다고 판정
+- 모든 heading·paragraph를 `gpt-5.6-terra low` crop-only로 처리하는 detector-free lane을 검증하고, 표·수식 lane과 합친 model-assisted 전수 평가에서 418/445(93.93%) 확인
+- 본문 lane 30회와 표·수식 lane 25회의 복원 wall을 87.76~133.14초, Docling 포함 E2E를 207.33~252.71초로 추정
+- 문서 복원 모듈 `59 passed`, llmPipeline 전체 `503 passed`, `43 subtests passed`
+
 ## 2026-07-25
 
 ### fix: AI/Pipeline 미해결 이슈 보강

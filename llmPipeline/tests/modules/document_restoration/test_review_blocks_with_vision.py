@@ -66,3 +66,86 @@ class VisionRejectionTest(unittest.TestCase):
                 result = process_module.block_source_text(block)
 
         self.assertEqual(result, "Original Docling reference text.")
+
+    def test_preserves_recovered_heading_markdown(self) -> None:
+        block = {
+            "id": "docling_text_p01_001",
+            "type": "heading",
+            "source_text": "Original heading",
+            "bbox": [1, 2, 3, 4],
+            "confidence": "docling",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            recovered_dir = root / "text_recovered"
+            evaluation_dir = root / "text_evaluations"
+            recovered_dir.mkdir()
+            evaluation_dir.mkdir()
+            (recovered_dir / "docling_text_p01_001.md").write_text(
+                "## Restored heading\n",
+                encoding="utf-8",
+            )
+            (evaluation_dir / "docling_text_p01_001.json").write_text(
+                json.dumps({"accepted": True}),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(process_module, "TEXT_RECOVERED_DIR", recovered_dir),
+                mock.patch.object(process_module, "TEXT_EVALUATION_DIR", evaluation_dir),
+                mock.patch.object(process_module, "USE_RECOVERED_RESULTS", True),
+            ):
+                result = process_module.process_heading(block)
+
+        self.assertEqual(result[-1], "## Restored heading")
+
+    def test_can_ignore_stale_recovered_text_for_detected_markdown(self) -> None:
+        block = {
+            "id": "docling_text_p01_001",
+            "type": "paragraph",
+            "source_text": "Current Docling text.",
+        }
+
+        with mock.patch.object(
+            process_module,
+            "USE_RECOVERED_RESULTS",
+            False,
+        ):
+            result = process_module.block_source_text(block)
+
+        self.assertEqual(result, "Current Docling text.")
+
+    def test_can_ignore_stale_layout_decision_for_detected_markdown(self) -> None:
+        block = {
+            "id": "docling_table_p01_001",
+            "type": "table_candidate",
+            "source_text": "Current table text.",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            evaluation_dir = Path(temp_dir)
+            (evaluation_dir / "docling_table_p01_001.json").write_text(
+                json.dumps(
+                    {
+                        "accepted": False,
+                        "layout_decision": "discard_debris",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(
+                    process_module,
+                    "EVALUATION_DIR",
+                    evaluation_dir,
+                ),
+                mock.patch.object(
+                    process_module,
+                    "USE_RECOVERED_RESULTS",
+                    False,
+                ),
+            ):
+                self.assertFalse(
+                    process_module.skip_layout_adjudicated_block(block)
+                )
+                self.assertEqual(process_module.layout_decision(block), "")

@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.modules.document_restoration.domain.entities import RestorationStage
+from app.modules.document_restoration.domain.entities import (
+    RestorationMode,
+    RestorationStage,
+)
 
 
 @dataclass(frozen=True)
@@ -12,6 +15,8 @@ class RestoreDocumentCommand:
     output_dir: Path
     document_slug: str
     docling_json: Path | None = None
+    docling_markdown: Path | None = None
+    mode: RestorationMode = RestorationMode.DOCLING_ONLY
     use_local_sllm: bool = False
     use_local_vision: bool = False
     endpoint: str = "http://127.0.0.1:11434/v1/chat/completions"
@@ -19,12 +24,17 @@ class RestoreDocumentCommand:
     vision_model: str = "qwen2.5vl:7b"
     max_vision_attempts: int = 3
     docling_command: str = "docling"
+    selective_endpoint: str = "https://api.openai.com/v1/responses"
+    selective_model: str = "gpt-5.6-terra"
+    selective_reasoning_effort: str = "low"
+    selective_max_workers: int = 16
 
 
 @dataclass(frozen=True)
 class PreparedRestoration:
     pdf_file: Path
     docling_json: Path
+    docling_markdown: Path
     manifest_file: Path
 
 

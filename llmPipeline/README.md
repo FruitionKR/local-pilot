@@ -167,14 +167,49 @@ python run_lab.py \
 
 ### PDF 문서 복원 CLI
 
-문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 전용 requirements에는 수식 image-to-LaTeX 근거를 생성하는 `pix2tex`가 포함됩니다. `tesseract`는 별도 시스템 명령으로 설치되어 있어야 하며, Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `docling-only`이며 Docling이 만든 Markdown을 `final/{document_slug}.restored.md`로 게시하고 종료합니다.
 
 ```bash
 python -m pip install -r requirements-document-restoration.txt
 python -m app.modules.document_restoration.interfaces.cli \
   --pdf-file /path/to/paper.pdf \
   --output-dir /path/to/output \
+  --document-slug paper
+```
+
+이미 생성한 Docling 결과를 재사용한다면 JSON과 Markdown을 함께 전달합니다.
+
+```bash
+python -m app.modules.document_restoration.interfaces.cli \
+  --pdf-file /path/to/paper.pdf \
+  --docling-json /path/to/docling.json \
+  --docling-markdown /path/to/docling.md \
+  --output-dir /path/to/output \
+  --document-slug paper
+```
+
+기존 코드가 찾은 표·수식·손상 본문만 원본 이미지와 대조해 복원하려면 OpenAI API key를 환경변수로 전달하고 `selective-repair`를 사용합니다. 기본 모델은 `gpt-5.6-terra`, reasoning은 `low`, 페이지 병렬도는 16입니다. 그림은 모델 대상에서 제외하고 Docling image asset과 caption을 보존합니다.
+
+```bash
+export DOCUMENT_REPAIR_OPENAI_API_KEY=...
+
+python -m app.modules.document_restoration.interfaces.cli \
+  --pdf-file /path/to/paper.pdf \
+  --output-dir /path/to/output \
   --document-slug paper \
+  --mode selective-repair
+```
+
+환경변수 `OPENAI_API_KEY`도 fallback으로 사용할 수 있습니다. 모델과 병렬도는 각각 `--selective-model`, `--selective-max-workers`로 변경할 수 있습니다.
+
+기존 OCR·규칙·SLLM·Vision 전체 복원이 필요한 경우에만 `full-repair`를 명시합니다. 전용 requirements에는 수식 image-to-LaTeX 근거를 생성하는 `pix2tex`가 포함됩니다. `tesseract`는 별도 시스템 명령으로 설치되어 있어야 하며, Paddle FormulaRecognition은 `paddleocr`이 설치된 환경에서 선택적으로 사용됩니다.
+
+```bash
+python -m app.modules.document_restoration.interfaces.cli \
+  --pdf-file /path/to/paper.pdf \
+  --output-dir /path/to/output \
+  --document-slug paper \
+  --mode full-repair \
   --use-local-sllm \
   --use-local-vision
 ```

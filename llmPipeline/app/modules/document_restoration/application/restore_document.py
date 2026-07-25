@@ -7,7 +7,10 @@ from app.modules.document_restoration.application.models import (
 from app.modules.document_restoration.application.ports import (
     DocumentRestorationStagesPort,
 )
-from app.modules.document_restoration.domain.entities import RestorationStage
+from app.modules.document_restoration.domain.entities import (
+    RestorationMode,
+    RestorationStage,
+)
 
 
 class RestoreDocumentUseCase:
@@ -27,6 +30,40 @@ class RestoreDocumentUseCase:
                     prepared,
                 )
             )
+
+        if command.mode is RestorationMode.DOCLING_ONLY:
+            timings.append(
+                self._stages.run_stage(
+                    RestorationStage.PUBLISH_DOCLING_MARKDOWN,
+                    command,
+                    prepared,
+                )
+            )
+            self._stages.write_timings(
+                command,
+                timings,
+                time.perf_counter() - started_at,
+            )
+            return timings
+
+        if command.mode is RestorationMode.SELECTIVE_REPAIR:
+            stages = [
+                RestorationStage.DETECT_LAYOUT_BLOCKS,
+                RestorationStage.DETECT_EQUATION_CANDIDATES,
+                RestorationStage.BUILD_PRIMARY_MANIFEST,
+                RestorationStage.AUGMENT_TEXT_CANDIDATES,
+                RestorationStage.ASSEMBLE_DETECTED_MARKDOWN,
+                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.ASSEMBLE_MARKDOWN,
+            ]
+            for stage in stages:
+                timings.append(self._stages.run_stage(stage, command, prepared))
+            self._stages.write_timings(
+                command,
+                timings,
+                time.perf_counter() - started_at,
+            )
+            return timings
 
         stages = [
             RestorationStage.DETECT_LAYOUT_BLOCKS,
