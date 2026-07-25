@@ -26,6 +26,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Query Engine과 backend 출력 계약에서 `source_related_to` 원본 저장·traversal 설명을 제거하고 소비 계약 없는 관련 Source materialization을 보류
 - 정리 명령·기존 삭제 범위 테스트 `11 passed`, llmPipeline 전체 `489 passed`, `43 subtests passed`
 
+### test: Provider 실환경 E2E runner 추가
+
+- 실제 provider API로 ingestion JSON, agent router, `markdown_create`를 독립 실행하고 오류 본문 없이 pass/fail·latency·HTTP status를 기록하는 smoke runner 추가
+- Upstage 실제 실행에서 ingestion과 router 통과 후 account credit 부족으로 `markdown_create` HTTP 403 확인
+- OpenAI·Gemini·Claude credential 부재로 해당 실환경 검증은 미완료 상태를 유지하고 llmPipeline 전체 `491 passed`, `43 subtests passed`
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장
