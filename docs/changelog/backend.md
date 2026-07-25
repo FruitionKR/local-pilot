@@ -8,6 +8,22 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: Agent turn 오래된 baseVersion을 pipeline 호출 전에 409로 거절
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/agent/turn`에서 요청 `baseVersion`이 문서의 영속 `current_version`과 다르면 llmPipeline 호출 전에 `409 DOCUMENT_VERSION_CONFLICT`로 거절한다. 오래된 editor snapshot으로 편집을 요청해 LLM 호출을 낭비하거나 최신 저장본을 덮어쓸 위험을 사전에 차단한다.
+- 문서 접근 권한·Markdown 여부 확인 뒤, 편집 범위(target) 검증 이전에 버전을 확인한다. Apply 이후 저장 API의 optimistic locking 검사는 그대로 유지한다.
+
+**검증**
+
+- `AgentTurnServiceTest`에 오래된 `baseVersion` 거절(파이프라인 미호출) 테스트를 추가하고 기존 성공 케이스의 문서 버전을 정렬했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- chat session 연결과 최근 대화 요약·reference context의 backend 구성(`docs/issue/backend/2026-07-23.md`의 `2. Markdown Agent turn ...`)은 sessionId 계약 결정 후 후속 구현한다.
+
 ### docs: Document API 계약과 core 추적표 정합화
 
 **변경된 것**
