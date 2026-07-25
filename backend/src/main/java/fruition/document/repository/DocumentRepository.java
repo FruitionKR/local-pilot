@@ -77,6 +77,26 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("documentRole") DocumentRole documentRole
     );
 
+    @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
+            + "WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL")
+    long findMaxSortOrderInFolder(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findChildDocuments(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = fruition.document.domain.DocumentRole.EDITABLE "

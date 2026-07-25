@@ -16,6 +16,10 @@ import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.IdempotencyConflictException;
+import fruition.document.exception.HierarchyItemNotFoundException;
+import fruition.document.exception.HierarchyVersionConflictException;
+import fruition.document.exception.HierarchyCycleException;
+import fruition.document.exception.InvalidHierarchyRequestException;
 import fruition.chat.exception.ChatSessionLimitExceededException;
 import fruition.chat.exception.ChatSessionNotFoundException;
 import fruition.chat.exception.EmptyChatWikiExportException;
@@ -174,6 +178,34 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidHierarchyRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidHierarchyRequest(InvalidHierarchyRequestException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_HIERARCHY_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(HierarchyItemNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleHierarchyItemNotFound(HierarchyItemNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("HIERARCHY_ITEM_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(HierarchyVersionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleHierarchyVersionConflict(HierarchyVersionConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("HIERARCHY_VERSION_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(HierarchyCycleException.class)
+    public ResponseEntity<ErrorResponse> handleHierarchyCycle(HierarchyCycleException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("HIERARCHY_CYCLE", e.getMessage()));
     }
 
     @ExceptionHandler(EmptyChatWikiExportException.class)

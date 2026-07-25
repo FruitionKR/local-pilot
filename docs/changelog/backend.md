@@ -8,6 +8,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-25
 
+### feat: 폴더 생성·이름변경·이동 API 추가 (TASK-H002)
+
+**변경된 것**
+
+- 파일탐색기식 폴더 트리의 폴더 조작 API를 추가했다.
+  - `POST /api/workspaces/{workspace_id}/folders` — 폴더 생성(최상위 또는 상위 폴더 아래, 형제 마지막에 배치)
+  - `PATCH …/folders/{folder_id}` — 폴더 이름 변경(`base_version` 낙관적 잠금)
+  - `PATCH …/folders/{folder_id}/position` — 폴더 이동(대상 부모로, 형제 마지막에 배치)
+  - `GET …/folders/{folder_id}/children` — 직계 하위 폴더·문서를 공용 정렬로 혼합 조회, 폴더는 `has_children` 포함
+- 폴더 이동은 recursive CTE로 대상 부모의 조상 경로를 조회해 자기 자신·하위 폴더로의 순환 이동을 `409 HIERARCHY_CYCLE`로 거절한다.
+- 오래된 버전의 이름변경·이동은 `409 HIERARCHY_VERSION_CONFLICT`, 없는 폴더는 `404 HIERARCHY_ITEM_NOT_FOUND`, 잘못된 요청은 `400 INVALID_HIERARCHY_REQUEST`로 응답한다.
+- 폴더·문서의 `sort_order`는 같은 부모 범위에서 하나의 혼합 순서를 공유한다(생성·이동 시 폴더와 문서 중 최대 순서 다음에 배치).
+- 동일 이름 폴더 생성을 허용하고, 생성·이름변경·이동은 `Idempotency-Key`로 재요청을 no-op 처리한다.
+- 여러 endpoint가 공유하는 `IdempotencyService`를 추가했다.
+
+**검증**
+
+- 단위(`FolderServiceTest`)·컨트롤러(`FolderControllerTest`)·통합(`FolderServiceIntegrationTest`, Testcontainers) 테스트로 동일 이름 허용, 혼합 정렬, 순환·버전 충돌, 멱등 재요청을 검증했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 형제 사이 임의 위치(index) 재정렬은 아직 지원하지 않고 이동 시 대상 부모의 마지막에 배치한다. 세밀한 드래그 순서는 후속 보완한다.
+- 문서 이동·정렬(TASK-H003), 최상위 navigation·breadcrumb·검색(TASK-H005), 계층 삭제·복구(TASK-H006)는 후속 구현한다.
+
 ### feat: 문서 폴더 배치를 단일 folder_id로 통일 (V11)
 
 **변경된 것**
