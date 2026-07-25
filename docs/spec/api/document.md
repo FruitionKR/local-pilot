@@ -216,7 +216,9 @@ source block이 없는 직접 생성 문서는 빈 `blocks` 배열을 반환한�
 - 원본 파일과 공유 설정은 복제하지 않고 `source_document_id`만 기록한다.
 - 성공: `201 DocumentDuplicateResponse`
 
-응답: `id`, `filename`, `display_name`, `mime_type`, `byte_size`, `current_version`, `parent_document_id`, `source_document_id`, `sort_order`
+응답: `id`, `filename`, `display_name`, `mime_type`, `byte_size`, `current_version`, `folder_id`, `source_document_id`, `sort_order`
+
+> 배치 필드는 파일탐색기식 통일 모델 기준 `folder_id`다. V11 migration 이전 코드는 `parent_document_id`를 반환한다.
 
 ### 2.10 소프트 삭제
 
