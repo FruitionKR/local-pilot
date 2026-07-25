@@ -54,7 +54,7 @@ class DocumentPositionControllerTest {
                         .header("Authorization", bearer())
                         .header("Idempotency-Key", "key-1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new DocumentPositionRequest(FOLDER_ID, 1L))))
+                        .content(objectMapper.writeValueAsString(new DocumentPositionRequest(FOLDER_ID, null, 1L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("doc_1"))
                 .andExpect(jsonPath("$.folder_id").value(FOLDER_ID.toString()))
@@ -86,7 +86,7 @@ class DocumentPositionControllerTest {
     void move_unauthenticatedReturns401() throws Exception {
         mockMvc.perform(patch("/api/workspaces/" + WORKSPACE_ID + "/documents/doc_1/position")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new DocumentPositionRequest(null, 1L))))
+                        .content(objectMapper.writeValueAsString(new DocumentPositionRequest(null, null, 1L))))
                 .andExpect(status().isUnauthorized());
     }
 

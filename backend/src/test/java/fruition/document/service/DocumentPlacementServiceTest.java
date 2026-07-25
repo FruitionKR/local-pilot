@@ -37,13 +37,14 @@ class DocumentPlacementServiceTest {
     @Mock DocumentRepository documentRepository;
     @Mock FolderRepository folderRepository;
     @Mock IdempotencyService idempotencyService;
+    @Mock SiblingReorderer siblingReorderer;
 
     private DocumentPlacementService service;
 
     @BeforeEach
     void setUp() {
         service = new DocumentPlacementService(
-                workspaceMemberRepository, documentRepository, folderRepository, idempotencyService);
+                workspaceMemberRepository, documentRepository, folderRepository, idempotencyService, siblingReorderer);
     }
 
     private Document document() {
@@ -63,7 +64,7 @@ class DocumentPlacementServiceTest {
     void move_rejectsNonMember() {
         when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, "intruder")).thenReturn(false);
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, "intruder", DOCUMENT_ID, "k1",
-                new DocumentPositionRequest(null, 1L)))
+                new DocumentPositionRequest(null, null, 1L)))
                 .isInstanceOf(WorkspaceNotFoundException.class);
     }
 
@@ -73,7 +74,7 @@ class DocumentPlacementServiceTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1",
-                new DocumentPositionRequest(null, 1L)))
+                new DocumentPositionRequest(null, null, 1L)))
                 .isInstanceOf(HierarchyItemNotFoundException.class);
     }
 
@@ -86,7 +87,7 @@ class DocumentPlacementServiceTest {
         when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(targetFolderId, WORKSPACE_ID))
                 .thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1",
-                new DocumentPositionRequest(targetFolderId, 1L)))
+                new DocumentPositionRequest(targetFolderId, null, 1L)))
                 .isInstanceOf(HierarchyItemNotFoundException.class);
     }
 
@@ -96,18 +97,17 @@ class DocumentPlacementServiceTest {
         noReplay();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(document()));
-        when(folderRepository.findMaxSortOrder(WORKSPACE_ID, null)).thenReturn(-1L);
-        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(-1L);
+        when(siblingReorderer.placeDocument(WORKSPACE_ID, null, DOCUMENT_ID, null)).thenReturn(0L);
         when(documentRepository.moveIfVersionMatches(eq(DOCUMENT_ID), eq(WORKSPACE_ID), eq(9L), eq(null),
                 anyLong(), any())).thenReturn(0);
 
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1",
-                new DocumentPositionRequest(null, 9L)))
+                new DocumentPositionRequest(null, null, 9L)))
                 .isInstanceOf(HierarchyVersionConflictException.class);
     }
 
     @Test
-    void move_appendsAtEndOfTargetFolderMixedOrder() {
+    void move_placesAtReorderedPositionInTargetFolder() {
         memberOk();
         noReplay();
         UUID targetFolderId = UUID.randomUUID();
@@ -116,16 +116,15 @@ class DocumentPlacementServiceTest {
         when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(targetFolderId, WORKSPACE_ID))
                 .thenReturn(Optional.of(new fruition.document.domain.Folder(
                         targetFolderId, WORKSPACE_ID, null, "대상", 0)));
-        when(folderRepository.findMaxSortOrder(WORKSPACE_ID, targetFolderId)).thenReturn(2L);
-        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, targetFolderId)).thenReturn(5L);
+        when(siblingReorderer.placeDocument(WORKSPACE_ID, targetFolderId, DOCUMENT_ID, 1)).thenReturn(1L);
         when(documentRepository.moveIfVersionMatches(eq(DOCUMENT_ID), eq(WORKSPACE_ID), eq(1L),
-                eq(targetFolderId), eq(6L), any())).thenReturn(1);
+                eq(targetFolderId), eq(1L), any())).thenReturn(1);
 
         service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1",
-                new DocumentPositionRequest(targetFolderId, 1L));
+                new DocumentPositionRequest(targetFolderId, 1, 1L));
 
         verify(documentRepository).moveIfVersionMatches(eq(DOCUMENT_ID), eq(WORKSPACE_ID), eq(1L),
-                eq(targetFolderId), eq(6L), any());
+                eq(targetFolderId), eq(1L), any());
         verify(idempotencyService).save(eq(USER_ID), any(), eq("k1"), any(), eq(200), eq(DOCUMENT_ID), any());
     }
 
@@ -138,7 +137,7 @@ class DocumentPlacementServiceTest {
         when(idempotencyService.replay(any(), any(), any(), any(), eq(DocumentPositionResponse.class)))
                 .thenReturn(Optional.of(stored));
 
-        service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1", new DocumentPositionRequest(null, 1L));
+        service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1", new DocumentPositionRequest(null, null, 1L));
 
         verify(documentRepository, never()).moveIfVersionMatches(any(), any(), anyLong(), any(), anyLong(), any());
     }

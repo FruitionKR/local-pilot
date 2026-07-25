@@ -95,6 +95,26 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("folderId") java.util.UUID folderId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
+            + "AND ((:folderId IS NULL AND d.folderId IS NULL) OR d.folderId = :folderId) "
+            + "AND d.deletedAt IS NULL "
+            + "ORDER BY d.sortOrder ASC, d.id ASC")
+    List<Document> findChildDocumentsForUpdate(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") java.util.UUID folderId
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Document d SET d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :id AND d.workspaceId = :workspaceId AND d.deletedAt IS NULL")
+    void updateSortOrder(
+            @Param("id") String id,
+            @Param("workspaceId") String workspaceId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
+
     boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)

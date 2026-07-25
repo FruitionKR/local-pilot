@@ -99,7 +99,7 @@ class FolderServiceIntegrationTest {
                 new FolderCreateRequest("자식", parent.id()));
 
         assertThatThrownBy(() -> folderService.move(workspaceId, userId, parent.id(), "k3",
-                new FolderPositionRequest(child.id(), parent.currentVersion())))
+                new FolderPositionRequest(child.id(), null, parent.currentVersion())))
                 .isInstanceOf(HierarchyCycleException.class);
     }
 
@@ -128,7 +128,7 @@ class FolderServiceIntegrationTest {
         insertDocumentInFolder("doc_move", "메모.md", "EDITABLE", null, 0);
 
         DocumentPositionResponse moved = documentPlacementService.move(workspaceId, userId, "doc_move", "mk1",
-                new DocumentPositionRequest(folder.id(), 1L));
+                new DocumentPositionRequest(folder.id(), null, 1L));
 
         assertThat(moved.folderId()).isEqualTo(folder.id());
         assertThat(moved.currentVersion()).isEqualTo(2);
@@ -142,7 +142,7 @@ class FolderServiceIntegrationTest {
         insertDocumentInFolder("doc_stale", "메모.md", "EDITABLE", null, 0);
 
         assertThatThrownBy(() -> documentPlacementService.move(workspaceId, userId, "doc_stale", "mk1",
-                new DocumentPositionRequest(null, 999L)))
+                new DocumentPositionRequest(null, null, 999L)))
                 .isInstanceOf(HierarchyVersionConflictException.class);
     }
 
@@ -151,8 +151,40 @@ class FolderServiceIntegrationTest {
         insertDocumentInFolder("doc_orphan", "메모.md", "EDITABLE", null, 0);
 
         assertThatThrownBy(() -> documentPlacementService.move(workspaceId, userId, "doc_orphan", "mk1",
-                new DocumentPositionRequest(UUID.randomUUID(), 1L)))
+                new DocumentPositionRequest(UUID.randomUUID(), null, 1L)))
                 .isInstanceOf(HierarchyItemNotFoundException.class);
+    }
+
+    @Test
+    void folder_movesToExplicitPosition() {
+        FolderResponse a = folderService.create(workspaceId, userId, "ka", new FolderCreateRequest("A", null));
+        FolderResponse b = folderService.create(workspaceId, userId, "kb", new FolderCreateRequest("B", null));
+        FolderResponse c = folderService.create(workspaceId, userId, "kc", new FolderCreateRequest("C", null));
+
+        folderService.move(workspaceId, userId, c.id(), "mk",
+                new FolderPositionRequest(null, 0, c.currentVersion()));
+
+        List<FolderChildrenResponse.Item> items = folderService.children(workspaceId, userId, null).items();
+        assertThat(items).extracting(FolderChildrenResponse.Item::id)
+                .containsExactly(c.id().toString(), a.id().toString(), b.id().toString());
+        assertThat(items).extracting(FolderChildrenResponse.Item::sortOrder)
+                .containsExactly(0L, 1L, 2L);
+    }
+
+    @Test
+    void document_reordersBetweenFolders() {
+        FolderResponse a = folderService.create(workspaceId, userId, "ka", new FolderCreateRequest("A", null));
+        FolderResponse b = folderService.create(workspaceId, userId, "kb", new FolderCreateRequest("B", null));
+        insertDocumentInFolder("doc_reorder", "메모.md", "EDITABLE", null, 2);
+
+        documentPlacementService.move(workspaceId, userId, "doc_reorder", "mk",
+                new DocumentPositionRequest(null, 1, 1L));
+
+        List<FolderChildrenResponse.Item> items = folderService.children(workspaceId, userId, null).items();
+        assertThat(items).extracting(FolderChildrenResponse.Item::id)
+                .containsExactly(a.id().toString(), "doc_reorder", b.id().toString());
+        assertThat(items).extracting(FolderChildrenResponse.Item::sortOrder)
+                .containsExactly(0L, 1L, 2L);
     }
 
     private void insertDocumentInFolder(String documentId, String filename, String role, UUID folderId, long sortOrder) {

@@ -39,12 +39,14 @@ class FolderServiceTest {
     @Mock FolderRepository folderRepository;
     @Mock DocumentRepository documentRepository;
     @Mock IdempotencyService idempotencyService;
+    @Mock SiblingReorderer siblingReorderer;
 
     private FolderService service;
 
     @BeforeEach
     void setUp() {
-        service = new FolderService(workspaceMemberRepository, folderRepository, documentRepository, idempotencyService);
+        service = new FolderService(workspaceMemberRepository, folderRepository, documentRepository,
+                idempotencyService, siblingReorderer);
     }
 
     private void memberOk() {
@@ -132,7 +134,7 @@ class FolderServiceTest {
         when(folderRepository.countAncestorMatches(targetId, movingId)).thenReturn(1L);
 
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, movingId, "key-1",
-                new FolderPositionRequest(targetId, 1L)))
+                new FolderPositionRequest(targetId, null, 1L)))
                 .isInstanceOf(HierarchyCycleException.class);
         verify(folderRepository, never()).moveIfVersionMatches(any(), any(), org.mockito.ArgumentMatchers.anyLong(),
                 any(), org.mockito.ArgumentMatchers.anyLong(), any());
@@ -145,13 +147,12 @@ class FolderServiceTest {
         UUID movingId = UUID.randomUUID();
         when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(movingId, WORKSPACE_ID))
                 .thenReturn(Optional.of(new Folder(movingId, WORKSPACE_ID, null, "이동", 0)));
-        when(folderRepository.findMaxSortOrder(WORKSPACE_ID, null)).thenReturn(-1L);
-        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(-1L);
+        when(siblingReorderer.placeFolder(WORKSPACE_ID, null, movingId, null)).thenReturn(0L);
         when(folderRepository.moveIfVersionMatches(eq(movingId), eq(WORKSPACE_ID), eq(2L), eq(null),
                 org.mockito.ArgumentMatchers.anyLong(), any())).thenReturn(0);
 
         assertThatThrownBy(() -> service.move(WORKSPACE_ID, USER_ID, movingId, "key-1",
-                new FolderPositionRequest(null, 2L)))
+                new FolderPositionRequest(null, null, 2L)))
                 .isInstanceOf(HierarchyVersionConflictException.class);
     }
 }

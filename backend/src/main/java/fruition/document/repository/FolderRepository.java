@@ -1,7 +1,9 @@
 package fruition.document.repository;
 
 import fruition.document.domain.Folder;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -35,6 +37,27 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
     List<Folder> findChildren(
             @Param("workspaceId") String workspaceId,
             @Param("parentFolderId") UUID parentFolderId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM Folder f WHERE f.workspaceId = :workspaceId "
+            + "AND ((:parentFolderId IS NULL AND f.parentFolderId IS NULL) "
+            + "OR f.parentFolderId = :parentFolderId) "
+            + "AND f.deletedAt IS NULL "
+            + "ORDER BY f.sortOrder ASC, f.id ASC")
+    List<Folder> findChildrenForUpdate(
+            @Param("workspaceId") String workspaceId,
+            @Param("parentFolderId") UUID parentFolderId
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Folder f SET f.sortOrder = :sortOrder, f.updatedAt = :updatedAt "
+            + "WHERE f.id = :id AND f.workspaceId = :workspaceId AND f.deletedAt IS NULL")
+    void updateSortOrder(
+            @Param("id") UUID id,
+            @Param("workspaceId") String workspaceId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
     );
 
     /** 대상 부모 폴더의 조상 경로(자기 자신 포함)에 이동 폴더가 있으면 순환이다. */

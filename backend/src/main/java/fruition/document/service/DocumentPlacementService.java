@@ -24,15 +24,18 @@ public class DocumentPlacementService {
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
     private final IdempotencyService idempotencyService;
+    private final SiblingReorderer siblingReorderer;
 
     public DocumentPlacementService(WorkspaceMemberRepository workspaceMemberRepository,
                                     DocumentRepository documentRepository,
                                     FolderRepository folderRepository,
-                                    IdempotencyService idempotencyService) {
+                                    IdempotencyService idempotencyService,
+                                    SiblingReorderer siblingReorderer) {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.idempotencyService = idempotencyService;
+        this.siblingReorderer = siblingReorderer;
     }
 
     @Transactional
@@ -51,16 +54,17 @@ public class DocumentPlacementService {
 
         String scope = "PATCH:/api/workspaces/" + workspaceId + "/documents/" + documentId + "/position";
         String hash = idempotencyService.requestHash(
-                String.valueOf(targetFolderId), String.valueOf(request.baseVersion()));
+                String.valueOf(targetFolderId), String.valueOf(request.position()),
+                String.valueOf(request.baseVersion()));
         Optional<DocumentPositionResponse> replay =
                 idempotencyService.replay(userId, scope, idempotencyKey, hash, DocumentPositionResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
 
+        long sortOrder = siblingReorderer.placeDocument(workspaceId, targetFolderId, documentId, request.position());
         int updated = documentRepository.moveIfVersionMatches(
-                documentId, workspaceId, request.baseVersion(), targetFolderId,
-                nextSortOrder(workspaceId, targetFolderId), Instant.now());
+                documentId, workspaceId, request.baseVersion(), targetFolderId, sortOrder, Instant.now());
         if (updated == 0) {
             throw new HierarchyVersionConflictException("문서가 이미 변경되어 이동할 수 없습니다.");
         }
@@ -71,12 +75,6 @@ public class DocumentPlacementService {
                 moved.getId(), moved.getFolderId(), moved.getSortOrder(), moved.getCurrentVersion());
         idempotencyService.save(userId, scope, idempotencyKey, hash, 200, documentId, response);
         return response;
-    }
-
-    private long nextSortOrder(String workspaceId, UUID folderId) {
-        long folderMax = folderRepository.findMaxSortOrder(workspaceId, folderId);
-        long documentMax = documentRepository.findMaxSortOrderInFolder(workspaceId, folderId);
-        return Math.max(folderMax, documentMax) + 1;
     }
 
     private void verifyMembership(String workspaceId, String userId) {

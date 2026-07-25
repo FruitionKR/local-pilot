@@ -34,15 +34,18 @@ public class FolderService {
     private final FolderRepository folderRepository;
     private final DocumentRepository documentRepository;
     private final IdempotencyService idempotencyService;
+    private final SiblingReorderer siblingReorderer;
 
     public FolderService(WorkspaceMemberRepository workspaceMemberRepository,
                          FolderRepository folderRepository,
                          DocumentRepository documentRepository,
-                         IdempotencyService idempotencyService) {
+                         IdempotencyService idempotencyService,
+                         SiblingReorderer siblingReorderer) {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.folderRepository = folderRepository;
         this.documentRepository = documentRepository;
         this.idempotencyService = idempotencyService;
+        this.siblingReorderer = siblingReorderer;
     }
 
     @Transactional
@@ -113,16 +116,17 @@ public class FolderService {
 
         String scope = "PATCH:/api/workspaces/" + workspaceId + "/folders/" + folderId + "/position";
         String hash = idempotencyService.requestHash(
-                String.valueOf(targetParentId), String.valueOf(request.baseVersion()));
+                String.valueOf(targetParentId), String.valueOf(request.position()),
+                String.valueOf(request.baseVersion()));
         Optional<FolderResponse> replay =
                 idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
 
+        long sortOrder = siblingReorderer.placeFolder(workspaceId, targetParentId, folderId, request.position());
         int updated = folderRepository.moveIfVersionMatches(
-                folderId, workspaceId, request.baseVersion(), targetParentId,
-                nextSortOrder(workspaceId, targetParentId), Instant.now());
+                folderId, workspaceId, request.baseVersion(), targetParentId, sortOrder, Instant.now());
         if (updated == 0) {
             throw new HierarchyVersionConflictException("폴더가 이미 변경되어 이동할 수 없습니다.");
         }
