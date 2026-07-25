@@ -50,6 +50,7 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         sql, params = connection.calls[0]
         self.assertIn("from_page.workspace_id = %s", sql)
         self.assertIn("to_page.workspace_id = %s", sql)
+        self.assertIn("l.link_type <> 'source_related_to'", sql)
         self.assertEqual(params, ("ws_target", "ws_target"))
 
 

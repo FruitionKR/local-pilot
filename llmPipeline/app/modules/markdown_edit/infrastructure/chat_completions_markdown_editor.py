@@ -6,7 +6,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
+from app.core.llm_env import (
+    api_key_from_env,
+    chat_completions_endpoint,
+    float_env,
+    int_env,
+    model_from_env,
+    optional_int_env,
+    provider_base_url,
+)
 from app.core.llm_prompt import with_schema_prompt
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
@@ -45,6 +53,7 @@ from app.modules.markdown_edit.infrastructure.markdown_source_range import (
 from app.modules.markdown_edit.infrastructure.markdown_syntax_validation import validate_markdown_syntax
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 DEFAULT_MARKDOWN_EDIT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "markdown_edit.system.md"
@@ -61,7 +70,7 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         create_system_prompt: str | None = None,
         source_edit_system_prompt: str | None = None,
         context_lines: int = 20,
-        schema_prompt_provider: Callable[[str], str] | None = None,
+        schema_prompt_provider: Callable[[str, str | None, str | None], str] | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
@@ -70,7 +79,9 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             encoding="utf-8"
         )
         self._context_lines = context_lines
-        self._schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
+        self._schema_prompt_provider = schema_prompt_provider or (
+            lambda feature, workspace_id, user_id: ""
+        )
 
     def generate_edit(self, request: MarkdownEditRequest) -> MarkdownEditResult:
         validate_markdown_target_boundary(request.markdown, request.target)
@@ -95,7 +106,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "markdown": protected.markdown,
             "editable_context": _editable_context_payload(scope, protected.markdown),
         }
-        system_prompt = with_schema_prompt(self._system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(
+            self._system_prompt,
+            self._schema_prompt_provider(
+                "edit",
+                request.workspace_id,
+                request.user_id,
+            ),
+        )
         try:
             result = self._complete_edit(system_prompt, payload, request, protected, scope)
         except JsonParseError:
@@ -136,7 +154,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             **source_range_payload(plan),
             **_read_only_context_payload(scope),
         }
-        system_prompt = with_schema_prompt(self._source_edit_system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(
+            self._source_edit_system_prompt,
+            self._schema_prompt_provider(
+                "edit",
+                request.workspace_id,
+                request.user_id,
+            ),
+        )
         try:
             result, failures, raw = self._complete_source_range_edit(system_prompt, payload, request, plan)
         except JsonParseError:
@@ -228,7 +253,14 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "conversation_summary": request.conversation_summary,
             "reference_context": request.reference_context or {},
         }
-        system_prompt = with_schema_prompt(self._create_system_prompt, self._schema_prompt_provider("edit"))
+        system_prompt = with_schema_prompt(
+            self._create_system_prompt,
+            self._schema_prompt_provider(
+                "edit",
+                request.workspace_id,
+                request.user_id,
+            ),
+        )
         try:
             result, failures, raw = self._complete_markdown_create(system_prompt, payload)
         except JsonParseError:
@@ -291,6 +323,7 @@ def build_markdown_editor() -> MarkdownEditorPort:
         create_system_prompt=create_prompt_path.read_text(encoding="utf-8"),
         source_edit_system_prompt=source_edit_prompt_path.read_text(encoding="utf-8"),
         context_lines=_int_env("MARKDOWN_EDIT_CONTEXT_LINES", 20),
+        schema_prompt_provider=get_active_schema_prompt,
     )
 
 
@@ -463,21 +496,21 @@ def _contract_string(
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("MARKDOWN_EDIT_LLM_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("MARKDOWN_EDIT_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "UPSTAGE_BASE_URL", "LLM_BASE_URL"),
-        default_base_url="https://api.upstage.ai/v1",
+        base_url_env_names=("MARKDOWN_EDIT_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        default_base_url=provider_base_url(),
     )
 
 
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="MARKDOWN_EDIT_LLM_API_KEY_ENV",
-        key_env_names=("MARKDOWN_EDIT_LLM_API_KEY", "QUERY_LLM_API_KEY", "UPSTAGE_API_KEY", "LLM_API_KEY"),
+        key_env_names=("MARKDOWN_EDIT_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
     )
 
 
 def _model() -> str:
     return model_from_env(
-        ("MARKDOWN_EDIT_LLM_MODEL", "QUERY_LLM_MODEL", "UPSTAGE_MODEL", "LLM_MODEL"),
+        ("MARKDOWN_EDIT_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"),
         "solar-pro2",
     )
 

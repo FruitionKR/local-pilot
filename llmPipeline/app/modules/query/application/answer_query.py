@@ -145,6 +145,7 @@ class AnswerQueryUseCase:
         question: str,
         *,
         workspace_id: str,
+        user_id: str | None = None,
         event_publisher: QueryEventPublisherPort | None = None,
         conversation_context: ConversationContext | None = None,
     ) -> QueryAnswer:
@@ -184,6 +185,8 @@ class AnswerQueryUseCase:
         internal_context = self._build_internal_query_context(
             original_question=query.normalized,
             contextual_question=contextual_question,
+            workspace_id=workspace_id,
+            user_id=user_id,
             conversation_context=conversation_context,
             candidates=candidates,
             event_publisher=event_publisher,
@@ -248,6 +251,8 @@ class AnswerQueryUseCase:
         *,
         original_question: str,
         contextual_question: str,
+        workspace_id: str,
+        user_id: str | None,
         conversation_context: ConversationContext | None,
         candidates: _ScoredWikiCandidates,
         event_publisher: QueryEventPublisherPort | None,
@@ -287,6 +292,8 @@ class AnswerQueryUseCase:
             embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
                 related_pages
             ),
+            workspace_id=workspace_id,
+            user_id=user_id,
         )
         self._publish(
             event_publisher,

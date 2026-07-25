@@ -14,7 +14,7 @@ class RunLabPipelineRunner:
     def run(
         self,
         command: PipelineRunCommand,
-        progress_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[[], bool | None] | None = None,
     ) -> dict[str, Any]:
         return run_pipeline(command, progress_callback=progress_callback)
 
@@ -42,8 +42,8 @@ class PostgresPipelineRunRepository:
     def fail(self, run_id: str, error: str) -> None:
         database.fail_pipeline_run(run_id, error)
 
-    def touch(self, run_id: str) -> None:
-        database.touch_pipeline_run(run_id)
+    def touch(self, run_id: str) -> bool:
+        return database.touch_pipeline_run(run_id)
 
     def get_document(self, document_id: str) -> dict[str, Any] | None:
         return database.get_document(document_id)

@@ -22,6 +22,8 @@ class MarkdownEditRequest:
     instruction: str
     markdown: str
     target: MarkdownEditTarget
+    workspace_id: str | None = None
+    user_id: str | None = None
     conversation_summary: str | None = None
     edit_goal: str | None = None
 
@@ -58,6 +60,8 @@ class MarkdownEditResult:
 @dataclass(frozen=True)
 class MarkdownCreateRequest:
     instruction: str
+    workspace_id: str | None = None
+    user_id: str | None = None
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
 

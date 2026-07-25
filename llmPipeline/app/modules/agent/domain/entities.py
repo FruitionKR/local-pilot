@@ -27,6 +27,8 @@ class AgentConversationContext:
 @dataclass(frozen=True)
 class AgentTurnRequest:
     message: str
+    workspace_id: str | None = None
+    user_id: str | None = None
     conversation_context: AgentConversationContext | None = None
     active_markdown_context: ActiveMarkdownContext | None = None
 

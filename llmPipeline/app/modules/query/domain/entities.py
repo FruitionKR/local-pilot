@@ -132,6 +132,8 @@ class QueryContext:
     related_pages: list[RetrievedPage]
     evidence_snippets: list[EvidenceSnippet]
     answer_context: str
+    workspace_id: str | None = None
+    user_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -69,6 +69,11 @@ from app.modules.wiki_generation.infrastructure.source_context_merge import (
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
+from app.core.llm_env import (
+    SUPPORTED_LLM_PROVIDERS,
+    provider_api_endpoint,
+    resolve_llm_provider_defaults,
+)
 
 
 @dataclass(frozen=True)
@@ -109,7 +114,12 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--input", required=True, help="Input Markdown file")
     ap.add_argument("--out", default="runs/latest", help="Output directory")
     ap.add_argument("--mode", choices=["api", "generic-chat"], default="api", help="api/generic-chat=OpenAI-compatible chat-completions")
-    ap.add_argument("--provider", choices=["upstage", "generic"], default=os.environ.get("LLM_PROVIDER", "upstage"), help="API defaults preset. upstage defaults to Solar Pro 2.")
+    ap.add_argument(
+        "--provider",
+        choices=SUPPORTED_LLM_PROVIDERS,
+        default=None,
+        help="LLM provider preset. If omitted, uses LLM_PROVIDER and then upstage.",
+    )
     ap.add_argument("--env-file", help="Optional .env file to load before resolving API settings")
     ap.add_argument(
         "--source-page-mode",
@@ -182,33 +192,20 @@ def load_env_file(path_like: str | None) -> None:
 
 def resolve_api_defaults(command: PipelineRunCommand) -> PipelineRunCommand:
     """Resolve provider-specific API defaults after optional .env loading."""
-    if command.provider == "upstage":
-        api_base_url = (
-            command.api_base_url
-            or os.environ.get("UPSTAGE_BASE_URL")
-            or os.environ.get("LLM_BASE_URL")
-            or "https://api.upstage.ai/v1"
-        )
-        api_key_env = command.api_key_env or "UPSTAGE_API_KEY"
-        model = (
-            command.model
-            or os.environ.get("UPSTAGE_MODEL")
-            or os.environ.get("LLM_MODEL")
-            or "solar-pro2"
-        )
-    else:
-        api_base_url = (
-            command.api_base_url
-            or os.environ.get("LLM_BASE_URL")
-            or "https://api.openai.com/v1"
-        )
-        api_key_env = command.api_key_env or "LLM_API_KEY"
-        model = command.model or os.environ.get("LLM_MODEL")
+    defaults = resolve_llm_provider_defaults(
+        provider=command.provider,
+        base_url=command.api_base_url,
+        api_key_env=command.api_key_env,
+        api_key=command.api_key,
+        model=command.model,
+    )
     return replace(
         command,
-        api_base_url=api_base_url,
-        api_key_env=api_key_env,
-        model=model,
+        provider=defaults.provider,
+        api_base_url=defaults.base_url,
+        api_key_env=defaults.api_key_env,
+        api_key=defaults.api_key,
+        model=defaults.model,
     )
 
 
@@ -224,7 +221,7 @@ def read_prompt(path_like: str) -> str:
 def resolve_endpoint(args: PipelineRunCommand) -> str:
     if args.endpoint:
         return args.endpoint
-    return args.api_base_url.rstrip("/") + "/chat/completions"
+    return provider_api_endpoint(args.api_base_url, args.provider)
 
 
 def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
@@ -242,6 +239,7 @@ def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
             timeout_seconds=args.timeout_seconds,
             max_tokens=args.max_tokens,
             json_mode=args.json_mode,
+            provider=args.provider,
         )
     )
 
@@ -1106,7 +1104,7 @@ def _assemble_meaning_clusters(
 
 def run_pipeline(
     command: PipelineRunCommand,
-    progress_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[[], bool | None] | None = None,
 ) -> dict:
     load_env_file(command.env_file)
     args = resolve_api_defaults(command)

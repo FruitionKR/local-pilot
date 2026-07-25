@@ -5,6 +5,7 @@ from run_lab import (
     parse_args,
     pipeline_command_from_cli_args,
     resolve_api_defaults,
+    resolve_endpoint,
 )
 
 
@@ -70,5 +71,45 @@ def test_api_defaults_return_resolved_command_without_mutating_input(
     assert command.api_key_env is None
     assert command.model is None
     assert resolved.api_base_url == "https://api.upstage.ai/v1"
-    assert resolved.api_key_env == "UPSTAGE_API_KEY"
+    assert resolved.provider == "upstage"
+    assert resolved.api_key_env == "LLM_API_KEY"
     assert resolved.model == "solar-pro2"
+
+
+def test_api_defaults_use_unified_provider_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("LLM_API_KEY", "gemini-key")
+    monkeypatch.setenv("LLM_MODEL", "gemini-model")
+    monkeypatch.setenv("UPSTAGE_API_KEY", "legacy-key")
+    command = PipelineRunCommand(
+        run_id=None,
+        input="input.md",
+        input_name="input.md",
+        out="runs/cli",
+        user_id="local-user",
+        workspace_id="local-workspace",
+    )
+
+    resolved = resolve_api_defaults(command)
+
+    assert resolved.provider == "gemini"
+    assert resolved.api_base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert resolved.api_key == "gemini-key"
+    assert resolved.api_key_env == "LLM_API_KEY"
+    assert resolved.model == "gemini-model"
+
+
+def test_claude_uses_messages_endpoint(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "claude")
+    command = PipelineRunCommand(
+        run_id=None,
+        input="input.md",
+        input_name="input.md",
+        out="runs/cli",
+        user_id="local-user",
+        workspace_id="local-workspace",
+    )
+
+    resolved = resolve_api_defaults(command)
+
+    assert resolve_endpoint(resolved) == "https://api.anthropic.com/v1/messages"

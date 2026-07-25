@@ -284,7 +284,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
         self.assertEqual(result.evidence_snippets[1].source_block_ids, ["B0003"])
 
-    def test_traverses_source_related_to_edges(self) -> None:
+    def test_ignores_legacy_source_related_to_edges(self) -> None:
         pages = [
             source_page("source:a", "RAG Overview"),
             source_page("source:b", "Wiki Graph Notes"),
@@ -323,8 +323,8 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         related_ids = {item.page.id for item in result.related_pages}
         edge_types = {edge.link_type for edge in result.graph_context.edges}
-        self.assertIn("source:b", related_ids)
-        self.assertIn("source_related_to", edge_types)
+        self.assertNotIn("source:b", related_ids)
+        self.assertNotIn("source_related_to", edge_types)
 
     def test_excludes_nodes_below_five_percent_from_best_observed_score(self) -> None:
         pages = [

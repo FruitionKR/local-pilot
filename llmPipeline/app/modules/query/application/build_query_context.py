@@ -44,6 +44,8 @@ class BuildQueryContextUseCase:
         evidence_question: str | None = None,
         answer_mode: str | None = None,
         embedding_units_by_page_id: dict[str, list[WikiEmbeddingUnit]] | None = None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
     ) -> QueryContext:
         evidence_snippets = self._evidence_selector.select(
             evidence_question or question,
@@ -64,4 +66,6 @@ class BuildQueryContextUseCase:
                 original_question=original_question,
                 answer_mode=answer_mode,
             ),
+            workspace_id=workspace_id,
+            user_id=user_id,
         )

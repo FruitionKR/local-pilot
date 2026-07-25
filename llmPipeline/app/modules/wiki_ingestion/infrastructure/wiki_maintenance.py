@@ -10,6 +10,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
+from app.core.llm_env import resolve_llm_provider_defaults
 from app.modules.wiki_ingestion.application.models import (
     WikiMaintenanceCommand,
     WikiMaintenanceConfigurationError,
@@ -83,33 +84,31 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
 
 
 def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClient:
-    if command.provider == "upstage":
-        base_url = (
-            command.api_base_url
-            or os.environ.get("UPSTAGE_BASE_URL")
-            or "https://api.upstage.ai/v1"
-        )
-        endpoint = command.endpoint or base_url.rstrip("/") + "/chat/completions"
-        api_key_env = command.api_key_env or "UPSTAGE_API_KEY"
-        model = command.model or os.environ.get("UPSTAGE_MODEL") or "solar-pro2"
-    else:
-        endpoint = command.endpoint or os.environ.get("LLM_ENDPOINT") or ""
-        api_key_env = command.api_key_env or "LLM_API_KEY"
-        model = command.model or os.environ.get("LLM_MODEL") or "gpt-4o-mini"
-    api_key = command.api_key or os.environ.get(api_key_env)
-    if not endpoint:
+    defaults = resolve_llm_provider_defaults(
+        provider=command.provider,
+        base_url=command.api_base_url,
+        api_key_env=command.api_key_env,
+        api_key=command.api_key,
+        model=command.model,
+    )
+    endpoint = (
+        command.endpoint
+        or os.environ.get("LLM_ENDPOINT")
+        or defaults.base_url.rstrip("/") + "/chat/completions"
+    )
+    if not defaults.api_key:
         raise WikiMaintenanceConfigurationError(
-            "Set endpoint or api_base_url for lint LLM"
+            f"Missing API key. Set {defaults.api_key_env}=... or pass api_key"
         )
-    if not api_key:
+    if not defaults.model:
         raise WikiMaintenanceConfigurationError(
-            f"Missing API key. Set {api_key_env}=... or pass api_key"
+            "Missing model. Set LLM_MODEL or pass model"
         )
     return ChatCompletionsJsonClient(
         ChatClientConfig(
             endpoint=endpoint,
-            api_key=api_key,
-            model=model,
+            api_key=defaults.api_key,
+            model=defaults.model,
             temperature=command.temperature,
             timeout_seconds=command.timeout_seconds,
             max_tokens=command.max_tokens,

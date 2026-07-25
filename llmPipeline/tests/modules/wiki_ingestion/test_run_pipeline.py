@@ -26,8 +26,13 @@ class FakeRunner:
 
 
 class FakeRepository:
-    def __init__(self, calls: list[object]) -> None:
+    def __init__(
+        self,
+        calls: list[object],
+        active_results: list[bool] | None = None,
+    ) -> None:
         self.calls = calls
+        self.active_results = list(active_results or [])
 
     def create(
         self,
@@ -48,8 +53,11 @@ class FakeRepository:
     def fail(self, run_id: str, error: str) -> None:
         self.calls.append(("fail", run_id, error))
 
-    def touch(self, run_id: str) -> None:
+    def touch(self, run_id: str) -> bool:
         self.calls.append(("touch", run_id))
+        if self.active_results:
+            return self.active_results.pop(0)
+        return True
 
 
 class FakeEmbeddingJob:
@@ -99,7 +107,9 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                     "runs/run-1",
                     "api",
                 ),
+                ("touch", "run-1"),
                 ("run", command),
+                ("touch", "run-1"),
                 ("finish", "run-1", {"manifest": "value"}),
                 ("embedding", "run-1", ["page-1"]),
             ],
@@ -127,6 +137,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         self.assertEqual(
             calls,
             [
+                ("touch", "run-1"),
                 ("run", command),
                 ("fail", "run-1", "pipeline failed"),
             ],
@@ -160,7 +171,84 @@ class RunPipelineUseCaseTest(unittest.TestCase):
 
         use_case.execute("run-1", command)
 
-        self.assertEqual(calls[0], ("touch", "run-1"))
+        self.assertEqual(
+            calls[:3],
+            [
+                ("touch", "run-1"),
+                ("touch", "run-1"),
+                ("touch", "run-1"),
+            ],
+        )
+
+    def test_execute_stops_before_runner_for_inactive_target(self) -> None:
+        calls: list[object] = []
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=FakeRepository(calls, active_results=[False]),
+            embedding_job=FakeEmbeddingJob(calls),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "document or workspace is inactive",
+        ):
+            use_case.execute("run-1", command)
+
+        self.assertEqual(
+            calls,
+            [
+                ("touch", "run-1"),
+                (
+                    "fail",
+                    "run-1",
+                    "Pipeline run cancelled because its document or workspace is inactive.",
+                ),
+            ],
+        )
+
+    def test_execute_stops_before_finish_when_target_becomes_inactive(self) -> None:
+        calls: list[object] = []
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=FakeRepository(calls, active_results=[True, False]),
+            embedding_job=FakeEmbeddingJob(calls),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "document or workspace is inactive",
+        ):
+            use_case.execute("run-1", command)
+
+        self.assertEqual(
+            calls,
+            [
+                ("touch", "run-1"),
+                ("run", command),
+                ("touch", "run-1"),
+                (
+                    "fail",
+                    "run-1",
+                    "Pipeline run cancelled because its document or workspace is inactive.",
+                ),
+            ],
+        )
 
     def test_execute_serializes_runs_across_use_case_instances(self) -> None:
         first_entered = Event()

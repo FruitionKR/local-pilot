@@ -12,7 +12,7 @@ class WikiMaintenanceCommand:
     workspace_id: str
     materialize_promotions: bool = False
     dry_run: bool = True
-    provider: str = "upstage"
+    provider: str | None = None
     endpoint: str | None = None
     api_base_url: str | None = None
     api_key_env: str | None = None
@@ -44,7 +44,7 @@ class PipelineRunCommand:
     selection_mode: str | None = None
     input_markdown: str | None = None
     mode: str = "api"
-    provider: str = "upstage"
+    provider: str | None = None
     env_file: str | None = None
     source_page_mode: str = "auto"
     concept_page_mode: str = "auto"

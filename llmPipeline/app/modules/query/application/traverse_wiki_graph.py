@@ -132,7 +132,7 @@ class TraverseWikiGraphUseCase:
 
     def _build_adjacency(self, links: list[WikiPageLink]) -> dict[str, list[WikiPageLink]]:
         adjacency: dict[str, list[WikiPageLink]] = defaultdict(list)
-        allowed = {"source_mentions_concept", "concept_related_to", "source_related_to"}
+        allowed = {"source_mentions_concept", "concept_related_to"}
         for link in links:
             if link.link_type not in allowed:
                 continue

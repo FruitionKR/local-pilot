@@ -38,6 +38,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 JOIN wiki_pages to_page ON to_page.id = l.to_page_id
                 WHERE from_page.status = 'active'
                   AND to_page.status = 'active'
+                  AND l.link_type <> 'source_related_to'
                   AND from_page.workspace_id = %s
                   AND to_page.workspace_id = %s
                 """,

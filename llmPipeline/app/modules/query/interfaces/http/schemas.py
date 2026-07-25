@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
     workspace_id: str = Field(..., min_length=1)
+    user_id: str | None = Field(default=None, min_length=1)
     question: str = Field(..., min_length=1)
     request_id: str | None = None
     log_callback_url: str | None = None

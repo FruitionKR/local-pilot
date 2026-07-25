@@ -33,6 +33,7 @@ def answer_query(
         result = use_case.execute(
             payload.question,
             workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
             event_publisher=event_publisher,
             conversation_context=_conversation_context(payload),
         )

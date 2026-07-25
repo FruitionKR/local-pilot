@@ -7,7 +7,7 @@ def _stub_followup_writes(monkeypatch) -> None:
     monkeypatch.setattr(persistence, "_persist_source_blocks", lambda *_args: None)
     monkeypatch.setattr(
         persistence,
-        "refresh_source_related_links",
+        "delete_source_related_links",
         lambda *_args: None,
     )
     monkeypatch.setattr(
@@ -77,8 +77,8 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     )
     monkeypatch.setattr(
         persistence,
-        "refresh_source_related_links",
-        lambda *_args: calls.append("refresh_source_links"),
+        "delete_source_related_links",
+        lambda *_args: calls.append("delete_source_links"),
     )
     monkeypatch.setattr(
         persistence,
@@ -97,7 +97,7 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "document_link",
         "embedding_units",
         "load_concept_ids",
-        "refresh_source_links",
+        "delete_source_links",
         "meaning_clusters",
     ]
 

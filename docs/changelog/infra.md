@@ -22,7 +22,7 @@
 
 **남은 주의사항**
 
-- 채팅→원본문서 편입의 wiki 생성(ingestion) 경로는 `run_lab.py`가 `UPSTAGE_API_KEY`를 별도로 강제해 여전히 실패한다. 원인·해결안은 `docs/issue/ai/2026-07-24.md` 참고(현 config로는 `infra/.env`의 `UPSTAGE_*`를 Gemini 값으로 채우면 우회 가능).
+- 당시 채팅→원본문서 편입의 wiki 생성(ingestion) 경로는 `run_lab.py`가 `UPSTAGE_API_KEY`를 별도로 강제해 실패했다. 해결 기록은 `docs/backlog/issue-2026-07-25.md`의 `AI/Pipeline — Multi-provider 설정과 Claude Messages API 지원`을 참고한다.
 
 **gitignore**
 

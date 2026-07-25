@@ -4,6 +4,16 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-25
+
+### fix: AI/Pipeline 미해결 이슈 보강
+
+- Agent 편집·생성·질의에 workspace/user 범위의 활성 Wiki schema fragment를 주입하고 scope나 활성 schema가 없으면 기존 빈 prompt 동작 유지
+- Wiki ingest의 `source_related_to` 전체 Source 조합 생성·저장을 제거하고 legacy edge를 Query와 traversal에서 제외
+- ingestion·markdown 편집·query·agent router의 provider 설정을 `LLM_*`로 통합하고 Claude Messages API 요청·응답 변환 추가
+- 삭제 document/workspace의 실행 중 pipeline을 heartbeat에서 취소하고 Wiki 산출물 저장 전 DB lock과 활성 상태 검사로 완료 경합 차단
+- llmPipeline 전체 테스트 `486 passed`, `43 subtests passed`, Python compile과 diff 검사 통과
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장

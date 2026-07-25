@@ -17,7 +17,7 @@ class _PipelineRunBase(BaseModel):
     input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
-    provider: Literal["upstage", "generic"] = "upstage"
+    provider: Literal["openai", "gemini", "claude", "upstage", "generic"] | None = None
     env_file: str | None = None
     source_page_mode: Literal["auto", "skeleton", "section-polish"] = "auto"
     concept_page_mode: Literal[
@@ -102,7 +102,7 @@ class WikiLintIn(BaseModel):
     workspace_id: str = "local-workspace"
     materialize_promotions: bool = False
     dry_run: bool = True
-    provider: Literal["upstage", "generic"] = "upstage"
+    provider: Literal["openai", "gemini", "claude", "upstage", "generic"] | None = None
     endpoint: str | None = None
     api_base_url: str | None = None
     api_key_env: str | None = None

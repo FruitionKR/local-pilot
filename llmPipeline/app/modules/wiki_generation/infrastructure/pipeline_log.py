@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_ingestion.infrastructure.file_io import append_text
 
 
@@ -17,7 +18,7 @@ class PipelineLog:
         path: str | Path,
         callback_url: str | None = None,
         run_id: str | None = None,
-        progress_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[[], bool | None] | None = None,
     ) -> None:
         self.path = Path(path)
         self.callback_url = callback_url
@@ -46,7 +47,13 @@ class PipelineLog:
 
     def _report_progress(self, timestamp: str) -> None:
         try:
-            self.progress_callback()
+            should_continue = self.progress_callback()
+            if should_continue is False:
+                raise PipelineRunCancelledError(
+                    "Pipeline run cancelled because its document or workspace is inactive."
+                )
+        except PipelineRunCancelledError:
+            raise
         except Exception as exc:
             append_text(self.path, f"[{timestamp}] [heartbeat 갱신 실패] {exc}\n")
 
