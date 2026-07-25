@@ -11,7 +11,7 @@ class FakeCursor:
 
 class FakeConnection:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[str, ...]]] = []
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def __enter__(self) -> "FakeConnection":
         return self
@@ -19,7 +19,7 @@ class FakeConnection:
     def __exit__(self, exc_type, exc, traceback) -> None:
         return None
 
-    def execute(self, sql: str, params: tuple[str, ...]) -> FakeCursor:
+    def execute(self, sql: str, params: tuple[object, ...]) -> FakeCursor:
         self.calls.append((sql, params))
         return FakeCursor()
 
@@ -32,11 +32,21 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
             "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
             return_value=connection,
         ):
-            PostgresWikiRepository().list_active_pages("ws_target")
+            PostgresWikiRepository().list_candidate_pages(
+                "ws_target",
+                "검색 질문",
+                source_limit=60,
+                concept_limit=40,
+            )
 
         sql, params = connection.calls[0]
-        self.assertIn("workspace_id = %s", sql)
-        self.assertEqual(params, ("ws_target",))
+        self.assertIn("p.workspace_id = %s", sql)
+        self.assertIn("PARTITION BY page_type", sql)
+        self.assertIn("type_rank <= %s", sql)
+        self.assertEqual(
+            params,
+            ("ws_target", "검색 질문", "검색 질문", "검색 질문", 60, 40),
+        )
 
     def test_active_links_require_both_pages_in_workspace(self) -> None:
         connection = FakeConnection()
@@ -45,13 +55,29 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
             "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
             return_value=connection,
         ):
-            PostgresWikiRepository().list_active_links("ws_target")
+            PostgresWikiRepository().list_links_for_page_ids(
+                "ws_target",
+                ["source-1", "concept-1"],
+                limit=200,
+            )
 
         sql, params = connection.calls[0]
         self.assertIn("from_page.workspace_id = %s", sql)
         self.assertIn("to_page.workspace_id = %s", sql)
         self.assertIn("l.link_type <> 'source_related_to'", sql)
-        self.assertEqual(params, ("ws_target", "ws_target"))
+        self.assertIn("l.from_page_id = ANY(%s)", sql)
+        self.assertIn("l.to_page_id = ANY(%s)", sql)
+        self.assertIn("LIMIT %s", sql)
+        self.assertEqual(
+            params,
+            (
+                "ws_target",
+                "ws_target",
+                ["source-1", "concept-1"],
+                ["source-1", "concept-1"],
+                200,
+            ),
+        )
 
 
 if __name__ == "__main__":

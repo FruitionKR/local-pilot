@@ -96,6 +96,8 @@ class AnswerQueryUseCase:
         returned_path_limit: int = 5,
         min_internal_relevance_score: float = 0.0,
         query_evaluator_max_attempts: int = 2,
+        candidate_pool_multiplier: int = 4,
+        graph_link_limit: int = 200,
     ) -> None:
         self._wiki_repository = wiki_repository
         self._embedding_search = embedding_search
@@ -133,6 +135,8 @@ class AnswerQueryUseCase:
         self._returned_path_limit = returned_path_limit
         self._min_internal_relevance_score = min_internal_relevance_score
         self._query_evaluator_max_attempts = max(1, query_evaluator_max_attempts)
+        self._candidate_pool_multiplier = max(1, candidate_pool_multiplier)
+        self._graph_link_limit = max(1, graph_link_limit)
         self._query_evaluator_graph = query_evaluator_graph or QueryEvaluatorLoop(
             query_answer_assembler=self._query_answer_assembler,
             query_evaluator=query_evaluator,
@@ -416,8 +420,17 @@ class AnswerQueryUseCase:
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _ScoredWikiCandidates:
-        pages = self._wiki_repository.list_active_pages(workspace_id)
-        links = self._wiki_repository.list_active_links(workspace_id)
+        pages = self._wiki_repository.list_candidate_pages(
+            workspace_id,
+            query_rewrite.retrieval_query,
+            self._source_candidate_limit * self._candidate_pool_multiplier,
+            self._concept_candidate_limit * self._candidate_pool_multiplier,
+        )
+        links = self._wiki_repository.list_links_for_page_ids(
+            workspace_id,
+            [page.id for page in pages],
+            self._graph_link_limit,
+        )
         self._publish(
             event_publisher,
             "wiki_loaded",

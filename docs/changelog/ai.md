@@ -14,6 +14,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 삭제 document/workspace의 실행 중 pipeline을 heartbeat에서 취소하고 Wiki 산출물 저장 전 DB lock과 활성 상태 검사로 완료 경합 차단
 - llmPipeline 전체 테스트 `486 passed`, `43 subtests passed`, Python compile과 diff 검사 통과
 
+### perf: Query 후보와 graph 조회량 제한
+
+- Workspace 전체 Wiki page/link를 먼저 읽던 Query repository 계약을 Source/Concept별 bounded 후보와 후보 page 사이 bounded link 조회로 변경
+- PostgreSQL lexical rank로 후보 pool을 제한한 뒤 기존 hybrid scoring과 evidence·related page·traversal path 계약 유지
+- Query 모듈 `68 passed`, `4 subtests passed`, llmPipeline 전체 `487 passed`, `43 subtests passed`
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장

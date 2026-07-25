@@ -139,6 +139,47 @@ class FakeQueryEvaluator:
         return self.evaluations[index]
 
 
+class RecordingCandidateRepository(InMemoryWikiRepository):
+    def __init__(
+        self,
+        pages: list[WikiPage],
+        links: list[WikiPageLink],
+    ) -> None:
+        super().__init__(pages, links)
+        self.candidate_calls: list[tuple[str, str, int, int]] = []
+        self.link_calls: list[tuple[str, list[str], int]] = []
+
+    def list_candidate_pages(
+        self,
+        workspace_id: str,
+        query: str,
+        source_limit: int,
+        concept_limit: int,
+    ) -> list[WikiPage]:
+        self.candidate_calls.append(
+            (workspace_id, query, source_limit, concept_limit)
+        )
+        return super().list_candidate_pages(
+            workspace_id,
+            query,
+            source_limit,
+            concept_limit,
+        )
+
+    def list_links_for_page_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+        limit: int,
+    ) -> list[WikiPageLink]:
+        self.link_calls.append((workspace_id, page_ids, limit))
+        return super().list_links_for_page_ids(
+            workspace_id,
+            page_ids,
+            limit,
+        )
+
+
 def source_page(page_id: str, title: str) -> WikiPage:
     return WikiPage(
         id=page_id,
@@ -162,6 +203,47 @@ def concept_page(page_id: str, title: str) -> WikiPage:
 
 
 class AnswerQueryUseCaseTest(unittest.TestCase):
+    def test_bounds_repository_candidates_before_scoring(self) -> None:
+        pages = [
+            source_page("source:bounded", "Bounded Source"),
+            concept_page("concept:bounded", "Bounded Concept"),
+        ]
+        repository = RecordingCandidateRepository(pages, [])
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Bounded Source": 0.9,
+                    "Bounded Concept": 0.8,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:bounded.md": "---\ndocument_id: doc_bounded\n---\n\nBounded source. [B0001]",
+                    "s3://test/concept:bounded.md": "Bounded concept. [B0002]",
+                }
+            ),
+            source_candidate_limit=3,
+            concept_candidate_limit=2,
+            candidate_pool_multiplier=4,
+            graph_link_limit=7,
+        )
+
+        use_case.execute("bounded 질문", workspace_id="ws_test")
+
+        self.assertEqual(
+            repository.candidate_calls,
+            [("ws_test", "bounded 질문", 12, 8)],
+        )
+        self.assertEqual(repository.link_calls[0][0], "ws_test")
+        self.assertEqual(
+            repository.link_calls[0][1],
+            ["source:bounded", "concept:bounded"],
+        )
+        self.assertEqual(repository.link_calls[0][2], 7)
+
     def test_starts_from_top_source_and_cites_evidence_context(self) -> None:
         pages = [
             source_page("source:attention", "Lecture Attention"),
