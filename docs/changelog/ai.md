@@ -32,6 +32,10 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Upstage 실제 실행에서 ingestion과 router 통과 후 account credit 부족으로 `markdown_create` HTTP 403 확인
 - OpenAI·Gemini·Claude credential 부재로 해당 실환경 검증은 미완료 상태를 유지하고 llmPipeline 전체 `491 passed`, `43 subtests passed`
 
+### fix: Claude Wiki maintenance provider 전달 보완
+
+- Wiki maintenance가 Claude에서도 `provider_api_endpoint()`로 `/messages`를 선택하고 공통 client에 `provider=claude`를 전달하도록 수정
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장

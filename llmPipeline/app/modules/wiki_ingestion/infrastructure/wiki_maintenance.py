@@ -10,7 +10,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
-from app.core.llm_env import resolve_llm_provider_defaults
+from app.core.llm_env import provider_api_endpoint, resolve_llm_provider_defaults
 from app.modules.wiki_ingestion.application.models import (
     WikiMaintenanceCommand,
     WikiMaintenanceConfigurationError,
@@ -94,7 +94,7 @@ def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClie
     endpoint = (
         command.endpoint
         or os.environ.get("LLM_ENDPOINT")
-        or defaults.base_url.rstrip("/") + "/chat/completions"
+        or provider_api_endpoint(defaults.base_url, defaults.provider)
     )
     if not defaults.api_key:
         raise WikiMaintenanceConfigurationError(
@@ -113,6 +113,7 @@ def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClie
             timeout_seconds=command.timeout_seconds,
             max_tokens=command.max_tokens,
             json_mode=False,
+            provider=defaults.provider,
         )
     )
 
