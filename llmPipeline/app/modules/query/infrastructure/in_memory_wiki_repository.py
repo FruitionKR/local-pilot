@@ -24,14 +24,22 @@ class InMemoryWikiRepository(WikiRepositoryPort):
         workspace_id: str,
         page_ids: list[str],
         limit: int,
+        excluded_page_ids: list[str] | None = None,
     ) -> list[WikiPageLink]:
         del workspace_id
         candidate_ids = set(page_ids)
+        excluded_ids = set(excluded_page_ids or [])
         return [
             link
             for link in self._links
-            if link.from_page_id in candidate_ids
-            or link.to_page_id in candidate_ids
+            if (
+                link.from_page_id in candidate_ids
+                and link.to_page_id not in excluded_ids
+            )
+            or (
+                link.to_page_id in candidate_ids
+                and link.from_page_id not in excluded_ids
+            )
         ][:limit]
 
     def list_pages_by_ids(

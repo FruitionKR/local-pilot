@@ -18,6 +18,7 @@ class WikiRepositoryPort(Protocol):
         workspace_id: str,
         page_ids: list[str],
         limit: int,
+        excluded_page_ids: list[str] | None = None,
     ) -> list[WikiPageLink]:
         ...
 

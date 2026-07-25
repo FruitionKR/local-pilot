@@ -58,6 +58,57 @@ class PostgresWikiRepository(WikiRepositoryPort):
                     WHERE (page_type = 'source' AND type_rank <= %s)
                        OR (page_type = 'concept' AND type_rank <= %s)
                 ),
+                unit_scores AS (
+                    SELECT
+                        p.id,
+                        p.page_type,
+                        max(
+                            ts_rank_cd(
+                                to_tsvector('simple', eu.text),
+                                plainto_tsquery('simple', %s)
+                            )
+                        ) AS text_rank
+                    FROM wiki_embedding_units eu
+                    JOIN wiki_pages p ON p.id = eu.page_id
+                    WHERE p.status = 'active'
+                      AND p.workspace_id = %s
+                      AND p.page_type IN ('source', 'concept')
+                      AND to_tsvector('simple', eu.text)
+                          @@ plainto_tsquery('simple', %s)
+                    GROUP BY p.id, p.page_type
+                ),
+                unit_ranked AS (
+                    SELECT
+                        *,
+                        row_number() OVER (
+                            PARTITION BY page_type
+                            ORDER BY text_rank DESC, id
+                        ) AS type_rank
+                    FROM unit_scores
+                ),
+                candidate_ids AS (
+                    SELECT id
+                    FROM metadata_candidates
+                    UNION
+                    SELECT id
+                    FROM unit_ranked
+                    WHERE (page_type = 'source' AND type_rank <= %s)
+                       OR (page_type = 'concept' AND type_rank <= %s)
+                ),
+                candidate_pages AS (
+                    SELECT
+                        p.id,
+                        p.page_type,
+                        p.title,
+                        p.slug,
+                        p.summary,
+                        p.markdown_uri,
+                        p.updated_at,
+                        coalesce(m.exact_match, 0) AS exact_match
+                    FROM candidate_ids c
+                    JOIN wiki_pages p ON p.id = c.id
+                    LEFT JOIN metadata_candidates m ON m.id = c.id
+                ),
                 page_text AS (
                     SELECT
                         p.id,
@@ -75,7 +126,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                             p.summary,
                             string_agg(eu.text, ' ')
                         ) AS searchable_text
-                    FROM metadata_candidates p
+                    FROM candidate_pages p
                     LEFT JOIN wiki_embedding_units eu ON eu.page_id = p.id
                     GROUP BY
                         p.id,
@@ -95,9 +146,23 @@ class PostgresWikiRepository(WikiRepositoryPort):
                             plainto_tsquery('simple', %s)
                         ) AS text_rank
                     FROM page_text
+                ),
+                ranked_pages AS (
+                    SELECT
+                        *,
+                        row_number() OVER (
+                            PARTITION BY page_type
+                            ORDER BY
+                                exact_match DESC,
+                                text_rank DESC,
+                                updated_at DESC
+                        ) AS type_rank
+                    FROM scored_pages
                 )
                 SELECT id, page_type, title, slug, summary, markdown_uri
-                FROM scored_pages
+                FROM ranked_pages
+                WHERE (page_type = 'source' AND type_rank <= %s)
+                   OR (page_type = 'concept' AND type_rank <= %s)
                 ORDER BY exact_match DESC, text_rank DESC, updated_at DESC
                 """,
                 (
@@ -110,6 +175,13 @@ class PostgresWikiRepository(WikiRepositoryPort):
                     source_limit,
                     concept_limit,
                     query,
+                    workspace_id,
+                    query,
+                    source_limit,
+                    concept_limit,
+                    query,
+                    source_limit,
+                    concept_limit,
                 ),
             ).fetchall()
         return [
@@ -129,9 +201,11 @@ class PostgresWikiRepository(WikiRepositoryPort):
         workspace_id: str,
         page_ids: list[str],
         limit: int,
+        excluded_page_ids: list[str] | None = None,
     ) -> list[WikiPageLink]:
         if not page_ids:
             return []
+        excluded_page_ids = excluded_page_ids or []
         with database.connect() as conn:
             rows = conn.execute(
                 """
@@ -145,13 +219,27 @@ class PostgresWikiRepository(WikiRepositoryPort):
                   AND from_page.workspace_id = %s
                   AND to_page.workspace_id = %s
                   AND (
-                      l.from_page_id = ANY(%s)
-                      OR l.to_page_id = ANY(%s)
+                      (
+                          l.from_page_id = ANY(%s)
+                          AND NOT (l.to_page_id = ANY(%s))
+                      )
+                      OR (
+                          l.to_page_id = ANY(%s)
+                          AND NOT (l.from_page_id = ANY(%s))
+                      )
                   )
                 ORDER BY l.confidence DESC, l.from_page_id, l.to_page_id
                 LIMIT %s
                 """,
-                (workspace_id, workspace_id, page_ids, page_ids, limit),
+                (
+                    workspace_id,
+                    workspace_id,
+                    page_ids,
+                    excluded_page_ids,
+                    page_ids,
+                    excluded_page_ids,
+                    limit,
+                ),
             ).fetchall()
         return [
             WikiPageLink(

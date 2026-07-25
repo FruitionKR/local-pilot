@@ -147,7 +147,9 @@ class RecordingCandidateRepository(InMemoryWikiRepository):
     ) -> None:
         super().__init__(pages, links)
         self.candidate_calls: list[tuple[str, str, int, int]] = []
-        self.link_calls: list[tuple[str, list[str], int]] = []
+        self.link_calls: list[
+            tuple[str, list[str], int, list[str] | None]
+        ] = []
         self.page_id_calls: list[tuple[str, list[str]]] = []
 
     def list_candidate_pages(
@@ -172,12 +174,16 @@ class RecordingCandidateRepository(InMemoryWikiRepository):
         workspace_id: str,
         page_ids: list[str],
         limit: int,
+        excluded_page_ids: list[str] | None = None,
     ) -> list[WikiPageLink]:
-        self.link_calls.append((workspace_id, page_ids, limit))
+        self.link_calls.append(
+            (workspace_id, page_ids, limit, excluded_page_ids)
+        )
         return super().list_links_for_page_ids(
             workspace_id,
             page_ids,
             limit,
+            excluded_page_ids,
         )
 
     def list_pages_by_ids(
@@ -249,9 +255,10 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(repository.link_calls[0][0], "ws_test")
         self.assertEqual(
             repository.link_calls[0][1],
-            ["source:bounded", "concept:bounded"],
+            ["concept:bounded", "source:bounded"],
         )
         self.assertEqual(repository.link_calls[0][2], 7)
+        self.assertEqual(repository.link_calls[0][3], [])
         self.assertEqual(repository.page_id_calls, [("ws_test", [])])
 
     def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
@@ -300,6 +307,68 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn(
             "concept:neighbor",
             {item.page.id for item in result.related_pages},
+        )
+
+    def test_expands_bounded_graph_to_configured_depth(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+            concept_page("concept:two", "Concept Two"),
+            concept_page("concept:three", "Concept Three"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:seed",
+                to_page_id="concept:one",
+                link_type="source_mentions_concept",
+                confidence=0.95,
+            ),
+            WikiPageLink(
+                from_page_id="concept:one",
+                to_page_id="concept:two",
+                link_type="concept_related_to",
+                confidence=0.95,
+            ),
+            WikiPageLink(
+                from_page_id="concept:two",
+                to_page_id="concept:three",
+                link_type="concept_related_to",
+                confidence=0.95,
+            ),
+        ]
+        repository = RecordingCandidateRepository(pages, links)
+        markdown = {
+            page.markdown_uri: (
+                "---\ndocument_id: doc_seed\n---\n\nEvidence. [B0001]"
+                if page.is_source
+                else f"{page.title}. [B0001]"
+            )
+            for page in pages
+            if page.markdown_uri
+        }
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {page.title: 0.9 for page in pages}
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(markdown),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+            graph_expansion_depth=3,
+        )
+
+        result = use_case.execute("seed 질문", workspace_id="ws_test")
+
+        self.assertIn(
+            "concept:three",
+            {item.page.id for item in result.related_pages},
+        )
+        self.assertEqual(
+            [call[1] for call in repository.link_calls],
+            [["source:seed"], ["concept:one"], ["concept:two"]],
         )
 
     def test_starts_from_top_source_and_cites_evidence_context(self) -> None:

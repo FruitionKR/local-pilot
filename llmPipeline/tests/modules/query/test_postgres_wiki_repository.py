@@ -20,6 +20,7 @@ class FakeConnection:
         return None
 
     def execute(self, sql: str, params: tuple[object, ...]) -> FakeCursor:
+        assert sql.count("%s") == len(params)
         self.calls.append((sql, params))
         return FakeCursor()
 
@@ -44,9 +45,11 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         self.assertIn("PARTITION BY p.page_type", sql)
         self.assertIn("type_rank <= %s", sql)
         self.assertLess(
-            sql.index("metadata_candidates AS"),
+            sql.index("candidate_ids AS"),
             sql.index("string_agg(eu.text"),
         )
+        self.assertIn("FROM unit_ranked", sql)
+        self.assertIn("@@ plainto_tsquery", sql)
         self.assertEqual(
             params,
             (
@@ -59,6 +62,13 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 60,
                 40,
                 "검색 질문",
+                "ws_target",
+                "검색 질문",
+                60,
+                40,
+                "검색 질문",
+                60,
+                40,
             ),
         )
 
@@ -80,7 +90,9 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         self.assertIn("to_page.workspace_id = %s", sql)
         self.assertIn("l.link_type <> 'source_related_to'", sql)
         self.assertIn("l.from_page_id = ANY(%s)", sql)
-        self.assertIn("OR l.to_page_id = ANY(%s)", sql)
+        self.assertIn("l.to_page_id = ANY(%s)", sql)
+        self.assertIn("AND NOT (l.to_page_id = ANY(%s))", sql)
+        self.assertIn("AND NOT (l.from_page_id = ANY(%s))", sql)
         self.assertIn("LIMIT %s", sql)
         self.assertEqual(
             params,
@@ -88,7 +100,9 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 "ws_target",
                 "ws_target",
                 ["source-1", "concept-1"],
+                [],
                 ["source-1", "concept-1"],
+                [],
                 200,
             ),
         )

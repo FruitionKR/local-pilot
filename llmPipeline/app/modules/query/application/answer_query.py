@@ -98,6 +98,7 @@ class AnswerQueryUseCase:
         query_evaluator_max_attempts: int = 2,
         candidate_pool_multiplier: int = 4,
         graph_link_limit: int = 200,
+        graph_expansion_depth: int = 3,
     ) -> None:
         self._wiki_repository = wiki_repository
         self._embedding_search = embedding_search
@@ -137,6 +138,7 @@ class AnswerQueryUseCase:
         self._query_evaluator_max_attempts = max(1, query_evaluator_max_attempts)
         self._candidate_pool_multiplier = max(1, candidate_pool_multiplier)
         self._graph_link_limit = max(1, graph_link_limit)
+        self._graph_expansion_depth = max(1, graph_expansion_depth)
         self._query_evaluator_graph = query_evaluator_graph or QueryEvaluatorLoop(
             query_answer_assembler=self._query_answer_assembler,
             query_evaluator=query_evaluator,
@@ -427,19 +429,33 @@ class AnswerQueryUseCase:
             self._concept_candidate_limit * self._candidate_pool_multiplier,
         )
         candidate_page_ids = [page.id for page in candidate_pages]
-        links = self._wiki_repository.list_links_for_page_ids(
-            workspace_id,
-            candidate_page_ids,
-            self._graph_link_limit,
-        )
-        linked_page_ids = {
-            page_id
-            for link in links
-            for page_id in (link.from_page_id, link.to_page_id)
-        }
+        seen_page_ids = set(candidate_page_ids)
+        frontier_page_ids = set(candidate_page_ids)
+        links_by_key: dict[tuple[str, str, str], WikiPageLink] = {}
+        for _depth in range(self._graph_expansion_depth):
+            remaining_link_limit = self._graph_link_limit - len(links_by_key)
+            if not frontier_page_ids or remaining_link_limit <= 0:
+                break
+            links = self._wiki_repository.list_links_for_page_ids(
+                workspace_id,
+                sorted(frontier_page_ids),
+                remaining_link_limit,
+                excluded_page_ids=sorted(seen_page_ids - frontier_page_ids),
+            )
+            next_frontier: set[str] = set()
+            for link in links:
+                links_by_key[
+                    (link.from_page_id, link.to_page_id, link.link_type)
+                ] = link
+                next_frontier.update(
+                    {link.from_page_id, link.to_page_id} - seen_page_ids
+                )
+            seen_page_ids.update(next_frontier)
+            frontier_page_ids = next_frontier
+        links = list(links_by_key.values())
         neighbor_pages = self._wiki_repository.list_pages_by_ids(
             workspace_id,
-            sorted(linked_page_ids - set(candidate_page_ids)),
+            sorted(seen_page_ids - set(candidate_page_ids)),
         )
         pages = list(
             {

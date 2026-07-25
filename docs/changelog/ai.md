@@ -21,7 +21,9 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Query 모듈 `68 passed`, `4 subtests passed`, llmPipeline 전체 `487 passed`, `43 subtests passed`
 - 리뷰 후 metadata 후보를 먼저 제한하고 해당 page의 embedding unit만 집계하도록 변경
 - 초기 후보에 닿는 bounded link와 반대쪽 page를 추가 조회해 lexical Top-K 밖의 직접 연결 node도 graph traversal에 포함
-- 집중 테스트 `32 passed`, llmPipeline 전체 `494 passed`, Python compile과 diff 검사 통과
+- embedding unit 본문 match 후보를 metadata 후보와 합쳐 본문에만 관련 내용이 있는 page의 누락 방지
+- 전역 link budget 안에서 frontier를 최대 3단계 반복 조회해 `max_depth=3` traversal 계약 유지
+- 집중 테스트 `39 passed`, llmPipeline 전체 `496 passed`, Python compile과 diff 검사 통과
 
 ### chore: Legacy source 관계 정리 절차 추가
 
