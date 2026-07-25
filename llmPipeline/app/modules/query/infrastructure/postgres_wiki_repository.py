@@ -11,6 +11,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
         source_limit: int,
         concept_limit: int,
     ) -> list[WikiPage]:
+        content_query = " OR ".join(query.split())
         with database.connect() as conn:
             rows = conn.execute(
                 """
@@ -65,7 +66,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                         max(
                             ts_rank_cd(
                                 to_tsvector('simple', eu.text),
-                                plainto_tsquery('simple', %s)
+                                websearch_to_tsquery('simple', %s)
                             )
                         ) AS text_rank
                     FROM wiki_embedding_units eu
@@ -74,7 +75,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
                       AND p.workspace_id = %s
                       AND p.page_type IN ('source', 'concept')
                       AND to_tsvector('simple', eu.text)
-                          @@ plainto_tsquery('simple', %s)
+                          @@ websearch_to_tsquery('simple', %s)
                     GROUP BY p.id, p.page_type
                 ),
                 unit_ranked AS (
@@ -174,9 +175,9 @@ class PostgresWikiRepository(WikiRepositoryPort):
                     workspace_id,
                     source_limit,
                     concept_limit,
-                    query,
+                    content_query,
                     workspace_id,
-                    query,
+                    content_query,
                     source_limit,
                     concept_limit,
                     query,

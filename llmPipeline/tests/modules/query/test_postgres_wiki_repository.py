@@ -49,7 +49,7 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
             sql.index("string_agg(eu.text"),
         )
         self.assertIn("FROM unit_ranked", sql)
-        self.assertIn("@@ plainto_tsquery", sql)
+        self.assertIn("@@ websearch_to_tsquery", sql)
         self.assertEqual(
             params,
             (
@@ -61,9 +61,9 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 "ws_target",
                 60,
                 40,
-                "검색 질문",
+                "검색 OR 질문",
                 "ws_target",
-                "검색 질문",
+                "검색 OR 질문",
                 60,
                 40,
                 "검색 질문",
@@ -71,6 +71,24 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 40,
             ),
         )
+
+    def test_body_candidates_match_any_query_term(self) -> None:
+        connection = FakeConnection()
+
+        with patch(
+            "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
+            return_value=connection,
+        ):
+            PostgresWikiRepository().list_candidate_pages(
+                "ws_target",
+                "alpha beta",
+                source_limit=60,
+                concept_limit=40,
+            )
+
+        sql, params = connection.calls[0]
+        self.assertIn("websearch_to_tsquery('simple', %s)", sql)
+        self.assertEqual(params.count("alpha OR beta"), 2)
 
     def test_active_links_include_bounded_neighbors_in_workspace(self) -> None:
         connection = FakeConnection()

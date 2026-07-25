@@ -23,7 +23,8 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 초기 후보에 닿는 bounded link와 반대쪽 page를 추가 조회해 lexical Top-K 밖의 직접 연결 node도 graph traversal에 포함
 - embedding unit 본문 match 후보를 metadata 후보와 합쳐 본문에만 관련 내용이 있는 page의 누락 방지
 - 전역 link budget 안에서 frontier를 최대 3단계 반복 조회해 `max_depth=3` traversal 계약 유지
-- 집중 테스트 `39 passed`, llmPipeline 전체 `496 passed`, Python compile과 diff 검사 통과
+- 다중 검색어를 OR 본문 후보로 변환해 일부 검색어만 포함하거나 서로 다른 unit에 검색어가 나뉜 page도 후보화
+- 집중 테스트 `39 passed`, llmPipeline 전체 `497 passed`, Python compile과 diff 검사 통과
 
 ### chore: Legacy source 관계 정리 절차 추가
 
