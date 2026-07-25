@@ -41,14 +41,28 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
 
         sql, params = connection.calls[0]
         self.assertIn("p.workspace_id = %s", sql)
-        self.assertIn("PARTITION BY page_type", sql)
+        self.assertIn("PARTITION BY p.page_type", sql)
         self.assertIn("type_rank <= %s", sql)
+        self.assertLess(
+            sql.index("metadata_candidates AS"),
+            sql.index("string_agg(eu.text"),
+        )
         self.assertEqual(
             params,
-            ("ws_target", "검색 질문", "검색 질문", "검색 질문", 60, 40),
+            (
+                "검색 질문",
+                "검색 질문",
+                "검색 질문",
+                "검색 질문",
+                "검색 질문",
+                "ws_target",
+                60,
+                40,
+                "검색 질문",
+            ),
         )
 
-    def test_active_links_require_both_pages_in_workspace(self) -> None:
+    def test_active_links_include_bounded_neighbors_in_workspace(self) -> None:
         connection = FakeConnection()
 
         with patch(
@@ -66,7 +80,7 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
         self.assertIn("to_page.workspace_id = %s", sql)
         self.assertIn("l.link_type <> 'source_related_to'", sql)
         self.assertIn("l.from_page_id = ANY(%s)", sql)
-        self.assertIn("l.to_page_id = ANY(%s)", sql)
+        self.assertIn("OR l.to_page_id = ANY(%s)", sql)
         self.assertIn("LIMIT %s", sql)
         self.assertEqual(
             params,
@@ -77,6 +91,26 @@ class PostgresWikiRepositoryTest(unittest.TestCase):
                 ["source-1", "concept-1"],
                 200,
             ),
+        )
+
+    def test_neighbor_pages_are_loaded_by_bounded_ids(self) -> None:
+        connection = FakeConnection()
+
+        with patch(
+            "app.modules.query.infrastructure.postgres_wiki_repository.database.connect",
+            return_value=connection,
+        ):
+            PostgresWikiRepository().list_pages_by_ids(
+                "ws_target",
+                ["concept-neighbor"],
+            )
+
+        sql, params = connection.calls[0]
+        self.assertIn("workspace_id = %s", sql)
+        self.assertIn("id = ANY(%s)", sql)
+        self.assertEqual(
+            params,
+            ("ws_target", ["concept-neighbor"]),
         )
 
 

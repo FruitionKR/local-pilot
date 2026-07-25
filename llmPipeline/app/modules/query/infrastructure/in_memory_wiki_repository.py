@@ -31,5 +31,14 @@ class InMemoryWikiRepository(WikiRepositoryPort):
             link
             for link in self._links
             if link.from_page_id in candidate_ids
-            and link.to_page_id in candidate_ids
+            or link.to_page_id in candidate_ids
         ][:limit]
+
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
+        del workspace_id
+        requested_ids = set(page_ids)
+        return [page for page in self._pages if page.id in requested_ids]

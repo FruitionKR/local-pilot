@@ -14,7 +14,7 @@ class PostgresWikiRepository(WikiRepositoryPort):
         with database.connect() as conn:
             rows = conn.execute(
                 """
-                WITH page_text AS (
+                WITH metadata_ranked AS (
                     SELECT
                         p.id,
                         p.page_type,
@@ -23,6 +23,51 @@ class PostgresWikiRepository(WikiRepositoryPort):
                         p.summary,
                         p.markdown_uri,
                         p.updated_at,
+                        CASE
+                            WHEN lower(p.title) = lower(%s)
+                              OR lower(p.slug) = lower(%s)
+                            THEN 1
+                            ELSE 0
+                        END AS exact_match,
+                        row_number() OVER (
+                            PARTITION BY p.page_type
+                            ORDER BY
+                                CASE
+                                    WHEN lower(p.title) = lower(%s)
+                                      OR lower(p.slug) = lower(%s)
+                                    THEN 1
+                                    ELSE 0
+                                END DESC,
+                                ts_rank_cd(
+                                    to_tsvector(
+                                        'simple',
+                                        concat_ws(' ', p.title, p.slug, p.summary)
+                                    ),
+                                    plainto_tsquery('simple', %s)
+                                ) DESC,
+                                p.updated_at DESC
+                        ) AS type_rank
+                    FROM wiki_pages p
+                    WHERE p.status = 'active'
+                      AND p.workspace_id = %s
+                      AND p.page_type IN ('source', 'concept')
+                ),
+                metadata_candidates AS (
+                    SELECT *
+                    FROM metadata_ranked
+                    WHERE (page_type = 'source' AND type_rank <= %s)
+                       OR (page_type = 'concept' AND type_rank <= %s)
+                ),
+                page_text AS (
+                    SELECT
+                        p.id,
+                        p.page_type,
+                        p.title,
+                        p.slug,
+                        p.summary,
+                        p.markdown_uri,
+                        p.updated_at,
+                        p.exact_match,
                         concat_ws(
                             ' ',
                             p.title,
@@ -30,11 +75,8 @@ class PostgresWikiRepository(WikiRepositoryPort):
                             p.summary,
                             string_agg(eu.text, ' ')
                         ) AS searchable_text
-                    FROM wiki_pages p
+                    FROM metadata_candidates p
                     LEFT JOIN wiki_embedding_units eu ON eu.page_id = p.id
-                    WHERE p.status = 'active'
-                      AND p.workspace_id = %s
-                      AND p.page_type IN ('source', 'concept')
                     GROUP BY
                         p.id,
                         p.page_type,
@@ -42,45 +84,32 @@ class PostgresWikiRepository(WikiRepositoryPort):
                         p.slug,
                         p.summary,
                         p.markdown_uri,
-                        p.updated_at
+                        p.updated_at,
+                        p.exact_match
                 ),
                 scored_pages AS (
                     SELECT
                         *,
-                        CASE
-                            WHEN lower(title) = lower(%s)
-                              OR lower(slug) = lower(%s)
-                            THEN 1
-                            ELSE 0
-                        END AS exact_match,
                         ts_rank_cd(
                             to_tsvector('simple', searchable_text),
                             plainto_tsquery('simple', %s)
                         ) AS text_rank
                     FROM page_text
-                ),
-                ranked_pages AS (
-                    SELECT
-                        *,
-                        row_number() OVER (
-                            PARTITION BY page_type
-                            ORDER BY exact_match DESC, text_rank DESC, updated_at DESC
-                        ) AS type_rank
-                    FROM scored_pages
                 )
                 SELECT id, page_type, title, slug, summary, markdown_uri
-                FROM ranked_pages
-                WHERE (page_type = 'source' AND type_rank <= %s)
-                   OR (page_type = 'concept' AND type_rank <= %s)
+                FROM scored_pages
                 ORDER BY exact_match DESC, text_rank DESC, updated_at DESC
                 """,
                 (
+                    query,
+                    query,
+                    query,
+                    query,
+                    query,
                     workspace_id,
-                    query,
-                    query,
-                    query,
                     source_limit,
                     concept_limit,
+                    query,
                 ),
             ).fetchall()
         return [
@@ -115,8 +144,10 @@ class PostgresWikiRepository(WikiRepositoryPort):
                   AND l.link_type <> 'source_related_to'
                   AND from_page.workspace_id = %s
                   AND to_page.workspace_id = %s
-                  AND l.from_page_id = ANY(%s)
-                  AND l.to_page_id = ANY(%s)
+                  AND (
+                      l.from_page_id = ANY(%s)
+                      OR l.to_page_id = ANY(%s)
+                  )
                 ORDER BY l.confidence DESC, l.from_page_id, l.to_page_id
                 LIMIT %s
                 """,
@@ -129,6 +160,36 @@ class PostgresWikiRepository(WikiRepositoryPort):
                 link_type=row["link_type"],
                 label=row["label"],
                 confidence=float(row["confidence"] or 1.0),
+            )
+            for row in rows
+        ]
+
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
+        if not page_ids:
+            return []
+        with database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, page_type, title, slug, summary, markdown_uri
+                FROM wiki_pages
+                WHERE status = 'active'
+                  AND workspace_id = %s
+                  AND id = ANY(%s)
+                """,
+                (workspace_id, page_ids),
+            ).fetchall()
+        return [
+            WikiPage(
+                id=row["id"],
+                page_type=row["page_type"],
+                title=row["title"],
+                slug=row["slug"],
+                summary=row["summary"] or "",
+                markdown_uri=row["markdown_uri"],
             )
             for row in rows
         ]

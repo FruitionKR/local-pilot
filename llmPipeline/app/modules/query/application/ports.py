@@ -21,6 +21,13 @@ class WikiRepositoryPort(Protocol):
     ) -> list[WikiPageLink]:
         ...
 
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
+        ...
+
     def list_embedding_units_by_page_ids(self, page_ids: list[str]) -> dict[str, list[WikiEmbeddingUnit]]:
         ...
 

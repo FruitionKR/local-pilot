@@ -148,6 +148,7 @@ class RecordingCandidateRepository(InMemoryWikiRepository):
         super().__init__(pages, links)
         self.candidate_calls: list[tuple[str, str, int, int]] = []
         self.link_calls: list[tuple[str, list[str], int]] = []
+        self.page_id_calls: list[tuple[str, list[str]]] = []
 
     def list_candidate_pages(
         self,
@@ -178,6 +179,14 @@ class RecordingCandidateRepository(InMemoryWikiRepository):
             page_ids,
             limit,
         )
+
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
+        self.page_id_calls.append((workspace_id, page_ids))
+        return super().list_pages_by_ids(workspace_id, page_ids)
 
 
 def source_page(page_id: str, title: str) -> WikiPage:
@@ -243,6 +252,55 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             ["source:bounded", "concept:bounded"],
         )
         self.assertEqual(repository.link_calls[0][2], 7)
+        self.assertEqual(repository.page_id_calls, [("ws_test", [])])
+
+    def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:neighbor", "Neighbor Concept"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:seed",
+                to_page_id="concept:neighbor",
+                link_type="source_mentions_concept",
+                confidence=0.95,
+            )
+        ]
+        repository = RecordingCandidateRepository(pages, links)
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.9,
+                    "Neighbor Concept": 0.9,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:seed.md": (
+                        "---\ndocument_id: doc_seed\n---\n\nSeed. [B0001]"
+                    ),
+                    "s3://test/concept:neighbor.md": "Neighbor. [B0002]",
+                }
+            ),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+        )
+
+        result = use_case.execute("seed 질문", workspace_id="ws_test")
+
+        self.assertEqual(
+            repository.page_id_calls,
+            [("ws_test", ["concept:neighbor"])],
+        )
+        self.assertIn(
+            "concept:neighbor",
+            {item.page.id for item in result.related_pages},
+        )
 
     def test_starts_from_top_source_and_cites_evidence_context(self) -> None:
         pages = [

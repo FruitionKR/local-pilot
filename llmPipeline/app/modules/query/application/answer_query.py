@@ -420,16 +420,32 @@ class AnswerQueryUseCase:
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _ScoredWikiCandidates:
-        pages = self._wiki_repository.list_candidate_pages(
+        candidate_pages = self._wiki_repository.list_candidate_pages(
             workspace_id,
             query_rewrite.retrieval_query,
             self._source_candidate_limit * self._candidate_pool_multiplier,
             self._concept_candidate_limit * self._candidate_pool_multiplier,
         )
+        candidate_page_ids = [page.id for page in candidate_pages]
         links = self._wiki_repository.list_links_for_page_ids(
             workspace_id,
-            [page.id for page in pages],
+            candidate_page_ids,
             self._graph_link_limit,
+        )
+        linked_page_ids = {
+            page_id
+            for link in links
+            for page_id in (link.from_page_id, link.to_page_id)
+        }
+        neighbor_pages = self._wiki_repository.list_pages_by_ids(
+            workspace_id,
+            sorted(linked_page_ids - set(candidate_page_ids)),
+        )
+        pages = list(
+            {
+                page.id: page
+                for page in [*candidate_pages, *neighbor_pages]
+            }.values()
         )
         self._publish(
             event_publisher,
@@ -444,16 +460,25 @@ class AnswerQueryUseCase:
             "검색용 Wiki Markdown 본문을 로드했습니다.",
             {"loaded_markdown_count": len([page for page in pages if page.markdown])},
         )
-        source_pages = [page for page in pages if page.is_source]
-        concept_pages = [page for page in pages if page.is_concept]
+        candidate_page_id_set = set(candidate_page_ids)
+        source_pages = [
+            page
+            for page in pages
+            if page.is_source and page.id in candidate_page_id_set
+        ]
+        concept_pages = [
+            page
+            for page in pages
+            if page.is_concept and page.id in candidate_page_id_set
+        ]
         source_scores = self._query_page_scorer.score_pages(
             query_rewrite,
-            source_pages,
+            [page for page in pages if page.is_source],
             embedding_weight=0.8,
         )
         concept_scores = self._query_page_scorer.score_pages(
             query_rewrite,
-            concept_pages,
+            [page for page in pages if page.is_concept],
             embedding_weight=0.8,
         )
         self._publish(

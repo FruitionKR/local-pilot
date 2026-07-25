@@ -19,6 +19,9 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Workspace 전체 Wiki page/link를 먼저 읽던 Query repository 계약을 Source/Concept별 bounded 후보와 후보 page 사이 bounded link 조회로 변경
 - PostgreSQL lexical rank로 후보 pool을 제한한 뒤 기존 hybrid scoring과 evidence·related page·traversal path 계약 유지
 - Query 모듈 `68 passed`, `4 subtests passed`, llmPipeline 전체 `487 passed`, `43 subtests passed`
+- 리뷰 후 metadata 후보를 먼저 제한하고 해당 page의 embedding unit만 집계하도록 변경
+- 초기 후보에 닿는 bounded link와 반대쪽 page를 추가 조회해 lexical Top-K 밖의 직접 연결 node도 graph traversal에 포함
+- 집중 테스트 `32 passed`, llmPipeline 전체 `494 passed`, Python compile과 diff 검사 통과
 
 ### chore: Legacy source 관계 정리 절차 추가
 
