@@ -8,6 +8,19 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### refactor: pipeline 실행 요청 body에서 user_id·workspace_id 제거
+
+**변경된 것**
+
+- `DocumentProcessingRequester`가 `/pipeline/runs`·`/chat-wiki/runs` 요청 body에 넣던 `user_id`·`workspace_id`를 제거했다. `request(...)` 시그니처와 `PipelineRunRequest` record, 관련 로그에서도 두 값을 뺐다.
+- llmPipeline은 두 필드를 optional 호환 필드로만 받고 실제 Wiki 저장 범위는 `document_id`로 DB에서 재조회하므로(스키마 주석·`_run_pipeline_request`), body에서 빼도 동작이 동일하다. 요청 계약 예시(`docs/spec/chat-to-wiki-contract.md`)도 이미 두 필드 없이 정의돼 있어 코드가 계약과 일치하게 됐다.
+- llmPipeline 스키마는 하위호환을 위해 그대로 두고 backend 송신부만 정리했다.
+
+**검증**
+
+- `DocumentServiceBlocksTest`의 `processingRequester.request` 검증을 새 5-인자 시그니처로 갱신했다.
+- `./gradlew test` 전체 통과.
+
 ### feat: wiki maintenance lint llmPipeline 프록시 추가
 
 **변경된 것**

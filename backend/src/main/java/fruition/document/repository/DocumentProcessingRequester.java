@@ -31,15 +31,14 @@ public class DocumentProcessingRequester {
     }
 
     /** chatWiki=true면 채팅 Wiki page화 전용 엔드포인트(/chat-wiki/runs)로, 아니면 일반 문서 처리 엔드포인트로 보낸다. */
-    public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
+    public PipelineRunResponse request(String documentId, String callbackUrl,
                                        String selectionMode, String inputMarkdown, boolean chatWiki) {
         String endpoint = chatWiki ? chatEndpoint : processingEndpoint;
-        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown);
-        log.info("[파이프라인 요청 데이터] endpoint={} documentId={} userId={} workspaceId={} chatWiki={} selectionMode={} callbackUrl={} inputMarkdownPresent={} inputMarkdownLength={}",
+        // user_id/workspace_id는 보내지 않는다. pipeline이 document_id로 DB에서 저장 범위를 조회한다.
+        PipelineRunRequest body = new PipelineRunRequest(documentId, callbackUrl, selectionMode, inputMarkdown);
+        log.info("[파이프라인 요청 데이터] endpoint={} documentId={} chatWiki={} selectionMode={} callbackUrl={} inputMarkdownPresent={} inputMarkdownLength={}",
                 endpoint,
                 documentId,
-                userId,
-                workspaceId,
                 chatWiki,
                 selectionMode,
                 callbackUrl,
@@ -52,10 +51,9 @@ public class DocumentProcessingRequester {
                     .body(body)
                     .retrieve()
                     .body(PipelineRunResponse.class);
-            log.info("[파이프라인 실행 요청 완료] endpoint={} documentId={} workspaceId={} runId={} status={}",
+            log.info("[파이프라인 실행 요청 완료] endpoint={} documentId={} runId={} status={}",
                     endpoint,
                     documentId,
-                    workspaceId,
                     response != null ? response.runId() : "null",
                     response != null ? response.status() : "null");
             return response;
@@ -74,8 +72,6 @@ public class DocumentProcessingRequester {
 
     public record PipelineRunRequest(
             @JsonProperty("document_id") String documentId,
-            @JsonProperty("user_id") String userId,
-            @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("log_callback_url") String logCallbackUrl,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown

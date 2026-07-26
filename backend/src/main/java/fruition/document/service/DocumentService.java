@@ -710,8 +710,8 @@ public class DocumentService {
                 document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
-                    processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
-                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki);
+                    processingRequester.request(documentId, callbackUrl,
+                            document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki);
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
