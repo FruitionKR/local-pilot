@@ -12,6 +12,7 @@ import fruition.document.domain.IdempotencyRecord;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.DocumentAlreadyProcessingException;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.InvalidDocumentFilenameException;
@@ -22,6 +23,7 @@ import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentIngestResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
@@ -956,6 +958,49 @@ public class DocumentService {
                 updatedAt,
                 true
         );
+    }
+
+    /**
+     * 편집 가능 Markdown 문서를 최신 편집본으로 재ingest한다. DB 편집본을 MinIO 원본으로 승격(덮어쓰기)한 뒤
+     * 파이프라인 처리 큐에 재등록해, 업로드 당시가 아닌 편집한 내용으로 Wiki가 만들어지게 한다.
+     */
+    @Transactional
+    public DocumentIngestResponse ingest(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 재처리할 수 있습니다.");
+        }
+        if (document.getStatus() == DocumentStatus.processing) {
+            throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");
+        }
+
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState editState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+
+        byte[] bytes = editState.getMarkdown().getBytes(StandardCharsets.UTF_8);
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(document.getSourceUri())
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("문서 원본 갱신 중 오류가 발생했습니다.", e);
+        }
+
+        document.reopenForReingest(editState.getContentHash(), bytes.length);
+        log.info("[문서 재ingest DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={}",
+                documentId, contentHashPrefix(editState.getContentHash()), bytes.length);
+        requestProcessingAfterCommit(documentId);
+        return new DocumentIngestResponse(documentId, document.getStatus());
     }
 
     @Transactional

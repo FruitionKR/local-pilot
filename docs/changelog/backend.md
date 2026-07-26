@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: 편집본 재ingest API 추가 (POST /documents/{id}/ingest)
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/documents/{document_id}/ingest`를 추가했다. 편집 가능 Markdown 문서를 **최신 편집본으로 다시 Wiki 파이프라인에 넣는다.** 지금까지는 업로드 당시 원본으로만 위키가 만들어지고 이후 편집(`PUT /content`, DB `document_edit_states`)은 위키에 반영되지 않았다.
+- 동작: DB 편집본을 읽어 **MinIO 원본(`source_uri`)으로 덮어써 승격**한 뒤, 문서를 `processing`으로 되돌리고(`Document.reopenForReingest`) 처리 큐에 재등록한다. 파이프라인은 기존대로 MinIO 원본을 읽으므로 llmPipeline 수정이 필요 없다.
+- 결정 반영: ① 이미 `processing`인 문서는 `409 DOCUMENT_ALREADY_PROCESSING`으로 거절(중복 run 방지) ② 편집본 해시로 dedup `content_hash`도 정렬 ③ 재실행 시 위키 갱신은 파이프라인의 기존 `wiki_pages` upsert 동작에 위임(채팅 재생성과 동일).
+- 편집 가능 Markdown(`DocumentRole.EDITABLE`)만 대상이다. PDF 등 비-Markdown 재처리는 별도 항목(문서 형식 확장)으로 남긴다.
+- **업로드 시 자동 처리는 그대로 유지**했다. 즉 이번 변경은 additive이며 기존 "업로드=자동 위키화" 흐름을 깨지 않는다. 완전한 "업로드/ingest 분리"(업로드는 `uploaded`만, 프론트 ingest 버튼)는 프론트 대응과 함께하는 후속 단계다.
+
+**검증**
+
+- `DocumentServiceBlocksTest`에 편집본 MinIO 승격·상태 전환·재큐, 비-editable 거절, 처리 중 409 거절 테스트를 추가했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 프론트에 ingest 버튼 UI와, 업로드를 `uploaded`(자동처리 off)로 전환하는 작업은 `docs/issue/backend/2026-07-26.md`의 `4.`에서 후속으로 관리한다.
+
 ### refactor: pipeline 실행 요청 body에서 user_id·workspace_id 제거
 
 **변경된 것**

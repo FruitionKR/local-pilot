@@ -233,6 +233,20 @@ public class Document {
         this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
     }
 
+    /**
+     * 편집 가능 Markdown 재ingest: 편집본을 MinIO 원본으로 덮어쓴 뒤 재처리한다. 일반 문서는
+     * 파이프라인이 MinIO 원본 전체를 읽으므로 inline 입력(pipelineInputMarkdown)은 두지 않는다.
+     */
+    public void reopenForReingest(String contentHash, long byteSize) {
+        this.contentHash = contentHash;
+        this.byteSize = byteSize;
+        this.status = DocumentStatus.processing;
+        this.processedAt = null;
+        this.errorMessage = null;
+        this.pipelineInputMarkdown = null;
+        this.reconciledAt = null; // 재처리하므로 완료 후 다시 reconcile 대상이 되게 리셋
+    }
+
     /** 완료 후처리(reconcile)를 마쳤음을 기록한다. 이후 폴링 조회에서 제외된다. */
     public void markReconciled(Instant now) {
         this.reconciledAt = now;

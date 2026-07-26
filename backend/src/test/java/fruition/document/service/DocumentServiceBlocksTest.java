@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentEditState;
 import fruition.document.domain.DocumentRole;
+import fruition.document.domain.DocumentStatus;
 import fruition.document.domain.IdempotencyRecord;
 import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
@@ -11,6 +12,7 @@ import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentIngestResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
 import fruition.document.dto.DocumentLifecycleResponse;
@@ -19,8 +21,10 @@ import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
+import fruition.document.exception.DocumentAlreadyProcessingException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentUploadException;
+import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.exception.DocumentWriteForbiddenException;
 import fruition.document.exception.IdempotencyConflictException;
@@ -51,6 +55,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -863,5 +868,59 @@ class DocumentServiceBlocksTest {
         documentService.doRequestProcessing("doc_deleted_workspace");
 
         verifyNoInteractions(processingRequester);
+    }
+
+    @Test
+    @DisplayName("재ingest는 편집본을 MinIO 원본으로 승격하고 상태를 processing으로 되돌린다")
+    void ingest_promotesDraftAndReprocesses() throws Exception {
+        stubOwnedWorkspace();
+        when(storageProps.getBucket()).thenReturn("fruition-storage");
+        Document document = editableMarkdown("doc_ing");
+        document.updateStatus(DocumentStatus.completed, null, Instant.now(), null);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_ing", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById("doc_ing"))
+                .thenReturn(Optional.of(new DocumentEditState("doc_ing", "# 편집본", "edit-hash")));
+
+        DocumentIngestResponse response = documentService.ingest(WORKSPACE_ID, USER_ID, "doc_ing");
+
+        verify(editStateInitializer).initializeIfNeeded(document);
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(transactionTemplate).execute(any());
+        assertThat(response.status()).isEqualTo(DocumentStatus.processing);
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.processing);
+        assertThat(document.getContentHash()).isEqualTo("edit-hash");
+    }
+
+    @Test
+    @DisplayName("편집 가능 Markdown이 아니면 재ingest를 거절한다")
+    void ingest_rejectsNonEditableDocument() throws Exception {
+        stubOwnedWorkspace();
+        Document pdf = new Document("doc_pdf", WORKSPACE_ID, USER_ID, "a.pdf", "application/pdf", 10,
+                "sources/documents/doc_pdf/original", "pdf-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_pdf", WORKSPACE_ID))
+                .thenReturn(Optional.of(pdf));
+
+        assertThatThrownBy(() -> documentService.ingest(WORKSPACE_ID, USER_ID, "doc_pdf"))
+                .isInstanceOf(InvalidMarkdownContentException.class);
+        verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    @DisplayName("이미 처리 중인 문서는 재ingest를 409로 거절한다")
+    void ingest_rejectsAlreadyProcessing() throws Exception {
+        stubOwnedWorkspace();
+        Document document = editableMarkdown("doc_proc"); // 생성자 기본 status=processing
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_proc", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> documentService.ingest(WORKSPACE_ID, USER_ID, "doc_proc"))
+                .isInstanceOf(DocumentAlreadyProcessingException.class);
+        verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+    }
+
+    private Document editableMarkdown(String id) {
+        return new Document(id, WORKSPACE_ID, USER_ID, "note.md", "text/markdown", 10,
+                "sources/documents/" + id + "/original", "orig-hash");
     }
 }

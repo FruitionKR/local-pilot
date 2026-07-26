@@ -4,6 +4,7 @@ import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wiki.maintenance.exception.PipelineWikiMaintenanceException;
+import fruition.document.exception.DocumentAlreadyProcessingException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -125,6 +126,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_VERSION_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAlreadyProcessingException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAlreadyProcessing(DocumentAlreadyProcessingException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("DOCUMENT_ALREADY_PROCESSING", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentOriginalNotFoundException.class)
