@@ -11,6 +11,9 @@ import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.exception.DocumentWriteForbiddenException;
+import fruition.document.exception.FolderNotFoundException;
+import fruition.document.exception.FolderVersionConflictException;
+import fruition.document.exception.InvalidFolderRequestException;
 import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidDocumentVersionException;
@@ -141,6 +144,27 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_CONTENT_VERSION_NOT_FOUND", "문서 콘텐츠 버전을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(FolderNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFolderNotFound(FolderNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("FOLDER_NOT_FOUND", "폴더를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(InvalidFolderRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidFolderRequest(InvalidFolderRequestException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_FOLDER_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(FolderVersionConflictException.class)
+    public ResponseEntity<ErrorResponse> handleFolderVersionConflict(FolderVersionConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("FOLDER_VERSION_CONFLICT", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentOriginalNotFoundException.class)

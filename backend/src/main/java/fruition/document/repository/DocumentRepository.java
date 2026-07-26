@@ -13,6 +13,7 @@ import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface DocumentRepository extends JpaRepository<Document, String> {
 
@@ -160,5 +161,43 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("baseVersion") long baseVersion,
             @Param("sortOrder") long sortOrder,
             @Param("restoredAt") Instant restoredAt
+    );
+
+    /** 대상 폴더(또는 root, folderId=null) 안 활성 문서의 최대 sort_order. 배치 기본 위치(끝) 계산용. */
+    @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
+            + "WHERE d.workspaceId = :workspaceId AND d.deletedAt IS NULL "
+            + "AND ((:folderId IS NULL AND d.sourceFolderId IS NULL) OR d.sourceFolderId = :folderId)")
+    long findMaxSortOrderInFolder(
+            @Param("workspaceId") String workspaceId,
+            @Param("folderId") UUID folderId
+    );
+
+    /** 문서를 폴더(또는 root, folderId=null)로 배치한다. 폴더 배치는 페이지 중첩(parent_document_id)을 해제한다. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.sourceFolderId = :sourceFolderId, d.parentDocumentId = NULL, "
+            + "d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
+            + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")
+    int placeIfVersionMatches(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("baseVersion") long baseVersion,
+            @Param("sourceFolderId") UUID sourceFolderId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
+
+    /** 폴더 cascade 삭제: 지정 폴더들에 직접 배치된 활성 문서를 함께 소프트 삭제한다. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.deletedAt = :deletedAt, d.deletedBy = :deletedBy, "
+            + "d.deleteOperationId = :deleteOperationId, d.updatedAt = :deletedAt "
+            + "WHERE d.sourceFolderId IN :folderIds AND d.deletedAt IS NULL")
+    int softDeleteBySourceFolderIds(
+            @Param("folderIds") List<UUID> folderIds,
+            @Param("deletedBy") String deletedBy,
+            @Param("deletedAt") Instant deletedAt,
+            @Param("deleteOperationId") UUID deleteOperationId
     );
 }

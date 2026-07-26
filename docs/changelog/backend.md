@@ -8,6 +8,33 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: 폴더 트리 영속화 API 추가
+
+**변경된 것**
+
+- 준비돼 있던 `source_folders`(자기참조 폴더 트리) 모델을 실제 API로 연결했다. 지금까지 프론트가 `localStorage`로만 관리하던 폴더 트리를 서버에 영속화한다.
+- 엔드포인트 5종을 추가했다.
+  - `GET /api/workspaces/{workspace_id}/document-tree` — 폴더 계층과 문서 배치(`source_folder_id`·`sort_order`)를 함께 반환(클라이언트가 parent 참조로 트리 구성).
+  - `POST /api/workspaces/{workspace_id}/folders` — 폴더 생성(이름·상위 폴더·정렬, `sort_order` 생략 시 형제 끝).
+  - `PATCH .../folders/{folder_id}` — 이름·상위 폴더·정렬을 원자적으로 변경. `base_version` 낙관적 잠금.
+  - `DELETE .../folders/{folder_id}` — 폴더 삭제. `base_version`(선택) 검증.
+  - `PATCH .../documents/{document_id}/placement` — 문서를 폴더(또는 root, `folder_id:null`)로 이동. `base_version` 낙관적 잠금.
+- **폴더 삭제 정책: cascade 소프트 삭제.** 하위 폴더 전체(BFS)와 그 안에 배치된 문서를 같은 `delete_operation_id`로 함께 소프트 삭제한다.
+- **순환 차단**: 폴더를 자기 자신이나 하위 폴더로 이동하면 `400 INVALID_FOLDER_REQUEST`. 조상 체인을 거슬러 검사한다.
+- **권한·소속**: 워크스페이스 멤버십과 대상 폴더/문서의 워크스페이스 소속을 검증한다. 문서 이동은 소유자만 가능(`403`).
+- 오류: 폴더 미존재 `404 FOLDER_NOT_FOUND`, 버전 충돌 `409 FOLDER_VERSION_CONFLICT`, 문서 버전 충돌 `409 DOCUMENT_VERSION_CONFLICT`.
+
+**검증**
+
+- `DocumentTreeServiceTest`에 생성 기본 정렬, 순환 이동 거절, 버전 충돌(폴더/문서), cascade 소프트 삭제(하위 폴더+문서 같은 operation), 트리 조회 매핑 테스트를 추가했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- **폴더 복구는 미구현**. cascade 소프트 삭제된 폴더를 되살리는 트리 복원은 후속(계층 트리 복구·`docs/issue/backend/2026-07-26.md`의 `5.`)에서 다룬다. 함께 소프트 삭제된 문서는 기존 `POST /documents/{id}/restore`로 개별 복구(최상위 배치) 가능.
+- 페이지 중첩(`parent_document_id`)은 이번 범위 밖이며, 폴더 배치는 페이지 중첩을 해제한다.
+- 프론트 `useProjectTree`의 `localStorage` 저장을 이 API로 교체하는 작업은 프론트 후속.
+
 ### feat: 문서 콘텐츠 버전 이력·롤백 추가
 
 **변경된 것**
