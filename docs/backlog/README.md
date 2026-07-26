@@ -30,4 +30,5 @@
 - `issue-2026-07-21.md` — 새 노트 생성, pipeline schema 소유권 충돌, Markdown 편집 router·생성 계약, 이메일 인증 회원가입·비밀번호 재설정 API와 Frontend 연동 해결 기록. 노트 본문 저장 API 잔여분은 `docs/issue/backend/2026-07-21.md`. pipeline 동시 실행·heartbeat는 dev에서 해결(요약은 `docs/changelog/ai.md` 2026-07-21 항목).
 - `issue-ai-2026-07-22.md` — Agent 전체 편집·500 응답, Wiki maintenance HTTP 경계, PDF evaluator 원본 보존 검증 해결 기록.
 - `issue-2026-07-25.md` — Markdown 원문 내보내기 API와 문서 상태 불변 검증 완료 기록. 다른 문서 형식 확장은 `docs/issue/backend/2026-07-25.md`.
+- `issue-2026-07-26.md` — wiki-schema·wiki maintenance lint llmPipeline 프록시 신규 구현과, 코드 대조로 확인한 기완료(노트 본문 저장, content_hash workspace 범위화, Agent turn baseVersion 409, source_refs 노출) 기록. 미해결 잔여분은 `docs/issue/backend/2026-07-26.md`.
 - `Fruition_MVP_API_Contract.md` — 로그인 없이 단일 기본 workspace만 쓰던 시절 API 계약. 현재 API 계약은 `docs/Fruition_MVP_API_Contract.md`.
