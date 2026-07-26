@@ -10,6 +10,7 @@ import fruition.document.domain.DocumentStatus;
 import fruition.document.domain.IdempotencyRecord;
 import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
+import fruition.document.domain.SourceFolder;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
@@ -38,6 +39,7 @@ import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentContentVersionRepository;
+import fruition.document.repository.SourceFolderRepository;
 import fruition.document.repository.DocumentEditStateRepository;
 import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
@@ -99,6 +101,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
     @Mock DocumentContentVersionRepository contentVersionRepository;
+    @Mock SourceFolderRepository sourceFolderRepository;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     DocumentService documentService;
@@ -108,7 +111,8 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, contentVersionRepository, idempotencyRecordRepository,
+                editStateInitializer, editStateRepository, contentVersionRepository, sourceFolderRepository,
+                idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
@@ -517,7 +521,7 @@ class DocumentServiceBlocksTest {
         verify(documentRepository, never()).softDeleteIfVersionMatches(
                 anyString(), anyString(), anyLong(), anyString(), any(), any());
         verify(documentRepository, never()).restoreIfVersionMatches(
-                anyString(), anyString(), anyLong(), anyLong(), any());
+                anyString(), anyString(), anyLong(), any(), anyLong(), any());
     }
 
     @Test
@@ -759,7 +763,7 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findRootItemsForUpdate(WORKSPACE_ID, DocumentRole.EDITABLE))
                 .thenReturn(List.of(root));
         when(documentRepository.restoreIfVersionMatches(
-                eq(deleted.getId()), eq(WORKSPACE_ID), eq(2L), eq(5L), any()))
+                eq(deleted.getId()), eq(WORKSPACE_ID), eq(2L), any(), eq(5L), any()))
                 .thenReturn(1);
 
         DocumentLifecycleResponse response = documentService.restore(
@@ -773,6 +777,33 @@ class DocumentServiceBlocksTest {
         assertThat(response.deleted()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(3);
         assertThat(response.sortOrder()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("삭제 문서 복구 시 원래 폴더가 살아 있으면 그 폴더·순서로 복구된다")
+    void restore_deletedDocumentToOriginalFolderIfActive() {
+        stubOwnedWorkspace();
+        java.util.UUID folderId = java.util.UUID.randomUUID();
+        Document deleted = mock(Document.class);
+        when(deleted.getUserId()).thenReturn(USER_ID);
+        when(deleted.getDeletedAt()).thenReturn(java.time.Instant.now());
+        when(deleted.getSourceFolderId()).thenReturn(folderId);
+        when(deleted.getSortOrder()).thenReturn(7L);
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate("doc_restore_f", WORKSPACE_ID))
+                .thenReturn(Optional.of(deleted));
+        when(sourceFolderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(folderId, WORKSPACE_ID))
+                .thenReturn(Optional.of(mock(SourceFolder.class)));
+        when(documentRepository.restoreIfVersionMatches(
+                eq("doc_restore_f"), eq(WORKSPACE_ID), eq(2L), eq(folderId), eq(7L), any()))
+                .thenReturn(1);
+
+        DocumentLifecycleResponse response = documentService.restore(
+                WORKSPACE_ID, USER_ID, "doc_restore_f", "restore-key-f",
+                new DocumentLifecycleRequest(2L));
+
+        assertThat(response.sortOrder()).isEqualTo(7);
+        assertThat(response.currentVersion()).isEqualTo(3);
+        verify(documentRepository, never()).findRootItemsForUpdate(any(), any());
     }
 
     @Test

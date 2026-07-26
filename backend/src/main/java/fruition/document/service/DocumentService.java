@@ -48,6 +48,7 @@ import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
 import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.repository.DocumentEditStateRepository;
+import fruition.document.repository.SourceFolderRepository;
 import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.SourceBlockRepository;
@@ -107,6 +108,7 @@ public class DocumentService {
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
     private final DocumentContentVersionRepository contentVersionRepository;
+    private final SourceFolderRepository sourceFolderRepository;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
@@ -125,6 +127,7 @@ public class DocumentService {
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
                            DocumentContentVersionRepository contentVersionRepository,
+                           SourceFolderRepository sourceFolderRepository,
                            IdempotencyRecordRepository idempotencyRecordRepository,
                            ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
@@ -142,6 +145,7 @@ public class DocumentService {
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
         this.contentVersionRepository = contentVersionRepository;
+        this.sourceFolderRepository = sourceFolderRepository;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
@@ -1268,17 +1272,31 @@ public class DocumentService {
         if (document.getDeletedAt() == null) {
             throw new DocumentNotFoundException(documentId);
         }
-        List<Document> rootItems = documentRepository.findRootItemsForUpdate(
-                workspaceId, document.getDocumentRole());
-        long sortOrder = rootItems.stream()
-                .mapToLong(Document::getSortOrder)
-                .max()
-                .orElse(-1) + 1;
+        // 원래 폴더가 아직 살아 있으면 그 폴더·순서로 복구하고, 사라졌으면 최상위 마지막에 배치한다.
+        UUID originalFolderId = document.getSourceFolderId();
+        boolean originalFolderActive = originalFolderId != null
+                && sourceFolderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(originalFolderId, workspaceId)
+                        .isPresent();
+        UUID targetFolderId;
+        long sortOrder;
+        if (originalFolderActive) {
+            targetFolderId = originalFolderId;
+            sortOrder = document.getSortOrder();
+        } else {
+            targetFolderId = null;
+            List<Document> rootItems = documentRepository.findRootItemsForUpdate(
+                    workspaceId, document.getDocumentRole());
+            sortOrder = rootItems.stream()
+                    .mapToLong(Document::getSortOrder)
+                    .max()
+                    .orElse(-1) + 1;
+        }
         Instant restoredAt = Instant.now();
         int updated = documentRepository.restoreIfVersionMatches(
                 documentId,
                 workspaceId,
                 request.baseVersion(),
+                targetFolderId,
                 sortOrder,
                 restoredAt
         );

@@ -137,7 +137,7 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
             + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, "
-            + "d.sourceFolderId = NULL, "
+            + "d.sourceFolderId = :sourceFolderId, "
             + "d.sortOrder = :sortOrder, d.updatedAt = :restoredAt "
             + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NOT NULL AND d.currentVersion = :baseVersion")
@@ -145,8 +145,37 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("documentId") String documentId,
             @Param("workspaceId") String workspaceId,
             @Param("baseVersion") long baseVersion,
+            @Param("sourceFolderId") UUID sourceFolderId,
             @Param("sortOrder") long sortOrder,
             @Param("restoredAt") Instant restoredAt
+    );
+
+    /** 폴더 복구용: delete_operation_id 그룹의 소프트 삭제된 문서를 조회한다. */
+    List<Document> findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(
+            String workspaceId, UUID deleteOperationId);
+
+    /** 폴더 복구용: delete_operation_id 그룹 문서를 배치(source_folder_id·sort_order) 보존하며 되살린다. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, d.updatedAt = :restoredAt "
+            + "WHERE d.workspaceId = :workspaceId AND d.deleteOperationId = :deleteOperationId "
+            + "AND d.deletedAt IS NOT NULL")
+    int restoreByDeleteOperationIdPreservingPlacement(
+            @Param("workspaceId") String workspaceId,
+            @Param("deleteOperationId") UUID deleteOperationId,
+            @Param("restoredAt") Instant restoredAt
+    );
+
+    /** Fixup: 원래 폴더가 사라진 문서를 최상위로 뗀다(버전 미검증). */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
+            + "d.sourceFolderId = NULL, d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
+            + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId AND d.deletedAt IS NULL")
+    int detachToRoot(
+            @Param("documentId") String documentId,
+            @Param("workspaceId") String workspaceId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
     );
 
     /** 대상 폴더(또는 root, folderId=null) 안 활성 문서의 최대 sort_order. 배치 기본 위치(끝) 계산용. */

@@ -114,6 +114,49 @@ public class DocumentTreeService {
     }
 
     @Transactional
+    public void restoreFolder(String workspaceId, String userId, UUID folderId, Long baseVersion) {
+        verifyMembership(workspaceId, userId);
+        SourceFolder folder = folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNotNull(folderId, workspaceId)
+                .orElseThrow(() -> new FolderNotFoundException(folderId));
+        if (baseVersion != null && folder.getCurrentVersion() != baseVersion) {
+            throw folderConflict();
+        }
+        UUID operationId = folder.getDeleteOperationId();
+        // 같은 삭제 작업으로 함께 지워진 폴더·문서를 그룹으로 복구한다(삭제 시점 트리·배치 보존).
+        List<SourceFolder> groupFolders = operationId == null
+                ? List.of(folder)
+                : folderRepository.findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(workspaceId, operationId);
+        List<Document> groupDocs = operationId == null
+                ? List.of()
+                : documentRepository.findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(workspaceId, operationId);
+
+        Instant now = Instant.now();
+        folderRepository.restoreByIdsPreservingTree(
+                groupFolders.stream().map(SourceFolder::getId).toList(), now);
+        if (operationId != null) {
+            documentRepository.restoreByDeleteOperationIdPreservingPlacement(workspaceId, operationId, now);
+        }
+
+        // Fixup: 부모/폴더가 이 복구로 살아나지 않은(외부 작업으로 아직 삭제 상태인) 항목은 최상위로 뗀다.
+        long nextFolderSort = folderRepository.findMaxSortOrder(workspaceId, null) + 1;
+        for (SourceFolder restored : groupFolders) {
+            UUID parentId = restored.getParentFolderId();
+            if (parentId != null
+                    && folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(parentId, workspaceId).isEmpty()) {
+                folderRepository.detachToRoot(restored.getId(), workspaceId, nextFolderSort++, now);
+            }
+        }
+        long nextDocSort = documentRepository.findMaxSortOrderInFolder(workspaceId, null) + 1;
+        for (Document restored : groupDocs) {
+            UUID docFolderId = restored.getSourceFolderId();
+            if (docFolderId != null
+                    && folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(docFolderId, workspaceId).isEmpty()) {
+                documentRepository.detachToRoot(restored.getId(), workspaceId, nextDocSort++, now);
+            }
+        }
+    }
+
+    @Transactional
     public DocumentPlacementResponse placeDocument(
             String workspaceId, String userId, String documentId, DocumentPlacementRequest request) {
         verifyMembership(workspaceId, userId);

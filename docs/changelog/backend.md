@@ -8,6 +8,25 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: 폴더 트리 복구 추가 (폴더 restore·문서 복구 시 폴더 배치 보존)
+
+**변경된 것**
+
+- **폴더 복구** `POST /api/workspaces/{workspace_id}/folders/{folder_id}/restore`를 추가했다. cascade 소프트 삭제된 폴더의 `delete_operation_id` 그룹(폴더 + 그 안 문서) 전체를 삭제 시점 트리·배치를 보존하며 되살린다. `base_version`(선택) 낙관적 검증.
+- **Fixup**: 복구 후에도 부모 폴더/소속 폴더가 살아나지 않은(다른 작업으로 아직 삭제 상태인) 항목은 최상위로 뗀다. 대롱대롱 매달린 참조를 막는다.
+- **문서 복구 시 폴더 배치 보존**: `POST /documents/{id}/restore`가 이전엔 항상 최상위 마지막으로 복구했으나, 이제 **원래 폴더가 아직 활성이면 그 폴더·순서로 복구**하고, 폴더가 사라졌으면 기존대로 최상위 마지막에 배치한다.
+- `SourceFolderRepository`에 그룹 조회·트리 보존 복구·root 이동(fixup) 쿼리를, `DocumentRepository`에 그룹 조회·배치 보존 복구·root 이동 쿼리를 추가했다. `restoreIfVersionMatches`가 대상 `source_folder_id`를 받도록 확장했다.
+
+**검증**
+
+- `DocumentTreeServiceTest`에 폴더 그룹 복구(트리 보존·fixup 미발생) 테스트를, `DocumentServiceBlocksTest`에 원래 폴더 활성 시 그 폴더로 복구되는 테스트를 추가했다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 페이지 중첩은 존재하지 않으므로(제거됨) 계층은 폴더 트리 하나다. 영구 삭제 보존 기간·실행 주체는 운영 정책 결정 사항으로 남긴다.
+- 프론트의 폴더 트리·휴지통 UI 연동은 프론트 후속.
+
 ### refactor: 미사용 parent_document_id 컬럼 제거
 
 **변경된 것**

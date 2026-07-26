@@ -68,6 +68,16 @@ public class DocumentTreeController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/folders/{folder_id}/restore")
+    public ResponseEntity<Void> restoreFolder(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("folder_id") UUID folderId,
+            @RequestParam(value = "base_version", required = false) Long baseVersion) {
+        documentTreeService.restoreFolder(workspaceId, userId, folderId, baseVersion);
+        return ResponseEntity.noContent().build();
+    }
+
     @PatchMapping("/documents/{document_id}/placement")
     public ResponseEntity<DocumentPlacementResponse> placeDocument(
             @PathVariable("workspace_id") String workspaceId,

@@ -58,4 +58,32 @@ public interface SourceFolderRepository extends JpaRepository<SourceFolder, UUID
             @Param("deletedAt") Instant deletedAt,
             @Param("deleteOperationId") UUID deleteOperationId
     );
+
+    Optional<SourceFolder> findByIdAndWorkspaceIdAndDeletedAtIsNotNull(UUID id, String workspaceId);
+
+    /** 복구용: delete_operation_id 그룹의 소프트 삭제된 폴더를 조회한다. */
+    List<SourceFolder> findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(
+            String workspaceId, UUID deleteOperationId);
+
+    /** 그룹 폴더를 트리(parent_folder_id·sort_order) 보존하며 되살린다. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE SourceFolder f SET f.currentVersion = f.currentVersion + 1, "
+            + "f.deletedAt = NULL, f.deletedBy = NULL, f.deleteOperationId = NULL, f.updatedAt = :restoredAt "
+            + "WHERE f.id IN :ids AND f.deletedAt IS NOT NULL")
+    int restoreByIdsPreservingTree(
+            @Param("ids") List<UUID> ids,
+            @Param("restoredAt") Instant restoredAt
+    );
+
+    /** Fixup: 부모가 사라진 폴더를 최상위로 뗀다(버전 미검증). */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE SourceFolder f SET f.currentVersion = f.currentVersion + 1, "
+            + "f.parentFolderId = NULL, f.sortOrder = :sortOrder, f.updatedAt = :updatedAt "
+            + "WHERE f.id = :id AND f.workspaceId = :workspaceId AND f.deletedAt IS NULL")
+    int detachToRoot(
+            @Param("id") UUID id,
+            @Param("workspaceId") String workspaceId,
+            @Param("sortOrder") long sortOrder,
+            @Param("updatedAt") Instant updatedAt
+    );
 }

@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -150,6 +151,39 @@ class DocumentTreeServiceTest {
         assertThat(response.documents()).hasSize(1);
         assertThat(response.documents().get(0).fileType()).isEqualTo("md");
         assertThat(response.documents().get(0).editable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("폴더 복구는 같은 삭제 작업의 폴더·문서를 트리 보존하며 되살린다")
+    void restoreFolder_restoresGroupPreservingTree() {
+        UUID folderId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        SourceFolder folder = mock(SourceFolder.class);
+        when(folder.getId()).thenReturn(folderId);
+        when(folder.getCurrentVersion()).thenReturn(2L);
+        when(folder.getDeleteOperationId()).thenReturn(operationId);
+        when(folder.getParentFolderId()).thenReturn(null); // 루트 폴더 → fixup 불필요
+        Document doc = mock(Document.class);
+        when(doc.getSourceFolderId()).thenReturn(folderId); // 복구되는 폴더 안 문서
+
+        when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNotNull(folderId, WORKSPACE_ID))
+                .thenReturn(Optional.of(folder));
+        when(folderRepository.findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(WORKSPACE_ID, operationId))
+                .thenReturn(List.of(folder));
+        when(documentRepository.findByWorkspaceIdAndDeleteOperationIdAndDeletedAtIsNotNull(WORKSPACE_ID, operationId))
+                .thenReturn(List.of(doc));
+        when(folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(folderId, WORKSPACE_ID))
+                .thenReturn(Optional.of(folder)); // 복구 후 폴더가 활성 → 문서 fixup 불필요
+        when(folderRepository.findMaxSortOrder(WORKSPACE_ID, null)).thenReturn(-1L);
+        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(-1L);
+
+        service.restoreFolder(WORKSPACE_ID, USER_ID, folderId, 2L);
+
+        verify(folderRepository).restoreByIdsPreservingTree(eq(List.of(folderId)), any());
+        verify(documentRepository).restoreByDeleteOperationIdPreservingPlacement(
+                eq(WORKSPACE_ID), eq(operationId), any());
+        verify(folderRepository, never()).detachToRoot(any(), any(), anyLong(), any());
+        verify(documentRepository, never()).detachToRoot(any(), any(), anyLong(), any());
     }
 
     private static List<UUID> argThatContains(UUID... expected) {
