@@ -8,6 +8,27 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: wiki maintenance lint llmPipeline 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `POST /wiki/maintenance/lint`를 workspace 범위 public API `POST /api/workspaces/{workspace_id}/wiki/maintenance/lint`로 중계하는 프록시를 추가했다. wiki cluster promotion·relation의 proposal 조회(`dry_run=true`)와 실행(`dry_run=false`)을 프론트가 FastAPI를 직접 호출하지 않고 사용할 수 있다.
+- pipeline 호출 전에 workspace 멤버십을 검증한다(비멤버 → `WORKSPACE_NOT_FOUND`). `workspace_id`는 path, `user_id`는 `@AuthenticationPrincipal`에서 주입한다.
+- 공개 요청은 `dry_run`(기본 true)·`materialize_promotions`(기본 true)만 노출한다. `provider`·`api_key`·`endpoint`·`model` 등 LLM provider/비밀 설정은 클라이언트가 넣을 수 없고 pipeline 자체 env 기본값을 쓴다(`/pipeline/runs` 방식과 동일).
+- 응답은 pipeline JSON을 `JsonNode`로 그대로 pass-through 한다. 오류는 400/422는 원본 status·body 보존, 그 외·timeout은 503으로 매핑한다.
+- 설정 `app.wiki-maintenance.lint-endpoint`(`WIKI_MAINTENANCE_LINT_ENDPOINT`)와 `app.wiki-maintenance.timeout-seconds`(기본 180초, lint LLM 실행이 길 수 있음)를 추가했다.
+
+**검증**
+
+- `PipelineWikiMaintenanceRequesterTest`(4), `WikiMaintenanceServiceTest`(4) 신규 8개 테스트 통과. scope·flag 전송과 LLM 비밀값 미포함, dry_run 기본값, 비멤버 거절, 400 보존·500→503을 검증한다.
+- `./gradlew test` 전체 통과.
+
+**남은 주의사항**
+
+- 프론트 maintenance UI(패널·proposal·summary)는 미구현이다(`docs/issue/frontend/2026-07-23.md`의 `4. wiki maintenance UI`). 재배선 시 이 프록시로 연결한다.
+- backlog가 제안한 typed 응답 DTO(`WikiMaterializedPromotion` 등) 대신 pass-through를 택했다. 프론트에서 snake_case→camelCase 변환을 처리한다.
+- `dry_run=false` 실행은 `wiki_pages`/`wiki_page_links`/embedding을 실제로 바꾼다. 실행 후 `GET /api/workspaces/{workspace_id}/wiki/graph` 재조회로 새 concept node·edge를 확인한다.
+
 ### feat: wiki-schema llmPipeline 프록시 추가
 
 **변경된 것**

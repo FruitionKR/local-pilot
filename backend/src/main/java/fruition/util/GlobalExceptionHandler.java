@@ -3,6 +3,7 @@ package fruition.util;
 import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
+import fruition.wiki.maintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -75,6 +76,17 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(e.getHttpStatus())
                 .body(ErrorResponse.of("WIKI_SCHEMA_PIPELINE_UNAVAILABLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(PipelineWikiMaintenanceException.class)
+    public ResponseEntity<?> handlePipelineWikiMaintenance(PipelineWikiMaintenanceException e) {
+        if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBody());
+        }
+        return ResponseEntity.status(e.getHttpStatus())
+                .body(ErrorResponse.of("WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
 
     @ExceptionHandler(MultipartException.class)
