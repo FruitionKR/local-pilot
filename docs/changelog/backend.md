@@ -8,6 +8,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: 운영 이메일 인증 SMTP 발송 추가
+
+**변경된 것**
+
+- 인증번호를 실제 메일로 보내는 `SmtpEmailVerificationSender`(JavaMail SMTP)를 추가했다. provider 무관(SES SMTP·SendGrid SMTP·Gmail 등) — SMTP 계정만 있으면 동작한다. 인증번호·수신 이메일 원문은 로그에 남기지 않는다.
+- `EmailSenderConfig`가 sender를 배타 등록한다: `spring.mail.host`가 설정돼 있으면 **SMTP 발송**, 없으면 **dev 로그 stub**(fallback). `LoggingEmailVerificationSender`의 `@Component`를 제거해 이 config로만 등록된다(운영/개발 배타).
+- `build.gradle`에 `spring-boot-starter-mail`을 추가했다.
+- purpose별 제목·본문 template(회원가입/비밀번호 재설정)을 적용했다.
+- 발송 실패는 `EmailVerificationSendException`으로 감싸 `502 EMAIL_SEND_FAILED`(재시도 안내)로 응답한다.
+- 설정: `app.auth.email-verification.from`(`MAIL_FROM`) 추가. `spring.mail.*`는 커밋하지 않고 배포 환경에서 `SPRING_MAIL_*`로 주입한다(`.env.example`에 주석 안내). 기본(로컬·테스트)은 stub.
+
+**검증**
+
+- `SmtpEmailVerificationSenderTest`: purpose별 제목/수신/발신/코드 포함, 빈 발신주소 거절, 발송 실패 래핑을 검증. `./gradlew test` 전체 통과(stub fallback으로 컨텍스트 로딩).
+
+**남은 주의사항**
+
+- 운영 전환: 배포 환경에 `SPRING_MAIL_HOST`(+계정)와 `MAIL_FROM`을 주입하면 자동으로 SMTP로 전환된다. `AUTH_EMAIL_DEV_FIXED_CODE`는 운영에서 빈값 유지(기존).
+- provider별 sandbox/실발송 통합 테스트는 배포 환경 구성 시 별도로 다룬다.
+
 ### change: 콘텐츠 버전 스냅샷을 AI 편집(source=agent)에만 기록
 
 **변경된 것**
