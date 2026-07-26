@@ -23,6 +23,11 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - `SmtpEmailVerificationSenderTest`: purpose별 제목/수신/발신/코드 포함, 빈 발신주소 거절, 발송 실패 래핑을 검증. `./gradlew test` 전체 통과(stub fallback으로 컨텍스트 로딩).
 
+**리뷰 반영(경계 처리)**
+
+- SMTP 발송을 **트랜잭션 밖으로** 뺐다. `EmailVerificationService.request`의 DB 쓰기(이전 코드 폐기+저장)만 `TransactionTemplate`으로 커밋하고, `sender.send`는 커밋 후에 호출한다. 외부 메일 왕복 동안 DB 커넥션을 붙잡지 않는다. 발송 실패 시 예외 전파(레코드는 재요청 시 폐기·TTL 만료).
+- **SMTP timeout**을 항상 적용한다: `spring.mail.properties.mail.smtp.connectiontimeout/timeout/writetimeout` 기본 5000ms(`MAIL_SMTP_*_MS`로 오버라이드). 응답 없는 메일 서버에 무한 대기하지 않는다.
+
 **남은 주의사항**
 
 - 운영 전환: 배포 환경에 `SPRING_MAIL_HOST`(+계정)와 `MAIL_FROM`을 주입하면 자동으로 SMTP로 전환된다. `AUTH_EMAIL_DEV_FIXED_CODE`는 운영에서 빈값 유지(기존).

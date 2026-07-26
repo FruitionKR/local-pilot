@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -40,6 +41,7 @@ public class EmailVerificationService {
     private final EmailVerificationRepository verificationRepository;
     private final UserRepository userRepository;
     private final EmailVerificationSender sender;
+    private final TransactionTemplate transactionTemplate;
     private final SecureRandom secureRandom = new SecureRandom();
 
     private final long codeTtlSeconds;
@@ -53,6 +55,7 @@ public class EmailVerificationService {
             EmailVerificationRepository verificationRepository,
             UserRepository userRepository,
             EmailVerificationSender sender,
+            TransactionTemplate transactionTemplate,
             @Value("${app.auth.email-verification.code-ttl-seconds}") long codeTtlSeconds,
             @Value("${app.auth.email-verification.token-ttl-seconds}") long tokenTtlSeconds,
             @Value("${app.auth.email-verification.resend-cooldown-seconds}") long resendCooldownSeconds,
@@ -62,6 +65,7 @@ public class EmailVerificationService {
         this.verificationRepository = verificationRepository;
         this.userRepository = userRepository;
         this.sender = sender;
+        this.transactionTemplate = transactionTemplate;
         this.codeTtlSeconds = codeTtlSeconds;
         this.tokenTtlSeconds = tokenTtlSeconds;
         this.resendCooldownSeconds = resendCooldownSeconds;
@@ -70,7 +74,6 @@ public class EmailVerificationService {
         this.devFixedCode = devFixedCode;
     }
 
-    @Transactional
     public EmailVerificationResponse request(EmailVerificationRequest request) {
         String email = request.email().trim().toLowerCase();
         String purpose = request.purpose();
@@ -85,17 +88,21 @@ public class EmailVerificationService {
             throw new DuplicateEmailException(email);
         }
 
-        // 새 코드 발급 전 같은 (email, purpose)의 미소비 코드를 폐기한다.
-        for (EmailVerification previous : verificationRepository.findByEmailAndPurposeAndConsumedAtIsNull(email, purpose)) {
-            previous.expireCode();
-        }
-
         String code = devFixedCode.isBlank() ? generateCode() : devFixedCode;
         String id = "ev_" + UUID.randomUUID().toString().replace("-", "");
-        EmailVerification verification = new EmailVerification(
-                id, email, purpose, sha256(code), Instant.now().plusSeconds(codeTtlSeconds));
-        verificationRepository.save(verification);
 
+        // DB 쓰기만 트랜잭션으로 처리하고 커밋한다. SMTP 발송을 트랜잭션 안에서 하면
+        // 외부 메일 서버 왕복 동안 DB 커넥션을 붙잡으므로, 발송은 커밋 후 트랜잭션 밖에서 한다.
+        transactionTemplate.executeWithoutResult(status -> {
+            // 새 코드 발급 전 같은 (email, purpose)의 미소비 코드를 폐기한다.
+            for (EmailVerification previous : verificationRepository.findByEmailAndPurposeAndConsumedAtIsNull(email, purpose)) {
+                previous.expireCode();
+            }
+            verificationRepository.save(new EmailVerification(
+                    id, email, purpose, sha256(code), Instant.now().plusSeconds(codeTtlSeconds)));
+        });
+
+        // 발송 실패 시 예외를 전파한다(레코드는 남지만 재요청 시 폐기되고 TTL로 만료된다).
         sender.send(email, purpose, code);
         log.info("[인증 요청] verificationId={} email={} purpose={}", id, email, purpose);
 
