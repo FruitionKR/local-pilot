@@ -386,10 +386,12 @@ public class DocumentController {
             @Parameter(description = "저장할 전체 Markdown 본문", required = true)
             @RequestPart("markdown") String markdown,
             @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1", required = true)
-            @RequestPart("base_version") String baseVersion) {
+            @RequestPart("base_version") String baseVersion,
+            @Parameter(description = "저장 출처. 'agent'이면 AI 편집으로 보고 콘텐츠 버전 이력에 스냅샷을 남긴다.")
+            @RequestPart(value = "source", required = false) String source) {
         return ResponseEntity.ok(
                 documentService.saveContent(
-                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion)));
+                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion), source));
     }
 
     @Operation(

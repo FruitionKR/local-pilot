@@ -226,9 +226,6 @@ public class DocumentService {
             if (markdownUpload) {
                 editStateRepository.save(new DocumentEditState(
                         documentId, markdownContent.markdown(), markdownContent.contentHash()));
-                // 초기 콘텐츠를 버전 1 스냅샷으로 남긴다(이후 편집은 saveContent에서 누적).
-                recordContentVersion(documentId, document.getCurrentVersion(),
-                        markdownContent.markdown(), markdownContent.contentHash(), userId);
             }
             DocumentUploadResponse response = toUploadResponse(document, markdownUpload);
             saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
@@ -920,7 +917,8 @@ public class DocumentService {
             String userId,
             String documentId,
             String markdown,
-            Long baseVersion
+            Long baseVersion,
+            String source
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         if (baseVersion == null || baseVersion < 1) {
@@ -937,15 +935,18 @@ public class DocumentService {
             throw versionConflict();
         }
 
-        return applyContent(workspaceId, userId, document, markdown, baseVersion);
+        // 콘텐츠 버전 이력은 AI 편집(source=agent) 적용 시에만 남긴다. 수동 저장은 스냅샷하지 않는다.
+        boolean recordVersion = "agent".equalsIgnoreCase(source);
+        return applyContent(workspaceId, userId, document, markdown, baseVersion, recordVersion);
     }
 
     /**
-     * 편집본을 적용해 문서 버전을 올리고 콘텐츠 스냅샷을 남긴다. 저장(saveContent)과 복원(restoreContentVersion)이 공유한다.
+     * 편집본을 적용해 문서 버전을 올린다. recordVersion=true면 결과를 콘텐츠 버전 스냅샷으로 남긴다.
      * 호출부에서 문서 로드·소유자·EDITABLE·version 검증을 이미 마쳤다고 가정한다.
      */
     private DocumentContentSaveResponse applyContent(
-            String workspaceId, String userId, Document document, String markdown, long baseVersion) {
+            String workspaceId, String userId, Document document, String markdown,
+            long baseVersion, boolean recordVersion) {
         String documentId = document.getId();
         editStateInitializer.initializeIfNeeded(document);
         DocumentEditState editState = editStateRepository.findById(documentId)
@@ -975,7 +976,9 @@ public class DocumentService {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
         editState.update(content.markdown(), content.contentHash(), updatedAt);
-        recordContentVersion(documentId, baseVersion + 1, content.markdown(), content.contentHash(), userId, updatedAt);
+        if (recordVersion) {
+            recordContentVersion(documentId, baseVersion + 1, content.markdown(), content.contentHash(), userId, updatedAt);
+        }
         return new DocumentContentSaveResponse(
                 documentId,
                 baseVersion + 1,
@@ -983,11 +986,6 @@ public class DocumentService {
                 updatedAt,
                 true
         );
-    }
-
-    private void recordContentVersion(String documentId, long version, String markdown,
-                                      String contentHash, String createdBy) {
-        recordContentVersion(documentId, version, markdown, contentHash, createdBy, Instant.now());
     }
 
     private void recordContentVersion(String documentId, long version, String markdown,
@@ -1042,7 +1040,8 @@ public class DocumentService {
         DocumentContentVersion target = contentVersionRepository
                 .findById(new DocumentContentVersionId(documentId, version))
                 .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, version));
-        return applyContent(workspaceId, userId, document, target.getMarkdown(), baseVersion);
+        // 복원은 AI 편집이 아니므로 새 버전 스냅샷을 남기지 않는다.
+        return applyContent(workspaceId, userId, document, target.getMarkdown(), baseVersion, false);
     }
 
     private Document loadEditableForVersion(String workspaceId, String userId, String documentId) {

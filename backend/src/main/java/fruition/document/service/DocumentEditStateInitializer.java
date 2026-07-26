@@ -5,7 +5,6 @@ import fruition.document.domain.DocumentRole;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
-import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.repository.DocumentEditStateRepository;
 import fruition.util.StorageProperties;
 import io.minio.GetObjectArgs;
@@ -20,18 +19,15 @@ import java.time.Instant;
 public class DocumentEditStateInitializer {
 
     private final DocumentEditStateRepository editStateRepository;
-    private final DocumentContentVersionRepository contentVersionRepository;
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
 
     public DocumentEditStateInitializer(
             DocumentEditStateRepository editStateRepository,
-            DocumentContentVersionRepository contentVersionRepository,
             MinioClient minioClient,
             StorageProperties storageProperties
     ) {
         this.editStateRepository = editStateRepository;
-        this.contentVersionRepository = contentVersionRepository;
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
     }
@@ -58,10 +54,6 @@ public class DocumentEditStateInitializer {
             Instant now = Instant.now();
             editStateRepository.insertIfAbsent(
                     document.getId(), content.markdown(), content.contentHash(), now, now);
-            // 편집 상태를 처음 만들 때 현재 콘텐츠를 baseline 버전 스냅샷으로 함께 남긴다(레거시 문서 포함).
-            contentVersionRepository.insertIfAbsent(
-                    document.getId(), document.getCurrentVersion(),
-                    content.markdown(), content.contentHash(), document.getUserId(), now);
         } catch (InvalidMarkdownContentException | MarkdownContentTooLargeException exception) {
             throw exception;
         } catch (Exception exception) {

@@ -427,13 +427,38 @@ class DocumentServiceBlocksTest {
                 .thenReturn(1);
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L);
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
         assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
         assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
         assertThat(document.getContentHash()).isEqualTo("original-hash");
+        // 수동 저장(source=null)은 콘텐츠 버전 스냅샷을 남기지 않는다.
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("AI 편집 저장(source=agent)만 콘텐츠 버전 스냅샷을 남긴다")
+    void saveContent_recordsVersionOnlyForAgentSource() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), "# AI 편집\n", 1L, "agent");
+
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(2L), anyString(), anyString(), eq(USER_ID), any());
     }
 
     @Test
@@ -452,7 +477,7 @@ class DocumentServiceBlocksTest {
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L);
+                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L, null);
 
         assertThat(response.changed()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(1);
@@ -472,12 +497,12 @@ class DocumentServiceBlocksTest {
                 .thenReturn(Optional.of(document));
 
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L))
+                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L, null))
                 .isInstanceOf(DocumentVersionConflictException.class);
         when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, "member_2"))
                 .thenReturn(true);
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, "member_2", document.getId(), "new", 1L))
+                WORKSPACE_ID, "member_2", document.getId(), "new", 1L, null))
                 .isInstanceOf(DocumentWriteForbiddenException.class);
     }
 
@@ -990,8 +1015,8 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("복원은 과거 버전 내용을 새 버전으로 저장하고 스냅샷을 남긴다")
-    void restoreContentVersion_savesTargetAsNewVersion() {
+    @DisplayName("복원은 과거 버전 내용을 새 버전으로 저장하되 새 스냅샷은 남기지 않는다")
+    void restoreContentVersion_savesTargetWithoutNewSnapshot() {
         stubOwnedWorkspace();
         Document document = editableMarkdown("doc_v"); // currentVersion=1
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_v", WORKSPACE_ID))
@@ -1010,9 +1035,9 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.currentVersion()).isEqualTo(2);
         assertThat(response.changed()).isTrue();
-        // 새 버전(2) 스냅샷 기록
-        verify(contentVersionRepository).insertIfAbsent(
-                eq("doc_v"), eq(2L), anyString(), anyString(), eq(USER_ID), any());
+        // 복원은 AI 편집이 아니므로 새 버전 스냅샷을 남기지 않는다.
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), any(), any());
     }
 
     @Test

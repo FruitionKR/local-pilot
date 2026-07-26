@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### change: 콘텐츠 버전 스냅샷을 AI 편집(source=agent)에만 기록
+
+**변경된 것**
+
+- 콘텐츠 버전 이력을 **AI 편집 적용 시에만** 남기도록 바꿨다. 업로드 baseline(v1)과 수동 저장 스냅샷 기록을 제거했다.
+- `PUT /content`에 선택적 `source` part를 추가했다. `source=agent`이면 AI 편집으로 보고 저장 결과를 콘텐츠 버전 스냅샷으로 남기고, 그 외(수동 저장)는 남기지 않는다.
+- 복원(`POST /versions/{version}/restore`)은 내용은 적용하되(현재 version 증가) **새 스냅샷은 남기지 않는다**(AI 편집이 아니므로).
+- `DocumentEditStateInitializer`에서 baseline 기록용 버전 리포지토리 주입을 제거했다.
+
+**의도**
+
+- 버전 이력 목록을 "AI가 편집한 시점"만으로 유지해 깔끔하게 한다. 사람의 수동 편집 시점은 이력에 남기지 않는다(에디터 undo/현재 저장본이 담당).
+
+**남은 주의사항**
+
+- 백엔드가 AI 편집을 알려면 저장 요청이 `source=agent`를 보내야 한다. 프론트가 AI Apply 시 이 값을 보내도록 배선해야 실제로 스냅샷이 쌓인다(`PUT /content` 계약 정합과 함께 처리).
+- baseline이 없으므로 "첫 AI 편집 이전 원본"은 버전 이력으로 복원 대상이 아니다(현재 저장본으로만 존재).
+
+**검증**
+
+- `DocumentServiceBlocksTest`에 `source=agent`만 스냅샷을 남기고 수동 저장·복원은 남기지 않음을 검증하는 테스트를 추가·갱신했다. `./gradlew test` 전체 통과.
+
 ### feat: 폴더 트리 복구 추가 (폴더 restore·문서 복구 시 폴더 배치 보존)
 
 **변경된 것**
