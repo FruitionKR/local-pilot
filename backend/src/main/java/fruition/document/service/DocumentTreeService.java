@@ -200,7 +200,6 @@ public class DocumentTreeService {
                 fileType(document.getFilename()),
                 document.getDocumentRole() == DocumentRole.EDITABLE,
                 document.getSourceFolderId(),
-                document.getParentDocumentId(),
                 document.getSortOrder(),
                 document.getCurrentVersion());
     }

@@ -290,15 +290,15 @@ public class DocumentService {
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         validateIdempotencyKey(idempotencyKey);
-        Document source = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+        // 원본 행을 비관적 잠금으로 조회해 같은 문서에 대한 동시 복제 요청을 직렬화한다(멱등 레코드 경쟁 방지).
+        Document source = documentRepository.findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .filter(document -> document.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(source, userId);
         if (source.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new DocumentWriteForbiddenException("편집 가능한 Markdown 문서만 복제할 수 있습니다.");
         }
 
-        List<Document> siblings =
-                documentRepository.findSiblingPagesForUpdate(workspaceId, source.getParentDocumentId());
         editStateInitializer.initializeIfNeeded(source);
         DocumentEditState sourceEditState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentWriteForbiddenException(
@@ -312,15 +312,14 @@ public class DocumentService {
             return replay.get();
         }
 
-        Set<String> existingNames = siblings.stream()
+        // 복제본은 원본과 같은 폴더에 붙인다(원본이 root면 root). 이름 충돌은 워크스페이스 전체 기준으로 회피한다.
+        Set<String> existingNames = documentRepository.findVisibleByWorkspaceId(workspaceId).stream()
                 .map(Document::getNormalizedFilename)
                 .collect(Collectors.toSet());
         DocumentEditingRules.Filename duplicateFilename =
                 DocumentEditingRules.duplicateFilename(source.getDisplayName(), existingNames);
-        long sortOrder = siblings.stream()
-                .mapToLong(Document::getSortOrder)
-                .max()
-                .orElse(-1) + 1;
+        long sortOrder = documentRepository.findMaxSortOrderInFolder(
+                workspaceId, source.getSourceFolderId()) + 1;
         DocumentEditingRules.MarkdownContent content =
                 DocumentEditingRules.markdown(sourceEditState.getMarkdown());
 
@@ -338,10 +337,10 @@ public class DocumentService {
         );
         duplicate.initializeDuplicate(
                 source.getId(),
-                source.getParentDocumentId(),
                 content.contentHash(),
                 content.bytes().length,
-                sortOrder
+                sortOrder,
+                source.getSourceFolderId()
         );
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
@@ -581,7 +580,6 @@ public class DocumentService {
                 document.getMimeType(),
                 document.getByteSize(),
                 document.getCurrentVersion(),
-                document.getParentDocumentId(),
                 document.getSourceDocumentId(),
                 document.getSortOrder()
         );

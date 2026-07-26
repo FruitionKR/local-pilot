@@ -71,7 +71,6 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Query("SELECT COALESCE(MAX(d.sortOrder), -1) FROM Document d "
             + "WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = :documentRole "
-            + "AND d.parentDocumentId IS NULL "
             + "AND d.sourceFolderId IS NULL "
             + "AND d.deletedAt IS NULL")
     long findMaxRootSortOrder(
@@ -81,20 +80,7 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
-            + "AND d.documentRole = fruition.document.domain.DocumentRole.EDITABLE "
-            + "AND ((:parentDocumentId IS NULL AND d.parentDocumentId IS NULL) "
-            + "OR d.parentDocumentId = :parentDocumentId) "
-            + "AND d.deletedAt IS NULL "
-            + "ORDER BY d.sortOrder ASC, d.id ASC")
-    List<Document> findSiblingPagesForUpdate(
-            @Param("workspaceId") String workspaceId,
-            @Param("parentDocumentId") String parentDocumentId
-    );
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.documentRole = :documentRole "
-            + "AND d.parentDocumentId IS NULL "
             + "AND d.sourceFolderId IS NULL "
             + "AND d.deletedAt IS NULL "
             + "ORDER BY d.sortOrder ASC, d.id ASC")
@@ -151,7 +137,7 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
             + "d.deletedAt = NULL, d.deletedBy = NULL, d.deleteOperationId = NULL, "
-            + "d.parentDocumentId = NULL, d.sourceFolderId = NULL, "
+            + "d.sourceFolderId = NULL, "
             + "d.sortOrder = :sortOrder, d.updatedAt = :restoredAt "
             + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NOT NULL AND d.currentVersion = :baseVersion")
@@ -172,10 +158,10 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("folderId") UUID folderId
     );
 
-    /** 문서를 폴더(또는 root, folderId=null)로 배치한다. 폴더 배치는 페이지 중첩(parent_document_id)을 해제한다. */
+    /** 문서를 폴더(또는 root, folderId=null)로 배치한다. */
     @Modifying(flushAutomatically = true)
     @Query("UPDATE Document d SET d.currentVersion = d.currentVersion + 1, "
-            + "d.sourceFolderId = :sourceFolderId, d.parentDocumentId = NULL, "
+            + "d.sourceFolderId = :sourceFolderId, "
             + "d.sortOrder = :sortOrder, d.updatedAt = :updatedAt "
             + "WHERE d.id = :documentId AND d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NULL AND d.currentVersion = :baseVersion")

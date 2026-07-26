@@ -17,7 +17,6 @@ public record DocumentTreeResponse(
             @JsonProperty("file_type") String fileType,
             boolean editable,
             @JsonProperty("source_folder_id") UUID sourceFolderId,
-            @JsonProperty("parent_document_id") String parentDocumentId,
             @JsonProperty("sort_order") long sortOrder,
             @JsonProperty("current_version") long currentVersion
     ) {}

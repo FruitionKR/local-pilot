@@ -573,23 +573,22 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("최신 Markdown을 새 ID와 version 1로 같은 부모의 마지막에 복제한다")
-    void duplicate_copiesLatestMarkdownAtEndOfSameParent() {
+    @DisplayName("최신 Markdown을 새 ID와 version 1로 같은 폴더의 마지막에 복제한다")
+    void duplicate_copiesLatestMarkdownAtEndOfSameFolder() {
         stubOwnedWorkspace();
         Document source = new Document(
                 "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
                 null, null, "direct");
-        source.initializeDuplicate("doc_origin", "doc_parent", "old-hash", 10, 2);
         Document existingCopy = new Document(
                 "doc_existing", WORKSPACE_ID, USER_ID, "보고서 복사본.md",
                 "text/markdown", 10, null, null, "duplicate");
-        existingCopy.initializeDuplicate("doc_source", "doc_parent", "old-hash", 10, 3);
         DocumentEditState sourceEditState = new DocumentEditState(
                 source.getId(), "# 최신 본문\n", DocumentEditingRules.markdown("# 최신 본문\n").contentHash());
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(source.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
-        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, "doc_parent"))
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID))
                 .thenReturn(List.of(source, existingCopy));
+        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(3L);
         when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
 
         DocumentDuplicateResponse response = documentService.duplicate(
@@ -598,7 +597,6 @@ class DocumentServiceBlocksTest {
         assertThat(response.id()).startsWith("doc_").isNotEqualTo(source.getId());
         assertThat(response.filename()).isEqualTo("보고서 복사본 (2).md");
         assertThat(response.currentVersion()).isEqualTo(1);
-        assertThat(response.parentDocumentId()).isEqualTo("doc_parent");
         assertThat(response.sourceDocumentId()).isEqualTo(source.getId());
         assertThat(response.sortOrder()).isEqualTo(4);
 
@@ -621,10 +619,10 @@ class DocumentServiceBlocksTest {
                 null, null, "direct");
         DocumentEditState sourceEditState = new DocumentEditState(
                 source.getId(), "# 본문\n", DocumentEditingRules.markdown("# 본문\n").contentHash());
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(source.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
-        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null))
-                .thenReturn(List.of(source));
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(source));
+        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(-1L);
         when(editStateRepository.findById(source.getId())).thenReturn(Optional.of(sourceEditState));
 
         DocumentDuplicateResponse first = documentService.duplicate(
@@ -661,12 +659,13 @@ class DocumentServiceBlocksTest {
                 firstSource.getId(), "# 첫 문서", DocumentEditingRules.markdown("# 첫 문서").contentHash());
         DocumentEditState secondState = new DocumentEditState(
                 secondSource.getId(), "# 둘째 문서", DocumentEditingRules.markdown("# 둘째 문서").contentHash());
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(firstSource.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(firstSource.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(firstSource));
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(secondSource.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(secondSource.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(secondSource));
-        when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null))
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID))
                 .thenReturn(List.of(firstSource, secondSource));
+        when(documentRepository.findMaxSortOrderInFolder(WORKSPACE_ID, null)).thenReturn(-1L);
         when(editStateRepository.findById(firstSource.getId())).thenReturn(Optional.of(firstState));
         when(editStateRepository.findById(secondSource.getId())).thenReturn(Optional.of(secondState));
 
@@ -693,7 +692,7 @@ class DocumentServiceBlocksTest {
         Document original = new Document(
                 "doc_pdf", WORKSPACE_ID, USER_ID, "자료.pdf", "application/pdf", 10,
                 "sources/documents/doc_pdf/original", "hash");
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(original.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(original.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(original));
 
         assertThatThrownBy(() -> documentService.duplicate(
@@ -703,13 +702,13 @@ class DocumentServiceBlocksTest {
         Document otherOwner = new Document(
                 "doc_other", WORKSPACE_ID, "user_other", "문서.md", "text/markdown", 10,
                 null, null, "direct");
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(otherOwner.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(otherOwner.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(otherOwner));
 
         assertThatThrownBy(() -> documentService.duplicate(
                 WORKSPACE_ID, USER_ID, otherOwner.getId(), "duplicate-key-2"))
                 .isInstanceOf(DocumentWriteForbiddenException.class);
-        verify(documentRepository, never()).findSiblingPagesForUpdate(anyString(), any());
+        verify(documentRepository, never()).save(any(Document.class));
     }
 
     @Test

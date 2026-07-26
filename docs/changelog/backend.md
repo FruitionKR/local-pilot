@@ -8,6 +8,21 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### refactor: 미사용 parent_document_id 컬럼 제거
+
+**변경된 것**
+
+- 서비스에서 쓰이지 않는 문서 자기참조 컬럼 `parent_document_id`를 제거했다(V12: 제약·인덱스·FK·컬럼 삭제). 이 컬럼은 `POST /duplicate`의 `initializeDuplicate`에서만 설정됐고 실제로는 항상 null이었다.
+- **부수 효과(버그 해소)**: V9의 `documents_role_parent_check`가 `EDITABLE → source_folder_id IS NULL`을 강제해 **편집 문서를 폴더에 넣을 수 없었다.** 이 제약을 제거해 이제 편집 문서도 폴더에 배치할 수 있다(방금 추가한 폴더 배치 API가 편집 노트에도 정상 동작).
+- 복제본 배치 기준을 문서 자기참조에서 **폴더**로 바꿨다. 복제본은 원본과 같은 `source_folder_id`(root면 root)의 마지막에 배치하고, 이름 충돌은 워크스페이스 전체 기준으로 회피한다.
+- 복제 시 원본 행을 **비관적 잠금(`findByIdAndWorkspaceIdForUpdate`)** 으로 조회해 같은 문서에 대한 동시 복제 요청을 직렬화한다(기존 형제 조회 잠금이 담당하던 역할을 대체).
+- `Document.parentDocumentId` 필드·getter, `findSiblingPagesForUpdate` 쿼리, `DocumentDuplicateResponse.parent_document_id`, `DocumentTreeResponse.Item.parent_document_id`를 제거했다. 루트 조회(`findMaxRootSortOrder`, `findRootItemsForUpdate`)와 복구·배치 쿼리에서 `parent_document_id` 조건을 뺐다.
+
+**검증**
+
+- 복제 테스트를 폴더 기준으로 갱신하고, 스키마 통합 테스트에서 편집 문서의 폴더 배치가 허용됨을 검증(옛 role-parent 제약 제거 확인). 동시 복제 멱등성 테스트 통과.
+- `./gradlew test` 전체 통과(V12 마이그레이션 포함).
+
 ### feat: 폴더 트리 영속화 API 추가
 
 **변경된 것**
@@ -32,7 +47,6 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **남은 주의사항**
 
 - **폴더 복구는 미구현**. cascade 소프트 삭제된 폴더를 되살리는 트리 복원은 후속(계층 트리 복구·`docs/issue/backend/2026-07-26.md`의 `5.`)에서 다룬다. 함께 소프트 삭제된 문서는 기존 `POST /documents/{id}/restore`로 개별 복구(최상위 배치) 가능.
-- 페이지 중첩(`parent_document_id`)은 이번 범위 밖이며, 폴더 배치는 페이지 중첩을 해제한다.
 - 프론트 `useProjectTree`의 `localStorage` 저장을 이 API로 교체하는 작업은 프론트 후속.
 
 ### feat: 문서 콘텐츠 버전 이력·롤백 추가
