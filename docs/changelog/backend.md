@@ -6,6 +6,30 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-26
+
+### feat: wiki-schema llmPipeline 프록시 추가
+
+**변경된 것**
+
+- llmPipeline `wiki_schema` 모듈을 workspace 범위 public API로 중계하는 프록시를 추가했다. endpoint는 `/api/workspaces/{workspace_id}/wiki-schema`의 `POST /preview`, `POST /drafts`, `POST /{schema_id}/activate`, `GET /active` 4종이다.
+- `AgentTurn` 프록시 패턴(controller → service → pipeline requester)을 그대로 따른다. pipeline 응답(snake_case JSON)은 별도 envelope 없이 `JsonNode`로 그대로 pass-through 한다.
+- `POST /drafts`는 `user_id`를 `@AuthenticationPrincipal`, `workspace_id`를 path에서 주입해 pipeline body로 전달한다. 클라이언트가 신뢰 값을 직접 보내지 않는다.
+- 모든 endpoint는 pipeline 호출 전에 workspace 멤버십을 검증한다(비멤버 → `WORKSPACE_NOT_FOUND`). wiki_schema pipeline은 자체 권한 검증이 없어 이 게이트가 남의 workspace 접근을 막는다.
+- 오류 매핑: pipeline의 400/422(요청 거부)와 404(스키마 없음)는 원본 status·body를 보존하고, 그 외·timeout은 503으로 매핑한다.
+- 설정 `app.wiki-schema.endpoint`(`WIKI_SCHEMA_ENDPOINT`, 기본 `http://localhost:8000/wiki-schema`)와 `app.wiki-schema.timeout-seconds`를 추가했다.
+
+**검증**
+
+- `PipelineWikiSchemaRequesterTest`(9), `WikiSchemaServiceTest`(5) 신규 14개 테스트 통과. 경로/바디 전송, name 생략, `/active` 쿼리·null 응답, 400/404 보존, 500→503, 비멤버 거절을 검증한다.
+
+**남은 주의사항**
+
+- 프론트(`frontend/src/entities/schema`)는 아직 목업을 사용한다. 재배선 시 이 프록시로 연결하고 snake_case→camelCase 변환은 프론트에서 처리한다.
+- pipeline에는 스키마 목록 조회 endpoint가 없어 프록시도 4종만 제공한다. 프론트 `listWikiSchemas`는 별도 계약 결정이 필요하다.
+
+---
+
 ## 2026-07-25
 
 ### feat: Agent turn 오래된 baseVersion을 pipeline 호출 전에 409로 거절
