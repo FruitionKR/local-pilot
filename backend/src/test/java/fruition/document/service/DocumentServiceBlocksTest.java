@@ -3,6 +3,8 @@ package fruition.document.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentEditState;
+import fruition.document.domain.DocumentContentVersion;
+import fruition.document.domain.DocumentContentVersionId;
 import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.domain.IdempotencyRecord;
@@ -11,6 +13,8 @@ import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentContentVersionListResponse;
+import fruition.document.dto.DocumentContentVersionResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentIngestResponse;
 import fruition.document.dto.DocumentListResponse;
@@ -22,6 +26,7 @@ import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.dto.DocumentRenameRequest;
 import fruition.document.dto.DocumentRenameResponse;
 import fruition.document.exception.DocumentAlreadyProcessingException;
+import fruition.document.exception.DocumentContentVersionNotFoundException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.InvalidMarkdownContentException;
@@ -32,6 +37,7 @@ import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.repository.DocumentProcessingQueueRepository;
 import fruition.document.repository.DocumentProcessingRequester;
+import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.repository.DocumentEditStateRepository;
 import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
@@ -92,6 +98,7 @@ class DocumentServiceBlocksTest {
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentContentVersionRepository contentVersionRepository;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     DocumentService documentService;
@@ -101,7 +108,7 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, idempotencyRecordRepository,
+                editStateInitializer, editStateRepository, contentVersionRepository, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
@@ -917,6 +924,87 @@ class DocumentServiceBlocksTest {
         assertThatThrownBy(() -> documentService.ingest(WORKSPACE_ID, USER_ID, "doc_proc"))
                 .isInstanceOf(DocumentAlreadyProcessingException.class);
         verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    @DisplayName("버전 이력 목록은 최신 버전 순 메타데이터와 현재 version을 반환한다")
+    void listContentVersions_returnsSummariesNewestFirst() {
+        stubOwnedWorkspace();
+        Document document = editableMarkdown("doc_v");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_v", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(contentVersionRepository.findSummaries("doc_v"))
+                .thenReturn(List.of(summary(3, "h3"), summary(1, "h1")));
+
+        DocumentContentVersionListResponse response =
+                documentService.listContentVersions(WORKSPACE_ID, USER_ID, "doc_v");
+
+        assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.versions())
+                .extracting(DocumentContentVersionListResponse.Item::version)
+                .containsExactly(3L, 1L);
+    }
+
+    @Test
+    @DisplayName("특정 버전이 없으면 404로 거절한다")
+    void getContentVersion_missing_throwsNotFound() {
+        stubOwnedWorkspace();
+        Document document = editableMarkdown("doc_v");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_v", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(contentVersionRepository.findById(any(DocumentContentVersionId.class)))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.getContentVersion(WORKSPACE_ID, USER_ID, "doc_v", 9))
+                .isInstanceOf(DocumentContentVersionNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("복원은 과거 버전 내용을 새 버전으로 저장하고 스냅샷을 남긴다")
+    void restoreContentVersion_savesTargetAsNewVersion() {
+        stubOwnedWorkspace();
+        Document document = editableMarkdown("doc_v"); // currentVersion=1
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_v", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(contentVersionRepository.findById(new DocumentContentVersionId("doc_v", 1L)))
+                .thenReturn(Optional.of(new DocumentContentVersion(
+                        "doc_v", 1L, "# 과거본", "old-hash", USER_ID, java.time.Instant.now())));
+        when(editStateRepository.findById("doc_v"))
+                .thenReturn(Optional.of(new DocumentEditState("doc_v", "# 현재본", "cur-hash")));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq("doc_v"), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        DocumentContentSaveResponse response =
+                documentService.restoreContentVersion(WORKSPACE_ID, USER_ID, "doc_v", 1L, 1L);
+
+        assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(response.changed()).isTrue();
+        // 새 버전(2) 스냅샷 기록
+        verify(contentVersionRepository).insertIfAbsent(
+                eq("doc_v"), eq(2L), anyString(), anyString(), eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("복원 시 base_version이 현재 version과 다르면 409 충돌")
+    void restoreContentVersion_conflictOnStaleBaseVersion() {
+        stubOwnedWorkspace();
+        Document document = editableMarkdown("doc_v"); // currentVersion=1
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_v", WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+
+        assertThatThrownBy(() -> documentService.restoreContentVersion(WORKSPACE_ID, USER_ID, "doc_v", 1L, 5L))
+                .isInstanceOf(DocumentVersionConflictException.class);
+        verify(contentVersionRepository, never()).insertIfAbsent(any(), anyLong(), any(), any(), any(), any());
+    }
+
+    private DocumentContentVersionRepository.Summary summary(long version, String hash) {
+        return new DocumentContentVersionRepository.Summary() {
+            @Override public long getVersion() { return version; }
+            @Override public String getContentHash() { return hash; }
+            @Override public String getCreatedBy() { return USER_ID; }
+            @Override public java.time.Instant getCreatedAt() { return java.time.Instant.now(); }
+        };
     }
 
     private Document editableMarkdown(String id) {

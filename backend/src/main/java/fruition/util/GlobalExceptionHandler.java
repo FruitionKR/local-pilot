@@ -5,6 +5,7 @@ import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wiki.maintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentAlreadyProcessingException;
+import fruition.document.exception.DocumentContentVersionNotFoundException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -133,6 +134,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_ALREADY_PROCESSING", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentContentVersionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentContentVersionNotFound(DocumentContentVersionNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("DOCUMENT_CONTENT_VERSION_NOT_FOUND", "문서 콘텐츠 버전을 찾을 수 없습니다."));
     }
 
     @ExceptionHandler(DocumentOriginalNotFoundException.class)

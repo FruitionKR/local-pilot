@@ -1,6 +1,7 @@
 package fruition.document.service;
 
 import fruition.document.domain.Document;
+import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.repository.DocumentEditStateRepository;
 import fruition.util.StorageProperties;
 import io.minio.GetObjectResponse;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.when;
 class DocumentEditStateInitializerTest {
 
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentContentVersionRepository contentVersionRepository;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProperties;
 
@@ -51,7 +53,7 @@ class DocumentEditStateInitializerTest {
                 new ByteArrayInputStream(markdown)
         ));
 
-        new DocumentEditStateInitializer(editStateRepository, minioClient, storageProperties)
+        new DocumentEditStateInitializer(editStateRepository, contentVersionRepository, minioClient, storageProperties)
                 .initializeIfNeeded(document);
 
         verify(editStateRepository).insertIfAbsent(
@@ -76,7 +78,7 @@ class DocumentEditStateInitializerTest {
                 "legacy-hash"
         );
 
-        new DocumentEditStateInitializer(editStateRepository, minioClient, storageProperties)
+        new DocumentEditStateInitializer(editStateRepository, contentVersionRepository, minioClient, storageProperties)
                 .initializeIfNeeded(document);
 
         verify(editStateRepository, never()).insertIfAbsent(

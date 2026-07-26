@@ -6,6 +6,9 @@ import fruition.document.service.DocumentExportService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
+import fruition.document.dto.DocumentContentRestoreRequest;
+import fruition.document.dto.DocumentContentVersionListResponse;
+import fruition.document.dto.DocumentContentVersionResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentIngestResponse;
 import fruition.document.dto.DocumentExportResult;
@@ -411,6 +414,65 @@ public class DocumentController {
             @PathVariable("document_id") String documentId) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(documentService.ingest(workspaceId, userId, documentId));
+    }
+
+    @Operation(summary = "콘텐츠 버전 이력 목록",
+        description = "편집 가능 Markdown 문서의 콘텐츠 버전 이력을 최신 순으로 반환합니다. 본문은 제외한 메타데이터만 제공합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = DocumentContentVersionListResponse.class))),
+        @ApiResponse(responseCode = "400", description = "편집 가능한 Markdown 문서가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/versions")
+    public ResponseEntity<DocumentContentVersionListResponse> listVersions(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId) {
+        return ResponseEntity.ok(documentService.listContentVersions(workspaceId, userId, documentId));
+    }
+
+    @Operation(summary = "콘텐츠 버전 단건 조회", description = "특정 버전의 전체 Markdown 본문을 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = DocumentContentVersionResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 해당 버전을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/versions/{version}")
+    public ResponseEntity<DocumentContentVersionResponse> getVersion(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @PathVariable("version") long version) {
+        return ResponseEntity.ok(documentService.getContentVersion(workspaceId, userId, documentId, version));
+    }
+
+    @Operation(summary = "콘텐츠 버전 복원",
+        description = "과거 버전을 새 버전으로 복원합니다(비파괴적). base_version이 현재 version과 일치할 때만 반영합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "복원 성공 또는 동일 본문 no-op",
+            content = @Content(schema = @Schema(implementation = DocumentContentSaveResponse.class))),
+        @ApiResponse(responseCode = "400", description = "편집 가능한 Markdown 문서가 아니거나 base_version 오류",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 해당 버전을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "문서 version 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/versions/{version}/restore")
+    public ResponseEntity<DocumentContentSaveResponse> restoreVersion(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @PathVariable("version") long version,
+            @Valid @RequestBody DocumentContentRestoreRequest request) {
+        return ResponseEntity.ok(
+                documentService.restoreContentVersion(workspaceId, userId, documentId, version, request.baseVersion()));
     }
 
     private long parseBaseVersion(String baseVersion) {

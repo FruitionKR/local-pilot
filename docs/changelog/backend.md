@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-26
 
+### feat: 문서 콘텐츠 버전 이력·롤백 추가
+
+**변경된 것**
+
+- 편집 가능 Markdown 문서의 콘텐츠 스냅샷을 남기는 `document_content_versions` 테이블(V11)과 도메인/리포지토리를 추가했다. PK는 `(document_id, version)`이고, 버전마다 전체 Markdown 본문을 보관한다(델타 아님). 클라이언트측 스냅샷을 서버 이력으로 승격한다.
+- 스냅샷 기록 시점: (1) 업로드·레거시 지연 초기화에서 편집 상태를 처음 만들 때 현재 콘텐츠를 baseline 버전으로, (2) 이후 콘텐츠가 실제 바뀌는 `saveContent` 성공마다 `version = baseVersion+1`로. `ON CONFLICT DO NOTHING`으로 중복 기록을 막는다. rename/delete는 content 변화가 없으므로 스냅샷을 남기지 않아 버전 번호가 비연속일 수 있다.
+- 조회·복원 API 3종을 추가했다.
+  - `GET /api/workspaces/{workspace_id}/documents/{document_id}/versions` — 이력 목록(본문 제외 메타데이터만, 최신 버전 순)
+  - `GET .../documents/{document_id}/versions/{version}` — 특정 버전 전체 Markdown
+  - `POST .../documents/{document_id}/versions/{version}/restore` — 과거 버전을 **새 버전으로 복원(비파괴적)**. `base_version` 낙관적 잠금으로 동시 편집 충돌(`409`)을 막고, 복원 결과가 새 스냅샷으로 다시 기록된다.
+- 저장(`saveContent`)과 복원(`restoreContentVersion`)이 공용 `applyContent`로 콘텐츠 적용·버전 증가·스냅샷 기록을 공유한다. 편집 가능 Markdown(`EDITABLE`)만 대상이며, 없는 버전 조회는 `404 DOCUMENT_CONTENT_VERSION_NOT_FOUND`.
+
+**검증**
+
+- `DocumentServiceBlocksTest`에 목록 최신순 매핑, 없는 버전 404, 복원 시 새 버전 저장·스냅샷 기록, base_version 불일치 409 테스트를 추가했다.
+- `./gradlew test` 전체 통과(V11 마이그레이션·엔티티 매핑 포함).
+
+**남은 주의사항**
+
+- 버전은 상한 없이 전부 보관한다. 장기적으로 보관 기간·개수 정책이 필요하면 후속으로 다룬다.
+- 프론트의 클라이언트측 스냅샷(`history/snapshotStore.ts`)을 이 서버 이력으로 교체하는 작업은 프론트 후속이다.
+
 ### feat: 편집본 재ingest API 추가 (POST /documents/{id}/ingest)
 
 **변경된 것**
