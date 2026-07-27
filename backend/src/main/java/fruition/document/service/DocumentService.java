@@ -23,7 +23,13 @@ import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentContentVersionListResponse;
+import fruition.document.dto.DocumentContentVersionResponse;
 import fruition.document.dto.DocumentIngestResponse;
+import fruition.document.domain.DocumentContentVersion;
+import fruition.document.domain.DocumentContentVersionId;
+import fruition.document.exception.DocumentContentVersionNotFoundException;
+import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
@@ -103,6 +109,7 @@ public class DocumentService {
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentContentVersionRepository contentVersionRepository;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
@@ -121,6 +128,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
+                           DocumentContentVersionRepository contentVersionRepository,
                            IdempotencyRecordRepository idempotencyRecordRepository,
                            ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
@@ -138,6 +146,7 @@ public class DocumentService {
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
+        this.contentVersionRepository = contentVersionRepository;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
@@ -935,7 +944,8 @@ public class DocumentService {
             String userId,
             String documentId,
             String markdown,
-            Long baseVersion
+            Long baseVersion,
+            String source
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         if (baseVersion == null || baseVersion < 1) {
@@ -980,6 +990,11 @@ public class DocumentService {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
         editState.update(content.markdown(), content.contentHash(), updatedAt);
+        // 버전 스냅샷은 AI 편집(source=agent)일 때만 남긴다(사용자가 승인한 AI 편집 결과가 롤백 지점).
+        if ("agent".equalsIgnoreCase(source)) {
+            recordContentVersion(documentId, baseVersion + 1, content.markdown(),
+                    content.contentHash(), userId, updatedAt);
+        }
         return new DocumentContentSaveResponse(
                 documentId,
                 baseVersion + 1,
@@ -987,6 +1002,60 @@ public class DocumentService {
                 updatedAt,
                 true
         );
+    }
+
+    private void recordContentVersion(String documentId, long version, String markdown,
+                                      String contentHash, String createdBy, Instant createdAt) {
+        contentVersionRepository.insertIfAbsent(documentId, version, markdown, contentHash, createdBy, createdAt);
+    }
+
+    /** 콘텐츠 버전 이력 목록(메타데이터만, 최신 버전 순). */
+    @Transactional(readOnly = true)
+    public DocumentContentVersionListResponse listContentVersions(
+            String workspaceId, String userId, String documentId) {
+        Document document = loadEditableForVersion(workspaceId, userId, documentId);
+        List<DocumentContentVersionListResponse.Item> items = contentVersionRepository.findSummaries(documentId).stream()
+                .map(s -> new DocumentContentVersionListResponse.Item(
+                        s.getVersion(), s.getContentHash(), s.getCreatedBy(), s.getCreatedAt()))
+                .toList();
+        return new DocumentContentVersionListResponse(documentId, document.getCurrentVersion(), items);
+    }
+
+    /** 특정 버전의 전체 Markdown. */
+    @Transactional(readOnly = true)
+    public DocumentContentVersionResponse getContentVersion(
+            String workspaceId, String userId, String documentId, long version) {
+        loadEditableForVersion(workspaceId, userId, documentId);
+        DocumentContentVersion snapshot = contentVersionRepository
+                .findById(new DocumentContentVersionId(documentId, version))
+                .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, version));
+        return new DocumentContentVersionResponse(documentId, snapshot.getVersion(), snapshot.getMarkdown(),
+                snapshot.getContentHash(), snapshot.getCreatedBy(), snapshot.getCreatedAt());
+    }
+
+    /**
+     * 과거 버전을 새 버전으로 복원한다(비파괴적). 해당 버전의 Markdown을 현재 편집본으로 저장해 version을 1 증가시킨다.
+     * base_version 낙관적 잠금으로 동시 편집 충돌을 막는다. 복원 자체는 새 스냅샷을 남기지 않는다(source 미지정).
+     */
+    @Transactional
+    public DocumentContentSaveResponse restoreContentVersion(
+            String workspaceId, String userId, String documentId, long version, Long baseVersion) {
+        loadEditableForVersion(workspaceId, userId, documentId);
+        DocumentContentVersion target = contentVersionRepository
+                .findById(new DocumentContentVersionId(documentId, version))
+                .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, version));
+        return saveContent(workspaceId, userId, documentId, target.getMarkdown(), baseVersion, null);
+    }
+
+    private Document loadEditableForVersion(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 버전 이력을 제공합니다.");
+        }
+        return document;
     }
 
     /**
