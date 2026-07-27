@@ -9,6 +9,7 @@ from app.modules.query.application.ports import (
     QueryEvaluatorGraphPort,
     QueryEvaluatorPort,
     QueryRewritePort,
+    SemanticQueryEmbeddingPort,
     TextSearchPort,
     WebSearchPort,
     WikiMarkdownReaderPort,
@@ -92,10 +93,13 @@ class AnswerQueryUseCase:
         query_evaluator_graph: QueryEvaluatorGraphPort | None = None,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
-        focus_concept_threshold: float = 0.60,
+        focus_concept_threshold: float = 0.45,
         returned_path_limit: int = 5,
         min_internal_relevance_score: float = 0.0,
         query_evaluator_max_attempts: int = 2,
+        candidate_pool_multiplier: int = 4,
+        graph_link_limit: int = 200,
+        graph_expansion_depth: int = 3,
     ) -> None:
         self._wiki_repository = wiki_repository
         self._embedding_search = embedding_search
@@ -133,6 +137,9 @@ class AnswerQueryUseCase:
         self._returned_path_limit = returned_path_limit
         self._min_internal_relevance_score = min_internal_relevance_score
         self._query_evaluator_max_attempts = max(1, query_evaluator_max_attempts)
+        self._candidate_pool_multiplier = max(1, candidate_pool_multiplier)
+        self._graph_link_limit = max(1, graph_link_limit)
+        self._graph_expansion_depth = max(1, graph_expansion_depth)
         self._query_evaluator_graph = query_evaluator_graph or QueryEvaluatorLoop(
             query_answer_assembler=self._query_answer_assembler,
             query_evaluator=query_evaluator,
@@ -145,6 +152,7 @@ class AnswerQueryUseCase:
         question: str,
         *,
         workspace_id: str,
+        user_id: str | None = None,
         event_publisher: QueryEventPublisherPort | None = None,
         conversation_context: ConversationContext | None = None,
     ) -> QueryAnswer:
@@ -184,6 +192,8 @@ class AnswerQueryUseCase:
         internal_context = self._build_internal_query_context(
             original_question=query.normalized,
             contextual_question=contextual_question,
+            workspace_id=workspace_id,
+            user_id=user_id,
             conversation_context=conversation_context,
             candidates=candidates,
             event_publisher=event_publisher,
@@ -248,6 +258,8 @@ class AnswerQueryUseCase:
         *,
         original_question: str,
         contextual_question: str,
+        workspace_id: str,
+        user_id: str | None,
         conversation_context: ConversationContext | None,
         candidates: _ScoredWikiCandidates,
         event_publisher: QueryEventPublisherPort | None,
@@ -287,6 +299,8 @@ class AnswerQueryUseCase:
             embedding_units_by_page_id=self._load_embedding_units_for_related_pages(
                 related_pages
             ),
+            workspace_id=workspace_id,
+            user_id=user_id,
         )
         self._publish(
             event_publisher,
@@ -409,8 +423,52 @@ class AnswerQueryUseCase:
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _ScoredWikiCandidates:
-        pages = self._wiki_repository.list_active_pages(workspace_id)
-        links = self._wiki_repository.list_active_links(workspace_id)
+        candidate_pages = self._wiki_repository.list_candidate_pages(
+            workspace_id,
+            query_rewrite.retrieval_query,
+            self._source_candidate_limit * self._candidate_pool_multiplier,
+            self._concept_candidate_limit * self._candidate_pool_multiplier,
+            semantic_query=(
+                self._embedding_search.embed_query(query_rewrite.retrieval_query)
+                if isinstance(self._embedding_search, SemanticQueryEmbeddingPort)
+                else None
+            ),
+        )
+        candidate_page_ids = [page.id for page in candidate_pages]
+        seen_page_ids = set(candidate_page_ids)
+        frontier_page_ids = set(candidate_page_ids)
+        links_by_key: dict[tuple[str, str, str], WikiPageLink] = {}
+        for _depth in range(self._graph_expansion_depth):
+            remaining_link_limit = self._graph_link_limit - len(links_by_key)
+            if not frontier_page_ids or remaining_link_limit <= 0:
+                break
+            links = self._wiki_repository.list_links_for_page_ids(
+                workspace_id,
+                sorted(frontier_page_ids),
+                remaining_link_limit,
+                excluded_page_ids=sorted(seen_page_ids - frontier_page_ids),
+            )
+            next_frontier: set[str] = set()
+            for link in links:
+                links_by_key[
+                    (link.from_page_id, link.to_page_id, link.link_type)
+                ] = link
+                next_frontier.update(
+                    {link.from_page_id, link.to_page_id} - seen_page_ids
+                )
+            seen_page_ids.update(next_frontier)
+            frontier_page_ids = next_frontier
+        links = list(links_by_key.values())
+        neighbor_pages = self._wiki_repository.list_pages_by_ids(
+            workspace_id,
+            sorted(seen_page_ids - set(candidate_page_ids)),
+        )
+        pages = list(
+            {
+                page.id: page
+                for page in [*candidate_pages, *neighbor_pages]
+            }.values()
+        )
         self._publish(
             event_publisher,
             "wiki_loaded",
@@ -424,17 +482,26 @@ class AnswerQueryUseCase:
             "검색용 Wiki Markdown 본문을 로드했습니다.",
             {"loaded_markdown_count": len([page for page in pages if page.markdown])},
         )
-        source_pages = [page for page in pages if page.is_source]
-        concept_pages = [page for page in pages if page.is_concept]
+        candidate_page_id_set = set(candidate_page_ids)
+        source_pages = [
+            page
+            for page in pages
+            if page.is_source and page.id in candidate_page_id_set
+        ]
+        concept_pages = [
+            page
+            for page in pages
+            if page.is_concept and page.id in candidate_page_id_set
+        ]
         source_scores = self._query_page_scorer.score_pages(
             query_rewrite,
-            source_pages,
-            embedding_weight=0.8,
+            [page for page in pages if page.is_source],
+            embedding_weight=0.6,
         )
         concept_scores = self._query_page_scorer.score_pages(
             query_rewrite,
-            concept_pages,
-            embedding_weight=0.8,
+            [page for page in pages if page.is_concept],
+            embedding_weight=0.6,
         )
         self._publish(
             event_publisher,

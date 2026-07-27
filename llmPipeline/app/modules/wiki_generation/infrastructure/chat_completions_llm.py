@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from app.core.langsmith_tracing import langsmith_tracing_enabled
+from app.core.llm_env import resolve_llm_provider
 from app.core.llm_prompt import with_schema_prompt
 from app.modules.wiki_generation.application.ports import (
     ConceptPageGenerator,
@@ -48,6 +49,7 @@ class ChatClientConfig:
     timeout_seconds: int = 180
     max_tokens: int | None = None
     json_mode: bool = False
+    provider: str | None = None
 
 
 class ChatCompletionsJsonClient:
@@ -55,6 +57,7 @@ class ChatCompletionsJsonClient:
 
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
+        self.provider = resolve_llm_provider(config.provider)
         self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
         self._request_index = 0
 
@@ -106,13 +109,15 @@ class ChatCompletionsJsonClient:
         return traced(body)
 
     def _send_chat_completion(self, body: JsonDict) -> str:
+        request_body = (
+            self._anthropic_request_body(body)
+            if self.provider == "claude"
+            else body
+        )
         req = urllib.request.Request(
             self.config.endpoint,
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.config.api_key}",
-            },
+            data=json.dumps(request_body).encode("utf-8"),
+            headers=self._request_headers(),
             method="POST",
         )
         try:
@@ -127,12 +132,57 @@ class ChatCompletionsJsonClient:
             raise RuntimeError(f"LLM API connection error: {e}") from e
 
         try:
-            content = payload["choices"][0]["message"]["content"]
+            content = self._response_content(payload)
         except Exception as e:
             self._write_prompt_log(body, error=f"Unexpected chat-completions response: {payload}")
             raise RuntimeError(f"Unexpected chat-completions response: {payload}") from e
         self._write_prompt_log(body, content=content)
         return content
+
+    def _request_headers(self) -> dict[str, str]:
+        if self.provider == "claude":
+            return {
+                "Content-Type": "application/json",
+                "x-api-key": self.config.api_key,
+                "anthropic-version": "2023-06-01",
+            }
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+        }
+
+    def _anthropic_request_body(self, body: JsonDict) -> JsonDict:
+        messages = list(body["messages"])
+        system_prompt = "\n\n".join(
+            str(message["content"])
+            for message in messages
+            if message.get("role") == "system"
+        )
+        if self.config.json_mode:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                "Return only one valid JSON object without Markdown fences."
+            )
+        return {
+            "model": body["model"],
+            "system": system_prompt,
+            "messages": [
+                message
+                for message in messages
+                if message.get("role") in {"user", "assistant"}
+            ],
+            "temperature": body["temperature"],
+            "max_tokens": body.get("max_tokens") or 4096,
+        }
+
+    def _response_content(self, payload: JsonDict) -> str:
+        if self.provider != "claude":
+            return str(payload["choices"][0]["message"]["content"])
+        return "".join(
+            str(block.get("text") or "")
+            for block in payload["content"]
+            if block.get("type") == "text"
+        )
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
         return parse_json_object(self.complete_text(system_prompt, user_prompt))

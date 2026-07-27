@@ -14,10 +14,10 @@ from app.modules.wiki_ingestion.infrastructure.concept_evidence import (
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
+    delete_source_related_links,
     load_existing_concept_ids_by_slug,
     persist_embedding_units,
     read_optional_text_object,
-    refresh_source_related_links,
     resolve_or_create_wiki_page_id,
     upload_wiki_markdown,
     upsert_document_wiki_link,
@@ -59,7 +59,7 @@ def persist_wiki_outputs(
         workspace_id,
     )
     _persist_page_links(conn, links, source_page_id, concept_id_by_slug)
-    refresh_source_related_links(conn, user_id, workspace_id)
+    delete_source_related_links(conn, user_id, workspace_id)
     _persist_meaning_cluster_artifacts(conn, document_id, manifest)
     return [source_page_id, *concept_page_ids]
 

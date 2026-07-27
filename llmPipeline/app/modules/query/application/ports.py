@@ -1,13 +1,33 @@
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
-from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, SemanticQueryEmbedding, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
 
 
 class WikiRepositoryPort(Protocol):
-    def list_active_pages(self, workspace_id: str) -> list[WikiPage]:
+    def list_candidate_pages(
+        self,
+        workspace_id: str,
+        query: str,
+        source_limit: int,
+        concept_limit: int,
+        semantic_query: SemanticQueryEmbedding | None = None,
+    ) -> list[WikiPage]:
         ...
 
-    def list_active_links(self, workspace_id: str) -> list[WikiPageLink]:
+    def list_links_for_page_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+        limit: int,
+        excluded_page_ids: list[str] | None = None,
+    ) -> list[WikiPageLink]:
+        ...
+
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
         ...
 
     def list_embedding_units_by_page_ids(self, page_ids: list[str]) -> dict[str, list[WikiEmbeddingUnit]]:
@@ -21,6 +41,12 @@ class WikiMarkdownReaderPort(Protocol):
 
 class EmbeddingSearchPort(Protocol):
     def score(self, query: str, documents: list[str]) -> list[float]:
+        ...
+
+
+@runtime_checkable
+class SemanticQueryEmbeddingPort(Protocol):
+    def embed_query(self, query: str) -> SemanticQueryEmbedding:
         ...
 
 

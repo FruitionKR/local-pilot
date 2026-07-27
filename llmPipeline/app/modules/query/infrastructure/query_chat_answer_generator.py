@@ -1,10 +1,19 @@
 from collections.abc import Callable
 
-from app.core.llm_env import api_key_from_env, chat_completions_endpoint, float_env, int_env, model_from_env, optional_int_env
+from app.core.llm_env import (
+    api_key_from_env,
+    chat_completions_endpoint,
+    float_env,
+    int_env,
+    model_from_env,
+    optional_int_env,
+    provider_base_url,
+)
 from app.core.llm_prompt import with_schema_prompt
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
+from app.modules.wiki_schema.infrastructure.active_schema_prompt import get_active_schema_prompt
 
 
 QUERY_ANSWER_SYSTEM_PROMPT = """You are a document-grounded question-answering assistant.
@@ -33,15 +42,28 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
         self,
         client: ChatCompletionsJsonClient,
         system_prompt: str = QUERY_ANSWER_SYSTEM_PROMPT,
-        schema_prompt_provider: Callable[[str], str] | None = None,
+        schema_prompt_provider: Callable[
+            [str, str | None, str | None],
+            str,
+        ]
+        | None = None,
     ) -> None:
         self._client = client
         self._system_prompt = system_prompt
-        self._schema_prompt_provider = schema_prompt_provider or (lambda feature: "")
+        self._schema_prompt_provider = schema_prompt_provider or (
+            lambda feature, workspace_id, user_id: ""
+        )
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         content = self._client.complete_text(
-            with_schema_prompt(self._system_prompt, self._schema_prompt_provider("query")),
+            with_schema_prompt(
+                self._system_prompt,
+                self._schema_prompt_provider(
+                    "query",
+                    context.workspace_id,
+                    context.user_id,
+                ),
+            ),
             context.answer_context,
         ).strip()
         return GeneratedAnswer(content=content)
@@ -50,6 +72,7 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
 def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
     return QueryChatAnswerGenerator(
         ChatCompletionsJsonClient(_config_from_env()),
+        schema_prompt_provider=get_active_schema_prompt,
     )
 
 
@@ -71,20 +94,20 @@ def _config_from_env() -> ChatClientConfig:
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("QUERY_LLM_BASE_URL", "UPSTAGE_BASE_URL", "LLM_BASE_URL"),
-        default_base_url="https://api.upstage.ai/v1",
+        base_url_env_names=("QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        default_base_url=provider_base_url(),
     )
 
 
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="QUERY_LLM_API_KEY_ENV",
-        key_env_names=("QUERY_LLM_API_KEY", "UPSTAGE_API_KEY", "LLM_API_KEY"),
+        key_env_names=("QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
     )
 
 
 def _model() -> str:
-    return model_from_env(("QUERY_LLM_MODEL", "UPSTAGE_MODEL", "LLM_MODEL"), "solar-pro2")
+    return model_from_env(("QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"), "solar-pro2")
 
 
 def _float_env(name: str, default: float) -> float:

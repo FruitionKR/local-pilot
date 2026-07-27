@@ -8,7 +8,7 @@ from app.modules.wiki_ingestion.infrastructure.embedding_units import extract_em
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     _concept_index_from_markdown,
     _materialize_active_relation_candidates,
-    _refresh_source_related_links,
+    _delete_source_related_links,
     _resolve_or_create_wiki_page_id,
 )
 
@@ -290,7 +290,7 @@ def test_lint_wiki_workspace_dry_run_does_not_write_log(monkeypatch) -> None:
     assert writes == []
 
 
-def test_refresh_source_related_links_is_scoped_to_workspace() -> None:
+def test_delete_source_related_links_is_scoped_to_workspace() -> None:
     class EmptyRows:
         def fetchall(self):
             return []
@@ -305,11 +305,9 @@ def test_refresh_source_related_links_is_scoped_to_workspace() -> None:
 
     conn = FakeConn()
 
-    _refresh_source_related_links(conn, "user_1", "workspace_1")
+    _delete_source_related_links(conn, "user_1", "workspace_1")
 
+    assert len(conn.calls) == 1
     assert conn.calls[0][1] == ("user_1", "workspace_1", "user_1", "workspace_1")
-    assert "s.user_id = %s" in conn.calls[0][0]
-    assert "c.workspace_id = %s" in conn.calls[0][0]
-    assert conn.calls[1][1] == ("user_1", "workspace_1", "user_1", "workspace_1")
-    assert "DELETE FROM wiki_page_links" in conn.calls[1][0]
-    assert "from_page.workspace_id = %s" in conn.calls[1][0]
+    assert "DELETE FROM wiki_page_links" in conn.calls[0][0]
+    assert "from_page.workspace_id = %s" in conn.calls[0][0]

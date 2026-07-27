@@ -142,6 +142,28 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(body["generated_markdown"]["title"], "Agent 설계 메모")
         self.assertIn("# Agent 설계 메모", body["generated_markdown"]["markdown"])
 
+    def test_agent_turn_maps_schema_scope_to_domain_request(self) -> None:
+        class RecordingUseCase(FixedAgentUseCase):
+            request: object | None = None
+
+            def execute(self, request: object) -> AgentTurnResult:
+                self.request = request
+                return super().execute(request)
+
+        use_case = RecordingUseCase()
+
+        handle_agent_turn(
+            AgentTurnRequestBody(
+                message="문서를 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            ),
+            use_case=use_case,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(getattr(use_case.request, "workspace_id"), "workspace-1")
+        self.assertEqual(getattr(use_case.request, "user_id"), "user-1")
+
     def test_agent_turn_distinguishes_requested_and_expanded_actual_target(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="문맥을 포함해 다듬어줘"),

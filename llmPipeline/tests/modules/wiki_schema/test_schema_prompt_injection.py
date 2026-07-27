@@ -35,14 +35,53 @@ class FakeJsonClient:
         return '{"section": "summary", "title": "", "text": "정리", "anchor_block_ids": [], "items": []}'
 
 
-def schema_prompt(feature: str) -> str:
+def schema_prompt(
+    feature: str,
+    workspace_id: str | None = None,
+    user_id: str | None = None,
+) -> str:
     return f"<workspace_schema>\n## {feature}\n- active schema\n</workspace_schema>"
+
+
+def scoped_schema_prompt(
+    feature: str,
+    workspace_id: str | None,
+    user_id: str | None,
+) -> str:
+    if not workspace_id or not user_id:
+        return ""
+    return schema_prompt(feature)
 
 
 class SchemaPromptInjectionTest(unittest.TestCase):
     def test_query_generator_injects_query_schema_prompt(self) -> None:
         client = FakeTextClient()
-        generator = QueryChatAnswerGenerator(client, schema_prompt_provider=schema_prompt)  # type: ignore[arg-type]
+        generator = QueryChatAnswerGenerator(
+            client,
+            schema_prompt_provider=scoped_schema_prompt,
+        )  # type: ignore[arg-type]
+
+        generator.generate_answer(
+            QueryContext(
+                question="질문",
+                graph_context=GraphContext(),
+                traversal_paths=[],
+                related_pages=[],
+                evidence_snippets=[],
+                answer_context="# User Question\n질문",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertIn("## query", client.calls[0][0])
+
+    def test_query_generator_does_not_inject_schema_without_scope(self) -> None:
+        client = FakeTextClient()
+        generator = QueryChatAnswerGenerator(
+            client,
+            schema_prompt_provider=scoped_schema_prompt,
+        )  # type: ignore[arg-type]
 
         generator.generate_answer(
             QueryContext(
@@ -55,7 +94,7 @@ class SchemaPromptInjectionTest(unittest.TestCase):
             )
         )
 
-        self.assertIn("## query", client.calls[0][0])
+        self.assertNotIn("<workspace_schema>", client.calls[0][0])
 
     def test_markdown_editor_injects_edit_schema_prompt(self) -> None:
         client = FakeJsonClient(
@@ -73,7 +112,38 @@ class SchemaPromptInjectionTest(unittest.TestCase):
         editor = ChatCompletionsMarkdownEditor(
             client=client,  # type: ignore[arg-type]
             system_prompt="edit system",
-            schema_prompt_provider=schema_prompt,
+            schema_prompt_provider=scoped_schema_prompt,
+        )
+
+        editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="줄여줘",
+                markdown="원문",
+                target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertIn("## edit", client.calls[0][0])
+
+    def test_markdown_editor_does_not_inject_schema_without_scope(self) -> None:
+        client = FakeJsonClient(
+            {
+                "operation": "replace",
+                "actual_target": {
+                    "type": "selection",
+                    "start_line": 1,
+                    "end_line": 1,
+                },
+                "summary": "수정",
+                "replacement_markdown": "결과",
+            }
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client=client,  # type: ignore[arg-type]
+            system_prompt="edit system",
+            schema_prompt_provider=scoped_schema_prompt,
         )
 
         editor.generate_edit(
@@ -84,7 +154,7 @@ class SchemaPromptInjectionTest(unittest.TestCase):
             )
         )
 
-        self.assertIn("## edit", client.calls[0][0])
+        self.assertNotIn("<workspace_schema>", client.calls[0][0])
 
     def test_ingest_extractor_injects_ingest_schema_prompt(self) -> None:
         client = FakeJsonClient({})

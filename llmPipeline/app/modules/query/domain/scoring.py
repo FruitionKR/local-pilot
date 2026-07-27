@@ -11,9 +11,6 @@ def traversal_score(base_score: float, node_score: float, edge_score: float, dep
 def edge_role(link_type: str) -> str:
     if link_type == "source_mentions_concept":
         return "seed_to_focus"
-    if link_type == "source_related_to":
-        return "source_to_source"
     if link_type == "concept_related_to":
         return "context_expansion"
     return "context_expansion"
-

@@ -4,6 +4,74 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-26
+
+### fix: Query hybrid 후보와 탐색 기준 복원
+
+- lexical 후보를 먼저 제한해 의미만 유사한 page가 embedding 비교에서 누락되던 회귀를 수정하고, Workspace 전체 저장 page embedding의 semantic Top-K를 keyword Top-K와 합친 뒤 bounded Markdown만 로드
+- Source·Concept hybrid 비율을 `embedding 60% + keyword 40%`로 조정하고 정확한 이름 일치 보정은 유지
+- semantic-only Concept의 기존 통과 기준을 유지하도록 focus threshold를 `0.60`에서 `0.45`로 함께 보정
+- graph traversal의 상대 유사도 하한을 변하는 path score가 아니라 최초 최고 seed score의 95%로 고정해 여러 hop에서 relevance가 점진적으로 낮아지는 문제 차단
+- keyword 우선 순위, semantic 후보 전달, PostgreSQL exact cosine 후보, 최초 seed 하한 회귀 테스트 추가
+- exact 전역 비교 비용은 현재 검색 정확성을 위한 의도된 동작으로 기록하고, 실제 사용자 지연이나 운영 지표가 확인되기 전에는 index 작업을 활성 이슈로 만들지 않음
+- Query 모듈 `78 passed`, `4 subtests passed`, llmPipeline 전체 `509 passed`, `43 subtests passed`; PostgreSQL 16 array cosine·ranking CTE 문법 확인
+
+### perf: PDF 복원 기본 경로를 Docling-only로 전환
+
+- 문서 복원 CLI 기본 mode를 `docling-only`로 변경해 Docling Markdown 생성 후 느린 crop OCR·Formula OCR·SLLM 단계를 실행하지 않도록 조정
+- `selective-repair` mode에서 기존 코드가 찾은 표·수식·손상 본문만 페이지별로 `gpt-5.6-terra low` Responses API에 병렬 요청하고 block ID·Markdown 형식을 검증한 뒤 병합
+- display math replacement의 `$$...$$`와 `\[...\]` 표기를 동일하게 허용하고 최종 조립 전 `$$...$$`로 정규화
+- 그림은 선택 복원 대상에서 제외해 Docling image asset과 caption을 그대로 보존
+- 기존 복원 pipeline은 `--mode full-repair`로 명시한 경우에만 실행하도록 유지
+- 캐시된 Docling JSON·Markdown 동시 입력과 최종 `restored.md` 게시 단계를 추가하고 timing JSON에 실행 mode 기록
+- 재실행 전에 이전 mode의 평가·복원 산출물을 전체 정리해 local OCR·Vision을 포함한 stale 결과가 최종 조립에 섞이는 문제 방지
+- `detected.md` 조립에서는 이전 recovery와 layout decision을 모두 무시해 stale 결과를 모델 입력으로 다시 사용하는 재실행 오류 차단
+- 캐시된 Docling JSON·Markdown은 항상 한 쌍으로 받도록 검증해 서로 다른 실행의 stale baseline 조합 방지
+- OpenAI가 교정한 heading의 Markdown 계층을 최종 조립에서 보존하고 여러 줄 heading 결과는 거부
+- Responses API 오류는 HTTP status만 전달해 provider 오류 본문과 문서 내용 노출 방지
+- 30페이지 benchmark에서 미선택 349 block 중 107개 false-negative를 확인해 코드 detector 기반 선택 복원은 최종 품질 경로로 부적합하다고 판정
+- 모든 heading·paragraph를 `gpt-5.6-terra low` crop-only로 처리하는 detector-free lane을 검증하고, 표·수식 lane과 합친 model-assisted 전수 평가에서 418/445(93.93%) 확인
+- 본문 lane 30회와 표·수식 lane 25회의 복원 wall을 87.76~133.14초, Docling 포함 E2E를 207.33~252.71초로 추정
+- 문서 복원 모듈 `59 passed`, llmPipeline 전체 `503 passed`, `43 subtests passed`
+
+## 2026-07-25
+
+### fix: AI/Pipeline 미해결 이슈 보강
+
+- Agent 편집·생성·질의에 workspace/user 범위의 활성 Wiki schema fragment를 주입하고 scope나 활성 schema가 없으면 기존 빈 prompt 동작 유지
+- Wiki ingest의 `source_related_to` 전체 Source 조합 생성·저장을 제거하고 legacy edge를 Query와 traversal에서 제외
+- ingestion·markdown 편집·query·agent router의 provider 설정을 `LLM_*`로 통합하고 Claude Messages API 요청·응답 변환 추가
+- 삭제 document/workspace의 실행 중 pipeline을 heartbeat에서 취소하고 Wiki 산출물 저장 전 DB lock과 활성 상태 검사로 완료 경합 차단
+- llmPipeline 전체 테스트 `486 passed`, `43 subtests passed`, Python compile과 diff 검사 통과
+
+### perf: Query 후보와 graph 조회량 제한
+
+- Workspace 전체 Wiki page/link를 먼저 읽던 Query repository 계약을 Source/Concept별 bounded 후보와 후보 page 사이 bounded link 조회로 변경
+- PostgreSQL lexical rank로 후보 pool을 제한한 뒤 기존 hybrid scoring과 evidence·related page·traversal path 계약 유지
+- Query 모듈 `68 passed`, `4 subtests passed`, llmPipeline 전체 `487 passed`, `43 subtests passed`
+- 리뷰 후 metadata 후보를 먼저 제한하고 해당 page의 embedding unit만 집계하도록 변경
+- 초기 후보에 닿는 bounded link와 반대쪽 page를 추가 조회해 lexical Top-K 밖의 직접 연결 node도 graph traversal에 포함
+- embedding unit 본문 match 후보를 metadata 후보와 합쳐 본문에만 관련 내용이 있는 page의 누락 방지
+- 전역 link budget 안에서 frontier를 최대 3단계 반복 조회해 `max_depth=3` traversal 계약 유지
+- 다중 검색어를 OR 본문 후보로 변환해 일부 검색어만 포함하거나 서로 다른 unit에 검색어가 나뉜 page도 후보화
+- 집중 테스트 `39 passed`, llmPipeline 전체 `497 passed`, Python compile과 diff 검사 통과
+
+### chore: Legacy source 관계 정리 절차 추가
+
+- Workspace/user별 legacy `source_related_to` row를 기본 dry-run으로 확인하고 `--apply`에서만 삭제하는 운영 명령 추가
+- Query Engine과 backend 출력 계약에서 `source_related_to` 원본 저장·traversal 설명을 제거하고 소비 계약 없는 관련 Source materialization을 보류
+- 정리 명령·기존 삭제 범위 테스트 `11 passed`, llmPipeline 전체 `489 passed`, `43 subtests passed`
+
+### test: Provider 실환경 E2E runner 추가
+
+- 실제 provider API로 ingestion JSON, agent router, `markdown_create`를 독립 실행하고 오류 본문 없이 pass/fail·latency·HTTP status를 기록하는 smoke runner 추가
+- Upstage 실제 실행에서 ingestion과 router 통과 후 account credit 부족으로 `markdown_create` HTTP 403 확인
+- OpenAI·Gemini·Claude credential 부재로 해당 실환경 검증은 미완료 상태를 유지하고 llmPipeline 전체 `491 passed`, `43 subtests passed`
+
+### fix: Claude Wiki maintenance provider 전달 보완
+
+- Wiki maintenance가 Claude에서도 `provider_api_endpoint()`로 `/messages`를 선택하고 공통 client에 `provider=claude`를 전달하도록 수정
+
 ## 2026-07-24
 
 ### feat: Markdown AI 편집 응답 계약 확장

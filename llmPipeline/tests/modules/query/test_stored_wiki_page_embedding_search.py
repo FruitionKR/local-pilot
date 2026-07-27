@@ -48,6 +48,17 @@ class FakeCursor:
 
 
 class StoredWikiPageEmbeddingSearchTest(unittest.TestCase):
+    def test_exposes_query_embedding_for_global_candidate_search(self) -> None:
+        search = StoredWikiPageEmbeddingSearch(
+            embedding_model=FakeEmbeddingModel(),
+            fallback_search=FakeFallbackSearch(),
+        )
+
+        query_embedding = search.embed_query("query")
+
+        self.assertEqual(query_embedding.model_name, "test-model")
+        self.assertEqual(query_embedding.vector, [1.0, 0.0])
+
     def test_scores_with_stored_vectors_without_fallback(self) -> None:
         document = "Stored document"
         document_hash = hashlib.sha256(document.encode("utf-8")).hexdigest()

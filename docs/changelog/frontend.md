@@ -45,7 +45,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - 새 세션 fallback 제목을 헤더와 동일한 "새 채팅"으로 통일(불일치 버그).
 - 세션 행에 Fruition 로고(임시 SVG) + 옵션 메뉴(원본 문서로 생성 / 삭제) 추가. `deleteChatSession` 프론트 API 추가(기존 백엔드 DELETE 사용), 원본 문서화는 기존 `wiki-export` 재사용.
 - composer placeholder를 문서 열림 여부와 무관하게 항상 "AI 에이전트에게 무엇이든 물어보세요."로 고정.
-- 주의: 채팅→원본문서 편입의 wiki 생성 단계는 프론트 무관한 파이프라인 이슈로 실패(`docs/issue/ai/2026-07-24.md` 참고).
+- 주의: 당시 채팅→원본문서 편입의 wiki 생성 단계는 프론트 무관한 파이프라인 설정 문제로 실패했다. 해결 기록은 `docs/backlog/issue-2026-07-25.md`의 `AI/Pipeline — Multi-provider 설정과 Claude Messages API 지원`을 참고한다.
 
 ### feat: 로그·설정 임시 목업 페이지 추가
 
@@ -230,7 +230,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   - `_components/schema/` 신규: `SchemaWorkspace`(컨테이너), `SchemaEditorForm`(name + markdown), `SchemaPreviewCard`(정리 조각 + SchemaIssue 경고 + activate), `SchemaList`(활성/draft 배지 + 활성화). rail "규칙" 뷰에 마운트.
   - `_styles/history.css`, `_styles/schema.css` 신규 + `globals.css` @import, `_lib/api.ts`·`_lib/types.ts` 배럴에 schema re-export 1줄씩.
 - 검증: `tsc --noEmit`, `next lint`, `next build`, `test:markdown`(46 pass) 통과.
-- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 상호참조 이슈로 정리: `docs/issue/backend/2026-07-23.md`, `docs/issue/ai/2026-07-23.md`, `docs/issue/frontend/2026-07-23.md`(항목 10).
+- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 `docs/issue/backend/2026-07-23.md`, `docs/backlog/issue-2026-07-25.md`의 `AI/Pipeline — 활성 wiki-schema를 agent turn에 주입`, `docs/issue/frontend/2026-07-23.md`(항목 10)를 참조한다.
 
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 

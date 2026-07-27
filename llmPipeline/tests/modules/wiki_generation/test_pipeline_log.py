@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
 
 
@@ -28,3 +31,13 @@ def test_emit_keeps_pipeline_running_when_heartbeat_fails(tmp_path: Path) -> Non
     assert "문서를 변환했습니다." in content
     assert "heartbeat 갱신 실패" in content
     assert "database unavailable" in content
+
+
+def test_emit_propagates_inactive_pipeline_signal(tmp_path: Path) -> None:
+    log = PipelineLog(
+        tmp_path / "pipeline.log",
+        progress_callback=lambda: False,
+    )
+
+    with pytest.raises(PipelineRunCancelledError):
+        log.emit("변환", "문서를 변환했습니다.")

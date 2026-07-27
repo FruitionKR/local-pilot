@@ -1,0 +1,22 @@
+from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+from app.modules.wiki_ingestion.infrastructure.wiki_maintenance import (
+    _lint_api_client,
+)
+
+
+def test_claude_lint_client_uses_messages_endpoint_and_provider(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "claude-test")
+
+    client = _lint_api_client(
+        WikiMaintenanceCommand(
+            user_id="user-1",
+            workspace_id="workspace-1",
+            provider="claude",
+        )
+    )
+
+    assert client.config.endpoint == "https://api.anthropic.com/v1/messages"
+    assert client.provider == "claude"

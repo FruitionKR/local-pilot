@@ -48,12 +48,16 @@ class AgentConversationContextRequest(BaseModel):
 
 class AgentTurnRequestBody(BaseModel):
     message: str = Field(..., min_length=1)
+    workspace_id: str | None = Field(default=None, min_length=1)
+    user_id: str | None = Field(default=None, min_length=1)
     conversation_context: AgentConversationContextRequest | None = None
     active_markdown_context: ActiveMarkdownContextRequest | None = None
 
     def to_domain(self) -> AgentTurnRequest:
         return AgentTurnRequest(
             message=self.message,
+            workspace_id=self.workspace_id,
+            user_id=self.user_id,
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
         )

@@ -8,6 +8,7 @@ from app.modules.query.domain.entities import (
     QueryContext,
     QueryEvaluation,
     QueryRewrite,
+    SemanticQueryEmbedding,
     WebSearchResult,
     WikiPage,
     WikiPageLink,
@@ -32,6 +33,11 @@ class RecordingScoreSearch(ScoreSearch):
     def score(self, query: str, documents: list[str]) -> list[float]:
         self.queries.append(query)
         return super().score(query, documents)
+
+
+class SemanticScoreSearch(ScoreSearch):
+    def embed_query(self, query: str) -> SemanticQueryEmbedding:
+        return SemanticQueryEmbedding(model_name="test-model", vector=[1.0, 0.0])
 
 
 class EmptyTextSearch:
@@ -139,6 +145,66 @@ class FakeQueryEvaluator:
         return self.evaluations[index]
 
 
+class RecordingCandidateRepository(InMemoryWikiRepository):
+    def __init__(
+        self,
+        pages: list[WikiPage],
+        links: list[WikiPageLink],
+    ) -> None:
+        super().__init__(pages, links)
+        self.candidate_calls: list[tuple[str, str, int, int]] = []
+        self.semantic_queries: list[SemanticQueryEmbedding | None] = []
+        self.link_calls: list[
+            tuple[str, list[str], int, list[str] | None]
+        ] = []
+        self.page_id_calls: list[tuple[str, list[str]]] = []
+
+    def list_candidate_pages(
+        self,
+        workspace_id: str,
+        query: str,
+        source_limit: int,
+        concept_limit: int,
+        semantic_query: SemanticQueryEmbedding | None = None,
+    ) -> list[WikiPage]:
+        self.candidate_calls.append(
+            (workspace_id, query, source_limit, concept_limit)
+        )
+        self.semantic_queries.append(semantic_query)
+        return super().list_candidate_pages(
+            workspace_id,
+            query,
+            source_limit,
+            concept_limit,
+            semantic_query,
+        )
+
+    def list_links_for_page_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+        limit: int,
+        excluded_page_ids: list[str] | None = None,
+    ) -> list[WikiPageLink]:
+        self.link_calls.append(
+            (workspace_id, page_ids, limit, excluded_page_ids)
+        )
+        return super().list_links_for_page_ids(
+            workspace_id,
+            page_ids,
+            limit,
+            excluded_page_ids,
+        )
+
+    def list_pages_by_ids(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> list[WikiPage]:
+        self.page_id_calls.append((workspace_id, page_ids))
+        return super().list_pages_by_ids(workspace_id, page_ids)
+
+
 def source_page(page_id: str, title: str) -> WikiPage:
     return WikiPage(
         id=page_id,
@@ -162,6 +228,217 @@ def concept_page(page_id: str, title: str) -> WikiPage:
 
 
 class AnswerQueryUseCaseTest(unittest.TestCase):
+    def test_bounds_repository_candidates_before_scoring(self) -> None:
+        pages = [
+            source_page("source:bounded", "Bounded Source"),
+            concept_page("concept:bounded", "Bounded Concept"),
+        ]
+        repository = RecordingCandidateRepository(pages, [])
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Bounded Source": 0.9,
+                    "Bounded Concept": 0.8,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:bounded.md": "---\ndocument_id: doc_bounded\n---\n\nBounded source. [B0001]",
+                    "s3://test/concept:bounded.md": "Bounded concept. [B0002]",
+                }
+            ),
+            source_candidate_limit=3,
+            concept_candidate_limit=2,
+            candidate_pool_multiplier=4,
+            graph_link_limit=7,
+        )
+
+        use_case.execute("bounded 질문", workspace_id="ws_test")
+
+        self.assertEqual(
+            repository.candidate_calls,
+            [("ws_test", "bounded 질문", 12, 8)],
+        )
+        self.assertEqual(repository.link_calls[0][0], "ws_test")
+        self.assertEqual(
+            repository.link_calls[0][1],
+            ["concept:bounded", "source:bounded"],
+        )
+        self.assertEqual(repository.link_calls[0][2], 7)
+        self.assertEqual(repository.link_calls[0][3], [])
+        self.assertEqual(repository.page_id_calls, [("ws_test", [])])
+
+    def test_passes_query_embedding_for_global_semantic_candidates(self) -> None:
+        repository = RecordingCandidateRepository(
+            [source_page("source:semantic", "Semantic Source")],
+            [],
+        )
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=SemanticScoreSearch({"Semantic Source": 0.9}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:semantic.md": (
+                        "---\ndocument_id: doc_semantic\n---\n\nSemantic source. [B0001]"
+                    ),
+                }
+            ),
+        )
+
+        use_case.execute("의미 검색", workspace_id="ws_test")
+
+        self.assertEqual(
+            repository.semantic_queries,
+            [SemanticQueryEmbedding(model_name="test-model", vector=[1.0, 0.0])],
+        )
+
+    def test_uses_sixty_forty_hybrid_weight_for_page_ranking(self) -> None:
+        pages = [
+            source_page("source:semantic", "Semantic Candidate"),
+            source_page("source:keyword", "Keyword Candidate"),
+        ]
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch(
+                {
+                    "Semantic Candidate": 0.9,
+                    "Keyword Candidate": 0.4,
+                }
+            ),
+            text_search=QueryContainsSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:semantic.md": (
+                        "---\ndocument_id: doc_semantic\n---\n\n다른 내용입니다. [B0001]"
+                    ),
+                    "s3://test/source:keyword.md": (
+                        "---\ndocument_id: doc_keyword\n---\n\n정확한검색어가 있습니다. [B0002]"
+                    ),
+                }
+            ),
+            source_candidate_limit=1,
+        )
+
+        result = use_case.execute("정확한검색어", workspace_id="ws_test")
+
+        self.assertEqual(result.related_pages[0].page.id, "source:keyword")
+
+    def test_loads_neighbor_page_outside_initial_candidate_pool(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:neighbor", "Neighbor Concept"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:seed",
+                to_page_id="concept:neighbor",
+                link_type="source_mentions_concept",
+                confidence=0.95,
+            )
+        ]
+        repository = RecordingCandidateRepository(pages, links)
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {
+                    "Seed Source": 0.9,
+                    "Neighbor Concept": 0.9,
+                }
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(
+                {
+                    "s3://test/source:seed.md": (
+                        "---\ndocument_id: doc_seed\n---\n\nSeed. [B0001]"
+                    ),
+                    "s3://test/concept:neighbor.md": "Neighbor. [B0002]",
+                }
+            ),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+        )
+
+        result = use_case.execute("seed 질문", workspace_id="ws_test")
+
+        self.assertEqual(
+            repository.page_id_calls,
+            [("ws_test", ["concept:neighbor"])],
+        )
+        self.assertIn(
+            "concept:neighbor",
+            {item.page.id for item in result.related_pages},
+        )
+
+    def test_expands_bounded_graph_to_configured_depth(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:one", "Concept One"),
+            concept_page("concept:two", "Concept Two"),
+            concept_page("concept:three", "Concept Three"),
+        ]
+        links = [
+            WikiPageLink(
+                from_page_id="source:seed",
+                to_page_id="concept:one",
+                link_type="source_mentions_concept",
+                confidence=0.95,
+            ),
+            WikiPageLink(
+                from_page_id="concept:one",
+                to_page_id="concept:two",
+                link_type="concept_related_to",
+                confidence=0.95,
+            ),
+            WikiPageLink(
+                from_page_id="concept:two",
+                to_page_id="concept:three",
+                link_type="concept_related_to",
+                confidence=0.95,
+            ),
+        ]
+        repository = RecordingCandidateRepository(pages, links)
+        markdown = {
+            page.markdown_uri: (
+                "---\ndocument_id: doc_seed\n---\n\nEvidence. [B0001]"
+                if page.is_source
+                else f"{page.title}. [B0001]"
+            )
+            for page in pages
+            if page.markdown_uri
+        }
+        use_case = AnswerQueryUseCase(
+            wiki_repository=repository,
+            embedding_search=ScoreSearch(
+                {page.title: 0.9 for page in pages}
+            ),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            markdown_reader=FakeMarkdownReader(markdown),
+            source_candidate_limit=1,
+            concept_candidate_limit=0,
+            candidate_pool_multiplier=1,
+            graph_expansion_depth=3,
+        )
+
+        result = use_case.execute("seed 질문", workspace_id="ws_test")
+
+        self.assertIn(
+            "concept:three",
+            {item.page.id for item in result.related_pages},
+        )
+        self.assertEqual(
+            [call[1] for call in repository.link_calls],
+            [["source:seed"], ["concept:one"], ["concept:two"]],
+        )
+
     def test_starts_from_top_source_and_cites_evidence_context(self) -> None:
         pages = [
             source_page("source:attention", "Lecture Attention"),
@@ -284,7 +561,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["B0001"])
         self.assertEqual(result.evidence_snippets[1].source_block_ids, ["B0003"])
 
-    def test_traverses_source_related_to_edges(self) -> None:
+    def test_ignores_legacy_source_related_to_edges(self) -> None:
         pages = [
             source_page("source:a", "RAG Overview"),
             source_page("source:b", "Wiki Graph Notes"),
@@ -323,8 +600,8 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
         related_ids = {item.page.id for item in result.related_pages}
         edge_types = {edge.link_type for edge in result.graph_context.edges}
-        self.assertIn("source:b", related_ids)
-        self.assertIn("source_related_to", edge_types)
+        self.assertNotIn("source:b", related_ids)
+        self.assertNotIn("source_related_to", edge_types)
 
     def test_excludes_nodes_below_five_percent_from_best_observed_score(self) -> None:
         pages = [
@@ -1104,6 +1381,40 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(stop_reason, "no_frontier")
+
+    def test_stops_traversal_below_initial_best_seed_floor(self) -> None:
+        pages = [
+            source_page("source:seed", "Seed Source"),
+            concept_page("concept:near", "Near Concept"),
+            concept_page("concept:drift", "Drift Concept"),
+        ]
+        graph_context, _paths, _stop_reason = TraverseWikiGraphUseCase(
+            relative_score_floor=0.95,
+        ).execute(
+            pages_by_id={page.id: page for page in pages},
+            links=[
+                WikiPageLink(
+                    "source:seed",
+                    "concept:near",
+                    "source_mentions_concept",
+                ),
+                WikiPageLink(
+                    "concept:near",
+                    "concept:drift",
+                    "concept_related_to",
+                ),
+            ],
+            seed_page_ids=["source:seed"],
+            node_scores={
+                "source:seed": 1.0,
+                "concept:near": 0.96,
+                "concept:drift": 0.94,
+            },
+        )
+
+        related_ids = {item.page.id for item in graph_context.nodes}
+        self.assertIn("concept:near", related_ids)
+        self.assertNotIn("concept:drift", related_ids)
 
     def test_rejects_blank_question(self) -> None:
         use_case = AnswerQueryUseCase(

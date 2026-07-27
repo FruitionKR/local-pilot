@@ -1,5 +1,83 @@
 import os
 from collections.abc import Iterable
+from dataclasses import dataclass
+
+
+SUPPORTED_LLM_PROVIDERS = ("openai", "gemini", "claude", "upstage", "generic")
+_PROVIDER_BASE_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "claude": "https://api.anthropic.com/v1",
+    "upstage": "https://api.upstage.ai/v1",
+    "generic": "https://api.openai.com/v1",
+}
+
+
+@dataclass(frozen=True)
+class LlmProviderDefaults:
+    provider: str
+    base_url: str
+    api_key_env: str
+    api_key: str | None
+    model: str | None
+
+
+def resolve_llm_provider(provider: str | None = None) -> str:
+    resolved = (provider or os.environ.get("LLM_PROVIDER") or "upstage").strip().lower()
+    if resolved not in SUPPORTED_LLM_PROVIDERS:
+        supported = ", ".join(SUPPORTED_LLM_PROVIDERS)
+        raise ValueError(f"Unsupported LLM_PROVIDER: {resolved}. Expected one of: {supported}")
+    return resolved
+
+
+def provider_base_url(provider: str | None = None) -> str:
+    return _PROVIDER_BASE_URLS[resolve_llm_provider(provider)]
+
+
+def provider_api_endpoint(
+    base_url: str,
+    provider: str | None = None,
+) -> str:
+    suffix = "/messages" if resolve_llm_provider(provider) == "claude" else "/chat/completions"
+    return base_url.rstrip("/") + suffix
+
+
+def resolve_llm_provider_defaults(
+    *,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> LlmProviderDefaults:
+    resolved_provider = resolve_llm_provider(provider)
+    resolved_key_env = api_key_env or "LLM_API_KEY"
+    resolved_key = api_key or os.environ.get(resolved_key_env)
+    if (
+        resolved_key is None
+        and api_key_env is None
+        and resolved_provider == "upstage"
+    ):
+        resolved_key = os.environ.get("UPSTAGE_API_KEY")
+        if resolved_key:
+            resolved_key_env = "UPSTAGE_API_KEY"
+    resolved_model = model or os.environ.get("LLM_MODEL")
+    if resolved_provider == "upstage":
+        resolved_model = resolved_model or os.environ.get("UPSTAGE_MODEL") or "solar-pro2"
+    return LlmProviderDefaults(
+        provider=resolved_provider,
+        base_url=base_url
+        or os.environ.get("LLM_BASE_URL")
+        or (
+            os.environ.get("UPSTAGE_BASE_URL")
+            if resolved_provider == "upstage"
+            else None
+        )
+        or provider_base_url(resolved_provider),
+        api_key_env=resolved_key_env,
+        api_key=resolved_key,
+        model=resolved_model,
+    )
 
 
 def chat_completions_endpoint(
@@ -12,7 +90,7 @@ def chat_completions_endpoint(
     if endpoint:
         return endpoint
     base_url = first_env(base_url_env_names) or default_base_url
-    return base_url.rstrip("/") + "/chat/completions"
+    return provider_api_endpoint(base_url)
 
 
 def api_key_from_env(

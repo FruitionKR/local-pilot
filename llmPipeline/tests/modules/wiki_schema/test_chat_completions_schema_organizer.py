@@ -47,7 +47,7 @@ class ChatCompletionsSchemaOrganizerTest(unittest.TestCase):
         self.assertEqual(payload["raw_markdown"], "답변은 한국어로 해줘.")
         self.assertIn("global_markdown", payload["target_sections"])
 
-    def test_defaults_to_local_ollama_endpoint_and_model(self) -> None:
+    def test_defaults_to_shared_upstage_provider(self) -> None:
         env_keys = [
             "WIKI_SCHEMA_LLM_ENDPOINT",
             "QUERY_LLM_ENDPOINT",
@@ -65,11 +65,11 @@ class ChatCompletionsSchemaOrganizerTest(unittest.TestCase):
             endpoint = _endpoint()
             model = _model()
 
-        self.assertEqual(endpoint, "http://127.0.0.1:11434/v1/chat/completions")
-        self.assertTrue(_is_local_ollama_endpoint(endpoint))
-        self.assertEqual(model, "qwen2.5:7b")
+        self.assertEqual(endpoint, "https://api.upstage.ai/v1/chat/completions")
+        self.assertFalse(_is_local_ollama_endpoint(endpoint))
+        self.assertEqual(model, "solar-pro2")
 
-    def test_api_key_can_be_missing_for_local_ollama(self) -> None:
+    def test_api_key_is_none_when_no_shared_or_override_key_exists(self) -> None:
         env_keys = [
             "WIKI_SCHEMA_LLM_API_KEY_ENV",
             "WIKI_SCHEMA_LLM_API_KEY",

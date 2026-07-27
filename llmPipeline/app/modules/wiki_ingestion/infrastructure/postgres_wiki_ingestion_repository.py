@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from app.core.error_text import truncate_error
+from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     MATERIALIZED_CORE_RELATIONS,
     cluster_relation_items as _cluster_relation_items,
@@ -28,10 +29,10 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence 
     persist_wiki_outputs as _persist_wiki_outputs,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
+    delete_source_related_links as _delete_source_related_links,
     load_existing_concept_ids_by_slug as _load_existing_concept_ids_by_slug,
     persist_embedding_units as _persist_embedding_units,
     read_optional_text_object as _read_optional_text_object,
-    refresh_source_related_links as _refresh_source_related_links,
     resolve_or_create_wiki_page_id as _resolve_or_create_wiki_page_id,
     upload_wiki_markdown as _upload_wiki_markdown,
     upsert_wiki_page as _upsert_wiki_page,
@@ -133,6 +134,22 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         document_id = row["document_id"] if row else None
         if document_id:
+            active_document = conn.execute(
+                """
+                SELECT d.id
+                FROM documents d
+                JOIN workspaces w ON w.id = d.workspace_id
+                WHERE d.id = %s
+                  AND d.deleted_at IS NULL
+                  AND w.deleted_at IS NULL
+                FOR SHARE OF d, w
+                """,
+                (document_id,),
+            ).fetchone()
+            if active_document is None:
+                raise PipelineRunCancelledError(
+                    "Pipeline run cancelled because its document or workspace is inactive."
+                )
             embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
             manifest = _stored_manifest(manifest)
             conn.execute(
@@ -165,6 +182,13 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
                 UPDATE documents
                 SET status = 'failed', processed_at = now(), error_message = %s
                 WHERE id = %s
+                  AND deleted_at IS NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM workspaces w
+                      WHERE w.id = documents.workspace_id
+                        AND w.deleted_at IS NULL
+                  )
                 """,
                 (error_message, row["document_id"]),
             )
@@ -179,16 +203,30 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
         )
 
 
-def touch_pipeline_run(run_id: str) -> None:
+def touch_pipeline_run(run_id: str) -> bool:
     with connect() as conn:
-        conn.execute(
+        row = conn.execute(
             """
-            UPDATE pipeline_runs
+            UPDATE pipeline_runs pr
             SET updated_at = now()
-            WHERE id = %s AND status = 'running'
+            WHERE pr.id = %s
+              AND pr.status = 'running'
+              AND (
+                  pr.document_id IS NULL
+                  OR EXISTS (
+                      SELECT 1
+                      FROM documents d
+                      JOIN workspaces w ON w.id = d.workspace_id
+                      WHERE d.id = pr.document_id
+                        AND d.deleted_at IS NULL
+                        AND w.deleted_at IS NULL
+                  )
+              )
+            RETURNING pr.id
             """,
             (run_id,),
-        )
+        ).fetchone()
+    return row is not None
 
 
 def get_pipeline_run(run_id: str) -> dict | None:

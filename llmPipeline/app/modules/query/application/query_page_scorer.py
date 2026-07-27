@@ -12,7 +12,7 @@ class QueryPageScorer:
         text_search: TextSearchPort,
         source_candidate_limit: int = 15,
         concept_candidate_limit: int = 10,
-        focus_concept_threshold: float = 0.60,
+        focus_concept_threshold: float = 0.45,
     ) -> None:
         self._embedding_search = embedding_search
         self._text_search = text_search
@@ -56,7 +56,7 @@ class QueryPageScorer:
         if not ranked:
             return []
         top_score = concept_scores.get(ranked[0].id, 0.0)
-        if top_score < self._focus_concept_threshold:
+        if top_score + 1e-9 < self._focus_concept_threshold:
             return []
         focus = [page.id for page in ranked if concept_scores.get(page.id, 0.0) >= top_score - 0.001]
         return focus[: self._concept_candidate_limit]

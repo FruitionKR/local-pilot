@@ -42,6 +42,12 @@ class WikiEmbeddingUnit:
 
 
 @dataclass(frozen=True)
+class SemanticQueryEmbedding:
+    model_name: str
+    vector: list[float]
+
+
+@dataclass(frozen=True)
 class QueryRewrite:
     original_question: str
     retrieval_query: str
@@ -132,6 +138,8 @@ class QueryContext:
     related_pages: list[RetrievedPage]
     evidence_snippets: list[EvidenceSnippet]
     answer_context: str
+    workspace_id: str | None = None
+    user_id: str | None = None
 
 
 @dataclass(frozen=True)

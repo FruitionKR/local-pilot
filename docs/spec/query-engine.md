@@ -32,7 +32,6 @@ raw document
   -> concept page
   -> source_mentions_concept
   -> concept_related_to
-  -> source_related_to
 ```
 
 따라서 Query Engine은 GraphRAG 전체를 새로 만드는 것이 아니라, 이미 만들어진 Wiki graph 위에서 검색, 탐색, 맥락 구성, 답변 생성을 수행한다.
@@ -108,7 +107,6 @@ Query Engine은 최소 아래 데이터를 사용한다.
 ```text
 source_mentions_concept
 concept_related_to
-source_related_to
 ```
 
 `concept_contrasts_with`는 계약상 존재할 수 있으나 MVP Query Engine의 기본 traversal 대상에서는 제외한다.
@@ -170,27 +168,39 @@ Sources:
 
 ### 6.4 Hybrid score
 
-초기 기본값은 BGE-M3 vector similarity를 주력으로 한다.
+embedding 유사도와 keyword 일치도를 함께 사용한다. 정확한 문서명·Concept명·
+고유명사 검색이 semantic 유사도에 묻히지 않도록 keyword 비중을 40%로 둔다.
 
 권장 source score:
 
 ```text
 source_retrieval_score =
-  0.80 * embedding_similarity
-+ 0.20 * bm25_score
+  0.60 * embedding_similarity
++ 0.40 * bm25_score
 ```
 
-테스트 결과, 한국어 우회 표현에서는 BGE-M3 source vector가 강하게 동작했다. BM25는 exact keyword, 고유명사, 짧은 질의에서 보조 역할로 사용한다.
+정확한 title·slug·Concept명 일치는 hybrid 계산 뒤 별도 name match 보정도
+적용한다. 한국어 우회 표현의 semantic 검색과 정확한 keyword 검색을 함께
+회귀 테스트하고, 운영 평가 없이 한쪽 비중을 추가로 높이지 않는다.
 
 Concept hint score:
 
 ```text
 concept_hint_score =
-  0.80 * concept_embedding_similarity
-+ 0.20 * concept_bm25_score
+  0.60 * concept_embedding_similarity
++ 0.40 * concept_bm25_score
 ```
 
-`concept_hint_score >= 0.60`이면 해당 concept과 연결된 source를 seed 후보에 추가한다. threshold는 평가 결과에 따라 조정한다.
+`concept_hint_score >= 0.45`이면 해당 concept과 연결된 source를 seed 후보에
+추가한다. 이는 keyword가 없는 semantic-only Concept도 embedding similarity
+0.75부터 기존과 동일하게 통과시키기 위한 60:40 가중치 기준값이다. threshold는
+평가 결과에 따라 조정한다.
+
+후보 생성은 Workspace 전체 저장 page embedding의 exact cosine Top-K와
+keyword Top-K를 독립적으로 구한 뒤 합친다. 반환 후보와 Markdown 로드는
+bounded로 유지한다. 전역 비교 비용은 현재 검색 정확성을 위한 의도된
+동작이며, 실제 사용자 지연이나 운영 지표로 병목이 확인될 때 별도 성능
+이슈에서 index 필요성을 평가한다.
 
 ## 7. Graph traversal 정책
 
@@ -201,7 +211,6 @@ concept_hint_score =
 ```text
 source -> concept: source_mentions_concept
 concept -> concept: concept_related_to
-source -> source: source_related_to
 concept -> source: source_mentions_concept 역방향
 ```
 
@@ -209,33 +218,12 @@ concept -> source: source_mentions_concept 역방향
 
 ### 7.2 Source-source edge
 
-`source_related_to`는 top-k 제한으로 만들지 않는다. 높은 minimum score threshold를 통과한 관계만 저장한다.
+`source_related_to`는 Wiki 원본 link로 생성하거나 저장하지 않는다. 현재 Query
+Engine에도 관련 Source 전용 소비 계약이 없으므로 Source-source 파생 관계를
+미리 materialize하지 않는다.
 
-기본 생성 기준:
-
-```text
-source_related_score =
-  weighted shared concept cosine
-
-store if:
-  source_related_score >= 0.75
-```
-
-공유 concept이 너무 많은 hub concept일 경우 영향력을 줄이기 위해 concept source count 기반 weight를 적용한다.
-
-```text
-concept_weight = 1 / concept_source_count
-```
-
-DB 저장:
-
-```text
-from_page_id = source:A
-to_page_id = source:B
-link_type = source_related_to
-label = "공유 concept: ..."
-confidence = source_related_score
-```
+관련 Source 기능이 필요해지면 소비 endpoint, 결과 상한, 정렬 기준을 먼저
+정의하고 명시적인 Source→Concept link에서 요청 시 계산한다.
 
 ### 7.3 Traversal budget
 
@@ -251,7 +239,7 @@ max_depth = 3
 
 멈춤 조건:
 
-- 다음 후보가 현재 path score의 `relative_score_floor`를 넘지 못한다.
+- 다음 후보가 최초 최고 seed score의 `relative_score_floor`를 넘지 못한다.
 - 다음 frontier가 없다.
 - 설정한 `max_depth`에서 확장 가능한 후속 frontier가 남아 있다.
 - 시작 seed의 점수가 0 이하라 관련 seed가 없다고 판단한다.

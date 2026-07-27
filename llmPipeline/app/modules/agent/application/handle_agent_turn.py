@@ -36,6 +36,8 @@ class HandleAgentTurnUseCase:
             result = self._markdown_create_use_case.execute(
                 MarkdownCreateRequest(
                     instruction=request.message,
+                    workspace_id=request.workspace_id,
+                    user_id=request.user_id,
                     conversation_summary=(
                         request.conversation_context.recent_conversation_summary
                         if request.conversation_context
@@ -72,6 +74,8 @@ class HandleAgentTurnUseCase:
                     instruction=request.message,
                     markdown=markdown_context.markdown,
                     target=target,
+                    workspace_id=request.workspace_id,
+                    user_id=request.user_id,
                     conversation_summary=(
                         request.conversation_context.recent_conversation_summary
                         if request.conversation_context
@@ -100,6 +104,8 @@ class HandleAgentTurnUseCase:
 
         answer = self._query_use_case.execute(
             request.message,
+            workspace_id=request.workspace_id or "",
+            user_id=request.user_id,
             conversation_context=_to_query_conversation_context(request),
         )
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)

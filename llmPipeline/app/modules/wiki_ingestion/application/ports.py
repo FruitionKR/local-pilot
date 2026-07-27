@@ -15,7 +15,7 @@ class PipelineRunnerPort(Protocol):
     def run(
         self,
         command: PipelineRunCommand,
-        progress_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[[], bool | None] | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -33,7 +33,7 @@ class PipelineRunRepositoryPort(Protocol):
 
     def fail(self, run_id: str, error: str) -> None: ...
 
-    def touch(self, run_id: str) -> None: ...
+    def touch(self, run_id: str) -> bool: ...
 
     def get_document(self, document_id: str) -> dict[str, Any] | None: ...
 
