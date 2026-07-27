@@ -2,12 +2,17 @@
 
 이 디렉터리는 현재 구현 기준과 다르거나, 구현 전 설계 단계에서 작성된 이전 자료를 보관한다.
 현재 API 계약과 실행 기준은 `docs/` 최상위 문서와 `docs/spec/`의 최신 문서를 우선한다.
+현재 MSA 목표 구조는 `docs/Fruition_AWS_MSA_Architecture.md`를 따른다.
 
 보관 문서를 참고할 때는 각 파일 상단의 이전 자료 안내와 최신 참조 문서를 먼저 확인한다.
 
 ## 보관 문서
 
 - `development.md` — 백엔드/프론트엔드 도입 전 개발 환경 기록. 현재 실행 기준은 `docs/local-runbook.md`.
+- `Fruition_MSA_Proposal.md` — 4서비스와 SQS를 전제로 한 초기 AWS MSA 제안서. 현재 구조는 `docs/Fruition_AWS_MSA_Architecture.md`.
+- `Fruition_MSA_Proposal_revised.md` — ECS on Fargate와 SQS를 전제로 한 3서비스 AWS MSA 제안서. 현재 구조는 `docs/Fruition_AWS_MSA_Architecture.md`.
+- `msa-operational-contracts.md` — 4도메인 분할과 SQS/Redis Streams를 전제로 한 구현·운영 계약 초안. 필드·상태 전이·재처리 알고리즘만 참고한다.
+- `query-sse-redis.md` — Query 실행·재처리를 Redis Streams로 확장하는 이전 설계안. 현재 AI 작업 큐는 Kafka를 사용하고 Redis는 실시간 상태 전달에 한정한다.
 - `issue-2026-06-11.md` — 2026-06-16 기준 해결 또는 이관된 2026-06-11 이슈 기록.
 - `issue-2026-06-12.md` — 2026-06-16 기준 해결된 rename API 이슈 기록.
 - `issue-2026-06-16.md` — 전 항목 해결(PR 34/38/43/44/54/55/58)된 이슈 기록. 2026-07-15 이관.

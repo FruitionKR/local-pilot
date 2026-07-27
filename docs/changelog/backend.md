@@ -521,7 +521,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 **남은 주의사항**
 
-- 여전히 in-memory 단일 인스턴스 전제다. 다중 인스턴스 확장 시의 run 공유는 별도 범위(`docs/design/query-sse-redis.md`).
+- 여전히 in-memory 단일 인스턴스 전제다. 당시 검토한 다중 인스턴스 run 공유안은 `docs/backlog/query-sse-redis.md`에 보관했다.
 
 ### fix: 초기 노트의 임시 주석 제거 및 status를 completed로 저장
 
@@ -549,7 +549,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `QueryRunService.start()`가 `202`를 반환하기 전에 같은 `pair_id`의 `user=completed`, `assistant=pending` 메시지를 `REQUIRES_NEW` transaction으로 commit한다.
 - 성공 시 기존 assistant를 `completed`와 최종 답변으로 갱신하고, pipeline 또는 예상 밖 오류 시 같은 assistant를 `failed`와 오류 메시지로 갱신한다.
 - 예상 밖 `Exception`도 run을 `FAILED`로 바꾸고 일반화된 `query.failed` SSE를 발행한다. 상세 stack trace는 서버 로그에만 남긴다.
-- 현재 인메모리 SSE 흐름과 Redis Pub/Sub·Streams 적용 기준을 `docs/design/query-sse-redis.md`에 시각화했다.
+- 당시 인메모리 SSE 흐름과 Redis Pub/Sub·Streams 적용 기준을 `docs/backlog/query-sse-redis.md`에 시각화했다.
 
 **검증**
 
