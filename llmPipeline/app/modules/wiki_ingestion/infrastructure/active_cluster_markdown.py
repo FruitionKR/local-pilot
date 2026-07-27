@@ -59,7 +59,9 @@ def reconcile_active_cluster_invalidations(
     sections = cluster_sections_by_id(markdown)
     removed_claims: list[dict[str, Any]] = []
     removed_relations: list[dict[str, Any]] = []
+    changed = False
     for cluster_id, section in sections.items():
+        original_section = section
         cluster = parse_active_cluster_lint(section)[0]
         stale_claim_ids = {
             str(claim.get("id") or "")
@@ -82,8 +84,9 @@ def reconcile_active_cluster_invalidations(
             current_relation_signatures,
         )
         removed_relations.extend(relations)
+        changed = changed or section != original_section
         sections[cluster_id] = section
-    if not removed_claims and not removed_relations:
+    if not changed:
         return markdown, [], []
     lines = ["# Active Meaning Clusters"]
     lines.extend(sections[cluster_id].strip() for cluster_id in sorted(sections))

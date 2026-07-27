@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -196,6 +197,11 @@ def _contribution_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def _manifest_links(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     links = manifest.get("links")
+    if isinstance(links, (str, Path)):
+        path = Path(links)
+        if not path.exists():
+            return []
+        links = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(links, list):
         return []
     return [

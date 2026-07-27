@@ -542,6 +542,33 @@ def test_reconcile_active_clusters_removes_only_stale_reingest_claims() -> None:
     assert removed_relations[0]["target"] == "concept:old-target"
 
 
+def test_reconcile_active_clusters_keeps_partial_relation_evidence_change() -> None:
+    markdown = """# Active Meaning Clusters
+
+## cluster: motor
+
+### Core Relation Candidates
+- target: concept:target
+  relation: supports_or_enables
+  evidence: [doc_1:B0002, claim_keep]
+  reason: 일부 근거만 무효화
+"""
+
+    reconciled, removed_claims, removed_relations = (
+        reconcile_active_cluster_invalidations(
+            markdown,
+            {"doc_1:B0002"},
+            set(),
+            set(),
+        )
+    )
+
+    assert "evidence: [claim_keep]" in reconciled
+    assert "doc_1:B0002" not in reconciled
+    assert removed_claims == []
+    assert removed_relations == []
+
+
 def test_delete_source_related_links_is_scoped_to_workspace() -> None:
     class EmptyRows:
         def fetchall(self):

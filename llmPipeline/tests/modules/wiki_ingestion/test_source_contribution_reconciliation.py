@@ -68,6 +68,30 @@ def test_contribution_payload_keeps_reingest_reconciliation_inputs() -> None:
     }
 
 
+def test_contribution_payload_reads_links_json_path(tmp_path) -> None:
+    links_path = tmp_path / "links.json"
+    links_path.write_text(
+        """[
+  {
+    "source": "source:doc-1",
+    "target": "concept:kept-concept",
+    "relation": "source_mentions_concept"
+  }
+]""",
+        encoding="utf-8",
+    )
+
+    payload = source_contribution_payload({"links": str(links_path)})
+
+    assert payload["links"] == [
+        {
+            "source": "source:doc-1",
+            "target": "concept:kept-concept",
+            "relation": "source_mentions_concept",
+        }
+    ]
+
+
 def test_reconciliation_candidate_compares_previous_and_current_contribution() -> None:
     candidate = _reconciliation_candidate(
         {
