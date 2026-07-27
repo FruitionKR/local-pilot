@@ -20,7 +20,8 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
   `pipeline_runs.manifest.source_contribution`에 필요한 식별값만 저장하고 문서별
   최신 성공 실행을 사용
 - 변경 전 실행에 별도 기여분이 없더라도 기존 manifest의 concept·relation을 읽어
-  최초 재편입부터 사라진 구조를 찾도록 호환
+  최초 재편입부터 사라진 구조를 찾고, 최신 claim 식별값이 없는 과거 재편입은
+  active cluster 자동 삭제에서 제외
 - lint dry-run에서 수정·삭제 block, 사라진 문서-concept 연결, 사라진 relation을
   `reconciliation_candidates`로 반환
 - `dry_run=false`에서 오래된 문서-concept 연결·해당 문서의 embedding unit과
@@ -32,7 +33,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
   `needs_review` 대상으로 분류
 - Concept 본문 의미 재작성은 안전한 기여 병합 단계가 더 필요해
   `docs/issue/ai/2026-07-27.md`에서 후속 관리
-- 집중 테스트 `28 passed`, llmPipeline 전체 `530 passed`,
+- 집중 테스트 `29 passed`, llmPipeline 전체 `531 passed`,
   `43 subtests passed`; Python compile과 `git diff --check` 통과
 
 ## 2026-07-26

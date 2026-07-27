@@ -88,6 +88,8 @@ def test_reconciliation_candidate_compares_previous_and_current_contribution() -
                     "source_block_changes": {
                         "invalidated_block_ids": ["B0002", "B0003"],
                     },
+                    "claim_signatures": [],
+                    "relation_signatures": [],
                 },
             },
             "previous_manifests": [
@@ -128,6 +130,7 @@ def test_reconciliation_candidate_compares_previous_and_current_contribution() -
     ]
     assert candidate["_current_claim_signatures"] == []
     assert candidate["_current_relation_signatures"] == []
+    assert candidate["_cluster_reconciliation_ready"] is True
 
 
 def test_reconciliation_candidate_reads_legacy_manifest_links() -> None:
@@ -169,6 +172,7 @@ def test_reconciliation_candidate_reads_legacy_manifest_links() -> None:
             "relation": "source_mentions_concept",
         }
     ]
+    assert candidate["_cluster_reconciliation_ready"] is False
 
 
 def test_structural_reconciliation_keeps_relation_supported_by_another_document() -> None:

@@ -211,6 +211,7 @@ def _manifest_links(manifest: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _reconciliation_candidate(row: dict[str, Any]) -> dict[str, Any]:
     manifest = row.get("manifest") or {}
+    stored_contribution = manifest.get("source_contribution")
     payload = _contribution_from_manifest(manifest)
     previous_payloads = [
         _contribution_from_manifest(previous_manifest)
@@ -243,6 +244,11 @@ def _reconciliation_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "stale_relations": list(stale_relations_by_key.values()),
         "structural_reconciled": (
             payload.get("structural_reconciled_at") is not None
+        ),
+        "_cluster_reconciliation_ready": (
+            isinstance(stored_contribution, dict)
+            and isinstance(stored_contribution.get("claim_signatures"), list)
+            and isinstance(stored_contribution.get("relation_signatures"), list)
         ),
         "_current_claim_signatures": payload.get("claim_signatures", []),
         "_current_relation_signatures": payload.get("relation_signatures", []),

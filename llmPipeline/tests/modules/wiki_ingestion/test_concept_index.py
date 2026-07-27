@@ -419,6 +419,76 @@ source_refs: [doc_1]
     assert result["needs_review"] == []
 
 
+def test_lint_does_not_remove_claim_for_legacy_reingest_without_signatures(
+    monkeypatch,
+) -> None:
+    active_markdown = """# Active Meaning Clusters
+
+## cluster: legacy-cluster
+
+### Evidence Claims
+- claim_001: 최신 여부를 판별할 수 없는 주장이다. [doc_1:B0002]
+"""
+    reconciled_refs: list[set[str]] = []
+    monkeypatch.setattr(
+        repository,
+        "_read_optional_text_object",
+        lambda _path: active_markdown,
+    )
+    monkeypatch.setattr(repository, "_orphan_source_refs", lambda _refs: [])
+    monkeypatch.setattr(
+        repository,
+        "_list_reconciliation_candidates",
+        lambda *_args: [
+            {
+                "pipeline_run_id": "run-2",
+                "document_id": "doc_1",
+                "invalidated_source_refs": ["doc_1:B0002"],
+                "stale_concept_slugs": [],
+                "stale_relations": [],
+                "structural_reconciled": False,
+                "_cluster_reconciliation_ready": False,
+                "_current_claim_signatures": [],
+                "_current_relation_signatures": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        repository,
+        "_reconcile_active_cluster_invalidations",
+        lambda markdown, refs, *_args: (
+            reconciled_refs.append(refs) or markdown,
+            [],
+            [],
+        ),
+    )
+    monkeypatch.setattr(repository, "_active_relation_keys", lambda *_args: set())
+    monkeypatch.setattr(
+        repository,
+        "_apply_structural_reconciliation",
+        lambda *_args: [],
+    )
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(repository, "connect", FakeConnection)
+
+    result = repository.lint_wiki_workspace(
+        "user_1",
+        "workspace_1",
+        apply_reconciliation=True,
+        write_log=False,
+    )
+
+    assert reconciled_refs == [set()]
+    assert result["needs_review"] == ["legacy-cluster"]
+
+
 def test_reconcile_active_clusters_removes_only_stale_reingest_claims() -> None:
     markdown = """# Active Meaning Clusters
 

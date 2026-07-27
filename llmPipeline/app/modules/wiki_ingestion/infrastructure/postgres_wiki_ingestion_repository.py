@@ -380,6 +380,12 @@ def lint_wiki_workspace(
         for candidate in reconciliation_candidates
         for ref in candidate["invalidated_source_refs"]
     }
+    cluster_reconciliation_source_refs = {
+        ref
+        for candidate in reconciliation_candidates
+        if candidate.get("_cluster_reconciliation_ready", False)
+        for ref in candidate["invalidated_source_refs"]
+    }
     current_claim_signatures = {
         tuple(signature)
         for candidate in reconciliation_candidates
@@ -406,7 +412,7 @@ def lint_wiki_workspace(
             removed_relations,
         ) = _reconcile_active_cluster_invalidations(
             active_markdown,
-            stale_source_refs,
+            cluster_reconciliation_source_refs,
             current_claim_signatures,
             current_relation_signatures,
         )
