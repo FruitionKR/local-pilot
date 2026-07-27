@@ -522,6 +522,28 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("다른 사용자가 편집 잠금을 보유 중이면 저장을 차단한다")
+    void saveContent_lockedByOther_throwsLocked() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        org.mockito.Mockito.doThrow(new fruition.document.exception.DocumentLockedException("다른 사용자가 편집 중"))
+                .when(editLockService).requireWritable(document.getId(), USER_ID);
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "agent"))
+                .isInstanceOf(fruition.document.exception.DocumentLockedException.class);
+        // 잠금 차단은 버전 갱신·스냅샷 이전에 일어난다
+        verify(documentRepository, never()).updateContentIfVersionMatches(
+                anyString(), anyString(), anyLong(), anyString(), anyLong(), any());
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
     @DisplayName("동일 Markdown 저장은 버전과 수정 시각을 변경하지 않는다")
     void saveContent_sameMarkdown_returnsNoOp() {
         stubOwnedWorkspace();
