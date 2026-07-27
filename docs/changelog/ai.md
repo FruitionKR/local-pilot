@@ -4,6 +4,16 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-27
+
+### feat: Markdown 문서 재편입 흐름 추가
+
+- `POST /pipeline/reingest-runs`가 같은 `document_id`의 최신 Markdown과 기존 Source Page·source block을 받아 추가·수정 블록만 의미 추출
+- 유지·이동·추가·수정·삭제 블록을 구분하고 기존 블록 ID를 유지하며, 삭제된 블록 ID는 이후 실행에서도 재사용하지 않도록 마지막 발급 번호를 보존
+- 삭제·수정 블록에만 연결된 기존 추출 항목을 제외하고 요약·카테고리처럼 블록 귀속을 확인할 수 없는 기존 정보는 lint 전까지 유지
+- 공백뿐인 Markdown 재편입은 기존 source block을 제거하며, Source Page가 없는 문서는 `409`로 거부
+- llmPipeline 전체 테스트 `522 passed`, `43 subtests passed`; `git diff --check` 통과
+
 ## 2026-07-26
 
 ### fix: Query hybrid 후보와 탐색 기준 복원

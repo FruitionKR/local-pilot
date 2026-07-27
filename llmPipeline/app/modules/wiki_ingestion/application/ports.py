@@ -52,6 +52,11 @@ class PipelineRunRepositoryPort(Protocol):
         workspace_id: str,
     ) -> dict[str, Any] | None: ...
 
+    def list_source_blocks(
+        self,
+        document_id: str,
+    ) -> list[dict[str, Any]]: ...
+
 
 class WikiEmbeddingJobPort(Protocol):
     def start(self, run_id: str, page_ids: list[str]) -> None: ...

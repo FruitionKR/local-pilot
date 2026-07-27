@@ -24,6 +24,7 @@ def _repository(
     repository = Mock()
     repository.get_document.return_value = document
     repository.latest_source_page_context.return_value = source_context
+    repository.list_source_blocks.return_value = []
     repository.list_active_concept_index.return_value = []
     return repository
 
@@ -102,6 +103,15 @@ def test_pipeline_run_requires_document_id() -> None:
         assert "document_id" in str(exc)
     else:
         raise AssertionError("document pipeline request should require document_id")
+
+
+def test_reingest_run_accepts_empty_markdown() -> None:
+    payload = api.ReingestRunIn(
+        document_id="document_1",
+        input_markdown="",
+    )
+
+    assert payload.input_markdown == ""
 
 
 def test_pipeline_run_rejects_direct_input() -> None:
@@ -319,6 +329,77 @@ def test_pipeline_endpoint_runs_stored_document_in_background() -> None:
     assert registration.input_source == "storage:documents/document_1.md"
     assert command.input_markdown == "# Stored Document"
     assert command.source_document_id == "document_1"
+
+
+def test_reingest_endpoint_uses_inline_markdown_and_previous_source() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "filename": "document.md",
+        },
+        source_context={
+            "artifact": {"document_id": "document_1"},
+            "source_markdown": "# 기존 문서",
+        },
+    )
+    repository.list_source_blocks.return_value = [
+        {"document_id": "document_1", "block_id": "B0001", "text": "기존 문서"}
+    ]
+    use_case = _use_case()
+    source_reader = _source_reader()
+
+    with _pipeline_client(
+        use_case=use_case,
+        repository=repository,
+        source_reader=source_reader,
+    ) as client:
+        response = client.post(
+            "/pipeline/reingest-runs",
+            json={
+                "document_id": "document_1",
+                "input_markdown": "# 수정 문서",
+            },
+        )
+
+    assert response.status_code == 200
+    registration = use_case.register.call_args.args[0]
+    command = use_case.execute.call_args.args[1]
+    assert registration.input_source == "inline:document.md"
+    assert command.reingest is True
+    assert command.input_markdown == "# 수정 문서"
+    assert command.existing_source_artifact == {"document_id": "document_1"}
+    assert command.existing_source_blocks == repository.list_source_blocks.return_value
+    source_reader.read_text.assert_not_called()
+
+
+def test_reingest_endpoint_rejects_document_without_existing_source_page() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "filename": "document.md",
+        },
+    )
+
+    with _pipeline_client(
+        use_case=_use_case(),
+        repository=repository,
+        source_reader=_source_reader(),
+    ) as client:
+        response = client.post(
+            "/pipeline/reingest-runs",
+            json={
+                "document_id": "document_1",
+                "input_markdown": "# 수정 문서",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "재편입하려면 기존 활성 source page가 필요합니다."
+    repository.list_source_blocks.assert_not_called()
 
 
 def test_pipeline_endpoint_waits_for_synchronous_result() -> None:

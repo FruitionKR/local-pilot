@@ -42,6 +42,7 @@ class PipelineRunCommand:
     workspace_id: str
     source_document_id: str | None = None
     selection_mode: str | None = None
+    reingest: bool = False
     input_markdown: str | None = None
     mode: str = "api"
     provider: str | None = None
@@ -70,6 +71,7 @@ class PipelineRunCommand:
     existing_concept_index: list[dict[str, Any]] = field(default_factory=list)
     existing_source_artifact: dict[str, Any] | None = None
     existing_source_markdown: str | None = None
+    existing_source_blocks: list[dict[str, Any]] = field(default_factory=list)
     wiki_evaluation_loop: bool = True
     max_eval_attempts: int = 2
     save_debug_json: bool = False

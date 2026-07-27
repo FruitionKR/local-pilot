@@ -70,6 +70,12 @@ class PostgresPipelineRunRepository:
             workspace_id,
         )
 
+    def list_source_blocks(
+        self,
+        document_id: str,
+    ) -> list[dict[str, Any]]:
+        return database.list_source_blocks(document_id)
+
 
 class ObjectStoragePipelineSourceReader:
     def read_text(self, object_uri: str) -> str:
