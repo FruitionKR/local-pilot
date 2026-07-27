@@ -1,0 +1,179 @@
+from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
+    _contribution_payload,
+    _reconciliation_candidate,
+    _remove_stale_document_concepts,
+    apply_structural_reconciliation,
+)
+
+
+def test_contribution_payload_keeps_reingest_reconciliation_inputs() -> None:
+    payload = _contribution_payload(
+        {
+            "concept_pages": [
+                {"slug": "kept-concept", "markdown": "# 유지"},
+                "runs/concepts/path-concept.md",
+            ],
+            "links": [
+                {
+                    "source": "source:doc-1",
+                    "target": "concept:kept-concept",
+                    "relation": "source_mentions_concept",
+                    "label": "저장하지 않는 표시값",
+                }
+            ],
+            "source_block_changes": {
+                "invalidated_block_ids": ["B0002"],
+            },
+            "meaning_clusters": {
+                "active_markdown": "# Active Meaning Clusters\n",
+            },
+        }
+    )
+
+    assert payload == {
+        "concept_slugs": ["kept-concept", "path-concept"],
+        "links": [
+            {
+                "source": "source:doc-1",
+                "target": "concept:kept-concept",
+                "relation": "source_mentions_concept",
+            }
+        ],
+        "source_block_changes": {
+            "invalidated_block_ids": ["B0002"],
+        },
+        "active_cluster_markdown": "# Active Meaning Clusters\n",
+    }
+
+
+def test_reconciliation_candidate_compares_previous_and_current_contribution() -> None:
+    candidate = _reconciliation_candidate(
+        {
+            "pipeline_run_id": "run-2",
+            "document_id": "doc-1",
+            "user_id": "user-1",
+            "workspace_id": "workspace-1",
+            "structural_reconciled_at": None,
+            "payload": {
+                "concept_slugs": ["kept-concept"],
+                "links": [
+                    {
+                        "source": "source:doc-1",
+                        "target": "concept:kept-concept",
+                        "relation": "source_mentions_concept",
+                    }
+                ],
+                "source_block_changes": {
+                    "invalidated_block_ids": ["B0002", "B0003"],
+                },
+            },
+            "previous_payloads": [
+                {
+                    "concept_slugs": ["kept-concept", "stale-concept"],
+                    "links": [
+                        {
+                            "source": "source:doc-1",
+                            "target": "concept:kept-concept",
+                            "relation": "source_mentions_concept",
+                        },
+                        {
+                            "source": "source:doc-1",
+                            "target": "concept:stale-concept",
+                            "relation": "source_mentions_concept",
+                        },
+                    ],
+                }
+            ],
+            "linked_concept_slugs": ["kept-concept", "stale-concept"],
+        }
+    )
+
+    assert candidate["invalidated_source_refs"] == [
+        "doc-1:B0002",
+        "doc-1:B0003",
+    ]
+    assert candidate["stale_concept_slugs"] == ["stale-concept"]
+    assert candidate["stale_relations"] == [
+        {
+            "source": "source:doc-1",
+            "target": "concept:stale-concept",
+            "relation": "source_mentions_concept",
+        }
+    ]
+    assert candidate["_current_claim_signatures"] == []
+    assert candidate["_current_relation_signatures"] == []
+
+
+def test_structural_reconciliation_keeps_relation_supported_by_another_document() -> None:
+    class Result:
+        def fetchall(self):
+            return []
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def execute(self, query: str, _params):
+            self.queries.append(" ".join(query.split()))
+            return Result()
+
+    relation = {
+        "source": "concept:shared-source",
+        "target": "concept:shared-target",
+        "relation": "supports_or_enables",
+    }
+    candidate = {
+        "pipeline_run_id": "run-2",
+        "document_id": "doc-1",
+        "user_id": "user-1",
+        "workspace_id": "workspace-1",
+        "stale_concept_slugs": [],
+        "stale_relations": [relation],
+        "structural_reconciled": False,
+    }
+    conn = FakeConnection()
+
+    applied = apply_structural_reconciliation(
+        conn,  # type: ignore[arg-type]
+        [candidate],
+        {("concept:shared-source", "concept:shared-target", "supports_or_enables")},
+    )
+
+    assert all("DELETE FROM wiki_page_links" not in query for query in conn.queries)
+    assert applied[0]["removed_relations"] == []
+    assert any("structural_reconciled_at = now()" in query for query in conn.queries)
+
+
+def test_remove_stale_document_concepts_removes_its_embedding_units() -> None:
+    class Result:
+        def __init__(self, rows=None, rowcount=0) -> None:
+            self._rows = rows or []
+            self.rowcount = rowcount
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def execute(self, query: str, params):
+            self.calls.append((" ".join(query.split()), params))
+            if "DELETE FROM document_wiki_links" in query:
+                return Result([{"id": "page-1", "slug": "stale-concept"}])
+            return Result(rowcount=3)
+
+    conn = FakeConnection()
+
+    removed_slugs, removed_units = _remove_stale_document_concepts(
+        conn,  # type: ignore[arg-type]
+        "doc-1",
+        ["stale-concept"],
+    )
+
+    assert removed_slugs == ["stale-concept"]
+    assert removed_units == 3
+    assert conn.calls[1][1] == ("doc-1", ["page-1"])

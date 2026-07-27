@@ -6,6 +6,18 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-27
+
+### feat: Wiki 문서별 편입 기여 스키마 추가
+
+- Flyway V12로 `wiki_source_contributions`를 추가해 llmPipeline이 문서별 최신
+  편입 기여분과 lint 구조 정리 상태를 저장할 수 있게 했다.
+- 문서당 활성 기여분 하나만 허용하고 document·pipeline run 삭제 시 관련
+  기여분도 함께 삭제되도록 외래키와 인덱스를 구성했다.
+- Flyway 테이블 존재 확인 대상에 새 테이블을 추가했다.
+- Java 실행 환경이 없어 Backend 통합 테스트는 실행하지 못했으며,
+  llmPipeline 전체 `529 passed`, `43 subtests passed`를 확인했다.
+
 ## 2026-07-25
 
 ### feat: 폴더 하위 항목 개별 복구 (TASK-H006)

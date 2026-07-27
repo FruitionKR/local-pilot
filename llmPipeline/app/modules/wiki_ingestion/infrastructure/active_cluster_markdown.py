@@ -50,6 +50,50 @@ def merge_active_cluster_markdown(existing: str, incoming: str) -> str:
     return "\n\n".join(lines).rstrip() + "\n"
 
 
+def reconcile_active_cluster_invalidations(
+    markdown: str,
+    invalidated_refs: set[str],
+    current_claim_signatures: set[tuple[str, str, str]],
+    current_relation_signatures: set[tuple[str, str, str, tuple[str, ...]]],
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+    sections = cluster_sections_by_id(markdown)
+    removed_claims: list[dict[str, Any]] = []
+    removed_relations: list[dict[str, Any]] = []
+    for cluster_id, section in sections.items():
+        cluster = parse_active_cluster_lint(section)[0]
+        stale_claim_ids = {
+            str(claim.get("id") or "")
+            for claim in cluster.get("claims", [])
+            if invalidated_refs.intersection(claim.get("refs", []))
+            and _claim_signature(cluster_id, claim) not in current_claim_signatures
+        }
+        if stale_claim_ids:
+            section, claims = _remove_cluster_claims(
+                section,
+                cluster_id,
+                stale_claim_ids,
+            )
+            removed_claims.extend(claims)
+        section, relations = _remove_stale_cluster_relations(
+            section,
+            cluster_id,
+            stale_claim_ids,
+            invalidated_refs,
+            current_relation_signatures,
+        )
+        removed_relations.extend(relations)
+        sections[cluster_id] = section
+    if not removed_claims and not removed_relations:
+        return markdown, [], []
+    lines = ["# Active Meaning Clusters"]
+    lines.extend(sections[cluster_id].strip() for cluster_id in sorted(sections))
+    return (
+        "\n\n".join(lines).rstrip() + "\n",
+        removed_claims,
+        removed_relations,
+    )
+
+
 def cluster_sections_by_id(markdown: str) -> dict[str, str]:
     sections: dict[str, str] = {}
     current_id = ""
@@ -254,6 +298,98 @@ def relation_item_key(item: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
         str(item.get("relation") or ""),
         tuple(sorted(str(evidence) for evidence in item.get("evidence", []))),
     )
+
+
+def _claim_signature(
+    cluster_id: str,
+    claim: dict[str, Any],
+) -> tuple[str, str, str]:
+    return (
+        cluster_id,
+        str(claim.get("id") or ""),
+        str(claim.get("text") or ""),
+    )
+
+
+def _relation_signature(
+    cluster_id: str,
+    relation: dict[str, Any],
+) -> tuple[str, str, str, tuple[str, ...]]:
+    return (
+        cluster_id,
+        str(relation.get("target") or ""),
+        str(relation.get("relation") or ""),
+        tuple(str(item) for item in relation.get("evidence", [])),
+    )
+
+
+def _remove_cluster_claims(
+    section: str,
+    cluster_id: str,
+    stale_claim_ids: set[str],
+) -> tuple[str, list[dict[str, Any]]]:
+    claims = {
+        str(claim.get("id") or ""): claim
+        for claim in cluster_claims(section)
+        if str(claim.get("id") or "") in stale_claim_ids
+    }
+    lines = section.splitlines()
+    kept: list[str] = []
+    skip_decision = False
+    for line in lines:
+        match = re.match(r"^\s*- (claim_[^:]+|ev_[^:]+):", line)
+        if match and match.group(1) in claims:
+            skip_decision = True
+            continue
+        if skip_decision and line.strip().startswith("cluster_decision:"):
+            continue
+        skip_decision = False
+        kept.append(line)
+    removed = [
+        {
+            "cluster_id": cluster_id,
+            "claim_id": claim_id,
+            "source_refs": claim.get("refs", []),
+        }
+        for claim_id, claim in claims.items()
+    ]
+    return "\n".join(kept).strip(), removed
+
+
+def _remove_stale_cluster_relations(
+    section: str,
+    cluster_id: str,
+    stale_claim_ids: set[str],
+    invalidated_refs: set[str],
+    current_relation_signatures: set[tuple[str, str, str, tuple[str, ...]]],
+) -> tuple[str, list[dict[str, Any]]]:
+    relations, invalid_relations = cluster_relation_items(section)
+    kept: list[dict[str, Any]] = []
+    removed: list[dict[str, Any]] = []
+    for relation in relations:
+        signature = _relation_signature(cluster_id, relation)
+        stale_evidence = [
+            evidence
+            for evidence in relation.get("evidence", [])
+            if evidence in stale_claim_ids
+            or (
+                evidence in invalidated_refs
+                and signature not in current_relation_signatures
+            )
+        ]
+        if stale_evidence and len(stale_evidence) == len(relation.get("evidence", [])):
+            removed.append({"cluster_id": cluster_id, **relation})
+        else:
+            kept.append(relation)
+    if not removed:
+        return section, []
+    lines = section.splitlines()
+    replace_heading_section(
+        lines,
+        "### Core Relation Candidates",
+        relation_items_to_lines([*kept, *invalid_relations]),
+    )
+    return "\n".join(lines).strip(), removed
 
 
 def relation_items_to_lines(items: list[dict[str, Any]]) -> list[str]:

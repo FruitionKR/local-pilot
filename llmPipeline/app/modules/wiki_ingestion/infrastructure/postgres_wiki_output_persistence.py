@@ -30,10 +30,14 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     resolve_page_id,
     source_summary,
 )
+from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
+    persist_source_contribution,
+)
 
 
 def persist_wiki_outputs(
     conn: psycopg.Connection,
+    run_id: str,
     document_id: str,
     manifest: dict[str, Any],
 ) -> list[str]:
@@ -61,6 +65,12 @@ def persist_wiki_outputs(
     _persist_page_links(conn, links, source_page_id, concept_id_by_slug)
     delete_source_related_links(conn, user_id, workspace_id)
     _persist_meaning_cluster_artifacts(conn, document_id, manifest)
+    persist_source_contribution(
+        conn,
+        run_id,
+        document_id,
+        {**manifest, "links": links},
+    )
     return [source_page_id, *concept_page_ids]
 
 
