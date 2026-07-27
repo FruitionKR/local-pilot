@@ -7,6 +7,7 @@ import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
+import fruition.document.dto.DocumentIngestResponse;
 import fruition.document.dto.DocumentExportResult;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
@@ -387,6 +388,30 @@ public class DocumentController {
         return ResponseEntity.ok(
                 documentService.saveContent(
                         workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion)));
+    }
+
+    @Operation(
+        summary = "문서 재ingest",
+        description = "편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣습니다. 편집본을 원본으로 승격한 뒤 재처리합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "재처리 큐 등록됨",
+            content = @Content(schema = @Schema(implementation = DocumentIngestResponse.class))),
+        @ApiResponse(responseCode = "400", description = "편집 가능한 Markdown 문서가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "이미 처리 중인 문서",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/ingest")
+    public ResponseEntity<DocumentIngestResponse> ingest(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(documentService.ingest(workspaceId, userId, documentId));
     }
 
     private long parseBaseVersion(String baseVersion) {
