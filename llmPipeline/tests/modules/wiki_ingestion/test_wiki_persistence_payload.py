@@ -30,9 +30,17 @@ class WikiPersistencePayloadTest(unittest.TestCase):
     def test_stored_manifest_removes_large_runtime_payloads(self) -> None:
         manifest = {
             "source_page": {"slug": "source-a", "markdown": "# Source", "source_extraction_artifact": {}},
+            "source_extraction_artifact": {
+                "summary": "요약",
+                "max_block_number": 12,
+            },
             "concept_pages": [{"slug": "concept-a", "markdown": "# Concept"}],
             "normalized": {"large": True},
             "source_blocks": [{"block_id": "B0001"}],
+            "source_block_changes": {
+                "added_block_ids": ["B0002"],
+                "invalidated_block_ids": [],
+            },
             "generation_evaluations": [{"passed": False, "issues": [{"type": "missing_ref"}]}],
             "generation_evaluation_status": "unresolved",
             "meaning_clusters": {
@@ -47,6 +55,14 @@ class WikiPersistencePayloadTest(unittest.TestCase):
 
         self.assertNotIn("normalized", stored)
         self.assertNotIn("source_blocks", stored)
+        self.assertEqual(
+            stored["source_extraction_artifact"]["max_block_number"],
+            12,
+        )
+        self.assertEqual(
+            stored["source_block_changes"],
+            manifest["source_block_changes"],
+        )
         self.assertEqual(stored["source_page"], {"slug": "source-a"})
         self.assertEqual(stored["concept_pages"], [{"slug": "concept-a"}])
         self.assertEqual(stored["meaning_clusters"], {"active_uri": "s3://active"})

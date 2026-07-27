@@ -77,6 +77,11 @@ class PipelineRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
 
 
+class ReingestRunIn(_PipelineRunBase):
+    input_markdown: str
+    system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
+
+
 class ChatWikiRunIn(_PipelineRunBase):
     selection_mode: Literal["full", "partial"] = Field(
         description="full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.",

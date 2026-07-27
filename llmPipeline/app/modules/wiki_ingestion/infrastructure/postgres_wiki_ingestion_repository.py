@@ -317,6 +317,20 @@ def latest_source_page_context(
     }
 
 
+def list_source_blocks(document_id: str) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT document_id, block_id, text
+            FROM source_blocks
+            WHERE document_id = %s
+            ORDER BY block_id
+            """,
+            (document_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _concept_index_from_markdown(slug: str, title: str, markdown_uri: str, markdown: str) -> dict[str, Any]:
     return {
         "slug": slug,

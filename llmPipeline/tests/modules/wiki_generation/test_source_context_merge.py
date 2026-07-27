@@ -1,8 +1,106 @@
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
+    active_source_artifact,
     apply_same_source_core_context,
     source_context_blocks,
     source_page_context_normalized,
 )
+
+
+def test_active_source_artifact_removes_invalidated_block_contributions() -> None:
+    artifact = {
+        "summary": "기존 요약",
+        "key_points": [
+            {"text": "유지", "evidence_block_ids": ["B0001"]},
+            {"text": "삭제", "evidence_block_ids": ["B0002"]},
+        ],
+        "categories": [
+            {"term": "유지 분류", "evidence_block_ids": ["B0001"]},
+            {"term": "삭제 분류", "evidence_block_ids": ["B0002"]},
+        ],
+        "observations": [],
+        "core_concepts": [
+            {"term": "일부 유지", "evidence_block_ids": ["B0001", "B0002"]}
+        ],
+        "section_candidates": [],
+        "mentions": [],
+        "evidence_claims": [
+            {"claim": "삭제 주장", "anchor_reference_ids": ["B0002"]}
+        ],
+    }
+
+    result = active_source_artifact(
+        artifact,
+        ["B0001"],
+        current_has_blocks=True,
+    )
+
+    assert result is not None
+    assert [item["text"] for item in result["key_points"]] == ["유지"]
+    assert [item["term"] for item in result["categories"]] == ["유지 분류"]
+    assert result["core_concepts"][0]["evidence_block_ids"] == ["B0001"]
+    assert result["evidence_claims"] == []
+    assert result["summary"] == "기존 요약"
+
+
+def test_active_source_artifact_preserves_unreferenced_contributions() -> None:
+    artifact = {
+        "summary": "기존 전체 요약",
+        "key_points": [
+            {"text": "유지", "evidence_block_ids": ["B0001"]},
+            {"text": "삭제", "evidence_block_ids": ["B0002"]},
+        ],
+        "categories": ["legacy-category"],
+        "observations": [{"summary": "참조 없는 기존 관찰"}],
+    }
+
+    result = active_source_artifact(
+        artifact,
+        ["B0001"],
+        current_has_blocks=True,
+    )
+
+    assert result is not None
+    assert result["summary"] == "기존 전체 요약"
+    assert result["categories"] == ["legacy-category"]
+    assert result["observations"] == [{"summary": "참조 없는 기존 관찰"}]
+
+
+def test_active_source_artifact_clears_all_contributions_without_active_blocks() -> None:
+    artifact = {
+        "summary": "기존 요약",
+        "key_points": [{"text": "기존", "evidence_block_ids": ["B0001"]}],
+        "categories": ["legacy-category"],
+    }
+
+    result = active_source_artifact(
+        artifact,
+        [],
+        current_has_blocks=False,
+    )
+
+    assert result is not None
+    assert result["summary"] == ""
+    assert result["key_points"] == []
+    assert result["categories"] == []
+
+
+def test_active_source_artifact_preserves_unreferenced_context_when_all_blocks_changed() -> None:
+    artifact = {
+        "summary": "기존 전체 요약",
+        "key_points": [{"text": "수정 전 핵심", "evidence_block_ids": ["B0001"]}],
+        "categories": ["legacy-category"],
+    }
+
+    result = active_source_artifact(
+        artifact,
+        [],
+        current_has_blocks=True,
+    )
+
+    assert result is not None
+    assert result["summary"] == "기존 전체 요약"
+    assert result["key_points"] == []
+    assert result["categories"] == ["legacy-category"]
 
 
 def test_apply_same_source_core_context_adds_previous_candidate_evidence_to_new_core() -> None:

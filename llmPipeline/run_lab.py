@@ -62,11 +62,16 @@ from app.modules.wiki_generation.infrastructure.packet import SemanticPacketBuil
 from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
 from app.modules.wiki_generation.infrastructure.prompt_io import collect_concept_source_blocks
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
+    active_source_artifact,
     apply_same_source_core_context,
     source_context_blocks,
     source_page_context_normalized,
 )
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
+from app.modules.wiki_ingestion.domain.source_block_changes import (
+    SourceBlockChanges,
+    compare_source_blocks,
+)
 from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_json, write_text
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from app.core.llm_env import (
@@ -628,6 +633,32 @@ def _extract_pipeline_source(
     return document, blocks, source_block_records
 
 
+def _empty_normalized(document: SourceDocument) -> dict[str, Any]:
+    return {
+        "document": asdict(document),
+        "semantic_notes": [],
+        "concept_ledger": [],
+        "categories": [],
+        "section_candidates": [],
+        "mentions": [],
+        "observations": [],
+        "evidence_units": [],
+        "missing_related_concept_hints": [],
+        "warnings": [],
+    }
+
+
+def _source_block_records(blocks: list[SourceBlock]) -> list[dict[str, str]]:
+    return [
+        {
+            "document_id": block.document_id,
+            "block_id": block.block_id,
+            "text": block.text,
+        }
+        for block in blocks
+    ]
+
+
 def _resolve_pipeline_concepts(
     args: PipelineRunCommand,
     *,
@@ -1144,10 +1175,38 @@ def run_pipeline(
         out=out,
         log=log,
     )
+    source_changes: SourceBlockChanges | None = None
+    extraction_blocks = blocks
+    if args.reingest:
+        source_changes = compare_source_blocks(
+            args.existing_source_blocks,
+            blocks,
+            previous_max_block_number=int(
+                (args.existing_source_artifact or {}).get(
+                    "max_block_number",
+                    0,
+                )
+                or 0
+            ),
+        )
+        blocks = source_changes.blocks
+        extraction_blocks = source_changes.ingest_blocks
+        source_block_records = _source_block_records(blocks)
+        log.emit(
+            "1-보조. 재편입 블록 비교",
+            "마지막 성공 블록과 최신 Markdown을 비교해 재추출 대상을 확정했습니다.",
+            {
+                "유지": len(source_changes.unchanged_block_ids),
+                "이동": len(source_changes.moved_block_ids),
+                "추가": len(source_changes.added_block_ids),
+                "수정": len(source_changes.modified_block_ids),
+                "삭제": len(source_changes.deleted_block_ids),
+            },
+        )
 
     # 2. Build LLM packets with short [B0001] anchors only.
     packet_builder = SemanticPacketBuilder(args.max_packet_chars, args.overlap_blocks)
-    packets = packet_builder.build(document.document_id, blocks)
+    packets = packet_builder.build(document.document_id, extraction_blocks)
     if args.save_debug_json:
         packet_dir = ensure_dir(out / "packets")
         for p in packets:
@@ -1162,39 +1221,55 @@ def run_pipeline(
     assert api_client is not None
     existing_source_artifact = (
         getattr(args, "existing_source_artifact", None)
-        if getattr(args, "selection_mode", None) == "full"
+        if getattr(args, "selection_mode", None) == "full" or args.reingest
         else None
     )
+    if source_changes is not None:
+        existing_source_artifact = active_source_artifact(
+            existing_source_artifact,
+            source_changes.unchanged_block_ids,
+            current_has_blocks=bool(source_changes.blocks),
+        )
     existing_source_markdown = (
         getattr(args, "existing_source_markdown", None)
-        if getattr(args, "selection_mode", None) == "full"
+        if getattr(args, "selection_mode", None) == "full" or args.reingest
         else None
     )
     semantic_source_context = (
         {"source_markdown": existing_source_markdown}
-        if existing_source_markdown
+        if existing_source_markdown and not args.reingest
         else None
     )
     raw_dir = ensure_dir(out / "raw_llm_outputs" / "semantic_extraction") if args.save_debug_json else None
-    normalizer = SemanticNormalizer(document, blocks)
+    normalizer = SemanticNormalizer(document, extraction_blocks)
     max_eval_attempts = max(1, int(getattr(args, "max_eval_attempts", 2) or 2))
-    notes, normalized, generation_evaluations = _run_wiki_generation_loop(
-        api_client=api_client,
-        semantic_system_prompt=prompts.semantic,
-        wiki_evaluator_system_prompt=prompts.wiki_evaluator,
-        packets=packets,
-        raw_dir=raw_dir,
-        log=log,
-        normalizer=normalizer,
-        document=document,
-        blocks=blocks,
-        out=out,
-        save_debug_json=args.save_debug_json,
-        wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
-        max_eval_attempts=max_eval_attempts,
-        source_context=semantic_source_context,
-        wiki_patch_system_prompt=prompts.wiki_patch,
-    )
+    if extraction_blocks:
+        notes, normalized, generation_evaluations = _run_wiki_generation_loop(
+            api_client=api_client,
+            semantic_system_prompt=prompts.semantic,
+            wiki_evaluator_system_prompt=prompts.wiki_evaluator,
+            packets=packets,
+            raw_dir=raw_dir,
+            log=log,
+            normalizer=normalizer,
+            document=document,
+            blocks=extraction_blocks,
+            out=out,
+            save_debug_json=args.save_debug_json,
+            wiki_evaluation_loop=getattr(args, "wiki_evaluation_loop", True),
+            max_eval_attempts=max_eval_attempts,
+            source_context=semantic_source_context,
+            wiki_patch_system_prompt=prompts.wiki_patch,
+        )
+    else:
+        notes = []
+        normalized = _empty_normalized(document)
+        generation_evaluations = []
+        log.emit(
+            "3. 의미 추출 생략",
+            "추가되거나 수정된 블록이 없어 LLM 의미 추출을 생략했습니다.",
+            {},
+        )
 
     # 4. Backend normalize/merge/mention expansion.
     log.emit(
@@ -1212,15 +1287,24 @@ def run_pipeline(
 
     # 4a. Resolve incoming concepts against each other and existing wiki concepts before page generation.
     assert api_client is not None
-    normalized, same_source_context_blocks = _resolve_pipeline_concepts(
-        args,
-        api_client=api_client,
-        concept_resolution_prompt=prompts.concept_resolution,
-        normalized=normalized,
-        existing_source_artifact=existing_source_artifact,
-        out=out,
-        log=log,
-    )
+    if extraction_blocks:
+        normalized, same_source_context_blocks = _resolve_pipeline_concepts(
+            args,
+            api_client=api_client,
+            concept_resolution_prompt=prompts.concept_resolution,
+            normalized=normalized,
+            existing_source_artifact=existing_source_artifact,
+            out=out,
+            log=log,
+        )
+    else:
+        same_source_context_blocks = []
+    contribution_normalized = normalized
+    if args.reingest:
+        normalized = source_page_context_normalized(
+            normalized,
+            existing_source_artifact,
+        )
     if args.save_debug_json:
         write_json(out / "normalized.json", normalized)
         if generation_evaluations:
@@ -1242,11 +1326,22 @@ def run_pipeline(
     meaning_cluster_artifact, maintenance_summary = _assemble_meaning_clusters(
         args,
         api_client=api_client,
-        normalized=normalized,
+        normalized=contribution_normalized,
         out=out,
         log=log,
     )
 
+    source_extraction_artifact = _json_safe(
+        page_outputs.source_page_normalized.get("source_extraction_artifact")
+    )
+    if source_changes is not None and isinstance(
+        source_extraction_artifact,
+        dict,
+    ):
+        source_extraction_artifact = {
+            **source_extraction_artifact,
+            "max_block_number": source_changes.max_block_number,
+        }
     manifest = {
         "input": input_source_name if input_text is not None else str(input_path),
         "out": str(out),
@@ -1259,10 +1354,13 @@ def run_pipeline(
         "document_id": document.document_id,
         "source_document_id": getattr(args, "source_document_id", None),
         "source_page": page_outputs.source_page,
-        "source_extraction_artifact": _json_safe(
-            page_outputs.source_page_normalized.get("source_extraction_artifact")
-        ),
+        "source_extraction_artifact": source_extraction_artifact,
         "source_blocks": source_block_records,
+        "source_block_changes": (
+            source_changes.to_manifest()
+            if source_changes is not None
+            else None
+        ),
         "concept_pages": page_outputs.concept_pages,
         "links": page_outputs.links,
         "meaning_clusters": meaning_cluster_artifact,
