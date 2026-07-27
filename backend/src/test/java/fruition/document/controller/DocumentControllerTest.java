@@ -292,7 +292,7 @@ class DocumentControllerTest {
     void saveContent_multipartPassesMarkdownAndBaseVersion() throws Exception {
         Instant updatedAt = Instant.now();
         when(documentService.saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L))
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null))
                 .thenReturn(new DocumentContentSaveResponse(
                         "doc_edit", 4, "a".repeat(64), updatedAt, true));
         MockMultipartFile markdown = new MockMultipartFile(
@@ -317,7 +317,7 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.changed").value(true));
 
         verify(documentService).saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L);
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null);
     }
 
     @Test

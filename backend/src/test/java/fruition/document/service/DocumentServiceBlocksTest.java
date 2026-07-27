@@ -88,6 +88,7 @@ class DocumentServiceBlocksTest {
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock fruition.document.repository.DocumentContentVersionRepository contentVersionRepository;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     DocumentService documentService;
@@ -97,7 +98,7 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, folderRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, idempotencyRecordRepository,
+                editStateInitializer, editStateRepository, contentVersionRepository, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
@@ -412,13 +413,111 @@ class DocumentServiceBlocksTest {
                 .thenReturn(1);
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L);
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
         assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
         assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
         assertThat(document.getContentHash()).isEqualTo("original-hash");
+    }
+
+    @Test
+    @DisplayName("source=agent 저장은 새 버전 스냅샷을 기록한다")
+    void saveContent_sourceAgent_recordsSnapshot() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        DocumentContentSaveResponse response = documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "agent");
+
+        assertThat(response.changed()).isTrue();
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(2L), eq("# 변경\n"), anyString(), eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("source 미지정(수동) 저장은 버전 스냅샷을 남기지 않는다")
+    void saveContent_manual_doesNotRecordSnapshot() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
+
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("버전 복원은 대상 본문을 새 version으로 적용하고 복원 자체는 스냅샷을 남기지 않는다")
+    void restoreContentVersion_appliesTargetWithoutSnapshot() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "current-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "current", DocumentEditingRules.markdown("current").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(contentVersionRepository.findById(
+                new fruition.document.domain.DocumentContentVersionId(document.getId(), 5L)))
+                .thenReturn(Optional.of(new fruition.document.domain.DocumentContentVersion(
+                        document.getId(), 5L, "# 예전\n", "old-hash", USER_ID, java.time.Instant.now())));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+
+        DocumentContentSaveResponse response = documentService.restoreContentVersion(
+                WORKSPACE_ID, USER_ID, document.getId(), 5L, 1L);
+
+        assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(editState.getMarkdown()).isEqualTo("# 예전\n");
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("재ingest는 편집본을 원본으로 승격하고 processing으로 되돌린다")
+    void ingest_promotesEditStateAndReprocesses() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "old-hash");
+        document.updateStatus(fruition.document.domain.DocumentStatus.completed, null, java.time.Instant.now(), null);
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "# 편집본\n", DocumentEditingRules.markdown("# 편집본\n").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(storageProps.getBucket()).thenReturn("bucket");
+
+        fruition.document.dto.DocumentIngestResponse response =
+                documentService.ingest(WORKSPACE_ID, USER_ID, document.getId());
+
+        assertThat(response.id()).isEqualTo(document.getId());
+        assertThat(document.getStatus()).isEqualTo(fruition.document.domain.DocumentStatus.processing);
+        assertThat(document.getContentHash()).isEqualTo(editState.getContentHash());
     }
 
     @Test
@@ -437,7 +536,7 @@ class DocumentServiceBlocksTest {
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L);
+                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L, null);
 
         assertThat(response.changed()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(1);
@@ -457,12 +556,12 @@ class DocumentServiceBlocksTest {
                 .thenReturn(Optional.of(document));
 
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L))
+                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L, null))
                 .isInstanceOf(DocumentVersionConflictException.class);
         when(workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(WORKSPACE_ID, "member_2"))
                 .thenReturn(true);
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, "member_2", document.getId(), "new", 1L))
+                WORKSPACE_ID, "member_2", document.getId(), "new", 1L, null))
                 .isInstanceOf(DocumentWriteForbiddenException.class);
     }
 
