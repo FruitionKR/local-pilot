@@ -6,6 +6,7 @@ import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.agent.repository.PipelineAgentRequester;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.exception.DocumentVersionConflictException;
+import fruition.document.service.DocumentEditLockService;
 import fruition.document.service.DocumentService;
 import org.springframework.stereotype.Service;
 
@@ -18,10 +19,14 @@ public class AgentTurnService {
     private static final Set<String> TARGET_TYPES = Set.of("selection", "current_section", "whole_document");
 
     private final DocumentService documentService;
+    private final DocumentEditLockService editLockService;
     private final PipelineAgentRequester pipelineAgentRequester;
 
-    public AgentTurnService(DocumentService documentService, PipelineAgentRequester pipelineAgentRequester) {
+    public AgentTurnService(DocumentService documentService,
+                            DocumentEditLockService editLockService,
+                            PipelineAgentRequester pipelineAgentRequester) {
         this.documentService = documentService;
+        this.editLockService = editLockService;
         this.pipelineAgentRequester = pipelineAgentRequester;
     }
 
@@ -30,6 +35,8 @@ public class AgentTurnService {
         if (!isMarkdown(document)) {
             throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
         }
+        // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
+        editLockService.requireWritable(request.documentId(), userId);
         // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
         if (document.currentVersion() != request.baseVersion()) {
             throw new DocumentVersionConflictException(

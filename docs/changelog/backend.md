@@ -10,6 +10,19 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 > `feat/agent-turn-base-version` 브랜치에서 dev와 중복되지 않는 고유 기능만 최신 `dev` 위에 재적용한 묶음입니다. 폴더 트리·wiki-schema·wiki-maintenance는 dev 구현을 사용합니다.
 
+### feat: 문서 편집 잠금(활성 편집 추적) 추가
+
+**변경된 것**
+
+- 한 문서를 동시에 두 사람이 편집하지 못하게 lease(TTL + heartbeat) 기반 편집 잠금을 추가했다. 테이블 `document_edit_locks`(마이그레이션 `V13`).
+- `POST/DELETE /documents/{id}/edit-lock`(획득/해제), `POST /documents/{id}/edit-lock/heartbeat`(연장). 획득은 원자적 조건부 upsert(비었거나 만료됐거나 본인 보유일 때만 성립).
+- 쓰기 계열(`saveContent`·`agent/turn`·버전 복원·재ingest)은 **다른 사용자가 유효한 잠금 보유 중이면 `423 DOCUMENT_EDIT_LOCKED`** 로 차단한다. 잠금이 없거나 만료됐거나 본인 보유면 통과(잠금 강제 아님, 비파괴적).
+- `GET /documents/{id}` 응답에 `edit_lock` 필드(보유자·표시 이름·만료 시각) 추가. 열람은 누구나 가능(읽기 전용), 보이는 내용은 마지막 저장본.
+- heartbeat 상실 시 `409 EDIT_LOCK_LOST`. TTL 기본 45초(`app.document.edit-lock.ttl-seconds`).
+- 설계: `docs/design/document-edit-lock.md`, 프론트 계약: `docs/issue/frontend/2026-07-27.md`.
+
+**검증**: `DocumentEditLockServiceTest`(획득 self/other·heartbeat 상실·requireWritable·getStatus) 통과.
+
 ### feat: 운영 이메일 인증 SMTP 발송 추가 (트랜잭션 분리·timeout 포함)
 
 **변경된 것**

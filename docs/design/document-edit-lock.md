@@ -111,7 +111,7 @@ sequenceDiagram
 
 ## 7. 적용 지점(enforcement)과 base_version 관계
 
-쓰기 계열은 **유효한 잠금 보유자만** 허용, 아니면 `423 EDIT_LOCK_REQUIRED`:
+쓰기 계열은 **다른 사용자가 유효한 잠금을 보유 중일 때만** `423 DOCUMENT_EDIT_LOCKED`로 차단한다. 잠금이 없거나 만료됐거나 본인 보유면 그대로 진행한다(잠금 보유를 강제하지 않음 — 비파괴적이고 잠금 미인지 클라이언트도 동작). 즉 "A가 편집 중이면 B 차단"만 보장한다.
 - `PUT /documents/{id}/content` (저장)
 - `POST /agent/turn` (AI 편집)
 - `POST /documents/{id}/versions/{version}/restore` (복원)
@@ -133,7 +133,7 @@ A가 편집 중이어도 B는 문서를 **읽기 전용으로 열람**할 수 �
 |---|---|
 | `GET /documents/{id}` 열람 | ✅ 가능. 응답 `edit_lock.holder = A` → 프론트가 "A 편집 중, 읽기 전용" 표시 |
 | `POST /edit-lock` 편집 진입 | ❌ `423 Locked` + 보유자(A) 정보 |
-| `PUT /content` · `POST /agent/turn` 등 쓰기 | ❌ `423 EDIT_LOCK_REQUIRED` |
+| `PUT /content` · `POST /agent/turn` 등 쓰기 | ❌ `423 DOCUMENT_EDIT_LOCKED` (다른 사용자 보유 시) |
 
 **열람 시 보이는 내용은 "마지막으로 저장된 버전"이다.** A가 편집 중이지만 아직 저장하지 않은 편집분(EditState 버퍼)은 B에게 노출하지 않는다. 실시간으로 A의 입력을 B에게 보여주는 것은 공동 편집(CRDT/OT) 영역으로 이 설계의 범위 밖이다(§3 비목표).
 
@@ -168,4 +168,4 @@ A가 편집 중이어도 B는 문서를 **읽기 전용으로 열람**할 수 �
 - 에디터 진입 시 `POST /edit-lock`. 200이면 편집 가능, **423이면 읽기 전용** + 보유자 표시.
 - 편집 중 15s마다 `POST /edit-lock/heartbeat`. `409 EDIT_LOCK_LOST` 오면 편집 중단·읽기 전용 전환.
 - 에디터 종료 시 `DELETE /edit-lock`.
-- 저장/AI편집이 `423 EDIT_LOCK_REQUIRED`면 잠금 재획득 유도.
+- 저장/AI편집이 `423 DOCUMENT_EDIT_LOCKED`면 다른 사용자가 편집 중 → 잠금 해제 대기/재획득 유도.

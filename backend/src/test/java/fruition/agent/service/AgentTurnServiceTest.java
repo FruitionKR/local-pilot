@@ -28,13 +28,14 @@ import static org.mockito.Mockito.when;
 class AgentTurnServiceTest {
 
     @Mock DocumentService documentService;
+    @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock PipelineAgentRequester pipelineAgentRequester;
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
-        service = new AgentTurnService(documentService, pipelineAgentRequester);
+        service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester);
     }
 
     @Test
@@ -106,7 +107,7 @@ class AgentTurnServiceTest {
                 "s3://source", null, Instant.now(), Instant.now(), null, List.of(),
                 null, null, null, filename.substring(0, filename.lastIndexOf('.')),
                 filename.substring(filename.lastIndexOf('.') + 1), null, false, currentVersion,
-                null, Instant.now(), null
+                null, Instant.now(), null, null
         );
     }
 }

@@ -89,6 +89,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
     @Mock fruition.document.repository.DocumentContentVersionRepository contentVersionRepository;
+    @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
     DocumentService documentService;
@@ -98,7 +99,7 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, folderRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, contentVersionRepository, idempotencyRecordRepository,
+                editStateInitializer, editStateRepository, contentVersionRepository, editLockService, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }

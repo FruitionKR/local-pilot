@@ -110,6 +110,7 @@ public class DocumentService {
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
     private final DocumentContentVersionRepository contentVersionRepository;
+    private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
@@ -129,6 +130,7 @@ public class DocumentService {
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
                            DocumentContentVersionRepository contentVersionRepository,
+                           DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
                            ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
@@ -147,6 +149,7 @@ public class DocumentService {
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
         this.contentVersionRepository = contentVersionRepository;
+        this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
@@ -877,7 +880,8 @@ public class DocumentService {
                 doc.getCurrentVersion(),
                 doc.getSourceDocumentId(),
                 doc.getUpdatedAt(),
-                editState.map(DocumentEditState::getMarkdown).orElse(null)
+                editState.map(DocumentEditState::getMarkdown).orElse(null),
+                editLockService.getStatus(doc.getId())
         );
     }
 
@@ -958,6 +962,7 @@ public class DocumentService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
+        editLockService.requireWritable(documentId, userId);
         if (document.getCurrentVersion() != baseVersion) {
             throw versionConflict();
         }
@@ -1071,6 +1076,7 @@ public class DocumentService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 재처리할 수 있습니다.");
         }
+        editLockService.requireWritable(documentId, userId);
         if (document.getStatus() == DocumentStatus.processing) {
             throw new DocumentAlreadyProcessingException("이미 처리 중인 문서입니다.");
         }
