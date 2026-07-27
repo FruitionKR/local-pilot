@@ -94,7 +94,9 @@ public class DocumentEditLockService {
         if (lock == null || lock.isExpiredAt(Instant.now()) || lock.isHeldBy(userId)) {
             return;
         }
-        throw new DocumentLockedException(holderDisplayName(lock.getHolderUserId()) + "님이 편집 중입니다. 편집이 끝난 뒤 다시 시도해 주세요.");
+        String holder = holderDisplayName(lock.getHolderUserId());
+        String who = holder != null ? holder + "님이" : "다른 사용자가";
+        throw new DocumentLockedException(who + " 편집 중입니다. 편집이 끝난 뒤 다시 시도해 주세요.");
     }
 
     private DocumentEditLock currentLock(String documentId) {
