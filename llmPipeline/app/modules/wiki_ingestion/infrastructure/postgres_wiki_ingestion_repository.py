@@ -16,6 +16,7 @@ from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     cluster_relation_items as _cluster_relation_items,
     cluster_sections_by_id as _cluster_sections_by_id,
     parse_active_cluster_lint as _parse_active_cluster_lint,
+    reconcile_active_cluster_invalidations as _reconcile_active_cluster_invalidations,
     refs_in_text as _refs_in_text,
 )
 from app.modules.wiki_ingestion.infrastructure.concept_evidence import append_concept_evidence
@@ -27,6 +28,12 @@ from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
 from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
     persist_wiki_outputs as _persist_wiki_outputs,
+)
+from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
+    active_relation_keys as _active_relation_keys,
+    apply_structural_reconciliation as _apply_structural_reconciliation,
+    list_reconciliation_candidates as _list_reconciliation_candidates,
+    source_contribution_payload as _source_contribution_payload,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
     delete_source_related_links as _delete_source_related_links,
@@ -151,6 +158,9 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
                     "Pipeline run cancelled because its document or workspace is inactive."
                 )
             embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+            manifest["source_contribution"] = _source_contribution_payload(
+                manifest
+            )
             manifest = _stored_manifest(manifest)
             conn.execute(
                 """
@@ -352,12 +362,67 @@ def lint_wiki_workspace(
     *,
     materialize_promotions: bool = False,
     promotion_page_generator: PromotionPageGenerator | None = None,
+    apply_reconciliation: bool = False,
     write_log: bool = True,
 ) -> dict[str, Any]:
     active_path = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
     lint_date = _today_iso()
     log_path = f"wiki/{user_id}/{workspace_id}/logs/{lint_date}.md"
     active_markdown = _read_optional_text_object(active_path)
+    with connect() as conn:
+        reconciliation_candidates = _list_reconciliation_candidates(
+            conn,
+            user_id,
+            workspace_id,
+        )
+    stale_source_refs = {
+        ref
+        for candidate in reconciliation_candidates
+        for ref in candidate["invalidated_source_refs"]
+    }
+    cluster_reconciliation_source_refs = {
+        ref
+        for candidate in reconciliation_candidates
+        if candidate.get("_cluster_reconciliation_ready", False)
+        for ref in candidate["invalidated_source_refs"]
+    }
+    current_claim_signatures = {
+        tuple(signature)
+        for candidate in reconciliation_candidates
+        for signature in candidate["_current_claim_signatures"]
+    }
+    current_relation_signatures = {
+        (
+            str(signature[0]),
+            str(signature[1]),
+            str(signature[2]),
+            tuple(str(item) for item in signature[3]),
+        )
+        for candidate in reconciliation_candidates
+        for signature in candidate["_current_relation_signatures"]
+    }
+    applied_cluster_reconciliation = {
+        "removed_claims": [],
+        "removed_relations": [],
+    }
+    if apply_reconciliation:
+        (
+            reconciled_markdown,
+            removed_claims,
+            removed_relations,
+        ) = _reconcile_active_cluster_invalidations(
+            active_markdown,
+            cluster_reconciliation_source_refs,
+            current_claim_signatures,
+            current_relation_signatures,
+        )
+        if reconciled_markdown != active_markdown:
+            write_text_object(active_path, reconciled_markdown)
+            active_markdown = reconciled_markdown
+        applied_cluster_reconciliation = {
+            "removed_claims": removed_claims,
+            "removed_relations": removed_relations,
+        }
     clusters = _parse_active_cluster_lint(active_markdown)
     source_refs = _unique_keep_order(
         ref
@@ -381,16 +446,30 @@ def lint_wiki_workspace(
         for cluster in clusters
         if cluster.get("promotion_status") == "candidate" and not cluster.get("promotion_source_refs")
     ]
+    blocked_cluster_ids = {
+        cluster["id"]
+        for cluster in clusters
+        for claim in cluster.get("claims", [])
+        if stale_source_refs.intersection(claim.get("refs", []))
+        and (
+            cluster["id"],
+            str(claim.get("id") or ""),
+            str(claim.get("text") or ""),
+        )
+        not in current_claim_signatures
+    }
     promotion_candidates = [
         cluster["id"]
         for cluster in clusters
         if cluster.get("promotion_status") == "candidate" and cluster.get("promotion_source_refs")
+        and cluster["id"] not in blocked_cluster_ids
     ]
     needs_review = [
         cluster["id"]
         for cluster in clusters
         if cluster.get("promotion_status") == "needs_review"
         or any(claim.get("decision") == "needs_review" for claim in cluster.get("claims", []))
+        or cluster["id"] in blocked_cluster_ids
     ]
     relation_candidates = [
         {
@@ -414,17 +493,39 @@ def lint_wiki_workspace(
         "relation_candidates": relation_candidates,
         "invalid_relations": invalid_relations,
         "invalid_promotions": invalid_promotions,
+        "reconciliation_candidates": [
+            {
+                key: value
+                for key, value in candidate.items()
+                if key not in {"user_id", "workspace_id"}
+                and not key.startswith("_")
+            }
+            for candidate in reconciliation_candidates
+        ],
+        "applied_reconciliations": [],
+        "applied_cluster_reconciliation": applied_cluster_reconciliation,
         "materialized_promotions": [],
         "merged_promotions": [],
         "materialized_relations": [],
     }
+    if apply_reconciliation:
+        with connect() as conn:
+            result["applied_reconciliations"] = _apply_structural_reconciliation(
+                conn,
+                reconciliation_candidates,
+                _active_relation_keys(conn, user_id, workspace_id),
+            )
     if materialize_promotions and promotion_page_generator is not None:
         with connect() as conn:
             materialized = _materialize_promotion_candidates(
                 conn,
                 user_id,
                 workspace_id,
-                clusters,
+                [
+                    cluster
+                    for cluster in clusters
+                    if cluster["id"] not in blocked_cluster_ids
+                ],
                 active_markdown,
                 active_path,
                 promotion_page_generator,

@@ -102,7 +102,6 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "_persist_meaning_cluster_artifacts",
         lambda *_args: calls.append("meaning_clusters"),
     )
-
     page_ids = persistence.persist_wiki_outputs(conn, "doc-1", manifest)  # type: ignore[arg-type]
 
     assert page_ids == ["source-page-1"]

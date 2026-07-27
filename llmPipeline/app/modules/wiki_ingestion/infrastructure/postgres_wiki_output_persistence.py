@@ -30,8 +30,6 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     resolve_page_id,
     source_summary,
 )
-
-
 def persist_wiki_outputs(
     conn: psycopg.Connection,
     document_id: str,

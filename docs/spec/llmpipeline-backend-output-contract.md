@@ -741,6 +741,27 @@ Wiki maintenance용 lint 기능이다.
       "reason": "promotion candidate has no source_refs"
     }
   ],
+  "reconciliation_candidates": [
+    {
+      "pipeline_run_id": "run_789",
+      "document_id": "doc_123",
+      "invalidated_source_refs": ["doc_123:B0007"],
+      "stale_concept_slugs": ["obsolete-concept"],
+      "stale_relations": [
+        {
+          "source": "source:doc_123",
+          "target": "concept:obsolete-concept",
+          "relation": "source_mentions_concept"
+        }
+      ],
+      "structural_reconciled": false
+    }
+  ],
+  "applied_reconciliations": [],
+  "applied_cluster_reconciliation": {
+    "removed_claims": [],
+    "removed_relations": []
+  },
   "materialized_promotions": [
     {
       "cluster_id": "robust-optimization",
@@ -778,6 +799,9 @@ Wiki maintenance용 lint 기능이다.
 | `relation_candidates` | array | 유효한 relation 후보 목록이다. |
 | `invalid_relations` | array | target, relation, evidence 중 일부가 없거나 허용되지 않아 materialize할 수 없는 relation 후보 목록이다. |
 | `invalid_promotions` | array | 승격 후보로 표시됐지만 source ref가 없어 승격할 수 없는 cluster 목록이다. |
+| `reconciliation_candidates` | array | 최신 재편입에서 수정·삭제된 block과 이전 편입 결과를 비교해 찾은 구조 정리 대상이다. |
+| `applied_reconciliations` | array | `dry_run=false`에서 오래된 문서-concept 연결·해당 문서의 embedding unit과 다른 활성 문서가 지지하지 않는 relation을 실제 정리한 결과다. |
+| `applied_cluster_reconciliation` | object | 최신 재편입 기여분과 비교해 active cluster에서 제거한 이전 claim과 relation 후보다. |
 | `materialized_promotions` | array | 이번 lint 실행에서 새 concept page로 실제 승격된 항목이다. `materialize_promotions=true`이고 `dry_run=false`일 때만 생긴다. |
 | `merged_promotions` | array | 이미 존재하는 concept에 evidence만 병합된 승격 후보 목록이다. |
 | `materialized_relations` | array | 이번 lint 실행에서 실제 `wiki_page_links`로 저장된 relation 목록이다. |
@@ -819,6 +843,23 @@ Wiki maintenance용 lint 기능이다.
 | `relation` | string | 저장된 relation type이다. |
 | `evidence` | array | relation을 뒷받침한 claim id 또는 source ref 목록이다. |
 | `source_refs` | array | evidence에서 해석된 실제 source ref 목록이다. 일부 materialize 경로에서는 없을 수 있다. |
+
+`reconciliation_candidates[]` 필드:
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `pipeline_run_id` | string | 정리 대상이 발생한 최신 재편입 실행 ID다. |
+| `document_id` | string | 재편입된 원본 문서 ID다. |
+| `invalidated_source_refs` | array | 수정·삭제로 기존 의미 기여가 무효화된 `document_id:block_id` 목록이다. |
+| `stale_concept_slugs` | array | 이전 편입에는 있었지만 최신 편입에는 없는 문서-concept 연결 대상이다. |
+| `stale_relations` | array | 이전 편입에는 있었지만 최신 편입에는 없는 relation이다. 다른 활성 문서가 같은 relation을 지지하면 삭제하지 않는다. |
+| `structural_reconciled` | boolean | 해당 실행의 구조 정리를 이미 적용했는지 나타낸다. |
+
+무효화된 source ref가 포함된 cluster는 자동 승격 대상에서 제외되고
+`needs_review`에 포함된다. `dry_run=false`에서는 최신 재편입 기여분에 없는
+이전 claim과 그 claim만 근거로 삼는 relation 후보를 active cluster에서
+제거한다. Concept 본문의 정의·근거 문장을 의미에 맞게 다시 쓰는 작업은 별도
+의미 정합성 단계가 필요하다.
 
 현재 lint에서 유효한 core relation은 다음 값이다.
 

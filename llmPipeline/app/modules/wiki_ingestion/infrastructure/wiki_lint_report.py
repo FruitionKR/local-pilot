@@ -48,10 +48,30 @@ def render_lint_log_markdown(result: dict[str, Any], lint_date: str) -> str:
             lines.append(f"  reason: {item.get('reason')}")
     else:
         lines.append("- invalid promotion 없음")
+    lines.extend(["", "### Reingest Reconciliation"])
+    reconciliation_candidates = result.get("reconciliation_candidates", [])
+    if reconciliation_candidates:
+        for item in reconciliation_candidates:
+            lines.append(f"- document:{item.get('document_id')}")
+            lines.append(
+                "  invalidated_source_refs: "
+                f"[{', '.join(item.get('invalidated_source_refs', []))}]"
+            )
+            lines.append(
+                "  stale_concept_slugs: "
+                f"[{', '.join(item.get('stale_concept_slugs', []))}]"
+            )
+    else:
+        lines.append("- reconciliation candidate 없음")
     lines.extend(["", "### Materialized Changes"])
     materialized_promotions = result.get("materialized_promotions", [])
     merged_promotions = result.get("merged_promotions", [])
     materialized_relations = result.get("materialized_relations", [])
+    applied_reconciliations = result.get("applied_reconciliations", [])
+    applied_cluster_reconciliation = result.get(
+        "applied_cluster_reconciliation",
+        {},
+    )
     if materialized_promotions:
         for item in materialized_promotions:
             lines.append(f"- promoted: cluster:{item.get('cluster_id')} -> concept:{item.get('concept_slug')}")
@@ -61,5 +81,20 @@ def render_lint_log_markdown(result: dict[str, Any], lint_date: str) -> str:
     if materialized_relations:
         for item in materialized_relations:
             lines.append(f"- linked: concept:{item.get('from')} -[{item.get('relation')}]-> concept:{item.get('to')}")
+    if applied_reconciliations:
+        for item in applied_reconciliations:
+            lines.append(
+                f"- reconciled: document:{item.get('document_id')}"
+            )
+    for item in applied_cluster_reconciliation.get("removed_claims", []):
+        lines.append(
+            f"- removed stale claim: cluster:{item.get('cluster_id')} "
+            f"claim:{item.get('claim_id')}"
+        )
+    for item in applied_cluster_reconciliation.get("removed_relations", []):
+        lines.append(
+            f"- removed stale relation: cluster:{item.get('cluster_id')} "
+            f"-> {item.get('target')}"
+        )
     lines.append("- updated: logs/{yyyy-mm-dd}.md")
     return "\n".join(lines) + "\n"
