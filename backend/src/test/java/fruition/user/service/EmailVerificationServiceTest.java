@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,12 +29,15 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,13 +47,19 @@ class EmailVerificationServiceTest {
     @Mock EmailVerificationRepository verificationRepository;
     @Mock UserRepository userRepository;
     @Mock EmailVerificationSender sender;
+    @Mock TransactionTemplate transactionTemplate;
 
     EmailVerificationService service;
 
     @BeforeEach
     void setUp() {
+        // 트랜잭션 콜백을 즉시 실행해 DB 쓰기 람다가 그대로 돌게 한다.
+        lenient().doAnswer(invocation -> {
+            invocation.getArgument(0, Consumer.class).accept((TransactionStatus) null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
         service = new EmailVerificationService(
-                verificationRepository, userRepository, sender,
+                verificationRepository, userRepository, sender, transactionTemplate,
                 300, 600, 60, 5, 5, "");
     }
 
@@ -126,7 +137,7 @@ class EmailVerificationServiceTest {
     @Test
     void request_withDevFixedCode_sendsFixedCode() {
         service = new EmailVerificationService(
-                verificationRepository, userRepository, sender,
+                verificationRepository, userRepository, sender, transactionTemplate,
                 300, 600, 60, 5, 5, "9700");
         when(verificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(anyString(), anyString()))
                 .thenReturn(Optional.empty());
