@@ -45,7 +45,7 @@ class WikiPersistencePayloadTest(unittest.TestCase):
             "generation_evaluation_status": "unresolved",
             "source_contribution": {
                 "concept_slugs": ["concept-a"],
-                "active_cluster_markdown": "# Active",
+                "claim_signatures": [["cluster-a", "claim-a", "주장"]],
             },
             "meaning_clusters": {
                 "active_markdown": "# Active",

@@ -25,7 +25,19 @@ def test_contribution_payload_keeps_reingest_reconciliation_inputs() -> None:
                 "invalidated_block_ids": ["B0002"],
             },
             "meaning_clusters": {
-                "active_markdown": "# Active Meaning Clusters\n",
+                "active_markdown": """# Active Meaning Clusters
+
+## cluster: motor
+
+### Evidence Claims
+- claim_1: 최신 주장이다. [doc-1:B0001]
+
+### Core Relation Candidates
+- target: concept:target
+  relation: supports_or_enables
+  evidence: [claim_1]
+  reason: 최신 관계
+""",
             },
         }
     )
@@ -42,7 +54,17 @@ def test_contribution_payload_keeps_reingest_reconciliation_inputs() -> None:
         "source_block_changes": {
             "invalidated_block_ids": ["B0002"],
         },
-        "active_cluster_markdown": "# Active Meaning Clusters\n",
+        "claim_signatures": [
+            ["motor", "claim_1", "최신 주장이다. [doc-1:B0001]"],
+        ],
+        "relation_signatures": [
+            [
+                "motor",
+                "concept:target",
+                "supports_or_enables",
+                ["claim_1"],
+            ]
+        ],
     }
 
 

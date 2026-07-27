@@ -173,15 +173,17 @@ def source_contribution_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(page, (str, Path)):
             concept_slugs.append(Path(page).stem)
     meaning_clusters = manifest.get("meaning_clusters")
+    active_cluster_markdown = (
+        meaning_clusters.get("active_markdown", "")
+        if isinstance(meaning_clusters, dict)
+        else ""
+    )
     return {
         "concept_slugs": list(dict.fromkeys(concept_slugs)),
         "links": _manifest_links(manifest),
         "source_block_changes": manifest.get("source_block_changes") or {},
-        "active_cluster_markdown": (
-            meaning_clusters.get("active_markdown", "")
-            if isinstance(meaning_clusters, dict)
-            else ""
-        ),
+        "claim_signatures": _claim_signatures(active_cluster_markdown),
+        "relation_signatures": _relation_signatures(active_cluster_markdown),
     }
 
 
@@ -242,12 +244,8 @@ def _reconciliation_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "structural_reconciled": (
             payload.get("structural_reconciled_at") is not None
         ),
-        "_current_claim_signatures": _claim_signatures(
-            payload.get("active_cluster_markdown", "")
-        ),
-        "_current_relation_signatures": _relation_signatures(
-            payload.get("active_cluster_markdown", "")
-        ),
+        "_current_claim_signatures": payload.get("claim_signatures", []),
+        "_current_relation_signatures": payload.get("relation_signatures", []),
     }
 
 
