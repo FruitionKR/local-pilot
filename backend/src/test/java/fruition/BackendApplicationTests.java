@@ -42,8 +42,7 @@ class BackendApplicationTests {
 				"wiki_page_embeddings",
 				"wiki_embedding_vectors",
 				"wiki_embedding_units",
-				"wiki_schemas",
-				"wiki_source_contributions"
+				"wiki_schemas"
 		}) {
 			Boolean exists = jdbcTemplate.queryForObject(
 					"SELECT to_regclass(?) IS NOT NULL",

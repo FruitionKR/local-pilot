@@ -33,6 +33,7 @@ from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliatio
     active_relation_keys as _active_relation_keys,
     apply_structural_reconciliation as _apply_structural_reconciliation,
     list_reconciliation_candidates as _list_reconciliation_candidates,
+    source_contribution_payload as _source_contribution_payload,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
     delete_source_related_links as _delete_source_related_links,
@@ -87,7 +88,6 @@ REQUIRED_TABLES = (
     "wiki_embedding_vectors",
     "wiki_embedding_units",
     "wiki_schemas",
-    "wiki_source_contributions",
 )
 
 
@@ -157,7 +157,10 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
                 raise PipelineRunCancelledError(
                     "Pipeline run cancelled because its document or workspace is inactive."
                 )
-            embedded_page_ids = _persist_wiki_outputs(conn, run_id, document_id, manifest)
+            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+            manifest["source_contribution"] = _source_contribution_payload(
+                manifest
+            )
             manifest = _stored_manifest(manifest)
             conn.execute(
                 """

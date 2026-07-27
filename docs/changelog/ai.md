@@ -16,19 +16,22 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ### feat: 재편입 기여분 기반 lint 구조 정리 추가
 
-- 편입 실행별 concept·relation·block 변경 기여분을
-  `wiki_source_contributions`에 저장하고 문서당 최신 실행 하나만 활성화
+- 편입 실행별 concept·relation·block 변경 기여분을 기존
+  `pipeline_runs.manifest.source_contribution`에 저장하고 문서별 최신 성공 실행을 사용
+- 변경 전 실행에 별도 기여분이 없더라도 기존 manifest의 concept·relation을 읽어
+  최초 재편입부터 사라진 구조를 찾도록 호환
 - lint dry-run에서 수정·삭제 block, 사라진 문서-concept 연결, 사라진 relation을
   `reconciliation_candidates`로 반환
 - `dry_run=false`에서 오래된 문서-concept 연결·해당 문서의 embedding unit과
   다른 활성 문서가 지지하지 않는 relation만 삭제하고 적용 여부를 기록
-- 최신 재편입 기여분과 비교해 active cluster의 이전 claim과 그 claim만
-  근거로 삼는 relation 후보를 제거하고 같은 block ID의 최신 claim은 유지
+- 최신 재편입 기여분과 비교해 active cluster의 이전 claim을 제거하고 relation에
+  유효한 근거가 함께 있으면 이전 claim 근거만 제거하며, 근거가 모두 사라지면
+  relation 후보도 제거
 - 무효화된 source ref가 포함된 cluster를 자동 승격에서 제외하고
   `needs_review` 대상으로 분류
 - Concept 본문 의미 재작성은 안전한 기여 병합 단계가 더 필요해
   `docs/issue/ai/2026-07-27.md`에서 후속 관리
-- 집중 테스트 `27 passed`, llmPipeline 전체 `529 passed`,
+- 집중 테스트 `28 passed`, llmPipeline 전체 `530 passed`,
   `43 subtests passed`; Python compile과 `git diff --check` 통과
 
 ## 2026-07-26

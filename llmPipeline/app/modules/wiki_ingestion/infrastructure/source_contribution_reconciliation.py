@@ -4,49 +4,10 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
-from psycopg.types.json import Json
 
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     parse_active_cluster_lint,
 )
-
-
-def persist_source_contribution(
-    conn: psycopg.Connection,
-    run_id: str,
-    document_id: str,
-    manifest: dict[str, Any],
-) -> None:
-    payload = _contribution_payload(manifest)
-    conn.execute(
-        """
-        UPDATE wiki_source_contributions
-        SET active = false
-        WHERE document_id = %s
-          AND active
-        """,
-        (document_id,),
-    )
-    conn.execute(
-        """
-        INSERT INTO wiki_source_contributions (
-            pipeline_run_id,
-            document_id,
-            user_id,
-            workspace_id,
-            payload,
-            active
-        )
-        VALUES (%s, %s, %s, %s, %s, true)
-        """,
-        (
-            run_id,
-            document_id,
-            str(manifest.get("user_id") or "local-user"),
-            str(manifest.get("workspace_id") or "local-workspace"),
-            Json(payload),
-        ),
-    )
 
 
 def list_reconciliation_candidates(
@@ -56,41 +17,62 @@ def list_reconciliation_candidates(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT current_contribution.pipeline_run_id,
-               current_contribution.document_id,
-               current_contribution.user_id,
-               current_contribution.workspace_id,
-               current_contribution.payload,
-               current_contribution.structural_reconciled_at,
-               COALESCE(previous.payloads, '[]'::jsonb) AS previous_payloads,
+        WITH scoped_runs AS (
+            SELECT run.id AS pipeline_run_id,
+                   run.document_id,
+                   document.user_id,
+                   document.workspace_id,
+                   run.manifest,
+                   row_number() OVER (
+                       PARTITION BY run.document_id
+                       ORDER BY run.finished_at DESC NULLS LAST,
+                                run.created_at DESC,
+                                run.id DESC
+                   ) AS run_rank
+            FROM pipeline_runs run
+            JOIN documents document ON document.id = run.document_id
+            JOIN workspaces workspace ON workspace.id = document.workspace_id
+            WHERE run.status = 'succeeded'
+              AND run.manifest IS NOT NULL
+              AND document.user_id = %s
+              AND document.workspace_id = %s
+              AND document.deleted_at IS NULL
+              AND workspace.deleted_at IS NULL
+        )
+        SELECT current_run.pipeline_run_id,
+               current_run.document_id,
+               current_run.user_id,
+               current_run.workspace_id,
+               current_run.manifest,
+               COALESCE(previous.manifests, '[]'::jsonb) AS previous_manifests,
                COALESCE(linked_concepts.slugs, ARRAY[]::text[]) AS linked_concept_slugs
-        FROM wiki_source_contributions current_contribution
+        FROM scoped_runs current_run
         LEFT JOIN LATERAL (
-            SELECT jsonb_agg(payload ORDER BY created_at) AS payloads
-            FROM wiki_source_contributions previous
-            WHERE previous.document_id = current_contribution.document_id
-              AND previous.pipeline_run_id <> current_contribution.pipeline_run_id
-              AND NOT previous.active
+            SELECT jsonb_agg(previous_run.manifest ORDER BY previous_run.run_rank DESC)
+                   AS manifests
+            FROM scoped_runs previous_run
+            WHERE previous_run.document_id = current_run.document_id
+              AND previous_run.run_rank > 1
         ) previous ON true
         LEFT JOIN LATERAL (
             SELECT array_agg(page.slug ORDER BY page.slug) AS slugs
             FROM document_wiki_links link
             JOIN wiki_pages page ON page.id = link.wiki_page_id
-            WHERE link.document_id = current_contribution.document_id
+            WHERE link.document_id = current_run.document_id
               AND link.relation_type = 'extracted_concept'
               AND page.page_type = 'concept'
         ) linked_concepts ON true
-        WHERE current_contribution.user_id = %s
-          AND current_contribution.workspace_id = %s
-          AND current_contribution.active
+        WHERE current_run.run_rank = 1
           AND jsonb_array_length(
               COALESCE(
-                  current_contribution.payload->'source_block_changes'->'invalidated_block_ids',
+                  current_run.manifest->'source_contribution'
+                      ->'source_block_changes'->'invalidated_block_ids',
+                  current_run.manifest
+                      ->'source_block_changes'->'invalidated_block_ids',
                   '[]'::jsonb
               )
           ) > 0
-        ORDER BY current_contribution.created_at,
-                 current_contribution.pipeline_run_id
+        ORDER BY current_run.document_id
         """,
         (user_id, workspace_id),
     ).fetchall()
@@ -120,9 +102,20 @@ def apply_structural_reconciliation(
         )
         conn.execute(
             """
-            UPDATE wiki_source_contributions
-            SET structural_reconciled_at = now()
-            WHERE pipeline_run_id = %s
+            UPDATE pipeline_runs
+            SET manifest = jsonb_set(
+                manifest,
+                '{source_contribution}',
+                COALESCE(
+                    manifest->'source_contribution',
+                    '{}'::jsonb
+                ) || jsonb_build_object(
+                    'structural_reconciled_at',
+                    now()
+                ),
+                true
+            )
+            WHERE id = %s
             """,
             (candidate["pipeline_run_id"],),
         )
@@ -145,22 +138,34 @@ def active_relation_keys(
 ) -> set[tuple[str, str, str]]:
     rows = conn.execute(
         """
-        SELECT payload
-        FROM wiki_source_contributions
-        WHERE user_id = %s
-          AND workspace_id = %s
-          AND active
+        SELECT DISTINCT ON (run.document_id)
+               run.manifest
+        FROM pipeline_runs run
+        JOIN documents document ON document.id = run.document_id
+        JOIN workspaces workspace ON workspace.id = document.workspace_id
+        WHERE run.status = 'succeeded'
+          AND run.manifest IS NOT NULL
+          AND document.user_id = %s
+          AND document.workspace_id = %s
+          AND document.deleted_at IS NULL
+          AND workspace.deleted_at IS NULL
+        ORDER BY run.document_id,
+                 run.finished_at DESC NULLS LAST,
+                 run.created_at DESC,
+                 run.id DESC
         """,
         (user_id, workspace_id),
     ).fetchall()
     return {
         _relation_key(relation)
         for row in rows
-        for relation in _relations(row.get("payload") or {})
+        for relation in _relations(
+            _contribution_from_manifest(row.get("manifest") or {})
+        )
     }
 
 
-def _contribution_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+def source_contribution_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     concept_slugs = []
     for page in manifest.get("concept_pages", []):
         if isinstance(page, dict) and page.get("slug"):
@@ -180,6 +185,13 @@ def _contribution_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _contribution_from_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    contribution = manifest.get("source_contribution")
+    if isinstance(contribution, dict):
+        return contribution
+    return source_contribution_payload(manifest)
+
+
 def _manifest_links(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     links = manifest.get("links")
     if not isinstance(links, list):
@@ -196,8 +208,13 @@ def _manifest_links(manifest: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _reconciliation_candidate(row: dict[str, Any]) -> dict[str, Any]:
-    payload = row.get("payload") or {}
-    previous_payloads = row.get("previous_payloads") or []
+    manifest = row.get("manifest") or {}
+    payload = _contribution_from_manifest(manifest)
+    previous_payloads = [
+        _contribution_from_manifest(previous_manifest)
+        for previous_manifest in row.get("previous_manifests") or []
+        if isinstance(previous_manifest, dict)
+    ]
     document_id = str(row["document_id"])
     invalidated_ids = (
         payload.get("source_block_changes", {}).get("invalidated_block_ids", [])
@@ -222,7 +239,9 @@ def _reconciliation_candidate(row: dict[str, Any]) -> dict[str, Any]:
         ],
         "stale_concept_slugs": sorted(previous_concepts - current_concepts),
         "stale_relations": list(stale_relations_by_key.values()),
-        "structural_reconciled": row.get("structural_reconciled_at") is not None,
+        "structural_reconciled": (
+            payload.get("structural_reconciled_at") is not None
+        ),
         "_current_claim_signatures": _claim_signatures(
             payload.get("active_cluster_markdown", "")
         ),

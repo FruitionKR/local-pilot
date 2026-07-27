@@ -366,6 +366,7 @@ def _remove_stale_cluster_relations(
     relations, invalid_relations = cluster_relation_items(section)
     kept: list[dict[str, Any]] = []
     removed: list[dict[str, Any]] = []
+    changed = False
     for relation in relations:
         signature = _relation_signature(cluster_id, relation)
         stale_evidence = [
@@ -379,9 +380,22 @@ def _remove_stale_cluster_relations(
         ]
         if stale_evidence and len(stale_evidence) == len(relation.get("evidence", [])):
             removed.append({"cluster_id": cluster_id, **relation})
+            changed = True
+        elif stale_evidence:
+            kept.append(
+                {
+                    **relation,
+                    "evidence": [
+                        evidence
+                        for evidence in relation.get("evidence", [])
+                        if evidence not in stale_evidence
+                    ],
+                }
+            )
+            changed = True
         else:
             kept.append(relation)
-    if not removed:
+    if not changed:
         return section, []
     lines = section.splitlines()
     replace_heading_section(

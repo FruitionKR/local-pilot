@@ -43,6 +43,10 @@ class WikiPersistencePayloadTest(unittest.TestCase):
             },
             "generation_evaluations": [{"passed": False, "issues": [{"type": "missing_ref"}]}],
             "generation_evaluation_status": "unresolved",
+            "source_contribution": {
+                "concept_slugs": ["concept-a"],
+                "active_cluster_markdown": "# Active",
+            },
             "meaning_clusters": {
                 "active_markdown": "# Active",
                 "log_markdown": "# Log",
@@ -68,6 +72,10 @@ class WikiPersistencePayloadTest(unittest.TestCase):
         self.assertEqual(stored["meaning_clusters"], {"active_uri": "s3://active"})
         self.assertEqual(stored["generation_evaluations"], manifest["generation_evaluations"])
         self.assertEqual(stored["generation_evaluation_status"], "unresolved")
+        self.assertEqual(
+            stored["source_contribution"],
+            manifest["source_contribution"],
+        )
 
     def test_resolves_summary_title_and_link_page_ids(self) -> None:
         self.assertEqual(

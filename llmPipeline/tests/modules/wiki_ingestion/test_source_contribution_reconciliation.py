@@ -1,13 +1,13 @@
 from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
-    _contribution_payload,
     _reconciliation_candidate,
     _remove_stale_document_concepts,
     apply_structural_reconciliation,
+    source_contribution_payload,
 )
 
 
 def test_contribution_payload_keeps_reingest_reconciliation_inputs() -> None:
-    payload = _contribution_payload(
+    payload = source_contribution_payload(
         {
             "concept_pages": [
                 {"slug": "kept-concept", "markdown": "# 유지"},
@@ -53,23 +53,27 @@ def test_reconciliation_candidate_compares_previous_and_current_contribution() -
             "document_id": "doc-1",
             "user_id": "user-1",
             "workspace_id": "workspace-1",
-            "structural_reconciled_at": None,
-            "payload": {
-                "concept_slugs": ["kept-concept"],
-                "links": [
-                    {
-                        "source": "source:doc-1",
-                        "target": "concept:kept-concept",
-                        "relation": "source_mentions_concept",
-                    }
-                ],
-                "source_block_changes": {
-                    "invalidated_block_ids": ["B0002", "B0003"],
+            "manifest": {
+                "source_contribution": {
+                    "concept_slugs": ["kept-concept"],
+                    "links": [
+                        {
+                            "source": "source:doc-1",
+                            "target": "concept:kept-concept",
+                            "relation": "source_mentions_concept",
+                        }
+                    ],
+                    "source_block_changes": {
+                        "invalidated_block_ids": ["B0002", "B0003"],
+                    },
                 },
             },
-            "previous_payloads": [
+            "previous_manifests": [
                 {
-                    "concept_slugs": ["kept-concept", "stale-concept"],
+                    "concept_pages": [
+                        {"slug": "kept-concept"},
+                        {"slug": "stale-concept"},
+                    ],
                     "links": [
                         {
                             "source": "source:doc-1",
@@ -102,6 +106,47 @@ def test_reconciliation_candidate_compares_previous_and_current_contribution() -
     ]
     assert candidate["_current_claim_signatures"] == []
     assert candidate["_current_relation_signatures"] == []
+
+
+def test_reconciliation_candidate_reads_legacy_manifest_links() -> None:
+    candidate = _reconciliation_candidate(
+        {
+            "pipeline_run_id": "run-2",
+            "document_id": "doc-1",
+            "user_id": "user-1",
+            "workspace_id": "workspace-1",
+            "manifest": {
+                "source_contribution": {
+                    "concept_slugs": [],
+                    "links": [],
+                    "source_block_changes": {
+                        "invalidated_block_ids": ["B0001"],
+                    },
+                }
+            },
+            "previous_manifests": [
+                {
+                    "concept_pages": [{"slug": "old-concept"}],
+                    "links": [
+                        {
+                            "source": "source:doc-1",
+                            "target": "concept:old-concept",
+                            "relation": "source_mentions_concept",
+                        }
+                    ],
+                }
+            ],
+            "linked_concept_slugs": ["old-concept"],
+        }
+    )
+
+    assert candidate["stale_relations"] == [
+        {
+            "source": "source:doc-1",
+            "target": "concept:old-concept",
+            "relation": "source_mentions_concept",
+        }
+    ]
 
 
 def test_structural_reconciliation_keeps_relation_supported_by_another_document() -> None:
@@ -144,7 +189,7 @@ def test_structural_reconciliation_keeps_relation_supported_by_another_document(
 
     assert all("DELETE FROM wiki_page_links" not in query for query in conn.queries)
     assert applied[0]["removed_relations"] == []
-    assert any("structural_reconciled_at = now()" in query for query in conn.queries)
+    assert any("jsonb_build_object" in query for query in conn.queries)
 
 
 def test_remove_stale_document_concepts_removes_its_embedding_units() -> None:

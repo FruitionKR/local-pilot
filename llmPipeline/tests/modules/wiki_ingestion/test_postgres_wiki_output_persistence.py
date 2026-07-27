@@ -17,11 +17,6 @@ def _stub_followup_writes(monkeypatch) -> None:
         "_persist_meaning_cluster_artifacts",
         lambda *_args: None,
     )
-    monkeypatch.setattr(
-        persistence,
-        "persist_source_contribution",
-        lambda *_args: None,
-    )
 
 
 def test_persist_source_blocks_clears_existing_rows_for_empty_blocks() -> None:
@@ -107,13 +102,7 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "_persist_meaning_cluster_artifacts",
         lambda *_args: calls.append("meaning_clusters"),
     )
-    monkeypatch.setattr(
-        persistence,
-        "persist_source_contribution",
-        lambda *_args: calls.append("source_contribution"),
-    )
-
-    page_ids = persistence.persist_wiki_outputs(conn, "run-1", "doc-1", manifest)  # type: ignore[arg-type]
+    page_ids = persistence.persist_wiki_outputs(conn, "doc-1", manifest)  # type: ignore[arg-type]
 
     assert page_ids == ["source-page-1"]
     assert calls == [
@@ -126,7 +115,6 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "load_concept_ids",
         "delete_source_links",
         "meaning_clusters",
-        "source_contribution",
     ]
 
 
@@ -198,7 +186,7 @@ def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> Non
         lambda *args: page_links.append(args),
     )
 
-    page_ids = persistence.persist_wiki_outputs(conn, "run-1", "doc-1", manifest)  # type: ignore[arg-type]
+    page_ids = persistence.persist_wiki_outputs(conn, "doc-1", manifest)  # type: ignore[arg-type]
 
     assert page_ids == ["source-page-1", "concept-page-1"]
     assert page_links == [
@@ -275,7 +263,7 @@ def test_persist_wiki_outputs_reads_normalized_and_links_artifacts(
         lambda *args: page_links.append(args),
     )
 
-    page_ids = persistence.persist_wiki_outputs(object(), "run-1", "doc-1", manifest)  # type: ignore[arg-type]
+    page_ids = persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
 
     assert page_ids == ["source-page-1"]
     assert page_titles == ["파일 제목"]

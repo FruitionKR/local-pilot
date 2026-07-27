@@ -436,7 +436,7 @@ def test_reconcile_active_clusters_removes_only_stale_reingest_claims() -> None:
   reason: 이전 주장 관계
 - target: concept:new-target
   relation: supports_or_enables
-  evidence: [claim_new]
+  evidence: [claim_old, claim_new]
   reason: 최신 주장 관계
 """
 
@@ -456,7 +456,7 @@ def test_reconcile_active_clusters_removes_only_stale_reingest_claims() -> None:
                     "motor",
                     "concept:new-target",
                     "supports_or_enables",
-                    ("claim_new",),
+                    ("claim_old", "claim_new"),
                 )
             },
         )
@@ -466,6 +466,7 @@ def test_reconcile_active_clusters_removes_only_stale_reingest_claims() -> None:
     assert "concept:old-target" not in reconciled
     assert "claim_new" in reconciled
     assert "concept:new-target" in reconciled
+    assert "evidence: [claim_new]" in reconciled
     assert "claim_other" in reconciled
     assert removed_claims[0]["claim_id"] == "claim_old"
     assert removed_relations[0]["target"] == "concept:old-target"
