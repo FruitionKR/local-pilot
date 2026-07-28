@@ -27,6 +27,7 @@ import { createClientId } from "@/entities/tree";
 import { useResizeHandle } from "../model/useResizeHandle";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { NoteEditState, TreeItem } from "@/entities/tree";
+import type { ChatWikiExportResponse } from "@/features/wiki-export";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 320;
@@ -62,6 +63,7 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
+  const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
   const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
@@ -100,6 +102,15 @@ export function HomeWorkspace() {
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
   // 홈에서 문서가 메인 영역을 채우는 상태(Obsidian식 최근 문서 열람)
   const isDocumentMain = isHomeView && hasSourcePreview;
+
+  useEffect(() => {
+    if (!pendingExportDocumentId) return;
+    const exportedDocument = documents.find((document) => document.id === pendingExportDocumentId);
+    if (!exportedDocument) return;
+    setPendingExportDocumentId(null);
+    setActiveView("home");
+    selection.openSourceBlockPreview(exportedDocument.id, exportedDocument.filename, []);
+  }, [documents, pendingExportDocumentId, selection]);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
@@ -189,7 +200,8 @@ export function HomeWorkspace() {
     });
   }, []);
 
-  async function handleChatDocumentExported() {
+  async function handleChatDocumentExported(response: ChatWikiExportResponse) {
+    setPendingExportDocumentId(response.exportDocumentId);
     await refreshBackendData();
   }
 

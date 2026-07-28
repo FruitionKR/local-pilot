@@ -6,6 +6,7 @@ import type { NoteSaveStatus } from "@/entities/tree/model/tree";
 type PendingSave = {
   markdown: string;
   revision: number;
+  source?: "agent";
 };
 
 const AUTOSAVE_DELAY_MS = 800;
@@ -44,7 +45,12 @@ export function useNoteAutosave({
     setStatus("saving");
     setErrorMessage(null);
     try {
-      const saved = await saveNoteDraft(documentId, candidate.markdown, versionRef.current);
+      const saved = await saveNoteDraft(
+        documentId,
+        candidate.markdown,
+        versionRef.current,
+        candidate.source
+      );
       versionRef.current = saved.content_version;
       setContentVersion(saved.content_version);
       setStatus(candidate.revision === revisionRef.current ? "saved" : "dirty");
@@ -64,16 +70,22 @@ export function useNoteAutosave({
     }
   }
 
-  function queueSave(body: string) {
+  function queueSave(body: string, source?: "agent") {
     if (conflictRef.current) return;
     revisionRef.current += 1;
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),
-      revision: revisionRef.current
+      revision: revisionRef.current,
+      source
     };
     setStatus("dirty");
     setErrorMessage(null);
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (source === "agent") {
+      timerRef.current = null;
+      void flushSave(candidate);
+      return;
+    }
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       void flushSave(candidate);

@@ -80,7 +80,7 @@ export function NoteEditor({
       view.dispatch(tr);
     });
     onContentChangedRef.current?.(nextMarkdown);
-    queueSaveRef.current(nextMarkdown);
+    queueSaveRef.current(nextMarkdown, "agent");
     return true;
   }, []);
 

@@ -40,12 +40,14 @@ export async function fetchNoteDraft(documentId: string): Promise<NoteContentRes
 export async function saveNoteDraft(
   documentId: string,
   markdown: string,
-  expectedContentVersion: number
+  expectedContentVersion: number,
+  source?: "agent"
 ): Promise<NoteContentResponse> {
   const workspaceId = getWorkspaceId();
   const formData = new FormData();
   formData.append("markdown", markdown);
   formData.append("base_version", String(expectedContentVersion));
+  if (source) formData.append("source", source);
   const response = await apiFetch(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/content`,
     {
