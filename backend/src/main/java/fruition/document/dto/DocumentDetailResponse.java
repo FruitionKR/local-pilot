@@ -32,5 +32,6 @@ public record DocumentDetailResponse(
         @JsonProperty("current_version") long currentVersion,
         @JsonProperty("source_document_id") String sourceDocumentId,
         @JsonProperty("updated_at") Instant updatedAt,
-        String markdown
+        String markdown,
+        @JsonProperty("edit_lock") EditLockResponse editLock
 ) {}

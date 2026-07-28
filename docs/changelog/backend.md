@@ -6,6 +6,57 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-27
+
+> `feat/agent-turn-base-version` 브랜치에서 dev와 중복되지 않는 고유 기능만 최신 `dev` 위에 재적용한 묶음입니다. 폴더 트리·wiki-schema·wiki-maintenance는 dev 구현을 사용합니다.
+
+### feat: 문서 편집 잠금(활성 편집 추적) 추가
+
+**변경된 것**
+
+- 한 문서를 동시에 두 사람이 편집하지 못하게 lease(TTL + heartbeat) 기반 편집 잠금을 추가했다. 테이블 `document_edit_locks`(마이그레이션 `V13`).
+- `POST/DELETE /documents/{id}/edit-lock`(획득/해제), `POST /documents/{id}/edit-lock/heartbeat`(연장). 획득은 원자적 조건부 upsert(비었거나 만료됐거나 본인 보유일 때만 성립).
+- 쓰기 계열(`saveContent`·`agent/turn`·버전 복원·재ingest)은 **다른 사용자가 유효한 잠금 보유 중이면 `423 DOCUMENT_EDIT_LOCKED`** 로 차단한다. 잠금이 없거나 만료됐거나 본인 보유면 통과(잠금 강제 아님, 비파괴적).
+- `GET /documents/{id}` 응답에 `edit_lock` 필드(보유자·표시 이름·만료 시각) 추가. 열람은 누구나 가능(읽기 전용), 보이는 내용은 마지막 저장본.
+- heartbeat 상실 시 `409 EDIT_LOCK_LOST`. TTL 기본 45초(`app.document.edit-lock.ttl-seconds`).
+- 설계: `docs/design/document-edit-lock.md`, 프론트 계약: `docs/issue/frontend/2026-07-27.md`.
+
+**검증**: `DocumentEditLockServiceTest`(획득 self/other·heartbeat 상실·requireWritable·getStatus) 통과.
+
+### feat: 운영 이메일 인증 SMTP 발송 추가 (트랜잭션 분리·timeout 포함)
+
+**변경된 것**
+
+- `spring.mail.host`가 설정되면 실제 SMTP 발송(`SmtpEmailVerificationSender`), 없으면 dev 로그 stub로 동작하도록 `EmailSenderConfig`로 분기한다.
+- 인증번호 발송은 DB 커밋 후 트랜잭션 밖에서 수행하고(외부 메일 왕복 동안 커넥션 점유 방지), SMTP connection/read/write timeout을 적용한다.
+
+**검증**: `SmtpEmailVerificationSenderTest`, `EmailVerificationServiceTest` 통과.
+
+### feat: Agent turn 오래된 baseVersion을 pipeline 호출 전 409로 거절
+
+**변경된 것**
+
+- `POST /agent/turn`에서 요청 `base_version`이 문서 현재 version과 다르면 pipeline 호출 전에 `DOCUMENT_VERSION_CONFLICT`(409)로 거절해, 오래된 스냅샷으로 LLM을 낭비하지 않는다.
+
+### feat: 편집본 재ingest API 추가 (POST /documents/{id}/ingest)
+
+**변경된 것**
+
+- 편집 가능 Markdown 문서를 최신 편집본으로 다시 Wiki 파이프라인에 넣는다. DB 편집본을 MinIO 원본으로 승격한 뒤 `processing`으로 되돌리고 처리 큐에 재등록한다.
+- 이미 처리 중이면 `DOCUMENT_ALREADY_PROCESSING`(409). 편집 가능(EDITABLE) 문서만 대상.
+
+### feat: 문서 콘텐츠 버전 이력·롤백 추가 (AI 편집 스냅샷)
+
+**변경된 것**
+
+- `document_content_versions` 테이블(마이그레이션 `V12`)에 편집 가능 Markdown의 콘텐츠 스냅샷을 저장한다.
+- `GET /documents/{id}/versions`(목록), `GET /documents/{id}/versions/{version}`(단건 본문), `POST /documents/{id}/versions/{version}/restore`(비파괴 복원) 추가.
+- 스냅샷은 **AI 편집(`source=agent`)일 때만** 기록한다. `PUT /documents/{id}/content`에 선택적 `source` multipart part를 추가했고, `source=agent`이면 저장 성공 시 스냅샷을 남긴다. 수동 저장은 `source` 생략(스냅샷 없음).
+- 복원은 대상 버전 본문을 새 version으로 저장하며(base_version 낙관적 잠금), 복원 동작 자체는 새 스냅샷을 남기지 않는다.
+- 프론트 연동 계약은 `docs/issue/frontend/2026-07-27.md` 참고(코드는 이 PR에서 건드리지 않음).
+
+---
+
 ## 2026-07-25
 
 ### feat: 폴더 하위 항목 개별 복구 (TASK-H006)

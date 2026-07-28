@@ -6,6 +6,7 @@ import fruition.agent.dto.AgentTurnResponse;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.agent.repository.PipelineAgentRequester;
 import fruition.document.domain.DocumentStatus;
+import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +28,14 @@ import static org.mockito.Mockito.when;
 class AgentTurnServiceTest {
 
     @Mock DocumentService documentService;
+    @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock PipelineAgentRequester pipelineAgentRequester;
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
-        service = new AgentTurnService(documentService, pipelineAgentRequester);
+        service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester);
     }
 
     @Test
@@ -72,6 +74,17 @@ class AgentTurnServiceTest {
         verify(pipelineAgentRequester, never()).request(request);
     }
 
+    @Test
+    void turn_rejectsStaleBaseVersionBeforePipelineCall() {
+        AgentTurnRequest request = request("whole_document", 1, 2);
+        when(documentService.findById("ws_1", "user_1", "doc_1"))
+                .thenReturn(document("note.md", "text/markdown", 9));
+
+        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
+                .isInstanceOf(DocumentVersionConflictException.class);
+        verify(pipelineAgentRequester, never()).request(request);
+    }
+
     private AgentTurnRequest request(String type, int startLine, int endLine) {
         return new AgentTurnRequest(
                 "doc_1",
@@ -85,12 +98,16 @@ class AgentTurnServiceTest {
     }
 
     private DocumentDetailResponse document(String filename, String mimeType) {
+        return document(filename, mimeType, 7);
+    }
+
+    private DocumentDetailResponse document(String filename, String mimeType, long currentVersion) {
         return new DocumentDetailResponse(
                 "doc_1", filename, mimeType, 10, DocumentStatus.completed,
                 "s3://source", null, Instant.now(), Instant.now(), null, List.of(),
                 null, null, null, filename.substring(0, filename.lastIndexOf('.')),
-                filename.substring(filename.lastIndexOf('.') + 1), null, false, 1,
-                null, Instant.now(), null
+                filename.substring(filename.lastIndexOf('.') + 1), null, false, currentVersion,
+                null, Instant.now(), null, null
         );
     }
 }

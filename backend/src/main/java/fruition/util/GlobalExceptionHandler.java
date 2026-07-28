@@ -4,6 +4,10 @@ import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
+import fruition.document.exception.DocumentAlreadyProcessingException;
+import fruition.document.exception.DocumentContentVersionNotFoundException;
+import fruition.document.exception.DocumentLockedException;
+import fruition.document.exception.EditLockLostException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
@@ -38,6 +42,7 @@ import fruition.user.exception.OAuthEmailNotProvidedException;
 import fruition.user.exception.UserNotFoundException;
 import fruition.user.exception.VerificationCodeAttemptsExceededException;
 import fruition.user.exception.VerificationCodeExpiredException;
+import fruition.user.exception.EmailVerificationSendException;
 import fruition.user.exception.VerificationRateLimitedException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.workspace.exception.WorkspaceNotFoundException;
@@ -130,6 +135,34 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_VERSION_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAlreadyProcessingException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAlreadyProcessing(DocumentAlreadyProcessingException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("DOCUMENT_ALREADY_PROCESSING", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentContentVersionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentContentVersionNotFound(DocumentContentVersionNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("DOCUMENT_CONTENT_VERSION_NOT_FOUND", "문서 콘텐츠 버전을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(DocumentLockedException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentLocked(DocumentLockedException e) {
+        return ResponseEntity
+                .status(HttpStatus.LOCKED)
+                .body(ErrorResponse.of("DOCUMENT_EDIT_LOCKED", e.getMessage()));
+    }
+
+    @ExceptionHandler(EditLockLostException.class)
+    public ResponseEntity<ErrorResponse> handleEditLockLost(EditLockLostException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("EDIT_LOCK_LOST", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentOriginalNotFoundException.class)
@@ -383,5 +416,12 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.TOO_MANY_REQUESTS)
                 .header("Retry-After", String.valueOf(e.getRetryAfter()))
                 .body(ErrorResponse.of("VERIFICATION_RATE_LIMITED", e.getMessage()));
+    }
+
+    @ExceptionHandler(EmailVerificationSendException.class)
+    public ResponseEntity<ErrorResponse> handleEmailVerificationSend(EmailVerificationSendException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_GATEWAY)
+                .body(ErrorResponse.of("EMAIL_SEND_FAILED", "인증번호 메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요."));
     }
 }
