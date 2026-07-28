@@ -165,8 +165,10 @@ PROCESSING_ENDPOINT=http://localhost:8000/pipeline/runs
 QUERY_ENDPOINT=http://localhost:8000/query
 QUERY_TIMEOUT_SECONDS=30
 QUERY_EMBEDDING_MODE=text-only
-UPSTAGE_API_KEY=
-UPSTAGE_MODEL=solar-pro2
+LLM_PROVIDER=openai
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL=gpt-4.1-mini
 ```
 
 로컬에서 pipeline까지 함께 실행한다.

@@ -17,8 +17,10 @@ docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/do
 필수 환경변수는 `infra/.env`에 둡니다.
 
 ```env
-UPSTAGE_API_KEY=up_...
-UPSTAGE_MODEL=solar-pro2
+LLM_PROVIDER=openai
+LLM_API_KEY=...
+LLM_BASE_URL=
+LLM_MODEL=gpt-4.1-mini
 PIPELINE_API_PORT=8000
 DATABASE_URL=postgresql://...@postgresql:5432/...
 S3_ENDPOINT=http://minio:9000
@@ -35,7 +37,7 @@ QUERY_EVALUATOR_MODE=llm
 QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 
-현재 LLM 호출은 Upstage OpenAI-compatible API를 사용합니다. `LANGSMITH_TRACING=true`이고 `LANGSMITH_API_KEY`가 설정되어 있으면 query evaluator와 Wiki ingest evaluator의 LangGraph node 실행, `upstage_chat_completions` LLM span이 LangSmith project에 기록됩니다. API key가 없으면 graph 실행은 유지하고 tracing만 생략합니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+LLM 호출은 `LLM_PROVIDER`에 지정한 OpenAI, Gemini, Claude, Upstage 또는 generic provider를 사용합니다. API key·base URL·model override는 provider와 관계없이 `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`로 전달합니다. `LANGSMITH_TRACING=true`이고 `LANGSMITH_API_KEY`가 설정되어 있으면 query evaluator와 Wiki ingest evaluator의 LangGraph node 실행과 LLM span이 LangSmith project에 기록됩니다. API key가 없으면 graph 실행은 유지하고 tracing만 생략합니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
 
 LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 

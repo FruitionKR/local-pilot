@@ -4,6 +4,14 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-07-28
+
+### fix: LLM provider 환경변수 계약 단일화
+
+- ingestion·query·evaluator·agent router·Markdown 편집·Wiki schema organizer가 provider와 관계없이 `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`만 공통 설정으로 사용하도록 통일
+- `UPSTAGE_*` legacy fallback과 Compose 전달을 제거해 OpenAI 등 다른 provider 설정에 Upstage endpoint·key·model이 섞이는 문제 차단
+- env 예시와 실행 문서를 `LLM_*` 계약으로 갱신하고 모든 실시간 LLM 경로의 legacy fallback 부재를 회귀 테스트로 검증
+
 ## 2026-07-27
 
 ### feat: Markdown 문서 재편입 흐름 추가
