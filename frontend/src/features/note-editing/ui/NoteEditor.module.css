@@ -70,6 +70,10 @@
   background: transparent;
 }
 
+.note-markdown-editor :global(.cm-gutters) {
+  border-right: 0;
+}
+
 .note-markdown-editor :global(.cm-content) {
   max-width: none;
   padding: 0 0 120px;
@@ -87,4 +91,21 @@
 
 .note-markdown-editor :global(.cm-cursor) {
   border-left-color: var(--yellow);
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement) {
+  color: #777;
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter) {
+  position: relative;
+  color: transparent;
+  background: transparent;
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter::after) {
+  position: absolute;
+  right: 8px;
+  color: #8a8a8a;
+  content: "|";
 }

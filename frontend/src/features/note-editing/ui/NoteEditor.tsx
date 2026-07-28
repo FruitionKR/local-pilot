@@ -172,9 +172,7 @@ export function NoteEditor({
             lineNumbers: preferences.editor.markdown.lineNumbers,
             foldGutter: false,
             highlightActiveLine: preferences.editor.markdown.highlightActiveLine,
-            highlightActiveLineGutter:
-              preferences.editor.markdown.lineNumbers
-              && preferences.editor.markdown.highlightActiveLine
+            highlightActiveLineGutter: preferences.editor.markdown.lineNumbers
           }}
           onCreateEditor={(view) => {
             const selection = view.state.selection.main;
