@@ -92,6 +92,16 @@ Document Service
 
 문서 metadata와 목록 조회용 revision projection은 Core PostgreSQL에 둔다. 업로드 원본, 고정 revision snapshot, export, 대용량 AI 입출력은 S3에 둔다.
 
+S3는 두 서비스가 함께 쓰므로 prefix와 IAM 권한으로 경계를 나눈다.
+
+| Prefix | 쓰기 | 읽기 |
+|---|---|---|
+| `documents/` — 업로드 원본, revision snapshot, export | Document Service | Document Service, AI Service |
+| `ai-input/` — AI command의 `input_uri` 대상 | Document Service | AI Service |
+| `ai-output/` — AI 실행 결과 산출물 | AI Service | Document Service, AI Service |
+
+각 서비스 IRSA role에는 자기 쓰기 prefix에 대한 `PutObject`만 부여하고 나머지는 읽기 권한만 준다.
+
 ## 4. 주요 요청 흐름
 
 ### 4.1 로그인과 권한
@@ -123,7 +133,9 @@ Frontend
 
 ```text
 Document Service
-  → operation + outbox 저장
+  → Core PostgreSQL transaction
+       operation 저장
+       AI command outbox 저장
   → Kafka command topic
   → EKS AI Worker
   → AI 실행
@@ -135,6 +147,8 @@ Document Service
 ```
 
 요청 당시 revision과 현재 revision이 다르면 결과를 자동 반영하지 않고 `CONFLICT`로 보관한다.
+
+outbox는 두 종류이며 저장소가 다르다. AI command outbox는 `operation`과 같은 Core PostgreSQL transaction에 저장하고, 문서 본문 변경 event outbox는 §3.1처럼 MongoDB transaction에 저장한다. 하나의 흐름이 PostgreSQL과 MongoDB에 걸쳐 dual write하지 않는다. 결과 반영 단계(`MongoDB에 결과 반영`)에서 operation 상태 갱신이 필요하면 MongoDB 반영을 먼저 확정하고 PostgreSQL operation은 result consumer가 멱등하게 뒤따라 갱신한다.
 
 ## 5. Kafka와 AI Worker 계약
 
@@ -285,7 +299,7 @@ KEDA는 worker Pod 수를 조정하고 Karpenter 또는 Cluster Autoscaler는 pe
 | Access Service | 1 | 250m | 512Mi |
 | Document Service | 1 | 500m | 1Gi |
 | AI API | 1 | 500m | 1~2Gi |
-| Query Worker | 0~3 | 1 CPU | 2Gi |
+| Query Worker | 1~3 | 1 CPU | 2Gi |
 | Ingest Worker | 0~2 | 1 CPU | 2~4Gi |
 | Converter Worker | 0~2 | 1 CPU | 2Gi |
 | Embedding Worker | 0~2 | 2 CPU | 8Gi |
@@ -310,14 +324,17 @@ DLQ topic 보존:            14일
 | `ai.convert.command.v1` | 3 |
 | `ai.embedding.command.v1` | 3 |
 | `ai.result.v1` | 3 |
-| `ai.retry.v1` | 3 |
+| `ai.retry.1m.v1` | 3 |
+| `ai.retry.10m.v1` | 3 |
 | `ai.dlq.v1` | 1 |
 
 단일 broker는 HA 구성이 아니다. Kafka를 원본 저장소로 사용하지 않고 operation 상태를 PostgreSQL에 보존한다. Broker 복구 뒤 미완료 operation을 다시 발행할 수 있어야 한다.
 
+broker의 gp3 volume은 AZ에 묶이므로 §8.1처럼 General node를 2개 AZ에 분산해도 broker Pod는 volume이 있는 AZ 밖으로 재스케줄되지 않는다. broker StatefulSet은 한쪽 AZ의 node에 고정하고, 그 AZ 장애는 broker 중단으로 간주해 복구 절차(operation 재발행)로 대응한다.
+
 ### 8.4 KEDA
 
-- Query Worker는 `minReplicaCount=0`, `maxReplicaCount=3`을 사용한다.
+- Query Worker는 `minReplicaCount=1`, `maxReplicaCount=3`을 사용한다. 대화형 응답 경로이고 유사도 검색용 embedding 모델 로드에 수 분이 걸리므로 0대로 축소하지 않는다.
 - Ingest, Converter, Embedding Worker는 `minReplicaCount=0`, `maxReplicaCount=2`를 사용한다.
 - Topic을 명시해 scale-to-zero 상태에서도 lag을 확인한다.
 - API Pod는 사용자 요청을 받아야 하므로 0대로 축소하지 않는다.
