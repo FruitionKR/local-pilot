@@ -83,7 +83,7 @@ class LlmEnvTest(unittest.TestCase):
                 "https://api.anthropic.com/v1/messages",
             )
 
-    def test_provider_defaults_prefer_unified_env_and_keep_upstage_fallback(self) -> None:
+    def test_provider_defaults_use_only_unified_env(self) -> None:
         with patch.dict(
             "os.environ",
             {
@@ -110,8 +110,8 @@ class LlmEnvTest(unittest.TestCase):
             defaults = resolve_llm_provider_defaults()
 
         self.assertEqual(defaults.provider, "upstage")
-        self.assertEqual(defaults.api_key, "legacy-key")
-        self.assertEqual(defaults.api_key_env, "UPSTAGE_API_KEY")
+        self.assertIsNone(defaults.api_key)
+        self.assertEqual(defaults.api_key_env, "LLM_API_KEY")
         self.assertEqual(defaults.model, "solar-pro2")
 
     def test_rejects_unknown_provider(self) -> None:

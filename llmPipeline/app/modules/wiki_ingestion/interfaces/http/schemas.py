@@ -77,6 +77,11 @@ class PipelineRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
 
 
+class ReingestRunIn(_PipelineRunBase):
+    input_markdown: str
+    system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
+
+
 class ChatWikiRunIn(_PipelineRunBase):
     selection_mode: Literal["full", "partial"] = Field(
         description="full은 기존 chat source page에 누적하고, partial은 독립 source page를 생성합니다.",
@@ -128,6 +133,9 @@ class WikiLintOut(BaseModel):
     relation_candidates: list[dict[str, Any]]
     invalid_relations: list[dict[str, Any]]
     invalid_promotions: list[dict[str, Any]]
+    reconciliation_candidates: list[dict[str, Any]]
+    applied_reconciliations: list[dict[str, Any]]
+    applied_cluster_reconciliation: dict[str, list[dict[str, Any]]]
     materialized_promotions: list[dict[str, Any]]
     merged_promotions: list[dict[str, Any]]
     materialized_relations: list[dict[str, Any]]

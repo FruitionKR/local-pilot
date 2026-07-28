@@ -30,8 +30,6 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     resolve_page_id,
     source_summary,
 )
-
-
 def persist_wiki_outputs(
     conn: psycopg.Connection,
     document_id: str,
@@ -222,12 +220,14 @@ def _persist_source_blocks(
     manifest: dict[str, Any],
 ) -> None:
     blocks = manifest.get("source_blocks")
+    if blocks is None:
+        return
     if isinstance(blocks, str):
         path = Path(blocks)
         if not path.exists():
             return
         blocks = json.loads(path.read_text(encoding="utf-8"))
-    if not blocks:
+    if blocks is None:
         return
     conn.execute("DELETE FROM source_blocks WHERE document_id = %s", (document_id,))
     for block in blocks:

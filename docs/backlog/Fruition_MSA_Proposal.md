@@ -1,5 +1,7 @@
 # Fruition MSA 전환 및 AWS 배포 제안서
 
+> **이전 자료 안내 (2026-07-27)**: 이 문서는 4서비스와 SQS를 전제로 한 초기 제안서다. 현재 목표 구조는 [Fruition AWS MSA 목표 구조](../Fruition_AWS_MSA_Architecture.md)를 따른다.
+
 > 작성일: 2026-07-20 (4차 개정 — query SSE 확정, 전체 재정리)
 > 대상: Fruition MVP (backend / llmPipeline / converter / frontend)
 > 목적:

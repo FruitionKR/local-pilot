@@ -11,6 +11,7 @@ from app.core.llm_env import (
     model_from_env,
     optional_int_env,
     provider_base_url,
+    resolve_llm_provider,
 )
 from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.entities import AgentAction, AgentTurnRequest, AgentTurnRoute
@@ -93,14 +94,17 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
 def build_agent_turn_router() -> AgentTurnRouterPort:
     api_key = _api_key()
     if not api_key:
-        raise RuntimeError("Set AGENT_ROUTER_LLM_API_KEY, QUERY_LLM_API_KEY, UPSTAGE_API_KEY, or LLM_API_KEY.")
+        raise RuntimeError("Set AGENT_ROUTER_LLM_API_KEY, QUERY_LLM_API_KEY, or LLM_API_KEY.")
+    model = _model()
+    if not model:
+        raise RuntimeError("Set AGENT_ROUTER_LLM_MODEL, QUERY_LLM_MODEL, or LLM_MODEL.")
     prompt_path = Path(os.environ.get("AGENT_TURN_ROUTER_SYSTEM_PROMPT", str(DEFAULT_AGENT_TURN_ROUTER_PROMPT)))
     return ChatCompletionsTurnRouter(
         ChatCompletionsJsonClient(
             ChatClientConfig(
                 endpoint=_endpoint(),
                 api_key=api_key,
-                model=_model(),
+                model=model,
                 temperature=_float_env("AGENT_ROUTER_LLM_TEMPERATURE", 0.0),
                 timeout_seconds=_int_env("AGENT_ROUTER_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("AGENT_ROUTER_LLM_MAX_TOKENS"),
@@ -189,7 +193,7 @@ def _fallback_route() -> AgentTurnRoute:
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("AGENT_ROUTER_LLM_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("AGENT_ROUTER_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        base_url_env_names=("AGENT_ROUTER_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
         default_base_url=provider_base_url(),
     )
 
@@ -197,12 +201,16 @@ def _endpoint() -> str:
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="AGENT_ROUTER_LLM_API_KEY_ENV",
-        key_env_names=("AGENT_ROUTER_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
+        key_env_names=("AGENT_ROUTER_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
     )
 
 
 def _model() -> str:
-    return model_from_env(("AGENT_ROUTER_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"), "solar-pro2")
+    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+    return model_from_env(
+        ("AGENT_ROUTER_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
+        default,
+    )
 
 
 def _optional_text(value: object) -> str | None:

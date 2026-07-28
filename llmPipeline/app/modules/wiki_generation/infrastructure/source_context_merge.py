@@ -7,6 +7,46 @@ from app.modules.wiki_generation.domain.entities import SourceBlock
 from app.modules.wiki_generation.domain.text_utils import slugify, unique_keep_order
 
 
+def active_source_artifact(
+    source_artifact: dict[str, Any] | None,
+    active_block_ids: list[str],
+    *,
+    current_has_blocks: bool,
+) -> dict[str, Any] | None:
+    if not source_artifact:
+        return None
+    active_refs = set(active_block_ids)
+    result = copy.deepcopy(source_artifact)
+    if not current_has_blocks:
+        result["summary"] = ""
+        for field in (
+            "key_points",
+            "categories",
+            "observations",
+            "core_concepts",
+            "section_candidates",
+            "mentions",
+            "evidence_claims",
+        ):
+            result[field] = []
+        return result
+
+    for field in (
+        "key_points",
+        "categories",
+        "observations",
+        "core_concepts",
+        "section_candidates",
+        "mentions",
+        "evidence_claims",
+    ):
+        result[field] = _active_artifact_items(
+            result.get(field, []),
+            active_refs,
+        )
+    return result
+
+
 def apply_same_source_core_context(
     normalized: dict[str, Any],
     source_artifact: dict[str, Any] | None,
@@ -173,17 +213,22 @@ def _existing_source_context_note(source_artifact: dict[str, Any]) -> dict[str, 
         for item in source_artifact.get("key_points", [])
         if item.get("text")
     ]
-    if not key_points:
+    summary = str(source_artifact.get("summary") or "")
+    if not key_points and not summary:
         return None
     return {
         "chunk_id": "existing_source_page",
-        "semantic_summary": "",
+        "semantic_summary": summary,
         "key_points": key_points,
     }
 
 
 def _merge_categories(existing: list[Any], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    existing_items = [{"name": str(item)} for item in existing if str(item or "").strip()]
+    existing_items = [
+        copy.deepcopy(item) if isinstance(item, dict) else {"name": str(item)}
+        for item in existing
+        if isinstance(item, dict) or str(item or "").strip()
+    ]
     return _merge_by_text(existing_items, incoming, "name")
 
 
@@ -225,6 +270,39 @@ def _merge_term_items(existing: list[dict[str, Any]], incoming: list[dict[str, A
         by_slug[slug] = copied
         merged.append(copied)
     return merged
+
+
+def _active_artifact_items(
+    items: list[Any],
+    active_refs: set[str],
+) -> list[Any]:
+    active_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            active_items.append(item)
+            continue
+        ref_field = next(
+            (
+                field
+                for field in ("evidence_block_ids", "anchor_reference_ids")
+                if field in item
+            ),
+            None,
+        )
+        if ref_field is None or not item.get(ref_field):
+            active_items.append(copy.deepcopy(item))
+            continue
+        refs = [
+            str(ref)
+            for ref in item.get(ref_field, [])
+            if str(ref) in active_refs
+        ]
+        if not refs:
+            continue
+        copied = copy.deepcopy(item)
+        copied[ref_field] = refs
+        active_items.append(copied)
+    return active_items
 
 
 def _matches_any_concept(item: dict[str, Any], concepts: list[dict[str, Any]]) -> bool:

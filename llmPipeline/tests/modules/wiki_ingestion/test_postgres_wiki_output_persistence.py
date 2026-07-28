@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_output_persistence as persistence,
 )
@@ -15,6 +17,21 @@ def _stub_followup_writes(monkeypatch) -> None:
         "_persist_meaning_cluster_artifacts",
         lambda *_args: None,
     )
+
+
+def test_persist_source_blocks_clears_existing_rows_for_empty_blocks() -> None:
+    conn = Mock()
+
+    persistence._persist_source_blocks(
+        conn,
+        "doc-1",
+        {"source_blocks": []},
+    )
+
+    conn.execute.assert_called_once()
+    query, params = conn.execute.call_args.args
+    assert "DELETE FROM source_blocks WHERE document_id = %s" in query
+    assert params == ("doc-1",)
 
 
 def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
@@ -85,7 +102,6 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "_persist_meaning_cluster_artifacts",
         lambda *_args: calls.append("meaning_clusters"),
     )
-
     page_ids = persistence.persist_wiki_outputs(conn, "doc-1", manifest)  # type: ignore[arg-type]
 
     assert page_ids == ["source-page-1"]

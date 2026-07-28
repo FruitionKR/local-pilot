@@ -27,6 +27,12 @@ class FakeWikiMaintenance:
             "relation_candidates": [],
             "invalid_relations": [],
             "invalid_promotions": [],
+            "reconciliation_candidates": [],
+            "applied_reconciliations": [],
+            "applied_cluster_reconciliation": {
+                "removed_claims": [],
+                "removed_relations": [],
+            },
             "materialized_promotions": [],
             "merged_promotions": [],
             "materialized_relations": [],

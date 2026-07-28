@@ -1,5 +1,6 @@
 # Query 비동기 처리와 Redis 적용
 
+> **이전 자료 안내 (2026-07-27)**: 이 문서는 인메모리 Query 실행을 Redis Pub/Sub·Streams로 확장하는 이전 설계안이다. 현재 목표 구조는 AI 작업 실행·재처리에 Kafka를 사용하고 Redis는 실시간 상태 전달에 한정하므로, [Fruition AWS MSA 목표 구조](../Fruition_AWS_MSA_Architecture.md)를 따른다.
 
 ## 1. 먼저 결론
 

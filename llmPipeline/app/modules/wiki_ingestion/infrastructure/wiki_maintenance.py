@@ -36,6 +36,7 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
             command.workspace_id,
             materialize_promotions=should_materialize,
             promotion_page_generator=promotion_generator,
+            apply_reconciliation=not command.dry_run,
             write_log=not command.dry_run,
         )
 
