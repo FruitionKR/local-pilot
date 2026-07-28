@@ -7,11 +7,10 @@ import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
 import fruition.wiki.domain.WikiPageType;
-import fruition.wiki.exception.InvalidWikiPageTitleException;
 import fruition.wiki.exception.WikiPageNotFoundException;
-import fruition.wiki.exception.WikiPageSlugConflictException;
 import fruition.wiki.dto.*;
 import fruition.wiki.repository.DocumentWikiLinkRepository;
+import fruition.wiki.repository.PipelineWikiPageRequester;
 import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
@@ -19,11 +18,11 @@ import fruition.workspace.repository.WorkspaceMemberRepository;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -37,6 +36,7 @@ public class WikiService {
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final DocumentRepository documentRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final PipelineWikiPageRequester pipelineWikiPageRequester;
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
 
@@ -45,6 +45,7 @@ public class WikiService {
                        DocumentWikiLinkRepository documentWikiLinkRepository,
                        DocumentRepository documentRepository,
                        WorkspaceMemberRepository workspaceMemberRepository,
+                       PipelineWikiPageRequester pipelineWikiPageRequester,
                        MinioClient minioClient,
                        StorageProperties storageProperties) {
         this.wikiPageRepository = wikiPageRepository;
@@ -52,6 +53,7 @@ public class WikiService {
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.documentRepository = documentRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.pipelineWikiPageRequester = pipelineWikiPageRequester;
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
     }
@@ -202,70 +204,11 @@ public class WikiService {
                 .toList();
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public WikiPageRenameResponse rename(String workspaceId, String userId, String wikiPageId,
                                          WikiPageRenameRequest request) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        validateTitle(request.title());
-
-        WikiPage page = wikiPageRepository.findByIdAndWorkspaceId(wikiPageId, workspaceId)
-                .orElseThrow(() -> new WikiPageNotFoundException(wikiPageId));
-
-        String previousTitle = page.getTitle();
-        String previousSlug = page.getSlug();
-        String newTitle = request.title().trim();
-        boolean updateSlug = Boolean.TRUE.equals(request.updateSlug());
-
-        page.renameTitle(newTitle);
-
-        String currentSlug = previousSlug;
-        boolean slugUpdated = false;
-
-        if (updateSlug) {
-            String newSlug = generateSlug(newTitle);
-            if (!newSlug.equals(previousSlug)) {
-                boolean conflict = wikiPageRepository.findByUserIdAndWorkspaceIdAndPageTypeAndSlug(
-                                page.getUserId(), page.getWorkspaceId(), page.getPageType(), newSlug)
-                        .filter(existing -> !existing.getId().equals(page.getId()))
-                        .isPresent();
-                if (conflict) {
-                    throw new WikiPageSlugConflictException(newSlug);
-                }
-                page.updateSlug(newSlug);
-                currentSlug = newSlug;
-                slugUpdated = true;
-            }
-        }
-
-        return new WikiPageRenameResponse(
-                page.getId(),
-                page.getPageType().name(),
-                page.getTitle(),
-                previousTitle,
-                currentSlug,
-                previousSlug,
-                slugUpdated,
-                page.getUpdatedAt()
-        );
-    }
-
-    private void validateTitle(String title) {
-        if (title == null) {
-            throw new InvalidWikiPageTitleException("Wiki page 제목은 1자 이상 255자 이하여야 합니다.");
-        }
-        String trimmed = title.trim();
-        if (trimmed.isEmpty() || trimmed.length() > 255) {
-            throw new InvalidWikiPageTitleException("Wiki page 제목은 1자 이상 255자 이하여야 합니다.");
-        }
-    }
-
-    private String generateSlug(String title) {
-        return title.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[\\s]+", "-")
-                .replaceAll("[^a-z0-9가-힣-]", "")
-                .replaceAll("-{2,}", "-")
-                .replaceAll("^-|-$", "");
+        return pipelineWikiPageRequester.rename(workspaceId, userId, wikiPageId, request);
     }
 
     private List<WikiRelatedPage> buildRelatedPages(String fromPageId) {

@@ -8,6 +8,20 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-28
 
+### refactor: Wiki 페이지 이름 변경을 llmPipeline에 위임
+
+**변경된 것**
+
+- 외부 Wiki 페이지 이름 변경 API는 워크스페이스 멤버십만 검증하고 llmPipeline의 `PATCH /wiki/pages/{wiki_page_id}/rename`을 호출하도록 변경했다.
+- 이름 변경 경로에서 Backend의 `wiki_pages` 조회·수정을 제거하고, llmPipeline의 `400`·`404`·`409`·`422` 응답을 보존한다.
+- pipeline endpoint·timeout 설정과 연결 실패 시 `503 WIKI_PAGE_PIPELINE_UNAVAILABLE` 응답을 추가했다.
+- llmPipeline 구현 계약과 완료 조건은 `docs/issue/ai/2026-07-28.md`에 기록했다.
+
+**검증**
+
+- requester JSON 계약·오류 매핑과 멤버십 선검증·`WikiPageRepository` 미접근 테스트가 통과했다.
+- llmPipeline 내부 API 구현 전까지 실제 이름 변경 요청은 `503`으로 실패한다.
+
 ### feat: 전체 문서 트리 조회 API 추가
 
 **변경된 것**

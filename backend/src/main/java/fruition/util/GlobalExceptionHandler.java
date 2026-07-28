@@ -45,6 +45,7 @@ import fruition.user.exception.VerificationCodeExpiredException;
 import fruition.user.exception.EmailVerificationSendException;
 import fruition.user.exception.VerificationRateLimitedException;
 import fruition.wiki.exception.InvalidWikiPageTitleException;
+import fruition.wiki.exception.PipelineWikiPageException;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
@@ -60,6 +61,17 @@ import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(PipelineWikiPageException.class)
+    public ResponseEntity<?> handlePipelineWikiPage(PipelineWikiPageException e) {
+        if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBody());
+        }
+        return ResponseEntity.status(e.getHttpStatus())
+                .body(ErrorResponse.of("WIKI_PAGE_PIPELINE_UNAVAILABLE", e.getMessage()));
+    }
 
     @ExceptionHandler(PipelineAgentException.class)
     public ResponseEntity<?> handlePipelineAgent(PipelineAgentException e) {
