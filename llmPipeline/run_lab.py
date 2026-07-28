@@ -144,9 +144,9 @@ def parse_args() -> argparse.Namespace:
     # OpenAI-compatible chat-completions API options. Upstage Solar Pro 2 is the default provider preset.
     ap.add_argument("--endpoint", help="Full chat-completions endpoint. If omitted, uses {api_base_url}/chat/completions")
     ap.add_argument("--api-base-url", help="Base URL for OpenAI-compatible APIs. Upstage default: https://api.upstage.ai/v1")
-    ap.add_argument("--api-key-env", help="API key environment variable. Upstage default: UPSTAGE_API_KEY")
+    ap.add_argument("--api-key-env", help="API key environment variable. Default: LLM_API_KEY")
     ap.add_argument("--api-key", help="API key value. Prefer env var for safety")
-    ap.add_argument("--model", help="Model name. Upstage default: solar-pro2. Override with UPSTAGE_MODEL or --model")
+    ap.add_argument("--model", help="Model name. Override with LLM_MODEL or --model")
     ap.add_argument("--temperature", type=float, default=0.2)
     ap.add_argument("--timeout-seconds", type=int, default=180)
     ap.add_argument("--max-tokens", type=int, default=None)

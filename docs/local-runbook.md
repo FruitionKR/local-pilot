@@ -38,7 +38,7 @@ macOS에서 Docker Desktop 대신 Colima를 쓸 수 있습니다. 이 경우 `co
 cp infra/.env.example infra/.env
 ```
 
-기본 인프라와 프론트/백엔드 기동에는 예시 값만으로 충분합니다. 문서 처리 pipeline 또는 LLM 기능을 실제로 사용하려면 `OPENAI_API_KEY` 또는 `UPSTAGE_API_KEY` 같은 외부 API 키를 채워야 합니다.
+기본 인프라와 프론트/백엔드 기동에는 예시 값만으로 충분합니다. 문서 처리 pipeline 또는 LLM 기능을 실제로 사용하려면 provider에 맞는 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`을 채워야 합니다.
 
 Java 21이 기본 Java가 아닌 환경에서는 아래 중 하나를 지정합니다.
 
@@ -258,4 +258,4 @@ export NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
 
 ### 업로드 후 문서 처리가 계속 processing 상태임
 
-기본 실행은 pipeline API까지 포함합니다. 문서 처리가 계속 `processing` 상태라면 `http://localhost:8000/health` 응답과 `infra/.env`의 `PROCESSING_ENDPOINT`, `OPENAI_API_KEY`, `UPSTAGE_API_KEY` 값을 확인해야 합니다.
+기본 실행은 pipeline API까지 포함합니다. 문서 처리가 계속 `processing` 상태라면 `http://localhost:8000/health` 응답과 `infra/.env`의 `PROCESSING_ENDPOINT`, `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL` 값을 확인해야 합니다.

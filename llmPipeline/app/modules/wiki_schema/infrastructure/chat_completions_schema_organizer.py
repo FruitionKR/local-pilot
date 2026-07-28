@@ -13,6 +13,7 @@ from app.core.llm_env import (
     model_from_env,
     optional_int_env,
     provider_base_url,
+    resolve_llm_provider,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_schema.application.ports import SchemaOrganizerPort
@@ -52,14 +53,17 @@ def build_schema_organizer() -> SchemaOrganizerPort:
     endpoint = _endpoint()
     api_key = _api_key() or ("ollama" if _is_local_ollama_endpoint(endpoint) else None)
     if not api_key:
-        raise RuntimeError("Set WIKI_SCHEMA_LLM_API_KEY, QUERY_LLM_API_KEY, UPSTAGE_API_KEY, or LLM_API_KEY.")
+        raise RuntimeError("Set WIKI_SCHEMA_LLM_API_KEY, QUERY_LLM_API_KEY, or LLM_API_KEY.")
+    model = _model()
+    if not model:
+        raise RuntimeError("Set WIKI_SCHEMA_LLM_MODEL, QUERY_LLM_MODEL, or LLM_MODEL.")
     prompt_path = Path(os.environ.get("WIKI_SCHEMA_SYSTEM_PROMPT", str(DEFAULT_SCHEMA_ORGANIZER_PROMPT)))
     return ChatCompletionsSchemaOrganizer(
         ChatCompletionsJsonClient(
             ChatClientConfig(
                 endpoint=endpoint,
                 api_key=api_key,
-                model=_model(),
+                model=model,
                 temperature=_float_env("WIKI_SCHEMA_LLM_TEMPERATURE", 0.0),
                 timeout_seconds=_int_env("WIKI_SCHEMA_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("WIKI_SCHEMA_LLM_MAX_TOKENS") or 1200,
@@ -104,7 +108,7 @@ def _string_list(value: Any) -> list[str]:
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("WIKI_SCHEMA_LLM_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("WIKI_SCHEMA_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        base_url_env_names=("WIKI_SCHEMA_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
         default_base_url=provider_base_url(),
     )
 
@@ -112,13 +116,17 @@ def _endpoint() -> str:
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="WIKI_SCHEMA_LLM_API_KEY_ENV",
-        key_env_names=("WIKI_SCHEMA_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
+        key_env_names=("WIKI_SCHEMA_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
         strip=True,
     )
 
 
 def _model() -> str:
-    return model_from_env(("WIKI_SCHEMA_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"), "solar-pro2")
+    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+    return model_from_env(
+        ("WIKI_SCHEMA_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
+        default,
+    )
 
 
 def _is_local_ollama_endpoint(endpoint: str) -> bool:

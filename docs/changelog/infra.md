@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-07-28
+
+### fix: Pipeline LLM 환경변수 전달 단일화
+
+- `docker-compose.pipeline.yml`에서 legacy `UPSTAGE_*` 전달을 제거하고 모든 provider가 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`만 사용하도록 통일
+- `infra/.env.example`과 `infra/.env.pipeline.example`을 같은 계약으로 갱신하고 Compose 설정 렌더링 검증 통과
+
 ## 2026-07-24
 
 ### fix: pipeline 컨테이너에 범용 LLM env(LLM_*) 전달 추가

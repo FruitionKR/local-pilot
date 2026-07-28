@@ -11,6 +11,7 @@ from app.core.llm_env import (
     model_from_env,
     optional_int_env,
     provider_base_url,
+    resolve_llm_provider,
 )
 from app.modules.query.application.ports import QueryEvaluatorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryEvaluation
@@ -81,6 +82,9 @@ def build_query_answer_evaluator() -> QueryEvaluatorPort | None:
     api_key = _api_key()
     if not api_key:
         return None
+    model = _model()
+    if not model:
+        return None
     prompt_path = Path(os.environ.get("QUERY_EVALUATOR_PROMPT", str(DEFAULT_QUERY_EVALUATOR_PROMPT)))
     system_prompt = prompt_path.read_text(encoding="utf-8")
     return QueryAnswerEvaluator(
@@ -88,7 +92,7 @@ def build_query_answer_evaluator() -> QueryEvaluatorPort | None:
             ChatClientConfig(
                 endpoint=_endpoint(),
                 api_key=api_key,
-                model=_model(),
+                model=model,
                 temperature=_float_env("QUERY_EVALUATOR_TEMPERATURE", 0.0),
                 timeout_seconds=_int_env("QUERY_EVALUATOR_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("QUERY_EVALUATOR_MAX_TOKENS"),
@@ -121,7 +125,7 @@ def _normalize_evaluation(value: dict[str, Any]) -> QueryEvaluation:
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("QUERY_EVALUATOR_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("QUERY_EVALUATOR_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        base_url_env_names=("QUERY_EVALUATOR_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
         default_base_url=provider_base_url(),
     )
 
@@ -129,12 +133,16 @@ def _endpoint() -> str:
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="QUERY_EVALUATOR_API_KEY_ENV",
-        key_env_names=("QUERY_EVALUATOR_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
+        key_env_names=("QUERY_EVALUATOR_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
     )
 
 
 def _model() -> str:
-    return model_from_env(("QUERY_EVALUATOR_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"), "solar-pro2")
+    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+    return model_from_env(
+        ("QUERY_EVALUATOR_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
+        default,
+    )
 
 
 def _bounded_float(value: object, default: float) -> float:

@@ -11,6 +11,9 @@ _PROVIDER_BASE_URLS = {
     "upstage": "https://api.upstage.ai/v1",
     "generic": "https://api.openai.com/v1",
 }
+_PROVIDER_DEFAULT_MODELS = {
+    "upstage": "solar-pro2",
+}
 
 
 @dataclass(frozen=True)
@@ -53,26 +56,15 @@ def resolve_llm_provider_defaults(
     resolved_provider = resolve_llm_provider(provider)
     resolved_key_env = api_key_env or "LLM_API_KEY"
     resolved_key = api_key or os.environ.get(resolved_key_env)
-    if (
-        resolved_key is None
-        and api_key_env is None
-        and resolved_provider == "upstage"
-    ):
-        resolved_key = os.environ.get("UPSTAGE_API_KEY")
-        if resolved_key:
-            resolved_key_env = "UPSTAGE_API_KEY"
-    resolved_model = model or os.environ.get("LLM_MODEL")
-    if resolved_provider == "upstage":
-        resolved_model = resolved_model or os.environ.get("UPSTAGE_MODEL") or "solar-pro2"
+    resolved_model = (
+        model
+        or os.environ.get("LLM_MODEL")
+        or _PROVIDER_DEFAULT_MODELS.get(resolved_provider)
+    )
     return LlmProviderDefaults(
         provider=resolved_provider,
         base_url=base_url
         or os.environ.get("LLM_BASE_URL")
-        or (
-            os.environ.get("UPSTAGE_BASE_URL")
-            if resolved_provider == "upstage"
-            else None
-        )
         or provider_base_url(resolved_provider),
         api_key_env=resolved_key_env,
         api_key=resolved_key,

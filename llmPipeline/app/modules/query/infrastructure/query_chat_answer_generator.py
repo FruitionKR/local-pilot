@@ -8,6 +8,7 @@ from app.core.llm_env import (
     model_from_env,
     optional_int_env,
     provider_base_url,
+    resolve_llm_provider,
 )
 from app.core.llm_prompt import with_schema_prompt
 from app.modules.query.application.ports import AnswerGeneratorPort
@@ -79,11 +80,14 @@ def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
 def _config_from_env() -> ChatClientConfig:
     api_key = _api_key()
     if not api_key:
-        raise RuntimeError("Set QUERY_LLM_API_KEY, UPSTAGE_API_KEY, or LLM_API_KEY before enabling query answer generation.")
+        raise RuntimeError("Set QUERY_LLM_API_KEY or LLM_API_KEY before enabling query answer generation.")
+    model = _model()
+    if not model:
+        raise RuntimeError("Set QUERY_LLM_MODEL or LLM_MODEL before enabling query answer generation.")
     return ChatClientConfig(
         endpoint=_endpoint(),
         api_key=api_key,
-        model=_model(),
+        model=model,
         temperature=_float_env("QUERY_LLM_TEMPERATURE", 0.2),
         timeout_seconds=_int_env("QUERY_LLM_TIMEOUT_SECONDS", 180),
         max_tokens=_optional_int_env("QUERY_LLM_MAX_TOKENS"),
@@ -94,7 +98,7 @@ def _config_from_env() -> ChatClientConfig:
 def _endpoint() -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("QUERY_LLM_BASE_URL", "LLM_BASE_URL", "UPSTAGE_BASE_URL"),
+        base_url_env_names=("QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
         default_base_url=provider_base_url(),
     )
 
@@ -102,12 +106,13 @@ def _endpoint() -> str:
 def _api_key() -> str | None:
     return api_key_from_env(
         key_env_name="QUERY_LLM_API_KEY_ENV",
-        key_env_names=("QUERY_LLM_API_KEY", "LLM_API_KEY", "UPSTAGE_API_KEY"),
+        key_env_names=("QUERY_LLM_API_KEY", "LLM_API_KEY"),
     )
 
 
 def _model() -> str:
-    return model_from_env(("QUERY_LLM_MODEL", "LLM_MODEL", "UPSTAGE_MODEL"), "solar-pro2")
+    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+    return model_from_env(("QUERY_LLM_MODEL", "LLM_MODEL"), default)
 
 
 def _float_env(name: str, default: float) -> float:
