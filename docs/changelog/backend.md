@@ -8,6 +8,19 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-28
 
+### feat: 전체 문서 트리 조회 API 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/document-tree`를 추가해 활성 폴더와 문서를 전체 중첩 구조로 한 번에 조회할 수 있게 했다.
+- 전체 트리는 폴더·문서를 같은 부모의 `sort_order`, ID 순으로 정렬하고 소프트 삭제된 항목을 제외한다.
+- `/navigation`, `/folders/{folder_id}/children`, `/document-tree` 응답에 `current_version`을 포함해 프론트가 이름 변경·이동·삭제 요청의 `base_version`으로 사용할 수 있게 했다.
+
+**검증**
+
+- document-tree·navigation·folder controller 테스트와 `FolderServiceIntegrationTest`가 통과했다.
+- 실제 API 응답의 중첩 구조와 `current_version`, Swagger endpoint 등록을 확인했다.
+
 ### fix: 워크스페이스 조회·소유자 권한 판정 오류 수정
 
 **변경된 것**

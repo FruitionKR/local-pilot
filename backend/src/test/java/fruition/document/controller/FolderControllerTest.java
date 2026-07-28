@@ -109,15 +109,18 @@ class FolderControllerTest {
     void children_authenticatedReturnsMixedItems() throws Exception {
         when(folderService.children(WORKSPACE_ID, USER_ID, FOLDER_ID))
                 .thenReturn(new FolderChildrenResponse(List.of(
-                        FolderChildrenResponse.Item.folder("33333333-3333-3333-3333-333333333333", "하위", 0, false),
-                        FolderChildrenResponse.Item.document("doc_1", "메모", 1))));
+                        FolderChildrenResponse.Item.folder(
+                                "33333333-3333-3333-3333-333333333333", "하위", 0, 2, false),
+                        FolderChildrenResponse.Item.document("doc_1", "메모", 1, 3))));
 
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/folders/" + FOLDER_ID + "/children")
                         .header("Authorization", bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].type").value("folder"))
                 .andExpect(jsonPath("$.items[1].type").value("document"))
-                .andExpect(jsonPath("$.items[1].id").value("doc_1"));
+                .andExpect(jsonPath("$.items[1].id").value("doc_1"))
+                .andExpect(jsonPath("$.items[0].current_version").value(2))
+                .andExpect(jsonPath("$.items[1].current_version").value(3));
     }
 
     @Test

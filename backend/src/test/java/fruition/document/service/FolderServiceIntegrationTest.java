@@ -4,6 +4,7 @@ import fruition.TestcontainersConfiguration;
 import fruition.document.dto.DocumentPositionRequest;
 import fruition.document.dto.DocumentPositionResponse;
 import fruition.document.dto.BreadcrumbResponse;
+import fruition.document.dto.DocumentTreeResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.HierarchySearchResponse;
@@ -126,6 +127,31 @@ class FolderServiceIntegrationTest {
         assertThat(items.get(0).id()).isEqualTo(childFolder.id().toString());
         assertThat(items.get(1).type()).isEqualTo("document");
         assertThat(items.get(1).id()).isEqualTo("doc_mid");
+    }
+
+    @Test
+    void tree_returnsAllActiveFoldersAndDocumentsNestedInMixedOrder() {
+        FolderResponse parent = folderService.create(workspaceId, userId, "k1",
+                new FolderCreateRequest("부모", null));
+        FolderResponse child = folderService.create(workspaceId, userId, "k2",
+                new FolderCreateRequest("자식", parent.id()));
+        insertDocumentInFolder("doc_root", "최상위.md", "EDITABLE", null, 1);
+        insertDocumentInFolder("doc_parent", "부모 문서.md", "EDITABLE", parent.id(), 1);
+        insertDocumentInFolder("doc_child", "자식 문서.md", "EDITABLE", child.id(), 0);
+        jdbcTemplate.update(
+                "UPDATE documents SET deleted_at = now() WHERE id = ?",
+                "doc_parent");
+
+        DocumentTreeResponse tree = folderService.tree(workspaceId, userId);
+
+        assertThat(tree.items()).extracting(DocumentTreeResponse.Item::id)
+                .containsExactly(parent.id().toString(), "doc_root");
+        DocumentTreeResponse.Item parentItem = tree.items().get(0);
+        assertThat(parentItem.children()).extracting(DocumentTreeResponse.Item::id)
+                .containsExactly(child.id().toString());
+        assertThat(parentItem.children().get(0).children())
+                .extracting(DocumentTreeResponse.Item::id)
+                .containsExactly("doc_child");
     }
 
     @Test
