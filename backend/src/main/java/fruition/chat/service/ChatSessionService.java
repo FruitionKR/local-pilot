@@ -17,7 +17,7 @@ import java.util.UUID;
 @Service
 public class ChatSessionService {
 
-    private static final int MAX_SESSIONS_PER_WORKSPACE = 10;
+    private static final int MAX_SESSIONS_PER_WORKSPACE_MEMBER = 10;
 
     private final ChatSessionRepository chatSessionRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -36,7 +36,7 @@ public class ChatSessionService {
     /** workspace 소유권과 세션 소속을 함께 검증한다. 호출부는 컨트롤러/QueryController에서 재사용한다. */
     public ChatSession verifyOwnedSession(String workspaceId, String userId, String sessionId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        return chatSessionRepository.findByIdAndWorkspaceId(sessionId, workspaceId)
+        return chatSessionRepository.findByIdAndWorkspaceIdAndUserId(sessionId, workspaceId, userId)
                 .orElseThrow(() -> new ChatSessionNotFoundException(sessionId));
     }
 
@@ -44,7 +44,8 @@ public class ChatSessionService {
     public ChatSessionResponse create(String workspaceId, String userId, ChatSessionCreateRequest request) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        if (chatSessionRepository.countByWorkspaceId(workspaceId) >= MAX_SESSIONS_PER_WORKSPACE) {
+        if (chatSessionRepository.countByWorkspaceIdAndUserId(workspaceId, userId)
+                >= MAX_SESSIONS_PER_WORKSPACE_MEMBER) {
             throw new ChatSessionLimitExceededException(workspaceId);
         }
 
@@ -59,7 +60,9 @@ public class ChatSessionService {
         verifyWorkspaceOwnership(workspaceId, userId);
 
         return new ChatSessionListResponse(
-                chatSessionRepository.findAllByWorkspaceIdOrderByLastMessageAtDesc(workspaceId).stream()
+                chatSessionRepository
+                        .findAllByWorkspaceIdAndUserIdOrderByLastMessageAtDesc(workspaceId, userId)
+                        .stream()
                         .map(this::toResponse)
                         .toList()
         );
