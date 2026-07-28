@@ -1,6 +1,6 @@
 # Fruition MSA 구현·운영 계약 초안
 
-> **이전 자료 안내 (2026-07-27)**: 이 문서는 4도메인 분할(`document-api`·`chat-api`·`wiki-api` 등)과 SQS/Redis Streams를 전제로 한 이전 계약 초안이다. 도메인 4분할은 당시 Phase 5 목표였고, 당시 기준 문서는 같은 backlog의 `Fruition_MSA_Proposal_revised.md`였다. 문서 편집용 MongoDB와 필드·상태 전이·재처리 알고리즘은 참고 자료로만 사용하고, 현재 서비스·Kafka 계약은 [Fruition AWS MSA 목표 구조](../Fruition_AWS_MSA_Architecture.md)를 따른다.
+> **이전 자료 안내 (2026-07-27)**: 이 문서는 4도메인 분할(`document-api`·`chat-api`·`wiki-api` 등)과 SQS/Redis Streams를 전제로 한 이전 계약 초안이다. 도메인 4분할은 당시 Phase 5 목표였고, 당시 기준 문서는 같은 backlog의 `Fruition_MSA_Proposal_revised.md`였다. 문서 편집용 MongoDB와 필드·상태 전이·재처리 알고리즘은 참고 자료로만 사용한다. 그 외 서비스 분할, 작업 큐, 그리고 §2.4 AWS 배치·§2.9 관측성을 포함한 인프라·배포·운영 기준은 모두 [Fruition AWS MSA 목표 구조](../Fruition_AWS_MSA_Architecture.md)를 따른다. 이 문서 본문의 "~한다" 서술은 현재 기준이 아니라 당시 초안의 서술이다.
 
 > 작성일: 2026-07-20
 > 상태: Draft

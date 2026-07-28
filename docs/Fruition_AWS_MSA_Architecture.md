@@ -213,6 +213,8 @@ Consumer thread
 
 `enable.auto.commit=false`를 사용한다. 결과가 DB와 S3에 안전하게 저장되고 result event가 발행된 뒤 offset을 commit한다. 구현을 단순화해 별도 worker thread 없이 consumer thread에서 직접 처리한다면 `max.poll.records=1`과 `max.poll.interval.ms > 최대 작업 시간`을 함께 적용한다.
 
+worker Pod 하나는 동시에 한 건만 처리한다. bounded executor 병렬도를 1로 두고, 작업이 끝날 때까지 배정된 partition을 모두 pause한다. §8.2의 Pod resource가 한 건 기준이고, §5.5의 실질 병렬성도 Pod 수를 기준으로 계산한다. 여러 건을 동시에 처리하면 나중에 시작한 offset이 먼저 끝나 commit될 수 있고, 그 시점에 Pod가 죽으면 아직 처리 중이던 낮은 offset이 재전달되지 않아 유실된다. §5.4의 멱등성 key는 중복 실행만 막고 이 누락은 막지 못한다. 처리량은 Pod 안의 동시 실행이 아니라 partition 수와 replica 수로 늘린다.
+
 ### 5.4 멱등성과 재시도
 
 - `event_id` 또는 `idempotency_key`를 AI PostgreSQL의 unique key로 저장한다.
@@ -221,6 +223,8 @@ Consumer thread
 - 일시 오류는 retry topic으로 보내고 영구 오류나 최대 재시도 초과는 DLQ topic으로 보낸다.
 - 재시도 단계는 `ai.retry.1m.v1` 3회 → `ai.retry.10m.v1` 3회, 총 6회를 상한으로 한다. 6회를 넘기면 `ai.dlq.v1`로 보낸다. 현재 시도 횟수는 event header에 실어 단계 간에 이어 센다.
 - offset은 처리 성공 또는 retry/DLQ 발행이 확인된 뒤 commit한다.
+
+Kafka에는 message 단위 지연 발행이 없으므로 `1m`, `10m` 지연은 retry topic 전용 consumer가 직접 구현한다. 재시도로 보낼 때 header에 `not_before`(재처리 가능 시각)를 싣고, retry consumer는 partition head message의 `not_before`가 아직 오지 않았으면 그 partition을 pause한 뒤 남은 시간만큼 대기했다가 resume한다. 시각이 지난 message는 원래 command topic으로 재발행하고 offset을 commit한다. 한 topic 안의 message는 지연 폭이 같아 발행 순서와 만료 순서가 일치하므로 head만 확인하면 된다. 대기 중에도 poll은 계속 수행하므로 `max.poll.interval.ms`를 넘기지 않는다.
 
 ### 5.5 병렬 처리와 KEDA
 
