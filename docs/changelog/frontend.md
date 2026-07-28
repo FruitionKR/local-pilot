@@ -4,6 +4,36 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-28
+
+### feat: 브라우저 사용자별 개인 설정 구현
+
+- 설정 임시 목업을 실제 개인 설정 화면으로 교체했다. Motion, 문서 Font, 기본 편집 모드,
+  Markdown 줄 바꿈·줄 번호·현재 줄 강조, Graph 기본 노드 표시, 문서 처리 완료·실패·Browser
+  알림을 한 화면에서 변경할 수 있다.
+- 공통 설정은 인증 사용자 ID별, Graph 기본 표시는 사용자+workspace별 `localStorage`에 자동
+  저장한다. backend API가 없어 현재 같은 브라우저에서만 유지되며, 계정 식별 실패 시 사용자 간
+  혼합을 막기 위해 공용 키에 저장하지 않는다.
+- Motion 줄이기는 CSS 전환·애니메이션, 채팅 smooth scroll, Graph 물리·hover 애니메이션에
+  적용한다. 문서 Font는 Markdown 렌더와 WYSIWYG 본문에 적용하고 코드 글꼴은 유지한다.
+- 기본 편집 모드는 `마지막 사용 모드 / WYSIWYG / Markdown`으로 연결하고, Markdown 표시 옵션을
+  CodeMirror 설정에 반영했다.
+- Graph 필터를 사용자 기본값과 양방향 연결하고 모든 노드 종류를 동시에 끄지 못하게 했다.
+- 문서 상태 polling에서 `uploaded/processing → completed/failed` 전이를 감지해 앱 안 알림을
+  표시한다. 숨겨진 탭에서도 처리 중 polling을 유지하며, Browser 알림은 사용자 권한이 있고 탭이
+  보이지 않을 때만 사용한다.
+- 문서 업로드에 backend 계약의 `Idempotency-Key`를 추가했다. Markdown 편집본은 문서 상세
+  `markdown/current_version`에서 읽고, 저장은 `multipart/form-data`의 `markdown/base_version`으로
+  전송해 production 문서 API와 맞췄다. 직접 생성 노트는 원본보다 편집본을 먼저 읽는다.
+- FSD 이동 전 `frontend/app/_lib/*`를 가리키던 Markdown 테스트 import를 현재 `src` 경로로
+  갱신했다. production `postcss` override는 보안 패치 버전 `8.5.24`로 올렸다.
+- 계정 동기화·AI 답변 설정·앱 종료 후 push 알림은 frontend에서 동작하는 것처럼 노출하지 않고
+  `docs/issue/backend/2026-07-28.md`, `docs/issue/ai/2026-07-28.md`에 후속 계약으로 분리했다.
+- 검증: `npm run lint`, `npm exec tsc -- --noEmit --incremental false`, `npm run test:markdown`
+  47건, `npm run test:user-preferences` 4건, `npm run build`, `npm audit --omit=dev`를 통과했다.
+  로컬 전체 스택에서 회원가입·설정 reload 복원·Graph 필터·Markdown 업로드/조회/자동 저장을
+  Playwright로 확인했다.
+
 ## 2026-07-24
 
 ### feat: 채팅 편집 시 선택한 문답을 편집 맥락으로 전송

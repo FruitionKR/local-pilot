@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useUserPreferences } from "@/entities/user";
 import type { GraphFilterKind, GraphLink, GraphNode } from "@/entities/wiki";
 import { GraphCanvas } from "./GraphCanvas";
 import { GraphFilterChips } from "./GraphFilterChips";
@@ -27,16 +28,24 @@ export function Graph({
   loading?: boolean;
   errorMessage?: string | null;
 }) {
+  const { preferences, updatePreferences } = useUserPreferences();
   const sourceNodeCount = nodes.filter((node) => node.kind === "source").length;
   const conceptNodeCount = nodes.filter((node) => !node.kind || node.kind === "concept").length;
 
-  const [visibleKinds, setVisibleKinds] = useState<Record<GraphFilterKind, boolean>>({
-    raw: true,
-    source: true,
-    concept: true
-  });
-  const toggleKind = (kind: GraphFilterKind) =>
-    setVisibleKinds((current) => ({ ...current, [kind]: !current[kind] }));
+  const visibleKinds = preferences.graph.visibleKinds;
+  const toggleKind = (kind: GraphFilterKind) => {
+    updatePreferences((current) => {
+      const nextVisibleKinds = {
+        ...current.graph.visibleKinds,
+        [kind]: !current.graph.visibleKinds[kind]
+      };
+      if (!Object.values(nextVisibleKinds).some(Boolean)) return current;
+      return {
+        ...current,
+        graph: { ...current.graph, visibleKinds: nextVisibleKinds }
+      };
+    });
+  };
 
   // 필터에서 끈 종류의 노드와, 그 노드에 걸린 링크를 렌더 대상에서 제외한다.
   const { visibleNodes, visibleLinks } = useMemo(() => {

@@ -1,5 +1,6 @@
 import { MoreHorizontal, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { resolveEditorMode, useUserPreferences } from "@/entities/user";
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { DynamicNoteEditor } from "@/features/note-editing/ui/DynamicNoteEditor";
 import { fetchDocumentOriginal } from "@/entities/document";
@@ -57,6 +58,7 @@ export function SourcePreviewPanel({
   /** 홈에서 문서가 메인 영역을 채울 때: 고정폭/리사이즈 대신 남은 영역을 채운다 */
   fillMain?: boolean;
 }) {
+  const { preferences, preferencesReady, updatePreferences } = useUserPreferences();
   const [page, setPage] = useState<WikiPageDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -73,6 +75,8 @@ export function SourcePreviewPanel({
   const [needsReview, setNeedsReview] = useState(false);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const optionsRef = useRef<HTMLDivElement | null>(null);
+  const preferencesRef = useRef(preferences);
+  preferencesRef.current = preferences;
   const resolvedPageType = (page?.page_type || pageType || "source").toLowerCase();
   const pageTypeLabel = resolvedPageType === "concept" ? "Concept" : "Source";
   const sourceDocuments = page?.source_documents ?? [];
@@ -101,12 +105,13 @@ export function SourcePreviewPanel({
   }, [title]);
 
   useEffect(() => {
-    setSourceMode(false);
+    if (!preferencesReady) return;
+    setSourceMode(resolveEditorMode(preferencesRef.current) === "markdown");
     setIsOptionsOpen(false);
     setNoteSaveStatus("saved");
     setNoteSaveError(null);
     setNeedsReview(false);
-  }, [documentId]);
+  }, [documentId, preferencesReady]);
 
   useEffect(() => {
     if (!isOptionsOpen) return;
@@ -213,12 +218,19 @@ export function SourcePreviewPanel({
 
     const loadDocument = async () => {
       if (isMarkdownFile) {
+        const draft = await fetchNoteDraft(documentId);
+        if (draft) {
+          if (!ignore) {
+            setRawMarkdown(draft.markdown);
+            setNoteContentVersion(draft.content_version);
+          }
+          return;
+        }
         const blob = await fetchDocumentOriginal(documentId);
         const text = await blob.text();
-        const draft = await fetchNoteDraft(documentId);
         if (!ignore) {
-          setRawMarkdown(draft ? draft.markdown : text);
-          setNoteContentVersion(draft ? draft.content_version : 0);
+          setRawMarkdown(text);
+          setNoteContentVersion(0);
         }
         return;
       }
@@ -299,7 +311,12 @@ export function SourcePreviewPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    setSourceMode((current) => !current);
+                    const nextMode = sourceMode ? "wysiwyg" : "markdown";
+                    setSourceMode(nextMode === "markdown");
+                    updatePreferences((current) => ({
+                      ...current,
+                      editor: { ...current.editor, lastMode: nextMode }
+                    }));
                     setIsOptionsOpen(false);
                   }}
                 >

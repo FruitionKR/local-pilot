@@ -30,6 +30,7 @@ export function useBackendData({
     // 처리 중(processing/uploaded) 문서가 있을 때만 3초 폴링한다.
     refetchInterval: (activeQuery) =>
       hasProcessingDocuments(activeQuery.state.data) ? PROCESSING_POLL_INTERVAL_MS : false,
+    refetchIntervalInBackground: true,
     // 폴링으로 갱신 주기를 이미 제어하므로 탭 포커스마다 refetch하지 않는다.
     refetchOnWindowFocus: false
   });

@@ -10,6 +10,7 @@ import { EditorView } from "@codemirror/view";
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import { editorViewCtx, parserCtx } from "@milkdown/core";
 import { Slice } from "@milkdown/prose/model";
+import { useUserPreferences } from "@/entities/user";
 import { buildMarkdownEditorSnapshot } from "@/features/agent-chat/lib/markdownEditContext";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
@@ -35,9 +36,16 @@ export function NoteEditor({
   onSaveStatusChange?: (status: NoteSaveStatus, errorMessage: string | null) => void;
   onContentChanged?: (markdown: string) => void;
 }) {
+  const { preferences } = useUserPreferences();
   const [body, setBody] = useState(initialBody);
   const { status, errorMessage, contentVersion, queueSave } = useNoteAutosave({ documentId, marker, initialVersion });
-  const editorExtensions = useMemo(() => [markdown(), EditorView.lineWrapping], []);
+  const editorExtensions = useMemo(
+    () => [
+      markdown(),
+      ...(preferences.editor.markdown.lineWrapping ? [EditorView.lineWrapping] : [])
+    ],
+    [preferences.editor.markdown.lineWrapping]
+  );
   const wysiwygRootRef = useRef<HTMLDivElement | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
   const selectionRef = useRef({ from: 0, to: 0 });
@@ -161,10 +169,12 @@ export function NoteEditor({
           minHeight="420px"
           extensions={editorExtensions}
           basicSetup={{
-            lineNumbers: false,
+            lineNumbers: preferences.editor.markdown.lineNumbers,
             foldGutter: false,
-            highlightActiveLine: false,
-            highlightActiveLineGutter: false
+            highlightActiveLine: preferences.editor.markdown.highlightActiveLine,
+            highlightActiveLineGutter:
+              preferences.editor.markdown.lineNumbers
+              && preferences.editor.markdown.highlightActiveLine
           }}
           onCreateEditor={(view) => {
             const selection = view.state.selection.main;

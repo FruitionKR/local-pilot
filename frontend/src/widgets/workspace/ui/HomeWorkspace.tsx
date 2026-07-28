@@ -7,7 +7,8 @@ import { Graph } from "@/widgets/graph/ui/Graph";
 import { useSnapshots } from "@/features/document-history/model/useSnapshots";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
 import { LogsMockup } from "@/features/logs-mockup";
-import { SettingsMockup } from "@/features/settings-mockup";
+import { SettingsPanel } from "@/features/settings";
+import { DocumentProcessingNotifications } from "@/features/document-notifications";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { UploadErrorModal } from "@/features/document-upload/ui/UploadErrorModal";
 import { DeleteConfirmModal } from "@/shared/ui/DeleteConfirmModal";
@@ -322,12 +323,13 @@ export function HomeWorkspace() {
         ) : activeView === "logs" ? (
           <LogsMockup />
         ) : activeView === "settings" ? (
-          <SettingsMockup />
+          <SettingsPanel />
         ) : (
           <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
         )
       )}
 
+      <DocumentProcessingNotifications documents={documents} />
       {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
       {projectTree.deleteConfirm && (
         <DeleteConfirmModal
