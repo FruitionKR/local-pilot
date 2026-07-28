@@ -239,6 +239,27 @@ test("커밋 메시지 안의 구분자 문자는 옵션으로 보지 않는다"
   );
 });
 
+test("출력을 버리는 리다이렉션은 허용 판정을 막지 않는다", () => {
+  assert.equal(runHook("Bash", { command: "ls infra/.env 2>/dev/null" }), "");
+});
+
+test("stderr를 stdout에 합치는 리다이렉션도 허용 판정을 막지 않는다", () => {
+  assert.equal(
+    runHook("Bash", {
+      command: "docker compose --env-file infra/.env up -d 2>&1",
+    }),
+    ""
+  );
+});
+
+test("파일로 내보내는 리다이렉션은 차단한다", () => {
+  assertDenied(runHook("Bash", { command: "ls infra/.env > /tmp/leak" }));
+});
+
+test("허용 목록에 없는 명령은 리다이렉션을 붙여도 차단한다", () => {
+  assertDenied(runHook("Bash", { command: "cat infra/.env 2>/dev/null" }));
+});
+
 test("예시 파일에서 .env를 만드는 초기 설정은 허용한다", () => {
   assert.equal(
     runHook("Bash", { command: "cp infra/.env.example infra/.env" }),

@@ -3,11 +3,19 @@
 // - Grep: .env 파일을 content 모드로 검색해 값이 찍히는 것을 차단
 // - Bash: 실제 .env 경로를 다루는 명령은 기본 차단(allowlist).
 //         정해진 키 추출·값 마스킹 형식이거나, 내용을 출력하지 않는 명령 형태만 허용.
+// 이 hook은 실수로 값을 출력하는 것을 막는 안전장치이지, 의도적 우회를 막는 장치가 아니다.
 // 한계: 파일을 다른 경로로 복사·이동한 뒤 그 경로를 읽는 우회는 명령 단위 검사로 막을 수 없다.
+//       경로를 따옴표로 쪼개면(cat infra/.en"v") 문자열 매칭 자체를 빠져나간다.
+//       셸 문법을 정규식으로 완전히 따라갈 수는 없어서, 이 경로는 막지 않는다.
 //       또 명령 문자열 전체를 검사하므로, 파일을 읽지 않고 경로를 언급만 하는 명령도
 //       허용 목록에 없으면 차단된다(오탐).
 //       Grep 차단은 path/glob에 .env가 직접 적힌 경우만 걸린다. 상위 디렉터리를 대상으로 한
 //       content 검색은 .gitignore에 .env가 있고 Grep이 이를 존중한다는 전제에 기대고 있다.
+//
+// 사용: 기본 비활성이다. 쓰려면 개인 설정(.claude/settings.local.json)에 등록한다.
+//   {"hooks":{"PreToolUse":[{"matcher":"Bash|Read|Grep",
+//     "hooks":[{"type":"command",
+//       "command":"node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.js\""}]}]}}
 let data = "";
 process.stdin.on("data", (c) => (data += c));
 process.stdin.on("end", () => {
@@ -80,6 +88,10 @@ process.stdin.on("end", () => {
   // 여러 줄 커밋 메시지 같은 인자를 오탐하지 않도록 인용 구간을 지운 뒤 구분자를 검사한다.
   // 닫히지 않은 따옴표는 매칭되지 않아 원문이 그대로 남고, 안전한 쪽으로 차단된다.
   const stripQuoted = (s) => s.replace(/'[^']*'|"[^"]*"/g, "");
+  // 출력을 버리거나 stderr를 stdout에 합치는 리다이렉션은 값을 노출하지 않으므로 구분자로 보지 않는다.
+  // 파일로 내보내는 리다이렉션은 그대로 남겨 차단한다.
+  const stripHarmlessRedirect = (s) =>
+    s.replace(/\s(?:\d?>>?|&>)\s*\/dev\/null\b/g, "").replace(/\s2>&1(?!\d)/g, "");
   // 명령 구분자·리다이렉션. 개행도 셸에서는 `;`와 같은 구분자다.
   const hasSeparator = /[;&|<>\n\r]/;
   // 치환·확장은 인용 안에서도 명령을 실행하므로 원문 기준으로 검사한다.
@@ -123,7 +135,7 @@ process.stdin.on("end", () => {
       .replace(/^rtk\s+/i, "");
     if (!isEnvFile(cmd)) process.exit(0);
     if (safeKeyExtraction.test(cmd) || safeMaskedOutput.test(cmd)) process.exit(0);
-    const unquoted = stripQuoted(cmd);
+    const unquoted = stripHarmlessRedirect(stripQuoted(cmd));
     if (
       !hasSeparator.test(unquoted) &&
       !hasExpansion.test(cmd) &&
