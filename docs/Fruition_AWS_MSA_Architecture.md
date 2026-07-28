@@ -205,7 +205,7 @@ Consumer thread
   → partition resume
 ```
 
-`enable.auto.commit=false`를 사용한다. 결과가 DB와 S3에 안전하게 저장되고 result event가 발행된 뒤 offset을 commit한다. 구현을 단순화해 작업 thread에서 직접 처리한다면 `max.poll.records=1`과 `max.poll.interval.ms > 최대 작업 시간`을 함께 적용한다.
+`enable.auto.commit=false`를 사용한다. 결과가 DB와 S3에 안전하게 저장되고 result event가 발행된 뒤 offset을 commit한다. 구현을 단순화해 별도 worker thread 없이 consumer thread에서 직접 처리한다면 `max.poll.records=1`과 `max.poll.interval.ms > 최대 작업 시간`을 함께 적용한다.
 
 ### 5.4 멱등성과 재시도
 
@@ -213,6 +213,7 @@ Consumer thread
 - 같은 event를 다시 받으면 실행하지 않고 기존 결과를 반환한다.
 - 결과 반영 전 현재 Workspace 권한, document revision, operation 취소 여부를 다시 확인한다.
 - 일시 오류는 retry topic으로 보내고 영구 오류나 최대 재시도 초과는 DLQ topic으로 보낸다.
+- 재시도 단계는 `ai.retry.1m.v1` 3회 → `ai.retry.10m.v1` 3회, 총 6회를 상한으로 한다. 6회를 넘기면 `ai.dlq.v1`로 보낸다. 현재 시도 횟수는 event header에 실어 단계 간에 이어 센다.
 - offset은 처리 성공 또는 retry/DLQ 발행이 확인된 뒤 commit한다.
 
 ### 5.5 병렬 처리와 KEDA
@@ -286,10 +287,14 @@ RTO               4시간
 
 | Node Group | min/desired/max | 용도 | 구매 방식 |
 |---|---|---|---|
-| General | `2/2/3` | API, Kafka, 기본 system workload | On-Demand |
-| AI Worker | `0/0/2` | embedding, converter 등 고자원 작업 | Spot 허용 |
+| General | `2/2/3` | API, Kafka, Query Worker, 기본 system workload | On-Demand |
+| AI Worker | `0/0/2` | ingest, converter, embedding 등 고자원 배치 작업 | Spot 허용 |
 
 General node는 `2 vCPU / 8 GiB`급 2대로 시작하고 2개 AZ에 분산한다. AI Worker node는 `4 vCPU / 16 GiB`급으로 시작하되 작업이 없으면 0대로 축소한다. Kafka, DB, API에는 Spot을 사용하지 않는다.
+
+Query Worker는 §8.4처럼 항상 1대 이상 유지해야 하는 대화형 경로이므로 Spot을 허용하는 AI Worker node가 아니라 General node에 둔다. Spot eviction이 대화 응답 중단으로 이어지고, embedding 모델을 다시 로드하는 데 수 분이 걸린다.
+
+두 node group 모두 §8.4의 `maxReplicaCount` 합계를 담을 만큼 크지 않다. General은 API 3종과 Kafka broker가 `2.25 CPU`를 쓰므로 node 2대에서는 Query Worker 1대분 여유만 있고 2대를 담으려면 node가 3대로 늘어야 하며, AI Worker는 세 worker가 동시에 상한에 도달하면 `8 CPU`가 필요해 node 2대(`8 vCPU`)의 allocatable을 넘는다. 이는 의도한 동작이다. `maxReplicaCount`는 worker type별 상한일 뿐이고 실제 동시 실행은 node 용량이 먼저 묶는다. 초과분은 Pod pending으로 대기하며, 배치 작업은 Kafka에 그대로 남아 있으므로 유실되지 않는다. 이 profile에서 실질 동시 실행을 결정하는 값은 §8.6의 Workspace별 동시 작업 제한이다.
 
 KEDA는 worker Pod 수를 조정하고 Karpenter 또는 Cluster Autoscaler는 pending Pod를 기준으로 AI Worker node 수를 조정한다. 두 autoscaler의 책임을 구분한다.
 
@@ -337,6 +342,7 @@ broker의 gp3 volume은 AZ에 묶이므로 §8.1처럼 General node를 2개 AZ�
 
 - Query Worker는 `minReplicaCount=1`, `maxReplicaCount=3`을 사용한다. 대화형 응답 경로이고 유사도 검색용 embedding 모델 로드에 수 분이 걸리므로 0대로 축소하지 않는다.
 - Ingest, Converter, Embedding Worker는 `minReplicaCount=0`, `maxReplicaCount=2`를 사용한다.
+- 이 상한들은 worker type별 값이며 동시에 모두 도달할 수 있는 값이 아니다. §8.1처럼 node 용량이 먼저 묶는다.
 - Topic을 명시해 scale-to-zero 상태에서도 lag을 확인한다.
 - API Pod는 사용자 요청을 받아야 하므로 0대로 축소하지 않는다.
 - 최대 병렬 처리는 partition 수와 Workspace별 동시 작업 제한을 함께 적용한다.
@@ -359,7 +365,7 @@ Access, Core, AI database는 같은 RDS instance에서 시작할 수 있지만 d
 - CloudWatch log 보존 기간은 14일로 시작한다.
 - AWS Budget alarm은 월 USD 500과 700에 설정한다.
 - Workspace별 동시 AI 작업은 2개로 제한한다.
-- AI worker는 KEDA로 0대까지 축소하고 General node는 2대를 유지한다.
+- Ingest, Converter, Embedding Worker는 KEDA로 0대까지 축소하고 General node는 2대를 유지한다. Query Worker는 §8.4에 따라 1대를 유지한다.
 
 이 Profile은 Kafka broker 1개, RDS Single-AZ, Redis Single node, NAT Gateway 1개를 사용하므로 정식 Production HA가 아니다. 장애 시 일시 중단을 허용하고 backup, PITR, operation 재처리로 복구한다.
 
