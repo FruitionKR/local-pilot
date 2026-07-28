@@ -32,14 +32,16 @@ Fruition은 학습과 포트폴리오를 목적으로 다음 구조를 사용한
             └─ AWS WAF
                  └─ Application Load Balancer
                       └─ Amazon EKS
-                           ├─ Access Service
-                           ├─ Document Service
-                           ├─ AI API
-                           ├─ Query Worker
-                           ├─ Ingest Worker
-                           ├─ Converter Worker
-                           ├─ Embedding Worker
-                           └─ KEDA
+                           ├─ ALB 라우팅 대상
+                           │    ├─ Access Service
+                           │    └─ Document Service
+                           └─ cluster 내부 전용 (ClusterIP)
+                                ├─ AI API
+                                ├─ Query Worker
+                                ├─ Ingest Worker
+                                ├─ Converter Worker
+                                ├─ Embedding Worker
+                                └─ KEDA
 
 Amazon MSK
   ├─ AI command topics
@@ -57,13 +59,17 @@ Data
 
 Frontend와 API는 별도 도메인을 사용한다. Backend CORS는 Vercel Production domain만 허용하고, OAuth callback·cookie의 `SameSite`, `Secure`, `Domain` 정책을 함께 설정한다.
 
+ALB는 Access Service와 Document Service에만 라우팅한다. AI API와 worker는 §7처럼 ClusterIP로만 노출하고, 외부 요청은 Document Service를 거쳐 §4.3의 비동기 흐름으로만 AI Service에 도달한다.
+
 ## 3. 서비스와 데이터 소유권
 
 | 서비스 | 책임 | 원본 저장소 |
 |---|---|---|
 | Access Service | 사용자, OAuth, JWT, Workspace, membership, role | Access PostgreSQL |
 | Document Service | 문서, 폴더, Wiki, 채팅, revision, operation | Core PostgreSQL, MongoDB, S3 |
-| AI Service | Query, LLM, 변환, Wiki 생성, embedding, 검색 projection | AI PostgreSQL, Search/Vector, S3 |
+| AI Service | Query, LLM, 변환, Wiki 생성, embedding, 검색 projection | AI PostgreSQL, S3 |
+
+검색 projection(PostgreSQL FTS + pgvector)은 원본이 아니라 문서 원본에서 재생성 가능한 파생 데이터다. AI Service가 소유하고 갱신하지만 §10처럼 백업 대상이 아니라 재생성 대상으로 관리한다.
 
 초기에는 Access, Core, AI database를 같은 RDS instance 안의 별도 database와 별도 계정으로 운영할 수 있다. 다른 서비스 database에 대한 write 권한은 주지 않는다.
 
