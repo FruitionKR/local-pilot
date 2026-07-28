@@ -41,6 +41,7 @@ Fruition은 학습과 포트폴리오를 목적으로 다음 구조를 사용한
                                 ├─ Ingest Worker
                                 ├─ Converter Worker
                                 ├─ Embedding Worker
+                                ├─ Retry Consumer
                                 └─ KEDA
 
 Amazon MSK
@@ -213,7 +214,7 @@ Consumer thread
 
 `enable.auto.commit=false`를 사용한다. 결과가 DB와 S3에 안전하게 저장되고 result event가 발행된 뒤 offset을 commit한다. 구현을 단순화해 별도 worker thread 없이 consumer thread에서 직접 처리한다면 `max.poll.records=1`과 `max.poll.interval.ms > 최대 작업 시간`을 함께 적용한다.
 
-worker Pod 하나는 동시에 한 건만 처리한다. bounded executor 병렬도를 1로 두고, 작업이 끝날 때까지 배정된 partition을 모두 pause한다. §8.2의 Pod resource가 한 건 기준이고, §5.5의 실질 병렬성도 Pod 수를 기준으로 계산한다. 여러 건을 동시에 처리하면 나중에 시작한 offset이 먼저 끝나 commit될 수 있고, 그 시점에 Pod가 죽으면 아직 처리 중이던 낮은 offset이 재전달되지 않아 유실된다. §5.4의 멱등성 key는 중복 실행만 막고 이 누락은 막지 못한다. 처리량은 Pod 안의 동시 실행이 아니라 partition 수와 replica 수로 늘린다.
+AI 작업을 수행하는 worker Pod 하나는 동시에 한 건만 처리한다. bounded executor 병렬도를 1로 두고, 작업이 끝날 때까지 배정된 partition을 모두 pause한다. §8.2의 Pod resource가 한 건 기준이고, §5.5의 실질 병렬성도 Pod 수를 기준으로 계산한다. 여러 건을 동시에 처리하면 나중에 시작한 offset이 먼저 끝나 commit될 수 있고, 그 시점에 Pod가 죽으면 아직 처리 중이던 낮은 offset이 재전달되지 않아 유실된다. §5.4의 멱등성 key는 중복 실행만 막고 이 누락은 막지 못한다. 처리량은 Pod 안의 동시 실행이 아니라 partition 수와 replica 수로 늘린다.
 
 ### 5.4 멱등성과 재시도
 
@@ -225,7 +226,7 @@ worker Pod 하나는 동시에 한 건만 처리한다. bounded executor 병렬�
 - 시도 횟수를 늘리고 보낼 topic을 고르는 쪽은 command topic consumer다. 처리에 실패하면 header의 시도 횟수를 1 늘리고, 그 값이 1~3이면 `ai.retry.1m.v1`, 4~6이면 `ai.retry.10m.v1`, 6을 넘으면 `ai.dlq.v1`로 발행한다. retry consumer는 횟수를 바꾸지 않고 원래 command topic으로 되돌리기만 한다.
 - offset은 처리 성공 또는 retry/DLQ 발행이 확인된 뒤 commit한다.
 
-Kafka에는 message 단위 지연 발행이 없으므로 `1m`, `10m` 지연은 retry topic 전용 consumer가 직접 구현한다. 재시도로 보낼 때 header에 `not_before`(재처리 가능 시각)를 싣고, retry consumer는 partition head message의 `not_before`가 아직 오지 않았으면 그 partition을 pause한 뒤 남은 시간만큼 대기했다가 resume한다. 시각이 지난 message는 원래 command topic으로 재발행하고 offset을 commit한다. 재발행할 때 시도 횟수 header는 그대로 옮기고 `not_before`만 제거한다. header를 새로 만들면 시도 횟수가 초기화되어 6회 상한이 무너진다.
+Kafka에는 message 단위 지연 발행이 없으므로 `1m`, `10m` 지연은 retry topic 전용 consumer가 직접 구현한다. command topic consumer는 재시도로 보낼 때 header에 `not_before`(재처리 가능 시각)를 싣는다. 값은 발행 시각에 고른 topic의 지연을 더한 값이고, `ai.retry.1m.v1`이면 1분, `ai.retry.10m.v1`이면 10분이다. retry consumer는 partition head message의 `not_before`가 아직 오지 않았으면 그 partition을 pause한 뒤 남은 시간만큼 대기했다가 resume한다. partition마다 따로 판단하므로 §5.3의 한 건 제한은 적용하지 않는다. 대기와 재발행만 하고 AI 작업은 수행하지 않는다. 시각이 지난 message는 원래 command topic으로 재발행하고 offset을 commit한다. 재발행할 때 시도 횟수 header는 그대로 옮기고 `not_before`만 제거한다. header를 새로 만들면 시도 횟수가 초기화되어 6회 상한이 무너진다.
 
 retry topic은 4개 command topic의 재시도를 함께 받고 producer도 worker Pod마다 다르다. 한 topic 안의 지연 폭은 같지만 partition append 순서는 각 Pod가 broker에 도달한 시각 순이므로 `not_before` 순서와 정확히 일치하지는 않는다. 어긋나는 폭은 Pod 사이의 발행 시각 편차이고 지연 폭인 1분, 10분보다 훨씬 작으므로, head만 확인하는 방식에서는 뒤쪽 message가 그 편차만큼 더 기다린다. 이 지연은 허용하고 head만 본다. 편차가 문제가 될 만큼 커지면 partition 앞쪽 여러 건의 `not_before`를 함께 확인하는 방식으로 바꾼다.
 
@@ -302,14 +303,14 @@ RTO               4시간
 
 | Node Group | min/desired/max | 용도 | 구매 방식 |
 |---|---|---|---|
-| General | `2/2/3` | API, Kafka, Query Worker, 기본 system workload | On-Demand |
+| General | `2/2/3` | API, Kafka, Query Worker, Retry Consumer, 기본 system workload | On-Demand |
 | AI Worker | `0/0/2` | ingest, converter, embedding 등 고자원 배치 작업 | Spot 허용 |
 
 General node는 `2 vCPU / 8 GiB`급 2대로 시작하고 2개 AZ에 분산한다. AI Worker node는 `4 vCPU / 16 GiB`급으로 시작하되 작업이 없으면 0대로 축소한다. Kafka, DB, API에는 Spot을 사용하지 않는다.
 
 Query Worker는 §8.4처럼 항상 1대 이상 유지해야 하는 대화형 경로이므로 Spot을 허용하는 AI Worker node가 아니라 General node에 둔다. Spot eviction이 대화 응답 중단으로 이어지고, embedding 모델을 다시 로드하는 데 수 분이 걸린다.
 
-두 node group 모두 §8.4의 `maxReplicaCount` 합계를 담을 만큼 크지 않다. General은 API 3종과 Kafka broker가 `2.25 CPU`를 쓰므로 node 2대에서는 Query Worker 1대분 여유만 있고 2대를 담으려면 node가 3대로 늘어야 하며, AI Worker는 세 worker가 동시에 상한에 도달하면 `8 CPU`가 필요해 node 2대(`8 vCPU`)의 allocatable을 넘는다. 이는 의도한 동작이다. `maxReplicaCount`는 worker type별 상한일 뿐이고 실제 동시 실행은 node 용량이 먼저 묶는다. 초과분은 Pod pending으로 대기하며, 배치 작업은 Kafka에 그대로 남아 있으므로 유실되지 않는다. 이 profile에서 실질 동시 실행을 결정하는 값은 §8.6의 Workspace별 동시 작업 제한이다.
+두 node group 모두 §8.4의 `maxReplicaCount` 합계를 담을 만큼 크지 않다. General은 API 3종과 Kafka broker, Retry Consumer가 `2.35 CPU`를 쓰므로 node 2대에서는 Query Worker 1대분 여유만 있고 2대를 담으려면 node가 3대로 늘어야 하며, AI Worker는 세 worker가 동시에 상한에 도달하면 `8 CPU`가 필요해 node 2대(`8 vCPU`)의 allocatable을 넘는다. 이는 의도한 동작이다. `maxReplicaCount`는 worker type별 상한일 뿐이고 실제 동시 실행은 node 용량이 먼저 묶는다. 초과분은 Pod pending으로 대기하며, 배치 작업은 Kafka에 그대로 남아 있으므로 유실되지 않는다. 이 profile에서 실질 동시 실행을 결정하는 값은 §8.6의 Workspace별 동시 작업 제한이다.
 
 KEDA는 worker Pod 수를 조정하고 Karpenter 또는 Cluster Autoscaler는 pending Pod를 기준으로 AI Worker node 수를 조정한다. 두 autoscaler의 책임을 구분한다.
 
@@ -324,6 +325,7 @@ KEDA는 worker Pod 수를 조정하고 Karpenter 또는 Cluster Autoscaler는 pe
 | Ingest Worker | 0~2 | 1 CPU | 2~4Gi |
 | Converter Worker | 0~2 | 1 CPU | 2Gi |
 | Embedding Worker | 0~2 | 2 CPU | 8Gi |
+| Retry Consumer | 1 | 100m | 256Mi |
 | Kafka Broker | 1 | 1 CPU | 2Gi |
 
 실측 전 초기값이다. `request`는 scheduler가 보장할 자원이며 `limit`은 request의 약 2배로 시작해 부하 테스트로 조정한다.
@@ -358,6 +360,7 @@ broker의 gp3 volume은 AZ에 묶이므로 §8.1처럼 General node를 2개 AZ�
 - Query Worker는 `minReplicaCount=1`, `maxReplicaCount=3`을 사용한다. 대화형 응답 경로이고 유사도 검색용 embedding 모델 로드에 수 분이 걸리므로 0대로 축소하지 않는다.
 - Ingest, Converter, Embedding Worker는 `minReplicaCount=0`, `maxReplicaCount=2`를 사용한다.
 - 이 상한들은 worker type별 값이며 동시에 모두 도달할 수 있는 값이 아니다. §8.1처럼 node 용량이 먼저 묶는다.
+- Retry Consumer는 KEDA 대상이 아니다. replica 1로 고정하고 두 retry topic을 함께 소비한다. 지연 대기 중인 message도 lag으로 잡히므로 lag 기준으로 확장하면 대기만 하는 Pod가 늘어난다. 대기와 재발행만 하므로 partition 6개를 한 Pod가 맡아도 부하가 되지 않는다.
 - Topic을 명시해 scale-to-zero 상태에서도 lag을 확인한다.
 - API Pod는 사용자 요청을 받아야 하므로 0대로 축소하지 않는다.
 - 최대 병렬 처리는 partition 수와 Workspace별 동시 작업 제한을 함께 적용한다.
@@ -429,7 +432,7 @@ Green이 사용자 write를 받기 전에는 Blue로 rollback할 수 있다. Gre
 
 - CloudWatch와 OpenTelemetry로 log, metric, trace를 수집한다.
 - Prometheus/Grafana로 Pod, node, Kafka lag과 consumer 상태를 관찰할 수 있다.
-- Kafka lag, rebalance, retry, DLQ 증가량에 alarm을 설정한다.
+- Kafka lag, rebalance, retry, DLQ 증가량에 alarm을 설정한다. retry topic은 §8.4처럼 대기 중인 message도 lag으로 잡히므로 lag 자체가 아니라 지연 폭을 넘겨 밀린 양을 기준으로 본다.
 - RDS PITR, MongoDB backup, S3 Versioning을 적용한다.
 - Search/Vector는 원본에서 재생성 가능한 projection으로 관리한다.
 - 배포 전에 RPO, RTO, backup 보존 기간, restore rehearsal 주기를 확정한다.
