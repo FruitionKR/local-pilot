@@ -43,15 +43,18 @@ class NavigationControllerTest {
     void root_authenticatedReturnsTopLevelItems() throws Exception {
         when(folderService.children(WORKSPACE_ID, USER_ID, null))
                 .thenReturn(new FolderChildrenResponse(List.of(
-                        FolderChildrenResponse.Item.folder("33333333-3333-3333-3333-333333333333", "자료", 0, true),
-                        FolderChildrenResponse.Item.document("doc_1", "메모", 1))));
+                        FolderChildrenResponse.Item.folder(
+                                "33333333-3333-3333-3333-333333333333", "자료", 0, 2, true),
+                        FolderChildrenResponse.Item.document("doc_1", "메모", 1, 3))));
 
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/navigation")
                         .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].type").value("folder"))
+                .andExpect(jsonPath("$.items[0].current_version").value(2))
                 .andExpect(jsonPath("$.items[0].has_children").value(true))
-                .andExpect(jsonPath("$.items[1].id").value("doc_1"));
+                .andExpect(jsonPath("$.items[1].id").value("doc_1"))
+                .andExpect(jsonPath("$.items[1].current_version").value(3));
     }
 
     @Test

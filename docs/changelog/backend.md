@@ -6,6 +6,51 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-28
+
+### refactor: Wiki 페이지 이름 변경을 llmPipeline에 위임
+
+**변경된 것**
+
+- 외부 Wiki 페이지 이름 변경 API는 워크스페이스 멤버십만 검증하고 llmPipeline의 `PATCH /wiki/pages/{wiki_page_id}/rename`을 호출하도록 변경했다.
+- 이름 변경 경로에서 Backend의 `wiki_pages` 조회·수정을 제거하고, llmPipeline의 `400`·`404`·`409`·`422` 응답을 보존한다.
+- pipeline endpoint·timeout 설정과 연결 실패 시 `503 WIKI_PAGE_PIPELINE_UNAVAILABLE` 응답을 추가했다.
+- llmPipeline 구현 계약과 완료 조건은 `docs/issue/ai/2026-07-28.md`에 기록했다.
+
+**검증**
+
+- requester JSON 계약·오류 매핑과 멤버십 선검증·`WikiPageRepository` 미접근 테스트가 통과했다.
+- llmPipeline 내부 API 구현 전까지 실제 이름 변경 요청은 `503`으로 실패한다.
+
+### feat: 전체 문서 트리 조회 API 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{workspace_id}/document-tree`를 추가해 활성 폴더와 문서를 전체 중첩 구조로 한 번에 조회할 수 있게 했다.
+- 전체 트리는 폴더·문서를 같은 부모의 `sort_order`, ID 순으로 정렬하고 소프트 삭제된 항목을 제외한다.
+- `/navigation`, `/folders/{folder_id}/children`, `/document-tree` 응답에 `current_version`을 포함해 프론트가 이름 변경·이동·삭제 요청의 `base_version`으로 사용할 수 있게 했다.
+
+**검증**
+
+- document-tree·navigation·folder controller 테스트와 `FolderServiceIntegrationTest`가 통과했다.
+- 실제 API 응답의 중첩 구조와 `current_version`, Swagger endpoint 등록을 확인했다.
+
+### fix: 워크스페이스 조회·소유자 권한 판정 오류 수정
+
+**변경된 것**
+
+- 워크스페이스 목록 조회의 불필요한 `PESSIMISTIC_WRITE`를 제거해 트랜잭션 없는 조회가 `500`으로 실패하던 문제를 수정했다.
+- `workspace_members.role`을 `WorkspaceRole` enum(`OWNER`, `MEMBER`)으로 전환하고, 기존 lowercase 데이터를 변환하는 Flyway `V14`와 허용값 `CHECK` 제약을 추가했다.
+- 이름 변경·삭제·복구·휴지통과 폴더 owner 판정이 동일한 enum 값을 사용하도록 통일했다.
+- 워크스페이스 삭제·복구의 `Idempotency-Key`에 Swagger UUID 예시를 추가했다.
+
+**검증**
+
+- workspace·folder 관련 테스트와 `compileJava`가 통과했다.
+- 실제 API에서 워크스페이스 목록 조회와 이름 변경이 `200`으로 응답하고, 기존 role이 `OWNER`로 변환되며 DB 제약이 생성되는 것을 확인했다.
+
+---
+
 ## 2026-07-27
 
 > `feat/agent-turn-base-version` 브랜치에서 dev와 중복되지 않는 고유 기능만 최신 `dev` 위에 재적용한 묶음입니다. 폴더 트리·wiki-schema·wiki-maintenance는 dev 구현을 사용합니다.

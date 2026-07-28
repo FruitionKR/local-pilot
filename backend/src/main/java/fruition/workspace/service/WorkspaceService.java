@@ -10,6 +10,7 @@ import fruition.document.service.DocumentService;
 import fruition.user.repository.UserRepository;
 import fruition.workspace.domain.Workspace;
 import fruition.workspace.domain.WorkspaceMember;
+import fruition.workspace.domain.WorkspaceRole;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceListResponse;
 import fruition.workspace.dto.WorkspaceLifecycleResponse;
@@ -135,7 +136,7 @@ public class WorkspaceService {
 
     public WorkspaceTrashResponse trash(String userId) {
         return new WorkspaceTrashResponse(
-                workspaceMemberRepository.findDeletedOwnedWorkspaces(userId).stream()
+                workspaceMemberRepository.findDeletedOwnedWorkspaces(userId, WorkspaceRole.OWNER).stream()
                         .map(workspace -> new WorkspaceTrashResponse.WorkspaceTrashItem(
                                 workspace.getId(),
                                 workspace.getName(),
@@ -151,7 +152,11 @@ public class WorkspaceService {
         Workspace workspace = new Workspace(workspaceId, name);
         workspaceRepository.save(workspace);
 
-        WorkspaceMember owner = new WorkspaceMember(workspace, userRepository.getReferenceById(userId), WorkspaceMember.ROLE_OWNER);
+        WorkspaceMember owner = new WorkspaceMember(
+                workspace,
+                userRepository.getReferenceById(userId),
+                WorkspaceRole.OWNER
+        );
         workspaceMemberRepository.save(owner);
         documentService.createInitialNote(workspaceId, userId);
 
@@ -167,7 +172,11 @@ public class WorkspaceService {
     }
 
     private Workspace findOwnedIncludingDeleted(String userId, String workspaceId) {
-        return workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(workspaceId, userId)
+        return workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
+                        workspaceId,
+                        userId,
+                        WorkspaceRole.OWNER
+                )
                 .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
     }
 

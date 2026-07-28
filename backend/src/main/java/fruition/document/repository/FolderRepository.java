@@ -19,6 +19,8 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
 
     Optional<Folder> findByIdAndWorkspaceIdAndDeletedAtIsNotNull(UUID id, String workspaceId);
 
+    List<Folder> findAllByWorkspaceIdAndDeletedAtIsNull(String workspaceId);
+
     boolean existsByWorkspaceIdAndParentFolderIdAndDeletedAtIsNull(String workspaceId, UUID parentFolderId);
 
     @Query("SELECT COALESCE(MAX(f.sortOrder), -1) FROM Folder f "

@@ -3,6 +3,7 @@ package fruition.document.service;
 import fruition.document.domain.Document;
 import fruition.document.domain.Folder;
 import fruition.document.dto.BreadcrumbResponse;
+import fruition.document.dto.DocumentTreeResponse;
 import fruition.document.dto.FolderChildrenResponse;
 import fruition.document.dto.FolderCreateRequest;
 import fruition.document.dto.FolderLifecycleResponse;
@@ -18,6 +19,7 @@ import fruition.document.exception.InvalidHierarchyRequestException;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.FolderRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.domain.WorkspaceRole;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -223,15 +229,67 @@ public class FolderService {
         for (Folder child : folderRepository.findChildren(workspaceId, folderId)) {
             items.add(FolderChildrenResponse.Item.folder(
                     child.getId().toString(), child.getName(), child.getSortOrder(),
+                    child.getCurrentVersion(),
                     hasChildren(workspaceId, child.getId())));
         }
         for (Document child : documentRepository.findChildDocuments(workspaceId, folderId)) {
             items.add(FolderChildrenResponse.Item.document(
-                    child.getId(), child.getDisplayName(), child.getSortOrder()));
+                    child.getId(), child.getDisplayName(), child.getSortOrder(), child.getCurrentVersion()));
         }
         items.sort(Comparator.comparingLong(FolderChildrenResponse.Item::sortOrder)
                 .thenComparing(FolderChildrenResponse.Item::id));
         return new FolderChildrenResponse(items);
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentTreeResponse tree(String workspaceId, String userId) {
+        verifyMembership(workspaceId, userId);
+
+        Map<UUID, List<Folder>> foldersByParent = new HashMap<>();
+        for (Folder folder : folderRepository.findAllByWorkspaceIdAndDeletedAtIsNull(workspaceId)) {
+            foldersByParent.computeIfAbsent(folder.getParentFolderId(), ignored -> new ArrayList<>())
+                    .add(folder);
+        }
+
+        Map<UUID, List<Document>> documentsByFolder = new HashMap<>();
+        for (Document document : documentRepository.findVisibleByWorkspaceId(workspaceId)) {
+            documentsByFolder.computeIfAbsent(document.getFolderId(), ignored -> new ArrayList<>())
+                    .add(document);
+        }
+
+        return new DocumentTreeResponse(
+                buildTreeItems(null, foldersByParent, documentsByFolder, new HashSet<>()));
+    }
+
+    private List<DocumentTreeResponse.Item> buildTreeItems(
+            UUID parentFolderId,
+            Map<UUID, List<Folder>> foldersByParent,
+            Map<UUID, List<Document>> documentsByFolder,
+            Set<UUID> ancestorFolderIds
+    ) {
+        List<DocumentTreeResponse.Item> items = new ArrayList<>();
+        for (Folder folder : foldersByParent.getOrDefault(parentFolderId, List.of())) {
+            if (ancestorFolderIds.contains(folder.getId())) {
+                continue;
+            }
+            Set<UUID> nextAncestors = new HashSet<>(ancestorFolderIds);
+            nextAncestors.add(folder.getId());
+            items.add(DocumentTreeResponse.Item.folder(
+                    folder.getId().toString(),
+                    folder.getName(),
+                    folder.getSortOrder(),
+                    folder.getCurrentVersion(),
+                    buildTreeItems(folder.getId(), foldersByParent, documentsByFolder, nextAncestors)
+            ));
+        }
+        for (Document document : documentsByFolder.getOrDefault(parentFolderId, List.of())) {
+            items.add(DocumentTreeResponse.Item.document(
+                    document.getId(), document.getDisplayName(), document.getSortOrder(),
+                    document.getCurrentVersion()));
+        }
+        items.sort(Comparator.comparingLong(DocumentTreeResponse.Item::sortOrder)
+                .thenComparing(DocumentTreeResponse.Item::id));
+        return items;
     }
 
     @Transactional(readOnly = true)
@@ -316,7 +374,7 @@ public class FolderService {
 
     private boolean isWorkspaceOwner(String workspaceId, String userId) {
         return workspaceMemberRepository.findByWorkspace_IdAndUser_Id(workspaceId, userId)
-                .map(member -> "OWNER".equals(member.getRole()))
+                .map(member -> WorkspaceRole.OWNER == member.getRole())
                 .orElse(false);
     }
 

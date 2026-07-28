@@ -88,6 +88,7 @@ public class WorkspaceController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "워크스페이스 ID", example = "ws_abc12345")
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(example = "550e8400-e29b-41d4-a716-446655440000")
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         return ResponseEntity.ok(workspaceService.delete(userId, workspaceId, idempotencyKey));
     }
@@ -114,6 +115,7 @@ public class WorkspaceController {
     public ResponseEntity<WorkspaceLifecycleResponse> restore(
             @AuthenticationPrincipal String userId,
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(example = "6ba7b810-9dad-11d1-80b4-00c04fd430c8")
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         return ResponseEntity.ok(workspaceService.restore(userId, workspaceId, idempotencyKey));
     }
