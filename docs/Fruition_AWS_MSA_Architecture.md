@@ -222,6 +222,7 @@ worker Pod 하나는 동시에 한 건만 처리한다. bounded executor 병렬�
 - 결과 반영 전 현재 Workspace 권한, document revision, operation 취소 여부를 다시 확인한다.
 - 일시 오류는 retry topic으로 보내고 영구 오류나 최대 재시도 초과는 DLQ topic으로 보낸다.
 - 재시도 단계는 `ai.retry.1m.v1` 3회 → `ai.retry.10m.v1` 3회, 총 6회를 상한으로 한다. 6회를 넘기면 `ai.dlq.v1`로 보낸다. 현재 시도 횟수는 event header에 실어 단계 간에 이어 센다.
+- 시도 횟수를 늘리고 보낼 topic을 고르는 쪽은 command topic consumer다. 처리에 실패하면 header의 시도 횟수를 1 늘리고, 그 값이 1~3이면 `ai.retry.1m.v1`, 4~6이면 `ai.retry.10m.v1`, 6을 넘으면 `ai.dlq.v1`로 발행한다. retry consumer는 횟수를 바꾸지 않고 원래 command topic으로 되돌리기만 한다.
 - offset은 처리 성공 또는 retry/DLQ 발행이 확인된 뒤 commit한다.
 
 Kafka에는 message 단위 지연 발행이 없으므로 `1m`, `10m` 지연은 retry topic 전용 consumer가 직접 구현한다. 재시도로 보낼 때 header에 `not_before`(재처리 가능 시각)를 싣고, retry consumer는 partition head message의 `not_before`가 아직 오지 않았으면 그 partition을 pause한 뒤 남은 시간만큼 대기했다가 resume한다. 시각이 지난 message는 원래 command topic으로 재발행하고 offset을 commit한다. 재발행할 때 시도 횟수 header는 그대로 옮기고 `not_before`만 제거한다. header를 새로 만들면 시도 횟수가 초기화되어 6회 상한이 무너진다.
