@@ -6,6 +6,8 @@
 // 한계: 파일을 다른 경로로 복사·이동한 뒤 그 경로를 읽는 우회는 명령 단위 검사로 막을 수 없다.
 //       또 명령 문자열 전체를 검사하므로, 파일을 읽지 않고 경로를 언급만 하는 명령도
 //       허용 목록에 없으면 차단된다(오탐).
+//       Grep 차단은 path/glob에 .env가 직접 적힌 경우만 걸린다. 상위 디렉터리를 대상으로 한
+//       content 검색은 .gitignore에 .env가 있고 Grep이 이를 존중한다는 전제에 기대고 있다.
 let data = "";
 process.stdin.on("data", (c) => (data += c));
 process.stdin.on("end", () => {
@@ -52,8 +54,9 @@ process.stdin.on("end", () => {
   );
   // 파일을 읽지 않고 텍스트 안에서 경로를 언급만 하는 명령.
   // git commit -F/--file 은 파일 내용을 메시지로 읽으므로 제외한다.
+  // 인용 구간을 지운 문자열에 적용하므로, 커밋 메시지 본문에 나오는 --file 은 옵션으로 오인하지 않는다.
   const safeMentionOnlyCommand = new RegExp(
-    String.raw`^(?:echo\b|printf\b|git\s+commit\b(?!.*\s(?:-F|--file)\b))`,
+    String.raw`^(?:echo\b|printf\b|git\s+commit\b(?![\s\S]*\s(?:-F|--file)\b))`,
     "i"
   );
   // docker compose는 서브커맨드에 따라 해석된 값을 그대로 출력한다(config, exec, run 등).
@@ -73,8 +76,14 @@ process.stdin.on("end", () => {
     }
     return false;
   };
-  // 명령 연결·리다이렉션이 있으면 뒤에 평문 출력을 붙일 수 있으므로 형태 허용을 적용하지 않는다.
-  const hasChaining = /[;&|<>`]|\$\(/;
+  // 따옴표 안의 내용은 셸이 인자 하나로 넘기므로 명령 구분자가 아니다.
+  // 여러 줄 커밋 메시지 같은 인자를 오탐하지 않도록 인용 구간을 지운 뒤 구분자를 검사한다.
+  // 닫히지 않은 따옴표는 매칭되지 않아 원문이 그대로 남고, 안전한 쪽으로 차단된다.
+  const stripQuoted = (s) => s.replace(/'[^']*'|"[^"]*"/g, "");
+  // 명령 구분자·리다이렉션. 개행도 셸에서는 `;`와 같은 구분자다.
+  const hasSeparator = /[;&|<>\n\r]/;
+  // 치환·확장은 인용 안에서도 명령을 실행하므로 원문 기준으로 검사한다.
+  const hasExpansion = /`|\$\(/;
 
   const bashDenyReason =
     "시크릿 평문 출력 차단: 실제 .env 파일을 다루는 명령입니다. 키만 추출하거나(grep -oE '^[A-Za-z_]+=' 파일), " +
@@ -114,10 +123,12 @@ process.stdin.on("end", () => {
       .replace(/^rtk\s+/i, "");
     if (!isEnvFile(cmd)) process.exit(0);
     if (safeKeyExtraction.test(cmd) || safeMaskedOutput.test(cmd)) process.exit(0);
+    const unquoted = stripQuoted(cmd);
     if (
-      !hasChaining.test(cmd) &&
+      !hasSeparator.test(unquoted) &&
+      !hasExpansion.test(cmd) &&
       (safeNonReadingCommand.test(cmd) ||
-        safeMentionOnlyCommand.test(cmd) ||
+        safeMentionOnlyCommand.test(unquoted) ||
         isSafeDockerCompose(cmd))
     ) {
       process.exit(0);

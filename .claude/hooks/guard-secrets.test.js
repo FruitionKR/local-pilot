@@ -205,6 +205,40 @@ test("프록시 래퍼의 raw 실행 우회는 차단한다", () => {
   assertDenied(runHook("Bash", { command: "rtk proxy cat infra/.env" }));
 });
 
+// 허용 명령을 첫 줄에 두고 다음 줄에 출력 명령을 붙이는 우회
+for (const command of [
+  'echo "setup"\ncat infra/.env',
+  'git commit -m "x .env"\ncat infra/.env',
+  "ls infra/.env\ncat infra/.env",
+  'git commit -m "x" \\\n  -F infra/.env',
+]) {
+  test(`개행으로 이어붙인 출력 명령을 차단한다: ${JSON.stringify(command)}`, () => {
+    assertDenied(runHook("Bash", { command }));
+  });
+}
+
+test("인용 구간 안의 치환은 차단한다", () => {
+  assertDenied(runHook("Bash", { command: 'echo "$(cat infra/.env)"' }));
+});
+
+test("여러 줄 커밋 메시지는 허용한다", () => {
+  assert.equal(
+    runHook("Bash", {
+      command: 'git commit -m "fix: .env 처리" -m "본문 첫 줄\n본문 둘째 줄"',
+    }),
+    ""
+  );
+});
+
+test("커밋 메시지 안의 구분자 문자는 옵션으로 보지 않는다", () => {
+  assert.equal(
+    runHook("Bash", {
+      command: 'git commit -m "fix: .env 처리; --file 옵션 설명 포함"',
+    }),
+    ""
+  );
+});
+
 test("예시 파일에서 .env를 만드는 초기 설정은 허용한다", () => {
   assert.equal(
     runHook("Bash", { command: "cp infra/.env.example infra/.env" }),
