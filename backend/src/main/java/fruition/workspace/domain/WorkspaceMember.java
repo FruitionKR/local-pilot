@@ -11,9 +11,6 @@ import java.time.Instant;
 @Table(name = "workspace_members")
 public class WorkspaceMember {
 
-    public static final String ROLE_OWNER = "owner";
-    public static final String ROLE_MEMBER = "member";
-
     @EmbeddedId
     private WorkspaceMemberId id;
 
@@ -29,15 +26,16 @@ public class WorkspaceMember {
     @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String role;
+    private WorkspaceRole role;
 
     @Column(name = "joined_at", nullable = false, updatable = false)
     private Instant joinedAt;
 
     protected WorkspaceMember() {}
 
-    public WorkspaceMember(Workspace workspace, User user, String role) {
+    public WorkspaceMember(Workspace workspace, User user, WorkspaceRole role) {
         this.id = new WorkspaceMemberId(workspace.getId(), user.getId());
         this.workspace = workspace;
         this.user = user;
@@ -47,6 +45,6 @@ public class WorkspaceMember {
 
     public String getWorkspaceId() { return id.getWorkspaceId(); }
     public String getUserId() { return id.getUserId(); }
-    public String getRole() { return role; }
+    public WorkspaceRole getRole() { return role; }
     public Instant getJoinedAt() { return joinedAt; }
 }

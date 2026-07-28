@@ -6,6 +6,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-28
+
+### fix: 워크스페이스 조회·소유자 권한 판정 오류 수정
+
+**변경된 것**
+
+- 워크스페이스 목록 조회의 불필요한 `PESSIMISTIC_WRITE`를 제거해 트랜잭션 없는 조회가 `500`으로 실패하던 문제를 수정했다.
+- `workspace_members.role`을 `WorkspaceRole` enum(`OWNER`, `MEMBER`)으로 전환하고, 기존 lowercase 데이터를 변환하는 Flyway `V14`와 허용값 `CHECK` 제약을 추가했다.
+- 이름 변경·삭제·복구·휴지통과 폴더 owner 판정이 동일한 enum 값을 사용하도록 통일했다.
+- 워크스페이스 삭제·복구의 `Idempotency-Key`에 Swagger UUID 예시를 추가했다.
+
+**검증**
+
+- workspace·folder 관련 테스트와 `compileJava`가 통과했다.
+- 실제 API에서 워크스페이스 목록 조회와 이름 변경이 `200`으로 응답하고, 기존 role이 `OWNER`로 변환되며 DB 제약이 생성되는 것을 확인했다.
+
+---
+
 ## 2026-07-27
 
 > `feat/agent-turn-base-version` 브랜치에서 dev와 중복되지 않는 고유 기능만 최신 `dev` 위에 재적용한 묶음입니다. 폴더 트리·wiki-schema·wiki-maintenance는 dev 구현을 사용합니다.

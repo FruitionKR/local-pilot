@@ -18,6 +18,7 @@ import fruition.document.exception.InvalidHierarchyRequestException;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.FolderRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.domain.WorkspaceRole;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -316,7 +317,7 @@ public class FolderService {
 
     private boolean isWorkspaceOwner(String workspaceId, String userId) {
         return workspaceMemberRepository.findByWorkspace_IdAndUser_Id(workspaceId, userId)
-                .map(member -> "OWNER".equals(member.getRole()))
+                .map(member -> WorkspaceRole.OWNER == member.getRole())
                 .orElse(false);
     }
 

@@ -7,6 +7,7 @@ import fruition.document.service.DocumentService;
 import fruition.user.domain.User;
 import fruition.user.repository.UserRepository;
 import fruition.workspace.domain.Workspace;
+import fruition.workspace.domain.WorkspaceRole;
 import fruition.workspace.dto.WorkspaceCreateRequest;
 import fruition.workspace.dto.WorkspaceRenameRequest;
 import fruition.workspace.dto.WorkspaceResponse;
@@ -95,7 +96,7 @@ class WorkspaceServiceTest {
     void rename_ownedWorkspace_updatesName() {
         Workspace workspace = new Workspace("ws_aaa11111", "이전 이름");
         when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
+                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
 
         WorkspaceResponse response = workspaceService.rename("user_1f9a74af", "ws_aaa11111", new WorkspaceRenameRequest("새 이름"));
 
@@ -112,7 +113,7 @@ class WorkspaceServiceTest {
     void delete_ownedWorkspace_softDeletesWithoutChangingChildren() {
         Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스 A");
         when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
+                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
 
         WorkspaceLifecycleResponse response = workspaceService.delete(
                 "user_1f9a74af", "ws_aaa11111", "delete-key");
@@ -140,7 +141,7 @@ class WorkspaceServiceTest {
         Workspace workspace = new Workspace("ws_aaa11111", "워크스페이스 A");
         workspace.softDelete("user_1f9a74af", java.time.Instant.now());
         when(workspaceMemberRepository.findOwnedWorkspaceIncludingDeleted(
-                "ws_aaa11111", "user_1f9a74af")).thenReturn(Optional.of(workspace));
+                "ws_aaa11111", "user_1f9a74af", WorkspaceRole.OWNER)).thenReturn(Optional.of(workspace));
 
         WorkspaceLifecycleResponse response = workspaceService.restore(
                 "user_1f9a74af", "ws_aaa11111", "restore-key");
@@ -154,7 +155,8 @@ class WorkspaceServiceTest {
     void trash_returnsOnlyDeletedOwnedWorkspaces() {
         Workspace deleted = new Workspace("ws_deleted", "삭제 workspace");
         deleted.softDelete("user_1f9a74af", java.time.Instant.now());
-        when(workspaceMemberRepository.findDeletedOwnedWorkspaces("user_1f9a74af"))
+        when(workspaceMemberRepository.findDeletedOwnedWorkspaces(
+                "user_1f9a74af", WorkspaceRole.OWNER))
                 .thenReturn(List.of(deleted));
 
         WorkspaceTrashResponse response = workspaceService.trash("user_1f9a74af");
