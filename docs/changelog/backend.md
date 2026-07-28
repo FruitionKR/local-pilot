@@ -8,6 +8,18 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-28
 
+### fix: Markdown 업로드를 저장 전용으로 변경
+
+**변경된 것**
+
+- Markdown 업로드가 처리 큐를 자동 등록하지 않고 원본과 편집 상태만 `uploaded` 상태로 저장하도록 변경했다.
+- 업로드한 Markdown은 사용자가 `POST /documents/{document_id}/ingest`를 호출할 때만 Wiki pipeline 처리를 시작한다.
+- PDF 등 읽기 전용 원본의 기존 저장 전용 동작은 유지한다.
+
+**검증**
+
+- Markdown·PDF 업로드 상태와 처리 큐 미등록, 명시적 재ingest를 문서 서비스·컨트롤러 테스트로 검증했다.
+
 ### fix: 채팅 세션을 워크스페이스 멤버별로 격리
 
 **변경된 것**

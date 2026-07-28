@@ -225,9 +225,7 @@ public class DocumentService {
                     contentHash
             );
             document.place(folderId, placementSortOrder(workspaceId, folderId, document.getDocumentRole()));
-            if (!markdownUpload) {
-                document.updateStatus(DocumentStatus.uploaded, null, null, null);
-            }
+            document.updateStatus(DocumentStatus.uploaded, null, null, null);
             documentRepository.save(document);
             if (markdownUpload) {
                 editStateRepository.save(new DocumentEditState(
@@ -239,9 +237,6 @@ public class DocumentService {
                     document.getId(), document.getWorkspaceId(), document.getUserId(),
                     document.getFilename(), document.getStatus(), document.getSourceUri());
 
-            if (markdownUpload) {
-                requestProcessingAfterCommit(documentId);
-            }
             return response;
         } catch (InvalidDocumentFilenameException
                  | InvalidIdempotencyKeyException

@@ -51,7 +51,7 @@ field:
   "filename": "lecture_01.pdf",
   "mime_type": "application/pdf",
   "byte_size": 1024000,
-  "status": "processing",
+  "status": "uploaded",
   "source_uri": "sources/documents/doc_123/original",
   "uploaded_at": "2026-06-04T10:00:00Z"
 }
@@ -64,11 +64,11 @@ field:
 3. PDF 또는 Markdown이 아니면 415 UNSUPPORTED_FILE_TYPE을 반환한다.
 4. 파일 저장 경로는 `sources/documents/{document_id}/original` 형식을 따른다.
 5. 원본 파일 저장에 성공하면 documents 레코드를 생성한다.
-6. documents.status는 processing으로 저장한다.
+6. documents.status는 파일 종류와 관계없이 uploaded로 저장한다.
 7. content_hash를 기준으로 이미 같은 파일이 존재하면 409 DOCUMENT_ALREADY_EXISTS를 반환한다.
-8. API는 텍스트 추출과 Wiki 생성을 기다리지 않고 즉시 응답한다.
-9. 백그라운드 처리는 DocumentProcessingRequester를 통해 요청만 한다.
-10. 백그라운드 처리 실패는 이 API 응답 실패로 보지 않는다.
+8. 업로드 API는 처리 큐나 llmPipeline을 호출하지 않는다.
+9. 편집 가능한 Markdown은 사용자가 `POST /api/workspaces/{workspace_id}/documents/{document_id}/ingest`를 명시적으로 호출할 때 Wiki 처리를 시작한다.
+10. PDF 등 읽기 전용 원본은 업로드 시 저장만 한다.
 11. 인증되지 않은 요청은 401을 반환한다.
 12. 사용자가 속하지 않은 workspace 요청은 404 WORKSPACE_NOT_FOUND를 반환한다.
 
@@ -133,7 +133,7 @@ field:
 
 - 사용자는 PDF 파일을 업로드할 수 있다.
 - 사용자는 Markdown 파일을 업로드할 수 있다.
-- 업로드 성공 시 status는 processing이다.
+- 업로드 성공 시 status는 uploaded다.
 - 업로드 성공 시 source_uri는 `sources/documents/{document_id}/original` 형식이다.
 - 업로드 성공 시 documents 레코드가 생성된다.
 - 지원하지 않는 파일 형식은 415를 반환한다.

@@ -354,7 +354,7 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("Markdown 업로드는 즉시 편집 상태를 만들고 editable을 반환한다")
+    @DisplayName("Markdown 업로드는 편집 상태와 원본만 저장하고 파이프라인을 요청하지 않는다")
     void uploadMarkdown_createsEditStateImmediately() throws Exception {
         stubOwnedWorkspace();
         when(storageProps.getBucket()).thenReturn("test-bucket");
@@ -365,9 +365,15 @@ class DocumentServiceBlocksTest {
         DocumentUploadResponse response =
                 documentService.upload(WORKSPACE_ID, USER_ID, "upload-key", null, file);
 
+        ArgumentCaptor<Document> storedDocument = ArgumentCaptor.forClass(Document.class);
+        verify(documentRepository).save(storedDocument.capture());
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(editStateRepository).save(any(DocumentEditState.class));
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verifyNoInteractions(queueRepository);
+        assertThat(storedDocument.getValue().getStatus()).isEqualTo(
+                fruition.document.domain.DocumentStatus.uploaded);
+        assertThat(response.status()).isEqualTo(fruition.document.domain.DocumentStatus.uploaded);
         assertThat(response.editable()).isTrue();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
         assertThat(response.currentVersion()).isEqualTo(1);
