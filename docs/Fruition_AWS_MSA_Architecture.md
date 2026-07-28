@@ -217,11 +217,12 @@ Consumer thread
 
 ### 5.5 병렬 처리와 KEDA
 
-KEDA는 Kafka consumer lag을 기준으로 worker Deployment를 확장한다. Consumer group의 실질적인 최대 병렬성은 topic partition 수다.
+KEDA는 Kafka consumer lag을 기준으로 worker Deployment를 확장한다. Consumer group의 실질적인 최대 병렬성은 topic partition 수와 `maxReplicaCount` 중 작은 값이다. Partition 수를 넘겨 replica를 늘려도 남는 Pod는 partition을 배정받지 못한다.
 
 ```text
-convert topic: 12 partitions
-converter worker: 최대 12 replicas
+ai.convert.command.v1: 3 partitions (§8.3)
+converter worker:      maxReplicaCount=2 (§8.4)
+실질 최대 병렬성:       2
 ```
 
 Query, ingest, convert, embedding은 자원 특성이 다르므로 topic과 Deployment를 분리한다. 일반 worker는 Kubernetes `Deployment`로 실행한다. 작업별 자원 격리나 GPU node가 필요할 때만 dispatcher가 Kubernetes `Job`을 생성한다.
