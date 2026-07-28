@@ -4,6 +4,8 @@
 // - Bash: 실제 .env 경로를 다루는 명령은 기본 차단(allowlist).
 //         정해진 키 추출·값 마스킹 형식이거나, 내용을 출력하지 않는 명령 형태만 허용.
 // 한계: 파일을 다른 경로로 복사·이동한 뒤 그 경로를 읽는 우회는 명령 단위 검사로 막을 수 없다.
+//       또 명령 문자열 전체를 검사하므로, 파일을 읽지 않고 경로를 언급만 하는 명령도
+//       허용 목록에 없으면 차단된다(오탐).
 let data = "";
 process.stdin.on("data", (c) => (data += c));
 process.stdin.on("end", () => {
@@ -45,16 +47,40 @@ process.stdin.on("end", () => {
   // 파일 내용을 출력하지 않고 경로만 참조하는 명령 형태.
   // cp는 예시 파일을 원본으로 삼는 초기 설정(cp infra/.env.example infra/.env)만 허용한다.
   const safeNonReadingCommand = new RegExp(
-    String.raw`^(?:docker\s+compose\b|ls\b|test\b|git\s+check-ignore\b|cp\s+['"]?[A-Za-z0-9_./-]*\.env\.(?:example|sample|template|dist)\b)`,
+    String.raw`^(?:ls\b|test\b|git\s+check-ignore\b|cp\s+['"]?[A-Za-z0-9_./-]*\.env\.(?:example|sample|template|dist)\b)`,
     "i"
   );
+  // 파일을 읽지 않고 텍스트 안에서 경로를 언급만 하는 명령.
+  // git commit -F/--file 은 파일 내용을 메시지로 읽으므로 제외한다.
+  const safeMentionOnlyCommand = new RegExp(
+    String.raw`^(?:echo\b|printf\b|git\s+commit\b(?!.*\s(?:-F|--file)\b))`,
+    "i"
+  );
+  // docker compose는 서브커맨드에 따라 해석된 값을 그대로 출력한다(config, exec, run 등).
+  // 플래그를 건너뛴 첫 서브커맨드가 허용 목록에 있을 때만 통과시킨다.
+  const dockerComposeSafeSubcommands = new Set([
+    "up", "down", "start", "stop", "restart", "ps", "logs", "build", "pull", "push", "images", "top", "kill", "rm",
+  ]);
+  const isSafeDockerCompose = (cmd) => {
+    const tokens = cmd.split(/\s+/);
+    if (!/^docker$/i.test(tokens[0]) || !/^compose$/i.test(tokens[1] || "")) return false;
+    for (let i = 2; i < tokens.length; i += 1) {
+      const token = tokens[i];
+      if (!token.startsWith("-")) return dockerComposeSafeSubcommands.has(token.toLowerCase());
+      // `--env-file <path>` 처럼 값을 따로 받는 플래그는 다음 토큰까지 건너뛴다.
+      // boolean 전역 플래그(--dry-run 등)는 서브커맨드를 건너뛰어 차단되지만, 안전한 쪽으로 실패한다.
+      if (!token.includes("=")) i += 1;
+    }
+    return false;
+  };
   // 명령 연결·리다이렉션이 있으면 뒤에 평문 출력을 붙일 수 있으므로 형태 허용을 적용하지 않는다.
   const hasChaining = /[;&|<>`]|\$\(/;
 
   const bashDenyReason =
     "시크릿 평문 출력 차단: 실제 .env 파일을 다루는 명령입니다. 키만 추출하거나(grep -oE '^[A-Za-z_]+=' 파일), " +
     "정해진 형식으로 값을 마스킹하세요(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' 파일 | sed 's/=.*/=***/'). " +
-    "docker compose, ls, test, git check-ignore, cp <예시파일> <대상> 형태는 허용됩니다. .env.example 은 허용됩니다.";
+    "docker compose <up|down|ps|logs 등>, ls, test, git check-ignore, cp <예시파일> <대상>, " +
+    "그리고 파일을 읽지 않는 echo/printf/git commit 형태는 허용됩니다. .env.example 은 허용됩니다.";
 
   if (tool === "Read") {
     const p = (input.tool_input && input.tool_input.file_path) || "";
@@ -80,10 +106,22 @@ process.stdin.on("end", () => {
   }
 
   if (tool === "Bash") {
-    const cmd = String((input.tool_input && input.tool_input.command) || "").trim();
+    // 일부 환경은 다른 PreToolUse hook이 명령 앞에 프록시 래퍼를 붙인다(rtk git status 등).
+    // 래퍼를 벗겨야 아래 allowlist가 실제 명령 기준으로 판정된다.
+    // 벗긴 뒤에도 같은 allowlist를 적용하므로 rtk proxy cat 같은 우회는 그대로 차단된다.
+    const cmd = String((input.tool_input && input.tool_input.command) || "")
+      .trim()
+      .replace(/^rtk\s+/i, "");
     if (!isEnvFile(cmd)) process.exit(0);
     if (safeKeyExtraction.test(cmd) || safeMaskedOutput.test(cmd)) process.exit(0);
-    if (!hasChaining.test(cmd) && safeNonReadingCommand.test(cmd)) process.exit(0);
+    if (
+      !hasChaining.test(cmd) &&
+      (safeNonReadingCommand.test(cmd) ||
+        safeMentionOnlyCommand.test(cmd) ||
+        isSafeDockerCompose(cmd))
+    ) {
+      process.exit(0);
+    }
     deny(bashDenyReason);
   }
 });

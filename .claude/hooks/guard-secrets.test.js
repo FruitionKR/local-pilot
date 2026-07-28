@@ -153,6 +153,58 @@ test("docker compose --env-file 실행은 허용한다", () => {
   );
 });
 
+test("docker compose down도 허용한다", () => {
+  assert.equal(
+    runHook("Bash", { command: "docker compose --env-file infra/.env down" }),
+    ""
+  );
+});
+
+// 값을 그대로 출력하는 docker compose 서브커맨드
+for (const command of [
+  "docker compose --env-file infra/.env config",
+  "docker compose --env-file infra/.env -f infra/docker-compose.dev.yml config",
+  "docker compose --env-file infra/.env exec app env",
+  "docker compose --env-file infra/.env run app printenv",
+]) {
+  test(`값을 출력하는 docker compose 서브커맨드를 차단한다: ${command}`, () => {
+    assertDenied(runHook("Bash", { command }));
+  });
+}
+
+test("커밋 메시지에 .env를 언급하는 명령은 허용한다", () => {
+  assert.equal(
+    runHook("Bash", { command: 'git commit -m "fix: .env 처리 로직 수정"' }),
+    ""
+  );
+});
+
+test("경로를 안내만 하는 echo는 허용한다", () => {
+  assert.equal(
+    runHook("Bash", { command: 'echo "infra/.env 를 먼저 만드세요"' }),
+    ""
+  );
+});
+
+test("파일 내용을 커밋 메시지로 읽는 명령은 차단한다", () => {
+  assertDenied(runHook("Bash", { command: "git commit -F infra/.env" }));
+});
+
+test("프록시 래퍼가 붙어도 허용 명령을 통과시킨다", () => {
+  assert.equal(
+    runHook("Bash", { command: 'rtk git commit -m "fix: .env 처리"' }),
+    ""
+  );
+});
+
+test("프록시 래퍼로 감싼 출력 명령은 차단한다", () => {
+  assertDenied(runHook("Bash", { command: "rtk cat infra/.env" }));
+});
+
+test("프록시 래퍼의 raw 실행 우회는 차단한다", () => {
+  assertDenied(runHook("Bash", { command: "rtk proxy cat infra/.env" }));
+});
+
 test("예시 파일에서 .env를 만드는 초기 설정은 허용한다", () => {
   assert.equal(
     runHook("Bash", { command: "cp infra/.env.example infra/.env" }),
