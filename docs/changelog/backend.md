@@ -6,6 +6,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-29
+
+### feat: GitHub 스타일 Markdown 버전 diff 추가
+
+**변경된 것**
+
+- 수동 저장, AI 편집 적용, 복원으로 본문이 변경될 때 변경 전·후 전체 Markdown 스냅샷을 저장하도록 버전 이력을 보강했다.
+- `GET /api/workspaces/{workspace_id}/documents/{document_id}/diff`를 추가해 두 버전의 추가·삭제 줄과 GitHub 스타일 hunk를 반환한다.
+- diff 응답은 각 줄의 `CONTEXT`, `DELETE`, `ADD` 유형과 이전·이후 줄 번호를 제공한다.
+
+**검증**
+
+- diff 알고리즘, 저장·복원 스냅샷, HTTP 응답 계약을 단위·컨트롤러 테스트로 검증했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+- 변경 전 스냅샷이 없는 기존 버전은 소급 비교할 수 없다.
+
+---
+
 ## 2026-07-28
 
 ### fix: Markdown 업로드를 저장 전용으로 변경

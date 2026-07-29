@@ -9,6 +9,7 @@ import fruition.document.domain.SourceBlock;
 import fruition.document.domain.SourceBlockId;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
@@ -89,6 +90,7 @@ class DocumentServiceBlocksTest {
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
     @Mock fruition.document.repository.DocumentContentVersionRepository contentVersionRepository;
+    @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
 
@@ -99,7 +101,8 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, folderRepository, workspaceMemberRepository, minioClient, storageProps,
                 processingRequester, documentWikiLinkRepository, wikiPageRepository,
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, contentVersionRepository, editLockService, idempotencyRecordRepository,
+                editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
+                editLockService, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
@@ -454,8 +457,8 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("source 미지정(수동) 저장은 버전 스냅샷을 남기지 않는다")
-    void saveContent_manual_doesNotRecordSnapshot() {
+    @DisplayName("수동 저장도 변경 전후 버전 스냅샷을 남긴다")
+    void saveContent_manualRecordsBeforeAndAfterSnapshots() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -471,13 +474,15 @@ class DocumentServiceBlocksTest {
 
         documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
 
-        verify(contentVersionRepository, never()).insertIfAbsent(
-                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(1L), eq("old"), anyString(), eq(USER_ID), any());
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(2L), eq("# 변경\n"), anyString(), eq(USER_ID), any());
     }
 
     @Test
-    @DisplayName("버전 복원은 대상 본문을 새 version으로 적용하고 복원 자체는 스냅샷을 남기지 않는다")
-    void restoreContentVersion_appliesTargetWithoutSnapshot() {
+    @DisplayName("버전 복원은 대상 본문을 새 version으로 적용하고 변경 전후 스냅샷을 남긴다")
+    void restoreContentVersion_appliesTargetAndRecordsSnapshots() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -500,8 +505,42 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.currentVersion()).isEqualTo(2);
         assertThat(editState.getMarkdown()).isEqualTo("# 예전\n");
-        verify(contentVersionRepository, never()).insertIfAbsent(
-                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(1L), eq("current"), anyString(), eq(USER_ID), any());
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(2L), eq("# 예전\n"), anyString(), eq(USER_ID), any());
+    }
+
+    @Test
+    @DisplayName("두 콘텐츠 버전을 조회해 줄 단위 diff를 계산한다")
+    void compareContentVersions_loadsSnapshotsAndCalculatesDiff() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "current-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        fruition.document.domain.DocumentContentVersion before =
+                new fruition.document.domain.DocumentContentVersion(
+                        document.getId(), 1L, "이전", "old-hash", USER_ID, java.time.Instant.now());
+        fruition.document.domain.DocumentContentVersion after =
+                new fruition.document.domain.DocumentContentVersion(
+                        document.getId(), 2L, "이후", "new-hash", USER_ID, java.time.Instant.now());
+        when(contentVersionRepository.findById(
+                new fruition.document.domain.DocumentContentVersionId(document.getId(), 1L)))
+                .thenReturn(Optional.of(before));
+        when(contentVersionRepository.findById(
+                new fruition.document.domain.DocumentContentVersionId(document.getId(), 2L)))
+                .thenReturn(Optional.of(after));
+        DocumentContentDiffResponse expected =
+                new DocumentContentDiffResponse(document.getId(), 1L, 2L, 1, 1, List.of());
+        when(markdownDiffService.compare(document.getId(), 1L, "이전", 2L, "이후"))
+                .thenReturn(expected);
+
+        DocumentContentDiffResponse response = documentService.compareContentVersions(
+                WORKSPACE_ID, USER_ID, document.getId(), 1L, 2L);
+
+        assertThat(response).isEqualTo(expected);
     }
 
     @Test

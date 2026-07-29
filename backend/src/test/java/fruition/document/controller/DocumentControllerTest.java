@@ -4,6 +4,7 @@ import fruition.document.dto.DocumentBlockResponse;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentUploadResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentExportResult;
 import fruition.document.dto.DocumentLifecycleRequest;
@@ -340,6 +341,34 @@ class DocumentControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_DOCUMENT_VERSION"));
+    }
+
+    @Test
+    void compareVersions_returnsGitHubStyleDiff() throws Exception {
+        DocumentContentDiffResponse response = new DocumentContentDiffResponse(
+                "doc_edit", 1, 2, 1, 1,
+                List.of(new DocumentContentDiffResponse.Hunk(
+                        1, 1, 1, 1,
+                        List.of(
+                                new DocumentContentDiffResponse.Line(
+                                        DocumentContentDiffResponse.Type.DELETE, 1, null, "기존"),
+                                new DocumentContentDiffResponse.Line(
+                                        DocumentContentDiffResponse.Type.ADD, null, 1, "변경")))));
+        when(documentService.compareContentVersions(
+                WORKSPACE_ID, USER_ID, "doc_edit", 1L, 2L)).thenReturn(response);
+
+        mockMvc.perform(get(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/diff")
+                        .param("from_version", "1")
+                        .param("to_version", "2")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.from_version").value(1))
+                .andExpect(jsonPath("$.to_version").value(2))
+                .andExpect(jsonPath("$.additions").value(1))
+                .andExpect(jsonPath("$.deletions").value(1))
+                .andExpect(jsonPath("$.hunks[0].lines[0].type").value("DELETE"))
+                .andExpect(jsonPath("$.hunks[0].lines[1].type").value("ADD"));
     }
 
     @Test
