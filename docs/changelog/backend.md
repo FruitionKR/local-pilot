@@ -8,6 +8,17 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-29
 
+### docs: Swagger 요청 기본값 추가
+
+**변경된 것**
+
+- 로그인 요청 body의 기본값을 `user@example.com`, `stringst`로 제공한다.
+- 모든 `workspace_id` parameter의 예시와 기본값을 `ws_9d47a0e9a6324341b47562553b75f92a`로 통일한다.
+
+**검증**
+
+- OpenAPI schema와 parameter customizer 테스트로 example과 default 반영을 검증했다.
+
 ### feat: GitHub 스타일 Markdown 버전 diff 추가
 
 **변경된 것**
