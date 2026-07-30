@@ -6,6 +6,22 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-30
+
+### fix: Markdown 버전 diff 계산에 크기 가드 추가
+
+**변경된 것**
+
+- 두 버전의 본문이 동일하면 diff 계산 전에 빈 결과를 반환한다. 빈 본문끼리 비교할 때 Myers 배열이 범위를 벗어나 500이 나던 문제를 막는다.
+- Myers trace의 예상 메모리가 16MB를 넘으면 `MarkdownDiffTooLargeException`으로 계산을 중단하고 422 `MARKDOWN_DIFF_TOO_LARGE`를 반환한다. 큰 문서 비교로 서버 메모리가 무제한 늘어나는 것을 막는다.
+
+**검증**
+
+- 빈 본문 비교와 대용량 거부를 `MarkdownDiffServiceTest`로, 422 응답 계약을 `DocumentControllerTest`로 검증했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+---
+
 ## 2026-07-29
 
 ### docs: Swagger 요청 기본값 추가

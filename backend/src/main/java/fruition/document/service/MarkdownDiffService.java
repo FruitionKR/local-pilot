@@ -1,6 +1,7 @@
 package fruition.document.service;
 
 import fruition.document.dto.DocumentContentDiffResponse;
+import fruition.document.exception.MarkdownDiffTooLargeException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -12,9 +13,14 @@ import java.util.List;
 public class MarkdownDiffService {
 
     private static final int CONTEXT_LINES = 3;
+    private static final long MAX_TRACE_BYTES = 16L * 1024 * 1024;
 
     public DocumentContentDiffResponse compare(
             String documentId, long fromVersion, String before, long toVersion, String after) {
+        if (before.equals(after)) {
+            return new DocumentContentDiffResponse(
+                    documentId, fromVersion, toVersion, 0, 0, List.of());
+        }
         List<String> oldLines = lines(before);
         List<String> newLines = lines(after);
         List<Edit> edits = myers(oldLines, newLines);
@@ -38,10 +44,19 @@ public class MarkdownDiffService {
         int m = after.size();
         int max = n + m;
         int offset = max;
-        int[] frontier = new int[2 * max + 1];
+        long frontierLength = 2L * max + 1;
+        long frontierBytes = frontierLength * Integer.BYTES;
+        if (frontierBytes * 2 > MAX_TRACE_BYTES) {
+            throw diffTooLarge();
+        }
+        int[] frontier = new int[(int) frontierLength];
         List<int[]> trace = new ArrayList<>();
 
         for (int distance = 0; distance <= max; distance++) {
+            long estimatedBytes = (trace.size() + 2L) * frontierBytes;
+            if (estimatedBytes > MAX_TRACE_BYTES) {
+                throw diffTooLarge();
+            }
             trace.add(frontier.clone());
             for (int diagonal = -distance; diagonal <= distance; diagonal += 2) {
                 int index = offset + diagonal;
@@ -64,6 +79,11 @@ public class MarkdownDiffService {
             }
         }
         throw new IllegalStateException("Markdown diff를 계산할 수 없습니다.");
+    }
+
+    private MarkdownDiffTooLargeException diffTooLarge() {
+        return new MarkdownDiffTooLargeException(
+                "두 문서의 차이가 너무 커서 안전하게 비교할 수 없습니다.");
     }
 
     private List<Edit> backtrack(

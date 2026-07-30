@@ -1,9 +1,11 @@
 package fruition.document.service;
 
 import fruition.document.dto.DocumentContentDiffResponse;
+import fruition.document.exception.MarkdownDiffTooLargeException;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MarkdownDiffServiceTest {
 
@@ -40,5 +42,33 @@ class MarkdownDiffServiceTest {
         assertThat(response.additions()).isZero();
         assertThat(response.deletions()).isZero();
         assertThat(response.hunks()).isEmpty();
+    }
+
+    @Test
+    void compare_emptyMarkdown_returnsEmptyHunks() {
+        DocumentContentDiffResponse response =
+                service.compare("doc_1", 1, "", 2, "");
+
+        assertThat(response.additions()).isZero();
+        assertThat(response.deletions()).isZero();
+        assertThat(response.hunks()).isEmpty();
+    }
+
+    @Test
+    void compare_largeDifferentMarkdown_rejectsBeforeTraceExceedsLimit() {
+        String before = differentLines("이전", 2_000);
+        String after = differentLines("이후", 2_000);
+
+        assertThatThrownBy(() -> service.compare("doc_1", 1, before, 2, after))
+                .isInstanceOf(MarkdownDiffTooLargeException.class)
+                .hasMessage("두 문서의 차이가 너무 커서 안전하게 비교할 수 없습니다.");
+    }
+
+    private String differentLines(String prefix, int count) {
+        StringBuilder markdown = new StringBuilder();
+        for (int index = 0; index < count; index++) {
+            markdown.append(prefix).append(index).append('\n');
+        }
+        return markdown.toString();
     }
 }

@@ -462,6 +462,8 @@ public class DocumentController {
         @ApiResponse(responseCode = "400", description = "편집 가능한 Markdown 문서가 아님",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "문서 또는 비교할 버전을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "422", description = "문서 차이가 너무 커서 안전하게 비교할 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @GetMapping("/{document_id}/diff")

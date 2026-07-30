@@ -15,6 +15,7 @@ import fruition.document.dto.MarkdownDocumentCreateRequest;
 import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.exception.MarkdownDiffTooLargeException;
 import fruition.document.service.DocumentService;
 import fruition.document.service.DocumentExportService;
 import fruition.security.JwtAuthenticationFilter;
@@ -369,6 +370,22 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.deletions").value(1))
                 .andExpect(jsonPath("$.hunks[0].lines[0].type").value("DELETE"))
                 .andExpect(jsonPath("$.hunks[0].lines[1].type").value("ADD"));
+    }
+
+    @Test
+    void compareVersions_tooLargeDiffReturns422() throws Exception {
+        when(documentService.compareContentVersions(
+                WORKSPACE_ID, USER_ID, "doc_edit", 1L, 2L))
+                .thenThrow(new MarkdownDiffTooLargeException(
+                        "두 문서의 차이가 너무 커서 안전하게 비교할 수 없습니다."));
+
+        mockMvc.perform(get(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/diff")
+                        .param("from_version", "1")
+                        .param("to_version", "2")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.code").value("MARKDOWN_DIFF_TOO_LARGE"));
     }
 
     @Test
