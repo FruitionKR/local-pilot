@@ -100,7 +100,7 @@
 - 저장 모델과 문서 상세 API는 기존 `Document.id`를 공통 식별자로 유지한다.
 - 항목에는 `id`, 항목 종류, `filename`, `display_name`, `file_type`, `mime_type`, 처리 상태, `editable`, `current_version`, 원본 참조, 생성·수정 시각을 포함한다.
 - 본문과 소프트 삭제 문서는 일반 목록에서 제외한다.
-- 채팅 Wiki page화 export 문서(`origin='chat_export'`)는 기존과 동일하게 목록에서 제외한다(회귀 방지, 현재 `findVisibleByWorkspaceId` 규칙 유지).
+- 채팅 Wiki page화 export 문서(`origin='chat_export'`)도 저장된 워크스페이스 문서로 목록과 이름 검색에 포함한다.
 - 변환 중·실패 문서도 처리 상태와 함께 표시한다.
 - 기존 `{ "documents": [...] }` 전체 목록 응답은 hierarchy 탐색 API 전환 기간에만 호환용으로 유지한다. 신규 frontend는 hierarchy SDD의 navigation API를 사용한다.
 

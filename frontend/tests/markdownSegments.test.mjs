@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { splitMarkdownBlocks } from "../app/_lib/markdownSegments.ts";
+import { splitMarkdownBlocks } from "../src/shared/lib/markdownSegments.ts";
 
 test("비순서 중첩 목록의 들여쓰기를 보존한다", () => {
   const markdown = [

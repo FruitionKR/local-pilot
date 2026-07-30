@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMarkdownEditorSnapshot } from "../app/_lib/markdownEditContext.ts";
+import { buildMarkdownEditorSnapshot } from "../src/features/agent-chat/lib/markdownEditContext.ts";
 
 test("문자 selection을 포함하는 line 전체 범위로 변환한다", () => {
   const markdown = "첫째 줄\n둘째 줄\n셋째 줄";

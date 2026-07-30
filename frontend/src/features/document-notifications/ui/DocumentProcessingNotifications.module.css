@@ -1,0 +1,56 @@
+.notice-stack {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 50;
+  display: grid;
+  width: min(360px, calc(100vw - 40px));
+  gap: 10px;
+}
+
+.notice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #202020;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.notice strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notice > button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.notice > button:hover {
+  color: var(--ink);
+}
+
+.is-completed {
+  color: var(--source-page);
+}
+
+.is-failed {
+  color: #ff8d8d;
+}

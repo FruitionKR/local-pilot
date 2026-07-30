@@ -7,7 +7,8 @@ import { Graph } from "@/widgets/graph/ui/Graph";
 import { useSnapshots } from "@/features/document-history/model/useSnapshots";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
 import { LogsMockup } from "@/features/logs-mockup";
-import { SettingsMockup } from "@/features/settings-mockup";
+import { SettingsPanel } from "@/features/settings";
+import { DocumentProcessingNotifications } from "@/features/document-notifications";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { UploadErrorModal } from "@/features/document-upload/ui/UploadErrorModal";
 import { DeleteConfirmModal } from "@/shared/ui/DeleteConfirmModal";
@@ -22,10 +23,11 @@ import { uploadDocumentFile } from "@/entities/document";
 import { buildGeneratedMarkdownFilename } from "@/features/agent-chat/lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "@/features/agent-chat/lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
-import { createClientId } from "@/entities/tree";
+import { createClientId, findTreeItemByDocumentId } from "@/entities/tree";
 import { useResizeHandle } from "../model/useResizeHandle";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { NoteEditState, TreeItem } from "@/entities/tree";
+import type { ChatWikiExportResponse } from "@/features/wiki-export";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
 const SIDEBAR_MIN_WIDTH = 320;
@@ -61,6 +63,7 @@ export function HomeWorkspace() {
   const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
+  const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
   const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
@@ -99,6 +102,21 @@ export function HomeWorkspace() {
   const hasSourcePreview = Boolean(selection.selectedDocumentTitle);
   // 홈에서 문서가 메인 영역을 채우는 상태(Obsidian식 최근 문서 열람)
   const isDocumentMain = isHomeView && hasSourcePreview;
+
+  useEffect(() => {
+    if (!pendingExportDocumentId) return;
+    const exportedDocument = documents.find((document) => document.id === pendingExportDocumentId);
+    if (!exportedDocument) return;
+    let exportedTreeItem: TreeItem | null = null;
+    for (const project of projectTree.projects) {
+      exportedTreeItem = findTreeItemByDocumentId(project.items, pendingExportDocumentId);
+      if (exportedTreeItem) break;
+    }
+    if (!exportedTreeItem) return;
+    setPendingExportDocumentId(null);
+    setActiveView("home");
+    selection.selectTreeGraphNode(exportedTreeItem);
+  }, [documents, pendingExportDocumentId, projectTree.projects, selection]);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";
@@ -188,8 +206,9 @@ export function HomeWorkspace() {
     });
   }, []);
 
-  async function handleChatDocumentExported() {
-    await refreshBackendData();
+  async function handleChatDocumentExported(response: ChatWikiExportResponse) {
+    setPendingExportDocumentId(response.exportDocumentId);
+    await refreshBackendData({ throwOnError: true });
   }
 
   function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {
@@ -322,12 +341,13 @@ export function HomeWorkspace() {
         ) : activeView === "logs" ? (
           <LogsMockup />
         ) : activeView === "settings" ? (
-          <SettingsMockup />
+          <SettingsPanel />
         ) : (
           <section className="blank-view" aria-label={`${railItems.find((item) => item.id === activeView)?.label ?? ""} 빈 화면`} />
         )
       )}
 
+      <DocumentProcessingNotifications documents={documents} />
       {upload.hasRejectedFiles && <UploadErrorModal onConfirm={upload.clearRejectedFiles} />}
       {projectTree.deleteConfirm && (
         <DeleteConfirmModal

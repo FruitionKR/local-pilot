@@ -134,7 +134,6 @@ export function useGraphPointer({
 
   function updateHover(event: ReactPointerEvent<HTMLDivElement>) {
     if (draggingNodeIdRef.current) return;
-    if (externalFocusedNodeIdRef.current) return;
     setHoveredNode(hitTestNode(event.clientX, event.clientY)?.id ?? null);
   }
 
@@ -174,7 +173,7 @@ export function useGraphPointer({
     onDoubleClick: openNodePreview,
     onAuxClick: (event: ReactPointerEvent<HTMLDivElement>) => event.preventDefault(),
     onPointerLeave: () => {
-      if (!draggingNodeIdRef.current && !externalFocusedNodeIdRef.current) {
+      if (!draggingNodeIdRef.current) {
         setHoveredNode(null);
       }
     },

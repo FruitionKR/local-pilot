@@ -30,6 +30,7 @@ export function useBackendData({
     // 처리 중(processing/uploaded) 문서가 있을 때만 3초 폴링한다.
     refetchInterval: (activeQuery) =>
       hasProcessingDocuments(activeQuery.state.data) ? PROCESSING_POLL_INTERVAL_MS : false,
+    refetchIntervalInBackground: true,
     // 폴링으로 갱신 주기를 이미 제어하므로 탭 포커스마다 refetch하지 않는다.
     refetchOnWindowFocus: false
   });
@@ -43,8 +44,8 @@ export function useBackendData({
   }, [backendData, setProjects]);
 
   const { refetch } = query;
-  const refreshBackendData = useCallback(async () => {
-    await refetch();
+  const refreshBackendData = useCallback(async (options?: { throwOnError?: boolean }) => {
+    await refetch({ throwOnError: options?.throwOnError });
   }, [refetch]);
 
   /** 업로드 낙관적 갱신용: query cache의 documents를 직접 수정한다. */

@@ -4,6 +4,68 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-30
+
+### fix: 비동기 설정·AI 저장·채팅 편입 선택 경합 수정
+
+- 경로 변경으로 폐기된 사용자 설정 요청의 실패 응답이 새 요청의 `preferencesReady`를
+  앞당기지 않도록 cleanup 상태를 확인한다.
+- 저장 중 AI 결과와 후속 사용자 편집이 대기열에서 합쳐질 때 `source=agent`를 보존해 승인
+  스냅샷이 누락되지 않도록 한다.
+- AI 저장이 비충돌 오류로 실패해도 대기 중인 최신 본문 또는 다음 저장 후보에 `source=agent`를
+  유지해 재시도 성공 시 승인 스냅샷이 생성되도록 한다.
+- 채팅 편입 문서가 프로젝트 트리에 병합된 뒤 트리 항목으로 선택해 문서 본문, 사이드바 선택,
+  breadcrumb가 같은 문서를 가리키도록 한다.
+- 채팅 편입 후 문서 목록 갱신 실패를 성공으로 처리하지 않고 호출부까지 전파하며, 서버 편입
+  성공과 목록 갱신 실패를 분리해 중복 편입 대신 새로고침 안내를 표시한다.
+- 검증: `npm run test:markdown` 52건, `npm run test:user-preferences` 4건,
+  `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm audit --omit=dev`를 통과했다.
+
+## 2026-07-28
+
+### feat: AI 편집 스냅샷과 채팅 문서 편입 저장 연결
+
+- AI 편집 결과를 적용하면 문서 저장 요청의 `source=agent`를 함께 전송하고, 일반 자동 저장과
+  구분해 즉시 저장한다. 백엔드는 이 요청을 `document_content_versions`에 기록하므로 AI 편집
+  승인 시점이 서버 스냅샷으로 영속화된다.
+- 채팅 문서 편입 성공 응답의 `exportDocumentId`를 기준으로 워크스페이스 문서 목록을 새로
+  불러오고, 저장된 편입 문서를 자동으로 선택해 연다.
+- 로컬 전체 스택에서 AI 저장 후 서버 version 스냅샷 생성과 채팅 편입 문서의 사이드바 노출,
+  자동 선택, Markdown 본문 표시를 확인했다.
+
+### feat: 브라우저 사용자별 개인 설정 구현
+
+- 설정 임시 목업을 실제 개인 설정 화면으로 교체했다. Motion, 문서 Font, 기본 편집 모드,
+  Markdown 줄 바꿈·줄 번호·현재 줄 강조, Graph 기본 노드 표시, 문서 처리 완료·실패·Browser
+  알림을 한 화면에서 변경할 수 있다.
+- 공통 설정은 인증 사용자 ID별, Graph 기본 표시는 사용자+workspace별 `localStorage`에 자동
+  저장한다. backend API가 없어 현재 같은 브라우저에서만 유지되며, 계정 식별 실패 시 사용자 간
+  혼합을 막기 위해 공용 키에 저장하지 않는다.
+- Motion 줄이기는 CSS 전환·애니메이션, 채팅 smooth scroll, Graph 물리·hover 애니메이션에
+  적용한다. 문서 Font는 Markdown 렌더와 WYSIWYG 본문에 적용하고 코드 글꼴은 유지한다.
+- 기본 편집 모드는 `마지막 사용 모드 / WYSIWYG / Markdown`으로 연결하고, Markdown 표시 옵션을
+  CodeMirror 설정에 반영했다.
+- Graph 필터를 사용자 기본값과 양방향 연결하고 모든 노드 종류를 동시에 끄지 못하게 했다.
+- 선택된 문서가 있는 Graph에서도 포인터 hover가 클릭 없이 즉시 반응하도록 외부 선택과 hover
+  상태를 분리했다. Markdown 줄 번호는 현재 커서 줄만 회색 `|`로 표시하고 기본 gutter 세로선을
+  제거했다.
+- 워크스페이스 목록 호출 실패 시 빈 오류 문장 대신 화면 중앙 오류 카드, 상세 메시지, 재시도,
+  로그인 화면 이동을 제공한다. 재시도는 세션을 유지한 채 워크스페이스 준비 요청을 다시 실행한다.
+- 문서 상태 polling에서 `uploaded/processing → completed/failed` 전이를 감지해 앱 안 알림을
+  표시한다. 숨겨진 탭에서도 처리 중 polling을 유지하며, Browser 알림은 사용자 권한이 있고 탭이
+  보이지 않을 때만 사용한다.
+- 문서 업로드에 backend 계약의 `Idempotency-Key`를 추가했다. Markdown 편집본은 문서 상세
+  `markdown/current_version`에서 읽고, 저장은 `multipart/form-data`의 `markdown/base_version`으로
+  전송해 production 문서 API와 맞췄다. 직접 생성 노트는 원본보다 편집본을 먼저 읽는다.
+- FSD 이동 전 `frontend/app/_lib/*`를 가리키던 Markdown 테스트 import를 현재 `src` 경로로
+  갱신했다. production `postcss` override는 보안 패치 버전 `8.5.24`로 올렸다.
+- 계정 동기화·AI 답변 설정·앱 종료 후 push 알림은 frontend에서 동작하는 것처럼 노출하지 않고
+  `docs/issue/backend/2026-07-28.md`, `docs/issue/ai/2026-07-28.md`에 후속 계약으로 분리했다.
+- 검증: `npm run lint`, `npm exec tsc -- --noEmit --incremental false`, `npm run test:markdown`
+  47건, `npm run test:user-preferences` 4건, `npm run build`, `npm audit --omit=dev`를 통과했다.
+  로컬 전체 스택에서 회원가입·설정 reload 복원·Graph 필터·Markdown 업로드/조회/자동 저장을
+  Playwright로 확인했다.
+
 ## 2026-07-24
 
 ### feat: 채팅 편집 시 선택한 문답을 편집 맥락으로 전송
