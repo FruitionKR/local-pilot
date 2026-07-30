@@ -90,6 +90,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
         setPreferencesReady(true);
       })
       .catch(() => {
+        if (ignore) return;
         // 계정을 식별하지 못하면 다른 사용자의 설정과 섞이지 않도록 저장하지 않는다.
         setPreferencesReady(true);
       });

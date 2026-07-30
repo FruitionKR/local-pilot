@@ -23,7 +23,7 @@ import { uploadDocumentFile } from "@/entities/document";
 import { buildGeneratedMarkdownFilename } from "@/features/agent-chat/lib/markdownAgent";
 import type { GeneratedMarkdownDraft } from "@/features/agent-chat/lib/markdownAgent";
 import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdownEditContext";
-import { createClientId } from "@/entities/tree";
+import { createClientId, findTreeItemByDocumentId } from "@/entities/tree";
 import { useResizeHandle } from "../model/useResizeHandle";
 import type { SourceBlockHighlight } from "@/entities/document";
 import type { NoteEditState, TreeItem } from "@/entities/tree";
@@ -107,10 +107,16 @@ export function HomeWorkspace() {
     if (!pendingExportDocumentId) return;
     const exportedDocument = documents.find((document) => document.id === pendingExportDocumentId);
     if (!exportedDocument) return;
+    let exportedTreeItem: TreeItem | null = null;
+    for (const project of projectTree.projects) {
+      exportedTreeItem = findTreeItemByDocumentId(project.items, pendingExportDocumentId);
+      if (exportedTreeItem) break;
+    }
+    if (!exportedTreeItem) return;
     setPendingExportDocumentId(null);
     setActiveView("home");
-    selection.openSourceBlockPreview(exportedDocument.id, exportedDocument.filename, []);
-  }, [documents, pendingExportDocumentId, selection]);
+    selection.selectTreeGraphNode(exportedTreeItem);
+  }, [documents, pendingExportDocumentId, projectTree.projects, selection]);
 
   const selectedDocumentParentLabel = useMemo(() => {
     if (!selection.selectedTreeItemId) return "업로드 문서";

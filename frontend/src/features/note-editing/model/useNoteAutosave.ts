@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NoteContentConflictError, saveNoteDraft } from "../api/note";
 import { composeEditableNoteMarkdown } from "@/entities/document/lib/note";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
-
-type PendingSave = {
-  markdown: string;
-  revision: number;
-  source?: "agent";
-};
+import { mergePendingNoteSave, type PendingNoteSave } from "./pendingSave";
 
 const AUTOSAVE_DELAY_MS = 800;
 
@@ -27,17 +22,17 @@ export function useNoteAutosave({
   const revisionRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveInFlightRef = useRef(false);
-  const pendingSaveRef = useRef<PendingSave | null>(null);
+  const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
-  async function flushSave(candidate: PendingSave) {
+  async function flushSave(candidate: PendingNoteSave) {
     if (conflictRef.current) return;
     if (saveInFlightRef.current) {
-      pendingSaveRef.current = candidate;
+      pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, candidate);
       return;
     }
 
