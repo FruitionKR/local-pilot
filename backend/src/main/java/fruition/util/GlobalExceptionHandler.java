@@ -18,6 +18,7 @@ import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidDocumentVersionException;
 import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
+import fruition.document.exception.MarkdownDiffTooLargeException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
 import fruition.document.exception.IdempotencyConflictException;
 import fruition.document.exception.HierarchyItemNotFoundException;
@@ -210,6 +211,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("MARKDOWN_CONTENT_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(MarkdownDiffTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleMarkdownDiffTooLarge(MarkdownDiffTooLargeException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ErrorResponse.of("MARKDOWN_DIFF_TOO_LARGE", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidIdempotencyKeyException.class)

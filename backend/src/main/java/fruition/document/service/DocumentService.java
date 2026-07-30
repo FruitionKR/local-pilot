@@ -23,6 +23,7 @@ import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.document.dto.DocumentContentVersionListResponse;
 import fruition.document.dto.DocumentContentVersionResponse;
 import fruition.document.dto.DocumentIngestResponse;
@@ -110,6 +111,7 @@ public class DocumentService {
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
     private final DocumentContentVersionRepository contentVersionRepository;
+    private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
     private final ObjectMapper objectMapper;
@@ -130,6 +132,7 @@ public class DocumentService {
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
                            DocumentContentVersionRepository contentVersionRepository,
+                           MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
                            ObjectMapper objectMapper,
@@ -149,6 +152,7 @@ public class DocumentService {
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
         this.contentVersionRepository = contentVersionRepository;
+        this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
         this.objectMapper = objectMapper;
@@ -225,9 +229,7 @@ public class DocumentService {
                     contentHash
             );
             document.place(folderId, placementSortOrder(workspaceId, folderId, document.getDocumentRole()));
-            if (!markdownUpload) {
-                document.updateStatus(DocumentStatus.uploaded, null, null, null);
-            }
+            document.updateStatus(DocumentStatus.uploaded, null, null, null);
             documentRepository.save(document);
             if (markdownUpload) {
                 editStateRepository.save(new DocumentEditState(
@@ -239,9 +241,6 @@ public class DocumentService {
                     document.getId(), document.getWorkspaceId(), document.getUserId(),
                     document.getFilename(), document.getStatus(), document.getSourceUri());
 
-            if (markdownUpload) {
-                requestProcessingAfterCommit(documentId);
-            }
             return response;
         } catch (InvalidDocumentFilenameException
                  | InvalidIdempotencyKeyException
@@ -994,12 +993,11 @@ public class DocumentService {
         if (updated == 0) {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
+        recordContentVersion(documentId, baseVersion, editState.getMarkdown(),
+                editState.getContentHash(), userId, updatedAt);
         editState.update(content.markdown(), content.contentHash(), updatedAt);
-        // 버전 스냅샷은 AI 편집(source=agent)일 때만 남긴다(사용자가 승인한 AI 편집 결과가 롤백 지점).
-        if ("agent".equalsIgnoreCase(source)) {
-            recordContentVersion(documentId, baseVersion + 1, content.markdown(),
-                    content.contentHash(), userId, updatedAt);
-        }
+        recordContentVersion(documentId, baseVersion + 1, content.markdown(),
+                content.contentHash(), userId, updatedAt);
         return new DocumentContentSaveResponse(
                 documentId,
                 baseVersion + 1,
@@ -1038,9 +1036,24 @@ public class DocumentService {
                 snapshot.getContentHash(), snapshot.getCreatedBy(), snapshot.getCreatedAt());
     }
 
+    /** 두 콘텐츠 버전의 줄 단위 변경 사항. */
+    @Transactional(readOnly = true)
+    public DocumentContentDiffResponse compareContentVersions(
+            String workspaceId, String userId, String documentId, long fromVersion, long toVersion) {
+        loadEditableForVersion(workspaceId, userId, documentId);
+        DocumentContentVersion before = contentVersionRepository
+                .findById(new DocumentContentVersionId(documentId, fromVersion))
+                .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, fromVersion));
+        DocumentContentVersion after = contentVersionRepository
+                .findById(new DocumentContentVersionId(documentId, toVersion))
+                .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, toVersion));
+        return markdownDiffService.compare(
+                documentId, fromVersion, before.getMarkdown(), toVersion, after.getMarkdown());
+    }
+
     /**
      * 과거 버전을 새 버전으로 복원한다(비파괴적). 해당 버전의 Markdown을 현재 편집본으로 저장해 version을 1 증가시킨다.
-     * base_version 낙관적 잠금으로 동시 편집 충돌을 막는다. 복원 자체는 새 스냅샷을 남기지 않는다(source 미지정).
+     * base_version 낙관적 잠금으로 동시 편집 충돌을 막는다.
      */
     @Transactional
     public DocumentContentSaveResponse restoreContentVersion(

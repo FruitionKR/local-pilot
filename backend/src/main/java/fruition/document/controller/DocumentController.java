@@ -5,6 +5,7 @@ import fruition.document.service.DocumentService;
 import fruition.document.service.DocumentExportService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
+import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.document.dto.DocumentContentRestoreRequest;
 import fruition.document.dto.DocumentContentVersionListResponse;
 import fruition.document.dto.DocumentContentVersionResponse;
@@ -388,7 +389,7 @@ public class DocumentController {
             @RequestPart("markdown") String markdown,
             @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1", required = true)
             @RequestPart("base_version") String baseVersion,
-            @Parameter(description = "저장 출처. \"agent\"이면 버전 스냅샷을 남긴다(AI 편집 승인). 생략 시 수동 저장.")
+            @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
             @RequestPart(value = "source", required = false) String source) {
         return ResponseEntity.ok(
                 documentService.saveContent(
@@ -451,6 +452,29 @@ public class DocumentController {
             @PathVariable("document_id") String documentId,
             @PathVariable("version") long version) {
         return ResponseEntity.ok(documentService.getContentVersion(workspaceId, userId, documentId, version));
+    }
+
+    @Operation(summary = "콘텐츠 버전 비교",
+        description = "두 Markdown 버전을 줄 단위로 비교해 GitHub 스타일 diff hunk를 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "비교 성공",
+            content = @Content(schema = @Schema(implementation = DocumentContentDiffResponse.class))),
+        @ApiResponse(responseCode = "400", description = "편집 가능한 Markdown 문서가 아님",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 비교할 버전을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "422", description = "문서 차이가 너무 커서 안전하게 비교할 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{document_id}/diff")
+    public ResponseEntity<DocumentContentDiffResponse> compareVersions(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("document_id") String documentId,
+            @RequestParam("from_version") long fromVersion,
+            @RequestParam("to_version") long toVersion) {
+        return ResponseEntity.ok(documentService.compareContentVersions(
+                workspaceId, userId, documentId, fromVersion, toVersion));
     }
 
     @Operation(summary = "콘텐츠 버전 복원",

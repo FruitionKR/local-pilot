@@ -114,14 +114,14 @@ partial 발췌 export의 "문답 ↔ 위키 페이지" 멤버십(1:N). full 편�
 - 흐름(`@Transactional`, service 경계):
   1. controller → `chatSessionService.create(workspaceId, userId, safeRequest)`.
   2. `verifyWorkspaceOwnership` — `workspaceMemberRepository.existsByWorkspace_IdAndUser_Id` 아니면 404.
-  3. `chatSessionRepository.countByWorkspaceId(workspaceId) >= 10`이면 409(`MAX_SESSIONS_PER_WORKSPACE = 10`).
+  3. `chatSessionRepository.countByWorkspaceIdAndUserId(workspaceId, userId) >= 10`이면 409(`MAX_SESSIONS_PER_WORKSPACE_MEMBER = 10`). 세션 제한은 워크스페이스 전체가 아니라 멤버별로 적용한다.
   4. `session_`+UUID 생성 → `chatSessionRepository.save` → `toResponse`.
 
 ### `GET /api/workspaces/{workspace_id}/chat/sessions` — 세션 목록
 
 - 인증: 필요.
 - path: `workspace_id`. query 없음.
-- 응답: **200 OK**, `ChatSessionListResponse { sessions: ChatSessionResponse[] }`. 정렬은 `findAllByWorkspaceIdOrderByLastMessageAtDesc`(최근 메시지 순).
+- 응답: **200 OK**, `ChatSessionListResponse { sessions: ChatSessionResponse[] }`. 현재 로그인한 멤버가 생성한 세션만 `findAllByWorkspaceIdAndUserIdOrderByLastMessageAtDesc`로 최근 메시지 순 반환한다.
 - 에러: `WorkspaceNotFoundException` → 404.
 - 흐름(비트랜잭션 읽기): controller → `list` → `verifyWorkspaceOwnership` → repo 조회 → 매핑.
 
@@ -137,7 +137,7 @@ partial 발췌 export의 "문답 ↔ 위키 페이지" 멤버십(1:N). full 편�
   | `ChatSessionNotFoundException` | 404 | `CHAT_SESSION_NOT_FOUND` |
 - 흐름(`@Transactional`):
   1. controller → `delete`.
-  2. `verifyOwnedSession(workspaceId, userId, sessionId)` — 워크스페이스 소유권 + `findByIdAndWorkspaceId`(없으면 `ChatSessionNotFoundException`).
+  2. `verifyOwnedSession(workspaceId, userId, sessionId)` — 워크스페이스 멤버십 + `findByIdAndWorkspaceIdAndUserId`로 세션 소유자를 함께 확인한다(없으면 `ChatSessionNotFoundException`).
   3. `chatSessionRepository.delete(session)`. `chat_messages`/`chat_message_references`/`chat_message_related_pages`는 **FK ON DELETE CASCADE**로 함께 삭제. `chat_partial_wiki`는 FK CASCADE 없음(별도 정리 없음).
 
 ### `GET /api/workspaces/{workspace_id}/chat/sessions/{session_id}/messages` — 메시지 기록 조회

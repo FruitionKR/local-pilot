@@ -47,7 +47,7 @@ class ChatSessionServiceTest {
     @Test
     void create_underLimit_createsSession() {
         stubOwnedWorkspace();
-        when(chatSessionRepository.countByWorkspaceId(WORKSPACE_ID)).thenReturn(3L);
+        when(chatSessionRepository.countByWorkspaceIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(3L);
         when(chatSessionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         ChatSessionResponse response = chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest("제목"));
@@ -59,7 +59,7 @@ class ChatSessionServiceTest {
     @Test
     void create_atLimit_throwsChatSessionLimitExceeded() {
         stubOwnedWorkspace();
-        when(chatSessionRepository.countByWorkspaceId(WORKSPACE_ID)).thenReturn(10L);
+        when(chatSessionRepository.countByWorkspaceIdAndUserId(WORKSPACE_ID, USER_ID)).thenReturn(10L);
 
         assertThatThrownBy(() -> chatSessionService.create(WORKSPACE_ID, USER_ID, new ChatSessionCreateRequest(null)))
                 .isInstanceOf(ChatSessionLimitExceededException.class);
@@ -76,7 +76,7 @@ class ChatSessionServiceTest {
     @Test
     void list_returnsSessionsOrderedByLastMessageAt() {
         stubOwnedWorkspace();
-        when(chatSessionRepository.findAllByWorkspaceIdOrderByLastMessageAtDesc(WORKSPACE_ID))
+        when(chatSessionRepository.findAllByWorkspaceIdAndUserIdOrderByLastMessageAtDesc(WORKSPACE_ID, USER_ID))
                 .thenReturn(List.of(new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, "세션 A")));
 
         var response = chatSessionService.list(WORKSPACE_ID, USER_ID);
@@ -89,7 +89,8 @@ class ChatSessionServiceTest {
     void verifyOwnedSession_ownedSession_returnsSession() {
         stubOwnedWorkspace();
         ChatSession session = new ChatSession("session_aaa11111", WORKSPACE_ID, USER_ID, null);
-        when(chatSessionRepository.findByIdAndWorkspaceId("session_aaa11111", WORKSPACE_ID))
+        when(chatSessionRepository.findByIdAndWorkspaceIdAndUserId(
+                "session_aaa11111", WORKSPACE_ID, USER_ID))
                 .thenReturn(Optional.of(session));
 
         ChatSession result = chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, "session_aaa11111");
@@ -100,7 +101,8 @@ class ChatSessionServiceTest {
     @Test
     void verifyOwnedSession_unknownSession_throwsChatSessionNotFound() {
         stubOwnedWorkspace();
-        when(chatSessionRepository.findByIdAndWorkspaceId("session_unknown", WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(chatSessionRepository.findByIdAndWorkspaceIdAndUserId(
+                "session_unknown", WORKSPACE_ID, USER_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, "session_unknown"))
                 .isInstanceOf(ChatSessionNotFoundException.class);
@@ -110,7 +112,8 @@ class ChatSessionServiceTest {
     void delete_ownedSession_removesSession() {
         stubOwnedWorkspace();
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null);
-        when(chatSessionRepository.findByIdAndWorkspaceId(SESSION_ID, WORKSPACE_ID)).thenReturn(Optional.of(session));
+        when(chatSessionRepository.findByIdAndWorkspaceIdAndUserId(
+                SESSION_ID, WORKSPACE_ID, USER_ID)).thenReturn(Optional.of(session));
 
         chatSessionService.delete(WORKSPACE_ID, USER_ID, SESSION_ID);
 

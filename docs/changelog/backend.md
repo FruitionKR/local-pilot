@@ -6,7 +6,77 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-30
+
+### fix: Markdown 버전 diff 계산에 크기 가드 추가
+
+**변경된 것**
+
+- 두 버전의 본문이 동일하면 diff 계산 전에 빈 결과를 반환한다. 빈 본문끼리 비교할 때 Myers 배열이 범위를 벗어나 500이 나던 문제를 막는다.
+- Myers trace의 예상 메모리가 16MB를 넘으면 `MarkdownDiffTooLargeException`으로 계산을 중단하고 422 `MARKDOWN_DIFF_TOO_LARGE`를 반환한다. 큰 문서 비교로 서버 메모리가 무제한 늘어나는 것을 막는다.
+
+**검증**
+
+- 빈 본문 비교와 대용량 거부를 `MarkdownDiffServiceTest`로, 422 응답 계약을 `DocumentControllerTest`로 검증했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+---
+
+## 2026-07-29
+
+### docs: Swagger 요청 기본값 추가
+
+**변경된 것**
+
+- 로그인 요청 body의 기본값을 `user@example.com`, `stringst`로 제공한다.
+- 모든 `workspace_id` parameter의 예시와 기본값을 `ws_9d47a0e9a6324341b47562553b75f92a`로 통일한다.
+
+**검증**
+
+- OpenAPI schema와 parameter customizer 테스트로 example과 default 반영을 검증했다.
+
+### feat: GitHub 스타일 Markdown 버전 diff 추가
+
+**변경된 것**
+
+- 수동 저장, AI 편집 적용, 복원으로 본문이 변경될 때 변경 전·후 전체 Markdown 스냅샷을 저장하도록 버전 이력을 보강했다.
+- `GET /api/workspaces/{workspace_id}/documents/{document_id}/diff`를 추가해 두 버전의 추가·삭제 줄과 GitHub 스타일 hunk를 반환한다.
+- diff 응답은 각 줄의 `CONTEXT`, `DELETE`, `ADD` 유형과 이전·이후 줄 번호를 제공한다.
+
+**검증**
+
+- diff 알고리즘, 저장·복원 스냅샷, HTTP 응답 계약을 단위·컨트롤러 테스트로 검증했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+- 변경 전 스냅샷이 없는 기존 버전은 소급 비교할 수 없다.
+
+---
+
 ## 2026-07-28
+
+### fix: Markdown 업로드를 저장 전용으로 변경
+
+**변경된 것**
+
+- Markdown 업로드가 처리 큐를 자동 등록하지 않고 원본과 편집 상태만 `uploaded` 상태로 저장하도록 변경했다.
+- 업로드한 Markdown은 사용자가 `POST /documents/{document_id}/ingest`를 호출할 때만 Wiki pipeline 처리를 시작한다.
+- PDF 등 읽기 전용 원본의 기존 저장 전용 동작은 유지한다.
+
+**검증**
+
+- Markdown·PDF 업로드 상태와 처리 큐 미등록, 명시적 재ingest를 문서 서비스·컨트롤러 테스트로 검증했다.
+
+### fix: 채팅 세션을 워크스페이스 멤버별로 격리
+
+**변경된 것**
+
+- 채팅 세션 목록과 단건 소유권 검증에 `user_id` 조건을 추가해 같은 워크스페이스의 다른 멤버 세션이 노출·조회·삭제되지 않도록 수정했다.
+- 세션 최대 10개 제한을 워크스페이스 전체가 아닌 워크스페이스 멤버별로 적용했다.
+- Query와 Wiki export가 공통으로 사용하는 `verifyOwnedSession`에도 동일한 세션 소유자 검증을 적용했다.
+
+**검증**
+
+- 전체 chat 테스트가 통과했다.
+- 다중 세션 목록·전환 Frontend UI는 `docs/issue/frontend/2026-07-23.md`의 미해결 작업으로 유지한다.
 
 ### fix: 채팅 편입 문서를 워크스페이스 문서 목록에 노출
 
