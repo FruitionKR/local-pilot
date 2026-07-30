@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { NoteContentConflictError, saveNoteDraft } from "../api/note";
 import { composeEditableNoteMarkdown } from "@/entities/document/lib/note";
 import type { NoteSaveStatus } from "@/entities/tree/model/tree";
-import { mergePendingNoteSave, type PendingNoteSave } from "./pendingSave";
+import {
+  applyRequiredAgentSource,
+  mergePendingNoteSave,
+  recoverPendingNoteSaveAfterAgentFailure,
+  type PendingNoteSave
+} from "./pendingSave";
 
 const AUTOSAVE_DELAY_MS = 800;
 
@@ -24,15 +29,17 @@ export function useNoteAutosave({
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
+  const agentRetryRequiredRef = useRef(false);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
   async function flushSave(candidate: PendingNoteSave) {
+    const saveCandidate = applyRequiredAgentSource(candidate, agentRetryRequiredRef.current);
     if (conflictRef.current) return;
     if (saveInFlightRef.current) {
-      pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, candidate);
+      pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, saveCandidate);
       return;
     }
 
@@ -42,18 +49,24 @@ export function useNoteAutosave({
     try {
       const saved = await saveNoteDraft(
         documentId,
-        candidate.markdown,
+        saveCandidate.markdown,
         versionRef.current,
-        candidate.source
+        saveCandidate.source
       );
       versionRef.current = saved.content_version;
       setContentVersion(saved.content_version);
-      setStatus(candidate.revision === revisionRef.current ? "saved" : "dirty");
+      if (saveCandidate.source === "agent") agentRetryRequiredRef.current = false;
+      setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
         conflictRef.current = true;
         setStatus("conflict");
       } else {
+        if (saveCandidate.source === "agent") {
+          const recovery = recoverPendingNoteSaveAfterAgentFailure(pendingSaveRef.current);
+          pendingSaveRef.current = recovery.pending;
+          agentRetryRequiredRef.current = recovery.retryRequired;
+        }
         setStatus("error");
       }
       setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
@@ -71,7 +84,7 @@ export function useNoteAutosave({
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),
       revision: revisionRef.current,
-      source
+      source: source ?? (agentRetryRequiredRef.current ? "agent" : undefined)
     };
     setStatus("dirty");
     setErrorMessage(null);

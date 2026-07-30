@@ -208,7 +208,7 @@ export function HomeWorkspace() {
 
   async function handleChatDocumentExported(response: ChatWikiExportResponse) {
     setPendingExportDocumentId(response.exportDocumentId);
-    await refreshBackendData();
+    await refreshBackendData({ throwOnError: true });
   }
 
   function handleResizePointerMove(event: ReactPointerEvent<HTMLElement>) {

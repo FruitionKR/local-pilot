@@ -44,8 +44,8 @@ export function useBackendData({
   }, [backendData, setProjects]);
 
   const { refetch } = query;
-  const refreshBackendData = useCallback(async () => {
-    await refetch();
+  const refreshBackendData = useCallback(async (options?: { throwOnError?: boolean }) => {
+    await refetch({ throwOnError: options?.throwOnError });
   }, [refetch]);
 
   /** 업로드 낙관적 갱신용: query cache의 documents를 직접 수정한다. */
