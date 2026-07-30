@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useUserPreferences } from "@/entities/user";
 
 const SCROLL_DURATION_MS = 1100;
 
@@ -7,6 +8,7 @@ const SCROLL_DURATION_MS = 1100;
  * AgentBody에서 추출했습니다.
  */
 export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | null>) {
+  const { reduceMotion } = useUserPreferences();
   const animationRef = useRef<number | null>(null);
 
   const scrollToPosition = useCallback((targetTop: number, { immediate = false } = {}) => {
@@ -23,7 +25,7 @@ export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | n
     const distance = nextTop - startTop;
 
     if (Math.abs(distance) <= 1) return;
-    if (immediate) {
+    if (immediate || reduceMotion) {
       container.scrollTop = nextTop;
       return;
     }
@@ -48,7 +50,7 @@ export function useSmoothScroll(containerRef: React.RefObject<HTMLDivElement | n
     }
 
     animationRef.current = window.requestAnimationFrame(animateScroll);
-  }, [containerRef]);
+  }, [containerRef, reduceMotion]);
 
   // 언마운트 시 진행 중인 애니메이션 취소
   useEffect(() => () => {

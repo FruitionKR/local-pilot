@@ -207,18 +207,28 @@ export function AgentPanel({
       .finally(() => setIsExporting(false));
   }
 
-  function acceptExport() {
+  async function acceptExport() {
     setExportErrorMessage(null);
+    setAgentTurnSuccessMessage(null);
     setIsExporting(true);
-    exportChatWiki([...selectedPairIds])
-      .then(async (response) => {
-        setExportPreview(null);
-        setSelectedPairIds(new Set());
+    try {
+      const response = await exportChatWiki([...selectedPairIds]);
+      setExportPreview(null);
+      setSelectedPairIds(new Set());
+      try {
         await onDocumentExported?.(response);
         setAgentTurnSuccessMessage("채팅을 문서로 편입해 AI 처리 파이프라인에 전달했습니다.");
-      })
-      .catch((error: unknown) => setExportErrorMessage(getErrorMessage(error, "채팅을 문서로 편입하지 못했습니다.")))
-      .finally(() => setIsExporting(false));
+      } catch (error: unknown) {
+        const detail = getErrorMessage(error, "워크스페이스 목록 갱신에 실패했습니다.");
+        setExportErrorMessage(
+          `문서는 저장했지만 워크스페이스 목록을 갱신하지 못했습니다. 페이지를 새로고침해 주세요. (${detail})`
+        );
+      }
+    } catch (error: unknown) {
+      setExportErrorMessage(getErrorMessage(error, "채팅을 문서로 편입하지 못했습니다."));
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   return (

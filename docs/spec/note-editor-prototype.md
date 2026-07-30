@@ -93,7 +93,9 @@ Content-Type: application/json
 ### 5.1 API 계층
 
 - `fetchNoteDraft(documentId)`: mock draft를 조회하고 없으면 `null`을 반환한다.
-- `saveNoteDraft(documentId, markdown, expectedVersion)`: 저장 결과의 새 version을 반환한다.
+- `saveNoteDraft(documentId, markdown, expectedVersion, source?)`: 저장 결과의 새 version을 반환한다.
+  AI 편집 결과 적용 시 `source="agent"`를 전달해 서버 버전 스냅샷을 남기고, 일반 자동 저장은
+  `source`를 생략한다.
 - `409`는 일반 오류와 구분되는 conflict 오류로 변환한다.
 
 ### 5.2 editor 초기화

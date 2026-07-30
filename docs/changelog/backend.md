@@ -78,6 +78,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - 전체 chat 테스트가 통과했다.
 - 다중 세션 목록·전환 Frontend UI는 `docs/issue/frontend/2026-07-23.md`의 미해결 작업으로 유지한다.
 
+### fix: 채팅 편입 문서를 워크스페이스 문서 목록에 노출
+
+**변경된 것**
+
+- `origin='chat_export'` 문서를 평면 문서 목록, 폴더 트리, 이름 검색 결과에 포함하도록 조회
+  조건을 통일했다.
+- 채팅 편입 API가 MinIO와 `documents` 테이블에 저장한 Markdown을 프론트가 목록 갱신 후
+  실제 워크스페이스 문서로 열 수 있다.
+
+**검증**
+
+- AI 편집의 `source=agent` 저장 스냅샷 서비스 테스트가 통과했다.
+- 목록 조회 회귀 테스트는 `chat_export` 포함 기대값으로 갱신했다. 로컬 Colima 환경에서는
+  Testcontainers PostgreSQL 공개 포트 연결 거부로 해당 통합 테스트 실행이 환경 단계에서
+  중단됐고, production 코드와 테스트 코드는 Java 21로 컴파일됐다.
+- 로컬 전체 스택에서 `source=agent` 저장의 `document_content_versions` 생성과 채팅 편입
+  문서의 MinIO `source_uri`, `documents(origin='chat_export')`, 목록 노출을 확인했다.
+
 ### refactor: Wiki 페이지 이름 변경을 llmPipeline에 위임
 
 **변경된 것**

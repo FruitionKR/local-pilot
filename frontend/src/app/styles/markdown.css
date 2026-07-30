@@ -3,6 +3,7 @@
 
 .markdown-viewer {
   color: #d0d7de;
+  font-family: var(--document-font-family);
   font-size: 14px;
   line-height: 1.65;
 }

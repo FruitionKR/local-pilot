@@ -427,6 +427,7 @@ export function useGraphCanvas({ nodes = [], links = [], focusedNodeId, onOpenNo
     tickGraphRef,
     advanceHoverAnimationRef,
     drawGraphRef,
+    draggingNodeIdRef,
     scheduleGraphCacheWrite
   });
 

@@ -114,7 +114,7 @@ Markdown MIME 또는 `.md`/`.markdown` 파일은 `EDITABLE`, PDF는 `ORIGINAL`�
 - 활성 문서만 반환한다.
 - `query`는 `filename`과 `display_name`의 대소문자 무시 부분 검색이다.
 - 본문은 검색하지 않는다.
-- `chat_export` 문서는 목록에서 제외한다.
+- 채팅에서 편입해 생성한 `chat_export` 문서도 반환한다.
 - 계층 navigation API 도입 전 호환용 평면 목록이다.
 
 `DocumentListResponse`의 항목은 다음 필드를 사용한다.

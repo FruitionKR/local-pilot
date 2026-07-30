@@ -1,8 +1,7 @@
 import { createClientId } from "@/entities/tree/lib/guards";
 
 // 문서 편집 시점별 클라이언트측 스냅샷.
-// 백엔드 영속 저장(document_content_versions)은 미구현이라, 임시로 localStorage에 저장한다.
-// 상호참조: docs/issue/backend/2026-07-23.md, docs/issue/frontend/2026-07-23.md
+// localStorage 기록은 즉시 비교·복원 UI용이며, 승인된 AI 편집은 source=agent로 서버에도 저장한다.
 export type DocumentSnapshot = {
   id: string;
   documentId: string;
