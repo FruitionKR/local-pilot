@@ -267,6 +267,11 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         lambda *_args, **_kwargs: calls.append(("artifact", "lint-op-1")) or [],
         raising=False,
     )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "apply_lint_object_changes",
+        lambda _result: calls.append("objects"),
+    )
 
     result = wiki_maintenance.PostgresWikiMaintenance().lint(
         WikiMaintenanceCommand(
@@ -285,6 +290,7 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         ("orphan", True),
         ("artifact", "lint-op-1"),
         ("log", [{"reason": "no_active_support"}]),
+        "objects",
         "commit",
     ]
 
@@ -344,6 +350,11 @@ def test_wiki_maintenance_rolls_back_when_operation_log_persistence_fails(
         persist_artifact,
     )
     monkeypatch.setattr(wiki_maintenance.database, "write_wiki_lint_log", write_log)
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "apply_lint_object_changes",
+        lambda _result: calls.append("objects"),
+    )
 
     with pytest.raises(OSError):
         wiki_maintenance.PostgresWikiMaintenance().lint(

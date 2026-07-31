@@ -44,22 +44,22 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
                 ],
                 read_text=self._read_text,
             )
+            rebuilt = rebuild_concept_page(contributions)
+            markdown_key = (
+                f"wiki/{workspace_id}/pages/{page.page_id}/ops/"
+                f"{operation_id}.md"
+            )
+            self._write_text(
+                markdown_key,
+                rebuilt.markdown,
+                "text/markdown; charset=utf-8",
+            )
         except PageRebuildError:
             raise
         except Exception as exc:
             raise PageRebuildError(
-                f"failed to load contribution for page:{page.page_id}"
+                f"failed to rebuild page:{page.page_id}"
             ) from exc
-        rebuilt = rebuild_concept_page(contributions)
-        markdown_key = (
-            f"wiki/{workspace_id}/pages/{page.page_id}/ops/"
-            f"{operation_id}.md"
-        )
-        self._write_text(
-            markdown_key,
-            rebuilt.markdown,
-            "text/markdown; charset=utf-8",
-        )
         digest = hashlib.sha256(rebuilt.markdown.encode("utf-8")).hexdigest()
         return {
             "page_id": page.page_id,

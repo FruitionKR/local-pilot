@@ -55,21 +55,66 @@ class RunPipelineUseCase:
                     and command.result_callback_url
                     and self._result_notifier is not None
                 ):
+                    payload = _result_payload(command, manifest)
                     try:
                         self._result_notifier.notify(
                             command.result_callback_url,
-                            _result_payload(command, manifest),
+                            payload,
                         )
                     except Exception as exc:
                         self._repository.mark_notification_pending(
                             run_id,
                             str(exc),
+                            command.result_callback_url,
+                            payload,
+                            getattr(exc, "status_code", None),
                         )
                         return manifest
                 return manifest
             except Exception as exc:
                 self._repository.fail(run_id, str(exc))
+                if (
+                    command.operation_id
+                    and command.result_callback_url
+                    and self._result_notifier is not None
+                ):
+                    payload = _failed_result_payload(command, exc)
+                    try:
+                        self._result_notifier.notify(
+                            command.result_callback_url,
+                            payload,
+                        )
+                    except Exception as callback_exc:
+                        self._repository.mark_notification_pending(
+                            run_id,
+                            str(callback_exc),
+                            command.result_callback_url,
+                            payload,
+                            getattr(callback_exc, "status_code", None),
+                        )
                 raise
+
+    def retry_notification(self, run_id: str) -> dict[str, Any]:
+        if self._result_notifier is None:
+            raise RuntimeError("pipeline result notifier is not configured")
+        run = self._repository.get_run(run_id)
+        if run is None:
+            raise LookupError("pipeline run not found")
+        pending = (run.get("manifest") or {}).get("pending_notification")
+        if not isinstance(pending, dict):
+            raise ValueError("pipeline run has no pending notification")
+        if pending.get("status_code") == 409:
+            raise ValueError("conflicting callback result cannot be retried")
+        callback_url = str(pending.get("callback_url") or "")
+        payload = pending.get("payload")
+        if not callback_url or not isinstance(payload, dict):
+            raise ValueError("pending notification is invalid")
+        self._result_notifier.notify(callback_url, payload)
+        self._repository.complete_notification(
+            run_id,
+            str(payload.get("status") or "succeeded"),
+        )
+        return payload
 
     def _ensure_active(self, run_id: str) -> None:
         if self._repository.touch(run_id) is False:
@@ -91,4 +136,20 @@ def _result_payload(
         "target_document_id": command.source_document_id,
         "summary": "Wiki ingest를 완료했습니다.",
         "changed_pages": manifest.get("operation_artifacts", []),
+    }
+
+
+def _failed_result_payload(
+    command: PipelineRunCommand,
+    error: Exception,
+) -> dict[str, Any]:
+    return {
+        "operation_id": command.operation_id,
+        "operation_type": "ingest",
+        "status": "failed",
+        "workspace_id": command.workspace_id,
+        "user_id": command.user_id,
+        "target_document_id": command.source_document_id,
+        "summary": str(error),
+        "changed_pages": [],
     }

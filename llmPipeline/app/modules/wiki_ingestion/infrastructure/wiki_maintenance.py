@@ -46,6 +46,7 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
                 materialize_promotions=should_materialize,
                 promotion_page_generator=promotion_generator,
                 apply_reconciliation=not command.dry_run,
+                operation_id=command.operation_id,
                 write_log=False,
                 connection=connection,
             )
@@ -69,6 +70,7 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
                 result["operation_artifacts"] = operation_artifacts
                 result["changed_pages"] = operation_artifacts
                 database.write_wiki_lint_log(result)
+                database.apply_lint_object_changes(result)
         return result
 
     def _build_promotion_page_generator(

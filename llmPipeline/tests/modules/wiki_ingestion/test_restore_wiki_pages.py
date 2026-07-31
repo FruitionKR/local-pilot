@@ -276,6 +276,39 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
     ]
 
 
+def test_restore_treats_malformed_contribution_as_page_failure() -> None:
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/A.json": json.dumps(
+                {"operation_id": "A", "page_id": "C3"}
+            ),
+        }
+    )
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+    )
+
+    result = use_case.execute(
+        RestoreWikiCommand(
+            operation_id="restore-1",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["status"] == "partially_succeeded"
+    assert result["failed_pages"] == [
+        {"page_id": "C3", "reason": "contribution_missing"}
+    ]
+
+
 def test_restore_result_keeps_source_snapshot_and_deleted_page_notifications() -> None:
     use_case = RestoreWikiPagesUseCase(
         ObjectStorageWikiPageRestore(

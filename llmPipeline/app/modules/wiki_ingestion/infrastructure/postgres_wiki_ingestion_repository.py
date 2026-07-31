@@ -33,6 +33,7 @@ from app.modules.wiki_ingestion.infrastructure.lint_operation_artifacts import (
 from app.modules.wiki_ingestion.domain.orphan_link_lint import find_orphan_links
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     read_text_object,
+    storage_uri,
     write_text_object,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
@@ -224,16 +225,55 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
         )
 
 
-def mark_pipeline_notification_pending(run_id: str, error: str) -> None:
+def mark_pipeline_notification_pending(
+    run_id: str,
+    error: str,
+    callback_url: str,
+    payload: dict[str, Any],
+    status_code: int | None = None,
+) -> None:
     with connect() as conn:
         conn.execute(
             """
             UPDATE pipeline_runs
             SET status = 'notify_pending', error = %s,
+                manifest = COALESCE(manifest, '{}'::jsonb)
+                    || jsonb_build_object('pending_notification', %s::jsonb),
                 updated_at = now(), finished_at = now()
             WHERE id = %s
             """,
-            (truncate_error(error), run_id),
+            (
+                truncate_error(error),
+                Json(
+                    {
+                        "callback_url": callback_url,
+                        "payload": payload,
+                        "status_code": status_code,
+                    }
+                ),
+                run_id,
+            ),
+        )
+
+
+def complete_pipeline_notification(run_id: str, status: str) -> None:
+    run_status = "failed" if status == "failed" else "succeeded"
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET status = %s,
+                error = CASE
+                    WHEN %s = 'failed'
+                    THEN manifest #>> '{pending_notification,payload,summary}'
+                    ELSE NULL
+                END,
+                manifest = COALESCE(manifest, '{}'::jsonb)
+                    - 'pending_notification',
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (run_status, run_status, run_id),
         )
 
 
@@ -387,6 +427,7 @@ def lint_wiki_workspace(
     materialize_promotions: bool = False,
     promotion_page_generator: PromotionPageGenerator | None = None,
     apply_reconciliation: bool = False,
+    operation_id: str | None = None,
     write_log: bool = True,
     connection: psycopg.Connection | None = None,
 ) -> dict[str, Any]:
@@ -430,6 +471,8 @@ def lint_wiki_workspace(
         "removed_claims": [],
         "removed_relations": [],
     }
+    pending_active_markdown: str | None = None
+    pending_archived_sections: list[str] = []
     if apply_reconciliation:
         (
             reconciled_markdown,
@@ -442,8 +485,8 @@ def lint_wiki_workspace(
             current_relation_signatures,
         )
         if reconciled_markdown != active_markdown:
-            write_text_object(active_path, reconciled_markdown)
             active_markdown = reconciled_markdown
+            pending_active_markdown = reconciled_markdown
         applied_cluster_reconciliation = {
             "removed_claims": removed_claims,
             "removed_relations": removed_relations,
@@ -552,14 +595,23 @@ def lint_wiki_workspace(
                     if cluster["id"] not in blocked_cluster_ids
                 ],
                 active_markdown,
-                active_path,
                 promotion_page_generator,
+                operation_id=operation_id,
             )
         result["materialized_promotions"] = materialized["promotions"]
         result["merged_promotions"] = materialized["merged_promotions"]
         result["materialized_relations"] = materialized["relations"]
         result["_lint_page_changes"] = materialized["page_changes"]
+        if materialized["active_markdown"] is not None:
+            pending_active_markdown = materialized["active_markdown"]
+        pending_archived_sections = materialized["archived_sections"]
         result["active_path"] = active_path
+    if pending_active_markdown is not None or pending_archived_sections:
+        result["_lint_object_changes"] = {
+            "active_path": active_path,
+            "active_markdown": pending_active_markdown,
+            "archived_sections": pending_archived_sections,
+        }
     if write_log:
         write_wiki_lint_log(result, lint_date)
     return result
@@ -755,6 +807,20 @@ def persist_lint_operation_result(
     )
 
 
+def apply_lint_object_changes(result: dict[str, Any]) -> None:
+    changes = result.pop("_lint_object_changes", None)
+    if not isinstance(changes, dict):
+        return
+    active_markdown = changes.get("active_markdown")
+    if active_markdown is not None:
+        write_text_object(str(changes["active_path"]), str(active_markdown))
+    _append_archived_clusters(
+        str(result["user_id"]),
+        str(result["workspace_id"]),
+        list(changes.get("archived_sections") or []),
+    )
+
+
 def _connection_scope(connection: psycopg.Connection | None):
     return nullcontext(connection) if connection is not None else connect()
 
@@ -799,9 +865,10 @@ def _materialize_promotion_candidates(
     workspace_id: str,
     clusters: list[dict[str, Any]],
     active_markdown: str,
-    active_path: str,
     promotion_page_generator: PromotionPageGenerator,
-) -> dict[str, list[dict[str, Any]]]:
+    *,
+    operation_id: str | None = None,
+) -> dict[str, Any]:
     active_sections = _cluster_sections_by_id(active_markdown)
     archived_sections: list[str] = []
     materialized_promotions: list[dict[str, Any]] = []
@@ -825,6 +892,7 @@ def _materialize_promotion_candidates(
                 workspace_id,
                 cluster_id,
                 claims,
+                operation_id=operation_id,
             )
             if merged_page is not None:
                 merged_promotions.append(
@@ -855,7 +923,15 @@ def _materialize_promotion_candidates(
         if not markdown or not slug or slug == "untitled":
             continue
         page_id = _resolve_or_create_wiki_page_id(conn, user_id, workspace_id, "concept", slug)
-        markdown_uri = _upload_wiki_markdown(markdown + "\n", f"wiki/{user_id}/{workspace_id}/concepts/{slug}.md")
+        if operation_id:
+            markdown_uri = storage_uri(
+                f"wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md"
+            )
+        else:
+            markdown_uri = _upload_wiki_markdown(
+                markdown + "\n",
+                f"wiki/{user_id}/{workspace_id}/concepts/{slug}.md",
+            )
         _upsert_wiki_page(conn, page_id, "concept", title, slug, _markdown_section(markdown, "Definition"), markdown_uri, user_id, workspace_id)
         first_document_id = source_refs[0].split(":", 1)[0] if source_refs else ""
         _persist_embedding_units(conn, page_id, first_document_id, markdown)
@@ -891,14 +967,19 @@ def _materialize_promotion_candidates(
         if section:
             archived_sections.append(f"{section}\n\n### Archived\npromoted_to: concept:{slug}\npromoted_at: {_today_iso()}")
     materialized_relations = _materialize_active_relation_candidates(conn, clusters, existing_concept_ids)
+    active_markdown_update = None
     if materialized_promotions or merged_promotions:
-        _write_active_cluster_sections(active_path, active_sections)
-        _append_archived_clusters(user_id, workspace_id, archived_sections)
+        lines = ["# Active Meaning Clusters"]
+        for cluster_id in sorted(active_sections):
+            lines.append(active_sections[cluster_id].strip())
+        active_markdown_update = "\n\n".join(lines).rstrip() + "\n"
     return {
         "promotions": materialized_promotions,
         "merged_promotions": merged_promotions,
         "relations": materialized_relations,
         "page_changes": page_changes,
+        "active_markdown": active_markdown_update,
+        "archived_sections": archived_sections,
     }
 
 
@@ -908,6 +989,8 @@ def _merge_promotion_into_existing_concept(
     workspace_id: str,
     concept_slug: str,
     claims: list[dict[str, Any]],
+    *,
+    operation_id: str | None = None,
 ) -> dict[str, Any] | None:
     row = conn.execute(
         """
@@ -935,13 +1018,18 @@ def _merge_promotion_into_existing_concept(
         for claim in claims
     ]
     updated_markdown = append_concept_evidence(markdown, updates)
-    current_markdown_key = (
-        f"wiki/{user_id}/{workspace_id}/concepts/{concept_slug}.md"
-    )
-    current_markdown_uri = write_text_object(
-        current_markdown_key,
-        updated_markdown,
-    )
+    if operation_id:
+        current_markdown_uri = storage_uri(
+            f"wiki/{workspace_id}/pages/{row['id']}/ops/{operation_id}.md"
+        )
+    else:
+        current_markdown_key = (
+            f"wiki/{user_id}/{workspace_id}/concepts/{concept_slug}.md"
+        )
+        current_markdown_uri = write_text_object(
+            current_markdown_key,
+            updated_markdown,
+        )
     _upsert_wiki_page(
         conn,
         str(row["id"]),
@@ -1050,13 +1138,6 @@ def _source_blocks_for_refs(conn: psycopg.Connection, refs: list[str]) -> list[d
         for row in rows:
             rows_out.append({"ref": f"{document_id}:{row['block_id']}", "text": row["text"]})
     return rows_out
-
-
-def _write_active_cluster_sections(active_path: str, sections: dict[str, str]) -> None:
-    lines = ["# Active Meaning Clusters"]
-    for cluster_id in sorted(sections):
-        lines.append(sections[cluster_id].strip())
-    write_text_object(active_path, "\n\n".join(lines).rstrip() + "\n")
 
 
 def _append_archived_clusters(user_id: str, workspace_id: str, sections: list[str]) -> None:

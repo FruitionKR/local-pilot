@@ -246,6 +246,7 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
         "workspace_id": "workspace-1",
     }
     captured: dict = {}
+    events: list[str] = []
     markdown_uploads: list[str] = []
     page_upserts: list[tuple[object, ...]] = []
     _stub_followup_writes(monkeypatch)
@@ -264,8 +265,11 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
     monkeypatch.setattr(
         persistence,
         "upload_wiki_markdown",
-        lambda _markdown, object_name: markdown_uploads.append(object_name)
-        or object_name,
+        lambda _markdown, object_name: (
+            events.append("canonical")
+            or markdown_uploads.append(object_name)
+            or object_name
+        ),
     )
     monkeypatch.setattr(
         persistence,
@@ -291,7 +295,11 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
     monkeypatch.setattr(
         persistence,
         "persist_operation_artifacts",
-        lambda **kwargs: captured.update(kwargs) or [{"page_id": "source-page-1"}],
+        lambda **kwargs: (
+            events.append("artifact")
+            or captured.update(kwargs)
+            or [{"page_id": "source-page-1"}]
+        ),
     )
 
     persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
@@ -299,6 +307,7 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
     assert captured["operation_id"] == "op-1"
     assert captured["workspace_id"] == "workspace-1"
     assert captured["source_page_id"] == "source-page-1"
+    assert events[0] == "artifact"
     assert markdown_uploads == [
         "wiki/user-1/workspace-1/sources/doc-1.md",
         "wiki/user-1/workspace-1/concepts/concept-a.md",
@@ -369,7 +378,7 @@ def test_operation_artifacts_include_existing_concept_evidence_updates(
     )
     monkeypatch.setattr(
         persistence,
-        "_persist_meaning_cluster_artifacts",
+        "_prepare_concept_update_decisions",
         lambda *_args: [
             {
                 "page_id": "existing-page-1",
@@ -377,6 +386,11 @@ def test_operation_artifacts_include_existing_concept_evidence_updates(
                 "markdown": "# Existing\n\n새 근거\n",
             }
         ],
+    )
+    monkeypatch.setattr(
+        persistence,
+        "_persist_meaning_cluster_artifacts",
+        lambda *_args: [],
     )
     monkeypatch.setattr(
         persistence,

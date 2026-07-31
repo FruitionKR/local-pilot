@@ -34,7 +34,16 @@ class PipelineRunRepositoryPort(Protocol):
 
     def fail(self, run_id: str, error: str) -> None: ...
 
-    def mark_notification_pending(self, run_id: str, error: str) -> None: ...
+    def mark_notification_pending(
+        self,
+        run_id: str,
+        error: str,
+        callback_url: str,
+        payload: dict[str, Any],
+        status_code: int | None = None,
+    ) -> None: ...
+
+    def complete_notification(self, run_id: str, status: str) -> None: ...
 
     def touch(self, run_id: str) -> bool: ...
 
