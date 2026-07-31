@@ -6,6 +6,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-07-31
+
+### feat: AI 작업 로그 스키마 추가
+
+**변경된 것**
+
+- `ai_operation_logs`를 추가한다. 문서 AI 편집·Wiki ingest·lint·복구를 한 테이블에 기록한다. `operation_id`가 PK이며 작업 등록 중복을 막는다. `target_document_id`는 복구 대상 선정의 근거이고, `restore_manifest`와 `payload_hash`는 각각 재조립 결과 수신과 콜백 재전송 판별에 쓴다.
+- `ai_operation_changes`를 추가한다. 작업 1회가 바꾼 리소스를 1행씩 남기는 감사 기록이다. `(operation_id, resource_type, resource_id, change_type)` UNIQUE가 콜백 재전송 시 중복을 막는 최종 방어선이다. diff 본문은 저장하지 않고 줄 수만 남긴다.
+- `wiki_page_versions`를 추가한다. Wiki 페이지 본문 이력이며 `revision`은 단조 증가한다. 복구도 새 revision을 append한다. `markdown_key`에 불변 object key를 함께 남겨 복구가 저장소에 쓰지 않고 옛 object를 재사용한다.
+- `wiki_page_contributions`를 추가한다. "지금 어느 문서가 이 페이지를 받치고 있나"의 현재 상태이며 복구 판정의 근거다. 복구는 행을 지우지 않고 `active`를 끄고 `deactivated_by`를 남긴다. 지우면 연속 복구에서 제외한 기여가 다시 살아난다.
+- `document_content_versions.operation_id`를 추가한다. 그 버전을 만든 AI 작업을 가리키며 수동 편집이면 NULL이다.
+- `wiki_pages`는 변경하지 않는다. revision 채번은 `max(revision)`으로 얻고, 재조립 실패는 `ai_operation_changes.rebuild_failed`로 남긴다.
+
+**검증**
+
+- Flyway V15·V16 적용과 `Successfully validated 16 migrations`를 확인했다.
+- `spring.jpa.hibernate.ddl-auto=validate` 상태에서 애플리케이션이 정상 기동해 엔티티와 스키마 일치를 확인했다.
+
+**남은 주의사항**
+
+- 아직 어떤 서비스도 이 테이블을 쓰지 않는다. 기록·조회·복구는 후속 작업에서 붙인다.
+- 설계와 작업 계획은 `docs/design/ai-operation-log.md`와 `ai-operation-log-tasks.md`를 따른다.
+
+---
+
 ## 2026-07-30
 
 ### fix: Markdown 버전 diff 계산에 크기 가드 추가
