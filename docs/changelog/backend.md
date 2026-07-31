@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### feat: 문서 AI 편집 로그 기록 추가
+
+**변경된 것**
+
+- `AgentApplyOperationStore`를 추가한다. `POST /agent/turns`가 편집안마다 일회용 적용 표를 발급하고, 저장 요청이 그 표를 돌려주면 AI 작업으로 기록한다. TTL 30분이며 메모리에만 둔다.
+- `AgentTurnResponse`에 `applyOperationId`를 추가한다. 프론트엔드는 이 값을 `PUT /documents/{id}/content`의 `apply_operation_id` part로 전달해야 AI 편집 로그가 남는다.
+- `DocumentService.saveContent`에 `applyOperationId`를 받는 오버로드를 추가한다. 표 검증에 성공한 경우에만 `ai_operation_logs`·`ai_operation_changes`를 문서 저장과 같은 트랜잭션에서 기록하고 `document_content_versions.operation_id`를 연결한다.
+- `base_version` 불일치는 본 트랜잭션이 롤백되므로 `OperationRecorder.recordConflict`를 `REQUIRES_NEW`로 분리해 `conflict` 로그를 남긴다.
+- 줄 수 계산이 실패해도 저장을 막지 않는다. 큰 문서는 diff 계산이 거부될 수 있는데 로그 때문에 사용자 저장이 실패해서는 안 된다.
+
+**검증**
+
+- `AgentApplyOperationStoreTest` 5개로 재사용·위조·타 사용자·타 문서 표가 통과하지 못하는 것을 확인했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- `source=agent` 문자열만으로는 AI 작업 여부를 판단하지 않는다. 그 값은 클라이언트가 임의로 넣을 수 있어 수동 편집을 AI 작업으로 위장할 수 있다. 기존 `source` 파라미터는 그대로 두되 기록 판단에는 쓰지 않는다.
+- 표를 소비하는 시점은 저장 성공 직후다. 검증 단계에서 소비하면 `base_version` 충돌 시 표가 사라져 재시도할 수 없다.
+- 프론트엔드가 `apply_operation_id`를 전달하기 전까지 AI 편집 로그는 쌓이지 않는다. 필드 추가는 하위 호환이라 기존 동작에는 영향이 없다.
+- `saveContent`의 기록 분기는 DB가 필요해 아직 통합 테스트로 덮지 못했다.
+
 ### feat: AI 작업 복구 판정 추가
 
 **변경된 것**

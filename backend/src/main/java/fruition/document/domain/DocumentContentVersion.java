@@ -26,6 +26,10 @@ public class DocumentContentVersion {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** 이 버전을 만든 AI 작업. 사용자가 직접 편집한 버전이면 NULL이다. */
+    @Column(name = "operation_id")
+    private String operationId;
+
     protected DocumentContentVersion() {}
 
     public DocumentContentVersion(String documentId, long version, String markdown,
@@ -43,4 +47,5 @@ public class DocumentContentVersion {
     public String getContentHash() { return contentHash; }
     public String getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getOperationId() { return operationId; }
 }

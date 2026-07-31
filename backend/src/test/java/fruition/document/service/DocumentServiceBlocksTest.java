@@ -93,6 +93,7 @@ class DocumentServiceBlocksTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock fruition.aihistory.service.OperationRecorder operationRecorder;
 
     DocumentService documentService;
 
@@ -104,6 +105,8 @@ class DocumentServiceBlocksTest {
                 editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
+                new fruition.aihistory.service.AgentApplyOperationStore(),
+                operationRecorder,
                 "http://localhost:8080");
     }
 

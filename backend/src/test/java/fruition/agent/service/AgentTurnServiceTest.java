@@ -30,12 +30,15 @@ class AgentTurnServiceTest {
     @Mock DocumentService documentService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock PipelineAgentRequester pipelineAgentRequester;
+    fruition.aihistory.service.AgentApplyOperationStore applyOperationStore =
+            new fruition.aihistory.service.AgentApplyOperationStore();
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
-        service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester);
+        service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester,
+                applyOperationStore);
     }
 
     @Test
