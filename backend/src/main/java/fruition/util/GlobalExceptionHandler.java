@@ -2,6 +2,8 @@ package fruition.util;
 
 import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
+import fruition.aihistory.exception.InvalidRestoreRequestException;
+import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentAlreadyProcessingException;
@@ -365,6 +367,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(OperationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOperationNotFound(OperationNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("AI_OPERATION_NOT_FOUND", "AI 작업 로그를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(InvalidRestoreRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRestoreRequest(InvalidRestoreRequestException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_RESTORE_REQUEST", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)

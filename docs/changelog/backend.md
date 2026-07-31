@@ -25,7 +25,26 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **남은 주의사항**
 
 - 복원 목적지를 처음에 `제외 대상 중 가장 이른 sequence_revision - 1`로 계산했는데, 연속 복구 시나리오에서 이미 비활성화한 기여가 담긴 revision을 고르는 버그가 있었다. 남길 기여의 마지막 revision을 쓰되 그 시점 기여 집합이 남길 집합과 같은지 확인하는 방식으로 고쳤다. lint가 기여 없이 revision만 올린 구간도 이 방식으로 함께 처리된다.
-- `WikiPageContributionRepository`의 조회가 아직 `active = true`로 걸러 판정기 입력과 맞지 않는다. 미리보기 서비스를 붙일 때 전체 조회로 바꾼다.
+
+### feat: 복구 미리보기 서비스 추가
+
+**변경된 것**
+
+- `RestoreScopeResolver`를 추가한다. 기준 작업과 `mode`로 제외할 작업 집합을 정한다. `since`는 기준 작업 이후만, `document`는 기준 작업을 포함한 그 문서 작업 전부를 제외한다. lint와 restore는 기여를 만들지 않아 ingest만 모은다.
+- `PreviewTokenSigner`를 추가한다. 미리보기 시점의 상태를 HMAC-SHA256으로 서명하고, 실행 시 상태를 다시 계산해 서명을 대조한다. 토큰에 상태를 담지 않아 별도 저장이 필요 없다. 서명 대상에 기여의 활성 여부까지 넣어 그사이 다른 복구가 끼어든 것도 잡는다.
+- `RestorePreviewService`를 추가한다. 워크스페이스 멤버십을 확인하고 제외 집합·기여 명단·판정·토큰을 엮어 미리보기를 만든다. 본문을 읽지 않아 저장소 접근이 없다.
+- `WikiPageContributionRepository`의 페이지별 조회를 전체 기여(활성·비활성)로 바꾼다. 복원 목적지 유효성을 보려면 그 revision이 담고 있던 기여를 알아야 한다.
+- 예외 2건을 전역 핸들러에 등록한다. `OperationNotFoundException`은 404 `AI_OPERATION_NOT_FOUND`, `InvalidRestoreRequestException`은 400 `INVALID_RESTORE_REQUEST`다. 후자는 `target_document_id`가 없는 lint 작업에 `since`·`document`를 쓰려 할 때 난다.
+
+**검증**
+
+- `RestorePlannerTest` 14개가 계속 통과한다.
+- 서명 키는 기동 시 `SecureRandom`으로 만든다. 미리보기 토큰은 수명이 짧고 재시작 시 무효여도 무방하다. 다중 인스턴스로 확장할 때 공유 시크릿으로 바꾼다.
+
+**남은 주의사항**
+
+- 미리보기 엔드포인트는 아직 없다. 조회 API 작업에서 다른 엔드포인트와 함께 붙인다.
+- `RestoreScopeResolver`와 `RestorePreviewService`의 통합 테스트는 실제 데이터가 쌓이는 콜백 수신 작업 이후에 붙인다.
 
 ### feat: AI 작업 로그 스키마 추가
 

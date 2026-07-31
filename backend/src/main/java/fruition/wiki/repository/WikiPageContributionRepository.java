@@ -28,13 +28,18 @@ public interface WikiPageContributionRepository
     List<String> findActivePageIdsByOperationIds(
             @Param("operationIds") Collection<String> operationIds);
 
-    /** 여러 페이지의 살아 있는 기여를 한 번에. 판정 단계에서 본문을 읽지 않고 이것만으로 계산한다. */
+    /**
+     * 여러 페이지의 <b>전체</b> 기여를 한 번에. 판정 단계는 본문을 읽지 않고 이것만으로 계산한다.
+     *
+     * <p>비활성 기여도 함께 반환한다. 복원 목적지가 유효한지 보려면 그 revision이 담고 있던 기여를
+     * 알아야 하는데, 이전 복구로 꺼진 기여가 그 안에 들어 있을 수 있다.
+     */
     @Query("""
             SELECT c FROM WikiPageContribution c
-            WHERE c.id.pageId IN :pageIds AND c.active = true
+            WHERE c.id.pageId IN :pageIds
             ORDER BY c.id.pageId, c.sequenceRevision
             """)
-    List<WikiPageContribution> findActiveByPageIds(@Param("pageIds") Collection<String> pageIds);
+    List<WikiPageContribution> findByPageIds(@Param("pageIds") Collection<String> pageIds);
 
     long countByIdPageIdAndActiveTrue(String pageId);
 }

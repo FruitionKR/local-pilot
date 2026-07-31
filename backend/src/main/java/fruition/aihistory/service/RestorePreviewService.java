@@ -1,0 +1,91 @@
+package fruition.aihistory.service;
+
+import fruition.aihistory.domain.OperationLog;
+import fruition.aihistory.domain.RestoreMode;
+import fruition.aihistory.dto.RestorePlan;
+import fruition.aihistory.dto.RestorePreviewResponse;
+import fruition.aihistory.exception.OperationNotFoundException;
+import fruition.aihistory.repository.OperationLogRepository;
+import fruition.wiki.domain.WikiPageContribution;
+import fruition.wiki.repository.WikiPageContributionRepository;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import fruition.workspace.repository.WorkspaceMemberRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 복구 미리보기. 무엇이 삭제·복원·재작성되는지 계산해 보여주고 실행에 쓸 토큰을 발급한다.
+ *
+ * <p>본문을 읽지 않는다. 기여 명단만으로 끝나므로 저장소 접근이 없다.
+ */
+@Service
+public class RestorePreviewService {
+
+    private final OperationLogRepository operationLogRepository;
+    private final WikiPageContributionRepository contributionRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final RestoreScopeResolver scopeResolver;
+    private final RestorePlanner planner;
+    private final PreviewTokenSigner tokenSigner;
+
+    public RestorePreviewService(OperationLogRepository operationLogRepository,
+                                 WikiPageContributionRepository contributionRepository,
+                                 WorkspaceMemberRepository workspaceMemberRepository,
+                                 RestoreScopeResolver scopeResolver,
+                                 RestorePlanner planner,
+                                 PreviewTokenSigner tokenSigner) {
+        this.operationLogRepository = operationLogRepository;
+        this.contributionRepository = contributionRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.scopeResolver = scopeResolver;
+        this.planner = planner;
+        this.tokenSigner = tokenSigner;
+    }
+
+    @Transactional(readOnly = true)
+    public RestorePreviewResponse preview(String workspaceId, String userId,
+                                          String operationId, RestoreMode mode) {
+        RestoreMode resolved = RestoreMode.orDefault(mode);
+        OperationLog target = loadOperation(workspaceId, userId, operationId);
+
+        Set<String> excluded = scopeResolver.resolve(target, resolved);
+        Map<String, List<WikiPageContribution>> contributions = loadContributions(excluded);
+        RestorePlan plan = planner.plan(excluded, contributions);
+
+        String token = tokenSigner.sign(operationId, resolved.name(), contributions);
+        return RestorePreviewResponse.from(operationId, resolved.name(), plan, token);
+    }
+
+    /**
+     * 제외 대상이 건드린 페이지의 <b>전체</b> 기여를 페이지별로 모은다.
+     * 판정과 토큰 서명이 같은 값을 봐야 하므로 한 번만 읽어 둘 다에 넘긴다.
+     */
+    Map<String, List<WikiPageContribution>> loadContributions(Set<String> excludedOperationIds) {
+        if (excludedOperationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> pageIds =
+                contributionRepository.findActivePageIdsByOperationIds(excludedOperationIds);
+        if (pageIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<WikiPageContribution>> byPage = new LinkedHashMap<>();
+        for (WikiPageContribution c : contributionRepository.findByPageIds(pageIds)) {
+            byPage.computeIfAbsent(c.getPageId(), key -> new java.util.ArrayList<>()).add(c);
+        }
+        return byPage;
+    }
+
+    OperationLog loadOperation(String workspaceId, String userId, String operationId) {
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new WorkspaceNotFoundException(workspaceId);
+        }
+        return operationLogRepository.findByOperationIdAndWorkspaceId(operationId, workspaceId)
+                .orElseThrow(() -> new OperationNotFoundException(operationId));
+    }
+}

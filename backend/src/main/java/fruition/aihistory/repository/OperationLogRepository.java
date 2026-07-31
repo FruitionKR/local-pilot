@@ -30,4 +30,8 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("after") Instant after,
             @Param("operationType") OperationType operationType
     );
+
+    /** mode=document에서 그 문서의 작업 전부를 얻을 때 쓴다. */
+    List<OperationLog> findByTargetDocumentIdAndOperationTypeOrderByCreatedAtAsc(
+            String targetDocumentId, OperationType operationType);
 }
