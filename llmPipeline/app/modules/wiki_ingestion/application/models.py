@@ -10,6 +10,7 @@ class WikiMaintenanceConfigurationError(ValueError):
 class WikiMaintenanceCommand:
     user_id: str
     workspace_id: str
+    operation_id: str | None = None
     materialize_promotions: bool = False
     dry_run: bool = True
     provider: str | None = None
@@ -21,6 +22,28 @@ class WikiMaintenanceCommand:
     temperature: float = 0.2
     timeout_seconds: int = 180
     max_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class RestoreContributionCommand:
+    operation_id: str
+    document_id: str
+
+
+@dataclass(frozen=True)
+class RebuildPageCommand:
+    page_id: str
+    keep_contributions: tuple[RestoreContributionCommand, ...]
+
+
+@dataclass(frozen=True)
+class RestoreWikiCommand:
+    operation_id: str
+    workspace_id: str
+    rebuild_pages: tuple[RebuildPageCommand, ...]
+    result_callback_url: str | None = None
+    restored_pages: tuple[str, ...] = ()
+    deleted_pages: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -40,6 +63,8 @@ class PipelineRunCommand:
     out: str
     user_id: str
     workspace_id: str
+    operation_id: str | None = None
+    result_callback_url: str | None = None
     source_document_id: str | None = None
     selection_mode: str | None = None
     reingest: bool = False

@@ -54,6 +54,7 @@ def stored_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     ]
     stored.pop("normalized", None)
     stored.pop("source_blocks", None)
+    stored.pop("concept_contributions", None)
     meaning_clusters = stored.get("meaning_clusters")
     if isinstance(meaning_clusters, dict):
         stored["meaning_clusters"] = {

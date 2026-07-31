@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Iterator
 from unittest.mock import Mock, patch
 
+import pytest
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -134,6 +135,67 @@ def test_pipeline_run_accepts_legacy_document_scope_fields() -> None:
     assert payload.user_id == "request-user"
     assert payload.workspace_id == "request-workspace"
     assert payload.wiki_evaluation_loop is True
+
+
+def test_pipeline_run_accepts_operation_result_contract() -> None:
+    payload = api.PipelineRunIn(
+        document_id="document_1",
+        operation_id="op_1",
+        result_callback_url="http://backend/api/ai-operations/op_1/result",
+    )
+
+    assert payload.operation_id == "op_1"
+    assert (
+        payload.result_callback_url
+        == "http://backend/api/ai-operations/op_1/result"
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation_id", "result_callback_url"),
+    [
+        ("op_1", None),
+        (None, "http://backend/api/ai-operations/op_1/result"),
+    ],
+)
+def test_pipeline_run_rejects_incomplete_operation_result_contract(
+    operation_id: str | None,
+    result_callback_url: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="must be provided together"):
+        api.PipelineRunIn(
+            document_id="document_1",
+            operation_id=operation_id,
+            result_callback_url=result_callback_url,
+        )
+
+
+def test_pipeline_command_includes_operation_result_contract() -> None:
+    repository = _repository()
+    payload = api.PipelineRunIn(
+        document_id="document_1",
+        operation_id="op_1",
+        result_callback_url="http://backend/api/ai-operations/op_1/result",
+    )
+
+    command = pipeline_routes._build_pipeline_command(
+        payload,
+        run_id="run_1",
+        input_markdown="# Document",
+        input_name="document.md",
+        out=Path("runs/test"),
+        log_path=Path("runs/test/pipeline.log"),
+        source_document_id="document_1",
+        user_id="user_1",
+        workspace_id="workspace_1",
+        repository=repository,
+    )
+
+    assert command.operation_id == "op_1"
+    assert (
+        command.result_callback_url
+        == "http://backend/api/ai-operations/op_1/result"
+    )
 
 
 def test_chat_wiki_run_accepts_selection_mode() -> None:

@@ -11,11 +11,24 @@ from app.modules.wiki_ingestion.application.ports import (
     WikiMaintenancePort,
 )
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.application.restore_wiki_pages import (
+    RestoreWikiPagesUseCase,
+)
 from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     LocalPipelineLogReader,
     ObjectStoragePipelineSourceReader,
     PostgresPipelineRunRepository,
     RunLabPipelineRunner,
+)
+from app.modules.wiki_ingestion.infrastructure.pipeline_result_callback import (
+    HttpPipelineResultNotifier,
+)
+from app.modules.wiki_ingestion.infrastructure.object_storage import (
+    read_text_object,
+    write_text_object,
+)
+from app.modules.wiki_ingestion.infrastructure.wiki_page_restore import (
+    ObjectStorageWikiPageRestore,
 )
 from app.modules.wiki_ingestion.infrastructure.wiki_maintenance import PostgresWikiMaintenance
 
@@ -34,12 +47,24 @@ def get_pipeline_run_use_case() -> RunPipelineUseCase:
         runner=RunLabPipelineRunner(),
         repository=get_pipeline_run_repository(),
         embedding_job=ThreadedWikiEmbeddingJob(logger),
+        result_notifier=HttpPipelineResultNotifier(),
     )
 
 
 @lru_cache(maxsize=1)
 def get_pipeline_source_reader() -> PipelineSourceReaderPort:
     return ObjectStoragePipelineSourceReader()
+
+
+@lru_cache(maxsize=1)
+def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
+    return RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(
+            read_text_object,
+            write_text_object,
+        ),
+        HttpPipelineResultNotifier(),
+    )
 
 
 @lru_cache(maxsize=1)

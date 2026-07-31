@@ -15,7 +15,7 @@ def _stub_followup_writes(monkeypatch) -> None:
     monkeypatch.setattr(
         persistence,
         "_persist_meaning_cluster_artifacts",
-        lambda *_args: None,
+        lambda *_args: [],
     )
 
 
@@ -199,6 +199,238 @@ def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> Non
             0.9,
         )
     ]
+
+
+def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
+    manifest = {
+        "operation_id": "op-1",
+        "normalized": {
+            "document": {"title": "문서"},
+            "semantic_notes": [],
+            "concept_ledger": [
+                {
+                    "slug": "concept-a",
+                    "title": "개념 A",
+                    "definition": "정의",
+                }
+            ],
+        },
+        "source_page": {"title": "문서", "markdown": "# 문서\n"},
+        "source_blocks": [],
+        "concept_pages": [
+            {
+                "slug": "concept-a",
+                "title": "개념 A",
+                "markdown": "# 개념 A\n",
+            }
+        ],
+        "concept_contributions": {
+            "concept-a": {
+                "schema_version": 1,
+                "operation_id": "op-1",
+                "concept": {"slug": "concept-a"},
+            }
+        },
+        "links": [],
+        "user_id": "user-1",
+        "workspace_id": "workspace-1",
+    }
+    captured: dict = {}
+    markdown_uploads: list[str] = []
+    page_upserts: list[tuple[object, ...]] = []
+    _stub_followup_writes(monkeypatch)
+    monkeypatch.setattr(
+        persistence,
+        "resolve_or_create_wiki_page_id",
+        lambda _conn, _user, _workspace, page_type, _slug: (
+            "source-page-1" if page_type == "source" else "concept-page-1"
+        ),
+    )
+    monkeypatch.setattr(
+        persistence,
+        "upload_wiki_markdown",
+        lambda _markdown, object_name: markdown_uploads.append(object_name)
+        or object_name,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "upsert_wiki_page",
+        lambda *args: page_upserts.append(args),
+    )
+    monkeypatch.setattr(
+        persistence,
+        "upsert_document_wiki_link",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "persist_embedding_units",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "load_existing_concept_ids_by_slug",
+        lambda *_args: {},
+    )
+    monkeypatch.setattr(persistence, "upsert_wiki_page_link", lambda *_args: None)
+    monkeypatch.setattr(
+        persistence,
+        "persist_operation_artifacts",
+        lambda **kwargs: captured.update(kwargs) or [{"page_id": "source-page-1"}],
+    )
+
+    persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
+
+    assert captured["operation_id"] == "op-1"
+    assert captured["workspace_id"] == "workspace-1"
+    assert captured["source_page_id"] == "source-page-1"
+    assert markdown_uploads == [
+        "wiki/user-1/workspace-1/sources/doc-1.md",
+        "wiki/user-1/workspace-1/concepts/concept-a.md",
+    ]
+    assert len(page_upserts) == 2
+    assert captured["concept_pages"] == [
+        {
+            "page_id": "concept-page-1",
+            "slug": "concept-a",
+            "markdown": "# 개념 A\n",
+        }
+    ]
+    assert manifest["operation_artifacts"] == [{"page_id": "source-page-1"}]
+
+
+def test_operation_artifacts_include_existing_concept_evidence_updates(
+    monkeypatch,
+) -> None:
+    manifest = {
+        "operation_id": "op-1",
+        "normalized": {
+            "document": {"title": "문서"},
+            "semantic_notes": [],
+            "concept_ledger": [],
+        },
+        "source_page": {"title": "문서", "markdown": "# 문서\n"},
+        "source_blocks": [],
+        "concept_pages": [],
+        "concept_contributions": {
+            "existing": {
+                "operation_id": "op-1",
+                "concept": {"slug": "existing"},
+            }
+        },
+        "links": [],
+        "meaning_clusters": {},
+        "user_id": "user-1",
+        "workspace_id": "workspace-1",
+    }
+    captured = {}
+    _stub_followup_writes(monkeypatch)
+    monkeypatch.setattr(
+        persistence,
+        "resolve_or_create_wiki_page_id",
+        lambda *_args: "source-page-1",
+    )
+    monkeypatch.setattr(
+        persistence,
+        "upload_wiki_markdown",
+        lambda _markdown, key: key,
+    )
+    monkeypatch.setattr(persistence, "upsert_wiki_page", lambda *_args: None)
+    monkeypatch.setattr(
+        persistence,
+        "upsert_document_wiki_link",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "persist_embedding_units",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        persistence,
+        "load_existing_concept_ids_by_slug",
+        lambda *_args: {"existing": "existing-page-1"},
+    )
+    monkeypatch.setattr(
+        persistence,
+        "_persist_meaning_cluster_artifacts",
+        lambda *_args: [
+            {
+                "page_id": "existing-page-1",
+                "slug": "existing",
+                "markdown": "# Existing\n\n새 근거\n",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        persistence,
+        "persist_operation_artifacts",
+        lambda **kwargs: captured.update(kwargs) or [],
+    )
+
+    persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
+
+    assert captured["concept_pages"] == [
+        {
+            "page_id": "existing-page-1",
+            "slug": "existing",
+            "markdown": "# Existing\n\n새 근거\n",
+        }
+    ]
+
+
+def test_existing_concept_update_writes_canonical_current_markdown(
+    monkeypatch,
+) -> None:
+    writes = []
+
+    class Result:
+        def fetchone(self):
+            return {
+                "id": "existing-page-1",
+                "markdown_uri": "wiki/ws/pages/existing-page-1/ops/op-old.md",
+            }
+
+    class Connection:
+        def execute(self, _query, _params):
+            return Result()
+
+    monkeypatch.setattr(
+        persistence,
+        "read_optional_text_object",
+        lambda _key: "# Existing\n\n## Evidence\n- 기존 근거\n",
+    )
+    monkeypatch.setattr(
+        persistence,
+        "write_text_object",
+        lambda key, text: writes.append((key, text)) or f"s3://bucket/{key}",
+    )
+    monkeypatch.setattr(
+        persistence,
+        "persist_embedding_units",
+        lambda *_args: None,
+    )
+
+    changes = persistence._apply_concept_update_decisions(
+        Connection(),
+        "doc-1",
+        "user-1",
+        "ws",
+        [
+            {
+                "decision": "same_concept",
+                "concept_slug": "existing",
+                "claim_id": "claim-1",
+                "claim": "새 근거",
+                "refs": ["doc-1:B0001"],
+            }
+        ],
+    )
+
+    assert writes[0][0] == "wiki/user-1/ws/concepts/existing.md"
+    assert all("ops/op-old.md" not in key for key, _text in writes)
+    assert changes[0]["page_id"] == "existing-page-1"
+    assert "새 근거" in changes[0]["markdown"]
 
 
 def test_persist_wiki_outputs_reads_normalized_and_links_artifacts(

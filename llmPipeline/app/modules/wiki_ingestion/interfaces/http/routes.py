@@ -19,11 +19,15 @@ from app.modules.wiki_ingestion.application.ports import (
     WikiMaintenancePort,
 )
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.application.restore_wiki_pages import (
+    RestoreWikiPagesUseCase,
+)
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_log_reader,
     get_pipeline_run_repository,
     get_pipeline_run_use_case,
     get_pipeline_source_reader,
+    get_restore_wiki_pages_use_case,
     get_wiki_maintenance,
 )
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
@@ -33,6 +37,7 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     PipelineRunIn,
     PipelineRunOut,
     ReingestRunIn,
+    WikiRestoreRunIn,
     WikiLintIn,
     WikiLintOut,
 )
@@ -40,6 +45,26 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
 
 router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
+
+
+@router.post("/wiki/restore-runs")
+def restore_wiki_pages(
+    payload: WikiRestoreRunIn,
+    use_case: RestoreWikiPagesUseCase = Depends(
+        get_restore_wiki_pages_use_case
+    ),
+) -> dict[str, Any]:
+    try:
+        return use_case.execute(payload.to_command())
+    except Exception as exc:
+        logger.exception("Wiki restore 처리 중 예상하지 못한 오류가 발생했습니다.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "internal_server_error",
+                "message": "Wiki restore를 처리하지 못했습니다.",
+            },
+        ) from exc
 
 
 @router.post("/wiki/maintenance/lint", response_model=WikiLintOut)
@@ -283,6 +308,8 @@ def _build_pipeline_command(
     )
     return PipelineRunCommand(
         run_id=run_id,
+        operation_id=payload.operation_id,
+        result_callback_url=payload.result_callback_url,
         source_document_id=source_document_id,
         selection_mode=getattr(payload, "selection_mode", None),
         reingest=isinstance(payload, ReingestRunIn),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import date
@@ -25,7 +26,14 @@ from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
     markdown_list_section as _markdown_list_section,
     markdown_section as _markdown_section,
 )
-from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
+from app.modules.wiki_ingestion.infrastructure.lint_operation_artifacts import (
+    persist_lint_operation_artifacts,
+)
+from app.modules.wiki_ingestion.domain.orphan_link_lint import find_orphan_links
+from app.modules.wiki_ingestion.infrastructure.object_storage import (
+    read_text_object,
+    write_text_object,
+)
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
     persist_wiki_outputs as _persist_wiki_outputs,
 )
@@ -33,6 +41,7 @@ from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliatio
     active_relation_keys as _active_relation_keys,
     apply_structural_reconciliation as _apply_structural_reconciliation,
     list_reconciliation_candidates as _list_reconciliation_candidates,
+    _remove_stale_relations,
     source_contribution_payload as _source_contribution_payload,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
@@ -83,6 +92,7 @@ REQUIRED_TABLES = (
     "document_wiki_links",
     "source_blocks",
     "wiki_page_links",
+    "wiki_page_contributions",
     "pipeline_runs",
     "wiki_page_embeddings",
     "wiki_embedding_vectors",
@@ -210,6 +220,19 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
             WHERE id = %s
             """,
             (error_message, run_id),
+        )
+
+
+def mark_pipeline_notification_pending(run_id: str, error: str) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET status = 'notify_pending', error = %s,
+                updated_at = now(), finished_at = now()
+            WHERE id = %s
+            """,
+            (truncate_error(error), run_id),
         )
 
 
@@ -533,12 +556,209 @@ def lint_wiki_workspace(
         result["materialized_promotions"] = materialized["promotions"]
         result["merged_promotions"] = materialized["merged_promotions"]
         result["materialized_relations"] = materialized["relations"]
+        result["_lint_page_changes"] = materialized["page_changes"]
         result["active_path"] = active_path
     if write_log:
-        existing_log = _read_optional_text_object(log_path)
-        separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
-        write_text_object(log_path, f"{existing_log}{separator}{render_lint_log_markdown(result, lint_date)}")
+        write_wiki_lint_log(result, lint_date)
     return result
+
+
+def lint_orphan_wiki_links(
+    user_id: str,
+    workspace_id: str,
+    *,
+    apply: bool,
+) -> dict[str, list[dict[str, Any]]]:
+    with connect() as conn:
+        contribution_rows = conn.execute(
+            """
+            SELECT contribution.active,
+                   contribution.object_key
+            FROM wiki_page_contributions contribution
+            JOIN wiki_pages page ON page.id = contribution.page_id
+            WHERE contribution.object_key IS NOT NULL
+              AND page.page_type = 'concept'
+              AND page.user_id = %s
+              AND page.workspace_id = %s
+            ORDER BY contribution.sequence_revision
+            """,
+            (user_id, workspace_id),
+        ).fetchall()
+        link_rows = conn.execute(
+            """
+            SELECT concat(source_page.page_type, ':', source_page.slug) AS source,
+                   concat(target_page.page_type, ':', target_page.slug) AS target,
+                   link.link_type AS relation,
+                   source_page.status AS source_status,
+                   target_page.status AS target_status
+            FROM wiki_page_links link
+            JOIN wiki_pages source_page ON source_page.id = link.from_page_id
+            JOIN wiki_pages target_page ON target_page.id = link.to_page_id
+            WHERE source_page.user_id = %s
+              AND source_page.workspace_id = %s
+              AND target_page.user_id = %s
+              AND target_page.workspace_id = %s
+            """,
+            (user_id, workspace_id, user_id, workspace_id),
+        ).fetchall()
+
+        managed_contributions = []
+        active_contributions = []
+        for row in contribution_rows:
+            payload = json.loads(read_text_object(str(row["object_key"])))
+            if not isinstance(payload, dict):
+                raise RuntimeError(
+                    "concept contribution log must be a JSON object"
+                )
+            managed_contributions.append(payload)
+            if bool(row["active"]):
+                active_contributions.append(payload)
+
+        current_links = [
+            {
+                "source": str(row["source"]),
+                "target": str(row["target"]),
+                "relation": str(row["relation"]),
+            }
+            for row in link_rows
+        ]
+        deleted_page_refs = {
+            str(row[key])
+            for row in link_rows
+            for key, status_key in (
+                ("source", "source_status"),
+                ("target", "target_status"),
+            )
+            if str(row[status_key]) != "active"
+        }
+        candidates = find_orphan_links(
+            current_links=current_links,
+            active_contribution_json=active_contributions,
+            managed_contribution_json=managed_contributions,
+            deleted_page_refs=deleted_page_refs,
+        )
+        removed = (
+            _remove_stale_relations(
+                conn,
+                candidates,
+                set(),
+                user_id,
+                workspace_id,
+            )
+            if apply
+            else []
+        )
+    return {
+        "orphan_link_candidates": candidates,
+        "removed_orphan_links": removed,
+    }
+
+
+def write_wiki_lint_log(
+    result: dict[str, Any],
+    lint_date: str | None = None,
+) -> None:
+    date_value = lint_date or _today_iso()
+    log_path = (
+        f"wiki/{result['user_id']}/{result['workspace_id']}/logs/"
+        f"{date_value}.md"
+    )
+    existing_log = _read_optional_text_object(log_path)
+    separator = "\n" if existing_log and not existing_log.endswith("\n") else ""
+    write_text_object(
+        log_path,
+        f"{existing_log}{separator}{render_lint_log_markdown(result, date_value)}",
+    )
+
+
+def persist_lint_operation_result(
+    user_id: str,
+    workspace_id: str,
+    operation_id: str,
+    result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    page_changes = {
+        str(change["slug"]): dict(change)
+        for change in result.pop("_lint_page_changes", [])
+    }
+    added_links = [
+        _normalized_relation_link(item)
+        for item in result.get("materialized_relations", [])
+    ]
+    removed_links = [
+        _normalized_relation_link(item)
+        for reconciliation in result.get("applied_reconciliations", [])
+        for item in reconciliation.get("removed_relations", [])
+    ]
+    removed_links.extend(
+        _normalized_relation_link(item)
+        for item in result.get("removed_orphan_links", [])
+    )
+    links_by_source: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for field, links in (
+        ("added_links", added_links),
+        ("removed_links", removed_links),
+    ):
+        for link in links:
+            source = str(link.get("source") or "")
+            if not source.startswith("concept:"):
+                continue
+            slug = source.split(":", 1)[1]
+            links_by_source.setdefault(
+                slug,
+                {"added_links": [], "removed_links": []},
+            )[field].append(link)
+
+    missing_slugs = [slug for slug in links_by_source if slug not in page_changes]
+    if missing_slugs:
+        with connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, slug, title, summary, markdown_uri
+                FROM wiki_pages
+                WHERE page_type = 'concept'
+                  AND user_id = %s
+                  AND workspace_id = %s
+                  AND slug = ANY(%s)
+                """,
+                (user_id, workspace_id, missing_slugs),
+            ).fetchall()
+        for row in rows:
+            markdown = _read_optional_text_object(str(row["markdown_uri"]))
+            page_changes[str(row["slug"])] = {
+                "page_id": str(row["id"]),
+                "slug": str(row["slug"]),
+                "title": str(row["title"]),
+                "definition": str(row.get("summary") or ""),
+                "markdown": markdown,
+                "content_action": "none",
+                "claims": [],
+            }
+
+    for slug, link_actions in links_by_source.items():
+        change = page_changes.get(slug)
+        if change is None:
+            raise RuntimeError(
+                f"failed to resolve lint operation source page: concept:{slug}"
+            )
+        change.update(link_actions)
+
+    return persist_lint_operation_artifacts(
+        operation_id=operation_id,
+        workspace_id=workspace_id,
+        page_changes=list(page_changes.values()),
+        write_text=write_text_object,
+    )
+
+
+def _normalized_relation_link(item: dict[str, Any]) -> dict[str, Any]:
+    source = str(item.get("source") or item.get("from") or "")
+    target = str(item.get("target") or item.get("to") or "")
+    return {
+        "source": source if ":" in source else f"concept:{source}",
+        "target": target if ":" in target else f"concept:{target}",
+        "relation": str(item.get("relation") or "related_to"),
+    }
 
 
 def _orphan_source_refs(refs: list[str]) -> list[str]:
@@ -579,6 +799,7 @@ def _materialize_promotion_candidates(
     materialized_promotions: list[dict[str, Any]] = []
     merged_promotions: list[dict[str, Any]] = []
     materialized_relations: list[dict[str, Any]] = []
+    page_changes: list[dict[str, Any]] = []
     existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
     for cluster in clusters:
         cluster_id = cluster["id"]
@@ -590,7 +811,14 @@ def _materialize_promotion_candidates(
         if not claims:
             continue
         if cluster_id in existing_concept_ids:
-            if _merge_promotion_into_existing_concept(conn, user_id, workspace_id, cluster_id, claims):
+            merged_page = _merge_promotion_into_existing_concept(
+                conn,
+                user_id,
+                workspace_id,
+                cluster_id,
+                claims,
+            )
+            if merged_page is not None:
                 merged_promotions.append(
                     {
                         "cluster_id": cluster_id,
@@ -598,6 +826,7 @@ def _materialize_promotion_candidates(
                         "page_id": existing_concept_ids[cluster_id],
                     }
                 )
+                page_changes.append(merged_page)
                 section = active_sections.pop(cluster_id, "")
                 if section:
                     archived_sections.append(
@@ -624,6 +853,17 @@ def _materialize_promotion_candidates(
         _persist_embedding_units(conn, page_id, first_document_id, markdown)
         existing_concept_ids[slug] = page_id
         materialized_promotions.append({"cluster_id": cluster_id, "concept_slug": slug, "page_id": page_id})
+        page_changes.append(
+            {
+                "page_id": page_id,
+                "slug": slug,
+                "title": title,
+                "definition": _markdown_section(markdown, "Definition"),
+                "markdown": markdown + "\n",
+                "content_action": "create",
+                "claims": claims,
+            }
+        )
         for relation in cluster.get("relations", []):
             relation_type = relation.get("relation")
             target_slug = str(relation.get("target") or "").split("concept:", 1)[-1]
@@ -650,6 +890,7 @@ def _materialize_promotion_candidates(
         "promotions": materialized_promotions,
         "merged_promotions": merged_promotions,
         "relations": materialized_relations,
+        "page_changes": page_changes,
     }
 
 
@@ -659,10 +900,10 @@ def _merge_promotion_into_existing_concept(
     workspace_id: str,
     concept_slug: str,
     claims: list[dict[str, Any]],
-) -> bool:
+) -> dict[str, Any] | None:
     row = conn.execute(
         """
-        SELECT id, markdown_uri
+        SELECT id, title, summary, markdown_uri
         FROM wiki_pages
         WHERE page_type = 'concept'
           AND status = 'active'
@@ -673,10 +914,10 @@ def _merge_promotion_into_existing_concept(
         (user_id, workspace_id, concept_slug),
     ).fetchone()
     if not row:
-        return False
+        return None
     markdown = _read_optional_text_object(row["markdown_uri"])
     if not markdown:
-        return False
+        return None
     updates = [
         {
             "claim_id": claim.get("id"),
@@ -686,13 +927,40 @@ def _merge_promotion_into_existing_concept(
         for claim in claims
     ]
     updated_markdown = append_concept_evidence(markdown, updates)
-    if updated_markdown == markdown:
-        return True
-    write_text_object(row["markdown_uri"], updated_markdown)
-    first_ref = next((ref for claim in claims for ref in claim.get("refs", [])), "")
-    document_id = first_ref.split(":", 1)[0] if first_ref else ""
-    _persist_embedding_units(conn, row["id"], document_id, updated_markdown)
-    return True
+    current_markdown_key = (
+        f"wiki/{user_id}/{workspace_id}/concepts/{concept_slug}.md"
+    )
+    current_markdown_uri = write_text_object(
+        current_markdown_key,
+        updated_markdown,
+    )
+    _upsert_wiki_page(
+        conn,
+        str(row["id"]),
+        "concept",
+        str(row.get("title") or concept_slug),
+        concept_slug,
+        str(row.get("summary") or ""),
+        current_markdown_uri,
+        user_id,
+        workspace_id,
+    )
+    if updated_markdown != markdown:
+        first_ref = next(
+            (ref for claim in claims for ref in claim.get("refs", [])),
+            "",
+        )
+        document_id = first_ref.split(":", 1)[0] if first_ref else ""
+        _persist_embedding_units(conn, row["id"], document_id, updated_markdown)
+    return {
+        "page_id": str(row["id"]),
+        "slug": concept_slug,
+        "title": str(row.get("title") or concept_slug),
+        "definition": str(row.get("summary") or ""),
+        "markdown": updated_markdown,
+        "content_action": "append_evidence",
+        "claims": claims,
+    }
 
 
 def _materialize_active_relation_candidates(

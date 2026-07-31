@@ -35,6 +35,12 @@ class WikiPersistencePayloadTest(unittest.TestCase):
                 "max_block_number": 12,
             },
             "concept_pages": [{"slug": "concept-a", "markdown": "# Concept"}],
+            "concept_contributions": {
+                "concept-a": {
+                    "operation_id": "op-1",
+                    "evidence_units": [{"evidence_id": "ev-1"}],
+                }
+            },
             "normalized": {"large": True},
             "source_blocks": [{"block_id": "B0001"}],
             "source_block_changes": {
@@ -59,6 +65,7 @@ class WikiPersistencePayloadTest(unittest.TestCase):
 
         self.assertNotIn("normalized", stored)
         self.assertNotIn("source_blocks", stored)
+        self.assertNotIn("concept_contributions", stored)
         self.assertEqual(
             stored["source_extraction_artifact"]["max_block_number"],
             12,

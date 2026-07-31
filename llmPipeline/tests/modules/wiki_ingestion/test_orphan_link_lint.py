@@ -1,0 +1,302 @@
+import json
+
+from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+from app.modules.wiki_ingestion.domain.orphan_link_lint import (
+    find_orphan_links,
+)
+from app.modules.wiki_ingestion.infrastructure import (
+    postgres_wiki_ingestion_repository as repository,
+)
+from app.modules.wiki_ingestion.infrastructure import wiki_maintenance
+
+
+def test_lint_keeps_link_supported_by_any_active_contribution() -> None:
+    shared = {
+        "source": "concept:shared",
+        "target": "concept:target",
+        "relation": "related_to",
+    }
+    unsupported = {
+        "source": "concept:shared",
+        "target": "concept:removed",
+        "relation": "related_to",
+    }
+
+    orphan_links = find_orphan_links(
+        current_links=[shared, unsupported],
+        active_contribution_json=[
+            {
+                "operation_id": "op-B",
+                "page_id": "shared",
+                "links": [shared],
+            }
+        ],
+        managed_contribution_json=[{"links": [shared, unsupported]}],
+        deleted_page_refs=set(),
+    )
+
+    assert orphan_links == [
+        {
+            **unsupported,
+            "reason": "no_active_support",
+        }
+    ]
+
+
+def test_lint_marks_incident_link_when_page_is_deleted() -> None:
+    link = {
+        "source": "concept:deleted",
+        "target": "concept:target",
+        "relation": "related_to",
+    }
+
+    orphan_links = find_orphan_links(
+        current_links=[link],
+        active_contribution_json=[{"links": [link]}],
+        managed_contribution_json=[{"links": [link]}],
+        deleted_page_refs={"concept:deleted"},
+    )
+
+    assert orphan_links == [{**link, "reason": "endpoint_deleted"}]
+
+
+def test_lint_preserves_link_that_has_never_been_managed_by_contribution_log() -> None:
+    legacy_link = {
+        "source": "concept:legacy",
+        "target": "concept:target",
+        "relation": "related_to",
+    }
+
+    orphan_links = find_orphan_links(
+        current_links=[legacy_link],
+        active_contribution_json=[],
+        managed_contribution_json=[],
+        deleted_page_refs=set(),
+    )
+
+    assert orphan_links == []
+
+
+def test_lint_replays_link_add_and_remove_actions_in_operation_order() -> None:
+    link = {
+        "source": "concept:shared",
+        "target": "concept:target",
+        "relation": "related_to",
+    }
+
+    removed = find_orphan_links(
+        current_links=[link],
+        active_contribution_json=[
+            {"artifact_type": "ingest", "links": [link]},
+            {"artifact_type": "lint", "removed_links": [link]},
+        ],
+        managed_contribution_json=[
+            {"artifact_type": "ingest", "links": [link]},
+            {"artifact_type": "lint", "removed_links": [link]},
+        ],
+        deleted_page_refs=set(),
+    )
+    readded = find_orphan_links(
+        current_links=[link],
+        active_contribution_json=[
+            {"artifact_type": "ingest", "links": [link]},
+            {"artifact_type": "lint", "removed_links": [link]},
+            {"artifact_type": "lint", "added_links": [link]},
+        ],
+        managed_contribution_json=[
+            {"artifact_type": "ingest", "links": [link]},
+            {"artifact_type": "lint", "removed_links": [link]},
+            {"artifact_type": "lint", "added_links": [link]},
+        ],
+        deleted_page_refs=set(),
+    )
+
+    assert removed == [{**link, "reason": "no_active_support"}]
+    assert readded == []
+
+
+def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
+    monkeypatch,
+) -> None:
+    shared = {
+        "source": "concept:shared",
+        "target": "concept:target",
+        "relation": "related_to",
+    }
+    unsupported = {
+        "source": "concept:shared",
+        "target": "concept:removed",
+        "relation": "related_to",
+    }
+
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class Connection:
+        def execute(self, query, _params):
+            normalized = " ".join(query.split())
+            if "FROM wiki_page_contributions" in normalized:
+                return Result(
+                    [
+                        {
+                            "active": True,
+                            "object_key": "wiki/ws/pages/shared/ops/B.json",
+                        },
+                        {
+                            "active": False,
+                            "object_key": "wiki/ws/pages/shared/ops/A.json",
+                        },
+                    ]
+                )
+            if "FROM wiki_page_links link" in normalized:
+                return Result(
+                    [
+                        {
+                            **shared,
+                            "source_status": "active",
+                            "target_status": "active",
+                        },
+                        {
+                            **unsupported,
+                            "source_status": "active",
+                            "target_status": "active",
+                        },
+                    ]
+                )
+            raise AssertionError(normalized)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    removed = []
+    read_keys = []
+    monkeypatch.setattr(repository, "connect", lambda: Connection())
+    monkeypatch.setattr(
+        repository,
+        "read_text_object",
+        lambda key: read_keys.append(key)
+        or json.dumps(
+            {"links": [shared if key.endswith("B.json") else unsupported]},
+            ensure_ascii=False,
+        ),
+    )
+    monkeypatch.setattr(
+        repository,
+        "_remove_stale_relations",
+        lambda _conn, relations, _active, _user, _workspace: (
+            removed.extend(relations) or relations
+        ),
+    )
+
+    result = repository.lint_orphan_wiki_links(
+        "user-1",
+        "ws-1",
+        apply=True,
+    )
+
+    assert read_keys == [
+        "wiki/ws/pages/shared/ops/B.json",
+        "wiki/ws/pages/shared/ops/A.json",
+    ]
+    assert result["orphan_link_candidates"] == [
+        {**unsupported, "reason": "no_active_support"}
+    ]
+    assert result["removed_orphan_links"] == [
+        {**unsupported, "reason": "no_active_support"}
+    ]
+    assert removed == [{**unsupported, "reason": "no_active_support"}]
+
+
+def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
+    monkeypatch,
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_wiki_workspace",
+        lambda *_args, **kwargs: (
+            calls.append(("lint", kwargs["write_log"])) or {"workspace_id": "ws-1"}
+        ),
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_orphan_wiki_links",
+        lambda *_args, **kwargs: (
+            calls.append(("orphan", kwargs["apply"]))
+            or {
+                "orphan_link_candidates": [{"reason": "no_active_support"}],
+                "removed_orphan_links": [{"reason": "no_active_support"}],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "write_wiki_lint_log",
+        lambda result: calls.append(("log", result["removed_orphan_links"])),
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "persist_lint_operation_result",
+        lambda *_args: calls.append(("artifact", "lint-op-1")) or [],
+        raising=False,
+    )
+
+    result = wiki_maintenance.PostgresWikiMaintenance().lint(
+        WikiMaintenanceCommand(
+            user_id="user-1",
+            workspace_id="ws-1",
+            operation_id="lint-op-1",
+            dry_run=False,
+        )
+    )
+
+    assert result["removed_orphan_links"] == [{"reason": "no_active_support"}]
+    assert result["changed_pages"] == []
+    assert calls == [
+        ("lint", False),
+        ("orphan", True),
+        ("artifact", "lint-op-1"),
+        ("log", [{"reason": "no_active_support"}]),
+    ]
+
+
+def test_wiki_maintenance_dry_run_does_not_persist_operation_artifacts(
+    monkeypatch,
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_wiki_workspace",
+        lambda *_args, **_kwargs: {"workspace_id": "ws-1"},
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_orphan_wiki_links",
+        lambda *_args, **_kwargs: {
+            "orphan_link_candidates": [],
+            "removed_orphan_links": [],
+        },
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "persist_lint_operation_result",
+        lambda *_args: calls.append("artifact"),
+        raising=False,
+    )
+
+    wiki_maintenance.PostgresWikiMaintenance().lint(
+        WikiMaintenanceCommand(
+            user_id="user-1",
+            workspace_id="ws-1",
+            dry_run=True,
+        )
+    )
+
+    assert calls == []

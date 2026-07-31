@@ -42,6 +42,9 @@ class PostgresPipelineRunRepository:
     def fail(self, run_id: str, error: str) -> None:
         database.fail_pipeline_run(run_id, error)
 
+    def mark_notification_pending(self, run_id: str, error: str) -> None:
+        database.mark_pipeline_notification_pending(run_id, error)
+
     def touch(self, run_id: str) -> bool:
         return database.touch_pipeline_run(run_id)
 
