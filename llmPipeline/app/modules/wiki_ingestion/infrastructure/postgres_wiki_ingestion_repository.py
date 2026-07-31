@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from contextlib import nullcontext
 from datetime import date
 from typing import Any, Callable
 
@@ -387,12 +388,13 @@ def lint_wiki_workspace(
     promotion_page_generator: PromotionPageGenerator | None = None,
     apply_reconciliation: bool = False,
     write_log: bool = True,
+    connection: psycopg.Connection | None = None,
 ) -> dict[str, Any]:
     active_path = f"wiki/{user_id}/{workspace_id}/clusters/active.md"
     lint_date = _today_iso()
     log_path = f"wiki/{user_id}/{workspace_id}/logs/{lint_date}.md"
     active_markdown = _read_optional_text_object(active_path)
-    with connect() as conn:
+    with _connection_scope(connection) as conn:
         reconciliation_candidates = _list_reconciliation_candidates(
             conn,
             user_id,
@@ -532,14 +534,14 @@ def lint_wiki_workspace(
         "materialized_relations": [],
     }
     if apply_reconciliation:
-        with connect() as conn:
+        with _connection_scope(connection) as conn:
             result["applied_reconciliations"] = _apply_structural_reconciliation(
                 conn,
                 reconciliation_candidates,
                 _active_relation_keys(conn, user_id, workspace_id),
             )
     if materialize_promotions and promotion_page_generator is not None:
-        with connect() as conn:
+        with _connection_scope(connection) as conn:
             materialized = _materialize_promotion_candidates(
                 conn,
                 user_id,
@@ -568,8 +570,9 @@ def lint_orphan_wiki_links(
     workspace_id: str,
     *,
     apply: bool,
+    connection: psycopg.Connection | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    with connect() as conn:
+    with _connection_scope(connection) as conn:
         contribution_rows = conn.execute(
             """
             SELECT contribution.active,
@@ -676,6 +679,7 @@ def persist_lint_operation_result(
     workspace_id: str,
     operation_id: str,
     result: dict[str, Any],
+    connection: psycopg.Connection | None = None,
 ) -> list[dict[str, Any]]:
     page_changes = {
         str(change["slug"]): dict(change)
@@ -711,7 +715,7 @@ def persist_lint_operation_result(
 
     missing_slugs = [slug for slug in links_by_source if slug not in page_changes]
     if missing_slugs:
-        with connect() as conn:
+        with _connection_scope(connection) as conn:
             rows = conn.execute(
                 """
                 SELECT id, slug, title, summary, markdown_uri
@@ -749,6 +753,10 @@ def persist_lint_operation_result(
         page_changes=list(page_changes.values()),
         write_text=write_text_object,
     )
+
+
+def _connection_scope(connection: psycopg.Connection | None):
+    return nullcontext(connection) if connection is not None else connect()
 
 
 def _normalized_relation_link(item: dict[str, Any]) -> dict[str, Any]:

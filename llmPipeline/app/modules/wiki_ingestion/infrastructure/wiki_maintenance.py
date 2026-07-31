@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -35,32 +36,39 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
             if should_materialize
             else None
         )
-        result = database.lint_wiki_workspace(
-            command.user_id,
-            command.workspace_id,
-            materialize_promotions=should_materialize,
-            promotion_page_generator=promotion_generator,
-            apply_reconciliation=not command.dry_run,
-            write_log=False,
+        transaction = (
+            nullcontext(None) if command.dry_run else database.connect()
         )
-        result.update(
-            database.lint_orphan_wiki_links(
+        with transaction as connection:
+            result = database.lint_wiki_workspace(
                 command.user_id,
                 command.workspace_id,
-                apply=not command.dry_run,
+                materialize_promotions=should_materialize,
+                promotion_page_generator=promotion_generator,
+                apply_reconciliation=not command.dry_run,
+                write_log=False,
+                connection=connection,
             )
-        )
-        if not command.dry_run:
-            result["operation_id"] = command.operation_id
-            operation_artifacts = database.persist_lint_operation_result(
-                command.user_id,
-                command.workspace_id,
-                str(command.operation_id),
-                result,
+            result.update(
+                database.lint_orphan_wiki_links(
+                    command.user_id,
+                    command.workspace_id,
+                    apply=not command.dry_run,
+                    connection=connection,
+                )
             )
-            result["operation_artifacts"] = operation_artifacts
-            result["changed_pages"] = operation_artifacts
-            database.write_wiki_lint_log(result)
+            if not command.dry_run:
+                result["operation_id"] = command.operation_id
+                operation_artifacts = database.persist_lint_operation_result(
+                    command.user_id,
+                    command.workspace_id,
+                    str(command.operation_id),
+                    result,
+                    connection=connection,
+                )
+                result["operation_artifacts"] = operation_artifacts
+                result["changed_pages"] = operation_artifacts
+                database.write_wiki_lint_log(result)
         return result
 
     def _build_promotion_page_generator(

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
 from app.modules.wiki_ingestion.domain.orphan_link_lint import (
     find_orphan_links,
@@ -177,7 +179,12 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
 
     removed = []
     read_keys = []
-    monkeypatch.setattr(repository, "connect", lambda: Connection())
+    connection = Connection()
+
+    def unexpected_connect():
+        raise AssertionError("shared lint transaction을 사용해야 한다")
+
+    monkeypatch.setattr(repository, "connect", unexpected_connect)
     monkeypatch.setattr(
         repository,
         "read_text_object",
@@ -199,6 +206,7 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
         "user-1",
         "ws-1",
         apply=True,
+        connection=connection,
     )
 
     assert read_keys == [
@@ -218,6 +226,18 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
     monkeypatch,
 ) -> None:
     calls = []
+
+    class Transaction:
+        def __enter__(self):
+            calls.append("begin")
+            return self
+
+        def __exit__(self, exc_type, *_args):
+            calls.append("rollback" if exc_type else "commit")
+            return False
+
+    transaction = Transaction()
+    monkeypatch.setattr(wiki_maintenance.database, "connect", lambda: transaction)
     monkeypatch.setattr(
         wiki_maintenance.database,
         "lint_wiki_workspace",
@@ -244,7 +264,7 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
     monkeypatch.setattr(
         wiki_maintenance.database,
         "persist_lint_operation_result",
-        lambda *_args: calls.append(("artifact", "lint-op-1")) or [],
+        lambda *_args, **_kwargs: calls.append(("artifact", "lint-op-1")) or [],
         raising=False,
     )
 
@@ -260,11 +280,88 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
     assert result["removed_orphan_links"] == [{"reason": "no_active_support"}]
     assert result["changed_pages"] == []
     assert calls == [
+        "begin",
         ("lint", False),
         ("orphan", True),
         ("artifact", "lint-op-1"),
         ("log", [{"reason": "no_active_support"}]),
+        "commit",
     ]
+
+
+@pytest.mark.parametrize("failure_step", ["artifact", "log"])
+def test_wiki_maintenance_rolls_back_when_operation_log_persistence_fails(
+    monkeypatch,
+    failure_step: str,
+) -> None:
+    calls = []
+
+    class Transaction:
+        def __enter__(self):
+            calls.append("begin")
+            return self
+
+        def __exit__(self, exc_type, *_args):
+            calls.append("rollback" if exc_type else "commit")
+            return False
+
+    transaction = Transaction()
+    monkeypatch.setattr(wiki_maintenance.database, "connect", lambda: transaction)
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_wiki_workspace",
+        lambda *_args, **kwargs: (
+            calls.append(("lint", kwargs["connection"] is transaction))
+            or {"workspace_id": "ws-1"}
+        ),
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "lint_orphan_wiki_links",
+        lambda *_args, **kwargs: (
+            calls.append(("orphan", kwargs["connection"] is transaction))
+            or {
+                "orphan_link_candidates": [],
+                "removed_orphan_links": [],
+            }
+        ),
+    )
+
+    def persist_artifact(*_args, **kwargs):
+        calls.append(("artifact", kwargs["connection"] is transaction))
+        if failure_step == "artifact":
+            raise OSError("artifact write failed")
+        return []
+
+    def write_log(_result):
+        calls.append("log")
+        if failure_step == "log":
+            raise OSError("lint log write failed")
+
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "persist_lint_operation_result",
+        persist_artifact,
+    )
+    monkeypatch.setattr(wiki_maintenance.database, "write_wiki_lint_log", write_log)
+
+    with pytest.raises(OSError):
+        wiki_maintenance.PostgresWikiMaintenance().lint(
+            WikiMaintenanceCommand(
+                user_id="user-1",
+                workspace_id="ws-1",
+                operation_id="lint-op-1",
+                dry_run=False,
+            )
+        )
+
+    assert calls[:4] == [
+        "begin",
+        ("lint", True),
+        ("orphan", True),
+        ("artifact", True),
+    ]
+    assert calls[-1] == "rollback"
 
 
 def test_wiki_maintenance_dry_run_does_not_persist_operation_artifacts(

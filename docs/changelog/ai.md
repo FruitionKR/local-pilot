@@ -12,9 +12,10 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 부분·무변경 reingest에서는 이번 실행의 기여 JSON이 있는 Concept만 작업 산출물로 저장해 유지된 기존 Concept의 JSON 누락으로 실행이 실패하지 않도록 제한
 - 선택한 작업의 기여 JSON을 순서대로 합쳐 Concept 페이지와 간선을 복구하는 `POST /wiki/restore-runs` 추가
 - lint 변경도 operation Markdown·JSON으로 기록해 이후 복구에서 본문 변경과 간선 추가·삭제를 재생할 수 있도록 구성
+- non-dry-run lint의 DB 변경과 operation artifact·일일 로그 저장을 하나의 transaction 경계로 묶어 로그 저장 실패 시 간선 제거 등이 commit되지 않도록 처리
 - 활성 ingest·lint 로그를 순서대로 재생해 더 이상 지지되지 않는 관리 간선만 고아 간선으로 판정하고, 로그에 없던 기존 간선은 보존
 - 결과 callback의 일시적 실패를 재시도하고 최종 전송 실패를 `notify_pending`으로 구분해 embedding 처리를 막지 않도록 분리
-- llmPipeline 전체 테스트 `588 passed`, `43 subtests passed`; Python compile과 `git diff --check` 통과
+- llmPipeline 전체 테스트 `590 passed`, `43 subtests passed`; Python compile과 `git diff --check` 통과
 
 ## 2026-07-28
 
