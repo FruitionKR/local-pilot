@@ -8,6 +8,36 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### feat: 복구 재조립 결과 수신 추가
+
+**변경된 것**
+
+- `POST /api/ai-operations/{operation_id}/result`가 작업 유형에 따라 갈린다. `restore`면 재조립 분기로 가서 복구의 `rebuilding` 단계를 끝낸다. 엔드포인트는 그대로 하나다.
+- `OperationResultRequest`에 `failed_pages`를 추가한다. 재조립에만 실리며 없으면 전량 성공이다.
+- `RestoreRebuildApplier` — 재조립 결과를 한 트랜잭션으로 반영한다. 성공분은 `revision = max+1`로 적재하고 `rebuilt`를, 실패분은 본문을 건드리지 않고 `rebuild_failed`와 사유를 기록한다. `delegated` 행은 그대로 둔다.
+- `contribution_count`는 다시 세지 않고 복구가 보관해 둔 `restore_manifest`에서 꺼낸다. 그사이 새 ingest가 들어와도 목표값이 흔들리지 않는다.
+- 지시서에 `rebuild`로 없는 페이지가 결과에 오면 422로 거절한다. 요청하지 않은 페이지다.
+- 콜백 응답이 실제 상태를 돌려준다. 기존에는 `succeeded`로 고정이라 부분 실패를 알 수 없었다. `OperationResultResponse`를 추가하고 `accept()`가 이 값을 반환한다.
+- `WikiLineCounter`를 분리한다. ingest 적재와 재조립이 같은 방식으로 증감 줄 수를 센다. `OperationApplier`에 있던 `countLines`를 옮긴 것이며 계산 방식은 그대로다.
+
+**멱등**
+
+- 작업이 이미 확정 상태면 `payload_hash`를 비교해 같으면 기존 결과를, 다르면 409를 돌려준다. 기존 ingest와 같다.
+- `rebuilding` 중 같은 페이지가 다시 오면 `content_hash` 일치로 걸러 새 버전을 만들지 않는다. 재조립 본문은 복구 시점의 본문과 다르므로 해시가 같다는 것은 이미 반영했다는 뜻이다.
+- 실패 기록은 `(operation_id, page_id, rebuild_failed)` 존재 여부로 거른다. 실패에는 대조할 해시가 없다.
+- 재조립을 기다리는 상태(`rebuilding`·`notify_pending`)가 아니면 422로 거절한다.
+
+**검증**
+
+- `RestoreRebuildApplierTest` 8개를 추가했다. 지시서 기여 수 사용, `rebuilt` 기록, 실패 기록, 전량 성공 확정, 동일 내용 재전송, 중복 실패 기록, 미요청 페이지 거절, 되돌리기로 끝낸 페이지 거절이다. 지시서는 실제와 같이 JSON 직렬화·역직렬화를 거쳐 검증했다.
+- `OperationIngestServiceTest`에 재조립 분기 라우팅·상태 검증·해시 불일치 3개를 더해 10개가 됐다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline이 아직 이 payload를 보내지 않는다. mock payload로만 검증했다.
+- 재조립 실패 페이지는 복구 직전 내용 그대로 남는다. 남은 기여와 본문이 어긋난 상태이며 다음 lint가 정리해야 한다.
+
 ### feat: 이 시점으로 되돌리기 실행 추가
 
 **변경된 것**

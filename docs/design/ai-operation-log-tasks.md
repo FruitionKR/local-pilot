@@ -196,18 +196,21 @@
 
 - 관련 설계: §4.4, §5.2 ⑦
 - 선행: TASK-005, TASK-007
-- 변경 대상: `aihistory/service/OperationIngestService.java`
+- 변경 대상: `aihistory/service/OperationIngestService.java`,
+  신규 `aihistory/service/RestoreRebuildApplier.java`, `aihistory/service/WikiLineCounter.java`
 - 작업:
   - 기존 restore 작업의 `rebuilding` 단계를 완료하는 분기 추가
-  - 멱등 기준은 `(operation_id, page_id, result_phase='rebuild')`
+  - 멱등 기준은 `(operation_id, page_id, result_phase='rebuild')`.
+    성공분은 `content_hash` 일치로, 실패분은 `(operation_id, page_id, rebuild_failed)` 존재 여부로 판정한다
   - `contribution_count`는 `restore_manifest`에서 조회하고 재계산하지 않는다
+  - 지시서에 `rebuild`로 없는 페이지가 결과에 오면 거절한다
   - 성공분은 `revision = max+1`로 적재하고 `rebuilt` 기록
   - `failed_pages`는 `rebuild_failed`로 기록하고 사유를 `change_summary`에 남긴다
   - 전량 성공은 `succeeded`, 일부 실패는 `partially_succeeded`
   - `delegated` 행은 갱신하지 않는다
 - 완료 조건:
-  - [ ] `contribution_count`가 지시서 값과 일치
-  - [ ] 페이지별 재전송이 멱등이고, 다른 payload는 409
+  - [x] `contribution_count`가 지시서 값과 일치
+  - [x] 페이지별 재전송이 멱등이고, 다른 payload는 409
   - [ ] 허용 상태가 `rebuilding`이 아니면 409
   - [ ] 실패 페이지가 `rebuild_failed`로 남고 본문이 변경되지 않음
 

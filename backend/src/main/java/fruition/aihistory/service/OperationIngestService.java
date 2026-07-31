@@ -2,7 +2,10 @@ package fruition.aihistory.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.aihistory.domain.OperationLog;
+import fruition.aihistory.domain.OperationStatus;
+import fruition.aihistory.domain.OperationType;
 import fruition.aihistory.dto.OperationResultRequest;
+import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.aihistory.exception.OperationPayloadConflictException;
@@ -16,7 +19,7 @@ import java.util.HexFormat;
 import java.util.List;
 
 /**
- * llmPipeline이 보낸 ingest 결과를 받는다.
+ * llmPipeline이 보낸 ingest 결과와 복구 재조립 결과를 받는다. 엔드포인트는 하나다.
  *
  * <pre>
  * ① 멱등     payload_hash 비교 → 같으면 기존 결과, 다르면 409
@@ -27,6 +30,9 @@ import java.util.List;
  *
  * <p>③을 트랜잭션 밖에 두는 이유는 페이지 여러 개를 저장소에서 읽는 동안 DB 커넥션을
  * 붙잡지 않기 위해서다.
+ *
+ * <p>작업이 {@code restore}면 ④ 대신 {@link RestoreRebuildApplier}로 간다. 재조립은 기여를
+ * 만들지 않고 복구가 보관해 둔 지시서의 목표 기여 수를 그대로 쓴다.
  */
 @Service
 public class OperationIngestService {
@@ -34,20 +40,22 @@ public class OperationIngestService {
     private final OperationLogRepository operationLogRepository;
     private final WikiObjectReader objectReader;
     private final OperationApplier applier;
+    private final RestoreRebuildApplier rebuildApplier;
     private final ObjectMapper objectMapper;
 
     public OperationIngestService(OperationLogRepository operationLogRepository,
                                   WikiObjectReader objectReader,
                                   OperationApplier applier,
+                                  RestoreRebuildApplier rebuildApplier,
                                   ObjectMapper objectMapper) {
         this.operationLogRepository = operationLogRepository;
         this.objectReader = objectReader;
         this.applier = applier;
+        this.rebuildApplier = rebuildApplier;
         this.objectMapper = objectMapper;
     }
 
-    /** @return 실제로 만든 변경내역 수 */
-    public int accept(String operationId, OperationResultRequest request) {
+    public OperationResultResponse accept(String operationId, OperationResultRequest request) {
         if (!operationId.equals(request.operationId())) {
             throw new InvalidCallbackPayloadException(
                     "경로와 본문의 operation_id가 다릅니다: " + operationId);
@@ -60,18 +68,56 @@ public class OperationIngestService {
         // 이미 확정된 작업이면 같은 payload인지만 본다. 같으면 재전송이므로 기존 결과를 돌려준다.
         if (operation.getStatus().isTerminal()) {
             if (payloadHash.equals(operation.getPayloadHash())) {
-                return operation.getChangedResourceCount();
+                return new OperationResultResponse(operationId, operation.getStatus().name(),
+                        operation.getChangedResourceCount());
             }
             throw new OperationPayloadConflictException(operationId);
         }
 
         verifyMatchesRegistration(operation, request);
 
+        if (operation.getOperationType() == OperationType.restore) {
+            return acceptRebuild(operation, request, payloadHash);
+        }
+
         List<OperationApplier.LoadedPage> loaded = request.changedPages().stream()
                 .map(page -> load(operation, page))
                 .toList();
 
         return applier.apply(operationId, request, loaded, payloadHash, Instant.now());
+    }
+
+    /** 복구의 {@code rebuilding} 단계를 끝낸다. */
+    private OperationResultResponse acceptRebuild(OperationLog operation,
+                                                  OperationResultRequest request,
+                                                  String payloadHash) {
+        if (operation.getStatus() != OperationStatus.rebuilding
+                && operation.getStatus() != OperationStatus.notify_pending) {
+            throw new InvalidCallbackPayloadException(
+                    "재조립을 기다리는 작업이 아닙니다: operationId=" + operation.getOperationId()
+                            + " status=" + operation.getStatus());
+        }
+
+        List<RestoreRebuildApplier.RebuiltPage> loaded = request.changedPages().stream()
+                .map(page -> loadRebuilt(operation, page))
+                .toList();
+
+        return rebuildApplier.apply(operation.getOperationId(), request, loaded,
+                payloadHash, Instant.now());
+    }
+
+    /** 재조립은 기여 조각을 새로 만들지 않으므로 본문만 읽어 온다. */
+    private RestoreRebuildApplier.RebuiltPage loadRebuilt(OperationLog operation,
+                                                          OperationResultRequest.ChangedPage page) {
+        String markdown = objectReader.read(page.markdownKey(), operation.getWorkspaceId(),
+                page.pageId(), operation.getOperationId());
+        String actualHash = objectReader.sha256(markdown);
+        if (!actualHash.equals(page.contentHash())) {
+            throw new InvalidCallbackPayloadException(
+                    "본문 해시가 일치하지 않습니다: pageId=" + page.pageId());
+        }
+        return new RestoreRebuildApplier.RebuiltPage(
+                page.pageId(), page.markdownKey(), markdown, actualHash);
     }
 
     private OperationApplier.LoadedPage load(OperationLog operation,

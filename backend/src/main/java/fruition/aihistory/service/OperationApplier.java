@@ -6,20 +6,17 @@ import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationStatus;
 import fruition.aihistory.domain.ResourceType;
 import fruition.aihistory.dto.OperationResultRequest;
+import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.aihistory.repository.OperationLogRepository;
-import fruition.document.dto.DocumentContentDiffResponse;
-import fruition.document.service.MarkdownDiffService;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageContribution;
 import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.repository.WikiPageContributionRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.wiki.repository.WikiPageVersionRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,33 +33,30 @@ import java.util.Optional;
 @Component
 public class OperationApplier {
 
-    private static final Logger log = LoggerFactory.getLogger(OperationApplier.class);
-
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageVersionRepository versionRepository;
     private final WikiPageContributionRepository contributionRepository;
-    private final MarkdownDiffService markdownDiffService;
+    private final WikiLineCounter lineCounter;
 
     public OperationApplier(OperationLogRepository operationLogRepository,
                             OperationChangeRepository operationChangeRepository,
                             WikiPageRepository wikiPageRepository,
                             WikiPageVersionRepository versionRepository,
                             WikiPageContributionRepository contributionRepository,
-                            MarkdownDiffService markdownDiffService) {
+                            WikiLineCounter lineCounter) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.versionRepository = versionRepository;
         this.contributionRepository = contributionRepository;
-        this.markdownDiffService = markdownDiffService;
+        this.lineCounter = lineCounter;
     }
 
-    /** @return 실제로 만든 변경내역 수 */
     @Transactional
-    public int apply(String operationId, OperationResultRequest request,
-                     List<LoadedPage> loaded, String payloadHash, Instant now) {
+    public OperationResultResponse apply(String operationId, OperationResultRequest request,
+                                         List<LoadedPage> loaded, String payloadHash, Instant now) {
         OperationLog operation = operationLogRepository.findById(operationId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
 
@@ -79,7 +73,7 @@ public class OperationApplier {
                 ? OperationStatus.partially_succeeded
                 : OperationStatus.succeeded;
         operation.complete(status, request.summary(), recorded, payloadHash, now);
-        return recorded;
+        return new OperationResultResponse(operationId, status.name(), recorded);
     }
 
     /** @return 새 버전을 만들었으면 true. 내용이 그대로면 건너뛴다 */
@@ -115,8 +109,8 @@ public class OperationApplier {
         wikiPage.moveMarkdownUri(page.markdownKey(), now);
 
         Long beforeRevision = previous.map(WikiPageVersion::getRevision).orElse(null);
-        LineCount lines = countLines(pageId, previous.orElse(null), page.markdown(),
-                beforeRevision, revision);
+        WikiLineCounter.LineCount lines = lineCounter.count(pageId, previous.orElse(null),
+                page.markdown(), beforeRevision, revision);
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
                 beforeRevision, revision,
@@ -125,25 +119,7 @@ public class OperationApplier {
         return true;
     }
 
-    /** 줄 수 계산이 실패해도 적재를 막지 않는다. */
-    private LineCount countLines(String pageId, WikiPageVersion previous, String markdown,
-                                 Long beforeRevision, long afterRevision) {
-        if (previous == null) {
-            return new LineCount(null, null);
-        }
-        try {
-            DocumentContentDiffResponse diff = markdownDiffService.compare(
-                    pageId, beforeRevision, previous.getMarkdown(), afterRevision, markdown);
-            return new LineCount(diff.additions(), diff.deletions());
-        } catch (RuntimeException e) {
-            log.warn("[Wiki 줄 수 계산 생략] pageId={} reason={}", pageId, e.getMessage());
-            return new LineCount(null, null);
-        }
-    }
-
     /** 저장소에서 읽어 검증까지 마친 페이지 하나. */
     public record LoadedPage(String pageId, String markdownKey, String contributionKey,
                              String markdown, String contentHash) {}
-
-    private record LineCount(Integer additions, Integer deletions) {}
 }

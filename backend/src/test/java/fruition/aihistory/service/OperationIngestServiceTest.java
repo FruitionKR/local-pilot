@@ -5,6 +5,7 @@ import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationStatus;
 import fruition.aihistory.domain.OperationType;
 import fruition.aihistory.dto.OperationResultRequest;
+import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.aihistory.exception.OperationPayloadConflictException;
@@ -47,13 +48,14 @@ class OperationIngestServiceTest {
     @Mock OperationLogRepository operationLogRepository;
     @Mock WikiObjectReader objectReader;
     @Mock OperationApplier applier;
+    @Mock RestoreRebuildApplier rebuildApplier;
 
     private OperationIngestService service;
 
     @BeforeEach
     void setUp() {
         service = new OperationIngestService(operationLogRepository, objectReader, applier,
-                new ObjectMapper());
+                rebuildApplier, new ObjectMapper());
     }
 
     @Test
@@ -61,11 +63,12 @@ class OperationIngestServiceTest {
     void acceptsValidCallback() {
         givenProcessingOperation();
         givenObject("# 개념 C1", "sha256:aaa");
-        when(applier.apply(anyString(), any(), anyList(), anyString(), any())).thenReturn(1);
+        when(applier.apply(anyString(), any(), anyList(), anyString(), any()))
+                .thenReturn(new OperationResultResponse(OPERATION_ID, "succeeded", 1));
 
-        int recorded = service.accept(OPERATION_ID, request("sha256:aaa"));
+        OperationResultResponse response = service.accept(OPERATION_ID, request("sha256:aaa"));
 
-        assertThat(recorded).isEqualTo(1);
+        assertThat(response.recordedChanges()).isEqualTo(1);
         verify(applier).apply(anyString(), any(), anyList(), anyString(), any());
     }
 
@@ -103,7 +106,7 @@ class OperationIngestServiceTest {
         givenProcessingOperation();
         OperationResultRequest forged = new OperationResultRequest(
                 OPERATION_ID, "ingest", "succeeded", "ws_other", USER_ID, DOCUMENT_ID,
-                "요약", List.of(changedPage("sha256:aaa")));
+                "요약", List.of(changedPage("sha256:aaa")), null);
 
         assertThatThrownBy(() -> service.accept(OPERATION_ID, forged))
                 .isInstanceOf(InvalidCallbackPayloadException.class);
@@ -119,7 +122,7 @@ class OperationIngestServiceTest {
         done.complete(OperationStatus.succeeded, "요약", 3, payloadHashOf(request), Instant.now());
         when(operationLogRepository.findById(OPERATION_ID)).thenReturn(Optional.of(done));
 
-        assertThat(service.accept(OPERATION_ID, request)).isEqualTo(3);
+        assertThat(service.accept(OPERATION_ID, request).recordedChanges()).isEqualTo(3);
         verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
     }
 
@@ -134,7 +137,60 @@ class OperationIngestServiceTest {
                 .isInstanceOf(OperationPayloadConflictException.class);
     }
 
+    @Test
+    @DisplayName("복구 작업의 결과는 재조립 분기로 간다")
+    void routesRestoreOperationToRebuild() {
+        when(operationLogRepository.findById(OPERATION_ID)).thenReturn(Optional.of(rebuildingRestore()));
+        givenObject("# 다시 만든 C1", "sha256:new");
+        when(rebuildApplier.apply(anyString(), any(), anyList(), anyString(), any()))
+                .thenReturn(new OperationResultResponse(OPERATION_ID, "succeeded", 2));
+
+        OperationResultResponse response = service.accept(OPERATION_ID, restoreRequest("sha256:new"));
+
+        assertThat(response.status()).isEqualTo("succeeded");
+        verify(rebuildApplier).apply(anyString(), any(), anyList(), anyString(), any());
+        verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("재조립을 기다리는 상태가 아니면 거절한다")
+    void rejectsRebuildOnUnexpectedStatus() {
+        OperationLog restore = rebuildingRestore();
+        restore.moveTo(OperationStatus.applying);
+        when(operationLogRepository.findById(OPERATION_ID)).thenReturn(Optional.of(restore));
+
+        assertThatThrownBy(() -> service.accept(OPERATION_ID, restoreRequest("sha256:new")))
+                .isInstanceOf(InvalidCallbackPayloadException.class);
+
+        verify(rebuildApplier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("재조립 본문 해시가 다르면 거절하고 반영하지 않는다")
+    void rejectsRebuildHashMismatch() {
+        when(operationLogRepository.findById(OPERATION_ID)).thenReturn(Optional.of(rebuildingRestore()));
+        givenObject("# 다시 만든 C1", "sha256:actual");
+
+        assertThatThrownBy(() -> service.accept(OPERATION_ID, restoreRequest("sha256:reported")))
+                .isInstanceOf(InvalidCallbackPayloadException.class);
+
+        verify(rebuildApplier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
     // --- helpers ---
+
+    private OperationLog rebuildingRestore() {
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                DOCUMENT_ID, "op_a2", "{}", Instant.parse("2026-07-31T00:00:00Z"));
+        restore.moveTo(OperationStatus.rebuilding);
+        return restore;
+    }
+
+    private OperationResultRequest restoreRequest(String reportedHash) {
+        return new OperationResultRequest(
+                OPERATION_ID, "restore", "succeeded", WORKSPACE_ID, USER_ID, DOCUMENT_ID,
+                "재조립 1건", List.of(changedPage(reportedHash)), List.of());
+    }
 
     private void givenProcessingOperation() {
         when(operationLogRepository.findById(OPERATION_ID)).thenReturn(Optional.of(processingOperation()));
@@ -155,7 +211,7 @@ class OperationIngestServiceTest {
     private OperationResultRequest request(String reportedHash) {
         return new OperationResultRequest(
                 OPERATION_ID, "ingest", "succeeded", WORKSPACE_ID, USER_ID, DOCUMENT_ID,
-                "위키 페이지 1개를 갱신했습니다.", List.of(changedPage(reportedHash)));
+                "위키 페이지 1개를 갱신했습니다.", List.of(changedPage(reportedHash)), null);
     }
 
     private OperationResultRequest.ChangedPage changedPage(String contentHash) {

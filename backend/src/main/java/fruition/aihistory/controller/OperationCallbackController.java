@@ -1,6 +1,7 @@
 package fruition.aihistory.controller;
 
 import fruition.aihistory.dto.OperationResultRequest;
+import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.exception.InvalidCallbackTokenException;
 import fruition.aihistory.service.OperationIngestService;
 import fruition.util.ErrorResponse;
@@ -23,7 +24,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 
 /**
  * llmPipeline이 호출하는 내부 콜백. 사용자 인증 대상이 아니며 내부 토큰으로 검증한다.
@@ -46,8 +46,9 @@ public class OperationCallbackController {
     }
 
     @Operation(summary = "AI 작업 결과 수신",
-            description = "ingest가 끝나면 llmPipeline이 호출합니다. 같은 payload 재전송은 200, "
-                    + "같은 작업에 다른 payload가 오면 409입니다.")
+            description = "ingest 또는 복구 재조립이 끝나면 llmPipeline이 호출합니다. "
+                    + "작업이 restore면 재조립 분기로 가며 failed_pages를 함께 받습니다. "
+                    + "같은 payload 재전송은 200, 같은 작업에 다른 payload가 오면 409입니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "반영 완료"),
             @ApiResponse(responseCode = "401", description = "내부 토큰 불일치",
@@ -60,18 +61,14 @@ public class OperationCallbackController {
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping("/{operation_id}/result")
-    public ResponseEntity<Map<String, Object>> result(
+    public ResponseEntity<OperationResultResponse> result(
             @Parameter(description = "작업 식별자", example = "op_a2_7f3c9")
             @PathVariable("operation_id") String operationId,
             @Parameter(description = "내부 콜백 토큰", required = true)
             @RequestHeader(value = "X-Internal-Token", required = false) String token,
             @Valid @RequestBody OperationResultRequest request) {
         verifyToken(token);
-        int recorded = ingestService.accept(operationId, request);
-        return ResponseEntity.ok(Map.of(
-                "operation_id", operationId,
-                "status", "succeeded",
-                "recorded_changes", recorded));
+        return ResponseEntity.ok(ingestService.accept(operationId, request));
     }
 
     /** 길이가 달라도 시간차가 새지 않도록 상수 시간 비교를 쓴다. */

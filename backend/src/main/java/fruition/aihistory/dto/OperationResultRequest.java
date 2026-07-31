@@ -21,8 +21,20 @@ public record OperationResultRequest(
         @JsonProperty("user_id") String userId,
         @JsonProperty("target_document_id") String targetDocumentId,
         String summary,
-        @JsonProperty("changed_pages") @NotNull List<ChangedPage> changedPages
+        @JsonProperty("changed_pages") @NotNull List<ChangedPage> changedPages,
+        @JsonProperty("failed_pages") List<FailedPage> failedPages
 ) {
+
+    /** 재조립에만 쓴다. 실패한 페이지는 본문을 건드리지 않고 사유만 기록한다. */
+    public record FailedPage(
+            @JsonProperty("page_id") @NotBlank String pageId,
+            String reason
+    ) {}
+
+    /** 재조립 결과에만 실린다. 없으면 전량 성공이다. */
+    public List<FailedPage> failedPagesOrEmpty() {
+        return failedPages == null ? List.of() : failedPages;
+    }
 
     /**
      * @param markdownKey        그 작업이 쓴 본문 object key
