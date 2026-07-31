@@ -83,7 +83,7 @@ Wiki 페이지 간 방향 링크(그래프 엣지).
 ### 삭제 정책
 
 - Wiki 도메인 자체에는 페이지/링크 삭제 API가 없다. 정리용 파생 쿼리만 리포지토리에 존재한다: `WikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId(...)`, `DocumentWikiLinkRepository.deleteByIdDocumentId(...)`, `DocumentWikiLinkRepository.deleteByIdWikiPageId(...)`. 이들은 다른 도메인(문서 재처리, 복구)에서 호출되며, DB 레벨 cascade 제약은 엔티티에 선언돼 있지 않다.
-- **페이지 삭제는 소프트 삭제뿐이다.** 복구가 `status='deleted'`로 바꾸고 링크만 정리하며, `wiki_pages` 행과 버전·기여 이력은 남는다. 그래프/상세 조회에는 `status` 필터가 없으므로 `deleted` 페이지도 현재는 응답에 포함된다(아래 정합성 참조).
+- **페이지 삭제는 소프트 삭제뿐이다.** 복구가 `status='deleted'`로 바꾸고 링크만 정리하며, `wiki_pages` 행과 버전·기여 이력은 남는다. 그래프·상세 조회는 `deleted`를 제외하지만 diff는 이력 조회라 계속 동작한다(아래 정합성 참조).
 
 ---
 
@@ -219,7 +219,8 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/wiki")`. 모든 엔�
 - **DB 조인 없이 in-memory 매핑**: filename/source_uri/related title 등은 별도 `findAllById` 조회 후 Map 조인이라, 참조 대상이 없으면 해당 필드만 null(엔드포인트는 성공). `buildSourceDocRefs`는 동일 wikiPageId가 여러 문서 링크를 가질 때 첫 항목만 남긴다(`(a,b)->a`).
 - **confidence 정규화**: 모든 응답에서 `confidence`가 null이면 `0.0`으로 치환해 내려준다.
 - **markdown 본문**: 상세 조회 시 MinIO에서 실시간으로 읽는다. 스토리지 오류/부재는 예외를 삼키고 `markdown=null`로 응답한다(500 아님). `markdown_uri`는 그대로 노출된다. 반면 diff는 `wiki_page_versions.markdown`(RDS)에서 읽으므로 스토리지와 무관하다.
-- **`deleted` 페이지가 조회에서 걸러지지 않는다**: `findAllByWorkspaceId`(그래프)와 `findByIdAndWorkspaceId`(상세) 모두 `status` 조건이 없어, 복구로 소프트 삭제된 페이지도 응답에 포함된다. 복구가 `wiki_page_links`·`document_wiki_links`는 정리하므로 그래프에서 **고립 노드**로 남는다. 필터링은 아직 구현돼 있지 않다.
+- **`deleted` 페이지는 조회에서 제외된다**: 그래프는 `findAllByWorkspaceIdAndStatusNot(workspaceId, deleted)`, 상세는 `findByIdAndWorkspaceIdAndStatusNot(id, workspaceId, deleted)`을 쓴다. 삭제된 페이지의 상세는 404다. 그래프 간선은 page id 집합 기준으로 걸러지므로 삭제된 페이지로 가는 링크도 자동으로 빠진다. 상세의 `related_pages`도 삭제된 대상 링크를 뺀다 — 복구가 링크를 정리하지만 그 전에 조회가 들어올 수 있다. **단 대상 자체가 존재하지 않는 링크는 기존대로 남겨 필드만 null로 내려간다**(삭제와 부재는 다르다).
+- **diff는 삭제된 페이지에도 동작한다**: `diff`는 `findById`만 쓰고 `status`를 보지 않는다. 그래프·상세가 "현재 상태"를 보여주는 것과 달리 diff는 이력 조회이므로, 삭제된 페이지의 과거 revision 사이 변경분은 계속 볼 수 있다.
 - **본문 쓰기 주체**: `wiki_pages.markdown_uri`가 가리키는 object는 llmPipeline만 쓰며 작업마다 새 key를 만들고 덮어쓰지 않는다. Backend는 콜백이 준 key를 검증하고 읽은 뒤 `moveMarkdownUri`로 포인터만 옮긴다. 이 도메인의 어떤 엔드포인트도 본문을 쓰지 않는다.
 
 ---

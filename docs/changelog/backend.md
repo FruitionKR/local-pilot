@@ -8,6 +8,30 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### fix: 소프트 삭제된 Wiki 페이지를 조회에서 제외
+
+**배경**
+
+복구가 페이지를 소프트 삭제하면 `wiki_pages.status`만 `deleted`로 바뀐다. 그런데 그래프·상세 조회 쿼리에 `status` 조건이 없어 삭제된 페이지가 그대로 응답에 나왔다. 복구가 링크는 정리하므로 그래프에서는 **고립 노드**로 남는 상태였다.
+
+**변경된 것**
+
+- `WikiPageRepository`에 `findAllByWorkspaceIdAndStatusNot`, `findByIdAndWorkspaceIdAndStatusNot`을 추가하고 `WikiService.findGraph`·`findById`가 이 쿼리를 쓰게 한다. 삭제된 페이지의 상세는 404다.
+- 상세의 `related_pages`에서 삭제된 대상 링크를 뺀다. 복구가 링크를 정리하지만 그 전에 조회가 들어올 수 있다. **대상 자체가 존재하지 않는 링크는 기존대로 남겨 필드만 null로 내려간다** — 삭제와 부재는 다르게 다룬다.
+- 그래프 간선은 page id 집합 기준으로 걸러지므로 별도 처리 없이 함께 빠진다.
+- `GET .../wiki/pages/{id}/diff`는 그대로 둔다. 그래프·상세가 현재 상태를 보여주는 것과 달리 diff는 이력 조회이므로, 삭제된 페이지의 과거 revision 사이 변경분은 계속 볼 수 있어야 한다.
+- `docs/spec/api/wiki.md`의 정합성 항목을 실제 동작에 맞춰 갱신한다.
+
+**검증**
+
+- `WikiServiceTest`에 3개를 추가해 5개가 됐다. 그래프에서 삭제 페이지·간선 제외, 삭제 페이지 상세 404, 연관 페이지에서 삭제 대상만 제외하고 부재 대상은 유지다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- `docs/spec/api/wiki.md`의 rename 절이 실제와 다르다. 문서는 Backend가 slug를 생성하고 충돌을 검사하는 흐름으로 적혀 있으나, 현재 `WikiService.rename`은 `PipelineWikiPageRequester`에 그대로 위임한다(`5f230a4`). 이번 변경 범위 밖이라 손대지 않았다.
+- `WikiPageRepository.findAllByStatus`, `findAllByPageType`은 호출부가 없다. 이번 변경으로 생긴 것이 아니라 이전부터 있던 미사용 메서드다.
+
 ### docs: AI 작업 로그 API 스펙 작성
 
 **변경된 것**

@@ -33,4 +33,11 @@ public interface WikiPageRepository extends JpaRepository<WikiPage, String> {
     List<WikiPage> findAllByWorkspaceId(String workspaceId);
 
     Optional<WikiPage> findByIdAndWorkspaceId(String id, String workspaceId);
+
+    /** 그래프 조회용. 복구로 소프트 삭제된 페이지는 현재 상태가 아니므로 뺀다. */
+    List<WikiPage> findAllByWorkspaceIdAndStatusNot(String workspaceId, WikiPageStatus status);
+
+    /** 상세 조회용. 삭제된 페이지는 없는 것으로 본다. */
+    Optional<WikiPage> findByIdAndWorkspaceIdAndStatusNot(
+            String id, String workspaceId, WikiPageStatus status);
 }
