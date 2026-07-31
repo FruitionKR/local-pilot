@@ -24,7 +24,7 @@
 | Wiki 이력 테이블 | `fruition.wiki` 도메인에 배치 |
 | 본문 저장 | RDS text + `markdown_key`로 object 위치 병기 |
 | 저장소 쓰기 | llmPipeline만. Backend는 읽기만 |
-| 복구 기본 모드 | `mode=since` |
+| 복구 범위 | 선택 없음. 기준 작업 이후 같은 문서의 작업을 전부 취소한다 |
 | 화면 버전 | `revision`. 기여 수는 `contribution_count`로 병기 |
 
 ## 4. 작업 계획 — Backend
@@ -226,9 +226,9 @@
   - 전역 예외 핸들러 표에 신규 예외 추가
   - llmPipeline 실제 연동으로 ingest → 조회 → 복구 → 재조립 E2E 확인
 - 완료 조건:
-  - [ ] 문서의 경로·예외가 실제 컨트롤러와 일치
-  - [ ] 실제 ingest 1회가 로그·버전·기여·변경내역에 모두 반영됨
-  - [ ] 실제 복구 1회가 미리보기 예상과 일치
+  - [x] 문서의 경로·예외가 실제 컨트롤러와 일치
+  - [ ] 실제 ingest 1회가 로그·버전·기여·변경내역에 모두 반영됨 — **llmPipeline TASK-101~103 대기**
+  - [ ] 실제 복구 1회가 미리보기 예상과 일치 — **llmPipeline TASK-104 대기**
 
 ## 5. 작업 계획 — llmPipeline
 

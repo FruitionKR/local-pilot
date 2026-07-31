@@ -8,6 +8,24 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### docs: AI 작업 로그 API 스펙 작성
+
+**변경된 것**
+
+- `docs/spec/api/ai-operation-log.md`를 추가한다. 다른 스펙 문서와 같은 재구성 스펙 형식이며 데이터 모델, 사용자 엔드포인트 4개, 내부 콜백 1개, 복구 계산 규칙, llmPipeline 연동 계약, 작업 등록 지점, 예외·설정 키를 담는다.
+- `docs/spec/api/00-common.md`를 갱신한다. 전역 예외 표에 신규 예외 7개(`AI_OPERATION_NOT_FOUND`, `INVALID_RESTORE_REQUEST`, `RESTORE_PREVIEW_STALE`, `AI_OPERATION_PAYLOAD_CONFLICT`, `INVALID_CALLBACK_TOKEN`, `INVALID_CALLBACK_PAYLOAD`, `WIKI_PAGE_VERSION_NOT_FOUND`)를 추가하고, `/api/ai-operations/**`가 Spring Security 대신 `X-Internal-Token`으로 검증된다는 점과 설정 키 3개를 더한다.
+- `OperationLogRepository`에서 `findByTargetDocumentIdAndOperationTypeOrderByCreatedAtAsc`를 제거한다. 복구 범위 선택(`mode`)을 없애면서 호출부가 사라진 메서드다.
+- 같은 이유로 남아 있던 `mode=since`·`mode=document` 언급을 리포지토리 주석과 작업 계획 문서에서 정리한다.
+
+**검증**
+
+- 문서에 적은 경로·요청·응답 필드·예외 코드를 실제 컨트롤러와 `GlobalExceptionHandler`에서 대조했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- TASK-009의 나머지 완료 조건인 실제 ingest·복구 E2E 검증은 llmPipeline이 `operation_id` 수용, 기여 조각 저장, `POST /wiki/restore-runs`를 구현한 뒤에야 가능하다.
+
 ### feat: 복구 재조립 결과 수신 추가
 
 **변경된 것**
