@@ -345,12 +345,14 @@ wiki/{ws}/pages/{page_id}/ops/{op_id}.json   기여 조각
 ### 5.1 판정
 
 ```text
-E = 제외할 operation 집합. 기준 작업 X와 mode 로 정한다
+복구는 "이 시점으로 되돌리기" 하나다. 사용자가 범위를 고르지 않는다.
 
-    since     X 이후 같은 문서의 작업 전부      ← 기본
-              target_document_id = X.target AND created_at > X.created_at
-    single    X 하나만                          { X }
-    document  같은 문서의 작업 전부              target_document_id = X.target
+E = 제외할 operation 집합. 기준 작업 X 하나로 정해진다
+
+    target_document_id = X.target AND created_at > X.created_at AND type = ingest
+    → X 이후 같은 문서의 작업 전부. X 자신은 살린다
+
+    lint는 target_document_id가 없어 이 범위를 만들 수 없다. { X } 하나만 취소한다
 
 페이지의 active 기여를 sequence_revision 순으로 놓고 E를 뺀다
 
@@ -410,7 +412,7 @@ A 취소 → A3 ingest → B 취소    과거 기여는 비활성 유지
 같은 페이지 콜백 2개 동시 수신  revision 중복·포인터 역전 없음
 ```
 
-`mode=since` 시나리오도 고정한다. 문서 A를 5번 ingest하고 중간에 문서 B가 `C7`에 참여한 상태에서 `op_a2`를 지목한다.
+**다중 버전 시나리오**도 고정한다. 문서 A를 5번 ingest하고 중간에 문서 B가 `C7`에 참여한 상태에서 `op_a2`를 지목한다.
 
 ```text
 S_A  a1 a2 [a3 a4 a5]     뺄 것이 전부 뒤   →  되돌리기 (revision 2)
@@ -456,22 +458,19 @@ POST /api/ai-operations/{operation_id}/result        내부 콜백
 
 복구 실행은 body에 `preview_token`이 필수다. 편집 잠금 위반 423, 버전 충돌 409.
 
-미리보기와 실행은 `mode`를 받는다. **기본값은 `since`** — 로그 목록에서 한 시점을 골라 "여기로 되돌리기"가 가장 흔한 조작이기 때문이다.
+**복구 범위를 고르는 파라미터는 없다.** 로그에서 한 시점을 지목하면 그 이후 같은 문서의 작업이 전부 취소되고, 그사이에 만들어진 source page·concept page는 받치는 기여가 사라져 삭제된다.
 
 ```http
-GET  .../ai-operation-logs/{operation_id}/restore-preview?mode=since
-POST .../ai-operation-logs/{operation_id}/restore        { "mode": "since", "preview_token": "..." }
+GET  .../ai-operation-logs/{operation_id}/restore-preview
+POST .../ai-operation-logs/{operation_id}/restore        { "preview_token": "..." }
 ```
 
-| mode | 뜻 | 예 — A를 5번 ingest한 뒤 `op_a2` 지목 |
-|---|---|---|
-| `since` | 이 시점으로 되돌리기 | `{op_a3, op_a4, op_a5}` 취소 |
-| `single` | 이 작업만 취소 | `{op_a2}` 취소 |
-| `document` | 이 문서 통째로 취소 | `{op_a1…op_a5}` 취소 |
+```text
+A1 → A2 → A3 → B → A4  상태에서
 
-`mode`가 다르면 판정 결과가 달라지므로 `preview_token`에 함께 서명한다. 미리보기를 `since`로 받고 실행을 `document`로 보내면 409다.
-
-lint는 `target_document_id`가 없어 `since`·`document`를 쓸 수 없다. `single`만 허용한다.
+  A3 지목   A4 가 만든 페이지 삭제
+  A2 지목   A3·A4 가 만든 페이지가 대상. 단 B가 보탠 페이지는 B 것만으로 재작성
+```
 
 ## 7. 코드 수정 지점
 
@@ -534,7 +533,7 @@ F1·F2는 병렬 가능하다. **L2가 가장 급하다.** ingest 시점에 조�
 | F3 | AI 편집 1회 = 로그 1건. 수동 저장·무변경은 로그 없음. `source=agent`만 위조한 요청은 로그 생성 실패 |
 | F4 | 요청 실패는 `failed`. hash 불일치·prefix 위반 422. 동시 콜백에도 revision 중복·포인터 역전 없음 |
 | F5 | 기존 `/documents/{id}/diff` 스키마 무변경. 목록·상세는 diff 계산 0회 |
-| F6 | 5.4 시나리오 일치. 미리보기 후 revision 변경 시 실행 409. mode 기본값이 `since`이고, 미리보기와 실행의 mode가 다르면 409 |
+| F6 | 5.4 시나리오 일치. 미리보기 후 revision 변경 시 실행 409. 복구 범위 파라미터가 없고 기준 작업 하나로 결정됨 |
 | F7 | revision append, 소프트 삭제. 복원 revision의 `markdown_key`가 되돌릴 대상의 것과 동일. Backend가 저장소에 쓰지 않음 |
 | F8 | `contribution_count`가 지시서 값과 일치. 페이지별 재전송 멱등, 다른 payload 409 |
 

@@ -40,18 +40,18 @@ public class PreviewTokenSigner {
      *
      * @param contributionsByPage 페이지별 전체 기여. 판정에 넘긴 것과 같은 값이어야 한다
      */
-    public String sign(String operationId, String mode,
+    public String sign(String operationId,
                        Map<String, List<WikiPageContribution>> contributionsByPage) {
-        return hmac(canonical(operationId, mode, contributionsByPage));
+        return hmac(canonical(operationId, contributionsByPage));
     }
 
     /** 실행 시점에 다시 계산한 상태가 미리보기와 같은지. */
-    public boolean matches(String token, String operationId, String mode,
+    public boolean matches(String token, String operationId,
                            Map<String, List<WikiPageContribution>> contributionsByPage) {
         if (token == null || token.isBlank()) {
             return false;
         }
-        String expected = sign(operationId, mode, contributionsByPage);
+        String expected = sign(operationId, contributionsByPage);
         return constantTimeEquals(token, expected);
     }
 
@@ -59,7 +59,7 @@ public class PreviewTokenSigner {
      * 서명 대상 문자열. 페이지 순서와 기여 순서를 고정해 같은 상태면 같은 문자열이 나오게 한다.
      * 기여의 활성 여부까지 담아야 그사이 다른 복구가 끼어든 것을 잡아낸다.
      */
-    private String canonical(String operationId, String mode,
+    private String canonical(String operationId,
                              Map<String, List<WikiPageContribution>> contributionsByPage) {
         String pages = contributionsByPage.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -69,7 +69,7 @@ public class PreviewTokenSigner {
                                 + ":" + (c.isActive() ? "1" : "0"))
                         .collect(Collectors.joining(",")))
                 .collect(Collectors.joining(";"));
-        return operationId + "|" + mode + "|" + pages;
+        return operationId + "|" + pages;
     }
 
     private String hmac(String payload) {

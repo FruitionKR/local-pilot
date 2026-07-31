@@ -8,6 +8,34 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### feat: AI 작업 로그 조회 API 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{ws}/ai-operation-logs`를 추가한다. 최신순 커서 페이지네이션이며 `type`·`status`로 거를 수 있다. 로그 테이블만 읽고 diff를 계산하지 않는다. 기본 20건, 최대 100건이다.
+- `GET .../ai-operation-logs/{operation_id}`를 추가한다. 그 작업이 바꾼 리소스를 함께 반환한다. 줄 수는 저장된 값이라 계산이 없다.
+- `GET .../ai-operation-logs/{operation_id}/restore-preview`를 추가한다. 이미 만들어 둔 미리보기 서비스에 엔드포인트를 얹었다.
+- `GET .../wiki/pages/{page_id}/diff?from=&to=`를 추가한다. 두 revision 본문을 읽어 요청 시점에 계산한다.
+- `MarkdownDiffService`에 리소스 중립 `diff()`를 추가하고 기존 `compare()`는 어댑터로 남긴다. 문서와 Wiki가 같은 계산기를 쓰되 응답 타입만 다르다. **기존 `/documents/{id}/diff` 응답 스키마는 바뀌지 않는다.**
+- `WikiPageVersionNotFoundException`을 404 `WIKI_PAGE_VERSION_NOT_FOUND`로 매핑한다.
+
+**복구 범위 선택 제거**
+
+- 복구를 "이 시점으로 되돌리기" 하나로 고정하고 `mode` 파라미터를 없앤다. 기준 작업 이후 같은 문서의 작업이 전부 취소되며, 그사이에 만들어진 source page·concept page는 받치는 기여가 사라져 삭제된다.
+- lint는 `target_document_id`가 없어 문서 범위를 만들 수 없다. 그 작업 하나만 취소하도록 내부에서 처리하며 사용자에게 선택지를 노출하지 않는다.
+- `RestoreMode`를 삭제하고 `preview_token` 서명 대상에서도 뺐다.
+
+**검증**
+
+- 실제 데이터를 넣고 Swagger로 목록·필터·상세·미리보기·diff를 호출해 확인했다. 다중 버전 시나리오(`A1 A2 A3 B A4`)에서 A3 지목 시 A4가 만든 페이지가 삭제되고, A2 지목 시 A3·A4가 만든 페이지가 대상이 되며 문서 B가 보탠 페이지는 재작성되는 것을 확인했다.
+- `RestoreScopeResolverTest` 4개를 추가했다. 이후 작업 수집, 기준 작업 보존, 빈 범위, lint 단독 취소다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- 목록 조회가 `(:cursor IS NULL OR ...)` 형태에서 500으로 실패했다. Postgres가 timestamp 파라미터의 타입을 추론하지 못한다. 첫 페이지에 `null` 대신 먼 미래 값을 넘기도록 고쳤다. 단위 테스트로는 잡히지 않는 종류라 통합 테스트가 필요하다.
+- 로그가 쌓이려면 프론트엔드가 `apply_operation_id`를 전달하거나 `ingest-logging-enabled`를 켜고 llmPipeline이 콜백을 보내야 한다.
+
 ### feat: ingest 결과 콜백 수신 추가
 
 **변경된 것**

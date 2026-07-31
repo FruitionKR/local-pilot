@@ -2,7 +2,14 @@ package fruition.wiki.service;
 
 import fruition.document.domain.Document;
 import fruition.document.repository.DocumentRepository;
+import fruition.document.dto.MarkdownDiff;
+import fruition.document.service.MarkdownDiffService;
 import fruition.util.StorageProperties;
+import fruition.wiki.domain.WikiPageVersion;
+import fruition.wiki.domain.WikiPageVersionId;
+import fruition.wiki.dto.WikiPageDiffResponse;
+import fruition.wiki.exception.WikiPageVersionNotFoundException;
+import fruition.wiki.repository.WikiPageVersionRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
@@ -39,6 +46,8 @@ public class WikiService {
     private final PipelineWikiPageRequester pipelineWikiPageRequester;
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
+    private final WikiPageVersionRepository versionRepository;
+    private final MarkdownDiffService markdownDiffService;
 
     public WikiService(WikiPageRepository wikiPageRepository,
                        WikiPageLinkRepository wikiPageLinkRepository,
@@ -47,7 +56,9 @@ public class WikiService {
                        WorkspaceMemberRepository workspaceMemberRepository,
                        PipelineWikiPageRequester pipelineWikiPageRequester,
                        MinioClient minioClient,
-                       StorageProperties storageProperties) {
+                       StorageProperties storageProperties,
+                       WikiPageVersionRepository versionRepository,
+                       MarkdownDiffService markdownDiffService) {
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
@@ -56,6 +67,8 @@ public class WikiService {
         this.pipelineWikiPageRequester = pipelineWikiPageRequester;
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
+        this.versionRepository = versionRepository;
+        this.markdownDiffService = markdownDiffService;
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
@@ -234,5 +247,32 @@ public class WikiService {
                             link.getConfidence() != null ? link.getConfidence() : 0.0);
                 })
                 .toList();
+    }
+
+    /**
+     * 두 revision 사이의 변경분. 저장된 본문을 읽어 그 자리에서 계산한다.
+     *
+     * <p>diff 본문을 저장하지 않는 이유는 전체 본문이 바로 옆에 있어 언제든 다시 만들 수 있고,
+     * 중복 저장하면 두 값이 어긋날 여지가 생기기 때문이다. 사용자가 펼칠 때만 호출된다.
+     */
+    @Transactional(readOnly = true)
+    public WikiPageDiffResponse diff(String workspaceId, String userId, String pageId,
+                                     long fromRevision, long toRevision) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        WikiPage page = wikiPageRepository.findById(pageId)
+                .orElseThrow(() -> new WikiPageNotFoundException(pageId));
+        if (!page.getWorkspaceId().equals(workspaceId)) {
+            throw new WikiPageNotFoundException(pageId);
+        }
+        WikiPageVersion before = loadVersion(pageId, fromRevision);
+        WikiPageVersion after = loadVersion(pageId, toRevision);
+        MarkdownDiff diff = markdownDiffService.diff(
+                fromRevision, before.getMarkdown(), toRevision, after.getMarkdown());
+        return WikiPageDiffResponse.from(pageId, diff);
+    }
+
+    private WikiPageVersion loadVersion(String pageId, long revision) {
+        return versionRepository.findById(new WikiPageVersionId(pageId, revision))
+                .orElseThrow(() -> new WikiPageVersionNotFoundException(pageId, revision));
     }
 }

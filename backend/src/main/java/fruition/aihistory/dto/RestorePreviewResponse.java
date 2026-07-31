@@ -11,7 +11,6 @@ import java.util.List;
  */
 public record RestorePreviewResponse(
         @JsonProperty("operation_id") String operationId,
-        String mode,
         @JsonProperty("delete_count") int deleteCount,
         @JsonProperty("restore_count") int restoreCount,
         @JsonProperty("rebuild_count") int rebuildCount,
@@ -31,12 +30,11 @@ public record RestorePreviewResponse(
             @JsonProperty("contribution_count") int contributionCount
     ) {}
 
-    public static RestorePreviewResponse from(String operationId, String mode,
-                                              RestorePlan plan, String previewToken) {
+    public static RestorePreviewResponse from(String operationId, RestorePlan plan, String previewToken) {
         List<Page> pages = plan.pages().stream()
                 .map(p -> new Page(p.pageId(), p.action().name(), p.targetRevision(), p.contributionCount()))
                 .toList();
-        return new RestorePreviewResponse(operationId, mode,
+        return new RestorePreviewResponse(operationId,
                 plan.deleteCount(), plan.restoreCount(), plan.rebuildCount(), pages, previewToken);
     }
 }

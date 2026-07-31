@@ -55,6 +55,7 @@ import fruition.wiki.exception.PipelineWikiPageException;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
+import fruition.wiki.exception.WikiPageVersionNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -384,6 +385,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_RESTORE_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(WikiPageVersionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWikiPageVersionNotFound(WikiPageVersionNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WIKI_PAGE_VERSION_NOT_FOUND", "Wiki 페이지 버전을 찾을 수 없습니다."));
     }
 
     @ExceptionHandler(InvalidCallbackTokenException.class)

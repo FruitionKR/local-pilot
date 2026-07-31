@@ -1,7 +1,6 @@
 package fruition.aihistory.service;
 
 import fruition.aihistory.domain.OperationLog;
-import fruition.aihistory.domain.RestoreMode;
 import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.dto.RestorePreviewResponse;
 import fruition.aihistory.exception.OperationNotFoundException;
@@ -48,17 +47,15 @@ public class RestorePreviewService {
     }
 
     @Transactional(readOnly = true)
-    public RestorePreviewResponse preview(String workspaceId, String userId,
-                                          String operationId, RestoreMode mode) {
-        RestoreMode resolved = RestoreMode.orDefault(mode);
+    public RestorePreviewResponse preview(String workspaceId, String userId, String operationId) {
         OperationLog target = loadOperation(workspaceId, userId, operationId);
 
-        Set<String> excluded = scopeResolver.resolve(target, resolved);
+        Set<String> excluded = scopeResolver.resolve(target);
         Map<String, List<WikiPageContribution>> contributions = loadContributions(excluded);
         RestorePlan plan = planner.plan(excluded, contributions);
 
-        String token = tokenSigner.sign(operationId, resolved.name(), contributions);
-        return RestorePreviewResponse.from(operationId, resolved.name(), plan, token);
+        return RestorePreviewResponse.from(operationId, plan,
+                tokenSigner.sign(operationId, contributions));
     }
 
     /**

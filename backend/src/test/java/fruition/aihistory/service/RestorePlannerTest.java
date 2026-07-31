@@ -177,7 +177,7 @@ class RestorePlannerTest {
     }
 
     @Nested
-    @DisplayName("mode=since 시나리오")
+    @DisplayName("다중 버전 시나리오")
     class SinceScenarios {
 
         @Test
