@@ -2,7 +2,10 @@ package fruition.util;
 
 import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
+import fruition.aihistory.exception.InvalidCallbackPayloadException;
+import fruition.aihistory.exception.InvalidCallbackTokenException;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
+import fruition.aihistory.exception.OperationPayloadConflictException;
 import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
@@ -381,6 +384,28 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_RESTORE_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidCallbackTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCallbackToken(InvalidCallbackTokenException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("INVALID_CALLBACK_TOKEN", e.getMessage()));
+    }
+
+    /** 다시 쓰고 재전송하면 성공할 수 있는 실패라 422로 알린다. */
+    @ExceptionHandler(InvalidCallbackPayloadException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCallbackPayload(InvalidCallbackPayloadException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ErrorResponse.of("INVALID_CALLBACK_PAYLOAD", e.getMessage()));
+    }
+
+    @ExceptionHandler(OperationPayloadConflictException.class)
+    public ResponseEntity<ErrorResponse> handleOperationPayloadConflict(OperationPayloadConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("AI_OPERATION_PAYLOAD_CONFLICT", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)

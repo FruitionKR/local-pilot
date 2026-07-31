@@ -8,6 +8,29 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### feat: ingest 결과 콜백 수신 추가
+
+**변경된 것**
+
+- `POST /api/ai-operations/{operation_id}/result`를 추가한다. llmPipeline이 ingest를 마치고 호출하는 내부 콜백이며 사용자 인증 대상이 아니다. `X-Internal-Token` 헤더를 상수 시간 비교로 검증하고, **통과하기 전에는 저장소 객체를 읽지 않는다.**
+- `IngestOperationStarter`가 llmPipeline 호출 **전에** `processing` 로그를 별도 트랜잭션으로 커밋한다. 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다. 호출 자체가 실패하면 `failed`로 확정한다.
+- `OperationIngestService`가 멱등·정합성·읽기를 맡는다. 같은 `payload_hash` 재전송은 기존 결과를 200으로 돌려주고, 같은 작업에 다른 payload가 오면 409다. 콜백이 보낸 workspace·user·document는 권한 근거가 아니라 등록값과의 대조용이다.
+- `OperationApplier`가 적재를 한 트랜잭션으로 처리한다. 페이지마다 revision을 채번하고 기여를 먼저 넣어 그 시점 기여 수를 버전 행에 담는다. 검증을 마친 뒤에만 `wiki_pages.markdown_uri`를 옮긴다.
+- `WikiObjectReader`가 key 검증과 읽기를 맡는다. bucket은 환경 설정으로 고정하고 `wiki/{ws}/pages/{page}/ops/{op}.md`와 정확히 일치할 때만 읽는다.
+- `app.aihistory.ingest-logging-enabled` 플래그를 추가하고 기본값을 끈다.
+
+**검증**
+
+- `OperationIngestServiceTest` 7개를 mock payload로 검증했다. 정상 수신, 해시 불일치 422, 미등록 404, 경로·본문 id 불일치, 타 워크스페이스 위조, 재전송 200, 다른 payload 409다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- **플래그가 꺼져 있어야 한다.** llmPipeline의 `PipelineRunIn`이 `extra="forbid"`라 스키마가 준비되기 전에 `operation_id`를 보내면 ingest가 422로 깨진다. 플래그가 꺼져 있으면 해당 필드가 `null`이라 직렬화에서 빠져 기존 동작이 그대로다.
+- `@Transactional`을 같은 클래스의 `protected` 메서드에 두면 자기 호출이라 프록시를 타지 않는다. 그래서 적재를 `OperationApplier`로 분리했다.
+- 아직 `SELECT ... FOR UPDATE` 행 잠금이 없어 같은 페이지에 동시 콜백이 오면 revision이 겹칠 수 있다. 통합 테스트와 함께 이어서 붙인다.
+- lint 확장은 이번 범위에서 분리했다.
+
 ### feat: 문서 AI 편집 로그 기록 추가
 
 **변경된 것**

@@ -80,6 +80,15 @@ public class WikiPage {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * 현재 본문이 담긴 object를 가리키게 한다. Backend가 검증하고 revision으로 채택한 뒤에만 옮긴다.
+     * llmPipeline은 이 값을 갱신하지 않는다.
+     */
+    public void moveMarkdownUri(String markdownUri, Instant updatedAt) {
+        this.markdownUri = markdownUri;
+        this.updatedAt = updatedAt;
+    }
+
     public void renameTitle(String title) {
         this.title = title;
         this.updatedAt = Instant.now();

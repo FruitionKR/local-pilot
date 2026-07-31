@@ -54,6 +54,7 @@ import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.FolderRepository;
 import fruition.document.exception.HierarchyItemNotFoundException;
 import fruition.aihistory.service.AgentApplyOperationStore;
+import fruition.aihistory.service.IngestOperationStarter;
 import fruition.aihistory.service.OperationRecorder;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
@@ -119,6 +120,7 @@ public class DocumentService {
     private final ObjectMapper objectMapper;
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
+    private final IngestOperationStarter ingestOperationStarter;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -142,6 +144,7 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
+                           IngestOperationStarter ingestOperationStarter,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
@@ -164,6 +167,7 @@ public class DocumentService {
         this.objectMapper = objectMapper;
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
+        this.ingestOperationStarter = ingestOperationStarter;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -758,10 +762,17 @@ public class DocumentService {
                 documentId, document.getOrigin(), chatWiki, document.getWorkspaceId(), document.getUserId(),
                 callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown() != null,
                 document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
+        // llmPipeline 호출 전에 AI 작업 로그를 processing으로 먼저 커밋한다.
+        // 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다.
+        String operationId = ingestOperationStarter
+                .start(document.getWorkspaceId(), document.getUserId(), documentId)
+                .orElse(null);
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
                     processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
-                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki);
+                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki,
+                            operationId,
+                            operationId == null ? null : ingestOperationStarter.resultCallbackUrl(operationId));
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
@@ -772,6 +783,10 @@ public class DocumentService {
             log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
         } catch (Exception e) {
             Instant now = Instant.now();
+            if (operationId != null) {
+                ingestOperationStarter.markFailed(operationId,
+                        "llmPipeline 호출에 실패했습니다: " + e.getMessage());
+            }
             transactionTemplate.execute(status -> {
                 documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
                         doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));

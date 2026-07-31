@@ -94,6 +94,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
     @Mock fruition.aihistory.service.OperationRecorder operationRecorder;
+    @Mock fruition.aihistory.service.IngestOperationStarter ingestOperationStarter;
 
     DocumentService documentService;
 
@@ -107,6 +108,7 @@ class DocumentServiceBlocksTest {
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,
+                ingestOperationStarter,
                 "http://localhost:8080");
     }
 
@@ -999,14 +1001,14 @@ class DocumentServiceBlocksTest {
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
         when(documentRepository.findByIdInActiveWorkspace("chatdoc_1")).thenReturn(Optional.of(chatDoc));
-        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
+        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), any()))
                 .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_1", "running", null, null));
 
         documentService.doRequestProcessing("chatdoc_1");
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         verify(processingRequester).request(eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID), anyString(),
-                eq("full"), any(), chatWiki.capture());
+                eq("full"), any(), chatWiki.capture(), any(), any());
         assertThat(chatWiki.getValue()).isTrue();
     }
 
@@ -1016,13 +1018,14 @@ class DocumentServiceBlocksTest {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
         when(documentRepository.findByIdInActiveWorkspace("doc_up")).thenReturn(Optional.of(doc));
-        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean()))
+        when(processingRequester.request(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), any()))
                 .thenReturn(new DocumentProcessingRequester.PipelineRunResponse("run_2", "running", null, null));
 
         documentService.doRequestProcessing("doc_up");
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(processingRequester).request(any(), any(), any(), any(), any(), any(), chatWiki.capture());
+        verify(processingRequester).request(any(), any(), any(), any(), any(), any(), chatWiki.capture(),
+                any(), any());
         assertThat(chatWiki.getValue()).isFalse();
     }
 
