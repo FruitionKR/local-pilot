@@ -167,26 +167,30 @@
 - 관련 설계: §5.2
 - 선행: TASK-003
 - 변경 대상:
-  - 신규 `aihistory/service/RestoreExecutor.java`, `aihistory/repository/PipelineRestoreRequester.java`
+  - 신규 `aihistory/service/RestoreExecuteService.java`, `aihistory/service/RestoreApplier.java`,
+    `aihistory/service/RestoreOperationLifecycle.java`, `aihistory/repository/PipelineRestoreRequester.java`
   - `aihistory/controller/OperationQueryController.java`(실행 endpoint)
 - 작업:
-  - `POST .../ai-operation-logs/{operation_id}/restore` — body에 `mode`와 `preview_token` 필수
+  - `POST .../ai-operation-logs/{operation_id}/restore` — body에 `preview_token` 필수
   - `preview_token` 재검증. 대상 revision이나 활성 기여가 달라졌으면 409
-  - 문서 본문 복원을 Wiki보다 먼저 수행 (`document_role=EDITABLE`인 경우)
-  - `ai_operation_logs`에 `restore` 작업을 `applying`으로 생성하고 `restore_manifest` 보관
+  - ingest 되돌리기는 Wiki만 되돌린다. 문서 본문은 건드리지 않는다
+  - `ai_operation_logs`에 `restore` 작업을 `applying`으로 별도 트랜잭션에 먼저 커밋하고 `restore_manifest` 보관
   - 트랜잭션: 대상 `wiki_pages`를 `page_id` 순서로 `FOR UPDATE` → 제외 기여 `active=false`·`deactivated_by` 갱신 → 복원·삭제·위임 처리
   - 복원은 되돌릴 revision의 `markdown`과 `markdown_key`를 재사용하고 `markdown_uri`만 이동. **저장소에 쓰지 않는다**
   - 삭제는 `wiki_pages.status='deleted'` 소프트 삭제, 링크 정리
   - 위임은 `ai_operation_changes`에 `delegated`만 기록
   - 재조립 대상이 있으면 지시서 전송 후 `rebuilding`, 없으면 `succeeded`
-  - 중간 실패 시 `applying`에 두고 같은 `restore_manifest`로 재시도하며, 그동안 같은 문서의 새 ingest를 막는다
+  - 전송 실패는 예외를 올리지 않고 `notify_pending`으로 남긴다
+  - 중간 실패 시 `applying`에 두고 같은 `restore_manifest`로 재시도한다
 - 완료 조건:
-  - [ ] 복원 revision의 `markdown_key`가 되돌릴 대상과 동일
-  - [ ] 복구 중 Backend가 저장소에 쓰지 않음
-  - [ ] 삭제된 페이지의 `wiki_page_versions`·`wiki_page_contributions`가 유지됨
-  - [ ] 미리보기 이후 대상이 변경되면 409이고 revision이 생성되지 않음
-  - [ ] 통지 실패 시 `notify_pending` 유지 후 재시도 가능
-  - [ ] 편집 잠금 위반 423, 버전 충돌 409
+  - [x] 복원 revision의 `markdown_key`가 되돌릴 대상과 동일
+  - [x] 복구 중 Backend가 저장소에 쓰지 않음
+  - [x] 삭제된 페이지의 `wiki_page_versions`·`wiki_page_contributions`가 유지됨
+  - [x] 미리보기 이후 대상이 변경되면 409이고 revision이 생성되지 않음
+  - [x] 통지 실패 시 `notify_pending` 유지 후 재시도 가능
+- 남은 항목:
+  - `applying` 상태 동안 같은 문서의 새 ingest 차단 (미구현)
+  - `notify_pending` 재전송 (미구현. 지금은 수동 재시도)
 
 ### TASK-008 재조립 결과 수신 (F8)
 

@@ -80,6 +80,12 @@ public class WikiPage {
         this.updatedAt = Instant.now();
     }
 
+    /** 복구로 받치는 기여가 모두 사라졌다. 행과 이력은 남기고 표시만 바꾼다. */
+    public void softDelete(Instant updatedAt) {
+        this.status = WikiPageStatus.deleted;
+        this.updatedAt = updatedAt;
+    }
+
     /**
      * 현재 본문이 담긴 object를 가리키게 한다. Backend가 검증하고 revision으로 채택한 뒤에만 옮긴다.
      * llmPipeline은 이 값을 갱신하지 않는다.

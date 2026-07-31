@@ -373,8 +373,7 @@ C2 이력 : A → B → A2
 ① 미리보기 + preview_token (대상 page의 current_revision·활성 기여 hash 서명)
 ② 사용자 확인
 ③ preview_token 재검증 — 그사이 변경됐으면 409
-④ 문서 본문 복원 (EDITABLE인 경우). Wiki보다 먼저
-⑤ [트랜잭션] 페이지 행 FOR UPDATE
+④ [트랜잭션] 페이지 행 FOR UPDATE
      contributions SET active=false, deactivated_by=복구 operation
      복원 → wiki_page_versions insert
               revision      = max+1
@@ -383,13 +382,17 @@ C2 이력 : A → B → A2
             wiki_pages.markdown_uri 를 그 key로 이동
      삭제 → status='deleted' (소프트). 하드 삭제하면 이력이 CASCADE로 사라짐
      위임 → ai_operation_changes에 delegated 기록만
-⑥ 조립 지시서 전송 → 대상 있으면 rebuilding, 없으면 succeeded
-⑦ 재조립 결과 수신 (4.4)
+⑤ 조립 지시서 전송 → 대상 있으면 rebuilding, 없으면 succeeded
+⑥ 재조립 결과 수신 (4.4)
 ```
+
+**ingest 되돌리기는 Wiki만 되돌린다.** ingest는 원문 문서를 읽기만 하고 바꾸지 않으므로 되돌릴 문서 본문이 없다. 문서 본문을 되돌리는 것은 `document_edit` 작업의 몫이며 여기서 다루지 않는다.
 
 **Backend는 저장소에 쓰지 않는다.** 되돌릴 revision의 object가 불변으로 이미 있으므로 같은 본문을 다시 쓰지 않고 `markdown_uri`를 그 key로 되돌린다. 덕분에 Wiki 반영이 트랜잭션 하나로 끝나고, 쓰기 실패를 다룰 필요가 없다.
 
-④와 ⑤는 여전히 하나의 트랜잭션으로 묶이지 않는다(문서와 Wiki 반영). 중간 실패 시 `applying`에 두고 같은 `restore_manifest`로 재시도하며, 그동안 같은 문서의 새 ingest를 막는다.
+④는 한 트랜잭션이다. 그 앞에서 복구 작업을 `applying`으로 먼저 커밋해 두므로, 반영 중 실패하면 `applying`으로 남아 같은 `restore_manifest`로 재시도할 수 있다.
+
+⑤ 전송이 실패해도 예외를 올리지 않는다. 복구는 이미 DB에 반영됐고 재작성만 보류되므로 `notify_pending`으로 남겨 나중에 다시 보낸다.
 
 ### 5.3 lint 복구
 

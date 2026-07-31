@@ -8,6 +8,40 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-07-31
 
+### feat: 이 시점으로 되돌리기 실행 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{ws}/ai-operation-logs/{operation_id}/restore`를 추가한다. body는 미리보기 응답의 `preview_token` 하나다. 미리보기와 같은 계산을 다시 하고 결과를 Wiki에 반영한다.
+- `RestoreExecuteService` — 되돌릴 수 있는 작업인지 확인(`ingest`·`lint`만), `preview_token` 재검증, 계획 계산, 반영, llmPipeline 통지까지의 순서를 맡는다.
+- `RestoreApplier` — 반영을 한 트랜잭션으로 처리한다. 교착을 피하려고 `page_id` 오름차순으로 `FOR UPDATE` 잠금을 잡고, 제외 대상 기여를 `active=false`로 끈 뒤 페이지마다 복원·삭제·위임으로 갈린다.
+- `RestoreOperationLifecycle` — 복구 작업의 시작(`applying`)과 종료를 각각 별도 트랜잭션으로 커밋한다. 반영 중 실패해도 `applying`으로 남아 같은 `restore_manifest`로 재시도할 수 있다.
+- `PipelineRestoreRequester` — `POST {app.wiki-restore.endpoint}`로 조립 지시서를 보낸다. 재작성 대상, 되돌린 페이지, 삭제된 페이지를 함께 싣는다.
+- `WikiPageStatus.deleted`와 `V17__add_wiki_page_deleted_status.sql`을 추가한다. `wiki_pages.status` CHECK 제약에 `deleted`를 넣는다.
+- `WikiPageRepository.findByIdForUpdate`(비관적 쓰기 잠금)와 `DocumentWikiLinkRepository.deleteByIdWikiPageId`를 추가한다.
+- `RestorePreviewStaleException`을 409 `RESTORE_PREVIEW_STALE`로 매핑한다.
+- `app.wiki-restore.endpoint`·`app.wiki-restore.timeout-seconds` 설정을 추가한다.
+
+**설계 확정**
+
+- **ingest 되돌리기는 Wiki만 되돌린다.** ingest는 원문 문서를 읽기만 하고 바꾸지 않으므로 되돌릴 문서 본문이 없다. 문서 본문 복원은 `document_edit`의 몫이라 여기서 뺐다.
+- **Backend는 저장소에 쓰지 않는다.** 되돌릴 revision의 object가 불변 key로 이미 있으므로 같은 본문을 다시 쓰지 않고 `markdown_uri`를 그 key로 옮긴다.
+- 삭제는 소프트 삭제다. 하드 삭제하면 `wiki_page_versions`·`wiki_page_contributions`가 CASCADE로 사라져 되살릴 수 없다.
+- 기여 행은 지우지 않고 끈다. 지우면 연속 복구에서 이전에 제외한 기여가 되살아난다.
+- 통지 실패는 예외를 올리지 않는다. 복구는 이미 반영됐고 재작성만 보류되므로 `notify_pending`으로 남긴다.
+
+**검증**
+
+- `RestoreExecuteServiceTest` 7개를 추가했다. 토큰 불일치 409, 되돌릴 수 없는 작업 유형, 빈 계획, 재작성 없음→`succeeded`, 재작성 있음→`rebuilding`, 통지 실패→`notify_pending`, 콜백 주소 전달이다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline `POST /wiki/restore-runs`가 아직 없다. 재작성 대상이 있는 복구는 지금은 `notify_pending`에서 멈춘다.
+- `notify_pending` 자동 재전송이 없다. 재시도는 수동이다.
+- `applying` 상태 동안 같은 문서의 새 ingest를 막는 처리가 아직 없다.
+- 행 잠금 동작은 단위 테스트로 검증할 수 없다. Testcontainers 통합 테스트가 필요하다.
+
 ### feat: AI 작업 로그 조회 API 추가
 
 **변경된 것**

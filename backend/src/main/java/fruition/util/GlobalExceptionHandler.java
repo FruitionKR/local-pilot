@@ -7,6 +7,7 @@ import fruition.aihistory.exception.InvalidCallbackTokenException;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.exception.OperationPayloadConflictException;
 import fruition.aihistory.exception.OperationNotFoundException;
+import fruition.aihistory.exception.RestorePreviewStaleException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentAlreadyProcessingException;
@@ -414,6 +415,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("AI_OPERATION_PAYLOAD_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(RestorePreviewStaleException.class)
+    public ResponseEntity<ErrorResponse> handleRestorePreviewStale(RestorePreviewStaleException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("RESTORE_PREVIEW_STALE", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)
