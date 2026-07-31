@@ -67,12 +67,13 @@ def persist_wiki_outputs(
     operation_id = manifest.get("operation_id")
     if operation_id:
         source_page = page_payload(manifest["source_page"])
+        concept_contributions = manifest.get("concept_contributions") or {}
         operation_concept_pages_by_slug = {}
         for page_value in manifest.get("concept_pages", []):
             page = page_payload(page_value)
             slug = str(page["slug"])
             page_id = concept_id_by_slug.get(slug)
-            if page_id:
+            if page_id and slug in concept_contributions:
                 operation_concept_pages_by_slug[slug] = {
                     "page_id": page_id,
                     "slug": slug,
@@ -86,7 +87,7 @@ def persist_wiki_outputs(
             source_page_id=source_page_id,
             source_markdown=str(source_page["markdown"]),
             concept_pages=list(operation_concept_pages_by_slug.values()),
-            concept_contributions=manifest.get("concept_contributions") or {},
+            concept_contributions=concept_contributions,
             write_text=write_text_object,
         )
     return [source_page_id, *concept_page_ids]

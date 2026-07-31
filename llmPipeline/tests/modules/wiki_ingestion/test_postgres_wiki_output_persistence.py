@@ -212,7 +212,12 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
                     "slug": "concept-a",
                     "title": "개념 A",
                     "definition": "정의",
-                }
+                },
+                {
+                    "slug": "concept-b",
+                    "title": "개념 B",
+                    "definition": "기존 정의",
+                },
             ],
         },
         "source_page": {"title": "문서", "markdown": "# 문서\n"},
@@ -222,7 +227,12 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
                 "slug": "concept-a",
                 "title": "개념 A",
                 "markdown": "# 개념 A\n",
-            }
+            },
+            {
+                "slug": "concept-b",
+                "title": "개념 B",
+                "markdown": "# 개념 B\n",
+            },
         ],
         "concept_contributions": {
             "concept-a": {
@@ -242,8 +252,13 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
     monkeypatch.setattr(
         persistence,
         "resolve_or_create_wiki_page_id",
-        lambda _conn, _user, _workspace, page_type, _slug: (
-            "source-page-1" if page_type == "source" else "concept-page-1"
+        lambda _conn, _user, _workspace, page_type, slug: (
+            "source-page-1"
+            if page_type == "source"
+            else {
+                "concept-a": "concept-page-1",
+                "concept-b": "concept-page-2",
+            }[slug]
         ),
     )
     monkeypatch.setattr(
@@ -287,8 +302,9 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
     assert markdown_uploads == [
         "wiki/user-1/workspace-1/sources/doc-1.md",
         "wiki/user-1/workspace-1/concepts/concept-a.md",
+        "wiki/user-1/workspace-1/concepts/concept-b.md",
     ]
-    assert len(page_upserts) == 2
+    assert len(page_upserts) == 3
     assert captured["concept_pages"] == [
         {
             "page_id": "concept-page-1",
