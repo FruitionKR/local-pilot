@@ -33,7 +33,13 @@ class ChatCompletionsPlanGenerator:
         instruction: str,
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
+        allowed_tools: tuple[str, ...] | None,
     ) -> AgentPlan:
+        allowed_plan_tools = (
+            ALLOWED_PLAN_TOOLS
+            if allowed_tools is None
+            else ALLOWED_PLAN_TOOLS.intersection(allowed_tools)
+        )
         value = self._client.complete_json(
             self._system_prompt,
             json.dumps(
@@ -42,6 +48,7 @@ class ChatCompletionsPlanGenerator:
                     "instruction": instruction,
                     "hierarchy": hierarchy,
                     "skill_instructions": skill_instructions,
+                    "allowed_tools": sorted(allowed_plan_tools),
                 },
                 ensure_ascii=False,
                 indent=2,

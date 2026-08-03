@@ -314,6 +314,6 @@
 ## 5. 검증 결과
 
 llmPipeline의 Skill·AgentRun·Worker 구현과 자동 테스트는 완료했다. 2026-08-03 기준 전체
-테스트는 `650 passed, 49 subtests passed`이며 Compose config와 Python 구문 검사가 통과했다.
+테스트는 `651 passed, 49 subtests passed`이며 Compose config와 Python 구문 검사가 통과했다.
 Spring migration·Tool Gateway, Frontend UI, 실제 PostgreSQL·Backend E2E가 필요한 완료 조건은
 Pending으로 유지한다.

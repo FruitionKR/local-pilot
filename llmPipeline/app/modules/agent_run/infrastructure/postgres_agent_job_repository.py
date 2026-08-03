@@ -103,6 +103,23 @@ class PostgresAgentJobRepository:
             if terminal:
                 conn.execute(
                     """
+                    WITH active_run AS (
+                        SELECT current_plan_id
+                        FROM agent_runs
+                        WHERE id = %s
+                          AND status NOT IN (
+                              'completed', 'partial_failed', 'failed', 'conflicted', 'rejected', 'cancelled'
+                          )
+                    )
+                    UPDATE agent_plan_operations
+                    SET status = 'failed', error_code = %s, updated_at = now()
+                    WHERE plan_id = (SELECT current_plan_id FROM active_run)
+                      AND status = 'running'
+                    """,
+                    (job.run_id, error_code),
+                )
+                conn.execute(
+                    """
                     UPDATE agent_runs
                     SET status = 'failed', error_code = %s, updated_at = now(), finished_at = now()
                     WHERE id = %s

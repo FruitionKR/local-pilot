@@ -498,7 +498,7 @@ Frontend는 Spring backend만 호출한다.
 
 - 검증일: 2026-08-03
 - 최종 상태: llmPipeline 자동 검증 완료, Backend·Frontend 통합 Pending
-- 자동 검증: llmPipeline `650 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
+- 자동 검증: llmPipeline `651 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
 - 남은 문제: Backend migration·양방향 service 인증·Tool Gateway와 Frontend UI/E2E
 - 후속 작업:
   1. 요구사항 테스트부터 작성한다.

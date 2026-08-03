@@ -100,7 +100,11 @@ class AgentWorkerTest(unittest.TestCase):
         with patch.object(database, "connect", return_value=connection_context):
             PostgresAgentJobRepository().fail(job, "RuntimeError")
 
-        terminal_update = connection.execute.call_args_list[1].args[0]
+        operation_update, operation_parameters = connection.execute.call_args_list[1].args
+        terminal_update = connection.execute.call_args_list[2].args[0]
+        self.assertIn("status = 'failed'", operation_update)
+        self.assertIn("status = 'running'", operation_update)
+        self.assertEqual(operation_parameters, ("run-1", "RuntimeError"))
         self.assertIn("'partial_failed'", terminal_update)
         self.assertIn("'conflicted'", terminal_update)
 

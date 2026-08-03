@@ -83,6 +83,11 @@ class AgentWorker:
             instruction=context.run.request_summary,
             hierarchy=hierarchy,
             skill_instructions=context.skill_instructions,
+            allowed_tools=(
+                context.allowed_tools
+                if context.run.skill_version_id is not None
+                else None
+            ),
         )
         if context.run.skill_version_id is not None:
             unsupported = {operation.tool_name for operation in plan.operations} - set(context.allowed_tools)

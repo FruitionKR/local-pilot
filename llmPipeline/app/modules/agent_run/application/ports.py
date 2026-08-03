@@ -76,6 +76,7 @@ class AgentPlanGeneratorPort(Protocol):
         instruction: str,
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
+        allowed_tools: tuple[str, ...] | None,
     ) -> AgentPlan:
         ...
 
