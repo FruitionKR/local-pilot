@@ -336,6 +336,7 @@ wiki/{ws}/pages/{page_id}/ops/{op_id}.json   기여 조각
 | revision 채번 · `markdown_uri` 갱신 | **항상 Backend** |
 | 본문 위치 | 콜백이 준 key를 검증 후 Backend가 읽음 |
 | 본문 쓰기 | **llmPipeline만.** 작업별 새 key, 덮어쓰지 않음. Backend는 `wiki/`에 쓰지 않는다 |
+| `wiki_pages.markdown_uri` · `status` | **Backend만.** llmPipeline의 `ON CONFLICT DO UPDATE`에서 두 컬럼을 빼야 한다 |
 | 키 검증 | bucket은 환경 설정 고정. prefix가 `wiki/{ws}/pages/{page}/ops/{op}.(md\|json)`인지 정확 검증 |
 | 콜백 인증 | 내부 토큰·서명 필수. 인증 전에는 객체를 읽지 않음 |
 | 멱등 | 작업 등록은 `operation_id` PK, 콜백은 `payload_hash` + 변경내역 UNIQUE |
