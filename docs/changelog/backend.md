@@ -8,6 +8,37 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-03
 
+### feat: 작업 로그 상세에 변경분 포함
+
+**배경**
+
+목록에서 한 건을 고르면 상세와 변경분을 한 번에 받도록 한다. 기존에는 상세를 부르고 항목마다 diff 엔드포인트를 다시 불러야 했다.
+
+**변경된 것**
+
+- `ChangeDiffLoader` — 변경내역 한 건의 두 revision 본문을 읽어 그 자리에서 비교한다. `resource_type`에 따라 `wiki_page_versions` 또는 `document_content_versions`에서 읽는다.
+- `OperationLogDetailResponse.Change`에 `hunks`와 `diff_too_large`를 추가한다. 값이 없으면 응답에서 생략된다.
+- `additions`·`deletions`는 그대로 저장 시점 값이다. 다시 세지 않는다.
+
+**한 항목의 실패가 상세 전체를 실패시키지 않는다**
+
+큰 페이지 하나 때문에 나머지 멀쩡한 항목까지 못 보는 것은 잘못된 트레이드오프다. 개별 diff 엔드포인트였다면 422였을 경우도 상세에서는 200이고 그 항목만 `diff_too_large: true`가 된다. 버전 행이 없는 경우도 조용히 건너뛴다.
+
+`before_revision`이나 `after_revision`이 없는 항목(`created`·`deleted`·`delegated`·`rebuild_failed`)은 비교할 짝이 없어 본문을 읽지 않는다.
+
+**상한을 두지 않았다**
+
+ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이터가 없다. `document_wiki_links`가 0행이고 `wiki_pages`에 테스트 데이터 4건뿐이라 판단할 근거가 없었다. 없을지도 모르는 문제에 대비해 `diff_omitted` 같은 분기를 클라이언트에 강요하지 않기로 했다. 실제 운영 수치를 본 뒤 필요하면 추가한다. 응답에 필드가 느는 것이라 기존 클라이언트를 깨지 않는다.
+
+**검증**
+
+- `ChangeDiffLoaderTest` 6개를 추가했다. Wiki diff, 문서 diff, 생성 건너뛰기, `after_revision` 없는 3종 건너뛰기, 버전 부재, 계산 거부 시 예외 대신 표시다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+---
+
+## 2026-08-03
+
 ### feat: AI 문서 편집 되돌리기를 복구 API로 통일
 
 **배경**

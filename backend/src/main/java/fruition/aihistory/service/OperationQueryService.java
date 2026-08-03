@@ -34,13 +34,16 @@ public class OperationQueryService {
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final ChangeDiffLoader diffLoader;
 
     public OperationQueryService(OperationLogRepository operationLogRepository,
                                  OperationChangeRepository operationChangeRepository,
-                                 WorkspaceMemberRepository workspaceMemberRepository) {
+                                 WorkspaceMemberRepository workspaceMemberRepository,
+                                 ChangeDiffLoader diffLoader) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.diffLoader = diffLoader;
     }
 
     @Transactional(readOnly = true)
@@ -68,8 +71,13 @@ public class OperationQueryService {
         OperationLog log = operationLogRepository
                 .findByOperationIdAndWorkspaceId(operationId, workspaceId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
-        return OperationLogDetailResponse.from(
-                log, operationChangeRepository.findByOperationIdOrderByIdAsc(operationId));
+        // 상세를 한 번 부르면 변경분까지 다 받도록 여기서 계산한다.
+        List<OperationLogDetailResponse.Change> changes =
+                operationChangeRepository.findByOperationIdOrderByIdAsc(operationId).stream()
+                        .map(change -> OperationLogDetailResponse.Change.from(
+                                change, diffLoader.load(change)))
+                        .toList();
+        return OperationLogDetailResponse.from(log, changes);
     }
 
     private void verifyMember(String workspaceId, String userId) {

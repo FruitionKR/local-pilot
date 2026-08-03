@@ -1,6 +1,9 @@
 package fruition.aihistory.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import fruition.aihistory.service.ChangeDiffLoader;
+import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.aihistory.domain.OperationChange;
 import fruition.aihistory.domain.OperationLog;
 
@@ -10,8 +13,8 @@ import java.util.List;
 /**
  * 작업 상세. 그 작업이 바꾼 리소스를 함께 반환한다.
  *
- * <p>{@code additions}·{@code deletions}는 저장 시점에 계산해 둔 값이라 여기서 diff를 돌리지 않는다.
- * 실제 변경 내용은 사용자가 펼칠 때 페이지 diff 엔드포인트로 따로 가져간다.
+ * <p>{@code additions}·{@code deletions}는 저장 시점에 계산해 둔 값이라 다시 세지 않는다.
+ * {@code hunks}는 저장된 본문 두 벌을 읽어 조회 시점에 계산한다.
  */
 public record OperationLogDetailResponse(
         @JsonProperty("operation_id") String operationId,
@@ -29,7 +32,10 @@ public record OperationLogDetailResponse(
     /**
      * @param beforeRevision 손대기 직전 버전. null이면 새로 만든 것
      * @param afterRevision  이 작업이 만든 버전. 위임·실패면 null
+     * @param hunks          실제 변경분. 비교할 짝이 없거나 계산이 거부되면 생략된다
+     * @param diffTooLarge   두 본문 차이가 너무 커서 계산하지 못한 경우. 개별 diff로도 볼 수 없다
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Change(
             long id,
             @JsonProperty("resource_type") String resourceType,
@@ -39,9 +45,11 @@ public record OperationLogDetailResponse(
             @JsonProperty("change_type") String changeType,
             @JsonProperty("change_summary") String changeSummary,
             Integer additions,
-            Integer deletions
+            Integer deletions,
+            List<DocumentContentDiffResponse.Hunk> hunks,
+            @JsonProperty("diff_too_large") Boolean diffTooLarge
     ) {
-        public static Change from(OperationChange change) {
+        public static Change from(OperationChange change, ChangeDiffLoader.Diff diff) {
             return new Change(
                     change.getId(),
                     change.getResourceType().name(),
@@ -51,11 +59,13 @@ public record OperationLogDetailResponse(
                     change.getChangeType().name(),
                     change.getChangeSummary(),
                     change.getAdditions(),
-                    change.getDeletions());
+                    change.getDeletions(),
+                    diff.hunks(),
+                    diff.tooLarge() ? Boolean.TRUE : null);
         }
     }
 
-    public static OperationLogDetailResponse from(OperationLog log, List<OperationChange> changes) {
+    public static OperationLogDetailResponse from(OperationLog log, List<Change> changes) {
         return new OperationLogDetailResponse(
                 log.getOperationId(),
                 log.getOperationType().name(),
@@ -66,6 +76,6 @@ public record OperationLogDetailResponse(
                 log.getRestoredFrom(),
                 log.getCreatedAt(),
                 log.getCompletedAt(),
-                changes.stream().map(Change::from).toList());
+                changes);
     }
 }

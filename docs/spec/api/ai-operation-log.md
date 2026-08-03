@@ -167,10 +167,22 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`
 ### `GET .../ai-operation-logs/{operation_id}` — 작업 로그 상세
 
 - **응답 200** `OperationLogDetailResponse` — 목록 항목의 필드에 `changes[]`를 더한다
-  - `changes[]`: `id`, `resource_type`, `resource_id`, `before_revision`, `after_revision`, `change_type`, `change_summary`, `additions`, `deletions`
+  - `changes[]`: `id`, `resource_type`, `resource_id`, `before_revision`, `after_revision`, `change_type`, `change_summary`, `additions`, `deletions`, `hunks`, `diff_too_large`
   - `OperationChangeRepository.findByOperationIdOrderByIdAsc`로 기록 순서대로 반환
 - **에러**: 404 `AI_OPERATION_NOT_FOUND`
-- `additions`·`deletions`는 저장 시점 계산값이라 **여기서 diff를 돌리지 않는다.** 실제 변경 내용은 사용자가 펼칠 때 `GET .../wiki/pages/{page_id}/diff?from=&to=`로 따로 가져간다.
+
+`additions`·`deletions`는 저장 시점 계산값이라 다시 세지 않는다. 반면 `hunks`는 **조회 시점에 계산한다**(`ChangeDiffLoader`). 목록에서 한 건을 고르면 변경분까지 한 번에 받도록 상세에 담는다.
+
+| 상황 | `hunks` | `diff_too_large` |
+|---|---|---|
+| 갱신·복원·재작성 (`before`·`after` 둘 다 있음) | 계산 결과 | 생략 |
+| 생성·삭제·위임·재작성실패 (한쪽이 null) | 생략 | 생략 |
+| 버전 행이 없음 | 생략 | 생략 |
+| 두 본문 차이가 너무 커서 계산 거부 | 생략 | `true` |
+
+> ⚠️ **한 항목의 계산 실패가 상세 전체를 실패시키지 않는다.** 큰 페이지 하나 때문에 나머지 멀쩡한 항목까지 못 보는 것은 잘못된 트레이드오프다. 개별 diff 엔드포인트였다면 422였을 경우도 여기서는 200이고 그 항목만 `diff_too_large: true`가 된다.
+>
+> 리소스 수에 상한을 두지 않았다. ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이터가 없어서, 없을지도 모르는 문제에 대비해 클라이언트에 분기를 강요하지 않기로 했다. 실제 운영 수치를 본 뒤 필요하면 상한을 추가한다(응답에 필드가 느는 것이라 기존 클라이언트를 깨지 않는다).
 
 ---
 
