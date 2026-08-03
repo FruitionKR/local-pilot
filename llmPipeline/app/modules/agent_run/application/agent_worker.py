@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import replace
 import logging
 import threading
 from typing import Any
@@ -9,6 +7,7 @@ from uuid import uuid4
 
 from app.modules.agent_run.application.ports import (
     AgentJobRepositoryPort,
+    AgentExecutionDeciderPort,
     AgentPlanGeneratorPort,
     AgentPlanRepositoryPort,
     AgentToolGatewayPort,
@@ -20,6 +19,13 @@ from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 
 logger = logging.getLogger(__name__)
 
+_MAX_EXECUTION_STEPS = 40
+_READ_TOOL_ARGUMENTS = {
+    "list_root_items": frozenset(),
+    "list_folder_children": frozenset({"folder_id"}),
+    "get_document_metadata": frozenset({"document_id"}),
+}
+
 
 class AgentWorker:
     def __init__(
@@ -28,11 +34,13 @@ class AgentWorker:
         run_repository: AgentPlanRepositoryPort,
         tool_gateway: AgentToolGatewayPort,
         plan_generator: AgentPlanGeneratorPort,
+        execution_decider: AgentExecutionDeciderPort,
     ) -> None:
         self._repository = repository
         self._run_repository = run_repository
         self._tool_gateway = tool_gateway
         self._plan_generator = plan_generator
+        self._execution_decider = execution_decider
 
     def process(self, job: AgentJob) -> None:
         stop_heartbeat = threading.Event()
@@ -125,52 +133,147 @@ class AgentWorker:
         if plan.status != "approved" or context.run.status != "executing":
             raise ValueError("Only an approved Agent plan can execute.")
         results = self._repository.load_operation_results(job.run_id, plan.id)
-        remaining = {
-            operation.id: operation
-            for operation in plan.operations
-            if operation.status in {"pending", "running"}
-        }
-        failed: set[str] = {
-            operation.id
-            for operation in plan.operations
-            if operation.status in {"failed", "forbidden", "conflicted", "skipped"}
-        }
-        while remaining:
+        observations: list[dict[str, object]] = [
+            {"action": "execute_operation", "operation_id": operation_id, "result": result}
+            for operation_id, result in results.items()
+        ]
+        if any(operation.status in {"pending", "running"} for operation in plan.operations):
+            observations.append(
+                {
+                    "action": "read",
+                    "tool_name": "list_root_items",
+                    "arguments": {},
+                    "result": self._read_tool(context, "list_root_items", {}),
+                }
+            )
+        allowed_read_tools = self._allowed_read_tools(context)
+        for _ in range(_MAX_EXECUTION_STEPS):
             current_context = self._repository.load_context(job.run_id)
             if current_context.run.status == "cancelled":
                 return
+            if current_context.run.status != "executing":
+                raise ValueError("AgentRun left the executing state.")
+            current_plan = self._repository.load_current_plan(job.run_id)
+            if (
+                current_plan.id != plan.id
+                or current_plan.version != plan.version
+                or current_plan.operation_hash != plan.operation_hash
+                or current_plan.status != "approved"
+            ):
+                raise ValueError("Approved Agent plan changed during execution.")
+            remaining = {
+                operation.id: operation
+                for operation in current_plan.operations
+                if operation.status in {"pending", "running"}
+            }
+            failed = {
+                operation.id
+                for operation in current_plan.operations
+                if operation.status
+                in {"failed", "forbidden", "conflicted", "skipped", "cancelled", "verification_failed"}
+            }
             blocked = [
                 operation
                 for operation in remaining.values()
                 if any(dependency in failed for dependency in operation.depends_on)
             ]
             for operation in blocked:
-                self._repository.mark_operation(operation.id, ("pending",), "skipped", "dependency_failed")
-                failed.add(operation.id)
-                remaining.pop(operation.id)
-            ready = [
+                self._repository.mark_operation(
+                    operation.id,
+                    ("pending", "running"),
+                    "skipped",
+                    "dependency_failed",
+                )
+                observations.append(
+                    {
+                        "action": "operation_status",
+                        "operation_id": operation.id,
+                        "status": "skipped",
+                        "error_code": "dependency_failed",
+                    }
+                )
+            if blocked:
+                continue
+            ready = tuple(
                 operation
                 for operation in remaining.values()
                 if all(dependency in results for dependency in operation.depends_on)
-            ][:4]
-            if not ready:
-                if remaining:
-                    raise ValueError("Agent plan dependency graph cannot make progress.")
-                break
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = {
-                    executor.submit(self._execute_operation, context, plan, operation, results): operation
-                    for operation in ready
+            )
+            if remaining and not ready:
+                raise ValueError("Agent plan dependency graph cannot make progress.")
+            decision = self._execution_decider.decide(
+                instruction=context.run.request_summary,
+                plan=current_plan,
+                ready_operations=ready,
+                observations=tuple(observations),
+                allowed_read_tools=allowed_read_tools,
+            )
+            if decision.action == "read":
+                latest_context = self._repository.load_context(job.run_id)
+                if latest_context.run.status == "cancelled":
+                    return
+                if latest_context.run.status != "executing":
+                    raise ValueError("AgentRun left the executing state.")
+                tool_name, arguments = self._validate_read_decision(
+                    decision.tool_name,
+                    decision.arguments,
+                    allowed_read_tools,
+                )
+                observations.append(
+                    {
+                        "action": "read",
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                        "result": self._read_tool(latest_context, tool_name, arguments),
+                    }
+                )
+                continue
+            if decision.action == "execute_operation":
+                latest_context = self._repository.load_context(job.run_id)
+                if latest_context.run.status == "cancelled":
+                    return
+                if latest_context.run.status != "executing":
+                    raise ValueError("AgentRun left the executing state.")
+                operation = next(
+                    (item for item in ready if item.id == decision.operation_id),
+                    None,
+                )
+                if operation is None:
+                    raise ValueError("Agent selected an operation that is not ready.")
+                response = self._execute_operation(latest_context, current_plan, operation, results)
+                observation: dict[str, object] = {
+                    "action": "execute_operation",
+                    "operation_id": operation.id,
+                    "status": "succeeded" if response is not None else "failed",
                 }
-                for future in as_completed(futures):
-                    operation = futures[future]
-                    response = future.result()
-                    remaining.pop(operation.id)
-                    if response is None:
-                        failed.add(operation.id)
-                    else:
-                        results[operation.id] = response
-        self._repository.enqueue_verification(job.run_id)
+                if response is not None:
+                    results[operation.id] = response
+                    observation["result"] = response
+                observations.append(observation)
+                continue
+            if decision.action == "request_replan":
+                logger.info(
+                    "Agent execution requested a new plan: run_id=%s reason=%s",
+                    job.run_id,
+                    decision.reason,
+                )
+                if not self._repository.mark_run_status(
+                    job.run_id,
+                    ("executing",),
+                    "clarification_required",
+                ):
+                    raise ValueError("AgentRun cannot request a new plan.")
+                return
+            if remaining:
+                raise ValueError("Agent cannot finish while approved operations remain.")
+            self._repository.enqueue_verification(job.run_id)
+            return
+        if not self._repository.mark_run_status(
+            job.run_id,
+            ("executing",),
+            "clarification_required",
+        ):
+            raise ValueError("Agent execution step limit exceeded.")
 
     def _execute_operation(
         self,
@@ -296,6 +399,25 @@ class AgentWorker:
             user_id=context.run.user_id,
             arguments=arguments,
         )
+
+    def _allowed_read_tools(self, context: AgentRunContext) -> tuple[str, ...]:
+        if context.run.skill_version_id is None:
+            return tuple(_READ_TOOL_ARGUMENTS)
+        return tuple(tool_name for tool_name in _READ_TOOL_ARGUMENTS if tool_name in context.allowed_tools)
+
+    def _validate_read_decision(
+        self,
+        tool_name: str | None,
+        arguments: dict[str, object] | None,
+        allowed_read_tools: tuple[str, ...],
+    ) -> tuple[str, dict[str, object]]:
+        if tool_name not in allowed_read_tools or tool_name not in _READ_TOOL_ARGUMENTS:
+            raise ValueError("Agent selected a read tool that is not allowed.")
+        if arguments is None or set(arguments) != _READ_TOOL_ARGUMENTS[tool_name]:
+            raise ValueError("Agent read arguments do not match the tool contract.")
+        if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
+            raise ValueError("Agent read arguments must contain non-empty ids.")
+        return tool_name, arguments
 
 
 def _resolve_operation_references(

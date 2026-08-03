@@ -149,7 +149,7 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 
 사용자에게 대상 이름, 현재·변경 위치, 이유, 예상 최종 트리를 표시한다. 내부 계획에는 대상 ID, base_version, operation 의존 관계를 저장한다.
 
-- AgentRun 최대 step: 10
+- 실행 ReAct decision 최대 step: 40
 - 계획 최대 operation: 20
 - AgentRun 최대 tool 호출: 40
 - 계획 생성 timeout: 3분
@@ -188,22 +188,34 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 ### REQ-006 승인된 계획 실행
 
 - 계획에 없는 operation을 추가하지 않는다.
-- 의존 operation은 직렬 실행한다.
-- 독립 operation은 최대 4개까지 병렬 실행한다.
+- 실행 시작 시 현재 루트 상태를 읽고, 매 decision마다 최근 관찰과 operation 상태를 LLM에 제공한다.
+- LLM은 허용된 read tool 호출, 실행 가능한 승인 operation 하나 선택, 완료, 새 계획 요청 중 하나만 선택한다.
+- 상태 변경 tool과 인자는 LLM 출력이 아니라 승인된 plan operation에서 읽는다.
+- 의존 operation은 선행 결과가 확인된 뒤 선택할 수 있으며 operation은 한 번에 하나씩 실행한다.
+- LLM이 승인되지 않았거나 아직 실행 가능하지 않은 operation을 선택하면 실행하지 않는다.
+- 승인된 계획으로 목표를 안전하게 달성할 수 없으면 clarification_required로 중단하고 새 plan version과 hash 승인을 요구한다.
+- 실행 decision은 최대 40회이며 AgentRun 전체 tool 호출은 최대 40회다.
 - operation마다 고유한 Idempotency-Key를 사용한다.
 - timeout 또는 retryable 오류는 같은 key로 최대 2회 재시도한다.
 - 실패한 operation과 독립적인 operation은 계속 실행한다.
 - 자동 rollback은 수행하지 않는다.
 - 대상 version이 다르면 conflicted로 기록하고 실행하지 않는다.
+- LLM의 chain-of-thought는 저장하지 않고 선택한 action, 제한된 관찰 결과와 실행 결과만 사용한다.
 
 #### 인수 조건
 
 - Given: 폴더 생성에 의존하는 문서 이동이 있다.
 - When: 계획을 실행한다.
 - Then: 폴더 생성 성공 후 문서 이동을 실행한다.
-- Given: 독립 operation이 5개 이상이다.
-- When: 계획을 실행한다.
-- Then: 동시에 실행하는 operation은 최대 4개다.
+- Given: 여러 독립 operation이 실행 가능하다.
+- When: 다음 행동을 선택한다.
+- Then: LLM이 그중 하나를 선택하고 시스템은 승인 당시 저장한 tool과 인자로 실행한다.
+- Given: LLM이 계획에 없는 operation이나 변경된 인자를 반환한다.
+- When: 상태 변경을 실행하려 한다.
+- Then: 해당 출력을 실행하지 않고 승인된 operation 경계를 유지한다.
+- Given: 관찰 결과 승인된 계획을 그대로 진행할 수 없다.
+- When: LLM이 새 계획을 요청한다.
+- Then: clarification_required로 중단하고 사용자 수정 지시와 새 승인을 기다린다.
 - Given: operation 하나가 최종 실패했다.
 - When: 독립 operation이 남아 있다.
 - Then: 남은 작업을 계속하고 최종 상태를 partial_failed로 기록한다.
@@ -329,7 +341,6 @@ AgentRun은 사용자·Workspace, action, 선택 Skill version, 상태와 현재
 - heartbeat: 30초
 - lease: 90초
 - Worker job 최대 시도: 3회
-- 독립 operation 최대 병렬 실행: 4
 - retryable operation 재시도: 최대 2회
 
 ### 6.6 사용자 권한 경계
@@ -351,7 +362,7 @@ Backend→llmPipeline Agent·Skill 요청과 llmPipeline Worker→Backend tool �
 
 사용자는 operation JSON을 직접 편집하지 않고 자연어로 계획 수정을 요청한다. 수정은 같은 AgentRun에 새 plan version을 만들고 기존 승인을 무효화한다.
 
-의존 operation은 직렬, 독립 operation은 최대 4개 병렬 실행한다. 실패한 operation의 의존 작업은 skipped로 처리하고 독립 작업은 계속한다. 실행 후 관련 상태를 재조회하며 자동 rollback과 자동 복구는 수행하지 않는다.
+Worker는 현재 상태와 최근 실행 결과를 관찰한 뒤 LLM이 다음 read 또는 실행 가능한 승인 operation 하나를 선택하는 bounded ReAct loop를 수행한다. 상태 변경 tool과 인자는 승인된 plan에서만 가져온다. 실패한 operation의 의존 작업은 skipped로 처리하고 독립 작업은 계속한다. 계획 변경이 필요하면 clarification_required로 중단하며 새 plan version과 hash를 다시 승인받는다. 실행 후 관련 상태를 재조회하며 자동 rollback과 자동 복구는 수행하지 않는다.
 
 ### 6.8 API
 
@@ -440,6 +451,13 @@ Frontend는 Spring backend만 호출한다.
 - 대안: Workspace별 단계적 rollout.
 - 영향: 배포 전 전체 경로 검증이 필요하다.
 
+#### DEC-009 승인 경계 안의 bounded ReAct 실행
+
+- 결정: 승인 후에는 LLM이 관찰 결과를 바탕으로 다음 read 또는 실행 가능한 승인 operation 하나를 선택한다.
+- 이유: 계획의 목표와 승인 경계를 유지하면서 실행 결과에 따라 다음 행동을 조정한다.
+- 대안: 승인 후 operation 순서를 코드가 고정 실행하거나 LLM이 새 mutation을 자유롭게 생성한다.
+- 영향: 독립 operation 병렬 실행을 포기하며, 계획 변경 시 중단 후 새 version과 hash를 재승인해야 한다.
+
 ## 7. 작업 계획
 
 구현 작업은 docs/spec/sdd/tasks/agent-skills-and-folder-organization-tasks.md에서 관리한다.
@@ -453,7 +471,7 @@ Frontend는 Spring backend만 호출한다.
 | REQ-003 | capability·우선순위·안전성 | Schema와 Skill 동시 적용 | Pending |
 | REQ-004 | 계획 제한·hash·의존 관계 | 계획·예상 트리 | Pending |
 | REQ-005 | 미승인 차단·재승인·자연어 승인 | 승인·수정·취소 UI | Pending |
-| REQ-006 | 병렬도·멱등성·재시도·충돌 | 부분 실패 | Pending |
+| REQ-006 | ReAct 선택 경계·멱등성·재시도·충돌 | 관찰 기반 다음 행동·부분 실패 | Pending |
 | REQ-007 | 재조회·검증 실패 | 실행 전후 트리 | Pending |
 | REQ-008 | lease·heartbeat·worker 복구 | Worker 강제 종료 | Pending |
 | REQ-009 | 기존 /agent/turn 회귀 | 기존 질문·생성·편집 | Pending |
@@ -483,7 +501,7 @@ Frontend는 Spring backend만 호출한다.
 - [ ] 모호한 Skill 후보 선택 후 요청이 재개된다.
 - [ ] 계획·승인 전에는 상태가 변경되지 않는다.
 - [ ] 버튼과 자연어 승인, 계획 수정·재승인을 확인한다.
-- [ ] 의존 순서, 병렬도, 부분 실패, 취소를 확인한다.
+- [ ] 관찰 기반 다음 행동, 의존 순서, 부분 실패, 취소를 확인한다.
 - [ ] 권한 회수와 version 충돌이 안전하게 차단된다.
 - [ ] 실행 결과와 최종 폴더 트리를 확인한다.
 - [ ] Worker 중단 후 job이 복구되고 중복 변경이 없다.
@@ -498,7 +516,7 @@ Frontend는 Spring backend만 호출한다.
 
 - 검증일: 2026-08-03
 - 최종 상태: llmPipeline 자동 검증 완료, Backend·Frontend 통합 Pending
-- 자동 검증: llmPipeline `651 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
+- 자동 검증: llmPipeline `659 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
 - 남은 문제: Backend migration·양방향 service 인증·Tool Gateway와 Frontend UI/E2E
 - 후속 작업:
   1. 요구사항 테스트부터 작성한다.
