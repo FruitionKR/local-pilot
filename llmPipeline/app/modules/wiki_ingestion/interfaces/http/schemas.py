@@ -1,8 +1,15 @@
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+from app.modules.wiki_ingestion.application.models import (
+    IngestOperationRestoreCommand,
+    LintOperationRestoreCommand,
+    RebuildPageCommand,
+    RestoreContributionCommand,
+    SourceSnapshotRestoreCommand,
+    WikiMaintenanceCommand,
+)
 
 
 DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
@@ -14,6 +21,8 @@ class _PipelineRunBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     document_id: str
+    operation_id: str | None = None
+    result_callback_url: str | None = None
     input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
@@ -72,6 +81,14 @@ class _PipelineRunBase(BaseModel):
         description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.",
     )
 
+    @model_validator(mode="after")
+    def validate_operation_result_contract(self) -> Self:
+        if bool(self.operation_id) != bool(self.result_callback_url):
+            raise ValueError(
+                "operation_id and result_callback_url must be provided together"
+            )
+        return self
+
 
 class PipelineRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
@@ -102,9 +119,132 @@ class PipelineRunOut(BaseModel):
     log_path: str
 
 
+class RestoreContributionIn(BaseModel):
+    operation_id: str
+    document_id: str
+
+
+class RebuildPageIn(BaseModel):
+    page_id: str
+    keep_contributions: list[RestoreContributionIn]
+
+
+class SourceSnapshotRestoreIn(BaseModel):
+    page_id: str
+
+
+class _OperationRestoreIn(BaseModel):
+    operation_id: str
+    workspace_id: str
+    result_callback_url: str
+    rebuild_pages: list[RebuildPageIn]
+    deleted_pages: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_operation_restore(self) -> Self:
+        if not self.result_callback_url.strip():
+            raise ValueError("result_callback_url must not be blank")
+        return self
+
+    def kept_operation_ids(self) -> set[str]:
+        return {
+            item.operation_id
+            for page in self.rebuild_pages
+            for item in page.keep_contributions
+        }
+
+    def rebuild_commands(self) -> tuple[RebuildPageCommand, ...]:
+        return tuple(
+            RebuildPageCommand(
+                page_id=page.page_id,
+                keep_contributions=tuple(
+                    RestoreContributionCommand(
+                        operation_id=item.operation_id,
+                        document_id=item.document_id,
+                    )
+                    for item in page.keep_contributions
+                ),
+            )
+            for page in self.rebuild_pages
+        )
+
+
+class IngestOperationRestoreIn(_OperationRestoreIn):
+    restore_to_operation_id: str | None
+    cancel_operation_ids: list[str]
+    source_page: SourceSnapshotRestoreIn
+
+    @model_validator(mode="after")
+    def validate_restore_range(self) -> Self:
+        if not self.cancel_operation_ids:
+            raise ValueError("cancel_operation_ids must not be empty")
+        if len(set(self.cancel_operation_ids)) != len(self.cancel_operation_ids):
+            raise ValueError("cancel_operation_ids must not contain duplicates")
+        if self.operation_id in self.cancel_operation_ids:
+            raise ValueError(
+                "operation_id must not be included in cancel_operation_ids"
+            )
+        if self.operation_id == self.restore_to_operation_id:
+            raise ValueError(
+                "operation_id and restore_to_operation_id must be different"
+            )
+        if self.restore_to_operation_id in self.cancel_operation_ids:
+            raise ValueError(
+                "restore_to_operation_id must not be included in "
+                "cancel_operation_ids"
+            )
+        if self.kept_operation_ids().intersection(self.cancel_operation_ids):
+            raise ValueError(
+                "cancel_operation_ids must not be included in "
+                "keep_contributions"
+            )
+        return self
+
+    def to_command(self) -> IngestOperationRestoreCommand:
+        return IngestOperationRestoreCommand(
+            operation_id=self.operation_id,
+            restore_to_operation_id=self.restore_to_operation_id,
+            cancel_operation_ids=tuple(self.cancel_operation_ids),
+            workspace_id=self.workspace_id,
+            result_callback_url=self.result_callback_url,
+            source_page=SourceSnapshotRestoreCommand(
+                page_id=self.source_page.page_id,
+            ),
+            rebuild_pages=self.rebuild_commands(),
+            deleted_pages=tuple(self.deleted_pages),
+        )
+
+
+class LintOperationRestoreIn(_OperationRestoreIn):
+    target_operation_id: str
+
+    @model_validator(mode="after")
+    def validate_target_operation(self) -> Self:
+        if self.operation_id == self.target_operation_id:
+            raise ValueError(
+                "operation_id and target_operation_id must be different"
+            )
+        if self.target_operation_id in self.kept_operation_ids():
+            raise ValueError(
+                "target_operation_id must not be included in keep_contributions"
+            )
+        return self
+
+    def to_command(self) -> LintOperationRestoreCommand:
+        return LintOperationRestoreCommand(
+            operation_id=self.operation_id,
+            target_operation_id=self.target_operation_id,
+            workspace_id=self.workspace_id,
+            result_callback_url=self.result_callback_url,
+            rebuild_pages=self.rebuild_commands(),
+            deleted_pages=tuple(self.deleted_pages),
+        )
+
+
 class WikiLintIn(BaseModel):
     user_id: str = "local-user"
     workspace_id: str = "local-workspace"
+    operation_id: str | None = None
     materialize_promotions: bool = False
     dry_run: bool = True
     provider: Literal["openai", "gemini", "claude", "upstage", "generic"] | None = None
@@ -117,6 +257,12 @@ class WikiLintIn(BaseModel):
     timeout_seconds: int = 180
     max_tokens: int | None = None
 
+    @model_validator(mode="after")
+    def validate_operation_id(self) -> Self:
+        if not self.dry_run and not str(self.operation_id or "").strip():
+            raise ValueError("operation_id is required when dry_run is false")
+        return self
+
     def to_command(self) -> WikiMaintenanceCommand:
         return WikiMaintenanceCommand(**self.model_dump())
 
@@ -124,6 +270,7 @@ class WikiLintIn(BaseModel):
 class WikiLintOut(BaseModel):
     user_id: str
     workspace_id: str
+    operation_id: str | None = None
     active_path: str
     cluster_count: int
     source_ref_count: int
@@ -139,3 +286,7 @@ class WikiLintOut(BaseModel):
     materialized_promotions: list[dict[str, Any]]
     merged_promotions: list[dict[str, Any]]
     materialized_relations: list[dict[str, Any]]
+    orphan_link_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    removed_orphan_links: list[dict[str, Any]] = Field(default_factory=list)
+    operation_artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    changed_pages: list[dict[str, Any]] = Field(default_factory=list)

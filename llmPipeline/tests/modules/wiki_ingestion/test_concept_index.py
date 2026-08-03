@@ -9,9 +9,71 @@ from app.modules.wiki_ingestion.infrastructure.embedding_units import extract_em
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     _concept_index_from_markdown,
     _materialize_active_relation_candidates,
+    _merge_promotion_into_existing_concept,
     _delete_source_related_links,
     _resolve_or_create_wiki_page_id,
 )
+
+
+def test_lint_merge_does_not_overwrite_previous_operation_snapshot(
+    monkeypatch,
+) -> None:
+    writes = []
+    upserts = []
+
+    class Result:
+        def fetchone(self):
+            return {
+                "id": "page-shared",
+                "title": "Shared",
+                "summary": "공유 개념",
+                "markdown_uri": "wiki/ws/pages/page-shared/ops/ingest-A.md",
+            }
+
+    class Connection:
+        def execute(self, _query, _params):
+            return Result()
+
+    monkeypatch.setattr(
+        repository,
+        "_read_optional_text_object",
+        lambda _key: "# Shared\n\n## Evidence\n- 기존 근거\n",
+    )
+    monkeypatch.setattr(
+        repository,
+        "write_text_object",
+        lambda key, text: writes.append((key, text)) or key,
+    )
+    monkeypatch.setattr(
+        repository,
+        "_upsert_wiki_page",
+        lambda *args: upserts.append(args),
+    )
+    monkeypatch.setattr(
+        repository,
+        "_persist_embedding_units",
+        lambda *_args: None,
+    )
+
+    change = _merge_promotion_into_existing_concept(
+        Connection(),
+        "user-1",
+        "ws",
+        "shared",
+        [
+            {
+                "id": "claim-1",
+                "claim": "lint 근거",
+                "refs": ["doc-A:B0001"],
+            }
+        ],
+    )
+
+    assert writes[0][0] == "wiki/user-1/ws/concepts/shared.md"
+    assert all("ops/ingest-A.md" not in key for key, _text in writes)
+    assert upserts[0][6] == "wiki/user-1/ws/concepts/shared.md"
+    assert change is not None
+    assert "lint 근거" in change["markdown"]
 
 
 def test_concept_index_uses_markdown_definition_and_evidence() -> None:

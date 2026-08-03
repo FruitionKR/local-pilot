@@ -14,8 +14,8 @@
   --crepe-color-surface-low: #1e1e1e;
   --crepe-color-primary: var(--yellow);
   --crepe-color-selected: rgba(255, 193, 23, 0.2);
-  --crepe-font-title: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  --crepe-font-default: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --crepe-font-title: var(--document-font-family);
+  --crepe-font-default: var(--document-font-family);
   color: #d7d7d7;
   background: transparent;
 }
@@ -26,6 +26,7 @@
   color: #d7d7d7;
   background: transparent;
   caret-color: var(--yellow);
+  font-family: var(--document-font-family);
   font-size: 15px;
   line-height: 1.75;
 }
@@ -69,6 +70,10 @@
   background: transparent;
 }
 
+.note-markdown-editor :global(.cm-gutters) {
+  border-right: 0;
+}
+
 .note-markdown-editor :global(.cm-content) {
   max-width: none;
   padding: 0 0 120px;
@@ -86,4 +91,21 @@
 
 .note-markdown-editor :global(.cm-cursor) {
   border-left-color: var(--yellow);
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement) {
+  color: #777;
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter) {
+  position: relative;
+  color: transparent;
+  background: transparent;
+}
+
+.note-markdown-editor :global(.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter::after) {
+  position: absolute;
+  right: 8px;
+  color: #8a8a8a;
+  content: "|";
 }

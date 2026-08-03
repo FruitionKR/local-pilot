@@ -4,8 +4,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { splitMarkdownBlockRanges, splitMarkdownBlocks } from "../app/_lib/markdownSegments.ts";
-import { createRehypeSourceBlocks } from "../app/_lib/markdownSourceBlocks.ts";
+import { splitMarkdownBlockRanges, splitMarkdownBlocks } from "../src/shared/lib/markdownSegments.ts";
+import { createRehypeSourceBlocks } from "../src/shared/lib/markdownSourceBlocks.ts";
 
 function renderMarkdown(markdown) {
   const sourceBlocks = splitMarkdownBlockRanges(markdown).map((segment, index) => ({

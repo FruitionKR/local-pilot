@@ -5,7 +5,7 @@ import {
   composeEditableNoteMarkdown,
   getMarkdownDocumentTitle,
   splitEditableNoteMarkdown
-} from "../app/_lib/note.ts";
+} from "../src/entities/document/lib/note.ts";
 
 test("note marker를 편집 본문에서 분리한다", () => {
   assert.deepEqual(splitEditableNoteMarkdown("<!-- fruition-note: note-1 -->\n# 제목\n"), {

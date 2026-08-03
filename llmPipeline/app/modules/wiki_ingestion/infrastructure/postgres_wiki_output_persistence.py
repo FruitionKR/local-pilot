@@ -13,6 +13,9 @@ from app.modules.wiki_ingestion.infrastructure.concept_evidence import (
     append_concept_evidence,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import write_text_object
+from app.modules.wiki_ingestion.infrastructure.operation_artifacts import (
+    persist_operation_artifacts,
+)
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
     delete_source_related_links,
     load_existing_concept_ids_by_slug,
@@ -39,6 +42,42 @@ def persist_wiki_outputs(
     links = _load_links(manifest)
     user_id = str(manifest.get("user_id") or "local-user")
     workspace_id = str(manifest.get("workspace_id") or "local-workspace")
+    operation_id = manifest.get("operation_id")
+    prepared_concept_updates: list[dict[str, Any]] | None = None
+    source_page_id = None
+    concept_id_by_slug = None
+    if operation_id:
+        source_page_id = resolve_or_create_wiki_page_id(
+            conn,
+            user_id,
+            workspace_id,
+            "source",
+            document_id,
+        )
+        concept_id_by_slug = _prepare_concept_page_ids(
+            conn,
+            manifest,
+            normalized,
+            user_id,
+            workspace_id,
+        )
+        prepared_concept_updates = _prepare_concept_update_decisions(
+            conn,
+            user_id,
+            workspace_id,
+            (manifest.get("meaning_clusters") or {}).get(
+                "concept_update_decisions",
+                [],
+            ),
+        )
+        _persist_ingest_operation_artifacts(
+            manifest,
+            str(operation_id),
+            workspace_id,
+            source_page_id,
+            concept_id_by_slug,
+            prepared_concept_updates,
+        )
     _persist_source_blocks(conn, document_id, manifest)
     source_page_id = _persist_source_page(
         conn,
@@ -47,6 +86,7 @@ def persist_wiki_outputs(
         normalized,
         user_id,
         workspace_id,
+        page_id=source_page_id,
     )
     concept_page_ids, concept_id_by_slug = _persist_concept_pages(
         conn,
@@ -55,11 +95,75 @@ def persist_wiki_outputs(
         normalized,
         user_id,
         workspace_id,
+        concept_id_by_slug=concept_id_by_slug,
     )
     _persist_page_links(conn, links, source_page_id, concept_id_by_slug)
     delete_source_related_links(conn, user_id, workspace_id)
     _persist_meaning_cluster_artifacts(conn, document_id, manifest)
     return [source_page_id, *concept_page_ids]
+
+
+def _persist_ingest_operation_artifacts(
+    manifest: dict[str, Any],
+    operation_id: str,
+    workspace_id: str,
+    source_page_id: str,
+    concept_id_by_slug: dict[str, str],
+    prepared_concept_updates: list[dict[str, Any]],
+) -> None:
+    source_page = page_payload(manifest["source_page"])
+    concept_contributions = manifest.get("concept_contributions") or {}
+    operation_concept_pages_by_slug = {}
+    for page_value in manifest.get("concept_pages", []):
+        page = page_payload(page_value)
+        slug = str(page["slug"])
+        page_id = concept_id_by_slug.get(slug)
+        if page_id and slug in concept_contributions:
+            operation_concept_pages_by_slug[slug] = {
+                "page_id": page_id,
+                "slug": slug,
+                "markdown": page["markdown"],
+            }
+    for page in prepared_concept_updates:
+        operation_concept_pages_by_slug[str(page["slug"])] = page
+    manifest["operation_artifacts"] = persist_operation_artifacts(
+        operation_id=operation_id,
+        workspace_id=workspace_id,
+        source_page_id=source_page_id,
+        source_markdown=str(source_page["markdown"]),
+        concept_pages=list(operation_concept_pages_by_slug.values()),
+        concept_contributions=concept_contributions,
+        write_text=write_text_object,
+    )
+
+
+def _prepare_concept_page_ids(
+    conn: psycopg.Connection,
+    manifest: dict[str, Any],
+    normalized: dict[str, Any],
+    user_id: str,
+    workspace_id: str,
+) -> dict[str, str]:
+    concept_slugs = {
+        str(page_payload(page)["slug"])
+        for page in manifest.get("concept_pages", [])
+    }
+    concept_id_by_slug = load_existing_concept_ids_by_slug(
+        conn,
+        user_id,
+        workspace_id,
+    )
+    for concept in normalized.get("concept_ledger", []):
+        slug = str(concept.get("slug") or "")
+        if slug in concept_slugs and slug not in concept_id_by_slug:
+            concept_id_by_slug[slug] = resolve_or_create_wiki_page_id(
+                conn,
+                user_id,
+                workspace_id,
+                "concept",
+                slug,
+            )
+    return concept_id_by_slug
 
 
 def _load_normalized(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -84,8 +188,10 @@ def _persist_source_page(
     normalized: dict[str, Any],
     user_id: str,
     workspace_id: str,
+    *,
+    page_id: str | None = None,
 ) -> str:
-    source_page_id = resolve_or_create_wiki_page_id(
+    source_page_id = page_id or resolve_or_create_wiki_page_id(
         conn,
         user_id,
         workspace_id,
@@ -133,6 +239,8 @@ def _persist_concept_pages(
     normalized: dict[str, Any],
     user_id: str,
     workspace_id: str,
+    *,
+    concept_id_by_slug: dict[str, str] | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     concept_pages = [
         page_payload(page) for page in manifest.get("concept_pages", [])
@@ -140,7 +248,7 @@ def _persist_concept_pages(
     concept_pages_by_slug = {page["slug"]: page for page in concept_pages}
     generated_concept_slugs = set(concept_pages_by_slug)
     persisted_page_ids: list[str] = []
-    concept_id_by_slug = load_existing_concept_ids_by_slug(
+    concept_id_by_slug = concept_id_by_slug or load_existing_concept_ids_by_slug(
         conn,
         user_id,
         workspace_id,
@@ -250,13 +358,13 @@ def _persist_meaning_cluster_artifacts(
     conn: psycopg.Connection,
     document_id: str,
     manifest: dict[str, Any],
-) -> None:
+) -> list[dict[str, Any]]:
     artifact = manifest.get("meaning_clusters")
     if not isinstance(artifact, dict):
-        return
+        return []
     user_id = str(manifest.get("user_id") or "local-user")
     workspace_id = str(manifest.get("workspace_id") or "local-workspace")
-    _apply_concept_update_decisions(
+    updated_concept_pages = _apply_concept_update_decisions(
         conn,
         document_id,
         user_id,
@@ -283,6 +391,7 @@ def _persist_meaning_cluster_artifacts(
             f"{existing_log}{separator}{log_markdown}",
         )
         artifact["log_uri"] = log_uri
+    return updated_concept_pages
 
 
 def _apply_concept_update_decisions(
@@ -291,9 +400,31 @@ def _apply_concept_update_decisions(
     user_id: str,
     workspace_id: str,
     decisions: Any,
-) -> None:
+) -> list[dict[str, Any]]:
+    prepared = _prepare_concept_update_decisions(
+        conn,
+        user_id,
+        workspace_id,
+        decisions,
+    )
+    _persist_prepared_concept_updates(
+        conn,
+        document_id,
+        user_id,
+        workspace_id,
+        prepared,
+    )
+    return prepared
+
+
+def _prepare_concept_update_decisions(
+    conn: psycopg.Connection,
+    user_id: str,
+    workspace_id: str,
+    decisions: Any,
+) -> list[dict[str, Any]]:
     if not isinstance(decisions, list):
-        return
+        return []
     by_concept: dict[str, list[dict[str, Any]]] = {}
     for decision in decisions:
         if (
@@ -313,6 +444,7 @@ def _apply_concept_update_decisions(
                 "refs": refs,
             }
         )
+    changed_pages: list[dict[str, Any]] = []
     for concept_slug, updates in by_concept.items():
         row = conn.execute(
             """
@@ -334,10 +466,42 @@ def _apply_concept_update_decisions(
         updated_markdown = append_concept_evidence(markdown, updates)
         if updated_markdown == markdown:
             continue
-        write_text_object(row["markdown_uri"], updated_markdown)
+        changed_pages.append(
+            {
+                "page_id": str(row["id"]),
+                "slug": concept_slug,
+                "markdown": updated_markdown,
+            }
+        )
+    return changed_pages
+
+
+def _persist_prepared_concept_updates(
+    conn: psycopg.Connection,
+    document_id: str,
+    user_id: str,
+    workspace_id: str,
+    changed_pages: list[dict[str, Any]],
+) -> None:
+    for page in changed_pages:
+        current_markdown_key = (
+            f"wiki/{user_id}/{workspace_id}/concepts/{page['slug']}.md"
+        )
+        current_markdown_uri = write_text_object(
+            current_markdown_key,
+            str(page["markdown"]),
+        )
+        conn.execute(
+            """
+            UPDATE wiki_pages
+            SET markdown_uri = %s, updated_at = now()
+            WHERE id = %s
+            """,
+            (current_markdown_uri, page["page_id"]),
+        )
         persist_embedding_units(
             conn,
-            row["id"],
+            str(page["page_id"]),
             document_id,
-            updated_markdown,
+            str(page["markdown"]),
         )

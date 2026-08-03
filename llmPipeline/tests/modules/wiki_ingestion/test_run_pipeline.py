@@ -30,9 +30,11 @@ class FakeRepository:
         self,
         calls: list[object],
         active_results: list[bool] | None = None,
+        run_result: dict[str, object] | None = None,
     ) -> None:
         self.calls = calls
         self.active_results = list(active_results or [])
+        self.run_result = run_result
 
     def create(
         self,
@@ -52,6 +54,32 @@ class FakeRepository:
 
     def fail(self, run_id: str, error: str) -> None:
         self.calls.append(("fail", run_id, error))
+
+    def mark_notification_pending(
+        self,
+        run_id: str,
+        error: str,
+        callback_url: str,
+        payload: dict[str, object],
+        status_code: int | None = None,
+    ) -> None:
+        self.calls.append(
+            (
+                "notify_pending",
+                run_id,
+                error,
+                callback_url,
+                payload,
+                status_code,
+            )
+        )
+
+    def complete_notification(self, run_id: str, status: str) -> None:
+        self.calls.append(("notify_complete", run_id, status))
+
+    def get_run(self, run_id: str) -> dict[str, object] | None:
+        self.calls.append(("get_run", run_id))
+        return self.run_result
 
     def touch(self, run_id: str) -> bool:
         self.calls.append(("touch", run_id))
@@ -142,6 +170,38 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                 ("fail", "run-1", "pipeline failed"),
             ],
         )
+
+    def test_execute_notifies_operation_failure(self) -> None:
+        calls: list[object] = []
+
+        class ResultNotifier:
+            def notify(self, callback_url, payload):
+                calls.append(("notify", callback_url, payload))
+
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls, RuntimeError("pipeline failed")),
+            repository=FakeRepository(calls),
+            embedding_job=FakeEmbeddingJob(calls),
+            result_notifier=ResultNotifier(),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            operation_id="op-1",
+            result_callback_url="http://backend/result",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+            source_document_id="doc-1",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "pipeline failed"):
+            use_case.execute("run-1", command)
+
+        payload = next(call[2] for call in calls if call[0] == "notify")
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["changed_pages"], [])
 
     def test_execute_connects_pipeline_progress_to_run_heartbeat(self) -> None:
         class ProgressRunner:
@@ -319,6 +379,169 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         self.assertFalse(first.is_alive())
         self.assertFalse(second.is_alive())
         self.assertTrue(second_entered.is_set())
+
+    def test_execute_starts_embedding_before_operation_result_callback(self) -> None:
+        calls: list[object] = []
+
+        class ResultRepository(FakeRepository):
+            def finish(self, run_id, manifest):
+                calls.append(("finish", run_id))
+                manifest["operation_artifacts"] = [
+                    {
+                        "page_id": "concept-1",
+                        "page_type": "concept",
+                        "markdown_key": "wiki/ws/pages/concept-1/ops/op-1.md",
+                        "contribution_key": (
+                            "wiki/ws/pages/concept-1/ops/op-1.json"
+                        ),
+                        "content_hash": "sha256:abc",
+                    }
+                ]
+                return ["concept-1"]
+
+        class ResultNotifier:
+            def notify(self, callback_url, payload):
+                calls.append(("notify", callback_url, payload))
+
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=ResultRepository(calls),
+            embedding_job=FakeEmbeddingJob(calls),
+            result_notifier=ResultNotifier(),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            operation_id="op-1",
+            result_callback_url="http://backend/result",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+            source_document_id="doc-1",
+        )
+
+        use_case.execute("run-1", command)
+
+        notify_index = next(
+            index for index, call in enumerate(calls) if call[0] == "notify"
+        )
+        embedding_index = next(
+            index for index, call in enumerate(calls) if call[0] == "embedding"
+        )
+        payload = calls[notify_index][2]
+        self.assertLess(embedding_index, notify_index)
+        self.assertEqual(payload["operation_id"], "op-1")
+        self.assertEqual(payload["operation_type"], "ingest")
+        self.assertEqual(payload["target_document_id"], "doc-1")
+        self.assertEqual(payload["changed_pages"][0]["page_id"], "concept-1")
+
+    def test_callback_failure_keeps_ingest_success_and_starts_embedding(self) -> None:
+        calls: list[object] = []
+
+        class FailingNotifier:
+            def notify(self, callback_url, payload):
+                calls.append(("notify", callback_url, payload))
+                raise RuntimeError("callback failed")
+
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=FakeRepository(calls),
+            embedding_job=FakeEmbeddingJob(calls),
+            result_notifier=FailingNotifier(),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            operation_id="op-1",
+            result_callback_url="http://backend/result",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+            source_document_id="doc-1",
+        )
+
+        manifest = use_case.execute("run-1", command)
+
+        self.assertEqual(manifest, {"manifest": "value"})
+        self.assertIn(
+            "notify_pending",
+            [call[0] for call in calls],
+        )
+        pending = next(call for call in calls if call[0] == "notify_pending")
+        self.assertEqual(pending[3], "http://backend/result")
+        self.assertEqual(pending[4]["status"], "succeeded")
+        self.assertTrue(any(call[0] == "embedding" for call in calls))
+        self.assertFalse(any(call[0] == "fail" for call in calls))
+
+    def test_retry_notification_reuses_durable_payload(self) -> None:
+        calls: list[object] = []
+        payload = {"operation_id": "op-1", "status": "succeeded"}
+
+        class ResultNotifier:
+            def notify(self, callback_url, value):
+                calls.append(("notify", callback_url, value))
+
+        repository = FakeRepository(
+            calls,
+            run_result={
+                "manifest": {
+                    "pending_notification": {
+                        "callback_url": "http://backend/result",
+                        "payload": payload,
+                    }
+                }
+            },
+        )
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=repository,
+            embedding_job=FakeEmbeddingJob(calls),
+            result_notifier=ResultNotifier(),
+        )
+
+        result = use_case.retry_notification("run-1")
+
+        self.assertEqual(result, payload)
+        self.assertEqual(
+            calls,
+            [
+                ("get_run", "run-1"),
+                ("notify", "http://backend/result", payload),
+                ("notify_complete", "run-1", "succeeded"),
+            ],
+        )
+
+    def test_retry_notification_rejects_conflicting_result(self) -> None:
+        calls: list[object] = []
+
+        class ResultNotifier:
+            def notify(self, callback_url, value):
+                calls.append(("notify", callback_url, value))
+
+        repository = FakeRepository(
+            calls,
+            run_result={
+                "manifest": {
+                    "pending_notification": {
+                        "callback_url": "http://backend/result",
+                        "payload": {"status": "succeeded"},
+                        "status_code": 409,
+                    }
+                }
+            },
+        )
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=repository,
+            embedding_job=FakeEmbeddingJob(calls),
+            result_notifier=ResultNotifier(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "cannot be retried"):
+            use_case.retry_notification("run-1")
+        self.assertFalse(any(call[0] == "notify" for call in calls))
 
 if __name__ == "__main__":
     unittest.main()

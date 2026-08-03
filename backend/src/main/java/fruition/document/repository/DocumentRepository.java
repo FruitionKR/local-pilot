@@ -24,17 +24,15 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     List<Document> findAllByWorkspaceId(String workspaceId);
 
-    /** 호환 문서 목록: 활성 문서만 공용 순서로 조회하고 chat_export는 제외한다. */
+    /** 호환 문서 목록: 채팅 편입 문서를 포함한 활성 문서를 공용 순서로 조회한다. */
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NULL "
-            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
             + "ORDER BY d.sortOrder ASC, d.id ASC")
     List<Document> findVisibleByWorkspaceId(@Param("workspaceId") String workspaceId);
 
     /** 파일명 검색은 본문을 조회하지 않는다. */
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NULL "
-            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
             + "AND (LOWER(d.displayName) LIKE LOWER(CONCAT('%', :query, '%')) "
             + "OR LOWER(d.filename) LIKE LOWER(CONCAT('%', :query, '%'))) "
             + "ORDER BY d.sortOrder ASC, d.id ASC")
@@ -118,7 +116,6 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     boolean existsByWorkspaceIdAndFolderIdAndDeletedAtIsNull(String workspaceId, java.util.UUID folderId);
 
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId AND d.deletedAt IS NULL "
-            + "AND (d.origin IS NULL OR d.origin <> 'chat_export') "
             + "AND (LOWER(d.displayName) LIKE :pattern OR d.normalizedFilename LIKE :pattern) "
             + "ORDER BY d.displayName ASC, d.id ASC")
     List<Document> searchByName(

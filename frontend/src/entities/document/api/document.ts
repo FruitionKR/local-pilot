@@ -8,6 +8,7 @@ export async function uploadDocumentFile(file: File) {
 
   const response = await apiFetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, {
     method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
     body: formData
   });
 

@@ -484,7 +484,7 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void visibleListAndSearchExcludeDeletedChatExportAndOtherWorkspaceDocuments() {
+    void visibleListAndSearchIncludeChatExportAndExcludeDeletedAndOtherWorkspaceDocuments() {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
@@ -507,10 +507,10 @@ class DocumentEditingSchemaIntegrationTest {
 
         assertThat(documentRepository.findVisibleByWorkspaceId(workspaceId))
                 .extracting(fruition.document.domain.Document::getId)
-                .containsExactly("doc_visible_" + suffix);
+                .containsExactly("doc_chat_" + suffix, "doc_visible_" + suffix);
         assertThat(documentRepository.searchVisibleByWorkspaceId(workspaceId, "보고서"))
                 .extracting(fruition.document.domain.Document::getId)
-                .containsExactly("doc_visible_" + suffix);
+                .containsExactly("doc_chat_" + suffix, "doc_visible_" + suffix);
         assertThat(documentRepository.searchVisibleByWorkspaceId(workspaceId, "본문에만 있는 검색어"))
                 .isEmpty();
         assertThat(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(

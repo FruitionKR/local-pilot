@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -19,17 +20,23 @@ from app.modules.wiki_ingestion.application.ports import (
     WikiMaintenancePort,
 )
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.application.restore_wiki_pages import (
+    RestoreWikiPagesUseCase,
+)
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_log_reader,
     get_pipeline_run_repository,
     get_pipeline_run_use_case,
     get_pipeline_source_reader,
+    get_restore_wiki_pages_use_case,
     get_wiki_maintenance,
 )
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
     CHAT_APPEND_SEMANTIC_PROMPT,
     CHAT_SEMANTIC_PROMPT,
     ChatWikiRunIn,
+    IngestOperationRestoreIn,
+    LintOperationRestoreIn,
     PipelineRunIn,
     PipelineRunOut,
     ReingestRunIn,
@@ -40,6 +47,44 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
 
 router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
+
+
+@router.post("/wiki/ingest-restore-runs")
+def restore_ingest_operation(
+    payload: IngestOperationRestoreIn,
+    use_case: RestoreWikiPagesUseCase = Depends(
+        get_restore_wiki_pages_use_case
+    ),
+) -> dict[str, Any]:
+    return _execute_restore(
+        lambda: use_case.execute_ingest(payload.to_command())
+    )
+
+
+@router.post("/wiki/lint-restore-runs")
+def restore_lint_operation(
+    payload: LintOperationRestoreIn,
+    use_case: RestoreWikiPagesUseCase = Depends(
+        get_restore_wiki_pages_use_case
+    ),
+) -> dict[str, Any]:
+    return _execute_restore(
+        lambda: use_case.execute_lint(payload.to_command())
+    )
+
+
+def _execute_restore(execute: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    try:
+        return execute()
+    except Exception as exc:
+        logger.exception("Wiki restore 처리 중 예상하지 못한 오류가 발생했습니다.")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "internal_server_error",
+                "message": "Wiki restore를 처리하지 못했습니다.",
+            },
+        ) from exc
 
 
 @router.post("/wiki/maintenance/lint", response_model=WikiLintOut)
@@ -126,6 +171,19 @@ def get_pipeline_run(
     if not row:
         raise HTTPException(status_code=404, detail="Pipeline run not found")
     return row
+
+
+@router.post("/pipeline/runs/{run_id}/result-callback/retry")
+def retry_pipeline_result_callback(
+    run_id: str,
+    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
+) -> dict[str, Any]:
+    try:
+        return use_case.retry_notification(run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
@@ -283,6 +341,8 @@ def _build_pipeline_command(
     )
     return PipelineRunCommand(
         run_id=run_id,
+        operation_id=payload.operation_id,
+        result_callback_url=payload.result_callback_url,
         source_document_id=source_document_id,
         selection_mode=getattr(payload, "selection_mode", None),
         reingest=isinstance(payload, ReingestRunIn),

@@ -40,6 +40,32 @@ def render_lint_log_markdown(result: dict[str, Any], lint_date: str) -> str:
             lines.append(f"  missing: [{', '.join(item.get('missing', []))}]")
     else:
         lines.append("- invalid relation candidate 없음")
+    lines.extend(["", "### Orphan Wiki Links"])
+    orphan_link_candidates = result.get("orphan_link_candidates", [])
+    removed_orphan_links = result.get("removed_orphan_links", [])
+    if orphan_link_candidates:
+        removed_keys = {
+            (
+                item.get("source"),
+                item.get("target"),
+                item.get("relation"),
+            )
+            for item in removed_orphan_links
+        }
+        for item in orphan_link_candidates:
+            key = (
+                item.get("source"),
+                item.get("target"),
+                item.get("relation"),
+            )
+            decision = "removed" if key in removed_keys else "candidate"
+            lines.append(
+                f"- {decision}: {item.get('source')} "
+                f"-[{item.get('relation')}]-> {item.get('target')}"
+            )
+            lines.append(f"  reason: {item.get('reason')}")
+    else:
+        lines.append("- orphan wiki link 없음")
     lines.extend(["", "### Invalid Promotions"])
     invalid_promotions = result.get("invalid_promotions", [])
     if invalid_promotions:
