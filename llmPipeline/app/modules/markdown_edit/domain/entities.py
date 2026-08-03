@@ -26,6 +26,7 @@ class MarkdownEditRequest:
     user_id: str | None = None
     conversation_summary: str | None = None
     edit_goal: str | None = None
+    skill_instructions: str | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class MarkdownCreateRequest:
     user_id: str | None = None
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
+    skill_instructions: str | None = None
 
 
 @dataclass(frozen=True)

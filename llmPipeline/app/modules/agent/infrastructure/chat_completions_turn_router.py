@@ -27,7 +27,7 @@ TEMPLATE_DEFERRED_MARKERS = (
 )
 INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
 INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
-ALLOWED_ACTIONS = {"chat_answer", "markdown_edit", "markdown_create", "clarify", "reject"}
+ALLOWED_ACTIONS = {"chat_answer", "markdown_edit", "markdown_create", "folder_organize", "clarify", "reject"}
 JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
 
 
@@ -65,6 +65,17 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                     else None
                 ),
             },
+            "skill_mode": request.skill_mode,
+            "available_skills": [
+                {
+                    "id": skill.id,
+                    "version_id": skill.version_id,
+                    "name": skill.name,
+                    "description": skill.description,
+                    "capabilities": list(skill.capabilities),
+                }
+                for skill in request.available_skills
+            ],
         }
         route, failures = self._complete_route(payload)
         if not failures:
@@ -117,7 +128,8 @@ def build_agent_turn_router() -> AgentTurnRouterPort:
 
 def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     lowered = request.message.lower()
-    if any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS):
+    has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
+    if not has_template_skill and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS):
         return AgentTurnRoute(
             action="clarify",
             confidence=1.0,
@@ -174,11 +186,29 @@ def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
     else:
         edit_goal = _optional_text(raw_edit_goal)
 
+    raw_selected_skill_id = value.get("selected_skill_id")
+    if raw_selected_skill_id is not None and not isinstance(raw_selected_skill_id, str):
+        failures.append("selected_skill_id must be a string or null")
+        selected_skill_id = None
+    else:
+        selected_skill_id = _optional_text(raw_selected_skill_id)
+
+    raw_skill_candidates = value.get("skill_candidates", [])
+    if not isinstance(raw_skill_candidates, list) or not all(
+        isinstance(candidate, str) and candidate.strip() for candidate in raw_skill_candidates
+    ):
+        failures.append("skill_candidates must be an array of non-empty strings")
+        skill_candidates: tuple[str, ...] = ()
+    else:
+        skill_candidates = tuple(candidate.strip() for candidate in raw_skill_candidates)
+
     return AgentTurnRoute(
         action=action,
         confidence=confidence,
         reason=reason,
         edit_goal=edit_goal,
+        selected_skill_id=selected_skill_id,
+        skill_candidates=skill_candidates,
     ), failures
 
 
