@@ -188,6 +188,7 @@
   - [x] 삭제된 페이지의 `wiki_page_versions`·`wiki_page_contributions`가 유지됨
   - [x] 미리보기 이후 대상이 변경되면 409이고 revision이 생성되지 않음
   - [x] 통지 실패 시 `notify_pending` 유지 후 재시도 가능
+  - [x] 행 잠금이 실제로 동작 — `WikiPageLockIntegrationTest` (Testcontainers)
 - 남은 항목:
   - `applying` 상태 동안 같은 문서의 새 ingest 차단 (미구현)
   - `notify_pending` 재전송 (미구현. 지금은 수동 재시도)
