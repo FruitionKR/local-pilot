@@ -87,6 +87,7 @@ public class OperationApplier {
     /** @return 적재했으면 true. 같은 작업의 재전송이면 건너뛴다 */
     private boolean applyPage(OperationLog operation, LoadedPage page, Instant now) {
         String pageId = page.pageId();
+        // 행을 바꾸지는 않지만, 같은 페이지 콜백이 동시에 와도 revision 채번이 겹치지 않도록 잠근다.
         WikiPage wikiPage = wikiPageRepository.findByIdForUpdate(pageId)
                 .orElseThrow(() -> new InvalidCallbackPayloadException(
                         "Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId));
@@ -116,9 +117,6 @@ public class OperationApplier {
         versionRepository.save(new WikiPageVersion(
                 pageId, revision, contributionCount, page.markdown(), page.markdownKey(),
                 page.contentHash(), operation.getOperationId(), operation.getUserId(), now));
-
-        // 검증을 마친 뒤에만 현재 본문 포인터를 옮긴다.
-        wikiPage.moveMarkdownUri(page.markdownKey(), now);
 
         Long beforeRevision = previous.map(WikiPageVersion::getRevision).orElse(null);
         LineCounter.LineCount lines = lineCounter.count(pageId, beforeRevision,

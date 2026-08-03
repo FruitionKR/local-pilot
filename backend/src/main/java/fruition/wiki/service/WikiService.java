@@ -81,8 +81,7 @@ public class WikiService {
     public WikiGraphResponse findGraph(String workspaceId, String userId) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<WikiPage> pages = wikiPageRepository
-                .findAllByWorkspaceIdAndStatusNot(workspaceId, WikiPageStatus.deleted);
+        List<WikiPage> pages = wikiPageRepository.findAliveByWorkspaceId(workspaceId);
         Set<String> pageIds = pages.stream().map(WikiPage::getId).collect(Collectors.toSet());
         // wiki_page_links에는 workspace 컬럼이 없으므로, 이 workspace의 page id 집합 안에서
         // 양 끝점이 모두 존재하는 링크만 포함한다.
@@ -148,8 +147,7 @@ public class WikiService {
 
     public WikiPageDetailResponse findById(String workspaceId, String userId, String id) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        WikiPage page = wikiPageRepository
-                .findByIdAndWorkspaceIdAndStatusNot(id, workspaceId, WikiPageStatus.deleted)
+        WikiPage page = wikiPageRepository.findAliveByIdAndWorkspaceId(id, workspaceId)
                 .orElseThrow(() -> new WikiPageNotFoundException(id));
 
         List<WikiPageSourceDoc> sourceDocuments = buildSourceDocs(id);
@@ -162,12 +160,24 @@ public class WikiService {
                 page.getSlug(),
                 page.getSummary(),
                 page.getMarkdownUri(),
-                readMarkdown(page.getMarkdownUri()),
+                currentMarkdown(page),
                 page.getStatus().name(),
                 page.getCreatedAt(),
                 page.getUpdatedAt(),
                 sourceDocuments,
                 relatedPages);
+    }
+
+    /**
+     * 현재 본문. Backend가 쌓은 최신 revision이 곧 현재 내용이다.
+     *
+     * <p>{@code wiki_pages.markdown_uri}는 llmPipeline 소유라 Backend가 갱신하지 않는다.
+     * 이 기능 이전에 만들어져 revision 기록이 없는 페이지만 그 값으로 폴백한다.
+     */
+    private String currentMarkdown(WikiPage page) {
+        return versionRepository.findTopByIdPageIdOrderByIdRevisionDesc(page.getId())
+                .map(WikiPageVersion::getMarkdown)
+                .orElseGet(() -> readMarkdown(page.getMarkdownUri()));
     }
 
     private String readMarkdown(String markdownUri) {
@@ -236,14 +246,14 @@ public class WikiService {
                 .toList();
         Map<String, WikiPage> pageMap = wikiPageRepository.findAllById(targetIds).stream()
                 .collect(Collectors.toMap(WikiPage::getId, p -> p));
+        Set<String> alive = Set.copyOf(wikiPageRepository.findAliveIds(targetIds));
 
-        // 삭제된 페이지로 가는 링크는 뺀다. 복구가 링크를 정리하지만 그 전에 조회가 들어올 수 있다.
+        // 받치는 기여가 사라진 페이지로 가는 링크는 뺀다. 링크 정리는 llmPipeline 몫이라
+        // 그 전에 조회가 들어올 수 있다.
         // 대상 자체가 없는 링크는 기존대로 남겨 필드만 null로 내려간다.
         return outLinks.stream()
-                .filter(link -> {
-                    WikiPage target = pageMap.get(link.getToPageId());
-                    return target == null || target.getStatus() != WikiPageStatus.deleted;
-                })
+                .filter(link -> !pageMap.containsKey(link.getToPageId())
+                        || alive.contains(link.getToPageId()))
                 .map(link -> {
                     WikiPage target = pageMap.get(link.getToPageId());
                     return new WikiRelatedPage(

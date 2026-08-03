@@ -42,7 +42,6 @@ C3 = A 기여 + B 기여 + C 기여 + D 기여   (한 편의 글로 엮여 있�
    llmPipeline  위키 변경 → 작업별 key에 본문·조각 저장 → 콜백
    콜백 처리   wiki_page_versions        바뀐 페이지마다 1행 (본문 전체)
               wiki_page_contributions   바뀐 페이지마다 1행 (active=true)
-              wiki_pages                markdown_uri 를 새 key로 이동
               ai_operation_changes      바뀐 페이지마다 1행
               ai_operation_logs         succeeded 로 갱신
 
@@ -57,8 +56,9 @@ C3 = A 기여 + B 기여 + C 기여 + D 기여   (한 편의 글로 엮여 있�
    미리보기   wiki_page_contributions 읽기만 → 삭제·복원·재조립 3분류
    실행       wiki_page_contributions   뺄 기여를 active=false
               wiki_page_versions        복원 페이지마다 1행
-              wiki_pages                markdown_uri 를 옛 key로 되돌림 / status='deleted'
-                                       ← 저장소 쓰기 없음. 옛 object 재사용
+                                       ← 저장소 쓰기 없음. 옛 본문·key 재사용
+                                          최신 revision 이 곧 현재 본문
+                                          wiki_pages 는 llmPipeline 소유라 안 건드림
               ai_operation_logs         1행 (restore)
               ai_operation_changes      페이지마다 1행 (restored·deleted·delegated)
               → 재조립 대상은 llmPipeline에 지시서 전송
@@ -73,7 +73,7 @@ C3 = A 기여 + B 기여 + C 기여 + D 기여   (한 편의 글로 엮여 있�
 | 항목 | 결정 |
 |---|---|
 | 결과 수신 | Kafka 아님. **내부 콜백 API** (Backend에 Kafka 미도입) |
-| Wiki 이력 소유 | **Backend**. revision 채번과 `markdown_uri` 갱신은 Backend만. 단 저장소 쓰기는 llmPipeline만 |
+| Wiki 이력 소유 | **Backend**. revision 채번은 Backend만. 저장소와 `wiki_pages` 쓰기는 llmPipeline만 |
 | 본문 저장 | **RDS text**. 이 규모에서 트랜잭션 정합성·백업 단순성이 용량보다 이득 |
 | 본문 전달 | llmPipeline이 **작업별 불변 key**에 쓰고, 콜백은 key만. Backend가 검증 후 읽음 |
 | 화면 버전 | **`revision`** 하나. 기여 수는 지표로 병기 |
@@ -233,7 +233,7 @@ wiki/{ws}/pages/{page_id}/ops/{op_id}.md     본문. 작업마다 새 key. 덮�
 wiki/{ws}/pages/{page_id}/ops/{op_id}.json   기여 조각
 ```
 
-**`wiki_pages.markdown_uri`는 건드리지 않는다.** Backend가 검증 후 옮긴다.
+`wiki_pages.markdown_uri`는 llmPipeline이 계속 갱신한다. Backend는 이 값을 읽지 않고 `wiki_page_versions`의 최신 revision을 현재 본문으로 본다.
 
 ### 4.2 결과 콜백 — `POST /api/ai-operations/{operation_id}/result`
 
@@ -333,10 +333,10 @@ wiki/{ws}/pages/{page_id}/ops/{op_id}.json   기여 조각
 | 항목 | 규칙 |
 |---|---|
 | `operation_id` 발급 | **항상 Backend** |
-| revision 채번 · `markdown_uri` 갱신 | **항상 Backend** |
+| revision 채번 (`wiki_page_versions`) | **항상 Backend** |
 | 본문 위치 | 콜백이 준 key를 검증 후 Backend가 읽음 |
 | 본문 쓰기 | **llmPipeline만.** 작업별 새 key, 덮어쓰지 않음. Backend는 `wiki/`에 쓰지 않는다 |
-| `wiki_pages.markdown_uri` · `status` | **Backend만.** llmPipeline의 `ON CONFLICT DO UPDATE`에서 두 컬럼을 빼야 한다 |
+| `wiki_pages` 전 컬럼 | **항상 llmPipeline.** Backend는 읽기만 한다 |
 | 키 검증 | bucket은 환경 설정 고정. prefix가 `wiki/{ws}/pages/{page}/ops/{op}.(md\|json)`인지 정확 검증 |
 | 콜백 인증 | 내부 토큰·서명 필수. 인증 전에는 객체를 읽지 않음 |
 | 멱등 | 작업 등록은 `operation_id` PK, 콜백은 `payload_hash` + 변경내역 UNIQUE |
@@ -384,8 +384,9 @@ C2 이력 : A → B → A2
               revision      = max+1
               markdown      = 되돌릴 revision의 본문
               markdown_key  = 되돌릴 revision의 key       ← 재사용
-            wiki_pages.markdown_uri 를 그 key로 이동
-     삭제 → status='deleted' (소프트). 하드 삭제하면 이력이 CASCADE로 사라짐
+            최신 revision 이 곧 현재 본문. wiki_pages 는 안 건드림
+     삭제 → deleted 기록만. 기여가 전부 꺼진 상태가 곧 삭제
+            링크·임베딩 정리는 deleted_pages 를 받은 llmPipeline 몫
      위임 → ai_operation_changes에 delegated 기록만
 ⑤ 조립 지시서 전송 → 대상 있으면 rebuilding, 없으면 succeeded
 ⑥ 재조립 결과 수신 (4.4)
@@ -393,7 +394,9 @@ C2 이력 : A → B → A2
 
 **ingest 되돌리기는 Wiki만 되돌린다.** ingest는 원문 문서를 읽기만 하고 바꾸지 않으므로 되돌릴 문서 본문이 없다. 문서 본문을 되돌리는 것은 `document_edit` 작업의 몫이며 여기서 다루지 않는다.
 
-**Backend는 저장소에 쓰지 않는다.** 되돌릴 revision의 object가 불변으로 이미 있으므로 같은 본문을 다시 쓰지 않고 `markdown_uri`를 그 key로 되돌린다. 덕분에 Wiki 반영이 트랜잭션 하나로 끝나고, 쓰기 실패를 다룰 필요가 없다.
+**Backend는 저장소에도 `wiki_pages`에도 쓰지 않는다.** 되돌릴 revision의 본문이 `wiki_page_versions`에 이미 있으므로 그것을 새 revision으로 쌓으면 그 자체가 현재 본문이 된다. 덕분에 Wiki 반영이 트랜잭션 하나로 끝나고, 저장소 쓰기 실패도 소유권 다툼도 없다.
+
+`wiki_pages`는 llmPipeline 소유다(`5f230a4`에서 rename까지 위임했다). `markdown_uri`는 llmPipeline이 임베딩 생성에 쓰는 자기 값으로 남고, 삭제는 상태 컬럼 대신 **활성 기여가 남았는지**로 판단한다.
 
 ④는 한 트랜잭션이다. 그 앞에서 복구 작업을 `applying`으로 먼저 커밋해 두므로, 반영 중 실패하면 `applying`으로 남아 같은 `restore_manifest`로 재시도할 수 있다.
 
@@ -505,7 +508,7 @@ A1 → A2 → A3 → B → A4  상태에서
 |---|---|
 | `wiki_ingestion/interfaces/http/schemas.py` | `_PipelineRunBase`에 `operation_id`·`result_callback_url`. `WikiLintIn/Out` 확장 |
 | `wiki_ingestion/interfaces/http/routes.py` | `POST /wiki/restore-runs` 신설 |
-| `postgres_wiki_output_persistence.py:97,162,337` | 작업별 key에 write. `markdown_uri` 갱신 제거 |
+| `postgres_wiki_output_persistence.py:97,162,337` | 작업별 key에 write |
 | `postgres_wiki_ingestion_repository.py:621,691` | 동일 |
 | **신규** | 기여 조각 저장, 조각 기반 재조립 |
 | 결과 통지 | `pipeline_log.py:60 _post_event`의 `urllib` 패턴 재사용 |

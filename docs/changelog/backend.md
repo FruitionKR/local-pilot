@@ -8,6 +8,58 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-03
 
+### fix: Backend가 wiki_pages에 쓰지 않도록 정리
+
+**배경**
+
+`wiki_pages`는 llmPipeline 소유다. `5f230a4`("refactor: Wiki 페이지 이름 변경을 llmPipeline에 위임")에서 rename까지 걷어냈는데, 이번 작업이 그보다 깊은 쓰기를 다시 넣었다. 설계 문서에 "`markdown_uri` 갱신은 항상 Backend"라고 적은 것 자체가 코드베이스 규약과 어긋난 판단이었다.
+
+llmPipeline의 ingest 경로가 `markdown_uri`를 갱신하고 Backend가 콜백을 받아 다른 키로 덮어써, 두 주체가 같은 컬럼을 두고 다투는 상태이기도 했다.
+
+**걷어낸 것**
+
+- `WikiPage.moveMarkdownUri()`·`softDelete()` 제거. 호출부 4곳(`OperationApplier`, `RestoreApplier` 2곳, `RestoreRebuildApplier`)도 함께.
+- `RestoreApplier`의 링크 삭제 2곳 제거. `wiki_page_links`·`document_wiki_links`도 llmPipeline 소유다.
+- 그 결과 쓰이지 않게 된 `WikiPageLinkRepository`·`DocumentWikiLinkRepository` 의존과, 고아가 된 `findByIdAndWorkspaceId`·`findAllByWorkspaceId`를 지웠다.
+
+**현재 본문을 어디서 읽나**
+
+`wiki_page_versions`의 **최신 revision**이 답한다. Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이라, 포인터를 따로 옮길 이유가 없었다. 중복 상태 하나가 사라진다.
+
+상세 조회가 MinIO 왕복에서 RDS 읽기로 바뀌어 저장소 장애와도 무관해진다. revision 기록이 없는 페이지(이 기능 이전 생성)만 `markdown_uri`로 폴백한다. 본문이 객체 저장소에 있어 SQL 마이그레이션으로 채울 수 없으므로 폴백을 남겼다.
+
+**삭제를 어떻게 판단하나**
+
+`status='deleted'` 대신 `wiki_page_contributions`에 활성 기여가 남았는지로 본다. 이것이 원래 삭제 판정의 근거였고, 상태 컬럼은 그 결론을 복사한 것뿐이었다.
+
+| 기여 상태 | 판정 |
+|---|---|
+| 하나라도 활성 | 살아 있음 |
+| 기여가 있고 전부 비활성 | 삭제됨 |
+| 기여가 아예 없음 | 살아 있음 — 이 기능 이전 페이지 |
+
+`findAliveByWorkspaceId`·`findAliveByIdAndWorkspaceId`·`findAliveIds`로 교체했다.
+
+`V17`은 이미 적용된 마이그레이션이라 되돌리지 않는다. `WikiPageStatus.deleted`도 CHECK 제약이 허용하는 값을 읽을 수 있도록 남기고, 쓰지 않는 이유를 주석으로 적었다.
+
+**바뀌지 않는 것**
+
+되돌리기의 `restore` 판정은 지금처럼 Backend가 DB만으로 즉시 끝낸다. llmPipeline 왕복이 늘지 않는다.
+
+**검증**
+
+- `WikiServiceTest`에 2개를 더해 7개가 됐다. 최신 revision에서 본문을 읽는지(저장소 미접근 확인), revision이 없으면 폴백하는지다.
+- `WikiPageLockIntegrationTest`의 `markdown_uri` 단정을 "Backend가 갱신하지 않는다"로 뒤집었다.
+- Backend 전체 `./gradlew test` 436개가 통과했다.
+
+**llmPipeline 이슈 문서 정정**
+
+`docs/issue/ai/2026-08-03.md`의 L2-3(`ON CONFLICT`에서 `markdown_uri`·`status` 제거 요청)을 **철회**했다. 전제가 틀렸다. 대신 복구로 삭제된 페이지의 **링크·임베딩 정리**를 요청 항목으로 넣었다. 현재 llmPipeline 복구 경로에 DB 접근이 없어 이 정리가 누락된다.
+
+---
+
+## 2026-08-03
+
 ### fix: 되돌리기 범위에 지목한 작업 자신을 포함
 
 **배경**

@@ -35,10 +35,13 @@ Wiki 그래프의 노드. 문서에서 추출된 개념 페이지(`concept`)와 
 
 - **UNIQUE 제약** `uq_wiki_pages_workspace_type_slug`: `(user_id, workspace_id, page_type, slug)`. 즉 slug 유일성은 **워크스페이스 + 페이지 타입 + 소유자 범위** 안에서만 보장된다(전역 유일이 아님).
 - 상태 전이 메서드: `activate()`→`active`, `markFailed()`→`failed`, `updateContent(title,summary,markdownUri)`, `renameTitle(title)`, `updateSlug(slug)`.
-- 복구가 쓰는 메서드(호출자는 AI 작업 로그 도메인):
-  - `softDelete(Instant)` → `deleted`. **하드 삭제하지 않는다.** 지우면 `wiki_page_versions`·`wiki_page_contributions`가 CASCADE로 사라져 되살릴 수 없다.
-  - `moveMarkdownUri(String, Instant)` — 현재 본문을 가리키는 포인터만 옮긴다. Backend가 검증하고 revision으로 채택한 뒤에만 호출하며, llmPipeline은 이 값을 갱신하지 않는다.
-- `WikiPageRepository.findByIdForUpdate(id)`는 `@Lock(PESSIMISTIC_WRITE)`다. 복구가 여러 페이지를 만질 때 `page_id` 오름차순으로 잠가 교착을 피한다.
+> ⚠️ **Backend는 `wiki_pages`에 쓰지 않는다.** 이 테이블의 쓰기는 llmPipeline 몫이다(`5f230a4`에서 rename도 위임했다). `markdown_uri`·`status`를 포함해 어떤 컬럼도 Backend가 갱신하지 않는다.
+>
+> 그래서 **현재 본문은 `wiki_page_versions`의 최신 revision이 답한다.** Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이고, `markdown_uri`는 llmPipeline이 임베딩 생성에 쓰는 자기 값으로 남는다. 두 주체가 같은 컬럼을 두고 다투지 않는다.
+>
+> **삭제도 마찬가지다.** `status='deleted'`를 쓰지 않고 `wiki_page_contributions`에 활성 기여가 남았는지로 판단한다(아래 삭제 정책 참조).
+
+- `WikiPageRepository.findByIdForUpdate(id)`는 `@Lock(PESSIMISTIC_WRITE)`다. 행을 바꾸지는 않지만, 같은 페이지에 대한 콜백이나 복구가 동시에 올 때 revision 채번이 겹치지 않도록 `page_id` 오름차순으로 잠근다.
 
 ### `wiki_page_links` (엔티티 `WikiPageLink`)
 
@@ -83,7 +86,15 @@ Wiki 페이지 간 방향 링크(그래프 엣지).
 ### 삭제 정책
 
 - Wiki 도메인 자체에는 페이지/링크 삭제 API가 없다. 정리용 파생 쿼리만 리포지토리에 존재한다: `WikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId(...)`, `DocumentWikiLinkRepository.deleteByIdDocumentId(...)`, `DocumentWikiLinkRepository.deleteByIdWikiPageId(...)`. 이들은 다른 도메인(문서 재처리, 복구)에서 호출되며, DB 레벨 cascade 제약은 엔티티에 선언돼 있지 않다.
-- **페이지 삭제는 소프트 삭제뿐이다.** 복구가 `status='deleted'`로 바꾸고 링크만 정리하며, `wiki_pages` 행과 버전·기여 이력은 남는다. 그래프·상세 조회는 `deleted`를 제외하지만 diff는 이력 조회라 계속 동작한다(아래 정합성 참조).
+- **페이지 삭제는 상태 컬럼이 아니라 기여로 판단한다.** 복구는 받치는 기여를 전부 끄기만 하고 `wiki_pages`를 건드리지 않는다. 링크 정리와 임베딩 정리는 조립 지시서의 `deleted_pages`를 받은 llmPipeline이 한다.
+
+  | 기여 상태 | 판정 |
+  |---|---|
+  | 하나라도 `active = true` | 살아 있음 |
+  | 기여가 있고 전부 비활성 | **삭제됨** |
+  | 기여가 아예 없음 | 살아 있음 — 이 기능 이전에 만들어진 페이지 |
+
+  그래프·상세 조회는 삭제된 페이지를 제외하지만 diff는 이력 조회라 계속 동작한다(아래 정합성 참조).
 
 ---
 
@@ -218,10 +229,10 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/wiki")`. 모든 엔�
 - **그래프 구성 방식**: `wiki_page_links`에 workspace 컬럼이 없어, 워크스페이스 경계는 "해당 워크스페이스 페이지 id 집합에 **양 끝점이 모두 포함**되는 링크"로 애플리케이션에서 필터링한다. 한쪽 끝이 다른 워크스페이스/삭제된 페이지를 가리키는 링크는 그래프에서 제외된다.
 - **DB 조인 없이 in-memory 매핑**: filename/source_uri/related title 등은 별도 `findAllById` 조회 후 Map 조인이라, 참조 대상이 없으면 해당 필드만 null(엔드포인트는 성공). `buildSourceDocRefs`는 동일 wikiPageId가 여러 문서 링크를 가질 때 첫 항목만 남긴다(`(a,b)->a`).
 - **confidence 정규화**: 모든 응답에서 `confidence`가 null이면 `0.0`으로 치환해 내려준다.
-- **markdown 본문**: 상세 조회 시 MinIO에서 실시간으로 읽는다. 스토리지 오류/부재는 예외를 삼키고 `markdown=null`로 응답한다(500 아님). `markdown_uri`는 그대로 노출된다. 반면 diff는 `wiki_page_versions.markdown`(RDS)에서 읽으므로 스토리지와 무관하다.
-- **`deleted` 페이지는 조회에서 제외된다**: 그래프는 `findAllByWorkspaceIdAndStatusNot(workspaceId, deleted)`, 상세는 `findByIdAndWorkspaceIdAndStatusNot(id, workspaceId, deleted)`을 쓴다. 삭제된 페이지의 상세는 404다. 그래프 간선은 page id 집합 기준으로 걸러지므로 삭제된 페이지로 가는 링크도 자동으로 빠진다. 상세의 `related_pages`도 삭제된 대상 링크를 뺀다 — 복구가 링크를 정리하지만 그 전에 조회가 들어올 수 있다. **단 대상 자체가 존재하지 않는 링크는 기존대로 남겨 필드만 null로 내려간다**(삭제와 부재는 다르다).
-- **diff는 삭제된 페이지에도 동작한다**: `diff`는 `findById`만 쓰고 `status`를 보지 않는다. 그래프·상세가 "현재 상태"를 보여주는 것과 달리 diff는 이력 조회이므로, 삭제된 페이지의 과거 revision 사이 변경분은 계속 볼 수 있다.
-- **본문 쓰기 주체**: `wiki_pages.markdown_uri`가 가리키는 object는 llmPipeline만 쓰며 작업마다 새 key를 만들고 덮어쓰지 않는다. Backend는 콜백이 준 key를 검증하고 읽은 뒤 `moveMarkdownUri`로 포인터만 옮긴다. 이 도메인의 어떤 엔드포인트도 본문을 쓰지 않는다.
+- **markdown 본문**: 상세 조회는 `wiki_page_versions`의 최신 revision에서 읽는다. RDS 읽기 한 번이라 스토리지 장애와 무관하다. revision 기록이 없는 페이지(이 기능 이전 생성)만 `markdown_uri`로 MinIO를 읽는 **폴백**을 탄다. 그때 스토리지 오류/부재는 예외를 삼키고 `markdown=null`로 응답한다(500 아님). `markdown_uri`는 응답에 그대로 노출된다. diff도 같은 테이블에서 읽는다.
+- **삭제된 페이지는 조회에서 제외된다**: 그래프는 `findAliveByWorkspaceId`, 상세는 `findAliveByIdAndWorkspaceId`를 쓴다. 둘 다 "기여가 없거나, 활성 기여가 하나라도 있는" 페이지만 반환한다. 삭제된 페이지의 상세는 404다. 그래프 간선은 page id 집합 기준으로 걸러지므로 삭제된 페이지로 가는 링크도 자동으로 빠진다. 상세의 `related_pages`는 `findAliveIds`로 한 번 더 거른다 — 링크 정리는 llmPipeline 몫이라 그 전에 조회가 들어올 수 있다. **단 대상 자체가 존재하지 않는 링크는 기존대로 남겨 필드만 null로 내려간다**(삭제와 부재는 다르다).
+- **diff는 삭제된 페이지에도 동작한다**: `diff`는 `findById`만 쓰고 기여를 보지 않는다. 그래프·상세가 "현재 상태"를 보여주는 것과 달리 diff는 이력 조회이므로, 삭제된 페이지의 과거 revision 사이 변경분은 계속 볼 수 있다.
+- **본문 쓰기 주체**: object는 llmPipeline만 쓰며 작업마다 새 key를 만들고 덮어쓰지 않는다. Backend는 콜백이 준 key를 검증하고 읽어 `wiki_page_versions`에 사본을 남길 뿐, 저장소에도 `wiki_pages`에도 쓰지 않는다. 이 도메인의 어떤 엔드포인트도 본문을 쓰지 않는다.
 
 ---
 

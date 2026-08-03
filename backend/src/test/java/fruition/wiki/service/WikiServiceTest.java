@@ -7,6 +7,7 @@ import fruition.wiki.domain.WikiPageLink;
 import fruition.wiki.domain.WikiPageStatus;
 import fruition.wiki.domain.WikiPageType;
 import fruition.wiki.dto.WikiGraphResponse;
+import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.dto.WikiPageDetailResponse;
 import fruition.wiki.dto.WikiPageRenameRequest;
 import fruition.wiki.dto.WikiPageRenameResponse;
@@ -30,8 +31,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -46,6 +49,7 @@ class WikiServiceTest {
     @Mock DocumentRepository documentRepository;
     @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock PipelineWikiPageRequester pipelineWikiPageRequester;
+    @Mock fruition.wiki.repository.WikiPageVersionRepository versionRepository;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProperties;
     @InjectMocks WikiService wikiService;
@@ -75,7 +79,7 @@ class WikiServiceTest {
         List<WikiPage> alive = List.of(page("wp_1", WikiPageStatus.active));
         // 삭제된 wp_2로 가는 링크. 대상이 page 집합에 없으므로 간선도 빠진다.
         List<WikiPageLink> links = List.of(link("wp_1", "wp_2"));
-        when(wikiPageRepository.findAllByWorkspaceIdAndStatusNot("ws_1", WikiPageStatus.deleted))
+        when(wikiPageRepository.findAliveByWorkspaceId("ws_1"))
                 .thenReturn(alive);
         when(wikiPageLinkRepository.findAllByIdFromPageIdIn(java.util.Set.of("wp_1")))
                 .thenReturn(links);
@@ -90,15 +94,15 @@ class WikiServiceTest {
     @DisplayName("삭제된 페이지 상세는 404다")
     void findById_deletedPageNotFound() {
         givenMember();
-        when(wikiPageRepository.findByIdAndWorkspaceIdAndStatusNot(
-                "wp_1", "ws_1", WikiPageStatus.deleted)).thenReturn(Optional.empty());
+        when(wikiPageRepository.findAliveByIdAndWorkspaceId("wp_1", "ws_1"))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> wikiService.findById("ws_1", "user_1", "wp_1"))
                 .isInstanceOf(WikiPageNotFoundException.class);
     }
 
     @Test
-    @DisplayName("연관 페이지에서 삭제된 대상은 빼고, 대상 자체가 없는 링크는 남긴다")
+    @DisplayName("받치는 기여가 사라진 대상은 빼고, 대상 자체가 없는 링크는 남긴다")
     void findById_dropsLinksToDeletedPages() {
         givenMember();
         WikiPage self = page("wp_1", WikiPageStatus.active);
@@ -107,8 +111,10 @@ class WikiServiceTest {
         List<WikiPage> targets = List.of(
                 page("wp_deleted", WikiPageStatus.deleted),
                 page("wp_alive", WikiPageStatus.active));
-        when(wikiPageRepository.findByIdAndWorkspaceIdAndStatusNot(
-                "wp_1", "ws_1", WikiPageStatus.deleted)).thenReturn(Optional.of(self));
+        when(wikiPageRepository.findAliveByIdAndWorkspaceId("wp_1", "ws_1"))
+                .thenReturn(Optional.of(self));
+        when(wikiPageRepository.findAliveIds(List.of("wp_deleted", "wp_alive", "wp_missing")))
+                .thenReturn(List.of("wp_alive"));
         when(documentWikiLinkRepository.findAllByIdWikiPageId("wp_1")).thenReturn(List.of());
         when(wikiPageLinkRepository.findAllByIdFromPageId("wp_1")).thenReturn(outLinks);
         when(wikiPageRepository.findAllById(List.of("wp_deleted", "wp_alive", "wp_missing")))
@@ -118,6 +124,47 @@ class WikiServiceTest {
 
         assertThat(response.relatedPages()).extracting(r -> r.id())
                 .containsExactly("wp_alive", "wp_missing");
+    }
+
+    @Test
+    @DisplayName("현재 본문은 최신 revision 에서 읽는다")
+    void readsCurrentMarkdownFromLatestRevision() {
+        givenMember();
+        WikiPage self = page("wp_1", WikiPageStatus.active);
+        when(wikiPageRepository.findAliveByIdAndWorkspaceId("wp_1", "ws_1"))
+                .thenReturn(Optional.of(self));
+        when(documentWikiLinkRepository.findAllByIdWikiPageId("wp_1")).thenReturn(List.of());
+        when(wikiPageLinkRepository.findAllByIdFromPageId("wp_1")).thenReturn(List.of());
+        when(versionRepository.findTopByIdPageIdOrderByIdRevisionDesc("wp_1"))
+                .thenReturn(Optional.of(new WikiPageVersion("wp_1", 3, 2, "# 최신 본문",
+                        "wiki/key.md", "sha256:x", "op_a2", "user_1",
+                        java.time.Instant.parse("2026-08-03T00:00:00Z"))));
+
+        WikiPageDetailResponse response = wikiService.findById("ws_1", "user_1", "wp_1");
+
+        assertThat(response.markdown()).isEqualTo("# 최신 본문");
+        // wiki_pages.markdown_uri 로 저장소를 읽지 않는다.
+        verifyNoInteractions(minioClient);
+    }
+
+    @Test
+    @DisplayName("revision 기록이 없는 예전 페이지는 markdown_uri 로 폴백한다")
+    void fallsBackToMarkdownUriWhenNoRevision() throws Exception {
+        givenMember();
+        WikiPage self = page("wp_1", WikiPageStatus.active);
+        when(self.getMarkdownUri()).thenReturn("wiki/legacy.md");
+        when(wikiPageRepository.findAliveByIdAndWorkspaceId("wp_1", "ws_1"))
+                .thenReturn(Optional.of(self));
+        when(documentWikiLinkRepository.findAllByIdWikiPageId("wp_1")).thenReturn(List.of());
+        when(wikiPageLinkRepository.findAllByIdFromPageId("wp_1")).thenReturn(List.of());
+        when(versionRepository.findTopByIdPageIdOrderByIdRevisionDesc("wp_1"))
+                .thenReturn(Optional.empty());
+        when(storageProperties.getBucket()).thenReturn("fruition");
+
+        wikiService.findById("ws_1", "user_1", "wp_1");
+
+        // 저장소를 읽으려 시도한다. 실패하면 기존대로 markdown 이 null 로 내려간다.
+        verify(minioClient, atLeastOnce()).getObject(any());
     }
 
     // --- helpers ---

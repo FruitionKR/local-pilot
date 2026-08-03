@@ -30,14 +30,42 @@ public interface WikiPageRepository extends JpaRepository<WikiPage, String> {
 
     List<WikiPage> findAllByPageType(WikiPageType pageType);
 
-    List<WikiPage> findAllByWorkspaceId(String workspaceId);
+    /**
+     * 그래프 조회용. 복구로 받치는 기여가 모두 사라진 페이지를 뺀다.
+     *
+     * <p>{@code wiki_pages}에 삭제 표시를 하지 않는다. 그 테이블은 llmPipeline 소유이고,
+     * 삭제 여부는 기여 원장이 이미 답하고 있어 따로 적을 이유가 없다.
+     *
+     * <p>기여가 <b>하나도 없는</b> 페이지는 살아 있는 것으로 본다. 이 기능 이전에 만들어진
+     * 페이지들이라 복구로 지워진 것과 구분해야 한다.
+     */
+    @Query("""
+            SELECT p FROM WikiPage p
+            WHERE p.workspaceId = :workspaceId
+              AND (NOT EXISTS (SELECT 1 FROM WikiPageContribution c WHERE c.id.pageId = p.id)
+                   OR EXISTS (SELECT 1 FROM WikiPageContribution c
+                              WHERE c.id.pageId = p.id AND c.active = true))
+            """)
+    List<WikiPage> findAliveByWorkspaceId(@Param("workspaceId") String workspaceId);
 
-    Optional<WikiPage> findByIdAndWorkspaceId(String id, String workspaceId);
+    /** 상세 조회용. 받치는 기여가 모두 사라진 페이지는 없는 것으로 본다. */
+    @Query("""
+            SELECT p FROM WikiPage p
+            WHERE p.id = :id AND p.workspaceId = :workspaceId
+              AND (NOT EXISTS (SELECT 1 FROM WikiPageContribution c WHERE c.id.pageId = p.id)
+                   OR EXISTS (SELECT 1 FROM WikiPageContribution c
+                              WHERE c.id.pageId = p.id AND c.active = true))
+            """)
+    Optional<WikiPage> findAliveByIdAndWorkspaceId(
+            @Param("id") String id, @Param("workspaceId") String workspaceId);
 
-    /** 그래프 조회용. 복구로 소프트 삭제된 페이지는 현재 상태가 아니므로 뺀다. */
-    List<WikiPage> findAllByWorkspaceIdAndStatusNot(String workspaceId, WikiPageStatus status);
-
-    /** 상세 조회용. 삭제된 페이지는 없는 것으로 본다. */
-    Optional<WikiPage> findByIdAndWorkspaceIdAndStatusNot(
-            String id, String workspaceId, WikiPageStatus status);
+    /** 삭제 판정용. 여러 페이지 중 살아 있는 것만. */
+    @Query("""
+            SELECT p.id FROM WikiPage p
+            WHERE p.id IN :pageIds
+              AND (NOT EXISTS (SELECT 1 FROM WikiPageContribution c WHERE c.id.pageId = p.id)
+                   OR EXISTS (SELECT 1 FROM WikiPageContribution c
+                              WHERE c.id.pageId = p.id AND c.active = true))
+            """)
+    List<String> findAliveIds(@Param("pageIds") java.util.Collection<String> pageIds);
 }

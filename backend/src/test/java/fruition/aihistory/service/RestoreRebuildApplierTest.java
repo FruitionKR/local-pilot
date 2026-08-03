@@ -97,7 +97,6 @@ class RestoreRebuildApplierTest {
         assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.rebuilt);
         assertThat(captor.getValue().getBeforeRevision()).isEqualTo(4L);
         assertThat(captor.getValue().getAfterRevision()).isEqualTo(5L);
-        verify(wikiPage).moveMarkdownUri(anyString(), any());
     }
 
     @Test

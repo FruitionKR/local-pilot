@@ -188,12 +188,11 @@ class WikiPageLockIntegrationTest {
         assertThat(revisions).as("두 콜백이 각각 다른 revision 을 받아야 한다")
                 .containsExactly(1L, 2L);
 
-        Long pointerMatchesLatest = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM wiki_pages p"
-                        + " JOIN wiki_page_versions v ON v.page_id = p.id"
-                        + " WHERE p.id = ? AND v.revision = 2 AND p.markdown_uri = v.markdown_key",
+        // Backend 는 wiki_pages 를 건드리지 않는다. 현재 본문은 최신 revision 이 답한다.
+        Long untouched = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM wiki_pages WHERE id = ? AND markdown_uri IS NULL",
                 Long.class, pageA);
-        assertThat(pointerMatchesLatest).as("markdown_uri 가 더 큰 revision 을 가리켜야 한다")
+        assertThat(untouched).as("markdown_uri 는 llmPipeline 소유라 Backend 가 갱신하지 않는다")
                 .isEqualTo(1L);
     }
 

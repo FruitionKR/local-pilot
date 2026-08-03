@@ -132,8 +132,6 @@ public class RestoreRebuildApplier {
                 pageId, revision, contributionCount, page.markdown(), page.markdownKey(),
                 page.contentHash(), operation.getOperationId(), operation.getUserId(), now));
 
-        wikiPage.moveMarkdownUri(page.markdownKey(), now);
-
         Long beforeRevision = previous.map(WikiPageVersion::getRevision).orElse(null);
         LineCounter.LineCount lines = lineCounter.count(pageId, beforeRevision,
                 previous.map(WikiPageVersion::getMarkdown).orElse(null), revision, page.markdown());

@@ -15,9 +15,7 @@ import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageContribution;
 import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.domain.WikiPageVersionId;
-import fruition.wiki.repository.DocumentWikiLinkRepository;
 import fruition.wiki.repository.WikiPageContributionRepository;
-import fruition.wiki.repository.WikiPageLinkRepository;
 import fruition.wiki.repository.WikiPageRepository;
 import fruition.wiki.repository.WikiPageVersionRepository;
 import org.springframework.stereotype.Component;
@@ -31,8 +29,8 @@ import java.util.Set;
 /**
  * 복구 계획을 DB에 반영한다. <b>한 트랜잭션</b>으로 처리한다.
  *
- * <p>Backend는 저장소에 쓰지 않는다. 되돌릴 revision의 object가 불변 key로 이미 있으므로
- * 같은 본문을 다시 쓰지 않고 {@code markdown_uri}를 그 key로 되돌린다.
+ * <p>Backend는 저장소에도 {@code wiki_pages}에도 쓰지 않는다. 되돌릴 revision의 본문이 이미
+ * {@code wiki_page_versions}에 있으므로 그것을 새 revision으로 쌓으면 그 자체가 현재 본문이 된다.
  */
 @Component
 public class RestoreApplier {
@@ -42,23 +40,17 @@ public class RestoreApplier {
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageVersionRepository versionRepository;
     private final WikiPageContributionRepository contributionRepository;
-    private final WikiPageLinkRepository wikiPageLinkRepository;
-    private final DocumentWikiLinkRepository documentWikiLinkRepository;
 
     public RestoreApplier(OperationLogRepository operationLogRepository,
                           OperationChangeRepository operationChangeRepository,
                           WikiPageRepository wikiPageRepository,
                           WikiPageVersionRepository versionRepository,
-                          WikiPageContributionRepository contributionRepository,
-                          WikiPageLinkRepository wikiPageLinkRepository,
-                          DocumentWikiLinkRepository documentWikiLinkRepository) {
+                          WikiPageContributionRepository contributionRepository) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.versionRepository = versionRepository;
         this.contributionRepository = contributionRepository;
-        this.wikiPageLinkRepository = wikiPageLinkRepository;
-        this.documentWikiLinkRepository = documentWikiLinkRepository;
     }
 
     /**
@@ -121,9 +113,6 @@ public class RestoreApplier {
                 target.getMarkdown(), target.getMarkdownKey(), target.getContentHash(),
                 restore.getOperationId(), restore.getUserId(), now));
 
-        wikiPageRepository.findById(pageId)
-                .ifPresent(wikiPage -> wikiPage.moveMarkdownUri(target.getMarkdownKey(), now));
-
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.wiki_page, pageId,
                 maxRevision, revision, ChangeType.restored,
@@ -132,14 +121,15 @@ public class RestoreApplier {
         return new PipelineRestoreRequester.RestoreRun.RestoredPage(pageId, revision);
     }
 
-    /** 소프트 삭제. 하드 삭제하면 버전과 기여가 CASCADE로 사라져 되살릴 수 없다. */
+    /**
+     * 삭제 기록만 남긴다. 받치는 기여가 하나도 없는 상태가 곧 삭제이므로 따로 표시할 것이 없다.
+     *
+     * <p>{@code wiki_pages}와 링크 테이블은 llmPipeline 소유라 건드리지 않는다. 조립 지시서의
+     * {@code deleted_pages}로 알려주면 llmPipeline이 링크와 임베딩을 정리한다.
+     */
     private void deletePage(OperationLog restore, PageRestorePlan page, Instant now) {
         String pageId = page.pageId();
         long maxRevision = versionRepository.findMaxRevision(pageId);
-
-        wikiPageRepository.findById(pageId).ifPresent(wikiPage -> wikiPage.softDelete(now));
-        wikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId(pageId, pageId);
-        documentWikiLinkRepository.deleteByIdWikiPageId(pageId);
 
         operationChangeRepository.save(new OperationChange(
                 restore.getOperationId(), ResourceType.wiki_page, pageId,

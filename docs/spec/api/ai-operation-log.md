@@ -21,7 +21,11 @@ AI 작업 로그 도메인은 AI가 문서·Wiki를 바꾼 이력을 한곳에 �
 
 **기여 원장(contribution ledger)이 복구 판정의 유일한 근거다.** `wiki_page_contributions`가 "지금 누가 이 페이지를 받치고 있나"를 담는 유일한 가변 테이블이고, `ai_operation_logs`·`ai_operation_changes`·`wiki_page_versions`는 append-only 감사 기록이다. 복구는 기여 행을 **지우지 않고 `active=false`로 끈다**. 지우면 연속 복구에서 이전에 제외한 기여가 다시 살아난다.
 
-**Backend는 `wiki/`에 쓰지 않는다.** 본문 object는 llmPipeline만 쓰며 작업마다 새 key를 만들고 덮어쓰지 않는다. Backend는 콜백이 준 key를 검증하고 읽기만 한다. 복구도 되돌릴 revision의 `markdown_key`를 재사용하고 `wiki_pages.markdown_uri`만 옮긴다.
+**Backend는 `wiki/`에도 `wiki_pages`에도 쓰지 않는다.** 본문 object는 llmPipeline만 쓰며 작업마다 새 key를 만들고 덮어쓰지 않는다. `wiki_pages`도 llmPipeline 소유다(`5f230a4`에서 rename까지 위임했다).
+
+그래서 **현재 본문은 `wiki_page_versions`의 최신 revision이 답한다.** Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이라 포인터를 따로 옮길 필요가 없다. `wiki_pages.markdown_uri`는 llmPipeline이 임베딩 생성에 쓰는 자기 값으로 남는다.
+
+**삭제도 상태 컬럼을 쓰지 않는다.** 받치는 활성 기여가 하나도 없는 상태가 곧 삭제다. 링크·임베딩 정리는 조립 지시서의 `deleted_pages`를 받은 llmPipeline이 한다.
 
 ---
 
@@ -123,18 +127,11 @@ UNIQUE `uk_ai_operation_changes_operation_resource_type` = `(operation_id, resou
 
 인덱스 `(page_id, active, sequence_revision)` — 복구 판정의 핵심. 살아 있는 기여를 적용 순서대로 읽는다.
 
-### `wiki_pages` 변경 (V17)
+### `wiki_pages` (V17 — 현재 미사용)
 
-`status` CHECK 제약에 `deleted`를 추가한다. `WikiPageStatus` = `draft` \| `active` \| `failed` \| `deleted`.
+V17이 `status` CHECK 제약에 `deleted`를 추가했지만 **Backend는 이 값을 쓰지 않는다.** 삭제 판정을 기여 원장으로 옮기면서 필요가 없어졌다. 이미 적용된 마이그레이션이라 되돌리지 않고, `WikiPageStatus.deleted`도 그 값을 읽을 수 있도록 남겨 둔다.
 
-```sql
-ALTER TABLE wiki_pages DROP CONSTRAINT IF EXISTS wiki_pages_status_check;
-ALTER TABLE wiki_pages
-    ADD CONSTRAINT wiki_pages_status_check
-    CHECK (status IN ('draft', 'active', 'failed', 'deleted'));
-```
-
-복구의 삭제는 **소프트 삭제**다. 하드 삭제하면 `wiki_page_versions`·`wiki_page_contributions`가 CASCADE로 사라져 되살릴 수 없다.
+복구의 삭제는 행을 지우지 않는다. 하드 삭제하면 `wiki_page_versions`·`wiki_page_contributions`가 CASCADE로 사라져 되살릴 수 없다.
 
 ### `document_content_versions` 변경 (V15)
 
@@ -310,8 +307,8 @@ boolean canRestore = appliedAtRevision == kept.size();
 1. 대상 페이지를 **`page_id` 오름차순으로** `findByIdForUpdate`(`@Lock(PESSIMISTIC_WRITE)`) 잠근다. 순서를 고정해야 복구가 동시에 실행될 때 교착이 나지 않는다.
 2. 제외 대상 기여를 `active=false`, `deactivated_by=복구 operation`으로 끈다.
 3. 페이지별로:
-   - `restore` — 되돌릴 revision의 `markdown`·`markdown_key`·`content_hash`를 **재사용**해 `revision = max+1`로 새 버전을 쌓고, `wiki_pages.markdown_uri`를 그 key로 옮긴다. `restored` 기록. **저장소에 쓰지 않는다.**
-   - `delete` — `WikiPage.softDelete()`, `WikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId`, `DocumentWikiLinkRepository.deleteByIdWikiPageId`. `deleted` 기록
+   - `restore` — 되돌릴 revision의 `markdown`·`markdown_key`·`content_hash`를 **재사용**해 `revision = max+1`로 새 버전을 쌓는다. 그것이 곧 현재 본문이다. `restored` 기록. **저장소에도 `wiki_pages`에도 쓰지 않는다.**
+   - `delete` — `deleted` 기록만. 기여를 전부 끈 상태가 곧 삭제이고, 링크 정리는 llmPipeline 몫이다
    - `rebuild` — 본문을 건드리지 않고 `delegated` 기록만
 4. 작업을 `notify_pending`으로 옮긴다.
 
@@ -365,7 +362,7 @@ ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며
 3. `revision = max+1` 채번
 4. **기여를 먼저 넣는다.** 그래야 그 시점 기여 수가 나오고 그 값이 버전 행에 들어간다
 5. `contribution_count = countByIdPageIdAndActiveTrue(pageId)`
-6. `wiki_page_versions` 적재 → 검증을 마친 뒤에만 `wiki_pages.markdown_uri` 이동
+6. `wiki_page_versions` 적재. `wiki_pages`는 건드리지 않는다
 7. `created`(직전 버전 없음) 또는 `updated` 기록. 줄 수는 `WikiLineCounter`
 
 작업 확정: `status == "failed"`면 `partially_succeeded`, 아니면 `succeeded`. **부분 실패여도 이미 만든 페이지는 기록한다.** 안 그러면 Wiki에는 있는데 로그에 없는 페이지가 영영 복구 대상에서 빠진다.
@@ -377,7 +374,7 @@ ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며
 ingest 적재와 다른 점은 **기여를 만들지 않는다**는 것이다. 조립에 쓴 조각은 복구가 살려둔 것들이라 이미 있다. 따라서 `contribution_count`도 다시 세지 않고 `restore_manifest`에서 꺼낸다. 그사이 새 ingest가 들어와도 목표값이 흔들리지 않게 하기 위해서다.
 
 - 지시서에 `rebuild`로 없는 페이지가 결과에 오면 422다(요청하지 않은 페이지)
-- 성공분: 직전 `content_hash`가 같으면 건너뛰고, 아니면 `revision = max+1`로 적재 후 `rebuilt` 기록
+- 성공분: `revision = max+1`로 적재 후 `rebuilt` 기록. 같은 작업의 재전송이면 건너뛴다
 - 실패분: 본문을 건드리지 않고 `rebuild_failed` + 사유만 기록. `(operation_id, page_id, rebuild_failed)`가 이미 있으면 건너뛴다(실패에는 대조할 해시가 없다)
 - `delegated` 행은 갱신하지 않는다
 - 확정: `failed_pages`가 비고 `status != "failed"`면 `succeeded`, 아니면 `partially_succeeded`
@@ -489,7 +486,7 @@ sequenceDiagram
     CB->>CB: 토큰 검증 → payload_hash → 멱등 판정 → 등록값 대조
     CB->>CB: [트랜잭션 밖] key 검증 후 본문 읽기 + hash 대조
     CB->>A: apply(...)
-    A-->>A: [트랜잭션] 기여 → 버전 → markdown_uri → 변경내역 → 작업 확정
+    A-->>A: [트랜잭션] 기여 → 버전 → 변경내역 → 작업 확정
     A-->>C: 200 {status, recorded_changes}
 ```
 
@@ -504,8 +501,8 @@ flowchart TD
     D -- 예 --> F[applying 커밋 + restore_manifest]
     F --> G[트랜잭션: 행 잠금 → 기여 끄기]
     G --> H{페이지별 판정}
-    H -- 남은 기여 0 --> I[소프트 삭제 · deleted]
-    H -- 스냅샷 일치 --> J[markdown_key 재사용 · restored]
+    H -- 남은 기여 0 --> I[deleted 기록. 기여가 꺼진 것이 곧 삭제]
+    H -- 스냅샷 일치 --> J[본문 재사용해 새 revision · restored]
     H -- 그 외 --> K[delegated 기록만]
     I --> L[조립 지시서 전송]
     J --> L
