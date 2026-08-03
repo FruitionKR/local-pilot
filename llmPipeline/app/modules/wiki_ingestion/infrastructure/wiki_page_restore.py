@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from typing import Any
 
-from app.modules.wiki_ingestion.application.models import RebuildPageCommand
+from app.modules.wiki_ingestion.application.models import (
+    RebuildPageCommand,
+    SourceSnapshotRestoreCommand,
+)
 from app.modules.wiki_ingestion.application.ports import WikiPageRestorePort
 from app.modules.wiki_ingestion.domain.operation_recovery import PageRebuildError
+from app.modules.wiki_ingestion.domain.lint_operation_recovery import (
+    calculate_lint_link_changes,
+)
 from app.modules.wiki_ingestion.infrastructure.concept_contribution_rebuild import (
     load_concept_contributions,
     rebuild_concept_page,
@@ -63,7 +70,72 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
         digest = hashlib.sha256(rebuilt.markdown.encode("utf-8")).hexdigest()
         return {
             "page_id": page.page_id,
+            "page_type": "concept",
             "markdown_key": markdown_key,
             "content_hash": f"sha256:{digest}",
             "supported_links": list(rebuilt.supported_links),
         }
+
+    def restore_source_page(
+        self,
+        operation_id: str,
+        workspace_id: str,
+        source_page: SourceSnapshotRestoreCommand,
+    ) -> dict[str, Any]:
+        restore_from = source_page.restore_from_operation_id
+        if restore_from is None:
+            raise PageRebuildError("source snapshot operation is required")
+        source_key = (
+            f"wiki/{workspace_id}/pages/{source_page.page_id}/ops/"
+            f"{restore_from}.md"
+        )
+        target_key = (
+            f"wiki/{workspace_id}/pages/{source_page.page_id}/ops/"
+            f"{operation_id}.md"
+        )
+        try:
+            markdown = self._read_text(source_key)
+            self._write_text(
+                target_key,
+                markdown,
+                "text/markdown; charset=utf-8",
+            )
+        except Exception as exc:
+            raise PageRebuildError(
+                f"failed to restore source snapshot:{source_page.page_id}"
+            ) from exc
+        digest = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        return {
+            "page_id": source_page.page_id,
+            "page_type": "source",
+            "markdown_key": target_key,
+            "content_hash": f"sha256:{digest}",
+        }
+
+    def calculate_lint_action_changes(
+        self,
+        target_operation_id: str,
+        workspace_id: str,
+        affected_page_ids: list[str],
+        supported_links: list[dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]:
+        contributions = []
+        try:
+            for page_id in dict.fromkeys(affected_page_ids):
+                key = (
+                    f"wiki/{workspace_id}/pages/{page_id}/ops/"
+                    f"{target_operation_id}.json"
+                )
+                contribution = json.loads(self._read_text(key))
+                if (
+                    contribution.get("artifact_type") != "lint"
+                    or contribution.get("operation_id") != target_operation_id
+                    or contribution.get("page_id") != page_id
+                ):
+                    raise ValueError("lint contribution identity does not match")
+                contributions.append(contribution)
+        except Exception as exc:
+            raise PageRebuildError(
+                f"failed to restore lint actions:{target_operation_id}"
+            ) from exc
+        return calculate_lint_link_changes(contributions, supported_links)

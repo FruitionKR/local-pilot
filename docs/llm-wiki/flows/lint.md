@@ -386,8 +386,9 @@ wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.json
 ```
 
 lint 기여 JSON은 `content_action=create|append_evidence|none`과
-`added_links`, `removed_links`를 기록한다. 이후 restore에서 ingest 기여와 같은
-순서로 재생할 수 있다.
+`added_links`, `removed_links`를 기록한다. `POST /wiki/lint-restore-runs`가 대상
+lint를 제외한 ingest·lint 기여를 같은 순서로 재생해 Concept과 최종 지원 간선을
+복구한다.
 
 실제 적용 순서는 다음과 같다.
 
@@ -459,8 +460,8 @@ write mode의 변경 위치:
 - object storage 부작용 전체가 DB transaction과 동일하게 원자적이라고 가정하지 않는다.
 - 고아 간선 판정은 활성 contribution 재생 결과를 사용하며 legacy 간선은 자동
   관리 대상으로 간주하지 않는다.
-- lint operation JSON과 ingest operation JSON은 Concept restore에서 같은 순서로
-  재생된다.
+- lint operation JSON과 ingest operation JSON은 lint 취소 API의 Concept
+  재조립에서 같은 순서로 재생된다.
 
 ## 관련 문서
 

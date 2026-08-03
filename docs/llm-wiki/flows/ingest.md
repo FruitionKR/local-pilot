@@ -786,6 +786,11 @@ POST /pipeline/runs/{run_id}/result-callback/retry
 상세한 저장 형식, callback 상태와 복구 흐름은
 `docs/llm-wiki/flows/operation-recovery.md`를 따른다.
 
+ingest 또는 reingest operation을 취소할 때는
+`POST /wiki/ingest-restore-runs`를 사용한다. llmPipeline은 Backend가 선택한 직전
+활성 Source snapshot을 새 restore operation key로 복사하고, 취소 대상을 제외한
+활성 ingest·lint 기여로 영향받은 Concept을 다시 조립한다.
+
 runtime manifest는 관찰용 정보를 더 많이 포함할 수 있고 저장용 manifest는
 축약될 수 있다. DB 저장, object storage 저장과 후속 embedding 시작은 논리적으로
 이어지지만 모든 외부 부작용이 하나의 transaction이라고 가정하면 안 된다.

@@ -4,6 +4,7 @@ from typing import Any, Protocol
 from app.modules.wiki_ingestion.application.models import (
     PipelineRunCommand,
     RebuildPageCommand,
+    SourceSnapshotRestoreCommand,
     WikiMaintenanceCommand,
 )
 
@@ -89,6 +90,21 @@ class WikiPageRestorePort(Protocol):
         workspace_id: str,
         page: RebuildPageCommand,
     ) -> dict[str, Any]: ...
+
+    def restore_source_page(
+        self,
+        operation_id: str,
+        workspace_id: str,
+        source_page: SourceSnapshotRestoreCommand,
+    ) -> dict[str, Any]: ...
+
+    def calculate_lint_action_changes(
+        self,
+        target_operation_id: str,
+        workspace_id: str,
+        affected_page_ids: list[str],
+        supported_links: list[dict[str, Any]],
+    ) -> dict[str, list[dict[str, Any]]]: ...
 
 
 class PipelineSourceReaderPort(Protocol):

@@ -3,9 +3,11 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.wiki_ingestion.application.models import (
+    IngestOperationRestoreCommand,
+    LintOperationRestoreCommand,
     RebuildPageCommand,
     RestoreContributionCommand,
-    RestoreWikiCommand,
+    SourceSnapshotRestoreCommand,
     WikiMaintenanceCommand,
 )
 
@@ -127,40 +129,94 @@ class RebuildPageIn(BaseModel):
     keep_contributions: list[RestoreContributionIn]
 
 
-class WikiRestoreRunIn(BaseModel):
+class SourceSnapshotRestoreIn(BaseModel):
+    page_id: str
+    restore_from_operation_id: str | None
+
+
+class _OperationRestoreIn(BaseModel):
     operation_id: str
+    target_operation_id: str
     workspace_id: str
     result_callback_url: str
     rebuild_pages: list[RebuildPageIn]
-    restored_pages: list[str] = Field(default_factory=list)
     deleted_pages: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_result_callback_url(self) -> Self:
+    def validate_operation_restore(self) -> Self:
         if not self.result_callback_url.strip():
             raise ValueError("result_callback_url must not be blank")
+        if self.operation_id == self.target_operation_id:
+            raise ValueError(
+                "operation_id and target_operation_id must be different"
+            )
+        target_operation_id = self.target_operation_id
+        if any(
+            item.operation_id == target_operation_id
+            for page in self.rebuild_pages
+            for item in page.keep_contributions
+        ):
+            raise ValueError(
+                "target_operation_id must not be included in keep_contributions"
+            )
         return self
 
-    def to_command(self) -> RestoreWikiCommand:
-        return RestoreWikiCommand(
+    def rebuild_commands(self) -> tuple[RebuildPageCommand, ...]:
+        return tuple(
+            RebuildPageCommand(
+                page_id=page.page_id,
+                keep_contributions=tuple(
+                    RestoreContributionCommand(
+                        operation_id=item.operation_id,
+                        document_id=item.document_id,
+                    )
+                    for item in page.keep_contributions
+                ),
+            )
+            for page in self.rebuild_pages
+        )
+
+
+class IngestOperationRestoreIn(_OperationRestoreIn):
+    source_page: SourceSnapshotRestoreIn
+
+    @model_validator(mode="after")
+    def validate_source_snapshot(self) -> Self:
+        if (
+            self.source_page.restore_from_operation_id
+            == self.target_operation_id
+        ):
+            raise ValueError(
+                "target_operation_id cannot be restored as source snapshot"
+            )
+        return self
+
+    def to_command(self) -> IngestOperationRestoreCommand:
+        return IngestOperationRestoreCommand(
             operation_id=self.operation_id,
+            target_operation_id=self.target_operation_id,
             workspace_id=self.workspace_id,
             result_callback_url=self.result_callback_url,
-            restored_pages=tuple(self.restored_pages),
-            deleted_pages=tuple(self.deleted_pages),
-            rebuild_pages=tuple(
-                RebuildPageCommand(
-                    page_id=page.page_id,
-                    keep_contributions=tuple(
-                        RestoreContributionCommand(
-                            operation_id=item.operation_id,
-                            document_id=item.document_id,
-                        )
-                        for item in page.keep_contributions
-                    ),
-                )
-                for page in self.rebuild_pages
+            source_page=SourceSnapshotRestoreCommand(
+                page_id=self.source_page.page_id,
+                restore_from_operation_id=(
+                    self.source_page.restore_from_operation_id
+                ),
             ),
+            rebuild_pages=self.rebuild_commands(),
+            deleted_pages=tuple(self.deleted_pages),
+        )
+
+
+class LintOperationRestoreIn(_OperationRestoreIn):
+    def to_command(self) -> LintOperationRestoreCommand:
+        return LintOperationRestoreCommand(
+            operation_id=self.operation_id,
+            target_operation_id=self.target_operation_id,
+            workspace_id=self.workspace_id,
+            result_callback_url=self.result_callback_url,
+            rebuild_pages=self.rebuild_commands(),
+            deleted_pages=tuple(self.deleted_pages),
         )
 
 

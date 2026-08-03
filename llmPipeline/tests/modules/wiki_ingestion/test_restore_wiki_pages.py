@@ -1,9 +1,11 @@
 import json
 
 from app.modules.wiki_ingestion.application.models import (
+    IngestOperationRestoreCommand,
+    LintOperationRestoreCommand,
     RebuildPageCommand,
     RestoreContributionCommand,
-    RestoreWikiCommand,
+    SourceSnapshotRestoreCommand,
 )
 from app.modules.wiki_ingestion.application.restore_wiki_pages import (
     RestoreWikiPagesUseCase,
@@ -122,11 +124,13 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
         notifier,
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
             result_callback_url="http://backend/result",
+            source_page=SourceSnapshotRestoreCommand("S1", None),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -180,10 +184,12 @@ def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
         ObjectStorageWikiPageRestore(store.read_text, store.write_text)
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", None),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -214,10 +220,12 @@ def test_restore_reports_page_failure_and_keeps_other_success() -> None:
         ObjectStorageWikiPageRestore(store.read_text, store.write_text)
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", None),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -255,10 +263,12 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
         ObjectStorageWikiPageRestore(store.read_text, store.write_text)
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", None),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -288,10 +298,12 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
         ObjectStorageWikiPageRestore(store.read_text, store.write_text)
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", None),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -309,7 +321,7 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
     ]
 
 
-def test_restore_result_keeps_source_snapshot_and_deleted_page_notifications() -> None:
+def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
     use_case = RestoreWikiPagesUseCase(
         ObjectStorageWikiPageRestore(
             lambda _key: "",
@@ -317,15 +329,242 @@ def test_restore_result_keeps_source_snapshot_and_deleted_page_notifications() -
         )
     )
 
-    result = use_case.execute(
-        RestoreWikiCommand(
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
             operation_id="restore-1",
+            target_operation_id="target-ingest",
             workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S_A", None),
             rebuild_pages=(),
-            restored_pages=("S_A", "C2"),
             deleted_pages=("C1", "C5"),
         )
     )
 
-    assert result["restored_pages"] == ["S_A", "C2"]
-    assert result["deleted_pages"] == ["C1", "C5"]
+    assert result["changed_pages"] == []
+    assert result["deleted_pages"] == ["C1", "C5", "S_A"]
+
+
+def test_ingest_operation_restore_copies_previous_source_and_rebuilds_concepts() -> None:
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/S1/ops/ingest-A.md": "# 이전 Source\n",
+            "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "남은 근거"),
+        }
+    )
+    notifier = Notifier()
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text),
+        notifier,
+    )
+
+    result = use_case.execute_ingest(
+        IngestOperationRestoreCommand(
+            operation_id="restore-1",
+            target_operation_id="ingest-B",
+            workspace_id="ws-1",
+            result_callback_url="http://backend/result",
+            source_page=SourceSnapshotRestoreCommand("S1", "ingest-A"),
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["operation_type"] == "ingest_restore"
+    assert result["target_operation_id"] == "ingest-B"
+    assert [item["page_type"] for item in result["changed_pages"]] == [
+        "source",
+        "concept",
+    ]
+    assert store.writes[0][0] == "wiki/ws-1/pages/S1/ops/restore-1.md"
+    assert store.writes[0][1] == "# 이전 Source\n"
+    assert notifier.calls[0][1] == result
+
+
+def test_lint_operation_restore_replays_remaining_link_support() -> None:
+    restored_link = {
+        "source": "concept:c3",
+        "target": "concept:restored",
+        "relation": "related_to",
+    }
+    still_supported_link = {
+        "source": "concept:c3",
+        "target": "concept:shared",
+        "relation": "related_to",
+    }
+    ingest = json.loads(_payload("A", "C3", "남은 근거"))
+    ingest["links"] = [restored_link, still_supported_link]
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/A.json": json.dumps(ingest),
+            "wiki/ws-1/pages/C3/ops/lint-B.json": _lint_payload(
+                "lint-B",
+                "C3",
+                "취소할 lint 근거",
+                added_links=[still_supported_link],
+                removed_links=[restored_link],
+            ),
+        }
+    )
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+    )
+
+    result = use_case.execute_lint(
+        LintOperationRestoreCommand(
+            operation_id="restore-2",
+            target_operation_id="lint-B",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["operation_type"] == "lint_restore"
+    assert result["link_changes"] == {
+        "removed_links": [],
+        "restored_links": [restored_link],
+    }
+    assert "취소할 lint 근거" not in store.writes[0][1]
+
+
+def test_lint_operation_restore_removes_unsupported_added_link() -> None:
+    lint_link = {
+        "source": "concept:c3",
+        "target": "concept:lint-only",
+        "relation": "related_to",
+    }
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "남은 근거"),
+            "wiki/ws-1/pages/C3/ops/lint-B.json": _lint_payload(
+                "lint-B",
+                "C3",
+                "취소할 lint 근거",
+                added_links=[lint_link],
+            ),
+        }
+    )
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+    )
+
+    result = use_case.execute_lint(
+        LintOperationRestoreCommand(
+            operation_id="restore-2",
+            target_operation_id="lint-B",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["link_changes"] == {
+        "removed_links": [lint_link],
+        "restored_links": [],
+    }
+
+
+def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> None:
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/lint-B.json": _lint_payload(
+                "lint-B",
+                "C3",
+                "취소할 lint 근거",
+                added_links=[
+                    {
+                        "source": "concept:c3",
+                        "target": "concept:lint-only",
+                        "relation": "related_to",
+                    }
+                ],
+            ),
+        }
+    )
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+    )
+
+    result = use_case.execute_lint(
+        LintOperationRestoreCommand(
+            operation_id="restore-2",
+            target_operation_id="lint-B",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("missing", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["link_changes"] == {
+        "removed_links": [],
+        "restored_links": [],
+    }
+    assert result["failed_actions"] == [
+        {
+            "operation_id": "lint-B",
+            "reason": "concept_rebuild_failed",
+        }
+    ]
+
+
+def test_lint_operation_restore_reports_missing_target_log() -> None:
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "남은 근거"),
+        }
+    )
+    use_case = RestoreWikiPagesUseCase(
+        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+    )
+
+    result = use_case.execute_lint(
+        LintOperationRestoreCommand(
+            operation_id="restore-2",
+            target_operation_id="lint-missing",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["status"] == "partially_succeeded"
+    assert result["link_changes"] == {
+        "removed_links": [],
+        "restored_links": [],
+    }
+    assert result["failed_actions"] == [
+        {
+            "operation_id": "lint-missing",
+            "reason": "operation_log_missing",
+        }
+    ]

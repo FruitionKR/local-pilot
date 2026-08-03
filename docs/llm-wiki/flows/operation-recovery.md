@@ -46,10 +46,11 @@ Backend
   └─ 복구 시 page별 keep_contributions 계산
        │
        ▼
-llmPipeline restore
+llmPipeline operation 취소
+  ├─ ingest 취소이면 선택된 이전 Source snapshot 복사
   ├─ 남길 ingest·lint 기여 JSON을 순서대로 로드
   ├─ Concept Markdown과 지원 간선 재조립
-  └─ restore operation artifact와 callback 결과 반환
+  └─ lint 간선 변경과 restore operation 결과 반환
 ```
 
 현재 Wiki는 조회와 서비스에 사용하는 최신 상태다. operation artifact는 특정
@@ -65,7 +66,8 @@ operation 흐름의 외부 입력은 HTTP request이고, 출력은 즉시 HTTP r
 | ingest | `POST /pipeline/runs` | `PipelineRunOut` | ingest result callback |
 | reingest | `POST /pipeline/reingest-runs` | `PipelineRunOut` | ingest result callback |
 | lint | `POST /wiki/maintenance/lint` | `WikiLintOut` | 별도 callback 없음 |
-| restore | `POST /wiki/restore-runs` | restore 결과 | 같은 restore 결과 callback |
+| ingest 취소 | `POST /wiki/ingest-restore-runs` | ingest 복구 결과 | 같은 결과 callback |
+| lint 취소 | `POST /wiki/lint-restore-runs` | lint 복구 결과 | 같은 결과 callback |
 | callback 재전송 | `POST /pipeline/runs/{run_id}/result-callback/retry` | 저장된 result payload | Backend callback 재전송 |
 
 ### 2A.1 Ingest 입력
@@ -388,105 +390,152 @@ result callback이 없으므로 Backend는 이 HTTP response를 직접 처리한
 | `operation_artifacts` | write mode가 저장한 lint operation `.md`·`.json` metadata다. 변경이 없거나 dry-run이면 빈 배열이다. |
 | `changed_pages` | Backend 소비용 alias이며 현재 `operation_artifacts`와 같은 배열이다. |
 
-### 2A.6 Restore 입력과 출력
+### 2A.6 Operation 취소 API 입력과 출력
 
-Backend는 page별 활성 contribution을 operation 순서로 정렬해
-`keep_contributions`에 넣는다. 배열 순서가 Concept 조립 순서다.
+복구는 과거 operation을 다시 활성화하는 기능이 아니라 `target_operation_id`의
+효과를 취소하는 기능이다. Backend는 대상 operation을 제외한 활성 contribution을
+operation 순서로 정렬해 `keep_contributions`에 넣는다. 취소 대상이 이 배열에
+포함되면 request schema가 422를 반환한다.
+
+#### Ingest·reingest 취소
 
 ```http
-POST /wiki/restore-runs
+POST /wiki/ingest-restore-runs
 Content-Type: application/json
 ```
 
 ```json
 {
   "operation_id": "op_restore_A",
+  "target_operation_id": "op_reingest_B",
   "workspace_id": "ws_1",
   "result_callback_url": "http://backend/api/ai-operations/op_restore_A/result",
+  "source_page": {
+    "page_id": "page_source_A",
+    "restore_from_operation_id": "op_ingest_A"
+  },
   "rebuild_pages": [
     {
       "page_id": "page_concept_C2",
       "keep_contributions": [
         {"operation_id": "op_ingest_A", "document_id": "doc_A"},
-        {"operation_id": "op_lint_B", "document_id": "lint:op_lint_B"}
+        {"operation_id": "op_lint_C", "document_id": "lint:op_lint_C"}
       ]
     }
   ],
-  "restored_pages": ["page_source_A"],
-  "deleted_pages": ["page_concept_C1"]
+  "deleted_pages": []
 }
 ```
 
-| 필드 | 필수·기본값 | 결정 주체 | 의미와 빈 값 처리 |
-| --- | --- | --- | --- |
-| `operation_id` | 필수 | Backend | 새 restore Markdown key와 결과 operation id다. |
-| `workspace_id` | 필수 | Backend | contribution object prefix를 계산하는 workspace다. |
-| `result_callback_url` | 필수, 빈 문자열 불가 | Backend | restore 결과를 받을 내부 URL이다. |
-| `rebuild_pages` | 필수 | Backend | llmPipeline이 기여 JSON으로 재조립할 Concept 목록이다. 빈 배열이면 Concept 조립 없이 알림만 처리한다. |
-| `rebuild_pages[].page_id` | page마다 필수 | Backend | 재조립할 Concept의 Wiki page id다. |
-| `keep_contributions` | page마다 필수 | Backend | 남길 기여 목록이며 배열 순서가 조립 순서다. 빈 배열이면 해당 page는 `contribution_missing` 실패가 된다. |
-| `keep_contributions[].operation_id` | contribution마다 필수 | Backend | 읽을 `{operation_id}.json` object를 지정한다. JSON 내부 id와도 일치해야 한다. |
-| `keep_contributions[].document_id` | contribution마다 필수 | Backend | 기여 출처를 설명하는 식별자다. 현재 object key 계산에는 사용하지 않지만 Backend 조립 지시 계약에 포함된다. |
-| `restored_pages` | 선택, 기본 빈 배열 | Backend | Source snapshot 선택처럼 Backend가 직접 복원한 page id를 결과에 전달하기 위한 알림이다. llmPipeline이 이 page를 다시 쓰지 않는다. |
-| `deleted_pages` | 선택, 기본 빈 배열 | Backend | 남은 기여가 없어 Backend가 삭제 대상으로 확정한 page id 알림이다. llmPipeline이 이 배열만으로 page를 삭제하지 않는다. |
+| 필드 | 의미와 빈 값 처리 |
+| --- | --- |
+| `operation_id` | 이번 취소를 기록할 새 restore operation id다. |
+| `target_operation_id` | 취소할 ingest 또는 reingest operation id다. `operation_id`와 같을 수 없다. |
+| `workspace_id` | Source snapshot과 Concept contribution key를 계산할 workspace다. |
+| `result_callback_url` | 결과를 받을 Backend 내부 URL이며 빈 문자열일 수 없다. |
+| `source_page.page_id` | 취소 대상 문서에 1:1로 연결된 Source Page id다. |
+| `source_page.restore_from_operation_id` | 취소 후 직전 활성 Source snapshot의 operation id다. 이전 snapshot이 없으면 `null`이다. 취소 대상 id를 지정할 수 없다. |
+| `rebuild_pages` | 취소로 영향받아 다시 조립할 Concept 목록이다. 남은 기여가 없는 page는 넣지 않고 `deleted_pages`에 넣는다. |
+| `keep_contributions` | 취소 대상을 제외하고 남길 ingest·lint 기여다. 배열 순서가 재생 순서다. |
+| `keep_contributions[].operation_id` | 읽을 Concept `{operation_id}.json`을 지정한다. |
+| `keep_contributions[].document_id` | 기여 출처 식별자다. ingest는 원문 document id, lint는 `lint:{operation_id}`를 사용한다. |
+| `deleted_pages` | 남은 활성 기여가 없어 Backend가 삭제 처리할 page id다. 기본값은 빈 배열이다. |
 
-llmPipeline이 반환하고 callback으로도 보내는 결과:
+llmPipeline은 이전 Source `.md`를 읽어 restore operation의 새 `.md`로 복사하고,
+Concept은 남은 JSON을 조립한다. 이전 Source가 `null`이면 Source page id도
+`deleted_pages`에 추가한다.
 
 ```json
 {
   "operation_id": "op_restore_A",
-  "operation_type": "restore",
-  "status": "partially_succeeded",
+  "target_operation_id": "op_reingest_B",
+  "operation_type": "ingest_restore",
+  "status": "succeeded",
   "changed_pages": [
     {
+      "page_id": "page_source_A",
+      "page_type": "source",
+      "markdown_key": "wiki/ws_1/pages/page_source_A/ops/op_restore_A.md",
+      "content_hash": "sha256:..."
+    },
+    {
       "page_id": "page_concept_C2",
+      "page_type": "concept",
       "markdown_key": "wiki/ws_1/pages/page_concept_C2/ops/op_restore_A.md",
       "content_hash": "sha256:...",
       "supported_links": []
     }
   ],
-  "failed_pages": [
-    {
-      "page_id": "page_concept_C3",
-      "reason": "contribution_missing"
-    }
-  ],
-  "restored_pages": ["page_source_A"],
-  "deleted_pages": ["page_concept_C1"]
+  "failed_pages": [],
+  "deleted_pages": []
 }
 ```
 
-모든 page가 성공하면 `status=succeeded`, 하나라도 기여 JSON 로드·조립·저장에
-실패하면 `status=partially_succeeded`다. restore callback 전송이 최종 실패하면
-endpoint도 500으로 실패하며 ingest의 `notify_pending` 저장 경로를 사용하지 않는다.
+#### Lint 취소
 
-restore 결과 필드:
+```http
+POST /wiki/lint-restore-runs
+Content-Type: application/json
+```
 
-| 필드 | 의미와 빈 값 처리 |
+lint 입력은 ingest 취소 입력에서 `source_page`만 제외한 형태다. Backend는 취소할
+lint가 영향을 준 모든 Concept을 `rebuild_pages` 또는 `deleted_pages` 중 하나에
+포함해야 한다.
+
+```json
+{
+  "operation_id": "op_restore_L",
+  "target_operation_id": "op_lint_B",
+  "workspace_id": "ws_1",
+  "result_callback_url": "http://backend/api/ai-operations/op_restore_L/result",
+  "rebuild_pages": [
+    {
+      "page_id": "page_concept_C2",
+      "keep_contributions": [
+        {"operation_id": "op_ingest_A", "document_id": "doc_A"}
+      ]
+    }
+  ],
+  "deleted_pages": []
+}
+```
+
+llmPipeline은 대상 lint JSON의 `added_links`, `removed_links`와 남은 활성 기여의
+최종 지원 집합을 비교한다. 다른 활성 operation도 지지하는 간선은 제거하지 않고,
+다른 활성 operation이 지지하는 경우에만 과거 제거 간선을 복원 대상으로 반환한다.
+
+```json
+{
+  "operation_id": "op_restore_L",
+  "target_operation_id": "op_lint_B",
+  "operation_type": "lint_restore",
+  "status": "succeeded",
+  "changed_pages": [],
+  "failed_pages": [],
+  "deleted_pages": [],
+  "link_changes": {
+    "removed_links": [],
+    "restored_links": []
+  },
+  "failed_actions": []
+}
+```
+
+| 결과 필드 | 의미와 빈 값 처리 |
 | --- | --- |
-| `operation_id` | request의 restore operation id다. |
-| `operation_type` | 항상 `restore`다. |
-| `status` | 모든 rebuild 성공 시 `succeeded`, 하나 이상 실패 시 `partially_succeeded`다. rebuild 대상이 없어도 실패가 없으므로 `succeeded`다. |
-| `changed_pages` | llmPipeline이 새 restore Markdown을 저장한 Concept 목록이다. 재조립 대상이 없거나 모두 실패하면 빈 배열이다. |
-| `failed_pages` | page별 복구 실패다. 현재 외부 reason은 `contribution_missing`으로 정규화한다. |
-| `restored_pages` | request에서 전달한 Backend 직접 복원 page 알림을 그대로 반환한다. |
-| `deleted_pages` | request에서 전달한 Backend 삭제 page 알림을 그대로 반환한다. |
+| `operation_type` | ingest 취소는 `ingest_restore`, lint 취소는 `lint_restore`다. |
+| `status` | page 또는 lint action 실패가 없으면 `succeeded`, 하나라도 있으면 `partially_succeeded`다. |
+| `changed_pages` | 새 restore operation key에 저장한 Source snapshot과 재조립 Concept이다. |
+| `failed_pages` | Source snapshot 부재는 `source_snapshot_missing`, Concept 기여 부재·손상은 `contribution_missing`이다. |
+| `deleted_pages` | Backend가 삭제 처리할 page다. llmPipeline이 이 배열만으로 DB page를 삭제하지 않는다. |
+| `link_changes.removed_links` | 취소한 lint가 추가했고 이제 다른 활성 기여가 지지하지 않는 간선이다. |
+| `link_changes.restored_links` | 취소한 lint가 제거했지만 남은 활성 기여 재생 결과 다시 지원되는 간선이다. |
+| `failed_actions` | 대상 lint JSON이 없으면 `operation_log_missing`, Concept 재조립 실패로 지원 집합을 확정할 수 없으면 `concept_rebuild_failed`다. 이때 `link_changes`는 빈 배열이다. |
 
-restore `changed_pages[]` 필드:
-
-| 필드 | 의미 |
-| --- | --- |
-| `page_id` | 재조립한 Concept Wiki page id다. |
-| `markdown_key` | restore operation으로 새로 저장한 Markdown key다. |
-| `content_hash` | 재조립 Markdown의 `sha256:` hash다. |
-| `supported_links` | 남긴 ingest·lint contribution의 link action을 순서대로 재생한 최종 지원 간선이다. Backend가 복구 후 graph를 맞출 때 사용한다. |
-
-`failed_pages[]` 필드:
-
-| 필드 | 의미 |
-| --- | --- |
-| `page_id` | 복구하지 못한 Concept page id다. |
-| `reason` | 기여 object 부재, JSON 손상, identity 불일치 또는 조립 실패를 현재 `contribution_missing`으로 전달한다. |
+두 endpoint는 HTTP response와 같은 payload를 callback으로 보낸다. callback 최종
+실패는 endpoint 500으로 전달하며 ingest 실행 callback의 `notify_pending`을
+사용하지 않는다. Backend는 결과를 검증한 뒤 revision/current pointer, operation
+활성 상태, page 삭제와 `link_changes`의 DB 반영을 완료한다.
 
 ### 2A.7 Pending callback 재전송 입력과 출력
 
@@ -542,12 +591,12 @@ HTTP JSON
 
 | 단계 | 주요 입력 | 주요 출력 |
 | --- | --- | --- |
-| HTTP schema | Backend JSON | 검증된 `PipelineRunIn`, `WikiLintIn`, `WikiRestoreRunIn` |
+| HTTP schema | Backend JSON | 검증된 `PipelineRunIn`, `WikiLintIn`, `IngestOperationRestoreIn`, `LintOperationRestoreIn` |
 | command 조립 | schema + document row | 실제 user/workspace와 기존 Wiki context가 들어간 command |
 | pipeline | Markdown, source block, 기존 Concept index | Source·Concept page, link, meaning cluster, contribution |
 | persistence | runtime manifest | operation `.md`·`.json`, 현재 Wiki와 DB 변경 |
 | callback 조립 | command + `operation_artifacts` | Backend가 읽을 `changed_pages`와 상태 |
-| restore | Backend `keep_contributions` | 재조립 Markdown, hash, `supported_links` |
+| operation 취소 | Backend `target_operation_id`, Source snapshot, `keep_contributions` | 복구 Markdown, hash, `supported_links`, lint `link_changes` |
 
 ## 3. 식별자와 참조 형식
 
@@ -589,8 +638,9 @@ Source Page는 원문 문서와 1:1로 종속된다. 여러 문서의 의미 기
 wiki/{workspace_id}/pages/{source_page_id}/ops/{operation_id}.md
 ```
 
-Source 복구는 Concept처럼 JSON 조각을 합치는 작업이 아니라 Backend가 남길
-revision의 snapshot을 선택하는 작업이다.
+Source 복구는 Concept처럼 JSON 조각을 합치지 않는다. Backend가 직전 활성
+operation의 snapshot을 선택하고, llmPipeline이 그 `.md`를 restore operation의
+새 불변 key로 복사한다.
 
 ### 4.2 Concept Page
 
@@ -791,21 +841,29 @@ POST /pipeline/runs/{run_id}/result-callback/retry
 현재 callback 요청에는 별도 token 또는 signature header를 추가하지 않는다.
 배포 환경의 VPC 내부 통신과 네트워크 정책으로 접근 범위를 제한한다는 전제다.
 
-## 7. Concept 복구와 페이지 재조립
+## 7. Operation 취소와 Concept 페이지 재조립
 
-복구 진입점은 다음과 같다.
+외부 복구 진입점은 작업 유형별로 분리한다.
 
 ```text
-POST /wiki/restore-runs
+POST /wiki/ingest-restore-runs
+POST /wiki/lint-restore-runs
 ```
 
-Backend는 operation 순서와 활성 상태를 기준으로 page마다 남길 기여 목록을 만든다.
+두 endpoint의 복구 대상은 `target_operation_id`이며 의미는 해당 operation의
+비활성화다. Backend는 target을 제외한 활성 상태와 operation 순서를 기준으로
+page마다 남길 기여 목록을 만든다.
 
 ```json
 {
   "operation_id": "op_restore_1",
+  "target_operation_id": "op_ingest_B",
   "workspace_id": "ws",
   "result_callback_url": "http://backend/...",
+  "source_page": {
+    "page_id": "page_source_1",
+    "restore_from_operation_id": "op_ingest_A"
+  },
   "rebuild_pages": [
     {
       "page_id": "page_c2",
@@ -815,12 +873,13 @@ Backend는 operation 순서와 활성 상태를 기준으로 page마다 남길 �
       ]
     }
   ],
-  "restored_pages": [],
   "deleted_pages": []
 }
 ```
 
-llmPipeline은 각 Concept Page를 다음 순서로 재조립한다.
+ingest 취소는 먼저 직전 활성 Source snapshot을 restore operation의 새 key로
+복사한다. lint 취소에는 Source 단계가 없다. 두 흐름은 영향받은 각 Concept Page를
+다음 순서로 재조립한다.
 
 1. `page_id + operation_id`로 기여 JSON key 계산
 2. `keep_contributions` 순서대로 JSON 로드
@@ -837,11 +896,13 @@ llmPipeline은 각 Concept Page를 다음 순서로 재조립한다.
 ```json
 {
   "operation_id": "op_restore_1",
-  "operation_type": "restore",
+  "target_operation_id": "op_ingest_B",
+  "operation_type": "ingest_restore",
   "status": "succeeded",
   "changed_pages": [
     {
       "page_id": "page_c2",
+      "page_type": "concept",
       "markdown_key": "wiki/ws/pages/page_c2/ops/op_restore_1.md",
       "content_hash": "sha256:...",
       "supported_links": []
@@ -855,9 +916,13 @@ llmPipeline은 각 Concept Page를 다음 순서로 재조립한다.
 페이지를 `failed_pages`에 `reason=contribution_missing`으로 넣고 전체 상태를
 `partially_succeeded`로 반환한다.
 
-Source snapshot의 선택, 삭제 page 처리와 restore 결과에 따른 revision/pointer
-변경은 Backend 범위다. llmPipeline의 restore endpoint는 여러 기여가 섞인 Concept
-재조립을 담당한다.
+lint 취소는 대상 lint JSON의 link action과 재조립 결과의 `supported_links`를
+비교해 `link_changes`를 계산한다. Concept 재조립이 실패하면 불완전한 지원 집합으로
+간선을 추측하지 않고 `concept_rebuild_failed`를 반환한다.
+
+직전 활성 Source operation 선택, 취소 대상 비활성화, 삭제 page 처리와 복구 결과에
+따른 revision/current pointer 변경은 Backend 범위다. llmPipeline은 선택된 Source
+snapshot 복사, 남은 Concept 기여 재조립과 lint 간선 변경 계산을 담당한다.
 
 ## 8. Lint operation 로그
 
@@ -880,9 +945,9 @@ lint JSON의 나머지 `schema_version`, `operation_id`, `page_id`, `concept`,
 `evidence_units`, `source_blocks`, `source_key_points`는 ingest 기여 JSON과 같은 의미다.
 lint artifact는 본문 action 또는 link action 중 하나 이상이 있을 때만 저장한다.
 
-본문 변경과 간선 변경이 하나의 기여 JSON에 기록되므로 restore가 ingest와 lint를
-구분된 별도 복구 방식으로 처리할 필요가 없다. Backend가 남기라고 지정한 ingest와
-lint contribution을 한 순서로 전달하면 된다.
+본문 변경과 간선 변경이 하나의 기여 JSON에 기록되므로 ingest 취소와 lint 취소는
+서로 다른 API를 사용하되 같은 Concept 재조립기를 공유한다. Backend가 취소 대상을
+제외하고 남기라고 지정한 ingest와 lint contribution을 한 순서로 전달하면 된다.
 
 non-dry-run lint 순서:
 
@@ -944,7 +1009,8 @@ op-C lint:   A → B 다시 추가
 | operation Markdown·JSON 저장 | `wiki_page_contributions` schema와 row 저장 |
 | content hash와 changed_pages 생성 | revision, current pointer, sequence 관리 |
 | callback 재시도와 pending payload 저장 | callback payload·prefix·hash 검증 |
-| keep contribution 기반 Concept 재조립 | restore 대상 operation과 활성 여부 결정 |
+| Source snapshot 복사와 keep contribution 기반 Concept 재조립 | 취소 대상·직전 Source·활성 contribution 결정 |
+| lint action과 활성 지원을 비교해 `link_changes` 계산 | 복구 callback의 간선 변경을 DB에 반영 |
 | 활성 contribution 기반 고아 간선 계산·삭제 | restore 결과 적용과 page 활성·삭제 상태 확정 |
 
 llmPipeline은 Backend가 Flyway로 제공하는 table을 소비하지만 migration을 생성하지

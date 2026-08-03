@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,10 +35,11 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     CHAT_APPEND_SEMANTIC_PROMPT,
     CHAT_SEMANTIC_PROMPT,
     ChatWikiRunIn,
+    IngestOperationRestoreIn,
+    LintOperationRestoreIn,
     PipelineRunIn,
     PipelineRunOut,
     ReingestRunIn,
-    WikiRestoreRunIn,
     WikiLintIn,
     WikiLintOut,
 )
@@ -47,15 +49,33 @@ router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
 
 
-@router.post("/wiki/restore-runs")
-def restore_wiki_pages(
-    payload: WikiRestoreRunIn,
+@router.post("/wiki/ingest-restore-runs")
+def restore_ingest_operation(
+    payload: IngestOperationRestoreIn,
     use_case: RestoreWikiPagesUseCase = Depends(
         get_restore_wiki_pages_use_case
     ),
 ) -> dict[str, Any]:
+    return _execute_restore(
+        lambda: use_case.execute_ingest(payload.to_command())
+    )
+
+
+@router.post("/wiki/lint-restore-runs")
+def restore_lint_operation(
+    payload: LintOperationRestoreIn,
+    use_case: RestoreWikiPagesUseCase = Depends(
+        get_restore_wiki_pages_use_case
+    ),
+) -> dict[str, Any]:
+    return _execute_restore(
+        lambda: use_case.execute_lint(payload.to_command())
+    )
+
+
+def _execute_restore(execute: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     try:
-        return use_case.execute(payload.to_command())
+        return execute()
     except Exception as exc:
         logger.exception("Wiki restore 처리 중 예상하지 못한 오류가 발생했습니다.")
         raise HTTPException(

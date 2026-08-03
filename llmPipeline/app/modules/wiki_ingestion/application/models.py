@@ -37,12 +37,29 @@ class RebuildPageCommand:
 
 
 @dataclass(frozen=True)
-class RestoreWikiCommand:
+class SourceSnapshotRestoreCommand:
+    page_id: str
+    restore_from_operation_id: str | None
+
+
+@dataclass(frozen=True)
+class IngestOperationRestoreCommand:
     operation_id: str
+    target_operation_id: str
+    workspace_id: str
+    source_page: SourceSnapshotRestoreCommand
+    rebuild_pages: tuple[RebuildPageCommand, ...]
+    result_callback_url: str | None = None
+    deleted_pages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LintOperationRestoreCommand:
+    operation_id: str
+    target_operation_id: str
     workspace_id: str
     rebuild_pages: tuple[RebuildPageCommand, ...]
     result_callback_url: str | None = None
-    restored_pages: tuple[str, ...] = ()
     deleted_pages: tuple[str, ...] = ()
 
 
