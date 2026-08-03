@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -25,20 +26,52 @@ from app.modules.wiki_ingestion.infrastructure.promotion_concept_page import (
 
 class PostgresWikiMaintenance(WikiMaintenancePort):
     def lint(self, command: WikiMaintenanceCommand) -> dict[str, Any]:
+        if not command.dry_run and not str(command.operation_id or "").strip():
+            raise WikiMaintenanceConfigurationError(
+                "operation_id is required when dry_run is false"
+            )
         should_materialize = command.materialize_promotions and not command.dry_run
         promotion_generator = (
             self._build_promotion_page_generator(command)
             if should_materialize
             else None
         )
-        return database.lint_wiki_workspace(
-            command.user_id,
-            command.workspace_id,
-            materialize_promotions=should_materialize,
-            promotion_page_generator=promotion_generator,
-            apply_reconciliation=not command.dry_run,
-            write_log=not command.dry_run,
+        transaction = (
+            nullcontext(None) if command.dry_run else database.connect()
         )
+        with transaction as connection:
+            result = database.lint_wiki_workspace(
+                command.user_id,
+                command.workspace_id,
+                materialize_promotions=should_materialize,
+                promotion_page_generator=promotion_generator,
+                apply_reconciliation=not command.dry_run,
+                operation_id=command.operation_id,
+                write_log=False,
+                connection=connection,
+            )
+            result.update(
+                database.lint_orphan_wiki_links(
+                    command.user_id,
+                    command.workspace_id,
+                    apply=not command.dry_run,
+                    connection=connection,
+                )
+            )
+            if not command.dry_run:
+                result["operation_id"] = command.operation_id
+                operation_artifacts = database.persist_lint_operation_result(
+                    command.user_id,
+                    command.workspace_id,
+                    str(command.operation_id),
+                    result,
+                    connection=connection,
+                )
+                result["operation_artifacts"] = operation_artifacts
+                result["changed_pages"] = operation_artifacts
+                database.write_wiki_lint_log(result)
+                database.apply_lint_object_changes(result)
+        return result
 
     def _build_promotion_page_generator(
         self,

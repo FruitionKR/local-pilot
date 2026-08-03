@@ -67,6 +67,9 @@ from app.modules.wiki_generation.infrastructure.source_context_merge import (
     source_context_blocks,
     source_page_context_normalized,
 )
+from app.modules.wiki_ingestion.application.concept_contribution import (
+    build_concept_contributions,
+)
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from app.modules.wiki_ingestion.domain.source_block_changes import (
     SourceBlockChanges,
@@ -1346,6 +1349,8 @@ def run_pipeline(
         "input": input_source_name if input_text is not None else str(input_path),
         "out": str(out),
         "mode": args.mode,
+        "operation_id": args.operation_id,
+        "result_callback_url": args.result_callback_url,
         "selection_mode": getattr(args, "selection_mode", None),
         "user_id": args.user_id,
         "workspace_id": args.workspace_id,
@@ -1362,6 +1367,18 @@ def run_pipeline(
             else None
         ),
         "concept_pages": page_outputs.concept_pages,
+        "concept_contributions": build_concept_contributions(
+            operation_id=args.operation_id,
+            normalized=contribution_normalized,
+            source_blocks=source_block_records,
+            links=page_outputs.links,
+            concept_update_decisions=meaning_cluster_artifact.get(
+                "concept_update_decisions",
+                [],
+            ),
+        )
+        if args.operation_id
+        else {},
         "links": page_outputs.links,
         "meaning_clusters": meaning_cluster_artifact,
         "maintenance_summary": maintenance_summary,

@@ -711,15 +711,37 @@ judge는 유지·병합·신규 cluster 같은 제한된 decision JSON을 반환
 
 **무엇을 하는가**
 
-앞 단계의 artifact를 실행 응답으로 묶고 PostgreSQL과 MinIO에 실제 저장한다.
+앞 단계의 artifact를 실행 응답으로 묶고, 작업별 복구 산출물을 먼저 만든 뒤
+PostgreSQL과 현재 Wiki object에 반영한다.
 
 **입력**
 
 run metadata, source blocks, normalized, evaluator trace, pages, links, cluster/update 결과를 받는다.
 
-**저장 검증 규칙**
+**operation 저장 규칙**
 
-page metadata와 Markdown 본문, link endpoint, source ref의 참조 무결성을 검증한다.
+`operation_id`가 있는 실행은 Source·Concept page id와 기존 Concept의 evidence
+추가 결과를 먼저 확정한다. 그다음 현재 Wiki object를 변경하기 전에 다음 불변
+key를 저장한다.
+
+```text
+Source:  wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md
+Concept: wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md
+         wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.json
+```
+
+Source는 원문 문서와 1:1이므로 전체 Markdown snapshot만 필요하다. Concept는 여러
+문서와 lint의 기여를 합칠 수 있어 Markdown과 재조립용 기여 JSON을 함께 저장한다.
+기여 JSON에는 concept metadata, evidence, source block·key point와 이 작업이
+지지하는 page link가 들어간다.
+
+reingest에서는 결과에 남아 있는 모든 Concept이 아니라 이번 실행에서 새로
+생성되거나, 기여 JSON이 생성되거나, `same_concept` evidence가 추가된 Concept만
+operation artifact에 포함한다. 이전 실행의 결과를 그대로 유지한 Concept을 이번
+작업의 변경분으로 기록하지 않는다.
+
+page metadata와 Markdown 본문, link endpoint, source ref의 참조 무결성도 이
+단계에서 검증한다.
 
 **출력과 저장**
 
@@ -730,6 +752,8 @@ runtime manifest
   - evaluator/patch 상태
   - pages와 links
   - cluster/update 결과
+  - concept_contributions
+  - operation_artifacts
 
 PostgreSQL
   - pipeline run과 source block
@@ -738,11 +762,40 @@ PostgreSQL
   - wiki_embedding_units
 
 MinIO
-  - source/concept Markdown
+  - 현재 source/concept Markdown
+  - 작업별 Source snapshot
+  - 작업별 Concept Markdown·기여 JSON
   - 필요한 manifest와 debug artifact
 ```
 
-저장 후 embedding job을 시작한다. runtime manifest는 관찰용 정보를 더 많이 포함할 수 있고 저장용 manifest는 축약될 수 있다. DB 저장, object storage 저장과 후속 embedding 시작은 논리적으로 이어지지만 모든 외부 부작용이 하나의 transaction이라고 가정하면 안 된다.
+작업별 object를 먼저 저장한 뒤 source block, 현재 Source·Concept, page link,
+embedding unit과 meaning cluster를 반영하고 PostgreSQL transaction을 commit한다.
+그 후 embedding job을 시작하고 Backend result callback을 보낸다. pipeline 자체가
+실패한 경우에도 `status=failed` callback을 보내 Backend operation이
+`processing`에 남지 않게 한다.
+
+callback의 네트워크 오류와 5xx는 재시도한다. 422는 operation object의 key와
+hash를 다시 구성한 뒤 재전송하고, 409 payload 충돌은 재시도하지 않는다. 최종
+실패 시 callback URL·payload·status code를 `pipeline_runs.manifest`의
+`pending_notification`에 저장하며 다음 endpoint로 재전송할 수 있다.
+
+```text
+POST /pipeline/runs/{run_id}/result-callback/retry
+```
+
+상세한 저장 형식, callback 상태와 복구 흐름은
+`docs/llm-wiki/flows/operation-recovery.md`를 따른다.
+
+ingest 또는 reingest operation을 취소할 때는
+`POST /wiki/ingest-restore-runs`를 사용한다. Backend는
+`restore_to_operation_id` 이후의 `cancel_operation_ids`를 확정하고 restore point와
+현재 상태의 Concept 합집합을 전달한다. llmPipeline은 restore point의 Source
+snapshot을 새 restore operation key로 복사하고, 취소 대상을 제외한 활성
+ingest·lint 기여로 영향받은 Concept을 다시 조립한다.
+
+runtime manifest는 관찰용 정보를 더 많이 포함할 수 있고 저장용 manifest는
+축약될 수 있다. DB 저장, object storage 저장과 후속 embedding 시작은 논리적으로
+이어지지만 모든 외부 부작용이 하나의 transaction이라고 가정하면 안 된다.
 
 `PipelineRunOut`은 `run_id`, `status`, 선택적 `manifest`, `output_dir`, `log_path`를 반환한다. runtime manifest의 주요 값은 `source_page`, `source_extraction_artifact`, `source_blocks`, `source_block_changes`, `concept_pages`, `links`, `meaning_clusters`, `maintenance_summary`, `normalized`, `generation_evaluations`, `generation_evaluation_status`, `warnings`다.
 
@@ -753,6 +806,8 @@ MinIO
 | document-page/link | `document_wiki_links`, `wiki_page_links` | 없음 |
 | embedding 상태 | `wiki_embedding_units`, `wiki_embedding_vectors` | vector는 후속 job |
 | active cluster·ingest log | path/summary metadata | `clusters/active.md`, `logs/{date}.md` |
+| operation Source snapshot | Backend revision 연동 대상 | `wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md` |
+| operation Concept 기여 | Backend contribution 연동 대상 | 같은 prefix의 `.md`, `.json` |
 | 실행 상태·축약 manifest | `pipeline_runs` | 실행 환경의 pipeline log |
 
 DB용 manifest에서는 top-level `normalized`, `source_blocks`, page의 `markdown`, cluster 전문처럼 큰 값이 제거된다. 따라서 `wait=true` 즉시 manifest와 `GET /pipeline/runs/{run_id}`의 저장 manifest는 같은 정보량을 보장하지 않는다.
@@ -764,11 +819,14 @@ DB용 manifest에서는 top-level `normalized`, `source_blocks`, page의 `markdo
 - `save_debug_json=false`이면 prompt 전문과 raw response가 일반 산출물로 남는다고 가정하지 않는다.
 - runtime manifest와 저장용 manifest의 정보량은 다를 수 있다.
 - reingest 뒤의 stale cluster·relation 정리는 lint reconciliation 대상이 될 수 있다.
+- operation object가 저장된 뒤 DB transaction이 실패하면 미참조 object가 남을 수
+  있다. 현재 Wiki 변경보다 복구 기록을 먼저 쓰기 위해 허용한 실패 방향이다.
 
 ## 관련 문서
 
 - `docs/evaluation/current-evaluator-metrics.md`
 - `docs/evaluation/llm-evaluation-metrics.md`
 - `docs/evaluation/wiki-schema-prompt-experiment-report.md`
+- `docs/llm-wiki/flows/operation-recovery.md`
 - `docs/spec/llmpipeline-backend-output-contract.md`
 - `llmPipeline/README.md`

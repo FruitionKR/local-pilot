@@ -71,7 +71,10 @@ lint 결과 계산
   │    └─ relation materialization
   │
   └─ dry_run=false
-       └─ lint log append
+       ├─ 활성 contribution 기반 고아 간선 제거
+       ├─ operation Markdown·기여 JSON 저장
+       ├─ 일일 lint log append
+       └─ active/archive object 반영 후 DB commit
   │
   ▼
 WikiLintOut 반환
@@ -81,7 +84,9 @@ WikiLintOut 반환
 
 **역할과 입력**
 
-`workspace_id`, `user_id`, `dry_run`, `materialize_promotions`를 검증하고 active cluster, source block, pipeline run contribution, Wiki page/link와 embedding unit을 읽는다.
+`workspace_id`, `user_id`, `operation_id`, `dry_run`,
+`materialize_promotions`를 검증하고 active cluster, source block, pipeline run
+contribution, Wiki page/link와 embedding unit을 읽는다.
 
 HTTP 진입점은 `POST /wiki/maintenance/lint`다.
 
@@ -89,6 +94,7 @@ HTTP 진입점은 `POST /wiki/maintenance/lint`다.
 {
   "user_id": "local-user",
   "workspace_id": "local-workspace",
+  "operation_id": "op_lint_1",
   "materialize_promotions": false,
   "dry_run": true,
   "provider": "upstage",
@@ -99,6 +105,8 @@ HTTP 진입점은 `POST /wiki/maintenance/lint`다.
 ```
 
 provider/model 계열 값은 신규 promotion concept을 실제 생성할 때만 사용한다.
+`dry_run=false`이면 복구 가능한 변경 기록을 남겨야 하므로 `operation_id`가
+필수다.
 
 **Mode 결정 규칙**
 
@@ -107,8 +115,8 @@ provider/model 계열 값은 신규 promotion concept을 실제 생성할 때만
 | 조건 | 실행 범위 |
 | --- | --- |
 | dry-run | 검사만 |
-| write, promotion off | reconciliation + lint log |
-| write, promotion on | reconciliation + promotion/relation + lint log |
+| write, promotion off | reconciliation + 고아 간선 + operation/lint log |
+| write, promotion on | reconciliation + promotion/relation + 고아 간선 + operation/lint log |
 
 로드한 artifact는 active cluster parse로 넘어간다.
 
@@ -167,7 +175,10 @@ heading/section 계약에 맞는 값만 읽고 ref는 현재 source block과 대
 
 `reconciliation_candidates`는 dry-run에서도 반환되고 실제 적용분은 `applied_reconciliations`, cluster Markdown에 적용한 항목은 `applied_cluster_reconciliation`으로 분리한다. DB 구조 정리는 document-concept 관계, page link와 stale embedding unit을 포함할 수 있다.
 
-write는 repository transaction 안에서 수행되지만 MinIO archive/log 같은 object storage 부작용까지 같은 DB transaction이라고 보장하지 않는다.
+write는 하나의 repository transaction에서 실행한다. reconciliation과 간선 삭제
+SQL은 operation artifact와 일일 로그를 저장하기 전에 실행되지만 아직 commit되지
+않는다. 로그 저장이 실패하면 DB 변경을 rollback한다. MinIO object와 PostgreSQL을
+하나의 원자 transaction으로 묶을 수는 없다.
 
 ## 6A. Promotion 분기: 기존 Concept 병합
 
@@ -348,15 +359,50 @@ promoted_from: cluster:manufacturing-uncertainty
 
 필수 조건은 source cluster id와 연결되는 concept page 존재, target concept page 존재, source/target이 다름, 허용 relation type, 실제 ref 또는 ref를 가진 claim으로 근거 해석 가능함이다. 실패 항목은 materialized 목록에 넣지 않고 invalid/review 정보로 남긴다.
 
-## 8. 분기 합류: Archive, Lint Log와 응답
+## 8. 분기 합류: Operation Log, 고아 간선, Archive와 응답
 
 **역할과 입력**
 
-검사 결과, reconciliation, merged/materialized promotion과 relation 결과를 실행 기록으로 확정한다.
+검사 결과, reconciliation, merged/materialized promotion, relation과 고아 간선
+결과를 복구 가능한 실행 기록으로 확정한다.
 
-**Archive·응답 규칙**
+**고아 간선 규칙**
 
-write mode에서는 active cluster archive와 lint log를 남기며 dry-run에서는 저장하지 않는다.
+`wiki_page_contributions`의 모든 operation JSON과 현재 `active=true`인 JSON을
+`sequence_revision` 순서로 읽는다. ingest의 `links`, lint의 `removed_links`와
+`added_links`를 차례로 재생해 현재 활성 작업이 지지하는 간선 집합을 만든다.
+
+현재 간선은 endpoint page가 삭제되었거나, operation 로그에서 관리된 적이 있지만
+활성 작업 중 어느 것도 더 이상 지지하지 않을 때만 고아 후보가 된다. operation
+로그 도입 전에 만들어진 legacy 간선은 로그가 없다는 이유만으로 제거하지 않는다.
+
+**Operation artifact 규칙**
+
+write mode는 변경된 Concept마다 다음 key를 저장한다.
+
+```text
+wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md
+wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.json
+```
+
+lint 기여 JSON은 `content_action=create|append_evidence|none`과
+`added_links`, `removed_links`를 기록한다. `POST /wiki/lint-restore-runs`가 대상
+lint를 제외한 ingest·lint 기여를 같은 순서로 재생해 Concept과 최종 지원 간선을
+복구한다.
+
+실제 적용 순서는 다음과 같다.
+
+```text
+1. PostgreSQL transaction 시작
+2. reconciliation·고아 간선 DB 변경 실행     아직 미커밋
+3. lint operation Markdown·기여 JSON 저장
+4. 일일 lint log 저장
+5. active/archive object 반영
+6. DB commit
+```
+
+dry-run에서는 operation artifact, 일일 로그, active/archive object와 DB 변경을
+저장하지 않는다.
 
 **출력**
 
@@ -368,6 +414,7 @@ write mode에서는 active cluster archive와 lint log를 남기며 dry-run에�
 {
   "user_id": "local-user",
   "workspace_id": "local-workspace",
+  "operation_id": "op_lint_1",
   "active_path": "wiki/.../clusters/active.md",
   "cluster_count": 1,
   "source_ref_count": 2,
@@ -382,7 +429,11 @@ write mode에서는 active cluster archive와 lint log를 남기며 dry-run에�
   "applied_cluster_reconciliation": {},
   "materialized_promotions": [],
   "merged_promotions": [],
-  "materialized_relations": []
+  "materialized_relations": [],
+  "orphan_link_candidates": [],
+  "removed_orphan_links": [],
+  "operation_artifacts": [],
+  "changed_pages": []
 }
 ```
 
@@ -396,6 +447,7 @@ write mode의 변경 위치:
 | concept 본문 | MinIO concept Markdown |
 | 처리 완료 cluster | MinIO active cluster archive |
 | 실행 요약 | MinIO lint log |
+| 작업별 Concept 본문·기여 | MinIO operation `.md`, `.json` |
 
 설정 실패는 요청 오류로, 예상하지 못한 repository/provider 실패는 실행 실패로 전달한다. 정상 응답의 count와 materialized 목록을 통해 실제 적용 범위를 확인해야 한다.
 
@@ -406,8 +458,13 @@ write mode의 변경 위치:
 - orphan ref와 reingest stale contribution은 서로 다른 판정이다.
 - promotion prompt에는 active Wiki schema가 자동 주입되지 않는다.
 - object storage 부작용 전체가 DB transaction과 동일하게 원자적이라고 가정하지 않는다.
+- 고아 간선 판정은 활성 contribution 재생 결과를 사용하며 legacy 간선은 자동
+  관리 대상으로 간주하지 않는다.
+- lint operation JSON과 ingest operation JSON은 lint 취소 API의 Concept
+  재조립에서 같은 순서로 재생된다.
 
 ## 관련 문서
 
 - `docs/evaluation/current-evaluator-metrics.md`
+- `docs/llm-wiki/flows/operation-recovery.md`
 - `docs/spec/llmpipeline-backend-output-contract.md`

@@ -1,4 +1,5 @@
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 import api
 from app.modules.wiki_ingestion.application.models import (
@@ -51,6 +52,21 @@ def test_wiki_maintenance_route_returns_workspace_result() -> None:
     assert response.workspace_id == "workspace-1"
     assert response.promotion_candidates == ["candidate-1"]
     assert response.orphan_refs == ["doc-1:B9999"]
+
+
+def test_wiki_lint_requires_operation_id_only_when_changes_are_applied() -> None:
+    assert WikiLintIn(dry_run=True).operation_id is None
+
+    try:
+        WikiLintIn(dry_run=False)
+    except ValidationError as exc:
+        assert "operation_id" in str(exc)
+    else:
+        raise AssertionError("실행 lint는 operation_id가 필요해야 한다")
+
+    payload = WikiLintIn(dry_run=False, operation_id="lint-op-1")
+
+    assert payload.to_command().operation_id == "lint-op-1"
 
 
 def test_wiki_maintenance_route_is_registered_on_app() -> None:
