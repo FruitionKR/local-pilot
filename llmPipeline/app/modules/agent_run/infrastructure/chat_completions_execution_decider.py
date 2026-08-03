@@ -20,6 +20,12 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 
 
 DEFAULT_EXECUTION_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_execution.system.md"
+REPLAN_REASON_CODES = {
+    "state_changed",
+    "insufficient_information",
+    "plan_no_longer_safe",
+    "goal_not_achievable",
+}
 
 
 class ChatCompletionsExecutionDecider:
@@ -61,7 +67,7 @@ class ChatCompletionsExecutionDecider:
 
 def normalize_execution_decision(value: dict[str, Any]) -> AgentExecutionDecision:
     action = value.get("action")
-    if action not in {"read", "execute_operation", "finish", "request_replan"}:
+    if action not in {"read", "execute_operation", "request_replan"}:
         raise ValueError("Agent execution action is invalid.")
     operation_id = _optional_text(value.get("operation_id"))
     tool_name = _optional_text(value.get("tool_name"))
@@ -75,7 +81,9 @@ def normalize_execution_decision(value: dict[str, Any]) -> AgentExecutionDecisio
             raise ValueError("Agent execution decision requires an operation id.")
         tool_name = None
         arguments = None
-    else:
+    elif action == "request_replan":
+        if reason not in REPLAN_REASON_CODES:
+            raise ValueError("Agent replan decision requires a supported reason code.")
         operation_id = None
         tool_name = None
         arguments = None

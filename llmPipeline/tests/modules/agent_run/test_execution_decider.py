@@ -59,6 +59,18 @@ class ExecutionDeciderTest(unittest.TestCase):
                 {"action": "read", "tool_name": "list_folder_children", "arguments": None}
             )
 
+    def test_replan_decision_requires_limited_reason_code(self) -> None:
+        decision = normalize_execution_decision(
+            {"action": "request_replan", "reason": "state_changed"}
+        )
+
+        self.assertEqual(decision.reason, "state_changed")
+
+        with self.assertRaisesRegex(ValueError, "reason code"):
+            normalize_execution_decision(
+                {"action": "request_replan", "reason": "문서 이름을 로그에 남깁니다."}
+            )
+
 
 def _plan() -> AgentPlan:
     return AgentPlan(

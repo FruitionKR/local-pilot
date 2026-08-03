@@ -188,19 +188,21 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 ### REQ-006 승인된 계획 실행
 
 - 계획에 없는 operation을 추가하지 않는다.
-- 실행 시작 시 현재 루트 상태를 읽고, 매 decision마다 최근 관찰과 operation 상태를 LLM에 제공한다.
-- LLM은 허용된 read tool 호출, 실행 가능한 승인 operation 하나 선택, 완료, 새 계획 요청 중 하나만 선택한다.
+- 매 decision마다 최근 관찰과 operation 상태를 LLM에 제공하며, 필요한 현재 상태는 허용된 read tool로 조회한다.
+- LLM은 허용된 read tool 호출, 실행 가능한 승인 operation 하나 선택, 새 계획 요청 중 하나만 선택한다. 남은 operation이 없으면 시스템이 자동으로 검증 단계로 전환한다.
 - 상태 변경 tool과 인자는 LLM 출력이 아니라 승인된 plan operation에서 읽는다.
 - 의존 operation은 선행 결과가 확인된 뒤 선택할 수 있으며 operation은 한 번에 하나씩 실행한다.
 - LLM이 승인되지 않았거나 아직 실행 가능하지 않은 operation을 선택하면 실행하지 않는다.
 - 승인된 계획으로 목표를 안전하게 달성할 수 없으면 clarification_required로 중단하고 새 plan version과 hash 승인을 요구한다.
 - 실행 decision은 최대 40회이며 AgentRun 전체 tool 호출은 최대 40회다.
+- 남은 Tool 호출 수가 pending mutation 수와 같으면 추가 read를 허용하지 않으며, 더 적으면 react_tool_budget_insufficient 사유로 clarification_required 전환한다.
 - operation마다 고유한 Idempotency-Key를 사용한다.
 - timeout 또는 retryable 오류는 같은 key로 최대 2회 재시도한다.
 - 실패한 operation과 독립적인 operation은 계속 실행한다.
 - 자동 rollback은 수행하지 않는다.
 - 대상 version이 다르면 conflicted로 기록하고 실행하지 않는다.
 - LLM의 chain-of-thought는 저장하지 않고 선택한 action, 제한된 관찰 결과와 실행 결과만 사용한다.
+- 새 계획 요청 사유는 state_changed, insufficient_information, plan_no_longer_safe, goal_not_achievable 중 하나만 허용하고 AgentRun error_code로 반환한다.
 
 #### 인수 조건
 
@@ -215,7 +217,10 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 - Then: 해당 출력을 실행하지 않고 승인된 operation 경계를 유지한다.
 - Given: 관찰 결과 승인된 계획을 그대로 진행할 수 없다.
 - When: LLM이 새 계획을 요청한다.
-- Then: clarification_required로 중단하고 사용자 수정 지시와 새 승인을 기다린다.
+- Then: 제한된 사유 코드를 반환하고 clarification_required로 중단한 뒤 사용자 수정 지시와 새 승인을 기다린다.
+- Given: 남은 Tool 호출 수가 pending mutation 수 이하이다.
+- When: 다음 행동을 선택한다.
+- Then: mutation 실행 예산을 보존하고 부족하면 계획 축소를 요청한다.
 - Given: operation 하나가 최종 실패했다.
 - When: 독립 operation이 남아 있다.
 - Then: 남은 작업을 계속하고 최종 상태를 partial_failed로 기록한다.
@@ -362,7 +367,7 @@ Backend→llmPipeline Agent·Skill 요청과 llmPipeline Worker→Backend tool �
 
 사용자는 operation JSON을 직접 편집하지 않고 자연어로 계획 수정을 요청한다. 수정은 같은 AgentRun에 새 plan version을 만들고 기존 승인을 무효화한다.
 
-Worker는 현재 상태와 최근 실행 결과를 관찰한 뒤 LLM이 다음 read 또는 실행 가능한 승인 operation 하나를 선택하는 bounded ReAct loop를 수행한다. 상태 변경 tool과 인자는 승인된 plan에서만 가져온다. 실패한 operation의 의존 작업은 skipped로 처리하고 독립 작업은 계속한다. 계획 변경이 필요하면 clarification_required로 중단하며 새 plan version과 hash를 다시 승인받는다. 실행 후 관련 상태를 재조회하며 자동 rollback과 자동 복구는 수행하지 않는다.
+Worker는 최근 실행 결과를 관찰한 뒤 LLM이 다음 read 또는 실행 가능한 승인 operation 하나를 선택하는 bounded ReAct loop를 수행한다. 상태 변경 tool과 인자는 승인된 plan에서만 가져오며 남은 mutation의 Tool 호출 예산을 우선 보존한다. 실패한 operation의 의존 작업은 skipped로 처리하고 독립 작업은 계속한다. 계획 변경이 필요하면 제한된 사유 코드와 함께 clarification_required로 중단하며 새 plan version과 hash를 다시 승인받는다. 남은 operation이 없으면 LLM 호출 없이 검증 단계로 전환한다. 실행 후 관련 상태를 재조회하며 자동 rollback과 자동 복구는 수행하지 않는다.
 
 ### 6.8 API
 
@@ -516,7 +521,7 @@ Frontend는 Spring backend만 호출한다.
 
 - 검증일: 2026-08-03
 - 최종 상태: llmPipeline 자동 검증 완료, Backend·Frontend 통합 Pending
-- 자동 검증: llmPipeline `659 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
+- 자동 검증: llmPipeline `665 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
 - 남은 문제: Backend migration·양방향 service 인증·Tool Gateway와 Frontend UI/E2E
 - 후속 작업:
   1. 요구사항 테스트부터 작성한다.

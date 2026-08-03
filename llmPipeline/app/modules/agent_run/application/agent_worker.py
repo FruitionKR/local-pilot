@@ -137,16 +137,7 @@ class AgentWorker:
             {"action": "execute_operation", "operation_id": operation_id, "result": result}
             for operation_id, result in results.items()
         ]
-        if any(operation.status in {"pending", "running"} for operation in plan.operations):
-            observations.append(
-                {
-                    "action": "read",
-                    "tool_name": "list_root_items",
-                    "arguments": {},
-                    "result": self._read_tool(context, "list_root_items", {}),
-                }
-            )
-        allowed_read_tools = self._allowed_read_tools(context)
+        configured_read_tools = self._allowed_read_tools(context)
         for _ in range(_MAX_EXECUTION_STEPS):
             current_context = self._repository.load_context(job.run_id)
             if current_context.run.status == "cancelled":
@@ -194,6 +185,22 @@ class AgentWorker:
                 )
             if blocked:
                 continue
+            if not remaining:
+                self._repository.enqueue_verification(job.run_id)
+                return
+            remaining_tool_calls = self._repository.remaining_tool_calls(job.run_id)
+            if remaining_tool_calls < len(remaining):
+                if not self._repository.request_clarification(
+                    job.run_id,
+                    "react_tool_budget_insufficient",
+                ):
+                    raise ValueError("AgentRun cannot request Tool budget clarification.")
+                return
+            allowed_read_tools = (
+                configured_read_tools
+                if remaining_tool_calls > len(remaining)
+                else ()
+            )
             ready = tuple(
                 operation
                 for operation in remaining.values()
@@ -252,26 +259,16 @@ class AgentWorker:
                 observations.append(observation)
                 continue
             if decision.action == "request_replan":
-                logger.info(
-                    "Agent execution requested a new plan: run_id=%s reason=%s",
+                if not self._repository.request_clarification(
                     job.run_id,
-                    decision.reason,
-                )
-                if not self._repository.mark_run_status(
-                    job.run_id,
-                    ("executing",),
-                    "clarification_required",
+                    f"react_replan_{decision.reason}",
                 ):
                     raise ValueError("AgentRun cannot request a new plan.")
                 return
-            if remaining:
-                raise ValueError("Agent cannot finish while approved operations remain.")
-            self._repository.enqueue_verification(job.run_id)
-            return
-        if not self._repository.mark_run_status(
+            raise ValueError("Unsupported Agent execution action.")
+        if not self._repository.request_clarification(
             job.run_id,
-            ("executing",),
-            "clarification_required",
+            "react_step_limit_exceeded",
         ):
             raise ValueError("Agent execution step limit exceeded.")
 

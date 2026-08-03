@@ -96,6 +96,7 @@ class AgentWorkerTest(unittest.TestCase):
     def test_react_executor_uses_stored_approved_operation_arguments(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
+        repository.remaining_tool_calls.return_value = 1
         repository.mark_operation.return_value = True
         context = _executing_context()
         plan = _approved_plan()
@@ -110,14 +111,11 @@ class AgentWorkerTest(unittest.TestCase):
         tool_gateway.read.return_value = {"items": []}
         tool_gateway.execute.return_value = {"id": "document-1", "folder_id": "folder-1"}
         decider = MagicMock()
-        decider.decide.side_effect = [
-            AgentExecutionDecision(
-                action="execute_operation",
-                operation_id="plan-1-op-1",
-                arguments={"document_id": "unapproved-document"},
-            ),
-            AgentExecutionDecision(action="finish"),
-        ]
+        decider.decide.return_value = AgentExecutionDecision(
+            action="execute_operation",
+            operation_id="plan-1-op-1",
+            arguments={"document_id": "unapproved-document"},
+        )
         worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
 
         worker._execute(MagicMock(run_id="run-1"))
@@ -131,6 +129,29 @@ class AgentWorkerTest(unittest.TestCase):
                 "base_version": 3,
             },
         )
+        self.assertEqual(decider.decide.call_args.kwargs["allowed_read_tools"], ())
+        decider.decide.assert_called_once()
+        repository.enqueue_verification.assert_called_once_with("run-1")
+
+    def test_react_executor_finishes_without_an_additional_llm_decision(self) -> None:
+        repository = MagicMock()
+        context = _executing_context()
+        plan = _approved_plan()
+        succeeded_plan = replace(
+            plan,
+            operations=(replace(plan.operations[0], status="succeeded"),),
+        )
+        repository.load_context.return_value = context
+        repository.load_current_plan.side_effect = [succeeded_plan, succeeded_plan]
+        repository.load_operation_results.return_value = {
+            "plan-1-op-1": {"id": "document-1", "folder_id": "folder-1"}
+        }
+        decider = MagicMock()
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), decider)
+
+        worker._execute(MagicMock(run_id="run-1"))
+
+        decider.decide.assert_not_called()
         repository.enqueue_verification.assert_called_once_with("run-1")
 
     def test_react_executor_rejects_read_tool_outside_skill_allowlist(self) -> None:
@@ -146,6 +167,7 @@ class AgentWorkerTest(unittest.TestCase):
     def test_react_executor_does_not_execute_unapproved_operation_id(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
+        repository.remaining_tool_calls.return_value = 40
         context = _executing_context()
         plan = _approved_plan()
         repository.load_context.return_value = context
@@ -168,7 +190,8 @@ class AgentWorkerTest(unittest.TestCase):
     def test_react_executor_stops_for_new_plan_without_running_mutation(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
-        repository.mark_run_status.return_value = True
+        repository.remaining_tool_calls.return_value = 40
+        repository.request_clarification.return_value = True
         context = _executing_context()
         plan = _approved_plan()
         repository.load_context.return_value = context
@@ -179,16 +202,15 @@ class AgentWorkerTest(unittest.TestCase):
         decider = MagicMock()
         decider.decide.return_value = AgentExecutionDecision(
             action="request_replan",
-            reason="현재 구조가 승인 시점과 다릅니다.",
+            reason="state_changed",
         )
         worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
 
         worker._execute(MagicMock(run_id="run-1"))
 
-        repository.mark_run_status.assert_called_once_with(
+        repository.request_clarification.assert_called_once_with(
             "run-1",
-            ("executing",),
-            "clarification_required",
+            "react_replan_state_changed",
         )
         tool_gateway.execute.assert_not_called()
         repository.enqueue_verification.assert_not_called()
@@ -196,6 +218,7 @@ class AgentWorkerTest(unittest.TestCase):
     def test_react_executor_does_not_start_mutation_cancelled_during_decision(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
+        repository.remaining_tool_calls.return_value = 40
         context = _executing_context()
         cancelled_context = replace(context, run=replace(context.run, status="cancelled"))
         plan = _approved_plan()
@@ -215,6 +238,57 @@ class AgentWorkerTest(unittest.TestCase):
 
         tool_gateway.execute.assert_not_called()
         repository.enqueue_verification.assert_not_called()
+
+    def test_react_executor_requests_clarification_when_mutation_budget_is_insufficient(self) -> None:
+        repository = MagicMock()
+        repository.remaining_tool_calls.return_value = 0
+        repository.request_clarification.return_value = True
+        context = _executing_context()
+        plan = _approved_plan()
+        repository.load_context.return_value = context
+        repository.load_current_plan.side_effect = [plan, plan]
+        repository.load_operation_results.return_value = {}
+        decider = MagicMock()
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), decider)
+
+        worker._execute(MagicMock(run_id="run-1"))
+
+        repository.request_clarification.assert_called_once_with(
+            "run-1",
+            "react_tool_budget_insufficient",
+        )
+        decider.decide.assert_not_called()
+
+    def test_repository_reports_remaining_tool_calls(self) -> None:
+        connection = MagicMock()
+        connection.execute.return_value.fetchone.return_value = {"remaining": 17}
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect", return_value=connection_context):
+            remaining = PostgresAgentJobRepository().remaining_tool_calls("run-1")
+
+        self.assertEqual(remaining, 17)
+        query, parameters = connection.execute.call_args.args
+        self.assertIn("40 - tool_call_count", query)
+        self.assertEqual(parameters, ("run-1",))
+
+    def test_repository_persists_limited_clarification_code(self) -> None:
+        connection = MagicMock()
+        connection.execute.return_value.fetchone.return_value = {"id": "run-1"}
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect", return_value=connection_context):
+            updated = PostgresAgentJobRepository().request_clarification(
+                "run-1",
+                "react_replan_state_changed",
+            )
+
+        self.assertTrue(updated)
+        query, parameters = connection.execute.call_args.args
+        self.assertIn("error_code = %s", query)
+        self.assertEqual(parameters, ("react_replan_state_changed", "run-1"))
 
     def test_terminal_run_status_is_not_overwritten_when_job_fails(self) -> None:
         connection = MagicMock()

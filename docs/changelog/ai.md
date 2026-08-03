@@ -11,10 +11,11 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Wiki Schema와 분리된 개인·팀 Skill의 draft/version, preview, publish, enable/disable, capability·허용 Tool 정책을 추가
 - 자연어 `auto`, `/<skill>`·`skill_id` 명시 선택, `off`, 모호한 후보 확인을 Agent turn에 통합하고 Markdown 생성·편집에는 선택된 Skill 지침을 후순위로 주입
 - 폴더 정리 요청을 계획·plan hash 승인·수정·취소·비동기 실행·결과 검증 상태를 가진 AgentRun으로 분리하고 PostgreSQL job lease, heartbeat와 Tool 호출 제한을 구현
-- 승인 후 실행은 최근 관찰 결과를 바탕으로 LLM이 허용된 read, 실행 가능한 승인 operation 하나, 완료, 새 계획 요청 중 다음 action을 선택하는 bounded ReAct loop로 전환하고 mutation tool·arguments는 승인된 plan 값만 사용
+- 승인 후 실행은 최근 관찰 결과를 바탕으로 LLM이 허용된 read, 실행 가능한 승인 operation 하나, 새 계획 요청 중 다음 action을 선택하는 bounded ReAct loop로 전환하고 mutation tool·arguments는 승인된 plan 값만 사용
+- 완료된 operation만 남으면 추가 LLM 호출 없이 검증하고, pending mutation의 Tool 호출 예산을 우선 보존하며 재계획 사유는 제한된 error_code로만 저장·응답
 - 실제 변경은 `X-Agent-Service-Token`으로 인증하는 Spring Backend Tool Gateway만 사용하며 Skill의 빈 `allowed_tools`를 제한 없음으로 해석하지 않고 planner에도 허용 mutation Tool만 전달
 - 종료된 AgentRun의 90일 정리와 worker 실행·health check 기반을 추가하고, 마지막 job 실패 시 남은 `running` operation을 `failed`로 마감하며 기능은 `AGENT_SKILLS_ENABLED=false`가 기본값인 kill switch 뒤에 배치
-- llmPipeline 전체 테스트 `659 passed`, `49 subtests passed`; Python compile, Compose config, `git diff --check` 통과
+- llmPipeline 전체 테스트 `665 passed`, `49 subtests passed`; Python compile, Compose config, `git diff --check` 통과
 
 ## 2026-07-31
 
