@@ -24,7 +24,7 @@
 | Wiki 이력 테이블 | `fruition.wiki` 도메인에 배치 |
 | 본문 저장 | RDS text + `markdown_key`로 object 위치 병기 |
 | 저장소 쓰기 | llmPipeline만. Backend는 읽기만 |
-| 복구 범위 | 선택 없음. 기준 작업 이후 같은 문서의 작업을 전부 취소한다 |
+| 복구 범위 | 선택 없음. 지목한 작업과 그 이후 같은 문서의 작업을 전부 취소한다 |
 | 화면 버전 | `revision`. 기여 수는 `contribution_count`로 병기 |
 
 ## 4. 작업 계획 — Backend

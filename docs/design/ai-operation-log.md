@@ -346,14 +346,18 @@ wiki/{ws}/pages/{page_id}/ops/{op_id}.json   기여 조각
 ### 5.1 판정
 
 ```text
-복구는 "이 시점으로 되돌리기" 하나다. 사용자가 범위를 고르지 않는다.
+복구는 "이 작업 되돌리기" 하나다. 사용자가 범위를 고르지 않는다.
 
-E = 제외할 operation 집합. 기준 작업 X 하나로 정해진다
+E = 취소할 operation 집합. 지목한 작업 X 하나로 정해진다
 
-    target_document_id = X.target AND created_at > X.created_at AND type = ingest
-    → X 이후 같은 문서의 작업 전부. X 자신은 살린다
+    { X } ∪ (target_document_id = X.target AND created_at > X.created_at AND type = ingest)
+    → X 자신과 그 이후 같은 문서의 작업 전부
 
-    lint는 target_document_id가 없어 이 범위를 만들 수 없다. { X } 하나만 취소한다
+    lint는 target_document_id가 없어 뒤 범위를 만들 수 없다. { X } 하나만 취소한다
+
+X 자신을 포함하는 이유는 로그 목록에서 "이 항목이 한 일을 없앤다"가 가장 흔한 조작이기
+때문이다. lint도 같은 규칙이라 두 유형의 결과가 어긋나지 않는다.
+X까지 살리고 싶으면 그다음 작업을 지목하면 된다.
 
 페이지의 active 기여를 sequence_revision 순으로 놓고 E를 뺀다
 

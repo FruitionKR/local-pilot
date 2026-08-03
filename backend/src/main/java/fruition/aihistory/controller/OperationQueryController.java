@@ -84,8 +84,8 @@ public class OperationQueryController {
     }
 
     @Operation(summary = "복구 미리보기",
-            description = "이 시점으로 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. "
-                    + "기준 작업 이후 같은 문서의 작업을 전부 걷어내며, 그사이에 만들어진 페이지는 삭제됩니다. "
+            description = "이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. "
+                    + "지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. "
                     + "본문을 읽지 않으며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "계산 성공"),
@@ -100,7 +100,7 @@ public class OperationQueryController {
         return ResponseEntity.ok(previewService.preview(workspaceId, userId, operationId));
     }
 
-    @Operation(summary = "이 시점으로 되돌리기",
+    @Operation(summary = "이 작업 되돌리기",
             description = "미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. "
                     + "받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, "
                     + "남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. "

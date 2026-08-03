@@ -7,14 +7,17 @@ import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 기준 작업으로 제외할 작업 집합을 정한다.
  *
- * <p>복구는 <b>"이 시점으로 되돌리기" 하나</b>다. 기준 작업 이후 같은 문서의 작업을 전부 걷어내며,
- * 그사이에 만들어진 source page와 concept page는 받치는 기여가 사라져 삭제된다.
+ * <p>복구는 <b>"이 작업 되돌리기" 하나</b>다. 지목한 작업과 그 이후 같은 문서의 작업을 전부
+ * 걷어내며, 그 과정에서 만들어진 source page와 concept page는 받치는 기여가 사라져 삭제된다.
  * 사용자가 범위를 고르지 않는다.
+ *
+ * <p>지목한 작업 자신을 포함하는 이유는 로그 목록에서 "이 항목이 한 일을 없앤다"가 가장 흔한
+ * 조작이기 때문이다. lint도 같은 규칙이라 두 유형의 결과가 어긋나지 않는다.
+ * A2까지 살리고 싶으면 그다음 작업인 A3을 지목하면 된다.
  *
  * <p>ingest만 모은다. lint와 restore는 기여를 만들지 않아 판정에 영향이 없다.
  */
@@ -34,14 +37,13 @@ public class RestoreScopeResolver {
             return Set.of(target.getOperationId());
         }
 
-        Set<String> ids = operationLogRepository.findByTargetDocumentAfter(
+        Set<String> ids = new LinkedHashSet<>();
+        ids.add(target.getOperationId());
+        operationLogRepository.findByTargetDocumentAfter(
                         target.getTargetDocumentId(), target.getCreatedAt(), OperationType.ingest)
                 .stream()
                 .map(OperationLog::getOperationId)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-
-        // 기준 작업 자신은 살린다. 같은 시각의 작업이 섞이는 것을 막기 위해 명시적으로 뺀다.
-        ids.remove(target.getOperationId());
+                .forEach(ids::add);
         return ids;
     }
 }

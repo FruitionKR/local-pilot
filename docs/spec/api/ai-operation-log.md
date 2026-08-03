@@ -203,7 +203,7 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`
 
 ---
 
-### `POST .../ai-operation-logs/{operation_id}/restore` — 이 시점으로 되돌리기
+### `POST .../ai-operation-logs/{operation_id}/restore` — 이 작업 되돌리기
 
 - **요청** `RestoreExecuteRequest`: `{ "preview_token": "..." }` (`@NotBlank`)
 - **응답 200** `RestoreExecuteResponse`
@@ -255,10 +255,12 @@ Wiki revision과 같은 원칙이다. 되돌린 것도 다시 되돌릴 수 있�
 
 사용자는 범위를 고르지 않는다. 기준 작업 하나로 정해진다.
 
-- `target_document_id`가 있으면(ingest): `findByTargetDocumentAfter(documentId, target.createdAt, ingest)`로 **기준 작업 이후 같은 문서의 ingest를 전부** 모으고, 기준 작업 자신은 제외 목록에서 뺀다(같은 시각 작업이 조회에 섞여 들어와도 살아남아야 한다). 반환은 `LinkedHashSet`으로 순서를 유지한다.
+- `target_document_id`가 있으면(ingest): **지목한 작업 자신**과 `findByTargetDocumentAfter(documentId, target.createdAt, ingest)`가 반환한 **그 이후 같은 문서의 ingest 전부**를 모은다. `LinkedHashSet`이라 같은 시각 작업이 조회에 섞여 들어와도 중복되지 않는다.
 - `target_document_id`가 없으면(lint): 그 작업 하나만 취소한다.
 
-`A1 → A2 → A3 → B → A4`에서 A2를 지목하면 제외 대상은 `{A3, A4}`다. B는 다른 문서이므로 살아남고, B가 보탠 페이지는 재작성 대상이 된다.
+`A1 → A2 → A3 → B → A4`에서 A2를 지목하면 취소 대상은 `{A2, A3, A4}`다. B는 다른 문서이므로 살아남고, B가 보탠 페이지는 재작성 대상이 된다.
+
+> **지목한 작업 자신도 취소된다.** 로그 목록에서 "이 항목이 한 일을 없앤다"가 가장 흔한 조작이기 때문이다. lint 되돌리기도 그 작업 하나만 취소하므로 두 유형의 규칙이 같다. A2까지 살리고 싶으면 그다음 작업인 A3을 지목하면 된다.
 
 ### 3.2 페이지별 판정 (`RestorePlanner`)
 

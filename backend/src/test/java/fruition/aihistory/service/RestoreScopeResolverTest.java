@@ -22,7 +22,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 복구 범위 결정. 사용자가 고르지 않고 기준 작업 하나로 정해진다.
+ * 복구 범위 결정. 사용자가 고르지 않고 지목한 작업 하나로 정해진다.
+ *
+ * <p>"이 작업 되돌리기"라서 지목한 작업 자신도 취소 대상이다. lint와 같은 규칙이다.
  */
 @ExtendWith(MockitoExtension.class)
 class RestoreScopeResolverTest {
@@ -41,36 +43,35 @@ class RestoreScopeResolverTest {
     }
 
     @Test
-    @DisplayName("기준 작업 이후 같은 문서의 ingest를 전부 제외한다")
-    void collectsLaterOperationsOfSameDocument() {
+    @DisplayName("지목한 작업과 그 이후 같은 문서의 ingest를 전부 취소한다")
+    void cancelsTargetAndLaterOperationsOfSameDocument() {
         OperationLog target = ingest("op_a2", "doc_A", T2);
         when(operationLogRepository.findByTargetDocumentAfter("doc_A", T2, OperationType.ingest))
                 .thenReturn(List.of(
                         ingest("op_a3", "doc_A", T2.plusSeconds(3600)),
                         ingest("op_a4", "doc_A", T2.plusSeconds(7200))));
 
-        assertThat(resolver.resolve(target)).containsExactly("op_a3", "op_a4");
+        assertThat(resolver.resolve(target)).containsExactly("op_a2", "op_a3", "op_a4");
     }
 
     @Test
-    @DisplayName("기준 작업 자신은 살린다")
-    void keepsTargetItself() {
+    @DisplayName("같은 시각 작업이 조회에 섞여 들어와도 중복되지 않는다")
+    void doesNotDuplicateTarget() {
         OperationLog target = ingest("op_a2", "doc_A", T2);
-        // 같은 시각의 작업이 조회에 섞여 들어와도 기준 작업은 빠져야 한다.
         when(operationLogRepository.findByTargetDocumentAfter(any(), any(), any()))
                 .thenReturn(List.of(target, ingest("op_a3", "doc_A", T2.plusSeconds(3600))));
 
-        assertThat(resolver.resolve(target)).containsExactly("op_a3");
+        assertThat(resolver.resolve(target)).containsExactly("op_a2", "op_a3");
     }
 
     @Test
-    @DisplayName("이후 작업이 없으면 제외 집합이 비어 아무 페이지도 건드리지 않는다")
-    void emptyWhenNothingFollows() {
+    @DisplayName("마지막 작업을 지목하면 그것만 취소한다")
+    void cancelsOnlyTargetWhenNothingFollows() {
         OperationLog target = ingest("op_a4", "doc_A", T2);
         when(operationLogRepository.findByTargetDocumentAfter(any(), any(), any()))
                 .thenReturn(List.of(target));
 
-        assertThat(resolver.resolve(target)).isEmpty();
+        assertThat(resolver.resolve(target)).containsExactly("op_a4");
     }
 
     @Test
