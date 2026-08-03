@@ -1,6 +1,8 @@
 package fruition.aihistory.service;
 
 import fruition.aihistory.domain.OperationLog;
+import fruition.aihistory.domain.OperationType;
+import fruition.aihistory.dto.DocumentRestorePlan;
 import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.dto.RestorePreviewResponse;
 import fruition.aihistory.exception.OperationNotFoundException;
@@ -31,24 +33,33 @@ public class RestorePreviewService {
     private final RestoreScopeResolver scopeResolver;
     private final RestorePlanner planner;
     private final PreviewTokenSigner tokenSigner;
+    private final DocumentRestorePlanner documentPlanner;
 
     public RestorePreviewService(OperationLogRepository operationLogRepository,
                                  WikiPageContributionRepository contributionRepository,
                                  WorkspaceMemberRepository workspaceMemberRepository,
                                  RestoreScopeResolver scopeResolver,
                                  RestorePlanner planner,
-                                 PreviewTokenSigner tokenSigner) {
+                                 PreviewTokenSigner tokenSigner,
+                                 DocumentRestorePlanner documentPlanner) {
         this.operationLogRepository = operationLogRepository;
         this.contributionRepository = contributionRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.scopeResolver = scopeResolver;
         this.planner = planner;
         this.tokenSigner = tokenSigner;
+        this.documentPlanner = documentPlanner;
     }
 
     @Transactional(readOnly = true)
     public RestorePreviewResponse preview(String workspaceId, String userId, String operationId) {
         OperationLog target = loadOperation(workspaceId, userId, operationId);
+
+        // 문서 편집은 되돌릴 버전이 변경내역에 이미 적혀 있어 계산할 것이 없다.
+        if (target.getOperationType() == OperationType.document_edit) {
+            DocumentRestorePlan plan = documentPlanner.plan(target);
+            return RestorePreviewResponse.from(operationId, plan, tokenSigner.sign(operationId, plan));
+        }
 
         Set<String> excluded = scopeResolver.resolve(target);
         Map<String, List<WikiPageContribution>> contributions = loadContributions(excluded);

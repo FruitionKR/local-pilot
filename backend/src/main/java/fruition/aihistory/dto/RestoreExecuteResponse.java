@@ -18,6 +18,11 @@ public record RestoreExecuteResponse(
         boolean rebuilding,
         String status
 ) {
+    /** 문서 편집 되돌리기. 재작성이 없어 이 시점에 이미 끝나 있다. */
+    public static RestoreExecuteResponse forDocument(String operationId, String restoredFrom) {
+        return new RestoreExecuteResponse(operationId, restoredFrom, 0, 1, 0, false, "succeeded");
+    }
+
     public static RestoreExecuteResponse from(String operationId, String restoredFrom,
                                               RestorePlan plan, boolean notified) {
         String status = !notified ? "notify_pending" : (plan.hasRebuild() ? "rebuilding" : "succeeded");

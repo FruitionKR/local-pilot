@@ -181,7 +181,11 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`
 - **응답 200** `RestorePreviewResponse`
   - `delete_count`, `restore_count`, `rebuild_count`
   - `pages[]`: `page_id`, `action`(`delete` \| `restore` \| `rebuild`), `target_revision`(복원일 때만, 그 외 null), `contribution_count`
+  - `document`: `{ document_id, from_version, to_version }` — **문서 편집 되돌리기일 때만**. 이때 `pages`는 빈 배열이다
   - `preview_token`: 실행에 그대로 전달해야 한다
+
+> Wiki 되돌리기는 `pages`가 차고, 문서 편집 되돌리기는 `document`가 찬다. 둘이 동시에 차지 않는다.
+> 문서는 버전이 선형이라 계산할 것이 없다. 되돌릴 지점이 `ai_operation_changes.before_revision`에 이미 적혀 있다.
 - **에러**: 404 `AI_OPERATION_NOT_FOUND` / `WORKSPACE_NOT_FOUND`
 - `@Transactional(readOnly = true)`
 
@@ -193,10 +197,43 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`
 - **응답 200** `RestoreExecuteResponse`
   - `operation_id`(이번 복구 작업), `restored_from`(되돌린 대상), `delete_count`, `restore_count`, `rebuild_count`, `rebuilding`(boolean), `status`
 - **에러**
-  - 400 `INVALID_RESTORE_REQUEST` — 되돌릴 수 없는 작업 유형(`ingest`·`lint`만 가능), 되돌릴 Wiki 페이지 없음
-  - 404 `AI_OPERATION_NOT_FOUND` / `WORKSPACE_NOT_FOUND`
+  - 400 `INVALID_RESTORE_REQUEST` — 되돌릴 수 없는 작업 유형(`document_edit`·`ingest`·`lint`만 가능), 되돌릴 대상 없음
+  - 404 `AI_OPERATION_NOT_FOUND` / `WORKSPACE_NOT_FOUND` / `DOCUMENT_CONTENT_VERSION_NOT_FOUND`
   - 409 `RESTORE_PREVIEW_STALE` — 미리보기 이후 대상이 변경됨
+  - 423 — 다른 사용자가 문서를 편집 중 (문서 되돌리기만)
 - **ingest 되돌리기는 Wiki만 되돌린다.** ingest는 원문 문서를 읽기만 하고 바꾸지 않으므로 되돌릴 문서 본문이 없다.
+- **문서 편집 되돌리기는 문서만 되돌린다.** 재작성이 없어 llmPipeline을 부르지 않고 그 자리에서 `succeeded`로 끝난다.
+
+### 문서 편집 되돌리기 (`document_edit`)
+
+되돌리기는 사용자에게 한 가지 동작이므로 작업 종류와 무관하게 이 엔드포인트 하나로 처리한다. 내부에서만 갈린다.
+
+```
+① DocumentRestorePlanner — ai_operation_changes에서 before_revision을 읽어 목적지 결정
+     from_version = 지금 문서 버전 (대상 작업이 만든 버전이 아니다. 그 뒤 사용자가 더 저장했을 수 있다)
+     to_version   = before_revision
+② preview_token 재검증 — from_version이 서명에 들어 있어 그사이 문서가 저장되면 409
+③ [별도 트랜잭션] restore 작업을 applying으로 커밋
+④ DocumentRestoreApplier — to_version의 본문으로 DocumentService.saveContent 호출
+     편집 잠금·낙관적 잠금·편집 상태 갱신이 이미 그 안에 있어 되돌리기라고 다르게 처리하지 않는다
+     적용 표를 넘기지 않으므로 document_edit 로그는 생기지 않는다
+⑤ ai_operation_changes에 restored 기록 (document / from_version → 새 버전)
+⑥ succeeded 확정
+```
+
+**과거 버전을 되살리지 않고 그 내용으로 새 버전을 쌓는다.**
+
+```
+버전 5  "원래 문단"
+버전 6  "AI가 다듬은 문단"      ← op_7Kd3 이 만듦
+버전 7  "원래 문단"             ← 되돌리기 결과. 5로 돌아가지 않는다
+```
+
+Wiki revision과 같은 원칙이다. 되돌린 것도 다시 되돌릴 수 있고, 같은 번호가 다른 내용을 가리키는 일이 없다.
+
+거절하는 경우: 새로 만든 문서라 `before_revision`이 NULL, 이미 그 버전, 문서 변경내역이 없는 작업, 되돌릴 내용이 현재와 같아 저장이 일어나지 않음.
+
+> 기존 `POST /api/documents/{id}/versions/{version}/restore`는 그대로 둔다. 버전 목록 화면에서 쓰는 별개 경로이며 AI 작업 로그를 만들지 않는다.
 
 ---
 
@@ -243,7 +280,7 @@ boolean canRestore = appliedAtRevision == kept.size();
 ### 3.4 실행 순서 (`RestoreExecuteService`)
 
 ```
-① 대상 작업 조회 + 유형 확인 (ingest·lint만)
+① 대상 작업 조회 + 유형 확인 (document_edit이면 문서 분기로)
 ② 범위 결정 → 기여 적재 → preview_token 재검증 (불일치면 409)
 ③ 계획 계산. 대상 페이지가 없으면 400
 ④ [별도 트랜잭션] restore 작업을 applying으로 커밋 + restore_manifest 보관

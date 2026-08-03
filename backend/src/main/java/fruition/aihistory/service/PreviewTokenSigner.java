@@ -1,5 +1,6 @@
 package fruition.aihistory.service;
 
+import fruition.aihistory.dto.DocumentRestorePlan;
 import fruition.wiki.domain.WikiPageContribution;
 import org.springframework.stereotype.Component;
 
@@ -53,6 +54,25 @@ public class PreviewTokenSigner {
         }
         String expected = sign(operationId, contributionsByPage);
         return constantTimeEquals(token, expected);
+    }
+
+    /**
+     * 문서 되돌리기용. 지금 버전을 담아 그사이 문서가 편집되면 실행이 막히게 한다.
+     */
+    public String sign(String operationId, DocumentRestorePlan plan) {
+        return hmac(canonical(operationId, plan));
+    }
+
+    public boolean matches(String token, String operationId, DocumentRestorePlan plan) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        return constantTimeEquals(token, sign(operationId, plan));
+    }
+
+    private String canonical(String operationId, DocumentRestorePlan plan) {
+        return operationId + "|document=" + plan.documentId()
+                + ":" + plan.fromVersion() + ":" + plan.toVersion();
     }
 
     /**

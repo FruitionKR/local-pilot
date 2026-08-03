@@ -6,6 +6,43 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-03
+
+### feat: AI 문서 편집 되돌리기를 복구 API로 통일
+
+**배경**
+
+되돌리기는 사용자에게 한 가지 동작인데, AI 문서 편집만 복구 API가 받지 않고 400으로 거절했다. 프론트가 작업 종류를 보고 `POST /documents/{id}/versions/{version}/restore`를 따로 불러야 했고, 그러려면 되돌릴 버전 번호까지 알아야 했다. 이제 `POST .../ai-operation-logs/{operation_id}/restore` 하나로 처리한다.
+
+**변경된 것**
+
+- `DocumentRestorePlanner` — `ai_operation_changes.before_revision`에서 되돌릴 버전을 읽는다. Wiki와 달리 계산할 것이 없다. `from_version`은 대상 작업이 만든 버전이 아니라 **지금 문서 버전**이다. 그 작업 이후 사용자가 더 저장했을 수 있다.
+- `DocumentRestoreApplier` — 되돌릴 버전 본문으로 `DocumentService.saveContent`를 호출한다. 편집 잠금·낙관적 잠금·편집 상태 갱신이 이미 그 안에 있어 되돌리기라고 다르게 처리하지 않는다. 적용 표를 넘기지 않으므로 `document_edit` 로그는 생기지 않고, 대신 `restore` 작업에 `restored` 변경내역을 남긴다.
+- `PreviewTokenSigner`에 문서용 서명을 추가한다. `from_version`이 서명에 들어가 미리보기 이후 문서가 저장되면 실행이 409로 막힌다.
+- `RestorePreviewResponse`에 `document` 필드를 추가한다. Wiki면 `pages`가 차고 문서 편집이면 `document`가 찬다. 둘이 동시에 차지 않으며 빈 쪽은 응답에서 생략된다.
+- `RestoreExecuteService`가 `document_edit`을 문서 분기로 보낸다. 재작성이 없어 llmPipeline을 부르지 않고 그 자리에서 `succeeded`로 끝난다.
+
+**과거 버전을 되살리지 않고 새 버전을 쌓는다**
+
+버전 5 → 6(AI 편집) 상태에서 되돌리면 5로 돌아가는 것이 아니라 5의 내용으로 **버전 7**이 생긴다. Wiki revision과 같은 원칙이다. 되돌린 것도 다시 되돌릴 수 있고, 같은 번호가 다른 내용을 가리키는 일이 없다.
+
+**거절하는 경우**
+
+새로 만든 문서라 `before_revision`이 NULL, 이미 그 버전, 문서 변경내역이 없는 작업, 되돌릴 내용이 현재와 같아 저장이 일어나지 않는 경우다.
+
+**검증**
+
+- `DocumentRestoreTest` 9개를 추가했다. 계획 5개(목적지 결정, `from_version`이 현재 버전인지, 이전 버전 없음, 이미 그 버전, 문서 변경내역 없음), 반영 3개(새 버전 append, `restored` 기록, 무변경 거절), 토큰 1개(문서가 바뀌면 서명 불일치)다.
+- `RestoreExecuteServiceTest`에 문서 분기 라우팅과 토큰 불일치 2개를 더해 9개가 됐다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- 기존 `POST /documents/{id}/versions/{version}/restore`는 그대로 둔다. 버전 목록 화면에서 쓰는 별개 경로이며 AI 작업 로그를 만들지 않는다.
+- 채팅 메시지에서 되돌리기를 누르려면 `chat_messages`와 작업 로그를 잇는 작업이 따로 필요하다. 이번 범위에 없다.
+
+---
+
 ## 2026-07-31
 
 ### fix: 소프트 삭제된 Wiki 페이지를 조회에서 제외

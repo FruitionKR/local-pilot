@@ -3,6 +3,7 @@ package fruition.aihistory.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationType;
+import fruition.aihistory.dto.DocumentRestorePlan;
 import fruition.aihistory.dto.PageRestorePlan;
 import fruition.aihistory.dto.RestoreExecuteResponse;
 import fruition.aihistory.dto.RestorePlan;
@@ -49,6 +50,8 @@ class RestoreExecuteServiceTest {
     @Mock RestorePlanner planner;
     @Mock PreviewTokenSigner tokenSigner;
     @Mock RestoreOperationLifecycle lifecycle;
+    @Mock DocumentRestorePlanner documentPlanner;
+    @Mock DocumentRestoreApplier documentApplier;
     @Mock RestoreApplier applier;
     @Mock PipelineRestoreRequester restoreRequester;
 
@@ -57,7 +60,8 @@ class RestoreExecuteServiceTest {
     @BeforeEach
     void setUp() {
         service = new RestoreExecuteService(previewService, scopeResolver, planner, tokenSigner,
-                lifecycle, applier, restoreRequester, new ObjectMapper(), "http://backend:8080");
+                lifecycle, documentPlanner, documentApplier, applier, restoreRequester,
+                new ObjectMapper(), "http://backend:8080");
     }
 
     @Test
@@ -76,14 +80,49 @@ class RestoreExecuteServiceTest {
     }
 
     @Test
-    @DisplayName("ingest·lint가 아닌 작업은 되돌리지 않는다")
+    @DisplayName("되돌릴 수 없는 작업 유형은 거절한다")
     void rejectsNonRestorableOperationType() {
-        givenTarget(OperationType.document_edit);
+        givenTarget(OperationType.restore);
 
         assertThatThrownBy(() -> execute())
                 .isInstanceOf(InvalidRestoreRequestException.class);
 
         verify(applier, never()).apply(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("문서 편집은 Wiki 경로를 타지 않고 문서 되돌리기로 간다")
+    void routesDocumentEditToDocumentRestore() {
+        givenTarget(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        OperationLog restore = OperationLog.applying("op_restore", WORKSPACE, USER,
+                "doc_A", TARGET, "{}", T);
+        when(documentPlanner.plan(any())).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
+        when(lifecycle.start(any(), anyString(), any())).thenReturn(restore);
+        when(documentApplier.apply(any(), any())).thenReturn(7L);
+
+        RestoreExecuteResponse response = execute();
+
+        assertThat(response.status()).isEqualTo("succeeded");
+        assertThat(response.rebuilding()).isFalse();
+        verify(documentApplier).apply(restore, plan);
+        verify(lifecycle).finishDocument(eq("op_restore"), eq(5L), eq(7L), any());
+        verify(applier, never()).apply(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("문서 편집도 미리보기 이후 바뀌었으면 409다")
+    void rejectsStaleDocumentToken() {
+        givenTarget(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        when(documentPlanner.plan(any())).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(false);
+
+        assertThatThrownBy(() -> execute())
+                .isInstanceOf(RestorePreviewStaleException.class);
+
+        verify(documentApplier, never()).apply(any(), any());
     }
 
     @Test

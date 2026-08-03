@@ -65,6 +65,15 @@ public class RestoreOperationLifecycle {
         });
     }
 
+    /** 문서 되돌리기는 재작성이 없어 반영이 끝나면 그 자리에서 확정된다. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void finishDocument(String restoreOperationId, long toVersion, long newVersion, Instant now) {
+        operationLogRepository.findById(restoreOperationId).ifPresent(restore ->
+                restore.complete(OperationStatus.succeeded,
+                        "버전 " + toVersion + " 내용으로 되돌렸습니다. 새 버전 " + newVersion,
+                        1, null, now));
+    }
+
     private String summary(RestorePlan plan) {
         return "삭제 " + plan.deleteCount() + "건 · 복원 " + plan.restoreCount()
                 + "건 · 재작성 " + plan.rebuildCount() + "건";

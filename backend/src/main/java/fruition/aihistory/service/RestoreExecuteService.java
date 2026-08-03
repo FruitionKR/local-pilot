@@ -3,6 +3,7 @@ package fruition.aihistory.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationType;
+import fruition.aihistory.dto.DocumentRestorePlan;
 import fruition.aihistory.dto.RestoreExecuteResponse;
 import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
@@ -31,6 +32,8 @@ public class RestoreExecuteService {
     private final RestorePlanner planner;
     private final PreviewTokenSigner tokenSigner;
     private final RestoreOperationLifecycle lifecycle;
+    private final DocumentRestorePlanner documentPlanner;
+    private final DocumentRestoreApplier documentApplier;
     private final RestoreApplier applier;
     private final PipelineRestoreRequester restoreRequester;
     private final ObjectMapper objectMapper;
@@ -41,6 +44,8 @@ public class RestoreExecuteService {
                                  RestorePlanner planner,
                                  PreviewTokenSigner tokenSigner,
                                  RestoreOperationLifecycle lifecycle,
+                                 DocumentRestorePlanner documentPlanner,
+                                 DocumentRestoreApplier documentApplier,
                                  RestoreApplier applier,
                                  PipelineRestoreRequester restoreRequester,
                                  ObjectMapper objectMapper,
@@ -50,6 +55,8 @@ public class RestoreExecuteService {
         this.planner = planner;
         this.tokenSigner = tokenSigner;
         this.lifecycle = lifecycle;
+        this.documentPlanner = documentPlanner;
+        this.documentApplier = documentApplier;
         this.applier = applier;
         this.restoreRequester = restoreRequester;
         this.objectMapper = objectMapper;
@@ -59,6 +66,9 @@ public class RestoreExecuteService {
     public RestoreExecuteResponse execute(String workspaceId, String userId,
                                           String operationId, String previewToken) {
         OperationLog target = previewService.loadOperation(workspaceId, userId, operationId);
+        if (target.getOperationType() == OperationType.document_edit) {
+            return executeDocument(target, previewToken);
+        }
         if (target.getOperationType() != OperationType.ingest
                 && target.getOperationType() != OperationType.lint) {
             throw new InvalidRestoreRequestException(
@@ -91,6 +101,24 @@ public class RestoreExecuteService {
         return RestoreExecuteResponse.from(restore.getOperationId(), operationId, plan, notified);
     }
 
+    /**
+     * 문서 편집 되돌리기. Wiki와 달리 재작성이 없어 llmPipeline을 부르지 않고 그 자리에서 끝난다.
+     */
+    private RestoreExecuteResponse executeDocument(OperationLog target, String previewToken) {
+        DocumentRestorePlan plan = documentPlanner.plan(target);
+        if (!tokenSigner.matches(previewToken, target.getOperationId(), plan)) {
+            throw new RestorePreviewStaleException();
+        }
+
+        Instant now = Instant.now();
+        OperationLog restore = lifecycle.start(target, manifestJson(plan), now);
+        long newVersion = documentApplier.apply(restore, plan);
+        lifecycle.finishDocument(restore.getOperationId(), plan.toVersion(), newVersion, now);
+
+        return RestoreExecuteResponse.forDocument(
+                restore.getOperationId(), target.getOperationId());
+    }
+
     private boolean notify(OperationLog restore, OperationLog target, Set<String> excluded,
                            RestorePlan plan,
                            List<PipelineRestoreRequester.RestoreRun.RestoredPage> restored) {
@@ -102,7 +130,7 @@ public class RestoreExecuteService {
     }
 
     /** 지시서 원본을 보관한다. 재조립 결과를 받을 때 목표 기여 수를 여기서 꺼내면 그사이 새 ingest가 들어와도 값이 안 흔들린다. */
-    private String manifestJson(RestorePlan plan) {
+    private String manifestJson(Object plan) {
         try {
             return objectMapper.writeValueAsString(plan);
         } catch (Exception e) {
