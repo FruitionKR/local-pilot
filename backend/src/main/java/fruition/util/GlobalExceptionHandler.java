@@ -8,6 +8,7 @@ import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.exception.OperationPayloadConflictException;
 import fruition.aihistory.exception.OperationNotFoundException;
 import fruition.aihistory.exception.RestorePreviewStaleException;
+import fruition.aihistory.exception.WikiObjectReadException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentAlreadyProcessingException;
@@ -415,6 +416,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("AI_OPERATION_PAYLOAD_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(WikiObjectReadException.class)
+    public ResponseEntity<ErrorResponse> handleWikiObjectRead(WikiObjectReadException e) {
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("WIKI_OBJECT_READ_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(RestorePreviewStaleException.class)

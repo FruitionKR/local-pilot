@@ -8,6 +8,44 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-03
 
+### fix: 코드리뷰 지적 사항 반영 (동시성·원자성·N+1)
+
+**동시성·원자성**
+
+- `OperationApplier` — ingest 적재가 행 잠금 없이 `findMaxRevision() + 1`로 채번했다. 같은 페이지 콜백 2건이 동시에 오면 revision이 겹쳐 한쪽이 PK 위반으로 500이 났다. `findByIdForUpdate`로 바꾸고 `page_id` 오름차순으로 처리한다. 복구 경로(`RestoreApplier`)와 같은 순서다.
+- `DocumentRestoreApplier` — `@Transactional`이 없어 `saveContent` 커밋과 변경내역 insert가 별개 트랜잭션이었다. 뒤가 실패하면 문서만 바뀌고 감사 기록이 없다. `@Transactional`을 붙여 `saveContent`가 같은 트랜잭션에 참여하게 한다.
+
+**재전송 판정 기준 변경**
+
+`OperationApplier`가 직전 버전의 `content_hash`로 재전송을 가렸는데, 이 기준이 **무변경 판정과 재전송 방어를 겸하고 있어** 문제였다. 다른 문서의 ingest가 우연히 같은 내용을 만들면 재전송으로 오인해 그 문서의 기여가 원장에 남지 않았다. 그러면 나중에 앞 문서를 되돌릴 때 받치는 문서가 남았는데도 페이지가 삭제된다.
+
+재전송 판정을 `(page_id, ingest_operation_id)` 존재 여부로 바꿨다. 이 PK가 곧 "이 작업이 이 페이지에 이미 반영됐다"는 뜻이라 판정이 정확해진다.
+
+**오류 응답 구분**
+
+- `WikiObjectReader` — `catch (Exception)`이 MinIO 장애까지 `InvalidCallbackPayloadException`(422)으로 바꿨다. 422는 계약상 "다시 쓰고 재전송"이라 저장소가 죽었을 때 llmPipeline이 무의미하게 재작업한다. 원인 예외도 로그 없이 삼켜 진단이 불가능했다. 경로 불일치만 422로 두고, 읽기 실패는 `WikiObjectReadException`(500 `WIKI_OBJECT_READ_FAILED`)으로 올리며 원인을 로깅한다.
+- `ChangeDiffLoader` — 모든 `RuntimeException`을 `diff_too_large: true`로 표시해 NPE 같은 오류도 "너무 큽니다"로 나갔다. `MarkdownDiffTooLargeException`만 그렇게 표시하고 나머지는 `hunks`만 비운다.
+
+**성능**
+
+- `ChangeDiffLoader` — 변경내역마다 버전을 2번씩 조회해 리소스 30개면 60쿼리였다. 필요한 본문을 리소스 종류별로 `findAllById` 일괄 조회한 뒤 Map 조인하도록 바꿔 **2쿼리**가 된다.
+
+**정리**
+
+- 호출부가 없는 `WikiPageContributionRepository.findActiveByPageId`와 `WikiPageVersionRepository.findSummaries`를 제거했다.
+- `WikiLineCounter`가 `WikiPageVersion`에 묶여 있어 문서 경로가 재사용하지 못하고 `OperationRecorder`에 같은 로직이 따로 있었다. 본문 문자열을 받는 `LineCounter`로 일반화해 세 경로가 공유한다.
+
+**검증**
+
+- `WikiPageLockIntegrationTest`에 3개를 더해 7개가 됐다. 동시 ingest 콜백의 revision 비충돌, 같은 작업 재전송 무시, 다른 작업의 동일 내용에도 기여 기록이다.
+- 동시 콜백 테스트는 **잠금을 되돌리면 실제로 실패하는 것을 확인**했다.
+- `ChangeDiffLoaderTest`에 일괄 조회 검증을 더해 7개가 됐다.
+- Backend 전체 `./gradlew test` 434개가 통과했다.
+
+---
+
+## 2026-08-03
+
 ### test: Wiki 페이지 행 잠금 통합 테스트 추가
 
 **배경**

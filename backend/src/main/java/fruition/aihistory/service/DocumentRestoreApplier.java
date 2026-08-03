@@ -14,6 +14,7 @@ import fruition.document.exception.DocumentContentVersionNotFoundException;
 import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.service.DocumentService;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 문서를 예전 버전 내용으로 되돌린다.
@@ -24,6 +25,9 @@ import org.springframework.stereotype.Component;
  * <p>저장 자체는 {@link DocumentService#saveContent}에 맡긴다. 편집 잠금·낙관적 잠금·편집 상태
  * 갱신이 이미 그 안에 있고, 되돌리기라고 다르게 처리할 이유가 없다. 적용 표를 넘기지 않으므로
  * {@code document_edit} 로그는 생기지 않는다.
+ *
+ * <p>문서 저장과 변경내역 기록은 <b>한 트랜잭션</b>이어야 한다. 나뉘면 문서만 바뀌고 감사 기록이
+ * 없는 상태가 생긴다. {@code saveContent}가 {@code REQUIRED}라 이 트랜잭션에 참여한다.
  */
 @Component
 public class DocumentRestoreApplier {
@@ -41,6 +45,7 @@ public class DocumentRestoreApplier {
     }
 
     /** @return 되돌리기로 만들어진 새 버전 */
+    @Transactional
     public long apply(OperationLog restore, DocumentRestorePlan plan) {
         DocumentContentVersion target = contentVersionRepository
                 .findById(new DocumentContentVersionId(plan.documentId(), plan.toVersion()))

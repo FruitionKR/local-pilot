@@ -55,7 +55,7 @@ class RestoreRebuildApplierTest {
     @Mock OperationChangeRepository operationChangeRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock WikiPageVersionRepository versionRepository;
-    @Mock WikiLineCounter lineCounter;
+    @Mock LineCounter lineCounter;
     @Mock WikiPage wikiPage;
 
     private RestoreRebuildApplier applier;
@@ -66,8 +66,8 @@ class RestoreRebuildApplierTest {
                 wikiPageRepository, versionRepository, lineCounter, new ObjectMapper());
         when(wikiPage.getWorkspaceId()).thenReturn(WORKSPACE_ID);
         when(wikiPageRepository.findById(PAGE_ID)).thenReturn(Optional.of(wikiPage));
-        when(lineCounter.count(anyString(), any(), anyString(), any(), org.mockito.ArgumentMatchers.anyLong()))
-                .thenReturn(new WikiLineCounter.LineCount(null, null));
+        when(lineCounter.count(anyString(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
+                .thenReturn(new LineCounter.LineCount(null, null));
     }
 
     @Test

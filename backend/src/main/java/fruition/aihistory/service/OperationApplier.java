@@ -13,6 +13,7 @@ import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.aihistory.repository.OperationLogRepository;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageContribution;
+import fruition.wiki.domain.WikiPageContributionId;
 import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.repository.WikiPageContributionRepository;
 import fruition.wiki.repository.WikiPageRepository;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,14 +40,14 @@ public class OperationApplier {
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageVersionRepository versionRepository;
     private final WikiPageContributionRepository contributionRepository;
-    private final WikiLineCounter lineCounter;
+    private final LineCounter lineCounter;
 
     public OperationApplier(OperationLogRepository operationLogRepository,
                             OperationChangeRepository operationChangeRepository,
                             WikiPageRepository wikiPageRepository,
                             WikiPageVersionRepository versionRepository,
                             WikiPageContributionRepository contributionRepository,
-                            WikiLineCounter lineCounter) {
+                            LineCounter lineCounter) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.wikiPageRepository = wikiPageRepository;
@@ -60,8 +62,14 @@ public class OperationApplier {
         OperationLog operation = operationLogRepository.findById(operationId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
 
+        // 같은 페이지에 대한 콜백이 동시에 오면 revision 채번이 겹친다.
+        // 교착을 피하려고 page_id 오름차순으로 잠근다. RestoreApplier와 같은 순서다.
+        List<LoadedPage> ordered = loaded.stream()
+                .sorted(Comparator.comparing(LoadedPage::pageId))
+                .toList();
+
         int recorded = 0;
-        for (LoadedPage page : loaded) {
+        for (LoadedPage page : ordered) {
             if (applyPage(operation, page, now)) {
                 recorded++;
             }
@@ -76,10 +84,10 @@ public class OperationApplier {
         return new OperationResultResponse(operationId, status.name(), recorded);
     }
 
-    /** @return 새 버전을 만들었으면 true. 내용이 그대로면 건너뛴다 */
+    /** @return 적재했으면 true. 같은 작업의 재전송이면 건너뛴다 */
     private boolean applyPage(OperationLog operation, LoadedPage page, Instant now) {
         String pageId = page.pageId();
-        WikiPage wikiPage = wikiPageRepository.findById(pageId)
+        WikiPage wikiPage = wikiPageRepository.findByIdForUpdate(pageId)
                 .orElseThrow(() -> new InvalidCallbackPayloadException(
                         "Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId));
         if (!wikiPage.getWorkspaceId().equals(operation.getWorkspaceId())) {
@@ -87,12 +95,16 @@ public class OperationApplier {
                     "다른 워크스페이스의 페이지입니다: pageId=" + pageId);
         }
 
-        Optional<WikiPageVersion> previous =
-                versionRepository.findTopByIdPageIdOrderByIdRevisionDesc(pageId);
-        if (previous.isPresent() && previous.get().getContentHash().equals(page.contentHash())) {
+        // 재전송 판정은 기여 유무로 한다. 본문 해시로 가르면, 다른 문서가 우연히 같은 내용을
+        // 만들었을 때 재전송으로 오인해 그 문서의 기여가 원장에서 빠진다. 그러면 나중에 앞
+        // 문서를 되돌릴 때 받치는 문서가 남았는데도 페이지가 삭제된다.
+        if (contributionRepository.existsById(
+                new WikiPageContributionId(pageId, operation.getOperationId()))) {
             return false;
         }
 
+        Optional<WikiPageVersion> previous =
+                versionRepository.findTopByIdPageIdOrderByIdRevisionDesc(pageId);
         long revision = versionRepository.findMaxRevision(pageId) + 1;
 
         // 기여를 먼저 넣어야 그 시점 기여 수가 나온다. 그 값이 버전 행에 들어간다.
@@ -109,8 +121,8 @@ public class OperationApplier {
         wikiPage.moveMarkdownUri(page.markdownKey(), now);
 
         Long beforeRevision = previous.map(WikiPageVersion::getRevision).orElse(null);
-        WikiLineCounter.LineCount lines = lineCounter.count(pageId, previous.orElse(null),
-                page.markdown(), beforeRevision, revision);
+        LineCounter.LineCount lines = lineCounter.count(pageId, beforeRevision,
+                previous.map(WikiPageVersion::getMarkdown).orElse(null), revision, page.markdown());
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
                 beforeRevision, revision,

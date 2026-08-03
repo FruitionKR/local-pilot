@@ -43,14 +43,14 @@ public class RestoreRebuildApplier {
     private final OperationChangeRepository operationChangeRepository;
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageVersionRepository versionRepository;
-    private final WikiLineCounter lineCounter;
+    private final LineCounter lineCounter;
     private final ObjectMapper objectMapper;
 
     public RestoreRebuildApplier(OperationLogRepository operationLogRepository,
                                  OperationChangeRepository operationChangeRepository,
                                  WikiPageRepository wikiPageRepository,
                                  WikiPageVersionRepository versionRepository,
-                                 WikiLineCounter lineCounter,
+                                 LineCounter lineCounter,
                                  ObjectMapper objectMapper) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
@@ -135,8 +135,8 @@ public class RestoreRebuildApplier {
         wikiPage.moveMarkdownUri(page.markdownKey(), now);
 
         Long beforeRevision = previous.map(WikiPageVersion::getRevision).orElse(null);
-        WikiLineCounter.LineCount lines = lineCounter.count(
-                pageId, previous.orElse(null), page.markdown(), beforeRevision, revision);
+        LineCounter.LineCount lines = lineCounter.count(pageId, beforeRevision,
+                previous.map(WikiPageVersion::getMarkdown).orElse(null), revision, page.markdown());
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
                 beforeRevision, revision, ChangeType.rebuilt,

@@ -1,5 +1,6 @@
 package fruition.aihistory.service;
 
+import fruition.aihistory.domain.OperationChange;
 import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationStatus;
 import fruition.aihistory.domain.OperationType;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -72,11 +74,13 @@ public class OperationQueryService {
                 .findByOperationIdAndWorkspaceId(operationId, workspaceId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
         // 상세를 한 번 부르면 변경분까지 다 받도록 여기서 계산한다.
-        List<OperationLogDetailResponse.Change> changes =
-                operationChangeRepository.findByOperationIdOrderByIdAsc(operationId).stream()
-                        .map(change -> OperationLogDetailResponse.Change.from(
-                                change, diffLoader.load(change)))
-                        .toList();
+        List<OperationChange> found = operationChangeRepository.findByOperationIdOrderByIdAsc(operationId);
+        List<ChangeDiffLoader.Diff> diffs = diffLoader.load(found);
+
+        List<OperationLogDetailResponse.Change> changes = new ArrayList<>(found.size());
+        for (int i = 0; i < found.size(); i++) {
+            changes.add(OperationLogDetailResponse.Change.from(found.get(i), diffs.get(i)));
+        }
         return OperationLogDetailResponse.from(log, changes);
     }
 

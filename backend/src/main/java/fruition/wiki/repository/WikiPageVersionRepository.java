@@ -6,8 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 public interface WikiPageVersionRepository extends JpaRepository<WikiPageVersion, WikiPageVersionId> {
@@ -21,23 +19,4 @@ public interface WikiPageVersionRepository extends JpaRepository<WikiPageVersion
 
     Optional<WikiPageVersion> findTopByIdPageIdOrderByIdRevisionDesc(String pageId);
 
-    /** 이력 목록. 본문을 제외한 메타데이터만 최신 순으로 반환한다. */
-    @Query("""
-            SELECT v.id.revision AS revision, v.contributionCount AS contributionCount,
-                   v.contentHash AS contentHash, v.operationId AS operationId,
-                   v.createdBy AS createdBy, v.createdAt AS createdAt
-            FROM WikiPageVersion v
-            WHERE v.id.pageId = :pageId
-            ORDER BY v.id.revision DESC
-            """)
-    List<Summary> findSummaries(@Param("pageId") String pageId);
-
-    interface Summary {
-        long getRevision();
-        int getContributionCount();
-        String getContentHash();
-        String getOperationId();
-        String getCreatedBy();
-        Instant getCreatedAt();
-    }
 }

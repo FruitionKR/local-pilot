@@ -8,8 +8,6 @@ import fruition.aihistory.domain.OperationType;
 import fruition.aihistory.domain.ResourceType;
 import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.aihistory.repository.OperationLogRepository;
-import fruition.document.dto.DocumentContentDiffResponse;
-import fruition.document.service.MarkdownDiffService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -26,14 +24,14 @@ public class OperationRecorder {
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
-    private final MarkdownDiffService markdownDiffService;
+    private final LineCounter lineCounter;
 
     public OperationRecorder(OperationLogRepository operationLogRepository,
                              OperationChangeRepository operationChangeRepository,
-                             MarkdownDiffService markdownDiffService) {
+                             LineCounter lineCounter) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
-        this.markdownDiffService = markdownDiffService;
+        this.lineCounter = lineCounter;
     }
 
     /**
@@ -47,7 +45,8 @@ public class OperationRecorder {
                 operationId, workspaceId, userId, OperationType.document_edit, documentId,
                 "AI 편집을 문서에 반영했습니다.", 1, now));
 
-        LineCount lines = countLines(documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
+        LineCounter.LineCount lines = lineCounter.count(
+                documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
         operationChangeRepository.save(new OperationChange(
                 operationId, ResourceType.document, documentId,
                 beforeVersion, afterVersion, ChangeType.updated,
@@ -69,21 +68,4 @@ public class OperationRecorder {
         operationLogRepository.save(conflict);
     }
 
-    /**
-     * 줄 수 계산이 실패해도 저장을 막지 않는다. 큰 문서는 diff 계산이 거부될 수 있는데,
-     * 로그 때문에 사용자 저장이 실패하는 것은 잘못된 트레이드오프다.
-     */
-    private LineCount countLines(String documentId, long beforeVersion, String beforeMarkdown,
-                                 long afterVersion, String afterMarkdown) {
-        try {
-            DocumentContentDiffResponse diff = markdownDiffService.compare(
-                    documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
-            return new LineCount(diff.additions(), diff.deletions());
-        } catch (RuntimeException e) {
-            log.warn("[AI 편집 줄 수 계산 생략] documentId={} reason={}", documentId, e.getMessage());
-            return new LineCount(null, null);
-        }
-    }
-
-    private record LineCount(Integer additions, Integer deletions) {}
 }

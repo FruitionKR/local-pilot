@@ -2,22 +2,27 @@ package fruition.aihistory.service;
 
 import fruition.aihistory.domain.OperationChange;
 import fruition.aihistory.domain.ResourceType;
+import fruition.document.domain.DocumentContentVersion;
 import fruition.document.domain.DocumentContentVersionId;
 import fruition.document.dto.DocumentContentDiffResponse;
 import fruition.document.dto.MarkdownDiff;
+import fruition.document.exception.MarkdownDiffTooLargeException;
 import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.service.MarkdownDiffService;
+import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.domain.WikiPageVersionId;
 import fruition.wiki.repository.WikiPageVersionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 /**
- * 변경내역 한 건의 실제 변경분을 계산한다. 저장된 본문 두 벌을 읽어 그 자리에서 비교한다.
+ * 작업이 바꾼 리소스들의 실제 변경분을 계산한다. 저장된 본문을 읽어 조회 시점에 비교한다.
  *
  * <p>한 항목의 계산이 실패해도 상세 조회 전체를 실패시키지 않는다. 큰 페이지 하나 때문에
  * 나머지 멀쩡한 항목까지 못 보는 것은 잘못된 트레이드오프다.
@@ -39,40 +44,100 @@ public class ChangeDiffLoader {
         this.markdownDiffService = markdownDiffService;
     }
 
-    public Diff load(OperationChange change) {
-        Long before = change.getBeforeRevision();
-        Long after = change.getAfterRevision();
-        // 생성·삭제·위임·재작성실패는 비교할 짝이 없다.
-        if (before == null || after == null) {
+    /**
+     * 변경내역 전부의 변경분을 만든다.
+     *
+     * <p>필요한 본문을 <b>일괄 조회</b>한 뒤 비교한다. 항목마다 따로 읽으면 리소스 수만큼
+     * 쿼리가 늘어난다(30개면 60번).
+     *
+     * @return 입력과 같은 순서의 결과
+     */
+    public List<Diff> load(List<OperationChange> changes) {
+        Map<WikiPageVersionId, String> wikiMarkdown = loadWikiMarkdown(changes);
+        Map<DocumentContentVersionId, String> documentMarkdown = loadDocumentMarkdown(changes);
+
+        List<Diff> diffs = new ArrayList<>(changes.size());
+        for (OperationChange change : changes) {
+            diffs.add(diff(change, wikiMarkdown, documentMarkdown));
+        }
+        return diffs;
+    }
+
+    private Diff diff(OperationChange change,
+                      Map<WikiPageVersionId, String> wikiMarkdown,
+                      Map<DocumentContentVersionId, String> documentMarkdown) {
+        if (!comparable(change)) {
             return Diff.none();
         }
+        long before = change.getBeforeRevision();
+        long after = change.getAfterRevision();
 
-        Optional<String> beforeMarkdown = markdown(change, before);
-        Optional<String> afterMarkdown = markdown(change, after);
-        if (beforeMarkdown.isEmpty() || afterMarkdown.isEmpty()) {
+        String beforeMarkdown = markdown(change, before, wikiMarkdown, documentMarkdown);
+        String afterMarkdown = markdown(change, after, wikiMarkdown, documentMarkdown);
+        if (beforeMarkdown == null || afterMarkdown == null) {
             return Diff.none();
         }
 
         try {
-            MarkdownDiff diff = markdownDiffService.diff(
-                    before, beforeMarkdown.get(), after, afterMarkdown.get());
+            MarkdownDiff diff = markdownDiffService.diff(before, beforeMarkdown, after, afterMarkdown);
             return new Diff(diff.hunks(), false);
+        } catch (MarkdownDiffTooLargeException e) {
+            return new Diff(null, true);
         } catch (RuntimeException e) {
+            // 크기 초과가 아닌 실패를 too_large로 보고하면 오진을 부른다. 변경분만 비운다.
             log.warn("[변경분 계산 생략] resourceId={} {}→{} reason={}",
                     change.getResourceId(), before, after, e.getMessage());
-            return new Diff(null, true);
+            return Diff.none();
         }
     }
 
-    private Optional<String> markdown(OperationChange change, long revision) {
-        if (change.getResourceType() == ResourceType.wiki_page) {
-            return wikiVersionRepository
-                    .findById(new WikiPageVersionId(change.getResourceId(), revision))
-                    .map(v -> v.getMarkdown());
+    private String markdown(OperationChange change, long revision,
+                            Map<WikiPageVersionId, String> wikiMarkdown,
+                            Map<DocumentContentVersionId, String> documentMarkdown) {
+        return change.getResourceType() == ResourceType.wiki_page
+                ? wikiMarkdown.get(new WikiPageVersionId(change.getResourceId(), revision))
+                : documentMarkdown.get(new DocumentContentVersionId(change.getResourceId(), revision));
+    }
+
+    private Map<WikiPageVersionId, String> loadWikiMarkdown(List<OperationChange> changes) {
+        List<WikiPageVersionId> ids = new ArrayList<>();
+        for (OperationChange change : changes) {
+            if (comparable(change) && change.getResourceType() == ResourceType.wiki_page) {
+                ids.add(new WikiPageVersionId(change.getResourceId(), change.getBeforeRevision()));
+                ids.add(new WikiPageVersionId(change.getResourceId(), change.getAfterRevision()));
+            }
         }
-        return documentVersionRepository
-                .findById(new DocumentContentVersionId(change.getResourceId(), revision))
-                .map(v -> v.getMarkdown());
+        Map<WikiPageVersionId, String> markdown = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (WikiPageVersion version : wikiVersionRepository.findAllById(ids)) {
+                markdown.put(new WikiPageVersionId(version.getPageId(), version.getRevision()),
+                        version.getMarkdown());
+            }
+        }
+        return markdown;
+    }
+
+    private Map<DocumentContentVersionId, String> loadDocumentMarkdown(List<OperationChange> changes) {
+        List<DocumentContentVersionId> ids = new ArrayList<>();
+        for (OperationChange change : changes) {
+            if (comparable(change) && change.getResourceType() == ResourceType.document) {
+                ids.add(new DocumentContentVersionId(change.getResourceId(), change.getBeforeRevision()));
+                ids.add(new DocumentContentVersionId(change.getResourceId(), change.getAfterRevision()));
+            }
+        }
+        Map<DocumentContentVersionId, String> markdown = new HashMap<>();
+        if (!ids.isEmpty()) {
+            for (DocumentContentVersion version : documentVersionRepository.findAllById(ids)) {
+                markdown.put(new DocumentContentVersionId(version.getDocumentId(), version.getVersion()),
+                        version.getMarkdown());
+            }
+        }
+        return markdown;
+    }
+
+    /** 생성·삭제·위임·재작성실패는 비교할 짝이 없다. */
+    private boolean comparable(OperationChange change) {
+        return change.getBeforeRevision() != null && change.getAfterRevision() != null;
     }
 
     /**

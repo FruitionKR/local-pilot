@@ -1,9 +1,12 @@
 package fruition.aihistory.service;
 
 import fruition.aihistory.exception.InvalidCallbackPayloadException;
+import fruition.aihistory.exception.WikiObjectReadException;
 import fruition.util.StorageProperties;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -18,6 +21,8 @@ import java.util.HexFormat;
  */
 @Component
 public class WikiObjectReader {
+
+    private static final Logger log = LoggerFactory.getLogger(WikiObjectReader.class);
 
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
@@ -45,8 +50,11 @@ public class WikiObjectReader {
                 .build())) {
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new InvalidCallbackPayloadException(
-                    "본문 객체를 읽지 못했습니다: pageId=" + pageId);
+            // 경로 검증은 통과했다. 여기서 실패했으면 저장소 쪽 문제이므로 재전송해도 소용없다.
+            log.error("[Wiki 본문 읽기 실패] pageId={} key={} operationId={}",
+                    pageId, actual, operationId, e);
+            throw new WikiObjectReadException(
+                    "본문 객체를 읽지 못했습니다: pageId=" + pageId, e);
         }
     }
 

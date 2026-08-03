@@ -4,12 +4,10 @@ import fruition.aihistory.domain.ChangeType;
 import fruition.aihistory.domain.OperationChange;
 import fruition.aihistory.domain.ResourceType;
 import fruition.document.domain.DocumentContentVersion;
-import fruition.document.domain.DocumentContentVersionId;
 import fruition.document.exception.MarkdownDiffTooLargeException;
 import fruition.document.repository.DocumentContentVersionRepository;
 import fruition.document.service.MarkdownDiffService;
 import fruition.wiki.domain.WikiPageVersion;
-import fruition.wiki.domain.WikiPageVersionId;
 import fruition.wiki.repository.WikiPageVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,13 +19,12 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.time.Instant;
-import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,7 +55,7 @@ class ChangeDiffLoaderTest {
         givenWikiVersion("wp_C3", 3, "# 제목\n첫 줄\n");
         givenWikiVersion("wp_C3", 4, "# 제목\n첫 줄\n둘째 줄\n");
 
-        ChangeDiffLoader.Diff diff = loader.load(
+        ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.wiki_page, "wp_C3", 3L, 4L, ChangeType.updated));
 
         assertThat(diff.hunks()).isNotEmpty();
@@ -71,43 +68,41 @@ class ChangeDiffLoaderTest {
         givenDocumentVersion("doc_A", 5, "원래 문단\n");
         givenDocumentVersion("doc_A", 6, "다듬은 문단\n");
 
-        ChangeDiffLoader.Diff diff = loader.load(
+        ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.document, "doc_A", 5L, 6L, ChangeType.updated));
 
         assertThat(diff.hunks()).isNotEmpty();
-        verify(wikiVersionRepository, never()).findById(any());
+        verify(wikiVersionRepository, never()).findAllById(any());
     }
 
     @Test
     @DisplayName("새로 만든 리소스는 비교할 짝이 없어 변경분을 담지 않는다")
     void skipsWhenCreated() {
-        ChangeDiffLoader.Diff diff = loader.load(
+        ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.wiki_page, "wp_C3", null, 1L, ChangeType.created));
 
         assertThat(diff.hunks()).isNull();
         assertThat(diff.tooLarge()).isFalse();
-        verify(wikiVersionRepository, never()).findById(any());
+        verify(wikiVersionRepository, never()).findAllById(any());
     }
 
     @Test
     @DisplayName("삭제·위임·재작성실패는 after_revision이 없어 건너뛴다")
     void skipsWhenNoAfterRevision() {
-        assertThat(loader.load(change(ResourceType.wiki_page, "wp_C6", 4L, null,
+        assertThat(loadOne(change(ResourceType.wiki_page, "wp_C6", 4L, null,
                 ChangeType.deleted)).hunks()).isNull();
-        assertThat(loader.load(change(ResourceType.wiki_page, "wp_C3", 4L, null,
+        assertThat(loadOne(change(ResourceType.wiki_page, "wp_C3", 4L, null,
                 ChangeType.delegated)).hunks()).isNull();
-        assertThat(loader.load(change(ResourceType.wiki_page, "wp_C7", 4L, null,
+        assertThat(loadOne(change(ResourceType.wiki_page, "wp_C7", 4L, null,
                 ChangeType.rebuild_failed)).hunks()).isNull();
     }
 
     @Test
     @DisplayName("버전 행이 없으면 조용히 건너뛴다")
     void skipsWhenVersionMissing() {
-        givenWikiVersion("wp_C3", 3, "# 제목\n");
-        when(wikiVersionRepository.findById(new WikiPageVersionId("wp_C3", 4)))
-                .thenReturn(Optional.empty());
+        givenWikiVersion("wp_C3", 3, "# 제목\n");   // revision 4는 넣지 않는다
 
-        ChangeDiffLoader.Diff diff = loader.load(
+        ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.wiki_page, "wp_C3", 3L, 4L, ChangeType.updated));
 
         assertThat(diff.hunks()).isNull();
@@ -128,11 +123,32 @@ class ChangeDiffLoaderTest {
         givenWikiVersion("wp_C3", 3, "가");
         givenWikiVersion("wp_C3", 4, "나");
 
-        ChangeDiffLoader.Diff diff = loader.load(
+        ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.wiki_page, "wp_C3", 3L, 4L, ChangeType.updated));
 
         assertThat(diff.hunks()).isNull();
         assertThat(diff.tooLarge()).isTrue();
+    }
+
+    @Test
+    @DisplayName("변경내역이 여러 건이어도 리소스 종류마다 한 번만 조회한다")
+    void loadsVersionsInOneQueryPerResourceType() {
+        for (int i = 1; i <= 10; i++) {
+            givenWikiVersion("wp_" + i, 1, "이전 " + i);
+            givenWikiVersion("wp_" + i, 2, "이후 " + i);
+        }
+        List<OperationChange> changes = new java.util.ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            changes.add(change(ResourceType.wiki_page, "wp_" + i, 1L, 2L, ChangeType.updated));
+        }
+        when(wikiVersionRepository.findAllById(any())).thenReturn(wikiVersions);
+        when(documentVersionRepository.findAllById(any())).thenReturn(documentVersions);
+
+        List<ChangeDiffLoader.Diff> diffs = loader.load(changes);
+
+        assertThat(diffs).hasSize(10).allSatisfy(d -> assertThat(d.hunks()).isNotEmpty());
+        verify(wikiVersionRepository, times(1)).findAllById(any());
+        verify(documentVersionRepository, never()).findAllById(any());
     }
 
     // --- helpers ---
@@ -143,15 +159,22 @@ class ChangeDiffLoaderTest {
                 changeType, null, null, null);
     }
 
+    private final List<WikiPageVersion> wikiVersions = new java.util.ArrayList<>();
+    private final List<DocumentContentVersion> documentVersions = new java.util.ArrayList<>();
+
+    private ChangeDiffLoader.Diff loadOne(OperationChange change) {
+        when(wikiVersionRepository.findAllById(any())).thenReturn(wikiVersions);
+        when(documentVersionRepository.findAllById(any())).thenReturn(documentVersions);
+        return loader.load(List.of(change)).get(0);
+    }
+
     private void givenWikiVersion(String pageId, long revision, String markdown) {
-        when(wikiVersionRepository.findById(new WikiPageVersionId(pageId, revision)))
-                .thenReturn(Optional.of(new WikiPageVersion(pageId, revision, 1, markdown,
-                        "wiki/key.md", "sha256:x", OPERATION, "user_1", NOW)));
+        wikiVersions.add(new WikiPageVersion(pageId, revision, 1, markdown,
+                "wiki/key.md", "sha256:x", OPERATION, "user_1", NOW));
     }
 
     private void givenDocumentVersion(String documentId, long version, String markdown) {
-        when(documentVersionRepository.findById(new DocumentContentVersionId(documentId, version)))
-                .thenReturn(Optional.of(new DocumentContentVersion(documentId, version, markdown,
-                        "sha256:x", "user_1", NOW)));
+        documentVersions.add(new DocumentContentVersion(documentId, version, markdown,
+                "sha256:x", "user_1", NOW));
     }
 }
