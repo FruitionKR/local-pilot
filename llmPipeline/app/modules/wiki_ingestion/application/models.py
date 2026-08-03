@@ -39,13 +39,13 @@ class RebuildPageCommand:
 @dataclass(frozen=True)
 class SourceSnapshotRestoreCommand:
     page_id: str
-    restore_from_operation_id: str | None
 
 
 @dataclass(frozen=True)
 class IngestOperationRestoreCommand:
     operation_id: str
-    target_operation_id: str
+    restore_to_operation_id: str | None
+    cancel_operation_ids: tuple[str, ...]
     workspace_id: str
     source_page: SourceSnapshotRestoreCommand
     rebuild_pages: tuple[RebuildPageCommand, ...]

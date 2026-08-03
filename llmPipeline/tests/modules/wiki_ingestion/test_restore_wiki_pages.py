@@ -127,10 +127,11 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
             result_callback_url="http://backend/result",
-            source_page=SourceSnapshotRestoreCommand("S1", None),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -187,9 +188,10 @@ def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", None),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -223,9 +225,10 @@ def test_restore_reports_page_failure_and_keeps_other_success() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", None),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -266,9 +269,10 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", None),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -301,9 +305,10 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1", None),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -332,9 +337,10 @@ def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="target-ingest",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S_A", None),
+            source_page=SourceSnapshotRestoreCommand("S_A"),
             rebuild_pages=(),
             deleted_pages=("C1", "C5"),
         )
@@ -344,11 +350,12 @@ def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
     assert result["deleted_pages"] == ["C1", "C5", "S_A"]
 
 
-def test_ingest_operation_restore_copies_previous_source_and_rebuilds_concepts() -> None:
+def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
     store = ArtifactStore(
         {
-            "wiki/ws-1/pages/S1/ops/ingest-A.md": "# 이전 Source\n",
-            "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "남은 근거"),
+            "wiki/ws-1/pages/S1/ops/A2.md": "# A2 Source\n",
+            "wiki/ws-1/pages/X/ops/A2.json": _payload("A2", "X", "A2의 X"),
+            "wiki/ws-1/pages/Y/ops/B1.json": _payload("B1", "Y", "다른 문서의 Y"),
         }
     )
     notifier = Notifier()
@@ -360,29 +367,40 @@ def test_ingest_operation_restore_copies_previous_source_and_rebuilds_concepts()
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
             operation_id="restore-1",
-            target_operation_id="ingest-B",
+            restore_to_operation_id="A2",
+            cancel_operation_ids=("A3", "A4", "A5"),
             workspace_id="ws-1",
             result_callback_url="http://backend/result",
-            source_page=SourceSnapshotRestoreCommand("S1", "ingest-A"),
+            source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
-                    page_id="C3",
+                    page_id="X",
                     keep_contributions=(
-                        RestoreContributionCommand("A", "doc-A"),
+                        RestoreContributionCommand("A2", "doc-A"),
+                    ),
+                ),
+                RebuildPageCommand(
+                    page_id="Y",
+                    keep_contributions=(
+                        RestoreContributionCommand("B1", "doc-B"),
                     ),
                 ),
             ),
+            deleted_pages=("Z",),
         )
     )
 
     assert result["operation_type"] == "ingest_restore"
-    assert result["target_operation_id"] == "ingest-B"
+    assert result["restore_to_operation_id"] == "A2"
+    assert result["cancel_operation_ids"] == ["A3", "A4", "A5"]
     assert [item["page_type"] for item in result["changed_pages"]] == [
         "source",
         "concept",
+        "concept",
     ]
+    assert result["deleted_pages"] == ["Z"]
     assert store.writes[0][0] == "wiki/ws-1/pages/S1/ops/restore-1.md"
-    assert store.writes[0][1] == "# 이전 Source\n"
+    assert store.writes[0][1] == "# A2 Source\n"
     assert notifier.calls[0][1] == result
 
 

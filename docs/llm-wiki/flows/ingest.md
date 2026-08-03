@@ -787,9 +787,11 @@ POST /pipeline/runs/{run_id}/result-callback/retry
 `docs/llm-wiki/flows/operation-recovery.md`를 따른다.
 
 ingest 또는 reingest operation을 취소할 때는
-`POST /wiki/ingest-restore-runs`를 사용한다. llmPipeline은 Backend가 선택한 직전
-활성 Source snapshot을 새 restore operation key로 복사하고, 취소 대상을 제외한
-활성 ingest·lint 기여로 영향받은 Concept을 다시 조립한다.
+`POST /wiki/ingest-restore-runs`를 사용한다. Backend는
+`restore_to_operation_id` 이후의 `cancel_operation_ids`를 확정하고 restore point와
+현재 상태의 Concept 합집합을 전달한다. llmPipeline은 restore point의 Source
+snapshot을 새 restore operation key로 복사하고, 취소 대상을 제외한 활성
+ingest·lint 기여로 영향받은 Concept을 다시 조립한다.
 
 runtime manifest는 관찰용 정보를 더 많이 포함할 수 있고 저장용 manifest는
 축약될 수 있다. DB 저장, object storage 저장과 후속 embedding 시작은 논리적으로

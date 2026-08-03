@@ -29,7 +29,7 @@ class RestoreWikiPagesUseCase:
         changed_pages: list[dict[str, Any]] = []
         failed_pages: list[dict[str, str]] = []
         deleted_pages = list(command.deleted_pages)
-        if command.source_page.restore_from_operation_id is None:
+        if command.restore_to_operation_id is None:
             if command.source_page.page_id not in deleted_pages:
                 deleted_pages.append(command.source_page.page_id)
         else:
@@ -37,6 +37,7 @@ class RestoreWikiPagesUseCase:
                 changed_pages.append(
                     self._page_restore.restore_source_page(
                         command.operation_id,
+                        command.restore_to_operation_id,
                         command.workspace_id,
                         command.source_page,
                     )
@@ -54,7 +55,8 @@ class RestoreWikiPagesUseCase:
         result = self._result(
             operation_id=command.operation_id,
             operation_type="ingest_restore",
-            target_operation_id=command.target_operation_id,
+            restore_to_operation_id=command.restore_to_operation_id,
+            cancel_operation_ids=list(command.cancel_operation_ids),
             changed_pages=changed_pages,
             failed_pages=failed_pages,
             deleted_pages=deleted_pages,

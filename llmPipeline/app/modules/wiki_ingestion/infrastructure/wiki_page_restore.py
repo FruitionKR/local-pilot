@@ -79,15 +79,13 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
     def restore_source_page(
         self,
         operation_id: str,
+        restore_to_operation_id: str,
         workspace_id: str,
         source_page: SourceSnapshotRestoreCommand,
     ) -> dict[str, Any]:
-        restore_from = source_page.restore_from_operation_id
-        if restore_from is None:
-            raise PageRebuildError("source snapshot operation is required")
         source_key = (
             f"wiki/{workspace_id}/pages/{source_page.page_id}/ops/"
-            f"{restore_from}.md"
+            f"{restore_to_operation_id}.md"
         )
         target_key = (
             f"wiki/{workspace_id}/pages/{source_page.page_id}/ops/"

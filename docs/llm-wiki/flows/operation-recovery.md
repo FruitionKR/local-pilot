@@ -392,10 +392,12 @@ result callback이 없으므로 Backend는 이 HTTP response를 직접 처리한
 
 ### 2A.6 Operation 취소 API 입력과 출력
 
-복구는 과거 operation을 다시 활성화하는 기능이 아니라 `target_operation_id`의
-효과를 취소하는 기능이다. Backend는 대상 operation을 제외한 활성 contribution을
-operation 순서로 정렬해 `keep_contributions`에 넣는다. 취소 대상이 이 배열에
-포함되면 request schema가 422를 반환한다.
+복구는 과거 operation을 다시 활성화하는 기능이 아니라 현재 상태를 과거 restore
+point로 되돌리는 기능이다. ingest 복구에서는 restore point 이후 operation들을
+모두 취소하고, lint 복구에서는 지정한 lint operation 하나를 취소한다. Backend는
+취소 대상을 제외한 활성 contribution을 operation 순서로 정렬해
+`keep_contributions`에 넣는다. 취소 대상이 이 배열에 포함되면 request schema가
+422를 반환한다.
 
 #### Ingest·reingest 취소
 
@@ -407,12 +409,12 @@ Content-Type: application/json
 ```json
 {
   "operation_id": "op_restore_A",
-  "target_operation_id": "op_reingest_B",
+  "restore_to_operation_id": "op_reingest_A2",
+  "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "workspace_id": "ws_1",
   "result_callback_url": "http://backend/api/ai-operations/op_restore_A/result",
   "source_page": {
-    "page_id": "page_source_A",
-    "restore_from_operation_id": "op_ingest_A"
+    "page_id": "page_source_A"
   },
   "rebuild_pages": [
     {
@@ -430,25 +432,26 @@ Content-Type: application/json
 | 필드 | 의미와 빈 값 처리 |
 | --- | --- |
 | `operation_id` | 이번 취소를 기록할 새 restore operation id다. |
-| `target_operation_id` | 취소할 ingest 또는 reingest operation id다. `operation_id`와 같을 수 없다. |
+| `restore_to_operation_id` | 복귀할 Source version의 ingest 또는 reingest operation id다. 새 restore `operation_id`와 달라야 하며 해당 operation의 기여는 `keep_contributions`에 포함할 수 있다. 이전 Source가 없는 상태로 돌아가면 `null`이다. |
+| `cancel_operation_ids` | restore point 이후 취소할 operation id를 순서대로 담는다. 비어 있거나 중복될 수 없으며 restore operation과 restore point를 포함할 수 없다. |
 | `workspace_id` | Source snapshot과 Concept contribution key를 계산할 workspace다. |
 | `result_callback_url` | 결과를 받을 Backend 내부 URL이며 빈 문자열일 수 없다. |
-| `source_page.page_id` | 취소 대상 문서에 1:1로 연결된 Source Page id다. |
-| `source_page.restore_from_operation_id` | 취소 후 직전 활성 Source snapshot의 operation id다. 이전 snapshot이 없으면 `null`이다. 취소 대상 id를 지정할 수 없다. |
-| `rebuild_pages` | 취소로 영향받아 다시 조립할 Concept 목록이다. 남은 기여가 없는 page는 넣지 않고 `deleted_pages`에 넣는다. |
+| `source_page.page_id` | restore point의 Source snapshot을 복사할 Source Page id다. 읽을 operation은 `restore_to_operation_id`다. |
+| `rebuild_pages` | restore point와 현재 상태의 Concept 합집합 중 다시 조립할 page다. 남은 기여가 없는 page는 넣지 않고 `deleted_pages`에 넣는다. |
 | `keep_contributions` | 취소 대상을 제외하고 남길 ingest·lint 기여다. 배열 순서가 재생 순서다. |
 | `keep_contributions[].operation_id` | 읽을 Concept `{operation_id}.json`을 지정한다. |
 | `keep_contributions[].document_id` | 기여 출처 식별자다. ingest는 원문 document id, lint는 `lint:{operation_id}`를 사용한다. |
 | `deleted_pages` | 남은 활성 기여가 없어 Backend가 삭제 처리할 page id다. 기본값은 빈 배열이다. |
 
-llmPipeline은 이전 Source `.md`를 읽어 restore operation의 새 `.md`로 복사하고,
-Concept은 남은 JSON을 조립한다. 이전 Source가 `null`이면 Source page id도
+llmPipeline은 restore point의 Source `.md`를 읽어 restore operation의 새 `.md`로
+복사하고, Concept은 남은 JSON을 조립한다. restore point가 `null`이면 Source page id도
 `deleted_pages`에 추가한다.
 
 ```json
 {
   "operation_id": "op_restore_A",
-  "target_operation_id": "op_reingest_B",
+  "restore_to_operation_id": "op_reingest_A2",
+  "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "operation_type": "ingest_restore",
   "status": "succeeded",
   "changed_pages": [
@@ -478,9 +481,10 @@ POST /wiki/lint-restore-runs
 Content-Type: application/json
 ```
 
-lint 입력은 ingest 취소 입력에서 `source_page`만 제외한 형태다. Backend는 취소할
-lint가 영향을 준 모든 Concept을 `rebuild_pages` 또는 `deleted_pages` 중 하나에
-포함해야 한다.
+lint 입력은 공통 restore 필드와 단일 `target_operation_id`를 사용하며
+`restore_to_operation_id`, `cancel_operation_ids`, `source_page`는 받지 않는다.
+Backend는 취소할 lint가 영향을 준 모든 Concept을 `rebuild_pages` 또는
+`deleted_pages` 중 하나에 포함해야 한다.
 
 ```json
 {
@@ -524,6 +528,9 @@ llmPipeline은 대상 lint JSON의 `added_links`, `removed_links`와 남은 활�
 | 결과 필드 | 의미와 빈 값 처리 |
 | --- | --- |
 | `operation_type` | ingest 취소는 `ingest_restore`, lint 취소는 `lint_restore`다. |
+| `restore_to_operation_id` | ingest 취소 결과가 복귀한 Source version operation id다. Source가 없던 상태면 `null`이다. |
+| `cancel_operation_ids` | ingest 취소 결과에서 비활성화해야 할 restore point 이후 operation 목록이다. |
+| `target_operation_id` | lint 취소 결과에서 비활성화해야 할 단일 lint operation id다. |
 | `status` | page 또는 lint action 실패가 없으면 `succeeded`, 하나라도 있으면 `partially_succeeded`다. |
 | `changed_pages` | 새 restore operation key에 저장한 Source snapshot과 재조립 Concept이다. |
 | `failed_pages` | Source snapshot 부재는 `source_snapshot_missing`, Concept 기여 부재·손상은 `contribution_missing`이다. |
@@ -596,7 +603,7 @@ HTTP JSON
 | pipeline | Markdown, source block, 기존 Concept index | Source·Concept page, link, meaning cluster, contribution |
 | persistence | runtime manifest | operation `.md`·`.json`, 현재 Wiki와 DB 변경 |
 | callback 조립 | command + `operation_artifacts` | Backend가 읽을 `changed_pages`와 상태 |
-| operation 취소 | Backend `target_operation_id`, Source snapshot, `keep_contributions` | 복구 Markdown, hash, `supported_links`, lint `link_changes` |
+| operation 취소 | Backend restore point·취소 목록, Source page, `keep_contributions` | 복구 Markdown, hash, `supported_links`, lint `link_changes` |
 
 ## 3. 식별자와 참조 형식
 
@@ -850,19 +857,21 @@ POST /wiki/ingest-restore-runs
 POST /wiki/lint-restore-runs
 ```
 
-두 endpoint의 복구 대상은 `target_operation_id`이며 의미는 해당 operation의
-비활성화다. Backend는 target을 제외한 활성 상태와 operation 순서를 기준으로
-page마다 남길 기여 목록을 만든다.
+ingest 취소 endpoint는 `restore_to_operation_id` 이후의
+`cancel_operation_ids`를 한 복구 단위로 처리한다. lint 취소 endpoint는
+`target_operation_id` 하나를 처리한다. Backend는 취소 대상을 제외한 활성 상태와
+operation 순서를 기준으로 page마다 남길 기여 목록을 만들고 callback 성공 후
+대상 operation을 비활성화한다.
 
 ```json
 {
   "operation_id": "op_restore_1",
-  "target_operation_id": "op_ingest_B",
+  "restore_to_operation_id": "op_ingest_A2",
+  "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "workspace_id": "ws",
   "result_callback_url": "http://backend/...",
   "source_page": {
-    "page_id": "page_source_1",
-    "restore_from_operation_id": "op_ingest_A"
+    "page_id": "page_source_1"
   },
   "rebuild_pages": [
     {
@@ -877,9 +886,10 @@ page마다 남길 기여 목록을 만든다.
 }
 ```
 
-ingest 취소는 먼저 직전 활성 Source snapshot을 restore operation의 새 key로
-복사한다. lint 취소에는 Source 단계가 없다. 두 흐름은 영향받은 각 Concept Page를
-다음 순서로 재조립한다.
+ingest 취소는 먼저 restore point의 Source snapshot을 restore operation의 새 key로
+복사한다. restore point와 현재 상태의 Concept 합집합을 영향 범위로 삼으며, 남은
+기여가 있는 page는 재조립하고 없는 page는 삭제 대상으로 반환한다. lint 취소에는
+Source 단계가 없다. 두 흐름은 영향받은 각 Concept Page를 다음 순서로 재조립한다.
 
 1. `page_id + operation_id`로 기여 JSON key 계산
 2. `keep_contributions` 순서대로 JSON 로드
@@ -896,7 +906,8 @@ ingest 취소는 먼저 직전 활성 Source snapshot을 restore operation의 �
 ```json
 {
   "operation_id": "op_restore_1",
-  "target_operation_id": "op_ingest_B",
+  "restore_to_operation_id": "op_ingest_A2",
+  "cancel_operation_ids": ["op_reingest_A3", "op_reingest_A4", "op_reingest_A5"],
   "operation_type": "ingest_restore",
   "status": "succeeded",
   "changed_pages": [
@@ -920,7 +931,7 @@ lint 취소는 대상 lint JSON의 link action과 재조립 결과의 `supported
 비교해 `link_changes`를 계산한다. Concept 재조립이 실패하면 불완전한 지원 집합으로
 간선을 추측하지 않고 `concept_rebuild_failed`를 반환한다.
 
-직전 활성 Source operation 선택, 취소 대상 비활성화, 삭제 page 처리와 복구 결과에
+restore point와 취소 suffix 선택, 취소 대상 비활성화, 삭제 page 처리와 복구 결과에
 따른 revision/current pointer 변경은 Backend 범위다. llmPipeline은 선택된 Source
 snapshot 복사, 남은 Concept 기여 재조립과 lint 간선 변경 계산을 담당한다.
 

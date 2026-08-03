@@ -131,12 +131,10 @@ class RebuildPageIn(BaseModel):
 
 class SourceSnapshotRestoreIn(BaseModel):
     page_id: str
-    restore_from_operation_id: str | None
 
 
 class _OperationRestoreIn(BaseModel):
     operation_id: str
-    target_operation_id: str
     workspace_id: str
     result_callback_url: str
     rebuild_pages: list[RebuildPageIn]
@@ -146,20 +144,14 @@ class _OperationRestoreIn(BaseModel):
     def validate_operation_restore(self) -> Self:
         if not self.result_callback_url.strip():
             raise ValueError("result_callback_url must not be blank")
-        if self.operation_id == self.target_operation_id:
-            raise ValueError(
-                "operation_id and target_operation_id must be different"
-            )
-        target_operation_id = self.target_operation_id
-        if any(
-            item.operation_id == target_operation_id
+        return self
+
+    def kept_operation_ids(self) -> set[str]:
+        return {
+            item.operation_id
             for page in self.rebuild_pages
             for item in page.keep_contributions
-        ):
-            raise ValueError(
-                "target_operation_id must not be included in keep_contributions"
-            )
-        return self
+        }
 
     def rebuild_commands(self) -> tuple[RebuildPageCommand, ...]:
         return tuple(
@@ -178,30 +170,45 @@ class _OperationRestoreIn(BaseModel):
 
 
 class IngestOperationRestoreIn(_OperationRestoreIn):
+    restore_to_operation_id: str | None
+    cancel_operation_ids: list[str]
     source_page: SourceSnapshotRestoreIn
 
     @model_validator(mode="after")
-    def validate_source_snapshot(self) -> Self:
-        if (
-            self.source_page.restore_from_operation_id
-            == self.target_operation_id
-        ):
+    def validate_restore_range(self) -> Self:
+        if not self.cancel_operation_ids:
+            raise ValueError("cancel_operation_ids must not be empty")
+        if len(set(self.cancel_operation_ids)) != len(self.cancel_operation_ids):
+            raise ValueError("cancel_operation_ids must not contain duplicates")
+        if self.operation_id in self.cancel_operation_ids:
             raise ValueError(
-                "target_operation_id cannot be restored as source snapshot"
+                "operation_id must not be included in cancel_operation_ids"
+            )
+        if self.operation_id == self.restore_to_operation_id:
+            raise ValueError(
+                "operation_id and restore_to_operation_id must be different"
+            )
+        if self.restore_to_operation_id in self.cancel_operation_ids:
+            raise ValueError(
+                "restore_to_operation_id must not be included in "
+                "cancel_operation_ids"
+            )
+        if self.kept_operation_ids().intersection(self.cancel_operation_ids):
+            raise ValueError(
+                "cancel_operation_ids must not be included in "
+                "keep_contributions"
             )
         return self
 
     def to_command(self) -> IngestOperationRestoreCommand:
         return IngestOperationRestoreCommand(
             operation_id=self.operation_id,
-            target_operation_id=self.target_operation_id,
+            restore_to_operation_id=self.restore_to_operation_id,
+            cancel_operation_ids=tuple(self.cancel_operation_ids),
             workspace_id=self.workspace_id,
             result_callback_url=self.result_callback_url,
             source_page=SourceSnapshotRestoreCommand(
                 page_id=self.source_page.page_id,
-                restore_from_operation_id=(
-                    self.source_page.restore_from_operation_id
-                ),
             ),
             rebuild_pages=self.rebuild_commands(),
             deleted_pages=tuple(self.deleted_pages),
@@ -209,6 +216,20 @@ class IngestOperationRestoreIn(_OperationRestoreIn):
 
 
 class LintOperationRestoreIn(_OperationRestoreIn):
+    target_operation_id: str
+
+    @model_validator(mode="after")
+    def validate_target_operation(self) -> Self:
+        if self.operation_id == self.target_operation_id:
+            raise ValueError(
+                "operation_id and target_operation_id must be different"
+            )
+        if self.target_operation_id in self.kept_operation_ids():
+            raise ValueError(
+                "target_operation_id must not be included in keep_contributions"
+            )
+        return self
+
     def to_command(self) -> LintOperationRestoreCommand:
         return LintOperationRestoreCommand(
             operation_id=self.operation_id,

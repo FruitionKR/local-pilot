@@ -10,12 +10,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 - ingest 실행별 Source·Concept Markdown과 Concept 기여 JSON을 object storage에 저장하고, 현재 Wiki Markdown과 복구용 작업 산출물을 분리
 - 부분·무변경 reingest에서는 이번 실행의 기여 JSON이 있는 Concept만 작업 산출물로 저장해 유지된 기존 Concept의 JSON 누락으로 실행이 실패하지 않도록 제한
-- 취소할 operation을 제외한 활성 로그를 재생하는 `POST /wiki/ingest-restore-runs`, `POST /wiki/lint-restore-runs`를 추가하고, ingest 취소는 직전 Source snapshot과 Concept을 복구하며 lint 취소는 Concept 재조립 결과로 제거·복원할 간선을 계산
+- 취소할 operation을 제외한 활성 로그를 재생하는 `POST /wiki/ingest-restore-runs`, `POST /wiki/lint-restore-runs`를 추가하고, ingest 취소는 restore point 이후 여러 reingest를 함께 취소해 Source와 Concept을 복구하며 lint 취소는 Concept 재조립 결과로 제거·복원할 간선을 계산
 - lint 변경도 operation Markdown·JSON으로 기록해 이후 복구에서 본문 변경과 간선 추가·삭제를 재생할 수 있도록 구성
 - ingest·lint의 operation artifact를 현재 Wiki object 변경보다 먼저 저장하고, non-dry-run lint의 DB 변경과 로그 저장을 하나의 transaction 경계로 묶어 로그 저장 실패 시 간선 제거 등이 commit되지 않도록 처리
 - 활성 ingest·lint 로그를 순서대로 재생해 더 이상 지지되지 않는 관리 간선만 고아 간선으로 판정하고, 로그에 없던 기존 간선은 보존
 - 결과 callback의 일시적 실패를 재시도하고, 422 응답에는 작업 산출물 key·hash를 다시 구성하며, 최종 전송 실패 시 URL·payload를 `notify_pending` manifest에 저장해 재전송할 수 있도록 구성
-- llmPipeline 전체 테스트 `603 passed`, `43 subtests passed`; Python compile과 `git diff --check` 통과
+- llmPipeline 전체 테스트 `606 passed`, `43 subtests passed`; Python compile과 `git diff --check` 통과
 
 ## 2026-07-28
 

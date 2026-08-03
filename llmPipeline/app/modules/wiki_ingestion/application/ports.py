@@ -94,6 +94,7 @@ class WikiPageRestorePort(Protocol):
     def restore_source_page(
         self,
         operation_id: str,
+        restore_to_operation_id: str,
         workspace_id: str,
         source_page: SourceSnapshotRestoreCommand,
     ) -> dict[str, Any]: ...
