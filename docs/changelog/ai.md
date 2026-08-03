@@ -4,6 +4,17 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-03
+
+### feat: 요청별 Agent Skill과 폴더 정리 AgentRun 추가
+
+- Wiki Schema와 분리된 개인·팀 Skill의 draft/version, preview, publish, enable/disable, capability·허용 Tool 정책을 추가
+- 자연어 `auto`, `/<skill>`·`skill_id` 명시 선택, `off`, 모호한 후보 확인을 Agent turn에 통합하고 Markdown 생성·편집에는 선택된 Skill 지침을 후순위로 주입
+- 폴더 정리 요청을 계획·plan hash 승인·수정·취소·비동기 실행·결과 검증 상태를 가진 AgentRun으로 분리하고 PostgreSQL job lease, heartbeat, 최대 4개 병렬 operation과 Tool 호출 제한을 구현
+- 실제 변경은 `X-Agent-Service-Token`으로 인증하는 Spring Backend Tool Gateway만 사용하며 Skill의 빈 `allowed_tools`를 제한 없음으로 해석하지 않도록 차단
+- 종료된 AgentRun의 90일 정리와 worker 실행·health check 기반을 추가하고, 기능은 `AGENT_SKILLS_ENABLED=false`가 기본값인 kill switch 뒤에 배치
+- llmPipeline 전체 테스트 `650 passed`, `49 subtests passed`; Python compile, Compose config, `git diff --check` 통과
+
 ## 2026-07-31
 
 ### feat: Wiki 작업 로그와 복구 흐름 추가

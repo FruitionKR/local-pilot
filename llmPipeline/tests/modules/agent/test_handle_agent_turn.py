@@ -24,6 +24,8 @@ from app.modules.query.domain.entities import (
     QueryAnswer,
     RetrievalSummary,
 )
+from app.modules.skill.application.select_skill import SelectSkillUseCase
+from app.modules.skill.domain.entities import Skill, SkillVersion
 
 
 class FixedRouter:
@@ -85,7 +87,173 @@ class RecordingMarkdownEditor:
         return self.create_result
 
 
+class FixedSkillRepository:
+    def __init__(self, skill: Skill) -> None:
+        self.skill = skill
+
+    def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
+        return [self.skill]
+
+    def get_accessible(self, workspace_id: str, user_id: str, skill_id: str) -> Skill | None:
+        return self.skill if self.skill.id == skill_id else None
+
+    def get_accessible_by_slug(self, workspace_id: str, user_id: str, slug: str) -> Skill | None:
+        return self.skill if self.skill.slug == slug else None
+
+
+class RecordingAgentRunStarter:
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    def start(self, request: object) -> tuple[str, str]:
+        self.requests.append(request)
+        return "run-1", "queued"
+
+
+def document_skill(capability: str = "document-create") -> Skill:
+    return Skill(
+        id="skill-1",
+        workspace_id="workspace-1",
+        scope_type="personal",
+        owner_user_id="user-1",
+        slug="brief",
+        status="enabled",
+        enabled_version=SkillVersion(
+            id="version-1",
+            skill_id="skill-1",
+            version=1,
+            name="간결한 문서",
+            description="문서를 간결하게 작성합니다.",
+            instructions_markdown="핵심 내용을 세 문단 이내로 작성한다.",
+            capabilities=(capability,),  # type: ignore[arg-type]
+            status="published",
+        ),
+    )
+
+
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_folder_organize_starts_async_run_without_direct_edit(self) -> None:
+        starter = RecordingAgentRunStarter()
+        skill = document_skill("folder-organize")
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="folder_organize",
+                    confidence=0.95,
+                    reason="folder request",
+                    selected_skill_id="skill-1",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_selector=SelectSkillUseCase(FixedSkillRepository(skill)),  # type: ignore[arg-type]
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="분기 문서를 폴더별로 정리해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertEqual(result.action, "folder_organize")
+        self.assertEqual(result.run_id, "run-1")
+        self.assertEqual(result.run_status, "queued")
+        self.assertEqual(getattr(starter.requests[0], "skill_version_id"), "version-1")
+        self.assertEqual(editor.requests, [])
+
+    def test_passes_selected_skill_instructions_to_markdown_create(self) -> None:
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="markdown_create",
+                    confidence=0.9,
+                    reason="create request",
+                    selected_skill_id="skill-1",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_selector=SelectSkillUseCase(FixedSkillRepository(document_skill())),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="회의록을 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertEqual(result.route.selected_skill_id, "skill-1")
+        self.assertEqual(
+            editor.create_requests[0].skill_instructions,
+            "핵심 내용을 세 문단 이내로 작성한다.",
+        )
+
+    def test_stops_for_ambiguous_skill_selection(self) -> None:
+        skill = document_skill("folder-organize")
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="clarify",
+                    confidence=0.5,
+                    reason="multiple skills match",
+                    skill_candidates=("skill-1",),
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_selector=SelectSkillUseCase(FixedSkillRepository(skill)),  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="폴더를 정리해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertEqual(result.action, "clarify")
+        self.assertEqual(result.skill_candidates[0].description, "문서를 간결하게 작성합니다.")
+        self.assertIn("Skill", result.message or "")
+
     def test_returns_reject_action_without_running_other_use_cases(self) -> None:
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(

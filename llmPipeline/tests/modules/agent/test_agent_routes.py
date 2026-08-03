@@ -2,7 +2,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute
+from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute, SkillCandidate
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.routes import handle_agent_turn
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
@@ -16,6 +16,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
+from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
 class FixedAgentUseCase:
@@ -106,12 +107,110 @@ class UnexpectedFailureUseCase:
         raise RuntimeError("secret-internal-detail")
 
 
+class AmbiguousSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        candidates = (
+            SkillCandidate("skill-1", "version-1", "분기 정리", "분기별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-2", "version-2", "팀 정리", "팀별로 정리합니다.", ("folder-organize",)),
+        )
+        return AgentTurnResult(
+            action="clarify",
+            route=AgentTurnRoute(
+                action="clarify",
+                confidence=0.5,
+                reason="multiple skills match",
+                skill_candidates=("skill-1", "skill-2"),
+            ),
+            message="사용할 Skill을 선택해 주세요.",
+            skill_candidates=candidates,
+        )
+
+
+class QueuedAgentRunUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        return AgentTurnResult(
+            action="folder_organize",
+            route=AgentTurnRoute(
+                action="folder_organize",
+                confidence=0.9,
+                reason="folder request",
+            ),
+            run_id="run-1",
+            run_status="queued",
+        )
+
+
 class FailingAgentRouteUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise AgentTurnRouteContractError(["secret-internal-detail"])
 
 
+class MissingSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise SkillNotFoundError("missing")
+
+
+class DisabledSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise SkillDisabledError("skill-1")
+
+
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_returns_queued_run(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(message="폴더를 정리해줘"),
+            use_case=QueuedAgentRunUseCase(),  # type: ignore[arg-type]
+        )
+
+        body = response.model_dump()
+        self.assertEqual(body["action"], "folder_organize")
+        self.assertEqual(body["run_id"], "run-1")
+        self.assertEqual(body["run_status"], "queued")
+
+    def test_agent_turn_maps_explicit_skill_errors(self) -> None:
+        for use_case, code in (
+            (MissingSkillUseCase(), "SKILL_NOT_FOUND"),
+            (DisabledSkillUseCase(), "SKILL_DISABLED"),
+        ):
+            with self.subTest(code=code):
+                with self.assertRaises(HTTPException) as raised:
+                    handle_agent_turn(
+                        AgentTurnRequestBody(message="정리해줘", skill_mode="explicit", skill_id="skill-1"),
+                        use_case=use_case,  # type: ignore[arg-type]
+                    )
+
+                self.assertEqual(raised.exception.status_code, 422)
+                self.assertEqual(raised.exception.detail["code"], code)
+
+    def test_agent_turn_returns_ambiguous_skill_descriptions(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(message="폴더를 정리해줘"),
+            use_case=AmbiguousSkillUseCase(),  # type: ignore[arg-type]
+        )
+
+        body = response.model_dump()
+        self.assertEqual(body["action"], "clarify")
+        self.assertEqual([candidate["id"] for candidate in body["skill_candidates"]], ["skill-1", "skill-2"])
+        self.assertEqual(body["skill_candidates"][0]["description"], "분기별로 정리합니다.")
+
+    def test_agent_turn_maps_skill_mode_and_id(self) -> None:
+        class RecordingUseCase(FixedAgentUseCase):
+            request: object | None = None
+
+            def execute(self, request: object) -> AgentTurnResult:
+                self.request = request
+                return super().execute(request)
+
+        use_case = RecordingUseCase()
+
+        handle_agent_turn(
+            AgentTurnRequestBody(message="정리해줘", skill_mode="explicit", skill_id="skill-1"),
+            use_case=use_case,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(getattr(use_case.request, "skill_mode"), "explicit")
+        self.assertEqual(getattr(use_case.request, "skill_id"), "skill-1")
+
     def test_agent_turn_returns_insert_after_operation(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="현재 섹션 아래에 문제 해결 절을 추가해줘"),
