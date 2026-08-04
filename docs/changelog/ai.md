@@ -4,6 +4,16 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-04
+
+### feat: Workspace 문서 Tool과 완료 작업 기반 Skill proposal 추가
+
+- `workspace_workflow`가 폴더 정리와 같은 AgentRun 계획·승인·bounded ReAct 경로를 사용하고 `get_document_content`, `create_document`, `apply_document_edit` 계약을 처리하도록 확장
+- 문서 mutation plan에는 본문 대신 Backend의 `list_agent_run_artifacts`로 조회한 run·사용자·Workspace 결합 artifact ID, content hash와 편집 target만 포함하고 승인된 operation과 일치할 때만 실행
+- 완료 AgentRun의 성공 Tool과 사용자 지시를 일반화하는 `skill_draft_proposal` action·preview를 추가하고, 고정 resource 값·승인 우회 지시·관찰하지 않은 mutation Tool을 차단하며 자동 저장·publish는 수행하지 않음
+- mutation Skill에는 계획에 필요한 hierarchy read Tool을 필수로 포함하고 완료 작업에서 만든 proposal에도 동일 정책을 적용
+- llmPipeline 전체 테스트 `680 passed`, `49 subtests passed`; Python compile과 `git diff --check` 통과
+
 ## 2026-08-03
 
 ### feat: 요청별 Agent Skill과 폴더 정리 AgentRun 추가

@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
+from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.application.ports import SkillRepositoryPort
-from app.modules.skill.interfaces.http.dependencies import get_manage_skill_use_case, get_skill_repository
+from app.modules.skill.interfaces.http.dependencies import (
+    get_manage_skill_use_case,
+    get_propose_skill_draft_use_case,
+    get_skill_repository,
+)
 from app.modules.skill.interfaces.http.schemas import (
     CreateSkillRequest,
     SkillActorRequest,
     SkillDefinitionRequest,
+    SkillDraftProposalRequest,
+    SkillDraftProposalResponse,
     SkillPreviewResponse,
     SkillResponse,
     UpdateSkillRequest,
@@ -14,6 +21,22 @@ from app.modules.skill.interfaces.http.schemas import (
 
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+
+
+@router.post("/draft-from-runs/preview", response_model=SkillDraftProposalResponse)
+def propose_skill_draft(
+    payload: SkillDraftProposalRequest,
+    use_case: ProposeSkillDraftUseCase = Depends(get_propose_skill_draft_use_case),
+) -> SkillDraftProposalResponse:
+    try:
+        proposal = use_case.execute(
+            source_runs=tuple(source.to_domain() for source in payload.source_runs),
+            user_directives=tuple(payload.user_directives),
+            excluded_literals=tuple(payload.excluded_literals),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SkillDraftProposalResponse.from_domain(proposal)
 
 
 @router.post("/preview", response_model=SkillPreviewResponse)

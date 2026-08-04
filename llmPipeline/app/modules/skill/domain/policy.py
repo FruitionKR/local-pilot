@@ -8,16 +8,27 @@ READ_TOOLS: frozenset[SkillTool] = frozenset(
         "search_hierarchy",
         "get_breadcrumb",
         "get_document_metadata",
+        "get_document_content",
     }
 )
 FOLDER_MUTATION_TOOLS: frozenset[SkillTool] = frozenset(
     {"create_folder", "rename_folder", "move_folder", "move_document", "rename_document"}
 )
+PLANNING_READ_TOOLS: tuple[SkillTool, ...] = (
+    "list_root_items",
+    "list_folder_children",
+)
+DOCUMENT_READ_TOOLS: frozenset[SkillTool] = frozenset(
+    {"get_document_metadata", "get_document_content"}
+)
+DOCUMENT_MUTATION_TOOLS: frozenset[SkillTool] = frozenset(
+    {"create_document", "apply_document_edit"}
+)
 CAPABILITY_TOOLS: dict[SkillCapability, frozenset[SkillTool]] = {
-    "document-create": frozenset(),
-    "document-edit": frozenset(),
+    "document-create": DOCUMENT_READ_TOOLS | frozenset(PLANNING_READ_TOOLS) | {"create_document"},
+    "document-edit": DOCUMENT_READ_TOOLS | frozenset(PLANNING_READ_TOOLS) | {"apply_document_edit"},
     "folder-organize": READ_TOOLS | FOLDER_MUTATION_TOOLS,
-    "template": frozenset(),
+    "template": DOCUMENT_READ_TOOLS | frozenset(PLANNING_READ_TOOLS) | DOCUMENT_MUTATION_TOOLS,
 }
 
 
@@ -31,3 +42,16 @@ def validate_allowed_tools(
     unsupported = set(allowed_tools) - allowed_by_capability
     if unsupported:
         raise ValueError(f"allowed_tools contains unsupported tools: {sorted(unsupported)}")
+    required_reads = with_required_planning_reads(allowed_tools)
+    missing_reads = set(required_reads) - set(allowed_tools)
+    if missing_reads:
+        raise ValueError(f"allowed_tools is missing planning read tools: {sorted(missing_reads)}")
+
+
+def with_required_planning_reads(allowed_tools: tuple[SkillTool, ...]) -> tuple[SkillTool, ...]:
+    mutation_tools = FOLDER_MUTATION_TOOLS | DOCUMENT_MUTATION_TOOLS
+    if not mutation_tools.intersection(allowed_tools):
+        return allowed_tools
+    return tuple(
+        dict.fromkeys((*PLANNING_READ_TOOLS, *allowed_tools))
+    )

@@ -24,6 +24,7 @@ class StartAgentRunRequest:
     workspace_id: str
     user_id: str
     instruction: str
+    action: Literal["folder_organize", "workspace_workflow"] = "folder_organize"
     skill_version_id: str | None = None
 
 
@@ -58,3 +59,13 @@ class AgentRunContext:
     run: AgentRun
     skill_instructions: str | None
     allowed_tools: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ContentArtifactReference:
+    id: str
+    content_hash: str
+    purpose: Literal["create_document", "apply_document_edit"]
+    document_id: str | None = None
+    base_version: int | None = None
+    target: dict[str, object] | None = None

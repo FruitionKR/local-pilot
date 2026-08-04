@@ -1,10 +1,12 @@
-# Agent Skill과 승인형 폴더 정리
+# Agent Skill과 승인형 Workspace 작업
 
 ## 1. 문서 정보
 
 - 상태: Draft
 - 작성일: 2026-08-03
-- 관련 이슈: 미정
+- 관련 이슈:
+  - docs/issue/backend/2026-08-04.md
+  - docs/issue/frontend/2026-08-04.md
 - 관련 PR:
 - 관련 작업 계획: docs/spec/sdd/tasks/agent-skills-and-folder-organization-tasks.md
 - 관련 문서:
@@ -22,7 +24,7 @@
 
 Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 변경, 이동 기능이 있다. 폴더·문서 변경에는 권한, current_version, Idempotency-Key, hierarchy cycle 검사가 적용된다.
 
-사용자는 자연어나 명시적 Skill 커맨드로 문서 생성·편집 규칙을 적용하고 폴더 정리를 요청하고자 한다. Prompt 규칙만 필요한 작업은 기존 UseCase로 처리하고, 폴더 정리는 구조 조사, 계획, 승인, 실행, 검증을 포함한 AgentRun으로 처리해야 한다.
+사용자는 자연어나 명시적 Skill 커맨드로 문서 생성·편집과 폴더 정리를 요청하고, 채팅에서 함께 완료한 작업 방식을 재사용 가능한 Skill로 만들고자 한다. LLM의 초안 생성과 계획은 상태를 변경하지 않지만, Workspace 상태 조회와 폴더·문서 저장·변경은 모두 권한이 제한된 업무 Tool을 통해야 한다. 모든 mutation은 계획, 승인, 실행, 검증을 포함한 AgentRun으로 처리해야 한다.
 
 ## 3. 목표
 
@@ -30,12 +32,14 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - 요청별 Skill 미적용 모드를 제공한다.
 - 개인 Skill과 Workspace 팀 Skill을 지원한다.
 - Skill은 Markdown 생성·편집, Template 적용, 폴더 정리에 적용한다.
-- query와 기존 Markdown UseCase는 기존 실행 경로를 유지한다.
-- 상태 변경 작업만 승인형 비동기 AgentRun으로 실행한다.
+- query와 상태를 변경하지 않는 Markdown 초안·편집안 생성은 기존 실행 경로를 유지한다.
+- Workspace 상태 조회는 read Tool, 폴더·문서의 영속 변경은 mutation Tool로만 수행한다.
+- 문서 저장·본문 반영을 포함한 상태 변경 작업은 승인형 비동기 AgentRun으로 실행한다.
 - 승인 전에는 상태를 변경하지 않고 승인된 operation만 실행한다.
 - 계획이나 대상 version이 바뀌면 기존 승인을 무효화한다.
-- 실행 후 operation별 결과와 최종 폴더 구조를 보여준다.
+- 실행 후 operation별 결과와 최종 폴더·문서 상태를 보여준다.
 - Agent는 실행 사용자의 현재 권한을 넘지 않는다.
+- 현재 채팅에서 선택한 완료 작업을 일반화해 Skill draft를 제안한다.
 
 ## 4. 범위
 
@@ -45,14 +49,16 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - 여러 enabled Skill, 개인 Skill, Workspace 팀 Skill
 - 자연어 자동 선택, 명시적 선택, Skill 미적용 모드
 - Markdown 생성·편집과 Template Skill
-- 폴더 구조·문서 metadata 조회와 검색
+- 폴더 구조·문서 metadata·본문 조회와 검색
 - 폴더 생성·이름 변경·이동
-- 문서 이름 변경·이동
+- 문서 생성·이름 변경·이동·본문 편집
 - 계획 생성·preview·수정·승인·거절·취소
 - 승인된 operation 실행과 결과 검증
 - AgentRun, plan, 승인, job, tool 실행 이력
 - PostgreSQL 기반 비동기 llmPipeline worker
 - 채팅 안의 계획·승인·진행 상태 UI
+- 현재 채팅의 완료 AgentRun 선택과 Skill draft 제안
+- 일회성 ID를 제거한 작업 규칙 추출, draft 저장 확인, publish 확인
 
 ### 제외
 
@@ -67,6 +73,9 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - 여러 Agent의 병렬 계획 실행
 - SKILL.md import/export
 - 별도 AgentRun 상세 화면과 SSE·WebSocket
+- 실패·취소된 operation의 성공 사례 학습
+- 사용자 확인 없는 Skill draft 저장·publish·enable
+- 승인된 operation을 그대로 재생하는 고정 ID 기반 매크로
 
 ### 사용자와 권한
 
@@ -143,11 +152,11 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 - When: 기존 AgentRun을 계속 처리한다.
 - Then: 시작 당시 기록한 Skill version을 사용한다.
 
-### REQ-004 폴더 정리 계획
+### REQ-004 Workspace 작업 계획
 
-시스템은 읽기 전용 tool로 현재 구조를 조사하고 상태를 변경하지 않은 채 create_folder, rename_folder, move_folder, move_document, rename_document 계획을 생성해야 한다.
+시스템은 읽기 전용 Tool로 현재 폴더·문서 상태를 조사하고 상태를 변경하지 않은 채 `create_folder`, `rename_folder`, `move_folder`, `create_document`, `move_document`, `rename_document`, `apply_document_edit` 계획을 생성해야 한다.
 
-사용자에게 대상 이름, 현재·변경 위치, 이유, 예상 최종 트리를 표시한다. 내부 계획에는 대상 ID, base_version, operation 의존 관계를 저장한다.
+사용자에게 대상 이름, 현재·변경 위치 또는 편집 범위, 이유, 예상 최종 폴더·문서 상태를 표시한다. 내부 계획에는 대상 ID, `base_version`, 편집 target, operation 의존 관계를 저장한다.
 
 - 실행 ReAct decision 최대 step: 40
 - 계획 최대 operation: 20
@@ -158,7 +167,7 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 
 #### 인수 조건
 
-- Given: 폴더 정리 요청이 들어왔다.
+- Given: 폴더 또는 문서 상태를 변경하는 요청이 들어왔다.
 - When: 계획 생성이 완료됐다.
 - Then: 상태 변경 없이 최대 20개의 operation을 반환한다.
 - Given: 대상이 모호하거나 제한을 초과했다.
@@ -167,7 +176,7 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 
 ### REQ-005 변경 승인과 취소
 
-읽기, 검색, 계획 생성에는 승인이 필요하지 않다. 모든 상태 변경 operation은 실행 전에 승인을 받아야 하며 MVP에서는 bypass를 지원하지 않는다.
+읽기, 검색, 계획 생성에는 승인이 필요하지 않다. 모든 Workspace mutation operation은 실행 전에 plan 승인을 받아야 하며 MVP에서는 bypass를 지원하지 않는다. Skill draft 저장과 publish는 REQ-011의 별도 명시적 확인을 따른다.
 
 승인은 run_id, plan_id, plan_version, operations_hash, 승인자와 승인 시각에 결합한다. 버튼 또는 같은 채팅의 자연어로 승인·거절할 수 있다. 자연어 승인은 해당 채팅에 승인 대기 계획이 정확히 하나일 때만 인증된 승인 API로 처리한다.
 
@@ -227,9 +236,9 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 
 ### REQ-007 실행 결과 검증
 
-Tool 호출 후 실제 위치, 이름, version을 다시 조회해야 한다. API 호출이 성공했더라도 실제 상태가 계획과 다르면 verification_failed로 기록하고 추가 변경을 수행하지 않는다.
+Tool 호출 후 실제 위치, 이름, 본문 version을 다시 조회해야 한다. API 호출이 성공했더라도 실제 상태가 계획과 다르면 verification_failed로 기록하고 추가 변경을 수행하지 않는다.
 
-Operation 상태는 succeeded, failed, skipped, forbidden, conflicted, verification_failed, cancelled 중 하나다. 검증 후 operation별 상태와 최종 폴더 구조를 보여준다.
+Operation 상태는 succeeded, failed, skipped, forbidden, conflicted, verification_failed, cancelled 중 하나다. 검증 후 operation별 상태와 최종 폴더·문서 상태를 보여준다.
 
 #### 인수 조건
 
@@ -242,7 +251,7 @@ Operation 상태는 succeeded, failed, skipped, forbidden, conflicted, verificat
 
 ### REQ-008 비동기 AgentRun
 
-폴더 정리 AgentRun은 PostgreSQL job과 별도 llmPipeline worker가 비동기로 실행해야 한다.
+Workspace mutation AgentRun은 PostgreSQL job과 별도 llmPipeline worker가 비동기로 실행해야 한다.
 
     queued → planning → awaiting_approval
     → queued_for_execution → executing → verifying
@@ -252,7 +261,7 @@ API는 완료를 기다리지 않고 run_id를 반환한다. 화면이나 HTTP �
 
 #### 인수 조건
 
-- Given: 폴더 정리 AgentRun을 시작했다.
+- Given: 폴더 또는 문서 mutation AgentRun을 시작했다.
 - When: API가 요청을 접수했다.
 - Then: 완료를 기다리지 않고 run_id와 현재 상태를 반환한다.
 - Given: 화면이나 API 연결이 종료됐다.
@@ -261,19 +270,65 @@ API는 완료를 기다리지 않고 run_id를 반환한다. 화면이나 HTTP �
 
 ### REQ-009 기존 기능과 Endpoint 경계
 
-기존 /agent/turn은 query, Markdown 생성, Markdown 편집을 직접 처리한다. Router가 folder_organize로 판정하면 내부적으로 AgentRun을 생성하고 run_id를 반환한다. Frontend는 요청을 미리 분류해 별도 생성 endpoint를 다시 호출하지 않는다. Kill switch 상태에서도 기존 query/create/edit는 유지한다.
+기존 `/agent/turn`은 query, 새 Markdown 초안과 사용자가 직접 제공한 비영속 텍스트의 편집안을 직접 처리한다. 기존 Workspace 문서를 읽거나 Markdown 결과를 새 문서에 저장·기존 본문에 반영하는 요청은 `workspace_workflow`로 처리한다. Router가 `folder_organize` 또는 `workspace_workflow`로 판정하면 내부적으로 AgentRun을 생성하고 `run_id`를 반환한다. Frontend는 요청을 미리 분류해 별도 생성 endpoint를 다시 호출하지 않는다. Kill switch 상태에서도 기존 query와 Workspace 상태에 접근하지 않는 draft 생성은 유지한다.
 
 #### 인수 조건
 
-- Given: 기존 query/create/edit 요청이다.
+- Given: 기존 query, 새 Markdown 초안 또는 사용자가 직접 제공한 비영속 텍스트 편집 요청이다.
 - When: /agent/turn으로 요청한다.
 - Then: 기존 요청·응답 계약을 유지한다.
-- Given: folder_organize 요청이다.
+- Given: `folder_organize` 또는 문서 저장·본문 반영 요청이다.
 - When: Router가 여러 단계와 승인이 필요하다고 판정한다.
 - Then: AgentRun을 생성하고 run_id를 반환한다.
 - Given: Agent Skill kill switch가 꺼져 있다.
-- When: 기존 query/create/edit를 실행한다.
+- When: 기존 query와 저장하지 않는 Markdown 초안·편집안 생성을 실행한다.
 - Then: 기존 UseCase가 정상 작동한다.
+
+### REQ-010 Tool-only Workspace 상태 접근
+
+Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 repository에서 직접 읽거나 변경하지 않고 Spring Backend의 업무 단위 Tool만 사용해야 한다. LLM의 판단, 계획과 Workspace 상태에 의존하지 않는 Markdown 초안 생성은 Tool 대상이 아니며, 영속 저장과 본문 반영은 mutation Tool로 분리한다.
+
+#### 인수 조건
+
+- Given: Agent가 문서 내용을 확인해야 한다.
+- When: 계획 또는 실행에 필요한 현재 상태를 조사한다.
+- Then: 실행 사용자의 권한을 검사하는 `get_document_content` read Tool을 사용한다.
+- Given: LLM이 새 문서 Markdown을 생성했다.
+- When: Workspace에 저장하려 한다.
+- Then: 승인된 `create_document` operation을 Backend Tool Gateway로 실행한다.
+- Given: LLM이 문서 편집안을 생성했다.
+- When: 기존 본문에 반영하려 한다.
+- Then: 승인된 `apply_document_edit` operation과 `base_version`으로 실행한다.
+- Given: Tool Gateway를 통하지 않는 DB, shell, SQL 또는 repository 접근을 요청했다.
+- When: Agent가 실행을 결정한다.
+- Then: 실행하지 않고 허용되지 않은 경계로 기록한다.
+
+### REQ-011 완료 작업 기반 Skill draft
+
+사용자가 같은 채팅에서 완료한 작업을 Skill로 만들어 달라고 요청하면 시스템은 선택된 성공 AgentRun과 사용자 수정 지시에서 반복 가능한 규칙을 추출해 Skill draft를 제안해야 한다.
+
+- 사용자가 완료 작업과 반영할 사용자 지시 turn을 명시적으로 선택하며, 선택이 없으면 같은 채팅의 가장 최근 completed AgentRun 하나와 그 run에 연결된 요청·수정 지시만 사용한다.
+- failed, conflicted, cancelled operation은 성공한 실행 예시로 사용하지 않는다.
+- 고정 resource ID, 일회성 이름·위치, 문서 본문, 인증정보를 Skill instructions에 복사하지 않는다.
+- 성공한 Tool 종류는 capability와 `allowed_tools` 후보를 좁히는 근거로만 사용한다.
+- 사용자 추가·제외 지시는 반복 가능한 제약 규칙으로 제안한다.
+- LLM은 구조화된 Skill proposal만 반환하며 자동으로 저장·publish·enable하지 않는다.
+- 사용자가 proposal을 확인해야 draft를 저장하고, lint 후 별도 확인을 받아 publish한다.
+
+#### 인수 조건
+
+- Given: 같은 채팅에 완료된 프로젝트 정리 AgentRun이 있다.
+- When: 사용자가 “방금 방식대로 Skill로 만들어줘”라고 요청한다.
+- Then: 사용한 Tool과 사용자 수정 지시를 일반화한 이름, 설명, capability, instructions, `allowed_tools` proposal을 반환한다.
+- Given: 선택한 작업 기록에 문서·폴더 ID와 일회성 프로젝트 이름이 있다.
+- When: Skill proposal을 만든다.
+- Then: 해당 값을 고정 인자로 저장하지 않고 새 요청에서 다시 식별할 규칙으로 바꾼다.
+- Given: 사용자가 proposal 저장을 확인하지 않았다.
+- When: 응답을 반환한다.
+- Then: Skill draft, published version과 enabled 상태를 만들지 않는다.
+- Given: 사용자가 draft 저장을 확인했다.
+- When: Skill을 저장한다.
+- Then: 선택한 source run 참조와 lint 결과를 기록하고 publish 확인을 별도로 기다린다.
 
 ## 6. 설계
 
@@ -282,14 +337,18 @@ API는 완료를 기다리지 않고 run_id를 반환한다. 화면이나 HTTP �
     Frontend
     → Spring backend
     → llmPipeline Router
-       ├─ query/create/edit → 기존 UseCase
-       └─ folder_organize   → AgentRun
-                               → 계획
-                               → 승인 대기
-                               → 승인된 tool 실행
-                               → 검증
+       ├─ query·비영속 Markdown draft → 기존 UseCase
+       ├─ folder_organize      → AgentRun
+       ├─ workspace_workflow   → AgentRun
+       │                         → read Tool로 관찰
+       │                         → 계획
+       │                         → 승인 대기
+       │                         → 승인된 mutation Tool 실행
+       │                         → 검증
+       └─ skill_draft_proposal → 완료 AgentRun 일반화
+                                 → 사용자 확인 후 draft 저장
 
-Wiki Schema는 모든 요청에 적용되는 기본 설정으로 유지하고 Skill은 요청별 작업 지침으로 별도 관리한다. Agent는 Spring backend의 업무 단위 tool만 사용한다.
+Wiki Schema는 모든 요청에 적용되는 기본 설정으로 유지하고 Skill은 요청별 작업 지침으로 별도 관리한다. Agent는 Workspace 상태에 접근할 때 Spring Backend의 업무 단위 Tool만 사용한다. LLM의 초안·편집안 생성과 reasoning은 Tool이 아니지만 결과를 영속화하는 작업은 반드시 승인된 mutation Tool로 분리한다.
 
 ### 6.2 Skill과 version
 
@@ -302,7 +361,12 @@ Wiki Schema는 모든 요청에 적용되는 기본 설정으로 유지하고 Sk
     - instructions_markdown, capabilities, allowed_tools
     - lint_result, status, created_by, created_at, published_at
 
+    skill_version_sources
+    - skill_version_id, source_agent_run_id, source_turn_id, source_type, created_at
+
 Enabled Skill 수정은 새 draft version을 만든다. 안전성 검사와 preview 후 publish하면 enabled_version_id를 교체한다. 기존 AgentRun은 시작 당시 version을 유지한다.
+
+완료 작업에서 만든 Skill draft는 사용자가 선택한 source AgentRun과 사용자 지시 turn 참조만 별도 저장한다. 현재 채팅 전체를 암묵적으로 입력하지 않으며 문서 본문, 전체 prompt, 인증정보와 LLM chain-of-thought는 Skill source에 복사하지 않는다.
 
 ### 6.3 Capability와 Tool
 
@@ -315,6 +379,8 @@ MVP capability는 document-create, document-edit, folder-organize, template이�
     search_hierarchy
     get_breadcrumb
     get_document_metadata
+    get_document_content
+    list_agent_run_artifacts
 
 변경 tool:
 
@@ -323,6 +389,8 @@ MVP capability는 document-create, document-edit, folder-organize, template이�
     move_folder
     move_document
     rename_document
+    create_document
+    apply_document_edit
 
 #### 6.3.1 공통 Skill 선택 흐름
 
@@ -342,10 +410,10 @@ action과 capability의 호환 관계는 다음과 같다.
 
 | capability | 호환 action | 실행 방식 | 상태 변경 승인 | allowed_tools |
 |---|---|---|---|---|
-| document-create | markdown_create | 기존 문서 생성 UseCase | 없음 | 비어 있음 |
-| document-edit | markdown_edit | 기존 Markdown 편집 UseCase | 없음 | 비어 있음 |
-| template | markdown_create 또는 markdown_edit | 기존 문서 생성·편집 UseCase | 없음 | 비어 있음 |
-| folder-organize | folder_organize | AgentRun과 bounded ReAct | mutation 전 plan 승인 | capability 허용 Tool의 부분집합 |
+| document-create | markdown_create 또는 workspace_workflow | 초안은 기존 UseCase, 저장은 AgentRun | create_document 전 plan 승인 | hierarchy planning read, get_document 계열, create_document |
+| document-edit | markdown_edit 또는 workspace_workflow | 비영속 입력 편집은 기존 UseCase, Workspace 문서 편집은 AgentRun | apply_document_edit 전 plan 승인 | hierarchy planning read, get_document 계열, apply_document_edit |
+| template | markdown_create, markdown_edit 또는 workspace_workflow | 초안·편집안은 기존 UseCase, 저장·반영은 AgentRun | mutation 전 plan 승인 | document capability Tool의 부분집합 |
+| folder-organize | folder_organize 또는 workspace_workflow | AgentRun과 bounded ReAct | mutation 전 plan 승인 | folder/document 배치 Tool의 부분집합 |
 
 명시한 Skill이 없거나 disabled이거나 접근할 수 없으면 오류를 반환한다. auto 후보 중 하나가 명확히 일치하면 해당 Skill을 적용한다. 여러 후보가 비슷하면 실행하지 않고 Skill 하나 또는 Skill 없이 계속할지를 사용자에게 묻는다. 호환되는 Skill이 없으면 Skill 없이 기존 action을 실행한다. chat_answer에는 Skill을 적용하지 않는다.
 
@@ -385,7 +453,21 @@ Skill instructions는 system·developer 정책, Backend 권한·승인·안전 �
     Agent:
     요청한 `회의록 작성` Skill을 적용해 회의록을 작성했습니다.
 
-이 요청은 업무 Tool로 폴더나 기존 문서 상태를 변경하지 않으므로 별도 계획과 승인을 만들지 않는다. Router는 `markdown_create`와 Skill을 선택하고 기존 문서 생성 UseCase에 Skill instructions를 전달한다. 생성과 저장 권한은 기존 Backend 경계를 그대로 사용한다.
+Markdown 초안을 만드는 단계까지는 상태를 변경하지 않으므로 별도 계획과 승인을 만들지 않는다. Router는 `markdown_create`와 Skill을 선택하고 기존 문서 생성 UseCase에 Skill instructions를 전달한다.
+
+사용자가 결과를 Workspace 문서로 저장하면 mutation 경로로 전환한다.
+
+    사용자:
+    이대로 `제품 회의록` 문서로 저장해줘.
+
+    Agent:
+    다음 변경을 실행하려고 합니다.
+    1. 현재 Workspace에 `제품 회의록` 문서를 생성합니다.
+    2. 방금 확인한 Markdown을 본문으로 저장합니다.
+    저장 권한과 대상 위치를 확인했고, 승인 전에는 문서를 만들지 않습니다.
+    [승인] [수정 요청] [취소]
+
+승인 후 `create_document` Tool이 기존 Backend 문서 생성 권한과 Idempotency-Key를 검사해 저장한다.
 
 여러 생성 Skill이 비슷하게 일치하면 결과를 만들기 전에 다음과 같이 묻는다.
 
@@ -410,9 +492,9 @@ Skill instructions는 system·developer 정책, Backend 권한·승인·안전 �
     변경 후:
     이번에 구현한 기능은 다양한 상황에서 활용할 수 있습니다.
 
-명시적 호출은 `/formal-writing 선택한 문단을 공식적인 문체로 정리해줘`처럼 입력한다. 활성 문서가 없으면 Agent는 추측하지 않고 문서를 열어 달라고 요청한다. 선택 범위가 있으면 해당 범위, 현재 섹션이 있으면 해당 섹션, 둘 다 없으면 활성 문서 전체를 편집 대상으로 삼는다.
+명시적 호출은 `/formal-writing 선택한 문단을 공식적인 문체로 정리해줘`처럼 입력한다. 활성 문서 ID와 selection은 target 힌트로만 사용하며 본문 source of truth로 신뢰하지 않는다. Agent는 `get_document_content` Tool로 현재 권한과 version을 확인한다. 활성 문서가 없고 사용자가 편집할 텍스트도 직접 제공하지 않았다면 추측하지 않고 문서를 열거나 텍스트를 제공해 달라고 요청한다.
 
-이 요청도 AgentRun 승인 대상이 아니다. Router는 `markdown_edit`와 `style_change`를 선택하고 기존 Markdown 편집 UseCase가 변경안을 만든다. 실제 반영 시 기존 문서 편집 권한, `base_version`과 충돌 검사를 우회하지 않는다.
+사용자가 직접 제공한 비영속 텍스트의 편집안은 `markdown_edit` UseCase로 만들 수 있다. 기존 Workspace 문서 편집은 `workspace_workflow`에서 read Tool로 현재 본문을 가져와 편집안과 mutation plan을 함께 만들고, Agent는 target, 변경 요약과 예상 version을 설명한다. 승인 후 `apply_document_edit` Tool을 호출하며 Backend는 문서 편집 권한, `base_version`과 target 범위를 다시 검사한다.
 
 #### 6.3.4 template 예시: 주간보고서 Template Skill
 
@@ -443,7 +525,7 @@ Skill instructions는 system·developer 정책, Backend 권한·승인·안전 �
     ## 다음 주 계획
     - 통합 테스트 수행
 
-명시적 호출은 `/weekly-report 이번 주 업무 내용으로 새 주간보고서를 만들어줘`처럼 입력한다. 이 요청은 `markdown_create` 경로를 사용하므로 폴더 정리 계획과 승인을 만들지 않는다.
+명시적 호출은 `/weekly-report 이번 주 업무 내용으로 새 주간보고서를 만들어줘`처럼 입력한다. 결과를 초안으로만 반환하면 `markdown_create` 경로를 사용하고, Workspace에 저장하거나 기존 문서에 반영하면 `workspace_workflow` 계획과 승인을 거친다.
 
 현재 구현은 기존 문서 전체를 외부 Template 구조로 재구성하는 `template_transform`을 지원하지 않는다. 이 요청은 일반 편집으로 추측하지 않고 다음과 같이 안내한다.
 
@@ -568,7 +650,10 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
       - 제목, 일시, 참석자, 논의 내용, 결정 사항, 후속 작업 순서로 작성한다.
       - 확인되지 않은 사실은 만들지 않는다.
       - 담당자와 기한은 제공된 경우에만 표시한다.
-    allowed_tools: []
+    allowed_tools:
+      - list_root_items
+      - list_folder_children
+      - create_document
 
 개인 Skill은 본인만 생성·관리·사용할 수 있다. 팀 Skill은 Workspace owner/editor만 생성·관리하며 Workspace 멤버가 사용할 수 있다.
 
@@ -593,7 +678,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
     시스템:
     안전성 검사를 통과했습니다.
-    이 Skill은 문서 생성 지침만 제공하며 상태 변경 Tool을 사용하지 않습니다.
+    이 Skill은 planning read Tool과 `create_document`만 사용할 수 있으며 실제 저장에는 plan 승인이 필요합니다.
 
 검사에 실패하면 publish를 막고 수정할 위치와 이유를 표시한다. 예를 들어 instructions에 “승인 없이 문서를 이동한다”가 포함되면 해당 지시는 상위 승인 정책을 바꿀 수 없다고 안내한다.
 
@@ -607,7 +692,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
     시스템 preview:
     차단 문제 없음
     - capability: document-create
-    - allowed_tools: 없음
+    - allowed_tools: list_root_items, list_folder_children, create_document
     - 승인·권한 우회 지시: 없음
 
 `POST /skills/preview`는 입력 정의를 저장하지 않고 `lint_result`와 `has_blocked_issues`를 반환한다. 실제 문서·폴더 조회와 Tool 실행은 하지 않는다. 사용 예시는 publish 후 일반 요청 흐름에서 확인한다.
@@ -635,18 +720,57 @@ enabled version을 직접 수정하지 않는다. 사용자가 편집을 시작�
 
 version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2를 사용한다. 이미 시작한 AgentRun은 version 1을 고정해서 사용하며 실행 도중 바뀌지 않는다. disable하면 신규 요청의 후보에서 제외하지만 이미 진행 중인 AgentRun을 임의로 변경하거나 취소하지 않는다. 다시 enable하면 마지막 published version을 후보로 복원한다.
 
-#### 6.4.6 채팅 기반 Skill 생성의 후속 범위
+#### 6.4.6 완료 작업에서 Skill proposal 생성
 
-MVP에서 다음 요청은 Skill을 바로 저장하지 않고 관리 화면을 안내한다.
+사용자는 현재 채팅에서 완료한 작업을 선택하거나 가장 최근 completed AgentRun을 기준으로 Skill 생성을 요청할 수 있다.
 
     사용자:
-    회의록 작성 Skill을 만들어줘.
+    방금 프로젝트 문서를 정리한 방식대로 Skill로 만들어줘.
 
     Agent:
-    현재 채팅에서는 Skill을 자동 생성하거나 publish할 수 없습니다.
-    Skill 관리 화면에서 이름, capability와 instructions를 작성한 뒤 preview할 수 있습니다.
+    최근 완료된 작업에서 다음 규칙을 추출했습니다.
 
-향후 채팅 기반 생성을 지원하더라도 LLM은 draft 제안까지만 수행한다. 사용자 확인 없이 publish하거나 enable하지 않으며, 동일한 lint, preview, 관리 권한 검사를 거쳐야 한다.
+    이름: 프로젝트 문서 정리
+    capability:
+      - folder-organize
+    instructions:
+      - 프로젝트 이름과 같은 폴더가 없으면 생성한다.
+      - 제목이나 내용에서 관련성이 명확한 문서만 이동한다.
+      - 회의록은 이동 대상에서 제외한다.
+      - 같은 이름의 폴더가 있으면 중복 생성하지 않는다.
+    allowed_tools:
+      - list_root_items
+      - list_folder_children
+      - search_hierarchy
+      - get_document_metadata
+      - create_folder
+      - move_document
+
+    실행 당시의 프로젝트 이름, folder ID와 document ID는 Skill에 저장하지 않습니다.
+    이 내용으로 Skill draft를 저장할까요?
+
+LLM은 선택한 run의 승인된 계획, 성공한 Tool 실행과 사용자가 명시적으로 선택한 요청·수정 지시 turn만 입력으로 받는다. 현재 채팅 전체, 실패·취소된 operation, 문서 본문, 전체 prompt, 인증정보와 chain-of-thought는 입력에서 제외한다.
+
+#### 6.4.7 draft 저장과 publish 확인
+
+Skill proposal은 저장되지 않은 구조화된 응답이다. 사용자가 확인하면 일반 Skill 관리 권한을 검사한 뒤 draft를 저장한다.
+
+    사용자:
+    응, 개인 Skill 초안으로 저장해줘.
+
+    Agent:
+    `프로젝트 문서 정리` draft를 저장했고 lint를 통과했습니다.
+    아직 요청에는 적용되지 않습니다. publish하고 활성화할까요?
+
+    사용자:
+    활성화해줘.
+
+    Agent:
+    `프로젝트 문서 정리` version 1을 publish하고 활성화했습니다.
+
+draft 저장 확인과 publish 확인은 분리한다. proposal 내용이 수정되면 변경된 전체 정의를 다시 보여주고 저장 확인을 받는다. publish는 기존 Skill 안전성 검사와 개인·팀 관리 권한을 그대로 사용한다.
+
+Skill은 과거 operation을 그대로 재생하는 매크로가 아니다. `source_agent_run_id`는 생성 근거 감사용으로만 저장하며 새 요청에서는 현재 상태를 read Tool로 다시 조사하고 Skill 규칙에 맞는 새 plan을 만든다.
 
 ### 6.5 AgentRun 저장 모델
 
@@ -658,8 +782,12 @@ AgentRun은 다음 테이블로 관리한다.
     agent_approvals
     agent_jobs
     agent_tool_executions
+    agent_run_artifacts
+    skill_version_sources
 
-AgentRun은 사용자·Workspace, action, 선택 Skill version, 상태와 현재 plan을 저장한다. Plan은 version, summary, canonical operation hash를 저장한다. Operation은 대상 ID·version·위치·인자·이유·의존 관계를 저장한다. 승인과 tool 실행은 plan·operation에 연결한다.
+AgentRun은 사용자·Workspace, conversation·turn, action, 선택 Skill version, 상태와 현재 plan을 저장한다. Plan은 version, summary, canonical operation hash를 저장한다. Operation은 대상 ID·version·위치·편집 target·artifact 참조·인자·이유·의존 관계를 저장한다. 승인과 Tool 실행은 plan·operation에 연결한다. `skill_version_sources`는 사용자가 선택한 completed AgentRun과 생성된 Skill draft version을 연결한다.
+
+비동기 `create_document`와 `apply_document_edit`에 필요한 Markdown 또는 edit operation은 `agent_run_artifacts`에 실행용 payload로 분리하고 plan에는 artifact ID와 content hash만 저장한다. artifact는 run actor·Workspace에 결합하고 Tool Gateway 전달 전 hash를 검증한다. terminal run에서 더 이상 필요하지 않으면 감사 데이터와 분리해 정리하며 Skill source로 사용하지 않는다.
 
 문서 본문, 전체 prompt, 인증 token은 AgentRun 감사 데이터에 저장하지 않는다.
 
@@ -674,7 +802,7 @@ AgentRun은 사용자·Workspace, action, 선택 Skill version, 상태와 현재
 
 ### 6.7 사용자 권한 경계
 
-    capability 허용 tool
+    capability 허용 Tool
     ∩ Skill allowed_tools
     ∩ AgentRun 사용자의 현재 권한
     ∩ 승인된 plan operation
@@ -685,11 +813,11 @@ Backend→llmPipeline Agent·Skill 요청과 llmPipeline Worker→Backend tool �
 `X-Agent-Service-Token`에 `AGENT_INTERNAL_TOKEN`을 전달해 service를 인증한다. 이 token은
 사용자 권한을 대신하지 않으며 양쪽 모두 요청의 사용자·Workspace 권한을 별도로 검증한다.
 
-실제 변경은 기존 FolderService, DocumentService, DocumentPlacementService를 사용한다. Agent 경로는 기존 권한, version, idempotency, hierarchy 검증을 우회할 수 없다. 계획 후 권한이 회수되면 해당 operation은 forbidden이 된다.
+실제 변경은 기존 FolderService, DocumentService, DocumentPlacementService와 문서 본문 편집 경계를 사용한다. Agent 경로는 기존 권한, version, idempotency, hierarchy와 편집 target 검증을 우회할 수 없다. 계획 후 권한이 회수되면 해당 operation은 forbidden이 된다.
 
 ### 6.8 계획·승인·실행
 
-사용자는 operation JSON을 직접 편집하지 않고 자연어로 계획 수정을 요청한다. 수정은 같은 AgentRun에 새 plan version을 만들고 기존 승인을 무효화한다.
+사용자는 operation JSON을 직접 편집하지 않고 자연어로 계획 수정을 요청한다. 수정은 같은 AgentRun에 새 plan version을 만들고 기존 승인을 무효화한다. Markdown 생성기와 편집기는 저장 전 초안·편집안을 만들 수 있지만, Worker는 승인된 `create_document` 또는 `apply_document_edit` operation을 통해서만 결과를 영속화한다.
 
 Worker는 최근 실행 결과를 관찰한 뒤 LLM이 다음 read 또는 실행 가능한 승인 operation 하나를 선택하는 bounded ReAct loop를 수행한다. 상태 변경 tool과 인자는 승인된 plan에서만 가져오며 남은 mutation의 Tool 호출 예산을 우선 보존한다. 실패한 operation의 의존 작업은 skipped로 처리하고 독립 작업은 계속한다. 계획 변경이 필요하면 제한된 사유 코드와 함께 clarification_required로 중단하며 새 plan version과 hash를 다시 승인받는다. 남은 operation이 없으면 LLM 호출 없이 검증 단계로 전환한다. 실행 후 관련 상태를 재조회하며 자동 rollback과 자동 복구는 수행하지 않는다.
 
@@ -714,22 +842,24 @@ Frontend는 Spring backend만 호출한다.
     POST  /api/workspaces/{workspace_id}/skills/{skill_id}/enable
     POST  /api/workspaces/{workspace_id}/skills/{skill_id}/disable
 
+    POST  /api/workspaces/{workspace_id}/skills/draft-from-runs/preview
+
 ### 6.10 UI, 보관, 배포
 
 계획과 승인은 채팅 카드로 제공한다. Frontend는 종료될 때까지 2초 간격으로 AgentRun을 조회하며 화면을 다시 열어도 run_id로 복원한다.
 
 종료된 AgentRun 기록은 90일 보관하고 하루 한 번 정리한다. 종료되지 않은 AgentRun에는 만료를 적용하지 않는다.
 
-기능은 Workspace별 rollout 없이 한 번에 배포한다. AGENT_SKILLS_ENABLED=false는 신규 Skill 선택과 AgentRun 생성을 차단하되 기존 query/create/edit는 유지한다.
+기능은 Workspace별 rollout 없이 한 번에 배포한다. AGENT_SKILLS_ENABLED=false는 신규 Skill 선택과 AgentRun 생성을 차단하되 기존 query와 상태를 변경하지 않는 Markdown 초안·편집안 생성은 유지한다.
 
 ### 6.11 주요 설계 결정
 
-#### DEC-001 하이브리드 실행 구조
+#### DEC-001 Tool-first Workspace 상태 경계
 
-- 결정: 기존 UseCase를 유지하고 상태 변경형 작업만 AgentRun으로 실행한다.
-- 이유: 기존 기능 회귀와 불필요한 Agent 복잡도를 줄인다.
-- 대안: 모든 요청을 Agent loop로 통합한다.
-- 영향: direct 요청과 AgentRun 경로를 함께 유지한다.
+- 결정: query와 상태를 변경하지 않는 Markdown 초안·편집안 생성은 기존 UseCase를 유지하고, Workspace 상태 조회는 read Tool, 모든 영속 변경은 승인된 mutation Tool을 사용하는 AgentRun으로 실행한다.
+- 이유: LLM 생성 자체와 권한·version·감사가 필요한 실제 변경을 분리하면서 모든 재사용 가능한 작업을 동일한 Tool 실행 기록으로 남긴다.
+- 대안: 문서 생성·편집은 direct 경로로 영속화하고 폴더 정리만 Tool로 실행하거나, 모든 reasoning과 생성까지 Tool로 감싼다.
+- 영향: `workspace_workflow`, 문서 read/mutation Tool과 기존 Markdown 결과를 AgentRun plan에 연결하는 계약이 필요하다.
 
 #### DEC-002 명시적 승인과 plan hash
 
@@ -787,6 +917,13 @@ Frontend는 Spring backend만 호출한다.
 - 대안: 승인 후 operation 순서를 코드가 고정 실행하거나 LLM이 새 mutation을 자유롭게 생성한다.
 - 영향: 독립 operation 병렬 실행을 포기하며, 계획 변경 시 중단 후 새 version과 hash를 재승인해야 한다.
 
+#### DEC-010 완료 작업에서 Skill 규칙 추출
+
+- 결정: 사용자가 선택한 같은 채팅의 completed AgentRun과 성공 Tool 실행을 일반화해 저장 전 Skill proposal을 만들고, draft 저장과 publish를 각각 확인받는다.
+- 이유: 실제로 검증된 작업 방식과 사용자 수정 조건을 재사용하면서 일회성 ID를 고정한 매크로 생성을 막는다.
+- 대안: 전체 채팅 원문을 자동 학습하거나 Tool 호출을 그대로 재생하는 workflow macro를 저장한다.
+- 영향: AgentRun에 conversation·turn 연결, `skill_version_sources`, 구조화된 proposal 계약과 source redaction이 필요하다.
+
 ## 7. 작업 계획
 
 구현 작업은 docs/spec/sdd/tasks/agent-skills-and-folder-organization-tasks.md에서 관리한다.
@@ -804,6 +941,8 @@ Frontend는 Spring backend만 호출한다.
 | REQ-007 | 재조회·검증 실패 | 실행 전후 트리 | Pending |
 | REQ-008 | lease·heartbeat·worker 복구 | Worker 강제 종료 | Pending |
 | REQ-009 | 기존 /agent/turn 회귀 | 기존 질문·생성·편집 | Pending |
+| REQ-010 | read/mutation Tool 경계·문서 version | 권한별 문서 저장·편집 승인 | Pending |
+| REQ-011 | 완료 run 일반화·민감값 제거·저장 확인 | 채팅에서 Skill proposal 확인·publish | Pending |
 
 ### 실행 명령
 
@@ -836,17 +975,22 @@ Frontend는 Spring backend만 호출한다.
 - [ ] Worker 중단 후 job이 복구되고 중복 변경이 없다.
 - [ ] kill switch 상태에서 기존 기능 회귀가 없다.
 - [ ] 감사 로그에 본문, 전체 prompt, token이 남지 않는다.
+- [ ] 문서 초안·편집안은 승인 전 영속 상태를 변경하지 않는다.
+- [ ] 문서 저장·본문 반영은 승인된 Tool과 `base_version`으로만 실행된다.
+- [ ] 같은 채팅의 완료 작업에서 고정 ID가 제거된 Skill proposal을 만든다.
+- [ ] proposal 확인 전 draft가 저장되지 않고 publish를 별도로 확인한다.
 
 ## 9. 미결정 사항
 
 - [ ] Frontend Agent Skill·AgentRun 단위 테스트 package script 이름
+- [ ] `agent_run_artifacts` 실행 payload의 암호화 방식과 terminal/orphan 정리 TTL
 
 ## 10. 결과
 
 - 검증일: 2026-08-03
-- 최종 상태: llmPipeline 자동 검증 완료, Backend·Frontend 통합 Pending
-- 자동 검증: llmPipeline `665 passed, 49 subtests passed`, Compose config와 Python 구문 검사 통과
-- 남은 문제: Backend migration·양방향 service 인증·Tool Gateway와 Frontend UI/E2E
+- 최종 상태: 폴더 정리 llmPipeline 자동 검증 완료, Tool-first 문서 작업·완료 작업 기반 Skill 생성과 Backend·Frontend 통합 Pending
+- 자동 검증: llmPipeline `680 passed, 49 subtests passed`, Python 구문 검사와 `git diff --check` 통과
+- 남은 문제: 문서 read/mutation Tool, `workspace_workflow`, Skill proposal 생성, Backend migration·양방향 service 인증·Tool Gateway와 Frontend UI/E2E
 - 후속 작업:
   1. 요구사항 테스트부터 작성한다.
   2. 작업 계획 순서대로 구현한다.

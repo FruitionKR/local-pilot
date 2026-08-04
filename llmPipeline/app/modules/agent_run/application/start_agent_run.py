@@ -18,7 +18,7 @@ class StartAgentRunUseCase(AgentRunStarterPort):
             id=str(uuid4()),
             workspace_id=request.workspace_id,
             user_id=request.user_id,
-            action="folder_organize",
+            action=request.action,
             skill_version_id=request.skill_version_id,
             status="queued",
             request_summary=request.instruction.strip()[:1000],
