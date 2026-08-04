@@ -33,6 +33,7 @@ public class RestorePreviewService {
     private final RestoreScopeResolver scopeResolver;
     private final RestorePlanner planner;
     private final PreviewTokenSigner tokenSigner;
+    private final RestoreTargetValidator validator;
     private final DocumentRestorePlanner documentPlanner;
 
     public RestorePreviewService(OperationLogRepository operationLogRepository,
@@ -41,7 +42,8 @@ public class RestorePreviewService {
                                  RestoreScopeResolver scopeResolver,
                                  RestorePlanner planner,
                                  PreviewTokenSigner tokenSigner,
-                                 DocumentRestorePlanner documentPlanner) {
+                                 DocumentRestorePlanner documentPlanner,
+                                 RestoreTargetValidator validator) {
         this.operationLogRepository = operationLogRepository;
         this.contributionRepository = contributionRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -49,11 +51,19 @@ public class RestorePreviewService {
         this.planner = planner;
         this.tokenSigner = tokenSigner;
         this.documentPlanner = documentPlanner;
+        this.validator = validator;
     }
 
+    /**
+     * 되돌리면 무엇이 바뀌는지 계산한다.
+     *
+     * <p>실행과 <b>같은 검증</b>을 거친다. 여기서 통과한 것이 실행에서 거절되면 사용자가 확인
+     * 화면을 다 보고 나서 실패한다.
+     */
     @Transactional(readOnly = true)
     public RestorePreviewResponse preview(String workspaceId, String userId, String operationId) {
         OperationLog target = loadOperation(workspaceId, userId, operationId);
+        validator.requireRestorable(target);
 
         // 문서 편집은 되돌릴 버전이 변경내역에 이미 적혀 있어 계산할 것이 없다.
         if (target.getOperationType() == OperationType.document_edit) {
@@ -64,6 +74,7 @@ public class RestorePreviewService {
         Set<String> excluded = scopeResolver.resolve(target);
         Map<String, List<WikiPageContribution>> contributions = loadContributions(excluded);
         RestorePlan plan = planner.plan(excluded, contributions);
+        validator.requireApplicable(target, plan);
 
         return RestorePreviewResponse.from(operationId, plan,
                 tokenSigner.sign(operationId, contributions));

@@ -55,7 +55,7 @@ class RestoreExecuteServiceTest {
     @Mock DocumentRestoreApplier documentApplier;
     @Mock RestoreApplier applier;
     @Mock PipelineRestoreRequester restoreRequester;
-    @Mock fruition.wiki.repository.WikiPageRepository wikiPageRepository;
+    @Mock RestoreTargetValidator validator;
 
     private RestoreExecuteService service;
 
@@ -63,7 +63,7 @@ class RestoreExecuteServiceTest {
     void setUp() {
         service = new RestoreExecuteService(previewService, scopeResolver, planner, tokenSigner,
                 lifecycle, documentPlanner, documentApplier, applier, restoreRequester,
-                wikiPageRepository, new ObjectMapper(), "http://backend:8080");
+                validator, new ObjectMapper(), "http://backend:8080");
     }
 
     @Test
@@ -85,6 +85,8 @@ class RestoreExecuteServiceTest {
     @DisplayName("되돌릴 수 없는 작업 유형은 거절한다")
     void rejectsNonRestorableOperationType() {
         givenTarget(OperationType.restore);
+        org.mockito.Mockito.doThrow(new InvalidRestoreRequestException("되돌릴 수 없는 작업입니다."))
+                .when(validator).requireRestorable(any());
 
         assertThatThrownBy(() -> execute())
                 .isInstanceOf(InvalidRestoreRequestException.class);
@@ -132,6 +134,8 @@ class RestoreExecuteServiceTest {
     void rejectsEmptyPlan() {
         givenValidPreview();
         when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of()));
+        when(validator.requireApplicable(any(), any()))
+                .thenThrow(new InvalidRestoreRequestException("되돌릴 Wiki 페이지가 없습니다."));
 
         assertThatThrownBy(() -> execute())
                 .isInstanceOf(InvalidRestoreRequestException.class);
@@ -267,6 +271,7 @@ class RestoreExecuteServiceTest {
         when(previewService.loadContributions(any())).thenReturn(Map.of());
         when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
         givenPlan(PageRestorePlan.rebuild("wp_C3", List.of()));
+        when(validator.requireApplicable(any(), any())).thenReturn(null);
         when(restoreRequester.sendLintRestore(any())).thenReturn(true);
 
         execute();
@@ -279,36 +284,21 @@ class RestoreExecuteServiceTest {
     }
 
     @Test
-    @DisplayName("원문 페이지를 못 찾으면 반영 전에 거절한다")
-    void rejectsBeforeApplyingWhenSourcePageMissing() {
+    @DisplayName("검증에 걸리면 반영 전에 멈춘다")
+    void rejectsBeforeApplyingWhenNotApplicable() {
         givenValidPreview();
         when(planner.plan(any(), any())).thenReturn(new RestorePlan(
                 List.of(PageRestorePlan.rebuild("wp_C7", List.of()))));
-        when(wikiPageRepository.findIdsByPageType(any(), any())).thenReturn(List.of());
+        when(validator.requireApplicable(any(), any()))
+                .thenThrow(new InvalidRestoreRequestException("되돌릴 대상에 원문 페이지가 없습니다."));
 
         assertThatThrownBy(() -> execute())
                 .isInstanceOf(InvalidRestoreRequestException.class);
 
-        // llmPipeline 의 source_page 는 필수라 없이 보내면 400 이다. 그때는 이미 DB 반영이
-        // 끝나 되돌릴 수 없으므로, 아무것도 바꾸기 전에 멈춰야 한다.
+        // 뒤에서 걸리면 이미 DB 가 바뀐 뒤라 되돌릴 수 없다.
         verify(lifecycle, never()).start(any(), anyString(), any());
         verify(applier, never()).apply(any(), any(), any(), any());
         verify(restoreRequester, never()).sendIngestRestore(any());
-    }
-
-    @Test
-    @DisplayName("원문 페이지는 링크가 아니라 page_type으로 찾는다")
-    void findsSourcePageByPageType() {
-        givenValidPreview();
-        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1));
-        givenSourcePage("wp_S_A");
-        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
-
-        execute();
-
-        // document_wiki_links 는 llmPipeline 이 관리해 문서 재처리 때 지워질 수 있다.
-        verify(wikiPageRepository).findIdsByPageType(
-                List.of("wp_S_A"), fruition.wiki.domain.WikiPageType.source);
     }
 
     private RestoreExecuteResponse execute() {
@@ -328,10 +318,12 @@ class RestoreExecuteServiceTest {
         when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
     }
 
+    /** 검증기가 돌려주는 원문 페이지. 실제 판별 규칙은 RestoreTargetValidatorTest 가 다룬다. */
     private void givenSourcePage(String pageId) {
-        when(wikiPageRepository.findIdsByPageType(
-                any(), eq(fruition.wiki.domain.WikiPageType.source)))
-                .thenReturn(List.of(pageId));
+        when(validator.requireApplicable(any(), any()))
+                .thenAnswer(call -> ((RestorePlan) call.getArgument(1)).pages().stream()
+                        .filter(page -> page.pageId().equals(pageId))
+                        .findFirst().orElseThrow());
     }
 
     private void givenPlan(PageRestorePlan... pages) {
@@ -340,6 +332,6 @@ class RestoreExecuteServiceTest {
                 "doc_A", TARGET, "{}", T);
         when(lifecycle.start(any(), anyString(), any())).thenReturn(restore);
         // source page 조회는 ingest 경로에서만 일어난다. 필요한 테스트가 givenSourcePage 로 채운다.
-        lenient().when(wikiPageRepository.findIdsByPageType(any(), any())).thenReturn(List.of());
+        lenient().when(validator.requireApplicable(any(), any())).thenReturn(null);
     }
 }

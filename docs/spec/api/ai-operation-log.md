@@ -192,10 +192,12 @@ Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`
   - `pages[]`: `page_id`, `action`(`delete` \| `restore` \| `rebuild`), `target_revision`(복원일 때만, 그 외 null), `contribution_count`
   - `document`: `{ document_id, from_version, to_version }` — **문서 편집 되돌리기일 때만**. 이때 `pages`는 빈 배열이다
   - `preview_token`: 실행에 그대로 전달해야 한다
+- **에러**: 실행과 **같은 검증**을 거치므로 에러도 같다. 400 `INVALID_RESTORE_REQUEST`(되돌릴 수 없는 유형·되돌릴 대상 없음·원문 페이지 없음), 404 `AI_OPERATION_NOT_FOUND` / `WORKSPACE_NOT_FOUND`
 
+> 미리보기가 통과시킨 것을 실행이 거절하면 사용자가 확인 화면을 다 보고 나서 실패한다. 두 경로가 `RestoreTargetValidator` 하나를 공유한다.
+>
 > Wiki 되돌리기는 `pages`가 차고, 문서 편집 되돌리기는 `document`가 찬다. 둘이 동시에 차지 않는다.
 > 문서는 버전이 선형이라 계산할 것이 없다. 되돌릴 지점이 `ai_operation_changes.before_revision`에 이미 적혀 있다.
-- **에러**: 404 `AI_OPERATION_NOT_FOUND` / `WORKSPACE_NOT_FOUND`
 - `@Transactional(readOnly = true)`
 
 ---

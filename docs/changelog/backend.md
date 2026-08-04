@@ -8,6 +8,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-04
 
+### fix: 미리보기와 실행의 검증을 일치시킴
+
+**배경**
+
+실행은 `document_edit`·`ingest`·`lint`만 받고 나머지는 400으로 거절하는데, **미리보기에는 유형 검사가 없었다.** 되돌리기 기록(`restore` 유형)을 지목하면 미리보기가 그럴듯한 계획을 돌려준다. `restore` 로그도 `target_document_id`를 갖고 있어 범위 결정과 페이지 판정이 끝까지 수행되기 때문이다. 로그 목록에 `restore` 항목이 그대로 나오므로 실제로 눌릴 수 있고, 사용자는 확인 화면을 다 본 뒤에 400을 받는다.
+
+원문 페이지 확인과 빈 계획 거절도 실행에만 있었다.
+
+**변경된 것**
+
+- `RestoreTargetValidator`를 추가해 세 검증을 한곳에 모았다. 되돌릴 수 있는 유형인지, 계획이 비지 않았는지, ingest면 원문 페이지가 있는지다.
+- `RestorePreviewService`와 `RestoreExecuteService`가 이것을 공유한다. **미리보기가 통과시킨 것은 실행도 통과한다**(그사이 대상이 바뀌는 경우는 `preview_token`이 잡는다).
+- `RestoreExecuteService`에 있던 `requireSourcePage`와 유형 검사를 옮기면서 `WikiPageRepository` 의존이 빠졌다.
+
+**검증**
+
+- `RestoreTargetValidatorTest` 6개 — 허용 유형 3종, `restore` 거절, 빈 계획 거절, `page_type`으로 원문 페이지 찾기, 원문 없으면 거절, lint는 조회 자체를 안 함.
+- `RestorePreviewServiceTest` 6개 — 유형 거절, 실행이 거절할 계획은 미리보기도 거절, 정상 응답, 문서 편집 분기, 비멤버 404, 없는 작업 404. 이 서비스에 전용 테스트가 없었다.
+- `RestoreExecuteServiceTest`는 검증기를 mock으로 두고 배선만 확인하도록 정리했다. 판별 규칙은 검증기 테스트가 다룬다.
+- Backend 전체 `./gradlew test` 473개가 통과했다.
+
+---
+
+## 2026-08-04
+
 ### fix: 재작성 대상이 없어도 llmPipeline 결과를 기다리도록 수정
 
 **배경**

@@ -11,8 +11,6 @@ import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.exception.RestorePreviewStaleException;
 import fruition.aihistory.repository.PipelineRestoreRequester;
 import fruition.wiki.domain.WikiPageContribution;
-import fruition.wiki.domain.WikiPageType;
-import fruition.wiki.repository.WikiPageRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -39,7 +37,7 @@ public class RestoreExecuteService {
     private final DocumentRestoreApplier documentApplier;
     private final RestoreApplier applier;
     private final PipelineRestoreRequester restoreRequester;
-    private final WikiPageRepository wikiPageRepository;
+    private final RestoreTargetValidator validator;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
 
@@ -52,7 +50,7 @@ public class RestoreExecuteService {
                                  DocumentRestoreApplier documentApplier,
                                  RestoreApplier applier,
                                  PipelineRestoreRequester restoreRequester,
-                                 WikiPageRepository wikiPageRepository,
+                                 RestoreTargetValidator validator,
                                  ObjectMapper objectMapper,
                                  @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.previewService = previewService;
@@ -64,7 +62,7 @@ public class RestoreExecuteService {
         this.documentApplier = documentApplier;
         this.applier = applier;
         this.restoreRequester = restoreRequester;
-        this.wikiPageRepository = wikiPageRepository;
+        this.validator = validator;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
     }
@@ -72,13 +70,9 @@ public class RestoreExecuteService {
     public RestoreExecuteResponse execute(String workspaceId, String userId,
                                           String operationId, String previewToken) {
         OperationLog target = previewService.loadOperation(workspaceId, userId, operationId);
+        validator.requireRestorable(target);
         if (target.getOperationType() == OperationType.document_edit) {
             return executeDocument(target, previewToken);
-        }
-        if (target.getOperationType() != OperationType.ingest
-                && target.getOperationType() != OperationType.lint) {
-            throw new InvalidRestoreRequestException(
-                    "되돌릴 수 없는 작업입니다: " + target.getOperationType());
         }
 
         Set<String> excluded = scopeResolver.resolve(target);
@@ -91,15 +85,8 @@ public class RestoreExecuteService {
         }
 
         RestorePlan plan = planner.plan(excluded, contributions);
-        if (plan.pages().isEmpty()) {
-            throw new InvalidRestoreRequestException("되돌릴 Wiki 페이지가 없습니다.");
-        }
-
-        // 지시서를 보내기 전에 확인한다. llmPipeline의 source_page는 필수 필드라 없이 보내면
-        // 400으로 거절당하는데, 그때는 이미 DB에 반영이 끝나 되돌릴 수 없는 상태가 된다.
-        PageRestorePlan sourcePage = target.getOperationType() == OperationType.ingest
-                ? requireSourcePage(plan)
-                : null;
+        // 반영 전에 확인한다. 뒤에서 걸리면 이미 DB가 바뀐 뒤라 되돌릴 수 없다.
+        PageRestorePlan sourcePage = validator.requireApplicable(target, plan);
 
         Instant now = Instant.now();
         OperationLog restore = lifecycle.start(target, manifestJson(plan), now);
@@ -154,24 +141,6 @@ public class RestoreExecuteService {
                 new PipelineRestoreRequester.IngestRestoreRun.SourcePage(sourcePage.pageId()),
                 PipelineRestoreRequester.rebuildPages(plan),
                 PipelineRestoreRequester.deletedPages(plan, sourcePage.pageId())));
-    }
-
-    /**
-     * 계획에 든 페이지 중 원문을 대표하는 source page. ingest는 항상 하나를 건드린다.
-     *
-     * <p>{@code document_wiki_links}가 아니라 {@code wiki_pages.page_type}으로 찾는다. 링크
-     * 테이블은 llmPipeline이 관리하고 문서 재처리 과정에서 지워질 수 있어, 페이지 자신이 들고
-     * 있는 값을 보는 편이 안전하다.
-     */
-    private PageRestorePlan requireSourcePage(RestorePlan plan) {
-        List<String> pageIds = plan.pages().stream().map(PageRestorePlan::pageId).toList();
-        Set<String> sourcePageIds = Set.copyOf(
-                wikiPageRepository.findIdsByPageType(pageIds, WikiPageType.source));
-        return plan.pages().stream()
-                .filter(page -> sourcePageIds.contains(page.pageId()))
-                .findFirst()
-                .orElseThrow(() -> new InvalidRestoreRequestException(
-                        "되돌릴 대상에 원문 페이지가 없습니다. 이미 되돌려졌는지 확인해 주세요."));
     }
 
     /** 지시서 원본을 보관한다. 재조립 결과를 받을 때 목표 기여 수를 여기서 꺼내면 그사이 새 ingest가 들어와도 값이 안 흔들린다. */
