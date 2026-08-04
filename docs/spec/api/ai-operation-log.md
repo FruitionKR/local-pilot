@@ -316,9 +316,12 @@ boolean canRestore = appliedAtRevision == kept.size();
 
 | 조건 | 결과 |
 |---|---|
-| 전송 실패 | `notify_pending` — 복구는 이미 반영됐고 재작성만 보류된다 |
-| 전송 성공 + 재작성 있음 | `rebuilding` |
-| 전송 성공 + 재작성 없음 | `succeeded` |
+| 전송 실패 | `notify_pending` — 복구는 이미 반영됐고 llmPipeline 몫만 보류된다 |
+| 전송 성공 | `rebuilding` |
+
+> ⚠️ **재작성 대상이 없어도 여기서 끝내지 않는다.** llmPipeline은 `rebuild_pages`가 비어 있어도 지시서를 받으면 링크·임베딩을 정리한 뒤 **반드시 결과를 보내온다.** 미리 `succeeded`로 확정하면 그 콜백이 종료된 작업에 도착해 `payload_hash` 불일치로 409가 나고, 정리가 끝나기도 전에 사용자에게 완료로 보인다. 확정은 재조립 결과를 받을 때(§4.4) 한다.
+>
+> 문서 편집 되돌리기만 예외다. llmPipeline을 부르지 않으므로 그 자리에서 `succeeded`다.
 
 `PipelineRestoreRequester.send()`는 **예외를 던지지 않고** boolean을 반환한다. 통지 실패로 복구 전체를 롤백하면 이미 반영된 DB 상태와 어긋난다.
 
@@ -525,9 +528,9 @@ flowchart TD
     K --> L
     L --> M{전송 성공?}
     M -- 아니오 --> N[notify_pending]
-    M -- 예, 재작성 있음 --> O[rebuilding]
-    M -- 예, 재작성 없음 --> P[succeeded]
+    M -- 예 --> O[rebuilding]
     O --> Q[POST result: changed_pages + failed_pages]
+    P[문서 편집은 llmPipeline 없이 즉시 succeeded]
     Q --> R[rebuilt · rebuild_failed 기록 → succeeded / partially_succeeded]
 ```
 

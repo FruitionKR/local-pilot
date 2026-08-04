@@ -186,8 +186,8 @@ class OperationQueryControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"preview_token\":\"token-abc\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("succeeded"))
-                .andExpect(jsonPath("$.rebuilding").value(false));
+                .andExpect(jsonPath("$.status").value("rebuilding"))
+                .andExpect(jsonPath("$.rebuilding").value(true));
 
         verify(executeService).execute(WORKSPACE_ID, USER_ID, OPERATION_ID, "token-abc");
     }

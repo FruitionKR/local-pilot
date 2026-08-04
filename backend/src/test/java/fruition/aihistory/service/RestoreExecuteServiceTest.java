@@ -140,8 +140,8 @@ class RestoreExecuteServiceTest {
     }
 
     @Test
-    @DisplayName("재작성 대상이 없고 통지에 성공하면 그 자리에서 끝난다")
-    void completesWhenNothingToRebuild() {
+    @DisplayName("재작성 대상이 없어도 llmPipeline 결과를 기다린다")
+    void waitsEvenWhenNothingToRebuild() {
         givenValidPreview();
         givenPlan(PageRestorePlan.delete("page_1"), PageRestorePlan.restore("page_2", 3L, "op_a1", 1));
         givenSourcePage("page_2");
@@ -149,8 +149,11 @@ class RestoreExecuteServiceTest {
 
         RestoreExecuteResponse response = execute();
 
-        assertThat(response.rebuilding()).isFalse();
-        assertThat(response.status()).isEqualTo("succeeded");
+        // llmPipeline 은 재작성할 페이지가 없어도 링크·임베딩을 정리하고 결과를 보내온다.
+        // 미리 완료로 확정하면 그 콜백이 종료된 작업에 도착해 409 로 거절된다.
+        assertThat(response.status()).isEqualTo("rebuilding");
+        assertThat(response.rebuilding()).isTrue();
+        assertThat(response.rebuildCount()).isZero();
         assertThat(response.deleteCount()).isEqualTo(1);
         assertThat(response.restoreCount()).isEqualTo(1);
         verify(lifecycle).finish(eq("op_restore"), any(), eq(true), any());

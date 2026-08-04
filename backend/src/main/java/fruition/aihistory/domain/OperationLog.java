@@ -129,6 +129,14 @@ public class OperationLog {
         this.status = status;
     }
 
+    /**
+     * 중간 상태로 옮기면서 요약을 남긴다. 결과를 기다리는 동안에도 목록에 무엇을 했는지 보여야 한다.
+     */
+    public void moveTo(OperationStatus status, String summary) {
+        this.status = status;
+        this.summary = summary;
+    }
+
     public String getOperationId() { return operationId; }
     public String getWorkspaceId() { return workspaceId; }
     public String getUserId() { return userId; }

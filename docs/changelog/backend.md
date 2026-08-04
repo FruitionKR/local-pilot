@@ -8,6 +8,39 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-04
 
+### fix: 재작성 대상이 없어도 llmPipeline 결과를 기다리도록 수정
+
+**배경**
+
+지시서를 보낸 뒤 `plan.hasRebuild()`가 false면 그 자리에서 `succeeded`로 확정했다. 그런데 **llmPipeline은 `rebuild_pages`가 비어 있어도 항상 콜백을 보낸다**(`restore_wiki_pages.py`의 `execute_ingest`·`execute_lint`가 무조건 `_notify` 호출). 결과적으로:
+
+- 콜백이 종료된 작업에 도착해 `payload_hash` 불일치로 **409**가 난다. 계약상 llmPipeline은 409를 받으면 중단하므로 그 복구는 매번 오류로 끝난다.
+- llmPipeline이 링크·임베딩 정리를 끝내기도 전에 사용자에게 **완료로 보인다.**
+
+문서를 두 번 ingest하고 마지막을 취소하면 판정이 `restore`와 `delete`로만 나와 실제로 도달하는 경로다.
+
+**변경된 것**
+
+- `RestoreOperationLifecycle.finish` — 통지에 성공하면 재작성 대상 유무와 무관하게 `rebuilding`이다. 확정은 재조립 결과를 받을 때 한다.
+- `RestoreExecuteResponse.from` — `status`와 `rebuilding`을 같은 기준으로 맞췄다. `rebuilding`은 이제 "llmPipeline 결과를 기다리는 중"을 뜻한다.
+- 문서 편집 되돌리기는 그대로다. llmPipeline을 부르지 않으므로 즉시 `succeeded`다.
+
+**요약이 사라지지 않게 함께 고침**
+
+중간 상태로 옮길 때도 요약을 남기도록 `OperationLog.moveTo(status, summary)`를 추가했다. 결과를 기다리는 동안 목록에 무엇을 했는지 보여야 한다.
+
+그리고 llmPipeline 복구 결과 payload에는 `summary`가 없어서, `RestoreRebuildApplier`가 확정할 때 기존 요약을 null로 덮어쓰고 있었다. 콜백에 값이 없으면 유지하도록 바꿨다.
+
+**검증**
+
+- `RestoreExecuteServiceTest`의 "재작성 대상이 없고 통지에 성공하면 그 자리에서 끝난다"를 "재작성 대상이 없어도 llmPipeline 결과를 기다린다"로 뒤집었다.
+- `OperationQueryControllerTest`의 되돌리기 응답 단정도 함께 맞췄다.
+- Backend 전체 `./gradlew test` 462개가 통과했다.
+
+---
+
+## 2026-08-04
+
 ### fix: 원문 페이지를 못 찾으면 반영 전에 거절
 
 **배경**

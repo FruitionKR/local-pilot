@@ -79,7 +79,9 @@ public class RestoreRebuildApplier {
         OperationStatus status = request.failedPagesOrEmpty().isEmpty() && !request.isFailure()
                 ? OperationStatus.succeeded
                 : OperationStatus.partially_succeeded;
-        operation.complete(status, request.summary(), changed, payloadHash, now);
+        // llmPipeline 복구 결과에는 summary가 없다. 복구 실행 때 남긴 요약을 지우지 않는다.
+        String summary = request.summary() != null ? request.summary() : operation.getSummary();
+        operation.complete(status, summary, changed, payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), changed);
     }
 

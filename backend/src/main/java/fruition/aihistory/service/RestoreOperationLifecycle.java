@@ -44,23 +44,25 @@ public class RestoreOperationLifecycle {
     }
 
     /**
-     * 통지 결과에 따라 상태를 확정한다.
+     * 통지 결과에 따라 상태를 옮긴다.
      *
-     * <p>재작성 대상이 없고 통지도 됐으면 완료다. 대상이 있으면 llmPipeline 결과를 기다리는
-     * {@code rebuilding}이고, 통지 자체가 실패하면 {@code notify_pending}으로 남겨 재시도 대상으로 둔다.
-     * 복구는 이미 DB에 반영됐고 재작성만 보류된다.
+     * <p>Wiki 복구는 <b>재작성 대상이 없어도</b> 여기서 끝내지 않는다. llmPipeline이 지시서를 받으면
+     * 재작성할 페이지가 없어도 링크·임베딩을 정리한 뒤 반드시 결과를 보내오기 때문이다. 미리 완료로
+     * 확정하면 그 콜백이 종료된 작업에 도착해 409로 거절되고, 정리가 끝나기도 전에 사용자에게
+     * 완료로 보인다. 확정은 재조립 결과를 받을 때 한다.
+     *
+     * <p>통지 자체가 실패하면 {@code notify_pending}으로 남겨 재시도 대상으로 둔다. 복구는 이미
+     * DB에 반영됐고 llmPipeline 몫만 보류된다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void finish(String restoreOperationId, RestorePlan plan, boolean notified, Instant now) {
         operationLogRepository.findById(restoreOperationId).ifPresent(restore -> {
-            if (!notified) {
+            if (notified) {
+                restore.moveTo(OperationStatus.rebuilding, summary(plan));
+            } else {
                 log.warn("[복구 통지 보류] operationId={} 재작성 {}건이 대기 중입니다.",
                         restoreOperationId, plan.rebuildCount());
-                restore.moveTo(OperationStatus.notify_pending);
-            } else if (plan.hasRebuild()) {
-                restore.moveTo(OperationStatus.rebuilding);
-            } else {
-                restore.complete(OperationStatus.succeeded, summary(plan), plan.pages().size(), null, now);
+                restore.moveTo(OperationStatus.notify_pending, summary(plan));
             }
         });
     }

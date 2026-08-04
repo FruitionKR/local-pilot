@@ -388,7 +388,7 @@ C2 이력 : A → B → A2
      삭제 → deleted 기록만. 기여가 전부 꺼진 상태가 곧 삭제
             링크·임베딩 정리는 deleted_pages 를 받은 llmPipeline 몫
      위임 → ai_operation_changes에 delegated 기록만
-⑤ 조립 지시서 전송 → 대상 있으면 rebuilding, 없으면 succeeded
+⑤ 조립 지시서 전송 → rebuilding (재작성 대상이 없어도 결과를 기다린다)
 ⑥ 재조립 결과 수신 (4.4)
 ```
 
@@ -400,7 +400,9 @@ C2 이력 : A → B → A2
 
 ④는 한 트랜잭션이다. 그 앞에서 복구 작업을 `applying`으로 먼저 커밋해 두므로, 반영 중 실패하면 `applying`으로 남아 같은 `restore_manifest`로 재시도할 수 있다.
 
-⑤ 전송이 실패해도 예외를 올리지 않는다. 복구는 이미 DB에 반영됐고 재작성만 보류되므로 `notify_pending`으로 남겨 나중에 다시 보낸다.
+⑤ 전송이 실패해도 예외를 올리지 않는다. 복구는 이미 DB에 반영됐고 llmPipeline 몫만 보류되므로 `notify_pending`으로 남겨 나중에 다시 보낸다.
+
+재작성 대상이 없어도 `rebuilding`으로 둔다. llmPipeline은 지시서를 받으면 재작성할 페이지가 없어도 링크·임베딩을 정리한 뒤 반드시 결과를 보내오기 때문이다. 미리 완료로 확정하면 그 콜백이 종료된 작업에 도착해 409로 거절된다.
 
 ### 5.3 lint 복구
 
