@@ -8,6 +8,41 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-04
 
+### fix: 원문 페이지를 못 찾으면 반영 전에 거절
+
+**배경**
+
+llmPipeline의 `source_page.page_id`는 필수 필드다. Backend가 원문 페이지를 못 찾아 `null`을 보내면 Pydantic이 400으로 거절하는데, 그 시점에는 이미 DB 반영이 끝나 있어 **복구가 `notify_pending`에 영구히 갇힌다.** 재시도해도 같은 요청이라 계속 실패한다.
+
+**변경된 것**
+
+- 원문 페이지를 `document_wiki_links`의 `source_of`가 아니라 **`wiki_pages.page_type`** 으로 찾는다. 링크 테이블은 llmPipeline이 관리하고 문서 재처리 과정에서 지워질 수 있어, 페이지 자신이 들고 있는 값을 보는 편이 안전하다. `WikiPageRepository.findIdsByPageType`을 추가했다.
+- 못 찾으면 **`applier.apply()` 전에** `InvalidRestoreRequestException`(400)으로 거절한다. 아무것도 바꾸지 않으므로 갇히는 상태가 생기지 않는다.
+- 그 결과 쓰이지 않게 된 `DocumentWikiLinkRepository` 의존을 `RestoreExecuteService`에서 걷어냈다.
+
+거절해도 안전한 이유는, 원문 페이지가 계획에 없다는 것은 취소 대상이 건드린 활성 기여가 하나도 없다는 뜻이고, 그러면 다른 페이지도 마찬가지라 계획이 통째로 비어 이미 400이 나기 때문이다. 실질적으로는 안전망이다.
+
+### test: AI 작업 로그 컨트롤러 테스트 추가
+
+`aihistory` 도메인만 `@WebMvcTest`가 없어 인증·권한·응답 직렬화가 서비스 테스트로만 덮여 있었다.
+
+- `OperationQueryControllerTest` 11개 — snake_case 직렬화, 커서·필터 전달, 상세의 `hunks` 포함과 `diff_too_large` 생략, 미리보기가 Wiki면 `pages`·문서면 `document`만 차는지, `preview_token` 전달, 404·409·400, 미인증 401.
+- `OperationCallbackControllerTest` 9개 — **토큰 검증이 서비스에 닿기 전에 끊는지**(없음·틀림·사용자 JWT 모두), 확정 상태를 고정값이 아니라 실제 값으로 돌려주는지, 404·409·422 매핑, `changed_pages` 누락 400, 재조립 결과의 `failed_pages` 수용.
+
+콜백 테스트에서 `verify(ingestService, never())`로 **인증 실패 시 서비스 호출이 없는 것**까지 확인한다. 저장소 객체를 읽는 것이 그 뒤라 순서가 중요하다.
+
+**정리**
+
+`RestoreApplier`의 `WikiPage`, `WikiService`의 `WikiPageStatus` import가 각각 `wiki_pages` 쓰기 제거와 삭제 판정 변경으로 고아가 돼 지웠다.
+
+**검증**
+
+Backend 전체 `./gradlew test` 462개가 통과했다.
+
+---
+
+## 2026-08-04
+
 ### fix: 복구 조립 지시서를 llmPipeline 계약에 맞춤
 
 **배경**

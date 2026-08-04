@@ -55,7 +55,7 @@ class RestoreExecuteServiceTest {
     @Mock DocumentRestoreApplier documentApplier;
     @Mock RestoreApplier applier;
     @Mock PipelineRestoreRequester restoreRequester;
-    @Mock fruition.wiki.repository.DocumentWikiLinkRepository documentWikiLinkRepository;
+    @Mock fruition.wiki.repository.WikiPageRepository wikiPageRepository;
 
     private RestoreExecuteService service;
 
@@ -63,7 +63,7 @@ class RestoreExecuteServiceTest {
     void setUp() {
         service = new RestoreExecuteService(previewService, scopeResolver, planner, tokenSigner,
                 lifecycle, documentPlanner, documentApplier, applier, restoreRequester,
-                documentWikiLinkRepository, new ObjectMapper(), "http://backend:8080");
+                wikiPageRepository, new ObjectMapper(), "http://backend:8080");
     }
 
     @Test
@@ -144,6 +144,7 @@ class RestoreExecuteServiceTest {
     void completesWhenNothingToRebuild() {
         givenValidPreview();
         givenPlan(PageRestorePlan.delete("page_1"), PageRestorePlan.restore("page_2", 3L, "op_a1", 1));
+        givenSourcePage("page_2");
         when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         RestoreExecuteResponse response = execute();
@@ -159,8 +160,10 @@ class RestoreExecuteServiceTest {
     @DisplayName("재작성 대상이 있으면 llmPipeline 결과를 기다린다")
     void waitsForRebuild() {
         givenValidPreview();
-        givenPlan(PageRestorePlan.rebuild("page_1",
-                List.of(new PageRestorePlan.Kept("op_b", "doc_B", "wiki/frag_b.md"))));
+        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1),
+                PageRestorePlan.rebuild("page_1",
+                        List.of(new PageRestorePlan.Kept("op_b", "doc_B", "wiki/frag_b.md"))));
+        givenSourcePage("wp_S_A");
         when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         RestoreExecuteResponse response = execute();
@@ -173,7 +176,9 @@ class RestoreExecuteServiceTest {
     @DisplayName("통지에 실패해도 반영은 유지하고 재시도 대상으로 남긴다")
     void keepsAppliedWhenNotifyFails() {
         givenValidPreview();
-        givenPlan(PageRestorePlan.rebuild("page_1", List.of()));
+        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1),
+                PageRestorePlan.rebuild("page_1", List.of()));
+        givenSourcePage("wp_S_A");
         when(restoreRequester.sendIngestRestore(any())).thenReturn(false);
 
         RestoreExecuteResponse response = execute();
@@ -187,7 +192,9 @@ class RestoreExecuteServiceTest {
     @DisplayName("조립 지시서에 이번 복구 작업의 콜백 주소를 싣는다")
     void sendsCallbackUrlOfThisRestore() {
         givenValidPreview();
-        givenPlan(PageRestorePlan.rebuild("page_1", List.of()));
+        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1),
+                PageRestorePlan.rebuild("page_1", List.of()));
+        givenSourcePage("wp_S_A");
         when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         execute();
@@ -268,6 +275,39 @@ class RestoreExecuteServiceTest {
         verify(restoreRequester, never()).sendIngestRestore(any());
     }
 
+    @Test
+    @DisplayName("원문 페이지를 못 찾으면 반영 전에 거절한다")
+    void rejectsBeforeApplyingWhenSourcePageMissing() {
+        givenValidPreview();
+        when(planner.plan(any(), any())).thenReturn(new RestorePlan(
+                List.of(PageRestorePlan.rebuild("wp_C7", List.of()))));
+        when(wikiPageRepository.findIdsByPageType(any(), any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> execute())
+                .isInstanceOf(InvalidRestoreRequestException.class);
+
+        // llmPipeline 의 source_page 는 필수라 없이 보내면 400 이다. 그때는 이미 DB 반영이
+        // 끝나 되돌릴 수 없으므로, 아무것도 바꾸기 전에 멈춰야 한다.
+        verify(lifecycle, never()).start(any(), anyString(), any());
+        verify(applier, never()).apply(any(), any(), any(), any());
+        verify(restoreRequester, never()).sendIngestRestore(any());
+    }
+
+    @Test
+    @DisplayName("원문 페이지는 링크가 아니라 page_type으로 찾는다")
+    void findsSourcePageByPageType() {
+        givenValidPreview();
+        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1));
+        givenSourcePage("wp_S_A");
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
+
+        execute();
+
+        // document_wiki_links 는 llmPipeline 이 관리해 문서 재처리 때 지워질 수 있다.
+        verify(wikiPageRepository).findIdsByPageType(
+                List.of("wp_S_A"), fruition.wiki.domain.WikiPageType.source);
+    }
+
     private RestoreExecuteResponse execute() {
         return service.execute(WORKSPACE, USER, TARGET, TOKEN);
     }
@@ -286,12 +326,9 @@ class RestoreExecuteServiceTest {
     }
 
     private void givenSourcePage(String pageId) {
-        fruition.wiki.domain.DocumentWikiLink link = org.mockito.Mockito.mock(
-                fruition.wiki.domain.DocumentWikiLink.class);
-        when(link.getWikiPageId()).thenReturn(pageId);
-        when(documentWikiLinkRepository.findAllByIdDocumentIdAndIdRelationType(
-                any(), eq(fruition.wiki.domain.DocumentWikiRelationType.source_of)))
-                .thenReturn(List.of(link));
+        when(wikiPageRepository.findIdsByPageType(
+                any(), eq(fruition.wiki.domain.WikiPageType.source)))
+                .thenReturn(List.of(pageId));
     }
 
     private void givenPlan(PageRestorePlan... pages) {
@@ -300,7 +337,6 @@ class RestoreExecuteServiceTest {
                 "doc_A", TARGET, "{}", T);
         when(lifecycle.start(any(), anyString(), any())).thenReturn(restore);
         // source page 조회는 ingest 경로에서만 일어난다. 필요한 테스트가 givenSourcePage 로 채운다.
-        lenient().when(documentWikiLinkRepository.findAllByIdDocumentIdAndIdRelationType(any(), any()))
-                .thenReturn(List.of());
+        lenient().when(wikiPageRepository.findIdsByPageType(any(), any())).thenReturn(List.of());
     }
 }

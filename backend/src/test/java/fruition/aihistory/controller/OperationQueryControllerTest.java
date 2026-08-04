@@ -1,0 +1,233 @@
+package fruition.aihistory.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.aihistory.dto.DocumentRestorePlan;
+import fruition.aihistory.dto.OperationLogDetailResponse;
+import fruition.aihistory.dto.OperationLogListResponse;
+import fruition.aihistory.dto.RestoreExecuteResponse;
+import fruition.aihistory.dto.RestorePlan;
+import fruition.aihistory.dto.RestorePreviewResponse;
+import fruition.aihistory.exception.OperationNotFoundException;
+import fruition.aihistory.exception.RestorePreviewStaleException;
+import fruition.aihistory.service.OperationQueryService;
+import fruition.aihistory.service.RestoreExecuteService;
+import fruition.aihistory.service.RestorePreviewService;
+import fruition.security.JwtAuthenticationFilter;
+import fruition.security.JwtTokenProvider;
+import fruition.security.SecurityConfig;
+import fruition.security.oauth.OAuthExchangeCodeStore;
+import fruition.security.oauth.handler.OAuth2AuthenticationFailureHandler;
+import fruition.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
+import fruition.security.oauth.service.CustomOAuth2UserService;
+import fruition.util.GlobalExceptionHandler;
+import fruition.workspace.exception.WorkspaceNotFoundException;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * AI 작업 로그 조회·복구 엔드포인트. 인증과 응답 직렬화를 확인한다.
+ */
+@WebMvcTest(OperationQueryController.class)
+@Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
+        OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
+class OperationQueryControllerTest {
+
+    private static final String USER_ID = "user_1f9a74af";
+    private static final String WORKSPACE_ID = "ws_aaa11111";
+    private static final String OPERATION_ID = "op_a2";
+    private static final String BASE = "/api/workspaces/" + WORKSPACE_ID + "/ai-operation-logs";
+    private static final Instant NOW = Instant.parse("2026-08-04T00:00:00Z");
+
+    @Autowired MockMvc mockMvc;
+    @Autowired ObjectMapper objectMapper;
+    @Autowired JwtTokenProvider jwtTokenProvider;
+    @MockBean OperationQueryService queryService;
+    @MockBean RestorePreviewService previewService;
+    @MockBean RestoreExecuteService executeService;
+    @MockBean CustomOAuth2UserService customOAuth2UserService;
+
+    @Test
+    @DisplayName("목록은 snake_case로 내려가고 커서를 그대로 전달한다")
+    void listReturnsSnakeCaseAndPassesCursor() throws Exception {
+        when(queryService.list(eq(WORKSPACE_ID), eq(USER_ID), eq("ingest"), isNull(),
+                eq("2026-08-01T00:00:00Z"), eq(50)))
+                .thenReturn(new OperationLogListResponse(List.of(
+                        new OperationLogListResponse.Item(OPERATION_ID, "ingest", "succeeded",
+                                "doc_A", "요약", 3, null, NOW, NOW)),
+                        "2026-07-31T00:00:00Z"));
+
+        mockMvc.perform(get(BASE)
+                        .header("Authorization", bearer())
+                        .param("type", "ingest")
+                        .param("cursor", "2026-08-01T00:00:00Z")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.logs[0].operation_id").value(OPERATION_ID))
+                .andExpect(jsonPath("$.logs[0].operation_type").value("ingest"))
+                .andExpect(jsonPath("$.logs[0].changed_resource_count").value(3))
+                .andExpect(jsonPath("$.next_cursor").value("2026-07-31T00:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("필터를 안 주면 null로 넘어간다")
+    void listWithoutFiltersPassesNulls() throws Exception {
+        when(queryService.list(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new OperationLogListResponse(List.of(), null));
+
+        mockMvc.perform(get(BASE).header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.next_cursor").doesNotExist());
+
+        verify(queryService).list(WORKSPACE_ID, USER_ID, null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("상세는 변경분까지 함께 내려간다")
+    void detailIncludesHunks() throws Exception {
+        when(queryService.detail(WORKSPACE_ID, USER_ID, OPERATION_ID))
+                .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "ingest", "succeeded",
+                        "doc_A", "요약", 1, null, NOW, NOW,
+                        List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_C3",
+                                3L, 4L, "updated", null, 8, 1, List.of(), null))));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.changes[0].resource_id").value("wp_C3"))
+                .andExpect(jsonPath("$.changes[0].before_revision").value(3))
+                .andExpect(jsonPath("$.changes[0].change_type").value("updated"))
+                .andExpect(jsonPath("$.changes[0].hunks").isArray())
+                // 값이 없으면 응답에서 생략한다.
+                .andExpect(jsonPath("$.changes[0].diff_too_large").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("없는 작업은 404")
+    void detailNotFound() throws Exception {
+        when(queryService.detail(any(), any(), any()))
+                .thenThrow(new OperationNotFoundException(OPERATION_ID));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("AI_OPERATION_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("다른 워크스페이스 로그는 404")
+    void detailOfForeignWorkspaceIsNotFound() throws Exception {
+        when(queryService.detail(any(), any(), any()))
+                .thenThrow(new WorkspaceNotFoundException(WORKSPACE_ID));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WORKSPACE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("Wiki 미리보기는 pages가 차고 document는 생략된다")
+    void previewForWikiOmitsDocument() throws Exception {
+        when(previewService.preview(WORKSPACE_ID, USER_ID, OPERATION_ID))
+                .thenReturn(new RestorePreviewResponse(OPERATION_ID, 1, 1, 1,
+                        List.of(new RestorePreviewResponse.Page("wp_C3", "rebuild", null, 2)),
+                        null, "token-abc"));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID + "/restore-preview")
+                        .header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pages[0].page_id").value("wp_C3"))
+                .andExpect(jsonPath("$.pages[0].contribution_count").value(2))
+                .andExpect(jsonPath("$.preview_token").value("token-abc"))
+                .andExpect(jsonPath("$.document").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("문서 편집 미리보기는 document가 차고 pages는 빈 배열이다")
+    void previewForDocumentIncludesDocumentPlan() throws Exception {
+        when(previewService.preview(WORKSPACE_ID, USER_ID, OPERATION_ID))
+                .thenReturn(RestorePreviewResponse.from(OPERATION_ID,
+                        new DocumentRestorePlan("doc_A", 6, 5), "token-abc"));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID + "/restore-preview")
+                        .header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document.document_id").value("doc_A"))
+                .andExpect(jsonPath("$.document.from_version").value(6))
+                .andExpect(jsonPath("$.document.to_version").value(5))
+                .andExpect(jsonPath("$.pages").isEmpty());
+    }
+
+    @Test
+    @DisplayName("되돌리기는 preview_token을 그대로 서비스에 넘긴다")
+    void restorePassesPreviewToken() throws Exception {
+        when(executeService.execute(WORKSPACE_ID, USER_ID, OPERATION_ID, "token-abc"))
+                .thenReturn(RestoreExecuteResponse.from(OPERATION_ID, "op_a2",
+                        new RestorePlan(List.of()), true));
+
+        mockMvc.perform(post(BASE + "/" + OPERATION_ID + "/restore")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preview_token\":\"token-abc\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("succeeded"))
+                .andExpect(jsonPath("$.rebuilding").value(false));
+
+        verify(executeService).execute(WORKSPACE_ID, USER_ID, OPERATION_ID, "token-abc");
+    }
+
+    @Test
+    @DisplayName("preview_token이 비면 400")
+    void restoreWithoutTokenIsBadRequest() throws Exception {
+        mockMvc.perform(post(BASE + "/" + OPERATION_ID + "/restore")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preview_token\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("미리보기 이후 대상이 바뀌면 409")
+    void restoreWithStalePreviewIsConflict() throws Exception {
+        when(executeService.execute(any(), any(), any(), any()))
+                .thenThrow(new RestorePreviewStaleException());
+
+        mockMvc.perform(post(BASE + "/" + OPERATION_ID + "/restore")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preview_token\":\"token-abc\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("RESTORE_PREVIEW_STALE"));
+    }
+
+    @Test
+    @DisplayName("인증 없이는 목록도 되돌리기도 401")
+    void unauthenticatedIsRejected() throws Exception {
+        mockMvc.perform(get(BASE)).andExpect(status().isUnauthorized());
+        mockMvc.perform(post(BASE + "/" + OPERATION_ID + "/restore")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"preview_token\":\"token-abc\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private String bearer() {
+        return "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+    }
+}

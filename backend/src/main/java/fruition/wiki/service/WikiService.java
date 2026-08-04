@@ -13,7 +13,6 @@ import fruition.wiki.repository.WikiPageVersionRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
-import fruition.wiki.domain.WikiPageStatus;
 import fruition.wiki.domain.WikiPageType;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.dto.*;

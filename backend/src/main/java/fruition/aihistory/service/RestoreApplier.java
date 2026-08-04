@@ -10,7 +10,6 @@ import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.aihistory.repository.OperationLogRepository;
-import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageContribution;
 import fruition.wiki.domain.WikiPageVersion;
 import fruition.wiki.domain.WikiPageVersionId;

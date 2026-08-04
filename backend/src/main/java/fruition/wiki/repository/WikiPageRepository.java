@@ -59,6 +59,11 @@ public interface WikiPageRepository extends JpaRepository<WikiPage, String> {
     Optional<WikiPage> findAliveByIdAndWorkspaceId(
             @Param("id") String id, @Param("workspaceId") String workspaceId);
 
+    /** 여러 페이지 중 주어진 유형인 것. 복구 지시서에 실을 source page를 고를 때 쓴다. */
+    @Query("SELECT p.id FROM WikiPage p WHERE p.id IN :pageIds AND p.pageType = :pageType")
+    List<String> findIdsByPageType(@Param("pageIds") java.util.Collection<String> pageIds,
+                                   @Param("pageType") WikiPageType pageType);
+
     /** 삭제 판정용. 여러 페이지 중 살아 있는 것만. */
     @Query("""
             SELECT p.id FROM WikiPage p
