@@ -11,6 +11,7 @@ from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor i
 from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
 from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.infrastructure.postgres_skill_repository import PostgresSkillRepository
+from app.modules.skill.interfaces.http.dependencies import get_propose_skill_draft_use_case
 
 
 @lru_cache(maxsize=1)
@@ -24,4 +25,9 @@ def get_handle_agent_turn_use_case() -> HandleAgentTurnUseCase:
         markdown_create_use_case=GenerateMarkdownDocumentUseCase(markdown_editor),
         skill_selector=SelectSkillUseCase(PostgresSkillRepository(), feature_enabled=feature_enabled),
         agent_run_starter=StartAgentRunUseCase(PostgresAgentRunRepository(), feature_enabled=feature_enabled),
+        skill_draft_proposer=(
+            get_propose_skill_draft_use_case()
+            if feature_enabled
+            else None
+        ),
     )

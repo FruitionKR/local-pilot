@@ -9,6 +9,10 @@ from app.modules.agent.domain.entities import (
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import QueryResponse
+from app.modules.skill.interfaces.http.schemas import (
+    SkillDraftProposalResponse,
+    SkillDraftSourceRunRequest,
+)
 
 
 class MarkdownEditTargetRequest(BaseModel):
@@ -54,6 +58,9 @@ class AgentTurnRequestBody(BaseModel):
     active_markdown_context: ActiveMarkdownContextRequest | None = None
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
     skill_id: str | None = Field(default=None, min_length=1)
+    skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
+    skill_draft_user_directives: list[str] = Field(default_factory=list)
+    skill_draft_excluded_literals: list[str] = Field(default_factory=list)
 
     def to_domain(self) -> AgentTurnRequest:
         return AgentTurnRequest(
@@ -64,11 +71,23 @@ class AgentTurnRequestBody(BaseModel):
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
             skill_mode=self.skill_mode,
             skill_id=self.skill_id,
+            skill_draft_sources=tuple(source.to_domain() for source in self.skill_draft_sources),
+            skill_draft_user_directives=tuple(self.skill_draft_user_directives),
+            skill_draft_excluded_literals=tuple(self.skill_draft_excluded_literals),
         )
 
 
 class AgentTurnRouteResponse(BaseModel):
-    action: Literal["chat_answer", "markdown_edit", "markdown_create", "folder_organize", "clarify", "reject"]
+    action: Literal[
+        "chat_answer",
+        "markdown_edit",
+        "markdown_create",
+        "folder_organize",
+        "workspace_workflow",
+        "skill_draft_proposal",
+        "clarify",
+        "reject",
+    ]
     confidence: float
     reason: str
     edit_goal: str | None = None
@@ -107,7 +126,16 @@ class GeneratedMarkdownResponse(BaseModel):
 
 
 class AgentTurnResponse(BaseModel):
-    action: Literal["chat_answer", "markdown_edit", "markdown_create", "folder_organize", "clarify", "reject"]
+    action: Literal[
+        "chat_answer",
+        "markdown_edit",
+        "markdown_create",
+        "folder_organize",
+        "workspace_workflow",
+        "skill_draft_proposal",
+        "clarify",
+        "reject",
+    ]
     route: AgentTurnRouteResponse
     message: str | None = None
     chat: QueryResponse | None = None
@@ -116,3 +144,4 @@ class AgentTurnResponse(BaseModel):
     skill_candidates: list[SkillCandidateResponse] = Field(default_factory=list)
     run_id: str | None = None
     run_status: str | None = None
+    skill_draft_proposal: SkillDraftProposalResponse | None = None

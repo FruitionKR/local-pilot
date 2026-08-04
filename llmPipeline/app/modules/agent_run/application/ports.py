@@ -1,6 +1,12 @@
 from typing import Protocol
 
-from app.modules.agent_run.domain.entities import AgentJob, AgentRun, AgentRunContext, StartAgentRunRequest
+from app.modules.agent_run.domain.entities import (
+    AgentJob,
+    AgentRun,
+    AgentRunContext,
+    ContentArtifactReference,
+    StartAgentRunRequest,
+)
 from app.modules.agent_run.domain.execution import AgentExecutionDecision
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 
@@ -78,6 +84,7 @@ class AgentPlanGeneratorPort(Protocol):
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
         allowed_tools: tuple[str, ...] | None,
+        content_artifacts: tuple[ContentArtifactReference, ...] = (),
     ) -> AgentPlan:
         ...
 

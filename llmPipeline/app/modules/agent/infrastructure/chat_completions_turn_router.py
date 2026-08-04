@@ -27,7 +27,16 @@ TEMPLATE_DEFERRED_MARKERS = (
 )
 INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
 INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
-ALLOWED_ACTIONS = {"chat_answer", "markdown_edit", "markdown_create", "folder_organize", "clarify", "reject"}
+ALLOWED_ACTIONS = {
+    "chat_answer",
+    "markdown_edit",
+    "markdown_create",
+    "folder_organize",
+    "workspace_workflow",
+    "skill_draft_proposal",
+    "clarify",
+    "reject",
+}
 JSON_OBJECT_CONTRACT_FAILURE = "model output must be a JSON object"
 
 

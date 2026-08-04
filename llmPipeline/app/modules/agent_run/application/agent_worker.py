@@ -13,7 +13,11 @@ from app.modules.agent_run.application.ports import (
     AgentToolGatewayPort,
     ToolGatewayError,
 )
-from app.modules.agent_run.domain.entities import AgentJob, AgentRunContext
+from app.modules.agent_run.domain.entities import (
+    AgentJob,
+    AgentRunContext,
+    ContentArtifactReference,
+)
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 
 
@@ -24,6 +28,7 @@ _READ_TOOL_ARGUMENTS = {
     "list_root_items": frozenset(),
     "list_folder_children": frozenset({"folder_id"}),
     "get_document_metadata": frozenset({"document_id"}),
+    "get_document_content": frozenset({"document_id"}),
 }
 
 
@@ -83,6 +88,7 @@ class AgentWorker:
         ):
             raise ValueError("AgentRun cannot enter planning.")
         hierarchy = self._inspect_hierarchy(context)
+        content_artifacts = self._load_content_artifacts(context)
         plan_id = str(uuid4())
         plan = self._plan_generator.generate(
             run_id=job.run_id,
@@ -96,6 +102,7 @@ class AgentWorker:
                 if context.run.skill_version_id is not None
                 else None
             ),
+            content_artifacts=content_artifacts,
         )
         if context.run.skill_version_id is not None:
             unsupported = {operation.tool_name for operation in plan.operations} - set(context.allowed_tools)
@@ -124,6 +131,26 @@ class AgentWorker:
                     raise ValueError("Hierarchy children response is invalid.")
                 queue.extend((folder_id, child) for child in child_items if isinstance(child, dict))
         return snapshot
+
+    def _load_content_artifacts(
+        self,
+        context: AgentRunContext,
+    ) -> tuple[ContentArtifactReference, ...]:
+        if context.run.action != "workspace_workflow":
+            return ()
+        if not self._repository.reserve_tool_call(context.run.id):
+            raise ValueError("AgentRun tool call limit exceeded.")
+        response = self._tool_gateway.read(
+            "list_agent_run_artifacts",
+            run_id=context.run.id,
+            workspace_id=context.run.workspace_id,
+            user_id=context.run.user_id,
+            arguments={},
+        )
+        items = response.get("items")
+        if not isinstance(items, list) or len(items) > 20:
+            raise ValueError("AgentRun artifact response is invalid.")
+        return tuple(_content_artifact(item) for item in items)
 
     def _execute(self, job: AgentJob) -> None:
         context = self._repository.load_context(job.run_id)
@@ -364,6 +391,18 @@ class AgentWorker:
         target_id = str(response.get("id") or operation.target_id or "")
         if not target_id:
             return False
+        if operation.tool_name == "apply_document_edit":
+            current = self._read_tool(context, "get_document_content", {"document_id": target_id})
+            expected_version = response.get("current_version")
+            expected_hash = response.get("content_hash")
+            return (
+                isinstance(expected_version, int)
+                and not isinstance(expected_version, bool)
+                and isinstance(expected_hash, str)
+                and bool(expected_hash)
+                and current.get("current_version") == expected_version
+                and current.get("content_hash") == expected_hash
+            )
         if operation.target_type == "document" and operation.tool_name == "rename_document":
             current = self._read_tool(context, "get_document_metadata", {"document_id": target_id})
             return _response_name(current) == _response_name(response)
@@ -436,3 +475,67 @@ def _resolve_operation_references(
 
 def _response_name(response: dict[str, object]) -> object | None:
     return response.get("name") or response.get("display_name") or response.get("displayName")
+
+
+def _content_artifact(value: object) -> ContentArtifactReference:
+    allowed_fields = {
+        "id",
+        "content_hash",
+        "purpose",
+        "document_id",
+        "base_version",
+        "target",
+    }
+    if not isinstance(value, dict) or not {"id", "content_hash", "purpose"}.issubset(value):
+        raise ValueError("AgentRun artifact item is invalid.")
+    if set(value) - allowed_fields:
+        raise ValueError("AgentRun artifact item contains unsupported fields.")
+    artifact_id = value.get("id")
+    content_hash = value.get("content_hash")
+    purpose = value.get("purpose")
+    if not isinstance(artifact_id, str) or not artifact_id.strip():
+        raise ValueError("AgentRun artifact id is invalid.")
+    if not isinstance(content_hash, str) or not content_hash.strip():
+        raise ValueError("AgentRun artifact content_hash is invalid.")
+    if purpose not in {"create_document", "apply_document_edit"}:
+        raise ValueError("AgentRun artifact purpose is invalid.")
+
+    document_id = value.get("document_id")
+    base_version = value.get("base_version")
+    target = value.get("target")
+    if purpose == "create_document":
+        if document_id is not None or base_version is not None or target is not None:
+            raise ValueError("Document creation artifact cannot have an edit target.")
+    elif (
+        not isinstance(document_id, str)
+        or not document_id.strip()
+        or not isinstance(base_version, int)
+        or isinstance(base_version, bool)
+        or base_version < 1
+        or not _is_document_target(target)
+    ):
+        raise ValueError("Document edit artifact target is invalid.")
+    return ContentArtifactReference(
+        id=artifact_id.strip(),
+        content_hash=content_hash.strip(),
+        purpose=purpose,  # type: ignore[arg-type]
+        document_id=document_id,
+        base_version=base_version,
+        target=target,
+    )
+
+
+def _is_document_target(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"type", "start_line", "end_line"}:
+        return False
+    start_line = value.get("start_line")
+    end_line = value.get("end_line")
+    return (
+        value.get("type") in {"selection", "current_section", "whole_document"}
+        and isinstance(start_line, int)
+        and not isinstance(start_line, bool)
+        and isinstance(end_line, int)
+        and not isinstance(end_line, bool)
+        and start_line >= 1
+        and end_line >= start_line
+    )

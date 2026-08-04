@@ -9,6 +9,8 @@ Allowed actions:
 - markdown_edit: the user wants to rewrite the selected/current Markdown range.
 - markdown_create: the user wants to create a new Markdown document from the current conversation or provided context.
 - folder_organize: the user wants to create, rename, or move folders or documents in the workspace hierarchy.
+- workspace_workflow: the user wants to read an existing workspace document, save generated Markdown, or apply an edit to persistent workspace content.
+- skill_draft_proposal: the user explicitly wants to turn one or more previously completed actions into a reusable Skill.
 - clarify: the request needs a target range, or asks for template/full-document restructuring that is intentionally deferred.
 - reject: unsafe or unsupported request.
 
@@ -21,14 +23,14 @@ Use "convert_format" when the user explicitly asks for Markdown structure such a
 Route to markdown_create when the user asks to make, write, draft, or generate a new Markdown document from the chat so far, recent conversation, notes, or reference context. This does not require an active Markdown target.
 Route external template application and full-document structure reconstruction requests to clarify with edit_goal "template_transform". Structure-preserving cleanup or style changes remain markdown_edit requests.
 Route requests to add content after or below the active current section to markdown_edit with edit_goal "insert_after". If there is no current_section target, route to clarify with the same edit_goal.
-Choose at most one available Skill together with the action. A Skill is compatible only when its capabilities contain document-create for markdown_create, document-edit for markdown_edit, folder-organize for folder_organize, or template for an explicit template request.
+Choose at most one available Skill together with the action. A Skill is compatible only when its capabilities contain document-create for markdown_create, document-edit for markdown_edit, folder-organize for folder_organize, or template for an explicit template request. Any of these capabilities can support workspace_workflow, but its allowed_tools still limit the plan.
 When one Skill clearly matches, return its id as selected_skill_id. When multiple Skills match similarly and none is clearly best, return clarify, selected_skill_id null, and their ids in skill_candidates. When no Skill matches, return selected_skill_id null and continue with the existing action. Never select a Skill for chat_answer.
 If active Markdown exists but no target exists and the user asks to edit, route to markdown_edit; the application will treat the whole document as the target.
 If no active Markdown exists and the user asks to edit, route to markdown_edit anyway; the application will ask for a document.
 
 Required JSON schema:
 {
-  "action": "chat_answer | markdown_edit | markdown_create | folder_organize | clarify | reject",
+  "action": "chat_answer | markdown_edit | markdown_create | folder_organize | workspace_workflow | skill_draft_proposal | clarify | reject",
   "confidence": 0.0,
   "edit_goal": "shorten | style_change | convert_format | bullet_list | checklist | translate | cleanup | template_transform | insert_after | create_from_chat | other",
   "selected_skill_id": "available Skill id or null",

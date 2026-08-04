@@ -4,7 +4,15 @@ import json
 from typing import Literal
 
 
-PlanToolName = Literal["create_folder", "rename_folder", "move_folder", "move_document", "rename_document"]
+PlanToolName = Literal[
+    "create_folder",
+    "rename_folder",
+    "move_folder",
+    "move_document",
+    "rename_document",
+    "create_document",
+    "apply_document_edit",
+]
 OperationStatus = Literal[
     "pending",
     "running",
