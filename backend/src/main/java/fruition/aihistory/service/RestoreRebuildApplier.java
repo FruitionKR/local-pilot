@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 재조립 결과를 DB에 반영해 복구 작업을 끝낸다. 저장소 읽기를 마친 뒤 <b>한 트랜잭션</b>으로 처리한다.
@@ -67,7 +68,9 @@ public class RestoreRebuildApplier {
         OperationLog operation = operationLogRepository.findById(operationId)
                 .orElseThrow(() -> new OperationNotFoundException(operationId));
 
-        Map<String, Integer> targetCounts = targetContributionCounts(operation);
+        RestorePlan plan = restorePlan(operation);
+        Map<String, Integer> targetCounts = targetContributionCounts(plan);
+        validateDeletedPages(request, plan);
         for (RebuiltPage page : loaded) {
             applyPage(operation, page, targetCounts, now);
         }
@@ -142,23 +145,38 @@ public class RestoreRebuildApplier {
      * 사본을 만들어 결과에 실어 보내기 때문이다(source page가 그렇다). 본문이 같아 아래에서
      * {@code content_hash} 비교로 걸러지므로 새 revision이 생기지는 않는다.
      */
-    private Map<String, Integer> targetContributionCounts(OperationLog operation) {
+    private RestorePlan restorePlan(OperationLog operation) {
         if (operation.getRestoreManifest() == null) {
             throw new InvalidCallbackPayloadException(
                     "복구 지시서가 없는 작업입니다: operationId=" + operation.getOperationId());
         }
         try {
-            RestorePlan plan = objectMapper.readValue(operation.getRestoreManifest(), RestorePlan.class);
-            Map<String, Integer> counts = new HashMap<>();
-            for (PageRestorePlan page : plan.pages()) {
-                if (page.action() == RestoreAction.rebuild || page.action() == RestoreAction.restore) {
-                    counts.put(page.pageId(), page.contributionCount());
-                }
-            }
-            return counts;
+            return objectMapper.readValue(operation.getRestoreManifest(), RestorePlan.class);
         } catch (Exception e) {
             throw new IllegalStateException("복구 지시서를 읽지 못했습니다: operationId="
                     + operation.getOperationId(), e);
+        }
+    }
+
+    private Map<String, Integer> targetContributionCounts(RestorePlan plan) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (PageRestorePlan page : plan.pages()) {
+            if (page.action() == RestoreAction.rebuild || page.action() == RestoreAction.restore) {
+                counts.put(page.pageId(), page.contributionCount());
+            }
+        }
+        return counts;
+    }
+
+    private void validateDeletedPages(OperationResultRequest request, RestorePlan plan) {
+        Set<String> targets = plan.byAction(RestoreAction.delete).stream()
+                .map(PageRestorePlan::pageId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (String pageId : request.deletedPagesOrEmpty()) {
+            if (!targets.contains(pageId)) {
+                throw new InvalidCallbackPayloadException(
+                        "복구 지시서에 없는 삭제 페이지입니다: pageId=" + pageId);
+            }
         }
     }
 

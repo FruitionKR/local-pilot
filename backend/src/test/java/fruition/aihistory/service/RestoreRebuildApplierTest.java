@@ -193,6 +193,22 @@ class RestoreRebuildApplierTest {
     }
 
     @Test
+    @DisplayName("복구 지시서에 없는 삭제 페이지를 callback이 보고하면 거절한다")
+    void rejectsDeletedPageNotInManifest() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of("C_OTHER"), null, List.of());
+
+        assertThatThrownBy(() -> applier.apply(OPERATION_ID, request, List.of(), "hash", NOW))
+                .isInstanceOf(InvalidCallbackPayloadException.class)
+                .hasMessageContaining("복구 지시서에 없는 삭제 페이지");
+
+        verify(operationChangeRepository, never()).save(any());
+        verify(versionRepository, never()).findMaxRevision(anyString());
+    }
+
+    @Test
     @DisplayName("같은 결과가 다시 오면 새 버전을 만들지 않는다")
     void skipsWhenContentUnchanged() {
         givenOperation(manifest(PageRestorePlan.rebuild(PAGE_ID, keptOf(2))));

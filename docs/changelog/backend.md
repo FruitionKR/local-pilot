@@ -8,6 +8,17 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-04
 
+### fix: 복구 callback 삭제 대상을 지시서와 대조
+
+- 복구 callback의 `deleted_pages`가 `restore_manifest`의 `delete` 대상에 포함되는지 변경 저장 전에 검증한다.
+- 계획에 없는 페이지가 오면 422 `INVALID_CALLBACK_PAYLOAD`로 거절해 다른 페이지의 삭제 감사 로그가 잘못 남지 않게 했다.
+- 계획에 포함된 삭제 대상 일부만 보고하는 부분 성공 callback은 계속 허용한다.
+- 회귀 테스트와 Backend 전체 `./gradlew test`, `git diff --check`가 통과했다.
+
+---
+
+## 2026-08-04
+
 ### feat: lint 작업 로그 저장과 되돌리기 지원
 
 **배경**
