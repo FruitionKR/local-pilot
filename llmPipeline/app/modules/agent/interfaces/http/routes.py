@@ -13,6 +13,7 @@ from app.modules.agent.interfaces.http.schemas import (
     GeneratedMarkdownResponse,
     MarkdownEditOperationResponse,
     MarkdownEditTargetResponse,
+    SkillCandidateResponse,
 )
 from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownCreateOutputContractError,
@@ -20,6 +21,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
+from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -55,6 +57,14 @@ def handle_agent_turn(
             detail={
                 "code": "agent_turn_route_contract_failed",
                 "message": "Agent 요청 분류 결과가 필수 출력 조건을 충족하지 못했습니다.",
+            },
+        ) from exc
+    except (SkillNotFoundError, SkillDisabledError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": exc.code,
+                "message": "선택한 Skill을 사용할 수 없습니다.",
             },
         ) from exc
     except MarkdownTargetBoundaryError as exc:
@@ -93,11 +103,25 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
             confidence=result.route.confidence,
             reason=result.route.reason,
             edit_goal=result.route.edit_goal,
+            selected_skill_id=result.route.selected_skill_id,
+            skill_candidates=list(result.route.skill_candidates),
         ),
         message=result.message,
         chat=query_to_response(result.query_answer) if result.query_answer else None,
         edit=_edit_to_response(result) if result.edit else None,
         generated_markdown=_generated_markdown_to_response(result),
+        skill_candidates=[
+            SkillCandidateResponse(
+                id=candidate.id,
+                version_id=candidate.version_id,
+                name=candidate.name,
+                description=candidate.description,
+                capabilities=list(candidate.capabilities),
+            )
+            for candidate in result.skill_candidates
+        ],
+        run_id=result.run_id,
+        run_status=result.run_status,
     )
 
 

@@ -1,17 +1,22 @@
 from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult
+from app.modules.agent_run.application.ports import AgentRunStarterPort
+from app.modules.agent_run.domain.entities import StartAgentRunRequest
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
 from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
+from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
+from app.modules.skill.domain.entities import Skill
 
 
 CLARIFY_MARKDOWN_TARGET_MESSAGE = "수정할 Markdown 범위를 선택한 뒤 다시 요청해 주세요."
 CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시 요청해 주세요."
 DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다. 현재는 선택 영역, 현재 섹션, 또는 문서 전체의 일반 편집만 지원합니다."
 CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
+CLARIFY_SKILL_MESSAGE = "이 요청에 적용할 Skill을 선택하거나 Skill 없이 계속해 주세요."
 
 
 class HandleAgentTurnUseCase:
@@ -21,17 +26,37 @@ class HandleAgentTurnUseCase:
         query_use_case: AnswerQueryUseCase,
         markdown_edit_use_case: GenerateMarkdownEditUseCase,
         markdown_create_use_case: GenerateMarkdownDocumentUseCase,
+        skill_selector: SelectSkillUseCase | None = None,
+        agent_run_starter: AgentRunStarterPort | None = None,
     ) -> None:
         self._router = router
         self._query_use_case = query_use_case
         self._markdown_edit_use_case = markdown_edit_use_case
         self._markdown_create_use_case = markdown_create_use_case
+        self._skill_selector = skill_selector
+        self._agent_run_starter = agent_run_starter
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         if not request.message.strip():
             raise ValueError("message is required.")
 
-        route = self._router.route(request)
+        selection = self._prepare_skill_selection(request)
+        request = selection.request
+        resolved = selection.resolve_route(self._router.route(request))
+        route = resolved.route
+        selected_skill = resolved.skill
+        if route.action == "clarify" and route.skill_candidates:
+            candidates = tuple(
+                candidate
+                for candidate in request.available_skills
+                if candidate.id in route.skill_candidates
+            )
+            return AgentTurnResult(
+                action="clarify",
+                route=route,
+                message=CLARIFY_SKILL_MESSAGE,
+                skill_candidates=candidates,
+            )
         if route.action == "markdown_create":
             result = self._markdown_create_use_case.execute(
                 MarkdownCreateRequest(
@@ -48,9 +73,33 @@ class HandleAgentTurnUseCase:
                         if request.conversation_context
                         else {}
                     ),
+                    skill_instructions=_skill_instructions(selected_skill),
                 )
             )
             return AgentTurnResult(action="markdown_create", route=route, generated_markdown=result.document)
+
+        if route.action == "folder_organize":
+            if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
+                raise ValueError("Folder organization requires workspace_id and user_id.")
+            skill_version_id = (
+                selected_skill.enabled_version.id
+                if selected_skill is not None and selected_skill.enabled_version is not None
+                else None
+            )
+            run_id, run_status = self._agent_run_starter.start(
+                StartAgentRunRequest(
+                    workspace_id=request.workspace_id,
+                    user_id=request.user_id,
+                    instruction=request.message,
+                    skill_version_id=skill_version_id,
+                )
+            )
+            return AgentTurnResult(
+                action="folder_organize",
+                route=route,
+                run_id=run_id,
+                run_status=run_status,
+            )
 
         if route.action == "markdown_edit":
             markdown_context = request.active_markdown_context
@@ -82,6 +131,7 @@ class HandleAgentTurnUseCase:
                         else None
                     ),
                     edit_goal=route.edit_goal,
+                    skill_instructions=_skill_instructions(selected_skill),
                 )
             )
             return AgentTurnResult(action="markdown_edit", route=route, edit=result.edit)
@@ -110,6 +160,11 @@ class HandleAgentTurnUseCase:
         )
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 
+    def _prepare_skill_selection(self, request: AgentTurnRequest) -> PreparedSkillSelection:
+        if self._skill_selector is not None:
+            return self._skill_selector.prepare(request)
+        return PreparedSkillSelection(request=request, skills=())
+
 
 def _to_query_conversation_context(request: AgentTurnRequest) -> ConversationContext | None:
     if request.conversation_context is None:
@@ -128,3 +183,9 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
         start_line=1,
         end_line=max(1, markdown_line_count(markdown)),
     )
+
+
+def _skill_instructions(skill: Skill | None) -> str | None:
+    if skill is None or skill.enabled_version is None:
+        return None
+    return skill.enabled_version.instructions_markdown

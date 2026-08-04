@@ -21,6 +21,8 @@ services:
       QUERY_WEB_SEARCH_MAX_RESULTS: ${QUERY_WEB_SEARCH_MAX_RESULTS:-5}
       QUERY_WEB_SEARCH_TIMEOUT_SECONDS: ${QUERY_WEB_SEARCH_TIMEOUT_SECONDS:-10}
       QUERY_MIN_INTERNAL_RELEVANCE_SCORE: ${QUERY_MIN_INTERNAL_RELEVANCE_SCORE:-0.0}
+      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+      AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: ${S3_BUCKET:-fruition-storage}
@@ -35,6 +37,33 @@ services:
     depends_on:
       postgresql:
         condition: service_healthy
+  pipeline-agent-worker:
+    build:
+      context: ../llmPipeline
+    container_name: fruition-pipeline-agent-worker-dev
+    restart: unless-stopped
+    profiles: ["agent-skills"]
+    command: ["python", "agent_worker.py"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fruition}:${POSTGRES_PASSWORD:-fruition_dev_password}@postgresql:5432/${POSTGRES_DB:-fruition_mvp}
+      LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      AGENT_BACKEND_URL: http://host.docker.internal:8080
+      AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
+      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,sys; sys.exit(b'agent_worker.py' not in pathlib.Path('/proc/1/cmdline').read_bytes())"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pipeline-runs:

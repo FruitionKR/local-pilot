@@ -595,3 +595,27 @@ def test_chat_wiki_inline_markdown_requires_existing_document() -> None:
         assert exc.detail == "Document not found"
     else:
         raise AssertionError("chat wiki inline input should require an existing backend document")
+
+
+def test_agent_service_token_is_required_when_not_configured(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_INTERNAL_TOKEN", raising=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.require_agent_service_token("token")
+
+    assert exc_info.value.status_code == 503
+
+
+def test_agent_service_token_rejects_invalid_value(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_INTERNAL_TOKEN", "expected-token")
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.require_agent_service_token("wrong-token")
+
+    assert exc_info.value.status_code == 401
+
+
+def test_agent_service_token_accepts_matching_value(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_INTERNAL_TOKEN", "expected-token")
+
+    api.require_agent_service_token("expected-token")

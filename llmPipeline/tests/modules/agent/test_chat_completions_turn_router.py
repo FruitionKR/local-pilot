@@ -5,6 +5,7 @@ from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
     AgentConversationContext,
     AgentTurnRequest,
+    SkillCandidate,
 )
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
 from app.modules.agent.infrastructure.chat_completions_turn_router import (
@@ -39,6 +40,44 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
+    def test_sends_skill_candidates_and_normalizes_selected_skill(self) -> None:
+        response = route_response("folder_organize")
+        response["selected_skill_id"] = "skill-1"
+        response["skill_candidates"] = []
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="폴더를 정리해줘",
+                available_skills=(
+                    SkillCandidate(
+                        id="skill-1",
+                        version_id="version-1",
+                        name="폴더 정리",
+                        description="프로젝트별로 문서를 정리합니다.",
+                        capabilities=("folder-organize",),
+                    ),
+                ),
+            )
+        )
+
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(payload["available_skills"][0]["id"], "skill-1")
+        self.assertEqual(route.action, "folder_organize")
+        self.assertEqual(route.selected_skill_id, "skill-1")
+
+    def test_normalizes_ambiguous_skill_candidates(self) -> None:
+        response = route_response("clarify")
+        response["selected_skill_id"] = None
+        response["skill_candidates"] = ["skill-1", "skill-2"]
+        client = SequenceJsonClient([response])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="정리해줘"))
+
+        self.assertEqual(route.skill_candidates, ("skill-1", "skill-2"))
+
     def test_retries_json_parse_failure_once(self) -> None:
         client = SequenceJsonClient(
             [

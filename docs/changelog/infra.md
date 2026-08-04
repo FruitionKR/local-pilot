@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-08-03
+
+### feat: Agent worker 실행과 내부 인증 설정 추가
+
+- `agent-skills` Compose profile에 PostgreSQL job 기반 `pipeline-agent-worker`와 process health check를 추가
+- pipeline API와 worker에 공통 `AGENT_INTERNAL_TOKEN`을 전달해 Backend↔llmPipeline 내부 Agent 통신의 `X-Agent-Service-Token` 검증에 사용
+- `AGENT_SKILLS_ENABLED=false`를 기본값으로 유지하고 Docker image에 `agent_worker.py`를 포함
+- Compose config와 llmPipeline 전체 테스트 `651 passed`, `49 subtests passed` 통과
+
 ## 2026-07-28
 
 ### fix: Pipeline LLM 환경변수 전달 단일화
