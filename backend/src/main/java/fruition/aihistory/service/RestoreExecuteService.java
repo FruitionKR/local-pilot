@@ -31,6 +31,7 @@ public class RestoreExecuteService {
     private final RestorePreviewService previewService;
     private final RestoreScopeResolver scopeResolver;
     private final RestorePlanner planner;
+    private final LintRestorePlanner lintRestorePlanner;
     private final PreviewTokenSigner tokenSigner;
     private final RestoreOperationLifecycle lifecycle;
     private final DocumentRestorePlanner documentPlanner;
@@ -44,6 +45,7 @@ public class RestoreExecuteService {
     public RestoreExecuteService(RestorePreviewService previewService,
                                  RestoreScopeResolver scopeResolver,
                                  RestorePlanner planner,
+                                 LintRestorePlanner lintRestorePlanner,
                                  PreviewTokenSigner tokenSigner,
                                  RestoreOperationLifecycle lifecycle,
                                  DocumentRestorePlanner documentPlanner,
@@ -56,6 +58,7 @@ public class RestoreExecuteService {
         this.previewService = previewService;
         this.scopeResolver = scopeResolver;
         this.planner = planner;
+        this.lintRestorePlanner = lintRestorePlanner;
         this.tokenSigner = tokenSigner;
         this.lifecycle = lifecycle;
         this.documentPlanner = documentPlanner;
@@ -76,15 +79,22 @@ public class RestoreExecuteService {
         }
 
         Set<String> excluded = scopeResolver.resolve(target);
-        Map<String, List<WikiPageContribution>> contributions =
-                previewService.loadContributions(excluded);
+        Map<String, List<WikiPageContribution>> contributions;
+        RestorePlan plan;
+        if (target.getOperationType() == OperationType.lint) {
+            LintRestorePlanner.Context context = lintRestorePlanner.plan(target);
+            contributions = context.contributions();
+            plan = context.plan();
+        } else {
+            contributions = previewService.loadContributions(excluded);
+            plan = planner.plan(excluded, contributions);
+        }
 
         // 미리보기 이후 대상이 바뀌었으면 실행하지 않는다. 되돌리기는 무를 수 없다.
         if (!tokenSigner.matches(previewToken, operationId, contributions)) {
             throw new RestorePreviewStaleException();
         }
 
-        RestorePlan plan = planner.plan(excluded, contributions);
         // 반영 전에 확인한다. 뒤에서 걸리면 이미 DB가 바뀐 뒤라 되돌릴 수 없다.
         PageRestorePlan sourcePage = validator.requireApplicable(target, plan);
 

@@ -48,6 +48,7 @@ class RestoreExecuteServiceTest {
     @Mock RestorePreviewService previewService;
     @Mock RestoreScopeResolver scopeResolver;
     @Mock RestorePlanner planner;
+    @Mock LintRestorePlanner lintRestorePlanner;
     @Mock PreviewTokenSigner tokenSigner;
     @Mock RestoreOperationLifecycle lifecycle;
     @Mock DocumentRestorePlanner documentPlanner;
@@ -60,7 +61,8 @@ class RestoreExecuteServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RestoreExecuteService(previewService, scopeResolver, planner, tokenSigner,
+        service = new RestoreExecuteService(previewService, scopeResolver, planner,
+                lintRestorePlanner, tokenSigner,
                 lifecycle, documentPlanner, documentApplier, applier, restoreRequester,
                 validator, new ObjectMapper(), "http://backend:8080");
     }
@@ -267,9 +269,17 @@ class RestoreExecuteServiceTest {
     void routesLintToLintEndpoint() {
         givenTarget(OperationType.lint);
         when(scopeResolver.resolve(any())).thenReturn(Set.of(TARGET));
-        when(previewService.loadContributions(any())).thenReturn(Map.of());
-        when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
-        givenPlan(PageRestorePlan.rebuild("wp_C3", List.of()));
+        PageRestorePlan rebuild = PageRestorePlan.rebuild("wp_C3", List.of(
+                new PageRestorePlan.Kept(
+                        "op_ingest_1", "doc_1", "wiki/ws_1/pages/wp_C3/ops/op_ingest_1.json")));
+        PageRestorePlan delete = PageRestorePlan.delete("wp_C4");
+        RestorePlan lintPlan = new RestorePlan(List.of(rebuild, delete));
+        when(lintRestorePlanner.plan(any())).thenReturn(
+                new LintRestorePlanner.Context(lintPlan, Map.of("wp_C3", List.of())));
+        when(tokenSigner.matches(TOKEN, TARGET, Map.of("wp_C3", List.of()))).thenReturn(true);
+        OperationLog restore = OperationLog.applying("op_restore", WORKSPACE, USER,
+                null, TARGET, "{}", T);
+        when(lifecycle.start(any(), anyString(), any())).thenReturn(restore);
         when(validator.requireApplicable(any(), any())).thenReturn(null);
         when(restoreRequester.sendLintRestore(any())).thenReturn(true);
 
@@ -279,6 +289,12 @@ class RestoreExecuteServiceTest {
                 ArgumentCaptor.forClass(PipelineRestoreRequester.LintRestoreRun.class);
         verify(restoreRequester).sendLintRestore(captor.capture());
         assertThat(captor.getValue().targetOperationId()).isEqualTo(TARGET);
+        assertThat(captor.getValue().deletedPages()).containsExactly("wp_C4");
+        assertThat(captor.getValue().rebuildPages()).singleElement().satisfies(page -> {
+            assertThat(page.pageId()).isEqualTo("wp_C3");
+            assertThat(page.keepContributions()).containsExactly(
+                    new PipelineRestoreRequester.Kept("op_ingest_1", "doc_1"));
+        });
         verify(restoreRequester, never()).sendIngestRestore(any());
     }
 

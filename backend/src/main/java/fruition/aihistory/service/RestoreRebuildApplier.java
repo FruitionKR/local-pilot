@@ -74,15 +74,65 @@ public class RestoreRebuildApplier {
         for (OperationResultRequest.FailedPage failed : request.failedPagesOrEmpty()) {
             recordFailure(operation, failed, targetCounts);
         }
+        recordReportedChanges(operation, request);
 
         int changed = (int) operationChangeRepository.countByOperationId(operationId);
         OperationStatus status = request.failedPagesOrEmpty().isEmpty() && !request.isFailure()
                 ? OperationStatus.succeeded
                 : OperationStatus.partially_succeeded;
-        // llmPipeline 복구 결과에는 summary가 없다. 복구 실행 때 남긴 요약을 지우지 않는다.
-        String summary = request.summary() != null ? request.summary() : operation.getSummary();
+        String summary = resultSummary(request);
         operation.complete(status, summary, changed, payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), changed);
+    }
+
+    /** llmPipeline 결과의 페이지·링크·실패 수를 조회 화면에서 바로 읽을 수 있게 남긴다. */
+    private String resultSummary(OperationResultRequest request) {
+        if (request.summary() != null && !request.summary().isBlank()) {
+            return request.summary();
+        }
+        OperationResultRequest.LinkChanges links = request.linkChangesOrEmpty();
+        return "페이지 변경 " + request.changedPages().size() + "건"
+                + " · 삭제 " + request.deletedPagesOrEmpty().size() + "건"
+                + " · 링크 제거 " + links.removedLinks().size() + "건"
+                + " · 링크 복원 " + links.restoredLinks().size() + "건"
+                + " · 실패 " + (request.failedPagesOrEmpty().size()
+                + request.failedActionsOrEmpty().size()) + "건";
+    }
+
+    /** 실행 단계에서 빠진 삭제 기록을 보완하고 llmPipeline이 처리한 링크 변경을 감사 로그로 남긴다. */
+    private void recordReportedChanges(OperationLog operation, OperationResultRequest request) {
+        for (String pageId : request.deletedPagesOrEmpty()) {
+            if (!alreadyRecorded(operation, pageId, ChangeType.deleted)) {
+                long revision = versionRepository.findMaxRevision(pageId);
+                operationChangeRepository.save(new OperationChange(
+                        operation.getOperationId(), ResourceType.wiki_page, pageId,
+                        revision == 0 ? null : revision, null, ChangeType.deleted,
+                        "llmPipeline이 페이지 삭제를 완료했습니다.", null, null));
+            }
+        }
+
+        OperationResultRequest.LinkChanges links = request.linkChangesOrEmpty();
+        for (OperationResultRequest.Link link : links.removedLinks()) {
+            recordLink(operation, link, ChangeType.link_removed, "링크를 제거했습니다.");
+        }
+        for (OperationResultRequest.Link link : links.restoredLinks()) {
+            recordLink(operation, link, ChangeType.link_restored, "링크를 복원했습니다.");
+        }
+    }
+
+    private void recordLink(OperationLog operation, OperationResultRequest.Link link,
+                            ChangeType changeType, String summary) {
+        String resourceId = link.source() + "|" + link.relation() + "|" + link.target();
+        if (!alreadyRecorded(operation, resourceId, changeType)) {
+            operationChangeRepository.save(new OperationChange(
+                    operation.getOperationId(), ResourceType.relation_link, resourceId,
+                    null, null, changeType, summary, null, null));
+        }
+    }
+
+    private boolean alreadyRecorded(OperationLog operation, String resourceId, ChangeType changeType) {
+        return operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                operation.getOperationId(), resourceId, changeType);
     }
 
     /**

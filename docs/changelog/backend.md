@@ -8,6 +8,34 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-04
 
+### feat: lint 작업 로그 저장과 되돌리기 지원
+
+**배경**
+
+Wiki lint는 llmPipeline이 페이지를 직접 변경하지만 Backend에는 작업별 버전과 변경 이력이 남지 않아 조회하거나 되돌릴 수 없었다. 또한 lint 되돌리기는 ingest와 달리 기여를 제거하는 대신 lint 작업이 만든 페이지 변경만 역산해야 한다.
+
+**변경된 것**
+
+- 실제 lint 실행 전에 Backend가 `operation_id`를 발급하고, llmPipeline의 `changed_pages`를 받아 페이지 버전과 `ai_operation_changes`를 저장한다. lint는 새 기여를 만들거나 기존 기여 수를 늘리지 않는다.
+- lint 로그의 목록·상세·diff 조회를 지원하고, 생성 페이지는 삭제, 수정 페이지는 활성 기여로 재조립하는 되돌리기 계획을 추가했다. 대상 이후 같은 페이지가 변경됐으면 안전하게 거절한다.
+- llmPipeline의 `/wiki/lint-restore-runs` 계약에 맞춰 재조립 페이지와 삭제 페이지를 전달한다.
+- 복구 callback의 `deleted_pages`, `link_changes`, `failed_actions`를 수신한다. 삭제 페이지와 제거·복원 relation link를 감사 로그로 남기고 부분 성공 상태와 건수 요약을 보존한다.
+
+**검증**
+
+- lint 시작·결과 반영·조회·미리보기·실행·callback 계약 테스트를 추가했다.
+- 실제 PostgreSQL 동시 실행 테스트로 같은 페이지의 revision이 충돌하지 않고 순차 증가하는지 확인했다.
+- Backend 전체 `./gradlew test`와 `git diff --check`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline callback에 `X-Internal-Token`이 없어 현재 Backend가 결과를 401로 거절한다.
+- llmPipeline에서 `deleted_pages`의 링크·임베딩을 실제 정리하는 작업은 별도 AI 이슈로 남아 있다.
+
+---
+
+## 2026-08-04
+
 ### fix: 미리보기와 실행의 검증을 일치시킴
 
 **배경**

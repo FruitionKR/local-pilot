@@ -16,4 +16,7 @@ public interface OperationChangeRepository extends JpaRepository<OperationChange
             String operationId, String resourceId, ChangeType changeType);
 
     long countByOperationId(String operationId);
+
+    /** 대상 작업 이후 같은 리소스가 다시 변경됐는지 확인한다. */
+    boolean existsByResourceIdAndIdGreaterThan(String resourceId, Long id);
 }

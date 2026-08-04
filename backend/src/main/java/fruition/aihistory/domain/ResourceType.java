@@ -8,5 +8,6 @@ package fruition.aihistory.domain;
  */
 public enum ResourceType {
     document,
-    wiki_page
+    wiki_page,
+    relation_link
 }

@@ -48,13 +48,14 @@ class OperationIngestServiceTest {
     @Mock OperationLogRepository operationLogRepository;
     @Mock WikiObjectReader objectReader;
     @Mock OperationApplier applier;
+    @Mock LintOperationApplier lintApplier;
     @Mock RestoreRebuildApplier rebuildApplier;
 
     private OperationIngestService service;
 
     @BeforeEach
     void setUp() {
-        service = new OperationIngestService(operationLogRepository, objectReader, applier,
+        service = new OperationIngestService(operationLogRepository, objectReader, applier, lintApplier,
                 rebuildApplier, new ObjectMapper());
     }
 
@@ -82,6 +83,55 @@ class OperationIngestServiceTest {
                 .isInstanceOf(InvalidCallbackPayloadException.class);
 
         verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("lint 결과는 기여를 만드는 ingest 적재와 분리한다")
+    void routesLintOperationToLintApplier() {
+        OperationLog lint = OperationLog.processing(
+                "op_lint_1", WORKSPACE_ID, USER_ID, OperationType.lint, null, Instant.now());
+        when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(lint));
+        givenObject("# 정리된 개념", "sha256:lint");
+        when(lintApplier.apply(anyString(), any(), anyList(), anyString(), any()))
+                .thenReturn(new OperationResultResponse("op_lint_1", "succeeded", 1));
+        OperationResultRequest request = new OperationResultRequest(
+                "op_lint_1", "lint", "succeeded", WORKSPACE_ID, USER_ID, null,
+                "Wiki lint를 실행했습니다.",
+                List.of(new OperationResultRequest.ChangedPage(
+                        PAGE_ID, "concept", "wiki/ws_1/pages/C1/ops/op_lint_1.md",
+                        "wiki/ws_1/pages/C1/ops/op_lint_1.json", "sha256:lint", false)),
+                List.of());
+
+        service.accept("op_lint_1", request);
+
+        verify(lintApplier).apply(anyString(), any(), anyList(), anyString(), any());
+        verify(applier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("완료된 lint에 같은 결과가 다시 오면 기존 결과를 반환한다")
+    void lintResendReturnsExistingResult() {
+        OperationResultRequest request = lintRequest("sha256:lint");
+        OperationLog done = OperationLog.processing(
+                "op_lint_1", WORKSPACE_ID, USER_ID, OperationType.lint, null, Instant.now());
+        done.complete(OperationStatus.succeeded, "요약", 2, payloadHashOf(request), Instant.now());
+        when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(done));
+
+        assertThat(service.accept("op_lint_1", request).recordedChanges()).isEqualTo(2);
+        verify(lintApplier, never()).apply(anyString(), any(), anyList(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("완료된 lint에 다른 결과가 오면 충돌로 거절한다")
+    void differentPayloadOnFinishedLintConflicts() {
+        OperationLog done = OperationLog.processing(
+                "op_lint_1", WORKSPACE_ID, USER_ID, OperationType.lint, null, Instant.now());
+        done.complete(OperationStatus.succeeded, "요약", 2, "다른해시", Instant.now());
+        when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(done));
+
+        assertThatThrownBy(() -> service.accept("op_lint_1", lintRequest("sha256:lint")))
+                .isInstanceOf(OperationPayloadConflictException.class);
+        verify(lintApplier, never()).apply(anyString(), any(), anyList(), anyString(), any());
     }
 
     @Test
@@ -212,6 +262,15 @@ class OperationIngestServiceTest {
         return new OperationResultRequest(
                 OPERATION_ID, "ingest", "succeeded", WORKSPACE_ID, USER_ID, DOCUMENT_ID,
                 "위키 페이지 1개를 갱신했습니다.", List.of(changedPage(reportedHash)), null);
+    }
+
+    private OperationResultRequest lintRequest(String reportedHash) {
+        return new OperationResultRequest(
+                "op_lint_1", "lint", "succeeded", WORKSPACE_ID, USER_ID, null,
+                "요약", List.of(new OperationResultRequest.ChangedPage(
+                        PAGE_ID, "concept", "wiki/ws_1/pages/C1/ops/op_lint_1.md",
+                        "wiki/ws_1/pages/C1/ops/op_lint_1.json", reportedHash, false)),
+                List.of());
     }
 
     private OperationResultRequest.ChangedPage changedPage(String contentHash) {

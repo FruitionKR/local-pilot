@@ -1,6 +1,7 @@
 package fruition.aihistory.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.aihistory.dto.OperationResultRequest;
 import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.aihistory.exception.OperationNotFoundException;
@@ -16,6 +17,7 @@ import fruition.security.oauth.service.CustomOAuth2UserService;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -26,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -182,6 +185,39 @@ class OperationCallbackControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.recorded_changes").value(3));
+    }
+
+    @Test
+    @DisplayName("재조립 결과의 링크 변경과 실패 작업을 손실 없이 받아 넘긴다")
+    void acceptsRestoreLinkChangesAndFailedActions() throws Exception {
+        when(ingestService.accept(eq(OPERATION_ID), any()))
+                .thenReturn(new OperationResultResponse(OPERATION_ID, "partially_succeeded", 2));
+
+        String body = """
+                { "operation_id": "%s", "operation_type": "lint_restore",
+                  "status": "partially_succeeded", "changed_pages": [],
+                  "deleted_pages": ["wp_C7"],
+                  "link_changes": {
+                    "removed_links": [ { "source": "wp_C3", "target": "wp_C7", "relation": "related" } ],
+                    "restored_links": [ { "source": "wp_C3", "target": "wp_C4", "relation": "supports" } ]
+                  },
+                  "failed_actions": [ { "action": "delete_page", "resource_id": "wp_C8",
+                                         "reason": "page_not_found" } ] }
+                """.formatted(OPERATION_ID);
+
+        mockMvc.perform(post(URL)
+                        .header("X-Internal-Token", internalToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<OperationResultRequest> captor = ArgumentCaptor.forClass(OperationResultRequest.class);
+        verify(ingestService).accept(eq(OPERATION_ID), captor.capture());
+        OperationResultRequest request = captor.getValue();
+        assertThat(request.deletedPagesOrEmpty()).containsExactly("wp_C7");
+        assertThat(request.linkChangesOrEmpty().removedLinks()).hasSize(1);
+        assertThat(request.linkChangesOrEmpty().restoredLinks()).hasSize(1);
+        assertThat(request.failedActionsOrEmpty()).hasSize(1);
     }
 
     private String payload() {

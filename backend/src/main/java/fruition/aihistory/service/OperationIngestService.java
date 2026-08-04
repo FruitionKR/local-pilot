@@ -40,17 +40,20 @@ public class OperationIngestService {
     private final OperationLogRepository operationLogRepository;
     private final WikiObjectReader objectReader;
     private final OperationApplier applier;
+    private final LintOperationApplier lintApplier;
     private final RestoreRebuildApplier rebuildApplier;
     private final ObjectMapper objectMapper;
 
     public OperationIngestService(OperationLogRepository operationLogRepository,
                                   WikiObjectReader objectReader,
                                   OperationApplier applier,
+                                  LintOperationApplier lintApplier,
                                   RestoreRebuildApplier rebuildApplier,
                                   ObjectMapper objectMapper) {
         this.operationLogRepository = operationLogRepository;
         this.objectReader = objectReader;
         this.applier = applier;
+        this.lintApplier = lintApplier;
         this.rebuildApplier = rebuildApplier;
         this.objectMapper = objectMapper;
     }
@@ -79,12 +82,32 @@ public class OperationIngestService {
         if (operation.getOperationType() == OperationType.restore) {
             return acceptRebuild(operation, request, payloadHash);
         }
+        if (operation.getOperationType() == OperationType.lint) {
+            List<LintOperationApplier.LoadedPage> loaded = request.changedPages().stream()
+                    .map(page -> loadLint(operation, page))
+                    .toList();
+            return lintApplier.apply(operationId, request, loaded, payloadHash, Instant.now());
+        }
 
         List<OperationApplier.LoadedPage> loaded = request.changedPages().stream()
                 .map(page -> load(operation, page))
                 .toList();
 
         return applier.apply(operationId, request, loaded, payloadHash, Instant.now());
+    }
+
+    private LintOperationApplier.LoadedPage loadLint(
+            OperationLog operation,
+            OperationResultRequest.ChangedPage page) {
+        String markdown = objectReader.read(page.markdownKey(), operation.getWorkspaceId(),
+                page.pageId(), operation.getOperationId());
+        String actualHash = objectReader.sha256(markdown);
+        if (!actualHash.equals(page.contentHash())) {
+            throw new InvalidCallbackPayloadException(
+                    "본문 해시가 일치하지 않습니다: pageId=" + page.pageId());
+        }
+        return new LintOperationApplier.LoadedPage(
+                page.pageId(), page.markdownKey(), markdown, actualHash);
     }
 
     /** 복구의 {@code rebuilding} 단계를 끝낸다. */

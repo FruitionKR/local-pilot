@@ -88,6 +88,26 @@ class OperationQueryControllerTest {
     }
 
     @Test
+    @DisplayName("lint 목록은 문서 대상 없이 저장된 변경 개수를 반환한다")
+    void listReturnsLintLog() throws Exception {
+        when(queryService.list(eq(WORKSPACE_ID), eq(USER_ID), eq("lint"), isNull(),
+                isNull(), eq(20)))
+                .thenReturn(new OperationLogListResponse(List.of(
+                        new OperationLogListResponse.Item(OPERATION_ID, "lint", "succeeded",
+                                null, "Wiki lint로 페이지 2개를 변경했습니다.",
+                                2, null, NOW, NOW)), null));
+
+        mockMvc.perform(get(BASE)
+                        .header("Authorization", bearer())
+                        .param("type", "lint")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.logs[0].operation_type").value("lint"))
+                .andExpect(jsonPath("$.logs[0].target_document_id").doesNotExist())
+                .andExpect(jsonPath("$.logs[0].changed_resource_count").value(2));
+    }
+
+    @Test
     @DisplayName("필터를 안 주면 null로 넘어간다")
     void listWithoutFiltersPassesNulls() throws Exception {
         when(queryService.list(any(), any(), any(), any(), any(), any()))
