@@ -131,8 +131,15 @@ public class PipelineRestoreRequester {
                 .toList();
     }
 
-    /** source page는 별도 필드로 넘기므로 삭제 목록에서 뺀다. llmPipeline이 스스로 추가한다. */
-    public static List<String> deletedPages(RestorePlan plan, String sourcePageId) {
+    /** lint용. 원문 페이지 개념이 없어 삭제 대상을 그대로 싣는다. */
+    public static List<String> deletedPages(RestorePlan plan) {
+        return plan.byAction(RestoreAction.delete).stream()
+                .map(PageRestorePlan::pageId)
+                .toList();
+    }
+
+    /** ingest용. source page는 별도 필드로 넘기므로 삭제 목록에서 뺀다. llmPipeline이 스스로 추가한다. */
+    public static List<String> deletedPagesExcept(RestorePlan plan, String sourcePageId) {
         return plan.byAction(RestoreAction.delete).stream()
                 .map(PageRestorePlan::pageId)
                 .filter(pageId -> !pageId.equals(sourcePageId))

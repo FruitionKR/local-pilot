@@ -130,7 +130,7 @@ public class RestoreExecuteService {
                     restore.getOperationId(), restore.getWorkspaceId(), callbackUrl,
                     target.getOperationId(),
                     PipelineRestoreRequester.rebuildPages(plan),
-                    PipelineRestoreRequester.deletedPages(plan, null)));
+                    PipelineRestoreRequester.deletedPages(plan)));
         }
 
         // ingest는 원문 문서를 대표하는 source page를 별도 필드로 넘긴다.
@@ -140,7 +140,7 @@ public class RestoreExecuteService {
                 List.copyOf(excluded),
                 new PipelineRestoreRequester.IngestRestoreRun.SourcePage(sourcePage.pageId()),
                 PipelineRestoreRequester.rebuildPages(plan),
-                PipelineRestoreRequester.deletedPages(plan, sourcePage.pageId())));
+                PipelineRestoreRequester.deletedPagesExcept(plan, sourcePage.pageId())));
     }
 
     /** 지시서 원본을 보관한다. 재조립 결과를 받을 때 목표 기여 수를 여기서 꺼내면 그사이 새 ingest가 들어와도 값이 안 흔들린다. */
