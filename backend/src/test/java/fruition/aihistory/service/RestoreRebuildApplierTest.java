@@ -174,9 +174,22 @@ class RestoreRebuildApplierTest {
     }
 
     @Test
-    @DisplayName("복구가 되돌리기로 끝낸 페이지는 재조립 대상이 아니다")
-    void rejectsRestoredPage() {
-        givenOperation(manifest(PageRestorePlan.restore(PAGE_ID, 3L, 1)));
+    @DisplayName("Backend가 되돌린 페이지를 llmPipeline도 보내오지만 내용이 같아 건너뛴다")
+    void skipsPageAlreadyRestoredByBackend() {
+        // source page 가 그렇다. Backend 는 로컬에서 되돌리고, llmPipeline 은 자기 사본을 만들어 보고한다.
+        givenOperation(manifest(PageRestorePlan.restore(PAGE_ID, 3L, "op_a1", 1)));
+        givenPreviousRevision(4, "sha256:same");
+
+        applier.apply(OPERATION_ID, request(), List.of(rebuilt("sha256:same")), "hash", NOW);
+
+        verify(versionRepository, never()).save(any());
+        verify(operationChangeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("지시서에 아예 없는 페이지는 거절한다")
+    void rejectsPageNotInPlan() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
         givenPreviousRevision(4, "sha256:old");
 
         assertThatThrownBy(() ->

@@ -67,11 +67,13 @@ public class RestorePlanner {
             return Optional.of(PageRestorePlan.delete(pageId));
         }
 
-        long lastKeptRevision = kept.get(kept.size() - 1).getSequenceRevision();
+        WikiPageContribution lastKept = kept.get(kept.size() - 1);
+        long lastKeptRevision = lastKept.getSequenceRevision();
         if (snapshotMatchesKept(ordered, kept, lastKeptRevision)) {
             // 그 revision이 담고 있던 기여가 남길 집합과 정확히 같다.
             // 새로 쓸 필요 없이 그 revision의 본문과 object key를 재사용한다.
-            return Optional.of(PageRestorePlan.restore(pageId, lastKeptRevision, kept.size()));
+            return Optional.of(PageRestorePlan.restore(
+                    pageId, lastKeptRevision, lastKept.getIngestOperationId(), kept.size()));
         }
 
         // 남은 기여만의 본문이 저장된 적이 없다. 조각을 다시 붙여야 한다.

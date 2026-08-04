@@ -6,6 +6,56 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-04
+
+### fix: 복구 조립 지시서를 llmPipeline 계약에 맞춤
+
+**배경**
+
+`origin/dev` 병합으로 llmPipeline의 복구 구현이 이미 들어와 있는 것을 확인했다. 양쪽이 **서로 다른 계약을 가정하고 병렬로 만들어** 엔드포인트와 필드가 어긋나 있었다. llmPipeline이 테스트까지 갖춰 병합돼 있어 Backend를 그쪽에 맞춘다.
+
+지금 상태로는 되돌리기를 실행하면 404가 나고 `notify_pending`에서 멈춘다.
+
+**변경된 것**
+
+- 엔드포인트를 둘로 나눈다. llmPipeline이 `POST /wiki/ingest-restore-runs`와 `POST /wiki/lint-restore-runs`를 따로 열어 두었고 요청 스키마도 다르다. 설정 키도 `app.wiki-restore.ingest-endpoint`·`lint-endpoint`로 나눴다.
+- `PipelineRestoreRequester`를 지시서 2종으로 다시 썼다.
+
+| 항목 | 처리 |
+|---|---|
+| `excluded_operations` | `cancel_operation_ids`로 이름 맞춤 |
+| `keep_contributions[].object_key` | **제거.** llmPipeline이 `wiki/{ws}/pages/{page}/ops/{op}.json`을 같은 규칙으로 조립하고 조각 안 식별자까지 대조한다 |
+| `contribution_count` | **제거.** Backend만 쓰는 값이라 `restore_manifest`에 보관한다 |
+| `restored_pages`·`restored_from`·`user_id` | **제거.** 받지 않는 필드다 |
+| `restore_to_operation_id` | **추가.** source page를 어느 작업 시점으로 되돌릴지. `PageRestorePlan`에 `targetOperationId`를 넣어 계획 단계에서 계산한다 |
+| `source_page` | **추가.** 필수 필드다. `document_wiki_links`의 `source_of`로 찾는다 |
+
+- `RestoreApplier`가 되돌린 페이지 목록을 반환하지 않는다. llmPipeline이 `restored_pages`를 받지 않아 쓸 곳이 없어졌다.
+
+**source page는 양쪽이 각자 되돌린다**
+
+`source_page`가 필수라 안 보낼 수 없고, llmPipeline은 그것을 받으면 자기 사본 객체를 만들어 `changed_pages`로 보고한다. Backend도 로컬에서 되돌린다.
+
+두 결과의 **본문이 같아** 콜백 수신 시 `content_hash` 비교로 걸러지므로 revision이 중복 생기지 않는다. 이를 위해 `RestoreRebuildApplier`가 지시서의 `restore` 판정 페이지도 인정하도록 넓혔다. 이전에는 `rebuild` 목록에만 있으면 인정해서, source page가 실려 오면 재조립 수신 전체가 422로 실패했다.
+
+Backend가 로컬에서 처리하므로 되돌리기 속도는 그대로다. llmPipeline 왕복을 기다리지 않는다.
+
+**lint는 엔드포인트만 맞췄다**
+
+`WikiMaintenanceService`에 작업 로그 연동이 아직 없어 lint 작업 자체가 기록되지 않는다. 되돌릴 대상이 없으므로 실제 호출은 lint 연동이 생길 때 확인한다.
+
+**검증**
+
+- `RestoreExecuteServiceTest`에 3개를 더해 12개가 됐다. ingest 지시서에 source page와 되돌릴 시점을 싣는지, 남는 기여가 없으면 `restore_to_operation_id`가 null인지, lint가 다른 엔드포인트로 가는지다.
+- `RestoreRebuildApplierTest`의 "되돌리기로 끝낸 페이지는 재조립 대상이 아니다"를 뒤집었다. 이제 받아들이되 내용이 같아 건너뛴다. 지시서에 아예 없는 페이지를 거절하는 테스트를 따로 뒀다.
+- Backend 전체 `./gradlew test` 440개가 통과했다.
+
+**남은 것**
+
+llmPipeline 복구 경로에 DB 접근이 없어, 삭제된 페이지의 링크(`wiki_page_links`·`document_wiki_links`)와 임베딩이 정리되지 않는다. `docs/issue/ai/2026-08-03.md`에 요청 항목으로 남겼다.
+
+---
+
 ## 2026-08-03
 
 ### fix: Backend가 wiki_pages에 쓰지 않도록 정리

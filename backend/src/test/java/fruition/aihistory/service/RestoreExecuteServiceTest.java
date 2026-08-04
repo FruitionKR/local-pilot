@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,6 +55,7 @@ class RestoreExecuteServiceTest {
     @Mock DocumentRestoreApplier documentApplier;
     @Mock RestoreApplier applier;
     @Mock PipelineRestoreRequester restoreRequester;
+    @Mock fruition.wiki.repository.DocumentWikiLinkRepository documentWikiLinkRepository;
 
     private RestoreExecuteService service;
 
@@ -61,7 +63,7 @@ class RestoreExecuteServiceTest {
     void setUp() {
         service = new RestoreExecuteService(previewService, scopeResolver, planner, tokenSigner,
                 lifecycle, documentPlanner, documentApplier, applier, restoreRequester,
-                new ObjectMapper(), "http://backend:8080");
+                documentWikiLinkRepository, new ObjectMapper(), "http://backend:8080");
     }
 
     @Test
@@ -141,8 +143,8 @@ class RestoreExecuteServiceTest {
     @DisplayName("재작성 대상이 없고 통지에 성공하면 그 자리에서 끝난다")
     void completesWhenNothingToRebuild() {
         givenValidPreview();
-        givenPlan(PageRestorePlan.delete("page_1"), PageRestorePlan.restore("page_2", 3L, 1));
-        when(restoreRequester.send(any())).thenReturn(true);
+        givenPlan(PageRestorePlan.delete("page_1"), PageRestorePlan.restore("page_2", 3L, "op_a1", 1));
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         RestoreExecuteResponse response = execute();
 
@@ -159,7 +161,7 @@ class RestoreExecuteServiceTest {
         givenValidPreview();
         givenPlan(PageRestorePlan.rebuild("page_1",
                 List.of(new PageRestorePlan.Kept("op_b", "doc_B", "wiki/frag_b.md"))));
-        when(restoreRequester.send(any())).thenReturn(true);
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         RestoreExecuteResponse response = execute();
 
@@ -172,7 +174,7 @@ class RestoreExecuteServiceTest {
     void keepsAppliedWhenNotifyFails() {
         givenValidPreview();
         givenPlan(PageRestorePlan.rebuild("page_1", List.of()));
-        when(restoreRequester.send(any())).thenReturn(false);
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(false);
 
         RestoreExecuteResponse response = execute();
 
@@ -186,16 +188,84 @@ class RestoreExecuteServiceTest {
     void sendsCallbackUrlOfThisRestore() {
         givenValidPreview();
         givenPlan(PageRestorePlan.rebuild("page_1", List.of()));
-        when(restoreRequester.send(any())).thenReturn(true);
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
 
         execute();
 
-        ArgumentCaptor<PipelineRestoreRequester.RestoreRun> captor =
-                ArgumentCaptor.forClass(PipelineRestoreRequester.RestoreRun.class);
-        verify(restoreRequester).send(captor.capture());
+        ArgumentCaptor<PipelineRestoreRequester.IngestRestoreRun> captor =
+                ArgumentCaptor.forClass(PipelineRestoreRequester.IngestRestoreRun.class);
+        verify(restoreRequester).sendIngestRestore(captor.capture());
         assertThat(captor.getValue().resultCallbackUrl())
                 .isEqualTo("http://backend:8080/api/ai-operations/op_restore/result");
-        assertThat(captor.getValue().restoredFrom()).isEqualTo(TARGET);
+        assertThat(captor.getValue().cancelOperationIds()).containsExactly("op_a3");
+    }
+
+    @Test
+    @DisplayName("ingest 지시서에 source page와 되돌릴 시점을 싣는다")
+    void sendsSourcePageAndRestorePoint() {
+        givenValidPreview();
+        givenPlan(PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1),
+                PageRestorePlan.rebuild("wp_C7",
+                        List.of(new PageRestorePlan.Kept("op_b", "doc_B", "wiki/frag_b.json"))),
+                PageRestorePlan.delete("wp_C8"));
+        givenSourcePage("wp_S_A");
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
+
+        execute();
+
+        ArgumentCaptor<PipelineRestoreRequester.IngestRestoreRun> captor =
+                ArgumentCaptor.forClass(PipelineRestoreRequester.IngestRestoreRun.class);
+        verify(restoreRequester).sendIngestRestore(captor.capture());
+        PipelineRestoreRequester.IngestRestoreRun run = captor.getValue();
+
+        assertThat(run.sourcePage().pageId()).isEqualTo("wp_S_A");
+        assertThat(run.restoreToOperationId()).isEqualTo("op_a1");
+        // source page 는 별도 필드로 넘기므로 삭제 목록에서 뺀다.
+        assertThat(run.deletedPages()).containsExactly("wp_C8");
+        assertThat(run.rebuildPages()).singleElement()
+                .satisfies(page -> {
+                    assertThat(page.pageId()).isEqualTo("wp_C7");
+                    // object_key 는 보내지 않는다. llmPipeline 이 같은 규칙으로 만든다.
+                    assertThat(page.keepContributions()).containsExactly(
+                            new PipelineRestoreRequester.Kept("op_b", "doc_B"));
+                });
+    }
+
+    @Test
+    @DisplayName("남는 기여가 없으면 되돌릴 시점이 null이라 llmPipeline이 source page를 지운다")
+    void sendsNullRestorePointWhenSourcePageDeleted() {
+        givenValidPreview();
+        givenPlan(PageRestorePlan.delete("wp_S_A"));
+        givenSourcePage("wp_S_A");
+        when(restoreRequester.sendIngestRestore(any())).thenReturn(true);
+
+        execute();
+
+        ArgumentCaptor<PipelineRestoreRequester.IngestRestoreRun> captor =
+                ArgumentCaptor.forClass(PipelineRestoreRequester.IngestRestoreRun.class);
+        verify(restoreRequester).sendIngestRestore(captor.capture());
+        assertThat(captor.getValue().restoreToOperationId()).isNull();
+        assertThat(captor.getValue().sourcePage().pageId()).isEqualTo("wp_S_A");
+        assertThat(captor.getValue().deletedPages()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("lint 되돌리기는 다른 엔드포인트로 간다")
+    void routesLintToLintEndpoint() {
+        givenTarget(OperationType.lint);
+        when(scopeResolver.resolve(any())).thenReturn(Set.of(TARGET));
+        when(previewService.loadContributions(any())).thenReturn(Map.of());
+        when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
+        givenPlan(PageRestorePlan.rebuild("wp_C3", List.of()));
+        when(restoreRequester.sendLintRestore(any())).thenReturn(true);
+
+        execute();
+
+        ArgumentCaptor<PipelineRestoreRequester.LintRestoreRun> captor =
+                ArgumentCaptor.forClass(PipelineRestoreRequester.LintRestoreRun.class);
+        verify(restoreRequester).sendLintRestore(captor.capture());
+        assertThat(captor.getValue().targetOperationId()).isEqualTo(TARGET);
+        verify(restoreRequester, never()).sendIngestRestore(any());
     }
 
     private RestoreExecuteResponse execute() {
@@ -215,11 +285,22 @@ class RestoreExecuteServiceTest {
         when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
     }
 
+    private void givenSourcePage(String pageId) {
+        fruition.wiki.domain.DocumentWikiLink link = org.mockito.Mockito.mock(
+                fruition.wiki.domain.DocumentWikiLink.class);
+        when(link.getWikiPageId()).thenReturn(pageId);
+        when(documentWikiLinkRepository.findAllByIdDocumentIdAndIdRelationType(
+                any(), eq(fruition.wiki.domain.DocumentWikiRelationType.source_of)))
+                .thenReturn(List.of(link));
+    }
+
     private void givenPlan(PageRestorePlan... pages) {
         when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of(pages)));
         OperationLog restore = OperationLog.applying("op_restore", WORKSPACE, USER,
                 "doc_A", TARGET, "{}", T);
         when(lifecycle.start(any(), anyString(), any())).thenReturn(restore);
-        when(applier.apply(any(), any(), any(), any())).thenReturn(List.of());
+        // source page 조회는 ingest 경로에서만 일어난다. 필요한 테스트가 givenSourcePage 로 채운다.
+        lenient().when(documentWikiLinkRepository.findAllByIdDocumentIdAndIdRelationType(any(), any()))
+                .thenReturn(List.of());
     }
 }

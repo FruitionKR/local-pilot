@@ -85,6 +85,10 @@ public class RestoreRebuildApplier {
 
     /**
      * 지시서에 담은 페이지별 목표 기여 수. 여기 없는 페이지가 결과에 오면 요청하지 않은 것이므로 거절한다.
+     *
+     * <p>{@code restore}로 판정한 페이지도 포함한다. Backend가 이미 되돌렸지만 llmPipeline도 자기
+     * 사본을 만들어 결과에 실어 보내기 때문이다(source page가 그렇다). 본문이 같아 아래에서
+     * {@code content_hash} 비교로 걸러지므로 새 revision이 생기지는 않는다.
      */
     private Map<String, Integer> targetContributionCounts(OperationLog operation) {
         if (operation.getRestoreManifest() == null) {
@@ -95,7 +99,7 @@ public class RestoreRebuildApplier {
             RestorePlan plan = objectMapper.readValue(operation.getRestoreManifest(), RestorePlan.class);
             Map<String, Integer> counts = new HashMap<>();
             for (PageRestorePlan page : plan.pages()) {
-                if (page.action() == RestoreAction.rebuild) {
+                if (page.action() == RestoreAction.rebuild || page.action() == RestoreAction.restore) {
                     counts.put(page.pageId(), page.contributionCount());
                 }
             }

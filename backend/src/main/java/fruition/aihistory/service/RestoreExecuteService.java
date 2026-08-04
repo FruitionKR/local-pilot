@@ -4,12 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationType;
 import fruition.aihistory.dto.DocumentRestorePlan;
+import fruition.aihistory.dto.PageRestorePlan;
 import fruition.aihistory.dto.RestoreExecuteResponse;
 import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.exception.RestorePreviewStaleException;
 import fruition.aihistory.repository.PipelineRestoreRequester;
+import fruition.wiki.domain.DocumentWikiLink;
+import fruition.wiki.domain.DocumentWikiRelationType;
 import fruition.wiki.domain.WikiPageContribution;
+import fruition.wiki.repository.DocumentWikiLinkRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +21,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 복구 실행. 미리보기에서 본 상태가 아직 그대로인지 확인하고 반영한 뒤, 재작성만 llmPipeline에 맡긴다.
@@ -36,6 +41,7 @@ public class RestoreExecuteService {
     private final DocumentRestoreApplier documentApplier;
     private final RestoreApplier applier;
     private final PipelineRestoreRequester restoreRequester;
+    private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
 
@@ -48,6 +54,7 @@ public class RestoreExecuteService {
                                  DocumentRestoreApplier documentApplier,
                                  RestoreApplier applier,
                                  PipelineRestoreRequester restoreRequester,
+                                 DocumentWikiLinkRepository documentWikiLinkRepository,
                                  ObjectMapper objectMapper,
                                  @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.previewService = previewService;
@@ -59,6 +66,7 @@ public class RestoreExecuteService {
         this.documentApplier = documentApplier;
         this.applier = applier;
         this.restoreRequester = restoreRequester;
+        this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
     }
@@ -92,10 +100,9 @@ public class RestoreExecuteService {
         Instant now = Instant.now();
         OperationLog restore = lifecycle.start(target, manifestJson(plan), now);
 
-        List<PipelineRestoreRequester.RestoreRun.RestoredPage> restored =
-                applier.apply(restore, plan, excluded, now);
+        applier.apply(restore, plan, excluded, now);
 
-        boolean notified = notify(restore, target, excluded, plan, restored);
+        boolean notified = notify(restore, target, excluded, plan);
         lifecycle.finish(restore.getOperationId(), plan, notified, now);
 
         return RestoreExecuteResponse.from(restore.getOperationId(), operationId, plan, notified);
@@ -119,14 +126,49 @@ public class RestoreExecuteService {
                 restore.getOperationId(), target.getOperationId());
     }
 
-    private boolean notify(OperationLog restore, OperationLog target, Set<String> excluded,
-                           RestorePlan plan,
-                           List<PipelineRestoreRequester.RestoreRun.RestoredPage> restored) {
-        return restoreRequester.send(PipelineRestoreRequester.RestoreRun.from(
-                restore.getOperationId(), target.getOperationId(), restore.getWorkspaceId(),
-                restore.getUserId(),
-                callbackBaseUrl + "/api/ai-operations/" + restore.getOperationId() + "/result",
-                excluded, plan, restored));
+    /**
+     * llmPipeline에 재작성을 맡긴다. ingest와 lint가 요청 스키마가 달라 엔드포인트도 나뉜다.
+     */
+    private boolean notify(OperationLog restore, OperationLog target,
+                           Set<String> excluded, RestorePlan plan) {
+        String callbackUrl = callbackBaseUrl + "/api/ai-operations/"
+                + restore.getOperationId() + "/result";
+
+        if (target.getOperationType() == OperationType.lint) {
+            return restoreRequester.sendLintRestore(new PipelineRestoreRequester.LintRestoreRun(
+                    restore.getOperationId(), restore.getWorkspaceId(), callbackUrl,
+                    target.getOperationId(),
+                    PipelineRestoreRequester.rebuildPages(plan),
+                    PipelineRestoreRequester.deletedPages(plan, null)));
+        }
+
+        // ingest는 원문 문서를 대표하는 source page를 별도 필드로 넘긴다. 항상 하나 있다.
+        PageRestorePlan sourcePage = findSourcePage(target.getTargetDocumentId(), plan);
+        return restoreRequester.sendIngestRestore(new PipelineRestoreRequester.IngestRestoreRun(
+                restore.getOperationId(), restore.getWorkspaceId(), callbackUrl,
+                sourcePage == null ? null : sourcePage.targetOperationId(),
+                List.copyOf(excluded),
+                new PipelineRestoreRequester.IngestRestoreRun.SourcePage(
+                        sourcePage == null ? null : sourcePage.pageId()),
+                PipelineRestoreRequester.rebuildPages(plan),
+                PipelineRestoreRequester.deletedPages(plan,
+                        sourcePage == null ? null : sourcePage.pageId())));
+    }
+
+    /**
+     * 계획에 든 페이지 중 그 문서의 source page. {@code document_wiki_links}가 어느 페이지가
+     * 원문을 대표하는지 알고 있다.
+     */
+    private PageRestorePlan findSourcePage(String documentId, RestorePlan plan) {
+        Set<String> sourcePageIds = documentWikiLinkRepository
+                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of)
+                .stream()
+                .map(DocumentWikiLink::getWikiPageId)
+                .collect(Collectors.toSet());
+        return plan.pages().stream()
+                .filter(page -> sourcePageIds.contains(page.pageId()))
+                .findFirst()
+                .orElse(null);
     }
 
     /** 지시서 원본을 보관한다. 재조립 결과를 받을 때 목표 기여 수를 여기서 꺼내면 그사이 새 ingest가 들어와도 값이 안 흔들린다. */

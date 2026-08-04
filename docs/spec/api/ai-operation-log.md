@@ -373,40 +373,55 @@ ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며
 
 ingest 적재와 다른 점은 **기여를 만들지 않는다**는 것이다. 조립에 쓴 조각은 복구가 살려둔 것들이라 이미 있다. 따라서 `contribution_count`도 다시 세지 않고 `restore_manifest`에서 꺼낸다. 그사이 새 ingest가 들어와도 목표값이 흔들리지 않게 하기 위해서다.
 
-- 지시서에 `rebuild`로 없는 페이지가 결과에 오면 422다(요청하지 않은 페이지)
+- 지시서에 `rebuild`·`restore` 어느 쪽으로도 없는 페이지가 결과에 오면 422다(요청하지 않은 페이지)
 - 성공분: `revision = max+1`로 적재 후 `rebuilt` 기록. 같은 작업의 재전송이면 건너뛴다
 - 실패분: 본문을 건드리지 않고 `rebuild_failed` + 사유만 기록. `(operation_id, page_id, rebuild_failed)`가 이미 있으면 건너뛴다(실패에는 대조할 해시가 없다)
 - `delegated` 행은 갱신하지 않는다
 - 확정: `failed_pages`가 비고 `status != "failed"`면 `succeeded`, 아니면 `partially_succeeded`
 - `recorded_changes`는 이 복구 작업이 남긴 **전체** 변경내역 수다(삭제·복원·위임 포함)
 
-### 4.5 `POST {app.wiki-restore.endpoint}` — 조립 지시서 (Backend → llmPipeline)
+### 4.5 조립 지시서 (Backend → llmPipeline)
 
-Backend가 못 하는 것만 넘긴다.
+Backend가 못 하는 것만 넘긴다. llmPipeline이 ingest용과 lint용을 나눠 열어 두어 **요청 스키마가 서로 다르다.**
+
+```http
+POST {app.wiki-restore.ingest-endpoint}    ingest 되돌리기
+POST {app.wiki-restore.lint-endpoint}      lint 되돌리기
+```
 
 ```json
+// ingest
 {
   "operation_id": "op_restore_9a2b",
-  "restored_from": "op_a2",
   "workspace_id": "ws_1",
-  "user_id": "user_1",
   "result_callback_url": "http://.../api/ai-operations/op_restore_9a2b/result",
-  "excluded_operations": ["op_a3", "op_a4"],
+  "restore_to_operation_id": "op_a1",
+  "cancel_operation_ids": ["op_a2", "op_a3"],
+  "source_page": { "page_id": "wp_S_A" },
   "rebuild_pages": [
-    { "page_id": "C3", "contribution_count": 2,
-      "keep_contributions": [ { "operation_id": "op_b", "document_id": "doc_B", "object_key": "..." } ] }
+    { "page_id": "wp_C7",
+      "keep_contributions": [ { "operation_id": "op_b", "document_id": "doc_B" } ] }
   ],
-  "restored_pages": [ { "page_id": "S_A", "revision": 3 } ],
-  "deleted_pages": ["C6"]
+  "deleted_pages": ["wp_C8"]
 }
 ```
 
+lint는 `restore_to_operation_id`·`cancel_operation_ids`·`source_page` 대신 `target_operation_id` 하나를 보낸다. 원문 문서가 없어 범위를 만들지 않기 때문이다.
+
 | 항목 | 의미 |
 |---|---|
-| `rebuild_pages` | 요청 — 남은 조각을 `keep_contributions` **순서대로** 붙여 다시 써 달라. 순서가 결과를 바꾼다 |
-| `restored_pages` · `deleted_pages` | 통보 — 이미 끝난 사실이며 임베딩·링크 정리용 |
+| `rebuild_pages` | **요청** — 남은 조각을 `keep_contributions` **순서대로** 붙여 다시 써 달라. 순서가 결과를 바꾼다 |
+| `source_page` | ingest는 원문을 대표하는 페이지를 항상 하나 건드린다. **필수** |
+| `restore_to_operation_id` | source page를 어느 작업 시점으로 되돌릴지. `null`이면 남는 기여가 없다는 뜻이고 llmPipeline이 삭제 대상으로 다룬다 |
+| `deleted_pages` | **통보** — 이미 기여를 끈 페이지. 링크·임베딩 정리용. source page는 별도 필드로 넘기므로 여기서 뺀다 |
+
+**조각의 object key는 보내지 않는다.** llmPipeline이 `wiki/{ws}/pages/{page}/ops/{op}.json`을 같은 규칙으로 조립하고, 조각 안의 `operation_id`·`page_id`까지 대조해 검증한다.
+
+**`contribution_count`도 보내지 않는다.** Backend만 쓰는 값이라 `restore_manifest`에 보관하고 재조립 결과를 받을 때 꺼낸다.
 
 `keep_contributions`가 1개면 조립이 아니라 그 조각을 그대로 쓰면 되므로 LLM 호출이 필요 없다.
+
+> ⚠️ **source page는 양쪽이 각자 되돌린다.** Backend는 `wiki_page_versions`에 새 revision을 쌓아 즉시 끝내고, llmPipeline은 지시서를 받아 자기 사본 객체를 만들어 결과에 실어 보낸다. **본문이 같아** 콜백 수신 시 `content_hash` 비교로 걸러지므로 revision이 중복 생기지 않는다. 이를 위해 재조립 수신이 `restore`로 판정한 페이지도 지시서에 있는 것으로 인정한다(§4.4).
 
 ### 4.6 object key 검증 (`WikiObjectReader`)
 
@@ -458,7 +473,8 @@ bucket은 **환경 설정으로 고정**하고 콜백에서 받지 않는다. �
 |---|---|---|
 | `app.aihistory.ingest-logging-enabled` | `false` (`AIHISTORY_INGEST_LOGGING_ENABLED`) | ingest 작업 등록 on/off |
 | `app.internal.callback-token` | `INTERNAL_CALLBACK_TOKEN` | 내부 콜백 인증. 사용자 인증과 분리. 기본값은 로컬 개발용 placeholder이며 배포 환경에서는 반드시 주입한다 |
-| `app.wiki-restore.endpoint` | `http://localhost:8000/wiki/restore-runs` (`WIKI_RESTORE_ENDPOINT`) | 조립 지시서 전송 대상 |
+| `app.wiki-restore.ingest-endpoint` | `http://localhost:8000/wiki/ingest-restore-runs` | ingest 되돌리기 지시서 |
+| `app.wiki-restore.lint-endpoint` | `http://localhost:8000/wiki/lint-restore-runs` | lint 되돌리기 지시서 |
 | `app.wiki-restore.timeout-seconds` | `60` (`WIKI_RESTORE_TIMEOUT_SECONDS`) | read timeout. connect는 5초 고정 |
 | `app.callback.base-url` | `http://host.docker.internal:8080` (`CALLBACK_BASE_URL`) | `result_callback_url` 조립에 쓴다 |
 

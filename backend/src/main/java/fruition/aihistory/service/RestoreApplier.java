@@ -10,7 +10,6 @@ import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.aihistory.repository.OperationLogRepository;
-import fruition.aihistory.repository.PipelineRestoreRequester;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageContribution;
 import fruition.wiki.domain.WikiPageVersion;
@@ -22,7 +21,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -53,12 +51,9 @@ public class RestoreApplier {
         this.contributionRepository = contributionRepository;
     }
 
-    /**
-     * @return 되돌린 페이지 목록. llmPipeline 통지에 실어 임베딩을 갱신하게 한다
-     */
     @Transactional
-    public List<PipelineRestoreRequester.RestoreRun.RestoredPage> apply(
-            OperationLog restore, RestorePlan plan, Set<String> excludedOperationIds, Instant now) {
+    public void apply(OperationLog restore, RestorePlan plan,
+                      Set<String> excludedOperationIds, Instant now) {
 
         // 여러 복구가 동시에 실행될 때 교착을 피하려고 page_id 순서로 잠근다.
         List<String> pageIds = plan.pages().stream()
@@ -74,10 +69,9 @@ public class RestoreApplier {
         // 지우면 연속 복구에서 이전에 제외한 기여가 다시 살아난다.
         deactivate(pageIds, excludedOperationIds, restore.getOperationId());
 
-        List<PipelineRestoreRequester.RestoreRun.RestoredPage> restored = new ArrayList<>();
         for (PageRestorePlan page : plan.pages()) {
             switch (page.action()) {
-                case restore -> restored.add(restorePage(restore, page, now));
+                case restore -> restorePage(restore, page, now);
                 case delete -> deletePage(restore, page, now);
                 case rebuild -> delegate(restore, page);
             }
@@ -85,7 +79,6 @@ public class RestoreApplier {
 
         restore.moveTo(OperationStatus.notify_pending);
         operationLogRepository.save(restore);
-        return restored;
     }
 
     private void deactivate(List<String> pageIds, Set<String> excluded, String restoreOperationId) {
@@ -97,8 +90,7 @@ public class RestoreApplier {
     }
 
     /** 되돌릴 revision의 본문과 object key를 재사용해 새 revision으로 쌓는다. */
-    private PipelineRestoreRequester.RestoreRun.RestoredPage restorePage(
-            OperationLog restore, PageRestorePlan page, Instant now) {
+    private void restorePage(OperationLog restore, PageRestorePlan page, Instant now) {
         String pageId = page.pageId();
         WikiPageVersion target = versionRepository
                 .findById(new WikiPageVersionId(pageId, page.targetRevision()))
@@ -117,8 +109,6 @@ public class RestoreApplier {
                 restore.getOperationId(), ResourceType.wiki_page, pageId,
                 maxRevision, revision, ChangeType.restored,
                 "revision " + page.targetRevision() + " 내용으로 되돌렸습니다.", null, null));
-
-        return new PipelineRestoreRequester.RestoreRun.RestoredPage(pageId, revision);
     }
 
     /**
