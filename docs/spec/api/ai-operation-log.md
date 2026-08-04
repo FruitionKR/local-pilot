@@ -3,7 +3,7 @@
 AI 작업 로그 도메인은 AI가 문서·Wiki를 바꾼 이력을 한곳에 모아 **조회**하고, 특정 시점으로 **되돌린다**. 인증·예외 매핑·에러 응답 포맷 등 공통 규약은 [`00-common.md`](./00-common.md)를 전제로 하며 여기서 반복하지 않는다.
 
 - Controller: `fruition/aihistory/controller/OperationQueryController.java`(사용자용), `OperationCallbackController.java`(llmPipeline 내부 콜백)
-- Service: `OperationQueryService`, `RestorePreviewService`, `RestoreExecuteService`, `RestoreScopeResolver`, `RestorePlanner`, `RestoreApplier`, `RestoreOperationLifecycle`, `OperationIngestService`, `OperationApplier`, `RestoreRebuildApplier`, `OperationRecorder`, `IngestOperationStarter`, `AgentApplyOperationStore`, `PreviewTokenSigner`, `WikiObjectReader`, `WikiLineCounter` (`fruition/aihistory/service/`)
+- Service: `OperationQueryService`, `RestorePreviewService`, `RestoreExecuteService`, `RestoreScopeResolver`, `RestorePlanner`, `LintRestorePlanner`, `RestoreApplier`, `RestoreOperationLifecycle`, `OperationIngestService`, `OperationApplier`, `LintOperationApplier`, `LintOperationStarter`, `RestoreRebuildApplier`, `OperationRecorder`, `IngestOperationStarter`, `AgentApplyOperationStore`, `PreviewTokenSigner`, `WikiObjectReader`, `WikiLineCounter` (`fruition/aihistory/service/`)
 - Domain: `OperationLog`, `OperationChange`, `OperationType`, `OperationStatus`, `ChangeType`, `ResourceType`, `RestoreAction` (`fruition/aihistory/domain/`)
 - Repository: `OperationLogRepository`, `OperationChangeRepository`, `PipelineRestoreRequester` (`fruition/aihistory/repository/`)
 - Exception: `OperationNotFoundException`, `OperationPayloadConflictException`, `InvalidRestoreRequestException`, `RestorePreviewStaleException`, `InvalidCallbackTokenException`, `InvalidCallbackPayloadException` (`fruition/aihistory/exception/`)
@@ -25,7 +25,7 @@ AI 작업 로그 도메인은 AI가 문서·Wiki를 바꾼 이력을 한곳에 �
 
 그래서 **현재 본문은 `wiki_page_versions`의 최신 revision이 답한다.** Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이라 포인터를 따로 옮길 필요가 없다. `wiki_pages.markdown_uri`는 llmPipeline이 임베딩 생성에 쓰는 자기 값으로 남는다.
 
-**삭제도 상태 컬럼을 쓰지 않는다.** 받치는 활성 기여가 하나도 없는 상태가 곧 삭제다. 링크·임베딩 정리는 조립 지시서의 `deleted_pages`를 받은 llmPipeline이 한다.
+**삭제도 상태 컬럼을 쓰지 않는다.** 받치는 활성 기여가 하나도 없는 상태가 곧 삭제다. 링크·임베딩 정리는 조립 지시서의 `deleted_pages`를 받은 llmPipeline 몫이다. 단, 현재 llmPipeline의 실제 정리 처리는 미구현 상태다.
 
 ---
 
@@ -75,8 +75,8 @@ AI 작업 1회 = 1행. 애플리케이션 로그가 아니라 사용자에게 �
 |---|---|---|
 | `id` | PK, bigint IDENTITY | |
 | `operation_id` | varchar(255), NOT NULL, FK→`ai_operation_logs` ON DELETE CASCADE | |
-| `resource_type` | varchar(20), NOT NULL | `ResourceType` = `document` \| `wiki_page` |
-| `resource_id` | varchar(255), NOT NULL | **FK 없음.** `documents.id` 또는 `wiki_pages.id`를 가리키는 다형 참조이며, 대상이 삭제돼도 로그는 남아야 한다 |
+| `resource_type` | varchar(20), NOT NULL | `ResourceType` = `document` \| `wiki_page` \| `relation_link` |
+| `resource_id` | varchar(255), NOT NULL | **FK 없음.** 문서·페이지 ID 또는 relation link의 `source\|relation\|target` 식별자. 대상이 삭제돼도 로그는 남아야 한다 |
 | `before_revision` | bigint, nullable | 손대기 직전 버전. NULL이면 새로 만든 것 |
 | `after_revision` | bigint, nullable | 이 작업이 만든 버전. 위임·실패면 NULL |
 | `change_type` | varchar(20), NOT NULL | 아래 표 참조 |
@@ -98,6 +98,8 @@ UNIQUE `uk_ai_operation_changes_operation_resource_type` = `(operation_id, resou
 | `delegated` | 복구가 재조립을 llmPipeline에 맡김. 본문 미변경 |
 | `rebuilt` | 재조립 성공 |
 | `rebuild_failed` | 재조립 실패. 사유는 `change_summary` |
+| `link_removed` | llmPipeline 복구가 relation link를 제거했다고 보고 |
+| `link_restored` | llmPipeline 복구가 relation link를 복원했다고 보고 |
 
 ### `wiki_page_versions` (엔티티 `WikiPageVersion`, `fruition.wiki`)
 
@@ -142,6 +144,48 @@ V17이 `status` CHECK 제약에 `deleted`를 추가했지만 **Backend는 이 �
 ## 2. 사용자용 엔드포인트
 
 Controller `@RequestMapping("/api/workspaces/{workspace_id}/ai-operation-logs")`. `/api/workspaces/**`에 속하므로 **인증 필수**. `@AuthenticationPrincipal String userId`로 호출자를 식별하고, 서비스 진입 시 `WorkspaceMemberRepository.existsByWorkspace_IdAndUser_Id`로 멤버십을 검증한다. 아니면 `WorkspaceNotFoundException`(404).
+
+### `POST /api/workspaces/{workspace_id}/wiki/maintenance/lint` — Wiki lint 실행
+
+사용자 인증과 워크스페이스 멤버십이 필요하다. 공개 요청은 camelCase이며 llmPipeline 내부 요청으로 변환된다.
+
+```json
+{ "materializePromotions": true, "dryRun": false }
+```
+
+- `dryRun`이 `true`, `null`이거나 body가 없으면 미리보기다. Backend는 `operation_id`를 만들지 않고 llmPipeline 응답을 그대로 반환한다.
+- `dryRun=false`면 Backend가 lint 작업을 `processing`으로 먼저 등록하고, 발급한 `operation_id`를 llmPipeline에 전달한다.
+- llmPipeline의 동기 응답 `changed_pages`를 즉시 읽어 `wiki_page_versions`와 `ai_operation_changes`에 저장하고 작업을 확정한다.
+- lint는 새 기여를 만들지 않으며 기존 `contribution_count`도 늘리지 않는다.
+- 실제 실행 중 llmPipeline 호출이나 결과 반영이 실패하면 생성한 lint 로그를 `failed`로 확정한다.
+
+내부 llmPipeline 요청은 다음 형태다.
+
+```json
+{
+  "user_id": "user_1",
+  "workspace_id": "ws_1",
+  "operation_id": "op_lint_1",
+  "materialize_promotions": true,
+  "dry_run": false
+}
+```
+
+실제 실행 응답에는 최소한 다음 변경 정보가 필요하다. 공개 API는 이 원본 응답을 그대로 반환한다.
+
+```json
+{
+  "operation_id": "op_lint_1",
+  "changed_pages": [
+    {
+      "page_id": "wp_C3",
+      "page_type": "concept",
+      "markdown_key": "wiki/ws_1/pages/wp_C3/ops/op_lint_1.md",
+      "content_hash": "sha256:abc"
+    }
+  ]
+}
+```
 
 ---
 
@@ -337,12 +381,15 @@ Controller `@RequestMapping("/api/ai-operations")`. 사용자 인증 대상이 �
 
 ### 4.2 `POST /api/ai-operations/{operation_id}/result` — 작업 결과 수신
 
-ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며, 등록된 작업의 `operation_type`으로 갈린다.
+ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며, 등록된 작업의 `operation_type`으로 갈린다. lint 실행 결과는 동기 응답으로 저장하므로 이 callback을 쓰지 않는다.
 
 - **요청** `OperationResultRequest`
   - `operation_id`(`@NotBlank`), `operation_type`, `status`(`@NotBlank`), `workspace_id`, `user_id`, `target_document_id`, `summary`
   - `changed_pages[]`(`@NotNull`): `page_id`, `page_type`, `markdown_key`, `contribution_key`, `content_hash`, `contribution_stored`
   - `failed_pages[]`: `page_id`, `reason` — **재조립에만 실린다**
+  - `deleted_pages[]`: llmPipeline이 삭제 처리했다고 보고한 페이지 ID
+  - `link_changes`: `removed_links[]`, `restored_links[]`. 각 링크는 `source`, `target`, `relation`
+  - `failed_actions[]`: `action`, `resource_id`, `reason`
 - **응답 200** `OperationResultResponse`: `operation_id`, `status`, `recorded_changes`
 - **에러**: 401 `INVALID_CALLBACK_TOKEN` / 404 `AI_OPERATION_NOT_FOUND` / 409 `AI_OPERATION_PAYLOAD_CONFLICT` / 422 `INVALID_CALLBACK_PAYLOAD`
 
@@ -354,7 +401,7 @@ ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며
 2. 작업 조회(없으면 404) 후 `payload_hash` 계산 — 정규화 JSON의 SHA-256 hex
 3. **멱등** — 작업이 이미 `isTerminal()`이면 `payload_hash`가 같을 때 기존 결과를 그대로 반환하고, 다르면 409
 4. 등록값 대조
-5. 유형 분기 — `restore`면 재조립(4.4), 아니면 ingest 적재(4.3)
+5. 유형 분기 — `restore`면 재조립(4.4), `lint`면 기여 없는 lint 적재, 그 외에는 ingest 적재(4.3)
 
 **저장소 읽기는 트랜잭션 밖**에서 한다. 페이지 여러 개를 읽는 동안 DB 커넥션을 붙잡지 않기 위해서다.
 
@@ -370,7 +417,7 @@ ingest 결과와 복구 재조립 결과가 **같은 엔드포인트**를 쓰며
 6. `wiki_page_versions` 적재. `wiki_pages`는 건드리지 않는다
 7. `created`(직전 버전 없음) 또는 `updated` 기록. 줄 수는 `WikiLineCounter`
 
-작업 확정: `status == "failed"`면 `partially_succeeded`, 아니면 `succeeded`. **부분 실패여도 이미 만든 페이지는 기록한다.** 안 그러면 Wiki에는 있는데 로그에 없는 페이지가 영영 복구 대상에서 빠진다.
+작업 확정: `status`가 `failed`·`partially_succeeded`이거나 실패 페이지·실패 작업이 있으면 `partially_succeeded`, 아니면 `succeeded`. **부분 실패여도 이미 만든 페이지는 기록한다.** 안 그러면 Wiki에는 있는데 로그에 없는 페이지가 영영 복구 대상에서 빠진다.
 
 ### 4.4 재조립 결과 (`RestoreRebuildApplier`, 한 트랜잭션)
 
@@ -382,7 +429,10 @@ ingest 적재와 다른 점은 **기여를 만들지 않는다**는 것이다. �
 - 성공분: `revision = max+1`로 적재 후 `rebuilt` 기록. 같은 작업의 재전송이면 건너뛴다
 - 실패분: 본문을 건드리지 않고 `rebuild_failed` + 사유만 기록. `(operation_id, page_id, rebuild_failed)`가 이미 있으면 건너뛴다(실패에는 대조할 해시가 없다)
 - `delegated` 행은 갱신하지 않는다
-- 확정: `failed_pages`가 비고 `status != "failed"`면 `succeeded`, 아니면 `partially_succeeded`
+- `deleted_pages`는 실행 단계의 `deleted` 기록이 있으면 중복 저장하지 않고, 누락된 경우만 보완한다
+- 제거·복원 링크는 각각 `relation_link / link_removed`, `relation_link / link_restored` 변경내역으로 기록한다
+- 확정: `failed_pages`·`failed_actions`가 비고 실패 상태가 아니면 `succeeded`, 아니면 `partially_succeeded`
+- 응답에 summary가 없으면 페이지 변경·삭제·링크 제거·링크 복원·실패 건수를 조합해 저장한다
 - `recorded_changes`는 이 복구 작업이 남긴 **전체** 변경내역 수다(삭제·복원·위임 포함)
 
 ### 4.5 조립 지시서 (Backend → llmPipeline)
@@ -412,6 +462,21 @@ POST {app.wiki-restore.lint-endpoint}      lint 되돌리기
 ```
 
 lint는 `restore_to_operation_id`·`cancel_operation_ids`·`source_page` 대신 `target_operation_id` 하나를 보낸다. 원문 문서가 없어 범위를 만들지 않기 때문이다.
+
+```json
+// lint
+{
+  "operation_id": "op_restore_9a2b",
+  "workspace_id": "ws_1",
+  "result_callback_url": "http://.../api/ai-operations/op_restore_9a2b/result",
+  "target_operation_id": "op_lint_1",
+  "rebuild_pages": [
+    { "page_id": "wp_C3",
+      "keep_contributions": [ { "operation_id": "op_a1", "document_id": "doc_A" } ] }
+  ],
+  "deleted_pages": []
+}
+```
 
 | 항목 | 의미 |
 |---|---|
@@ -457,6 +522,12 @@ bucket은 **환경 설정으로 고정**하고 콜백에서 받지 않는다. �
 
 > ⚠️ `app.aihistory.ingest-logging-enabled` 기본값은 **`false`**다. llmPipeline의 `PipelineRunIn`이 `extra="forbid"`라 스키마가 준비되기 전에 `operation_id`를 보내면 422가 난다. llmPipeline이 준비되면 켠다.
 
+### 5.3 `lint` — Wiki 정리
+
+`dry_run=false`일 때만 `LintOperationStarter.start(...)`가 `processing` 로그를 먼저 커밋한다. `WikiMaintenanceService`가 발급한 `operation_id`를 llmPipeline 동기 요청에 싣고, 응답의 `changed_pages`를 `OperationIngestService`에 전달한다. `LintOperationApplier`는 페이지 행을 잠근 뒤 revision과 `created`·`updated` 변경내역만 추가하며 기여는 만들지 않는다.
+
+`dry_run=true`, `null`, body 생략은 미리보기로 취급해 작업 로그를 만들지 않는다.
+
 ---
 
 ## 6. 예외 → HTTP 매핑
@@ -478,6 +549,8 @@ bucket은 **환경 설정으로 고정**하고 콜백에서 받지 않는다. �
 |---|---|---|
 | `app.aihistory.ingest-logging-enabled` | `false` (`AIHISTORY_INGEST_LOGGING_ENABLED`) | ingest 작업 등록 on/off |
 | `app.internal.callback-token` | `INTERNAL_CALLBACK_TOKEN` | 내부 콜백 인증. 사용자 인증과 분리. 기본값은 로컬 개발용 placeholder이며 배포 환경에서는 반드시 주입한다 |
+| `app.wiki-maintenance.endpoint` | `http://localhost:8000/wiki/maintenance/lint` | lint 동기 실행 endpoint |
+| `app.wiki-maintenance.timeout-seconds` | `200` (`WIKI_MAINTENANCE_TIMEOUT_SECONDS`) | lint read timeout. connect는 5초 고정 |
 | `app.wiki-restore.ingest-endpoint` | `http://localhost:8000/wiki/ingest-restore-runs` | ingest 되돌리기 지시서 |
 | `app.wiki-restore.lint-endpoint` | `http://localhost:8000/wiki/lint-restore-runs` | lint 되돌리기 지시서 |
 | `app.wiki-restore.timeout-seconds` | `60` (`WIKI_RESTORE_TIMEOUT_SECONDS`) | read timeout. connect는 5초 고정 |
@@ -531,7 +604,7 @@ flowchart TD
     L --> M{전송 성공?}
     M -- 아니오 --> N[notify_pending]
     M -- 예 --> O[rebuilding]
-    O --> Q[POST result: changed_pages + failed_pages]
+    O --> Q[POST result: changed_pages + failed_pages + deleted_pages + link_changes + failed_actions]
     P[문서 편집은 llmPipeline 없이 즉시 succeeded]
     Q --> R[rebuilt · rebuild_failed 기록 → succeeded / partially_succeeded]
 ```
@@ -540,9 +613,9 @@ flowchart TD
 
 ## 9. 현재 상태
 
-- llmPipeline은 아직 `operation_id` 수용, 기여 조각 저장, `POST /wiki/restore-runs`를 구현하지 않았다. Backend는 mock payload로만 검증했다.
-- 그래서 `app.aihistory.ingest-logging-enabled`가 꺼져 있고, 재작성 대상이 있는 복구는 `notify_pending`에서 멈춘다.
+- llmPipeline의 `operation_id`·작업별 artifact·ingest/lint 복구 endpoint 구현에 Backend 계약을 맞췄다.
+- lint 실행·로그 저장·조회·diff·미리보기·복구 요청은 실제 PostgreSQL 통합 테스트로 연결해 검증했다. `dry_run=true`는 로그와 버전을 만들지 않는다.
+- llmPipeline callback에 `X-Internal-Token`이 없어 ingest·복구 결과 callback은 현재 Backend에서 401로 거절된다.
+- llmPipeline이 `deleted_pages`의 페이지·링크·임베딩을 실제 정리하는 처리는 아직 없다. Backend는 callback이 보고한 삭제·링크 결과만 감사 로그로 저장한다.
 - `notify_pending` 자동 재전송이 없다. 재시도는 수동이다.
-- `applying` 상태 동안 같은 문서의 새 ingest를 막는 처리가 없다.
-- 행 잠금 동작은 단위 테스트로 검증할 수 없다. Testcontainers 통합 테스트가 필요하다.
 - 재조립 실패 페이지는 복구 직전 내용 그대로 남는다. 남은 기여와 본문이 어긋난 상태이며 다음 lint가 정리해야 한다.
