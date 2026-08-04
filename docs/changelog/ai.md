@@ -6,6 +6,12 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-08-04
 
+### fix: 공통 LLM prompt injection과 숫자형 개인정보 방어 추가
+
+- 공통 Chat Completions system prompt에 역할·승인·Tool 결과 사칭, 과거 승인 재사용과 보호 데이터 외부 전송을 금지하고 거부 시에도 기존 출력 schema를 유지하도록 보안 경계를 추가
+- LLM 요청·응답·오류 로그에서 전화번호, 주민등록번호, 카드번호와 명시된 계좌번호를 정규식으로 마스킹하되 날짜와 version 번호는 유지
+- llmPipeline 전체 테스트 `684 passed`, `49 subtests passed`; Python compile과 `git diff --check` 통과
+
 ### feat: Workspace 문서 Tool과 완료 작업 기반 Skill proposal 추가
 
 - `workspace_workflow`가 폴더 정리와 같은 AgentRun 계획·승인·bounded ReAct 경로를 사용하고 `get_document_content`, `create_document`, `apply_document_edit` 계약을 처리하도록 확장
