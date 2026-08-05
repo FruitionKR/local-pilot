@@ -114,6 +114,7 @@ public class DocumentService {
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
     private final ObjectMapper objectMapper;
     private final String callbackBaseUrl;
 
@@ -135,6 +136,7 @@ public class DocumentService {
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
+                           DocumentAssetReferenceSynchronizer assetReferenceSynchronizer,
                            ObjectMapper objectMapper,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
@@ -155,6 +157,7 @@ public class DocumentService {
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.assetReferenceSynchronizer = assetReferenceSynchronizer;
         this.objectMapper = objectMapper;
         this.callbackBaseUrl = callbackBaseUrl;
     }
@@ -353,6 +356,7 @@ public class DocumentService {
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
                 duplicateId, content.markdown(), content.contentHash()));
+        assetReferenceSynchronizer.copyReferences(documentId, duplicateId);
 
         DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
         saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);

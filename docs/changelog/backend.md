@@ -28,6 +28,9 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   object를 보상 삭제하고, 삭제 하나가 실패해도 나머지 삭제를 계속 시도하도록 했다.
 - 보상 삭제 실패 object를 `document_asset_orphans`에 별도 transaction으로 기록해 이후 worker가
   재시도할 수 있게 했다.
+- CommonMark 이미지 destination에서 관리 asset 참조를 추출하고 workspace batch 검증, 문서별
+  reference diff, 마지막 참조 제거·재참조 상태를 동기화하도록 했다.
+- Markdown 문서 복제 시 asset row와 MinIO object를 복사하지 않고 기존 asset reference만 복사한다.
 
 **검증**
 
@@ -38,6 +41,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `DocumentAssetStorageCoordinatorTest`로 정상 object key 생성, 중간 저장 실패 보상과 일부 삭제 실패
   시 전체 삭제 시도를 검증했다.
 - schema 통합 테스트로 orphan 테이블 migration을 검증했다.
+- parser·synchronizer·문서 복제 테스트로 코드 블록/일반 링크 제외, 중복 참조, workspace 격리,
+  reference 추가·제거와 복제 동작을 검증했다.
 - Controller 저장 연결, 이미지 검증, MinIO 보상, 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---

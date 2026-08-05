@@ -93,6 +93,7 @@ class DocumentServiceBlocksTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
 
     DocumentService documentService;
 
@@ -103,6 +104,7 @@ class DocumentServiceBlocksTest {
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
                 editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
+                assetReferenceSynchronizer,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }
@@ -766,6 +768,7 @@ class DocumentServiceBlocksTest {
         assertThat(documentCaptor.getValue().getSourceUri()).isNull();
         assertThat(documentCaptor.getValue().getContentHash()).isNull();
         assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
+        verify(assetReferenceSynchronizer).copyReferences(source.getId(), response.id());
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
     }
 
