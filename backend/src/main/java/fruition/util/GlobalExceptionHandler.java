@@ -17,6 +17,7 @@ import fruition.document.exception.DocumentLockedException;
 import fruition.document.exception.EditLockLostException;
 import fruition.document.exception.DocumentNotFoundException;
 import fruition.document.exception.DocumentAssetNotFoundException;
+import fruition.document.exception.DocumentAssetExportException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DocumentVersionConflictException;
@@ -153,6 +154,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDocumentAssetNotFound(DocumentAssetNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_ASSET_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAssetExportException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetExport(DocumentAssetExportException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_EXPORT_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentWriteForbiddenException.class)

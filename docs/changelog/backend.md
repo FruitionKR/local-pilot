@@ -42,6 +42,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   처리하고 검증 MIME·길이·private cache·ETag·`nosniff`와 조건부 `304` 응답을 제공한다.
 - 7일 이상 미참조 이미지와 7일 경과 보상 삭제 orphan을 `FOR UPDATE SKIP LOCKED` batch로 정리하는 worker를
   추가했다. MinIO 삭제에 성공한 경우만 DB row를 제거하고 실패 항목은 다음 실행에서 재시도한다.
+- 관리 이미지가 있는 Markdown 내보내기를 ZIP으로 확장했다. 관리 URL을 로컬 상대 경로로 치환하고
+  파일명 충돌, 100개·100MB 제한, asset 누락과 MinIO 실패를 완성 전 검증하며 외부 URL은 fetch하지 않는다.
 
 **검증**
 
@@ -60,7 +62,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   ETag 조건부 응답을 검증했다.
 - 정리 worker 테스트로 7일 기준 조회, object 선삭제 순서, MinIO 실패 시 asset row 유지와 orphan
   retry metadata 갱신을 검증했다.
-- 인증 조회와 ZIP 내보내기는 후속 작업이다.
+- 내보내기 service·Controller 테스트로 기존 `.md` 호환, ZIP MIME·entry·경로 치환·파일명 충돌,
+  외부 URL 유지, 누락 asset과 개수·합계 용량 제한을 검증했다.
 
 ---
 

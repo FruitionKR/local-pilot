@@ -274,11 +274,13 @@ source block이 없는 직접 생성 문서는 빈 `blocks` 배열을 반환한�
 
 - 모든 활성 workspace 멤버가 사용할 수 있다.
 - 활성 `EDITABLE` 문서의 최신 편집 상태를 UTF-8로 반환한다.
-- Content-Type: `text/markdown;charset=UTF-8`
-- Content-Disposition: 현재 `display_name`을 사용하는 `.md` attachment
+- 관리 이미지 reference가 없으면 `text/markdown;charset=UTF-8`과 현재 `display_name`의 `.md` attachment를 반환한다.
+- 관리 이미지가 있으면 `application/zip`과 현재 `display_name`의 `.zip` attachment를 반환한다.
+- ZIP에는 `.md`와 `assets/` 이미지가 포함되며 관리 URL은 `./assets/<filename>`으로 치환된다.
+- 같은 원본 파일명은 `-2`, `-3` suffix로 충돌을 해소하고 외부 URL은 원문을 유지하며 fetch하지 않는다.
+- 이미지 최대 100개·합계 100MB를 적용하고 asset 누락이나 object 조회 실패 시 `422 DOCUMENT_ASSET_EXPORT_FAILED`로 전체 실패한다.
 - `base_version`을 요구하지 않고 문서 상태를 변경하지 않는다.
 - 원본 자료와 편집 상태가 없는 문서는 `404 DOCUMENT_NOT_FOUND`다.
-- 이미지 URL은 Markdown 문자열 그대로 유지한다. 이미지 ZIP은 assets 후속 task 범위다.
 
 ## 3. Pipeline callback API
 

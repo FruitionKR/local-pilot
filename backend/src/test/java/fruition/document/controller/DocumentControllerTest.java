@@ -112,6 +112,19 @@ class DocumentControllerTest {
     }
 
     @Test
+    void export_withImagesReturnsZipContentType() throws Exception {
+        byte[] bytes = new byte[]{1, 2, 3};
+        when(documentExportService.exportMarkdown(WORKSPACE_ID, USER_ID, "doc_zip"))
+                .thenReturn(new DocumentExportResult("이미지 문서.zip", "application/zip", bytes));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/documents/doc_zip/export")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/zip"))
+                .andExpect(content().bytes(bytes));
+    }
+
+    @Test
     void getBlocks_unknownDocument_returns404() throws Exception {
         when(documentService.blocks(WORKSPACE_ID, USER_ID, "doc_unknown"))
                 .thenThrow(new DocumentNotFoundException("doc_unknown"));

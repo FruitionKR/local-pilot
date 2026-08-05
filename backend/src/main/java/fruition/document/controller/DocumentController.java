@@ -213,7 +213,7 @@ public class DocumentController {
 
     @Operation(
         summary = "Markdown 원문 내보내기",
-        description = "요청 시점의 최신 Markdown 편집본을 UTF-8 .md 파일로 다운로드합니다."
+        description = "최신 Markdown 편집본을 내보냅니다. 관리 이미지가 있으면 이미지와 Markdown을 ZIP으로 반환합니다."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Markdown 다운로드"),
@@ -232,7 +232,7 @@ public class DocumentController {
                 .build();
 
         return ResponseEntity.ok()
-                .contentType(new MediaType("text", "markdown", StandardCharsets.UTF_8))
+                .contentType(MediaType.parseMediaType(result.contentType()))
                 .contentLength(result.bytes().length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
                 .body(new InputStreamResource(new ByteArrayInputStream(result.bytes())));
