@@ -103,7 +103,8 @@ class DocumentEditingSchemaIntegrationTest {
 
     @Test
     void migration_createsDocumentAssetFoundationAndProtectsReferencedAssets() {
-        for (String table : List.of("document_assets", "document_asset_references")) {
+        for (String table : List.of(
+                "document_assets", "document_asset_references", "document_asset_orphans")) {
             Boolean exists = jdbcTemplate.queryForObject(
                     "SELECT to_regclass(?) IS NOT NULL",
                     Boolean.class,

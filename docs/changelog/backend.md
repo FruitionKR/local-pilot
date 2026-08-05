@@ -26,6 +26,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   검증하고 검증된 MIME·SHA-256·원본 bytes를 만드는 이미지 검증기를 추가했다.
 - asset 전용 MinIO adapter와 저장 coordinator를 추가해 여러 이미지 저장 중 실패하면 이미 저장된
   object를 보상 삭제하고, 삭제 하나가 실패해도 나머지 삭제를 계속 시도하도록 했다.
+- 보상 삭제 실패 object를 `document_asset_orphans`에 별도 transaction으로 기록해 이후 worker가
+  재시도할 수 있게 했다.
 
 **검증**
 
@@ -35,6 +37,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   GIF bytes 보존과 개수·크기 제한을 검증했다.
 - `DocumentAssetStorageCoordinatorTest`로 정상 object key 생성, 중간 저장 실패 보상과 일부 삭제 실패
   시 전체 삭제 시도를 검증했다.
+- schema 통합 테스트로 orphan 테이블 migration을 검증했다.
 - Controller 저장 연결, 이미지 검증, MinIO 보상, 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---

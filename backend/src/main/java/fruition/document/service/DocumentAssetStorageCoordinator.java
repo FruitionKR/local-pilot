@@ -16,9 +16,14 @@ public class DocumentAssetStorageCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentAssetStorageCoordinator.class);
     private final DocumentAssetObjectStorage objectStorage;
+    private final DocumentAssetOrphanRegistry orphanRegistry;
 
-    public DocumentAssetStorageCoordinator(DocumentAssetObjectStorage objectStorage) {
+    public DocumentAssetStorageCoordinator(
+            DocumentAssetObjectStorage objectStorage,
+            DocumentAssetOrphanRegistry orphanRegistry
+    ) {
         this.objectStorage = objectStorage;
+        this.orphanRegistry = orphanRegistry;
     }
 
     public Map<UUID, StoredAsset> storeAll(
@@ -47,6 +52,11 @@ public class DocumentAssetStorageCoordinator {
                 objectStorage.delete(storedAsset.objectKey());
             } catch (RuntimeException exception) {
                 failedAssetIds.add(storedAsset.assetId().toString());
+                try {
+                    orphanRegistry.record(storedAsset.assetId(), storedAsset.objectKey(), exception.getMessage());
+                } catch (RuntimeException registryException) {
+                    log.error("[이미지 asset orphan 기록 실패] assetId={}", storedAsset.assetId());
+                }
             }
         }
         if (!failedAssetIds.isEmpty()) {

@@ -17,7 +17,8 @@ class DocumentAssetStorageCoordinatorTest {
     @Test
     void storeAll_returnsAttachmentMappingWithoutExposingBytesToKey() {
         RecordingStorage storage = new RecordingStorage(-1);
-        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage);
+        RecordingOrphanRegistry orphans = new RecordingOrphanRegistry();
+        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage, orphans);
         UUID attachmentId = UUID.randomUUID();
 
         var stored = coordinator.storeAll("ws_1", Map.of(attachmentId, asset("first.png")));
@@ -30,7 +31,8 @@ class DocumentAssetStorageCoordinatorTest {
     @Test
     void storeAll_whenLaterPutFails_deletesPreviouslyStoredObjects() {
         RecordingStorage storage = new RecordingStorage(2);
-        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage);
+        RecordingOrphanRegistry orphans = new RecordingOrphanRegistry();
+        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage, orphans);
         Map<UUID, DocumentAssetValidator.ValidatedAsset> assets = new LinkedHashMap<>();
         assets.put(UUID.randomUUID(), asset("first.png"));
         assets.put(UUID.randomUUID(), asset("second.png"));
@@ -44,7 +46,8 @@ class DocumentAssetStorageCoordinatorTest {
     void compensate_attemptsEveryDeleteWhenOneDeleteFails() {
         RecordingStorage storage = new RecordingStorage(-1);
         storage.failDeleteIndex = 1;
-        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage);
+        RecordingOrphanRegistry orphans = new RecordingOrphanRegistry();
+        DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage, orphans);
         Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> stored = coordinator.storeAll(
                 "ws_1",
                 Map.of(UUID.randomUUID(), asset("first.png"), UUID.randomUUID(), asset("second.png")));
@@ -52,6 +55,16 @@ class DocumentAssetStorageCoordinatorTest {
         coordinator.compensate(stored.values());
 
         assertThat(storage.deleteAttempts).hasSize(2);
+        assertThat(orphans.assetIds).hasSize(1);
+    }
+
+    private static final class RecordingOrphanRegistry implements DocumentAssetOrphanRegistry {
+        private final List<UUID> assetIds = new ArrayList<>();
+
+        @Override
+        public void record(UUID assetId, String storageKey, String errorMessage) {
+            assetIds.add(assetId);
+        }
     }
 
     private DocumentAssetValidator.ValidatedAsset asset(String filename) {
