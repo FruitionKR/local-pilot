@@ -102,6 +102,43 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
+    void migration_createsDocumentAssetFoundationAndProtectsReferencedAssets() {
+        for (String table : List.of("document_assets", "document_asset_references")) {
+            Boolean exists = jdbcTemplate.queryForObject(
+                    "SELECT to_regclass(?) IS NOT NULL",
+                    Boolean.class,
+                    "public." + table
+            );
+            assertThat(exists).as(table).isTrue();
+        }
+
+        String userId = "asset-user-" + UUID.randomUUID();
+        String workspaceId = "asset-workspace-" + UUID.randomUUID();
+        String documentId = "asset-document-" + UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+        insertUserAndWorkspace(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "asset.md", "b".repeat(64), DocumentRole.EDITABLE.name());
+        jdbcTemplate.update(
+                """
+                INSERT INTO document_assets(
+                    id, workspace_id, uploaded_by, original_filename, content_type, byte_size,
+                    width, height, content_hash, storage_key, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                """,
+                assetId, workspaceId, userId, "diagram.png", "image/png", 4L,
+                1, 1, "a".repeat(64), "assets/" + assetId
+        );
+        jdbcTemplate.update(
+                "INSERT INTO document_asset_references(document_id, asset_id, created_at) VALUES (?, ?, now())",
+                documentId,
+                assetId
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM document_assets WHERE id = ?", assetId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void migration_createsWorkspaceSoftDeleteColumns() {
         List<String> columns = jdbcTemplate.queryForList(
                 """
