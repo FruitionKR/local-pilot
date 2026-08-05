@@ -55,6 +55,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @WebMvcTest(DocumentController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
@@ -394,6 +395,36 @@ class DocumentControllerTest {
         verify(documentAssetContentService).save(
                 eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(),
                 eq("operation_1"));
+    }
+
+    @Test
+    void saveContent_metadataForwardsUnknownUploadedFileForContractValidation() throws Exception {
+        String metadataJson = """
+                {"markdown":"# 본문","base_version":3}
+                """;
+        when(documentAssetContentService.save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(), eq(null)))
+                .thenReturn(new DocumentContentSaveResponse(
+                        "doc_edit", 3, "a".repeat(64), Instant.now(), false, "# 본문", List.of()));
+
+        mockMvc.perform(multipart(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
+                        .file(new MockMultipartFile(
+                                "metadata", "", "application/json", metadataJson.getBytes()))
+                        .file(new MockMultipartFile(
+                                "unexpected_file", "image.png", "image/png", new byte[]{1}))
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        })
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk());
+
+        var files = org.mockito.ArgumentCaptor.forClass(org.springframework.util.MultiValueMap.class);
+        verify(documentAssetContentService).save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), files.capture(), eq(null));
+        assertThat(files.getValue()).containsKey("unexpected_file");
+        assertThat(files.getValue()).doesNotContainKey("metadata");
     }
 
     @Test

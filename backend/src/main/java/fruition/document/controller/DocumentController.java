@@ -371,7 +371,7 @@ public class DocumentController {
 
     @Operation(
         summary = "Markdown 본문 저장",
-        description = "전체 Markdown을 수동 저장합니다. base_version이 현재 version과 일치할 때만 반영합니다.")
+        description = "전체 Markdown과 신규 이미지를 수동 저장합니다. base_version이 현재 version과 일치할 때만 반영합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "저장 성공 또는 동일 본문 no-op",
             content = @Content(schema = @Schema(implementation = DocumentContentSaveResponse.class))),
@@ -383,7 +383,9 @@ public class DocumentController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "문서 version 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "413", description = "Markdown 5MB 초과",
+        @ApiResponse(responseCode = "413", description = "Markdown 5MB 또는 이미지 제한 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "415", description = "지원하지 않는 이미지 형식",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PutMapping(path = "/{document_id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -405,7 +407,11 @@ public class DocumentController {
         if (metadata != null) {
             LinkedMultiValueMap<String, MultipartFile> attachments = new LinkedMultiValueMap<>();
             multipartRequest.getMultiFileMap().forEach((partName, files) -> {
-                if (partName.startsWith("attachment_")) attachments.put(partName, files);
+                boolean uploadedFile = files.stream().anyMatch(file ->
+                        file.getOriginalFilename() != null && !file.getOriginalFilename().isBlank());
+                if (partName.startsWith("attachment_") || uploadedFile) {
+                    attachments.put(partName, files);
+                }
             });
             return ResponseEntity.ok(documentAssetContentService.save(
                     workspaceId, userId, documentId, metadata, attachments, applyOperationId));

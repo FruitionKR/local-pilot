@@ -44,6 +44,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   추가했다. MinIO 삭제에 성공한 경우만 DB row를 제거하고 실패 항목은 다음 실행에서 재시도한다.
 - 관리 이미지가 있는 Markdown 내보내기를 ZIP으로 확장했다. 관리 URL을 로컬 상대 경로로 치환하고
   파일명 충돌, 100개·100MB 제한, asset 누락과 MinIO 실패를 완성 전 검증하며 외부 URL은 fetch하지 않는다.
+- multipart Controller가 알 수 없는 업로드 file part를 버리지 않고 parser 검증으로 전달하도록 수정해
+  잘못된 part 이름이 조용히 무시되지 않게 했다. API·OpenAPI와 SDD 요구사항 추적 결과도 갱신했다.
 
 **검증**
 
@@ -64,6 +66,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   retry metadata 갱신을 검증했다.
 - 내보내기 service·Controller 테스트로 기존 `.md` 호환, ZIP MIME·entry·경로 치환·파일명 충돌,
   외부 URL 유지, 누락 asset과 개수·합계 용량 제한을 검증했다.
+- Markdown 5MB와 이미지 제한의 `413` 오류 코드 분리, 잘못된 multipart file part 전달을 검증하고
+  Backend 전체 테스트, `flywayValidate`, `git diff --check`를 통과했다.
 
 ---
 
