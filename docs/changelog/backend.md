@@ -40,6 +40,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   일반 Markdown 저장과 같은 기준으로 기록한다.
 - workspace 멤버 전용 이미지 조회 endpoint를 추가했다. 비멤버·다른 workspace asset은 `404`로
   처리하고 검증 MIME·길이·private cache·ETag·`nosniff`와 조건부 `304` 응답을 제공한다.
+- 7일 이상 미참조 이미지와 7일 경과 보상 삭제 orphan을 `FOR UPDATE SKIP LOCKED` batch로 정리하는 worker를
+  추가했다. MinIO 삭제에 성공한 경우만 DB row를 제거하고 실패 항목은 다음 실행에서 재시도한다.
 
 **검증**
 
@@ -56,6 +58,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   이미지 없는 저장의 하위 호환을 검증했다.
 - asset 조회 service·Controller 테스트로 멤버 stream, 비멤버·workspace 격리, 보안·cache header와
   ETag 조건부 응답을 검증했다.
+- 정리 worker 테스트로 7일 기준 조회, object 선삭제 순서, MinIO 실패 시 asset row 유지와 orphan
+  retry metadata 갱신을 검증했다.
 - 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---
