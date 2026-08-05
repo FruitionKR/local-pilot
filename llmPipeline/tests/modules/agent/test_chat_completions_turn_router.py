@@ -40,6 +40,14 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
+    def test_routes_completed_work_to_skill_draft_proposal(self) -> None:
+        client = SequenceJsonClient([route_response("skill_draft_proposal")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="방금 방식대로 Skill로 만들어줘"))
+
+        self.assertEqual(route.action, "skill_draft_proposal")
+
     def test_sends_skill_candidates_and_normalizes_selected_skill(self) -> None:
         response = route_response("folder_organize")
         response["selected_skill_id"] = "skill-1"

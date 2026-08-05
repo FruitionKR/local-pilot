@@ -7,9 +7,22 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditTarget,
 )
 from app.modules.query.domain.entities import QueryAnswer
+from app.modules.skill.domain.entities import (
+    SkillDraftProposal,
+    SkillDraftSourceRun,
+)
 
 
-AgentAction = Literal["chat_answer", "markdown_edit", "markdown_create", "folder_organize", "clarify", "reject"]
+AgentAction = Literal[
+    "chat_answer",
+    "markdown_edit",
+    "markdown_create",
+    "folder_organize",
+    "workspace_workflow",
+    "skill_draft_proposal",
+    "clarify",
+    "reject",
+]
 SkillMode = Literal["auto", "explicit", "off"]
 
 
@@ -44,6 +57,9 @@ class AgentTurnRequest:
     skill_mode: SkillMode = "auto"
     skill_id: str | None = None
     available_skills: tuple[SkillCandidate, ...] = ()
+    skill_draft_sources: tuple[SkillDraftSourceRun, ...] = ()
+    skill_draft_user_directives: tuple[str, ...] = ()
+    skill_draft_excluded_literals: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,3 +83,4 @@ class AgentTurnResult:
     skill_candidates: tuple[SkillCandidate, ...] = ()
     run_id: str | None = None
     run_status: str | None = None
+    skill_draft_proposal: SkillDraftProposal | None = None

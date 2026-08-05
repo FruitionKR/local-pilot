@@ -12,11 +12,20 @@ from app.core.llm_env import (
     resolve_llm_provider,
 )
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation, build_agent_plan
+from app.modules.agent_run.domain.entities import ContentArtifactReference
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 
 
 DEFAULT_PLAN_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "agent_folder_plan.system.md"
-ALLOWED_PLAN_TOOLS = {"create_folder", "rename_folder", "move_folder", "move_document", "rename_document"}
+ALLOWED_PLAN_TOOLS = {
+    "create_folder",
+    "rename_folder",
+    "move_folder",
+    "move_document",
+    "rename_document",
+    "create_document",
+    "apply_document_edit",
+}
 
 
 class ChatCompletionsPlanGenerator:
@@ -34,6 +43,7 @@ class ChatCompletionsPlanGenerator:
         hierarchy: list[dict[str, object]],
         skill_instructions: str | None,
         allowed_tools: tuple[str, ...] | None,
+        content_artifacts: tuple[ContentArtifactReference, ...] = (),
     ) -> AgentPlan:
         allowed_plan_tools = (
             ALLOWED_PLAN_TOOLS
@@ -49,13 +59,24 @@ class ChatCompletionsPlanGenerator:
                     "hierarchy": hierarchy,
                     "skill_instructions": skill_instructions,
                     "allowed_tools": sorted(allowed_plan_tools),
+                    "content_artifacts": [
+                        {
+                            "id": artifact.id,
+                            "content_hash": artifact.content_hash,
+                            "purpose": artifact.purpose,
+                            "document_id": artifact.document_id,
+                            "base_version": artifact.base_version,
+                            "target": artifact.target,
+                        }
+                        for artifact in content_artifacts
+                    ],
                 },
                 ensure_ascii=False,
                 indent=2,
             ),
         )
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
-        _validate_plan_against_hierarchy(plan, hierarchy)
+        _validate_plan_against_hierarchy(plan, hierarchy, content_artifacts)
         return plan
 
 
@@ -163,6 +184,7 @@ def _optional_int(value: object) -> int | None:
 def _validate_plan_against_hierarchy(
     plan: AgentPlan,
     hierarchy: list[dict[str, object]],
+    content_artifacts: tuple[ContentArtifactReference, ...],
 ) -> None:
     items = {str(item.get("id")): item for item in hierarchy if item.get("id") is not None}
     operation_ids = {operation.id for operation in plan.operations}
@@ -172,13 +194,28 @@ def _validate_plan_against_hierarchy(
         "move_folder": {"folder_id", "parent_folder_id", "position", "base_version"},
         "move_document": {"document_id", "folder_id", "position", "base_version"},
         "rename_document": {"document_id", "display_name", "base_version"},
+        "create_document": {"display_name", "folder_id", "content_artifact_id", "content_hash"},
+        "apply_document_edit": {
+            "document_id",
+            "base_version",
+            "target",
+            "content_artifact_id",
+            "content_hash",
+        },
     }
     for operation in plan.operations:
         if set(operation.arguments) != required_arguments[operation.tool_name]:
             raise ValueError("Agent plan arguments do not match the tool contract.")
-        if operation.tool_name == "create_folder":
+        expected_target_type = "folder" if operation.tool_name in {
+            "create_folder",
+            "rename_folder",
+            "move_folder",
+        } else "document"
+        if operation.target_type != expected_target_type:
+            raise ValueError("Agent plan target_type does not match the tool contract.")
+        if operation.tool_name in {"create_folder", "create_document"}:
             if operation.target_id is not None or operation.base_version is not None:
-                raise ValueError("create_folder cannot have an existing target or base_version.")
+                raise ValueError("Create operations cannot have an existing target or base_version.")
         else:
             item = items.get(operation.target_id or "")
             if item is None or item.get("type") != operation.target_type:
@@ -192,6 +229,7 @@ def _validate_plan_against_hierarchy(
                 raise ValueError("Agent plan base_version must match the tool arguments.")
         destination_key = {
             "create_folder": "parent_folder_id",
+            "create_document": "folder_id",
             "move_folder": "parent_folder_id",
             "move_document": "folder_id",
         }.get(operation.tool_name)
@@ -203,9 +241,64 @@ def _validate_plan_against_hierarchy(
                 target_folder = items.get(destination)
                 if target_folder is None or target_folder.get("type") != "folder":
                     raise ValueError("Agent plan destination folder must exist.")
+        if operation.tool_name in {"create_document", "apply_document_edit"}:
+            _validate_artifact_arguments(operation)
+            _validate_artifact_reference(operation, content_artifacts)
         references = _operation_references(operation.arguments)
         if not references.issubset(set(operation.depends_on)) or not references.issubset(operation_ids):
             raise ValueError("Agent plan result references must be declared dependencies.")
+
+
+def _validate_artifact_arguments(operation: AgentPlanOperation) -> None:
+    artifact_id = operation.arguments.get("content_artifact_id")
+    content_hash = operation.arguments.get("content_hash")
+    if not isinstance(artifact_id, str) or not artifact_id.strip():
+        raise ValueError("Document mutation requires content_artifact_id.")
+    if not isinstance(content_hash, str) or not content_hash.strip():
+        raise ValueError("Document mutation requires content_hash.")
+    if operation.tool_name == "apply_document_edit":
+        target = operation.arguments.get("target")
+        if not isinstance(target, dict) or set(target) != {"type", "start_line", "end_line"}:
+            raise ValueError("apply_document_edit requires an exact target object.")
+        if target.get("type") not in {"selection", "current_section", "whole_document"}:
+            raise ValueError("apply_document_edit target type is invalid.")
+        start_line = target.get("start_line")
+        end_line = target.get("end_line")
+        if (
+            not isinstance(start_line, int)
+            or isinstance(start_line, bool)
+            or not isinstance(end_line, int)
+            or isinstance(end_line, bool)
+            or start_line < 1
+            or end_line < start_line
+        ):
+            raise ValueError("apply_document_edit target lines are invalid.")
+
+
+def _validate_artifact_reference(
+    operation: AgentPlanOperation,
+    content_artifacts: tuple[ContentArtifactReference, ...],
+) -> None:
+    artifact = next(
+        (
+            candidate
+            for candidate in content_artifacts
+            if candidate.id == operation.arguments.get("content_artifact_id")
+        ),
+        None,
+    )
+    if artifact is None:
+        raise ValueError("Document mutation artifact was not supplied by trusted context.")
+    if artifact.content_hash != operation.arguments.get("content_hash"):
+        raise ValueError("Document mutation content_hash does not match its artifact.")
+    if artifact.purpose != operation.tool_name:
+        raise ValueError("Document mutation artifact purpose does not match the tool.")
+    if operation.tool_name == "apply_document_edit" and (
+        artifact.document_id != operation.target_id
+        or artifact.base_version != operation.base_version
+        or artifact.target != operation.arguments.get("target")
+    ):
+        raise ValueError("Document edit artifact does not match the approved target.")
 
 
 def _operation_references(value: object) -> set[str]:
