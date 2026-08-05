@@ -17,6 +17,9 @@ import fruition.document.exception.DuplicateDocumentException;
 import fruition.document.exception.InvalidDocumentFilenameException;
 import fruition.document.exception.InvalidDocumentVersionException;
 import fruition.document.exception.InvalidMarkdownContentException;
+import fruition.document.exception.InvalidDocumentAssetException;
+import fruition.document.exception.DocumentAssetTooLargeException;
+import fruition.document.exception.UnsupportedDocumentAssetException;
 import fruition.document.exception.MarkdownContentTooLargeException;
 import fruition.document.exception.MarkdownDiffTooLargeException;
 import fruition.document.exception.InvalidIdempotencyKeyException;
@@ -204,6 +207,23 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_MARKDOWN_CONTENT", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidDocumentAssetException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDocumentAsset(InvalidDocumentAssetException e) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_DOCUMENT_ASSET", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAssetTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetTooLarge(DocumentAssetTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(UnsupportedDocumentAssetException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedDocumentAsset(UnsupportedDocumentAssetException e) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ErrorResponse.of("UNSUPPORTED_DOCUMENT_ASSET", e.getMessage()));
     }
 
     @ExceptionHandler(MarkdownContentTooLargeException.class)

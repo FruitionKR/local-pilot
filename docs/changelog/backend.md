@@ -22,11 +22,15 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - asset과 복합키 reference JPA entity 및 repository를 추가했다.
 - 이미지 저장 `metadata` JSON과 `attachment_<uuid>` file part를 해석하고 placeholder 누락, 중복 file,
   미사용 file과 잘못된 part를 거절하는 요청 parser를 추가했다.
+- PNG·JPEG·WebP·GIF signature와 decoder/구조, dimension, 개별 10MB, 요청당 20개·100MB 제한을
+  검증하고 검증된 MIME·SHA-256·원본 bytes를 만드는 이미지 검증기를 추가했다.
 
 **검증**
 
 - `DocumentEditingSchemaIntegrationTest`로 migration 적용과 참조 중 asset 삭제 차단을 검증했다.
 - `DocumentAssetSaveRequestParserTest`로 정상 매핑, 이미지 없는 요청과 잘못된 multipart 조합을 검증했다.
+- `DocumentAssetValidatorTest`로 MIME 위장, SVG·손상 파일 거절, PNG/JPEG/GIF/WebP dimension,
+  GIF bytes 보존과 개수·크기 제한을 검증했다.
 - Controller 저장 연결, 이미지 검증, MinIO 보상, 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---
