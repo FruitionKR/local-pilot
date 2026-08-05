@@ -25,9 +25,18 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
         self,
         read_text: Callable[[str], str],
         write_text: Callable[[str, str, str], str],
+        cleanup_deleted_pages: Callable[[str, list[str]], None],
     ) -> None:
         self._read_text = read_text
         self._write_text = write_text
+        self._cleanup_deleted_pages = cleanup_deleted_pages
+
+    def cleanup_deleted_pages(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> None:
+        self._cleanup_deleted_pages(workspace_id, page_ids)
 
     def rebuild_page(
         self,

@@ -88,6 +88,73 @@ def connect() -> psycopg.Connection:
     return psycopg.connect(database_url(), row_factory=dict_row)
 
 
+def cleanup_deleted_wiki_pages(
+    workspace_id: str,
+    page_ids: list[str],
+) -> None:
+    if not page_ids:
+        return
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id
+            FROM wiki_pages
+            WHERE workspace_id = %s
+              AND id = ANY(%s)
+            """,
+            (workspace_id, page_ids),
+        ).fetchall()
+        target_ids = [row["id"] for row in rows]
+        if not target_ids:
+            return
+        vector_rows = conn.execute(
+            """
+            SELECT DISTINCT embedding_vector_id
+            FROM wiki_embedding_units
+            WHERE page_id = ANY(%s)
+            """,
+            (target_ids,),
+        ).fetchall()
+        vector_ids = [row["embedding_vector_id"] for row in vector_rows]
+        conn.execute(
+            """
+            DELETE FROM wiki_page_links
+            WHERE from_page_id = ANY(%s)
+               OR to_page_id = ANY(%s)
+            """,
+            (target_ids, target_ids),
+        )
+        conn.execute(
+            "DELETE FROM document_wiki_links WHERE wiki_page_id = ANY(%s)",
+            (target_ids,),
+        )
+        conn.execute(
+            "DELETE FROM wiki_page_embeddings WHERE page_id = ANY(%s)",
+            (target_ids,),
+        )
+        conn.execute(
+            "DELETE FROM wiki_embedding_units WHERE page_id = ANY(%s)",
+            (target_ids,),
+        )
+        if vector_ids:
+            conn.execute(
+                """
+                DELETE FROM wiki_embedding_vectors vector
+                WHERE vector.id = ANY(%s)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM wiki_embedding_units unit
+                      WHERE unit.embedding_vector_id = vector.id
+                  )
+                """,
+                (vector_ids,),
+            )
+        conn.execute(
+            "UPDATE wiki_pages SET status = 'deleted', updated_at = now() WHERE id = ANY(%s)",
+            (target_ids,),
+        )
+
+
 REQUIRED_TABLES = (
     "documents",
     "wiki_pages",

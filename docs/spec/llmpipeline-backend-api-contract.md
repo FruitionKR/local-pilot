@@ -38,6 +38,7 @@ flowchart LR
         AGENT[Markdown Agent]
         SCHEMA[Wiki Schema]
         LINT[Wiki Lint]
+        RESTORE[Wiki Restore]
     end
 
     DB[(PostgreSQL)]
@@ -50,8 +51,10 @@ flowchart LR
     SPRING -->|POST /agent/turn| AGENT
     SPRING -->|/wiki-schema/*| SCHEMA
     SPRING -->|POST /wiki/maintenance/lint| LINT
+    SPRING -->|POST /wiki/*-restore-runs| RESTORE
 
     INGEST -. pipeline event callback .-> SPRING
+    INGEST -. operation result callback .-> SPRING
     QUERY -. query event callback .-> SPRING
 
     PIPELINE <--> DB
@@ -71,7 +74,9 @@ flowchart LR
 | 연결됨 | `POST` | `/wiki-schema/drafts` | `PipelineWikiSchemaRequester` |
 | 연결됨 | `POST` | `/wiki-schema/{schema_id}/activate` | `PipelineWikiSchemaRequester` |
 | 연결됨 | `GET` | `/wiki-schema/active` | `PipelineWikiSchemaRequester` |
-| dry-run만 연결 | `POST` | `/wiki/maintenance/lint` | `PipelineWikiMaintenanceRequester` |
+| 연결됨 | `POST` | `/wiki/maintenance/lint` | `PipelineWikiMaintenanceRequester` |
+| 연결됨 | `POST` | `/wiki/ingest-restore-runs` | `PipelineRestoreRequester` |
+| 연결됨 | `POST` | `/wiki/lint-restore-runs` | `PipelineRestoreRequester` |
 | 계약 불일치 | `PATCH` | `/wiki/pages/{wiki_page_id}/rename` | `PipelineWikiPageRequester` |
 
 `PATCH /wiki/pages/{wiki_page_id}/rename`은 Spring에 호출 코드가 있지만 llmPipeline에 FastAPI route가 없다. 따라서 현재 사용 가능한 API가 아니며, 제6장에 계약 공백으로 기록한다.
@@ -82,6 +87,9 @@ flowchart LR
 | --- | --- | --- | --- |
 | 연결됨 | `POST` | `/api/documents/{document_id}/pipeline-events` | `PipelineLog` |
 | 연결됨 | `POST` | `/api/query/runs/{request_id}/events/callback` | `HttpQueryEventPublisher` |
+| 연결됨 | `POST` | `/api/ai-operations/{operation_id}/result` | `HttpPipelineResultNotifier` |
+| Backend route 없음 | `POST` | `/internal/agent/tools/read/{tool_name}` | `BackendToolGateway` |
+| Backend route 없음 | `POST` | `/internal/agent/tools/execute/{tool_name}` | `BackendToolGateway` |
 
 ### 2.4 범위에서 제외한 llmPipeline API
 
@@ -91,8 +99,6 @@ flowchart LR
 - `GET /pipeline/runs/{run_id}`
 - `GET /pipeline/runs/{run_id}/logs`
 - `POST /pipeline/runs/{run_id}/result-callback/retry`
-- `POST /wiki/ingest-restore-runs`
-- `POST /wiki/lint-restore-runs`
 - `/skills/*`
 - `/agent-runs/*`
 - `GET /documents/{document_id}`
@@ -113,10 +119,12 @@ flowchart LR
 
 | API | llmPipeline Auth | Spring 헤더 | 현재 판정 |
 | --- | --- | --- | --- |
-| Ingestion, Query, Schema, Lint | 없음 | 없음 | 내부 network 신뢰에 의존 |
-| `/agent/turn` + `AGENT_SKILLS_ENABLED=false` | 없음 | 없음 | 기본 설정에서 호출 가능 |
-| `/agent/turn` + `AGENT_SKILLS_ENABLED=true` | `X-Agent-Service-Token` 필수 | **현재 미전송** | Spring 호출이 `401` 또는 `503`으로 실패 |
-| llmPipeline → Spring callback | 없음 | 없음 | callback URL 소유 여부만 사실상의 경계 |
+| Ingestion, Query, Schema, Lint, Restore | `X-Internal-Token` 필수 | **현재 미전송** | Spring 호출이 `401`로 실패 |
+| `/agent/turn` + `AGENT_SKILLS_ENABLED=false` | `X-Internal-Token` 필수 | **현재 미전송** | Spring 호출이 `401`로 실패 |
+| `/agent/turn` + `AGENT_SKILLS_ENABLED=true` | `X-Internal-Token`, `X-Agent-Service-Token` 필수 | **둘 다 현재 미전송** | Spring 호출이 `401` 또는 `503`으로 실패 |
+| 진행·Query callback | llmPipeline이 `X-Internal-Token` 전송 | Spring 검증 없음 | 헤더를 보내지만 아직 인증 경계로 사용하지 않음 |
+| Operation result callback | Spring `X-Internal-Token` 필수 | llmPipeline이 `INTERNAL_CALLBACK_TOKEN` 전송 | 양쪽 설정값이 같을 때 연결됨 |
+| Agent Tool Gateway | Spring route 없음 | llmPipeline이 `X-Agent-Service-Token` 전송 | 현재 `404`로 실패 |
 
 Auth 항목은 현재 코드를 기술한 것이며, 보안상 권장 상태를 뜻하지 않는다.
 
@@ -178,12 +186,12 @@ Spring에 저장된 일반 Document를 Source·Concept Wiki Page로 비동기 �
 
 #### Auth
 
-- 현재 llmPipeline Auth: 없음
-- Spring 전송 헤더: 없음
+- llmPipeline Auth: `X-Internal-Token` 필수
+- Spring 전송 헤더: 현재 없음(`401`)
 
 #### 권한 규칙
 
-- Spring의 일반 업로드·재처리 API가 사용자 권한과 Document 상태를 검증한 뒤 처리 큐에 등록한다. 실제 llmPipeline 호출은 `DocumentProcessingWorker`가 수행하며 별도 사용자·서비스 인증을 추가하지 않는다.
+- Spring의 일반 업로드·재처리 API가 사용자 권한과 Document 상태를 검증한 뒤 처리 큐에 등록한다. 실제 llmPipeline 호출은 `DocumentProcessingWorker`가 수행하지만 현재 `X-Internal-Token`을 보내지 않아 llmPipeline에서 `401`로 거절된다.
 - llmPipeline은 request의 `user_id`, `workspace_id`를 Wiki 저장 범위의 권위 값으로 사용하지 않고, `document_id`로 조회한 DB Document의 값을 사용한다.
 
 #### Request Body
@@ -194,8 +202,11 @@ Spring에 저장된 일반 Document를 Source·Concept Wiki Page로 비동기 �
 | `user_id` | string | 아니오 | 예 | 호환용 필드. 실제 범위는 DB Document에서 결정 |
 | `workspace_id` | string | 아니오 | 예 | 호환용 필드. 실제 범위는 DB Document에서 결정 |
 | `log_callback_url` | string/null | 아니오 | 예 | 단계별 event callback URL |
+| `operation_id` | string/null | 조건부 | 기능 flag 활성 시 | AI 작업 로그와 완료 결과를 연결하는 ID다. `result_callback_url`과 함께 보내야 한다. |
+| `result_callback_url` | string/null | 조건부 | 기능 flag 활성 시 | 완료·실패 결과 callback URL이다. 진행 event용 `log_callback_url`과 별개다. |
 
 Spring은 llmPipeline이 지원하는 model·prompt·evaluation 세부 설정을 전송하지 않으며 llmPipeline 기본값을 사용한다.
+`app.aihistory.ingest-logging-enabled=false`가 기본값이므로 기본 설정에서는 `operation_id`와 `result_callback_url`을 보내지 않는다.
 
 #### Response Body
 
@@ -215,6 +226,7 @@ Spring은 llmPipeline이 지원하는 model·prompt·evaluation 세부 설정을
 | `409` | PDF 등에 `extracted_text_uri`가 없음 | `Document needs extracted_text_uri ...` |
 | `409` | source URI가 없음 | `Document has no source_uri or extracted_text_uri` |
 | `422` | request schema 위반 | Pydantic validation detail |
+| `422` | `operation_id`, `result_callback_url` 중 하나만 전송 | Pydantic model validation detail |
 | `502` | MinIO 원본 읽기 실패 | `Failed to read document object from storage: ...` |
 | `500` | DB run 등록 등 내부 오류 | 예외 메시지 |
 
@@ -258,8 +270,8 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 
 #### Auth
 
-- 현재 llmPipeline Auth: 없음
-- Spring 전송 헤더: 없음
+- llmPipeline Auth: `X-Internal-Token` 필수
+- Spring 전송 헤더: 현재 없음(`401`)
 
 #### 권한 규칙
 
@@ -277,8 +289,11 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 | `log_callback_url` | string/null | 아니오 | Document pipeline event callback URL |
 | `selection_mode` | `full`/`partial` | 예 | full 누적 또는 partial 독립 Source Page |
 | `input_markdown` | string/null | 아니오 | 기존 full Source Page에 추가할 신규 pair Markdown |
+| `operation_id` | string/null | 조건부 | AI 작업 로그 ID다. `result_callback_url`과 함께 보내야 한다. |
+| `result_callback_url` | string/null | 조건부 | 완료·실패 결과를 받을 Spring callback URL이다. |
 
 `input_markdown`은 `selection_mode=full`이고 기존 Source Page가 있을 때만 허용된다. 그 외에는 Document의 MinIO 원본을 읽는다.
+두 operation 필드는 일반 Ingestion과 동일하게 `app.aihistory.ingest-logging-enabled=true`일 때만 Spring이 전송한다.
 
 #### Response Body
 
@@ -293,6 +308,7 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 | `422` | `selection_mode` 누락·잘못된 값 |
 | `422` | partial에 `input_markdown`을 전송 |
 | `422` | 기존 Source Page 없이 full `input_markdown`을 전송 |
+| `422` | `operation_id`, `result_callback_url` 중 하나만 전송 |
 | `502` | MinIO 읽기 실패 |
 | `500` | DB·Pipeline 내부 오류 |
 
@@ -336,8 +352,8 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 
 #### Auth
 
-- 현재 llmPipeline Auth: 없음
-- Spring 전송 헤더: 없음
+- llmPipeline Auth: `X-Internal-Token` 필수
+- Spring 전송 헤더: 현재 없음(`401`)
 
 #### 권한 규칙
 
@@ -486,9 +502,9 @@ Content-Type: application/json
 
 #### Auth
 
-- `AGENT_SKILLS_ENABLED=false`: Auth 없음
-- `AGENT_SKILLS_ENABLED=true`: `X-Agent-Service-Token` 필수
-- 현재 `PipelineAgentRequester`는 해당 헤더를 전송하지 않음
+- `AGENT_SKILLS_ENABLED=false`: `X-Internal-Token` 필수
+- `AGENT_SKILLS_ENABLED=true`: `X-Internal-Token`, `X-Agent-Service-Token` 모두 필수
+- 현재 `PipelineAgentRequester`는 두 헤더를 모두 전송하지 않음
 
 #### 권한 규칙
 
@@ -681,7 +697,7 @@ Content-Type: application/json
 
 #### Auth
 
-현재 llmPipeline Auth 없음.
+llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
 #### 권한 규칙
 
@@ -767,7 +783,7 @@ Spring `WikiSchemaService`가 Workspace membership을 검증한 후 호출한다
 
 #### Auth
 
-현재 llmPipeline Auth 없음.
+llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
 #### 권한 규칙
 
@@ -864,7 +880,7 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 
 #### Auth
 
-현재 llmPipeline Auth 없음.
+llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
 #### 권한 규칙
 
@@ -932,7 +948,7 @@ Workspace·User 범위의 active Wiki Schema를 조회한다.
 
 #### Auth
 
-현재 llmPipeline Auth 없음.
+llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
 #### 권한 규칙
 
@@ -1006,13 +1022,14 @@ Workspace Wiki의 contribution, orphan link, promotion·relation·reconciliation
 
 #### Auth
 
-현재 llmPipeline Auth 없음.
+llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
 #### 권한 규칙
 
 - Spring `WikiMaintenanceService`가 Workspace membership을 검증한다.
 - llmPipeline은 request의 `workspace_id`, `user_id`를 신뢰한다.
-- `dry_run=false`의 변경 실행은 `operation_id`가 필수이지만 Spring DTO가 이 필드를 전송하지 않는다. 따라서 현재 Spring 경로는 dry-run만 성공할 수 있다.
+- `dry_run=false`이면 Spring `LintOperationStarter`가 먼저 `operation_id`를 발급·저장하고 llmPipeline에 전송한다.
+- Spring은 mutation 응답의 `changed_pages`를 읽어 AI 작업 로그와 변경 Page를 직접 확정한다. Lint에는 별도 HTTP 결과 callback을 사용하지 않는다.
 
 #### Request Body
 
@@ -1022,7 +1039,7 @@ Workspace Wiki의 contribution, orphan link, promotion·relation·reconciliation
 | `workspace_id` | string | 기본값 있음 | 예 | Workspace scope |
 | `materialize_promotions` | boolean | 아니오 | 예 | promotion 실체화 여부 |
 | `dry_run` | boolean | 아니오 | 예 | 기본 `true` |
-| `operation_id` | string/null | mutation에서만 | **아니오** | 복구·artifact 작업 ID |
+| `operation_id` | string/null | mutation에서만 | mutation에서 예 | 복구·artifact와 Spring AI 작업 로그를 연결하는 작업 ID |
 
 #### Response Body
 
@@ -1075,7 +1092,7 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 | `operation_artifacts[].contribution_key` | 변경 기여분 JSON의 Object Storage key다. |
 | `operation_artifacts[].content_hash` | 저장된 Markdown 내용의 hash다. |
 
-`WikiLintOut`은 일부 중첩 항목을 `dict`로 허용하므로 위 설명은 현재 구현이 생성하는 구조다. Spring은 응답을 `JsonNode`로 전달하며 개별 중첩 필드를 정적 DTO로 검증하지 않는다.
+`WikiLintOut`은 일부 중첩 항목을 `dict`로 허용하므로 위 설명은 현재 구현이 생성하는 구조다. Spring은 전체 응답을 `JsonNode`로 유지하면서 `operation_id`와 `changed_pages`의 artifact 식별 필드만 별도 DTO로 읽는다.
 
 #### Error Response
 
@@ -1100,8 +1117,9 @@ Content-Type: application/json
 {
   "user_id": "user_123",
   "workspace_id": "ws_123",
+  "operation_id": "op_lint_123",
   "materialize_promotions": false,
-  "dry_run": true
+  "dry_run": false
 }
 ```
 
@@ -1111,7 +1129,7 @@ Content-Type: application/json
 {
   "user_id": "user_123",
   "workspace_id": "ws_123",
-  "operation_id": null,
+  "operation_id": "op_lint_123",
   "active_path": "wiki/user_123/ws_123/clusters/active.md",
   "cluster_count": 4,
   "source_ref_count": 12,
@@ -1131,6 +1149,230 @@ Content-Type: application/json
   "removed_orphan_links": [],
   "operation_artifacts": [],
   "changed_pages": []
+}
+```
+
+### 4.10 `POST /wiki/ingest-restore-runs`
+
+#### 목적
+
+취소할 Ingestion operation을 제외하고 남은 contribution으로 Source·Concept Page를 재조립한다.
+
+#### Auth
+
+- llmPipeline Auth: `X-Internal-Token` 필수
+- Spring 전송 헤더: 현재 없음(`401`)
+
+#### 권한 규칙
+
+- Spring `RestoreExecuteService`가 사용자 권한, 복구 대상 operation과 restore plan을 검증한 뒤 내부 요청을 만든다.
+- llmPipeline은 request의 `workspace_id`, operation·Page ID를 신뢰하며 membership을 다시 검증하지 않는다.
+- 재조립 후 `result_callback_url`로 결과를 통지해야 route가 성공한다. callback token이 없거나 Spring 설정과 다르면 요청이 실패하고 Spring 작업이 `notify_pending`에 남는다.
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 예 | 이번 restore 작업의 ID다. 결과 callback과 artifact 경로에 사용한다. |
+| `workspace_id` | string | 예 | 재조립할 Wiki의 Workspace 범위다. |
+| `result_callback_url` | string | 예 | 재조립 완료·부분 실패 결과를 받을 Spring URL이다. 빈 문자열은 허용하지 않는다. |
+| `restore_to_operation_id` | string/null | 예 | Source Page를 되돌릴 Ingestion operation ID다. `null`이면 Source Page를 삭제 대상으로 처리한다. |
+| `cancel_operation_ids` | string array | 예 | 취소할 Ingestion operation 목록이다. 비어 있거나 중복될 수 없다. |
+| `source_page` | object | 예 | 원본 Document를 대표하는 Source Page다. |
+| `source_page.page_id` | string | 예 | 복원하거나 삭제할 Source Page ID다. |
+| `rebuild_pages` | array | 예 | 남은 contribution으로 다시 만들 Concept Page 목록이다. 빈 배열은 허용된다. |
+| `rebuild_pages[].page_id` | string | 예 | 재조립할 Concept Page ID다. |
+| `rebuild_pages[].keep_contributions` | array | 예 | 적용 순서대로 유지할 contribution 목록이다. 순서가 결과에 영향을 준다. |
+| `keep_contributions[].operation_id` | string | 예 | 유지할 contribution을 만든 operation ID다. |
+| `keep_contributions[].document_id` | string | 예 | contribution의 원본 Document ID다. |
+| `deleted_pages` | string array | 아니오 | Spring restore plan이 삭제 대상으로 계산한 Page ID다. 기본 `[]`다. llmPipeline은 Page를 `deleted`로 바꾸고 관련 link·embedding을 정리한 뒤 결과에 전달한다. |
+
+`operation_id`는 `cancel_operation_ids`, `restore_to_operation_id`와 같을 수 없다. 유지할 contribution의 operation도 취소 목록에 포함될 수 없다.
+
+#### Response Body
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `operation_id` | string | request의 restore 작업 ID다. |
+| `operation_type` | `ingest_restore` | Ingestion 복구 결과임을 나타낸다. |
+| `status` | `succeeded`/`partially_succeeded` | 모든 Page 재조립 성공 여부다. 하나라도 실패하면 `partially_succeeded`다. |
+| `changed_pages` | object array | 재작성한 Page와 Markdown artifact 정보다. |
+| `changed_pages[].page_id` | string | 재작성한 Page ID다. |
+| `changed_pages[].page_type` | string | 재작성한 Page 종류다. |
+| `changed_pages[].markdown_key` | string | 복원된 Markdown의 Object Storage key다. |
+| `changed_pages[].contribution_key` | string/null | contribution artifact key다. 복구 재조립은 새 contribution을 만들지 않아 없을 수 있다. |
+| `changed_pages[].content_hash` | string | 복원 Markdown의 무결성 hash다. |
+| `failed_pages` | object array | 재조립하지 못한 Page와 실패 이유다. |
+| `failed_pages[].page_id` | string | 실패한 Page ID다. |
+| `failed_pages[].reason` | string | `source_snapshot_missing`, `contribution_missing` 같은 실패 코드다. |
+| `restore_to_operation_id` | string/null | 실제 Source Page 복원 기준 operation이다. |
+| `cancel_operation_ids` | string array | 결과에 반영된 취소 operation 목록이다. |
+| `deleted_pages` | string array | Page 상태와 관련 link·embedding 정리를 마치고 삭제 대상으로 보고한 Page ID다. |
+
+Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는다. 같은 payload가 별도의 Operation result callback으로 전달돼야 작업 상태가 확정된다.
+
+#### Error Response
+
+| Status | 조건 | Spring 처리 |
+| --- | --- | --- |
+| `422` | request field·operation 관계 validation 실패 | 전송 실패로 보고 `notify_pending` 유지 |
+| `500` | artifact 재조립 실패 또는 결과 callback 실패 | 전송 실패로 보고 `notify_pending` 유지 |
+| timeout/network | Spring 요청 실패 | `false` 반환 후 `notify_pending` 유지 |
+
+#### Pagination / Filtering
+
+해당 없음. `rebuild_pages`, `cancel_operation_ids`는 한 restore plan 전체다.
+
+#### 예시 요청
+
+```json
+{
+  "operation_id": "op_restore_123",
+  "workspace_id": "ws_123",
+  "result_callback_url": "http://backend:8080/api/ai-operations/op_restore_123/result",
+  "restore_to_operation_id": "op_ingest_100",
+  "cancel_operation_ids": ["op_ingest_101"],
+  "source_page": {
+    "page_id": "source_doc_123"
+  },
+  "rebuild_pages": [
+    {
+      "page_id": "concept_123",
+      "keep_contributions": [
+        {
+          "operation_id": "op_ingest_100",
+          "document_id": "doc_123"
+        }
+      ]
+    }
+  ],
+  "deleted_pages": []
+}
+```
+
+#### 예시 응답
+
+```json
+{
+  "operation_id": "op_restore_123",
+  "operation_type": "ingest_restore",
+  "status": "succeeded",
+  "changed_pages": [
+    {
+      "page_id": "concept_123",
+      "page_type": "concept",
+      "markdown_key": "wiki/ws_123/pages/concept_123/ops/op_restore_123.md",
+      "contribution_key": null,
+      "content_hash": "sha256:example"
+    }
+  ],
+  "failed_pages": [],
+  "restore_to_operation_id": "op_ingest_100",
+  "cancel_operation_ids": ["op_ingest_101"],
+  "deleted_pages": []
+}
+```
+
+### 4.11 `POST /wiki/lint-restore-runs`
+
+#### 목적
+
+취소할 Lint operation 이전의 contribution 상태로 Concept Page와 Wiki relation을 재조립한다.
+
+#### Auth
+
+- llmPipeline Auth: `X-Internal-Token` 필수
+- Spring 전송 헤더: 현재 없음(`401`)
+
+#### 권한 규칙
+
+- Spring이 복구 대상 Lint operation과 Page별 유지 contribution을 계산한 뒤 호출한다.
+- llmPipeline은 `workspace_id`, `target_operation_id`, Page ID를 신뢰하며 membership을 다시 검증하지 않는다.
+- Ingestion restore와 동일하게 Operation result callback까지 성공해야 restore 완료가 확정된다.
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 예 | 이번 restore 작업 ID다. |
+| `workspace_id` | string | 예 | 복구 대상 Workspace다. |
+| `result_callback_url` | string | 예 | restore 결과를 받을 Spring callback URL이다. |
+| `target_operation_id` | string | 예 | 되돌릴 기존 Lint operation ID다. 이번 `operation_id`와 달라야 한다. |
+| `rebuild_pages` | array | 예 | contribution을 다시 조립할 Concept Page 목록이다. 구조는 4.10과 같다. |
+| `deleted_pages` | string array | 아니오 | Spring restore plan이 삭제 대상으로 계산한 Page ID다. 기본 `[]`다. llmPipeline은 Page를 `deleted`로 바꾸고 관련 link·embedding을 정리한다. |
+
+`target_operation_id`는 `rebuild_pages[].keep_contributions[].operation_id`에 포함될 수 없다.
+
+#### Response Body
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `operation_id` | string | 이번 restore 작업 ID다. |
+| `operation_type` | `lint_restore` | Lint 복구 결과임을 나타낸다. |
+| `status` | `succeeded`/`partially_succeeded` | Page 재조립과 link 계산의 전체 결과다. |
+| `changed_pages` | object array | 재조립된 Page artifact다. 필드는 4.10과 같다. |
+| `failed_pages` | object array | 재조립하지 못한 Page와 이유다. 필드는 4.10과 같다. |
+| `target_operation_id` | string | 실제로 취소한 Lint operation ID다. |
+| `deleted_pages` | string array | Page 상태와 관련 link·embedding 정리를 마치고 삭제 대상으로 보고한 Page ID다. |
+| `link_changes` | object | 복구 후 제거·복원해야 할 Wiki link 묶음이다. |
+| `link_changes.removed_links` | object array | 제거한 link의 `source`, `target`, `relation`이다. |
+| `link_changes.restored_links` | object array | 복원한 link의 `source`, `target`, `relation`이다. |
+| `failed_actions` | object array | Page 이외 복구 작업의 실패 정보다. |
+| `failed_actions[].action` | string | 실패한 작업 종류다. 현재 link 복구는 `restore_links`다. |
+| `failed_actions[].resource_id` | string | 실패 대상 resource다. 현재 link 복구는 취소하려던 Lint operation ID다. |
+| `failed_actions[].reason` | string | `concept_rebuild_failed`, `operation_log_missing` 같은 실패 이유다. |
+
+#### Error Response
+
+| Status | 조건 | Spring 처리 |
+| --- | --- | --- |
+| `422` | request field·operation 관계 validation 실패 | 전송 실패로 보고 `notify_pending` 유지 |
+| `500` | Page·link 복구 또는 결과 callback 실패 | 전송 실패로 보고 `notify_pending` 유지 |
+| timeout/network | Spring 요청 실패 | `false` 반환 후 `notify_pending` 유지 |
+
+#### Pagination / Filtering
+
+해당 없음.
+
+#### 예시 요청
+
+```json
+{
+  "operation_id": "op_restore_200",
+  "workspace_id": "ws_123",
+  "result_callback_url": "http://backend:8080/api/ai-operations/op_restore_200/result",
+  "target_operation_id": "op_lint_150",
+  "rebuild_pages": [
+    {
+      "page_id": "concept_123",
+      "keep_contributions": [
+        {
+          "operation_id": "op_ingest_100",
+          "document_id": "doc_123"
+        }
+      ]
+    }
+  ],
+  "deleted_pages": []
+}
+```
+
+#### 예시 응답
+
+```json
+{
+  "operation_id": "op_restore_200",
+  "operation_type": "lint_restore",
+  "status": "succeeded",
+  "changed_pages": [],
+  "failed_pages": [],
+  "target_operation_id": "op_lint_150",
+  "deleted_pages": [],
+  "link_changes": {
+    "removed_links": [],
+    "restored_links": []
+  },
+  "failed_actions": []
 }
 ```
 
@@ -1166,7 +1408,7 @@ llmPipeline Ingestion의 단계별 event를 Spring Document 처리 상태에 반
 
 #### Auth
 
-현재 Spring Security에서 전용 service Auth 없이 호출 가능하다.
+llmPipeline은 `X-Internal-Token`을 보내지만 현재 Spring Security는 이를 검증하지 않는다.
 
 #### 권한 규칙
 
@@ -1249,7 +1491,7 @@ llmPipeline Query의 단계별 event를 Spring SSE 구독자에게 전달한다.
 
 #### Auth
 
-현재 Spring Security에서 전용 service Auth 없이 호출 가능하다.
+llmPipeline은 `X-Internal-Token`을 보내지만 현재 Spring Security는 이를 검증하지 않는다.
 
 #### 권한 규칙
 
@@ -1310,6 +1552,141 @@ Content-Type: application/json
 HTTP/1.1 200 OK
 ```
 
+### 5.5 Operation Result Flow
+
+```mermaid
+sequenceDiagram
+    participant P as llmPipeline
+    participant B as Spring Operation API
+    participant O as Operation Log
+
+    P->>B: POST /api/ai-operations/{operation_id}/result
+    alt X-Internal-Token valid
+        B->>O: 등록값·artifact·hash·멱등성 검증 후 반영
+        B-->>P: 200 recorded_changes
+    else token 불일치
+        B-->>P: 401 Unauthorized
+        P->>P: notification_pending 또는 restore 실패 기록
+    else llmPipeline token 환경 변수 누락
+        P->>P: HTTP 요청 전 callback 생성 실패
+    end
+```
+
+### 5.6 `POST /api/ai-operations/{operation_id}/result`
+
+#### 목적
+
+Ingestion 또는 Wiki restore가 만든 Page artifact와 부분 실패 결과를 Spring AI 작업 로그에 반영한다.
+
+#### Auth
+
+- Spring 요구 헤더: `X-Internal-Token`
+- Spring 설정: `app.internal.callback-token`
+- llmPipeline 전송값: 환경 변수 `INTERNAL_CALLBACK_TOKEN`
+- Docker Compose는 Spring과 llmPipeline에 같은 기본값을 전달한다.
+
+#### 권한 규칙
+
+- path와 body의 `operation_id`가 같아야 한다.
+- Spring에 먼저 등록된 operation의 Workspace·User·Document 값과 body 값이 일치해야 한다. body에서 생략된 범위 값은 대조하지 않는다.
+- `markdown_key`는 해당 Workspace·Page·operation artifact 경로여야 하며 읽은 Markdown의 hash가 `content_hash`와 같아야 한다.
+- 같은 payload 재전송은 기존 결과를 `200`으로 반환하고, 이미 끝난 operation에 다른 payload를 보내면 `409`로 거절한다.
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `operation_id` | string | 예 | 결과가 속한 Spring AI operation ID다. path 값과 같아야 한다. |
+| `operation_type` | string/null | 아니오 | `ingest`, `ingest_restore`, `lint_restore`처럼 결과 생성 작업의 종류다. |
+| `status` | string | 예 | `succeeded`, `failed`, `partially_succeeded` 등 결과 상태다. |
+| `workspace_id` | string/null | 아니오 | 결과가 속한 Workspace다. 전송되면 등록값과 대조한다. |
+| `user_id` | string/null | 아니오 | 결과가 속한 User다. 전송되면 등록값과 대조한다. |
+| `target_document_id` | string/null | 아니오 | Ingestion 대상 원본 Document ID다. 전송되면 등록값과 대조한다. |
+| `summary` | string/null | 아니오 | 작업 완료·실패를 설명하는 요약이다. |
+| `changed_pages` | object array | 예 | 생성·재조립한 Page artifact 목록이다. |
+| `changed_pages[].page_id` | string | 예 | 변경된 Wiki Page ID다. |
+| `changed_pages[].page_type` | string/null | 아니오 | Page 종류다. 예: `source`, `concept`. |
+| `changed_pages[].markdown_key` | string | 예 | 변경 후 Markdown artifact의 Object Storage key다. |
+| `changed_pages[].contribution_key` | string/null | 아니오 | Ingestion contribution JSON key다. restore 결과에는 없을 수 있다. |
+| `changed_pages[].content_hash` | string | 예 | Spring이 Object Storage에서 읽은 Markdown과 대조할 hash다. |
+| `changed_pages[].contribution_stored` | boolean/null | 아니오 | contribution artifact가 저장됐는지 나타내는 호환 필드다. |
+| `failed_pages` | object array/null | 아니오 | 재조립하지 못한 Page와 이유다. |
+| `failed_pages[].page_id` | string | 예 | 실패한 Page ID다. |
+| `failed_pages[].reason` | string/null | 아니오 | 재조립 실패 이유다. |
+| `deleted_pages` | string array/null | 아니오 | restore 결과에서 삭제해야 할 Page ID다. |
+| `link_changes` | object/null | 아니오 | Lint restore에서 제거·복원할 link 묶음이다. |
+| `link_changes.removed_links` | object array | 아니오 | 제거할 `source`, `target`, `relation` 목록이다. |
+| `link_changes.restored_links` | object array | 아니오 | 복원할 `source`, `target`, `relation` 목록이다. |
+| `removed_links[].source`, `restored_links[].source` | string/null | 아니오 | link 시작 Page 참조다. |
+| `removed_links[].target`, `restored_links[].target` | string/null | 아니오 | link 도착 Page 참조다. |
+| `removed_links[].relation`, `restored_links[].relation` | string/null | 아니오 | 두 Page 사이 relation type이다. |
+| `failed_actions` | object array/null | 아니오 | Page 재조립 외 작업 실패 목록이다. |
+| `failed_actions[].action` | string/null | 아니오 | 실패한 작업 종류다. |
+| `failed_actions[].resource_id` | string/null | 아니오 | 실패한 resource 식별자다. |
+| `failed_actions[].reason` | string/null | 아니오 | 실패 이유다. |
+
+#### Response Body
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `operation_id` | string | 반영한 operation ID다. |
+| `status` | string | Spring이 최종 확정한 operation 상태다. 부분 실패가 있으면 요청 상태와 달라질 수 있다. |
+| `recorded_changes` | integer | Spring 작업 로그에 기록한 변경 resource 수다. |
+
+#### Error Response
+
+| Status | 조건 | llmPipeline 처리 |
+| --- | --- | --- |
+| `400` | request validation 실패 | callback 실패 |
+| `401` | `X-Internal-Token` 누락·불일치 | 즉시 실패 |
+| `404` | 등록되지 않은 operation | 즉시 실패 |
+| `409` | 이미 끝난 operation에 다른 payload 전송 | 재시도 금지 |
+| `422` | 등록 범위·artifact key·content hash 불일치 | artifact를 정규 경로로 다시 쓴 뒤 최대 5회 안에서 재시도 |
+| `5xx`/network | Spring 또는 통신 장애 | exponential backoff로 최대 5회 시도 |
+
+Ingestion Run은 callback 실패를 `pipeline_runs.manifest.pending_notification`에 저장하고 Pipeline 성공 자체는 유지한다. Restore route는 callback 예외가 route까지 전파돼 `500`을 반환한다.
+
+#### Pagination / Filtering
+
+해당 없음.
+
+#### 예시 요청
+
+```http
+POST /api/ai-operations/op_ingest_123/result HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: configured-internal-token
+
+{
+  "operation_id": "op_ingest_123",
+  "operation_type": "ingest",
+  "status": "succeeded",
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "target_document_id": "doc_123",
+  "summary": "Wiki ingest를 완료했습니다.",
+  "changed_pages": [
+    {
+      "page_id": "concept_123",
+      "page_type": "concept",
+      "markdown_key": "wiki/ws_123/pages/concept_123/ops/op_ingest_123.md",
+      "contribution_key": "wiki/ws_123/pages/concept_123/ops/op_ingest_123.json",
+      "content_hash": "sha256:example"
+    }
+  ]
+}
+```
+
+#### 예시 응답
+
+```json
+{
+  "operation_id": "op_ingest_123",
+  "status": "succeeded",
+  "recorded_changes": 1
+}
+```
+
 ## 6. 계약 공백과 주의사항
 
 ### 6.1 Wiki Page Rename API 미구현
@@ -1334,15 +1711,24 @@ Content-Type: application/json
 
 `AGENT_SKILLS_ENABLED=true`이면 llmPipeline `/agent/turn`이 `X-Agent-Service-Token`을 요구한다. Spring `PipelineAgentRequester`는 현재 이 헤더를 보내지 않으므로 기능 flag를 켜면 통신이 깨진다.
 
-### 6.3 Lint Mutation `operation_id` 누락
+### 6.3 Operation Result Callback 환경 변수 필수
 
-llmPipeline은 `dry_run=false`에서 `operation_id`를 필수로 검증한다. Spring `WikiLintRequest`와 `PipelineWikiMaintenanceRequester.LintPayload`에는 해당 필드가 없어 mutation lint가 성공할 수 없다.
+`HttpPipelineResultNotifier`는 `INTERNAL_CALLBACK_TOKEN`을 필수 환경 변수로 직접 읽는다. Docker Compose에는 Spring과 같은 기본값이 연결돼 있지만, llmPipeline을 단독 실행하면서 변수를 설정하지 않으면 HTTP 요청 전 `KeyError`가 발생한다. 값이 Spring `app.internal.callback-token`과 다르면 callback은 `401`로 실패한다.
 
-### 6.4 Service-to-Service Auth 부재
+### 6.4 Agent Tool Backend Route 미구현
 
-Ingestion, Query, Schema, Lint와 두 callback에는 service authentication이 없다. 현재 계약은 trusted internal network을 전제로 하지만, 외부에 포트가 노출되면 Workspace ID·Document ID·callback URL을 알고 있는 호출자를 별도로 인증하지 못한다.
+llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API를 호출한다.
 
-### 6.5 Spring과 llmPipeline의 Error Mapping 불일치
+- `POST /internal/agent/tools/read/{tool_name}`
+- `POST /internal/agent/tools/execute/{tool_name}`
+
+하지만 Spring에 두 route를 처리하는 Controller가 없다. Agent Worker가 실행되면 현재 `404`가 발생한다.
+
+### 6.5 `INTERNAL_CALLBACK_TOKEN` 양방향 적용 불완전
+
+llmPipeline은 Ingestion, Query, Schema, Lint, Restore, Agent 요청에서 `X-Internal-Token`을 검증하고 진행·Query·작업 결과 callback에 같은 헤더를 보낸다. Spring requester는 아직 헤더를 보내지 않아 llmPipeline 호출이 `401`로 실패하며, 진행·Query callback Controller도 헤더를 검증하지 않는다. Backend 잔여 작업은 `docs/issue/backend/2026-08-05.md`에서 추적한다.
+
+### 6.6 Spring과 llmPipeline의 Error Mapping 불일치
 
 | 기능 | llmPipeline 상태 | Spring 변환 |
 | --- | --- | --- |
@@ -1355,6 +1741,7 @@ Ingestion, Query, Schema, Lint와 두 callback에는 service authentication이 �
 | Schema | 기타/timeout | `503` |
 | Lint | `400/422` | 원 상태 유지 |
 | Lint | 기타/timeout | `503` |
+| Restore | 모든 HTTP·timeout 오류 | 예외를 숨기고 `false`, 작업은 `notify_pending` |
 
 ## 7. 주요 코드 위치
 
@@ -1365,6 +1752,9 @@ Ingestion, Query, Schema, Lint와 두 callback에는 service authentication이 �
 | Agent | `backend/src/main/java/fruition/agent/repository/PipelineAgentRequester.java` | `llmPipeline/app/modules/agent/interfaces/http/routes.py` |
 | Wiki Schema | `backend/src/main/java/fruition/wikischema/repository/PipelineWikiSchemaRequester.java` | `llmPipeline/app/modules/wiki_schema/interfaces/http/routes.py` |
 | Wiki Lint | `backend/src/main/java/fruition/wikimaintenance/repository/PipelineWikiMaintenanceRequester.java` | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |
+| Wiki Restore | `backend/src/main/java/fruition/aihistory/repository/PipelineRestoreRequester.java` | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |
 | Wiki Page Rename | `backend/src/main/java/fruition/wiki/repository/PipelineWikiPageRequester.java` | 현재 route 없음 |
 | Document callback | `backend/src/main/java/fruition/document/controller/DocumentPipelineController.java` | `llmPipeline/app/modules/wiki_generation/infrastructure/pipeline_log.py` |
 | Query callback | `backend/src/main/java/fruition/query/controller/QueryRunController.java` | `llmPipeline/app/modules/query/infrastructure/query_event_publisher.py` |
+| Operation result callback | `backend/src/main/java/fruition/aihistory/controller/OperationCallbackController.java` | `llmPipeline/app/modules/wiki_ingestion/infrastructure/pipeline_result_callback.py` |
+| Agent Tool Gateway | 현재 route 없음 | `llmPipeline/app/modules/agent_run/infrastructure/backend_tool_gateway.py` |

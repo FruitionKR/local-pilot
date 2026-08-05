@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -60,7 +61,10 @@ def post_pipeline_result(
         request = urllib.request.Request(
             callback_url,
             data=body,
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-Internal-Token": os.environ["INTERNAL_CALLBACK_TOKEN"],
+            },
             method="POST",
         )
         try:

@@ -84,6 +84,12 @@ class PipelineResultNotifierPort(Protocol):
 
 
 class WikiPageRestorePort(Protocol):
+    def cleanup_deleted_pages(
+        self,
+        workspace_id: str,
+        page_ids: list[str],
+    ) -> None: ...
+
     def rebuild_page(
         self,
         operation_id: str,

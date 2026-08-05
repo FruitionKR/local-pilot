@@ -23,6 +23,9 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
 from app.modules.wiki_ingestion.infrastructure.pipeline_result_callback import (
     HttpPipelineResultNotifier,
 )
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
+    cleanup_deleted_wiki_pages,
+)
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     read_text_object,
     write_text_object,
@@ -62,6 +65,7 @@ def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
         ObjectStorageWikiPageRestore(
             read_text_object,
             write_text_object,
+            cleanup_deleted_wiki_pages,
         ),
         HttpPipelineResultNotifier(),
     )

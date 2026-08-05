@@ -400,7 +400,7 @@ flowchart LR
     MD --> VIEW --> WEB
 ```
 
-**Status:** 연결됨
+**Status:** 부분 연결. Graph·Page 조회는 연결됐지만 Page rename은 Spring 호출 대상인 llmPipeline route가 없어 현재 실패한다.
 
 #### Wiki 조회 API (`WikiController`)
 
@@ -408,7 +408,7 @@ flowchart LR
 - **Responsibility:** Graph·Page 상세·Page rename HTTP endpoint를 제공한다.
 - **Output:** WikiGraphResponse, WikiPageDetailResponse, rename 결과
 - **Key Logic:** authentication principal과 path parameter를 WikiService에 전달한다.
-- **Failure Handling:** 입력 validation과 domain 예외를 공통 exception handler에 위임한다.
+- **Failure Handling:** 입력 validation과 domain 예외를 공통 exception handler에 위임한다. Page rename은 llmPipeline에 `PATCH /wiki/pages/{wiki_page_id}/rename` route가 없어 현재 `404`로 실패한다.
 - **Why this exists:** Wiki 탐색 기능의 공개 HTTP 경계를 명확히 하기 위해 존재한다.
 
 #### Wiki Graph·Page 조립 (`WikiService`)
@@ -468,29 +468,35 @@ flowchart LR
 
 ```mermaid
 flowchart LR
+    USER[Wiki Lint·복구 요청]
     SPRING["Wiki Lint 요청 중계"]
-    INTERNAL[AI Pipeline 내부 호출자]
+    OP[AI 작업 로그]
     LINT["Wiki 정합성 검사·수정"]
     MODE{dry_run?}
     REPORT[검사 결과만 반환]
     ARTIFACT[(Operation Artifact·Lint Log)]
+    RESTORE_REQUEST["Wiki 복구 요청 조정"]
     RESTORE["Wiki 변경 복구"]
+    CALLBACK[Operation Result Callback]
+    DELETED[deleted_pages]
+    CLEANUP["Link·Embedding 정리"]
 
-    SPRING -->|dry-run| LINT --> MODE
-    INTERNAL -->|operation_id 포함| LINT
-    MODE -->|예| REPORT
-    MODE -->|아니오·내부 호출| ARTIFACT --> RESTORE
+    USER --> SPRING --> MODE
+    MODE -->|예| LINT --> REPORT
+    MODE -->|아니오·operation_id| OP --> LINT --> ARTIFACT
+    USER --> RESTORE_REQUEST --> RESTORE --> CALLBACK --> OP
+    RESTORE --> DELETED --> CLEANUP
 ```
 
-**Status:** 부분 연결. Spring은 dry-run만 성공 가능하고 변경 실행·복구는 AI Pipeline 내부에만 있다.
+**Status:** 연결됨. Lint dry-run·변경 실행, Ingestion·Lint 복구 재조립, `deleted_pages`의 link·embedding 정리와 결과 callback을 지원한다. Backend의 ingest logging을 켠 실제 Backend↔llmPipeline 흐름도 확인했다.
 
 #### Wiki Lint 요청 중계 (`WikiMaintenanceService`, `PipelineWikiMaintenanceRequester`)
 
 - **Input:** Workspace·User ID, `dry_run`, `materialize_promotions`
 - **Responsibility:** Workspace membership을 검증하고 Spring 요청을 AI Pipeline lint payload로 전달한다.
-- **Output:** AI Pipeline lint JSON 결과
-- **Key Logic:** membership 확인, null request 기본값 처리, connect·read timeout, `400/422` 보존
-- **Failure Handling:** timeout·빈 응답·Pipeline 장애는 `503`으로 변환한다. Spring DTO에 `operation_id`가 없어 `dry_run=false`는 Pipeline에서 `422`로 거절된다.
+- **Output:** AI Pipeline lint JSON 결과, mutation AI 작업 로그와 changed Page 기록
+- **Key Logic:** membership 확인, dry-run이면 operation 없이 조회하고 `dry_run=false`면 `LintOperationStarter`가 operation ID를 먼저 등록한다. 응답의 `changed_pages`를 작업 로그에 반영한다.
+- **Failure Handling:** timeout·빈 응답·Pipeline 장애는 `503`으로 변환한다. mutation 실패 시 먼저 등록한 operation을 `failed`로 확정한다.
 - **Why this exists:** 제품 권한 검증과 Pipeline maintenance HTTP 규약을 분리하기 위해 존재한다.
 
 #### Wiki 정합성 검사·수정 (`PostgresWikiMaintenance`)
@@ -508,8 +514,17 @@ flowchart LR
 - **Responsibility:** operation artifact를 사용해 Wiki Page와 contribution 상태를 이전 시점으로 복원한다.
 - **Output:** 복원된 Page·Link·contribution 요약
 - **Key Logic:** artifact 로드, restore target 검증, 취소 operation 적용, Wiki Markdown·DB 재저장
-- **Failure Handling:** 없는 artifact·잘못된 operation 관계는 restore 실패로 반환하고 예상 못 한 오류는 내부 API에서 `500`으로 처리한다.
+- **Failure Handling:** 없는 artifact·잘못된 operation 관계는 restore 실패로 반환하고 예상 못 한 오류는 내부 API에서 `500`으로 처리한다. `deleted_pages` 정리에 실패하면 callback을 보내지 않아 복구 완료로 잘못 확정되지 않는다.
 - **Why this exists:** lint·ingest 변경을 작업 단위로 되돌릴 수 있게 하기 위해 존재한다.
+
+#### Wiki 복구 요청 조정 (`RestoreExecuteService`, `PipelineRestoreRequester`)
+
+- **Input:** 인증된 복구 요청, 대상 operation, Page별 유지 contribution plan
+- **Responsibility:** Spring DB 복구를 먼저 적용하고 Ingestion·Lint 유형에 맞는 재조립 지시서를 llmPipeline에 전달한다.
+- **Output:** restore operation, `/wiki/ingest-restore-runs` 또는 `/wiki/lint-restore-runs` 요청, `rebuilding·notify_pending` 상태
+- **Key Logic:** Source Page와 Concept Page 복구 계획 분리, contribution 적용 순서 보존, callback URL 생성, 유형별 endpoint 선택
+- **Failure Handling:** llmPipeline 요청·callback 완료가 실패하면 이미 적용한 Spring 복구를 되돌리지 않고 `notify_pending`으로 남겨 재전송 대상으로 관리한다.
+- **Why this exists:** Spring이 소유한 작업 로그·version 복구와 llmPipeline이 소유한 Wiki artifact 재조립을 하나의 restore 작업으로 연결하기 위해 존재한다.
 
 ### 3.10 Pipeline Run & Progress Log
 
@@ -519,18 +534,21 @@ flowchart LR
     STATE["Pipeline Run 상태 저장"]
     DB[(pipeline_runs)]
     LOG["Pipeline 실행 로그 기록·조회"]
-    CALLBACK["Pipeline 진행·결과 알림"]
+    PROGRESS["Pipeline 진행 알림"]
+    RESULT["Pipeline 결과 알림"]
     STATUS[(documents.processing_stage)]
+    OPLOG[(AI Operation Log)]
     POLLING[Sidebar Polling]
     MOCK[Frontend Logs Mockup]
 
     RUN --> STATE --> DB
     RUN --> LOG
-    RUN --> CALLBACK --> STATUS --> POLLING
+    RUN --> PROGRESS --> STATUS --> POLLING
+    RUN --> RESULT --> OPLOG
     LOG -. Spring 공개 API 미연결 .-> MOCK
 ```
 
-**Status:** 부분 연결. 진행 callback은 연결됐지만 Pipeline log 조회는 내부 API뿐이며 Frontend 화면은 목업이다.
+**Status:** 부분 연결. Document 진행 callback과 token 기반 Operation 결과 callback은 연결됐다. Pipeline log 조회는 내부 API뿐이며 Frontend 화면은 목업이다.
 
 #### Pipeline Run 상태 저장 (`PostgresPipelineRunRepository`)
 
@@ -550,14 +568,23 @@ flowchart LR
 - **Failure Handling:** log 파일·run이 없으면 `404`, 읽기 실패는 내부 API 실패로 반환한다.
 - **Why this exists:** DB 상태만으로 알 수 없는 단계별 실패 원인을 run 단위로 추적하기 위해 존재한다.
 
-#### Pipeline 진행·결과 알림 (`HttpPipelineResultNotifier`, `DocumentPipelineController`)
+#### Pipeline 진행 알림 (`PipelineLog`, `DocumentPipelineController`)
 
-- **Input:** processing stage·result callback URL과 payload
-- **Responsibility:** AI Pipeline의 진행·결과를 Spring에 전달하고 Document processing 상태를 갱신한다.
+- **Input:** Document callback URL, run ID, stage·message·data event
+- **Responsibility:** AI Pipeline의 단계별 진행 event를 Spring에 보내 Document heartbeat와 현재 processing stage를 갱신한다.
 - **Output:** `documents.processing_stage`, Sidebar polling이 조회할 상태
-- **Key Logic:** callback retry, exponential backoff, `422` artifact rewrite, Spring callback 멱등 처리
-- **Failure Handling:** `409`같은 비재시도 HTTP 오류는 즉시 종료하고, network·`5xx`는 제한된 횟수만 재시도한다.
-- **Why this exists:** 공유 DB 상태와 별개로 제품 UI가 필요한 진행 이벤트를 Spring에 전달하기 위해 존재한다.
+- **Key Logic:** local log 기록 후 HTTP POST, 현재 Document Run ID 대조, Spring 수신 시각으로 heartbeat 갱신
+- **Failure Handling:** callback 실패를 local `pipeline.log`에 남기고 Pipeline 실행은 계속한다. 자동 재시도하지 않는다.
+- **Why this exists:** 비동기 Ingestion의 현재 단계를 Spring polling UI에 전달하기 위해 존재한다.
+
+#### Pipeline 결과 알림 (`HttpPipelineResultNotifier`, `OperationCallbackController`)
+
+- **Input:** operation ID, result callback URL, 성공·실패 상태, changed Page artifact와 hash
+- **Responsibility:** Ingestion·Restore의 최종 결과를 Spring AI 작업 로그에 전달하고 Page 변경을 멱등하게 반영한다.
+- **Output:** 확정된 operation 상태와 기록된 변경 수, 또는 `pipeline_runs.pending_notification·notify_pending`
+- **Key Logic:** path·body operation ID 대조, 등록 범위 확인, artifact key·content hash 검증, payload hash 기반 멱등 처리, `422` artifact rewrite
+- **Failure Handling:** `INTERNAL_CALLBACK_TOKEN`이 없으면 HTTP 요청 전 실패하고 Spring 설정값과 다르면 `401`이 발생한다. Ingestion은 pending notification을 저장하고 Restore는 `500`과 `notify_pending`으로 남긴다. `422`는 artifact를 정규 경로로 다시 쓴 뒤 재시도한다.
+- **Why this exists:** llmPipeline이 만든 Wiki artifact와 Spring의 AI 작업 이력·복구 상태를 같은 operation으로 확정하기 위해 존재한다.
 
 ### 3.11 Wiki Schema
 
@@ -747,7 +774,8 @@ flowchart LR
 | Spring Query → conversation context | AI Pipeline의 대화 context 보강 경로를 사용하지 않음 |
 | Frontend Log → Pipeline Log API | 로그 화면은 실제 실행 데이터가 아닌 목업 |
 | Frontend Schema → Spring Schema API | Schema 화면은 LocalStorage 목업 |
-| Spring → Skill·Agent Run | 공개 인증·권한·Tool Gateway가 없어 기본 비활성 |
+| Spring → Skill·Agent Run | 공개 인증·권한 endpoint가 없어 기본 비활성 |
+| Agent Worker → Spring Tool API | `BackendToolGateway`는 호출하지만 Spring `/internal/agent/tools/*` route가 없어 `404` |
 
 ## 5. 주요 코드 위치
 
@@ -763,6 +791,7 @@ flowchart LR
 | Chat Wiki export | `backend/src/main/java/fruition/chat/service/ChatWikiExportService.java` |
 | Wiki lint·recovery | `llmPipeline/app/modules/wiki_ingestion/infrastructure/wiki_maintenance.py` |
 | Pipeline log | `llmPipeline/app/modules/wiki_generation/infrastructure/pipeline_log.py` |
+| AI 작업 결과 callback·복구 요청 | `backend/src/main/java/fruition/aihistory/`, `llmPipeline/app/modules/wiki_ingestion/infrastructure/pipeline_result_callback.py` |
 | Wiki Schema | `backend/src/main/java/fruition/wikischema/`, `llmPipeline/app/modules/wiki_schema/` |
 | Skill | `llmPipeline/app/modules/skill/` |
 | Agent Run | `llmPipeline/app/modules/agent_run/` |

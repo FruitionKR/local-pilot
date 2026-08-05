@@ -61,6 +61,11 @@ class RestoreWikiPagesUseCase:
             failed_pages=failed_pages,
             deleted_pages=deleted_pages,
         )
+        if deleted_pages:
+            self._page_restore.cleanup_deleted_pages(
+                command.workspace_id,
+                deleted_pages,
+            )
         self._notify(command.result_callback_url, result)
         return result
 
@@ -79,7 +84,8 @@ class RestoreWikiPagesUseCase:
             link_changes = {"removed_links": [], "restored_links": []}
             failed_actions.append(
                 {
-                    "operation_id": command.target_operation_id,
+                    "action": "restore_links",
+                    "resource_id": command.target_operation_id,
                     "reason": "concept_rebuild_failed",
                 }
             )
@@ -98,7 +104,8 @@ class RestoreWikiPagesUseCase:
                 link_changes = {"removed_links": [], "restored_links": []}
                 failed_actions.append(
                     {
-                        "operation_id": command.target_operation_id,
+                        "action": "restore_links",
+                        "resource_id": command.target_operation_id,
                         "reason": "operation_log_missing",
                     }
                 )
@@ -112,6 +119,11 @@ class RestoreWikiPagesUseCase:
             link_changes=link_changes,
             failed_actions=failed_actions,
         )
+        if command.deleted_pages:
+            self._page_restore.cleanup_deleted_pages(
+                command.workspace_id,
+                list(command.deleted_pages),
+            )
         self._notify(command.result_callback_url, result)
         return result
 
