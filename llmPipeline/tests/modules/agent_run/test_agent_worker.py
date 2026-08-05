@@ -13,6 +13,111 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 
 class AgentWorkerTest(unittest.TestCase):
+    def test_workspace_workflow_loads_trusted_artifacts_from_tool_gateway(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {
+            "items": [
+                {
+                    "id": "artifact-1",
+                    "content_hash": "sha256:abc",
+                    "purpose": "apply_document_edit",
+                    "document_id": "document-1",
+                    "base_version": 2,
+                    "target": {"type": "whole_document", "start_line": 1, "end_line": 5},
+                }
+            ]
+        }
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        context = AgentRunContext(
+            run=AgentRun(
+                id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                action="workspace_workflow",
+                skill_version_id=None,
+                status="planning",
+                request_summary="문서를 수정해줘",
+            ),
+            skill_instructions=None,
+            allowed_tools=(),
+        )
+
+        artifacts = worker._load_content_artifacts(context)
+
+        self.assertEqual(artifacts[0].id, "artifact-1")
+        gateway.read.assert_called_once_with(
+            "list_agent_run_artifacts",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={},
+        )
+
+    def test_workspace_artifact_response_rejects_document_body(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {
+            "items": [
+                {
+                    "id": "artifact-1",
+                    "content_hash": "sha256:abc",
+                    "purpose": "create_document",
+                    "content": "본문은 artifact 조회 응답에 포함하면 안 됩니다.",
+                }
+            ]
+        }
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        context = AgentRunContext(
+            run=AgentRun(
+                id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                action="workspace_workflow",
+                skill_version_id=None,
+                status="planning",
+                request_summary="문서를 저장해줘",
+            ),
+            skill_instructions=None,
+            allowed_tools=(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "unsupported fields"):
+            worker._load_content_artifacts(context)
+
+    def test_document_content_read_uses_actor_scoped_tool_gateway(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.return_value = {"current_version": 2, "content_hash": "sha256:abc"}
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        context = AgentRunContext(
+            run=AgentRun(
+                id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                action="workspace_workflow",
+                skill_version_id=None,
+                status="executing",
+                request_summary="문서를 확인해줘",
+            ),
+            skill_instructions=None,
+            allowed_tools=(),
+        )
+
+        result = worker._read_tool(context, "get_document_content", {"document_id": "document-1"})
+
+        self.assertEqual(result["current_version"], 2)
+        gateway.read.assert_called_once_with(
+            "get_document_content",
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            arguments={"document_id": "document-1"},
+        )
+
     def test_resolves_approved_dependency_output_without_changing_other_arguments(self) -> None:
         arguments = {
             "document_id": "document-1",

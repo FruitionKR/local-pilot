@@ -10,11 +10,14 @@ SkillTool = Literal[
     "search_hierarchy",
     "get_breadcrumb",
     "get_document_metadata",
+    "get_document_content",
     "create_folder",
     "rename_folder",
     "move_folder",
     "move_document",
     "rename_document",
+    "create_document",
+    "apply_document_edit",
 ]
 SkillScopeType = Literal["personal", "team"]
 SkillStatus = Literal["enabled", "disabled"]
@@ -50,3 +53,29 @@ class Skill:
     latest_version: SkillVersion | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class SkillDraftSourceOperation:
+    tool_name: SkillTool
+    reason: str
+
+
+@dataclass(frozen=True)
+class SkillDraftSourceRun:
+    run_id: str
+    status: str
+    request_summary: str
+    plan_summary: str
+    successful_operations: tuple[SkillDraftSourceOperation, ...]
+
+
+@dataclass(frozen=True)
+class SkillDraftProposal:
+    name: str
+    description: str
+    instructions_markdown: str
+    capabilities: tuple[SkillCapability, ...]
+    allowed_tools: tuple[SkillTool, ...]
+    source_run_ids: tuple[str, ...]
+    persisted: Literal[False] = False

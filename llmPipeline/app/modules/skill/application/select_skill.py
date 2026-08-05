@@ -109,6 +109,11 @@ def _supports_action(skill: Skill, action: str) -> bool:
         return False
     if action in {"markdown_create", "markdown_edit"} and "template" in version.capabilities:
         return True
+    if action == "workspace_workflow":
+        return bool(
+            set(version.capabilities)
+            & {"document-create", "document-edit", "folder-organize", "template"}
+        )
     required_capability = {
         "markdown_create": "document-create",
         "markdown_edit": "document-edit",

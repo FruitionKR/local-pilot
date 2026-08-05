@@ -25,6 +25,11 @@ from app.modules.query.domain.entities import (
     RetrievalSummary,
 )
 from app.modules.skill.application.select_skill import SelectSkillUseCase
+from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
+from app.modules.skill.domain.entities import (
+    SkillDraftSourceOperation,
+    SkillDraftSourceRun,
+)
 from app.modules.skill.domain.entities import Skill, SkillVersion
 
 
@@ -132,6 +137,64 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
+        class Generator:
+            def generate(self, source_runs: object, user_directives: object) -> dict[str, object]:
+                return {
+                    "name": "프로젝트 문서 정리",
+                    "description": "프로젝트별로 관련 문서를 정리합니다.",
+                    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+                    "capabilities": ["folder-organize"],
+                    "allowed_tools": ["move_document"],
+                }
+
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="skill_draft_proposal",
+                    confidence=0.95,
+                    reason="skill creation request",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_draft_proposer=ProposeSkillDraftUseCase(Generator()),  # type: ignore[arg-type]
+        )
+        source = SkillDraftSourceRun(
+            run_id="run-1",
+            status="completed",
+            request_summary="프로젝트 문서를 정리해줘",
+            plan_summary="관련 문서를 이동합니다.",
+            successful_operations=(
+                SkillDraftSourceOperation(
+                    tool_name="move_document",
+                    reason="관련성이 명확한 문서를 이동합니다.",
+                ),
+            ),
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="방금 방식대로 Skill로 만들어줘",
+                skill_draft_sources=(source,),
+            )
+        )
+
+        self.assertEqual(result.action, "skill_draft_proposal")
+        self.assertEqual(result.skill_draft_proposal.source_run_ids, ("run-1",))  # type: ignore[union-attr]
+        self.assertFalse(result.skill_draft_proposal.persisted)  # type: ignore[union-attr]
+
     def test_folder_organize_starts_async_run_without_direct_edit(self) -> None:
         starter = RecordingAgentRunStarter()
         skill = document_skill("folder-organize")
@@ -173,6 +236,44 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.run_id, "run-1")
         self.assertEqual(result.run_status, "queued")
         self.assertEqual(getattr(starter.requests[0], "skill_version_id"), "version-1")
+        self.assertEqual(editor.requests, [])
+
+    def test_workspace_workflow_starts_run_with_action(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="workspace_workflow",
+                    confidence=0.95,
+                    reason="workspace document request",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="현재 문서를 다듬어서 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(getattr(starter.requests[0], "action"), "workspace_workflow")
         self.assertEqual(editor.requests, [])
 
     def test_passes_selected_skill_instructions_to_markdown_create(self) -> None:

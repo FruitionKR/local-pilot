@@ -9,6 +9,7 @@ from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
 from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
+from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.domain.entities import Skill
 
 
@@ -28,6 +29,7 @@ class HandleAgentTurnUseCase:
         markdown_create_use_case: GenerateMarkdownDocumentUseCase,
         skill_selector: SelectSkillUseCase | None = None,
         agent_run_starter: AgentRunStarterPort | None = None,
+        skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
     ) -> None:
         self._router = router
         self._query_use_case = query_use_case
@@ -35,6 +37,7 @@ class HandleAgentTurnUseCase:
         self._markdown_create_use_case = markdown_create_use_case
         self._skill_selector = skill_selector
         self._agent_run_starter = agent_run_starter
+        self._skill_draft_proposer = skill_draft_proposer
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         if not request.message.strip():
@@ -78,9 +81,29 @@ class HandleAgentTurnUseCase:
             )
             return AgentTurnResult(action="markdown_create", route=route, generated_markdown=result.document)
 
-        if route.action == "folder_organize":
+        if route.action == "skill_draft_proposal":
+            if not request.skill_draft_sources:
+                return AgentTurnResult(
+                    action="clarify",
+                    route=route,
+                    message="Skill로 만들 완료 작업을 선택해 주세요.",
+                )
+            if self._skill_draft_proposer is None:
+                raise ValueError("Skill draft proposal is not configured.")
+            proposal = self._skill_draft_proposer.execute(
+                source_runs=request.skill_draft_sources,
+                user_directives=request.skill_draft_user_directives,
+                excluded_literals=request.skill_draft_excluded_literals,
+            )
+            return AgentTurnResult(
+                action="skill_draft_proposal",
+                route=route,
+                skill_draft_proposal=proposal,
+            )
+
+        if route.action in {"folder_organize", "workspace_workflow"}:
             if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
-                raise ValueError("Folder organization requires workspace_id and user_id.")
+                raise ValueError("Workspace workflow requires workspace_id and user_id.")
             skill_version_id = (
                 selected_skill.enabled_version.id
                 if selected_skill is not None and selected_skill.enabled_version is not None
@@ -91,11 +114,12 @@ class HandleAgentTurnUseCase:
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
                     instruction=request.message,
+                    action=route.action,
                     skill_version_id=skill_version_id,
                 )
             )
             return AgentTurnResult(
-                action="folder_organize",
+                action=route.action,
                 route=route,
                 run_id=run_id,
                 run_status=run_status,

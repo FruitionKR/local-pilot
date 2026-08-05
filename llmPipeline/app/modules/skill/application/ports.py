@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.skill.domain.entities import Skill
+from app.modules.skill.domain.entities import Skill, SkillDraftSourceRun
 
 
 class SkillRepositoryPort(Protocol):
@@ -29,3 +29,11 @@ class ManageSkillRepositoryPort(Protocol):
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
         ...
+
+
+class SkillDraftGeneratorPort(Protocol):
+    def generate(
+        self,
+        source_runs: tuple[SkillDraftSourceRun, ...],
+        user_directives: tuple[str, ...],
+    ) -> dict[str, object]: ...
