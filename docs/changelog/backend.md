@@ -8,6 +8,42 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-06
 
+### fix: 문서 내보내기 스트리밍 전환과 저장 응답 최종 Markdown 정합
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 내보내기 응답이 ZIP 전체를 힙에 올리는 문제와, 저장 응답의
+  `markdown` 필드가 요청 형식에 따라 달라지는 문제를 확인했다.
+
+**수정된 것**
+
+- `DocumentExportResult`가 `byte[]` 대신 `contentLength`와 `InputStream`을 전달한다. 기존에는
+  임시 파일에 ZIP을 스트리밍으로 완성한 뒤 `Files.readAllBytes`로 최대 100MB를 다시 힙에 올려,
+  임시 파일을 쓴 이점이 사라지고 동시 내보내기에서 메모리 사용량이 선형으로 늘었다. 임시 파일은
+  `StandardOpenOption.DELETE_ON_CLOSE`로 응답 stream이 닫힐 때 함께 정리한다.
+- 내보내기의 DB 조회와 ZIP 생성을 분리했다. 기존에는 `@Transactional(readOnly = true)` 안에서
+  최대 100MB를 MinIO에서 내려받아 그동안 DB 커넥션을 붙잡았다. 이제 조회만 짧은 트랜잭션에서
+  수행하고 다운로드와 압축은 트랜잭션 밖에서 한다.
+- 이미지 없이 저장하는 경로도 응답에 최종 Markdown을 담는다. 기존에는 `metadata` multipart 저장만
+  `markdown`을 채우고 `markdown` part 저장은 `null`을 반환해, `docs/spec/api/document.md`의 응답
+  계약과 어긋났고 프론트가 저장 형식별로 분기해야 했다. no-op 저장도 서버가 가진 현재 본문을
+  반환한다.
+
+**주의사항**
+
+- 내보내기 트랜잭션이 쪼개지면서 조회들이 하나의 스냅샷이 아니게 된다. asset 누락 시 `422`로
+  전체 실패하므로 불완전한 ZIP은 나가지 않는다.
+- HTTP 응답 형식은 바뀌지 않는다. 저장 응답의 `markdown`은 스키마에 이미 있던 필드이며 값이
+  `null`에서 실제 본문으로 채워질 뿐이다.
+- Markdown 본문에 raw HTML `<img>`로 관리 이미지 경로를 적으면 참조로 인식되지 않는다. 관리
+  이미지는 인증이 필요해 `<img src>`로 표시되지 않고 SDD가 raw HTML 미실행과 CommonMark 사용을
+  명시하므로 현행 유지로 결정했다. 프론트 이미지 렌더러 작업 시 입력 단계에서 막는다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- 내보내기 stream 길이와 ZIP 내용, 일반 저장·no-op 응답의 `markdown`을 단위 테스트로 검증했다.
+
 ### refactor: 이미지 asset 조회와 정리 worker의 object storage 호출 범위 축소
 
 **배경**

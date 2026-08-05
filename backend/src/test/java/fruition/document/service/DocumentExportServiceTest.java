@@ -17,7 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.List;
@@ -52,11 +55,12 @@ class DocumentExportServiceTest {
     void setUp() {
         exportService = new DocumentExportService(
                 documentRepository, editStateRepository, workspaceMemberRepository,
-                referenceRepository, assetRepository, objectStorage);
+                referenceRepository, assetRepository, objectStorage,
+                new TransactionTemplate(org.mockito.Mockito.mock(PlatformTransactionManager.class)));
     }
 
     @Test
-    void exportMarkdown_memberDownloadsLatestUtf8WithoutChangingState() {
+    void exportMarkdown_memberDownloadsLatestUtf8WithoutChangingState() throws Exception {
         Document document = new Document(
                 "doc_export", WORKSPACE_ID, "owner_1", "회의 결과.md",
                 "text/markdown", 10, null, null, "direct");
@@ -76,7 +80,7 @@ class DocumentExportServiceTest {
                 exportService.exportMarkdown(WORKSPACE_ID, USER_ID, document.getId());
 
         assertThat(result.filename()).isEqualTo("회의 결과.md");
-        assertThat(new String(result.bytes(), StandardCharsets.UTF_8))
+        assertThat(new String(readAll(result.content()), StandardCharsets.UTF_8))
                 .isEqualTo("# 최신 회의 결과\n한글 본문");
         assertThat(document.getCurrentVersion()).isEqualTo(versionBefore);
         assertThat(document.getUpdatedAt()).isEqualTo(updatedAtBefore);
@@ -106,10 +110,12 @@ class DocumentExportServiceTest {
         when(objectStorage.get("key-2")).thenReturn(new ByteArrayInputStream(new byte[]{4, 5}));
 
         DocumentExportResult result = exportService.exportMarkdown(WORKSPACE_ID, USER_ID, document.getId());
-        Map<String, byte[]> entries = unzip(result.bytes());
+        byte[] zipBytes = readAll(result.content());
+        Map<String, byte[]> entries = unzip(zipBytes);
 
         assertThat(result.filename()).isEqualTo("이미지 문서.zip");
         assertThat(result.contentType()).isEqualTo("application/zip");
+        assertThat(result.contentLength()).isEqualTo(zipBytes.length);
         assertThat(entries.keySet()).containsExactlyInAnyOrder(
                 "이미지 문서.md", "assets/diagram.png", "assets/diagram-2.png");
         String exportedMarkdown = new String(entries.get("이미지 문서.md"), StandardCharsets.UTF_8);
@@ -183,6 +189,13 @@ class DocumentExportServiceTest {
     private DocumentAsset asset(UUID id, String filename, String storageKey, long size) {
         return new DocumentAsset(id, WORKSPACE_ID, USER_ID, filename, "image/png", size,
                 1, 1, "a".repeat(64), storageKey, java.time.Instant.now());
+    }
+
+    /** stream을 끝까지 읽고 닫는다. ZIP stream은 닫힐 때 임시 파일도 함께 정리된다. */
+    private byte[] readAll(InputStream content) throws Exception {
+        try (content) {
+            return content.readAllBytes();
+        }
     }
 
     private Map<String, byte[]> unzip(byte[] bytes) throws Exception {

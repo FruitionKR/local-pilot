@@ -1035,7 +1035,9 @@ public class DocumentService {
                     document.getCurrentVersion(),
                     document.getCurrentContentHash(),
                     document.getUpdatedAt(),
-                    false
+                    false,
+                    editState.getMarkdown(),
+                    List.of()
             );
         }
 
@@ -1075,7 +1077,9 @@ public class DocumentService {
                 baseVersion + 1,
                 content.contentHash(),
                 updatedAt,
-                true
+                true,
+                content.markdown(),
+                List.of()
         );
     }
 

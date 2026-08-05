@@ -340,7 +340,7 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void markdownExport_readsLatestEditStateWithoutChangingDocument() {
+    void markdownExport_readsLatestEditStateWithoutChangingDocument() throws Exception {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
@@ -368,7 +368,7 @@ class DocumentEditingSchemaIntegrationTest {
                 documentExportService.exportMarkdown(workspaceId, userId, documentId);
 
         assertThat(result.filename()).isEqualTo("회의 결과.md");
-        assertThat(new String(result.bytes(), java.nio.charset.StandardCharsets.UTF_8))
+        assertThat(new String(result.content().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
                 .isEqualTo("# 최신 회의 결과\n한글 본문");
         assertThat(jdbcTemplate.queryForMap(
                 """

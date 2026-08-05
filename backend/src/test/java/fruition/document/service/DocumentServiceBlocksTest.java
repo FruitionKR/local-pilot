@@ -439,6 +439,8 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(response.markdown()).isEqualTo("# 변경\n");
+        assertThat(response.attachments()).isEmpty();
         assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
         assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
         assertThat(document.getContentHash()).isEqualTo("original-hash");
@@ -646,6 +648,7 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.changed()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.markdown()).isEqualTo(markdown);
         assertThat(response.updatedAt()).isEqualTo(document.getUpdatedAt());
         verify(documentRepository, never()).updateContentIfVersionMatches(
                 anyString(), anyString(), anyLong(), anyString(), anyLong(), any());

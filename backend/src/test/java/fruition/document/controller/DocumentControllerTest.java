@@ -98,7 +98,7 @@ class DocumentControllerTest {
         byte[] bytes = "# 최신 본문\n한글".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         when(documentExportService.exportMarkdown(
                 WORKSPACE_ID, USER_ID, "doc_export"))
-                .thenReturn(new DocumentExportResult("회의 결과.md", bytes));
+                .thenReturn(DocumentExportResult.markdown("회의 결과.md", bytes));
 
         mockMvc.perform(get(
                         "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_export/export")
@@ -116,7 +116,8 @@ class DocumentControllerTest {
     void export_withImagesReturnsZipContentType() throws Exception {
         byte[] bytes = new byte[]{1, 2, 3};
         when(documentExportService.exportMarkdown(WORKSPACE_ID, USER_ID, "doc_zip"))
-                .thenReturn(new DocumentExportResult("이미지 문서.zip", "application/zip", bytes));
+                .thenReturn(DocumentExportResult.zip(
+                        "이미지 문서.zip", bytes.length, new java.io.ByteArrayInputStream(bytes)));
 
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/documents/doc_zip/export")
                         .header("Authorization", bearerToken()))
