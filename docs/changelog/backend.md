@@ -31,6 +31,11 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - CommonMark 이미지 destination에서 관리 asset 참조를 추출하고 workspace batch 검증, 문서별
   reference diff, 마지막 참조 제거·재참조 상태를 동기화하도록 했다.
 - Markdown 문서 복제 시 asset row와 MinIO object를 복사하지 않고 기존 asset reference만 복사한다.
+- `PUT /documents/{document_id}/content`에 `metadata` JSON과 `attachment_<uuid>` file part 저장 흐름을
+  연결했다. 저장 전후 version을 각각 확인하고 성공 시 치환된 Markdown과 attachment–asset 매핑을
+  반환한다.
+- 문서 본문·asset row·reference를 한 DB transaction에서 갱신하고 DB 실패나 version 충돌에는 이번
+  요청에서 선저장한 MinIO object를 보상 삭제한다.
 
 **검증**
 
@@ -43,6 +48,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - schema 통합 테스트로 orphan 테이블 migration을 검증했다.
 - parser·synchronizer·문서 복제 테스트로 코드 블록/일반 링크 제외, 중복 참조, workspace 격리,
   reference 추가·제거와 복제 동작을 검증했다.
+- asset 저장 orchestration과 Controller 테스트로 placeholder 치환, 최종 응답, 충돌 보상과 기존
+  이미지 없는 저장의 하위 호환을 검증했다.
 - Controller 저장 연결, 이미지 검증, MinIO 보상, 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---

@@ -94,6 +94,8 @@ class DocumentServiceBlocksTest {
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
     @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    @Mock DocumentAssetReferenceParser assetReferenceParser;
+    @Mock fruition.document.repository.DocumentAssetRepository assetRepository;
 
     DocumentService documentService;
 
@@ -105,6 +107,7 @@ class DocumentServiceBlocksTest {
                 editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
                 assetReferenceSynchronizer,
+                assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 "http://localhost:8080");
     }

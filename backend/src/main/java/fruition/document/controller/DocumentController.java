@@ -3,6 +3,7 @@ package fruition.document.controller;
 import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
 import fruition.document.service.DocumentExportService;
+import fruition.document.service.DocumentAssetContentService;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentContentDiffResponse;
@@ -40,6 +41,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
+import org.springframework.util.LinkedMultiValueMap;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -58,13 +61,16 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final DocumentExportService documentExportService;
+    private final DocumentAssetContentService documentAssetContentService;
 
     public DocumentController(
             DocumentService documentService,
-            DocumentExportService documentExportService
+            DocumentExportService documentExportService,
+            DocumentAssetContentService documentAssetContentService
     ) {
         this.documentService = documentService;
         this.documentExportService = documentExportService;
+        this.documentAssetContentService = documentAssetContentService;
     }
 
     @Operation(
@@ -385,12 +391,27 @@ public class DocumentController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @PathVariable("document_id") String documentId,
-            @Parameter(description = "저장할 전체 Markdown 본문", required = true)
-            @RequestPart("markdown") String markdown,
-            @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1", required = true)
-            @RequestPart("base_version") String baseVersion,
+            @Parameter(description = "이미지 포함 저장 metadata JSON")
+            @RequestPart(value = "metadata", required = false) String metadata,
+            @Parameter(description = "저장할 전체 Markdown 본문")
+            @RequestPart(value = "markdown", required = false) String markdown,
+            @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1")
+            @RequestPart(value = "base_version", required = false) String baseVersion,
             @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
-            @RequestPart(value = "source", required = false) String source) {
+            @RequestPart(value = "source", required = false) String source,
+            MultipartHttpServletRequest multipartRequest) {
+        if (metadata != null) {
+            LinkedMultiValueMap<String, MultipartFile> attachments = new LinkedMultiValueMap<>();
+            multipartRequest.getMultiFileMap().forEach((partName, files) -> {
+                if (!"metadata".equals(partName)) attachments.put(partName, files);
+            });
+            return ResponseEntity.ok(documentAssetContentService.save(
+                    workspaceId, userId, documentId, metadata, attachments));
+        }
+        if (markdown == null) {
+            throw new fruition.document.exception.InvalidMarkdownContentException(
+                    "markdown 또는 metadata part가 필요합니다.");
+        }
         return ResponseEntity.ok(
                 documentService.saveContent(
                         workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion), source));
