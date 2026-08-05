@@ -203,6 +203,11 @@ class IngestOperationRestoreIn(_OperationRestoreIn):
             raise ValueError(
                 "deleted_pages must not include restored source_page"
             )
+        if any(
+            page.page_id == self.source_page.page_id
+            for page in self.rebuild_pages
+        ):
+            raise ValueError("source_page must not be included in rebuild_pages")
         if self.kept_operation_ids().intersection(self.cancel_operation_ids):
             raise ValueError(
                 "cancel_operation_ids must not be included in "

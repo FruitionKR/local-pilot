@@ -18,8 +18,8 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 진행 로그·Query event callback에도 작업 결과 callback과 같은 `INTERNAL_CALLBACK_TOKEN`을 전송하도록 통일
 - 보호 route의 토큰을 request body 파싱 전 middleware에서 검증해 잘못된 JSON도 인증 실패를 먼저 반환하도록 수정
 - 복구 정리와 비동기 Page embedding 저장이 같은 `wiki_pages` 행 잠금을 사용해 삭제된 Page의 legacy embedding이 다시 생성되지 않도록 수정
-- 복구 요청에서 재조립 Page 또는 실제 복원할 Source Page가 `deleted_pages`와 겹치면 `422`로 거절하도록 계약 검증 추가
-- llmPipeline 전체 테스트 `696 passed`, `49 subtests passed`; `git diff --check` 통과
+- 복구 요청에서 Source Page·재조립 Page·삭제 Page의 역할이 서로 충돌하면 `422`로 거절하도록 계약 검증 추가
+- llmPipeline 전체 테스트 `697 passed`, `49 subtests passed`; `git diff --check` 통과
 - AI 작업 로그 API의 현재 상태와 이관된 이슈 문서 링크를 현행 경로로 정리
 
 ## 2026-08-04
