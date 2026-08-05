@@ -408,7 +408,7 @@ flowchart LR
 - **Responsibility:** Graph·Page 상세·Page rename HTTP endpoint를 제공한다.
 - **Output:** WikiGraphResponse, WikiPageDetailResponse, rename 결과
 - **Key Logic:** authentication principal과 path parameter를 WikiService에 전달한다.
-- **Failure Handling:** 입력 validation과 domain 예외를 공통 exception handler에 위임한다. Page rename은 llmPipeline에 `PATCH /wiki/pages/{wiki_page_id}/rename` route가 없어 현재 `404`로 실패한다.
+- **Failure Handling:** 입력 validation과 domain 예외를 공통 exception handler에 위임한다. Page rename은 현재 내부 토큰 미전송으로 `401`, Backend 토큰 송신 적용 후에는 llmPipeline route 미구현으로 `404`가 발생한다.
 - **Why this exists:** Wiki 탐색 기능의 공개 HTTP 경계를 명확히 하기 위해 존재한다.
 
 #### Wiki Graph·Page 조립 (`WikiService`)

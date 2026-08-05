@@ -100,7 +100,7 @@ flowchart LR
 - `GET /pipeline/runs/{run_id}/logs`
 - `POST /pipeline/runs/{run_id}/result-callback/retry`
 - `/skills/*`
-- `/agent-runs/*`
+- `/agent/runs/*`
 - `GET /documents/{document_id}`
 - `GET /health`
 
@@ -1187,7 +1187,7 @@ Content-Type: application/json
 | `keep_contributions[].document_id` | string | 예 | contribution의 원본 Document ID다. |
 | `deleted_pages` | string array | 아니오 | Spring restore plan이 삭제 대상으로 계산한 Page ID다. 기본 `[]`다. llmPipeline은 Page를 `deleted`로 바꾸고 관련 link·embedding을 정리한 뒤 결과에 전달한다. |
 
-`operation_id`는 `cancel_operation_ids`, `restore_to_operation_id`와 같을 수 없다. 유지할 contribution의 operation도 취소 목록에 포함될 수 없다.
+`operation_id`는 `cancel_operation_ids`, `restore_to_operation_id`와 같을 수 없다. 유지할 contribution의 operation도 취소 목록에 포함될 수 없다. `deleted_pages`는 `rebuild_pages`와 겹칠 수 없고, `restore_to_operation_id`가 있으면 `source_page`도 포함할 수 없다.
 
 #### Response Body
 
@@ -1301,7 +1301,7 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 | `rebuild_pages` | array | 예 | contribution을 다시 조립할 Concept Page 목록이다. 구조는 4.10과 같다. |
 | `deleted_pages` | string array | 아니오 | Spring restore plan이 삭제 대상으로 계산한 Page ID다. 기본 `[]`다. llmPipeline은 Page를 `deleted`로 바꾸고 관련 link·embedding을 정리한다. |
 
-`target_operation_id`는 `rebuild_pages[].keep_contributions[].operation_id`에 포함될 수 없다.
+`target_operation_id`는 `rebuild_pages[].keep_contributions[].operation_id`에 포함될 수 없다. `deleted_pages`는 `rebuild_pages`와 겹칠 수 없다.
 
 #### Response Body
 
@@ -1705,7 +1705,7 @@ Content-Type: application/json
 }
 ```
 
-하지만 llmPipeline에 해당 FastAPI route가 없다. 현재 상태에서는 endpoint 기본값 `http://localhost:8000/wiki/pages`로 호출하면 `404 Not Found`가 발생한다.
+하지만 llmPipeline에 해당 FastAPI route가 없다. 현재 Spring requester는 `X-Internal-Token`도 보내지 않아 먼저 `401 Unauthorized`를 받고, Backend 토큰 송신을 적용한 뒤에는 `404 Not Found`가 발생한다.
 
 ### 6.2 Agent Service Token 불일치
 

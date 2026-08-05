@@ -144,6 +144,9 @@ class _OperationRestoreIn(BaseModel):
     def validate_operation_restore(self) -> Self:
         if not self.result_callback_url.strip():
             raise ValueError("result_callback_url must not be blank")
+        rebuild_page_ids = {page.page_id for page in self.rebuild_pages}
+        if rebuild_page_ids.intersection(self.deleted_pages):
+            raise ValueError("deleted_pages must not include rebuild_pages")
         return self
 
     def kept_operation_ids(self) -> set[str]:
@@ -192,6 +195,13 @@ class IngestOperationRestoreIn(_OperationRestoreIn):
             raise ValueError(
                 "restore_to_operation_id must not be included in "
                 "cancel_operation_ids"
+            )
+        if (
+            self.restore_to_operation_id is not None
+            and self.source_page.page_id in self.deleted_pages
+        ):
+            raise ValueError(
+                "deleted_pages must not include restored source_page"
             )
         if self.kept_operation_ids().intersection(self.cancel_operation_ids):
             raise ValueError(
