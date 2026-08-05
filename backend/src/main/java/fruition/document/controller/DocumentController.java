@@ -4,6 +4,7 @@ import fruition.util.ErrorResponse;
 import fruition.document.service.DocumentService;
 import fruition.document.service.DocumentExportService;
 import fruition.document.service.DocumentAssetContentService;
+import fruition.document.exception.InvalidMarkdownContentException;
 import fruition.document.dto.DocumentBlocksResponse;
 import fruition.document.dto.DocumentContentSaveResponse;
 import fruition.document.dto.DocumentContentDiffResponse;
@@ -404,20 +405,20 @@ public class DocumentController {
             @RequestPart(value = "apply_operation_id", required = false) String applyOperationId,
             MultipartHttpServletRequest multipartRequest) {
         if (metadata != null) {
-            LinkedMultiValueMap<String, MultipartFile> attachments = new LinkedMultiValueMap<>();
+            // attachment 후보뿐 아니라 업로드된 file part를 모두 넘겨, 계약에 없는 part는 parser가 거절하게 한다.
+            LinkedMultiValueMap<String, MultipartFile> fileParts = new LinkedMultiValueMap<>();
             multipartRequest.getMultiFileMap().forEach((partName, files) -> {
                 boolean uploadedFile = files.stream().anyMatch(file ->
                         file.getOriginalFilename() != null && !file.getOriginalFilename().isBlank());
                 if (partName.startsWith("attachment_") || uploadedFile) {
-                    attachments.put(partName, files);
+                    fileParts.put(partName, files);
                 }
             });
             return ResponseEntity.ok(documentAssetContentService.save(
-                    workspaceId, userId, documentId, metadata, attachments, applyOperationId));
+                    workspaceId, userId, documentId, metadata, fileParts, applyOperationId));
         }
         if (markdown == null) {
-            throw new fruition.document.exception.InvalidMarkdownContentException(
-                    "markdown 또는 metadata part가 필요합니다.");
+            throw new InvalidMarkdownContentException("markdown 또는 metadata part가 필요합니다.");
         }
         return ResponseEntity.ok(
                 documentService.saveContent(

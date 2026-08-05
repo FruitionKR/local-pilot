@@ -32,6 +32,18 @@ class DocumentAssetSaveRequestParserTest {
     }
 
     @Test
+    void parse_acceptsPlaceholderUuidRegardlessOfVersion() {
+        // 프론트가 v4가 아닌 UUID(예: v7)를 발급해도 placeholder 대응이 성립하면 저장을 막지 않는다.
+        UUID attachmentId = UUID.fromString("018f3a2b-1c4d-7e8f-9a0b-1c2d3e4f5a6b");
+        MultiValueMap<String, MultipartFile> files = new LinkedMultiValueMap<>();
+        files.add("attachment_" + attachmentId, image("diagram.png"));
+
+        var parsed = parser.parse(metadata("![](attachment://" + attachmentId + ")", 1), files);
+
+        assertThat(parsed.attachments()).containsOnlyKeys(attachmentId);
+    }
+
+    @Test
     void parse_allowsSaveWithoutImages() {
         var parsed = parser.parse(metadata("# 본문", 1), new LinkedMultiValueMap<>());
 

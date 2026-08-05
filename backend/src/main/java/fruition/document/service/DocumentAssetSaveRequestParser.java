@@ -19,8 +19,9 @@ import java.util.regex.Pattern;
 @Component
 public class DocumentAssetSaveRequestParser {
 
+    /** placeholder UUID는 프론트가 만든다. UUID 형태만 강제하고 version·variant는 제한하지 않는다. */
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile(
-            "attachment://([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})"
+            "attachment://([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
     );
     private static final String PART_PREFIX = "attachment_";
 

@@ -8,6 +8,32 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-06
 
+### refactor: 이미지 asset placeholder 대응 정리와 UUID version 제약 완화
+
+**배경**
+
+- 이미지 asset 계약 리뷰의 남은 지적 사항을 정리했다. 동작을 바꾸지 않는 구조 개선과, 프론트가
+  발급하는 placeholder UUID의 불필요한 제약 제거가 대상이다.
+
+**변경된 것**
+
+- `DocumentAssetValidator.validateAll`이 `List` 대신 `Map<UUID, MultipartFile>`을 받고
+  `Map<UUID, ValidatedAsset>`을 돌려준다. 기존에는 호출부가 `keySet()`과 `values()`의 반복 순서가
+  일치한다는 가정으로 인덱스를 세어 placeholder와 검증 결과를 다시 짝지었다. `Map.copyOf`는 반복
+  순서를 보장하지 않아 가정에 기대는 구조였다.
+- placeholder UUID 정규식에서 version(`1-5`)과 variant 제약을 제거하고 UUID 형태만 강제한다.
+  프론트가 UUIDv7 등을 발급하면 저장이 `400`으로 거절되던 문제를 없앤다. `UUID.fromString` 검증과
+  placeholder–file part 1:1 대응 검사는 그대로 유지된다.
+- 외부 호출자가 없던 `DocumentService.validateContentSave` 4-arg 오버로드를 제거했다.
+- `DocumentController`와 `DocumentExportService`의 인라인 FQN(`fruition.document.exception....`,
+  `java.io.IOException`)을 import로 정리하고, 컨트롤러 지역 변수명을 실제 의미에 맞춰
+  `attachments`에서 `fileParts`로 바꿨다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- placeholder–검증 결과 대응과 v4가 아닌 UUID 수용을 단위 테스트로 추가 검증했다.
+
 ### fix: 문서 내보내기 스트리밍 전환과 저장 응답 최종 Markdown 정합
 
 **배경**

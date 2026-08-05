@@ -12,9 +12,10 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @Component
 public class DocumentAssetValidator {
@@ -24,12 +25,13 @@ public class DocumentAssetValidator {
     static final int MAX_FILES = 20;
     static final int MAX_DIMENSION = 16_384;
 
-    public List<ValidatedAsset> validateAll(List<MultipartFile> files) {
-        if (files.size() > MAX_FILES) {
+    /** placeholder와 검증 결과를 같은 key로 묶어 돌려준다. 호출부가 순서로 다시 짝지을 필요가 없다. */
+    public Map<UUID, ValidatedAsset> validateAll(Map<UUID, MultipartFile> attachments) {
+        if (attachments.size() > MAX_FILES) {
             throw tooLarge("한 번에 새 이미지가 20개를 초과할 수 없습니다.");
         }
         long total = 0;
-        for (MultipartFile file : files) {
+        for (MultipartFile file : attachments.values()) {
             if (file.getSize() > MAX_FILE_BYTES) {
                 throw tooLarge("이미지 하나의 크기는 10MB를 초과할 수 없습니다.");
             }
@@ -39,9 +41,9 @@ public class DocumentAssetValidator {
             }
         }
 
-        List<ValidatedAsset> validated = new ArrayList<>(files.size());
-        for (MultipartFile file : files) validated.add(validate(file));
-        return List.copyOf(validated);
+        Map<UUID, ValidatedAsset> validated = new LinkedHashMap<>();
+        attachments.forEach((attachmentId, file) -> validated.put(attachmentId, validate(file)));
+        return validated;
     }
 
     public ValidatedAsset validate(MultipartFile file) {

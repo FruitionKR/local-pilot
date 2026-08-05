@@ -42,7 +42,8 @@ class DocumentAssetContentServiceTest {
         var stored = new DocumentAssetStorageCoordinator.StoredAsset(
                 assetId, "assets/ws_1/" + assetId + "/content", validated);
         when(requestParser.parse(eq("metadata"), any())).thenReturn(parsed);
-        when(assetValidator.validateAll(List.of(file))).thenReturn(List.of(validated));
+        when(assetValidator.validateAll(Map.of(attachmentId, file)))
+                .thenReturn(Map.of(attachmentId, validated));
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
@@ -77,7 +78,8 @@ class DocumentAssetContentServiceTest {
         var stored = new DocumentAssetStorageCoordinator.StoredAsset(
                 assetId, "assets/ws_1/" + assetId + "/content", validated);
         when(requestParser.parse(eq("metadata"), any())).thenReturn(parsed);
-        when(assetValidator.validateAll(List.of(file))).thenReturn(List.of(validated));
+        when(assetValidator.validateAll(Map.of(attachmentId, file)))
+                .thenReturn(Map.of(attachmentId, validated));
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(

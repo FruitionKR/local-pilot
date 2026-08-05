@@ -1085,12 +1085,6 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public void validateContentSave(
-            String workspaceId, String userId, String documentId, long baseVersion) {
-        validateContentSave(workspaceId, userId, documentId, baseVersion, null);
-    }
-
-    @Transactional(readOnly = true)
-    public void validateContentSave(
             String workspaceId, String userId, String documentId, long baseVersion,
             String applyOperationId) {
         verifyWorkspaceOwnership(workspaceId, userId);

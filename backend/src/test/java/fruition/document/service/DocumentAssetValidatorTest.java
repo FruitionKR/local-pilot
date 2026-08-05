@@ -10,8 +10,9 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -118,8 +119,8 @@ class DocumentAssetValidatorTest {
 
     @Test
     void validateAll_rejectsMoreThanTwentyFiles() {
-        List<MultipartFile> files = new ArrayList<>();
-        for (int index = 0; index < 21; index++) files.add(mock(MultipartFile.class));
+        Map<UUID, MultipartFile> files = new LinkedHashMap<>();
+        for (int index = 0; index < 21; index++) files.put(UUID.randomUUID(), mock(MultipartFile.class));
 
         assertThatThrownBy(() -> validator.validateAll(files))
                 .isInstanceOf(DocumentAssetTooLargeException.class);
@@ -127,15 +128,29 @@ class DocumentAssetValidatorTest {
 
     @Test
     void validateAll_rejectsRequestOverOneHundredMegabytesBeforeReading() {
-        List<MultipartFile> files = new ArrayList<>();
+        Map<UUID, MultipartFile> files = new LinkedHashMap<>();
         for (int index = 0; index < 11; index++) {
             MultipartFile file = mock(MultipartFile.class);
             when(file.getSize()).thenReturn(DocumentAssetValidator.MAX_FILE_BYTES);
-            files.add(file);
+            files.put(UUID.randomUUID(), file);
         }
 
         assertThatThrownBy(() -> validator.validateAll(files))
                 .isInstanceOf(DocumentAssetTooLargeException.class);
+    }
+
+    @Test
+    void validateAll_keepsPlaceholderPairingWithValidatedAssets() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        Map<UUID, MultipartFile> files = new LinkedHashMap<>();
+        files.put(first, new MockMultipartFile("a", "a.png", "image/png", imageBytes("png", 2, 1)));
+        files.put(second, new MockMultipartFile("b", "b.png", "image/png", imageBytes("png", 4, 3)));
+
+        Map<UUID, DocumentAssetValidator.ValidatedAsset> validated = validator.validateAll(files);
+
+        assertThat(validated.get(first).width()).isEqualTo(2);
+        assertThat(validated.get(second).width()).isEqualTo(4);
     }
 
     private byte[] imageBytes(String format, int width, int height) throws Exception {

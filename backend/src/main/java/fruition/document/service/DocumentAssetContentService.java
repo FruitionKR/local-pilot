@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,13 +42,8 @@ public class DocumentAssetContentService {
         documentService.validateContentSave(
                 workspaceId, userId, documentId, request.baseVersion(), applyOperationId);
 
-        Map<UUID, DocumentAssetValidator.ValidatedAsset> validated = new LinkedHashMap<>();
-        List<DocumentAssetValidator.ValidatedAsset> validatedList =
-                assetValidator.validateAll(List.copyOf(request.attachments().values()));
-        int index = 0;
-        for (UUID attachmentId : request.attachments().keySet()) {
-            validated.put(attachmentId, validatedList.get(index++));
-        }
+        Map<UUID, DocumentAssetValidator.ValidatedAsset> validated =
+                assetValidator.validateAll(request.attachments());
 
         Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> stored =
                 storageCoordinator.storeAll(workspaceId, validated);

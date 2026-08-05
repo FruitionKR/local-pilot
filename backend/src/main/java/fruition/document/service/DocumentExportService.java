@@ -15,6 +15,7 @@ import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -184,7 +185,7 @@ public class DocumentExportService {
         if (path == null) return;
         try {
             Files.deleteIfExists(path);
-        } catch (java.io.IOException ignored) {
+        } catch (IOException ignored) {
             // 이미 실패 응답으로 가는 경로라 삭제 실패가 결과를 바꾸지 않는다.
         }
     }
