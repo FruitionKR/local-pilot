@@ -186,14 +186,21 @@
   - planning, execution, verification job
   - PostgreSQL lease와 heartbeat
   - Worker crash 후 job 재획득
-  - 최대 4개 독립 operation 병렬 실행
+  - 관찰 결과와 실행 가능한 승인 operation을 입력으로 한 bounded ReAct decision
+  - 허용된 read, 승인 operation 하나 실행, 새 계획 요청 action 검증과 자동 완료
+  - 상태 변경 시 승인된 plan의 tool과 arguments만 사용
+  - 남은 mutation Tool 호출 예산 보존
   - operation별 Idempotency-Key와 retry
 - 완료 조건:
   - [ ] API와 Worker를 별도 프로세스로 실행한다.
   - [ ] 두 Worker가 같은 job을 동시에 처리하지 않는다.
   - [ ] lease 만료 job을 다른 Worker가 처리한다.
   - [ ] 의존 operation은 직렬로 실행한다.
-  - [ ] 독립 operation 동시 실행은 최대 4개다.
+  - [ ] LLM이 계획 밖 operation이나 변경 인자를 실행할 수 없다.
+  - [ ] 계획 변경이 필요하면 clarification_required로 중단하고 재승인을 요구한다.
+  - [ ] 재계획 사유는 제한된 error_code로만 저장·응답한다.
+  - [ ] 완료된 operation만 남으면 추가 LLM 호출 없이 검증한다.
+  - [ ] decision과 tool 호출 제한에서 loop가 종료된다.
   - [ ] 영구 오류는 재시도하지 않는다.
 
 ### TASK-010 실행 결과 검증과 복구 상태

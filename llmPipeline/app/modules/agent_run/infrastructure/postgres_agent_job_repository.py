@@ -172,6 +172,28 @@ class PostgresAgentJobRepository:
             ).fetchone()
         return row is not None
 
+    def remaining_tool_calls(self, run_id: str) -> int:
+        with database.connect() as conn:
+            row = conn.execute(
+                "SELECT GREATEST(40 - tool_call_count, 0) AS remaining FROM agent_runs WHERE id = %s",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise ValueError("AgentRun not found.")
+        return row["remaining"]
+
+    def request_clarification(self, run_id: str, error_code: str) -> bool:
+        with database.connect() as conn:
+            row = conn.execute(
+                """
+                UPDATE agent_runs
+                SET status = 'clarification_required', error_code = %s, updated_at = now()
+                WHERE id = %s AND status = 'executing' RETURNING id
+                """,
+                (error_code, run_id),
+            ).fetchone()
+        return row is not None
+
     def next_plan_version(self, run_id: str) -> int:
         with database.connect() as conn:
             row = conn.execute(

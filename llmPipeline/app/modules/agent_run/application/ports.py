@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from app.modules.agent_run.domain.entities import AgentJob, AgentRun, AgentRunContext, StartAgentRunRequest
+from app.modules.agent_run.domain.execution import AgentExecutionDecision
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 
 
@@ -81,6 +82,19 @@ class AgentPlanGeneratorPort(Protocol):
         ...
 
 
+class AgentExecutionDeciderPort(Protocol):
+    def decide(
+        self,
+        *,
+        instruction: str,
+        plan: AgentPlan,
+        ready_operations: tuple[AgentPlanOperation, ...],
+        observations: tuple[dict[str, object], ...],
+        allowed_read_tools: tuple[str, ...],
+    ) -> AgentExecutionDecision:
+        ...
+
+
 class AgentToolGatewayPort(Protocol):
     def read(
         self,
@@ -127,6 +141,12 @@ class AgentJobRepositoryPort(Protocol):
         ...
 
     def reserve_tool_call(self, run_id: str) -> bool:
+        ...
+
+    def remaining_tool_calls(self, run_id: str) -> int:
+        ...
+
+    def request_clarification(self, run_id: str, error_code: str) -> bool:
         ...
 
     def next_plan_version(self, run_id: str) -> int:
