@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -52,28 +51,19 @@ public class DocumentAssetController {
             @PathVariable("asset_id") UUID assetId,
             @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch
     ) {
-        var content = readService.read(workspaceId, userId, assetId);
-        if (content.etag().equals(ifNoneMatch)) {
-            close(content);
+        var metadata = readService.readMetadata(workspaceId, userId, assetId);
+        if (metadata.etag().equals(ifNoneMatch)) {
             return ResponseEntity.status(304)
                     .cacheControl(PRIVATE_CACHE)
-                    .eTag(content.etag())
+                    .eTag(metadata.etag())
                     .build();
         }
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(content.contentType()))
-                .contentLength(content.contentLength())
+                .contentType(MediaType.parseMediaType(metadata.contentType()))
+                .contentLength(metadata.contentLength())
                 .cacheControl(PRIVATE_CACHE)
-                .eTag(content.etag())
+                .eTag(metadata.etag())
                 .header("X-Content-Type-Options", "nosniff")
-                .body(new InputStreamResource(content.inputStream()));
-    }
-
-    private void close(DocumentAssetReadService.AssetContent content) {
-        try {
-            content.inputStream().close();
-        } catch (IOException ignored) {
-            // 응답 body를 보내지 않는 경로이므로 close 실패가 304 응답을 바꾸지 않는다.
-        }
+                .body(new InputStreamResource(readService.openStream(metadata)));
     }
 }

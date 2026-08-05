@@ -28,7 +28,23 @@ class DocumentAssetReadServiceTest {
     @Mock DocumentAssetObjectStorage objectStorage;
 
     @Test
-    void read_memberReceivesVerifiedMetadataAndStream() {
+    void readMetadata_memberReceivesVerifiedMetadataWithoutTouchingStorage() {
+        UUID assetId = UUID.randomUUID();
+        DocumentAsset asset = asset(assetId, "ws_1");
+        when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(true);
+        when(assetRepository.findByIdAndWorkspaceId(assetId, "ws_1")).thenReturn(Optional.of(asset));
+
+        var result = service().readMetadata("ws_1", "user_1", assetId);
+
+        assertThat(result.contentType()).isEqualTo("image/png");
+        assertThat(result.contentLength()).isEqualTo(3);
+        assertThat(result.etag()).isEqualTo("\"" + "a".repeat(64) + "\"");
+        assertThat(result.storageKey()).isEqualTo("assets/ws_1/content");
+        verify(objectStorage, never()).get(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void openStream_readsObjectForStoredKey() {
         UUID assetId = UUID.randomUUID();
         DocumentAsset asset = asset(assetId, "ws_1");
         ByteArrayInputStream stream = new ByteArrayInputStream(new byte[]{1, 2, 3});
@@ -36,32 +52,29 @@ class DocumentAssetReadServiceTest {
         when(assetRepository.findByIdAndWorkspaceId(assetId, "ws_1")).thenReturn(Optional.of(asset));
         when(objectStorage.get("assets/ws_1/content")).thenReturn(stream);
 
-        var result = service().read("ws_1", "user_1", assetId);
+        DocumentAssetReadService service = service();
 
-        assertThat(result.contentType()).isEqualTo("image/png");
-        assertThat(result.contentLength()).isEqualTo(3);
-        assertThat(result.etag()).isEqualTo("\"" + "a".repeat(64) + "\"");
-        assertThat(result.inputStream()).isSameAs(stream);
+        assertThat(service.openStream(service.readMetadata("ws_1", "user_1", assetId))).isSameAs(stream);
     }
 
     @Test
-    void read_nonMemberReturnsNotFoundWithoutLookingUpAsset() {
+    void readMetadata_nonMemberReturnsNotFoundWithoutLookingUpAsset() {
         UUID assetId = UUID.randomUUID();
         when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "intruder")).thenReturn(false);
 
-        assertThatThrownBy(() -> service().read("ws_1", "intruder", assetId))
+        assertThatThrownBy(() -> service().readMetadata("ws_1", "intruder", assetId))
                 .isInstanceOf(DocumentAssetNotFoundException.class);
         verify(assetRepository, never()).findByIdAndWorkspaceId(assetId, "ws_1");
         verify(objectStorage, never()).get(org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
-    void read_assetFromAnotherWorkspaceReturnsNotFound() {
+    void readMetadata_assetFromAnotherWorkspaceReturnsNotFound() {
         UUID assetId = UUID.randomUUID();
         when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(true);
         when(assetRepository.findByIdAndWorkspaceId(assetId, "ws_1")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().read("ws_1", "user_1", assetId))
+        assertThatThrownBy(() -> service().readMetadata("ws_1", "user_1", assetId))
                 .isInstanceOf(DocumentAssetNotFoundException.class);
         verify(objectStorage, never()).get(org.mockito.ArgumentMatchers.anyString());
     }

@@ -8,6 +8,37 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-06
 
+### refactor: 이미지 asset 조회와 정리 worker의 object storage 호출 범위 축소
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 object storage 호출이 필요 이상으로 일찍 실행되거나 DB 트랜잭션
+  안에서 수행되는 지점 두 곳을 확인했다.
+
+**변경된 것**
+
+- `DocumentAssetReadService.read`를 `readMetadata`와 `openStream`으로 나눴다. ETag는 DB의 content
+  hash에서 나오므로 조건부 요청 판정에 object storage가 필요 없는데, 기존에는 `304`로 응답할
+  경우에도 MinIO에서 object를 먼저 받아온 뒤 닫았다.
+- 이미지 정리 worker의 트랜잭션을 쪼갰다. 기존에는 하나의 `@Transactional` 안에서 asset 100건과
+  orphan 100건, 최대 200회의 MinIO 삭제를 수행해 그동안 DB 커넥션과 row lock을 붙잡았다. 이제
+  후보 조회와 row 삭제만 짧은 트랜잭션에서 처리하고 MinIO 삭제는 트랜잭션 밖에서 수행한다.
+  기존 `DocumentProcessingWorker`의 `TransactionTemplate` 패턴을 따랐다.
+- `FOR UPDATE SKIP LOCKED` native 잠금 쿼리 두 개와 사용처가 없던 조회 메서드 두 개를 제거하고
+  derived query로 통일했다.
+
+**주의사항**
+
+- 잠금 쿼리 제거로 여러 인스턴스가 같은 정리 후보를 동시에 집을 수 있다. MinIO `removeObject`와
+  `deleteById` 모두 멱등이라 결과는 같다.
+- HTTP 응답 형식(상태 코드·헤더·본문)은 바뀌지 않아 프론트 영향이 없다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- `304` 응답에서 object stream을 열지 않는지, 정리 worker가 storage 삭제 성공·실패별로 row를
+  어떻게 처리하는지 단위 테스트로 검증했다.
+
 ### fix: 일반 Markdown 저장의 asset 참조 동기화와 이미지 용량 한도 정합 수정
 
 **배경**

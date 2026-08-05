@@ -9,14 +9,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,65 +28,83 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class DocumentAssetCleanupWorkerTest {
 
+    private static final Instant NOW = Instant.parse("2026-08-05T00:00:00Z");
+    private static final Instant THRESHOLD = NOW.minus(Duration.ofDays(7));
+
     @Mock DocumentAssetRepository assetRepository;
     @Mock DocumentAssetOrphanRepository orphanRepository;
     @Mock DocumentAssetObjectStorage objectStorage;
 
     @Test
     void cleanup_deletesObjectBeforeAssetRow() {
-        Instant now = Instant.parse("2026-08-05T00:00:00Z");
         DocumentAsset asset = asset("asset-key");
-        when(assetRepository.lockCleanupCandidates(now.minus(Duration.ofDays(7))))
-                .thenReturn(List.of(asset));
-        when(orphanRepository.lockRetryCandidates(now.minus(Duration.ofDays(7)))).thenReturn(List.of());
+        stubCandidates(List.of(asset), List.of());
 
-        worker().cleanup(now);
+        worker().cleanup(NOW);
 
         var order = org.mockito.Mockito.inOrder(objectStorage, assetRepository);
         order.verify(objectStorage).delete("asset-key");
-        order.verify(assetRepository).delete(asset);
+        order.verify(assetRepository).deleteById(asset.getId());
     }
 
     @Test
     void cleanup_storageFailureKeepsAssetRowForRetry() {
-        Instant now = Instant.parse("2026-08-05T00:00:00Z");
         DocumentAsset asset = asset("asset-key");
-        when(assetRepository.lockCleanupCandidates(now.minus(Duration.ofDays(7))))
-                .thenReturn(List.of(asset));
-        when(orphanRepository.lockRetryCandidates(now.minus(Duration.ofDays(7)))).thenReturn(List.of());
+        stubCandidates(List.of(asset), List.of());
         doThrow(new DocumentAssetStorageException("실패", new IllegalStateException()))
                 .when(objectStorage).delete("asset-key");
 
-        worker().cleanup(now);
+        worker().cleanup(NOW);
 
-        verify(assetRepository, never()).delete(asset);
+        verify(assetRepository, never()).deleteById(asset.getId());
     }
 
     @Test
     void cleanup_retriesOrphanAndRecordsFailure() {
-        Instant now = Instant.parse("2026-08-05T00:00:00Z");
-        DocumentAssetOrphan orphan = new DocumentAssetOrphan(
-                UUID.randomUUID(), "orphan-key", now.minusSeconds(60), "첫 실패");
-        when(assetRepository.lockCleanupCandidates(now.minus(Duration.ofDays(7))))
-                .thenReturn(List.of());
-        when(orphanRepository.lockRetryCandidates(now.minus(Duration.ofDays(7))))
-                .thenReturn(List.of(orphan));
+        DocumentAssetOrphan orphan = orphan();
+        stubCandidates(List.of(), List.of(orphan));
         doThrow(new DocumentAssetStorageException("재시도 실패", new IllegalStateException()))
                 .when(objectStorage).delete("orphan-key");
+        when(orphanRepository.findById(orphan.getId())).thenReturn(Optional.of(orphan));
 
-        worker().cleanup(now);
+        worker().cleanup(NOW);
 
         assertThat(orphan.getRetryCount()).isEqualTo(1);
-        assertThat(orphan.getFailedAt()).isEqualTo(now);
-        verify(orphanRepository, never()).delete(orphan);
+        assertThat(orphan.getFailedAt()).isEqualTo(NOW);
+        verify(orphanRepository, never()).deleteById(orphan.getId());
+    }
+
+    @Test
+    void cleanup_deletesOrphanRowWhenStorageDeleteSucceeds() {
+        DocumentAssetOrphan orphan = orphan();
+        stubCandidates(List.of(), List.of(orphan));
+
+        worker().cleanup(NOW);
+
+        verify(objectStorage).delete("orphan-key");
+        verify(orphanRepository).deleteById(orphan.getId());
+    }
+
+    private void stubCandidates(List<DocumentAsset> assets, List<DocumentAssetOrphan> orphans) {
+        when(assetRepository.findTop100ByUnreferencedSinceLessThanEqualOrderByUnreferencedSinceAsc(THRESHOLD))
+                .thenReturn(assets);
+        when(orphanRepository.findTop100ByFailedAtLessThanEqualOrderByFailedAtAsc(THRESHOLD))
+                .thenReturn(orphans);
     }
 
     private DocumentAssetCleanupWorker worker() {
-        return new DocumentAssetCleanupWorker(assetRepository, orphanRepository, objectStorage);
+        return new DocumentAssetCleanupWorker(
+                assetRepository, orphanRepository, objectStorage,
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
     }
 
     private DocumentAsset asset(String storageKey) {
         return new DocumentAsset(UUID.randomUUID(), "ws_1", "user_1", "image.png", "image/png",
                 3, 1, 1, "a".repeat(64), storageKey, Instant.now());
+    }
+
+    private DocumentAssetOrphan orphan() {
+        return new DocumentAssetOrphan(
+                UUID.randomUUID(), "orphan-key", NOW.minusSeconds(60), "첫 실패");
     }
 }

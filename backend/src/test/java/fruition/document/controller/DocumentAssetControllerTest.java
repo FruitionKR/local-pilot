@@ -10,7 +10,10 @@ import java.io.ByteArrayInputStream;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DocumentAssetControllerTest {
@@ -21,9 +24,11 @@ class DocumentAssetControllerTest {
     @Test
     void getContent_setsPrivateSecurityAndEntityHeaders() {
         UUID assetId = UUID.randomUUID();
-        when(readService.read("ws_1", "user_1", assetId)).thenReturn(
-                new DocumentAssetReadService.AssetContent(
-                        "image/png", 3, "\"hash\"", new ByteArrayInputStream(new byte[]{1, 2, 3})));
+        var metadata = new DocumentAssetReadService.AssetMetadata(
+                "image/png", 3, "\"hash\"", "assets/ws_1/content");
+        when(readService.readMetadata("ws_1", "user_1", assetId)).thenReturn(metadata);
+        when(readService.openStream(metadata))
+                .thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
 
         var response = controller.getContent("ws_1", "user_1", assetId, null);
 
@@ -37,11 +42,11 @@ class DocumentAssetControllerTest {
     }
 
     @Test
-    void getContent_matchingEtagReturnsNotModifiedWithoutBody() {
+    void getContent_matchingEtagReturnsNotModifiedWithoutReadingObject() {
         UUID assetId = UUID.randomUUID();
-        when(readService.read("ws_1", "user_1", assetId)).thenReturn(
-                new DocumentAssetReadService.AssetContent(
-                        "image/png", 3, "\"hash\"", new ByteArrayInputStream(new byte[]{1, 2, 3})));
+        when(readService.readMetadata("ws_1", "user_1", assetId)).thenReturn(
+                new DocumentAssetReadService.AssetMetadata(
+                        "image/png", 3, "\"hash\"", "assets/ws_1/content"));
 
         var response = controller.getContent("ws_1", "user_1", assetId, "\"hash\"");
 
@@ -49,5 +54,6 @@ class DocumentAssetControllerTest {
         assertThat(response.getHeaders().getETag()).isEqualTo("\"hash\"");
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("private");
+        verify(readService, never()).openStream(any());
     }
 }
