@@ -38,6 +38,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   요청에서 선저장한 MinIO object를 보상 삭제한다.
 - 이미지 포함 저장도 `apply_operation_id`를 전달받아 AI 편집 성공 또는 version 충돌 작업 로그를
   일반 Markdown 저장과 같은 기준으로 기록한다.
+- workspace 멤버 전용 이미지 조회 endpoint를 추가했다. 비멤버·다른 workspace asset은 `404`로
+  처리하고 검증 MIME·길이·private cache·ETag·`nosniff`와 조건부 `304` 응답을 제공한다.
 
 **검증**
 
@@ -52,6 +54,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   reference 추가·제거와 복제 동작을 검증했다.
 - asset 저장 orchestration과 Controller 테스트로 placeholder 치환, 최종 응답, 충돌 보상과 기존
   이미지 없는 저장의 하위 호환을 검증했다.
+- asset 조회 service·Controller 테스트로 멤버 stream, 비멤버·workspace 격리, 보안·cache header와
+  ETag 조건부 응답을 검증했다.
 - 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
 ---

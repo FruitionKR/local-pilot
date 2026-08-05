@@ -16,6 +16,7 @@ import fruition.document.exception.DocumentContentVersionNotFoundException;
 import fruition.document.exception.DocumentLockedException;
 import fruition.document.exception.EditLockLostException;
 import fruition.document.exception.DocumentNotFoundException;
+import fruition.document.exception.DocumentAssetNotFoundException;
 import fruition.document.exception.DocumentOriginalNotFoundException;
 import fruition.document.exception.DocumentUploadException;
 import fruition.document.exception.DocumentVersionConflictException;
@@ -146,6 +147,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(DocumentAssetNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetNotFound(DocumentAssetNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentWriteForbiddenException.class)

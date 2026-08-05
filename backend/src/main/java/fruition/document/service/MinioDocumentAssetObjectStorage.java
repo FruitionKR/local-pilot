@@ -3,11 +3,13 @@ package fruition.document.service;
 import fruition.document.exception.DocumentAssetStorageException;
 import fruition.util.StorageProperties;
 import io.minio.MinioClient;
+import io.minio.GetObjectArgs;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 
 @Component
 public class MinioDocumentAssetObjectStorage implements DocumentAssetObjectStorage {
@@ -18,6 +20,18 @@ public class MinioDocumentAssetObjectStorage implements DocumentAssetObjectStora
     public MinioDocumentAssetObjectStorage(MinioClient minioClient, StorageProperties storageProperties) {
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
+    }
+
+    @Override
+    public InputStream get(String objectKey) {
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(storageProperties.getBucket())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception exception) {
+            throw new DocumentAssetStorageException("이미지 asset을 조회하지 못했습니다.", exception);
+        }
     }
 
     @Override

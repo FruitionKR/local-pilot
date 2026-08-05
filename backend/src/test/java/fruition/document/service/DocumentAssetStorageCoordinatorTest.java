@@ -94,6 +94,11 @@ class DocumentAssetStorageCoordinatorTest {
         }
 
         @Override
+        public java.io.InputStream get(String objectKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void delete(String objectKey) {
             deleteCount += 1;
             deleteAttempts.add(objectKey);

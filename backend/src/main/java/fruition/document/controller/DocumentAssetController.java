@@ -1,0 +1,79 @@
+package fruition.document.controller;
+
+import fruition.document.service.DocumentAssetReadService;
+import fruition.util.ErrorResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+@RestController
+@RequestMapping("/api/workspaces/{workspace_id}/assets")
+@Tag(name = "Document Assets", description = "Markdown 문서 이미지 asset 조회 API")
+public class DocumentAssetController {
+
+    private static final CacheControl PRIVATE_CACHE =
+            CacheControl.maxAge(1, TimeUnit.HOURS).cachePrivate();
+
+    private final DocumentAssetReadService readService;
+
+    public DocumentAssetController(DocumentAssetReadService readService) {
+        this.readService = readService;
+    }
+
+    @Operation(summary = "문서 이미지 조회", description = "워크스페이스 멤버에게 관리 이미지 bytes를 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "이미지 반환"),
+        @ApiResponse(responseCode = "304", description = "캐시된 이미지 사용"),
+        @ApiResponse(responseCode = "404", description = "asset 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{asset_id}/content")
+    public ResponseEntity<InputStreamResource> getContent(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("asset_id") UUID assetId,
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch
+    ) {
+        var content = readService.read(workspaceId, userId, assetId);
+        if (content.etag().equals(ifNoneMatch)) {
+            close(content);
+            return ResponseEntity.status(304)
+                    .cacheControl(PRIVATE_CACHE)
+                    .eTag(content.etag())
+                    .build();
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(content.contentType()))
+                .contentLength(content.contentLength())
+                .cacheControl(PRIVATE_CACHE)
+                .eTag(content.etag())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(new InputStreamResource(content.inputStream()));
+    }
+
+    private void close(DocumentAssetReadService.AssetContent content) {
+        try {
+            content.inputStream().close();
+        } catch (IOException ignored) {
+            // 응답 body를 보내지 않는 경로이므로 close 실패가 304 응답을 바꾸지 않는다.
+        }
+    }
+}
