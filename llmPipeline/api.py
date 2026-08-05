@@ -6,7 +6,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.agent_run.interfaces.http.routes import router as agent_run_router
@@ -67,16 +68,40 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0", lifespan=lifespan)
-internal_dependencies = [Depends(require_internal_token)]
+
+
+@app.middleware("http")
+async def authenticate_internal_request(request: Request, call_next):
+    path = request.url.path
+    if path == "/agent/turn" or path.startswith(
+        (
+            "/query",
+            "/pipeline",
+            "/chat-wiki",
+            "/wiki/",
+            "/wiki-schema",
+            "/documents/",
+        )
+    ):
+        try:
+            require_internal_token(request.headers.get("X-Internal-Token"))
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+    return await call_next(request)
+
+
 app.include_router(
     agent_router,
-    dependencies=[*internal_dependencies, Depends(require_agent_service_token)]
+    dependencies=[Depends(require_agent_service_token)]
     if AGENT_SKILLS_ENABLED
-    else internal_dependencies,
+    else None,
 )
-app.include_router(query_router, dependencies=internal_dependencies)
-app.include_router(pipeline_router, dependencies=internal_dependencies)
-app.include_router(wiki_schema_router, dependencies=internal_dependencies)
+app.include_router(query_router)
+app.include_router(pipeline_router)
+app.include_router(wiki_schema_router)
 if AGENT_SKILLS_ENABLED:
     agent_dependencies = [Depends(require_agent_service_token)]
     app.include_router(agent_run_router, dependencies=agent_dependencies)
@@ -88,7 +113,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/documents/{document_id}", dependencies=internal_dependencies)
+@app.get("/documents/{document_id}")
 def get_document(document_id: str) -> dict:
     try:
         document = database.get_document(document_id)

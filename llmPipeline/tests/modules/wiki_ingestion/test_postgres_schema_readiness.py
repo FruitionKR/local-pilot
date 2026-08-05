@@ -60,6 +60,7 @@ def test_cleanup_deleted_wiki_pages_removes_only_workspace_targets() -> None:
         database.cleanup_deleted_wiki_pages("ws-1", ["C1", "outside-page"])
 
     assert queries[0][1] == ("ws-1", ["C1", "outside-page"])
+    assert "FOR UPDATE" in queries[0][0]
     assert any("DELETE FROM wiki_page_links" in query for query, _ in queries)
     assert any("DELETE FROM document_wiki_links" in query for query, _ in queries)
     assert any("DELETE FROM wiki_page_embeddings" in query for query, _ in queries)

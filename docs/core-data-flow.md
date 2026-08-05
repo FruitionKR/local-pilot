@@ -192,7 +192,7 @@ flowchart LR
 #### Markdown AI Pipeline 호출 (`PipelineAgentRequester`)
 
 - **Input:** AgentTurnRequest의 message, conversation context, active Markdown context
-- **Responsibility:** Spring 요청을 AI Pipeline `/agent` payload로 변환하고 HTTP 응답을 중계한다.
+- **Responsibility:** Spring 요청을 AI Pipeline `/agent/turn` payload로 변환하고 HTTP 응답을 중계한다.
 - **Output:** AI Pipeline JSON 응답
 - **Key Logic:** connect·read timeout, target field snake_case 변환, `400/422` 응답 보존
 - **Failure Handling:** timeout·빈 응답·기타 Pipeline 장애는 `503`, Pipeline의 `400/422`는 그 상태로 전달한다.

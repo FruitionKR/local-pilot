@@ -668,6 +668,18 @@ def test_pipeline_route_rejects_missing_internal_token(monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_pipeline_route_authenticates_before_parsing_body(monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    response = TestClient(api.app).post(
+        "/pipeline/runs",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_health_does_not_require_internal_token(monkeypatch) -> None:
     monkeypatch.delenv("INTERNAL_CALLBACK_TOKEN", raising=False)
 

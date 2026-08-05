@@ -101,6 +101,8 @@ def cleanup_deleted_wiki_pages(
             FROM wiki_pages
             WHERE workspace_id = %s
               AND id = ANY(%s)
+            ORDER BY id
+            FOR UPDATE
             """,
             (workspace_id, page_ids),
         ).fetchall()

@@ -16,6 +16,9 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Backend와 llmPipeline을 함께 실행해 ingest `202`, 인증된 결과 callback `200`, 작업 로그 `partially_succeeded` 확정을 확인
 - Backend가 호출하는 Query·Ingest·Restore·Schema·Lint·Agent route에 `X-Internal-Token` 검증을 적용하고 `/health`만 인증에서 제외
 - 진행 로그·Query event callback에도 작업 결과 callback과 같은 `INTERNAL_CALLBACK_TOKEN`을 전송하도록 통일
+- 보호 route의 토큰을 request body 파싱 전 middleware에서 검증해 잘못된 JSON도 인증 실패를 먼저 반환하도록 수정
+- 복구 정리와 비동기 Page embedding 저장이 같은 `wiki_pages` 행 잠금을 사용해 삭제된 Page의 legacy embedding이 다시 생성되지 않도록 수정
+- llmPipeline 전체 테스트 `695 passed`, `49 subtests passed`; `git diff --check` 통과
 - AI 작업 로그 API의 현재 상태와 이관된 이슈 문서 링크를 현행 경로로 정리
 
 ## 2026-08-04
