@@ -297,7 +297,7 @@ class DocumentControllerTest {
     void saveContent_multipartPassesMarkdownAndBaseVersion() throws Exception {
         Instant updatedAt = Instant.now();
         when(documentService.saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null))
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null, null))
                 .thenReturn(new DocumentContentSaveResponse(
                         "doc_edit", 4, "a".repeat(64), updatedAt, true));
         MockMultipartFile markdown = new MockMultipartFile(
@@ -322,7 +322,7 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.changed").value(true));
 
         verify(documentService).saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null);
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null, null);
     }
 
     @Test
@@ -354,7 +354,8 @@ class DocumentControllerTest {
                 {"markdown":"![](attachment://%s)","base_version":3}
                 """.formatted(attachmentId);
         when(documentAssetContentService.save(
-                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any()))
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(),
+                eq("operation_1")))
                 .thenReturn(new DocumentContentSaveResponse(
                         "doc_edit", 4, "a".repeat(64), Instant.now(), true,
                         "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + UUID.randomUUID() + "/content)",
@@ -366,6 +367,8 @@ class DocumentControllerTest {
                                 "metadata", "", "application/json", metadataJson.getBytes()))
                         .file(new MockMultipartFile(
                                 "attachment_" + attachmentId, "image.png", "image/png", new byte[]{1}))
+                        .file(new MockMultipartFile(
+                                "apply_operation_id", "", "text/plain", "operation_1".getBytes()))
                         .with(request -> {
                             request.setMethod("PUT");
                             return request;
@@ -376,7 +379,8 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.markdown").isString());
 
         verify(documentAssetContentService).save(
-                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any());
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(),
+                eq("operation_1"));
     }
 
     @Test

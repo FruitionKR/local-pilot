@@ -55,6 +55,9 @@ import fruition.document.repository.IdempotencyRecordRepository;
 import fruition.document.repository.DocumentRepository;
 import fruition.document.repository.FolderRepository;
 import fruition.document.exception.HierarchyItemNotFoundException;
+import fruition.aihistory.service.AgentApplyOperationStore;
+import fruition.aihistory.service.IngestOperationStarter;
+import fruition.aihistory.service.OperationRecorder;
 import fruition.document.repository.SourceBlockRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.DocumentWikiRelationType;
@@ -120,6 +123,9 @@ public class DocumentService {
     private final DocumentAssetReferenceParser assetReferenceParser;
     private final DocumentAssetRepository assetRepository;
     private final ObjectMapper objectMapper;
+    private final AgentApplyOperationStore applyOperationStore;
+    private final OperationRecorder operationRecorder;
+    private final IngestOperationStarter ingestOperationStarter;
     private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
@@ -144,6 +150,9 @@ public class DocumentService {
                            DocumentAssetReferenceParser assetReferenceParser,
                            DocumentAssetRepository assetRepository,
                            ObjectMapper objectMapper,
+                           AgentApplyOperationStore applyOperationStore,
+                           OperationRecorder operationRecorder,
+                           IngestOperationStarter ingestOperationStarter,
                            @Value("${app.callback.base-url}") String callbackBaseUrl) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
@@ -167,6 +176,9 @@ public class DocumentService {
         this.assetReferenceParser = assetReferenceParser;
         this.assetRepository = assetRepository;
         this.objectMapper = objectMapper;
+        this.applyOperationStore = applyOperationStore;
+        this.operationRecorder = operationRecorder;
+        this.ingestOperationStarter = ingestOperationStarter;
         this.callbackBaseUrl = callbackBaseUrl;
     }
 
@@ -762,10 +774,17 @@ public class DocumentService {
                 documentId, document.getOrigin(), chatWiki, document.getWorkspaceId(), document.getUserId(),
                 callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown() != null,
                 document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
+        // llmPipeline 호출 전에 AI 작업 로그를 processing으로 먼저 커밋한다.
+        // 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다.
+        String operationId = ingestOperationStarter
+                .start(document.getWorkspaceId(), document.getUserId(), documentId)
+                .orElse(null);
         try {
             DocumentProcessingRequester.PipelineRunResponse response =
                     processingRequester.request(documentId, document.getUserId(), document.getWorkspaceId(),
-                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki);
+                            callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki,
+                            operationId,
+                            operationId == null ? null : ingestOperationStarter.resultCallbackUrl(operationId));
             String runId = response != null ? response.runId() : null;
             Instant now = Instant.now();
             transactionTemplate.execute(status -> {
@@ -776,6 +795,10 @@ public class DocumentService {
             log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
         } catch (Exception e) {
             Instant now = Instant.now();
+            if (operationId != null) {
+                ingestOperationStarter.markFailed(operationId,
+                        "llmPipeline 호출에 실패했습니다: " + e.getMessage());
+            }
             transactionTemplate.execute(status -> {
                 documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
                         doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
@@ -962,6 +985,23 @@ public class DocumentService {
             Long baseVersion,
             String source
     ) {
+        return saveContent(workspaceId, userId, documentId, markdown, baseVersion, source, null);
+    }
+
+    /**
+     * @param applyOperationId Agent turn에서 발급한 적용 표. 검증에 성공하면 AI 작업 로그를 남긴다.
+     *                         {@code source} 문자열은 클라이언트가 임의로 넣을 수 있어 신뢰하지 않는다.
+     */
+    @Transactional
+    public DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseVersion,
+            String source,
+            String applyOperationId
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         if (baseVersion == null || baseVersion < 1) {
             throw new InvalidMarkdownContentException("base_version은 1 이상이어야 합니다.");
@@ -975,6 +1015,12 @@ public class DocumentService {
         }
         editLockService.requireWritable(documentId, userId);
         if (document.getCurrentVersion() != baseVersion) {
+            // 편집안이 오래된 base를 바탕으로 하고 있다. 본 트랜잭션은 롤백되므로
+            // 시도 기록은 별도 트랜잭션으로 남긴다.
+            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                operationRecorder.recordConflict(
+                        applyOperationId, workspaceId, userId, documentId, Instant.now());
+            }
             throw versionConflict();
         }
 
@@ -1005,11 +1051,21 @@ public class DocumentService {
         if (updated == 0) {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
-        recordContentVersion(documentId, baseVersion, editState.getMarkdown(),
+        String previousMarkdown = editState.getMarkdown();
+        recordContentVersion(documentId, baseVersion, previousMarkdown,
                 editState.getContentHash(), userId, updatedAt);
         editState.update(content.markdown(), content.contentHash(), updatedAt);
         recordContentVersion(documentId, baseVersion + 1, content.markdown(),
                 content.contentHash(), userId, updatedAt);
+
+        // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
+        // 문서 저장과 같은 트랜잭션이라 한쪽만 남는 상황이 생기지 않는다.
+        if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+            operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                    baseVersion, baseVersion + 1, previousMarkdown, content.markdown(), updatedAt);
+            contentVersionRepository.linkOperation(documentId, baseVersion + 1, applyOperationId);
+        }
+
         return new DocumentContentSaveResponse(
                 documentId,
                 baseVersion + 1,
@@ -1022,6 +1078,13 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public void validateContentSave(
             String workspaceId, String userId, String documentId, long baseVersion) {
+        validateContentSave(workspaceId, userId, documentId, baseVersion, null);
+    }
+
+    @Transactional(readOnly = true)
+    public void validateContentSave(
+            String workspaceId, String userId, String documentId, long baseVersion,
+            String applyOperationId) {
         verifyWorkspaceOwnership(workspaceId, userId);
         Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
@@ -1030,7 +1093,13 @@ public class DocumentService {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
         editLockService.requireWritable(documentId, userId);
-        if (document.getCurrentVersion() != baseVersion) throw versionConflict();
+        if (document.getCurrentVersion() != baseVersion) {
+            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                operationRecorder.recordConflict(
+                        applyOperationId, workspaceId, userId, documentId, Instant.now());
+            }
+            throw versionConflict();
+        }
     }
 
     @Transactional
@@ -1040,9 +1109,10 @@ public class DocumentService {
             String documentId,
             String markdown,
             long baseVersion,
-            Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets
+            Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
+            String applyOperationId
     ) {
-        validateContentSave(workspaceId, userId, documentId, baseVersion);
+        validateContentSave(workspaceId, userId, documentId, baseVersion, applyOperationId);
         Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         editStateInitializer.initializeIfNeeded(document);
@@ -1073,11 +1143,17 @@ public class DocumentService {
         assetReferenceSynchronizer.synchronize(
                 documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
 
-        recordContentVersion(documentId, baseVersion, editState.getMarkdown(),
+        String previousMarkdown = editState.getMarkdown();
+        recordContentVersion(documentId, baseVersion, previousMarkdown,
                 editState.getContentHash(), userId, updatedAt);
         editState.update(content.markdown(), content.contentHash(), updatedAt);
         recordContentVersion(documentId, baseVersion + 1, content.markdown(),
                 content.contentHash(), userId, updatedAt);
+        if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+            operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                    baseVersion, baseVersion + 1, previousMarkdown, content.markdown(), updatedAt);
+            contentVersionRepository.linkOperation(documentId, baseVersion + 1, applyOperationId);
+        }
         return new DocumentContentSaveResponse(
                 documentId, baseVersion + 1, content.contentHash(), updatedAt,
                 true, content.markdown(), List.of());

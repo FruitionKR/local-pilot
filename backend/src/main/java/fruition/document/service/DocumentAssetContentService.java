@@ -36,11 +36,12 @@ public class DocumentAssetContentService {
             String userId,
             String documentId,
             String metadataJson,
-            MultiValueMap<String, MultipartFile> fileParts
+            MultiValueMap<String, MultipartFile> fileParts,
+            String applyOperationId
     ) {
         var request = requestParser.parse(metadataJson, fileParts);
         documentService.validateContentSave(
-                workspaceId, userId, documentId, request.baseVersion());
+                workspaceId, userId, documentId, request.baseVersion(), applyOperationId);
 
         Map<UUID, DocumentAssetValidator.ValidatedAsset> validated = new LinkedHashMap<>();
         List<DocumentAssetValidator.ValidatedAsset> validatedList =
@@ -55,7 +56,8 @@ public class DocumentAssetContentService {
         String finalMarkdown = replacePlaceholders(request.markdown(), workspaceId, stored);
         try {
             DocumentContentSaveResponse saved = documentService.saveContentWithAssets(
-                    workspaceId, userId, documentId, finalMarkdown, request.baseVersion(), stored);
+                    workspaceId, userId, documentId, finalMarkdown, request.baseVersion(), stored,
+                    applyOperationId);
             if (!saved.changed()) storageCoordinator.compensate(stored.values());
             return new DocumentContentSaveResponse(
                     saved.documentId(), saved.currentVersion(), saved.contentHash(), saved.updatedAt(),

@@ -29,6 +29,18 @@ public interface DocumentContentVersionRepository
             @Param("createdAt") Instant createdAt
     );
 
+    /** 이 버전을 만든 AI 작업을 연결한다. 수동 편집이면 호출하지 않는다. */
+    @Modifying
+    @Query("""
+            UPDATE DocumentContentVersion v SET v.operationId = :operationId
+            WHERE v.id.documentId = :documentId AND v.id.version = :version
+            """)
+    int linkOperation(
+            @Param("documentId") String documentId,
+            @Param("version") long version,
+            @Param("operationId") String operationId
+    );
+
     /** 이력 목록. markdown 본문을 제외한 메타데이터만 최신 버전 순으로 반환한다. */
     @Query("""
             SELECT v.id.version AS version, v.contentHash AS contentHash,

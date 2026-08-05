@@ -399,14 +399,16 @@ public class DocumentController {
             @RequestPart(value = "base_version", required = false) String baseVersion,
             @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
             @RequestPart(value = "source", required = false) String source,
+            @Parameter(description = "AI 편집 적용 표. `POST /agent/turns` 응답의 apply_operation_id를 그대로 전달하면 AI 작업 로그가 남습니다.")
+            @RequestPart(value = "apply_operation_id", required = false) String applyOperationId,
             MultipartHttpServletRequest multipartRequest) {
         if (metadata != null) {
             LinkedMultiValueMap<String, MultipartFile> attachments = new LinkedMultiValueMap<>();
             multipartRequest.getMultiFileMap().forEach((partName, files) -> {
-                if (!"metadata".equals(partName)) attachments.put(partName, files);
+                if (partName.startsWith("attachment_")) attachments.put(partName, files);
             });
             return ResponseEntity.ok(documentAssetContentService.save(
-                    workspaceId, userId, documentId, metadata, attachments));
+                    workspaceId, userId, documentId, metadata, attachments, applyOperationId));
         }
         if (markdown == null) {
             throw new fruition.document.exception.InvalidMarkdownContentException(
@@ -414,7 +416,8 @@ public class DocumentController {
         }
         return ResponseEntity.ok(
                 documentService.saveContent(
-                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion), source));
+                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion),
+                        source, applyOperationId));
     }
 
     @Operation(

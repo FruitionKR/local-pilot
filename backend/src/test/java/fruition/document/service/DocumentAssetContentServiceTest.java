@@ -46,14 +46,15 @@ class DocumentAssetContentServiceTest {
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
-                eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), any()))
+                eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), any(), eq("operation_1")))
                 .thenAnswer(invocation -> new DocumentContentSaveResponse(
                         "doc_1", 4, "a".repeat(64), Instant.now(), true,
                         invocation.getArgument(3), List.of()));
 
         DocumentAssetContentService service = service();
         DocumentContentSaveResponse response = service.save(
-                "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>());
+                "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(),
+                "operation_1");
 
         String expectedPath = "/api/workspaces/ws_1/assets/" + assetId + "/content";
         assertThat(response.markdown()).isEqualTo("![](" + expectedPath + ")");
@@ -79,11 +80,12 @@ class DocumentAssetContentServiceTest {
         when(assetValidator.validateAll(List.of(file))).thenReturn(List.of(validated));
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
-        when(documentService.saveContentWithAssets(any(), any(), any(), any(), any(Long.class), any()))
+        when(documentService.saveContentWithAssets(
+                any(), any(), any(), any(), any(Long.class), any(), any()))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
 
         assertThatThrownBy(() -> service().save(
-                "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>()))
+                "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(), null))
                 .isInstanceOf(DocumentVersionConflictException.class);
 
         ArgumentCaptor<java.util.Collection<DocumentAssetStorageCoordinator.StoredAsset>> compensated =

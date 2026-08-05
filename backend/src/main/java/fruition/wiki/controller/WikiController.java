@@ -4,6 +4,7 @@ import fruition.util.ErrorResponse;
 import fruition.wiki.service.WikiService;
 import fruition.wiki.dto.WikiGraphResponse;
 import fruition.wiki.dto.WikiPageDetailResponse;
+import fruition.wiki.dto.WikiPageDiffResponse;
 import fruition.wiki.dto.WikiPageRenameRequest;
 import fruition.wiki.dto.WikiPageRenameResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -84,5 +86,29 @@ public class WikiController {
             @PathVariable("wiki_page_id") String wikiPageId,
             @RequestBody WikiPageRenameRequest request) {
         return ResponseEntity.ok(wikiService.rename(workspaceId, userId, wikiPageId, request));
+    }
+
+    @Operation(summary = "Wiki 페이지 변경분 조회",
+        description = "두 revision 사이의 diff를 반환합니다. 저장된 본문을 읽어 요청 시점에 계산하며, 사용자가 펼칠 때만 호출됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "조회 성공",
+            content = @Content(schema = @Schema(implementation = WikiPageDiffResponse.class))),
+        @ApiResponse(responseCode = "404", description = "페이지 또는 버전을 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "422", description = "두 본문의 차이가 너무 커서 비교할 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/pages/{wiki_page_id}/diff")
+    public ResponseEntity<WikiPageDiffResponse> diff(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "Wiki 페이지 ID", example = "wp_abc123")
+            @PathVariable("wiki_page_id") String wikiPageId,
+            @Parameter(description = "비교 기준 revision", example = "1")
+            @RequestParam("from") long fromRevision,
+            @Parameter(description = "비교 대상 revision", example = "2")
+            @RequestParam("to") long toRevision) {
+        return ResponseEntity.ok(
+                wikiService.diff(workspaceId, userId, wikiPageId, fromRevision, toRevision));
     }
 }

@@ -45,30 +45,46 @@ class PipelineWikiMaintenanceRequesterTest {
 
     @Test
     void lint_injectsUserAndWorkspaceSnakeCase() {
-        JsonNode response = requester().lint("ws_1", "user_1", new WikiLintRequest(true, false));
+        responseBody.set(successResponse("op_lint_1", "page_1"));
 
-        assertThat(response.path("workspace_id").asText()).isEqualTo("ws_1");
+        PipelineWikiLintResponse response = requester()
+                .lint("ws_1", "user_1", new WikiLintRequest(true, false), "op_lint_1");
+
+        assertThat(response.body().path("workspace_id").asText()).isEqualTo("ws_1");
+        assertThat(response.operationId()).isEqualTo("op_lint_1");
+        assertThat(response.changedPages()).singleElement().satisfies(page -> {
+            assertThat(page.pageId()).isEqualTo("page_1");
+            assertThat(page.pageType()).isEqualTo("concept");
+            assertThat(page.markdownKey()).isEqualTo("wiki/ws_1/pages/page_1/ops/op_lint_1.md");
+            assertThat(page.contributionKey()).isEqualTo("wiki/ws_1/pages/page_1/ops/op_lint_1.json");
+            assertThat(page.contentHash()).isEqualTo("sha256:lint");
+        });
         assertThat(capturedBody.get())
                 .contains("\"user_id\":\"user_1\"")
                 .contains("\"workspace_id\":\"ws_1\"")
+                .contains("\"operation_id\":\"op_lint_1\"")
                 .contains("\"materialize_promotions\":true")
                 .contains("\"dry_run\":false");
     }
 
     @Test
     void lint_omitsNullOptionsSoPipelineDefaultsApply() {
-        requester().lint("ws_1", "user_1", new WikiLintRequest(null, null));
+        PipelineWikiLintResponse response = requester()
+                .lint("ws_1", "user_1", new WikiLintRequest(null, null), null);
 
+        assertThat(response.operationId()).isNull();
+        assertThat(response.changedPages()).isEmpty();
         assertThat(capturedBody.get())
                 .contains("\"user_id\":\"user_1\"")
                 .contains("\"workspace_id\":\"ws_1\"")
+                .doesNotContain("operation_id")
                 .doesNotContain("materialize_promotions")
                 .doesNotContain("dry_run");
     }
 
     @Test
     void lint_treatsNullRequestAsDefaults() {
-        requester().lint("ws_1", "user_1", null);
+        requester().lint("ws_1", "user_1", null, null);
 
         assertThat(capturedBody.get())
                 .contains("\"user_id\":\"user_1\"")
@@ -81,7 +97,7 @@ class PipelineWikiMaintenanceRequesterTest {
         responseStatus.set(400);
         responseBody.set("{\"detail\":\"missing upstage api key\"}");
 
-        assertThatThrownBy(() -> requester().lint("ws_1", "user_1", new WikiLintRequest(null, null)))
+        assertThatThrownBy(() -> requester().lint("ws_1", "user_1", new WikiLintRequest(null, null), null))
                 .isInstanceOfSatisfying(PipelineWikiMaintenanceException.class, error -> {
                     assertThat(error.getHttpStatus()).isEqualTo(400);
                     assertThat(error.getResponseBody()).contains("missing upstage api key");
@@ -93,7 +109,7 @@ class PipelineWikiMaintenanceRequesterTest {
         responseStatus.set(500);
         responseBody.set("{\"detail\":{\"code\":\"internal_server_error\"}}");
 
-        assertThatThrownBy(() -> requester().lint("ws_1", "user_1", new WikiLintRequest(null, null)))
+        assertThatThrownBy(() -> requester().lint("ws_1", "user_1", new WikiLintRequest(null, null), null))
                 .isInstanceOfSatisfying(PipelineWikiMaintenanceException.class, error -> {
                     assertThat(error.getHttpStatus()).isEqualTo(503);
                     assertThat(error.getResponseBody()).isNull();
@@ -111,5 +127,14 @@ class PipelineWikiMaintenanceRequesterTest {
                 + "\"source_ref_count\":5,\"orphan_refs\":[],\"promotion_candidates\":[],\"needs_review\":[],"
                 + "\"relation_candidates\":[],\"invalid_relations\":[],\"invalid_promotions\":[],"
                 + "\"materialized_promotions\":[],\"merged_promotions\":[],\"materialized_relations\":[]}";
+    }
+
+    private static String successResponse(String operationId, String pageId) {
+        return "{\"user_id\":\"user_1\",\"workspace_id\":\"ws_1\","
+                + "\"operation_id\":\"" + operationId + "\",\"changed_pages\":[{"
+                + "\"page_id\":\"" + pageId + "\",\"page_type\":\"concept\","
+                + "\"markdown_key\":\"wiki/ws_1/pages/" + pageId + "/ops/" + operationId + ".md\","
+                + "\"contribution_key\":\"wiki/ws_1/pages/" + pageId + "/ops/" + operationId + ".json\","
+                + "\"content_hash\":\"sha256:lint\"}]}";
     }
 }

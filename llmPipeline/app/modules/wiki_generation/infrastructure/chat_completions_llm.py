@@ -11,7 +11,11 @@ from typing import Any, Sequence
 
 from app.core.langsmith_tracing import langsmith_tracing_enabled
 from app.core.llm_env import resolve_llm_provider
-from app.core.llm_prompt import with_schema_prompt
+from app.core.llm_prompt import (
+    redact_numeric_personal_data,
+    with_llm_security_boundary,
+    with_schema_prompt,
+)
 from app.modules.wiki_generation.application.ports import (
     ConceptPageGenerator,
     ConceptResolver,
@@ -69,8 +73,8 @@ class ChatCompletionsJsonClient:
         log_dir.mkdir(parents=True, exist_ok=True)
         payload = {
             "request": body,
-            "response_content": content,
-            "error": error,
+            "response_content": redact_numeric_personal_data(content) if content else content,
+            "error": redact_numeric_personal_data(error) if error else error,
         }
         (log_dir / f"request_{self._request_index:04d}.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -81,8 +85,8 @@ class ChatCompletionsJsonClient:
         body: JsonDict = {
             "model": self.config.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "system", "content": with_llm_security_boundary(system_prompt)},
+                {"role": "user", "content": redact_numeric_personal_data(user_prompt)},
             ],
             "temperature": self.config.temperature,
         }
@@ -124,7 +128,9 @@ class ChatCompletionsJsonClient:
             with urllib.request.urlopen(req, timeout=self.config.timeout_seconds) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")
+            detail = redact_numeric_personal_data(
+                e.read().decode("utf-8", errors="replace")
+            )
             self._write_prompt_log(body, error=f"LLM API HTTP {e.code}: {detail}")
             raise RuntimeError(f"LLM API HTTP {e.code}: {detail}") from e
         except urllib.error.URLError as e:
@@ -132,10 +138,11 @@ class ChatCompletionsJsonClient:
             raise RuntimeError(f"LLM API connection error: {e}") from e
 
         try:
-            content = self._response_content(payload)
+            content = redact_numeric_personal_data(self._response_content(payload))
         except Exception as e:
-            self._write_prompt_log(body, error=f"Unexpected chat-completions response: {payload}")
-            raise RuntimeError(f"Unexpected chat-completions response: {payload}") from e
+            detail = redact_numeric_personal_data(str(payload))
+            self._write_prompt_log(body, error=f"Unexpected chat-completions response: {detail}")
+            raise RuntimeError(f"Unexpected chat-completions response: {detail}") from e
         self._write_prompt_log(body, content=content)
         return content
 

@@ -29,19 +29,21 @@ public class PipelineWikiMaintenanceRequester {
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    public JsonNode lint(String workspaceId, String userId, WikiLintRequest request) {
+    public PipelineWikiLintResponse lint(String workspaceId, String userId,
+                                         WikiLintRequest request, String operationId) {
         WikiLintRequest safe = request == null ? new WikiLintRequest(null, null) : request;
         try {
             JsonNode response = restClient.post()
                     .uri(endpoint)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(new LintPayload(userId, workspaceId, safe.materializePromotions(), safe.dryRun()))
+                    .body(new LintPayload(userId, workspaceId, operationId,
+                            safe.materializePromotions(), safe.dryRun()))
                     .retrieve()
                     .body(JsonNode.class);
             if (response == null || response.isNull()) {
                 throw new PipelineWikiMaintenanceException("Wiki maintenance lint 응답이 비어 있습니다.", 503, null);
             }
-            return response;
+            return PipelineWikiLintResponse.from(response);
         } catch (ResourceAccessException e) {
             throw new PipelineWikiMaintenanceException("Wiki maintenance lint 응답 시간이 초과되었습니다.", 503, null);
         } catch (RestClientResponseException e) {
@@ -58,6 +60,7 @@ public class PipelineWikiMaintenanceRequester {
     private record LintPayload(
             @JsonProperty("user_id") String userId,
             @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("operation_id") String operationId,
             @JsonProperty("materialize_promotions") Boolean materializePromotions,
             @JsonProperty("dry_run") Boolean dryRun
     ) {}

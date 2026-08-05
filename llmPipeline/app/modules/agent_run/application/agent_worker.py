@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import replace
 import logging
 import threading
 from typing import Any
@@ -9,16 +7,29 @@ from uuid import uuid4
 
 from app.modules.agent_run.application.ports import (
     AgentJobRepositoryPort,
+    AgentExecutionDeciderPort,
     AgentPlanGeneratorPort,
     AgentPlanRepositoryPort,
     AgentToolGatewayPort,
     ToolGatewayError,
 )
-from app.modules.agent_run.domain.entities import AgentJob, AgentRunContext
+from app.modules.agent_run.domain.entities import (
+    AgentJob,
+    AgentRunContext,
+    ContentArtifactReference,
+)
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 
 
 logger = logging.getLogger(__name__)
+
+_MAX_EXECUTION_STEPS = 40
+_READ_TOOL_ARGUMENTS = {
+    "list_root_items": frozenset(),
+    "list_folder_children": frozenset({"folder_id"}),
+    "get_document_metadata": frozenset({"document_id"}),
+    "get_document_content": frozenset({"document_id"}),
+}
 
 
 class AgentWorker:
@@ -28,11 +39,13 @@ class AgentWorker:
         run_repository: AgentPlanRepositoryPort,
         tool_gateway: AgentToolGatewayPort,
         plan_generator: AgentPlanGeneratorPort,
+        execution_decider: AgentExecutionDeciderPort,
     ) -> None:
         self._repository = repository
         self._run_repository = run_repository
         self._tool_gateway = tool_gateway
         self._plan_generator = plan_generator
+        self._execution_decider = execution_decider
 
     def process(self, job: AgentJob) -> None:
         stop_heartbeat = threading.Event()
@@ -75,6 +88,7 @@ class AgentWorker:
         ):
             raise ValueError("AgentRun cannot enter planning.")
         hierarchy = self._inspect_hierarchy(context)
+        content_artifacts = self._load_content_artifacts(context)
         plan_id = str(uuid4())
         plan = self._plan_generator.generate(
             run_id=job.run_id,
@@ -88,6 +102,7 @@ class AgentWorker:
                 if context.run.skill_version_id is not None
                 else None
             ),
+            content_artifacts=content_artifacts,
         )
         if context.run.skill_version_id is not None:
             unsupported = {operation.tool_name for operation in plan.operations} - set(context.allowed_tools)
@@ -117,6 +132,26 @@ class AgentWorker:
                 queue.extend((folder_id, child) for child in child_items if isinstance(child, dict))
         return snapshot
 
+    def _load_content_artifacts(
+        self,
+        context: AgentRunContext,
+    ) -> tuple[ContentArtifactReference, ...]:
+        if context.run.action != "workspace_workflow":
+            return ()
+        if not self._repository.reserve_tool_call(context.run.id):
+            raise ValueError("AgentRun tool call limit exceeded.")
+        response = self._tool_gateway.read(
+            "list_agent_run_artifacts",
+            run_id=context.run.id,
+            workspace_id=context.run.workspace_id,
+            user_id=context.run.user_id,
+            arguments={},
+        )
+        items = response.get("items")
+        if not isinstance(items, list) or len(items) > 20:
+            raise ValueError("AgentRun artifact response is invalid.")
+        return tuple(_content_artifact(item) for item in items)
+
     def _execute(self, job: AgentJob) -> None:
         context = self._repository.load_context(job.run_id)
         if context.run.status == "cancelled":
@@ -125,52 +160,144 @@ class AgentWorker:
         if plan.status != "approved" or context.run.status != "executing":
             raise ValueError("Only an approved Agent plan can execute.")
         results = self._repository.load_operation_results(job.run_id, plan.id)
-        remaining = {
-            operation.id: operation
-            for operation in plan.operations
-            if operation.status in {"pending", "running"}
-        }
-        failed: set[str] = {
-            operation.id
-            for operation in plan.operations
-            if operation.status in {"failed", "forbidden", "conflicted", "skipped"}
-        }
-        while remaining:
+        observations: list[dict[str, object]] = [
+            {"action": "execute_operation", "operation_id": operation_id, "result": result}
+            for operation_id, result in results.items()
+        ]
+        configured_read_tools = self._allowed_read_tools(context)
+        for _ in range(_MAX_EXECUTION_STEPS):
             current_context = self._repository.load_context(job.run_id)
             if current_context.run.status == "cancelled":
                 return
+            if current_context.run.status != "executing":
+                raise ValueError("AgentRun left the executing state.")
+            current_plan = self._repository.load_current_plan(job.run_id)
+            if (
+                current_plan.id != plan.id
+                or current_plan.version != plan.version
+                or current_plan.operation_hash != plan.operation_hash
+                or current_plan.status != "approved"
+            ):
+                raise ValueError("Approved Agent plan changed during execution.")
+            remaining = {
+                operation.id: operation
+                for operation in current_plan.operations
+                if operation.status in {"pending", "running"}
+            }
+            failed = {
+                operation.id
+                for operation in current_plan.operations
+                if operation.status
+                in {"failed", "forbidden", "conflicted", "skipped", "cancelled", "verification_failed"}
+            }
             blocked = [
                 operation
                 for operation in remaining.values()
                 if any(dependency in failed for dependency in operation.depends_on)
             ]
             for operation in blocked:
-                self._repository.mark_operation(operation.id, ("pending",), "skipped", "dependency_failed")
-                failed.add(operation.id)
-                remaining.pop(operation.id)
-            ready = [
+                self._repository.mark_operation(
+                    operation.id,
+                    ("pending", "running"),
+                    "skipped",
+                    "dependency_failed",
+                )
+                observations.append(
+                    {
+                        "action": "operation_status",
+                        "operation_id": operation.id,
+                        "status": "skipped",
+                        "error_code": "dependency_failed",
+                    }
+                )
+            if blocked:
+                continue
+            if not remaining:
+                self._repository.enqueue_verification(job.run_id)
+                return
+            remaining_tool_calls = self._repository.remaining_tool_calls(job.run_id)
+            if remaining_tool_calls < len(remaining):
+                if not self._repository.request_clarification(
+                    job.run_id,
+                    "react_tool_budget_insufficient",
+                ):
+                    raise ValueError("AgentRun cannot request Tool budget clarification.")
+                return
+            allowed_read_tools = (
+                configured_read_tools
+                if remaining_tool_calls > len(remaining)
+                else ()
+            )
+            ready = tuple(
                 operation
                 for operation in remaining.values()
                 if all(dependency in results for dependency in operation.depends_on)
-            ][:4]
-            if not ready:
-                if remaining:
-                    raise ValueError("Agent plan dependency graph cannot make progress.")
-                break
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = {
-                    executor.submit(self._execute_operation, context, plan, operation, results): operation
-                    for operation in ready
+            )
+            if remaining and not ready:
+                raise ValueError("Agent plan dependency graph cannot make progress.")
+            decision = self._execution_decider.decide(
+                instruction=context.run.request_summary,
+                plan=current_plan,
+                ready_operations=ready,
+                observations=tuple(observations),
+                allowed_read_tools=allowed_read_tools,
+            )
+            if decision.action == "read":
+                latest_context = self._repository.load_context(job.run_id)
+                if latest_context.run.status == "cancelled":
+                    return
+                if latest_context.run.status != "executing":
+                    raise ValueError("AgentRun left the executing state.")
+                tool_name, arguments = self._validate_read_decision(
+                    decision.tool_name,
+                    decision.arguments,
+                    allowed_read_tools,
+                )
+                observations.append(
+                    {
+                        "action": "read",
+                        "tool_name": tool_name,
+                        "arguments": arguments,
+                        "result": self._read_tool(latest_context, tool_name, arguments),
+                    }
+                )
+                continue
+            if decision.action == "execute_operation":
+                latest_context = self._repository.load_context(job.run_id)
+                if latest_context.run.status == "cancelled":
+                    return
+                if latest_context.run.status != "executing":
+                    raise ValueError("AgentRun left the executing state.")
+                operation = next(
+                    (item for item in ready if item.id == decision.operation_id),
+                    None,
+                )
+                if operation is None:
+                    raise ValueError("Agent selected an operation that is not ready.")
+                response = self._execute_operation(latest_context, current_plan, operation, results)
+                observation: dict[str, object] = {
+                    "action": "execute_operation",
+                    "operation_id": operation.id,
+                    "status": "succeeded" if response is not None else "failed",
                 }
-                for future in as_completed(futures):
-                    operation = futures[future]
-                    response = future.result()
-                    remaining.pop(operation.id)
-                    if response is None:
-                        failed.add(operation.id)
-                    else:
-                        results[operation.id] = response
-        self._repository.enqueue_verification(job.run_id)
+                if response is not None:
+                    results[operation.id] = response
+                    observation["result"] = response
+                observations.append(observation)
+                continue
+            if decision.action == "request_replan":
+                if not self._repository.request_clarification(
+                    job.run_id,
+                    f"react_replan_{decision.reason}",
+                ):
+                    raise ValueError("AgentRun cannot request a new plan.")
+                return
+            raise ValueError("Unsupported Agent execution action.")
+        if not self._repository.request_clarification(
+            job.run_id,
+            "react_step_limit_exceeded",
+        ):
+            raise ValueError("Agent execution step limit exceeded.")
 
     def _execute_operation(
         self,
@@ -264,6 +391,18 @@ class AgentWorker:
         target_id = str(response.get("id") or operation.target_id or "")
         if not target_id:
             return False
+        if operation.tool_name == "apply_document_edit":
+            current = self._read_tool(context, "get_document_content", {"document_id": target_id})
+            expected_version = response.get("current_version")
+            expected_hash = response.get("content_hash")
+            return (
+                isinstance(expected_version, int)
+                and not isinstance(expected_version, bool)
+                and isinstance(expected_hash, str)
+                and bool(expected_hash)
+                and current.get("current_version") == expected_version
+                and current.get("content_hash") == expected_hash
+            )
         if operation.target_type == "document" and operation.tool_name == "rename_document":
             current = self._read_tool(context, "get_document_metadata", {"document_id": target_id})
             return _response_name(current) == _response_name(response)
@@ -297,6 +436,25 @@ class AgentWorker:
             arguments=arguments,
         )
 
+    def _allowed_read_tools(self, context: AgentRunContext) -> tuple[str, ...]:
+        if context.run.skill_version_id is None:
+            return tuple(_READ_TOOL_ARGUMENTS)
+        return tuple(tool_name for tool_name in _READ_TOOL_ARGUMENTS if tool_name in context.allowed_tools)
+
+    def _validate_read_decision(
+        self,
+        tool_name: str | None,
+        arguments: dict[str, object] | None,
+        allowed_read_tools: tuple[str, ...],
+    ) -> tuple[str, dict[str, object]]:
+        if tool_name not in allowed_read_tools or tool_name not in _READ_TOOL_ARGUMENTS:
+            raise ValueError("Agent selected a read tool that is not allowed.")
+        if arguments is None or set(arguments) != _READ_TOOL_ARGUMENTS[tool_name]:
+            raise ValueError("Agent read arguments do not match the tool contract.")
+        if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
+            raise ValueError("Agent read arguments must contain non-empty ids.")
+        return tool_name, arguments
+
 
 def _resolve_operation_references(
     value: object,
@@ -317,3 +475,67 @@ def _resolve_operation_references(
 
 def _response_name(response: dict[str, object]) -> object | None:
     return response.get("name") or response.get("display_name") or response.get("displayName")
+
+
+def _content_artifact(value: object) -> ContentArtifactReference:
+    allowed_fields = {
+        "id",
+        "content_hash",
+        "purpose",
+        "document_id",
+        "base_version",
+        "target",
+    }
+    if not isinstance(value, dict) or not {"id", "content_hash", "purpose"}.issubset(value):
+        raise ValueError("AgentRun artifact item is invalid.")
+    if set(value) - allowed_fields:
+        raise ValueError("AgentRun artifact item contains unsupported fields.")
+    artifact_id = value.get("id")
+    content_hash = value.get("content_hash")
+    purpose = value.get("purpose")
+    if not isinstance(artifact_id, str) or not artifact_id.strip():
+        raise ValueError("AgentRun artifact id is invalid.")
+    if not isinstance(content_hash, str) or not content_hash.strip():
+        raise ValueError("AgentRun artifact content_hash is invalid.")
+    if purpose not in {"create_document", "apply_document_edit"}:
+        raise ValueError("AgentRun artifact purpose is invalid.")
+
+    document_id = value.get("document_id")
+    base_version = value.get("base_version")
+    target = value.get("target")
+    if purpose == "create_document":
+        if document_id is not None or base_version is not None or target is not None:
+            raise ValueError("Document creation artifact cannot have an edit target.")
+    elif (
+        not isinstance(document_id, str)
+        or not document_id.strip()
+        or not isinstance(base_version, int)
+        or isinstance(base_version, bool)
+        or base_version < 1
+        or not _is_document_target(target)
+    ):
+        raise ValueError("Document edit artifact target is invalid.")
+    return ContentArtifactReference(
+        id=artifact_id.strip(),
+        content_hash=content_hash.strip(),
+        purpose=purpose,  # type: ignore[arg-type]
+        document_id=document_id,
+        base_version=base_version,
+        target=target,
+    )
+
+
+def _is_document_target(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"type", "start_line", "end_line"}:
+        return False
+    start_line = value.get("start_line")
+    end_line = value.get("end_line")
+    return (
+        value.get("type") in {"selection", "current_section", "whole_document"}
+        and isinstance(start_line, int)
+        and not isinstance(start_line, bool)
+        and isinstance(end_line, int)
+        and not isinstance(end_line, bool)
+        and start_line >= 1
+        and end_line >= start_line
+    )

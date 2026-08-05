@@ -1,6 +1,7 @@
 package fruition.document.service;
 
 import fruition.document.dto.DocumentContentDiffResponse;
+import fruition.document.dto.MarkdownDiff;
 import fruition.document.exception.MarkdownDiffTooLargeException;
 import org.springframework.stereotype.Service;
 
@@ -15,11 +16,19 @@ public class MarkdownDiffService {
     private static final int CONTEXT_LINES = 3;
     private static final long MAX_TRACE_BYTES = 16L * 1024 * 1024;
 
+    /** 문서용 어댑터. 기존 응답 스키마를 그대로 유지한다. */
     public DocumentContentDiffResponse compare(
             String documentId, long fromVersion, String before, long toVersion, String after) {
+        MarkdownDiff diff = diff(fromVersion, before, toVersion, after);
+        return new DocumentContentDiffResponse(
+                documentId, diff.fromVersion(), diff.toVersion(),
+                diff.additions(), diff.deletions(), diff.hunks());
+    }
+
+    /** 리소스에 매이지 않는 계산. Wiki 페이지도 이것을 쓴다. */
+    public MarkdownDiff diff(long fromVersion, String before, long toVersion, String after) {
         if (before.equals(after)) {
-            return new DocumentContentDiffResponse(
-                    documentId, fromVersion, toVersion, 0, 0, List.of());
+            return new MarkdownDiff(fromVersion, toVersion, 0, 0, List.of());
         }
         List<String> oldLines = lines(before);
         List<String> newLines = lines(after);
@@ -28,8 +37,7 @@ public class MarkdownDiffService {
         List<DocumentContentDiffResponse.Hunk> hunks = hunks(numbered);
         int additions = (int) edits.stream().filter(edit -> edit.type == Type.ADD).count();
         int deletions = (int) edits.stream().filter(edit -> edit.type == Type.DELETE).count();
-        return new DocumentContentDiffResponse(
-                documentId, fromVersion, toVersion, additions, deletions, hunks);
+        return new MarkdownDiff(fromVersion, toVersion, additions, deletions, hunks);
     }
 
     private List<String> lines(String markdown) {

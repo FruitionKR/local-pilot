@@ -36,6 +36,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   반환한다.
 - 문서 본문·asset row·reference를 한 DB transaction에서 갱신하고 DB 실패나 version 충돌에는 이번
   요청에서 선저장한 MinIO object를 보상 삭제한다.
+- 이미지 포함 저장도 `apply_operation_id`를 전달받아 AI 편집 성공 또는 version 충돌 작업 로그를
+  일반 Markdown 저장과 같은 기준으로 기록한다.
 
 **검증**
 
@@ -50,8 +52,656 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   reference 추가·제거와 복제 동작을 검증했다.
 - asset 저장 orchestration과 Controller 테스트로 placeholder 치환, 최종 응답, 충돌 보상과 기존
   이미지 없는 저장의 하위 호환을 검증했다.
-- Controller 저장 연결, 이미지 검증, MinIO 보상, 인증 조회와 ZIP 내보내기는 후속 작업이다.
+- 인증 조회와 ZIP 내보내기는 후속 작업이다.
 
+---
+
+## 2026-08-04
+
+### fix: 복구 callback 삭제 대상을 지시서와 대조
+
+- 복구 callback의 `deleted_pages`가 `restore_manifest`의 `delete` 대상에 포함되는지 변경 저장 전에 검증한다.
+- 계획에 없는 페이지가 오면 422 `INVALID_CALLBACK_PAYLOAD`로 거절해 다른 페이지의 삭제 감사 로그가 잘못 남지 않게 했다.
+- 계획에 포함된 삭제 대상 일부만 보고하는 부분 성공 callback은 계속 허용한다.
+- 회귀 테스트와 Backend 전체 `./gradlew test`, `git diff --check`가 통과했다.
+
+---
+
+## 2026-08-04
+
+### feat: lint 작업 로그 저장과 되돌리기 지원
+
+**배경**
+
+Wiki lint는 llmPipeline이 페이지를 직접 변경하지만 Backend에는 작업별 버전과 변경 이력이 남지 않아 조회하거나 되돌릴 수 없었다. 또한 lint 되돌리기는 ingest와 달리 기여를 제거하는 대신 lint 작업이 만든 페이지 변경만 역산해야 한다.
+
+**변경된 것**
+
+- 실제 lint 실행 전에 Backend가 `operation_id`를 발급하고, llmPipeline의 `changed_pages`를 받아 페이지 버전과 `ai_operation_changes`를 저장한다. lint는 새 기여를 만들거나 기존 기여 수를 늘리지 않는다.
+- lint 로그의 목록·상세·diff 조회를 지원하고, 생성 페이지는 삭제, 수정 페이지는 활성 기여로 재조립하는 되돌리기 계획을 추가했다. 대상 이후 같은 페이지가 변경됐으면 안전하게 거절한다.
+- llmPipeline의 `/wiki/lint-restore-runs` 계약에 맞춰 재조립 페이지와 삭제 페이지를 전달한다.
+- 복구 callback의 `deleted_pages`, `link_changes`, `failed_actions`를 수신한다. 삭제 페이지와 제거·복원 relation link를 감사 로그로 남기고 부분 성공 상태와 건수 요약을 보존한다.
+
+**검증**
+
+- lint 시작·결과 반영·조회·미리보기·실행·callback 계약 테스트를 추가했다.
+- 실제 PostgreSQL 동시 실행 테스트로 같은 페이지의 revision이 충돌하지 않고 순차 증가하는지 확인했다.
+- Backend 전체 `./gradlew test`와 `git diff --check`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline callback에 `X-Internal-Token`이 없어 현재 Backend가 결과를 401로 거절한다.
+- llmPipeline에서 `deleted_pages`의 링크·임베딩을 실제 정리하는 작업은 별도 AI 이슈로 남아 있다.
+
+---
+
+## 2026-08-04
+
+### fix: 미리보기와 실행의 검증을 일치시킴
+
+**배경**
+
+실행은 `document_edit`·`ingest`·`lint`만 받고 나머지는 400으로 거절하는데, **미리보기에는 유형 검사가 없었다.** 되돌리기 기록(`restore` 유형)을 지목하면 미리보기가 그럴듯한 계획을 돌려준다. `restore` 로그도 `target_document_id`를 갖고 있어 범위 결정과 페이지 판정이 끝까지 수행되기 때문이다. 로그 목록에 `restore` 항목이 그대로 나오므로 실제로 눌릴 수 있고, 사용자는 확인 화면을 다 본 뒤에 400을 받는다.
+
+원문 페이지 확인과 빈 계획 거절도 실행에만 있었다.
+
+**변경된 것**
+
+- `RestoreTargetValidator`를 추가해 세 검증을 한곳에 모았다. 되돌릴 수 있는 유형인지, 계획이 비지 않았는지, ingest면 원문 페이지가 있는지다.
+- `RestorePreviewService`와 `RestoreExecuteService`가 이것을 공유한다. **미리보기가 통과시킨 것은 실행도 통과한다**(그사이 대상이 바뀌는 경우는 `preview_token`이 잡는다).
+- `RestoreExecuteService`에 있던 `requireSourcePage`와 유형 검사를 옮기면서 `WikiPageRepository` 의존이 빠졌다.
+
+**검증**
+
+- `RestoreTargetValidatorTest` 6개 — 허용 유형 3종, `restore` 거절, 빈 계획 거절, `page_type`으로 원문 페이지 찾기, 원문 없으면 거절, lint는 조회 자체를 안 함.
+- `RestorePreviewServiceTest` 6개 — 유형 거절, 실행이 거절할 계획은 미리보기도 거절, 정상 응답, 문서 편집 분기, 비멤버 404, 없는 작업 404. 이 서비스에 전용 테스트가 없었다.
+- `RestoreExecuteServiceTest`는 검증기를 mock으로 두고 배선만 확인하도록 정리했다. 판별 규칙은 검증기 테스트가 다룬다.
+- Backend 전체 `./gradlew test` 473개가 통과했다.
+
+---
+
+## 2026-08-04
+
+### fix: 재작성 대상이 없어도 llmPipeline 결과를 기다리도록 수정
+
+**배경**
+
+지시서를 보낸 뒤 `plan.hasRebuild()`가 false면 그 자리에서 `succeeded`로 확정했다. 그런데 **llmPipeline은 `rebuild_pages`가 비어 있어도 항상 콜백을 보낸다**(`restore_wiki_pages.py`의 `execute_ingest`·`execute_lint`가 무조건 `_notify` 호출). 결과적으로:
+
+- 콜백이 종료된 작업에 도착해 `payload_hash` 불일치로 **409**가 난다. 계약상 llmPipeline은 409를 받으면 중단하므로 그 복구는 매번 오류로 끝난다.
+- llmPipeline이 링크·임베딩 정리를 끝내기도 전에 사용자에게 **완료로 보인다.**
+
+문서를 두 번 ingest하고 마지막을 취소하면 판정이 `restore`와 `delete`로만 나와 실제로 도달하는 경로다.
+
+**변경된 것**
+
+- `RestoreOperationLifecycle.finish` — 통지에 성공하면 재작성 대상 유무와 무관하게 `rebuilding`이다. 확정은 재조립 결과를 받을 때 한다.
+- `RestoreExecuteResponse.from` — `status`와 `rebuilding`을 같은 기준으로 맞췄다. `rebuilding`은 이제 "llmPipeline 결과를 기다리는 중"을 뜻한다.
+- 문서 편집 되돌리기는 그대로다. llmPipeline을 부르지 않으므로 즉시 `succeeded`다.
+
+**요약이 사라지지 않게 함께 고침**
+
+중간 상태로 옮길 때도 요약을 남기도록 `OperationLog.moveTo(status, summary)`를 추가했다. 결과를 기다리는 동안 목록에 무엇을 했는지 보여야 한다.
+
+그리고 llmPipeline 복구 결과 payload에는 `summary`가 없어서, `RestoreRebuildApplier`가 확정할 때 기존 요약을 null로 덮어쓰고 있었다. 콜백에 값이 없으면 유지하도록 바꿨다.
+
+**검증**
+
+- `RestoreExecuteServiceTest`의 "재작성 대상이 없고 통지에 성공하면 그 자리에서 끝난다"를 "재작성 대상이 없어도 llmPipeline 결과를 기다린다"로 뒤집었다.
+- `OperationQueryControllerTest`의 되돌리기 응답 단정도 함께 맞췄다.
+- Backend 전체 `./gradlew test` 462개가 통과했다.
+
+---
+
+## 2026-08-04
+
+### fix: 원문 페이지를 못 찾으면 반영 전에 거절
+
+**배경**
+
+llmPipeline의 `source_page.page_id`는 필수 필드다. Backend가 원문 페이지를 못 찾아 `null`을 보내면 Pydantic이 400으로 거절하는데, 그 시점에는 이미 DB 반영이 끝나 있어 **복구가 `notify_pending`에 영구히 갇힌다.** 재시도해도 같은 요청이라 계속 실패한다.
+
+**변경된 것**
+
+- 원문 페이지를 `document_wiki_links`의 `source_of`가 아니라 **`wiki_pages.page_type`** 으로 찾는다. 링크 테이블은 llmPipeline이 관리하고 문서 재처리 과정에서 지워질 수 있어, 페이지 자신이 들고 있는 값을 보는 편이 안전하다. `WikiPageRepository.findIdsByPageType`을 추가했다.
+- 못 찾으면 **`applier.apply()` 전에** `InvalidRestoreRequestException`(400)으로 거절한다. 아무것도 바꾸지 않으므로 갇히는 상태가 생기지 않는다.
+- 그 결과 쓰이지 않게 된 `DocumentWikiLinkRepository` 의존을 `RestoreExecuteService`에서 걷어냈다.
+
+거절해도 안전한 이유는, 원문 페이지가 계획에 없다는 것은 취소 대상이 건드린 활성 기여가 하나도 없다는 뜻이고, 그러면 다른 페이지도 마찬가지라 계획이 통째로 비어 이미 400이 나기 때문이다. 실질적으로는 안전망이다.
+
+### test: AI 작업 로그 컨트롤러 테스트 추가
+
+`aihistory` 도메인만 `@WebMvcTest`가 없어 인증·권한·응답 직렬화가 서비스 테스트로만 덮여 있었다.
+
+- `OperationQueryControllerTest` 11개 — snake_case 직렬화, 커서·필터 전달, 상세의 `hunks` 포함과 `diff_too_large` 생략, 미리보기가 Wiki면 `pages`·문서면 `document`만 차는지, `preview_token` 전달, 404·409·400, 미인증 401.
+- `OperationCallbackControllerTest` 9개 — **토큰 검증이 서비스에 닿기 전에 끊는지**(없음·틀림·사용자 JWT 모두), 확정 상태를 고정값이 아니라 실제 값으로 돌려주는지, 404·409·422 매핑, `changed_pages` 누락 400, 재조립 결과의 `failed_pages` 수용.
+
+콜백 테스트에서 `verify(ingestService, never())`로 **인증 실패 시 서비스 호출이 없는 것**까지 확인한다. 저장소 객체를 읽는 것이 그 뒤라 순서가 중요하다.
+
+**정리**
+
+`RestoreApplier`의 `WikiPage`, `WikiService`의 `WikiPageStatus` import가 각각 `wiki_pages` 쓰기 제거와 삭제 판정 변경으로 고아가 돼 지웠다.
+
+**검증**
+
+Backend 전체 `./gradlew test` 462개가 통과했다.
+
+---
+
+## 2026-08-04
+
+### fix: 복구 조립 지시서를 llmPipeline 계약에 맞춤
+
+**배경**
+
+`origin/dev` 병합으로 llmPipeline의 복구 구현이 이미 들어와 있는 것을 확인했다. 양쪽이 **서로 다른 계약을 가정하고 병렬로 만들어** 엔드포인트와 필드가 어긋나 있었다. llmPipeline이 테스트까지 갖춰 병합돼 있어 Backend를 그쪽에 맞춘다.
+
+지금 상태로는 되돌리기를 실행하면 404가 나고 `notify_pending`에서 멈춘다.
+
+**변경된 것**
+
+- 엔드포인트를 둘로 나눈다. llmPipeline이 `POST /wiki/ingest-restore-runs`와 `POST /wiki/lint-restore-runs`를 따로 열어 두었고 요청 스키마도 다르다. 설정 키도 `app.wiki-restore.ingest-endpoint`·`lint-endpoint`로 나눴다.
+- `PipelineRestoreRequester`를 지시서 2종으로 다시 썼다.
+
+| 항목 | 처리 |
+|---|---|
+| `excluded_operations` | `cancel_operation_ids`로 이름 맞춤 |
+| `keep_contributions[].object_key` | **제거.** llmPipeline이 `wiki/{ws}/pages/{page}/ops/{op}.json`을 같은 규칙으로 조립하고 조각 안 식별자까지 대조한다 |
+| `contribution_count` | **제거.** Backend만 쓰는 값이라 `restore_manifest`에 보관한다 |
+| `restored_pages`·`restored_from`·`user_id` | **제거.** 받지 않는 필드다 |
+| `restore_to_operation_id` | **추가.** source page를 어느 작업 시점으로 되돌릴지. `PageRestorePlan`에 `targetOperationId`를 넣어 계획 단계에서 계산한다 |
+| `source_page` | **추가.** 필수 필드다. `document_wiki_links`의 `source_of`로 찾는다 |
+
+- `RestoreApplier`가 되돌린 페이지 목록을 반환하지 않는다. llmPipeline이 `restored_pages`를 받지 않아 쓸 곳이 없어졌다.
+
+**source page는 양쪽이 각자 되돌린다**
+
+`source_page`가 필수라 안 보낼 수 없고, llmPipeline은 그것을 받으면 자기 사본 객체를 만들어 `changed_pages`로 보고한다. Backend도 로컬에서 되돌린다.
+
+두 결과의 **본문이 같아** 콜백 수신 시 `content_hash` 비교로 걸러지므로 revision이 중복 생기지 않는다. 이를 위해 `RestoreRebuildApplier`가 지시서의 `restore` 판정 페이지도 인정하도록 넓혔다. 이전에는 `rebuild` 목록에만 있으면 인정해서, source page가 실려 오면 재조립 수신 전체가 422로 실패했다.
+
+Backend가 로컬에서 처리하므로 되돌리기 속도는 그대로다. llmPipeline 왕복을 기다리지 않는다.
+
+**lint는 엔드포인트만 맞췄다**
+
+`WikiMaintenanceService`에 작업 로그 연동이 아직 없어 lint 작업 자체가 기록되지 않는다. 되돌릴 대상이 없으므로 실제 호출은 lint 연동이 생길 때 확인한다.
+
+**검증**
+
+- `RestoreExecuteServiceTest`에 3개를 더해 12개가 됐다. ingest 지시서에 source page와 되돌릴 시점을 싣는지, 남는 기여가 없으면 `restore_to_operation_id`가 null인지, lint가 다른 엔드포인트로 가는지다.
+- `RestoreRebuildApplierTest`의 "되돌리기로 끝낸 페이지는 재조립 대상이 아니다"를 뒤집었다. 이제 받아들이되 내용이 같아 건너뛴다. 지시서에 아예 없는 페이지를 거절하는 테스트를 따로 뒀다.
+- Backend 전체 `./gradlew test` 440개가 통과했다.
+
+**남은 것**
+
+llmPipeline 복구 경로에 DB 접근이 없어, 삭제된 페이지의 링크(`wiki_page_links`·`document_wiki_links`)와 임베딩이 정리되지 않는다. `docs/issue/ai/2026-08-03.md`에 요청 항목으로 남겼다.
+
+---
+
+## 2026-08-03
+
+### fix: Backend가 wiki_pages에 쓰지 않도록 정리
+
+**배경**
+
+`wiki_pages`는 llmPipeline 소유다. `5f230a4`("refactor: Wiki 페이지 이름 변경을 llmPipeline에 위임")에서 rename까지 걷어냈는데, 이번 작업이 그보다 깊은 쓰기를 다시 넣었다. 설계 문서에 "`markdown_uri` 갱신은 항상 Backend"라고 적은 것 자체가 코드베이스 규약과 어긋난 판단이었다.
+
+llmPipeline의 ingest 경로가 `markdown_uri`를 갱신하고 Backend가 콜백을 받아 다른 키로 덮어써, 두 주체가 같은 컬럼을 두고 다투는 상태이기도 했다.
+
+**걷어낸 것**
+
+- `WikiPage.moveMarkdownUri()`·`softDelete()` 제거. 호출부 4곳(`OperationApplier`, `RestoreApplier` 2곳, `RestoreRebuildApplier`)도 함께.
+- `RestoreApplier`의 링크 삭제 2곳 제거. `wiki_page_links`·`document_wiki_links`도 llmPipeline 소유다.
+- 그 결과 쓰이지 않게 된 `WikiPageLinkRepository`·`DocumentWikiLinkRepository` 의존과, 고아가 된 `findByIdAndWorkspaceId`·`findAllByWorkspaceId`를 지웠다.
+
+**현재 본문을 어디서 읽나**
+
+`wiki_page_versions`의 **최신 revision**이 답한다. Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이라, 포인터를 따로 옮길 이유가 없었다. 중복 상태 하나가 사라진다.
+
+상세 조회가 MinIO 왕복에서 RDS 읽기로 바뀌어 저장소 장애와도 무관해진다. revision 기록이 없는 페이지(이 기능 이전 생성)만 `markdown_uri`로 폴백한다. 본문이 객체 저장소에 있어 SQL 마이그레이션으로 채울 수 없으므로 폴백을 남겼다.
+
+**삭제를 어떻게 판단하나**
+
+`status='deleted'` 대신 `wiki_page_contributions`에 활성 기여가 남았는지로 본다. 이것이 원래 삭제 판정의 근거였고, 상태 컬럼은 그 결론을 복사한 것뿐이었다.
+
+| 기여 상태 | 판정 |
+|---|---|
+| 하나라도 활성 | 살아 있음 |
+| 기여가 있고 전부 비활성 | 삭제됨 |
+| 기여가 아예 없음 | 살아 있음 — 이 기능 이전 페이지 |
+
+`findAliveByWorkspaceId`·`findAliveByIdAndWorkspaceId`·`findAliveIds`로 교체했다.
+
+`V17`은 이미 적용된 마이그레이션이라 되돌리지 않는다. `WikiPageStatus.deleted`도 CHECK 제약이 허용하는 값을 읽을 수 있도록 남기고, 쓰지 않는 이유를 주석으로 적었다.
+
+**바뀌지 않는 것**
+
+되돌리기의 `restore` 판정은 지금처럼 Backend가 DB만으로 즉시 끝낸다. llmPipeline 왕복이 늘지 않는다.
+
+**검증**
+
+- `WikiServiceTest`에 2개를 더해 7개가 됐다. 최신 revision에서 본문을 읽는지(저장소 미접근 확인), revision이 없으면 폴백하는지다.
+- `WikiPageLockIntegrationTest`의 `markdown_uri` 단정을 "Backend가 갱신하지 않는다"로 뒤집었다.
+- Backend 전체 `./gradlew test` 436개가 통과했다.
+
+**llmPipeline 이슈 문서 정정**
+
+`docs/issue/ai/2026-08-03.md`의 L2-3(`ON CONFLICT`에서 `markdown_uri`·`status` 제거 요청)을 **철회**했다. 전제가 틀렸다. 대신 복구로 삭제된 페이지의 **링크·임베딩 정리**를 요청 항목으로 넣었다. 현재 llmPipeline 복구 경로에 DB 접근이 없어 이 정리가 누락된다.
+
+---
+
+## 2026-08-03
+
+### fix: 되돌리기 범위에 지목한 작업 자신을 포함
+
+**배경**
+
+ingest 되돌리기가 "이 시점으로 되돌리기"였다. `A1 → A2 → A3`에서 A2를 지목하면 A3만 취소되고 A2는 살아남았다. 그런데 lint 되돌리기는 지목한 작업 하나만 취소한다. **같은 버튼인데 작업 유형에 따라 결과가 달랐다.**
+
+로그 목록에서 항목을 보고 되돌리기를 누르는 흐름에서는 "이 항목이 한 일을 없앤다"가 자연스럽다. ingest를 lint 쪽에 맞춘다.
+
+**변경된 것**
+
+- `RestoreScopeResolver` — 취소 집합에 지목한 작업 자신을 넣는다. A2를 지목하면 `{A2, A3}`가 된다. `LinkedHashSet`이라 같은 시각 작업이 조회에 섞여 들어와도 중복되지 않는다.
+- Swagger 설명과 스펙·설계 문서, 프론트 이슈 문서의 문구를 바꾼다.
+
+**사용자에게 달라지는 것**
+
+```
+"A2가 만든 걸 없애고 싶다"   →  A2 지목      (기존에는 A1을 지목해야 했다)
+"A2까지는 살리고 싶다"       →  A3 지목
+```
+
+**바뀌지 않는 것**
+
+- `RestorePlanner`는 취소 집합을 받아 판정할 뿐이라 그대로다. 집합이 커질 뿐이다.
+- llmPipeline 계약도 그대로다. `restore_to_operation_id`와 `cancel_operation_ids`를 따로 받으므로 어느 의미로 채우든 수용한다.
+
+**검증**
+
+- `RestoreScopeResolverTest` 3개를 새 의미로 고쳤다. 지목 작업 포함, 같은 시각 중복 방지, 마지막 작업 지목이다.
+- Backend 전체 `./gradlew test` 434개가 통과했다.
+
+---
+
+## 2026-08-03
+
+### fix: 코드리뷰 지적 사항 반영 (동시성·원자성·N+1)
+
+**동시성·원자성**
+
+- `OperationApplier` — ingest 적재가 행 잠금 없이 `findMaxRevision() + 1`로 채번했다. 같은 페이지 콜백 2건이 동시에 오면 revision이 겹쳐 한쪽이 PK 위반으로 500이 났다. `findByIdForUpdate`로 바꾸고 `page_id` 오름차순으로 처리한다. 복구 경로(`RestoreApplier`)와 같은 순서다.
+- `DocumentRestoreApplier` — `@Transactional`이 없어 `saveContent` 커밋과 변경내역 insert가 별개 트랜잭션이었다. 뒤가 실패하면 문서만 바뀌고 감사 기록이 없다. `@Transactional`을 붙여 `saveContent`가 같은 트랜잭션에 참여하게 한다.
+
+**재전송 판정 기준 변경**
+
+`OperationApplier`가 직전 버전의 `content_hash`로 재전송을 가렸는데, 이 기준이 **무변경 판정과 재전송 방어를 겸하고 있어** 문제였다. 다른 문서의 ingest가 우연히 같은 내용을 만들면 재전송으로 오인해 그 문서의 기여가 원장에 남지 않았다. 그러면 나중에 앞 문서를 되돌릴 때 받치는 문서가 남았는데도 페이지가 삭제된다.
+
+재전송 판정을 `(page_id, ingest_operation_id)` 존재 여부로 바꿨다. 이 PK가 곧 "이 작업이 이 페이지에 이미 반영됐다"는 뜻이라 판정이 정확해진다.
+
+**오류 응답 구분**
+
+- `WikiObjectReader` — `catch (Exception)`이 MinIO 장애까지 `InvalidCallbackPayloadException`(422)으로 바꿨다. 422는 계약상 "다시 쓰고 재전송"이라 저장소가 죽었을 때 llmPipeline이 무의미하게 재작업한다. 원인 예외도 로그 없이 삼켜 진단이 불가능했다. 경로 불일치만 422로 두고, 읽기 실패는 `WikiObjectReadException`(500 `WIKI_OBJECT_READ_FAILED`)으로 올리며 원인을 로깅한다.
+- `ChangeDiffLoader` — 모든 `RuntimeException`을 `diff_too_large: true`로 표시해 NPE 같은 오류도 "너무 큽니다"로 나갔다. `MarkdownDiffTooLargeException`만 그렇게 표시하고 나머지는 `hunks`만 비운다.
+
+**성능**
+
+- `ChangeDiffLoader` — 변경내역마다 버전을 2번씩 조회해 리소스 30개면 60쿼리였다. 필요한 본문을 리소스 종류별로 `findAllById` 일괄 조회한 뒤 Map 조인하도록 바꿔 **2쿼리**가 된다.
+
+**정리**
+
+- 호출부가 없는 `WikiPageContributionRepository.findActiveByPageId`와 `WikiPageVersionRepository.findSummaries`를 제거했다.
+- `WikiLineCounter`가 `WikiPageVersion`에 묶여 있어 문서 경로가 재사용하지 못하고 `OperationRecorder`에 같은 로직이 따로 있었다. 본문 문자열을 받는 `LineCounter`로 일반화해 세 경로가 공유한다.
+
+**검증**
+
+- `WikiPageLockIntegrationTest`에 3개를 더해 7개가 됐다. 동시 ingest 콜백의 revision 비충돌, 같은 작업 재전송 무시, 다른 작업의 동일 내용에도 기여 기록이다.
+- 동시 콜백 테스트는 **잠금을 되돌리면 실제로 실패하는 것을 확인**했다.
+- `ChangeDiffLoaderTest`에 일괄 조회 검증을 더해 7개가 됐다.
+- Backend 전체 `./gradlew test` 434개가 통과했다.
+
+---
+
+## 2026-08-03
+
+### test: Wiki 페이지 행 잠금 통합 테스트 추가
+
+**배경**
+
+`RestoreApplier`가 `page_id` 오름차순으로 `findByIdForUpdate` 잠금을 잡는데, 그게 실제로 동작하는지 단위 테스트로는 확인할 수 없었다. Mockito가 리포지토리를 대신하면 쿼리가 실행조차 되지 않는다. Testcontainers로 실제 Postgres에 붙여 검증한다.
+
+**추가된 것**
+
+- `WikiPageLockIntegrationTest` 4개
+  - `findByIdForUpdate`가 행을 잠가 다른 트랜잭션이 막힌다. 짧은 `lock_timeout`으로 시도해 실제로 대기하는지 확인하고, 앞 트랜잭션이 끝나면 다시 잠기는 것까지 본다
+  - 서로 다른 페이지는 동시에 잠긴다 (테이블 잠금이 아님을 확인)
+  - `page_id` 오름차순으로 잠그면 동시 복구에도 교착이 나지 않는다
+  - **반대 순서로 잠그면 교착이 난다** — 정렬이 필요한 이유를 대조군으로 고정
+
+**교착 테스트의 단정**
+
+Postgres가 교착을 감지하면 한쪽만 중단시키고 다른 쪽은 커밋된다. 그래서 `forwardOk ^ backwardOk`로 **정확히 한쪽만 실패**하는지 본다. "둘 다 성공하지 않음"으로 두면 다른 이유로 둘 다 실패해도 통과해버린다.
+
+두 스레드가 각자 첫 행을 잡은 뒤에 두 번째를 시도해야 교착이 재현되므로, 그 지점에서 `CountDownLatch`로 서로를 기다린다.
+
+**검증**
+
+- 3회 연속 실행해 흔들림이 없음을 확인했다. 교착 테스트가 매번 1.0초 걸리는데 Postgres `deadlock_timeout` 기본값과 일치해, 실제로 교착이 재현되고 감지된 것이다.
+- Backend 전체 `./gradlew test` 430개가 통과했다.
+
+**남은 주의사항**
+
+- 이 테스트는 복구 경로만 다룬다. **ingest 적재(`OperationApplier`)는 여전히 행 잠금이 없다.** 같은 페이지에 대한 콜백 2개가 동시에 오면 `max(revision)+1`이 겹쳐 한쪽이 PK 위반으로 실패한다.
+
+---
+
+## 2026-08-03
+
+### feat: 작업 로그 상세에 변경분 포함
+
+**배경**
+
+목록에서 한 건을 고르면 상세와 변경분을 한 번에 받도록 한다. 기존에는 상세를 부르고 항목마다 diff 엔드포인트를 다시 불러야 했다.
+
+**변경된 것**
+
+- `ChangeDiffLoader` — 변경내역 한 건의 두 revision 본문을 읽어 그 자리에서 비교한다. `resource_type`에 따라 `wiki_page_versions` 또는 `document_content_versions`에서 읽는다.
+- `OperationLogDetailResponse.Change`에 `hunks`와 `diff_too_large`를 추가한다. 값이 없으면 응답에서 생략된다.
+- `additions`·`deletions`는 그대로 저장 시점 값이다. 다시 세지 않는다.
+
+**한 항목의 실패가 상세 전체를 실패시키지 않는다**
+
+큰 페이지 하나 때문에 나머지 멀쩡한 항목까지 못 보는 것은 잘못된 트레이드오프다. 개별 diff 엔드포인트였다면 422였을 경우도 상세에서는 200이고 그 항목만 `diff_too_large: true`가 된다. 버전 행이 없는 경우도 조용히 건너뛴다.
+
+`before_revision`이나 `after_revision`이 없는 항목(`created`·`deleted`·`delegated`·`rebuild_failed`)은 비교할 짝이 없어 본문을 읽지 않는다.
+
+**상한을 두지 않았다**
+
+ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이터가 없다. `document_wiki_links`가 0행이고 `wiki_pages`에 테스트 데이터 4건뿐이라 판단할 근거가 없었다. 없을지도 모르는 문제에 대비해 `diff_omitted` 같은 분기를 클라이언트에 강요하지 않기로 했다. 실제 운영 수치를 본 뒤 필요하면 추가한다. 응답에 필드가 느는 것이라 기존 클라이언트를 깨지 않는다.
+
+**검증**
+
+- `ChangeDiffLoaderTest` 6개를 추가했다. Wiki diff, 문서 diff, 생성 건너뛰기, `after_revision` 없는 3종 건너뛰기, 버전 부재, 계산 거부 시 예외 대신 표시다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+---
+
+## 2026-08-03
+
+### feat: AI 문서 편집 되돌리기를 복구 API로 통일
+
+**배경**
+
+되돌리기는 사용자에게 한 가지 동작인데, AI 문서 편집만 복구 API가 받지 않고 400으로 거절했다. 프론트가 작업 종류를 보고 `POST /documents/{id}/versions/{version}/restore`를 따로 불러야 했고, 그러려면 되돌릴 버전 번호까지 알아야 했다. 이제 `POST .../ai-operation-logs/{operation_id}/restore` 하나로 처리한다.
+
+**변경된 것**
+
+- `DocumentRestorePlanner` — `ai_operation_changes.before_revision`에서 되돌릴 버전을 읽는다. Wiki와 달리 계산할 것이 없다. `from_version`은 대상 작업이 만든 버전이 아니라 **지금 문서 버전**이다. 그 작업 이후 사용자가 더 저장했을 수 있다.
+- `DocumentRestoreApplier` — 되돌릴 버전 본문으로 `DocumentService.saveContent`를 호출한다. 편집 잠금·낙관적 잠금·편집 상태 갱신이 이미 그 안에 있어 되돌리기라고 다르게 처리하지 않는다. 적용 표를 넘기지 않으므로 `document_edit` 로그는 생기지 않고, 대신 `restore` 작업에 `restored` 변경내역을 남긴다.
+- `PreviewTokenSigner`에 문서용 서명을 추가한다. `from_version`이 서명에 들어가 미리보기 이후 문서가 저장되면 실행이 409로 막힌다.
+- `RestorePreviewResponse`에 `document` 필드를 추가한다. Wiki면 `pages`가 차고 문서 편집이면 `document`가 찬다. 둘이 동시에 차지 않으며 빈 쪽은 응답에서 생략된다.
+- `RestoreExecuteService`가 `document_edit`을 문서 분기로 보낸다. 재작성이 없어 llmPipeline을 부르지 않고 그 자리에서 `succeeded`로 끝난다.
+
+**과거 버전을 되살리지 않고 새 버전을 쌓는다**
+
+버전 5 → 6(AI 편집) 상태에서 되돌리면 5로 돌아가는 것이 아니라 5의 내용으로 **버전 7**이 생긴다. Wiki revision과 같은 원칙이다. 되돌린 것도 다시 되돌릴 수 있고, 같은 번호가 다른 내용을 가리키는 일이 없다.
+
+**거절하는 경우**
+
+새로 만든 문서라 `before_revision`이 NULL, 이미 그 버전, 문서 변경내역이 없는 작업, 되돌릴 내용이 현재와 같아 저장이 일어나지 않는 경우다.
+
+**검증**
+
+- `DocumentRestoreTest` 9개를 추가했다. 계획 5개(목적지 결정, `from_version`이 현재 버전인지, 이전 버전 없음, 이미 그 버전, 문서 변경내역 없음), 반영 3개(새 버전 append, `restored` 기록, 무변경 거절), 토큰 1개(문서가 바뀌면 서명 불일치)다.
+- `RestoreExecuteServiceTest`에 문서 분기 라우팅과 토큰 불일치 2개를 더해 9개가 됐다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- 기존 `POST /documents/{id}/versions/{version}/restore`는 그대로 둔다. 버전 목록 화면에서 쓰는 별개 경로이며 AI 작업 로그를 만들지 않는다.
+- 채팅 메시지에서 되돌리기를 누르려면 `chat_messages`와 작업 로그를 잇는 작업이 따로 필요하다. 이번 범위에 없다.
+
+---
+
+## 2026-07-31
+
+### fix: 소프트 삭제된 Wiki 페이지를 조회에서 제외
+
+**배경**
+
+복구가 페이지를 소프트 삭제하면 `wiki_pages.status`만 `deleted`로 바뀐다. 그런데 그래프·상세 조회 쿼리에 `status` 조건이 없어 삭제된 페이지가 그대로 응답에 나왔다. 복구가 링크는 정리하므로 그래프에서는 **고립 노드**로 남는 상태였다.
+
+**변경된 것**
+
+- `WikiPageRepository`에 `findAllByWorkspaceIdAndStatusNot`, `findByIdAndWorkspaceIdAndStatusNot`을 추가하고 `WikiService.findGraph`·`findById`가 이 쿼리를 쓰게 한다. 삭제된 페이지의 상세는 404다.
+- 상세의 `related_pages`에서 삭제된 대상 링크를 뺀다. 복구가 링크를 정리하지만 그 전에 조회가 들어올 수 있다. **대상 자체가 존재하지 않는 링크는 기존대로 남겨 필드만 null로 내려간다** — 삭제와 부재는 다르게 다룬다.
+- 그래프 간선은 page id 집합 기준으로 걸러지므로 별도 처리 없이 함께 빠진다.
+- `GET .../wiki/pages/{id}/diff`는 그대로 둔다. 그래프·상세가 현재 상태를 보여주는 것과 달리 diff는 이력 조회이므로, 삭제된 페이지의 과거 revision 사이 변경분은 계속 볼 수 있어야 한다.
+- `docs/spec/api/wiki.md`의 정합성 항목을 실제 동작에 맞춰 갱신한다.
+
+**검증**
+
+- `WikiServiceTest`에 3개를 추가해 5개가 됐다. 그래프에서 삭제 페이지·간선 제외, 삭제 페이지 상세 404, 연관 페이지에서 삭제 대상만 제외하고 부재 대상은 유지다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- `docs/spec/api/wiki.md`의 rename 절이 실제와 다르다. 문서는 Backend가 slug를 생성하고 충돌을 검사하는 흐름으로 적혀 있으나, 현재 `WikiService.rename`은 `PipelineWikiPageRequester`에 그대로 위임한다(`5f230a4`). 이번 변경 범위 밖이라 손대지 않았다.
+- `WikiPageRepository.findAllByStatus`, `findAllByPageType`은 호출부가 없다. 이번 변경으로 생긴 것이 아니라 이전부터 있던 미사용 메서드다.
+
+### docs: AI 작업 로그 API 스펙 작성
+
+**변경된 것**
+
+- `docs/spec/api/ai-operation-log.md`를 추가한다. 다른 스펙 문서와 같은 재구성 스펙 형식이며 데이터 모델, 사용자 엔드포인트 4개, 내부 콜백 1개, 복구 계산 규칙, llmPipeline 연동 계약, 작업 등록 지점, 예외·설정 키를 담는다.
+- `docs/spec/api/00-common.md`를 갱신한다. 전역 예외 표에 신규 예외 7개(`AI_OPERATION_NOT_FOUND`, `INVALID_RESTORE_REQUEST`, `RESTORE_PREVIEW_STALE`, `AI_OPERATION_PAYLOAD_CONFLICT`, `INVALID_CALLBACK_TOKEN`, `INVALID_CALLBACK_PAYLOAD`, `WIKI_PAGE_VERSION_NOT_FOUND`)를 추가하고, `/api/ai-operations/**`가 Spring Security 대신 `X-Internal-Token`으로 검증된다는 점과 설정 키 3개를 더한다.
+- `OperationLogRepository`에서 `findByTargetDocumentIdAndOperationTypeOrderByCreatedAtAsc`를 제거한다. 복구 범위 선택(`mode`)을 없애면서 호출부가 사라진 메서드다.
+- 같은 이유로 남아 있던 `mode=since`·`mode=document` 언급을 리포지토리 주석과 작업 계획 문서에서 정리한다.
+
+**검증**
+
+- 문서에 적은 경로·요청·응답 필드·예외 코드를 실제 컨트롤러와 `GlobalExceptionHandler`에서 대조했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- TASK-009의 나머지 완료 조건인 실제 ingest·복구 E2E 검증은 llmPipeline이 `operation_id` 수용, 기여 조각 저장, `POST /wiki/restore-runs`를 구현한 뒤에야 가능하다.
+
+### feat: 복구 재조립 결과 수신 추가
+
+**변경된 것**
+
+- `POST /api/ai-operations/{operation_id}/result`가 작업 유형에 따라 갈린다. `restore`면 재조립 분기로 가서 복구의 `rebuilding` 단계를 끝낸다. 엔드포인트는 그대로 하나다.
+- `OperationResultRequest`에 `failed_pages`를 추가한다. 재조립에만 실리며 없으면 전량 성공이다.
+- `RestoreRebuildApplier` — 재조립 결과를 한 트랜잭션으로 반영한다. 성공분은 `revision = max+1`로 적재하고 `rebuilt`를, 실패분은 본문을 건드리지 않고 `rebuild_failed`와 사유를 기록한다. `delegated` 행은 그대로 둔다.
+- `contribution_count`는 다시 세지 않고 복구가 보관해 둔 `restore_manifest`에서 꺼낸다. 그사이 새 ingest가 들어와도 목표값이 흔들리지 않는다.
+- 지시서에 `rebuild`로 없는 페이지가 결과에 오면 422로 거절한다. 요청하지 않은 페이지다.
+- 콜백 응답이 실제 상태를 돌려준다. 기존에는 `succeeded`로 고정이라 부분 실패를 알 수 없었다. `OperationResultResponse`를 추가하고 `accept()`가 이 값을 반환한다.
+- `WikiLineCounter`를 분리한다. ingest 적재와 재조립이 같은 방식으로 증감 줄 수를 센다. `OperationApplier`에 있던 `countLines`를 옮긴 것이며 계산 방식은 그대로다.
+
+**멱등**
+
+- 작업이 이미 확정 상태면 `payload_hash`를 비교해 같으면 기존 결과를, 다르면 409를 돌려준다. 기존 ingest와 같다.
+- `rebuilding` 중 같은 페이지가 다시 오면 `content_hash` 일치로 걸러 새 버전을 만들지 않는다. 재조립 본문은 복구 시점의 본문과 다르므로 해시가 같다는 것은 이미 반영했다는 뜻이다.
+- 실패 기록은 `(operation_id, page_id, rebuild_failed)` 존재 여부로 거른다. 실패에는 대조할 해시가 없다.
+- 재조립을 기다리는 상태(`rebuilding`·`notify_pending`)가 아니면 422로 거절한다.
+
+**검증**
+
+- `RestoreRebuildApplierTest` 8개를 추가했다. 지시서 기여 수 사용, `rebuilt` 기록, 실패 기록, 전량 성공 확정, 동일 내용 재전송, 중복 실패 기록, 미요청 페이지 거절, 되돌리기로 끝낸 페이지 거절이다. 지시서는 실제와 같이 JSON 직렬화·역직렬화를 거쳐 검증했다.
+- `OperationIngestServiceTest`에 재조립 분기 라우팅·상태 검증·해시 불일치 3개를 더해 10개가 됐다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline이 아직 이 payload를 보내지 않는다. mock payload로만 검증했다.
+- 재조립 실패 페이지는 복구 직전 내용 그대로 남는다. 남은 기여와 본문이 어긋난 상태이며 다음 lint가 정리해야 한다.
+
+### feat: 이 시점으로 되돌리기 실행 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{ws}/ai-operation-logs/{operation_id}/restore`를 추가한다. body는 미리보기 응답의 `preview_token` 하나다. 미리보기와 같은 계산을 다시 하고 결과를 Wiki에 반영한다.
+- `RestoreExecuteService` — 되돌릴 수 있는 작업인지 확인(`ingest`·`lint`만), `preview_token` 재검증, 계획 계산, 반영, llmPipeline 통지까지의 순서를 맡는다.
+- `RestoreApplier` — 반영을 한 트랜잭션으로 처리한다. 교착을 피하려고 `page_id` 오름차순으로 `FOR UPDATE` 잠금을 잡고, 제외 대상 기여를 `active=false`로 끈 뒤 페이지마다 복원·삭제·위임으로 갈린다.
+- `RestoreOperationLifecycle` — 복구 작업의 시작(`applying`)과 종료를 각각 별도 트랜잭션으로 커밋한다. 반영 중 실패해도 `applying`으로 남아 같은 `restore_manifest`로 재시도할 수 있다.
+- `PipelineRestoreRequester` — `POST {app.wiki-restore.endpoint}`로 조립 지시서를 보낸다. 재작성 대상, 되돌린 페이지, 삭제된 페이지를 함께 싣는다.
+- `WikiPageStatus.deleted`와 `V17__add_wiki_page_deleted_status.sql`을 추가한다. `wiki_pages.status` CHECK 제약에 `deleted`를 넣는다.
+- `WikiPageRepository.findByIdForUpdate`(비관적 쓰기 잠금)와 `DocumentWikiLinkRepository.deleteByIdWikiPageId`를 추가한다.
+- `RestorePreviewStaleException`을 409 `RESTORE_PREVIEW_STALE`로 매핑한다.
+- `app.wiki-restore.endpoint`·`app.wiki-restore.timeout-seconds` 설정을 추가한다.
+
+**설계 확정**
+
+- **ingest 되돌리기는 Wiki만 되돌린다.** ingest는 원문 문서를 읽기만 하고 바꾸지 않으므로 되돌릴 문서 본문이 없다. 문서 본문 복원은 `document_edit`의 몫이라 여기서 뺐다.
+- **Backend는 저장소에 쓰지 않는다.** 되돌릴 revision의 object가 불변 key로 이미 있으므로 같은 본문을 다시 쓰지 않고 `markdown_uri`를 그 key로 옮긴다.
+- 삭제는 소프트 삭제다. 하드 삭제하면 `wiki_page_versions`·`wiki_page_contributions`가 CASCADE로 사라져 되살릴 수 없다.
+- 기여 행은 지우지 않고 끈다. 지우면 연속 복구에서 이전에 제외한 기여가 되살아난다.
+- 통지 실패는 예외를 올리지 않는다. 복구는 이미 반영됐고 재작성만 보류되므로 `notify_pending`으로 남긴다.
+
+**검증**
+
+- `RestoreExecuteServiceTest` 7개를 추가했다. 토큰 불일치 409, 되돌릴 수 없는 작업 유형, 빈 계획, 재작성 없음→`succeeded`, 재작성 있음→`rebuilding`, 통지 실패→`notify_pending`, 콜백 주소 전달이다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- llmPipeline `POST /wiki/restore-runs`가 아직 없다. 재작성 대상이 있는 복구는 지금은 `notify_pending`에서 멈춘다.
+- `notify_pending` 자동 재전송이 없다. 재시도는 수동이다.
+- `applying` 상태 동안 같은 문서의 새 ingest를 막는 처리가 아직 없다.
+- 행 잠금 동작은 단위 테스트로 검증할 수 없다. Testcontainers 통합 테스트가 필요하다.
+
+### feat: AI 작업 로그 조회 API 추가
+
+**변경된 것**
+
+- `GET /api/workspaces/{ws}/ai-operation-logs`를 추가한다. 최신순 커서 페이지네이션이며 `type`·`status`로 거를 수 있다. 로그 테이블만 읽고 diff를 계산하지 않는다. 기본 20건, 최대 100건이다.
+- `GET .../ai-operation-logs/{operation_id}`를 추가한다. 그 작업이 바꾼 리소스를 함께 반환한다. 줄 수는 저장된 값이라 계산이 없다.
+- `GET .../ai-operation-logs/{operation_id}/restore-preview`를 추가한다. 이미 만들어 둔 미리보기 서비스에 엔드포인트를 얹었다.
+- `GET .../wiki/pages/{page_id}/diff?from=&to=`를 추가한다. 두 revision 본문을 읽어 요청 시점에 계산한다.
+- `MarkdownDiffService`에 리소스 중립 `diff()`를 추가하고 기존 `compare()`는 어댑터로 남긴다. 문서와 Wiki가 같은 계산기를 쓰되 응답 타입만 다르다. **기존 `/documents/{id}/diff` 응답 스키마는 바뀌지 않는다.**
+- `WikiPageVersionNotFoundException`을 404 `WIKI_PAGE_VERSION_NOT_FOUND`로 매핑한다.
+
+**복구 범위 선택 제거**
+
+- 복구를 "이 시점으로 되돌리기" 하나로 고정하고 `mode` 파라미터를 없앤다. 기준 작업 이후 같은 문서의 작업이 전부 취소되며, 그사이에 만들어진 source page·concept page는 받치는 기여가 사라져 삭제된다.
+- lint는 `target_document_id`가 없어 문서 범위를 만들 수 없다. 그 작업 하나만 취소하도록 내부에서 처리하며 사용자에게 선택지를 노출하지 않는다.
+- `RestoreMode`를 삭제하고 `preview_token` 서명 대상에서도 뺐다.
+
+**검증**
+
+- 실제 데이터를 넣고 Swagger로 목록·필터·상세·미리보기·diff를 호출해 확인했다. 다중 버전 시나리오(`A1 A2 A3 B A4`)에서 A3 지목 시 A4가 만든 페이지가 삭제되고, A2 지목 시 A3·A4가 만든 페이지가 대상이 되며 문서 B가 보탠 페이지는 재작성되는 것을 확인했다.
+- `RestoreScopeResolverTest` 4개를 추가했다. 이후 작업 수집, 기준 작업 보존, 빈 범위, lint 단독 취소다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- 목록 조회가 `(:cursor IS NULL OR ...)` 형태에서 500으로 실패했다. Postgres가 timestamp 파라미터의 타입을 추론하지 못한다. 첫 페이지에 `null` 대신 먼 미래 값을 넘기도록 고쳤다. 단위 테스트로는 잡히지 않는 종류라 통합 테스트가 필요하다.
+- 로그가 쌓이려면 프론트엔드가 `apply_operation_id`를 전달하거나 `ingest-logging-enabled`를 켜고 llmPipeline이 콜백을 보내야 한다.
+
+### feat: ingest 결과 콜백 수신 추가
+
+**변경된 것**
+
+- `POST /api/ai-operations/{operation_id}/result`를 추가한다. llmPipeline이 ingest를 마치고 호출하는 내부 콜백이며 사용자 인증 대상이 아니다. `X-Internal-Token` 헤더를 상수 시간 비교로 검증하고, **통과하기 전에는 저장소 객체를 읽지 않는다.**
+- `IngestOperationStarter`가 llmPipeline 호출 **전에** `processing` 로그를 별도 트랜잭션으로 커밋한다. 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다. 호출 자체가 실패하면 `failed`로 확정한다.
+- `OperationIngestService`가 멱등·정합성·읽기를 맡는다. 같은 `payload_hash` 재전송은 기존 결과를 200으로 돌려주고, 같은 작업에 다른 payload가 오면 409다. 콜백이 보낸 workspace·user·document는 권한 근거가 아니라 등록값과의 대조용이다.
+- `OperationApplier`가 적재를 한 트랜잭션으로 처리한다. 페이지마다 revision을 채번하고 기여를 먼저 넣어 그 시점 기여 수를 버전 행에 담는다. 검증을 마친 뒤에만 `wiki_pages.markdown_uri`를 옮긴다.
+- `WikiObjectReader`가 key 검증과 읽기를 맡는다. bucket은 환경 설정으로 고정하고 `wiki/{ws}/pages/{page}/ops/{op}.md`와 정확히 일치할 때만 읽는다.
+- `app.aihistory.ingest-logging-enabled` 플래그를 추가하고 기본값을 끈다.
+
+**검증**
+
+- `OperationIngestServiceTest` 7개를 mock payload로 검증했다. 정상 수신, 해시 불일치 422, 미등록 404, 경로·본문 id 불일치, 타 워크스페이스 위조, 재전송 200, 다른 payload 409다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- **플래그가 꺼져 있어야 한다.** llmPipeline의 `PipelineRunIn`이 `extra="forbid"`라 스키마가 준비되기 전에 `operation_id`를 보내면 ingest가 422로 깨진다. 플래그가 꺼져 있으면 해당 필드가 `null`이라 직렬화에서 빠져 기존 동작이 그대로다.
+- `@Transactional`을 같은 클래스의 `protected` 메서드에 두면 자기 호출이라 프록시를 타지 않는다. 그래서 적재를 `OperationApplier`로 분리했다.
+- 아직 `SELECT ... FOR UPDATE` 행 잠금이 없어 같은 페이지에 동시 콜백이 오면 revision이 겹칠 수 있다. 통합 테스트와 함께 이어서 붙인다.
+- lint 확장은 이번 범위에서 분리했다.
+
+### feat: 문서 AI 편집 로그 기록 추가
+
+**변경된 것**
+
+- `AgentApplyOperationStore`를 추가한다. `POST /agent/turns`가 편집안마다 일회용 적용 표를 발급하고, 저장 요청이 그 표를 돌려주면 AI 작업으로 기록한다. TTL 30분이며 메모리에만 둔다.
+- `AgentTurnResponse`에 `applyOperationId`를 추가한다. 프론트엔드는 이 값을 `PUT /documents/{id}/content`의 `apply_operation_id` part로 전달해야 AI 편집 로그가 남는다.
+- `DocumentService.saveContent`에 `applyOperationId`를 받는 오버로드를 추가한다. 표 검증에 성공한 경우에만 `ai_operation_logs`·`ai_operation_changes`를 문서 저장과 같은 트랜잭션에서 기록하고 `document_content_versions.operation_id`를 연결한다.
+- `base_version` 불일치는 본 트랜잭션이 롤백되므로 `OperationRecorder.recordConflict`를 `REQUIRES_NEW`로 분리해 `conflict` 로그를 남긴다.
+- 줄 수 계산이 실패해도 저장을 막지 않는다. 큰 문서는 diff 계산이 거부될 수 있는데 로그 때문에 사용자 저장이 실패해서는 안 된다.
+
+**검증**
+
+- `AgentApplyOperationStoreTest` 5개로 재사용·위조·타 사용자·타 문서 표가 통과하지 못하는 것을 확인했다.
+- Backend 전체 `./gradlew test`가 통과했다.
+
+**남은 주의사항**
+
+- `source=agent` 문자열만으로는 AI 작업 여부를 판단하지 않는다. 그 값은 클라이언트가 임의로 넣을 수 있어 수동 편집을 AI 작업으로 위장할 수 있다. 기존 `source` 파라미터는 그대로 두되 기록 판단에는 쓰지 않는다.
+- 표를 소비하는 시점은 저장 성공 직후다. 검증 단계에서 소비하면 `base_version` 충돌 시 표가 사라져 재시도할 수 없다.
+- 프론트엔드가 `apply_operation_id`를 전달하기 전까지 AI 편집 로그는 쌓이지 않는다. 필드 추가는 하위 호환이라 기존 동작에는 영향이 없다.
+- `saveContent`의 기록 분기는 DB가 필요해 아직 통합 테스트로 덮지 못했다.
+
+### feat: AI 작업 복구 판정 추가
+
+**변경된 것**
+
+- `RestorePlanner`를 추가한다. 기여 명단만 보고 페이지마다 삭제·복원·재조립을 가른다. 본문을 읽지 않는 순수 계산이라 미리보기에 저장소 접근이 없다.
+- 판정 기준은 세 가지다. 받치는 기여가 하나도 남지 않으면 삭제, 남길 기여의 마지막 revision이 담고 있던 기여가 남길 집합과 정확히 같으면 그 스냅샷으로 복원, 그 외에는 llmPipeline 재조립이다.
+- `RestoreMode`를 추가한다. `since`(기본)는 기준 작업 이후 같은 문서의 작업을 전부 제외하고, `single`은 하나만, `document`는 그 문서 전부를 제외한다. 로그 목록에서 한 시점을 골라 되돌리는 조작이 가장 흔해 `since`를 기본값으로 둔다.
+- 판정기는 활성 기여만이 아니라 **비활성 기여까지 입력받는다.** 복원 목적지가 유효한지 판단하려면 그 revision이 담고 있던 기여를 알아야 하는데, 이전 복구로 꺼진 기여가 그 안에 들어 있을 수 있다.
+
+**검증**
+
+- 설계 문서 §5.4의 시나리오를 `RestorePlannerTest` 14개로 고정했다. 기본 취소 5개, 연속 복구 3개, `mode=since` 2개, 경계 4개다.
+- DB 없이 도는 순수 단위 테스트라 Testcontainers가 필요 없다.
+
+**남은 주의사항**
+
+- 복원 목적지를 처음에 `제외 대상 중 가장 이른 sequence_revision - 1`로 계산했는데, 연속 복구 시나리오에서 이미 비활성화한 기여가 담긴 revision을 고르는 버그가 있었다. 남길 기여의 마지막 revision을 쓰되 그 시점 기여 집합이 남길 집합과 같은지 확인하는 방식으로 고쳤다. lint가 기여 없이 revision만 올린 구간도 이 방식으로 함께 처리된다.
+
+### feat: 복구 미리보기 서비스 추가
+
+**변경된 것**
+
+- `RestoreScopeResolver`를 추가한다. 기준 작업과 `mode`로 제외할 작업 집합을 정한다. `since`는 기준 작업 이후만, `document`는 기준 작업을 포함한 그 문서 작업 전부를 제외한다. lint와 restore는 기여를 만들지 않아 ingest만 모은다.
+- `PreviewTokenSigner`를 추가한다. 미리보기 시점의 상태를 HMAC-SHA256으로 서명하고, 실행 시 상태를 다시 계산해 서명을 대조한다. 토큰에 상태를 담지 않아 별도 저장이 필요 없다. 서명 대상에 기여의 활성 여부까지 넣어 그사이 다른 복구가 끼어든 것도 잡는다.
+- `RestorePreviewService`를 추가한다. 워크스페이스 멤버십을 확인하고 제외 집합·기여 명단·판정·토큰을 엮어 미리보기를 만든다. 본문을 읽지 않아 저장소 접근이 없다.
+- `WikiPageContributionRepository`의 페이지별 조회를 전체 기여(활성·비활성)로 바꾼다. 복원 목적지 유효성을 보려면 그 revision이 담고 있던 기여를 알아야 한다.
+- 예외 2건을 전역 핸들러에 등록한다. `OperationNotFoundException`은 404 `AI_OPERATION_NOT_FOUND`, `InvalidRestoreRequestException`은 400 `INVALID_RESTORE_REQUEST`다. 후자는 `target_document_id`가 없는 lint 작업에 `since`·`document`를 쓰려 할 때 난다.
+
+**검증**
+
+- `RestorePlannerTest` 14개가 계속 통과한다.
+- 서명 키는 기동 시 `SecureRandom`으로 만든다. 미리보기 토큰은 수명이 짧고 재시작 시 무효여도 무방하다. 다중 인스턴스로 확장할 때 공유 시크릿으로 바꾼다.
+
+**남은 주의사항**
+
+- 미리보기 엔드포인트는 아직 없다. 조회 API 작업에서 다른 엔드포인트와 함께 붙인다.
+- `RestoreScopeResolver`와 `RestorePreviewService`의 통합 테스트는 실제 데이터가 쌓이는 콜백 수신 작업 이후에 붙인다.
+
+### feat: AI 작업 로그 스키마 추가
+
+**변경된 것**
+
+- `ai_operation_logs`를 추가한다. 문서 AI 편집·Wiki ingest·lint·복구를 한 테이블에 기록한다. `operation_id`가 PK이며 작업 등록 중복을 막는다. `target_document_id`는 복구 대상 선정의 근거이고, `restore_manifest`와 `payload_hash`는 각각 재조립 결과 수신과 콜백 재전송 판별에 쓴다.
+- `ai_operation_changes`를 추가한다. 작업 1회가 바꾼 리소스를 1행씩 남기는 감사 기록이다. `(operation_id, resource_type, resource_id, change_type)` UNIQUE가 콜백 재전송 시 중복을 막는 최종 방어선이다. diff 본문은 저장하지 않고 줄 수만 남긴다.
+- `wiki_page_versions`를 추가한다. Wiki 페이지 본문 이력이며 `revision`은 단조 증가한다. 복구도 새 revision을 append한다. `markdown_key`에 불변 object key를 함께 남겨 복구가 저장소에 쓰지 않고 옛 object를 재사용한다.
+- `wiki_page_contributions`를 추가한다. "지금 어느 문서가 이 페이지를 받치고 있나"의 현재 상태이며 복구 판정의 근거다. 복구는 행을 지우지 않고 `active`를 끄고 `deactivated_by`를 남긴다. 지우면 연속 복구에서 제외한 기여가 다시 살아난다.
+- `document_content_versions.operation_id`를 추가한다. 그 버전을 만든 AI 작업을 가리키며 수동 편집이면 NULL이다.
+- `wiki_pages`는 변경하지 않는다. revision 채번은 `max(revision)`으로 얻고, 재조립 실패는 `ai_operation_changes.rebuild_failed`로 남긴다.
+
+**검증**
+
+- Flyway V15·V16 적용과 `Successfully validated 16 migrations`를 확인했다.
+- `spring.jpa.hibernate.ddl-auto=validate` 상태에서 애플리케이션이 정상 기동해 엔티티와 스키마 일치를 확인했다.
+
+**남은 주의사항**
+
+- 아직 어떤 서비스도 이 테이블을 쓰지 않는다. 기록·조회·복구는 후속 작업에서 붙인다.
+- 설계와 작업 계획은 `docs/design/ai-operation-log.md`와 `ai-operation-log-tasks.md`를 따른다.
 ---
 
 ## 2026-07-30

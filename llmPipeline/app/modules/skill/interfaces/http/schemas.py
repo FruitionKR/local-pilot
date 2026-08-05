@@ -2,7 +2,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.skill.domain.entities import Skill, SkillVersion
+from app.modules.skill.domain.entities import (
+    Skill,
+    SkillDraftProposal,
+    SkillDraftSourceOperation,
+    SkillDraftSourceRun,
+    SkillVersion,
+)
 
 
 CapabilityValue = Literal["document-create", "document-edit", "folder-organize", "template"]
@@ -12,11 +18,14 @@ ToolValue = Literal[
     "search_hierarchy",
     "get_breadcrumb",
     "get_document_metadata",
+    "get_document_content",
     "create_folder",
     "rename_folder",
     "move_folder",
     "move_document",
     "rename_document",
+    "create_document",
+    "apply_document_edit",
 ]
 
 
@@ -107,4 +116,57 @@ class SkillPreviewResponse(BaseModel):
             has_blocked_issues=any(
                 isinstance(issue, dict) and issue.get("severity") == "blocked" for issue in issues
             ),
+        )
+
+
+class SkillDraftSourceOperationRequest(BaseModel):
+    tool_name: ToolValue
+    reason: str = Field(..., min_length=1)
+
+    def to_domain(self) -> SkillDraftSourceOperation:
+        return SkillDraftSourceOperation(tool_name=self.tool_name, reason=self.reason)
+
+
+class SkillDraftSourceRunRequest(BaseModel):
+    run_id: str = Field(..., min_length=1)
+    status: Literal["completed"]
+    request_summary: str = Field(..., min_length=1)
+    plan_summary: str = Field(..., min_length=1)
+    successful_operations: list[SkillDraftSourceOperationRequest] = Field(..., min_length=1)
+
+    def to_domain(self) -> SkillDraftSourceRun:
+        return SkillDraftSourceRun(
+            run_id=self.run_id,
+            status=self.status,
+            request_summary=self.request_summary,
+            plan_summary=self.plan_summary,
+            successful_operations=tuple(operation.to_domain() for operation in self.successful_operations),
+        )
+
+
+class SkillDraftProposalRequest(BaseModel):
+    source_runs: list[SkillDraftSourceRunRequest] = Field(..., min_length=1)
+    user_directives: list[str] = Field(default_factory=list)
+    excluded_literals: list[str] = Field(default_factory=list)
+
+
+class SkillDraftProposalResponse(BaseModel):
+    name: str
+    description: str
+    instructions_markdown: str
+    capabilities: list[str]
+    allowed_tools: list[str]
+    source_run_ids: list[str]
+    persisted: bool
+
+    @classmethod
+    def from_domain(cls, proposal: SkillDraftProposal) -> "SkillDraftProposalResponse":
+        return cls(
+            name=proposal.name,
+            description=proposal.description,
+            instructions_markdown=proposal.instructions_markdown,
+            capabilities=list(proposal.capabilities),
+            allowed_tools=list(proposal.allowed_tools),
+            source_run_ids=list(proposal.source_run_ids),
+            persisted=proposal.persisted,
         )
