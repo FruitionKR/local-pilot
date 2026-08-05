@@ -54,6 +54,8 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -440,6 +442,32 @@ class DocumentServiceBlocksTest {
         assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
         assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
         assertThat(document.getContentHash()).isEqualTo("original-hash");
+    }
+
+    @Test
+    @DisplayName("이미지를 첨부하지 않는 저장도 본문 기준으로 asset 참조를 동기화한다")
+    void saveContent_synchronizesAssetReferencesFromMarkdown() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        UUID retainedAssetId = UUID.randomUUID();
+        String retained = "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + retainedAssetId + "/content)\n";
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+        var reference = new DocumentAssetReferenceParser.ManagedAssetReference(WORKSPACE_ID, retainedAssetId);
+        when(assetReferenceParser.parse(retained)).thenReturn(Set.of(reference));
+
+        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), retained, 1L, null);
+
+        verify(assetReferenceSynchronizer).synchronize(
+                document.getId(), WORKSPACE_ID, Set.of(reference));
     }
 
     @Test

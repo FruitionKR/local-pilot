@@ -6,6 +6,44 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-06
+
+### fix: 일반 Markdown 저장의 asset 참조 동기화와 이미지 용량 한도 정합 수정
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 저장 경로가 `metadata` multipart와 `markdown` part 둘로 갈리면서 생긴
+  정합성 문제 두 건을 확인했다.
+
+**수정된 것**
+
+- 이미지를 첨부하지 않는 일반 저장(`DocumentService.saveContent`)에서도 본문을 기준으로 asset
+  reference를 동기화한다. 기존에는 `saveContentWithAssets`에서만 동기화해서, 본문에서 이미지를
+  지우고 저장해도 reference row가 남아 `unreferenced_since`가 찍히지 않았고 정리 worker가 해당
+  object를 영구히 삭제하지 못했다. 반대로 본문에 관리 이미지 경로를 새로 붙여도 reference가
+  생기지 않았다.
+- `spring.servlet.multipart.max-request-size`를 50MB에서 110MB로 올렸다. 이미지 합계 한도 100MB를
+  코드에서 검사하기 전에 Spring이 요청을 먼저 차단해, 계약상 `413 DOCUMENT_ASSET_TOO_LARGE`가
+  나가야 할 50~100MB 구간이 `400 INVALID_REQUEST "파일이 없거나 비어 있습니다."`로 응답됐다.
+- `MaxUploadSizeExceededException` 전용 handler를 추가해 multipart 한도 초과를
+  `413 PAYLOAD_TOO_LARGE`로 구분한다. 기존 `MultipartException` handler는 파일 누락 400 응답을
+  그대로 유지한다.
+
+**주의사항**
+
+- 일반 저장에도 참조 동기화가 걸리면서, 본문에 잘못된 관리 이미지 경로나 다른 workspace의 asset
+  경로가 있으면 이제 400으로 거절된다. 이미지 포함 저장 경로에는 이미 적용되던 규칙이며 두 경로의
+  동작을 일치시킨 것이다.
+- `max-request-size` 확대는 다른 multipart endpoint에도 적용된다. 파일 1개 한도는
+  `max-file-size=50MB`로 유지된다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- 일반 저장의 참조 동기화 호출과 413/400 구분을 각각 단위 테스트로 추가했다.
+
+---
+
 ## 2026-08-05
 
 ### feat: Markdown 이미지 asset 저장 모델 추가

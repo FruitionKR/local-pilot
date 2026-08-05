@@ -1051,6 +1051,10 @@ public class DocumentService {
         if (updated == 0) {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
+        // 이미지를 첨부하지 않는 저장에서도 본문에 남은 관리 이미지를 기준으로 참조를 맞춘다.
+        // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
+        assetReferenceSynchronizer.synchronize(
+                documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
         String previousMarkdown = editState.getMarkdown();
         recordContentVersion(documentId, baseVersion, previousMarkdown,
                 editState.getContentHash(), userId, updatedAt);
