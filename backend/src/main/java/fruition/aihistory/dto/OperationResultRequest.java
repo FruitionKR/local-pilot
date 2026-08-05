@@ -22,8 +22,20 @@ public record OperationResultRequest(
         @JsonProperty("target_document_id") String targetDocumentId,
         String summary,
         @JsonProperty("changed_pages") @NotNull List<ChangedPage> changedPages,
-        @JsonProperty("failed_pages") List<FailedPage> failedPages
+        @JsonProperty("failed_pages") List<FailedPage> failedPages,
+        @JsonProperty("deleted_pages") List<String> deletedPages,
+        @JsonProperty("link_changes") LinkChanges linkChanges,
+        @JsonProperty("failed_actions") List<FailedAction> failedActions
 ) {
+
+    /** 기존 ingest·lint 결과 생성 코드를 위한 호환 생성자다. */
+    public OperationResultRequest(String operationId, String operationType, String status,
+                                  String workspaceId, String userId, String targetDocumentId,
+                                  String summary, List<ChangedPage> changedPages,
+                                  List<FailedPage> failedPages) {
+        this(operationId, operationType, status, workspaceId, userId, targetDocumentId,
+                summary, changedPages, failedPages, null, null, null);
+    }
 
     /** 재조립에만 쓴다. 실패한 페이지는 본문을 건드리지 않고 사유만 기록한다. */
     public record FailedPage(
@@ -35,6 +47,36 @@ public record OperationResultRequest(
     public List<FailedPage> failedPagesOrEmpty() {
         return failedPages == null ? List.of() : failedPages;
     }
+
+    public List<String> deletedPagesOrEmpty() {
+        return deletedPages == null ? List.of() : deletedPages;
+    }
+
+    public LinkChanges linkChangesOrEmpty() {
+        return linkChanges == null ? new LinkChanges(List.of(), List.of()) : linkChanges;
+    }
+
+    public List<FailedAction> failedActionsOrEmpty() {
+        return failedActions == null ? List.of() : failedActions;
+    }
+
+    public record LinkChanges(
+            @JsonProperty("removed_links") List<Link> removedLinks,
+            @JsonProperty("restored_links") List<Link> restoredLinks
+    ) {
+        public LinkChanges {
+            removedLinks = removedLinks == null ? List.of() : removedLinks;
+            restoredLinks = restoredLinks == null ? List.of() : restoredLinks;
+        }
+    }
+
+    public record Link(String source, String target, String relation) {}
+
+    public record FailedAction(
+            String action,
+            @JsonProperty("resource_id") String resourceId,
+            String reason
+    ) {}
 
     /**
      * @param markdownKey        그 작업이 쓴 본문 object key
@@ -52,6 +94,9 @@ public record OperationResultRequest(
 
     /** 부분 실패도 이미 만든 페이지는 담아 보내야 한다. 안 그러면 Wiki에만 있고 로그에 없는 페이지가 남는다. */
     public boolean isFailure() {
-        return "failed".equals(status);
+        return "failed".equals(status)
+                || "partially_succeeded".equals(status)
+                || !failedPagesOrEmpty().isEmpty()
+                || !failedActionsOrEmpty().isEmpty();
     }
 }

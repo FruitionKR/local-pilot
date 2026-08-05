@@ -5,6 +5,7 @@ import fruition.aihistory.domain.ChangeType;
 import fruition.aihistory.domain.OperationChange;
 import fruition.aihistory.domain.OperationLog;
 import fruition.aihistory.domain.OperationStatus;
+import fruition.aihistory.domain.ResourceType;
 import fruition.aihistory.dto.OperationResultRequest;
 import fruition.aihistory.dto.OperationResultResponse;
 import fruition.aihistory.dto.PageRestorePlan;
@@ -130,6 +131,81 @@ class RestoreRebuildApplierTest {
         applier.apply(OPERATION_ID, request(), List.of(rebuilt("sha256:new")), "hash", NOW);
 
         assertThat(operation.getStatus()).isEqualTo(OperationStatus.succeeded);
+    }
+
+    @Test
+    @DisplayName("페이지 실패가 없어도 failed_actions가 있으면 부분 성공이고 링크 변경 수를 요약한다")
+    void marksPartialWhenActionFailedAndSummarizesLinkChanges() {
+        OperationLog operation = givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of("C9"),
+                new OperationResultRequest.LinkChanges(
+                        List.of(new OperationResultRequest.Link("C3", "C9", "related")),
+                        List.of(new OperationResultRequest.Link("C3", "C4", "supports"))),
+                List.of(new OperationResultRequest.FailedAction("delete_page", "C8", "page_not_found")));
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        assertThat(operation.getStatus()).isEqualTo(OperationStatus.partially_succeeded);
+        assertThat(operation.getSummary()).isEqualTo(
+                "페이지 변경 0건 · 삭제 1건 · 링크 제거 1건 · 링크 복원 1건 · 실패 1건");
+    }
+
+    @Test
+    @DisplayName("callback이 보고한 삭제 페이지와 링크 변경을 감사 로그로 기록한다")
+    void recordsReportedPageAndLinkChanges() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of("C9"),
+                new OperationResultRequest.LinkChanges(
+                        List.of(new OperationResultRequest.Link("C3", "C9", "related")),
+                        List.of(new OperationResultRequest.Link("C3", "C4", "supports"))),
+                List.of());
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository, org.mockito.Mockito.times(3)).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(OperationChange::getResourceType, OperationChange::getChangeType)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(ResourceType.wiki_page, ChangeType.deleted),
+                        org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_removed),
+                        org.assertj.core.groups.Tuple.tuple(ResourceType.relation_link, ChangeType.link_restored));
+        assertThat(captor.getAllValues().get(1).getResourceId()).isEqualTo("C3|related|C9");
+    }
+
+    @Test
+    @DisplayName("실행 단계에서 이미 기록한 삭제 페이지는 callback에서 중복 기록하지 않는다")
+    void skipsDeletedPageAlreadyRecorded() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        when(operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                OPERATION_ID, "C9", ChangeType.deleted)).thenReturn(true);
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of("C9"), null, List.of());
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        verify(operationChangeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("복구 지시서에 없는 삭제 페이지를 callback이 보고하면 거절한다")
+    void rejectsDeletedPageNotInManifest() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of("C_OTHER"), null, List.of());
+
+        assertThatThrownBy(() -> applier.apply(OPERATION_ID, request, List.of(), "hash", NOW))
+                .isInstanceOf(InvalidCallbackPayloadException.class)
+                .hasMessageContaining("복구 지시서에 없는 삭제 페이지");
+
+        verify(operationChangeRepository, never()).save(any());
+        verify(versionRepository, never()).findMaxRevision(anyString());
     }
 
     @Test

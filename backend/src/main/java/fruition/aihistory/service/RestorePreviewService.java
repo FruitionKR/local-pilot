@@ -1,12 +1,18 @@
 package fruition.aihistory.service;
 
 import fruition.aihistory.domain.OperationLog;
+import fruition.aihistory.domain.ChangeType;
+import fruition.aihistory.domain.OperationChange;
+import fruition.aihistory.domain.ResourceType;
 import fruition.aihistory.domain.OperationType;
 import fruition.aihistory.dto.DocumentRestorePlan;
+import fruition.aihistory.dto.PageRestorePlan;
 import fruition.aihistory.dto.RestorePlan;
 import fruition.aihistory.dto.RestorePreviewResponse;
 import fruition.aihistory.exception.OperationNotFoundException;
+import fruition.aihistory.exception.InvalidRestoreRequestException;
 import fruition.aihistory.repository.OperationLogRepository;
+import fruition.aihistory.repository.OperationChangeRepository;
 import fruition.wiki.domain.WikiPageContribution;
 import fruition.wiki.repository.WikiPageContributionRepository;
 import fruition.workspace.exception.WorkspaceNotFoundException;
@@ -15,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +43,7 @@ public class RestorePreviewService {
     private final PreviewTokenSigner tokenSigner;
     private final RestoreTargetValidator validator;
     private final DocumentRestorePlanner documentPlanner;
+    private final LintRestorePlanner lintRestorePlanner;
 
     public RestorePreviewService(OperationLogRepository operationLogRepository,
                                  WikiPageContributionRepository contributionRepository,
@@ -43,6 +52,7 @@ public class RestorePreviewService {
                                  RestorePlanner planner,
                                  PreviewTokenSigner tokenSigner,
                                  DocumentRestorePlanner documentPlanner,
+                                 LintRestorePlanner lintRestorePlanner,
                                  RestoreTargetValidator validator) {
         this.operationLogRepository = operationLogRepository;
         this.contributionRepository = contributionRepository;
@@ -51,6 +61,7 @@ public class RestorePreviewService {
         this.planner = planner;
         this.tokenSigner = tokenSigner;
         this.documentPlanner = documentPlanner;
+        this.lintRestorePlanner = lintRestorePlanner;
         this.validator = validator;
     }
 
@@ -69,6 +80,13 @@ public class RestorePreviewService {
         if (target.getOperationType() == OperationType.document_edit) {
             DocumentRestorePlan plan = documentPlanner.plan(target);
             return RestorePreviewResponse.from(operationId, plan, tokenSigner.sign(operationId, plan));
+        }
+
+        if (target.getOperationType() == OperationType.lint) {
+            LintRestorePlanner.Context lintPlan = lintRestorePlanner.plan(target);
+            validator.requireApplicable(target, lintPlan.plan());
+            return RestorePreviewResponse.from(operationId, lintPlan.plan(),
+                    tokenSigner.sign(operationId, lintPlan.contributions()));
         }
 
         Set<String> excluded = scopeResolver.resolve(target);

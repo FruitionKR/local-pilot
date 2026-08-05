@@ -3,6 +3,7 @@ package fruition.aihistory.repository;
 import fruition.TestcontainersConfiguration;
 import fruition.aihistory.dto.OperationResultRequest;
 import fruition.aihistory.service.OperationApplier;
+import fruition.aihistory.service.LintOperationApplier;
 import fruition.wiki.repository.WikiPageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +49,7 @@ class WikiPageLockIntegrationTest {
     @Autowired WikiPageRepository wikiPageRepository;
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired OperationApplier operationApplier;
+    @Autowired LintOperationApplier lintOperationApplier;
 
     private String workspaceId;
     private String userId;
@@ -219,6 +221,31 @@ class WikiPageLockIntegrationTest {
         assertThat(count("SELECT count(*) FROM wiki_page_contributions WHERE page_id = ?")).isEqualTo(2L);
     }
 
+    @Test
+    @DisplayName("같은 페이지의 lint 2건도 revision을 직렬화하고 기여를 만들지 않는다")
+    void concurrentLintOperationsDoNotCollideOrCreateContributions() throws Exception {
+        String first = insertLintOperation();
+        String second = insertLintOperation();
+
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> a = executor.submit(() -> applyLint(first, "# 첫 번째 lint", start));
+            Future<?> b = executor.submit(() -> applyLint(second, "# 두 번째 lint", start));
+            start.countDown();
+            a.get(20, TimeUnit.SECONDS);
+            b.get(20, TimeUnit.SECONDS);
+        }
+
+        List<Long> revisions = jdbcTemplate.queryForList(
+                "SELECT revision FROM wiki_page_versions WHERE page_id = ? ORDER BY revision",
+                Long.class, pageA);
+        assertThat(revisions).containsExactly(1L, 2L);
+        assertThat(count("SELECT count(*) FROM wiki_page_contributions WHERE page_id = ?"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ai_operation_changes WHERE resource_id = ?"))
+                .isEqualTo(2L);
+    }
+
     private Long count(String sql) {
         return jdbcTemplate.queryForObject(sql, Long.class, pageA);
     }
@@ -235,6 +262,16 @@ class WikiPageLockIntegrationTest {
         return operationId;
     }
 
+    private String insertLintOperation() {
+        String operationId = "op_" + UUID.randomUUID().toString().replace("-", "");
+        jdbcTemplate.update(
+                "INSERT INTO ai_operation_logs(operation_id, workspace_id, user_id, operation_type,"
+                        + " status, changed_resource_count, created_at)"
+                        + " VALUES (?, ?, ?, 'lint', 'processing', 0, now())",
+                operationId, workspaceId, userId);
+        return operationId;
+    }
+
     /** 콜백 수신 이후 단계만 재현한다. 저장소 읽기는 이미 끝났다고 보고 본문을 직접 넘긴다. */
     private Void applyIngest(String operationId, String markdown, CountDownLatch start) {
         await(start);
@@ -245,6 +282,19 @@ class WikiPageLockIntegrationTest {
         operationApplier.apply(operationId, request,
                 List.of(new OperationApplier.LoadedPage(
                         pageA, prefix + ".md", prefix + ".json", markdown, "sha256:" + operationId)),
+                "hash_" + operationId, Instant.now());
+        return null;
+    }
+
+    private Void applyLint(String operationId, String markdown, CountDownLatch start) {
+        await(start);
+        String prefix = "wiki/" + workspaceId + "/pages/" + pageA + "/ops/" + operationId;
+        OperationResultRequest request = new OperationResultRequest(
+                operationId, "lint", "succeeded", workspaceId, userId, null, "요약",
+                List.of(), null);
+        lintOperationApplier.apply(operationId, request,
+                List.of(new LintOperationApplier.LoadedPage(
+                        pageA, prefix + ".md", markdown, "sha256:" + operationId)),
                 "hash_" + operationId, Instant.now());
         return null;
     }
