@@ -33,8 +33,20 @@ public class DocumentProcessingRequester {
     /** chatWiki=true면 채팅 Wiki page화 전용 엔드포인트(/chat-wiki/runs)로, 아니면 일반 문서 처리 엔드포인트로 보낸다. */
     public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
                                        String selectionMode, String inputMarkdown, boolean chatWiki) {
+        return request(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown, chatWiki,
+                null, null);
+    }
+
+    /**
+     * @param operationId       AI 작업 로그 식별자. llmPipeline이 결과 콜백에 그대로 실어 보낸다
+     * @param resultCallbackUrl 완료 결과를 보낼 곳. 진행 로그용 {@code callbackUrl}과 별개다
+     */
+    public PipelineRunResponse request(String documentId, String userId, String workspaceId, String callbackUrl,
+                                       String selectionMode, String inputMarkdown, boolean chatWiki,
+                                       String operationId, String resultCallbackUrl) {
         String endpoint = chatWiki ? chatEndpoint : processingEndpoint;
-        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl, selectionMode, inputMarkdown);
+        PipelineRunRequest body = new PipelineRunRequest(documentId, userId, workspaceId, callbackUrl,
+                selectionMode, inputMarkdown, operationId, resultCallbackUrl);
         log.info("[파이프라인 요청 데이터] endpoint={} documentId={} userId={} workspaceId={} chatWiki={} selectionMode={} callbackUrl={} inputMarkdownPresent={} inputMarkdownLength={}",
                 endpoint,
                 documentId,
@@ -78,7 +90,11 @@ public class DocumentProcessingRequester {
             @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("log_callback_url") String logCallbackUrl,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode,
-            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown,
+            // llmPipeline의 PipelineRunIn이 extra="forbid"라 스키마가 준비되기 전에는 보내면 422가 난다.
+            // null이면 직렬화에서 빠지므로 기존 동작에 영향이 없다.
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("operation_id") String operationId,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("result_callback_url") String resultCallbackUrl
     ) {}
 
     public record PipelineRunResponse(

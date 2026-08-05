@@ -2,6 +2,13 @@ package fruition.util;
 
 import fruition.agent.exception.PipelineAgentException;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
+import fruition.aihistory.exception.InvalidCallbackPayloadException;
+import fruition.aihistory.exception.InvalidCallbackTokenException;
+import fruition.aihistory.exception.InvalidRestoreRequestException;
+import fruition.aihistory.exception.OperationPayloadConflictException;
+import fruition.aihistory.exception.OperationNotFoundException;
+import fruition.aihistory.exception.RestorePreviewStaleException;
+import fruition.aihistory.exception.WikiObjectReadException;
 import fruition.wikischema.exception.PipelineWikiSchemaException;
 import fruition.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.document.exception.DocumentAlreadyProcessingException;
@@ -50,6 +57,7 @@ import fruition.wiki.exception.PipelineWikiPageException;
 import fruition.workspace.exception.WorkspaceNotFoundException;
 import fruition.wiki.exception.WikiPageNotFoundException;
 import fruition.wiki.exception.WikiPageSlugConflictException;
+import fruition.wiki.exception.WikiPageVersionNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -365,6 +373,63 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(OperationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOperationNotFound(OperationNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("AI_OPERATION_NOT_FOUND", "AI 작업 로그를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(InvalidRestoreRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRestoreRequest(InvalidRestoreRequestException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of("INVALID_RESTORE_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(WikiPageVersionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWikiPageVersionNotFound(WikiPageVersionNotFoundException e) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("WIKI_PAGE_VERSION_NOT_FOUND", "Wiki 페이지 버전을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(InvalidCallbackTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCallbackToken(InvalidCallbackTokenException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ErrorResponse.of("INVALID_CALLBACK_TOKEN", e.getMessage()));
+    }
+
+    /** 다시 쓰고 재전송하면 성공할 수 있는 실패라 422로 알린다. */
+    @ExceptionHandler(InvalidCallbackPayloadException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCallbackPayload(InvalidCallbackPayloadException e) {
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ErrorResponse.of("INVALID_CALLBACK_PAYLOAD", e.getMessage()));
+    }
+
+    @ExceptionHandler(OperationPayloadConflictException.class)
+    public ResponseEntity<ErrorResponse> handleOperationPayloadConflict(OperationPayloadConflictException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("AI_OPERATION_PAYLOAD_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(WikiObjectReadException.class)
+    public ResponseEntity<ErrorResponse> handleWikiObjectRead(WikiObjectReadException e) {
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("WIKI_OBJECT_READ_FAILED", e.getMessage()));
+    }
+
+    @ExceptionHandler(RestorePreviewStaleException.class)
+    public ResponseEntity<ErrorResponse> handleRestorePreviewStale(RestorePreviewStaleException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("RESTORE_PREVIEW_STALE", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidOAuthCodeException.class)

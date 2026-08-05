@@ -48,6 +48,7 @@ class AgentTurnControllerTest {
                 "doc_1",
                 4,
                 "agent_request_1",
+                "op_apply_1",
                 objectMapper.readTree("{\"action\":\"markdown_edit\"}")
         );
         when(agentTurnService.turn(eq(WORKSPACE_ID), eq(USER_ID), any(AgentTurnRequest.class)))

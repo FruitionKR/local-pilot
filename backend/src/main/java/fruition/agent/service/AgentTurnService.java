@@ -4,6 +4,7 @@ import fruition.agent.dto.AgentTurnRequest;
 import fruition.agent.dto.AgentTurnResponse;
 import fruition.agent.exception.InvalidAgentTurnRequestException;
 import fruition.agent.repository.PipelineAgentRequester;
+import fruition.aihistory.service.AgentApplyOperationStore;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.service.DocumentEditLockService;
@@ -21,13 +22,16 @@ public class AgentTurnService {
     private final DocumentService documentService;
     private final DocumentEditLockService editLockService;
     private final PipelineAgentRequester pipelineAgentRequester;
+    private final AgentApplyOperationStore applyOperationStore;
 
     public AgentTurnService(DocumentService documentService,
                             DocumentEditLockService editLockService,
-                            PipelineAgentRequester pipelineAgentRequester) {
+                            PipelineAgentRequester pipelineAgentRequester,
+                            AgentApplyOperationStore applyOperationStore) {
         this.documentService = documentService;
         this.editLockService = editLockService;
         this.pipelineAgentRequester = pipelineAgentRequester;
+        this.applyOperationStore = applyOperationStore;
     }
 
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
@@ -45,10 +49,13 @@ public class AgentTurnService {
         validateTarget(request.editorSnapshot());
 
         String requestId = "agent_" + UUID.randomUUID().toString().replace("-", "");
+        // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
+        String applyOperationId = applyOperationStore.issue(userId, request.documentId());
         return new AgentTurnResponse(
                 request.documentId(),
                 request.baseVersion(),
                 requestId,
+                applyOperationId,
                 pipelineAgentRequester.request(request)
         );
     }

@@ -2,7 +2,14 @@ package fruition.wiki.service;
 
 import fruition.document.domain.Document;
 import fruition.document.repository.DocumentRepository;
+import fruition.document.dto.MarkdownDiff;
+import fruition.document.service.MarkdownDiffService;
 import fruition.util.StorageProperties;
+import fruition.wiki.domain.WikiPageVersion;
+import fruition.wiki.domain.WikiPageVersionId;
+import fruition.wiki.dto.WikiPageDiffResponse;
+import fruition.wiki.exception.WikiPageVersionNotFoundException;
+import fruition.wiki.repository.WikiPageVersionRepository;
 import fruition.wiki.domain.DocumentWikiLink;
 import fruition.wiki.domain.WikiPage;
 import fruition.wiki.domain.WikiPageLink;
@@ -39,6 +46,8 @@ public class WikiService {
     private final PipelineWikiPageRequester pipelineWikiPageRequester;
     private final MinioClient minioClient;
     private final StorageProperties storageProperties;
+    private final WikiPageVersionRepository versionRepository;
+    private final MarkdownDiffService markdownDiffService;
 
     public WikiService(WikiPageRepository wikiPageRepository,
                        WikiPageLinkRepository wikiPageLinkRepository,
@@ -47,7 +56,9 @@ public class WikiService {
                        WorkspaceMemberRepository workspaceMemberRepository,
                        PipelineWikiPageRequester pipelineWikiPageRequester,
                        MinioClient minioClient,
-                       StorageProperties storageProperties) {
+                       StorageProperties storageProperties,
+                       WikiPageVersionRepository versionRepository,
+                       MarkdownDiffService markdownDiffService) {
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
@@ -56,6 +67,8 @@ public class WikiService {
         this.pipelineWikiPageRequester = pipelineWikiPageRequester;
         this.minioClient = minioClient;
         this.storageProperties = storageProperties;
+        this.versionRepository = versionRepository;
+        this.markdownDiffService = markdownDiffService;
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
@@ -67,7 +80,7 @@ public class WikiService {
     public WikiGraphResponse findGraph(String workspaceId, String userId) {
         verifyWorkspaceOwnership(workspaceId, userId);
 
-        List<WikiPage> pages = wikiPageRepository.findAllByWorkspaceId(workspaceId);
+        List<WikiPage> pages = wikiPageRepository.findAliveByWorkspaceId(workspaceId);
         Set<String> pageIds = pages.stream().map(WikiPage::getId).collect(Collectors.toSet());
         // wiki_page_links에는 workspace 컬럼이 없으므로, 이 workspace의 page id 집합 안에서
         // 양 끝점이 모두 존재하는 링크만 포함한다.
@@ -133,7 +146,7 @@ public class WikiService {
 
     public WikiPageDetailResponse findById(String workspaceId, String userId, String id) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        WikiPage page = wikiPageRepository.findByIdAndWorkspaceId(id, workspaceId)
+        WikiPage page = wikiPageRepository.findAliveByIdAndWorkspaceId(id, workspaceId)
                 .orElseThrow(() -> new WikiPageNotFoundException(id));
 
         List<WikiPageSourceDoc> sourceDocuments = buildSourceDocs(id);
@@ -146,12 +159,24 @@ public class WikiService {
                 page.getSlug(),
                 page.getSummary(),
                 page.getMarkdownUri(),
-                readMarkdown(page.getMarkdownUri()),
+                currentMarkdown(page),
                 page.getStatus().name(),
                 page.getCreatedAt(),
                 page.getUpdatedAt(),
                 sourceDocuments,
                 relatedPages);
+    }
+
+    /**
+     * 현재 본문. Backend가 쌓은 최신 revision이 곧 현재 내용이다.
+     *
+     * <p>{@code wiki_pages.markdown_uri}는 llmPipeline 소유라 Backend가 갱신하지 않는다.
+     * 이 기능 이전에 만들어져 revision 기록이 없는 페이지만 그 값으로 폴백한다.
+     */
+    private String currentMarkdown(WikiPage page) {
+        return versionRepository.findTopByIdPageIdOrderByIdRevisionDesc(page.getId())
+                .map(WikiPageVersion::getMarkdown)
+                .orElseGet(() -> readMarkdown(page.getMarkdownUri()));
     }
 
     private String readMarkdown(String markdownUri) {
@@ -220,8 +245,14 @@ public class WikiService {
                 .toList();
         Map<String, WikiPage> pageMap = wikiPageRepository.findAllById(targetIds).stream()
                 .collect(Collectors.toMap(WikiPage::getId, p -> p));
+        Set<String> alive = Set.copyOf(wikiPageRepository.findAliveIds(targetIds));
 
+        // 받치는 기여가 사라진 페이지로 가는 링크는 뺀다. 링크 정리는 llmPipeline 몫이라
+        // 그 전에 조회가 들어올 수 있다.
+        // 대상 자체가 없는 링크는 기존대로 남겨 필드만 null로 내려간다.
         return outLinks.stream()
+                .filter(link -> !pageMap.containsKey(link.getToPageId())
+                        || alive.contains(link.getToPageId()))
                 .map(link -> {
                     WikiPage target = pageMap.get(link.getToPageId());
                     return new WikiRelatedPage(
@@ -234,5 +265,32 @@ public class WikiService {
                             link.getConfidence() != null ? link.getConfidence() : 0.0);
                 })
                 .toList();
+    }
+
+    /**
+     * 두 revision 사이의 변경분. 저장된 본문을 읽어 그 자리에서 계산한다.
+     *
+     * <p>diff 본문을 저장하지 않는 이유는 전체 본문이 바로 옆에 있어 언제든 다시 만들 수 있고,
+     * 중복 저장하면 두 값이 어긋날 여지가 생기기 때문이다. 사용자가 펼칠 때만 호출된다.
+     */
+    @Transactional(readOnly = true)
+    public WikiPageDiffResponse diff(String workspaceId, String userId, String pageId,
+                                     long fromRevision, long toRevision) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        WikiPage page = wikiPageRepository.findById(pageId)
+                .orElseThrow(() -> new WikiPageNotFoundException(pageId));
+        if (!page.getWorkspaceId().equals(workspaceId)) {
+            throw new WikiPageNotFoundException(pageId);
+        }
+        WikiPageVersion before = loadVersion(pageId, fromRevision);
+        WikiPageVersion after = loadVersion(pageId, toRevision);
+        MarkdownDiff diff = markdownDiffService.diff(
+                fromRevision, before.getMarkdown(), toRevision, after.getMarkdown());
+        return WikiPageDiffResponse.from(pageId, diff);
+    }
+
+    private WikiPageVersion loadVersion(String pageId, long revision) {
+        return versionRepository.findById(new WikiPageVersionId(pageId, revision))
+                .orElseThrow(() -> new WikiPageVersionNotFoundException(pageId, revision));
     }
 }
