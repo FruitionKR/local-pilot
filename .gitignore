@@ -55,8 +55,8 @@ pnpm-debug.log*
 
 # LLM pipeline generated outputs
 pipeline_api/runs/
-llmPipeline/runs/
-llmPipeline/.langgraph_api/
+services/ai-svc/pipeline/runs/
+services/ai-svc/pipeline/.langgraph_api/
 /tmp/
 /paddle_cache/
 
@@ -64,3 +64,4 @@ llmPipeline/.langgraph_api/
 .playwright-mcp/
 **/.playwright-mcp/
 /*.png
+output/playwright/

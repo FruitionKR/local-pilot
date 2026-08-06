@@ -1,0 +1,20 @@
+# ingest-worker를 Kafka consumer lag 기준으로 1~4 replica 스케일.
+# 사전 조건: KEDA 설치 (README 참조).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ingest-worker
+  namespace: fruition
+spec:
+  scaleTargetRef:
+    name: ingest-worker
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-kafka-bootstrap.fruition.svc:9092
+        consumerGroup: ingest-worker
+        topic: ai.ingest.command
+        lagThreshold: "5"
+        offsetResetPolicy: earliest

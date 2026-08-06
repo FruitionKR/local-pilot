@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
 FRONTEND_DIR="$ROOT_DIR/frontend"
-PIPELINE_DIR="$ROOT_DIR/llmPipeline"
+PIPELINE_DIR="$ROOT_DIR/services/ai-svc/pipeline"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 
@@ -26,7 +26,7 @@ Usage: ./scripts/bootstrap.sh [--with-python]
 새 개발 환경에서 필요한 프로젝트 의존성을 준비합니다.
 
 Options:
-  --with-python  llmPipeline/.venv를 만들고 llmPipeline/requirements.txt를 설치합니다.
+  --with-python  services/ai-svc/pipeline/.venv를 만들고 services/ai-svc/pipeline/requirements.txt를 설치합니다.
   -h, --help     도움말을 출력합니다.
 INFO
 }

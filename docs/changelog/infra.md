@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-08-07
+
+### feat: Kubernetes 매니페스트 도입 (kind 로컬 검증 완료)
+
+- `k8s/` 신설: kind 클러스터 구성 + Strimzi Kafka(KRaft, `ai.ingest.command` 12
+  partitions) + KEDA(ingest-worker lag 기반 min1/max4) + 전 서비스
+  Deployment/Service/ConfigMap/Secret/NetworkPolicy + 상태 계층(postgres·redis·minio).
+- kind 실검증: 전 pod Ready, Flyway migration, 가입·로그인 스모크, pipeline 내부 토큰
+  401/통과, worker consumer group join(12 partition), pod 강제 삭제 자가 복구,
+  NetworkPolicy 시행(외부 namespace에서 pipeline 차단), KEDA ScaledObject Ready.
+- 접속: `http://localhost:30080` (NodePort). 절차는 `k8s/README.md`.
+- 한계: LLM_API_KEY secret 주입 필요, pipeline-runs PVC는 단일 노드 전제(멀티 노드 시
+  S3 이전), 상태 계층 single replica(EKS에선 RDS·ElastiCache·MSK·S3로 대체).
+
+---
+
+## 2026-08-06
+
+### feat: Kafka 도입·backend 컨테이너화·배포 compose
+
+- `docker-compose.dev.yml`에 Kafka(KRaft 단일 브로커, apache/kafka:3.9) + topic 초기화
+  (`ai.ingest.command` partitions 12) 추가. 컨테이너는 `kafka:19092`, 호스트는
+  `localhost:9092`로 접속(이중 리스너).
+- `docker-compose.pipeline.yml`에 `ingest-worker` 서비스 추가(pipeline 이미지 공용,
+  command만 교체).
+- `services/backend/Dockerfile` 신설(gradle 멀티스테이지→JRE) +
+  `docker-compose.deploy.yml`로 backend까지 컨테이너 실행하는 배포 단위 검증 구성.
+- `.env.example`에 `KAFKA_BOOTSTRAP_SERVERS`·`INGEST_COMMAND_TOPIC` 추가.
+
+### feat: Redis 도입·내부 포트 루프백 제한
+
+- `docker-compose.dev.yml`에 `redis:7-alpine` 서비스 추가(healthcheck 포함). backend의
+  공유 store(OAuth 교환 코드, query run 상태·SSE 중계)가 사용한다. AWS에서는
+  ElastiCache로 대체한다.
+- pipeline(:8000)·converter(:8010) 포트 바인딩을 `127.0.0.1`로 제한해 호스트 외부에서
+  도달할 수 없게 했다.
+- `.env.example`에 `REDIS_HOST`/`REDIS_PORT` 추가.
+
+---
+
 ## 2026-08-03
 
 ### feat: Agent worker 실행과 내부 인증 설정 추가
