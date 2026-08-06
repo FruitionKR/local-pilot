@@ -38,7 +38,10 @@ class HttpQueryEventPublisher(QueryEventPublisherPort):
         request = urllib.request.Request(
             self._callback_url,
             data=body,
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-Internal-Token": os.environ["INTERNAL_CALLBACK_TOKEN"],
+            },
             method="POST",
         )
         try:

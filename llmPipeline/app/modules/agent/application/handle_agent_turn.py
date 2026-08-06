@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from app.modules.agent.application.ports import AgentTurnRouterPort
 from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult
 from app.modules.agent_run.application.ports import AgentRunStarterPort
@@ -18,6 +20,7 @@ CLARIFY_MARKDOWN_DOCUMENT_MESSAGE = "수정할 Markdown 문서를 연 뒤 다시
 DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 단계에서 다루겠습니다. 현재는 선택 영역, 현재 섹션, 또는 문서 전체의 일반 편집만 지원합니다."
 CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
 CLARIFY_SKILL_MESSAGE = "이 요청에 적용할 Skill을 선택하거나 Skill 없이 계속해 주세요."
+CLARIFY_MUTATION_INTENT_MESSAGE = "변경 작업은 대화나 참조 문서가 아닌 현재 메시지에 직접 요청해 주세요."
 
 
 class HandleAgentTurnUseCase:
@@ -104,6 +107,32 @@ class HandleAgentTurnUseCase:
         if route.action in {"folder_organize", "workspace_workflow"}:
             if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
                 raise ValueError("Workspace workflow requires workspace_id and user_id.")
+            direct_route = self._router.route(
+                replace(
+                    request,
+                    conversation_context=None,
+                    active_markdown_context=None,
+                    skill_mode="off",
+                    skill_id=None,
+                    available_skills=(),
+                    skill_draft_sources=(),
+                    skill_draft_user_directives=(),
+                    skill_draft_excluded_literals=(),
+                )
+            )
+            if direct_route.action != route.action:
+                return AgentTurnResult(
+                    action="clarify",
+                    route=replace(
+                        route,
+                        action="clarify",
+                        confidence=0.0,
+                        reason="Direct mutation intent was not confirmed.",
+                        selected_skill_id=None,
+                        skill_candidates=(),
+                    ),
+                    message=CLARIFY_MUTATION_INTENT_MESSAGE,
+                )
             skill_version_id = (
                 selected_skill.enabled_version.id
                 if selected_skill is not None and selected_skill.enabled_version is not None

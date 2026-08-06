@@ -25,7 +25,7 @@ AI 작업 로그 도메인은 AI가 문서·Wiki를 바꾼 이력을 한곳에 �
 
 그래서 **현재 본문은 `wiki_page_versions`의 최신 revision이 답한다.** Backend가 revision을 쌓는 것 자체가 "현재 내용이 이것"이라는 뜻이라 포인터를 따로 옮길 필요가 없다. `wiki_pages.markdown_uri`는 llmPipeline이 임베딩 생성에 쓰는 자기 값으로 남는다.
 
-**삭제도 상태 컬럼을 쓰지 않는다.** 받치는 활성 기여가 하나도 없는 상태가 곧 삭제다. 링크·임베딩 정리는 조립 지시서의 `deleted_pages`를 받은 llmPipeline 몫이다. 단, 현재 llmPipeline의 실제 정리 처리는 미구현 상태다.
+**Backend의 삭제 판정은 상태 컬럼을 쓰지 않는다.** 받치는 활성 기여가 하나도 없는 상태가 곧 삭제다. 조립 지시서의 `deleted_pages`를 받은 llmPipeline은 자기 조회 경로에서 제외하도록 `wiki_pages.status='deleted'`로 바꾸고 관련 링크·임베딩을 정리한다.
 
 ---
 
@@ -615,7 +615,7 @@ flowchart TD
 
 - llmPipeline의 `operation_id`·작업별 artifact·ingest/lint 복구 endpoint 구현에 Backend 계약을 맞췄다.
 - lint 실행·로그 저장·조회·diff·미리보기·복구 요청은 실제 PostgreSQL 통합 테스트로 연결해 검증했다. `dry_run=true`는 로그와 버전을 만들지 않는다.
-- llmPipeline callback에 `X-Internal-Token`이 없어 ingest·복구 결과 callback은 현재 Backend에서 401로 거절된다.
-- llmPipeline이 `deleted_pages`의 페이지·링크·임베딩을 실제 정리하는 처리는 아직 없다. Backend는 callback이 보고한 삭제·링크 결과만 감사 로그로 저장한다.
+- llmPipeline은 `INTERNAL_CALLBACK_TOKEN`을 `X-Internal-Token`으로 보내며 Backend와 같은 값을 공유한다. 실제 ingest에서 callback `200`과 작업 로그 `partially_succeeded` 확정을 확인했다.
+- llmPipeline은 `deleted_pages`를 `status='deleted'`로 바꾸고 양방향 Wiki link, Document link, embedding unit·미참조 vector·legacy Page embedding을 정리한다. Backend는 callback이 보고한 삭제·링크 결과를 감사 로그로 저장한다.
 - `notify_pending` 자동 재전송이 없다. 재시도는 수동이다.
 - 재조립 실패 페이지는 복구 직전 내용 그대로 남는다. 남은 기여와 본문이 어긋난 상태이며 다음 lint가 정리해야 한다.

@@ -11,6 +11,7 @@ from app.core.llm_env import (
     provider_base_url,
     resolve_llm_provider,
 )
+from app.core.untrusted_input import validate_untrusted_payload
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation, build_agent_plan
 from app.modules.agent_run.domain.entities import ContentArtifactReference
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
@@ -50,30 +51,28 @@ class ChatCompletionsPlanGenerator:
             if allowed_tools is None
             else ALLOWED_PLAN_TOOLS.intersection(allowed_tools)
         )
+        payload = {
+            "plan_id": plan_id,
+            "instruction": instruction,
+            "hierarchy": hierarchy,
+            "skill_instructions": skill_instructions,
+            "allowed_tools": sorted(allowed_plan_tools),
+            "content_artifacts": [
+                {
+                    "id": artifact.id,
+                    "content_hash": artifact.content_hash,
+                    "purpose": artifact.purpose,
+                    "document_id": artifact.document_id,
+                    "base_version": artifact.base_version,
+                    "target": artifact.target,
+                }
+                for artifact in content_artifacts
+            ],
+        }
+        validate_untrusted_payload(payload)
         value = self._client.complete_json(
             self._system_prompt,
-            json.dumps(
-                {
-                    "plan_id": plan_id,
-                    "instruction": instruction,
-                    "hierarchy": hierarchy,
-                    "skill_instructions": skill_instructions,
-                    "allowed_tools": sorted(allowed_plan_tools),
-                    "content_artifacts": [
-                        {
-                            "id": artifact.id,
-                            "content_hash": artifact.content_hash,
-                            "purpose": artifact.purpose,
-                            "document_id": artifact.document_id,
-                            "base_version": artifact.base_version,
-                            "target": artifact.target,
-                        }
-                        for artifact in content_artifacts
-                    ],
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(payload, ensure_ascii=False, indent=2),
         )
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
         _validate_plan_against_hierarchy(plan, hierarchy, content_artifacts)

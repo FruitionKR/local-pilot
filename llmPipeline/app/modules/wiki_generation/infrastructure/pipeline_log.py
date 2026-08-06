@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -62,7 +63,10 @@ class PipelineLog:
         request = urllib.request.Request(
             self.callback_url,
             data=body,
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-Internal-Token": os.environ["INTERNAL_CALLBACK_TOKEN"],
+            },
             method="POST",
         )
         try:

@@ -6,6 +6,13 @@ from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
+def _lock_active_page(conn: psycopg.Connection, page_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM wiki_pages WHERE id = %s AND status = 'active' FOR UPDATE",
+        (page_id,),
+    ).fetchone() is not None
+
+
 class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
     def list_active_pages_by_ids(self, page_ids: list[str]) -> list[WikiPageEmbeddingTarget]:
         if not page_ids:
@@ -55,6 +62,8 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
         embedding_vector: list[float],
     ) -> None:
         with database.connect() as conn:
+            if not _lock_active_page(conn, page_id):
+                return
             conn.execute(
                 """
                 INSERT INTO wiki_page_embeddings (
@@ -83,6 +92,8 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
     def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str, error: str) -> None:
         error_message = truncate_error(error)
         with database.connect() as conn:
+            if not _lock_active_page(conn, page_id):
+                return
             try:
                 conn.execute(
                     """

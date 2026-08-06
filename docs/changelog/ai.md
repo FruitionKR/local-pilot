@@ -4,6 +4,33 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-06
+
+### fix: Agent prompt injection 실행 경계 보강
+
+- `/agent/turn` 입력과 planning hierarchy·Skill instruction·Tool observation에 크기·중첩·제어 문자 검증을 적용
+- mutation action은 대화·문서·Skill context를 제거한 사용자 `message`만으로 같은 의도가 다시 확인될 때 AgentRun을 시작하도록 제한
+- Spring 연동용 API 계약에 Skill·Wiki Schema 관리 책임 결정, AgentRun proxy, 전체 요청·응답 예시와 callback 방향·인증 조건을 정리
+- llmPipeline 전체 테스트 `704 passed`, `53 subtests passed`; Python compile, 문서 JSON 예시와 `git diff --check` 통과
+
+## 2026-08-05
+
+### fix: AI 작업 결과 콜백에 내부 인증 토큰 추가
+
+- 결과 콜백에 `INTERNAL_CALLBACK_TOKEN` 값을 `X-Internal-Token` 헤더로 보내 Backend의 내부 콜백 인증을 통과하도록 수정
+- 재시도되는 모든 요청이 같은 인증 토큰을 유지하는 회귀 테스트 추가
+- Lint 복구 실패 정보의 `operation_id`를 Backend 계약인 `action`·`resource_id`로 맞춰 실패 대상이 유실되지 않도록 수정
+- Ingestion·Lint 복구의 `deleted_pages`에 연결된 양방향 Wiki link, Document link, embedding unit·미참조 vector·legacy Page embedding을 제거하고 Page를 `deleted`로 전환
+- 삭제 정리를 callback 전에 실행하고 Workspace 범위 제한·재실행 멱등성·비대상 Page 보존을 단위 테스트와 격리 PostgreSQL에서 검증
+- Backend와 llmPipeline을 함께 실행해 ingest `202`, 인증된 결과 callback `200`, 작업 로그 `partially_succeeded` 확정을 확인
+- Backend가 호출하는 Query·Ingest·Restore·Schema·Lint·Agent route에 `X-Internal-Token` 검증을 적용하고 `/health`만 인증에서 제외
+- 진행 로그·Query event callback에도 작업 결과 callback과 같은 `INTERNAL_CALLBACK_TOKEN`을 전송하도록 통일
+- 보호 route의 토큰을 request body 파싱 전 middleware에서 검증해 잘못된 JSON도 인증 실패를 먼저 반환하도록 수정
+- 복구 정리와 비동기 Page embedding 저장이 같은 `wiki_pages` 행 잠금을 사용해 삭제된 Page의 legacy embedding이 다시 생성되지 않도록 수정
+- 복구 요청에서 Source Page·재조립 Page·삭제 Page의 역할이 서로 충돌하면 `422`로 거절하도록 계약 검증 추가
+- llmPipeline 전체 테스트 `697 passed`, `49 subtests passed`; `git diff --check` 통과
+- AI 작업 로그 API의 현재 상태와 이관된 이슈 문서 링크를 현행 경로로 정리
+
 ## 2026-08-04
 
 ### fix: 공통 LLM prompt injection과 숫자형 개인정보 방어 추가

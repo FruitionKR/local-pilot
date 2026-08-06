@@ -12,7 +12,10 @@ class QueryEventPublisherTest(unittest.TestCase):
             request_id="query_123",
         )
 
-        with patch("urllib.request.urlopen") as urlopen:
+        with (
+            patch.dict("os.environ", {"INTERNAL_CALLBACK_TOKEN": "test-internal-token"}),
+            patch("urllib.request.urlopen") as urlopen,
+        ):
             publisher.publish("query_started", "질의 처리를 시작했습니다.", {"question": "LLM Wiki가 뭐야?"})
             publisher.publish("answer_generated", "답변 생성을 완료했습니다.", {"answer_chars": 12})
 
@@ -29,6 +32,7 @@ class QueryEventPublisherTest(unittest.TestCase):
         self.assertTrue(first_body["timestamp"].endswith("Z"))
         self.assertEqual(first_body["data"], {"question": "LLM Wiki가 뭐야?"})
         self.assertEqual(first_request.get_header("Content-type"), "application/json; charset=utf-8")
+        self.assertEqual(first_request.get_header("X-internal-token"), "test-internal-token")
         self.assertEqual(first_request.get_method(), "POST")
         self.assertEqual(second_body["sequence"], 2)
 
@@ -40,7 +44,10 @@ class QueryEventPublisherTest(unittest.TestCase):
             )
 
         self.assertIsInstance(publisher, HttpQueryEventPublisher)
-        with patch("urllib.request.urlopen") as urlopen:
+        with (
+            patch.dict("os.environ", {"INTERNAL_CALLBACK_TOKEN": "test-internal-token"}),
+            patch("urllib.request.urlopen") as urlopen,
+        ):
             publisher.publish("query_started", "질의 처리를 시작했습니다.")
 
         request = urlopen.call_args.args[0]

@@ -90,6 +90,7 @@ class ArtifactStore:
     def __init__(self, objects: dict[str, str]) -> None:
         self.objects = objects
         self.writes: list[tuple[str, str, str]] = []
+        self.cleaned_pages: list[tuple[str, list[str]]] = []
 
     def read_text(self, key: str) -> str:
         return self.objects[key]
@@ -98,9 +99,20 @@ class ArtifactStore:
         self.writes.append((key, text, content_type))
         return f"s3://bucket/{key}"
 
+    def cleanup_deleted_pages(self, workspace_id: str, page_ids: list[str]) -> None:
+        self.cleaned_pages.append((workspace_id, page_ids))
+
 
 class StorageReadError(Exception):
     pass
+
+
+def _restore(store: ArtifactStore) -> ObjectStorageWikiPageRestore:
+    return ObjectStorageWikiPageRestore(
+        store.read_text,
+        store.write_text,
+        store.cleanup_deleted_pages,
+    )
 
 
 class Notifier:
@@ -120,7 +132,7 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     )
     notifier = Notifier()
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text),
+        _restore(store),
         notifier,
     )
 
@@ -182,7 +194,7 @@ def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_ingest(
@@ -219,7 +231,7 @@ def test_restore_reports_page_failure_and_keeps_other_success() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_ingest(
@@ -263,7 +275,7 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
 
     store = FailingStore({})
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_ingest(
@@ -299,7 +311,7 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_ingest(
@@ -327,12 +339,8 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
 
 
 def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
-    use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(
-            lambda _key: "",
-            lambda *_args: "",
-        )
-    )
+    store = ArtifactStore({})
+    use_case = RestoreWikiPagesUseCase(_restore(store))
 
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
@@ -348,6 +356,7 @@ def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
 
     assert result["changed_pages"] == []
     assert result["deleted_pages"] == ["C1", "C5", "S_A"]
+    assert store.cleaned_pages == [("ws-1", ["C1", "C5", "S_A"])]
 
 
 def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
@@ -360,7 +369,7 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
     )
     notifier = Notifier()
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text),
+        _restore(store),
         notifier,
     )
 
@@ -430,7 +439,7 @@ def test_lint_operation_restore_replays_remaining_link_support() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_lint(
@@ -475,7 +484,7 @@ def test_lint_operation_restore_removes_unsupported_added_link() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_lint(
@@ -518,7 +527,7 @@ def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> Non
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_lint(
@@ -526,6 +535,7 @@ def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> Non
             operation_id="restore-2",
             target_operation_id="lint-B",
             workspace_id="ws-1",
+            deleted_pages=("Z",),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -543,10 +553,12 @@ def test_lint_operation_restore_defers_links_when_concept_rebuild_fails() -> Non
     }
     assert result["failed_actions"] == [
         {
-            "operation_id": "lint-B",
+            "action": "restore_links",
+            "resource_id": "lint-B",
             "reason": "concept_rebuild_failed",
         }
     ]
+    assert store.cleaned_pages == [("ws-1", ["Z"])]
 
 
 def test_lint_operation_restore_reports_missing_target_log() -> None:
@@ -556,7 +568,7 @@ def test_lint_operation_restore_reports_missing_target_log() -> None:
         }
     )
     use_case = RestoreWikiPagesUseCase(
-        ObjectStorageWikiPageRestore(store.read_text, store.write_text)
+        _restore(store)
     )
 
     result = use_case.execute_lint(
@@ -582,7 +594,8 @@ def test_lint_operation_restore_reports_missing_target_log() -> None:
     }
     assert result["failed_actions"] == [
         {
-            "operation_id": "lint-missing",
+            "action": "restore_links",
+            "resource_id": "lint-missing",
             "reason": "operation_log_missing",
         }
     ]
