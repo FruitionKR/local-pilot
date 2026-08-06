@@ -1,32 +1,33 @@
 # llmPipeline ↔ Spring Backend API 계약
 
-## 1. 문서 목적
+## 문서 목적
 
-이 문서는 **Spring Backend와 llmPipeline 사이에서 현재 실제로 호출되는 HTTP API 계약**을 정리한다.
+이 문서는 **Spring Backend와 llmPipeline 사이에 현재 구현된 HTTP API와 Spring 연동 검토 대상 API의 계약**을 정리한다.
 
-- 기준일: 2026-08-05
+- 기준일: 2026-08-06
 - Source of truth: Spring requester/controller와 llmPipeline FastAPI route/Pydantic schema
 - 문서와 코드가 다르면 현재 코드를 우선한다.
 
 다음 정보를 API별로 같은 순서에서 제공한다.
 
 1. Method + Path
-2. 목적
-3. Auth 필요 여부
-4. Request body
-5. Response body
-6. Error response
-7. Pagination / filtering
-8. 권한 규칙
-9. 예시 요청 / 응답
+2. 언제 호출하는가
+3. 필수 인증과 호출 전 Spring 검증
+4. Spring이 보내는 값
+5. Spring이 받는 값
+6. 오류 처리
+7. 목록·필터링 여부
+8. 예시 요청 / 응답
+
+Notion으로 옮길 때 `##` 기능 제목을 최상위 토글로, `###` endpoint 제목을 하위 토글로 사용한다. `공통 계약`은 접지 않고 페이지 상단에 노출하는 것을 권장한다.
 
 다이어그램은 사용자 여정을 기준으로 작은 흐름만 보여주고, 세부 JSON 계약은 각 API 섹션에서 설명한다. 이 구성은 API diagram에 endpoint, request/response flow, authentication, data structure, dependency, status/error를 포함하고 한 다이어그램에 너무 많은 개념을 넣지 말라는 [Postman API Diagram Guide](https://blog.postman.com/api-diagram-guide/)의 원칙을 따른다.
 
 성공 응답의 더 상세한 field 설명은 [llmpipeline-backend-output-contract.md](./llmpipeline-backend-output-contract.md)를 부록으로 참조한다. 단, 해당 부록에는 Spring이 현재 호출하지 않는 llmPipeline 내부 API도 포함되므로 **현재 연결 여부는 이 문서를 우선**한다.
 
-## 2. 범위와 연결 현황
+## 전체 연동 현황
 
-### 2.1 전체 Integration Diagram
+### 전체 Integration Diagram
 
 ```mermaid
 flowchart LR
@@ -62,14 +63,32 @@ flowchart LR
     PIPELINE <--> LLM
 ```
 
-### 2.2 Backend → llmPipeline API 목록
+### Backend → llmPipeline API 목록
 
 | 상태 | Method | Path | Spring 호출자 |
 | --- | --- | --- | --- |
 | 연결됨 | `POST` | `/pipeline/runs` | `DocumentProcessingRequester` |
+| 연동 필요 | `POST` | `/pipeline/reingest-runs` | 없음 |
+| 운영 연동 선택 | `GET` | `/pipeline/runs/{run_id}` | 없음 |
+| 운영 연동 선택 | `GET` | `/pipeline/runs/{run_id}/logs` | 없음 |
+| 운영 연동 선택 | `POST` | `/pipeline/runs/{run_id}/result-callback/retry` | 없음 |
 | 연결됨 | `POST` | `/chat-wiki/runs` | `DocumentProcessingRequester` |
 | 연결됨 | `POST` | `/query` | `PipelineQueryRequester` |
 | 부분 연결 | `POST` | `/agent/turn` | `PipelineAgentRequester` |
+| 연동 필요 | `POST` | `/skills/draft-from-runs/preview` | 없음 |
+| 연동 필요 | `POST` | `/skills/preview` | 없음 |
+| 연동 필요 | `POST` | `/skills` | 없음 |
+| 연동 필요 | `GET` | `/skills` | 없음 |
+| 연동 필요 | `GET` | `/skills/{skill_id}` | 없음 |
+| 연동 필요 | `PATCH` | `/skills/{skill_id}` | 없음 |
+| 연동 필요 | `POST` | `/skills/{skill_id}/publish` | 없음 |
+| 연동 필요 | `POST` | `/skills/{skill_id}/enable` | 없음 |
+| 연동 필요 | `POST` | `/skills/{skill_id}/disable` | 없음 |
+| 연동 필요 | `GET` | `/agent/runs/{run_id}` | 없음 |
+| 연동 필요 | `POST` | `/agent/runs/{run_id}/approve` | 없음 |
+| 연동 필요 | `POST` | `/agent/runs/{run_id}/reject` | 없음 |
+| 연동 필요 | `POST` | `/agent/runs/{run_id}/cancel` | 없음 |
+| 연동 필요 | `POST` | `/agent/runs/{run_id}/revise` | 없음 |
 | 연결됨 | `POST` | `/wiki-schema/preview` | `PipelineWikiSchemaRequester` |
 | 연결됨 | `POST` | `/wiki-schema/drafts` | `PipelineWikiSchemaRequester` |
 | 연결됨 | `POST` | `/wiki-schema/{schema_id}/activate` | `PipelineWikiSchemaRequester` |
@@ -78,10 +97,12 @@ flowchart LR
 | 연결됨 | `POST` | `/wiki/ingest-restore-runs` | `PipelineRestoreRequester` |
 | 연결됨 | `POST` | `/wiki/lint-restore-runs` | `PipelineRestoreRequester` |
 | 계약 불일치 | `PATCH` | `/wiki/pages/{wiki_page_id}/rename` | `PipelineWikiPageRequester` |
+| 진단용 | `GET` | `/documents/{document_id}` | 없음 |
+| 인프라용 | `GET` | `/health` | 없음 |
 
-`PATCH /wiki/pages/{wiki_page_id}/rename`은 Spring에 호출 코드가 있지만 llmPipeline에 FastAPI route가 없다. 따라서 현재 사용 가능한 API가 아니며, 제6장에 계약 공백으로 기록한다.
+`PATCH /wiki/pages/{wiki_page_id}/rename`은 Spring에 호출 코드가 있지만 llmPipeline에 FastAPI route가 없다. 따라서 현재 사용 가능한 API가 아니며, `미구현·계약 불일치`에 기록한다.
 
-### 2.3 llmPipeline → Backend Callback 목록
+### llmPipeline → Backend Callback 목록
 
 | 상태 | Method | Path | llmPipeline 호출자 |
 | --- | --- | --- | --- |
@@ -91,22 +112,18 @@ flowchart LR
 | Backend route 없음 | `POST` | `/internal/agent/tools/read/{tool_name}` | `BackendToolGateway` |
 | Backend route 없음 | `POST` | `/internal/agent/tools/execute/{tool_name}` | `BackendToolGateway` |
 
-### 2.4 범위에서 제외한 llmPipeline API
+### Spring 업무 API가 아닌 llmPipeline API
 
-다음 API는 llmPipeline에 구현되어 있지만 현재 Spring Backend가 호출하지 않으므로 본 계약의 API별 상세 범위에서 제외한다.
+다음 두 API도 뒤에서 응답 계약을 설명하지만 Spring application service가 사용자 기능을 위해 호출하는 API는 아니다.
 
-- `POST /pipeline/reingest-runs`
-- `GET /pipeline/runs/{run_id}`
-- `GET /pipeline/runs/{run_id}/logs`
-- `POST /pipeline/runs/{run_id}/result-callback/retry`
-- `/skills/*`
-- `/agent/runs/*`
-- `GET /documents/{document_id}`
-- `GET /health`
+- `GET /documents/{document_id}`: llmPipeline이 공유 DB에서 읽은 Document snapshot을 확인하는 진단용 API다. Document 원본의 소유자는 Spring이므로 Spring이 역조회할 필요가 없다.
+- `GET /health`: 배포 환경의 health check용 API다. Spring requester가 아니라 Docker/Kubernetes/모니터링 계층이 호출한다.
 
-## 3. 공통 계약
+그 밖에 기존에 제외했던 `/pipeline/reingest-runs`, Pipeline Run 조회·로그·callback 재시도, `/skills/*`, `/agent/runs/*`는 Spring 연동 판단과 구현에 필요하므로 이 문서의 상세 계약에 포함한다.
 
-### 3.1 Base URL과 Content-Type
+## 공통 계약
+
+### Base URL과 Content-Type
 
 | 항목 | 현재 값 |
 | --- | --- |
@@ -115,20 +132,23 @@ flowchart LR
 | Response Content-Type | 기본 `application/json` |
 | 문자 인코딩 | UTF-8 |
 
-### 3.2 Auth 현황
+### Auth 현황
 
 | API | llmPipeline Auth | Spring 헤더 | 현재 판정 |
 | --- | --- | --- | --- |
 | Ingestion, Query, Schema, Lint, Restore | `X-Internal-Token` 필수 | **현재 미전송** | Spring 호출이 `401`로 실패 |
 | `/agent/turn` + `AGENT_SKILLS_ENABLED=false` | `X-Internal-Token` 필수 | **현재 미전송** | Spring 호출이 `401`로 실패 |
 | `/agent/turn` + `AGENT_SKILLS_ENABLED=true` | `X-Internal-Token`, `X-Agent-Service-Token` 필수 | **둘 다 현재 미전송** | Spring 호출이 `401` 또는 `503`으로 실패 |
+| `/skills/*`, `/agent/runs/*` | `X-Agent-Service-Token` 필수 | Spring requester 없음 | 신규 연동 필요. 기능 flag가 꺼지면 route 자체가 없음 |
+| `/documents/{document_id}` | `X-Internal-Token` 필수 | Spring requester 없음 | 운영 진단용 |
+| `/health` | 인증 없음 | 해당 없음 | 배포 health check용 |
 | 진행·Query callback | llmPipeline이 `X-Internal-Token` 전송 | Spring 검증 없음 | 헤더를 보내지만 아직 인증 경계로 사용하지 않음 |
 | Operation result callback | Spring `X-Internal-Token` 필수 | llmPipeline이 `INTERNAL_CALLBACK_TOKEN` 전송 | 양쪽 설정값이 같을 때 연결됨 |
 | Agent Tool Gateway | Spring route 없음 | llmPipeline이 `X-Agent-Service-Token` 전송 | 현재 `404`로 실패 |
 
 Auth 항목은 현재 코드를 기술한 것이며, 보안상 권장 상태를 뜻하지 않는다.
 
-### 3.3 공통 Error Shape
+### 공통 Error Shape
 
 FastAPI route가 명시적으로 반환하는 오류는 보통 다음 형태다.
 
@@ -176,25 +196,238 @@ Agent의 출력 계약 실패는 코드화된 object를 `detail`에 넣는다.
 | `detail[].msg` | string | validation 실패 이유다. |
 | `detail[].input` | any | 검증에 실패한 입력값이다. 민감한 값이 포함될 수 있으므로 그대로 사용자 로그에 남기지 않는다. |
 
-## 4. Backend → llmPipeline API
+### Spring 구현자가 먼저 읽을 계약
 
-### 4.1 `POST /pipeline/runs`
+이 절은 **Spring에서 llmPipeline 호출 코드를 새로 만들거나 수정할 때 지켜야 하는 구현 목표**다. 아래 기능별 계약은 각 API의 전체 필드와 응답 구조를 설명하고, 이 절은 실제 요청 DTO와 `RestClient`를 구성하는 데 필요한 최소 규칙만 모은다.
 
-#### 목적
+문서의 용어는 다음 의미로 사용한다.
+
+| 구분 | Spring 처리 |
+| --- | --- |
+| 필수 | 항상 값을 만들고 전송한다. 값이 없으면 llmPipeline을 호출하지 않고 Spring 입력 검증에서 막는다. |
+| 조건부 | 표에 적힌 조건을 만족할 때만 전송한다. 함께 보내야 하는 필드는 하나의 DTO 생성 규칙으로 묶는다. |
+| 선택 | 해당 기능을 실제로 사용할 때만 전송한다. `null`이면 JSON에서 생략한다. |
+| llmPipeline 설정 | provider, model, prompt, temperature 같은 실행 세부 값이다. Spring 기능 요구사항이 없으면 보내지 않고 llmPipeline 기본값을 사용한다. |
+
+Spring은 사용자 요청을 그대로 전달하는 단순 proxy가 아니다. Workspace membership, Document 접근 권한, edit lock, 복구 대상 같은 사용자 권한과 업무 규칙을 먼저 검증하고, 검증을 마친 내부 식별자만 llmPipeline에 전달한다. llmPipeline은 내부 서비스 호출자로서 Spring이 전달한 Workspace·User·Page·Operation 식별자를 신뢰한다.
+
+### 모든 Backend → llmPipeline 요청의 공통 구성
+
+#### 필수 헤더
+
+```http
+Content-Type: application/json
+X-Internal-Token: {INTERNAL_CALLBACK_TOKEN과 같은 공유 시크릿}
+```
+
+| 헤더 | 적용 범위 | 규칙 |
+| --- | --- | --- |
+| `Content-Type: application/json` | body가 있는 모든 요청 | 필수 |
+| `X-Internal-Token` | Ingestion, Query, Wiki Schema/Lint/Restore, `/agent/turn`, `/documents/*` | 필수. llmPipeline의 `INTERNAL_CALLBACK_TOKEN`과 값이 같아야 한다. |
+| `X-Agent-Service-Token` | `/skills/*`, `/agent/runs/*` | 필수. llmPipeline의 `AGENT_INTERNAL_TOKEN`과 값이 같아야 한다. |
+| `X-Agent-Service-Token` | `AGENT_SKILLS_ENABLED=true`인 `/agent/turn` | `X-Internal-Token`에 추가로 필수 |
+
+기능별 개별 요청 예시에서 헤더가 생략되어 있어도 이 공통 헤더 계약을 항상 적용한다.
+
+현재 Spring requester들은 위 내부 인증 헤더를 보내지 않는다. 따라서 기존 requester를 그대로 복사하면 안 되며, 각 `RestClient` 요청에 헤더를 추가해야 한다. 토큰은 request/response log에 출력하지 않는다.
+
+구현 형태는 다음 정도면 충분하다. 별도 HTTP client abstraction은 필요하지 않다.
+
+```java
+RestClient restClient = RestClient.builder()
+        .requestFactory(requestFactory)
+        .defaultHeader("X-Internal-Token", internalToken)
+        .build();
+```
+
+Agent Skill 기능을 켠 환경은 `/agent/turn` client에 두 token을 모두 추가한다. `/skills/*`, `/agent/runs/*` client는 현재 코드 기준으로 `X-Agent-Service-Token`을 사용한다.
+
+#### URL과 callback URL
+
+| 값 | 예시 | 주의사항 |
+| --- | --- | --- |
+| Spring에서 호출하는 llmPipeline URL | `http://localhost:8000/query` | Spring 실행 환경에서 접근 가능한 주소여야 한다. |
+| llmPipeline이 호출하는 Spring callback URL | `http://host.docker.internal:8080/api/...` | llmPipeline 실행 환경에서 접근 가능한 주소여야 한다. 컨테이너에서 Spring을 호출할 때 `localhost`를 사용하지 않는다. |
+| `log_callback_url` | `/pipeline-events`, `/events/callback` | 진행 이벤트용이다. 최종 성공·실패를 확정하지 않는다. |
+| `result_callback_url` | `/api/ai-operations/{operation_id}/result` | 최종 작업 결과용이다. `operation_id`와 항상 함께 전송한다. |
+
+callback URL은 사용자 입력으로 받지 않고 Spring의 `app.callback.base-url`과 검증된 ID로 조립한다.
+
+### API 선택과 Spring 최소 입력
+
+| Spring이 하려는 일 | Method + Path | 항상 보낼 필드 | 조건부·선택 필드 | 즉시 응답에서 사용할 값 |
+| --- | --- | --- | --- | --- |
+| 저장된 일반 Document를 Wiki로 변환 | `POST /pipeline/runs` | `document_id` | `log_callback_url`; `operation_id` + `result_callback_url` | `run_id`, `status` |
+| 수정된 일반 Document를 Wiki에 재반영 | `POST /pipeline/reingest-runs` | `document_id`, `input_markdown` | `log_callback_url`; `operation_id` + `result_callback_url` | `run_id`, `status` |
+| Pipeline 실행 상태·로그 확인 | `GET /pipeline/runs/{run_id}` 및 `/logs` | path의 `run_id` | 없음 | 상태 JSON 또는 `text/plain` log |
+| 실패한 최종 callback 재전송 | `POST /pipeline/runs/{run_id}/result-callback/retry` | path의 `run_id` | 없음 | 재전송한 Operation 결과 payload |
+| Chat Document를 Wiki로 변환 | `POST /chat-wiki/runs` | `document_id`, `selection_mode` | `input_markdown`; `log_callback_url`; `operation_id` + `result_callback_url` | `run_id`, `status` |
+| Workspace Wiki에 질문 | `POST /query` | `workspace_id`, `question` | `user_id`; 비동기이면 `request_id` + `log_callback_url`; 대화 맥락 필드 | 전체 Query 응답 |
+| Skill 관리 | `/skills/*` | endpoint별 Workspace/User와 definition | version ID, 초안 source | `SkillResponse` 또는 preview |
+| 현재 Markdown 편집·생성·질문 | `POST /agent/turn` | `message` | Markdown context, conversation context, Workspace/User, `skill_mode`, `skill_id` | `action`에 해당하는 결과 |
+| Agent 계획 표시·승인·제어 | `/agent/runs/*` | path의 `run_id`, Workspace/User | approve의 plan version/hash, revise instruction | `AgentRunResponse` |
+| Schema 내용 미리보기 | `POST /wiki-schema/preview` | `raw_markdown` | 없음 | preview 전체 |
+| Schema draft 저장 | `POST /wiki-schema/drafts` | `raw_markdown`, `workspace_id`, `user_id` | `name` | `wiki_schema.id`, 상태와 preview |
+| Schema 활성화 | `POST /wiki-schema/{schema_id}/activate` | path의 `schema_id` | body 없음 | 활성 Schema 전체 |
+| 활성 Schema 조회 | `GET /wiki-schema/active` | query의 `workspace_id`, `user_id` | body 없음 | Schema 또는 `null` |
+| Wiki lint 실행 | `POST /wiki/maintenance/lint` | `user_id`, `workspace_id` | mutation이면 `operation_id`; 실행 mode | lint 결과 전체 |
+| Ingestion 작업 복구 | `POST /wiki/ingest-restore-runs` | `Ingestion 작업 복구`의 복구 지시서 전체 | `deleted_pages` 기본 `[]` | body를 완료 판정에 사용하지 않음 |
+| Lint 작업 복구 | `POST /wiki/lint-restore-runs` | `Lint 작업 복구`의 복구 지시서 전체 | `deleted_pages` 기본 `[]` | body를 완료 판정에 사용하지 않음 |
+
+`PATCH /wiki/pages/{wiki_page_id}/rename`은 llmPipeline route가 없으므로 Spring에서 호출 가능한 계약으로 구현하면 안 된다.
+
+### 요청 DTO 구성 규칙
+
+#### Document Ingestion
+
+일반 Document는 Spring DB와 Object Storage에 원문 메타데이터가 이미 저장된 뒤 호출한다. Spring이 원문 Markdown이나 로컬 파일 경로를 보내지 않는다.
+
+```json
+{
+  "document_id": "doc_123",
+  "log_callback_url": "http://backend:8080/api/documents/doc_123/pipeline-events"
+}
+```
+
+AI Operation 결과까지 추적할 때만 아래 두 필드를 **동시에** 추가한다. 하나만 보내면 `422`다.
+
+```json
+{
+  "operation_id": "op_123",
+  "result_callback_url": "http://backend:8080/api/ai-operations/op_123/result"
+}
+```
+
+`user_id`, `workspace_id`는 기존 Spring DTO 호환 필드다. llmPipeline은 `document_id`로 조회한 DB Document의 값을 사용하므로 신규 구현의 필수 입력으로 취급하지 않는다.
+
+#### Document Reingestion
+
+Document 수정 후에는 최초 편입 API를 재사용하지 않고 `POST /pipeline/reingest-runs`에 저장 완료된 전체 `input_markdown`을 보낸다. 기존 활성 source page가 없는 Document는 재편입할 수 없다.
+
+```json
+{
+  "document_id": "doc_123",
+  "input_markdown": "# 수정된 제목\n\n수정된 본문입니다."
+}
+```
+
+#### Chat Ingestion
+
+`selection_mode`는 `full` 또는 `partial`만 허용한다.
+
+- `partial`: 선택한 대화를 독립 Source Page로 생성한다. `input_markdown`을 보내지 않는다.
+- `full`: 기존 Chat Source Page에 누적한다. Spring이 중복을 제거한 신규 대화만 직렬화할 때 `input_markdown`을 보낼 수 있다.
+- 최초 `full`: 기존 Source Page가 없으므로 `input_markdown`을 보내면 `422`다. llmPipeline이 저장된 전체 Chat export를 읽게 한다.
+
+```json
+{
+  "document_id": "chatdoc_123",
+  "selection_mode": "full",
+  "input_markdown": "# Chat Export\n\n[session_1:pair_2]Q : 질문\nA : 답변"
+}
+```
+
+#### Query
+
+동기 Query의 최소 body는 다음과 같다.
+
+```json
+{
+  "workspace_id": "ws_123",
+  "question": "이 Workspace에서 다루는 핵심 개념은 뭐야?"
+}
+```
+
+비동기 Query는 Spring이 먼저 `request_id`를 생성하고 callback URL을 조립해 두 필드를 함께 보낸다. `recent_conversation_summary`와 `reference_context`는 Spring이 이전 대화로부터 만든 내부 context이며 프론트가 llmPipeline 형식으로 직접 만들게 하지 않는다.
+
+```json
+{
+  "workspace_id": "ws_123",
+  "question": "그 개념의 근거도 보여줘",
+  "request_id": "query_123",
+  "log_callback_url": "http://backend:8080/api/query/runs/query_123/events/callback",
+  "recent_conversation_summary": "직전 질문에서 robust optimization을 설명했다.",
+  "reference_context": {
+    "active_concept_ids": ["concept_123"]
+  }
+}
+```
+
+#### Markdown Agent
+
+Spring은 `document_id`와 `base_version`을 llmPipeline에 보내지 않는다. 이 값은 호출 전에 권한·버전·edit lock을 검증하고, 응답의 편집안을 실제 Document에 적용할 때 Spring이 다시 사용한다.
+
+```json
+{
+  "message": "선택한 문단을 간결하게 바꿔줘",
+  "active_markdown_context": {
+    "markdown": "# 제목\n\n긴 문단입니다.",
+    "target": {
+      "type": "selection",
+      "start_line": 3,
+      "end_line": 3
+    }
+  }
+}
+```
+
+target line은 1부터 시작하며 시작·끝 line을 모두 포함한다. `target`을 보내면 `type`, `start_line`, `end_line`을 모두 채운다. 허용 type은 `selection`, `current_section`, `whole_document`다.
+
+#### Agent Skill과 Agent Run
+
+- Spring은 Skill definition 전체를 `/agent/turn`에 넣지 않는다. Skill 관리 API로 먼저 저장·publish·enable하고 Agent 요청에는 `skill_mode`, 필요 시 `skill_id`만 보낸다.
+- `skill_mode=auto`는 llmPipeline이 접근 가능한 enabled Skill 후보 중에서 고르게 한다.
+- `skill_mode=explicit`은 `skill_id`를 함께 보내며, 없거나 disabled이면 `422`다.
+- `skill_mode=off`는 Skill 없이 실행한다.
+- mutation action이 `run_id`를 반환하면 `/agent/runs/{run_id}`를 조회한다. plan 승인에는 조회 응답의 `version`과 `operation_hash`를 수정 없이 되돌려 보낸다.
+
+#### Wiki Schema, Lint, Restore
+
+- Schema preview는 저장하지 않으므로 `raw_markdown`만 보낸다.
+- Schema draft는 `workspace_id`, `user_id`를 추가하고, 응답의 `wiki_schema.id`를 activate path에 사용한다.
+- Active 조회의 scope는 body가 아니라 query parameter로 보낸다.
+- Lint에서 `dry_run=false`이면 DB/Object Storage mutation을 추적할 `operation_id`가 필수다.
+- Restore의 `rebuild_pages[].keep_contributions` 순서는 페이지 조립 순서이므로 정렬하거나 `Set`으로 바꾸지 않는다.
+- Restore HTTP 응답 수신만으로 작업을 완료 처리하지 않는다. 같은 operation의 `result_callback_url` callback이 성공해야 최종 상태를 확정한다.
+
+### 응답과 오류 처리 규칙
+
+1. `POST /pipeline/runs`, `POST /pipeline/reingest-runs`, `POST /chat-wiki/runs`는 기본 `wait=false`다. `200` 응답은 실행 완료가 아니라 접수 성공이며, `status`는 보통 `running`, `manifest`는 `null`이다.
+2. Query, Agent, Schema, Lint는 동기 응답 body를 사용한다. `2xx`인데 body가 없으면 정상 결과로 처리하지 않는다.
+3. `GET /wiki-schema/active`의 `200 null`만 정상적인 빈 결과다.
+4. `401`은 사용자 인증 실패가 아니라 Spring↔llmPipeline 내부 토큰 설정 오류다. 사용자에게 그대로 노출하지 않고 내부 연동 오류로 처리한다.
+5. `422`의 `detail`은 string이 아니라 배열 또는 object일 수 있다. Spring DTO 하나로 강제 역직렬화하지 말고 원문 body를 보존해 domain error로 변환한다.
+6. timeout과 llmPipeline `5xx`는 재시도 가능성을 가진 연동 실패로 분류한다. 단, mutation 요청을 자동 재시도하려면 `operation_id` 기반 멱등성이 별도로 확인되어야 한다.
+7. callback URL, token, 원문 Markdown, 전체 질문은 운영 log에 남기지 않는다. ID, HTTP status, 처리 시간, payload 길이만 기록한다.
+
+Spring 구현 완료 기준:
+
+- 모든 활성 requester가 필요한 내부 인증 헤더를 보낸다.
+- DTO의 JSON 이름이 표의 snake_case와 일치한다.
+- 조건부 필드 쌍과 Chat/Lint/Restore validation을 호출 전에 검증한다.
+- callback URL이 llmPipeline 실행 환경에서 접근 가능하다.
+- async 접수와 최종 callback을 서로 다른 상태 전이로 처리한다.
+- 성공 body와 `4xx`/`5xx`/timeout을 endpoint 성격에 맞게 검증하는 requester test가 있다.
+
+## 일반 문서 Wiki 변환
+
+### `POST /pipeline/runs`
+
+#### 언제 호출하는가
 
 Spring에 저장된 일반 Document를 Source·Concept Wiki Page로 비동기 변환한다.
 
-#### Auth
+#### 필수 인증
 
 - llmPipeline Auth: `X-Internal-Token` 필수
 - Spring 전송 헤더: 현재 없음(`401`)
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring의 일반 업로드·재처리 API가 사용자 권한과 Document 상태를 검증한 뒤 처리 큐에 등록한다. 실제 llmPipeline 호출은 `DocumentProcessingWorker`가 수행하지만 현재 `X-Internal-Token`을 보내지 않아 llmPipeline에서 `401`로 거절된다.
 - llmPipeline은 request의 `user_id`, `workspace_id`를 Wiki 저장 범위의 권위 값으로 사용하지 않고, `document_id`로 조회한 DB Document의 값을 사용한다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | Spring 전송 | 설명 |
 | --- | --- | --- | --- | --- |
@@ -208,7 +441,7 @@ Spring에 저장된 일반 Document를 Source·Concept Wiki Page로 비동기 �
 Spring은 llmPipeline이 지원하는 model·prompt·evaluation 세부 설정을 전송하지 않으며 llmPipeline 기본값을 사용한다.
 `app.aihistory.ingest-logging-enabled=false`가 기본값이므로 기본 설정에서는 `operation_id`와 `result_callback_url`을 보내지 않는다.
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | Spring 사용 | 설명 |
 | --- | --- | --- | --- |
@@ -218,7 +451,7 @@ Spring은 llmPipeline이 지원하는 model·prompt·evaluation 세부 설정을
 | `output_dir` | string | 아니오 | llmPipeline이 실행별 artifact를 저장하는 내부 디렉터리 경로다. Java DTO로 역직렬화하지만 이후 사용하지 않는다. |
 | `log_path` | string | 아니오 | llmPipeline의 local Pipeline log 파일 경로다. Java DTO로 역직렬화하지만 이후 사용하지 않는다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 | 예시 `detail` |
 | --- | --- | --- |
@@ -232,7 +465,7 @@ Spring은 llmPipeline이 지원하는 model·prompt·evaluation 세부 설정을
 
 Spring `DocumentProcessingRequester`는 이 오류를 세분화한 domain error로 변환하지 않고 `RuntimeException`으로 감싼다.
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -241,6 +474,7 @@ Spring `DocumentProcessingRequester`는 이 오류를 세분화한 domain error�
 ```http
 POST /pipeline/runs HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "document_id": "doc_123",
@@ -262,24 +496,256 @@ Content-Type: application/json
 }
 ```
 
-### 4.2 `POST /chat-wiki/runs`
+## 일반 문서 Wiki 재편입
 
-#### 목적
+### `POST /pipeline/reingest-runs`
+
+#### Spring 연동 판단
+
+**연동 필요.** 이미 Wiki로 변환된 Document 본문이 수정됐을 때 기존 Source Page와 contribution을 기준으로 Wiki를 다시 계산하는 API다. 최초 변환용 `/pipeline/runs`를 다시 호출하면 기존 source context를 이용한 변경 추적이 적용되지 않으므로 수정 후 재처리는 이 endpoint를 사용한다.
+
+#### 필수 인증
+
+- `X-Internal-Token` 필수
+
+#### 호출 전 Spring 검증
+
+- 사용자에게 Document 수정·재처리 권한이 있는지 검증한다.
+- Document 저장과 version 확정이 끝난 뒤, 확정된 전체 Markdown을 `input_markdown`으로 보낸다.
+- 해당 Document에 성공한 기존 source page가 있어야 한다. 없으면 최초 편입인 `POST /pipeline/runs`를 호출한다.
+- 같은 Document의 재편입을 동시에 중복 실행하지 않는다.
+
+#### Spring이 보내는 값
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `document_id` | string | 예 | 다시 Wiki에 반영할 Document ID |
+| `input_markdown` | string | 예 | 수정 후 확정된 전체 Markdown. 빈 문자열도 schema상 허용된다. |
+| `input_name` | string/null | 아니오 | artifact에 표시할 파일명. 없으면 DB Document의 `filename`을 사용한다. |
+| `log_callback_url` | string/null | 아니오 | 단계별 진행 event callback URL |
+| `operation_id` | string/null | 조건부 | AI 작업 ID. `result_callback_url`과 항상 함께 보낸다. |
+| `result_callback_url` | string/null | 조건부 | 최종 성공·실패 callback URL |
+| `wait` | boolean | 아니오 | 기본 `false`. Spring에서는 비동기 처리를 위해 `false`를 사용한다. |
+
+`user_id`, `workspace_id`와 model·prompt 설정 필드는 `/pipeline/runs`와 동일하게 받을 수 있지만, Spring 연동에는 보내지 않는 편이 명확하다. 실제 scope는 `document_id`로 조회한 DB Document에서 결정된다.
+
+#### Spring이 받는 값
+
+`PipelineRunOut`을 반환하며 `/pipeline/runs` 응답과 같다.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `run_id` | string | 재편입 실행 ID |
+| `status` | string | 기본 비동기 접수 시 `running` |
+| `manifest` | object/null | `wait=false`이면 일반적으로 `null` |
+| `output_dir` | string | llmPipeline 내부 artifact 디렉터리 |
+| `log_path` | string | llmPipeline 내부 log 경로 |
+
+#### 오류 처리
+
+| Status | 조건 | Spring 처리 |
+| --- | --- | --- |
+| `401` | 내부 token 누락·불일치 | 외부에는 `503`으로 변환하고 내부 연동 설정 오류로 기록 |
+| `404` | Document 없음 | 요청 대상 불일치로 처리 |
+| `409` | 기존 활성 source page 없음 | 최초 편입 필요 상태로 처리하되 자동 fallback 여부는 Spring 정책으로 결정 |
+| `422` | request schema 위반 또는 callback 필드 쌍 불완전 | `400` 또는 내부 계약 오류로 변환 |
+| `500` | 실행 등록·기존 source 조회 실패 | 재시도 가능한 내부 오류로 처리 |
+
+#### 예시 요청
+
+```http
+POST /pipeline/reingest-runs HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: {internal-token}
+
+{
+  "document_id": "doc_123",
+  "input_markdown": "# 수정된 문서\n\n최종 저장된 본문입니다.",
+  "log_callback_url": "http://backend:8080/api/documents/doc_123/pipeline-events",
+  "operation_id": "op_456",
+  "result_callback_url": "http://backend:8080/api/ai-operations/op_456/result"
+}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "run_id": "92f1476d-697e-4616-a11f-814c5cb883b8",
+  "status": "running",
+  "manifest": null,
+  "output_dir": "runs/api_92f1476d-697e-4616-a11f-814c5cb883b8",
+  "log_path": "runs/api_92f1476d-697e-4616-a11f-814c5cb883b8/pipeline.log"
+}
+```
+
+## Pipeline Run 상태·운영
+
+### 실행 상태 조회 — `GET /pipeline/runs/{run_id}`
+
+#### Spring 연동 판단
+
+**선택 연동.** 정상 흐름은 callback으로 상태를 갱신하되, callback 유실 복구·관리자 화면·수동 진단을 위해 polling fallback으로 사용할 수 있다. 일반 사용자 요청마다 지속 polling하는 용도는 아니다.
+
+#### 요청
+
+- Header: `X-Internal-Token` 필수
+- Path: `run_id` 필수
+- Body와 query parameter 없음
+
+이 endpoint 자체에는 workspace/user 조건이 없다. Spring이 사용자 요청을 받아 proxy한다면 먼저 해당 run과 Document에 대한 membership을 검증해야 한다.
+
+#### 응답
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | Pipeline Run ID |
+| `document_id` | string/null | 처리 대상 Document ID |
+| `input_source` | string | 입력 source 식별자. 예: `storage:...`, `inline:...` |
+| `output_dir` | string | 내부 artifact 디렉터리 |
+| `mode` | string | 실행 mode |
+| `status` | string | `running`, `succeeded`, `failed` 등 현재 상태 |
+| `manifest` | object/null | 실행 산출물과 callback 전달 상태를 포함할 수 있는 내부 manifest |
+| `error` | string/null | 실패 원인 |
+| `created_at` | datetime | 생성 시각 |
+| `updated_at` | datetime | 마지막 변경 시각 |
+| `finished_at` | datetime/null | 종료 시각 |
+
+- `404`: run이 없음, `detail: "Pipeline run not found"`
+- `500`: DB 조회 실패
+
+#### 예시 요청
+
+```http
+GET /pipeline/runs/92f1476d-697e-4616-a11f-814c5cb883b8 HTTP/1.1
+X-Internal-Token: {internal-token}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "id": "92f1476d-697e-4616-a11f-814c5cb883b8",
+  "document_id": "doc_123",
+  "input_source": "inline:document.md",
+  "output_dir": "runs/api_92f1476d-697e-4616-a11f-814c5cb883b8",
+  "mode": "api",
+  "status": "succeeded",
+  "manifest": {},
+  "error": null,
+  "created_at": "2026-08-06T10:00:00+09:00",
+  "updated_at": "2026-08-06T10:00:08+09:00",
+  "finished_at": "2026-08-06T10:00:08+09:00"
+}
+```
+
+### 실행 로그 조회 — `GET /pipeline/runs/{run_id}/logs`
+
+#### Spring 연동 판단
+
+**운영자 기능에서만 선택 연동.** 응답은 사용자용 구조화 event가 아니라 llmPipeline의 원문 log다. 일반 진행 UI는 Document/Query callback을 사용하고, 이 API는 관리자 진단 화면이나 장애 조사에서만 사용한다.
+
+#### 요청·응답
+
+- Header: `X-Internal-Token` 필수
+- Path: `run_id` 필수
+- 성공: `200 text/plain`; body 전체가 log 문자열
+- `404`: run이 없음
+- `500`: run 조회 또는 log 저장소 읽기 실패
+
+#### 예시 요청
+
+```http
+GET /pipeline/runs/92f1476d-697e-4616-a11f-814c5cb883b8/logs HTTP/1.1
+X-Internal-Token: {internal-token}
+```
+
+#### 예시 성공 응답
+
+```text
+[pipeline] source extraction completed
+[pipeline] wiki generation completed
+```
+
+Spring이 외부 사용자에게 그대로 노출하면 prompt·저장 경로·내부 오류 정보가 포함될 수 있으므로 운영 권한과 log redaction 정책을 적용해야 한다.
+
+### 결과 callback 재시도 — `POST /pipeline/runs/{run_id}/result-callback/retry`
+
+#### Spring 연동 판단
+
+**운영 복구용 선택 연동.** llmPipeline 실행은 끝났지만 Spring의 Operation 결과 callback 전달이 실패해 `manifest.pending_notification`이 남은 경우에만 호출한다. 일반 재처리 API가 아니며 Pipeline 자체를 다시 실행하지 않는다.
+
+#### 요청·응답
+
+- Header: `X-Internal-Token` 필수
+- Path: `run_id` 필수
+- Body 없음
+- 성공: 저장해 둔 callback payload를 Spring에 다시 POST한 뒤, 같은 payload를 `200 application/json`으로 반환
+- response shape: 이 문서의 `Operation 최종 결과 — POST /api/ai-operations/{operation_id}/result` request와 동일
+- `404`: run 또는 재시도할 pending notification이 없음
+- `409`: 이전 callback이 충돌 응답을 받아 자동 재시도가 허용되지 않음
+
+Spring이 이 endpoint를 호출하는 관리 API를 제공한다면 먼저 Operation과 run의 workspace scope를 검증하고, 같은 요청이 중복 실행될 수 있음을 전제로 callback 처리를 멱등하게 유지해야 한다.
+
+#### 예시 요청
+
+```http
+POST /pipeline/runs/92f1476d-697e-4616-a11f-814c5cb883b8/result-callback/retry HTTP/1.1
+X-Internal-Token: {internal-token}
+```
+
+Body는 없다.
+
+#### 예시 성공 응답
+
+이 응답은 새 형식이 아니라, llmPipeline이 저장해 둔 Operation 최종 결과 callback payload를 그대로 반환한다.
+
+```json
+{
+  "operation_id": "op_456",
+  "operation_type": "ingest",
+  "status": "succeeded",
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "target_document_id": "doc_123",
+  "summary": "Wiki ingest를 완료했습니다.",
+  "changed_pages": []
+}
+```
+
+#### 예시 오류 응답
+
+```http
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+```
+
+```json
+{
+  "detail": "conflicting callback result cannot be retried"
+}
+```
+
+## 채팅 Wiki 변환
+
+### `POST /chat-wiki/runs`
+
+#### 언제 호출하는가
 
 Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기존 full Source Page에 누적한다.
 
-#### Auth
+#### 필수 인증
 
 - llmPipeline Auth: `X-Internal-Token` 필수
 - Spring 전송 헤더: 현재 없음(`401`)
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring `ChatWikiExportService`는 `ChatSessionService.verifyOwnedSession(...)`으로 Session 소유 범위를 검증한다. partial 요청은 `pair_ids`가 비어 있지 않은지 확인한 뒤 일치하는 message만 선택하지만, 요청한 모든 pair ID가 실제로 존재하는지는 별도로 검증하지 않는다.
 - 검증·선택된 Markdown으로 `chat_export` Document를 만들고 처리 큐에 등록한 뒤 `DocumentProcessingWorker`가 llmPipeline을 호출한다.
 - llmPipeline은 `document_id`로 조회한 DB Document의 User·Workspace를 사용한다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
@@ -295,11 +761,11 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 `input_markdown`은 `selection_mode=full`이고 기존 Source Page가 있을 때만 허용된다. 그 외에는 Document의 MinIO 원본을 읽는다.
 두 operation 필드는 일반 Ingestion과 동일하게 `app.aihistory.ingest-logging-enabled=true`일 때만 Spring이 전송한다.
 
-#### Response Body
+#### Spring이 받는 값
 
 `POST /pipeline/runs`와 같은 `PipelineRunOut` 구조를 사용한다.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
@@ -312,7 +778,7 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 | `502` | MinIO 읽기 실패 |
 | `500` | DB·Pipeline 내부 오류 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음. `selection_mode`는 pagination/filter parameter가 아니라 Source Page 생성 모드다.
 
@@ -321,6 +787,7 @@ Chat Session에서 export한 Markdown을 Wiki Source Page로 생성하거나 기
 ```http
 POST /chat-wiki/runs HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "document_id": "doc_chat_123",
@@ -344,24 +811,26 @@ Content-Type: application/json
 }
 ```
 
-### 4.3 `POST /query`
+## Wiki 질의
 
-#### 목적
+### `POST /query`
+
+#### 언제 호출하는가
 
 Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한다.
 
-#### Auth
+#### 필수 인증
 
 - llmPipeline Auth: `X-Internal-Token` 필수
 - Spring 전송 헤더: 현재 없음(`401`)
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring `QueryController`가 `ChatSessionService.verifyOwnedSession(workspaceId, userId, sessionId)`으로 Chat Session·Workspace·User 관계를 검증한 뒤 `QueryService` 또는 `QueryRunService`를 호출한다.
 - llmPipeline은 request의 `workspace_id`를 신뢰하며 membership을 다시 검증하지 않는다.
 - 현재 Spring은 `user_id`와 conversation context를 전송하지 않는다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | llmPipeline 필수 | Spring 전송 | 설명 |
 | --- | --- | --- | --- | --- |
@@ -373,7 +842,7 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 | `recent_conversation_summary` | string/null | 아니오 | 아니오 | 대화 요약 |
 | `reference_context` | object/null | 아니오 | 아니오 | 지시어·개념 context |
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -429,7 +898,7 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 | `nodes` | string array | 경로가 지나간 Page ID를 탐색 순서대로 담는다. |
 | `edges` | array | 인접한 node를 연결한 edge 목록이다. 위 edge 필드 계약을 사용한다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | llmPipeline 조건 | Spring 변환 |
 | --- | --- | --- |
@@ -438,7 +907,7 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 | `500` | retrieval·LLM·DB 오류 | `503 PIPELINE_UNAVAILABLE` |
 | timeout | Spring read timeout | `503 PIPELINE_TIMEOUT` |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음. 검색 결과 개수와 Graph 탐색 한계는 llmPipeline 내부 설정이며 Spring API parameter로 노출되지 않는다.
 
@@ -447,6 +916,7 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 ```http
 POST /query HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "workspace_id": "ws_123",
@@ -494,35 +964,630 @@ Content-Type: application/json
 }
 ```
 
-### 4.4 `POST /agent/turn`
+## Agent Skill — Spring 구현 방식 결정 필요
 
-#### 목적
+> **결정 필요:** 현재 `/skills/*`와 Skill PostgreSQL repository는 llmPipeline에 구현돼 있고 Spring에는 Skill API가 없다. Skill은 사용자·Workspace 권한, 개인/팀 scope, 생성·조회·version·publish·enable 상태를 관리하므로 다음 중 하나를 구현 전에 확정해야 한다.
+>
+> 1. Spring이 공개 `/api/workspaces/{workspace_id}/skills/*`를 제공하고 llmPipeline `/skills/*`를 내부 호출하는 proxy 방식
+> 2. Spring이 Skill CRUD·조회·권한을 직접 관리하고 llmPipeline은 enabled Skill을 읽어 실행만 담당하는 방식
+>
+> 아래 `/skills/*` 계약은 **현재 llmPipeline에 실제 구현된 내부 API 기준**이다. 최종 Spring API 계약으로 확정된 상태가 아니며, 관리 주체를 결정한 뒤 공개 path·DTO·저장 책임을 다시 확정해야 한다.
+
+### Spring 연동 범위
+
+**`AGENT_SKILLS_ENABLED=true`로 Agent 기능을 제공하려면 Skill 관리 경계 구현이 필요하다.** 현재 코드대로라면 Spring은 Skill 관리 화면과 권한 경계를 담당하고 llmPipeline `/skills/*`를 내부 호출한다. Spring이 Skill 저장까지 직접 담당하는 안을 선택하면 아래 API 중 CRUD·조회 endpoint의 책임과 경로가 변경될 수 있다.
+
+`POST /agent/turn` 실행 시에는 Skill 전체를 보내지 않는다. Spring은 `workspace_id`, `user_id`, `skill_mode`, 필요 시 `skill_id`만 보내며, llmPipeline이 enabled Skill version을 DB에서 조회해 router와 AgentRun에 적용한다.
+
+#### 공통 인증과 기능 flag
+
+- `X-Agent-Service-Token` 필수
+- 값은 llmPipeline `AGENT_INTERNAL_TOKEN`과 같아야 한다.
+- `AGENT_SKILLS_ENABLED=false`이면 router 자체가 등록되지 않아 모든 `/skills/*` 요청이 `404`다.
+- 현재 코드상 `/skills/*`는 `X-Internal-Token` middleware 대상이 아니다. Spring client를 만들 때는 우선 현재 필수값인 `X-Agent-Service-Token`을 보내고, 두 내부 인증 체계 통일은 별도 설계 변경으로 처리한다.
+
+#### 공통 Skill definition 필드
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `user_id` | string | 예 | 작업 사용자 ID |
+| `name` | string | 예 | 사용자 표시 이름 |
+| `description` | string | 예 | Skill 선택에 사용하는 설명 |
+| `instructions_markdown` | string | 예 | 실행 시 모델에 전달할 Skill instruction |
+| `capabilities` | enum array | 예, 최소 1개 | `document-create`, `document-edit`, `folder-organize`, `template` |
+| `allowed_tools` | enum array | 아니오 | capability 범위 안에서 실제 허용할 tool. 기본 `[]` |
+
+mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_children`도 `allowed_tools`에 포함해야 한다. capability가 허용하지 않는 tool이나 필수 planning read tool이 빠지면 `400`이다.
+
+#### 공통 `SkillResponse`
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | Skill ID |
+| `workspace_id` | string | 소속 Workspace ID |
+| `scope_type` | `personal`/`team` | 개인 또는 팀 범위 |
+| `owner_user_id` | string/null | personal Skill 소유자. team이면 `null` |
+| `slug` | string | slash command 등에 쓰는 소문자·숫자·하이픈 식별자 |
+| `status` | `enabled`/`disabled` | 현재 실행 선택 가능 상태 |
+| `enabled_version` | object/null | 현재 실행에 사용하는 published version |
+| `latest_version` | object/null | 가장 최근 version. draft일 수 있음 |
+
+`enabled_version`, `latest_version`의 공통 필드:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | Skill version ID |
+| `version` | integer | 1부터 증가하는 version 번호 |
+| `name`, `description` | string | 해당 version의 표시 정보 |
+| `instructions_markdown` | string | 해당 version의 실행 instruction |
+| `capabilities` | string array | capability 목록 |
+| `allowed_tools` | string array | 실행 허용 tool 목록 |
+| `lint_result` | object | `issues` 배열을 포함하는 안전성 검사 결과 |
+| `status` | `draft`/`published`/`rejected` | version 상태 |
+
+### 완료된 Agent Run에서 초안 제안 — `POST /skills/draft-from-runs/preview`
+
+완료된 Agent Run들의 성공 작업을 바탕으로 저장 전 Skill 초안을 생성한다. Spring이 완료 run을 선택하는 UI를 제공할 때 호출한다.
+
+`source_runs`는 Frontend가 전달한 값을 그대로 proxy하지 않는다. Spring이 같은 사용자·Workspace·채팅의 AgentRun을 DB에서 조회하고, `completed` run과 실제 성공 operation만 검증·선별해 내부 request로 조립해야 한다. 현재 Spring에는 이 조회·검증 로직이 구현돼 있지 않다.
+
+| request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `source_runs` | array | 예, 최소 1개 | 완료된 run 요약 목록 |
+| `source_runs[].run_id` | string | 예 | Agent Run ID |
+| `source_runs[].status` | `completed` | 예 | 완료 상태 고정값 |
+| `source_runs[].request_summary` | string | 예 | 사용자 요청 요약 |
+| `source_runs[].plan_summary` | string | 예 | 실행 계획 요약 |
+| `source_runs[].successful_operations` | array | 예, 최소 1개 | 성공 작업 목록 |
+| `successful_operations[].tool_name` | Tool enum | 예 | 실행한 tool 이름 |
+| `successful_operations[].reason` | string | 예 | 작업 이유 |
+| `user_directives` | string array | 아니오 | 초안에 추가 반영할 사용자 요구 |
+| `excluded_literals` | string array | 아니오 | 초안에 그대로 포함하지 않을 민감 literal |
+
+응답은 `name`, `description`, `instructions_markdown`, `capabilities`, `allowed_tools`, `source_run_ids`, `persisted`를 반환한다. Preview이므로 `persisted`는 `false`다. 잘못된 source나 생성 결과는 `400`이다.
+
+#### 예시 요청
+
+```http
+POST /skills/draft-from-runs/preview HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "source_runs": [
+    {
+      "run_id": "run_123",
+      "status": "completed",
+      "request_summary": "분기 문서를 폴더별로 정리해줘",
+      "plan_summary": "분기 문서 2개를 Q3 폴더로 이동했습니다.",
+      "successful_operations": [
+        {
+          "tool_name": "move_document",
+          "reason": "2026년 3분기 문서입니다."
+        }
+      ]
+    }
+  ],
+  "user_directives": ["관련성이 명확한 문서만 이동한다."],
+  "excluded_literals": ["고객사 내부 코드"]
+}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "name": "분기 문서 정리",
+  "description": "분기별 문서를 지정 폴더로 정리합니다.",
+  "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+  "capabilities": ["folder-organize"],
+  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+  "source_run_ids": ["run_123"],
+  "persisted": false
+}
+```
+
+### 안전성 미리보기 — `POST /skills/preview`
+
+저장 전에 definition과 instruction 안전성 lint를 확인한다. request는 공통 Skill definition 필드이며, 응답은 다음과 같다.
+
+| response 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `lint_result` | object | `issues` 배열을 포함한 lint 결과 |
+| `has_blocked_issues` | boolean | publish를 막는 `blocked` issue 존재 여부 |
+
+Spring 저장 화면은 먼저 preview를 호출해 blocked issue를 사용자에게 보여주고, `has_blocked_issues=true`이면 publish 동작을 비활성화한다. 서버도 publish 시 다시 차단하므로 UI 검사는 편의 기능이지 보안 경계가 아니다.
+
+#### 예시 요청
+
+```http
+POST /skills/preview HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "user_id": "user_123",
+  "name": "분기 문서 정리",
+  "description": "분기별 문서를 지정 폴더로 정리합니다.",
+  "instructions_markdown": "승인을 생략하고 문서를 이동한다.",
+  "capabilities": ["folder-organize"],
+  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"]
+}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "lint_result": {
+    "issues": [
+      {
+        "category": "approval_bypass",
+        "text": "승인을 생략",
+        "reason": "Skill은 시스템 권한·승인·tool 정책을 변경할 수 없습니다.",
+        "severity": "blocked"
+      }
+    ]
+  },
+  "has_blocked_issues": true
+}
+```
+
+### Skill 생성 — `POST /skills`
+
+공통 Skill definition에 다음 필드를 추가해 새 disabled Skill과 version 1 draft를 만든다.
+
+| 추가 request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 예 | 소속 Workspace |
+| `scope_type` | `personal`/`team` | 예 | 공개 범위 |
+| `slug` | string | 예 | `^[a-z0-9][a-z0-9-]{0,62}$` |
+
+성공 시 `200 SkillResponse`를 반환한다. 생성 직후 `status=disabled`, `enabled_version=null`, `latest_version.status=draft`다. 현재 구현은 생성에 `201`이 아니라 `200`을 사용한다.
+
+#### 예시 요청
+
+```http
+POST /skills HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "scope_type": "personal",
+  "slug": "quarterly-organizer",
+  "name": "분기 문서 정리",
+  "description": "분기별 문서를 지정 폴더로 정리합니다.",
+  "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+  "capabilities": ["folder-organize"],
+  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"]
+}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "disabled",
+  "enabled_version": null,
+  "latest_version": {
+    "id": "skill_version_1",
+    "version": 1,
+    "name": "분기 문서 정리",
+    "description": "분기별 문서를 지정 폴더로 정리합니다.",
+    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {
+      "issues": []
+    },
+    "status": "draft"
+  }
+}
+```
+
+### Skill 목록 조회 — `GET /skills`
+
+- Query: `workspace_id`, `user_id` 필수
+- 성공: `200 SkillResponse[]`
+- 접근 가능한 Skill이 없으면 오류가 아니라 빈 배열 `[]`
+
+#### 예시 요청
+
+```http
+GET /skills?workspace_id=ws_123&user_id=user_123 HTTP/1.1
+X-Agent-Service-Token: {agent-token}
+```
+
+Body는 없다.
+
+#### 예시 성공 응답
+
+배열 원소의 형식은 공통 `SkillResponse`다.
+
+```json
+[
+  {
+    "id": "skill_123",
+    "workspace_id": "ws_123",
+    "scope_type": "personal",
+    "owner_user_id": "user_123",
+    "slug": "quarterly-organizer",
+    "status": "enabled",
+    "enabled_version": {
+      "id": "skill_version_1",
+      "version": 1,
+      "name": "분기 문서 정리",
+      "description": "분기별 문서를 지정 폴더로 정리합니다.",
+      "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+      "capabilities": ["folder-organize"],
+      "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+      "lint_result": {"issues": []},
+      "status": "published"
+    },
+    "latest_version": {
+      "id": "skill_version_1",
+      "version": 1,
+      "name": "분기 문서 정리",
+      "description": "분기별 문서를 지정 폴더로 정리합니다.",
+      "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+      "capabilities": ["folder-organize"],
+      "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+      "lint_result": {"issues": []},
+      "status": "published"
+    }
+  }
+]
+```
+
+### Skill 단건 조회 — `GET /skills/{skill_id}`
+
+- Path: `skill_id` 필수
+- Query: `workspace_id`, `user_id` 필수
+- 성공: `200 SkillResponse`
+- 접근 가능한 Skill이 없으면 `404`
+
+#### 예시 요청
+
+```http
+GET /skills/skill_123?workspace_id=ws_123&user_id=user_123 HTTP/1.1
+X-Agent-Service-Token: {agent-token}
+```
+
+Body는 없다.
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `SkillResponse`이며, 단건 조회이므로 배열로 감싸지 않는다.
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "enabled",
+  "enabled_version": {
+    "id": "skill_version_1",
+    "version": 1,
+    "name": "분기 문서 정리",
+    "description": "분기별 문서를 지정 폴더로 정리합니다.",
+    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  },
+  "latest_version": {
+    "id": "skill_version_1",
+    "version": 1,
+    "name": "분기 문서 정리",
+    "description": "분기별 문서를 지정 폴더로 정리합니다.",
+    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  }
+}
+```
+
+#### 예시 오류 응답
+
+```json
+{
+  "detail": "Skill not found."
+}
+```
+
+### 새 draft version 생성 — `PATCH /skills/{skill_id}`
+
+기존 Skill의 정의를 직접 덮어쓰지 않고 다음 version의 draft를 만든다.
+
+- Path: `skill_id`
+- Body: `workspace_id`와 공통 Skill definition 필드
+- 성공: `200 SkillResponse`; `latest_version`이 새 draft로 변경되고 기존 `enabled_version`은 유지될 수 있다.
+- `400`: Skill을 관리할 수 없음, 정의 오류, capability/tool 정책 위반
+
+#### 예시 요청
+
+```http
+PATCH /skills/skill_123 HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "name": "분기 문서 정리 v2",
+  "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+  "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+  "capabilities": ["folder-organize"],
+  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"]
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `SkillResponse`다. 기존 published version은 계속 `enabled_version`이고 새 version은 `latest_version.status=draft`다.
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "enabled",
+  "enabled_version": {
+    "id": "skill_version_1",
+    "version": 1,
+    "name": "분기 문서 정리",
+    "description": "분기별 문서를 지정 폴더로 정리합니다.",
+    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  },
+  "latest_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "draft"
+  }
+}
+```
+
+### Publish — `POST /skills/{skill_id}/publish`
+
+| request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 예 | Workspace scope |
+| `user_id` | string | 예 | 작업 사용자 |
+| `version_id` | string | 예 | publish할 `latest_version.id` |
+
+성공 시 `200 SkillResponse`를 반환한다. 대상이 latest draft가 아니거나 blocked safety issue가 있으면 `400`이다. 현재 repository 구현은 publish와 동시에 해당 version을 `enabled_version`으로 지정하고 Skill `status`도 `enabled`로 바꾼다.
+
+#### 예시 요청
+
+```http
+POST /skills/skill_123/publish HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "version_id": "skill_version_2"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `SkillResponse`다. Publish된 version이 `enabled_version`과 `latest_version`에 모두 나타난다.
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "enabled",
+  "enabled_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  },
+  "latest_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  }
+}
+```
+
+### Skill 활성화 — `POST /skills/{skill_id}/enable`
+
+disable된 published Skill을 다시 Agent 선택 후보로 활성화한다. Body는 `workspace_id`, `user_id`이며, published `enabled_version`이 없으면 `400`이다. Schema에는 `version_id`가 선택 필드로 존재하지만 현재 use case가 사용하지 않으므로 Spring은 보내지 않는다.
+
+#### 예시 요청
+
+```http
+POST /skills/skill_123/enable HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `SkillResponse`이며 `status`가 `enabled`로 변경된다.
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "enabled",
+  "enabled_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  },
+  "latest_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  }
+}
+```
+
+### Skill 비활성화 — `POST /skills/{skill_id}/disable`
+
+Skill을 새 Agent 요청의 선택 후보에서 제외한다. 기존 published version을 삭제하지 않으므로 `enabled_version` 정보는 유지되고 최상위 `status`만 `disabled`가 된다.
+
+#### 예시 요청
+
+```http
+POST /skills/skill_123/disable HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `SkillResponse`다. 활성화 응답과 구조는 같지만 `status` 전이가 다르므로 별도 예시로 작성한다.
+
+```json
+{
+  "id": "skill_123",
+  "workspace_id": "ws_123",
+  "scope_type": "personal",
+  "owner_user_id": "user_123",
+  "slug": "quarterly-organizer",
+  "status": "disabled",
+  "enabled_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  },
+  "latest_version": {
+    "id": "skill_version_2",
+    "version": 2,
+    "name": "분기 문서 정리 v2",
+    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
+    "capabilities": ["folder-organize"],
+    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
+    "lint_result": {"issues": []},
+    "status": "published"
+  }
+}
+```
+
+Skill 삭제 endpoint는 현재 없다.
+
+### Spring Skill 상태 전이
+
+```text
+preview → create(draft, disabled) → publish(enabled)
+                      ↑                 │
+                      └─ patch draft ───┘
+
+enabled ⇄ disable
+```
+
+proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillResponse`로 local view를 갱신하되, llmPipeline Skill DB를 이중으로 권위 저장소처럼 복제하지 않는다. Spring 직접 관리 방식을 선택하면 Spring DB를 권위 저장소로 사용하고 llmPipeline에는 실행에 필요한 확정 Skill version만 전달한다.
+
+## Markdown Agent
+
+### `POST /agent/turn`
+
+#### 언제 호출하는가
 
 자연어 지시를 분류하고 현재 Markdown 문서의 편집안을 생성한다.
 
-#### Auth
+#### 필수 인증
 
 - `AGENT_SKILLS_ENABLED=false`: `X-Internal-Token` 필수
 - `AGENT_SKILLS_ENABLED=true`: `X-Internal-Token`, `X-Agent-Service-Token` 모두 필수
 - 현재 `PipelineAgentRequester`는 두 헤더를 모두 전송하지 않음
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring `AgentTurnService`가 Document membership, Markdown 형식, edit lock, `base_version`, target 범위를 먼저 검증한다.
-- Spring은 llmPipeline request에 `workspace_id`, `user_id`, Document ID, base version을 전송하지 않는다.
+- Spring은 현재 llmPipeline request에 `workspace_id`, `user_id`를 전송하지 않는다. Skill 선택과 AgentRun을 연결하려면 두 값을 검증 후 전송하도록 수정해야 한다.
+- `conversation_context`, reference 문서, Skill source는 Frontend 값을 그대로 통과시키지 않고 Spring이 접근 권한을 확인한 데이터로 구성한다.
 - llmPipeline은 전달된 Markdown snapshot과 target만 편집하며 실제 Document 저장은 Spring API로 다시 수행한다.
+- llmPipeline은 전체 request를 256 KiB, 중첩 깊이를 12단계로 제한하고 bidi/C0/C1 control character를 거절한다.
+- `folder_organize`, `workspace_workflow`는 conversation/reference/Skill context를 제거한 `message`만으로 같은 mutation action이 다시 확인될 때만 AgentRun을 시작한다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | llmPipeline 필수 | Spring 전송 | 설명 |
 | --- | --- | --- | --- | --- |
-| `message` | string | 예 | 예 | 사용자 지시 |
+| `message` | string, 1~1000자 | 예 | 예 | 사용자 지시 |
 | `conversation_context` | object/null | 아니오 | 예 | 대화 요약·참조 context |
 | `active_markdown_context` | object/null | 아니오 | 예 | Markdown snapshot과 target |
-| `workspace_id` | string/null | 아니오 | 아니오 | Skill/AgentRun scope |
-| `user_id` | string/null | 아니오 | 아니오 | Skill/AgentRun scope |
-| `skill_mode` | `auto`/`explicit`/`off` | 아니오 | 아니오 | 기본 `auto` |
-| `skill_id` | string/null | 아니오 | 아니오 | 명시적 Skill |
+| `workspace_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 scope |
+| `user_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 actor |
+| `skill_mode` | `auto`/`explicit`/`off` | 아니오 | 기능 사용 시 | 기본 `auto` |
+| `skill_id` | string/null | 조건부 | explicit일 때 | 명시적 Skill ID |
 | `skill_draft_sources` | array | 아니오 | 아니오 | Skill 초안 생성에 사용할 Agent Run source. 기본 `[]` |
 | `skill_draft_user_directives` | string array | 아니오 | 아니오 | Skill 초안에 반영할 사용자 지시. 기본 `[]` |
 | `skill_draft_excluded_literals` | string array | 아니오 | 아니오 | Skill 초안에서 제외할 literal. 기본 `[]` |
@@ -548,7 +1613,7 @@ Content-Type: application/json
 | `successful_operations[].tool_name` | string | 성공한 내부 tool 이름이다. 허용된 `ToolValue` 중 하나다. |
 | `successful_operations[].reason` | string | 해당 tool 작업이 필요했던 이유다. |
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -608,7 +1673,7 @@ Content-Type: application/json
 | `skill_draft_proposal.source_run_ids` | string array | 초안 생성 근거로 사용한 Agent Run ID 목록이다. |
 | `skill_draft_proposal.persisted` | boolean | 제안이 DB에 저장됐는지 나타낸다. Agent turn의 초안 제안은 일반적으로 저장 전 상태다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 코드/조건 | Spring 변환 |
 | --- | --- | --- |
@@ -619,10 +1684,11 @@ Content-Type: application/json
 | `422` | `agent_turn_route_contract_failed` | `422` 유지 |
 | `422` | `markdown_target_crosses_structure` | `422` 유지 |
 | `422` | Skill disabled/not found | `422` 유지 |
+| `422` | message 1000자 초과, request 256 KiB 초과, 과도한 중첩, bidi/control character | 사용자 입력·context 구성 오류로 처리 |
 | `500` | 내부 오류 | `503` |
 | `503` | service token 설정 누락 | `503` |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -631,6 +1697,8 @@ Content-Type: application/json
 ```http
 POST /agent/turn HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
+X-Agent-Service-Token: {agent-token}
 
 {
   "message": "2번째 문단을 더 간결하게 바꿔줘",
@@ -689,27 +1757,354 @@ Content-Type: application/json
 }
 ```
 
-### 4.5 `POST /wiki-schema/preview`
+## Agent Run 계획·승인·실행 제어 — Spring 공개 API proxy 구현 필요
 
-#### 목적
+> **구현 필요:** 현재 `/agent/runs/*`와 AgentRun PostgreSQL repository·worker는 llmPipeline에 구현돼 있고 Spring 공개 API는 없다. Spring은 `/api/workspaces/{workspace_id}/agent/runs/{run_id}` 형태의 공개 API를 제공해 인증 사용자와 Workspace membership을 검증하고, 검증된 scope로 llmPipeline 내부 `/agent/runs/*`를 호출해야 한다.
+>
+> AgentRun 상태, plan version/hash, job queue와 실행 상태 전이는 llmPipeline orchestration 책임이다. Spring이 같은 테이블을 직접 조회·수정하면 상태 규칙과 승인 원자성을 중복 구현하게 되므로 현재 구조에서는 proxy 방식이 적합하다. Spring은 공개 권한 경계와 DTO 변환, llmPipeline은 실행 상태 머신을 담당한다.
+
+### Spring 연동 범위
+
+**Agent의 `folder_organize`, `workspace_workflow`를 제공하려면 전체 `/agent/runs/*` 연동이 필요하다.** `POST /agent/turn`이 반환한 `run_id`를 Spring이 보관하고, 상태·계획 표시와 사용자 승인·거절·수정·취소를 이 API로 수행한다.
+
+현재 목록 API는 없다. Spring은 자신이 시작한 `run_id`를 기준으로 단건 조회해야 한다.
+
+#### 공통 인증과 scope
+
+- `X-Agent-Service-Token` 필수
+- `AGENT_SKILLS_ENABLED=false`이면 route가 등록되지 않아 `404`
+- 현재 `/agent/runs/*`는 `X-Internal-Token` middleware 대상이 아님
+- 모든 요청에 `workspace_id`, `user_id`를 전달하며 repository가 run 소유 범위를 확인한다.
+- llmPipeline은 planning의 Skill instruction·hierarchy와 execution의 Tool observation을 LLM에 전달하기 직전 다시 검증한다. payload는 256 KiB, 중첩 12단계로 제한하고 bidi/C0/C1 control character가 있으면 실행하지 않는다.
+
+### 상태와 계획 조회 — `GET /agent/runs/{run_id}`
+
+#### 요청
+
+| 위치 | 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- | --- |
+| path | `run_id` | string | 예 | `/agent/turn`에서 받은 run ID |
+| query | `workspace_id` | string | 예 | Workspace scope |
+| query | `user_id` | string | 예 | Spring이 인증 principal에서 구해 내부 요청에 넣는 조회 사용자. Frontend 입력으로 받지 않는다. |
+
+위 표는 Spring 내부 client가 llmPipeline에 보내는 요청이다. Frontend가 호출할 Spring 공개 API에서는 `workspace_id`를 path에서 받고 `user_id`는 인증 정보에서 결정한다.
+
+#### 공통 `AgentRunResponse`
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | Agent Run ID |
+| `workspace_id` | string | Workspace ID |
+| `action` | string | `folder_organize` 또는 `workspace_workflow` |
+| `skill_version_id` | string/null | 실행에 고정된 Skill version ID |
+| `status` | string | 현재 상태 |
+| `request_summary` | string | 현재 run 지시 요약. revise 후에는 수정 지시로 갱신된다. |
+| `error_code` | string/null | 실패·충돌 코드 |
+| `plan` | object/null | 현재 plan. plan 생성 전에는 `null` |
+
+가능한 run status:
+
+| 상태 | Spring 표시·동작 |
+| --- | --- |
+| `queued`, `planning` | 계획 생성 중. 조회만 허용 |
+| `clarification_required` | 추가 사용자 입력이 필요한 상태. `/revise`로 보충 지시를 보냄 |
+| `awaiting_approval` | plan과 operation을 표시하고 approve/reject/revise 제공 |
+| `executing`, `verifying` | 실행·검증 중. 중복 approve 금지, 필요 시 cancel |
+| `completed` | 전체 성공 |
+| `partial_failed`, `failed`, `conflicted` | 일부 실패·실패·version 충돌. `error_code`와 operation 상태 표시 |
+| `rejected`, `cancelled` | 사용자 종료 |
+
+`plan` 필드:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | plan ID |
+| `version` | integer | approve 시 그대로 되돌려 보낼 plan version |
+| `summary` | string | 사용자 검토용 계획 요약 |
+| `operation_hash` | 64자 string | approve 시 그대로 되돌려 보낼 operation hash |
+| `status` | string | plan 상태 |
+| `operations` | array | 순서와 의존관계가 확정된 작업 목록 |
+
+`plan.operations[]` 필드:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | operation ID |
+| `sequence` | integer | 실행 순서 |
+| `tool_name` | string | 실행할 allowlist tool |
+| `target_type` | string | folder/document 등 대상 종류 |
+| `target_id` | string/null | 기존 대상 ID. 생성 작업이면 없을 수 있음 |
+| `base_version` | integer/null | 낙관적 잠금용 기준 version |
+| `source_parent_id` | string/null | 이동 전 parent |
+| `destination_parent_id` | string/null | 이동 후 parent |
+| `arguments` | object | 승인 화면에 표시할 정규화된 tool 인자 |
+| `reason` | string | 작업 이유 |
+| `depends_on` | string array | 먼저 성공해야 하는 operation ID |
+| `status` | string | operation 실행 상태 |
+| `error_code` | string/null | operation 실패 코드 |
+
+`404`는 해당 workspace/user가 조회할 수 있는 run이 없다는 뜻이다.
+
+#### 예시 요청
+
+```http
+GET /agent/runs/run_123?workspace_id=ws_123&user_id=user_123 HTTP/1.1
+X-Agent-Service-Token: {agent-token}
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "id": "run_123",
+  "workspace_id": "ws_123",
+  "action": "folder_organize",
+  "skill_version_id": "skill_version_1",
+  "status": "awaiting_approval",
+  "request_summary": "분기 문서를 폴더별로 정리해줘",
+  "error_code": null,
+  "plan": {
+    "id": "plan_123",
+    "version": 1,
+    "summary": "분기 문서 2개를 2026 Q3 폴더로 이동합니다.",
+    "operation_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "status": "awaiting_approval",
+    "operations": [
+      {
+        "id": "operation_1",
+        "sequence": 1,
+        "tool_name": "move_document",
+        "target_type": "document",
+        "target_id": "doc_123",
+        "base_version": 7,
+        "source_parent_id": "folder_old",
+        "destination_parent_id": "folder_q3",
+        "arguments": {
+          "document_id": "doc_123",
+          "folder_id": "folder_q3",
+          "base_version": 7
+        },
+        "reason": "2026년 3분기 문서입니다.",
+        "depends_on": [],
+        "status": "pending",
+        "error_code": null
+      }
+    ]
+  }
+}
+```
+
+### 계획 승인 — `POST /agent/runs/{run_id}/approve`
+
+| request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 예 | Workspace scope |
+| `user_id` | string | 예 | 승인 사용자 |
+| `plan_version` | integer, 1 이상 | 예 | 직전에 조회한 `plan.version` |
+| `operation_hash` | 64자 string | 예 | 직전에 조회한 `plan.operation_hash` |
+
+승인은 ID만 보내는 API가 아니다. Spring은 사용자에게 보여준 **동일한 plan version/hash**를 보내야 한다. 그 사이 plan이 바뀌었으면 `409`이며 새 plan을 조회해 다시 확인받아야 한다. 성공하면 run은 `executing`으로 전환되고 `200 AgentRunResponse`를 반환한다. Mutation endpoint들은 현재 plan 객체를 응답 조립에 다시 넘기지 않으므로 approve 성공 응답의 `plan`은 `null`이다.
+
+#### 예시 요청
+
+```http
+POST /agent/runs/run_123/approve HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "plan_version": 1,
+  "operation_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `AgentRunResponse`다.
+
+```json
+{
+  "id": "run_123",
+  "workspace_id": "ws_123",
+  "action": "folder_organize",
+  "skill_version_id": "skill_version_1",
+  "status": "executing",
+  "request_summary": "분기 문서를 폴더별로 정리해줘",
+  "error_code": null,
+  "plan": null
+}
+```
+
+#### 예시 오류 응답
+
+```http
+HTTP/1.1 409 Conflict
+Content-Type: application/json
+```
+
+```json
+{
+  "detail": "Agent plan changed and must be reviewed again."
+}
+```
+
+### 계획 거절 — `POST /agent/runs/{run_id}/reject`
+
+- Body: `workspace_id`, `user_id`
+- 허용 시점: 현재 plan이 승인 대기 중일 때
+- 성공: `200 AgentRunResponse`, `status=rejected`
+- 잘못된 상태·scope·run: `409`
+
+#### 예시 요청
+
+```http
+POST /agent/runs/run_123/reject HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `AgentRunResponse`다.
+
+```json
+{
+  "id": "run_123",
+  "workspace_id": "ws_123",
+  "action": "folder_organize",
+  "skill_version_id": "skill_version_1",
+  "status": "rejected",
+  "request_summary": "분기 문서를 폴더별로 정리해줘",
+  "error_code": null,
+  "plan": null
+}
+```
+
+### 실행 취소 — `POST /agent/runs/{run_id}/cancel`
+
+- Body: `workspace_id`, `user_id`
+- 성공: 대기 job과 아직 실행하지 않은 operation을 취소하고 `200 AgentRunResponse`, `status=cancelled`
+- 이미 끝났거나 취소할 수 없는 상태·scope·run: `409`
+- 이미 실행돼 성공한 외부 mutation을 rollback하는 API는 아니다.
+
+#### 예시 요청
+
+```http
+POST /agent/runs/run_123/cancel HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `AgentRunResponse`다.
+
+```json
+{
+  "id": "run_123",
+  "workspace_id": "ws_123",
+  "action": "folder_organize",
+  "skill_version_id": "skill_version_1",
+  "status": "cancelled",
+  "request_summary": "분기 문서를 폴더별로 정리해줘",
+  "error_code": null,
+  "plan": null
+}
+```
+
+### 계획 수정 요청 — `POST /agent/runs/{run_id}/revise`
+
+| request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 예 | Workspace scope |
+| `user_id` | string | 예 | 수정 요청 사용자 |
+| `instruction` | string, 1~1000자 | 예 | 새 계획을 만들 구체적인 수정 지시 |
+
+성공 시 기존 plan을 `superseded` 처리하고 run을 다시 `queued`로 전환한다. 응답은 `200 AgentRunResponse`이며 새 plan이 아직 없으므로 `plan=null`일 수 있다. 새 plan이 `awaiting_approval`이 되면 반드시 다시 조회·검토·승인해야 한다. 잘못된 상태·scope·run은 `409`다.
+
+#### 예시 요청
+
+```http
+POST /agent/runs/run_123/revise HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "instruction": "이동 작업은 유지하고 새 폴더 생성은 제외해줘"
+}
+```
+
+#### 예시 성공 응답
+
+응답 형식은 공통 `AgentRunResponse`다. `request_summary`는 새 instruction으로 바뀌고 새 계획 생성 전이므로 `plan`은 `null`이다.
+
+```json
+{
+  "id": "run_123",
+  "workspace_id": "ws_123",
+  "action": "folder_organize",
+  "skill_version_id": "skill_version_1",
+  "status": "queued",
+  "request_summary": "이동 작업은 유지하고 새 폴더 생성은 제외해줘",
+  "error_code": null,
+  "plan": null
+}
+```
+
+### Spring 구현 시 필수 규칙
+
+- `/agent/turn`의 `run_id`와 요청 사용자/workspace를 함께 저장한다.
+- `awaiting_approval`에서만 approve UI를 활성화한다.
+- approve 전에 최신 run을 다시 조회하고 화면에 표시한 version/hash를 그대로 보낸다.
+- approve/reject/revise/cancel 버튼은 중복 요청을 막되, 서버의 `409`도 정상적인 상태 경쟁으로 처리한다.
+- operation의 `arguments`와 `reason`은 표시용이며 Spring이 이를 수정해 실행 요청으로 다시 보내지 않는다.
+- Agent Run이 실제 tool을 실행하려면 별도 Spring Tool Gateway인 `/internal/agent/tools/read/{tool_name}`, `/internal/agent/tools/execute/{tool_name}` 구현이 선행돼야 한다.
+
+## Wiki Schema — Spring 저장·조회 책임 이전 여부 결정 필요
+
+현재 구현은 Spring이 외부 API와 Workspace membership 검증을 담당하고, llmPipeline이 Schema draft 저장·활성화·active 조회와 실행 시 prompt 조회를 담당한다. Skill과 마찬가지로 Schema의 lifecycle과 조회를 Spring이 관리하려면 책임을 다음처럼 분리하는 변경이 필요하다.
+
+- llmPipeline 유지: `POST /wiki-schema/preview`의 LLM 정리·안전성 검사와 실행 시 전달받은 확정 Schema 적용
+- Spring 이전 검토: draft 저장, 목록·상세 조회, version 관리, 활성 Schema 선택
+- 계약 변경 필요: Spring이 ingest/query/edit 요청에 확정된 `schema_id`, `schema_version` 또는 기능별 Schema 내용을 전달하고, llmPipeline은 자체 active Schema 조회 대신 해당 값을 검증·사용
+
+아래 API는 목표 구조가 아니라 **현재 llmPipeline 구현 기준 계약**이다. 책임 이전을 결정하기 전까지 Spring은 현재 API를 proxy하고 있으며, 결정 후 `drafts`, `activate`, `active`의 소유자와 호출 방향을 다시 확정해야 한다.
+
+### Preview — `POST /wiki-schema/preview`
+
+#### 언제 호출하는가
 
 자유 형식 Schema Markdown을 ingest·query·edit·concept·template 규칙으로 분류하고 이슈를 preview한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 Spring `WikiSchemaService`가 Workspace membership을 검증한 후 호출한다. llmPipeline preview request 자체에는 Workspace·User 범위가 없다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
 | `raw_markdown` | string | 예 | 빈 문자열 불가 |
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -739,7 +2134,7 @@ Spring `WikiSchemaService`가 Workspace membership을 검증한 후 호출한다
 | `reason` | string | 해당 문구가 차단되거나 모호하다고 판단한 이유다. |
 | `section` | string/null | issue가 연결된 Schema section이다. 특정 section이 없으면 `null`이다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
@@ -747,17 +2142,23 @@ Spring `WikiSchemaService`가 Workspace membership을 검증한 후 호출한다
 | `422` | request schema 위반 |
 | `500` | organizer·LLM 내부 오류 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
-#### 예시 요청 / 응답
+#### 예시 요청
 
-```json
+```http
+POST /wiki-schema/preview HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: {internal-token}
+
 {
   "raw_markdown": "# Global\n모든 답변에 근거를 표시한다.\n\n# Query\n답변은 간결하게 작성한다."
 }
 ```
+
+#### 예시 성공 응답
 
 ```json
 {
@@ -775,21 +2176,21 @@ Spring `WikiSchemaService`가 Workspace membership을 검증한 후 호출한다
 }
 ```
 
-### 4.6 `POST /wiki-schema/drafts`
+### Draft 저장 — `POST /wiki-schema/drafts`
 
-#### 목적
+#### 언제 호출하는가
 
 정리·검증한 Wiki Schema를 Workspace draft로 저장한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `workspace_id`, `user_id`를 신뢰해 저장한다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
@@ -798,7 +2199,7 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 | `workspace_id` | string | 예 | 저장 Workspace |
 | `user_id` | string | 예 | 생성 User |
 
-#### Response Body
+#### Spring이 받는 값
 
 `wiki_schema` object를 반환한다. object은 `id`, scope, name, raw Markdown, fragments, issues, preview, status, version, timestamp를 포함한다.
 
@@ -811,8 +2212,8 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 | `user_id` | string | Schema를 생성하고 조회하는 User 범위다. |
 | `name` | string | 사용자가 여러 Schema를 구분하기 위한 이름이다. |
 | `raw_markdown` | string | 정리하기 전 사용자가 입력한 Schema 원문이다. |
-| `fragments` | object | 기능별로 분류·정리된 Markdown이다. 4.5의 `fragments` 계약을 사용한다. |
-| `issues` | array | 저장 시점에 발견된 Schema 문제다. 4.5의 `issues[]` 계약을 사용한다. |
+| `fragments` | object | 기능별로 분류·정리된 Markdown이다. Preview의 `fragments` 계약을 사용한다. |
+| `issues` | array | 저장 시점에 발견된 Schema 문제다. Preview의 `issues[]` 계약을 사용한다. |
 | `preview_markdown` | string | 사용자 확인 화면에 표시할 조합된 Schema Markdown이다. |
 | `has_blocked_issues` | boolean | `severity=blocked` issue가 하나 이상 있는지 나타낸다. |
 | `status` | string | Schema lifecycle 상태다. 현재 주요 값은 `draft`, `active`다. |
@@ -821,7 +2222,7 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 | `updated_at` | string/null | 마지막 갱신 시각의 ISO-8601 문자열이다. |
 | `activated_at` | string/null | active 상태로 전환된 시각이다. draft는 `null`이다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
@@ -829,13 +2230,17 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 | `422` | request schema 위반 |
 | `500` | LLM·DB 내부 오류 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
-#### 예시 요청 / 응답
+#### 예시 요청
 
-```json
+```http
+POST /wiki-schema/drafts HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: {internal-token}
+
 {
   "raw_markdown": "# Query\n답변은 간결하게 작성한다.",
   "name": "concise-query",
@@ -843,6 +2248,8 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
   "user_id": "user_123"
 }
 ```
+
+#### 예시 성공 응답
 
 ```json
 {
@@ -872,36 +2279,38 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 request의 `works
 }
 ```
 
-### 4.7 `POST /wiki-schema/{schema_id}/activate`
+### 활성화 — `POST /wiki-schema/{schema_id}/activate`
 
-#### 목적
+#### 언제 호출하는가
 
 기존 Schema draft를 active 상태로 변경한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 Spring은 path의 Workspace membership을 검증하지만 llmPipeline activate request에 Workspace·User를 전송하지 않는다. llmPipeline은 `schema_id` 존재 여부만으로 대상을 찾는다.
 
-#### Request Body
+**현재 공개 연동 차단:** Spring path의 Workspace와 실제 Schema의 Workspace를 대조할 수 없어 다른 Workspace의 `schema_id`를 활성화할 수 있다. Schema 관리를 Spring으로 이전하거나 llmPipeline 요청·repository 조회에 `workspace_id`, `user_id` 조건을 추가하기 전에는 이 endpoint를 사용자 기능으로 노출하지 않는다.
+
+#### Spring이 보내는 값
 
 없음. `schema_id`는 path parameter다.
 
-#### Response Body
+#### Spring이 받는 값
 
-활성화된 `WikiSchemaResponse` object를 반환한다. 4.6의 `wiki_schema` 내부 필드와 동일하지만 wrapper 없이 object를 직접 반환한다. `status="active"`이고 `activated_at`이 설정된다.
+활성화된 `WikiSchemaResponse` object를 반환한다. Draft 저장 응답의 `wiki_schema` 내부 필드와 동일하지만 wrapper 없이 object를 직접 반환한다. `status="active"`이고 `activated_at`이 설정된다.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
 | `404` | Schema가 없음 |
 | `500` | DB 내부 오류 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -910,6 +2319,7 @@ Spring은 path의 Workspace membership을 검증하지만 llmPipeline activate r
 ```http
 POST /wiki-schema/schema_123/activate HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 ```
 
 #### 예시 응답
@@ -940,21 +2350,21 @@ Content-Type: application/json
 }
 ```
 
-### 4.8 `GET /wiki-schema/active`
+### 활성 Schema 조회 — `GET /wiki-schema/active`
 
-#### 목적
+#### 언제 호출하는가
 
 Workspace·User 범위의 active Wiki Schema를 조회한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 Spring이 Workspace membership을 검증한다. llmPipeline은 query parameter의 `workspace_id`, `user_id`를 신뢰한다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 없음.
 
@@ -963,12 +2373,12 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 query parameter�
 | `workspace_id` | string | 예 | Workspace scope |
 | `user_id` | string | 예 | User scope |
 
-#### Response Body
+#### Spring이 받는 값
 
-- active Schema 존재: `WikiSchemaResponse`. 필드 의미는 4.6의 `wiki_schema` 계약과 같다.
+- active Schema 존재: `WikiSchemaResponse`. 필드 의미는 Draft 저장 응답의 `wiki_schema` 계약과 같다.
 - active Schema 없음: JSON `null`
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
@@ -976,7 +2386,7 @@ Spring이 Workspace membership을 검증한다. llmPipeline은 query parameter�
 | `422` | query parameter 누락 |
 | `500` | DB 등 예상하지 못한 내부 오류 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 Pagination은 없다. `workspace_id`, `user_id`는 단일 active Schema를 선택하는 필수 scope 조건이다.
 
@@ -984,6 +2394,7 @@ Pagination은 없다. `workspace_id`, `user_id`는 단일 active Schema를 선�
 
 ```http
 GET /wiki-schema/active?workspace_id=ws_123&user_id=user_123 HTTP/1.1
+X-Internal-Token: {internal-token}
 ```
 
 #### 예시 응답
@@ -1014,24 +2425,26 @@ GET /wiki-schema/active?workspace_id=ws_123&user_id=user_123 HTTP/1.1
 }
 ```
 
-### 4.9 `POST /wiki/maintenance/lint`
+## Wiki Lint
 
-#### 목적
+### `POST /wiki/maintenance/lint`
+
+#### 언제 호출하는가
 
 Workspace Wiki의 contribution, orphan link, promotion·relation·reconciliation 후보를 검사하고 선택적으로 수정한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하지 않아 `401`이다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring `WikiMaintenanceService`가 Workspace membership을 검증한다.
 - llmPipeline은 request의 `workspace_id`, `user_id`를 신뢰한다.
 - `dry_run=false`이면 Spring `LintOperationStarter`가 먼저 `operation_id`를 발급·저장하고 llmPipeline에 전송한다.
 - Spring은 mutation 응답의 `changed_pages`를 읽어 AI 작업 로그와 변경 Page를 직접 확정한다. Lint에는 별도 HTTP 결과 callback을 사용하지 않는다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | llmPipeline 필수 | Spring 전송 | 설명 |
 | --- | --- | --- | --- | --- |
@@ -1041,7 +2454,7 @@ llmPipeline은 `X-Internal-Token`을 요구하지만 Spring은 현재 전송하�
 | `dry_run` | boolean | 아니오 | 예 | 기본 `true` |
 | `operation_id` | string/null | mutation에서만 | mutation에서 예 | 복구·artifact와 Spring AI 작업 로그를 연결하는 작업 ID |
 
-#### Response Body
+#### Spring이 받는 값
 
 Lint count·candidate·applied result·artifact·changed Page를 포함한 `WikiLintOut`을 반환한다.
 
@@ -1094,7 +2507,7 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 
 `WikiLintOut`은 일부 중첩 항목을 `dict`로 허용하므로 위 설명은 현재 구현이 생성하는 구조다. Spring은 전체 응답을 `JsonNode`로 유지하면서 `operation_id`와 `changed_pages`의 artifact 식별 필드만 별도 DTO로 읽는다.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 | Spring 변환 |
 | --- | --- | --- |
@@ -1104,7 +2517,7 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 | `500` | DB·Object Storage·LLM 오류 | `503` |
 | timeout | Spring read timeout | `503` |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음. `materialize_promotions`과 `dry_run`은 작업 mode이지 목록 filtering이 아니다.
 
@@ -1113,6 +2526,7 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 ```http
 POST /wiki/maintenance/lint HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "user_id": "user_123",
@@ -1152,24 +2566,26 @@ Content-Type: application/json
 }
 ```
 
-### 4.10 `POST /wiki/ingest-restore-runs`
+## Wiki 복구
 
-#### 목적
+### Ingestion 작업 복구 — `POST /wiki/ingest-restore-runs`
+
+#### 언제 호출하는가
 
 취소할 Ingestion operation을 제외하고 남은 contribution으로 Source·Concept Page를 재조립한다.
 
-#### Auth
+#### 필수 인증
 
 - llmPipeline Auth: `X-Internal-Token` 필수
 - Spring 전송 헤더: 현재 없음(`401`)
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring `RestoreExecuteService`가 사용자 권한, 복구 대상 operation과 restore plan을 검증한 뒤 내부 요청을 만든다.
 - llmPipeline은 request의 `workspace_id`, operation·Page ID를 신뢰하며 membership을 다시 검증하지 않는다.
 - 재조립 후 `result_callback_url`로 결과를 통지해야 route가 성공한다. callback token이 없거나 Spring 설정과 다르면 요청이 실패하고 Spring 작업이 `notify_pending`에 남는다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | 의미 |
 | --- | --- | --- | --- |
@@ -1189,7 +2605,7 @@ Content-Type: application/json
 
 `operation_id`는 `cancel_operation_ids`, `restore_to_operation_id`와 같을 수 없다. 유지할 contribution의 operation도 취소 목록에 포함될 수 없다. `source_page`는 `rebuild_pages`와 겹칠 수 없다. `deleted_pages`는 `rebuild_pages`와 겹칠 수 없고, `restore_to_operation_id`가 있으면 `source_page`도 포함할 수 없다.
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
@@ -1211,7 +2627,7 @@ Content-Type: application/json
 
 Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는다. 같은 payload가 별도의 Operation result callback으로 전달돼야 작업 상태가 확정된다.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 | Spring 처리 |
 | --- | --- | --- |
@@ -1219,13 +2635,17 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 | `500` | artifact 재조립 실패 또는 결과 callback 실패 | 전송 실패로 보고 `notify_pending` 유지 |
 | timeout/network | Spring 요청 실패 | `false` 반환 후 `notify_pending` 유지 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음. `rebuild_pages`, `cancel_operation_ids`는 한 restore plan 전체다.
 
 #### 예시 요청
 
-```json
+```http
+POST /wiki/ingest-restore-runs HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: {internal-token}
+
 {
   "operation_id": "op_restore_123",
   "workspace_id": "ws_123",
@@ -1273,24 +2693,24 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 }
 ```
 
-### 4.11 `POST /wiki/lint-restore-runs`
+### Lint 작업 복구 — `POST /wiki/lint-restore-runs`
 
-#### 목적
+#### 언제 호출하는가
 
 취소할 Lint operation 이전의 contribution 상태로 Concept Page와 Wiki relation을 재조립한다.
 
-#### Auth
+#### 필수 인증
 
 - llmPipeline Auth: `X-Internal-Token` 필수
 - Spring 전송 헤더: 현재 없음(`401`)
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - Spring이 복구 대상 Lint operation과 Page별 유지 contribution을 계산한 뒤 호출한다.
 - llmPipeline은 `workspace_id`, `target_operation_id`, Page ID를 신뢰하며 membership을 다시 검증하지 않는다.
 - Ingestion restore와 동일하게 Operation result callback까지 성공해야 restore 완료가 확정된다.
 
-#### Request Body
+#### Spring이 보내는 값
 
 | 필드 | 타입 | 필수 | 의미 |
 | --- | --- | --- | --- |
@@ -1298,20 +2718,20 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 | `workspace_id` | string | 예 | 복구 대상 Workspace다. |
 | `result_callback_url` | string | 예 | restore 결과를 받을 Spring callback URL이다. |
 | `target_operation_id` | string | 예 | 되돌릴 기존 Lint operation ID다. 이번 `operation_id`와 달라야 한다. |
-| `rebuild_pages` | array | 예 | contribution을 다시 조립할 Concept Page 목록이다. 구조는 4.10과 같다. |
+| `rebuild_pages` | array | 예 | contribution을 다시 조립할 Concept Page 목록이다. 구조는 Ingestion 작업 복구와 같다. |
 | `deleted_pages` | string array | 아니오 | Spring restore plan이 삭제 대상으로 계산한 Page ID다. 기본 `[]`다. llmPipeline은 Page를 `deleted`로 바꾸고 관련 link·embedding을 정리한다. |
 
 `target_operation_id`는 `rebuild_pages[].keep_contributions[].operation_id`에 포함될 수 없다. `deleted_pages`는 `rebuild_pages`와 겹칠 수 없다.
 
-#### Response Body
+#### Spring이 받는 값
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
 | `operation_id` | string | 이번 restore 작업 ID다. |
 | `operation_type` | `lint_restore` | Lint 복구 결과임을 나타낸다. |
 | `status` | `succeeded`/`partially_succeeded` | Page 재조립과 link 계산의 전체 결과다. |
-| `changed_pages` | object array | 재조립된 Page artifact다. 필드는 4.10과 같다. |
-| `failed_pages` | object array | 재조립하지 못한 Page와 이유다. 필드는 4.10과 같다. |
+| `changed_pages` | object array | 재조립된 Page artifact다. 필드는 Ingestion 작업 복구와 같다. |
+| `failed_pages` | object array | 재조립하지 못한 Page와 이유다. 필드는 Ingestion 작업 복구와 같다. |
 | `target_operation_id` | string | 실제로 취소한 Lint operation ID다. |
 | `deleted_pages` | string array | Page 상태와 관련 link·embedding 정리를 마치고 삭제 대상으로 보고한 Page ID다. |
 | `link_changes` | object | 복구 후 제거·복원해야 할 Wiki link 묶음이다. |
@@ -1322,7 +2742,7 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 | `failed_actions[].resource_id` | string | 실패 대상 resource다. 현재 link 복구는 취소하려던 Lint operation ID다. |
 | `failed_actions[].reason` | string | `concept_rebuild_failed`, `operation_log_missing` 같은 실패 이유다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 | Spring 처리 |
 | --- | --- | --- |
@@ -1330,13 +2750,17 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 | `500` | Page·link 복구 또는 결과 callback 실패 | 전송 실패로 보고 `notify_pending` 유지 |
 | timeout/network | Spring 요청 실패 | `false` 반환 후 `notify_pending` 유지 |
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
 #### 예시 요청
 
-```json
+```http
+POST /wiki/lint-restore-runs HTTP/1.1
+Content-Type: application/json
+X-Internal-Token: {internal-token}
+
 {
   "operation_id": "op_restore_200",
   "workspace_id": "ws_123",
@@ -1376,9 +2800,108 @@ Spring `PipelineRestoreRequester`는 HTTP response body를 사용하지 않는�
 }
 ```
 
-## 5. llmPipeline → Backend Callback API
+## 운영·진단 보조 API
 
-### 5.1 Pipeline Event Flow
+### llmPipeline Document snapshot — `GET /documents/{document_id}`
+
+#### Spring 연동 판단
+
+**Spring application에서는 호출하지 않는다.** 이 API는 llmPipeline이 공유 DB에서 읽는 Document row를 확인하는 진단용이다. Spring이 이미 Document 원본과 권한의 소유자이므로 이 응답을 다시 업무 데이터로 사용하면 source of truth가 역전된다.
+
+운영 진단 도구에서만 사용할 경우:
+
+- Header: `X-Internal-Token` 필수
+- Path: `document_id` 필수
+- Body/query 없음
+
+| response 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | string | Document ID |
+| `user_id` | string | 소유 사용자 ID |
+| `workspace_id` | string | Workspace ID |
+| `filename` | string | 파일명 |
+| `mime_type` | string | MIME type |
+| `byte_size` | integer | 원본 크기 |
+| `status` | string | Document 처리 상태 |
+| `source_uri` | string/null | 원본 object URI |
+| `extracted_text_uri` | string/null | 추출 text object URI |
+| `content_hash` | string/null | 내용 hash |
+| `uploaded_at` | datetime | 업로드 시각 |
+| `processed_at` | datetime/null | 처리 완료 시각 |
+| `error_message` | string/null | 처리 실패 원인 |
+
+- `404`: `Document not found`
+- `500`: DB 조회 실패
+
+이 endpoint에는 workspace/user query 검증이 없으므로 사용자에게 직접 노출하거나 범용 Backend proxy로 제공하지 않는다.
+
+#### 예시 요청
+
+```http
+GET /documents/doc_123 HTTP/1.1
+X-Internal-Token: {internal-token}
+```
+
+Body와 query parameter는 없다.
+
+#### 예시 성공 응답
+
+```json
+{
+  "id": "doc_123",
+  "user_id": "user_123",
+  "workspace_id": "ws_123",
+  "filename": "architecture.md",
+  "mime_type": "text/markdown",
+  "byte_size": 4821,
+  "status": "processed",
+  "source_uri": "documents/doc_123.md",
+  "extracted_text_uri": null,
+  "content_hash": "sha256:example",
+  "uploaded_at": "2026-08-06T09:00:00+09:00",
+  "processed_at": "2026-08-06T09:00:07+09:00",
+  "error_message": null
+}
+```
+
+#### 예시 오류 응답
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+```
+
+```json
+{
+  "detail": "Document not found"
+}
+```
+
+### Health check — `GET /health`
+
+#### 호출 주체
+
+**Spring application requester가 아니라 배포·모니터링 계층이 호출한다.** 인증 header와 body가 없다.
+
+#### 예시 요청
+
+```http
+GET /health HTTP/1.1
+```
+
+#### 예시 성공 응답
+
+```json
+{
+  "status": "ok"
+}
+```
+
+현재 응답은 process가 HTTP 요청을 받을 수 있다는 liveness 수준이다. DB readiness는 application lifespan 시작 시 `verify_schema()` 실패로 process 기동 자체가 실패하는 방식이며, health 응답에 DB·LLM provider 상태를 따로 포함하지 않는다.
+
+## llmPipeline → Spring Callback
+
+### Document 처리 진행 흐름
 
 ```mermaid
 sequenceDiagram
@@ -1400,22 +2923,22 @@ sequenceDiagram
     end
 ```
 
-### 5.2 `POST /api/documents/{document_id}/pipeline-events`
+### Document 진행 이벤트 — `POST /api/documents/{document_id}/pipeline-events`
 
-#### 목적
+#### 언제 호출하는가
 
 llmPipeline Ingestion의 단계별 event를 Spring Document 처리 상태에 반영한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 보내지만 현재 Spring Security는 이를 검증하지 않는다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 URL의 `document_id`로 Document를 찾으며 User·Workspace membership을 검증하지 않는 내부 callback 경계다.
 body의 `run_id`가 null이 아니면서 Document에 기록된 현재 Pipeline Run ID와 다르면 Spring은 event를 반영하지 않지만 `204 No Content`를 반환한다.
 
-#### Request Body
+#### llmPipeline이 보내는 요청 값
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -1425,20 +2948,20 @@ body의 `run_id`가 null이 아니면서 Document에 기록된 현재 Pipeline R
 | `message` | string | 단계별 진행 설명이다. Spring은 수신 로그에는 남기지만 Document 상태에는 저장하지 않는다. |
 | `data` | object | llmPipeline이 각 값을 string으로 정규화한 추가 진단 데이터다. Spring은 key를 로그에 남기지만 상태 갱신에는 사용하지 않는다. |
 
-#### Response Body
+#### Spring이 반환하는 응답 값
 
 `204 No Content`. Body 없음.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
 | `404` | Document가 없음 |
 | `500` | Spring 내부 오류 |
 
-llmPipeline `PipelineLog`는 callback 실패를 Pipeline 실패로 바꾸지 않고 local log에만 남긴다. 재시도하지 않는다.
+llmPipeline `PipelineLog`는 HTTP·network callback 실패를 Pipeline 실패로 바꾸지 않고 local log에만 남긴다. 재시도하지 않는다. 단, `INTERNAL_CALLBACK_TOKEN`이 없으면 요청 생성 중 `KeyError`가 발생해 이 예외 처리에 들어가지 않으므로 Pipeline 실행도 실패할 수 있다.
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -1447,6 +2970,7 @@ llmPipeline `PipelineLog`는 callback 실패를 Pipeline 실패로 바꾸지 않
 ```http
 POST /api/documents/doc_123/pipeline-events HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "run_id": "run_123",
@@ -1465,7 +2989,7 @@ Content-Type: application/json
 HTTP/1.1 204 No Content
 ```
 
-### 5.3 Query Event Flow
+### Query 진행 흐름
 
 ```mermaid
 sequenceDiagram
@@ -1483,22 +3007,22 @@ sequenceDiagram
     B-->>S: query.completed SSE event
 ```
 
-### 5.4 `POST /api/query/runs/{request_id}/events/callback`
+### Query 진행 이벤트 — `POST /api/query/runs/{request_id}/events/callback`
 
-#### 목적
+#### 언제 호출하는가
 
 llmPipeline Query의 단계별 event를 Spring SSE 구독자에게 전달한다.
 
-#### Auth
+#### 필수 인증
 
 llmPipeline은 `X-Internal-Token`을 보내지만 현재 Spring Security는 이를 검증하지 않는다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 path의 `request_id`가 Spring `QueryRunStore`에 존재해야 한다. Workspace·User 권한은 callback에서 다시 검증하지 않는다.
 body의 `request_id`는 path 값과 일치하는지 검증하지 않으며, 현재 Spring은 body의 `event_type`, `sequence`, `timestamp`도 SSE event 생성에 사용하지 않는다.
 
-#### Request Body
+#### llmPipeline이 보내는 요청 값
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -1510,20 +3034,20 @@ body의 `request_id`는 path 값과 일치하는지 검증하지 않으며, 현�
 | `timestamp` | string | llmPipeline이 기록한 UTC ISO-8601 발생 시각이다. Spring은 자체 수신 시각을 사용하므로 이 값은 사용하지 않는다. |
 | `data` | object | candidate 수처럼 단계별로 제공하는 추가 데이터다. Spring이 SSE event payload에 전달한다. |
 
-#### Response Body
+#### Spring이 반환하는 응답 값
 
 `200 OK`. Body 없음.
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 |
 | --- | --- |
 | `404` | Query Run이 없거나 완료·실패 후 10분 TTL이 지나 메모리 store에서 제거됨 |
 | `500` | Spring 내부 오류 |
 
-llmPipeline `HttpQueryEventPublisher`는 callback 실패를 무시하고 Query 응답 생성을 계속한다. 재시도하지 않는다.
+llmPipeline `HttpQueryEventPublisher`는 HTTP·network callback 실패를 무시하고 Query 응답 생성을 계속한다. 재시도하지 않는다. 단, `INTERNAL_CALLBACK_TOKEN`이 없으면 요청 생성 중 `KeyError`가 발생해 Query 실행도 실패할 수 있다.
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -1532,6 +3056,7 @@ llmPipeline `HttpQueryEventPublisher`는 callback 실패를 무시하고 Query �
 ```http
 POST /api/query/runs/query_123/events/callback HTTP/1.1
 Content-Type: application/json
+X-Internal-Token: {internal-token}
 
 {
   "request_id": "query_123",
@@ -1552,7 +3077,7 @@ Content-Type: application/json
 HTTP/1.1 200 OK
 ```
 
-### 5.5 Operation Result Flow
+### Operation 결과 흐름
 
 ```mermaid
 sequenceDiagram
@@ -1572,27 +3097,27 @@ sequenceDiagram
     end
 ```
 
-### 5.6 `POST /api/ai-operations/{operation_id}/result`
+### Operation 최종 결과 — `POST /api/ai-operations/{operation_id}/result`
 
-#### 목적
+#### 언제 호출하는가
 
 Ingestion 또는 Wiki restore가 만든 Page artifact와 부분 실패 결과를 Spring AI 작업 로그에 반영한다.
 
-#### Auth
+#### 필수 인증
 
 - Spring 요구 헤더: `X-Internal-Token`
 - Spring 설정: `app.internal.callback-token`
 - llmPipeline 전송값: 환경 변수 `INTERNAL_CALLBACK_TOKEN`
 - Docker Compose는 Spring과 llmPipeline에 같은 기본값을 전달한다.
 
-#### 권한 규칙
+#### 호출 전 Spring 검증
 
 - path와 body의 `operation_id`가 같아야 한다.
 - Spring에 먼저 등록된 operation의 Workspace·User·Document 값과 body 값이 일치해야 한다. body에서 생략된 범위 값은 대조하지 않는다.
 - `markdown_key`는 해당 Workspace·Page·operation artifact 경로여야 하며 읽은 Markdown의 hash가 `content_hash`와 같아야 한다.
 - 같은 payload 재전송은 기존 결과를 `200`으로 반환하고, 이미 끝난 operation에 다른 payload를 보내면 `409`로 거절한다.
 
-#### Request Body
+#### llmPipeline이 보내는 요청 값
 
 | 필드 | 타입 | 필수 | 의미 |
 | --- | --- | --- | --- |
@@ -1625,7 +3150,7 @@ Ingestion 또는 Wiki restore가 만든 Page artifact와 부분 실패 결과를
 | `failed_actions[].resource_id` | string/null | 아니오 | 실패한 resource 식별자다. |
 | `failed_actions[].reason` | string/null | 아니오 | 실패 이유다. |
 
-#### Response Body
+#### Spring이 반환하는 응답 값
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
@@ -1633,7 +3158,7 @@ Ingestion 또는 Wiki restore가 만든 Page artifact와 부분 실패 결과를
 | `status` | string | Spring이 최종 확정한 operation 상태다. 부분 실패가 있으면 요청 상태와 달라질 수 있다. |
 | `recorded_changes` | integer | Spring 작업 로그에 기록한 변경 resource 수다. |
 
-#### Error Response
+#### 오류 처리
 
 | Status | 조건 | llmPipeline 처리 |
 | --- | --- | --- |
@@ -1646,7 +3171,7 @@ Ingestion 또는 Wiki restore가 만든 Page artifact와 부분 실패 결과를
 
 Ingestion Run은 callback 실패를 `pipeline_runs.manifest.pending_notification`에 저장하고 Pipeline 성공 자체는 유지한다. Restore route는 callback 예외가 route까지 전파돼 `500`을 반환한다.
 
-#### Pagination / Filtering
+#### 목록/필터링
 
 해당 없음.
 
@@ -1687,9 +3212,9 @@ X-Internal-Token: configured-internal-token
 }
 ```
 
-## 6. 계약 공백과 주의사항
+## 미구현·계약 불일치
 
-### 6.1 Wiki Page Rename API 미구현
+### Wiki Page Rename API 미구현
 
 Spring `PipelineWikiPageRequester`는 다음 API를 호출하도록 구현되어 있다.
 
@@ -1707,15 +3232,21 @@ Content-Type: application/json
 
 하지만 llmPipeline에 해당 FastAPI route가 없다. 현재 Spring requester는 `X-Internal-Token`도 보내지 않아 먼저 `401 Unauthorized`를 받고, Backend 토큰 송신을 적용한 뒤에는 `404 Not Found`가 발생한다.
 
-### 6.2 Agent Service Token 불일치
+### Agent Service Token 불일치
 
-`AGENT_SKILLS_ENABLED=true`이면 llmPipeline `/agent/turn`이 `X-Agent-Service-Token`을 요구한다. Spring `PipelineAgentRequester`는 현재 이 헤더를 보내지 않으므로 기능 flag를 켜면 통신이 깨진다.
+`AGENT_SKILLS_ENABLED=true`이면 llmPipeline `/agent/turn`이 `X-Agent-Service-Token`을 추가로 요구한다. Spring `PipelineAgentRequester`는 현재 이 헤더를 보내지 않으므로 기능 flag를 켜면 통신이 깨진다. `/skills/*`, `/agent/runs/*`용 Spring requester도 아직 없다.
 
-### 6.3 Operation Result Callback 환경 변수 필수
+또한 `/skills/*`, `/agent/runs/*`는 현재 `X-Agent-Service-Token`만 검사하고 공통 `X-Internal-Token` middleware 범위에서는 빠져 있다. 두 token의 역할을 통일할지는 구현 전에 결정해야 하지만, 계약 문서는 현재 실행 코드의 인증 조건을 기술한다.
 
-`HttpPipelineResultNotifier`는 `INTERNAL_CALLBACK_TOKEN`을 필수 환경 변수로 직접 읽는다. Docker Compose에는 Spring과 같은 기본값이 연결돼 있지만, llmPipeline을 단독 실행하면서 변수를 설정하지 않으면 HTTP 요청 전 `KeyError`가 발생한다. 값이 Spring `app.internal.callback-token`과 다르면 callback은 `401`로 실패한다.
+### Callback 환경 변수 필수
 
-### 6.4 Agent Tool Backend Route 미구현
+`PipelineLog`, `HttpQueryEventPublisher`, `HttpPipelineResultNotifier`는 `INTERNAL_CALLBACK_TOKEN`을 필수 환경 변수로 직접 읽는다. Docker Compose에는 Spring과 같은 기본값이 연결돼 있지만, llmPipeline을 단독 실행하면서 변수를 설정하지 않으면 HTTP 요청 전 `KeyError`가 발생한다. 진행·Query callback도 이 경우 본 작업을 실패시킬 수 있다. 값이 Spring `app.internal.callback-token`과 다르면 Operation result callback은 `401`로 실패하고, 현재 인증하지 않는 진행·Query callback은 값을 대조하지 않는다.
+
+### Wiki Schema 활성화 scope 검증 누락
+
+Spring 공개 path의 `workspace_id`는 membership 확인에만 쓰이고 llmPipeline `POST /wiki-schema/{schema_id}/activate`에는 전달되지 않는다. llmPipeline도 `schema_id`만으로 Schema를 활성화하므로 요청 Workspace와 Schema Workspace가 일치한다는 보장이 없다. Schema 관리 책임을 Spring으로 이전하거나 llmPipeline activate 계약에 Workspace·User scope 검증을 추가하기 전에는 공개 연동을 차단해야 한다.
+
+### Agent Tool Backend Route 미구현
 
 llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API를 호출한다.
 
@@ -1724,11 +3255,19 @@ llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API
 
 하지만 Spring에 두 route를 처리하는 Controller가 없다. Agent Worker가 실행되면 현재 `404`가 발생한다.
 
-### 6.5 `INTERNAL_CALLBACK_TOKEN` 양방향 적용 불완전
+### Agent Run clarification 응답 정보 부족
+
+Agent Run status에는 `clarification_required`가 있지만 `AgentRunResponse`에는 사용자에게 보여줄 clarification 질문이나 사유 필드가 없다. Spring은 상태 자체는 표시할 수 있고 `/revise`로 새 지시도 보낼 수 있지만, llmPipeline이 무엇을 추가로 요구하는지는 현재 API 응답만으로 알 수 없다. Agent 기능을 연결하기 전에 response 필드 추가 또는 `request_summary` 사용 정책을 별도 확정해야 한다.
+
+### Pipeline Run 조회 응답 schema 미고정
+
+`GET /pipeline/runs/{run_id}`는 FastAPI `response_model` 없이 DB row를 그대로 반환한다. 이 문서에는 현재 SELECT 필드를 기록했지만 manifest와 내부 필드가 변경될 수 있으므로, Spring이 안정적인 polling 계약으로 사용하려면 llmPipeline에 명시적 response schema를 추가하는 것이 필요하다.
+
+### `INTERNAL_CALLBACK_TOKEN` 양방향 적용 불완전
 
 llmPipeline은 Ingestion, Query, Schema, Lint, Restore, Agent 요청에서 `X-Internal-Token`을 검증하고 진행·Query·작업 결과 callback에 같은 헤더를 보낸다. Spring requester는 아직 헤더를 보내지 않아 llmPipeline 호출이 `401`로 실패하며, 진행·Query callback Controller도 헤더를 검증하지 않는다. Backend 잔여 작업은 `docs/issue/backend/2026-08-05.md`에서 추적한다.
 
-### 6.6 Spring과 llmPipeline의 Error Mapping 불일치
+### Spring과 llmPipeline의 Error Mapping 불일치
 
 | 기능 | llmPipeline 상태 | Spring 변환 |
 | --- | --- | --- |
@@ -1737,19 +3276,24 @@ llmPipeline은 Ingestion, Query, Schema, Lint, Restore, Agent 요청에서 `X-In
 | Query | `500`/timeout | `503` |
 | Agent | `400/422` | 원 상태 유지 |
 | Agent | 기타/timeout | `503` |
+| Skill | `400/404/422` | Spring requester 없음 |
+| Agent Run | `404/409/422` | Spring requester 없음 |
 | Schema | `400/404/422` | 원 상태 유지 |
 | Schema | 기타/timeout | `503` |
 | Lint | `400/422` | 원 상태 유지 |
 | Lint | 기타/timeout | `503` |
 | Restore | 모든 HTTP·timeout 오류 | 예외를 숨기고 `false`, 작업은 `notify_pending` |
 
-## 7. 주요 코드 위치
+## 주요 코드 위치
 
 | 계약 | Spring | llmPipeline |
 | --- | --- | --- |
 | Ingestion | `backend/src/main/java/fruition/document/repository/DocumentProcessingRequester.java` | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |
+| Reingestion·Pipeline Run 운영 | 현재 requester 없음 | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |
 | Query | `backend/src/main/java/fruition/query/repository/PipelineQueryRequester.java` | `llmPipeline/app/modules/query/interfaces/http/routes.py` |
 | Agent | `backend/src/main/java/fruition/agent/repository/PipelineAgentRequester.java` | `llmPipeline/app/modules/agent/interfaces/http/routes.py` |
+| Agent Skill | 현재 requester 없음 | `llmPipeline/app/modules/skill/interfaces/http/routes.py` |
+| Agent Run | 현재 requester 없음 | `llmPipeline/app/modules/agent_run/interfaces/http/routes.py` |
 | Wiki Schema | `backend/src/main/java/fruition/wikischema/repository/PipelineWikiSchemaRequester.java` | `llmPipeline/app/modules/wiki_schema/interfaces/http/routes.py` |
 | Wiki Lint | `backend/src/main/java/fruition/wikimaintenance/repository/PipelineWikiMaintenanceRequester.java` | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |
 | Wiki Restore | `backend/src/main/java/fruition/aihistory/repository/PipelineRestoreRequester.java` | `llmPipeline/app/modules/wiki_ingestion/interfaces/http/routes.py` |

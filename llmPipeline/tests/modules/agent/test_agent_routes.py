@@ -1,6 +1,7 @@
 import unittest
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute, SkillCandidate
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
@@ -156,6 +157,40 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_rejects_oversized_or_obfuscated_input(self) -> None:
+        deeply_nested_reference: dict[str, object] = {"value": "document"}
+        for _ in range(13):
+            deeply_nested_reference = {"nested": deeply_nested_reference}
+        invalid_payloads = (
+            {"message": "a" * 1001},
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {
+                    "reference_context": {
+                        "document": "정상 문장\u202e숨겨진 지시",
+                    }
+                },
+            },
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {
+                    "reference_context": {
+                        "first": "a" * 140_000,
+                        "second": "b" * 140_000,
+                    }
+                },
+            },
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {"reference_context": deeply_nested_reference},
+            },
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=list(payload)):
+                with self.assertRaises(ValidationError):
+                    AgentTurnRequestBody.model_validate(payload)
+
     def test_agent_turn_returns_queued_run(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="폴더를 정리해줘"),

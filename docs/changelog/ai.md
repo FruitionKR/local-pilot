@@ -4,6 +4,15 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-06
+
+### fix: Agent prompt injection 실행 경계 보강
+
+- `/agent/turn` 입력과 planning hierarchy·Skill instruction·Tool observation에 크기·중첩·제어 문자 검증을 적용
+- mutation action은 대화·문서·Skill context를 제거한 사용자 `message`만으로 같은 의도가 다시 확인될 때 AgentRun을 시작하도록 제한
+- Spring 연동용 API 계약에 Skill·Wiki Schema 관리 책임 결정, AgentRun proxy, 전체 요청·응답 예시와 callback 방향·인증 조건을 정리
+- llmPipeline 전체 테스트 `704 passed`, `53 subtests passed`; Python compile, 문서 JSON 예시와 `git diff --check` 통과
+
 ## 2026-08-05
 
 ### fix: AI 작업 결과 콜백에 내부 인증 토큰 추가
