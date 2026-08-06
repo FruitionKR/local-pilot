@@ -100,7 +100,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
-        failures.extend(_skill_authoring_failures(route, request.message))
+        failures.extend(_skill_authoring_failures(route, request))
         if not failures:
             return route
 
@@ -110,7 +110,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
-        retry_failures.extend(_skill_authoring_failures(retried_route, request.message))
+        retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
         return retried_route
@@ -183,12 +183,17 @@ def _requests_new_skill(message: str) -> bool:
     return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
 
 
-def _skill_authoring_failures(route: AgentTurnRoute, message: str) -> list[str]:
+def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
     if route.action != "skill_authoring":
         return []
-    if not _requests_new_skill(message):
+    summary = (
+        request.conversation_context.recent_conversation_summary
+        if request.conversation_context and request.conversation_context.recent_conversation_summary
+        else ""
+    )
+    if not _requests_new_skill(f"{request.message}\n{summary}"):
         return ["skill_authoring requires an explicit request to create a new Skill"]
-    if COMPLETED_WORK_REQUEST_PATTERN.search(message):
+    if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
         return ["completed work must use skill_draft_proposal instead of skill_authoring"]
     return []
 

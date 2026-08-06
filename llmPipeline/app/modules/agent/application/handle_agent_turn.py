@@ -116,7 +116,7 @@ class HandleAgentTurnUseCase:
                 workspace_id=request.workspace_id,
                 user_id=request.user_id,
                 scope_type=request.skill_scope_type,
-                instruction=request.message,
+                instruction=_skill_authoring_instruction(request),
                 reference_document_ids=request.skill_reference_document_ids,
                 allow_clarification=True,
             )
@@ -259,6 +259,15 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
         start_line=1,
         end_line=max(1, markdown_line_count(markdown)),
     )
+
+
+def _skill_authoring_instruction(request: AgentTurnRequest) -> str:
+    summary = (
+        request.conversation_context.recent_conversation_summary
+        if request.conversation_context and request.conversation_context.recent_conversation_summary
+        else None
+    )
+    return f"{summary.strip()}\n\n사용자의 현재 답변:\n{request.message}" if summary else request.message
 
 
 def _skill_instructions(skill: Skill | None) -> str | None:

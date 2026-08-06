@@ -656,9 +656,9 @@ Skill 관리 화면은 수동 정의 입력과 짧은 자연어 authoring을 함
 
 Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 `reference_document_ids`가 비어 있거나 세부 정보가 부족해도 보충 질문을 반환하지 않는다. 문서를 추측하는 대신 요청 유형에 맞는 일반 구조와 placeholder를 사용한 편집 가능한 draft를 만들고, 사용자가 Markdown을 직접 검토·수정한다. 채팅의 `/agent/turn`은 멀티턴이므로 필수 맥락이 없으면 기존 `clarification_required`와 한 개의 보충 질문을 반환할 수 있다. 생성 성공만으로 publish하거나 enable하지 않고, 사용자가 Markdown을 확인한 뒤 기존 publish API를 별도로 호출한다.
 
-Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 유지한다.
+Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. 채팅의 보충 질문 이후에는 `recent_conversation_summary`에 진행 중인 Skill 생성 요청을 유지해 짧은 사용자 답변도 같은 authoring 흐름으로 재개한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 유지한다.
 
-Router가 `skill_authoring`을 반환해도 현재 사용자 메시지에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 없으면 실행하지 않는다. “회의록 Skill을 사용해서 문서를 작성해”는 기존 Skill을 적용하는 문서 작업이며 Skill 생성으로 해석하지 않는다.
+Router가 `skill_authoring`을 반환해도 현재 사용자 메시지나 진행 중 대화 요약에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 없으면 실행하지 않는다. “회의록 Skill을 사용해서 문서를 작성해”는 기존 Skill을 적용하는 문서 작업이며 Skill 생성으로 해석하지 않는다.
 
 #### 6.4.2 새 Skill 수동 생성
 

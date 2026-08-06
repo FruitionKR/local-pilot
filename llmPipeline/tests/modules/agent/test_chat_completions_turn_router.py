@@ -48,6 +48,23 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_authoring")
 
+    def test_accepts_skill_authoring_clarification_answer_from_conversation(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="주간 회의록 문서요",
+                conversation_context=AgentConversationContext(
+                    recent_conversation_summary=(
+                        "사용자가 회의록 Skill을 만들어 달라고 했고, 참고 문서를 묻는 중이다."
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "skill_authoring")
+
     def test_accepts_direct_skill_creation_with_modifier(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

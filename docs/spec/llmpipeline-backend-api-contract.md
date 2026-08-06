@@ -1654,7 +1654,7 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 - llmPipeline은 전달된 Markdown snapshot과 target만 편집하며 실제 Document 저장은 Spring API로 다시 수행한다.
 - llmPipeline은 전체 request를 256 KiB, 중첩 깊이를 12단계로 제한하고 bidi/C0/C1 control character를 거절한다.
 - `folder_organize`, `workspace_workflow`는 conversation/reference/Skill context를 제거한 `message`만으로 같은 mutation action이 다시 확인될 때만 AgentRun을 시작한다.
-- `skill_authoring`은 현재 `message`에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 있을 때만 허용한다. “기존 Skill을 사용해서 작성해” 같은 요청을 LLM이 잘못 분류하면 한 번 재분류하고 반복 실패 시 실행하지 않는다.
+- `skill_authoring`은 현재 `message` 또는 `conversation_context.recent_conversation_summary`에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 있을 때만 허용한다. 따라서 보충 질문 뒤의 짧은 답변은 요약에 유지된 원래 생성 요청으로 authoring을 재개한다. “기존 Skill을 사용해서 작성해” 같은 요청을 LLM이 잘못 분류하면 한 번 재분류하고 반복 실패 시 실행하지 않는다.
 
 #### Spring이 보내는 값
 

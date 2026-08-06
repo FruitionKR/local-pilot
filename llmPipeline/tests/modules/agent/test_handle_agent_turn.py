@@ -178,7 +178,7 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
-    def test_skill_authoring_reuses_author_use_case_with_chat_scope(self) -> None:
+    def test_skill_authoring_reuses_conversation_and_chat_scope(self) -> None:
         authorer = RecordingSkillAuthorer()
         editor = RecordingMarkdownEditor(
             MarkdownEditResult(
@@ -206,9 +206,14 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         result = use_case.execute(
             AgentTurnRequest(
-                message="이 문서 구조로 회의록 스킬을 만들어줘",
+                message="주간 회의록 문서요",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    recent_conversation_summary=(
+                        "사용자가 회의록 Skill을 만들어 달라고 했고, 참고 문서를 묻는 중이다."
+                    ),
+                ),
                 skill_scope_type="personal",
                 skill_reference_document_ids=("document-1",),
             )
@@ -219,6 +224,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(authorer.kwargs["reference_document_ids"], ("document-1",))
         self.assertEqual(authorer.kwargs["scope_type"], "personal")
         self.assertTrue(authorer.kwargs["allow_clarification"])
+        self.assertIn("회의록 Skill을 만들어", authorer.kwargs["instruction"])
+        self.assertIn("주간 회의록 문서요", authorer.kwargs["instruction"])
 
     def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
         class Generator:
