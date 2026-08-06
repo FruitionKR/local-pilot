@@ -11,6 +11,7 @@ from app.modules.agent.domain.entities import (
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
+    SkillAuthoringResponse,
     SkillDraftProposalResponse,
     SkillDraftSourceRunRequest,
 )
@@ -65,6 +66,8 @@ class AgentTurnRequestBody(BaseModel):
     skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
     skill_draft_user_directives: list[str] = Field(default_factory=list)
     skill_draft_excluded_literals: list[str] = Field(default_factory=list)
+    skill_scope_type: Literal["personal", "team"] = "personal"
+    skill_reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def validate_untrusted_input(self) -> Self:
@@ -83,6 +86,8 @@ class AgentTurnRequestBody(BaseModel):
             skill_draft_sources=tuple(source.to_domain() for source in self.skill_draft_sources),
             skill_draft_user_directives=tuple(self.skill_draft_user_directives),
             skill_draft_excluded_literals=tuple(self.skill_draft_excluded_literals),
+            skill_scope_type=self.skill_scope_type,
+            skill_reference_document_ids=tuple(self.skill_reference_document_ids),
         )
 
 
@@ -93,6 +98,7 @@ class AgentTurnRouteResponse(BaseModel):
         "markdown_create",
         "folder_organize",
         "workspace_workflow",
+        "skill_authoring",
         "skill_draft_proposal",
         "clarify",
         "reject",
@@ -141,6 +147,7 @@ class AgentTurnResponse(BaseModel):
         "markdown_create",
         "folder_organize",
         "workspace_workflow",
+        "skill_authoring",
         "skill_draft_proposal",
         "clarify",
         "reject",
@@ -153,4 +160,5 @@ class AgentTurnResponse(BaseModel):
     skill_candidates: list[SkillCandidateResponse] = Field(default_factory=list)
     run_id: str | None = None
     run_status: str | None = None
+    skill_authoring: SkillAuthoringResponse | None = None
     skill_draft_proposal: SkillDraftProposalResponse | None = None

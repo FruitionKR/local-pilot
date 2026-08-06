@@ -1644,6 +1644,7 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 - llmPipeline은 전달된 Markdown snapshot과 target만 편집하며 실제 Document 저장은 Spring API로 다시 수행한다.
 - llmPipeline은 전체 request를 256 KiB, 중첩 깊이를 12단계로 제한하고 bidi/C0/C1 control character를 거절한다.
 - `folder_organize`, `workspace_workflow`는 conversation/reference/Skill context를 제거한 `message`만으로 같은 mutation action이 다시 확인될 때만 AgentRun을 시작한다.
+- `skill_authoring`은 현재 `message`에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 있을 때만 허용한다. “기존 Skill을 사용해서 작성해” 같은 요청을 LLM이 잘못 분류하면 한 번 재분류하고 반복 실패 시 실행하지 않는다.
 
 #### Spring이 보내는 값
 
@@ -1659,6 +1660,8 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `skill_draft_sources` | array | 아니오 | 아니오 | Skill 초안 생성에 사용할 Agent Run source. 기본 `[]` |
 | `skill_draft_user_directives` | string array | 아니오 | 아니오 | Skill 초안에 반영할 사용자 지시. 기본 `[]` |
 | `skill_draft_excluded_literals` | string array | 아니오 | 아니오 | Skill 초안에서 제외할 literal. 기본 `[]` |
+| `skill_scope_type` | `personal`/`team` | 아니오 | 아니오 | 자연어로 생성할 Skill 범위. 기본 `personal` |
+| `skill_reference_document_ids` | string array | 아니오, 최대 3개 | 아니오 | `skill_authoring`이 구조만 참고할 권한 검증된 문서 ID |
 
 `active_markdown_context.target`은 `selection`, `current_section`, `whole_document` 중 하나와 1부터 시작하는 `start_line`, `end_line`을 사용한다.
 
@@ -1693,13 +1696,14 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `generated_markdown` | object/null | Markdown create 결과 |
 | `skill_candidates` | array | Skill 후보 |
 | `run_id`, `run_status` | string/null | AgentRun 시작 결과 |
+| `skill_authoring` | object/null | 일반 자연어로 생성·저장한 Skill Markdown draft 또는 보충 질문 |
 | `skill_draft_proposal` | object/null | Skill 초안 제안 |
 
 `route` 필드:
 
 | 필드 | 타입 | 의미 |
 | --- | --- | --- |
-| `action` | string | Agent router가 분류한 실행 종류다. 예: `chat_answer`, `markdown_edit`, `markdown_create`, `clarify`. |
+| `action` | string | Agent router가 분류한 실행 종류다. 일반 Skill 생성은 `skill_authoring`, 완료 작업 일반화는 `skill_draft_proposal`이다. |
 | `confidence` | number | action 분류 신뢰도다. |
 | `reason` | string | 해당 action으로 판단한 이유다. |
 | `edit_goal` | string/null | `shorten`, `cleanup`, `insert_after`처럼 편집 목적을 표현하는 힌트다. |
@@ -1733,6 +1737,11 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `skill_candidates[].capabilities` | string array | Skill이 허용하는 기능 목록이다. |
 | `run_id` | string/null | workspace workflow 등에서 생성된 Agent Run ID다. |
 | `run_status` | string/null | 생성된 Agent Run의 현재 상태다. |
+| `skill_authoring.status` | `draft_created`/`clarification_required` | disabled draft 저장 여부 또는 보충 질문 상태다. |
+| `skill_authoring.question` | string/null | 참조 문서 등 필수 정보가 없을 때 표시할 질문이다. |
+| `skill_authoring.skill_id` | string/null | 생성된 disabled Skill ID다. |
+| `skill_authoring.version_id` | string/null | 생성된 draft version ID다. |
+| `skill_authoring.skill_markdown` | string/null | 사용자에게 표시할 Markdown이다. 내부 capability와 Tool은 포함하지 않는다. |
 | `skill_draft_proposal.name` | string | 제안된 Skill 이름이다. |
 | `skill_draft_proposal.description` | string | 제안된 Skill의 용도 설명이다. |
 | `skill_draft_proposal.instructions_markdown` | string | Skill이 따를 instruction Markdown 초안이다. |
@@ -1821,6 +1830,7 @@ X-Agent-Service-Token: {agent-token}
   "skill_candidates": [],
   "run_id": null,
   "run_status": null,
+  "skill_authoring": null,
   "skill_draft_proposal": null
 }
 ```

@@ -345,6 +345,9 @@ Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 r
        │                         → 승인 대기
        │                         → 승인된 mutation Tool 실행
        │                         → 검증
+       ├─ skill_authoring      → 현재 자연어 요구 구체화
+       │                         → 입력·참조·출력 필터링
+       │                         → disabled draft 저장
        └─ skill_draft_proposal → 완료 AgentRun 일반화
                                  → 사용자 확인 후 draft 저장
 
@@ -652,6 +655,10 @@ Skill 관리 화면은 수동 정의 입력과 짧은 자연어 authoring을 함
     5. 사용자에게 capability와 Tool을 제외한 Skill Markdown을 반환하고 disabled draft로 저장한다.
 
 참조가 필요한 표현인데 `reference_document_ids`가 비어 있으면 문서를 추측하지 않고 `clarification_required`와 한 개의 보충 질문을 반환하며 저장하지 않는다. 생성 성공만으로 publish하거나 enable하지 않고, 사용자가 Markdown을 확인한 뒤 기존 publish API를 별도로 호출한다.
+
+Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 유지한다.
+
+Router가 `skill_authoring`을 반환해도 현재 사용자 메시지에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 없으면 실행하지 않는다. “회의록 Skill을 사용해서 문서를 작성해”는 기존 Skill을 적용하는 문서 작업이며 Skill 생성으로 해석하지 않는다.
 
 #### 6.4.2 새 Skill 수동 생성
 

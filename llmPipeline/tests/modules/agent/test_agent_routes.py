@@ -17,6 +17,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
+from app.modules.skill.domain.entities import Skill, SkillAuthoringResult, SkillVersion
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
@@ -141,6 +142,41 @@ class QueuedAgentRunUseCase:
         )
 
 
+class AuthoredSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        version = SkillVersion(
+            id="version-authored",
+            skill_id="skill-authored",
+            version=1,
+            name="회의록 작성",
+            description="회의 내용을 정리합니다.",
+            instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
+        )
+        return AgentTurnResult(
+            action="skill_authoring",
+            route=AgentTurnRoute(
+                action="skill_authoring",
+                confidence=1.0,
+                reason="direct Skill creation request",
+            ),
+            message="Skill 초안을 만들었습니다.",
+            skill_authoring_result=SkillAuthoringResult(
+                status="draft_created",
+                skill=Skill(
+                    id="skill-authored",
+                    workspace_id="workspace-1",
+                    scope_type="personal",
+                    owner_user_id="user-1",
+                    slug="meeting-notes",
+                    status="disabled",
+                    latest_version=version,
+                ),
+            ),
+        )
+
+
 class FailingAgentRouteUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise AgentTurnRouteContractError(["secret-internal-detail"])
@@ -157,6 +193,22 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_returns_authored_skill_markdown_without_permissions(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(
+                message="회의록 스킬을 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            ),
+            use_case=AuthoredSkillUseCase(),  # type: ignore[arg-type]
+        )
+
+        body = response.model_dump()
+        self.assertEqual(body["action"], "skill_authoring")
+        self.assertIn("# 작성 절차", body["skill_authoring"]["skill_markdown"])
+        self.assertNotIn("capabilities", body["skill_authoring"])
+        self.assertNotIn("allowed_tools", body["skill_authoring"])
+
     def test_agent_turn_rejects_oversized_or_obfuscated_input(self) -> None:
         deeply_nested_reference: dict[str, object] = {"value": "document"}
         for _ in range(13):

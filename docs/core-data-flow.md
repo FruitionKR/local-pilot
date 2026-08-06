@@ -189,11 +189,11 @@ flowchart LR
 - **Failure Handling:** 잘못된 문서·target은 `400`, 오래된 version은 `409`, lock 충돌은 `423`으로 Pipeline 호출 전 거절한다.
 - **Why this exists:** 비용이 드는 LLM 호출 전에 제품의 문서 권한·동시성 규칙을 적용하기 위해 존재한다.
 
-#### Markdown AI Pipeline 호출 (`PipelineAgentRequester`)
+#### Markdown·Skill AI Pipeline 호출 (`PipelineAgentRequester`)
 
-- **Input:** AgentTurnRequest의 message, conversation context, active Markdown context
-- **Responsibility:** Spring 요청을 AI Pipeline `/agent/turn` payload로 변환하고 HTTP 응답을 중계한다.
-- **Output:** AI Pipeline JSON 응답
+- **Input:** AgentTurnRequest의 message, conversation context, active Markdown context, 선택적 Skill scope·참조 문서 ID
+- **Responsibility:** Spring 요청을 AI Pipeline `/agent/turn` payload로 변환하고 Markdown 작업 또는 자연어 Skill authoring 응답을 중계한다.
+- **Output:** AI Pipeline JSON 응답 또는 Tool 권한이 숨겨진 Skill Markdown draft
 - **Key Logic:** connect·read timeout, target field snake_case 변환, `400/422` 응답 보존
 - **Failure Handling:** timeout·빈 응답·기타 Pipeline 장애는 `503`, Pipeline의 `400/422`는 그 상태로 전달한다.
 - **Why this exists:** Spring domain service에서 AI Pipeline의 HTTP 규약과 장애 처리를 분리하기 위해 존재한다.

@@ -40,6 +40,78 @@ def route_response(action: str = "markdown_edit") -> dict[str, object]:
 
 
 class ChatCompletionsTurnRouterTest(unittest.TestCase):
+    def test_accepts_direct_skill_authoring_route(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="회의록 작성 스킬을 만들어줘"))
+
+        self.assertEqual(route.action, "skill_authoring")
+
+    def test_accepts_direct_skill_creation_with_modifier(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="회의록 스킬 하나 새로 만들어줘"))
+
+        self.assertEqual(route.action, "skill_authoring")
+
+    def test_does_not_misroute_existing_skill_usage_as_authoring(self) -> None:
+        client = SequenceJsonClient([route_response("markdown_create")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="회의록 스킬을 사용해서 문서를 작성해"))
+
+        self.assertEqual(route.action, "markdown_create")
+
+    def test_retries_llm_authoring_misroute_for_existing_skill_usage(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("markdown_create"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="회의록 스킬을 사용해서 문서를 작성해"))
+
+        self.assertEqual(route.action, "markdown_create")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "skill_authoring requires an explicit request to create a new Skill",
+            retry_payload["contract_failures"],
+        )
+
+    def test_retries_authoring_misroute_when_existing_skill_creates_document(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("markdown_create"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="회의록 스킬을 사용해서 문서를 생성해"))
+
+        self.assertEqual(route.action, "markdown_create")
+
+    def test_rejects_repeated_authoring_misroute_for_existing_skill_usage(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("skill_authoring"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(AgentTurnRouteContractError):
+            router.route(AgentTurnRequest(message="회의록 스킬을 사용해서 문서를 작성해"))
+
+    def test_leaves_template_skill_creation_to_llm_router(self) -> None:
+        route = _local_guard(AgentTurnRequest(message="회사 템플릿을 적용하는 스킬을 만들어줘"))
+
+        self.assertIsNone(route)
+
     def test_routes_completed_work_to_skill_draft_proposal(self) -> None:
         client = SequenceJsonClient([route_response("skill_draft_proposal")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

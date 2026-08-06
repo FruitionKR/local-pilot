@@ -10,6 +10,7 @@ from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, Mar
 from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
+from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.domain.entities import Skill
@@ -32,6 +33,7 @@ class HandleAgentTurnUseCase:
         markdown_create_use_case: GenerateMarkdownDocumentUseCase,
         skill_selector: SelectSkillUseCase | None = None,
         agent_run_starter: AgentRunStarterPort | None = None,
+        skill_authorer: AuthorSkillUseCase | None = None,
         skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
     ) -> None:
         self._router = router
@@ -40,6 +42,7 @@ class HandleAgentTurnUseCase:
         self._markdown_create_use_case = markdown_create_use_case
         self._skill_selector = skill_selector
         self._agent_run_starter = agent_run_starter
+        self._skill_authorer = skill_authorer
         self._skill_draft_proposer = skill_draft_proposer
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
@@ -102,6 +105,25 @@ class HandleAgentTurnUseCase:
                 action="skill_draft_proposal",
                 route=route,
                 skill_draft_proposal=proposal,
+            )
+
+        if route.action == "skill_authoring":
+            if self._skill_authorer is None:
+                raise ValueError("Skill authoring is not configured.")
+            if not request.workspace_id or not request.user_id:
+                raise ValueError("Skill authoring requires workspace_id and user_id.")
+            authored = self._skill_authorer.execute(
+                workspace_id=request.workspace_id,
+                user_id=request.user_id,
+                scope_type=request.skill_scope_type,
+                instruction=request.message,
+                reference_document_ids=request.skill_reference_document_ids,
+            )
+            return AgentTurnResult(
+                action="skill_authoring",
+                route=route,
+                message=authored.question or "Skill 초안을 만들었습니다. Markdown을 확인한 뒤 publish해 주세요.",
+                skill_authoring_result=authored,
             )
 
         if route.action in {"folder_organize", "workspace_workflow"}:

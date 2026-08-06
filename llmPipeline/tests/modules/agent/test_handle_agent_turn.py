@@ -27,6 +27,7 @@ from app.modules.query.domain.entities import (
 from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.domain.entities import (
+    SkillAuthoringResult,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
 )
@@ -125,6 +126,36 @@ class RecordingAgentRunStarter:
         return "run-1", "queued"
 
 
+class RecordingSkillAuthorer:
+    def __init__(self) -> None:
+        self.kwargs: dict[str, object] = {}
+
+    def execute(self, **kwargs: object) -> SkillAuthoringResult:
+        self.kwargs = kwargs
+        version = SkillVersion(
+            id="version-authored",
+            skill_id="skill-authored",
+            version=1,
+            name="회의록 작성",
+            description="회의 내용을 정해진 구조로 작성합니다.",
+            instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
+        )
+        return SkillAuthoringResult(
+            status="draft_created",
+            skill=Skill(
+                id="skill-authored",
+                workspace_id=str(kwargs["workspace_id"]),
+                scope_type="personal",
+                owner_user_id=str(kwargs["user_id"]),
+                slug="meeting-notes",
+                status="disabled",
+                latest_version=version,
+            ),
+        )
+
+
 def document_skill(capability: str = "document-create") -> Skill:
     return Skill(
         id="skill-1",
@@ -147,6 +178,47 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_skill_authoring_reuses_author_use_case_with_chat_scope(self) -> None:
+        authorer = RecordingSkillAuthorer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="skill_authoring",
+                    confidence=1.0,
+                    reason="direct Skill creation request",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_authorer=authorer,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이 문서 구조로 회의록 스킬을 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                skill_scope_type="personal",
+                skill_reference_document_ids=("document-1",),
+            )
+        )
+
+        self.assertEqual(result.action, "skill_authoring")
+        self.assertEqual(result.skill_authoring_result.status, "draft_created")  # type: ignore[union-attr]
+        self.assertEqual(authorer.kwargs["reference_document_ids"], ("document-1",))
+        self.assertEqual(authorer.kwargs["scope_type"], "personal")
+
     def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
         class Generator:
             def generate(self, source_runs: object, user_directives: object) -> dict[str, object]:

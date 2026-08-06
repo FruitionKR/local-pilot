@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +28,19 @@ TEMPLATE_DEFERRED_MARKERS = (
 )
 INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
 INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
+NEW_SKILL_REQUEST_PATTERN = re.compile(
+    r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
+    r"(?:만들어|생성해|정의해|작성해)|"
+    r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "markdown_edit",
     "markdown_create",
     "folder_organize",
     "workspace_workflow",
+    "skill_authoring",
     "skill_draft_proposal",
     "clarify",
     "reject",
@@ -87,6 +95,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
+        failures.extend(_skill_authoring_failures(route, request.message))
         if not failures:
             return route
 
@@ -96,6 +105,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
+        retry_failures.extend(_skill_authoring_failures(retried_route, request.message))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
         return retried_route
@@ -137,8 +147,13 @@ def build_agent_turn_router() -> AgentTurnRouterPort:
 
 def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     lowered = request.message.lower()
+    requests_new_skill = _requests_new_skill(lowered)
     has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
-    if not has_template_skill and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS):
+    if (
+        not requests_new_skill
+        and not has_template_skill
+        and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS)
+    ):
         return AgentTurnRoute(
             action="clarify",
             confidence=1.0,
@@ -157,6 +172,16 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             edit_goal="insert_after",
         )
     return None
+
+
+def _requests_new_skill(message: str) -> bool:
+    return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
+
+
+def _skill_authoring_failures(route: AgentTurnRoute, message: str) -> list[str]:
+    if route.action == "skill_authoring" and not _requests_new_skill(message):
+        return ["skill_authoring requires an explicit request to create a new Skill"]
+    return []
 
 
 def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:
