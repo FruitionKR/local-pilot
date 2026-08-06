@@ -118,6 +118,7 @@ class HandleAgentTurnUseCase:
                 scope_type=request.skill_scope_type,
                 instruction=request.message,
                 reference_document_ids=request.skill_reference_document_ids,
+                allow_clarification=True,
             )
             return AgentTurnResult(
                 action="skill_authoring",

@@ -33,22 +33,31 @@ class ChatCompletionsSkillAuthoringGenerator:
         self,
         instruction: str,
         references: tuple[SkillAuthoringReference, ...],
+        *,
+        allow_clarification: bool,
     ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "instruction": instruction,
+            "interaction_mode": "multi_turn" if allow_clarification else "single_turn",
+            "references": [
+                {
+                    "markdown_structure": _extract_markdown_structure(reference.markdown),
+                }
+                for reference in references
+            ],
+        }
+        result = self._complete(payload)
+        if allow_clarification or result.get("status") != "clarification_required":
+            return result
+        payload["contract_failures"] = [
+            "single_turn authoring must create a conservative editable draft instead of asking a question"
+        ]
+        return self._complete(payload)
+
+    def _complete(self, payload: dict[str, object]) -> dict[str, object]:
         return self._client.complete_json(
             self._system_prompt,
-            json.dumps(
-                {
-                    "instruction": instruction,
-                    "references": [
-                        {
-                            "markdown_structure": _extract_markdown_structure(reference.markdown),
-                        }
-                        for reference in references
-                    ],
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(payload, ensure_ascii=False, indent=2),
         )
 
 

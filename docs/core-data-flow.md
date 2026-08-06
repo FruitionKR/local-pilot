@@ -665,8 +665,8 @@ flowchart LR
 
 - **Input:** 짧은 자연어, 선택적 참조 문서 ID, 수동 Skill 정의, draft source operation, publish·enable 요청
 - **Responsibility:** AgentRun과 분리된 Skill authoring 전용 Backend read endpoint로 권한이 확인된 참조 Markdown을 받고, heading·목록·표 header 구조만 추출해 비신뢰 데이터로 격리하며 Skill Markdown 생성과 초안·version·publish·enable lifecycle을 관리한다.
-- **Output:** 보충 질문 또는 내부 권한 필드가 제거된 Skill Markdown draft, immutable published version, 완료 작업 기반 draft proposal
-- **Key Logic:** 입력·참조·출력 안전 검사, capability-tool 교집합, mutation tool에 필요한 read tool 보완, 비활성 draft 저장과 별도 publish
+- **Output:** 수동 입력의 편집 가능한 Skill Markdown draft, 채팅의 선택적 보충 질문, immutable published version, 완료 작업 기반 draft proposal
+- **Key Logic:** 수동 입력은 질문 없이 일반 placeholder draft 생성, 채팅은 멀티턴 보충 질문 허용, 입력·참조·출력 안전 검사, capability-tool 교집합, mutation tool에 필요한 read tool 보완, 비활성 draft 저장과 별도 publish
 - **Failure Handling:** 자연어 authoring의 위험한 instruction·지원하지 않는 tool은 `400`, request schema 위반은 `422`로 거절한다. 기존 Skill 관리 API의 없거나 관리할 수 없는 Skill과 version 충돌은 현재 `400`으로 반환한다.
 - **Why this exists:** 반복 작업 규칙을 자유 형식 prompt가 아닌 검증·version 가능한 Skill로 관리하기 위해 존재한다.
 

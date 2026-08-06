@@ -50,6 +50,7 @@ class AuthorSkillUseCase:
         scope_type: SkillScopeType,
         instruction: str,
         reference_document_ids: tuple[str, ...],
+        allow_clarification: bool = True,
     ) -> SkillAuthoringResult:
         instruction = instruction.strip()
         if not instruction or len(instruction) > MAX_INSTRUCTION_CHARS:
@@ -73,9 +74,15 @@ class AuthorSkillUseCase:
         )
         _validate_references(references)
 
-        candidate = self._generator.generate(instruction, references)
+        candidate = self._generator.generate(
+            instruction,
+            references,
+            allow_clarification=allow_clarification,
+        )
         status = candidate.get("status")
         if status == "clarification_required":
+            if not allow_clarification:
+                raise ValueError("Single-turn Skill authoring must return an editable draft.")
             question = _required_text(candidate, "question", MAX_QUESTION_CHARS)
             if inspect_skill_instructions(question):
                 raise ValueError("Skill authoring question contains blocked safety instructions.")

@@ -44,6 +44,8 @@ class SkillAuthoringGeneratorPort(Protocol):
         self,
         instruction: str,
         references: tuple[SkillAuthoringReference, ...],
+        *,
+        allow_clarification: bool,
     ) -> dict[str, object]: ...
 
 

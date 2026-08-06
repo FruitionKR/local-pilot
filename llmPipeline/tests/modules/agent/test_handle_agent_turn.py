@@ -218,6 +218,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.skill_authoring_result.status, "draft_created")  # type: ignore[union-attr]
         self.assertEqual(authorer.kwargs["reference_document_ids"], ("document-1",))
         self.assertEqual(authorer.kwargs["scope_type"], "personal")
+        self.assertTrue(authorer.kwargs["allow_clarification"])
 
     def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
         class Generator:

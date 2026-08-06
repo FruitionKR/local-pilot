@@ -39,6 +39,7 @@ def author_skill(
             scope_type=payload.scope_type,
             instruction=payload.instruction,
             reference_document_ids=tuple(payload.reference_document_ids),
+            allow_clarification=False,
         )
         return SkillAuthoringResponse.from_domain(result)
     except ValueError as exc:

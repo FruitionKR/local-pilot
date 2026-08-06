@@ -264,7 +264,7 @@ callback URL은 사용자 입력으로 받지 않고 Spring의 `app.callback.bas
 | 실패한 최종 callback 재전송 | `POST /pipeline/runs/{run_id}/result-callback/retry` | path의 `run_id` | 없음 | 재전송한 Operation 결과 payload |
 | Chat Document를 Wiki로 변환 | `POST /chat-wiki/runs` | `document_id`, `selection_mode` | `input_markdown`; `log_callback_url`; `operation_id` + `result_callback_url` | `run_id`, `status` |
 | Workspace Wiki에 질문 | `POST /query` | `workspace_id`, `question` | `user_id`; 비동기이면 `request_id` + `log_callback_url`; 대화 맥락 필드 | 전체 Query 응답 |
-| Skill 자연어 작성 | `POST /skills/author` | Workspace/User, scope, 자연어 instruction | 참조 문서 ID 최대 3개 | 보충 질문 또는 Tool이 숨겨진 Skill Markdown draft |
+| Skill 자연어 작성 | `POST /skills/author` | Workspace/User, scope, 자연어 instruction | 참조 문서 ID 최대 3개 | Tool이 숨겨진 편집 가능한 Skill Markdown draft |
 | Skill 관리 | `/skills/*` | endpoint별 Workspace/User와 definition | version ID, 초안 source | `SkillResponse` 또는 preview |
 | 현재 Markdown 편집·생성·질문 | `POST /agent/turn` | `message` | Markdown context, conversation context, Workspace/User, `skill_mode`, `skill_id` | `action`에 해당하는 결과 |
 | Agent 계획 표시·승인·제어 | `/agent/runs/*` | path의 `run_id`, Workspace/User | approve의 plan version/hash, revise instruction | `AgentRunResponse` |
@@ -1029,7 +1029,7 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 
 ### 자연어 Skill 작성 — `POST /skills/author`
 
-짧은 자연어를 구체적인 Skill Markdown으로 생성하고 새 disabled Skill의 version 1 draft로 저장한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않는다. 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증하며, 생성 성공만으로 publish·enable하지 않는다.
+짧은 자연어를 구체적인 Skill Markdown으로 생성하고 새 disabled Skill의 version 1 draft로 저장한다. Skill 관리 화면의 단발 입력이므로 참조나 세부 정보가 부족해도 보충 질문을 반환하지 않고 일반적인 placeholder 구조를 사용한 편집 가능한 draft를 만든다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않는다. 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증하며, 생성 성공만으로 publish·enable하지 않는다.
 
 | request 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
@@ -1099,19 +1099,7 @@ X-Agent-Service-Token: {agent-token}
 }
 ```
 
-#### 보충 질문 응답
-
-참조가 필요한 요청인데 선택된 문서가 없으면 draft를 저장하지 않는다.
-
-```json
-{
-  "status": "clarification_required",
-  "question": "어떤 문서의 구조를 참고할까요?",
-  "skill_id": null,
-  "version_id": null,
-  "skill_markdown": null
-}
-```
+참조가 필요한 표현인데 문서가 선택되지 않았으면 문서를 추측하지 않는다. 대신 요청 유형에 맞는 일반 구조와 placeholder를 사용한 draft를 반환하며 사용자가 Markdown을 직접 검토·수정한다. LLM이 `clarification_required`를 반환하면 draft 생성을 한 번 재요청하고, 반복해서 질문을 반환하면 잘못된 생성 결과로 거절한다.
 
 입력·참조·생성 결과 검증 실패와 접근할 수 없는 참조는 `400`, request schema 위반은 `422`다. LLM 또는 내부 연동 실패는 `500`이다.
 

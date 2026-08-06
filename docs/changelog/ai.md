@@ -10,10 +10,11 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 - `POST /skills/author`가 짧은 자연어와 선택적 참조 문서 ID를 받아 LLM으로 구체적인 Skill Markdown을 생성하고 비활성 draft로 저장하도록 추가
 - `/agent/turn`의 일반 “Skill 만들어줘” 요청도 `skill_authoring`으로 분류해 같은 작성 UseCase를 사용하고, “방금 방식대로” 요청은 기존 완료 AgentRun proposal 흐름으로 유지
+- Skill 관리 화면의 단발 자연어 작성은 정보가 부족해도 일반 placeholder를 사용한 편집 가능한 draft를 반환하고, 멀티턴 채팅만 필요한 경우 보충 질문을 허용
 - 참조 문서는 임의 AgentRun ID 없이 Skill authoring 전용 Backend read endpoint로 조회하고, 실제 문서명·본문은 제외한 heading·목록 marker·표 header 구조만 비신뢰 데이터로 전달하며 prompt injection, credential, 고정 참조값과 capability 밖 Tool을 저장 전에 차단
-- 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown과 draft 식별자 또는 보충 질문만 반환
+- 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown과 draft 식별자만 반환
 - OpenAI `skill-creator`의 간결한 작성·trigger description·progressive disclosure 원칙을 기존 `ChatCompletionsJsonClient` prompt에 적용하고 별도 런타임 의존성은 추가하지 않음
-- Skill authoring·Agent router 관련 단위 테스트 `80 passed`, Python compile과 `git diff --check` 통과
+- Skill authoring·Agent router 관련 단위 테스트 `82 passed`, Python compile과 `git diff --check` 통과
 
 ### refactor: Agent 실행 흐름을 LangGraph로 전환
 
