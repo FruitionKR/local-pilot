@@ -640,6 +640,7 @@ flowchart LR
     SPRING[Spring 공개 API·Tool Gateway]
 
     subgraph INTERNAL[AI Pipeline 내부 구현]
+        AUTHOR["자연어 Skill 작성·필터링"]
         SKILL["Skill 초안·버전 관리"]
         SELECT["요청별 Skill 선택"]
         PLAN["Agent 계획·승인 관리"]
@@ -649,7 +650,9 @@ flowchart LR
     DB[(Skill·AgentRun Tables)]
 
     UI -. 미구현 .-> SPRING
+    SPRING -. 미구현 .-> AUTHOR
     SPRING -. 미구현 .-> SKILL
+    AUTHOR -->|검증된 비활성 draft| SKILL
     SKILL --> SELECT --> PLAN --> EXECUTE
     SKILL --> DB
     PLAN --> DB
@@ -658,12 +661,12 @@ flowchart LR
 
 **Status:** 내부 구현. 기본값 `AGENT_SKILLS_ENABLED=false`이며 Spring 공개 API와 internal tool endpoint가 아직 없다.
 
-#### Skill 초안·버전 관리 (`ManageSkillUseCase`, `ProposeSkillDraftUseCase`)
+#### Skill 초안·버전 관리 (`AuthorSkillUseCase`, `ManageSkillUseCase`, `ProposeSkillDraftUseCase`)
 
-- **Input:** Skill 지시, capability, allowed tool, draft source operation, publish·enable 요청
-- **Responsibility:** Skill 초안·version·publish·enable lifecycle을 관리하고 LLM 기반 초안을 제안한다.
-- **Output:** Skill, immutable published version, draft proposal
-- **Key Logic:** instruction 안전 검사, capability-tool 교집합, mutation tool에 필요한 read tool 보완, version 생성
+- **Input:** 짧은 자연어, 선택적 참조 문서 ID, 수동 Skill 정의, draft source operation, publish·enable 요청
+- **Responsibility:** 권한이 확인된 참조 Markdown을 비신뢰 데이터로 격리해 Skill Markdown을 생성하고 초안·version·publish·enable lifecycle을 관리한다.
+- **Output:** 보충 질문 또는 내부 권한 필드가 제거된 Skill Markdown draft, immutable published version, 완료 작업 기반 draft proposal
+- **Key Logic:** 입력·참조·출력 안전 검사, capability-tool 교집합, mutation tool에 필요한 read tool 보완, 비활성 draft 저장과 별도 publish
 - **Failure Handling:** 위험한 instruction·지원하지 않는 tool은 `422`, 없거나 관리할 수 없는 Skill은 `404`, version 충돌은 `409`로 거절한다.
 - **Why this exists:** 반복 작업 규칙을 자유 형식 prompt가 아닌 검증·version 가능한 Skill로 관리하기 위해 존재한다.
 

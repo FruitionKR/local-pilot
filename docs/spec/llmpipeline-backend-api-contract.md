@@ -75,6 +75,7 @@ flowchart LR
 | 연결됨 | `POST` | `/chat-wiki/runs` | `DocumentProcessingRequester` |
 | 연결됨 | `POST` | `/query` | `PipelineQueryRequester` |
 | 부분 연결 | `POST` | `/agent/turn` | `PipelineAgentRequester` |
+| 연동 필요 | `POST` | `/skills/author` | 없음 |
 | 연동 필요 | `POST` | `/skills/draft-from-runs/preview` | 없음 |
 | 연동 필요 | `POST` | `/skills/preview` | 없음 |
 | 연동 필요 | `POST` | `/skills` | 없음 |
@@ -263,6 +264,7 @@ callback URL은 사용자 입력으로 받지 않고 Spring의 `app.callback.bas
 | 실패한 최종 callback 재전송 | `POST /pipeline/runs/{run_id}/result-callback/retry` | path의 `run_id` | 없음 | 재전송한 Operation 결과 payload |
 | Chat Document를 Wiki로 변환 | `POST /chat-wiki/runs` | `document_id`, `selection_mode` | `input_markdown`; `log_callback_url`; `operation_id` + `result_callback_url` | `run_id`, `status` |
 | Workspace Wiki에 질문 | `POST /query` | `workspace_id`, `question` | `user_id`; 비동기이면 `request_id` + `log_callback_url`; 대화 맥락 필드 | 전체 Query 응답 |
+| Skill 자연어 작성 | `POST /skills/author` | Workspace/User, scope, 자연어 instruction | 참조 문서 ID 최대 3개 | 보충 질문 또는 Tool이 숨겨진 Skill Markdown draft |
 | Skill 관리 | `/skills/*` | endpoint별 Workspace/User와 definition | version ID, 초안 source | `SkillResponse` 또는 preview |
 | 현재 Markdown 편집·생성·질문 | `POST /agent/turn` | `message` | Markdown context, conversation context, Workspace/User, `skill_mode`, `skill_id` | `action`에 해당하는 결과 |
 | Agent 계획 표시·승인·제어 | `/agent/runs/*` | path의 `run_id`, Workspace/User | approve의 plan version/hash, revise instruction | `AgentRunResponse` |
@@ -1024,6 +1026,72 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 | `allowed_tools` | string array | 실행 허용 tool 목록 |
 | `lint_result` | object | `issues` 배열을 포함하는 안전성 검사 결과 |
 | `status` | `draft`/`published`/`rejected` | version 상태 |
+
+### 자연어 Skill 작성 — `POST /skills/author`
+
+짧은 자연어를 구체적인 Skill Markdown으로 생성하고 새 disabled Skill의 version 1 draft로 저장한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않는다. 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증하며, 생성 성공만으로 publish·enable하지 않는다.
+
+| request 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| `workspace_id` | string | 예 | 참조 조회와 Skill 저장 범위 |
+| `user_id` | string | 예 | 참조 조회와 Skill 소유 사용자 |
+| `scope_type` | `personal`/`team` | 예 | 생성할 Skill 범위 |
+| `instruction` | string | 예, 1~4,000자 | 구체화할 자연어 요청 |
+| `reference_document_ids` | string array | 아니오, 최대 3개 | 구조만 참고할 Markdown 문서 ID |
+
+참조 ID가 있으면 llmPipeline은 `get_document_metadata`, `get_document_content` read Tool로 Workspace·User 권한이 적용된 현재 문서를 조회한다. 현재 Spring Tool route가 미구현이므로 참조 있는 요청은 해당 route 구현 전까지 동작하지 않으며, 참조 없는 요청은 이 제약을 받지 않는다.
+
+입력·참조·LLM 출력은 다음 순서로 검사한다.
+
+1. 자연어와 참조 개수·개별/전체 Markdown 크기 검사
+2. 입력과 참조의 승인 우회·권한 상승·system prompt 탈취·역할 변경 marker 차단
+3. 참조를 system prompt와 분리된 비신뢰 user payload로 전달
+4. 생성 결과의 필수 필드·길이·slug·capability·Tool 교집합 검사
+5. 참조 ID 고정값과 위험 instruction을 다시 차단한 뒤 disabled draft 저장
+
+#### 생성 요청
+
+```http
+POST /skills/author HTTP/1.1
+Content-Type: application/json
+X-Agent-Service-Token: {agent-token}
+
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "scope_type": "personal",
+  "instruction": "선택한 문서 구조로 회의록을 작성하는 Skill을 만들어줘.",
+  "reference_document_ids": ["doc_123"]
+}
+```
+
+#### 생성 성공 응답
+
+```json
+{
+  "status": "draft_created",
+  "question": null,
+  "skill_id": "skill_123",
+  "version_id": "version_123",
+  "skill_markdown": "---\nname: \"회의록 작성\"\ndescription: \"회의 내용을 정해진 구조로 작성합니다.\"\n---\n\n# 작성 절차\n\n- 결정 사항과 후속 작업을 구분한다."
+}
+```
+
+#### 보충 질문 응답
+
+참조가 필요한 요청인데 선택된 문서가 없으면 draft를 저장하지 않는다.
+
+```json
+{
+  "status": "clarification_required",
+  "question": "어떤 문서의 구조를 참고할까요?",
+  "skill_id": null,
+  "version_id": null,
+  "skill_markdown": null
+}
+```
+
+입력·참조·생성 결과 검증 실패와 접근할 수 없는 참조는 `400`, request schema 위반은 `422`다. LLM 또는 내부 연동 실패는 `500`이다.
 
 ### 완료된 Agent Run에서 초안 제안 — `POST /skills/draft-from-runs/preview`
 

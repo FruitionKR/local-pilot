@@ -79,3 +79,17 @@ class SkillDraftProposal:
     allowed_tools: tuple[SkillTool, ...]
     source_run_ids: tuple[str, ...]
     persisted: Literal[False] = False
+
+
+@dataclass(frozen=True)
+class SkillAuthoringReference:
+    id: str
+    name: str
+    markdown: str
+
+
+@dataclass(frozen=True)
+class SkillAuthoringResult:
+    status: Literal["clarification_required", "draft_created"]
+    question: str | None = None
+    skill: Skill | None = None

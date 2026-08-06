@@ -1,9 +1,11 @@
+import json
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.modules.skill.domain.entities import (
     Skill,
+    SkillAuthoringResult,
     SkillDraftProposal,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
@@ -36,6 +38,42 @@ class SkillDefinitionRequest(BaseModel):
     instructions_markdown: str = Field(..., min_length=1)
     capabilities: list[CapabilityValue] = Field(..., min_length=1)
     allowed_tools: list[ToolValue] = Field(default_factory=list)
+
+
+class SkillAuthoringRequest(BaseModel):
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    scope_type: Literal["personal", "team"]
+    instruction: str = Field(..., min_length=1, max_length=4_000)
+    reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
+
+
+class SkillAuthoringResponse(BaseModel):
+    status: Literal["clarification_required", "draft_created"]
+    question: str | None = None
+    skill_id: str | None = None
+    version_id: str | None = None
+    skill_markdown: str | None = None
+
+    @classmethod
+    def from_domain(cls, result: SkillAuthoringResult) -> "SkillAuthoringResponse":
+        if result.skill is None:
+            return cls(status=result.status, question=result.question)
+        version = result.skill.latest_version
+        if version is None:
+            raise ValueError("Authored Skill draft version is missing.")
+        return cls(
+            status=result.status,
+            skill_id=result.skill.id,
+            version_id=version.id,
+            skill_markdown=(
+                "---\n"
+                f"name: {json.dumps(version.name, ensure_ascii=False)}\n"
+                f"description: {json.dumps(version.description, ensure_ascii=False)}\n"
+                "---\n\n"
+                f"{version.instructions_markdown}"
+            ),
+        )
 
 
 class CreateSkillRequest(SkillDefinitionRequest):

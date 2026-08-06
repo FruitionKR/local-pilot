@@ -1,15 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.application.ports import SkillRepositoryPort
 from app.modules.skill.interfaces.http.dependencies import (
+    get_author_skill_use_case,
     get_manage_skill_use_case,
     get_propose_skill_draft_use_case,
     get_skill_repository,
 )
 from app.modules.skill.interfaces.http.schemas import (
     CreateSkillRequest,
+    SkillAuthoringRequest,
+    SkillAuthoringResponse,
     SkillActorRequest,
     SkillDefinitionRequest,
     SkillDraftProposalRequest,
@@ -21,6 +25,24 @@ from app.modules.skill.interfaces.http.schemas import (
 
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+
+
+@router.post("/author", response_model=SkillAuthoringResponse)
+def author_skill(
+    payload: SkillAuthoringRequest,
+    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
+) -> SkillAuthoringResponse:
+    try:
+        result = use_case.execute(
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
+            scope_type=payload.scope_type,
+            instruction=payload.instruction,
+            reference_document_ids=tuple(payload.reference_document_ids),
+        )
+        return SkillAuthoringResponse.from_domain(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/draft-from-runs/preview", response_model=SkillDraftProposalResponse)

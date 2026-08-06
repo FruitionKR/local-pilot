@@ -635,9 +635,25 @@ Skill은 `allowed_tools`를 넓히지 못한다. 예를 들어 Skill이 `create_
 
 ### 6.4 Skill 생성·수정·활성화 흐름
 
-MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회의록 Skill을 만들어줘”라고 요청해 LLM이 Skill을 자동 생성·저장하는 기능은 포함하지 않는다.
+Skill 관리 화면은 수동 정의 입력과 짧은 자연어 authoring을 함께 지원한다. 자연어 authoring은 LLM이 생성한 내부 capability·Tool 후보를 서버 허용 목록으로 다시 검증하고 사용자에게는 완성된 Skill Markdown만 보여준다.
 
-#### 6.4.1 새 Skill 생성
+#### 6.4.1 자연어 Skill authoring
+
+사용자는 범위, 짧은 자연어와 필요할 때만 참조 문서 ID를 보낸다. capability와 `allowed_tools`를 직접 입력하지 않는다.
+
+    사용자:
+    선택한 회의록 문서 구조로 이후 회의록을 작성하는 Skill을 만들어줘.
+
+    시스템:
+    1. Workspace·User 권한으로 참조 문서 metadata와 Markdown을 조회한다.
+    2. 입력과 참조의 크기·prompt injection을 먼저 검사한다.
+    3. 참조 Markdown을 명령이 아닌 비신뢰 구조 데이터로 LLM에 전달한다.
+    4. 생성된 name, description, instructions, capability와 Tool을 다시 검사한다.
+    5. 사용자에게 capability와 Tool을 제외한 Skill Markdown을 반환하고 disabled draft로 저장한다.
+
+참조가 필요한 표현인데 `reference_document_ids`가 비어 있으면 문서를 추측하지 않고 `clarification_required`와 한 개의 보충 질문을 반환하며 저장하지 않는다. 생성 성공만으로 publish하거나 enable하지 않고, 사용자가 Markdown을 확인한 뒤 기존 publish API를 별도로 호출한다.
+
+#### 6.4.2 새 Skill 수동 생성
 
 사용자는 다음 정보를 입력한다.
 
@@ -666,7 +682,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
 `POST /skills`는 immutable한 실행 version이 아니라 수정 가능한 draft를 만든다. draft 상태에서는 auto 선택과 명시적 command 대상이 아니다.
 
-#### 6.4.2 lint와 안전성 검사
+#### 6.4.3 lint와 안전성 검사
 
 저장 또는 preview 전에 시스템은 다음 항목을 검사한다.
 
@@ -682,7 +698,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
 검사에 실패하면 publish를 막고 수정할 위치와 이유를 표시한다. 예를 들어 instructions에 “승인 없이 문서를 이동한다”가 포함되면 해당 지시는 상위 승인 정책을 바꿀 수 없다고 안내한다.
 
-#### 6.4.3 preview
+#### 6.4.4 preview
 
 사용자는 Skill을 저장하거나 publish하기 전에 현재 입력값의 validation과 safety lint 결과를 확인한다. preview는 LLM으로 예시 문서를 생성하거나 실제 폴더 계획을 실행하는 기능이 아니다.
 
@@ -697,7 +713,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
 `POST /skills/preview`는 입력 정의를 저장하지 않고 `lint_result`와 `has_blocked_issues`를 반환한다. 실제 문서·폴더 조회와 Tool 실행은 하지 않는다. 사용 예시는 publish 후 일반 요청 흐름에서 확인한다.
 
-#### 6.4.4 publish와 활성화
+#### 6.4.5 publish와 활성화
 
     사용자:
     [Publish]
@@ -710,7 +726,7 @@ publish는 차단할 safety issue가 없는 draft를 변경 불가능한 publish
 
 여러 Skill을 동시에 enabled할 수 있지만 한 요청에는 최대 하나만 적용한다. 비슷한 후보가 여러 개이면 자동으로 임의 선택하지 않고 사용자에게 사용할 Skill을 묻는다.
 
-#### 6.4.5 enabled Skill 수정
+#### 6.4.6 enabled Skill 수정
 
 enabled version을 직접 수정하지 않는다. 사용자가 편집을 시작하면 새 draft version을 만든다. 새 version을 작성하는 동안 현재 enabled version은 기존 요청에 계속 사용된다.
 
@@ -720,7 +736,7 @@ enabled version을 직접 수정하지 않는다. 사용자가 편집을 시작�
 
 version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2를 사용한다. 이미 시작한 AgentRun은 version 1을 고정해서 사용하며 실행 도중 바뀌지 않는다. disable하면 신규 요청의 후보에서 제외하지만 이미 진행 중인 AgentRun을 임의로 변경하거나 취소하지 않는다. 다시 enable하면 마지막 published version을 후보로 복원한다.
 
-#### 6.4.6 완료 작업에서 Skill proposal 생성
+#### 6.4.7 완료 작업에서 Skill proposal 생성
 
 사용자는 현재 채팅에서 완료한 작업을 선택하거나 가장 최근 completed AgentRun을 기준으로 Skill 생성을 요청할 수 있다.
 
@@ -751,7 +767,7 @@ version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2
 
 LLM은 선택한 run의 승인된 계획, 성공한 Tool 실행과 사용자가 명시적으로 선택한 요청·수정 지시 turn만 입력으로 받는다. 현재 채팅 전체, 실패·취소된 operation, 문서 본문, 전체 prompt, 인증정보와 chain-of-thought는 입력에서 제외한다.
 
-#### 6.4.7 draft 저장과 publish 확인
+#### 6.4.8 draft 저장과 publish 확인
 
 Skill proposal은 저장되지 않은 구조화된 응답이다. 사용자가 확인하면 일반 Skill 관리 권한을 검사한 뒤 draft를 저장한다.
 
@@ -834,6 +850,7 @@ Frontend는 Spring backend만 호출한다.
     POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/revise
 
     POST  /api/workspaces/{workspace_id}/skills/preview
+    POST  /api/workspaces/{workspace_id}/skills/author
     POST  /api/workspaces/{workspace_id}/skills
     GET   /api/workspaces/{workspace_id}/skills
     GET   /api/workspaces/{workspace_id}/skills/{skill_id}

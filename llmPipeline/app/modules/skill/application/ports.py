@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.skill.domain.entities import Skill, SkillDraftSourceRun
+from app.modules.skill.domain.entities import Skill, SkillAuthoringReference, SkillDraftSourceRun
 
 
 class SkillRepositoryPort(Protocol):
@@ -37,3 +37,21 @@ class SkillDraftGeneratorPort(Protocol):
         source_runs: tuple[SkillDraftSourceRun, ...],
         user_directives: tuple[str, ...],
     ) -> dict[str, object]: ...
+
+
+class SkillAuthoringGeneratorPort(Protocol):
+    def generate(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+    ) -> dict[str, object]: ...
+
+
+class SkillReferenceReaderPort(Protocol):
+    def read(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        document_id: str,
+    ) -> SkillAuthoringReference: ...
