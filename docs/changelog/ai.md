@@ -6,6 +6,14 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-08-06
 
+### refactor: Agent 실행 흐름을 LangGraph로 전환
+
+- 수동 planning·승인 대기·최대 40단계 실행·verification 분기를 LangGraph state graph와 PostgreSQL checkpoint 재개 흐름으로 전환
+- run별 job 순서를 직렬화하고 DB/checkpoint 사이 재시작 경계를 terminal·clarification·plan 상태로 멱등 복구
+- Tool 조회 원문은 checkpoint에서 제외하고 Agent graph LangSmith tracing을 비활성화하며, 90일 만료 시 checkpoint를 AgentRun보다 먼저 삭제
+- Spring Flyway가 관리할 checkpoint schema 요구사항을 `docs/issue/backend/2026-08-06.md`에 기록
+- llmPipeline 전체 테스트 `719 passed`, `57 subtests passed`; Python compile과 `git diff --check` 통과
+
 ### fix: Agent prompt injection 실행 경계 보강
 
 - `/agent/turn` 입력과 planning hierarchy·Skill instruction·Tool observation에 크기·중첩·제어 문자 검증을 적용
