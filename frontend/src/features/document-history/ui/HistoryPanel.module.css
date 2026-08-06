@@ -1,24 +1,4 @@
-/* 문서 변경 기록(스냅샷 diff/롤백) 임시 패널. 홈 문서 화면 위 오버레이. */
-.history-trigger {
-  position: absolute;
-  top: 16px;
-  right: 24px;
-  z-index: 30;
-  padding: 6px 12px;
-  border: 1px solid #d0d5dd;
-  border-radius: 8px;
-  background: #fff;
-  color: #344054;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
-}
-
-.history-trigger:hover {
-  border-color: #98a2b3;
-}
-
+/* 문서 버전 기록(서버 버전 목록·diff·복원) 패널. 문서 화면 위 오버레이. */
 .history-panel {
   position: absolute;
   top: 56px;
@@ -30,11 +10,11 @@
   width: 360px;
   max-height: calc(100% - 96px);
   padding: 16px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #3a3a3a;
   border-radius: 14px;
-  background: #fff;
-  color: #273044;
-  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+  background: #1e1e1e;
+  color: #e7e7e7;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
   overflow: hidden;
 }
 
@@ -52,7 +32,7 @@
 .history-panel-header button {
   border: none;
   background: transparent;
-  color: #667085;
+  color: #9a9a9a;
   cursor: pointer;
   font-size: 14px;
 }
@@ -60,7 +40,14 @@
 .history-empty,
 .history-nodiff {
   margin: 0;
-  color: #667085;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-error {
+  margin: 0;
+  color: #ff8f87;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -85,29 +72,42 @@
   padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: #f8fafc;
-  color: #344054;
+  background: #262626;
+  color: #e7e7e7;
   cursor: pointer;
   text-align: left;
 }
 
 .history-item:hover {
-  background: #eef2f6;
+  background: #2f2f2f;
 }
 
 .history-item.is-selected {
   border-color: #315efb;
-  background: #eef3ff;
+  background: #1d2740;
 }
 
 .history-item-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 500;
 }
 
+.history-item-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #315efb;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
 .history-item-time {
   flex: none;
-  color: #98a2b3;
+  color: #8a8a8a;
   font-size: 11px;
 }
 
@@ -121,9 +121,9 @@
 .history-diff {
   max-height: 240px;
   overflow: auto;
-  border: 1px solid #e4e7ec;
+  border: 1px solid #3a3a3a;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #161616;
 }
 
 .history-diff code {
@@ -137,17 +137,23 @@
 }
 
 .history-diff code.is-delete {
-  background: #fff0f0;
-  color: #9b1c1c;
+  background: rgba(155, 28, 28, 0.22);
+  color: #ff9d95;
 }
 
 .history-diff code.is-insert {
-  background: #ecfdf3;
-  color: #067647;
+  background: rgba(6, 118, 71, 0.22);
+  color: #6fdba6;
 }
 
 .history-diff code.is-context {
-  color: #667085;
+  color: #9a9a9a;
+}
+
+.history-diff code.is-gap {
+  color: #6a6a6a;
+  background: #1b1b1b;
+  text-align: center;
 }
 
 .history-restore {

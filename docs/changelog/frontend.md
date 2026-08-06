@@ -4,6 +4,29 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-06
+
+### feat: access token silent refresh
+
+- `apiFetch`가 401을 만나면 저장된 refresh token으로 `POST /api/auth/refresh` 재발급을
+  1회 시도하고 원요청을 재시도한다. 동시 401은 재발급 요청 하나를 공유한다.
+  재발급까지 실패한 경우에만 로그인 필요 에러를 던진다. `/api/auth/**` 자체의 401
+  (비밀번호 오류 등)은 재발급 대상이 아니다.
+- `auth.ts`의 refresh 미구현 TODO 제거, `getRefreshToken` 추가.
+
+### feat: 문서 버전 이력을 서버 API로 전환
+
+- `features/document-history`를 localStorage 스냅샷에서 Backend 버전 API 연동으로 재작성했다.
+  `GET /versions` 목록, `GET /diff` 서버 diff, `POST /versions/{v}/restore` 비파괴 복원을 사용한다.
+- 미장착 상태였던 `HistoryPanel`을 `SourcePreviewPanel` 문서 옵션 메뉴의 "버전 기록"으로
+  연결했고, 복원 성공 시 본문·버전을 다시 불러와 에디터를 갱신한다. 복원 409는 자동
+  재시도 없이 목록 갱신 후 재비교를 안내한다.
+- AI 편집 직전 localStorage 캡처(`useSnapshots`)와 클라이언트 diff(`lineDiff`)를 제거했다.
+  서버 저장이 이전 버전 스냅샷을 이미 남기므로 중복이다.
+- 계약 문서: `docs/spec/document-version-history.md`. 테스트: `tests/markdownVersionDiff.test.mjs`.
+
+---
+
 ## 2026-07-30
 
 ### fix: 비동기 설정·AI 저장·채팅 편입 선택 경합 수정

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { AgentPanel } from "@/widgets/agent-panel/ui/AgentPanel";
 import { DocumentSidebar } from "@/widgets/document-sidebar/ui/DocumentSidebar";
 import { Graph } from "@/widgets/graph/ui/Graph";
-import { useSnapshots } from "@/features/document-history/model/useSnapshots";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
 import { LogsMockup } from "@/features/logs-mockup";
 import { SettingsPanel } from "@/features/settings";
@@ -64,7 +63,6 @@ export function HomeWorkspace() {
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
-  const snapshots = useSnapshots(markdownEditContext?.documentId ?? null);
   const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
@@ -149,20 +147,6 @@ export function HomeWorkspace() {
     didAutoOpenRef.current = true;
     selection.selectTreeGraphNode(firstSidebarNote);
   }, [firstSidebarNote, isGraphLoading, isHomeView, selection]);
-
-  // AgentPanel에 넘길 편집 컨텍스트를 감싸, AI 편집이 적용되기 직전 원본을 스냅샷으로 남긴다.
-  const agentEditContext = useMemo<ActiveMarkdownEditContext | null>(() => {
-    if (!markdownEditContext) return null;
-    const raw = markdownEditContext;
-    return {
-      ...raw,
-      applyMarkdown: (expectedMarkdown: string, nextMarkdown: string) => {
-        const applied = raw.applyMarkdown(expectedMarkdown, nextMarkdown);
-        if (applied) snapshots.capture(expectedMarkdown, "AI 편집 전");
-        return applied;
-      }
-    };
-  }, [markdownEditContext, snapshots]);
 
   function handleViewChange(view: RailView) {
     setActiveView(view);
@@ -329,7 +313,7 @@ export function HomeWorkspace() {
           onOpenWikiPage={selection.openWikiPagePreview}
           onOpenSourceBlocks={openSourceBlocks}
           onCreateMarkdownDocument={createGeneratedMarkdownDocument}
-          markdownEditContext={agentEditContext}
+          markdownEditContext={markdownEditContext}
           onDocumentExported={handleChatDocumentExported}
           nodes={graphData.nodes}
         />

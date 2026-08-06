@@ -38,3 +38,4 @@
 - `issue-2026-07-28.md` — AI 편집 승인 저장의 `source=agent` 스냅샷 영속화와 채팅 편입 문서의 워크스페이스 목록·검색 노출, 자동 선택 연결 완료 기록.
 - `issue-2026-07-29.md` — 문서 콘텐츠 버전 영속화, 변경 전후 스냅샷, 비파괴 복원과 GitHub 스타일 Markdown diff API 완료 기록. Frontend 연동은 `docs/issue/frontend/2026-07-23.md`에서 계속 관리한다.
 - `Fruition_MVP_API_Contract.md` — 로그인 없이 단일 기본 workspace만 쓰던 시절 API 계약. 현재 API 계약은 `docs/Fruition_MVP_API_Contract.md`.
+- `note-editor-prototype.md` — local mock 저장 전제의 노트 편집기 프로토타입 사양. 본문 저장·버전 이력·복원의 현재 계약은 `docs/spec/document-version-history.md`.

@@ -30,8 +30,10 @@ export async function loginWithEmail(email: string, password: string): Promise<A
 }
 
 export function getOAuthAuthorizationUrl(provider: OAuthProvider): string {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
-  return `${backendUrl}/oauth2/authorization/${provider}`;
+  // OAuth 시작은 access-svc(8081) 오리진으로 직접 이동한다.
+  // redirect_uri가 서버 자신 오리진 기준이라 Next rewrite 경유 시 3000 오리진으로 계산되므로 절대 URL을 유지한다.
+  const accessUrl = process.env.NEXT_PUBLIC_ACCESS_URL || "http://localhost:8081";
+  return `${accessUrl}/oauth2/authorization/${provider}`;
 }
 
 export async function exchangeOAuthCode(code: string): Promise<AuthTokensResponse> {

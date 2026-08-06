@@ -5,11 +5,15 @@ import type { NoteSaveStatus } from "@/entities/tree/model/tree";
 import {
   applyRequiredAgentSource,
   mergePendingNoteSave,
+  planAgentRetryAfterFailure,
   recoverPendingNoteSaveAfterAgentFailure,
   type PendingNoteSave
 } from "./pendingSave";
 
 const AUTOSAVE_DELAY_MS = 800;
+// AI 편집은 에디터에 이미 반영된 뒤라, 저장에 실패하면 사용자가 다시 편집하지 않아도 스스로 다시 보낸다.
+const AGENT_RETRY_MAX_ATTEMPTS = 3;
+const AGENT_RETRY_BASE_MS = 1000;
 
 export function useNoteAutosave({
   documentId,
@@ -30,10 +34,38 @@ export function useNoteAutosave({
   const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
   const agentRetryRequiredRef = useRef(false);
+  const agentRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentRetryAttemptsRef = useRef(0);
 
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
   }, []);
+
+  function cancelAgentRetry() {
+    if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
+    agentRetryTimerRef.current = null;
+  }
+
+  function scheduleAgentRetry(
+    candidate: PendingNoteSave,
+    recovered: { pending: PendingNoteSave | null; retryRequired: boolean }
+  ) {
+    const plan = planAgentRetryAfterFailure(
+      recovered,
+      agentRetryAttemptsRef.current,
+      AGENT_RETRY_MAX_ATTEMPTS,
+      AGENT_RETRY_BASE_MS
+    );
+    agentRetryAttemptsRef.current = plan.attempts;
+    if (!plan.shouldRetry) return;
+    cancelAgentRetry();
+    agentRetryTimerRef.current = setTimeout(() => {
+      agentRetryTimerRef.current = null;
+      if (conflictRef.current) return;
+      void flushSave(candidate);
+    }, plan.delayMs);
+  }
 
   async function flushSave(candidate: PendingNoteSave) {
     const saveCandidate = applyRequiredAgentSource(candidate, agentRetryRequiredRef.current);
@@ -55,17 +87,23 @@ export function useNoteAutosave({
       );
       versionRef.current = saved.content_version;
       setContentVersion(saved.content_version);
-      if (saveCandidate.source === "agent") agentRetryRequiredRef.current = false;
+      if (saveCandidate.source === "agent") {
+        agentRetryRequiredRef.current = false;
+        agentRetryAttemptsRef.current = 0;
+        cancelAgentRetry();
+      }
       setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
         conflictRef.current = true;
+        cancelAgentRetry();
         setStatus("conflict");
       } else {
         if (saveCandidate.source === "agent") {
           const recovery = recoverPendingNoteSaveAfterAgentFailure(pendingSaveRef.current);
           pendingSaveRef.current = recovery.pending;
           agentRetryRequiredRef.current = recovery.retryRequired;
+          scheduleAgentRetry(saveCandidate, recovery);
         }
         setStatus("error");
       }
@@ -80,6 +118,8 @@ export function useNoteAutosave({
 
   function queueSave(body: string, source?: "agent") {
     if (conflictRef.current) return;
+    // 새 저장이 밀린 AI 편집분을 그대로 싣고 가므로 예약된 재시도는 버린다.
+    cancelAgentRetry();
     revisionRef.current += 1;
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),

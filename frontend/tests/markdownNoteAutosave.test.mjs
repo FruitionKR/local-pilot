@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyRequiredAgentSource,
   mergePendingNoteSave,
+  planAgentRetryAfterFailure,
   recoverPendingNoteSaveAfterAgentFailure
 } from "../src/features/note-editing/model/pendingSave.ts";
 
@@ -66,5 +67,45 @@ test("AI 저장 실패 전에 만들어진 debounce 후보도 flush 시 agent �
   assert.deepEqual(applyRequiredAgentSource(candidate, true), {
     ...candidate,
     source: "agent"
+  });
+});
+
+test("밀린 저장이 없으면 사용자 편집 없이도 AI 저장을 다시 보낸다", () => {
+  const recovered = recoverPendingNoteSaveAfterAgentFailure(null);
+
+  assert.deepEqual(planAgentRetryAfterFailure(recovered, 0, 3, 1000), {
+    shouldRetry: true,
+    delayMs: 1000,
+    attempts: 1
+  });
+});
+
+test("재시도 간격은 시도할수록 늘어난다", () => {
+  const recovered = recoverPendingNoteSaveAfterAgentFailure(null);
+
+  assert.equal(planAgentRetryAfterFailure(recovered, 1, 3, 1000).delayMs, 2000);
+  assert.equal(planAgentRetryAfterFailure(recovered, 2, 3, 1000).delayMs, 4000);
+});
+
+test("밀린 저장이 있으면 그쪽이 실어 가므로 재시도를 걸지 않는다", () => {
+  const recovered = recoverPendingNoteSaveAfterAgentFailure({
+    markdown: "AI 편집 후 사용자 수정",
+    revision: 3
+  });
+
+  assert.deepEqual(planAgentRetryAfterFailure(recovered, 0, 3, 1000), {
+    shouldRetry: false,
+    delayMs: 0,
+    attempts: 0
+  });
+});
+
+test("재시도 횟수를 다 쓰면 더 보내지 않는다", () => {
+  const recovered = recoverPendingNoteSaveAfterAgentFailure(null);
+
+  assert.deepEqual(planAgentRetryAfterFailure(recovered, 3, 3, 1000), {
+    shouldRetry: false,
+    delayMs: 0,
+    attempts: 3
   });
 });

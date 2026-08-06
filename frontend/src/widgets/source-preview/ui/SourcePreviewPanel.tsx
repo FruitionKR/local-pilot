@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { resolveEditorMode, useUserPreferences } from "@/entities/user";
 import { MarkdownViewer } from "@/shared/ui/MarkdownViewer";
 import { DynamicNoteEditor } from "@/features/note-editing/ui/DynamicNoteEditor";
+import { HistoryPanel } from "@/features/document-history";
 import { fetchDocumentOriginal } from "@/entities/document";
 import { fetchWikiPage } from "@/entities/wiki";
 import { fetchNoteDraft } from "@/features/note-editing";
@@ -70,10 +71,16 @@ export function SourcePreviewPanel({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [sourceMode, setSourceMode] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // 버전 복원 후 문서 본문·버전을 다시 불러오기 위한 카운터
+  const [documentReloadCount, setDocumentReloadCount] = useState(0);
   const [noteSaveStatus, setNoteSaveStatus] = useState<NoteSaveStatus>("saved");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
   const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // 복원 완료 콜백이 도착한 시점에 보고 있는 문서를 판별하기 위한 ref
+  const activeDocumentIdRef = useRef(documentId);
+  activeDocumentIdRef.current = documentId;
   const optionsRef = useRef<HTMLDivElement | null>(null);
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
@@ -107,11 +114,17 @@ export function SourcePreviewPanel({
   useEffect(() => {
     if (!preferencesReady) return;
     setSourceMode(resolveEditorMode(preferencesRef.current) === "markdown");
+  }, [documentId, preferencesReady]);
+
+  // 저장 상태는 문서가 바뀔 때만 되돌린다.
+  // preferencesReady는 경로가 바뀔 때마다 다시 false→true가 되므로, 같이 묶으면 저장 중이거나 실패한 상태를 덮어쓴다.
+  useEffect(() => {
     setIsOptionsOpen(false);
+    setIsHistoryOpen(false);
     setNoteSaveStatus("saved");
     setNoteSaveError(null);
     setNeedsReview(false);
-  }, [documentId, preferencesReady]);
+  }, [documentId]);
 
   useEffect(() => {
     if (!isOptionsOpen) return;
@@ -257,7 +270,7 @@ export function SourcePreviewPanel({
       ignore = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [documentId, isMarkdownFile, pageId]);
+  }, [documentId, documentReloadCount, isMarkdownFile, pageId]);
 
   useEffect(() => {
     if (!isMarkdownFile || selectedBlockHighlights.length === 0 || rawMarkdown === null) return;
@@ -322,6 +335,15 @@ export function SourcePreviewPanel({
                 >
                   {sourceMode ? "자동 미리보기로 전환" : "Markdown 원문 보기"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsHistoryOpen(true);
+                    setIsOptionsOpen(false);
+                  }}
+                >
+                  버전 기록
+                </button>
               </div>
             )}
           </div>
@@ -362,7 +384,7 @@ export function SourcePreviewPanel({
         {isMarkdownFile && errorMessage && <p>{errorMessage}</p>}
         {isMarkdownFile && !isLoading && !errorMessage && rawMarkdown !== null && editableNote && documentId && (
           <DynamicNoteEditor
-            key={documentId}
+            key={`${documentId}:${documentReloadCount}`}
             documentId={documentId}
             marker={editableNote.marker}
             initialBody={editableNote.body}
@@ -401,6 +423,19 @@ export function SourcePreviewPanel({
         {!pageId && !documentId && <p>연결된 Wiki page가 없는 항목입니다.</p>}
         </div>
       </div>
+      {isHistoryOpen && isMarkdownFile && documentId && (
+        <HistoryPanel
+          documentId={documentId}
+          onRestored={(restoredDocumentId) => {
+            // 복원 중 다른 문서로 전환했으면 무시한다. 현재 문서의 에디터가 리마운트되어
+            // 저장 전 편집분이 초기화되는 것을 막는다.
+            if (restoredDocumentId === activeDocumentIdRef.current) {
+              setDocumentReloadCount((count) => count + 1);
+            }
+          }}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
       {!fillMain && (
         <button
           type="button"

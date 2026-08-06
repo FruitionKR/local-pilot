@@ -1,4 +1,4 @@
-import { getAccessToken, getSelectedWorkspaceId } from "@/shared/lib/auth";
+import { getAccessToken, getRefreshToken, getSelectedWorkspaceId, saveTokens } from "@/shared/lib/auth";
 
 // 공통 에러 메시지 상수
 export const ERROR_MESSAGES = {
@@ -40,17 +40,56 @@ export async function parseErrorResponse(response: Response, fallback: string): 
   }
 }
 
-/** Bearer 토큰을 부착하는 공통 fetch. 401이면 로그인 필요 에러를 던진다. */
-export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+// 동시 401들이 refresh를 중복 호출하지 않도록 진행 중인 재발급을 공유한다.
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshTokens(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      try {
+        const response = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken })
+        });
+        if (!response.ok) return false;
+        const body = await response.json() as { access_token?: string; refresh_token?: string };
+        if (!body.access_token || !body.refresh_token) return false;
+        saveTokens(body.access_token, body.refresh_token);
+        return true;
+      } catch {
+        return false;
+      }
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+function fetchWithToken(path: string, init?: RequestInit): Promise<Response> {
   const token = getAccessToken();
   const headers = new Headers(init?.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(path, { ...init, headers });
+}
 
-  const response = await fetch(path, { ...init, headers });
-  if (response.status === 401) {
-    throw new Error(ERROR_MESSAGES.loginRequired);
+/**
+ * Bearer 토큰을 부착하는 공통 fetch.
+ * access token 만료(401) 시 refresh token으로 재발급을 1회 시도하고 원요청을 재시도한다.
+ * 재발급까지 실패하면 로그인 필요 에러를 던진다.
+ */
+export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetchWithToken(path, init);
+  if (response.status !== 401) return response;
+  // 인증 엔드포인트 자체의 401(비밀번호 오류 등)은 재발급 대상이 아니다.
+  if (!path.startsWith("/api/auth/") && await tryRefreshTokens()) {
+    const retried = await fetchWithToken(path, init);
+    if (retried.status !== 401) return retried;
   }
-  return response;
+  throw new Error(ERROR_MESSAGES.loginRequired);
 }
 
 export async function parseJsonOrThrow<T>(response: Response, fallback: string): Promise<T> {
