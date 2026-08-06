@@ -1,0 +1,52 @@
+// 로그인·OAuth·세션·워크스페이스 담당 boot 앱 (포트 8081).
+plugins {
+	id 'org.springframework.boot'
+}
+
+dependencies {
+	implementation project(':java-shared')
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	implementation 'org.springframework.session:spring-session-jdbc'
+	// 다중 인스턴스 공유 store: OAuth 교환 코드
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'org.postgresql:postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// 통합 테스트 전용: 컨테이너 DB에 document-svc migration으로 스키마를 만든다. main에는 넣지 않는다.
+	testImplementation 'org.flywaydb:flyway-core'
+	testImplementation 'org.flywaydb:flyway-database-postgresql'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	// 운영 기본값을 두지 않는 설정이라 테스트에서만 고정값을 준다.
+	environment('INTERNAL_CALLBACK_TOKEN', 'test-internal-callback')
+}
+
+tasks.named('bootRun') {
+	doFirst {
+		environment('SPRING_PROFILES_ACTIVE', System.getenv('SPRING_PROFILES_ACTIVE') ?: 'local')
+		environment('SERVER_PORT', System.getenv('SERVER_PORT') ?: '8081')
+		def envFile = file("$projectDir/../../infra/.env")
+		// Docker 빌드처럼 상위 경로가 없는 환경에서는 경로가 디렉터리로 정규화될 수 있어 isFile로 가드한다.
+		if (envFile.isFile()) {
+			envFile.readLines().each { line ->
+				if (line && !line.startsWith('#') && line.contains('=')) {
+					def parts = line.split('=', 2)
+					environment(parts[0].trim(), parts[1].trim())
+				}
+			}
+		}
+	}
+}

@@ -6,6 +6,60 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-07
+
+### feat: backend를 access-svc·document-svc로 물리 분리 (MSA Phase 3)
+
+- 단일 Spring 앱을 Gradle 멀티프로젝트 3개로 분할: `access-svc`(:8081, 인증·OAuth·
+  세션·워크스페이스·멤버·권한 projection), `document-svc`(:8080, 문서·채팅·Wiki·query,
+  Flyway 스키마 소유, stateless), `java-shared`(JWT·공통 예외·Idempotency 라이브러리).
+- 코드 경계를 컴파일러가 강제: document→access, access→document import 0건. 두 앱은
+  서로의 DB repository를 직접 쓰지 않는다.
+- 인가를 Redis 권한 projection(`authz:role:{wid}:{uid}`, TTL 300s)으로 전환. document
+  guard는 캐시 hit 즉시 판정, miss 시 access 내부 API(`/internal/authz`) 폴백, 실패 시
+  fail-closed. access는 멤버십 변경 시 write-through/무효화. → **access 다운 중에도 캐시
+  warm 문서 기능 생존**(실검증: 로그인 000 / 문서 조회 200 / 업로드 201).
+- access→document 초기 노트는 내부 API로 전환, 트랜잭션 커밋 후 호출(FK 위반 해소, best-effort).
+- 실런타임 버그 수정: `DocumentRepository.findByIdInActiveWorkspace` JPQL이 access로 이관된
+  Workspace 엔티티를 참조해 부팅이 깨지던 것을 native query로 교체.
+- 테스트: access-svc 108 + document-svc 435, 실패 0.
+- 문서: `docs/msa/`(현행 구조·배포·검증).
+
+## 2026-08-06
+
+### feat: ingest command를 Kafka 발행으로 전환
+
+- 문서/채팅 Wiki ingest 요청을 pipeline 동기 HTTP 호출 대신 `ai.ingest.command`
+  topic 발행(`IngestCommandPublisher`)으로 전환했다. key=workspace_id로 워크스페이스별
+  순차·워크스페이스 간 병렬을 보장한다.
+- run_id는 backend가 생성해 command에 싣는다 — 동기 응답 없이 문서 run 기록과
+  pipeline-events 콜백 run_id 대조를 유지한다. 발행 실패는 기존 실패 마킹 경로 재사용.
+- `DocumentProcessingRequester` 제거(발행으로 대체). E2E 검증: worker 다운 중 발행
+  → Kafka lag 대기 → 기동 후 소비(유실 0).
+
+### feat: AWS 배포 대비 — 인증·인가 경계 확립과 상태 외부화 (MSA Phase 0~2 일부)
+
+- SecurityConfig를 deny-by-default로 전환. 공개 경로(인증·OAuth·swagger·내부 콜백)만
+  화이트리스트로 남기고 나머지는 전부 authenticated. `/api/query/runs/**` 조회·SSE에
+  인증과 workspace 멤버십 검사를 적용했다(QueryRun에 workspace_id 추가).
+- JWT에 iss(`fruition-access`)·aud(`fruition-api`) 클레임을 발급·검증한다(HS256 유지,
+  RS256/JWKS는 access-svc 분리 시점 항목).
+- 11개 서비스에 복제돼 있던 워크스페이스 멤버십 검사를 단일 인가 지점
+  `WorkspaceAccessGuard.requireMember`로 통합했다. 예외(404 fail-closed)는 동일.
+- 상태 외부화(Redis): OAuth 교환 코드(TTL 60s, GETDEL 1회 사용), query run 상태
+  (JSON+TTL), SSE 이벤트(list replay + pub/sub 인스턴스 간 중계, sequence 중복 제거).
+  인스턴스 2대 이상에서 로그인·질의 SSE가 동작하는 구조가 됐다.
+- V20 migration: `wiki_page_links`·`document_wiki_links`·`chat_partial_wiki`에
+  `workspace_id` 추가·backfill·NOT NULL·FK·인덱스. WikiService의 메모리 workspace
+  보정을 `findAllByWorkspaceId` 쿼리로 대체.
+- pipeline 호출 client 7개를 공용 `PipelineClientFactory`(connect 5s + 호출별 read
+  timeout, `X-Internal-Token` 기본 헤더)로 통합. timeout이 없어 무한 대기하던
+  DocumentProcessingRequester에 `app.processing.timeout-seconds`(기본 200s)를 부여.
+- 무인증이던 내부 콜백(DocumentPipelineController, query events callback)에
+  `X-Internal-Token` 상수시간 검증을 추가했다.
+
+---
+
 ## 2026-08-04
 
 ### fix: 복구 callback 삭제 대상을 지시서와 대조

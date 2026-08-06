@@ -1,0 +1,20 @@
+// 양쪽 앱(access-svc·document-svc)이 공유하는 라이브러리 모듈. boot 앱이 아니다.
+plugins {
+	id 'java-library'
+}
+
+dependencies {
+	// ErrorResponse/BaseExceptionHandler(web), JwtAuthenticationFilter(security),
+	// Idempotency entity·repository(data-jpa)가 컴파일에 필요하다.
+	api 'org.springframework.boot:spring-boot-starter-web'
+	api 'org.springframework.boot:spring-boot-starter-security'
+	api 'org.springframework.boot:spring-boot-starter-data-jpa'
+	// JwtTokenProvider (access는 발급까지, document는 검증만)
+	api 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+	// MinioConfig/StorageProperties (document만 스캔하지만 컴파일은 여기서 한다)
+	api 'io.minio:minio:8.5.7'
+	// OpenApiConfig
+	api 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
+}

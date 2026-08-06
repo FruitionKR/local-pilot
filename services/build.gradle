@@ -1,0 +1,31 @@
+// 멀티 프로젝트 공통 설정. 앱별 의존은 각 모듈 build.gradle에 둔다.
+plugins {
+	id 'org.springframework.boot' version '3.5.14' apply false
+	id 'io.spring.dependency-management' version '1.1.7' apply false
+	id 'org.flywaydb.flyway' version '11.7.2' apply false
+}
+
+subprojects {
+	apply plugin: 'java'
+	apply plugin: 'io.spring.dependency-management'
+
+	group = 'fruition'
+	version = '0.0.1-SNAPSHOT'
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(21)
+		}
+	}
+
+	repositories {
+		mavenCentral()
+	}
+
+	// boot 플러그인을 적용하지 않는 java-shared도 Spring BOM으로 버전을 맞춘다.
+	dependencyManagement {
+		imports {
+			mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+		}
+	}
+}

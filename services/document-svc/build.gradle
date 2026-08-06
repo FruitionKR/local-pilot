@@ -1,0 +1,101 @@
+// 문서·채팅·Wiki·query 담당 boot 앱 (포트 8080).
+// Flyway Gradle 플러그인(flywayInfo 등)이 DB에 접속하려면 JDBC 드라이버와
+// Postgres 모듈을 플러그인 classpath(buildscript)에 올려야 한다. Spring Boot가 쓰는 Flyway 11.7.2와 버전을 맞춘다.
+buildscript {
+	repositories { mavenCentral() }
+	dependencies {
+		classpath 'org.postgresql:postgresql:42.7.10'
+		classpath 'org.flywaydb:flyway-database-postgresql:11.7.2'
+	}
+}
+
+plugins {
+	id 'org.springframework.boot'
+	id 'org.flywaydb.flyway'
+}
+
+ext {
+	set('springAiVersion', "1.1.7")
+}
+
+dependencies {
+	implementation project(':java-shared')
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// MarkdownDiffService: 선형 공간 Myers diff 구현(편집 거리와 무관하게 O(n+m) 메모리)
+	implementation 'io.github.java-diff-utils:java-diff-utils:4.15'
+	// 다중 인스턴스 공유 store: query run 상태·SSE 이벤트 중계
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	// AI 비동기 command 발행 (ingest → ai-svc worker)
+	implementation 'org.springframework.kafka:spring-kafka'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'org.postgresql:postgresql'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+// Flyway Gradle 태스크(flywayInfo/flywayValidate 등) 설정.
+// 접속 정보는 bootRun과 동일하게 infra/.env에서 읽고, 없으면 application.properties와 같은 기본값을 쓴다.
+def flywayDbEnv = { ->
+	def env = [:]
+	def envFile = file("$projectDir/../../infra/.env")
+	// Docker 빌드처럼 상위 경로가 없는 환경에서는 경로가 디렉터리로 정규화될 수 있어 isFile로 가드한다.
+	if (envFile.isFile()) {
+		envFile.readLines().each { line ->
+			if (line && !line.startsWith('#') && line.contains('=')) {
+				def parts = line.split('=', 2)
+				env[parts[0].trim()] = parts[1].trim()
+			}
+		}
+	}
+	env
+}()
+
+flyway {
+	def host = flywayDbEnv.POSTGRES_HOST ?: System.getenv('POSTGRES_HOST') ?: 'localhost'
+	def port = flywayDbEnv.POSTGRES_PORT ?: System.getenv('POSTGRES_PORT') ?: '5432'
+	def name = flywayDbEnv.POSTGRES_DB ?: System.getenv('POSTGRES_DB') ?: 'fruition_mvp'
+	url = "jdbc:postgresql://${host}:${port}/${name}"
+	user = flywayDbEnv.POSTGRES_USER ?: System.getenv('POSTGRES_USER') ?: 'fruition'
+	password = flywayDbEnv.POSTGRES_PASSWORD ?: System.getenv('POSTGRES_PASSWORD') ?: 'fruition_dev_password'
+	locations = ['filesystem:src/main/resources/db/migration']
+	baselineOnMigrate = true
+	baselineVersion = '1'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	// 운영 기본값을 두지 않는 설정이라 테스트에서만 고정값을 준다.
+	environment('INTERNAL_CALLBACK_TOKEN', 'test-internal-callback')
+}
+
+tasks.named('bootRun') {
+	doFirst {
+		environment('SPRING_PROFILES_ACTIVE', System.getenv('SPRING_PROFILES_ACTIVE') ?: 'local')
+		def envFile = file("$projectDir/../../infra/.env")
+		if (envFile.isFile()) {
+			envFile.readLines().each { line ->
+				if (line && !line.startsWith('#') && line.contains('=')) {
+					def parts = line.split('=', 2)
+					environment(parts[0].trim(), parts[1].trim())
+				}
+			}
+		}
+	}
+}
