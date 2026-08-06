@@ -4,6 +4,8 @@
 > 상태: 목표 구조 확정안
 > 대상 리전: AWS Asia Pacific (Seoul), `ap-northeast-2`
 
+> **반영 현황 (2026-08-07)**: 이 목표 구조의 핵심(Access·Document·AI Service 물리 분리, Kafka command/worker, EKS/Strimzi/KEDA, 권한 projection 기반 장애 격리)이 코드에 반영되어 로컬 compose·kind에서 실검증됐다. 현행 구조·배포·검증 상세는 [`msa/`](msa/README.md)를 따른다. 남은 목표: 물리 DB 분할, RS256/JWKS, result topic, converter 연결, Terraform·Secrets Manager(실배포).
+
 ## 1. 결정
 
 Fruition은 학습과 포트폴리오를 목적으로 다음 구조를 사용한다.

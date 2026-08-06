@@ -2,11 +2,72 @@
 
 > **이전 자료 안내 (2026-07-27)**: 이 문서는 ECS on Fargate와 SQS를 전제로 한 이전 제안서다. 현재 Vercel·EKS·Kafka 구조는 [Fruition AWS MSA 목표 구조](../Fruition_AWS_MSA_Architecture.md)를 따른다.
 
+> **반영 현황 갱신 (2026-08-06)**: §1.2의 "현재 상태" 진단 다수가 코드에 반영되어 해소됐다. 무엇이 해소되고 무엇이 남았는지는 바로 아래 [현재 반영 현황](#현재-반영-현황-2026-08-06)이 이 문서의 진단·Phase 계획을 갱신한다. §1.2 표와 본문의 file:line 근거는 작성 시점 기록으로 남긴다.
+
 > 작성일: 2026-07-20
 > 재구성: 2026-07-24
 > 개정: 2026-07-27 — 목표 구조를 3개 서비스로 축소하고, 로그인부터 AI 호출까지의 흐름을 문서의 중심으로 재구성
-> 상태: Draft
-> 기준: 현재 저장소의 `backend/`, `llmPipeline/`, `infra/converter/`, `frontend/`
+> 상태: Draft (반영 현황은 2026-08-06 기준)
+> 기준: 현재 저장소의 `services/backend/`, `services/ai-svc/{pipeline,converter}/`, `frontend/` (구 `backend/`, `llmPipeline/`, `infra/converter/`)
+
+---
+
+## 현재 반영 현황 (2026-08-06)
+
+### 한눈에 보는 현재 구조
+
+```text
+Frontend (Next.js)
+    │  /api/:path* → 단일 backend URL rewrite (변경 없음)
+    │  access token 만료 시 silent refresh 후 재시도        [신규]
+    ▼
+services/backend (Spring Boot 모놀리스 — 패키지만 access/core로 논리 분리)
+    ├─ 인증: deny-by-default, JWT iss·aud 검증(HS256)      [신규]
+    ├─ 인가: WorkspaceAccessGuard 단일 지점 (11곳 통합)     [신규]
+    ├─ PostgreSQL (V20: 링크 테이블 3개 workspace_id 격리)  [신규]
+    ├─ Redis   OAuth 교환 코드 · query run 상태 ·
+    │          SSE 이벤트 replay+pub/sub 중계               [신규 — 다중 인스턴스 검증 완료]
+    ├─ MinIO / S3 호환 storage
+    └─ services/ai-svc/pipeline (FastAPI, 127.0.0.1:8000)
+         ├─ 전 엔드포인트 X-Internal-Token 필수(fail-closed) [신규]
+         ├─ 양방향 콜백에도 동일 토큰                        [신규]
+         └─ 여전히 같은 PostgreSQL에 직접 write (§2.3 목표 미달)
+
+services/ai-svc/converter (FastAPI, 127.0.0.1:8010) ── 여전히 미연결
+```
+
+### §1.2 진단 대비 해소 현황
+
+| §1.2 진단 | 현재 |
+|---|---|
+| 인증 경계 없음 (`anyRequest().permitAll()`) | **해소** — deny-by-default, 공개 경로 화이트리스트 + 내부 콜백은 컨트롤러 토큰 검증 |
+| JWT에 iss·aud 없음 | **해소** — 발급·검증 모두 적용 (RS256/JWKS는 access-svc 분리 시점으로 유보) |
+| 멤버십 검사 8곳 복제 | **해소** — `WorkspaceAccessGuard.requireMember` 단일 지점 (실제로는 11곳이었음) |
+| 역할 표기 불일치(OWNER 리터럴) | **해소** — V14에서 enum 통일 |
+| 링크 테이블 workspace 격리 없음 | **해소** — V20 migration + 메모리 보정 제거, pipeline INSERT도 workspace_id 포함 |
+| `/api/query/runs/**` 무인증·무스코프 | **해소** — 인증 + run의 workspace 멤버십 검사 |
+| in-memory 상태(OAuth 코드·query run) → 2대에서 깨짐 | **해소** — Redis 외부화. 2-인스턴스 동시 기동으로 로그인·상태 조회·SSE 교차 중계 실검증 |
+| pipeline 전 엔드포인트 무인증, 포트 공개 | **해소** — 내부 토큰 필수 + 127.0.0.1 바인딩 |
+| 콜백 무인증(DocumentPipelineController 등) | **해소** — 상수시간 토큰 검증 |
+| timeout 없는 AI client | **해소** — 공용 팩토리(connect 5s + 호출별 read timeout). retry·circuit breaker는 미도입 |
+| FE refresh 흐름 미구현 | **해소** — 401 시 재발급 1회 후 재시도 |
+| 한 schema에 writer 둘 (pipeline 직접 write) | **미해소** — 콜백 경유 단일 writer 전환은 Phase 2 잔여 |
+| ingest가 BackgroundTasks (배포 시 유실) | **미해소** — Queue 도입 필요 |
+| 임베딩 모델 프로세스 상주, converter 미연결 | **미해소** |
+
+문서와 다르게 구현된 것: 자동저장은 5초가 아니라 **800ms** debounce이고, 문서 본문·버전은 MongoDB가 아니라 **PostgreSQL**(`document_edit_states` + `document_content_versions` append-only 이력)이다. 멱등성은 `revision_write_id` 대신 base_version 낙관적 잠금 + `Idempotency-Key` 헤더. 버전 목록·diff·비파괴 복원 API와 FE 연동은 완료됐다(`docs/spec/document-version-history.md`).
+
+### Phase 진행 위치
+
+| Phase | 상태 |
+|---|---|
+| 0 격리·인가 정합성 | **완료** (JWKS만 Phase 3으로 유보) |
+| 1 상태 외부화 | **완료** (MongoDB 이관은 재평가 항목 — PostgreSQL 구현이 이미 동작) |
+| 2 ai-svc 신뢰 경계 | **부분 완료** — 인증·포트·timeout 완료 / 직접 write 회수·Queue·converter 연결 잔여 |
+| 3 access-svc 분리 | 미착수 (패키지 `fruition.access.*` 논리 분리까지만) |
+| 4 AWS 실행 형태 | 미착수 (Terraform·Queue·Secrets Manager — `docs/issue/{backend,infra}/2026-08-06.md`) |
+
+**요약**: 이 문서가 "인스턴스 하나 늘리는 것도 안전하지 않다"고 진단한 상태는 벗어났다. 현재 코드는 **다중 인스턴스에서 동작하는 보안 경계 갖춘 모놀리스 + 내부 인증된 ai-svc** 구성이며, 서비스 물리 분리(access-svc)와 비동기 큐가 다음 단계다. 변경 상세는 `docs/changelog/{backend,ai,infra,frontend}.md`의 2026-08-06 항목 참조.
 
 이 문서는 Fruition을 어떤 서비스 경계로 나누고 AWS에서 어떻게 운영할지 제안한다. 중심 질문은 다음 네 가지다.
 
