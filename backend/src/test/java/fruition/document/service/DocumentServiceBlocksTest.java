@@ -54,6 +54,8 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -93,6 +95,9 @@ class DocumentServiceBlocksTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    @Mock DocumentAssetReferenceParser assetReferenceParser;
+    @Mock fruition.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.aihistory.service.IngestOperationStarter ingestOperationStarter;
 
@@ -105,6 +110,8 @@ class DocumentServiceBlocksTest {
                 wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
                 editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
+                assetReferenceSynchronizer,
+                assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,
@@ -432,9 +439,37 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(response.markdown()).isEqualTo("# 변경\n");
+        assertThat(response.attachments()).isEmpty();
         assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
         assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
         assertThat(document.getContentHash()).isEqualTo("original-hash");
+    }
+
+    @Test
+    @DisplayName("이미지를 첨부하지 않는 저장도 본문 기준으로 asset 참조를 동기화한다")
+    void saveContent_synchronizesAssetReferencesFromMarkdown() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        UUID retainedAssetId = UUID.randomUUID();
+        String retained = "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + retainedAssetId + "/content)\n";
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(documentRepository.updateContentIfVersionMatches(
+                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
+                .thenReturn(1);
+        var reference = new DocumentAssetReferenceParser.ManagedAssetReference(WORKSPACE_ID, retainedAssetId);
+        when(assetReferenceParser.parse(retained)).thenReturn(Set.of(reference));
+
+        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), retained, 1L, null);
+
+        verify(assetReferenceSynchronizer).synchronize(
+                document.getId(), WORKSPACE_ID, Set.of(reference));
     }
 
     @Test
@@ -613,6 +648,7 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.changed()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.markdown()).isEqualTo(markdown);
         assertThat(response.updatedAt()).isEqualTo(document.getUpdatedAt());
         verify(documentRepository, never()).updateContentIfVersionMatches(
                 anyString(), anyString(), anyLong(), anyString(), anyLong(), any());
@@ -771,6 +807,7 @@ class DocumentServiceBlocksTest {
         assertThat(documentCaptor.getValue().getSourceUri()).isNull();
         assertThat(documentCaptor.getValue().getContentHash()).isNull();
         assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
+        verify(assetReferenceSynchronizer).copyReferences(source.getId(), response.id());
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
     }
 
