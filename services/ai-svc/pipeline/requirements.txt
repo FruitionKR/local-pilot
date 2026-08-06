@@ -1,0 +1,10 @@
+# Runtime dependencies
+# Python 3.10+ recommended.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+psycopg[binary]>=3.1
+minio>=7.2
+langgraph>=0.2
+langsmith>=0.3
+markdown-it-py>=3.0,<5.0
+aiokafka>=0.11

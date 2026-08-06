@@ -4,6 +4,30 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-06
+
+### feat: ingest Kafka worker 신설
+
+- `app/workers/ingest_worker.py` — `ai.ingest.command`를 소비해 기존 실행 경로
+  (`_run_pipeline_request`, run_id 주입 파라미터 추가)를 재사용하는 aiokafka worker.
+- 수동 커밋(처리 후), succeeded run 멱등 스킵, `max_poll_records=1` +
+  `max.poll.interval` 30분으로 분 단위 LLM 작업 중 리밸런싱 방지. heartbeat·결과는
+  기존 HTTP 콜백(X-Internal-Token) 유지.
+- 처리량 = worker 수 × partition(12). BackgroundTasks 배포 시 유실 문제 해소.
+
+### feat: pipeline 신뢰 경계 — 전 엔드포인트 내부 토큰 인증
+
+- 모든 라우터(pipeline/query/wiki-schema/documents 조회 포함)에 `X-Internal-Token`
+  검증 dependency를 적용했다(`INTERNAL_CALLBACK_TOKEN`, secrets.compare_digest,
+  미설정 시 fail-closed 503). `/health`만 제외.
+- backend로 보내는 콜백(query events, pipeline-events heartbeat)에도 같은 헤더를
+  부착했다. query events callback은 backend가 검증을 요구하는데 pipeline이 헤더를
+  보내지 않던 기존 결함이 함께 해소됐다.
+- wiki_page_links·document_wiki_links INSERT에 `workspace_id`를 포함한다
+  (V20 migration 대응, manifest의 workspace_id 사용).
+
+---
+
 ## 2026-08-04
 
 ### fix: 공통 LLM prompt injection과 숫자형 개인정보 방어 추가
