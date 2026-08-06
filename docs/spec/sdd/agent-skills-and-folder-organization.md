@@ -648,9 +648,9 @@ Skill 관리 화면은 수동 정의 입력과 짧은 자연어 authoring을 함
     선택한 회의록 문서 구조로 이후 회의록을 작성하는 Skill을 만들어줘.
 
     시스템:
-    1. Workspace·User 권한으로 참조 문서 metadata와 Markdown을 조회한다.
+    1. AgentRun Tool과 분리된 Skill authoring 전용 read endpoint에서 Workspace·User 권한으로 참조 문서 metadata와 Markdown을 조회한다.
     2. 입력과 참조의 크기·prompt injection을 먼저 검사한다.
-    3. 참조 Markdown을 명령이 아닌 비신뢰 구조 데이터로 LLM에 전달한다.
+    3. 참조 Markdown에서 heading·목록 marker·표 header 구조만 추출하고, 실제 문서명과 본문을 제외한 비신뢰 데이터로 LLM에 전달한다.
     4. 생성된 name, description, instructions, capability와 Tool을 다시 검사한다.
     5. 사용자에게 capability와 Tool을 제외한 Skill Markdown을 반환하고 disabled draft로 저장한다.
 

@@ -1039,15 +1039,37 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 | `instruction` | string | 예, 1~4,000자 | 구체화할 자연어 요청 |
 | `reference_document_ids` | string array | 아니오, 최대 3개 | 구조만 참고할 Markdown 문서 ID |
 
-참조 ID가 있으면 llmPipeline은 `get_document_metadata`, `get_document_content` read Tool로 Workspace·User 권한이 적용된 현재 문서를 조회한다. 현재 Spring Tool route가 미구현이므로 참조 있는 요청은 해당 route 구현 전까지 동작하지 않으며, 참조 없는 요청은 이 제약을 받지 않는다.
+참조 ID가 있으면 llmPipeline은 AgentRun Tool Gateway가 아닌 `POST /internal/agent/skill-authoring/references/read`로 Workspace·User 권한이 적용된 현재 문서를 조회한다. 자연어 Skill 작성에는 AgentRun이 없으므로 `run_id`를 만들거나 `/internal/agent/tools/read/*`의 run 검증을 우회하지 않는다. 현재 Spring 전용 route가 미구현이므로 참조 있는 요청은 구현 전까지 동작하지 않으며, 참조 없는 요청은 이 제약을 받지 않는다.
+
+#### 참조 문서 내부 조회 — `POST /internal/agent/skill-authoring/references/read`
+
+llmPipeline이 `X-Agent-Service-Token`과 다음 body를 보낸다.
+
+```json
+{
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "document_id": "doc_123"
+}
+```
+
+Spring은 service token과 현재 Workspace membership, Document 소속·read 권한을 검증한 뒤 다음 값만 반환한다.
+
+```json
+{
+  "markdown": "# 주간 회의록\n\n## 결정 사항"
+}
+```
+
+이 endpoint는 AgentRun 계획·승인·실행 endpoint가 아니다. `run_id`, `plan_id`, operation 정보와 mutation 권한을 받지 않으며 문서를 변경할 수 없다. 접근할 수 없는 문서는 `403` 또는 `404`, 잘못된 request는 `400`, 내부 장애는 `5xx`로 반환한다.
 
 입력·참조·LLM 출력은 다음 순서로 검사한다.
 
 1. 자연어와 참조 개수·개별/전체 Markdown 크기 검사
 2. 입력과 참조의 승인 우회·권한 상승·system prompt 탈취·역할 변경 marker 차단
-3. 참조를 system prompt와 분리된 비신뢰 user payload로 전달
+3. 참조에서 heading·목록 marker·표 header 구조만 추출하고 실제 문서명과 본문을 제외한 비신뢰 user payload로 전달
 4. 생성 결과의 필수 필드·길이·slug·capability·Tool 교집합 검사
-5. 참조 ID 고정값과 위험 instruction을 다시 차단한 뒤 disabled draft 저장
+5. 참조 ID 고정값, credential 형태와 위험 instruction을 다시 차단한 뒤 disabled draft 저장
 
 #### 생성 요청
 
@@ -3330,8 +3352,9 @@ llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API
 
 - `POST /internal/agent/tools/read/{tool_name}`
 - `POST /internal/agent/tools/execute/{tool_name}`
+- `POST /internal/agent/skill-authoring/references/read` — AgentRun 없는 Skill 참조 문서 전용 조회
 
-하지만 Spring에 두 route를 처리하는 Controller가 없다. Agent Worker가 실행되면 현재 `404`가 발생한다.
+하지만 Spring에 세 route를 처리하는 Controller가 없다. Agent Worker가 실행되거나 참조 문서 기반 Skill authoring을 호출하면 현재 `404`가 발생한다.
 
 ### Agent Run clarification 응답 정보 부족
 

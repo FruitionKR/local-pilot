@@ -120,6 +120,36 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_draft_proposal")
 
+    def test_retries_completed_work_misrouted_as_new_skill_authoring(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("skill_draft_proposal"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(AgentTurnRequest(message="방금 방식으로 스킬을 만들어줘"))
+
+        self.assertEqual(route.action, "skill_draft_proposal")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "completed work must use skill_draft_proposal instead of skill_authoring",
+            retry_payload["contract_failures"],
+        )
+
+    def test_rejects_repeated_completed_work_authoring_misroute(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("skill_authoring"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaises(AgentTurnRouteContractError):
+            router.route(AgentTurnRequest(message="이전 작업 방식으로 스킬을 만들어줘"))
+
     def test_sends_skill_candidates_and_normalizes_selected_skill(self) -> None:
         response = route_response("folder_organize")
         response["selected_skill_id"] = "skill-1"

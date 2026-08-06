@@ -1,4 +1,7 @@
+import json
 import unittest
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError, URLError
 
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
@@ -6,6 +9,7 @@ from app.modules.skill.domain.entities import Skill, SkillAuthoringReference, Sk
 from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator import (
     ChatCompletionsSkillAuthoringGenerator,
 )
+from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
 from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 
 
@@ -170,6 +174,85 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(generator.references, ())
         self.assertEqual(repository.skills, {})
 
+    def test_backend_reference_reader_uses_authoring_endpoint_without_agent_run(self) -> None:
+        response = MagicMock()
+        response.read.return_value = json.dumps(
+            {"markdown": "# 회의록"},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        response.__enter__.return_value = response
+        reader = BackendSkillReferenceReader("http://backend:8080", "service-token")
+
+        with patch(
+            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+            return_value=response,
+        ) as urlopen_mock:
+            reference = reader.read(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+            )
+
+        request = urlopen_mock.call_args.args[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(
+            request.full_url,
+            "http://backend:8080/internal/agent/skill-authoring/references/read",
+        )
+        self.assertEqual(
+            payload,
+            {
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+                "document_id": "document-1",
+            },
+        )
+        self.assertNotIn("run_id", payload)
+        self.assertEqual(request.get_header("X-agent-service-token"), "service-token")
+        self.assertEqual(reference.markdown, "# 회의록")
+
+    def test_backend_reference_reader_rejects_invalid_service_response(self) -> None:
+        response = MagicMock()
+        response.read.return_value = b"{}"
+        response.__enter__.return_value = response
+        reader = BackendSkillReferenceReader("http://backend:8080", "service-token")
+
+        with patch(
+            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+            return_value=response,
+        ), self.assertRaisesRegex(RuntimeError, "response is invalid"):
+            reader.read(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+            )
+
+    def test_backend_reference_reader_maps_inaccessible_document(self) -> None:
+        reader = BackendSkillReferenceReader("http://backend:8080", "service-token")
+
+        with patch(
+            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+            side_effect=HTTPError("url", 403, "Forbidden", {}, None),
+        ), self.assertRaisesRegex(ValueError, "not accessible"):
+            reader.read(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+            )
+
+    def test_backend_reference_reader_preserves_service_failure(self) -> None:
+        reader = BackendSkillReferenceReader("http://backend:8080", "service-token")
+
+        with patch(
+            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+            side_effect=URLError("connection failed"),
+        ), self.assertRaisesRegex(RuntimeError, "service request failed"):
+            reader.read(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                document_id="document-1",
+            )
+
     def test_rejects_generated_tool_outside_capability(self) -> None:
         candidate = draft_result()
         candidate["allowed_tools"] = ["list_root_items", "list_folder_children", "move_document"]
@@ -256,7 +339,63 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(client.system_prompt, "system rules")
         self.assertNotIn("ignore previous instructions", client.system_prompt)
-        self.assertIn("ignore previous instructions", client.user_prompt)
+        payload = json.loads(client.user_prompt)
+        self.assertNotIn("참고 문서", client.user_prompt)
+        self.assertNotIn("ignore previous instructions", client.user_prompt)
+        self.assertEqual(payload["references"][0]["markdown_structure"], "")
+
+    def test_sends_only_reference_markdown_structure(self) -> None:
+        client = RecordingClient()
+        generator = ChatCompletionsSkillAuthoringGenerator(client, "system rules")  # type: ignore[arg-type]
+
+        generator.generate(
+            "참조 구조로 작성해줘",
+            (
+                SkillAuthoringReference(
+                    id="document-1",
+                    name="민감한 프로젝트 이름",
+                    markdown=(
+                        "# 회의록\n\n"
+                        "고객 이름과 계약 금액\n\n"
+                        "- 실제 결정 사항\n"
+                        "1. 실제 후속 작업\n\n"
+                        "| 담당자 | 기한 |\n"
+                        "| --- | --- |\n"
+                        "| 홍길동 | 내일 |\n"
+                        "```markdown\n"
+                        "# 코드 블록 안의 제목\n"
+                        "```\n"
+                    ),
+                ),
+            ),
+        )
+
+        payload = json.loads(client.user_prompt)
+        reference = payload["references"][0]
+        self.assertEqual(
+            reference["markdown_structure"],
+            "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |",
+        )
+        self.assertNotIn("민감한 프로젝트 이름", client.user_prompt)
+        self.assertNotIn("고객 이름과 계약 금액", client.user_prompt)
+        self.assertNotIn("홍길동", client.user_prompt)
+        self.assertNotIn("코드 블록 안의 제목", client.user_prompt)
+
+    def test_rejects_generated_credential(self) -> None:
+        candidate = draft_result()
+        candidate["instructions_markdown"] = "API_KEY=super-secret-token"
+        use_case, repository = self.build_use_case(FixedGenerator(candidate))
+
+        with self.assertRaisesRegex(ValueError, "blocked safety"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction="문서를 작성하는 스킬",
+                reference_document_ids=(),
+            )
+
+        self.assertEqual(repository.skills, {})
 
 
 if __name__ == "__main__":

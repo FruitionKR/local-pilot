@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 
@@ -28,6 +29,16 @@ BLOCKED_INSTRUCTION_MARKERS = {
     ),
     "role_override": ("act as system", "developer message로 행동", "시스템 역할로 행동"),
 }
+CREDENTIAL_PATTERNS = (
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", re.IGNORECASE),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(
+        r"\b(?:api[_ -]?key|access[_ -]?token|client[_ -]?secret|password)\s*[:=]\s*['\"]?[^\s'\"]{8,}",
+        re.IGNORECASE,
+    ),
+)
 
 
 def inspect_skill_instructions(instructions_markdown: str) -> tuple[SkillSafetyIssue, ...]:
@@ -43,4 +54,12 @@ def inspect_skill_instructions(instructions_markdown: str) -> tuple[SkillSafetyI
                     reason="Skill은 시스템 권한·승인·tool 정책을 변경할 수 없습니다.",
                 )
             )
+    if any(pattern.search(instructions_markdown) for pattern in CREDENTIAL_PATTERNS):
+        issues.append(
+            SkillSafetyIssue(
+                category="credential",
+                text="[credential]",
+                reason="Skill에는 인증정보를 포함할 수 없습니다.",
+            )
+        )
     return tuple(issues)

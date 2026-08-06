@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 from app.core.llm_env import (
@@ -18,6 +19,9 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 
 
 DEFAULT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_authoring.system.md"
+HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}\s+\S")
+LIST_ITEM_PATTERN = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+\S")
+TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$")
 
 
 class ChatCompletionsSkillAuthoringGenerator:
@@ -37,8 +41,7 @@ class ChatCompletionsSkillAuthoringGenerator:
                     "instruction": instruction,
                     "references": [
                         {
-                            "name": reference.name,
-                            "markdown": reference.markdown,
+                            "markdown_structure": _extract_markdown_structure(reference.markdown),
                         }
                         for reference in references
                     ],
@@ -47,6 +50,34 @@ class ChatCompletionsSkillAuthoringGenerator:
                 indent=2,
             ),
         )
+
+
+def _extract_markdown_structure(markdown: str) -> str:
+    lines = markdown.splitlines()
+    structure: list[str] = []
+    fence_marker: str | None = None
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if fence_marker is None:
+                fence_marker = marker
+            elif fence_marker == marker:
+                fence_marker = None
+            continue
+        if fence_marker is not None:
+            continue
+        if HEADING_PATTERN.match(line):
+            structure.append(line.rstrip())
+            continue
+        list_item = LIST_ITEM_PATTERN.match(line)
+        if list_item:
+            marker = line[len(list_item.group(1)) :].split(maxsplit=1)[0]
+            structure.append(f"{list_item.group(1)}{marker} [item]")
+            continue
+        if index + 1 < len(lines) and "|" in line and TABLE_SEPARATOR_PATTERN.match(lines[index + 1]):
+            structure.extend((line.rstrip(), lines[index + 1].rstrip()))
+    return "\n".join(structure)
 
 
 def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:

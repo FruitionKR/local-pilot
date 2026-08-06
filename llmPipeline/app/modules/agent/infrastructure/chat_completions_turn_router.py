@@ -34,6 +34,11 @@ NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
     re.IGNORECASE,
 )
+COMPLETED_WORK_REQUEST_PATTERN = re.compile(
+    r"(?:방금|아까|이전|앞서).{0,20}(?:방식|작업|결과|과정|흐름)|"
+    r"(?:just now|earlier|previous).{0,30}(?:method|work|result|process|workflow)",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "markdown_edit",
@@ -179,8 +184,12 @@ def _requests_new_skill(message: str) -> bool:
 
 
 def _skill_authoring_failures(route: AgentTurnRoute, message: str) -> list[str]:
-    if route.action == "skill_authoring" and not _requests_new_skill(message):
+    if route.action != "skill_authoring":
+        return []
+    if not _requests_new_skill(message):
         return ["skill_authoring requires an explicit request to create a new Skill"]
+    if COMPLETED_WORK_REQUEST_PATTERN.search(message):
+        return ["completed work must use skill_draft_proposal instead of skill_authoring"]
     return []
 
 

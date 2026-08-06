@@ -1,16 +1,16 @@
-from uuid import uuid4
+import json
+import os
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-from app.modules.agent_run.application.ports import ToolGatewayError
-from app.modules.agent_run.infrastructure.backend_tool_gateway import (
-    BackendToolGateway,
-    build_backend_tool_gateway,
-)
 from app.modules.skill.domain.entities import SkillAuthoringReference
 
 
 class BackendSkillReferenceReader:
-    def __init__(self, gateway: BackendToolGateway) -> None:
-        self._gateway = gateway
+    def __init__(self, base_url: str, service_token: str, timeout_seconds: int = 30) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._service_token = service_token
+        self._timeout_seconds = timeout_seconds
 
     def read(
         self,
@@ -19,30 +19,45 @@ class BackendSkillReferenceReader:
         user_id: str,
         document_id: str,
     ) -> SkillAuthoringReference:
-        request_id = f"skill-authoring-{uuid4()}"
+        request = Request(
+            self._base_url + "/internal/agent/skill-authoring/references/read",
+            data=json.dumps(
+                {
+                    "workspace_id": workspace_id,
+                    "user_id": user_id,
+                    "document_id": document_id,
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "X-Agent-Service-Token": self._service_token,
+            },
+            method="POST",
+        )
         try:
-            metadata = self._gateway.read(
-                "get_document_metadata",
-                run_id=request_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                arguments={"document_id": document_id},
-            )
-            content = self._gateway.read(
-                "get_document_content",
-                run_id=request_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                arguments={"document_id": document_id},
-            )
-        except ToolGatewayError as exc:
-            raise ValueError("Reference document is not accessible.") from exc
-        name = metadata.get("name") or metadata.get("display_name")
-        markdown = content.get("content") or content.get("markdown")
-        if not isinstance(name, str) or not isinstance(markdown, str):
-            raise ValueError("Reference document response is invalid.")
-        return SkillAuthoringReference(id=document_id, name=name, markdown=markdown)
+            with urlopen(request, timeout=self._timeout_seconds) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code in {400, 403, 404}:
+                raise ValueError("Reference document is not accessible.") from exc
+            raise RuntimeError("Skill reference service request failed.") from exc
+        except (URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Skill reference service request failed.") from exc
+        if not isinstance(value, dict):
+            raise RuntimeError("Skill reference service response is invalid.")
+        markdown = value.get("markdown")
+        if not isinstance(markdown, str):
+            raise RuntimeError("Skill reference service response is invalid.")
+        return SkillAuthoringReference(id=document_id, name="", markdown=markdown)
 
 
 def build_skill_reference_reader() -> BackendSkillReferenceReader:
-    return BackendSkillReferenceReader(build_backend_tool_gateway())
+    token = os.environ.get("AGENT_INTERNAL_TOKEN")
+    if not token:
+        raise RuntimeError("Set AGENT_INTERNAL_TOKEN for Skill reference reads.")
+    return BackendSkillReferenceReader(
+        os.environ.get("AGENT_BACKEND_URL", "http://backend:8080"),
+        token,
+        int(os.environ.get("AGENT_TOOL_TIMEOUT_SECONDS", "30")),
+    )
