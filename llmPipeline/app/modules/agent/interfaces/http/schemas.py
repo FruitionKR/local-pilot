@@ -1,7 +1,8 @@
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from app.core.untrusted_input import validate_untrusted_payload
 from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
     AgentConversationContext,
@@ -13,6 +14,9 @@ from app.modules.skill.interfaces.http.schemas import (
     SkillDraftProposalResponse,
     SkillDraftSourceRunRequest,
 )
+
+
+MAX_AGENT_MESSAGE_LENGTH = 1000
 
 
 class MarkdownEditTargetRequest(BaseModel):
@@ -51,7 +55,7 @@ class AgentConversationContextRequest(BaseModel):
 
 
 class AgentTurnRequestBody(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=MAX_AGENT_MESSAGE_LENGTH)
     workspace_id: str | None = Field(default=None, min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
     conversation_context: AgentConversationContextRequest | None = None
@@ -61,6 +65,11 @@ class AgentTurnRequestBody(BaseModel):
     skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
     skill_draft_user_directives: list[str] = Field(default_factory=list)
     skill_draft_excluded_literals: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_untrusted_input(self) -> Self:
+        validate_untrusted_payload(self.model_dump(mode="json"))
+        return self
 
     def to_domain(self) -> AgentTurnRequest:
         return AgentTurnRequest(
