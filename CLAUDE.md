@@ -80,7 +80,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 커밋을 생성하거나 준비할 때는 반드시 `commit` 스킬(`.claude/skills/commit/SKILL.md`)의 절차를 따른다.
 - PR을 생성하거나 준비할 때는 반드시 `pr` 스킬(`.claude/skills/pr/SKILL.md`)의 절차를 따른다.
-- 코드 리뷰: 사용자가 "PR 리뷰"라고 명시적으로 지칭하거나 PR 번호를 줄 때만 `review` 스킬(`.claude/skills/review/SKILL.md`)을 사용한다. 그 외 일반 리뷰 요청은 스킬 없이 커밋된 코드(HEAD) 및 `origin/dev` 로그와 비교해 수정된 코드를 직접 검토한다(`git diff HEAD`, `git diff origin/dev...HEAD`).
+- 코드 리뷰: 사용자가 "PR 리뷰"라고 명시적으로 지칭하거나 PR 번호/URL을 줄 때만 `review` 스킬(`.claude/skills/review/SKILL.md`)을 사용한다. 그 외 일반 리뷰 요청은 스킬 없이 커밋된 코드(HEAD) 및 `origin/dev` 로그와 비교해 수정된 코드를 직접 검토한다(`git diff HEAD`, `git diff origin/dev...HEAD`, 신규 파일은 `git status --short`로 확인).
 
 ## 8. 이슈 문서 관리
 
