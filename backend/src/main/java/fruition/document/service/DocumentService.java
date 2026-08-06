@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.util.StorageProperties;
 import fruition.document.domain.Document;
 import fruition.document.domain.DocumentEditState;
+import fruition.document.domain.DocumentAsset;
 import fruition.document.domain.DocumentProcessingState;
 import fruition.document.domain.DocumentRole;
 import fruition.document.domain.DocumentStatus;
@@ -31,6 +32,7 @@ import fruition.document.domain.DocumentContentVersion;
 import fruition.document.domain.DocumentContentVersionId;
 import fruition.document.exception.DocumentContentVersionNotFoundException;
 import fruition.document.repository.DocumentContentVersionRepository;
+import fruition.document.repository.DocumentAssetRepository;
 import fruition.document.dto.DocumentDuplicateResponse;
 import fruition.document.dto.DocumentListResponse;
 import fruition.document.dto.DocumentLifecycleRequest;
@@ -117,6 +119,9 @@ public class DocumentService {
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    private final DocumentAssetReferenceParser assetReferenceParser;
+    private final DocumentAssetRepository assetRepository;
     private final ObjectMapper objectMapper;
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
@@ -141,6 +146,9 @@ public class DocumentService {
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
+                           DocumentAssetReferenceSynchronizer assetReferenceSynchronizer,
+                           DocumentAssetReferenceParser assetReferenceParser,
+                           DocumentAssetRepository assetRepository,
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
@@ -164,6 +172,9 @@ public class DocumentService {
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.assetReferenceSynchronizer = assetReferenceSynchronizer;
+        this.assetReferenceParser = assetReferenceParser;
+        this.assetRepository = assetRepository;
         this.objectMapper = objectMapper;
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
@@ -365,6 +376,7 @@ public class DocumentService {
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
                 duplicateId, content.markdown(), content.contentHash()));
+        assetReferenceSynchronizer.copyReferences(documentId, duplicateId);
 
         DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
         saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
@@ -1023,7 +1035,9 @@ public class DocumentService {
                     document.getCurrentVersion(),
                     document.getCurrentContentHash(),
                     document.getUpdatedAt(),
-                    false
+                    false,
+                    editState.getMarkdown(),
+                    List.of()
             );
         }
 
@@ -1039,6 +1053,10 @@ public class DocumentService {
         if (updated == 0) {
             throw conditionalUpdateFailure(workspaceId, documentId);
         }
+        // 이미지를 첨부하지 않는 저장에서도 본문에 남은 관리 이미지를 기준으로 참조를 맞춘다.
+        // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
+        assetReferenceSynchronizer.synchronize(
+                documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
         String previousMarkdown = editState.getMarkdown();
         recordContentVersion(documentId, baseVersion, previousMarkdown,
                 editState.getContentHash(), userId, updatedAt);
@@ -1059,8 +1077,88 @@ public class DocumentService {
                 baseVersion + 1,
                 content.contentHash(),
                 updatedAt,
-                true
+                true,
+                content.markdown(),
+                List.of()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public void validateContentSave(
+            String workspaceId, String userId, String documentId, long baseVersion,
+            String applyOperationId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
+        }
+        editLockService.requireWritable(documentId, userId);
+        if (document.getCurrentVersion() != baseVersion) {
+            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                operationRecorder.recordConflict(
+                        applyOperationId, workspaceId, userId, documentId, Instant.now());
+            }
+            throw versionConflict();
+        }
+    }
+
+    @Transactional
+    public DocumentContentSaveResponse saveContentWithAssets(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            long baseVersion,
+            Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
+            String applyOperationId
+    ) {
+        validateContentSave(workspaceId, userId, documentId, baseVersion, applyOperationId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState editState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        if (content.hasSameContent(document.getCurrentContentHash())) {
+            return new DocumentContentSaveResponse(
+                    documentId, document.getCurrentVersion(), document.getCurrentContentHash(),
+                    document.getUpdatedAt(), false, editState.getMarkdown(), List.of());
+        }
+
+        Instant updatedAt = Instant.now();
+        int updated = documentRepository.updateContentIfVersionMatches(
+                documentId, workspaceId, baseVersion, content.contentHash(), content.bytes().length, updatedAt);
+        if (updated == 0) throw conditionalUpdateFailure(workspaceId, documentId);
+
+        List<DocumentAsset> assets = storedAssets.values().stream()
+                .map(stored -> new DocumentAsset(
+                        stored.assetId(), workspaceId, userId,
+                        stored.validated().originalFilename(), stored.validated().contentType(),
+                        stored.validated().bytes().length, stored.validated().width(), stored.validated().height(),
+                        stored.validated().contentHash(), stored.objectKey(), updatedAt))
+                .toList();
+        assetRepository.saveAll(assets);
+        assetRepository.flush();
+        assetReferenceSynchronizer.synchronize(
+                documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
+
+        String previousMarkdown = editState.getMarkdown();
+        recordContentVersion(documentId, baseVersion, previousMarkdown,
+                editState.getContentHash(), userId, updatedAt);
+        editState.update(content.markdown(), content.contentHash(), updatedAt);
+        recordContentVersion(documentId, baseVersion + 1, content.markdown(),
+                content.contentHash(), userId, updatedAt);
+        if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+            operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                    baseVersion, baseVersion + 1, previousMarkdown, content.markdown(), updatedAt);
+            contentVersionRepository.linkOperation(documentId, baseVersion + 1, applyOperationId);
+        }
+        return new DocumentContentSaveResponse(
+                documentId, baseVersion + 1, content.contentHash(), updatedAt,
+                true, content.markdown(), List.of());
     }
 
     private void recordContentVersion(String documentId, long version, String markdown,

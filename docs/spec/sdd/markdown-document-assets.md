@@ -192,24 +192,24 @@ MinIO와 PostgreSQL은 단일 트랜잭션이 아니므로 object 선저장 후 
 
 | 영역 | 검증 방법 | 결과 |
 |---|---|---|
-| schema·reference | Testcontainers 통합 테스트 | Pending |
-| 이미지 형식·크기 | 단위·악성 fixture 테스트 | Pending |
-| multipart 저장 | Controller 통합 테스트 | Pending |
-| MinIO 보상 | storage 통합 테스트 | Pending |
-| 멤버 권한 | Security·API 테스트 | Pending |
-| 7일 정리 | worker 통합 테스트 | Pending |
-| ZIP | 실제 압축·경로 검증 | Pending |
+| schema·reference | Testcontainers 통합 테스트 | Pass |
+| 이미지 형식·크기 | 단위·악성 fixture 테스트 | Pass |
+| multipart 저장 | Controller·service 테스트 | Pass |
+| MinIO 보상 | storage coordinator·orphan 테스트 | Pass |
+| 멤버 권한 | service·API header 테스트 | Pass |
+| 7일 정리 | worker·PostgreSQL schema 테스트 | Pass |
+| ZIP | 실제 압축·경로 검증 | Pass |
 | Blob 표시 | 프론트 컴포넌트 테스트 | Pending |
 
 ## 9. 미결정 사항
 
-- 이미지 검증 Java 라이브러리
-- GFM parser 라이브러리
-- 임시 ZIP 경로와 서버 용량 제한
+- 이미지 검증은 Java ImageIO와 WebP 구조 검증을 사용한다.
+- GFM parser는 CommonMark를 사용한다.
+- 임시 ZIP은 시스템 임시 경로에서 완성 후 삭제하며 이미지 100개·합계 100MB를 제한한다.
 - asset 실패 지표와 알림 기준
 
 ## 10. 결과
 
-- 검증일:
-- 최종 상태: Pending
-- 후속 작업: [`markdown-document-sharing.md`](./markdown-document-sharing.md)의 token 기반 공개 이미지 접근 계약
+- 검증일: 2026-08-05
+- 최종 상태: Backend Complete, Frontend Blob 표시 Pending
+- 후속 작업: Frontend JWT Blob renderer와 [`markdown-document-sharing.md`](./markdown-document-sharing.md)의 token 기반 공개 이미지 접근 계약

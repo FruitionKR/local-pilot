@@ -6,6 +6,202 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-06
+
+### refactor: 이미지 asset placeholder 대응 정리와 UUID version 제약 완화
+
+**배경**
+
+- 이미지 asset 계약 리뷰의 남은 지적 사항을 정리했다. 동작을 바꾸지 않는 구조 개선과, 프론트가
+  발급하는 placeholder UUID의 불필요한 제약 제거가 대상이다.
+
+**변경된 것**
+
+- `DocumentAssetValidator.validateAll`이 `List` 대신 `Map<UUID, MultipartFile>`을 받고
+  `Map<UUID, ValidatedAsset>`을 돌려준다. 기존에는 호출부가 `keySet()`과 `values()`의 반복 순서가
+  일치한다는 가정으로 인덱스를 세어 placeholder와 검증 결과를 다시 짝지었다. `Map.copyOf`는 반복
+  순서를 보장하지 않아 가정에 기대는 구조였다.
+- placeholder UUID 정규식에서 version(`1-5`)과 variant 제약을 제거하고 UUID 형태만 강제한다.
+  프론트가 UUIDv7 등을 발급하면 저장이 `400`으로 거절되던 문제를 없앤다. `UUID.fromString` 검증과
+  placeholder–file part 1:1 대응 검사는 그대로 유지된다.
+- 외부 호출자가 없던 `DocumentService.validateContentSave` 4-arg 오버로드를 제거했다.
+- `DocumentController`와 `DocumentExportService`의 인라인 FQN(`fruition.document.exception....`,
+  `java.io.IOException`)을 import로 정리하고, 컨트롤러 지역 변수명을 실제 의미에 맞춰
+  `attachments`에서 `fileParts`로 바꿨다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- placeholder–검증 결과 대응과 v4가 아닌 UUID 수용을 단위 테스트로 추가 검증했다.
+
+### fix: 문서 내보내기 스트리밍 전환과 저장 응답 최종 Markdown 정합
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 내보내기 응답이 ZIP 전체를 힙에 올리는 문제와, 저장 응답의
+  `markdown` 필드가 요청 형식에 따라 달라지는 문제를 확인했다.
+
+**수정된 것**
+
+- `DocumentExportResult`가 `byte[]` 대신 `contentLength`와 `InputStream`을 전달한다. 기존에는
+  임시 파일에 ZIP을 스트리밍으로 완성한 뒤 `Files.readAllBytes`로 최대 100MB를 다시 힙에 올려,
+  임시 파일을 쓴 이점이 사라지고 동시 내보내기에서 메모리 사용량이 선형으로 늘었다. 임시 파일은
+  `StandardOpenOption.DELETE_ON_CLOSE`로 응답 stream이 닫힐 때 함께 정리한다.
+- 내보내기의 DB 조회와 ZIP 생성을 분리했다. 기존에는 `@Transactional(readOnly = true)` 안에서
+  최대 100MB를 MinIO에서 내려받아 그동안 DB 커넥션을 붙잡았다. 이제 조회만 짧은 트랜잭션에서
+  수행하고 다운로드와 압축은 트랜잭션 밖에서 한다.
+- 이미지 없이 저장하는 경로도 응답에 최종 Markdown을 담는다. 기존에는 `metadata` multipart 저장만
+  `markdown`을 채우고 `markdown` part 저장은 `null`을 반환해, `docs/spec/api/document.md`의 응답
+  계약과 어긋났고 프론트가 저장 형식별로 분기해야 했다. no-op 저장도 서버가 가진 현재 본문을
+  반환한다.
+
+**주의사항**
+
+- 내보내기 트랜잭션이 쪼개지면서 조회들이 하나의 스냅샷이 아니게 된다. asset 누락 시 `422`로
+  전체 실패하므로 불완전한 ZIP은 나가지 않는다.
+- HTTP 응답 형식은 바뀌지 않는다. 저장 응답의 `markdown`은 스키마에 이미 있던 필드이며 값이
+  `null`에서 실제 본문으로 채워질 뿐이다.
+- Markdown 본문에 raw HTML `<img>`로 관리 이미지 경로를 적으면 참조로 인식되지 않는다. 관리
+  이미지는 인증이 필요해 `<img src>`로 표시되지 않고 SDD가 raw HTML 미실행과 CommonMark 사용을
+  명시하므로 현행 유지로 결정했다. 프론트 이미지 렌더러 작업 시 입력 단계에서 막는다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- 내보내기 stream 길이와 ZIP 내용, 일반 저장·no-op 응답의 `markdown`을 단위 테스트로 검증했다.
+
+### refactor: 이미지 asset 조회와 정리 worker의 object storage 호출 범위 축소
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 object storage 호출이 필요 이상으로 일찍 실행되거나 DB 트랜잭션
+  안에서 수행되는 지점 두 곳을 확인했다.
+
+**변경된 것**
+
+- `DocumentAssetReadService.read`를 `readMetadata`와 `openStream`으로 나눴다. ETag는 DB의 content
+  hash에서 나오므로 조건부 요청 판정에 object storage가 필요 없는데, 기존에는 `304`로 응답할
+  경우에도 MinIO에서 object를 먼저 받아온 뒤 닫았다.
+- 이미지 정리 worker의 트랜잭션을 쪼갰다. 기존에는 하나의 `@Transactional` 안에서 asset 100건과
+  orphan 100건, 최대 200회의 MinIO 삭제를 수행해 그동안 DB 커넥션과 row lock을 붙잡았다. 이제
+  후보 조회와 row 삭제만 짧은 트랜잭션에서 처리하고 MinIO 삭제는 트랜잭션 밖에서 수행한다.
+  기존 `DocumentProcessingWorker`의 `TransactionTemplate` 패턴을 따랐다.
+- `FOR UPDATE SKIP LOCKED` native 잠금 쿼리 두 개와 사용처가 없던 조회 메서드 두 개를 제거하고
+  derived query로 통일했다.
+
+**주의사항**
+
+- 잠금 쿼리 제거로 여러 인스턴스가 같은 정리 후보를 동시에 집을 수 있다. MinIO `removeObject`와
+  `deleteById` 모두 멱등이라 결과는 같다.
+- HTTP 응답 형식(상태 코드·헤더·본문)은 바뀌지 않아 프론트 영향이 없다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- `304` 응답에서 object stream을 열지 않는지, 정리 worker가 storage 삭제 성공·실패별로 row를
+  어떻게 처리하는지 단위 테스트로 검증했다.
+
+### fix: 일반 Markdown 저장의 asset 참조 동기화와 이미지 용량 한도 정합 수정
+
+**배경**
+
+- 이미지 asset 계약 리뷰에서 저장 경로가 `metadata` multipart와 `markdown` part 둘로 갈리면서 생긴
+  정합성 문제 두 건을 확인했다.
+
+**수정된 것**
+
+- 이미지를 첨부하지 않는 일반 저장(`DocumentService.saveContent`)에서도 본문을 기준으로 asset
+  reference를 동기화한다. 기존에는 `saveContentWithAssets`에서만 동기화해서, 본문에서 이미지를
+  지우고 저장해도 reference row가 남아 `unreferenced_since`가 찍히지 않았고 정리 worker가 해당
+  object를 영구히 삭제하지 못했다. 반대로 본문에 관리 이미지 경로를 새로 붙여도 reference가
+  생기지 않았다.
+- `spring.servlet.multipart.max-request-size`를 50MB에서 110MB로 올렸다. 이미지 합계 한도 100MB를
+  코드에서 검사하기 전에 Spring이 요청을 먼저 차단해, 계약상 `413 DOCUMENT_ASSET_TOO_LARGE`가
+  나가야 할 50~100MB 구간이 `400 INVALID_REQUEST "파일이 없거나 비어 있습니다."`로 응답됐다.
+- `MaxUploadSizeExceededException` 전용 handler를 추가해 multipart 한도 초과를
+  `413 PAYLOAD_TOO_LARGE`로 구분한다. 기존 `MultipartException` handler는 파일 누락 400 응답을
+  그대로 유지한다.
+
+**주의사항**
+
+- 일반 저장에도 참조 동기화가 걸리면서, 본문에 잘못된 관리 이미지 경로나 다른 workspace의 asset
+  경로가 있으면 이제 400으로 거절된다. 이미지 포함 저장 경로에는 이미 적용되던 규칙이며 두 경로의
+  동작을 일치시킨 것이다.
+- `max-request-size` 확대는 다른 multipart endpoint에도 적용된다. 파일 1개 한도는
+  `max-file-size=50MB`로 유지된다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+- 일반 저장의 참조 동기화 호출과 413/400 구분을 각각 단위 테스트로 추가했다.
+
+---
+
+## 2026-08-05
+
+### feat: Markdown 이미지 asset 저장 모델 추가
+
+**배경**
+
+- Markdown 본문과 신규 이미지를 원자 저장하기 위한 선행 단계로 asset metadata와 문서 참조 관계를
+  DB에서 추적할 기반이 필요했다.
+
+**추가된 것**
+
+- `document_assets`, `document_asset_references` 테이블과 workspace·사용자·문서 FK를 추가했다.
+- 참조 중 asset 삭제를 차단하고, 미참조 정리와 asset 기준 reference 조회 index를 추가했다.
+- asset과 복합키 reference JPA entity 및 repository를 추가했다.
+- 이미지 저장 `metadata` JSON과 `attachment_<uuid>` file part를 해석하고 placeholder 누락, 중복 file,
+  미사용 file과 잘못된 part를 거절하는 요청 parser를 추가했다.
+- PNG·JPEG·WebP·GIF signature와 decoder/구조, dimension, 개별 10MB, 요청당 20개·100MB 제한을
+  검증하고 검증된 MIME·SHA-256·원본 bytes를 만드는 이미지 검증기를 추가했다.
+- asset 전용 MinIO adapter와 저장 coordinator를 추가해 여러 이미지 저장 중 실패하면 이미 저장된
+  object를 보상 삭제하고, 삭제 하나가 실패해도 나머지 삭제를 계속 시도하도록 했다.
+- 보상 삭제 실패 object를 `document_asset_orphans`에 별도 transaction으로 기록해 이후 worker가
+  재시도할 수 있게 했다.
+- CommonMark 이미지 destination에서 관리 asset 참조를 추출하고 workspace batch 검증, 문서별
+  reference diff, 마지막 참조 제거·재참조 상태를 동기화하도록 했다.
+- Markdown 문서 복제 시 asset row와 MinIO object를 복사하지 않고 기존 asset reference만 복사한다.
+- `PUT /documents/{document_id}/content`에 `metadata` JSON과 `attachment_<uuid>` file part 저장 흐름을
+  연결했다. 저장 전후 version을 각각 확인하고 성공 시 치환된 Markdown과 attachment–asset 매핑을
+  반환한다.
+- 문서 본문·asset row·reference를 한 DB transaction에서 갱신하고 DB 실패나 version 충돌에는 이번
+  요청에서 선저장한 MinIO object를 보상 삭제한다.
+- 이미지 포함 저장도 `apply_operation_id`를 전달받아 AI 편집 성공 또는 version 충돌 작업 로그를
+  일반 Markdown 저장과 같은 기준으로 기록한다.
+- workspace 멤버 전용 이미지 조회 endpoint를 추가했다. 비멤버·다른 workspace asset은 `404`로
+  처리하고 검증 MIME·길이·private cache·ETag·`nosniff`와 조건부 `304` 응답을 제공한다.
+- 7일 이상 미참조 이미지와 7일 경과 보상 삭제 orphan을 `FOR UPDATE SKIP LOCKED` batch로 정리하는 worker를
+  추가했다. MinIO 삭제에 성공한 경우만 DB row를 제거하고 실패 항목은 다음 실행에서 재시도한다.
+- 관리 이미지가 있는 Markdown 내보내기를 ZIP으로 확장했다. 관리 URL을 로컬 상대 경로로 치환하고
+  파일명 충돌, 100개·100MB 제한, asset 누락과 MinIO 실패를 완성 전 검증하며 외부 URL은 fetch하지 않는다.
+- multipart Controller가 알 수 없는 업로드 file part를 버리지 않고 parser 검증으로 전달하도록 수정해
+  잘못된 part 이름이 조용히 무시되지 않게 했다. API·OpenAPI와 SDD 요구사항 추적 결과도 갱신했다.
+
+**검증**
+
+- `DocumentEditingSchemaIntegrationTest`로 migration 적용과 참조 중 asset 삭제 차단을 검증했다.
+- `DocumentAssetSaveRequestParserTest`로 정상 매핑, 이미지 없는 요청과 잘못된 multipart 조합을 검증했다.
+- `DocumentAssetValidatorTest`로 MIME 위장, SVG·손상 파일 거절, PNG/JPEG/GIF/WebP dimension,
+  GIF bytes 보존과 개수·크기 제한을 검증했다.
+- `DocumentAssetStorageCoordinatorTest`로 정상 object key 생성, 중간 저장 실패 보상과 일부 삭제 실패
+  시 전체 삭제 시도를 검증했다.
+- schema 통합 테스트로 orphan 테이블 migration을 검증했다.
+- parser·synchronizer·문서 복제 테스트로 코드 블록/일반 링크 제외, 중복 참조, workspace 격리,
+  reference 추가·제거와 복제 동작을 검증했다.
+- asset 저장 orchestration과 Controller 테스트로 placeholder 치환, 최종 응답, 충돌 보상과 기존
+  이미지 없는 저장의 하위 호환을 검증했다.
+- asset 조회 service·Controller 테스트로 멤버 stream, 비멤버·workspace 격리, 보안·cache header와
+  ETag 조건부 응답을 검증했다.
+- 정리 worker 테스트로 7일 기준 조회, object 선삭제 순서, MinIO 실패 시 asset row 유지와 orphan
+  retry metadata 갱신을 검증했다.
+- 내보내기 service·Controller 테스트로 기존 `.md` 호환, ZIP MIME·entry·경로 치환·파일명 충돌,
+  외부 URL 유지, 누락 asset과 개수·합계 용량 제한을 검증했다.
+- Markdown 5MB와 이미지 제한의 `413` 오류 코드 분리, 잘못된 multipart file part 전달을 검증하고
+  Backend 전체 테스트, `flywayValidate`, `git diff --check`를 통과했다.
+
+---
+
 ## 2026-08-04
 
 ### fix: 복구 callback 삭제 대상을 지시서와 대조
@@ -652,7 +848,6 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 - 아직 어떤 서비스도 이 테이블을 쓰지 않는다. 기록·조회·복구는 후속 작업에서 붙인다.
 - 설계와 작업 계획은 `docs/design/ai-operation-log.md`와 `ai-operation-log-tasks.md`를 따른다.
-
 ---
 
 ## 2026-07-30
