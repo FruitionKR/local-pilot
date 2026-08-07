@@ -11,14 +11,12 @@ from app.modules.skill.interfaces.http.dependencies import (
     get_skill_repository,
 )
 from app.modules.skill.interfaces.http.schemas import (
-    CreateSkillRequest,
     PublishAuthoredSkillRequest,
     SkillAuthoringRequest,
     SkillAuthoringResponse,
     SkillActorRequest,
     SkillDefinitionRequest,
     SkillDraftProposalRequest,
-    SkillDraftProposalResponse,
     SkillPreviewResponse,
     SkillResponse,
     UpdateSkillRequest,
@@ -69,20 +67,27 @@ def publish_authored_skill(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/draft-from-runs/preview", response_model=SkillDraftProposalResponse)
+@router.post("/draft-from-runs/preview", response_model=SkillAuthoringResponse)
 def propose_skill_draft(
     payload: SkillDraftProposalRequest,
     use_case: ProposeSkillDraftUseCase = Depends(get_propose_skill_draft_use_case),
-) -> SkillDraftProposalResponse:
+    authorer: AuthorSkillUseCase = Depends(get_author_skill_use_case),
+) -> SkillAuthoringResponse:
     try:
         proposal = use_case.execute(
             source_runs=tuple(source.to_domain() for source in payload.source_runs),
             user_directives=tuple(payload.user_directives),
             excluded_literals=tuple(payload.excluded_literals),
         )
+        reviewed = authorer.review_draft(
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
+            scope_type=payload.scope_type,
+            draft=proposal,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillDraftProposalResponse.from_domain(proposal)
+    return SkillAuthoringResponse.from_domain(reviewed)
 
 
 @router.post("/preview", response_model=SkillPreviewResponse)
@@ -102,28 +107,6 @@ def preview_skill(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SkillPreviewResponse.from_domain(version)
-
-
-@router.post("", response_model=SkillResponse)
-def create_skill(
-    payload: CreateSkillRequest,
-    use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
-) -> SkillResponse:
-    try:
-        skill = use_case.create_published(
-            workspace_id=payload.workspace_id,
-            user_id=payload.user_id,
-            scope_type=payload.scope_type,
-            slug=payload.slug,
-            name=payload.name,
-            description=payload.description,
-            instructions_markdown=payload.instructions_markdown,
-            capabilities=tuple(payload.capabilities),
-            allowed_tools=tuple(payload.allowed_tools),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillResponse.from_domain(skill)
 
 
 @router.get("", response_model=list[SkillResponse])
@@ -148,26 +131,24 @@ def get_skill(
     return SkillResponse.from_domain(skill)
 
 
-@router.patch("/{skill_id}", response_model=SkillResponse)
+@router.patch("/{skill_id}", response_model=SkillAuthoringResponse)
 def update_skill(
     skill_id: str,
     payload: UpdateSkillRequest,
-    use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
-) -> SkillResponse:
+    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
+) -> SkillAuthoringResponse:
     try:
-        skill = use_case.update_published(
+        result = use_case.update(
             workspace_id=payload.workspace_id,
             user_id=payload.user_id,
             skill_id=skill_id,
             name=payload.name,
             description=payload.description,
             instructions_markdown=payload.instructions_markdown,
-            capabilities=tuple(payload.capabilities),
-            allowed_tools=tuple(payload.allowed_tools),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillResponse.from_domain(skill)
+    return SkillAuthoringResponse.from_domain(result)
 
 
 @router.post("/{skill_id}/enable", response_model=SkillResponse)

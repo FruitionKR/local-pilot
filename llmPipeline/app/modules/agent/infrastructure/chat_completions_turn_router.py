@@ -44,6 +44,13 @@ PUBLISH_SKILL_PATTERN = re.compile(
     r"\b(?:publish|post)\b",
     re.IGNORECASE,
 )
+PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
+    r"보안\s*(?:재)?검토|다시\s*검증|security\s*(?:re)?view|"
+    r"(?:AI로\s*)?재생성|다시\s*(?:만들어|작성)|regenerate|"
+    r"(?:제목|이름|커맨드|식별자).*(?:바꿔|변경|수정)|"
+    r"(?:개인|팀)(?:\s*(?:스킬|skill))?(?:로|으로)?\s*(?:해|바꿔|변경|수정)",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "markdown_edit",
@@ -169,10 +176,15 @@ def build_agent_turn_router() -> AgentTurnRouterPort:
 
 def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     lowered = request.message.lower()
+    has_pending_proposal = bool(
+        request.conversation_context and request.conversation_context.pending_skill_proposal
+    )
     if (
-        request.conversation_context
-        and request.conversation_context.pending_skill_proposal
-        and PUBLISH_SKILL_PATTERN.search(lowered)
+        has_pending_proposal
+        and (
+            PUBLISH_SKILL_PATTERN.search(lowered)
+            or PENDING_SKILL_FOLLOWUP_PATTERN.search(lowered)
+        )
     ):
         return AgentTurnRoute(
             action="skill_authoring",

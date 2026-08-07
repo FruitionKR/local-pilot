@@ -95,7 +95,7 @@ class ManageSkillUseCase:
         capabilities: tuple[SkillCapability, ...],
         allowed_tools: tuple[SkillTool, ...],
     ) -> Skill:
-        skill = self._require_manageable(workspace_id, user_id, skill_id)
+        skill = self.get_manageable(workspace_id, user_id, skill_id)
         _validate_definition(
             name,
             name,
@@ -121,12 +121,12 @@ class ManageSkillUseCase:
         return self._repository.save_published_version(skill, version)
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
-        skill = self._require_manageable(workspace_id, user_id, skill_id)
+        skill = self.get_manageable(workspace_id, user_id, skill_id)
         if enabled and skill.enabled_version is None:
             raise ValueError("Publish a Skill version before enabling it.")
         return self._repository.set_enabled(workspace_id, user_id, skill_id, enabled)
 
-    def _require_manageable(self, workspace_id: str, user_id: str, skill_id: str) -> Skill:
+    def get_manageable(self, workspace_id: str, user_id: str, skill_id: str) -> Skill:
         skill = self._repository.get_manageable(workspace_id, user_id, skill_id)
         if skill is None:
             raise ValueError("Skill not found or not manageable.")

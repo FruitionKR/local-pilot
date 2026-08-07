@@ -112,17 +112,40 @@ class HandleAgentTurnUseCase:
                     route=route,
                     message="Skill로 만들 완료 작업을 선택해 주세요.",
                 )
-            if self._skill_draft_proposer is None:
+            if (
+                self._skill_draft_proposer is None
+                or self._skill_authorer is None
+                or not request.workspace_id
+                or not request.user_id
+            ):
                 raise ValueError("Skill draft proposal is not configured.")
+            scope_type = _skill_scope_type(request)
+            if scope_type is None:
+                return AgentTurnResult(
+                    action="clarify",
+                    route=route,
+                    message="개인 스킬로 만들까요, 현재 팀 스킬로 만들까요?",
+                )
             proposal = self._skill_draft_proposer.execute(
                 source_runs=request.skill_draft_sources,
                 user_directives=request.skill_draft_user_directives,
                 excluded_literals=request.skill_draft_excluded_literals,
             )
+            reviewed = self._skill_authorer.review_draft(
+                workspace_id=request.workspace_id,
+                user_id=request.user_id,
+                scope_type=scope_type,
+                draft=proposal,
+            )
             return AgentTurnResult(
-                action="skill_draft_proposal",
+                action="skill_authoring",
                 route=route,
-                skill_draft_proposal=proposal,
+                message=(
+                    BLOCKED_SKILL_AUTHORING_MESSAGE
+                    if reviewed.status == "blocked"
+                    else _skill_authoring_message(reviewed)
+                ),
+                skill_authoring_result=reviewed,
             )
 
         if route.action == "skill_authoring":
@@ -312,7 +335,7 @@ class HandleAgentTurnUseCase:
                 instruction=proposal.instructions_markdown,
                 reference_document_ids=(),
                 allow_clarification=False,
-                authoring_mode="enhance",
+                authoring_mode="regenerate",
             )
         match = TITLE_REVISION_PATTERN.search(request.message.strip())
         if match is not None:

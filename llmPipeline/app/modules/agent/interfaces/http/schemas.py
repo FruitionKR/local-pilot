@@ -13,7 +13,6 @@ from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
     SkillAuthoringResponse,
-    SkillDraftProposalResponse,
     SkillDraftSourceRunRequest,
 )
 
@@ -183,4 +182,3 @@ class AgentTurnResponse(BaseModel):
     run_id: str | None = None
     run_status: str | None = None
     skill_authoring: SkillAuthoringResponse | None = None
-    skill_draft_proposal: SkillDraftProposalResponse | None = None

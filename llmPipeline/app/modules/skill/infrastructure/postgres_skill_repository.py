@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from psycopg.types.json import Json
@@ -129,6 +130,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
     def create_published(self, skill: Skill, version: SkillVersion) -> Skill:
         with database.connect() as conn:
             _require_manage_scope(conn, skill.workspace_id, version.created_by or "", skill.scope_type)
+            _lock_slug_scope(conn, skill, skill.slug)
             _ensure_slug_available(conn, skill, skill.slug)
             conn.execute(
                 """
@@ -151,6 +153,8 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
         with database.connect() as conn:
             if _lock_manageable(conn, skill.workspace_id, version.created_by or "", skill.id) is None:
                 raise ValueError("Skill not found or not manageable.")
+            version = _with_next_version(conn, version)
+            _lock_slug_scope(conn, skill, version.name)
             _ensure_slug_available(conn, skill, version.name, exclude_skill_id=skill.id)
             _insert_version(conn, version)
             conn.execute(
@@ -243,6 +247,14 @@ def _insert_version(conn: Any, version: SkillVersion) -> None:
     )
 
 
+def _with_next_version(conn: Any, version: SkillVersion) -> SkillVersion:
+    row = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) + 1 AS version FROM skill_versions WHERE skill_id = %s",
+        (version.skill_id,),
+    ).fetchone()
+    return replace(version, version=int(row["version"]))
+
+
 def _require_manage_scope(conn: Any, workspace_id: str | None, user_id: str, scope_type: str) -> None:
     if scope_type == "personal":
         return
@@ -281,6 +293,16 @@ def _ensure_slug_available(
         tuple(params),
     ).fetchone():
         raise ValueError("Skill command already exists in this scope.")
+
+
+def _lock_slug_scope(conn: Any, skill: Skill, slug: str) -> None:
+    owner = skill.owner_user_id if skill.scope_type == "personal" else skill.workspace_id
+    if owner is None:
+        raise ValueError("Skill scope owner is required.")
+    conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"skill-command:{skill.scope_type}:{owner}:{slug}",),
+    )
 
 
 def _lock_manageable(conn: Any, workspace_id: str | None, user_id: str, skill_id: str) -> dict[str, Any] | None:

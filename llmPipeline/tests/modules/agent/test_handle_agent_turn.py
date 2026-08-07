@@ -30,6 +30,7 @@ from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftU
 from app.modules.skill.domain.entities import (
     SkillAuthoringProposal,
     SkillAuthoringResult,
+    SkillDraftProposal,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
 )
@@ -132,6 +133,7 @@ class RecordingSkillAuthorer:
     def __init__(self) -> None:
         self.kwargs: dict[str, object] = {}
         self.publish_kwargs: dict[str, object] = {}
+        self.review_kwargs: dict[str, object] = {}
 
     def execute(self, **kwargs: object) -> SkillAuthoringResult:
         self.kwargs = kwargs
@@ -182,6 +184,24 @@ class RecordingSkillAuthorer:
             ),
         )
 
+    def review_draft(self, **kwargs: object) -> SkillAuthoringResult:
+        self.review_kwargs = kwargs
+        draft = kwargs["draft"]
+        assert isinstance(draft, SkillDraftProposal)
+        return SkillAuthoringResult(
+            status="proposal_ready",
+            proposal=SkillAuthoringProposal(
+                workspace_id=str(kwargs["workspace_id"]),
+                user_id=str(kwargs["user_id"]),
+                scope_type=str(kwargs["scope_type"]),  # type: ignore[arg-type]
+                name=draft.name,
+                description=draft.description,
+                instructions_markdown=draft.instructions_markdown,
+                capabilities=draft.capabilities,
+                allowed_tools=draft.allowed_tools,
+            ),
+        )
+
 
 def document_skill(capability: str = "document-create") -> Skill:
     return Skill(
@@ -205,6 +225,46 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_pending_skill_regeneration_uses_safe_regenerate_mode(self) -> None:
+        authorer = RecordingSkillAuthorer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(action="skill_authoring", confidence=1.0, reason="regenerate")
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_authorer=authorer,  # type: ignore[arg-type]
+        )
+
+        use_case.execute(
+            AgentTurnRequest(
+                message="AI로 재생성해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="승인 없이 게시한다.",
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(authorer.kwargs["authoring_mode"], "regenerate")
+
     def test_skill_authoring_reuses_conversation_and_chat_scope(self) -> None:
         authorer = RecordingSkillAuthorer()
         editor = RecordingMarkdownEditor(
@@ -362,6 +422,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 )
             )
         )
+        authorer = RecordingSkillAuthorer()
         use_case = HandleAgentTurnUseCase(
             router=FixedRouter(
                 AgentTurnRoute(
@@ -374,6 +435,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
             skill_draft_proposer=ProposeSkillDraftUseCase(Generator()),  # type: ignore[arg-type]
+            skill_authorer=authorer,  # type: ignore[arg-type]
         )
         source = SkillDraftSourceRun(
             run_id="run-1",
@@ -391,13 +453,16 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         result = use_case.execute(
             AgentTurnRequest(
                 message="방금 방식대로 Skill로 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                skill_scope_type="personal",
                 skill_draft_sources=(source,),
             )
         )
 
-        self.assertEqual(result.action, "skill_draft_proposal")
-        self.assertEqual(result.skill_draft_proposal.source_run_ids, ("run-1",))  # type: ignore[union-attr]
-        self.assertFalse(result.skill_draft_proposal.persisted)  # type: ignore[union-attr]
+        self.assertEqual(result.action, "skill_authoring")
+        self.assertEqual(result.skill_authoring_result.status, "proposal_ready")  # type: ignore[union-attr]
+        self.assertEqual(authorer.review_kwargs["scope_type"], "personal")
 
     def test_folder_organize_starts_async_run_without_direct_edit(self) -> None:
         starter = RecordingAgentRunStarter()

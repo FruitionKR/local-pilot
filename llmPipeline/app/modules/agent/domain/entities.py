@@ -10,7 +10,6 @@ from app.modules.query.domain.entities import QueryAnswer
 from app.modules.skill.domain.entities import (
     SkillAuthoringResult,
     SkillAuthoringMode,
-    SkillDraftProposal,
     SkillDraftSourceRun,
     SkillScopeType,
 )
@@ -100,4 +99,3 @@ class AgentTurnResult:
     run_id: str | None = None
     run_status: str | None = None
     skill_authoring_result: SkillAuthoringResult | None = None
-    skill_draft_proposal: SkillDraftProposal | None = None

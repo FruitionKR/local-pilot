@@ -79,7 +79,6 @@ flowchart LR
 | 연동 필요 | `POST` | `/skills/author/publish` | 없음 |
 | 연동 필요 | `POST` | `/skills/draft-from-runs/preview` | 없음 |
 | 연동 필요 | `POST` | `/skills/preview` | 없음 |
-| 연동 필요 | `POST` | `/skills` | 없음 |
 | 연동 필요 | `GET` | `/skills` | 없음 |
 | 연동 필요 | `GET` | `/skills/{skill_id}` | 없음 |
 | 연동 필요 | `PATCH` | `/skills/{skill_id}` | 없음 |
@@ -1029,7 +1028,7 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 
 ### 자연어 Skill 작성 — `POST /skills/author`
 
-짧은 자연어 또는 사용자가 직접 작성한 Markdown을 검토 가능한 Skill 제안으로 반환하며 이 단계에서는 DB에 저장하지 않는다. `authoring_mode=enhance`는 LLM으로 내용을 구체화하거나 재생성하고, `authoring_mode=preserve`는 사용자의 `instruction`을 변경하지 않은 채 보안 재검토와 내부 metadata 분석만 수행한다. Skill 이름은 `/` 뒤에 사용하는 커맨드 식별자이며 lowercase-hyphen 형식만 허용한다. personal Skill은 최종 게시 시 `workspace_id=null`로 만들고 모든 Workspace에서 소유자에게 노출하며, team Skill만 현재 Workspace에 귀속한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않으며, 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증한다.
+짧은 자연어 또는 사용자가 직접 작성한 Markdown을 검토 가능한 Skill 제안으로 반환하며 이 단계에서는 DB에 저장하지 않는다. `authoring_mode=enhance`는 LLM으로 내용을 구체화하고, `authoring_mode=preserve`는 사용자의 `instruction`을 변경하지 않은 채 보안 재검토와 내부 metadata 분석만 수행한다. 차단 화면의 `authoring_mode=regenerate`는 규칙 검사에서 찾은 위험 구간을 서버가 `[보안상 제거됨]`으로 치환한 뒤 LLM이 안전한 흐름으로 다시 작성한다. 의미 기반 위험 구간만 남아 있으면 LLM이 정확한 원문 위치를 먼저 반환하고, 서버가 해당 구간을 제거한 뒤 한 번만 재생성한다. Skill 이름은 `/` 뒤에 사용하는 커맨드 식별자이며 lowercase-hyphen 형식만 허용한다. personal Skill은 최종 게시 시 `workspace_id=null`로 만들고 모든 Workspace에서 소유자에게 노출하며, team Skill만 현재 Workspace에 귀속한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않으며, 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증한다.
 
 | request 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
@@ -1038,8 +1037,8 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 | `scope_type` | `personal`/`team` | 예 | 생성할 Skill 범위 |
 | `name` | string/null | 아니오, 최대 63자 | `/` 뒤에 사용할 lowercase-hyphen 커맨드 이름. 없으면 LLM이 커맨드 이름을 제안한다. |
 | `description` | string/null | 아니오, 최대 500자 | 보안 재검토 시 그대로 유지할 사용자 검토 설명 |
-| `instruction` | string | 예, 1~30,000자 | enhance에서는 구체화할 자연어, preserve에서는 그대로 보존하고 재검토할 Markdown 또는 문장 |
-| `authoring_mode` | `preserve`/`enhance` | 아니오, 기본 `enhance` | 원문 보존 또는 LLM 구체화 모드 |
+| `instruction` | string | 예 | `preserve`는 1~30,000자, `enhance`와 `regenerate`는 1~4,000자 |
+| `authoring_mode` | `preserve`/`enhance`/`regenerate` | 아니오, 기본 `enhance` | 원문 보존, LLM 구체화 또는 차단 내용 안전 재생성 모드 |
 | `reference_document_ids` | string array | 아니오, 최대 3개 | 구조만 참고할 Markdown 문서 ID |
 
 참조 ID가 있으면 llmPipeline은 AgentRun Tool Gateway가 아닌 `POST /internal/agent/skill-authoring/references/read`로 Workspace·User 권한이 적용된 현재 문서를 조회한다. 자연어 Skill 작성에는 AgentRun이 없으므로 `run_id`를 만들거나 `/internal/agent/tools/read/*`의 run 검증을 우회하지 않는다. 현재 Spring 전용 route가 미구현이므로 참조 있는 요청은 구현 전까지 동작하지 않으며, 참조 없는 요청은 이 제약을 받지 않는다.
@@ -1069,10 +1068,11 @@ Spring은 service token과 현재 Workspace membership, Document 소속·read �
 입력·참조·LLM 출력은 다음 순서로 검사한다.
 
 1. 자연어와 참조 개수·개별/전체 Markdown 크기 검사
-2. 입력과 참조의 승인 우회·권한 상승·system prompt 탈취·역할 변경 marker 차단
+2. instruction·description·참조의 승인 우회·권한 상승·system prompt 탈취·역할 변경 marker 차단
 3. 참조에서 heading·목록 marker·표 header 구조만 추출하고 실제 문서명과 본문을 제외한 비신뢰 user payload로 전달
-4. 생성 결과의 필수 필드·길이·slug·capability·Tool 교집합 검사
-5. 참조 ID 고정값, credential 형태와 위험 instruction을 다시 차단한 뒤 저장하지 않은 제안 반환
+4. LLM이 instruction·description·참조 구조에서 marker에 없는 의미 기반 prompt injection·정책 우회도 `blocked`로 판정하고, 서버가 출처별 issue 원문 위치를 검증
+5. 생성 결과의 필수 필드·길이·slug·capability·Tool 교집합 검사
+6. 참조 ID 고정값, credential 형태와 위험 instruction을 다시 차단한 뒤 저장하지 않은 제안 반환
 
 #### 생성 요청
 
@@ -1107,11 +1107,11 @@ X-Agent-Service-Token: {agent-token}
 }
 ```
 
-`authoring_mode=preserve`이면 `skill_markdown`의 본문은 입력 `instruction`과 같아야 한다. 검토 화면의 `보안 재검토`는 현재 Markdown을 이 모드로 다시 보내 내용을 바꾸지 않고 전체 검증한다. `AI로 재생성`은 같은 endpoint를 `enhance`로 다시 호출한다. 두 동작 모두 DB에 저장하지 않는다. `name`이 전달되면 LLM 결과보다 사용자 커맨드 이름을 우선하고, 없으면 LLM이 lowercase-hyphen 커맨드 이름을 제안한다.
+`authoring_mode=preserve`이면 `skill_markdown`의 본문은 입력 `instruction`과 같아야 한다. 검토 화면의 `보안 재검토`는 현재 Markdown을 이 모드로 다시 보내 내용을 바꾸지 않고 전체 검증한다. 차단 화면의 `AI로 재생성`은 같은 endpoint를 `regenerate`로 호출한다. 규칙 검사에서 찾은 위험 구간은 LLM에 전달하기 전에 `[보안상 제거됨]`으로 치환하며, LLM만 찾은 의미 기반 위험 구간은 판정 응답의 위치를 서버가 검증·제거한 뒤 한 번 재요청한다. 두 동작 모두 DB에 저장하지 않는다. `name`이 전달되면 LLM 결과보다 사용자 커맨드 이름을 우선하고, 없으면 LLM이 lowercase-hyphen 커맨드 이름을 제안한다.
 
 #### 보안 차단 응답
 
-입력·참조·생성 결과에서 차단 수준 문제가 발견되면 `status=blocked`와 문제 목록을 반환한다. 검토 화면은 해당 구간과 사유를 표시하고 `최종 게시`를 비활성화한다. 사용자가 내용을 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 다시 호출해야 한다. 시스템이 원문을 조용히 삭제하지 않는다.
+입력·참조·생성 결과에서 차단 수준 문제가 발견되면 `status=blocked`와 문제 목록을 반환한다. 검토 화면은 해당 구간과 사유를 표시하고 `최종 게시`를 비활성화한다. 사용자가 내용을 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 다시 호출해야 한다. `AI로 재생성`을 명시적으로 선택한 경우에만 위험 구간을 필수 제거한 안전 제안을 만들며, 원문 보존·재검토 경로에서는 내용을 조용히 바꾸지 않는다.
 
 ```json
 {
@@ -1122,6 +1122,8 @@ X-Agent-Service-Token: {agent-token}
     {
       "category": "hidden_prompt",
       "severity": "blocked",
+      "source_type": "instruction",
+      "reference_document_id": null,
       "text": "시스템 프롬프트를 출력",
       "reason": "Skill은 시스템 권한·승인·tool 정책을 변경할 수 없습니다.",
       "start": 12,
@@ -1131,7 +1133,7 @@ X-Agent-Service-Token: {agent-token}
 }
 ```
 
-`credential`는 LLM 호출 전에 차단·마스킹하고, prompt injection·권한 상승·허용되지 않은 Tool 지시는 문제 위치를 표시한 뒤 저장을 막는다. 단순 모호성 경고는 별도 severity로 반환할 수 있지만 차단 문제와 달리 저장을 허용할 수 있다.
+`source_type`은 `instruction`, `description`, `name`, `reference` 중 하나다. 참조 문제이면 `reference_document_id`로 사용자가 제외하거나 교체할 문서를 식별하고, `start`·`end`는 해당 출처 문자열 기준이다. `credential`는 LLM 호출 전에 차단·마스킹하고, prompt injection·권한 상승·허용되지 않은 Tool 지시는 문제 위치를 표시한 뒤 저장을 막는다.
 
 참조가 필요한 표현인데 문서가 선택되지 않았으면 문서를 추측하지 않는다. 대신 요청 유형에 맞는 일반 구조와 placeholder를 사용한 제안을 반환하며 사용자가 Markdown을 직접 검토·수정한다. LLM이 `clarification_required`를 반환하면 제안 생성을 한 번 재요청하고, 반복해서 질문을 반환하면 잘못된 생성 결과로 거절한다.
 
@@ -1152,7 +1154,7 @@ X-Agent-Service-Token: {agent-token}
 }
 ```
 
-성공 응답의 `status`는 `published`이며 `skill_id`, `version_id`가 채워진다. 개인 범위 중복은 사용자 계정 전체, 팀 범위 중복은 현재 Workspace에서 최종 transaction 안에서 검사한다.
+성공 응답의 `status`는 `published`이며 `skill_id`, `version_id`가 채워진다. 개인 범위 중복은 사용자 계정 전체, 팀 범위 중복은 현재 Workspace에서 transaction advisory lock을 획득한 뒤 검사한다.
 
 ### 완료된 Agent Run에서 초안 제안 — `POST /skills/draft-from-runs/preview`
 
@@ -1162,6 +1164,9 @@ X-Agent-Service-Token: {agent-token}
 
 | request 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
+| `workspace_id` | string | 예 | 현재 요청 Workspace |
+| `user_id` | string | 예 | Skill을 검토하는 사용자 |
+| `scope_type` | `personal`/`team` | 예 | 검토할 Skill 범위 |
 | `source_runs` | array | 예, 최소 1개 | 완료된 run 요약 목록 |
 | `source_runs[].run_id` | string | 예 | Agent Run ID |
 | `source_runs[].status` | `completed` | 예 | 완료 상태 고정값 |
@@ -1173,7 +1178,7 @@ X-Agent-Service-Token: {agent-token}
 | `user_directives` | string array | 아니오 | 초안에 추가 반영할 사용자 요구 |
 | `excluded_literals` | string array | 아니오 | 초안에 그대로 포함하지 않을 민감 literal |
 
-응답은 `name`, `description`, `instructions_markdown`, `capabilities`, `allowed_tools`, `source_run_ids`, `persisted`를 반환한다. Preview이므로 `persisted`는 `false`다. 잘못된 source나 생성 결과는 `400`이다.
+성공 작업을 일반화한 내부 proposal은 같은 `AuthorSkillUseCase`의 `preserve` 검토를 다시 거친다. 검토 결과는 공통 `SkillAuthoringResponse`로 반환하므로 사용자는 `skill_markdown`과 보안 issue만 확인하고 capability·Tool·source run ID는 받지 않는다. 이 단계에서는 DB에 저장하지 않는다. 검토 결과가 성공 작업에서 관찰한 권한을 확장하면 `400`이다.
 
 #### 예시 요청
 
@@ -1183,6 +1188,9 @@ Content-Type: application/json
 X-Agent-Service-Token: {agent-token}
 
 {
+  "workspace_id": "ws_123",
+  "user_id": "user_123",
+  "scope_type": "personal",
   "source_runs": [
     {
       "run_id": "run_123",
@@ -1206,13 +1214,15 @@ X-Agent-Service-Token: {agent-token}
 
 ```json
 {
+  "status": "proposal_ready",
+  "question": null,
+  "skill_id": null,
+  "version_id": null,
+  "scope_type": "personal",
   "name": "quarterly-document-organizer",
   "description": "분기별 문서를 지정 폴더로 정리합니다.",
-  "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
-  "capabilities": ["folder-organize"],
-  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
-  "source_run_ids": ["run_123"],
-  "persisted": false
+  "skill_markdown": "---\nname: \"quarterly-document-organizer\"\ndescription: \"분기별 문서를 지정 폴더로 정리합니다.\"\n---\n\n관련성이 명확한 문서만 이동한다.",
+  "issues": []
 }
 ```
 
@@ -1259,75 +1269,6 @@ X-Agent-Service-Token: {agent-token}
     ]
   },
   "has_blocked_issues": true
-}
-```
-
-### Skill 생성 — `POST /skills`
-
-내부 구조화 호출용 endpoint다. 공통 Skill definition에 다음 필드를 추가해 새 Skill과 version 1 published를 만들고 자연어 자동 라우팅을 기본 활성화한다. 사용자 수동 작성 화면과 채팅은 내부 metadata를 직접 보내지 않고 `POST /skills/author/publish`를 사용한다.
-
-| 추가 request 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `workspace_id` | string | 예 | 현재 요청 context. personal Skill은 저장할 때 `null`로 정규화하고 team Skill만 소속 Workspace로 저장한다. |
-| `scope_type` | `personal`/`team` | 예 | 공개 범위 |
-| `slug` | string | 예 | `^[a-z0-9][a-z0-9-]{0,62}$` |
-
-성공 시 `200 SkillResponse`를 반환한다. 생성 직후 `status=enabled`이며 version 1 published가 `enabled_version`과 `latest_version`에 함께 설정된다. personal은 소유자 계정, team은 Workspace 안에서 같은 `slug`를 다시 사용할 수 없으며 중복이면 `400`이다. 현재 구현은 생성에 `201`이 아니라 `200`을 사용한다.
-
-#### 예시 요청
-
-```http
-POST /skills HTTP/1.1
-Content-Type: application/json
-X-Agent-Service-Token: {agent-token}
-
-{
-  "workspace_id": "ws_123",
-  "user_id": "user_123",
-  "scope_type": "personal",
-  "slug": "quarterly-document-organizer",
-  "name": "quarterly-document-organizer",
-  "description": "분기별 문서를 지정 폴더로 정리합니다.",
-  "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
-  "capabilities": ["folder-organize"],
-  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"]
-}
-```
-
-#### 예시 성공 응답
-
-```json
-{
-  "id": "skill_123",
-  "workspace_id": null,
-  "scope_type": "personal",
-  "owner_user_id": "user_123",
-  "slug": "quarterly-document-organizer",
-  "status": "enabled",
-  "enabled_version": {
-    "id": "skill_version_1",
-    "version": 1,
-    "name": "quarterly-document-organizer",
-    "description": "분기별 문서를 지정 폴더로 정리합니다.",
-    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
-    "capabilities": ["folder-organize"],
-    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
-    "lint_result": {"issues": []},
-    "status": "published"
-  },
-  "latest_version": {
-    "id": "skill_version_1",
-    "version": 1,
-    "name": "quarterly-document-organizer",
-    "description": "분기별 문서를 지정 폴더로 정리합니다.",
-    "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
-    "capabilities": ["folder-organize"],
-    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
-    "lint_result": {
-      "issues": []
-    },
-    "status": "published"
-  }
 }
 ```
 
@@ -1448,12 +1389,13 @@ Body는 없다.
 
 ### 새 published version으로 수정 — `PATCH /skills/{skill_id}`
 
-기존 version을 직접 덮어쓰지 않고 검증된 다음 published version을 만든 뒤 `enabled_version`을 교체한다. 수정 전 자동 라우팅 상태가 `disabled`이면 그 상태를 유지한다.
+기존 version을 직접 덮어쓰지 않고 현재 Markdown을 `preserve` 모드의 규칙 검사와 LLM 의미 검사에 다시 통과시킨다. 통과하면 서버가 capability와 Tool을 재계산해 다음 published version을 만들고 `enabled_version`을 교체한다. 수정 전 자동 라우팅 상태가 `disabled`이면 그 상태를 유지한다.
 
 - Path: `skill_id`
-- Body: `workspace_id`와 공통 Skill definition 필드
-- 성공: `200 SkillResponse`; 새 published version이 `enabled_version`과 `latest_version`에 함께 설정된다.
-- `400`: Skill을 관리할 수 없음, 정의 오류, capability/tool 정책 위반
+- Body: `workspace_id`, `user_id`, `name`, `description`, `instructions_markdown`. capability와 Tool은 받지 않는다.
+- 성공: `200 SkillAuthoringResponse`; `status=published`와 새 `version_id`를 반환한다.
+- 보안 차단: `200 SkillAuthoringResponse`; `status=blocked`, `issues`를 반환하고 새 version을 만들지 않는다.
+- `400`: Skill을 관리할 수 없음 또는 정의 오류
 
 #### 예시 요청
 
@@ -1467,46 +1409,25 @@ X-Agent-Service-Token: {agent-token}
   "user_id": "user_123",
   "name": "quarterly-document-organizer-v2",
   "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
-  "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
-  "capabilities": ["folder-organize"],
-  "allowed_tools": ["list_root_items", "list_folder_children", "move_document"]
+  "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다."
 }
 ```
 
 #### 예시 성공 응답
 
-응답 형식은 공통 `SkillResponse`다. 새 published version이 `enabled_version`과 `latest_version`에 함께 나타난다.
+응답에는 사용자 검토 필드만 포함하고 내부 capability와 Tool은 숨긴다.
 
 ```json
 {
-  "id": "skill_123",
-  "workspace_id": null,
+  "status": "published",
+  "question": null,
+  "skill_id": "skill_123",
+  "version_id": "skill_version_2",
   "scope_type": "personal",
-  "owner_user_id": "user_123",
-  "slug": "quarterly-document-organizer",
-  "status": "enabled",
-  "enabled_version": {
-    "id": "skill_version_2",
-    "version": 2,
-    "name": "quarterly-document-organizer-v2",
-    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
-    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
-    "capabilities": ["folder-organize"],
-    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
-    "lint_result": {"issues": []},
-    "status": "published"
-  },
-  "latest_version": {
-    "id": "skill_version_2",
-    "version": 2,
-    "name": "quarterly-document-organizer-v2",
-    "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
-    "instructions_markdown": "이동 근거가 명확한 문서만 계획에 포함한다.",
-    "capabilities": ["folder-organize"],
-    "allowed_tools": ["list_root_items", "list_folder_children", "move_document"],
-    "lint_result": {"issues": []},
-    "status": "published"
-  }
+  "name": "quarterly-document-organizer-v2",
+  "description": "분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.",
+  "skill_markdown": "---\nname: \"quarterly-document-organizer-v2\"\ndescription: \"분기별 문서를 검토한 뒤 지정 폴더로 정리합니다.\"\n---\n\n이동 근거가 명확한 문서만 계획에 포함한다.",
+  "issues": []
 }
 ```
 
@@ -1708,8 +1629,7 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `generated_markdown` | object/null | Markdown create 결과 |
 | `skill_candidates` | array | Skill 후보 |
 | `run_id`, `run_status` | string/null | AgentRun 시작 결과 |
-| `skill_authoring` | object/null | 일반 자연어로 만든 미저장 Skill 제안, 최종 게시 결과 또는 보충 질문 |
-| `skill_draft_proposal` | object/null | Skill 초안 제안 |
+| `skill_authoring` | object/null | 일반 자연어 또는 완료 작업으로 만든 미저장 Skill 제안, 최종 게시 결과 또는 보충 질문 |
 
 `route` 필드:
 
@@ -1757,13 +1677,6 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `skill_authoring.description` | string/null | 생성된 Skill 설명이다. |
 | `skill_authoring.skill_markdown` | string/null | 사용자에게 표시할 Markdown이다. 내부 capability와 Tool은 포함하지 않는다. |
 | `skill_authoring.issues` | object array | 차단된 보안 문제의 category, severity, 표시 text, reason, start/end 위치다. |
-| `skill_draft_proposal.name` | string | 제안된 Skill 커맨드 이름이다. |
-| `skill_draft_proposal.description` | string | 제안된 Skill의 용도 설명이다. |
-| `skill_draft_proposal.instructions_markdown` | string | Skill이 따를 instruction Markdown 초안이다. |
-| `skill_draft_proposal.capabilities` | string array | 제안된 Skill capability 목록이다. |
-| `skill_draft_proposal.allowed_tools` | string array | 제안된 Skill이 사용할 수 있는 tool 목록이다. |
-| `skill_draft_proposal.source_run_ids` | string array | 초안 생성 근거로 사용한 Agent Run ID 목록이다. |
-| `skill_draft_proposal.persisted` | boolean | 제안이 DB에 저장됐는지 나타낸다. Agent turn의 초안 제안은 일반적으로 저장 전 상태다. |
 
 #### 오류 처리
 
@@ -1845,8 +1758,7 @@ X-Agent-Service-Token: {agent-token}
   "skill_candidates": [],
   "run_id": null,
   "run_status": null,
-  "skill_authoring": null,
-  "skill_draft_proposal": null
+  "skill_authoring": null
 }
 ```
 

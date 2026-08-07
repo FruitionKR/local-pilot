@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import cast
 
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
@@ -11,6 +12,7 @@ from app.modules.skill.domain.entities import (
     SkillAuthoringReference,
     SkillAuthoringResult,
     SkillCapability,
+    SkillDraftProposal,
     SkillScopeType,
     SkillTool,
 )
@@ -31,6 +33,7 @@ MAX_DESCRIPTION_CHARS = 500
 MAX_INSTRUCTIONS_CHARS = 30_000
 MAX_INSTRUCTIONS_LINES = 500
 MAX_QUESTION_CHARS = 500
+MAX_LLM_ISSUES = 10
 
 
 class AuthorSkillUseCase:
@@ -69,15 +72,25 @@ class AuthorSkillUseCase:
             raise ValueError("reference_document_ids must not contain duplicates.")
         if any(not document_id.strip() for document_id in reference_document_ids):
             raise ValueError("reference_document_ids must contain non-empty ids.")
-        input_issues = inspect_skill_instructions(instruction)
-        if input_issues:
+        input_issues = _tag_issues(inspect_skill_instructions(instruction), "instruction")
+        if input_issues and authoring_mode != "regenerate":
             return SkillAuthoringResult(status="blocked", issues=input_issues)
+        if input_issues:
+            instruction = _redact_issues(instruction, input_issues)
         if name is not None:
             name = validate_skill_name(name)
         if description is not None:
             description = description.strip()
             if not description or len(description) > MAX_DESCRIPTION_CHARS:
                 raise ValueError(f"description must contain 1-{MAX_DESCRIPTION_CHARS} characters.")
+            description_issues = _tag_issues(
+                inspect_skill_instructions(description),
+                "description",
+            )
+            if description_issues:
+                if authoring_mode != "regenerate":
+                    return SkillAuthoringResult(status="blocked", issues=description_issues)
+                description = None
 
         references = tuple(
             self._reference_reader.read(
@@ -89,7 +102,14 @@ class AuthorSkillUseCase:
         )
         reference_issues = _validate_references(references)
         if reference_issues:
-            return SkillAuthoringResult(status="blocked", issues=reference_issues)
+            if authoring_mode != "regenerate":
+                return SkillAuthoringResult(status="blocked", issues=reference_issues)
+            instruction, description, references = _redact_sources(
+                instruction,
+                description,
+                references,
+                reference_issues,
+            )
 
         candidate = self._generator.generate(
             instruction,
@@ -97,8 +117,43 @@ class AuthorSkillUseCase:
             allow_clarification=allow_clarification,
             authoring_mode=authoring_mode,
             requested_name=name,
+            requested_description=description,
         )
         status = candidate.get("status")
+        if status == "blocked":
+            issues = _llm_safety_issues(
+                candidate.get("issues"),
+                instruction=instruction,
+                description=description,
+                references=references,
+            )
+            if authoring_mode != "regenerate":
+                return SkillAuthoringResult(status="blocked", issues=issues)
+            instruction, description, references = _redact_sources(
+                instruction,
+                description,
+                references,
+                issues,
+            )
+            candidate = self._generator.generate(
+                instruction,
+                references,
+                allow_clarification=allow_clarification,
+                authoring_mode=authoring_mode,
+                requested_name=name,
+                requested_description=description,
+            )
+            status = candidate.get("status")
+            if status == "blocked":
+                return SkillAuthoringResult(
+                    status="blocked",
+                    issues=_llm_safety_issues(
+                        candidate.get("issues"),
+                        instruction=instruction,
+                        description=description,
+                        references=references,
+                    ),
+                )
         if status == "clarification_required":
             if not allow_clarification:
                 raise ValueError("Single-turn Skill authoring must return an editable draft.")
@@ -125,9 +180,33 @@ class AuthorSkillUseCase:
         capabilities = _capabilities(candidate.get("capabilities"))
         allowed_tools = with_required_planning_reads(_tools(candidate.get("allowed_tools")))
         validate_allowed_tools(capabilities, allowed_tools)
-        output_issues = inspect_skill_instructions("\n".join((resolved_name, resolved_description, instructions)))
+        output_issues = (
+            _tag_issues(inspect_skill_instructions(resolved_name), "name")
+            + _tag_issues(inspect_skill_instructions(resolved_description), "description")
+            + _tag_issues(inspect_skill_instructions(instructions), "instruction")
+        )
         if output_issues:
-            return SkillAuthoringResult(status="blocked", issues=output_issues)
+            proposal = SkillAuthoringProposal(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                scope_type=scope_type,
+                name=resolved_name,
+                description=_redact_issues(
+                    resolved_description,
+                    tuple(issue for issue in output_issues if issue.source_type == "description"),
+                ),
+                instructions_markdown=_redact_issues(
+                    instructions,
+                    tuple(issue for issue in output_issues if issue.source_type == "instruction"),
+                ),
+                capabilities=capabilities,
+                allowed_tools=allowed_tools,
+            )
+            return SkillAuthoringResult(
+                status="blocked",
+                proposal=proposal,
+                issues=output_issues,
+            )
         _reject_reference_literals(
             (resolved_name, resolved_description, instructions),
             tuple(reference.id for reference in references),
@@ -182,6 +261,70 @@ class AuthorSkillUseCase:
         )
         return SkillAuthoringResult(status="published", proposal=proposal, skill=skill)
 
+    def update(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        skill_id: str,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+    ) -> SkillAuthoringResult:
+        skill = self._skill_manager.get_manageable(workspace_id, user_id, skill_id)
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=skill.scope_type,
+            name=name,
+            description=description,
+            instruction=instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        if reviewed.status != "proposal_ready" or reviewed.proposal is None:
+            return reviewed
+        proposal = reviewed.proposal
+        updated = self._skill_manager.update_published(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            skill_id=skill_id,
+            name=proposal.name,
+            description=proposal.description,
+            instructions_markdown=proposal.instructions_markdown,
+            capabilities=proposal.capabilities,
+            allowed_tools=proposal.allowed_tools,
+        )
+        return SkillAuthoringResult(status="published", proposal=proposal, skill=updated)
+
+    def review_draft(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        scope_type: SkillScopeType,
+        draft: SkillDraftProposal,
+    ) -> SkillAuthoringResult:
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=draft.name,
+            description=draft.description,
+            instruction=draft.instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        proposal = reviewed.proposal
+        if reviewed.status == "proposal_ready" and proposal is not None and (
+            not set(proposal.capabilities).issubset(draft.capabilities)
+            or not set(proposal.allowed_tools).issubset(draft.allowed_tools)
+        ):
+            raise ValueError("Reviewed Skill must not expand completed AgentRun permissions.")
+        return reviewed
+
 
 def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> tuple[SkillSafetyIssue, ...]:
     total_chars = 0
@@ -193,7 +336,13 @@ def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> tup
         if len(markdown) > MAX_REFERENCE_CHARS:
             raise ValueError(f"Each reference document supports at most {MAX_REFERENCE_CHARS} characters.")
         total_chars += len(markdown)
-        issues.extend(inspect_skill_instructions(f"{reference.name}\n{markdown}"))
+        issues.extend(
+            _tag_issues(
+                inspect_skill_instructions(markdown),
+                "reference",
+                reference.id,
+            )
+        )
     if total_chars > MAX_TOTAL_REFERENCE_CHARS:
         raise ValueError(f"Reference documents support at most {MAX_TOTAL_REFERENCE_CHARS} characters in total.")
     return tuple(issues)
@@ -207,6 +356,111 @@ def _required_text(candidate: dict[str, object], key: str, max_chars: int) -> st
     if len(normalized) > max_chars:
         raise ValueError(f"Skill authoring result {key} supports at most {max_chars} characters.")
     return normalized
+
+
+def _llm_safety_issues(
+    value: object,
+    *,
+    instruction: str,
+    description: str | None,
+    references: tuple[SkillAuthoringReference, ...],
+) -> tuple[SkillSafetyIssue, ...]:
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_LLM_ISSUES:
+        raise ValueError("Blocked Skill authoring result must contain safety issues.")
+    issues: list[SkillSafetyIssue] = []
+    for value_issue in value:
+        if not isinstance(value_issue, dict):
+            raise ValueError("Skill authoring safety issue must be an object.")
+        category = _required_text(value_issue, "category", 50)
+        source_type = _required_text(value_issue, "source", 20)
+        text = _required_text(value_issue, "text", 500)
+        reason = _required_text(value_issue, "reason", 500)
+        reference_document_id = None
+        if source_type == "instruction":
+            source = instruction
+        elif source_type == "description" and description is not None:
+            source = description
+        elif source_type == "reference":
+            reference_index = value_issue.get("reference_index")
+            if not isinstance(reference_index, int) or isinstance(reference_index, bool):
+                raise ValueError("Reference safety issue requires a reference_index.")
+            if not 0 <= reference_index < len(references):
+                raise ValueError("Reference safety issue index is out of range.")
+            reference = references[reference_index]
+            source = reference.markdown
+            reference_document_id = reference.id
+        else:
+            raise ValueError("Skill authoring safety issue source is unsupported.")
+        start = source.find(text)
+        if start < 0:
+            raise ValueError("Skill authoring safety issue text must exist in its source.")
+        issues.append(
+            SkillSafetyIssue(
+                category=category,
+                text=text,
+                reason=reason,
+                start=start,
+                end=start + len(text),
+                source_type=source_type,
+                reference_document_id=reference_document_id,
+            )
+        )
+    return tuple(issues)
+
+
+def _redact_issues(source: str, issues: tuple[SkillSafetyIssue, ...]) -> str:
+    ranges = sorted(
+        ((issue.start, issue.end) for issue in issues if issue.start is not None and issue.end is not None),
+        reverse=True,
+    )
+    for start, end in ranges:
+        source = source[:start] + "[보안상 제거됨]" + source[end:]
+    return source
+
+
+def _redact_sources(
+    instruction: str,
+    description: str | None,
+    references: tuple[SkillAuthoringReference, ...],
+    issues: tuple[SkillSafetyIssue, ...],
+) -> tuple[str, str | None, tuple[SkillAuthoringReference, ...]]:
+    instruction = _redact_issues(
+        instruction,
+        tuple(issue for issue in issues if issue.source_type == "instruction"),
+    )
+    if any(issue.source_type == "description" for issue in issues):
+        description = None
+    references = tuple(
+        replace(
+            reference,
+            markdown=_redact_issues(
+                reference.markdown,
+                tuple(
+                    issue
+                    for issue in issues
+                    if issue.source_type == "reference"
+                    and issue.reference_document_id == reference.id
+                ),
+            ),
+        )
+        for reference in references
+    )
+    return instruction, description, references
+
+
+def _tag_issues(
+    issues: tuple[SkillSafetyIssue, ...],
+    source_type: str,
+    reference_document_id: str | None = None,
+) -> tuple[SkillSafetyIssue, ...]:
+    return tuple(
+        replace(
+            issue,
+            source_type=source_type,
+            reference_document_id=reference_document_id,
+        )
+        for issue in issues
+    )
 
 
 def _capabilities(value: object) -> tuple[SkillCapability, ...]:

@@ -22,7 +22,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
-from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse, SkillDraftProposalResponse
+from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -126,11 +126,6 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
         skill_authoring=(
             SkillAuthoringResponse.from_domain(result.skill_authoring_result)
             if result.skill_authoring_result
-            else None
-        ),
-        skill_draft_proposal=(
-            SkillDraftProposalResponse.from_domain(result.skill_draft_proposal)
-            if result.skill_draft_proposal
             else None
         ),
     )

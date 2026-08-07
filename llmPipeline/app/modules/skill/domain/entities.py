@@ -22,7 +22,7 @@ SkillTool = Literal[
     "apply_document_edit",
 ]
 SkillScopeType = Literal["personal", "team"]
-SkillAuthoringMode = Literal["preserve", "enhance"]
+SkillAuthoringMode = Literal["preserve", "enhance", "regenerate"]
 SkillStatus = Literal["enabled", "disabled"]
 SkillVersionStatus = Literal["draft", "published", "rejected"]
 

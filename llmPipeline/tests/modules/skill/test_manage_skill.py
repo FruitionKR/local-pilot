@@ -1,7 +1,12 @@
 import unittest
+from unittest.mock import MagicMock
 
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
 from app.modules.skill.domain.entities import Skill, SkillVersion
+from app.modules.skill.infrastructure.postgres_skill_repository import (
+    _lock_slug_scope,
+    _with_next_version,
+)
 
 
 class InMemoryManageSkillRepository:
@@ -45,6 +50,45 @@ class InMemoryManageSkillRepository:
 
 
 class ManageSkillTest(unittest.TestCase):
+    def test_assigns_next_version_from_database_after_lock(self) -> None:
+        conn = MagicMock()
+        conn.execute.return_value.fetchone.return_value = {"version": 4}
+        version = SkillVersion(
+            id="version-4",
+            skill_id="skill-1",
+            version=2,
+            name="meeting-notes",
+            description="회의록을 작성합니다.",
+            instructions_markdown="회의 내용을 요약한다.",
+            capabilities=(),
+        )
+
+        updated = _with_next_version(conn, version)
+
+        self.assertEqual(updated.version, 4)
+        conn.execute.assert_called_once_with(
+            "SELECT COALESCE(MAX(version), 0) + 1 AS version FROM skill_versions WHERE skill_id = %s",
+            ("skill-1",),
+        )
+
+    def test_duplicate_lock_is_scoped_by_personal_owner_and_command(self) -> None:
+        conn = MagicMock()
+        skill = Skill(
+            id="skill-1",
+            workspace_id=None,
+            scope_type="personal",
+            owner_user_id="user-1",
+            slug="meeting-notes",
+            status="enabled",
+        )
+
+        _lock_slug_scope(conn, skill, "meeting-notes")
+
+        conn.execute.assert_called_once_with(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            ("skill-command:personal:user-1:meeting-notes",),
+        )
+
     def test_creates_personal_skill_published_and_auto_routing_enabled(self) -> None:
         use_case = ManageSkillUseCase(InMemoryManageSkillRepository())  # type: ignore[arg-type]
 

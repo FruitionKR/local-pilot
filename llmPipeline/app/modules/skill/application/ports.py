@@ -50,6 +50,7 @@ class SkillAuthoringGeneratorPort(Protocol):
         allow_clarification: bool,
         authoring_mode: SkillAuthoringMode,
         requested_name: str | None,
+        requested_description: str | None,
     ) -> dict[str, object]: ...
 
 

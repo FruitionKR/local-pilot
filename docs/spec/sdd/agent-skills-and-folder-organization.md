@@ -655,17 +655,17 @@ Skill 관리 화면은 사용자가 직접 작성한 원문을 보존하는 auth
     4. 생성된 name, description, instructions, capability와 Tool을 다시 검사한다.
     5. 사용자에게 capability와 Tool을 제외한 Skill Markdown과 보안 결과를 반환하고 DB에는 저장하지 않는다.
 
-Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 세부 정보가 부족해도 보충 질문 대신 편집 가능한 일반 구조를 반환한다. 커맨드 식별자는 lowercase-hyphen이며 입력하지 않으면 LLM이 후보를 제안한다. personal Skill은 계정 전체, team Skill은 현재 Workspace에 귀속한다. `preserve`는 현재 Markdown을 변경하지 않고 보안 재검토하며, `enhance`는 자연어 구체화와 AI 재생성에 사용한다. 두 모드 모두 제안만 반환한다.
+Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 세부 정보가 부족해도 보충 질문 대신 편집 가능한 일반 구조를 반환한다. 커맨드 식별자는 lowercase-hyphen이며 입력하지 않으면 LLM이 후보를 제안한다. personal Skill은 계정 전체, team Skill은 현재 Workspace에 귀속한다. `preserve`는 현재 Markdown을 변경하지 않고 보안 재검토하며, `enhance`는 자연어를 구체화한다. 차단 화면의 `regenerate`는 규칙 검사에서 찾은 위험 구간을 필수 제거한 뒤 안전한 흐름으로 재작성한다. 세 모드 모두 제안만 반환한다.
 
-입력·참조·생성 결과에서 차단 보안 문제가 발견되면 `status=blocked`와 위치·이유를 반환하고 `최종 게시`를 막는다. 사용자가 해당 문구를 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 눌러 `preserve` 검증을 다시 수행한다. `AI로 재생성`은 현재 내용을 `enhance`로 다시 작성한다. 원문을 자동으로 조용히 삭제하지 않는다.
+입력·description·참조·생성 결과에서 규칙 검사 또는 LLM 의미 검사로 차단 보안 문제가 발견되면 `status=blocked`와 출처·위치·이유를 반환하고 `최종 게시`를 막는다. 참조 문제는 문서 ID를 함께 반환한다. 사용자가 해당 문구를 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 눌러 `preserve` 검증을 다시 수행한다. `AI로 재생성`은 `regenerate`로 위험 구간을 제거하고 다시 작성한다. 원문 보존 경로에서는 내용을 자동으로 조용히 삭제하지 않는다.
 
-Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. 저장 범위를 말하지 않으면 채팅에서 개인/현재 팀 중 하나를 확인한다. 제안은 다음 요청의 `pending_skill_proposal`에 `scope_type`, `name`, `description`, `instructions_markdown`으로 유지한다. 커맨드·범위 변경, AI 재생성, 보안 재검토는 이 제안만 갱신하고, “이대로 게시해줘”에서 같은 내용을 다시 검증한 뒤 게시한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 유지한다.
+Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. 저장 범위를 말하지 않으면 채팅에서 개인/현재 팀 중 하나를 확인한다. 제안은 다음 요청의 `pending_skill_proposal`에 `scope_type`, `name`, `description`, `instructions_markdown`으로 유지한다. 커맨드·범위 변경, AI 재생성, 보안 재검토는 이 제안만 갱신하고, “이대로 게시해줘”에서 같은 내용을 다시 검증한 뒤 게시한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 근거와 권한 상한을 계산한 뒤 같은 `AuthorSkillUseCase`의 미저장 검토 결과로 반환한다.
 
 Router가 `skill_authoring`을 반환해도 현재 사용자 메시지나 진행 중 대화 요약에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 없으면 실행하지 않는다. “회의록 Skill을 사용해서 문서를 작성해”는 기존 Skill을 적용하는 문서 작업이며 Skill 생성으로 해석하지 않는다.
 
 #### 6.4.2 새 Skill 수동 생성
 
-기존 구조화 수동 생성 API는 capability와 Tool을 직접 받는 내부 계약으로 유지하되, 자연어 Skill 관리 화면은 다음 입력만 사용한다.
+수동 생성과 채팅 생성은 capability와 Tool을 직접 받지 않고 같은 `AuthorSkillUseCase`를 사용한다. 자연어 Skill 관리 화면은 다음 입력만 사용한다.
 
     제목(선택): meeting-notes
     내용: 대화 내용을 정해진 회의록 구조로 작성한다.
@@ -849,7 +849,6 @@ Frontend는 Spring backend만 호출한다.
     POST  /api/workspaces/{workspace_id}/skills/preview
     POST  /api/workspaces/{workspace_id}/skills/author
     POST  /api/workspaces/{workspace_id}/skills/author/publish
-    POST  /api/workspaces/{workspace_id}/skills
     GET   /api/workspaces/{workspace_id}/skills
     GET   /api/workspaces/{workspace_id}/skills/{skill_id}
     PATCH /api/workspaces/{workspace_id}/skills/{skill_id}

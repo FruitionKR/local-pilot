@@ -1,12 +1,11 @@
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.skill.domain.entities import (
     Skill,
     SkillAuthoringResult,
-    SkillDraftProposal,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
     SkillVersion,
@@ -41,6 +40,8 @@ class SkillDefinitionRequest(BaseModel):
 
 
 class SkillAuthoringRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]
@@ -52,7 +53,7 @@ class SkillAuthoringRequest(BaseModel):
     )
     description: str | None = Field(default=None, min_length=1, max_length=500)
     instruction: str = Field(..., min_length=1, max_length=30_000)
-    authoring_mode: Literal["preserve", "enhance"] = "enhance"
+    authoring_mode: Literal["preserve", "enhance", "regenerate"] = "enhance"
     reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
 
 
@@ -85,6 +86,7 @@ class SkillAuthoringResponse(BaseModel):
                     proposal.description,
                     proposal.instructions_markdown,
                 ),
+                issues=[issue.__dict__ for issue in result.issues],
             )
         if result.skill is None:
             return cls(
@@ -107,6 +109,8 @@ class SkillAuthoringResponse(BaseModel):
 
 
 class PublishAuthoredSkillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]
@@ -115,14 +119,14 @@ class PublishAuthoredSkillRequest(BaseModel):
     instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
 
 
-class CreateSkillRequest(SkillDefinitionRequest):
-    workspace_id: str = Field(..., min_length=1)
-    scope_type: Literal["personal", "team"]
-    slug: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+class UpdateSkillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-
-class UpdateSkillRequest(SkillDefinitionRequest):
     workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    description: str = Field(..., min_length=1, max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
 
 
 class SkillActorRequest(BaseModel):
@@ -221,32 +225,12 @@ class SkillDraftSourceRunRequest(BaseModel):
 
 
 class SkillDraftProposalRequest(BaseModel):
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    scope_type: Literal["personal", "team"]
     source_runs: list[SkillDraftSourceRunRequest] = Field(..., min_length=1)
     user_directives: list[str] = Field(default_factory=list)
     excluded_literals: list[str] = Field(default_factory=list)
-
-
-class SkillDraftProposalResponse(BaseModel):
-    name: str
-    description: str
-    instructions_markdown: str
-    capabilities: list[str]
-    allowed_tools: list[str]
-    source_run_ids: list[str]
-    persisted: bool
-
-    @classmethod
-    def from_domain(cls, proposal: SkillDraftProposal) -> "SkillDraftProposalResponse":
-        return cls(
-            name=proposal.name,
-            description=proposal.description,
-            instructions_markdown=proposal.instructions_markdown,
-            capabilities=list(proposal.capabilities),
-            allowed_tools=list(proposal.allowed_tools),
-            source_run_ids=list(proposal.source_run_ids),
-            persisted=proposal.persisted,
-        )
-
 
 def _skill_markdown(name: str, description: str, instructions_markdown: str) -> str:
     return (

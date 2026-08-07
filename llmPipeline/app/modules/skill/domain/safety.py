@@ -10,6 +10,8 @@ class SkillSafetyIssue:
     severity: str = "blocked"
     start: int | None = None
     end: int | None = None
+    source_type: str = "instruction"
+    reference_document_id: str | None = None
 
 
 BLOCKED_INSTRUCTION_MARKERS = {

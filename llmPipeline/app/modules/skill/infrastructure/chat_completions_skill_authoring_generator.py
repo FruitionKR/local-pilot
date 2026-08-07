@@ -37,11 +37,13 @@ class ChatCompletionsSkillAuthoringGenerator:
         allow_clarification: bool,
         authoring_mode: SkillAuthoringMode,
         requested_name: str | None,
+        requested_description: str | None = None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "instruction": instruction,
             "authoring_mode": authoring_mode,
             "requested_name": requested_name,
+            "requested_description": requested_description,
             "interaction_mode": "multi_turn" if allow_clarification else "single_turn",
             "references": [
                 {

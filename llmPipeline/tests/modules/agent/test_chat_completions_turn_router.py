@@ -66,7 +66,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_authoring")
 
-    def test_accepts_pending_proposal_title_revision_without_repeated_create_request(self) -> None:
+    def test_guards_pending_proposal_title_revision_without_llm(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
 
@@ -85,8 +85,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         )
 
         self.assertEqual(route.action, "skill_authoring")
-        payload = json.loads(client.calls[0][1])
-        self.assertEqual(payload["pending_skill_proposal"]["name"], "meeting-notes")
+        self.assertEqual(client.calls, [])
 
     def test_pending_proposal_publish_approval_is_guarded_without_llm(self) -> None:
         route = _local_guard(
@@ -104,6 +103,28 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         )
 
         self.assertEqual(route.action, "skill_authoring")  # type: ignore[union-attr]
+
+    def test_pending_proposal_followups_are_guarded_without_llm(self) -> None:
+        context = AgentConversationContext(
+            pending_skill_proposal=PendingSkillProposal(
+                scope_type="personal",
+                name="meeting-notes",
+                description="회의 내용을 정리합니다.",
+                instructions_markdown="# 작성 절차",
+            )
+        )
+
+        for message in (
+            "AI로 재생성해줘",
+            "보안 재검토해줘",
+            "제목을 weekly-meeting-notes로 바꿔줘",
+            "팀 스킬로 변경해줘",
+        ):
+            with self.subTest(message=message):
+                route = _local_guard(
+                    AgentTurnRequest(message=message, conversation_context=context)
+                )
+                self.assertEqual(route.action, "skill_authoring")  # type: ignore[union-attr]
 
     def test_accepts_direct_skill_creation_with_modifier(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])

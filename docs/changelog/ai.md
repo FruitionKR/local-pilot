@@ -21,11 +21,19 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 참조 문서는 임의 AgentRun ID 없이 Skill authoring 전용 Backend read endpoint로 조회하고, 실제 문서명·본문은 제외한 heading·목록 marker·표 header 구조만 비신뢰 데이터로 전달하며 prompt injection, credential, 고정 참조값과 capability 밖 Tool을 저장 전에 차단
 - 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown·범위·보안 issue만 반환
 - `POST /skills/author/publish`가 최종 Markdown을 LLM과 규칙으로 다시 검증한 뒤 version 1을 `published`, 자연어 자동 라우팅을 기본 ON으로 transaction 저장
+- 차단 화면의 AI 재생성은 위험 구간을 서버에서 제거한 뒤 `regenerate` 모드로 다시 작성하고, 규칙 marker에 없는 의미 기반 prompt injection도 LLM의 `blocked` 판정과 서버 검증 위치로 표시
+- instruction뿐 아니라 description·참조 구조의 의미 기반 injection도 출처별로 검증하고, 참조 issue에는 문서 ID와 해당 문서 기준 위치를 반환
+- 완료 AgentRun 기반 proposal도 공통 `AuthorSkillUseCase`에서 재검토하고 검토 단계에서 성공 작업의 내부 권한 상한을 유지하며 사용자 응답에서는 capability·Tool을 숨김
+- 생성 결과가 차단되면 위험 구간을 마스킹한 미저장 Skill Markdown과 issue를 함께 반환해 검토 화면에서 수정 가능하도록 변경
+- pending proposal의 재생성·보안 재검토·커맨드·범위 변경은 LLM 호출 없이 `skill_authoring` 후속 흐름으로 고정
+- 보안 검토를 우회하던 직접 `POST /skills`를 제거하고 `PATCH /skills/{skill_id}`도 사용자 Markdown만 받아 같은 `AuthorSkillUseCase`에서 재검증
+- DB migration 없이 개인 계정·팀 Workspace별 커맨드 advisory lock을 추가해 동시 중복 생성 경쟁을 직렬화
+- 같은 Skill의 동시 수정은 parent row lock 안에서 다음 version 번호를 다시 계산해 version 충돌을 방지
 - DB draft와 별도 `/skills/{skill_id}/publish` 없이 미저장 proposal을 최종 게시
 - Skill 수정은 새 draft 대신 검증된 published version으로 바로 교체하고, 자동 라우팅 OFF 상태를 유지
 - 자연어 자동 라우팅을 끈 published Skill도 명시적 `/command`로 계속 실행하도록 선택 조건을 분리
 - OpenAI `skill-creator`의 간결한 작성·trigger description·progressive disclosure 원칙을 기존 `ChatCompletionsJsonClient` prompt에 적용하고 별도 런타임 의존성은 추가하지 않음
-- Skill authoring·Agent router·HTTP route 관련 단위 테스트 `106 passed`, Python compile과 `git diff --check` 통과
+- Skill authoring·Agent router·HTTP route 관련 단위 테스트 `121 passed`, llmPipeline 전체 `534 passed`; Python compile과 `git diff --check` 통과
 
 ### refactor: Agent 실행 흐름을 LangGraph로 전환
 
