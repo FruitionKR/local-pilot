@@ -67,7 +67,8 @@ kubectl apply -f k8s/base/configmap.yaml -f k8s/base/secret.yaml
 kubectl apply -f k8s/base/postgres.yaml -f k8s/base/mongodb.yaml \
   -f k8s/base/redis.yaml -f k8s/base/minio.yaml
 kubectl apply -f k8s/base/document-svc.yaml -f k8s/base/access-svc.yaml \
-  -f k8s/base/pipeline-api.yaml -f k8s/base/ingest-worker.yaml -f k8s/base/converter.yaml
+  -f k8s/base/pipeline-api.yaml -f k8s/base/ingest-worker.yaml \
+  -f k8s/base/edit-event-consumer.yaml -f k8s/base/converter.yaml
 kubectl apply -f k8s/base/networkpolicy.yaml -f k8s/base/keda-scaledobject.yaml
 
 # 초기에는 postgres 기동 전 document-svc·access-svc·pipeline-api가 몇 차례 재시작(CrashLoop)할 수 있다 — 자가 복구됨

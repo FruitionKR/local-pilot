@@ -972,7 +972,6 @@ def _materialize_promotion_candidates(
     archived_sections: list[str] = []
     materialized_promotions: list[dict[str, Any]] = []
     merged_promotions: list[dict[str, Any]] = []
-    materialized_relations: list[dict[str, Any]] = []
     page_changes: list[dict[str, Any]] = []
     existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
     for cluster in clusters:
@@ -1047,24 +1046,10 @@ def _materialize_promotion_candidates(
                 "claims": claims,
             }
         )
-        for relation in cluster.get("relations", []):
-            relation_type = relation.get("relation")
-            target_slug = str(relation.get("target") or "").split("concept:", 1)[-1]
-            target_page_id = existing_concept_ids.get(target_slug)
-            if relation_type not in MATERIALIZED_CORE_RELATIONS or not target_page_id:
-                continue
-            _upsert_wiki_page_link(conn, page_id, target_page_id, relation_type, relation.get("reason"), 0.8, workspace_id)
-            materialized_relations.append(
-                {
-                    "from": slug,
-                    "to": target_slug,
-                    "relation": relation_type,
-                    "evidence": relation.get("evidence", []),
-                }
-            )
         section = active_sections.pop(cluster_id, "")
         if section:
             archived_sections.append(f"{section}\n\n### Archived\npromoted_to: concept:{slug}\npromoted_at: {_today_iso()}")
+    # 관계 재료화는 promotion이 모두 끝나 existing_concept_ids가 완성된 뒤 한 곳에서만 수행한다(근거 검증·dedup 포함).
     materialized_relations = _materialize_active_relation_candidates(conn, clusters, existing_concept_ids, workspace_id)
     active_markdown_update = None
     if materialized_promotions or merged_promotions:

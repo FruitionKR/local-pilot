@@ -10,7 +10,8 @@ postgres → RDS, redis → ElastiCache, minio → S3, secret.yaml → Secrets M
 | 위치 | 값 | 출처 |
 |---|---|---|
 | `kustomization.yaml` images | `REPLACE_ME_ACCOUNT_ID` | AWS 계정 ID (`terraform output ecr_repository_urls`) |
-| `configmap-aws.yaml` | `REPLACE_ME_RDS_ENDPOINT` | `terraform output rds_endpoint` |
+| `kustomization.yaml` patches | `REPLACE_ME_CORE_RDS_ENDPOINT` | `terraform output core_rds_endpoint` |
+| `kustomization.yaml` patches | `REPLACE_ME_ACCESS_RDS_ENDPOINT` | `terraform output access_rds_endpoint` |
 | `configmap-aws.yaml` | `REPLACE_ME_REDIS_ENDPOINT` | `terraform output redis_endpoint` |
 | `configmap-aws.yaml` | `REPLACE_ME_S3_BUCKET` | `terraform output s3_bucket` |
 | `configmap-aws.yaml` | `REPLACE_ME_APP_DOMAIN` | Vercel production 도메인 |

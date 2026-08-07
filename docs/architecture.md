@@ -11,9 +11,8 @@ frontend (Next.js, Vercel)
   └─ 그 외 ───────────────────────────────────────────▶ document-svc
 
 services/
-├─ front/
-│  └─ frontend/    Next.js (Vercel 배포)
-├─ back/           Gradle 멀티프로젝트 루트 (gradlew·settings.gradle)
+├─ frontend/       Next.js (Vercel 배포)
+├─ backend/        Gradle 멀티프로젝트 루트 (gradlew·settings.gradle)
 │  ├─ access-svc/     Spring, :8081  로그인·OAuth·세션·워크스페이스·멤버·권한 projection 소유
 │  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki·query, Flyway(스키마) 소유, stateless
 │  └─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)

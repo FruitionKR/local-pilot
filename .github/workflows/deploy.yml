@@ -70,7 +70,7 @@ jobs:
 
       - name: Wait for rollout
         run: |
-          for d in document-svc access-svc pipeline-api ingest-worker converter; do
+          for d in document-svc access-svc pipeline-api ingest-worker edit-event-consumer converter; do
             kubectl -n fruition rollout status deploy/"$d" --timeout=600s
           done
 

@@ -1,5 +1,5 @@
 // 스킬(스키마) 도메인 타입. llmPipeline wiki_schema 계약을 프론트 형태(camelCase)로 옮긴 것.
-// 계약 원본: services/ai-svc/pipeline/app/modules/wiki_schema/interfaces/http/schemas.py, domain/entities.py
+// 계약 원본: services/ai/pipeline/app/modules/wiki_schema/interfaces/http/schemas.py, domain/entities.py
 export type SchemaFeature = "query" | "ingest" | "edit" | "concept" | "template";
 export type SchemaStatus = "draft" | "active" | "rejected";
 export type SchemaIssueSeverity = "blocked" | "unclear";

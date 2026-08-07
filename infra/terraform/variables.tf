@@ -33,3 +33,9 @@ variable "budget_email" {
   type        = string
   default     = ""
 }
+
+variable "eks_public_access_cidrs" {
+  description = "EKS API 서버 public endpoint 허용 CIDR. 기본은 전체 개방(GitHub Actions hosted runner IP가 고정되지 않아서) — 운영 전환 시 사무실/VPN 대역으로 제한할 것."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
