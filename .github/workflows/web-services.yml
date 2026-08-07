@@ -38,7 +38,7 @@ jobs:
 
       - name: Check init container results
         run: |
-          for c in fruition-minio-init-dev fruition-kafka-init-dev; do
+          for c in fruition-minio-init-dev fruition-kafka-init-dev fruition-db-isolation-validate; do
             exit_code=$(docker wait "$c")
             echo "$c exited with $exit_code"
             test "$exit_code" = "0"
