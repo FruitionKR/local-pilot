@@ -1,5 +1,7 @@
 package fruition.core.authz;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,6 +24,8 @@ import java.time.Duration;
  */
 @Component
 public class WorkspaceAccessGuard {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceAccessGuard.class);
 
     private static final String KEY_PREFIX = "authz:role:";
     private static final Duration CACHE_TTL = Duration.ofSeconds(300);
@@ -75,9 +79,12 @@ public class WorkspaceAccessGuard {
         String key = KEY_PREFIX + workspaceId + ":" + userId;
         String cached = redisTemplate.opsForValue().get(key);
         if (cached != null) {
+            // 판정 근거 로그 — 인가 우회 의심 사례 추적용 (docs/issue/backend/2026-08-07.md)
+            log.debug("[authz] cache hit workspace={} user={} role={}", workspaceId, userId, cached);
             return cached;
         }
         String role = fetchRole(workspaceId, userId);
+        log.debug("[authz] cache miss → 내부 API 판정 workspace={} user={} role={}", workspaceId, userId, role);
         redisTemplate.opsForValue().set(key, role, CACHE_TTL);
         return role;
     }
@@ -94,6 +101,8 @@ public class WorkspaceAccessGuard {
             return response.role();
         } catch (RestClientException e) {
             // 내부 API 장애 시 열어주지 않는다(fail-closed).
+            log.warn("[authz] 내부 API 실패 — fail-closed workspace={} user={} cause={}",
+                    workspaceId, userId, e.toString());
             throw new WorkspaceNotFoundException(workspaceId);
         }
     }
