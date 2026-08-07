@@ -1,3 +1,4 @@
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -42,6 +43,10 @@ def _use_case() -> Mock:
     return use_case
 
 
+def _internal_token_headers() -> dict[str, str]:
+    return {"X-Internal-Token": os.environ["INTERNAL_CALLBACK_TOKEN"]}
+
+
 @contextmanager
 def _pipeline_client(
     *,
@@ -70,8 +75,10 @@ def _pipeline_client(
     try:
         with (
             patch.object(api.database, "verify_schema"),
+            patch.object(api.database, "ensure_ai_schema"),
             TestClient(api.app) as client,
         ):
+            client.headers.update(_internal_token_headers())
             yield client
     finally:
         api.app.dependency_overrides.clear()
@@ -81,11 +88,13 @@ def _pipeline_client(
 def test_pipeline_lifespan_verifies_flyway_schema() -> None:
     with (
         patch.object(api.database, "verify_schema") as verify_schema,
+        patch.object(api.database, "ensure_ai_schema") as ensure_ai_schema,
         TestClient(api.app),
     ):
         pass
 
     verify_schema.assert_called_once_with()
+    ensure_ai_schema.assert_called_once_with()
 
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:
@@ -348,7 +357,11 @@ def test_pipeline_command_loads_existing_source_context_for_full() -> None:
 def test_pipeline_endpoint_rejects_selection_mode() -> None:
     client = TestClient(api.app)
 
-    response = client.post("/pipeline/runs", json={"document_id": "chat_document_1", "selection_mode": "full"})
+    response = client.post(
+        "/pipeline/runs",
+        json={"document_id": "chat_document_1", "selection_mode": "full"},
+        headers=_internal_token_headers(),
+    )
 
     assert response.status_code == 422
 
@@ -356,7 +369,11 @@ def test_pipeline_endpoint_rejects_selection_mode() -> None:
 def test_chat_wiki_endpoint_requires_selection_mode() -> None:
     client = TestClient(api.app)
 
-    response = client.post("/chat-wiki/runs", json={"document_id": "chat_document_1"})
+    response = client.post(
+        "/chat-wiki/runs",
+        json={"document_id": "chat_document_1"},
+        headers=_internal_token_headers(),
+    )
 
     assert response.status_code == 422
 

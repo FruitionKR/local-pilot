@@ -4,6 +4,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -14,6 +15,13 @@ public class TestcontainersConfiguration {
 	@ServiceConnection
 	PostgreSQLContainer<?> postgresContainer() {
 		return new PostgreSQLContainer<>(DockerImageName.parse("postgres:latest"));
+	}
+
+	// 문서 편집 상태 저장소가 MongoDB(replica set)를 쓰므로 통합 테스트에도 Mongo 컨테이너를 띄운다.
+	@Bean
+	@ServiceConnection
+	MongoDBContainer mongoContainer() {
+		return new MongoDBContainer(DockerImageName.parse("mongo:7.0"));
 	}
 
 	// query run 상태·authz projection 조회가 Redis를 쓰므로 통합 테스트에도 Redis 컨테이너를 띄운다.

@@ -329,6 +329,7 @@ def test_materialize_active_relation_candidates_links_existing_concepts_only() -
             "afpm-motor-optimization": "page_target",
             "cogging-torque": "page_related",
         },
+        "workspace-1",
     )
 
     assert materialized == [

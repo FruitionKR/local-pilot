@@ -197,6 +197,7 @@ def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> Non
             "source_mentions_concept",
             "언급",
             0.9,
+            "workspace-1",
         )
     ]
 

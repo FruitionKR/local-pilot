@@ -22,7 +22,6 @@ def test_touch_pipeline_run_updates_only_running_run() -> None:
     assert "SET updated_at = now()" in sql
     assert "pr.status = 'running'" in sql
     assert "d.deleted_at IS NULL" in sql
-    assert "w.deleted_at IS NULL" in sql
     assert params == ("run-1",)
 
 
@@ -58,6 +57,5 @@ def test_finish_pipeline_run_rechecks_target_before_wiki_write() -> None:
     persist_outputs.assert_not_called()
     active_sql, active_params = connection.execute.call_args_list[1].args
     assert "d.deleted_at IS NULL" in active_sql
-    assert "w.deleted_at IS NULL" in active_sql
-    assert "FOR SHARE OF d, w" in active_sql
+    assert "FOR SHARE OF d" in active_sql
     assert active_params == ("doc-1",)
