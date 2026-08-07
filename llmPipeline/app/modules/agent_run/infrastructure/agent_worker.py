@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Annotated, Any, TypedDict
 from uuid import uuid4
+
+from langgraph.channels import UntrackedValue
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
+from langsmith import tracing_context
 
 from app.modules.agent_run.application.ports import (
     AgentJobRepositoryPort,
@@ -24,12 +31,29 @@ from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 logger = logging.getLogger(__name__)
 
 _MAX_EXECUTION_STEPS = 40
+_GRAPH_RECURSION_LIMIT = 64
+_TERMINAL_RUN_STATUSES = frozenset(
+    {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"}
+)
 _READ_TOOL_ARGUMENTS = {
     "list_root_items": frozenset(),
     "list_folder_children": frozenset({"folder_id"}),
     "get_document_metadata": frozenset({"document_id"}),
     "get_document_content": frozenset({"document_id"}),
 }
+
+
+class AgentRunGraphState(TypedDict, total=False):
+    run_id: str
+    event: str
+    plan_id: str
+    plan_version: int
+    operation_hash: str
+    observations: Annotated[list[dict[str, object]], UntrackedValue(list)]
+    allowed_read_tools: list[str]
+    steps: int
+    outcome: str
+    error_code: str
 
 
 class AgentWorker:
@@ -40,12 +64,14 @@ class AgentWorker:
         tool_gateway: AgentToolGatewayPort,
         plan_generator: AgentPlanGeneratorPort,
         execution_decider: AgentExecutionDeciderPort,
+        checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._repository = repository
         self._run_repository = run_repository
         self._tool_gateway = tool_gateway
         self._plan_generator = plan_generator
         self._execution_decider = execution_decider
+        self._graph = self._build_graph().compile(checkpointer=checkpointer or InMemorySaver())
 
     def process(self, job: AgentJob) -> None:
         stop_heartbeat = threading.Event()
@@ -56,14 +82,7 @@ class AgentWorker:
         )
         heartbeat.start()
         try:
-            if job.job_type == "planning":
-                self._plan(job)
-            elif job.job_type == "execution":
-                self._execute(job)
-            elif job.job_type == "verification":
-                self._verify(job)
-            else:
-                raise ValueError("Unsupported Agent job type.")
+            self._run_job(job)
             self._repository.complete(job)
         except Exception as exc:
             logger.exception("Agent job 처리 실패: job_id=%s job_type=%s", job.id, job.job_type)
@@ -72,17 +91,140 @@ class AgentWorker:
             stop_heartbeat.set()
             heartbeat.join(timeout=1)
 
+    def _build_graph(self) -> StateGraph:
+        graph = StateGraph(AgentRunGraphState)
+        graph.add_node("plan", self._plan_node)
+        graph.add_node("wait_for_user", self._wait_for_user_node)
+        graph.add_node("start_execution", self._start_execution_node)
+        graph.add_node("execute_step", self._execute_step_node)
+        graph.add_node("verify", self._verify_node)
+        graph.add_conditional_edges(
+            START,
+            _route_job_event,
+            {
+                "planning": "plan",
+                "execution": "start_execution",
+                "verification": "verify",
+            },
+        )
+        graph.add_edge("plan", "wait_for_user")
+        graph.add_conditional_edges(
+            "wait_for_user",
+            _route_user_decision,
+            {"approved": "start_execution", "revise": "plan"},
+        )
+        graph.add_edge("start_execution", "execute_step")
+        graph.add_conditional_edges(
+            "execute_step",
+            _route_execution,
+            {
+                "continue": "execute_step",
+                "verify": "verify",
+                "wait_for_user": "wait_for_user",
+                "finished": END,
+            },
+        )
+        graph.add_edge("verify", END)
+        return graph
+
+    def _run_job(self, job: AgentJob) -> None:
+        if job.job_type not in {"planning", "execution", "verification"}:
+            raise ValueError("Unsupported Agent job type.")
+        config = {
+            "configurable": {"thread_id": job.run_id},
+            "recursion_limit": _GRAPH_RECURSION_LIMIT,
+            "run_name": f"agent_{job.job_type}",
+        }
+        snapshot = self._graph.get_state(config)
+        pending_interrupt = any(task.interrupts for task in snapshot.tasks)
+        if job.job_type == "planning" and pending_interrupt:
+            status = self._repository.load_context(job.run_id).run.status
+            if status != "queued":
+                return
+            graph_input: AgentRunGraphState | Command | None = Command(resume={"decision": "revise"})
+        elif job.job_type == "execution" and pending_interrupt:
+            status = self._repository.load_context(job.run_id).run.status
+            if status != "executing":
+                return
+            graph_input = Command(resume={"decision": "approved"})
+        elif snapshot.next:
+            next_nodes = set(snapshot.next)
+            if job.job_type == "execution" and next_nodes == {"wait_for_user"}:
+                status = self._repository.load_context(job.run_id).run.status
+                if status in _TERMINAL_RUN_STATUSES:
+                    return
+                if status not in {"clarification_required", "queued"}:
+                    raise ValueError("Agent checkpoint is not ready for this job type.")
+                graph_input = None
+            else:
+                allowed_nodes = {
+                    "planning": {"plan", "wait_for_user"},
+                    "execution": {"start_execution", "execute_step", "verify"},
+                    "verification": {"verify"},
+                }[job.job_type]
+                if not next_nodes <= allowed_nodes:
+                    raise ValueError("Agent checkpoint is not ready for this job type.")
+                graph_input = None
+        else:
+            if (
+                snapshot.values
+                and self._repository.load_context(job.run_id).run.status in _TERMINAL_RUN_STATUSES
+            ):
+                return
+            graph_input = {"run_id": job.run_id, "event": job.job_type}
+        with tracing_context(enabled=False):
+            self._graph.invoke(graph_input, config=config, durability="sync")
+
+    def _plan_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
+        self._plan_run(state["run_id"])
+        return {"steps": 0, "outcome": ""}
+
+    def _wait_for_user_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
+        decision = interrupt(
+            {
+                "run_id": state["run_id"],
+                "reason": state.get("error_code") or "plan_approval_required",
+            }
+        )
+        if not isinstance(decision, dict) or decision.get("decision") not in {"approved", "revise"}:
+            raise ValueError("Unsupported Agent resume decision.")
+        return {"event": str(decision["decision"]), "error_code": ""}
+
+    def _start_execution_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
+        context = self._repository.load_context(state["run_id"])
+        if context.run.status == "cancelled":
+            return {"outcome": "finished"}
+        plan = self._repository.load_current_plan(state["run_id"])
+        if plan.status != "approved" or context.run.status != "executing":
+            raise ValueError("Only an approved Agent plan can execute.")
+        results = self._repository.load_operation_results(state["run_id"], plan.id)
+        return {
+            "plan_id": plan.id,
+            "plan_version": plan.version,
+            "operation_hash": plan.operation_hash,
+            "observations": [
+                {"action": "execute_operation", "operation_id": operation_id, "result": result}
+                for operation_id, result in results.items()
+            ],
+            "allowed_read_tools": list(self._allowed_read_tools(context)),
+            "steps": 0,
+            "outcome": "continue",
+        }
+
     def _heartbeat_loop(self, job: AgentJob, stop: threading.Event) -> None:
         while not stop.wait(30):
             if not self._repository.heartbeat(job):
                 return
 
     def _plan(self, job: AgentJob) -> None:
-        context = self._repository.load_context(job.run_id)
-        if context.run.status == "cancelled":
+        self._plan_run(job.run_id)
+
+    def _plan_run(self, run_id: str) -> None:
+        context = self._repository.load_context(run_id)
+        if context.run.status not in {"queued", "planning", "clarification_required"}:
             return
         if not self._repository.mark_run_status(
-            job.run_id,
+            run_id,
             ("queued", "planning", "clarification_required"),
             "planning",
         ):
@@ -91,9 +233,9 @@ class AgentWorker:
         content_artifacts = self._load_content_artifacts(context)
         plan_id = str(uuid4())
         plan = self._plan_generator.generate(
-            run_id=job.run_id,
+            run_id=run_id,
             plan_id=plan_id,
-            version=self._repository.next_plan_version(job.run_id),
+            version=self._repository.next_plan_version(run_id),
             instruction=context.run.request_summary,
             hierarchy=hierarchy,
             skill_instructions=context.skill_instructions,
@@ -108,7 +250,7 @@ class AgentWorker:
             unsupported = {operation.tool_name for operation in plan.operations} - set(context.allowed_tools)
             if unsupported:
                 raise ValueError("Agent plan contains tools not allowed by the selected Skill.")
-        self._run_repository.save_plan(job.run_id, plan)
+        self._run_repository.save_plan(run_id, plan)
 
     def _inspect_hierarchy(self, context: AgentRunContext) -> list[dict[str, object]]:
         root = self._read_tool(context, "list_root_items", {})
@@ -153,151 +295,187 @@ class AgentWorker:
         return tuple(_content_artifact(item) for item in items)
 
     def _execute(self, job: AgentJob) -> None:
-        context = self._repository.load_context(job.run_id)
-        if context.run.status == "cancelled":
-            return
-        plan = self._repository.load_current_plan(job.run_id)
-        if plan.status != "approved" or context.run.status != "executing":
-            raise ValueError("Only an approved Agent plan can execute.")
-        results = self._repository.load_operation_results(job.run_id, plan.id)
-        observations: list[dict[str, object]] = [
+        with tracing_context(enabled=False):
+            self._graph.invoke(
+                {"run_id": job.run_id, "event": "execution"},
+                config={
+                    "configurable": {"thread_id": job.run_id},
+                    "recursion_limit": _GRAPH_RECURSION_LIMIT,
+                    "run_name": "agent_execution",
+                },
+                durability="sync",
+            )
+
+    def _execute_step_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
+        run_id = state["run_id"]
+        steps = state.get("steps", 0)
+        context = self._repository.load_context(run_id)
+        if context.run.status == "clarification_required":
+            return {
+                "outcome": "wait_for_user",
+                "error_code": context.run.error_code or "clarification_required",
+                "steps": steps + 1,
+            }
+        if context.run.status in _TERMINAL_RUN_STATUSES or context.run.status in {"queued", "verifying"}:
+            return {"outcome": "finished", "steps": steps + 1}
+        if context.run.status != "executing":
+            raise ValueError("AgentRun left the executing state.")
+        if steps >= _MAX_EXECUTION_STEPS:
+            return self._request_execution_clarification(
+                run_id,
+                "react_step_limit_exceeded",
+                "Agent execution step limit exceeded.",
+                steps,
+            )
+
+        plan = self._repository.load_current_plan(run_id)
+        if (
+            plan.id != state["plan_id"]
+            or plan.version != state["plan_version"]
+            or plan.operation_hash != state["operation_hash"]
+            or plan.status != "approved"
+        ):
+            raise ValueError("Approved Agent plan changed during execution.")
+
+        results = self._repository.load_operation_results(run_id, plan.id)
+        observations = list(state.get("observations", []))
+        observed_operation_ids = {
+            str(item.get("operation_id"))
+            for item in observations
+            if item.get("action") == "execute_operation"
+        }
+        observations.extend(
             {"action": "execute_operation", "operation_id": operation_id, "result": result}
             for operation_id, result in results.items()
+            if operation_id not in observed_operation_ids
+        )
+        remaining = {
+            operation.id: operation
+            for operation in plan.operations
+            if operation.status in {"pending", "running"}
+        }
+        failed = {
+            operation.id
+            for operation in plan.operations
+            if operation.status
+            in {"failed", "forbidden", "conflicted", "skipped", "cancelled", "verification_failed"}
+        }
+        blocked = [
+            operation
+            for operation in remaining.values()
+            if any(dependency in failed for dependency in operation.depends_on)
         ]
-        configured_read_tools = self._allowed_read_tools(context)
-        for _ in range(_MAX_EXECUTION_STEPS):
-            current_context = self._repository.load_context(job.run_id)
-            if current_context.run.status == "cancelled":
-                return
-            if current_context.run.status != "executing":
-                raise ValueError("AgentRun left the executing state.")
-            current_plan = self._repository.load_current_plan(job.run_id)
-            if (
-                current_plan.id != plan.id
-                or current_plan.version != plan.version
-                or current_plan.operation_hash != plan.operation_hash
-                or current_plan.status != "approved"
-            ):
-                raise ValueError("Approved Agent plan changed during execution.")
-            remaining = {
-                operation.id: operation
-                for operation in current_plan.operations
-                if operation.status in {"pending", "running"}
-            }
-            failed = {
-                operation.id
-                for operation in current_plan.operations
-                if operation.status
-                in {"failed", "forbidden", "conflicted", "skipped", "cancelled", "verification_failed"}
-            }
-            blocked = [
-                operation
-                for operation in remaining.values()
-                if any(dependency in failed for dependency in operation.depends_on)
-            ]
-            for operation in blocked:
-                self._repository.mark_operation(
-                    operation.id,
-                    ("pending", "running"),
-                    "skipped",
-                    "dependency_failed",
-                )
-                observations.append(
-                    {
-                        "action": "operation_status",
-                        "operation_id": operation.id,
-                        "status": "skipped",
-                        "error_code": "dependency_failed",
-                    }
-                )
-            if blocked:
-                continue
-            if not remaining:
-                self._repository.enqueue_verification(job.run_id)
-                return
-            remaining_tool_calls = self._repository.remaining_tool_calls(job.run_id)
-            if remaining_tool_calls < len(remaining):
-                if not self._repository.request_clarification(
-                    job.run_id,
-                    "react_tool_budget_insufficient",
-                ):
-                    raise ValueError("AgentRun cannot request Tool budget clarification.")
-                return
-            allowed_read_tools = (
-                configured_read_tools
-                if remaining_tool_calls > len(remaining)
-                else ()
+        for operation in blocked:
+            self._repository.mark_operation(
+                operation.id,
+                ("pending", "running"),
+                "skipped",
+                "dependency_failed",
             )
-            ready = tuple(
-                operation
-                for operation in remaining.values()
-                if all(dependency in results for dependency in operation.depends_on)
-            )
-            if remaining and not ready:
-                raise ValueError("Agent plan dependency graph cannot make progress.")
-            decision = self._execution_decider.decide(
-                instruction=context.run.request_summary,
-                plan=current_plan,
-                ready_operations=ready,
-                observations=tuple(observations),
-                allowed_read_tools=allowed_read_tools,
-            )
-            if decision.action == "read":
-                latest_context = self._repository.load_context(job.run_id)
-                if latest_context.run.status == "cancelled":
-                    return
-                if latest_context.run.status != "executing":
-                    raise ValueError("AgentRun left the executing state.")
-                tool_name, arguments = self._validate_read_decision(
-                    decision.tool_name,
-                    decision.arguments,
-                    allowed_read_tools,
-                )
-                observations.append(
-                    {
-                        "action": "read",
-                        "tool_name": tool_name,
-                        "arguments": arguments,
-                        "result": self._read_tool(latest_context, tool_name, arguments),
-                    }
-                )
-                continue
-            if decision.action == "execute_operation":
-                latest_context = self._repository.load_context(job.run_id)
-                if latest_context.run.status == "cancelled":
-                    return
-                if latest_context.run.status != "executing":
-                    raise ValueError("AgentRun left the executing state.")
-                operation = next(
-                    (item for item in ready if item.id == decision.operation_id),
-                    None,
-                )
-                if operation is None:
-                    raise ValueError("Agent selected an operation that is not ready.")
-                response = self._execute_operation(latest_context, current_plan, operation, results)
-                observation: dict[str, object] = {
-                    "action": "execute_operation",
+            observations.append(
+                {
+                    "action": "operation_status",
                     "operation_id": operation.id,
-                    "status": "succeeded" if response is not None else "failed",
+                    "status": "skipped",
+                    "error_code": "dependency_failed",
                 }
-                if response is not None:
-                    results[operation.id] = response
-                    observation["result"] = response
-                observations.append(observation)
-                continue
-            if decision.action == "request_replan":
-                if not self._repository.request_clarification(
-                    job.run_id,
-                    f"react_replan_{decision.reason}",
-                ):
-                    raise ValueError("AgentRun cannot request a new plan.")
-                return
-            raise ValueError("Unsupported Agent execution action.")
-        if not self._repository.request_clarification(
-            job.run_id,
-            "react_step_limit_exceeded",
-        ):
-            raise ValueError("Agent execution step limit exceeded.")
+            )
+        if blocked:
+            return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
+        if not remaining:
+            return {"observations": observations, "steps": steps + 1, "outcome": "verify"}
+
+        remaining_tool_calls = self._repository.remaining_tool_calls(run_id)
+        if remaining_tool_calls < len(remaining):
+            return self._request_execution_clarification(
+                run_id,
+                "react_tool_budget_insufficient",
+                "AgentRun cannot request Tool budget clarification.",
+                steps,
+            )
+        configured_read_tools = tuple(state.get("allowed_read_tools", []))
+        allowed_read_tools = configured_read_tools if remaining_tool_calls > len(remaining) else ()
+        ready = tuple(
+            operation
+            for operation in remaining.values()
+            if all(dependency in results for dependency in operation.depends_on)
+        )
+        if remaining and not ready:
+            raise ValueError("Agent plan dependency graph cannot make progress.")
+
+        decision = self._execution_decider.decide(
+            instruction=context.run.request_summary,
+            plan=plan,
+            ready_operations=ready,
+            observations=tuple(observations),
+            allowed_read_tools=allowed_read_tools,
+        )
+        if decision.action == "read":
+            latest_context = self._active_execution_context(run_id)
+            if latest_context is None:
+                return {"outcome": "finished", "steps": steps + 1}
+            tool_name, arguments = self._validate_read_decision(
+                decision.tool_name,
+                decision.arguments,
+                allowed_read_tools,
+            )
+            observations.append(
+                {
+                    "action": "read",
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "result": self._read_tool(latest_context, tool_name, arguments),
+                }
+            )
+            return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
+        if decision.action == "execute_operation":
+            latest_context = self._active_execution_context(run_id)
+            if latest_context is None:
+                return {"outcome": "finished", "steps": steps + 1}
+            operation = next((item for item in ready if item.id == decision.operation_id), None)
+            if operation is None:
+                raise ValueError("Agent selected an operation that is not ready.")
+            response = self._execute_operation(latest_context, plan, operation, results)
+            observation: dict[str, object] = {
+                "action": "execute_operation",
+                "operation_id": operation.id,
+                "status": "succeeded" if response is not None else "failed",
+            }
+            if response is not None:
+                observation["result"] = response
+            observations.append(observation)
+            return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
+        if decision.action == "request_replan":
+            return self._request_execution_clarification(
+                run_id,
+                f"react_replan_{decision.reason}",
+                "AgentRun cannot request a new plan.",
+                steps,
+            )
+        raise ValueError("Unsupported Agent execution action.")
+
+    def _active_execution_context(self, run_id: str) -> AgentRunContext | None:
+        context = self._repository.load_context(run_id)
+        if context.run.status == "cancelled":
+            return None
+        if context.run.status != "executing":
+            raise ValueError("AgentRun left the executing state.")
+        return context
+
+    def _request_execution_clarification(
+        self,
+        run_id: str,
+        error_code: str,
+        failure_message: str,
+        steps: int,
+    ) -> AgentRunGraphState:
+        if not self._repository.request_clarification(run_id, error_code):
+            raise ValueError(failure_message)
+        return {
+            "outcome": "wait_for_user",
+            "error_code": error_code,
+            "steps": steps + 1,
+        }
 
     def _execute_operation(
         self,
@@ -364,11 +542,23 @@ class AgentWorker:
         return None
 
     def _verify(self, job: AgentJob) -> None:
-        context = self._repository.load_context(job.run_id)
-        if context.run.status == "cancelled":
+        self._verify_run(job.run_id)
+
+    def _verify_node(self, state: AgentRunGraphState) -> AgentRunGraphState:
+        self._verify_run(state["run_id"])
+        return {"outcome": "finished"}
+
+    def _verify_run(self, run_id: str) -> None:
+        context = self._repository.load_context(run_id)
+        if context.run.status in _TERMINAL_RUN_STATUSES:
             return
-        plan = self._repository.load_current_plan(job.run_id)
-        results = self._repository.load_operation_results(job.run_id, plan.id)
+        if context.run.status == "executing":
+            if not self._repository.mark_run_status(run_id, ("executing",), "verifying"):
+                raise ValueError("AgentRun cannot enter verification.")
+        elif context.run.status != "verifying":
+            raise ValueError("AgentRun cannot enter verification.")
+        plan = self._repository.load_current_plan(run_id)
+        results = self._repository.load_operation_results(run_id, plan.id)
         for operation in plan.operations:
             if operation.status != "succeeded":
                 continue
@@ -380,7 +570,7 @@ class AgentWorker:
                     "verification_failed",
                     "state_mismatch",
                 )
-        self._repository.finish_run_from_operations(job.run_id)
+        self._repository.finish_run_from_operations(run_id)
 
     def _verify_operation(
         self,
@@ -454,6 +644,27 @@ class AgentWorker:
         if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
             raise ValueError("Agent read arguments must contain non-empty ids.")
         return tool_name, arguments
+
+
+def _route_job_event(state: AgentRunGraphState) -> str:
+    event = state.get("event")
+    if event not in {"planning", "execution", "verification"}:
+        raise ValueError("Unsupported Agent graph event.")
+    return event
+
+
+def _route_user_decision(state: AgentRunGraphState) -> str:
+    decision = state.get("event")
+    if decision not in {"approved", "revise"}:
+        raise ValueError("Unsupported Agent resume decision.")
+    return decision
+
+
+def _route_execution(state: AgentRunGraphState) -> str:
+    outcome = state.get("outcome")
+    if outcome not in {"continue", "verify", "wait_for_user", "finished"}:
+        raise ValueError("Unsupported Agent execution outcome.")
+    return outcome
 
 
 def _resolve_operation_references(
