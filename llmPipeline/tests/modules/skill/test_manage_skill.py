@@ -100,8 +100,8 @@ class ManageSkillTest(unittest.TestCase):
             name="concise-document",
             description="문서를 간결하게 작성합니다.",
             instructions_markdown="핵심만 작성한다.",
-            capabilities=(),
-            allowed_tools=(),
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
         )
 
         self.assertIsNone(skill.workspace_id)
@@ -120,8 +120,8 @@ class ManageSkillTest(unittest.TestCase):
             name="concise-document",
             description="문서를 간결하게 작성합니다.",
             instructions_markdown="핵심만 작성한다.",
-            capabilities=(),
-            allowed_tools=(),
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
         )
         skill = use_case.set_enabled("workspace-1", "user-1", skill.id, False)
 
@@ -132,8 +132,8 @@ class ManageSkillTest(unittest.TestCase):
             name="concise-document",
             description="문서를 더 간결하게 작성합니다.",
             instructions_markdown="핵심만 두 문단으로 작성한다.",
-            capabilities=(),
-            allowed_tools=(),
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
         )
 
         self.assertEqual(updated.status, "disabled")
@@ -169,6 +169,22 @@ class ManageSkillTest(unittest.TestCase):
                 instructions_markdown="정리한다.",
                 capabilities=("folder-organize",),
                 allowed_tools=("shell",),  # type: ignore[arg-type]
+            )
+
+    def test_rejects_skill_without_routable_capability(self) -> None:
+        use_case = ManageSkillUseCase(InMemoryManageSkillRepository())  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(ValueError, "supported values"):
+            use_case.create_published(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                slug="unroutable-skill",
+                name="unroutable-skill",
+                description="어떤 Agent 작업에도 연결되지 않습니다.",
+                instructions_markdown="지침만 저장한다.",
+                capabilities=(),
+                allowed_tools=(),
             )
 
     def test_rejects_tool_outside_capability_when_updating(self) -> None:
@@ -236,8 +252,8 @@ class ManageSkillTest(unittest.TestCase):
         create = dict(
             description="문서를 정리합니다.",
             instructions_markdown="핵심만 작성한다.",
-            capabilities=(),
-            allowed_tools=(),
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
             slug="meeting-notes",
             name="meeting-notes",
         )

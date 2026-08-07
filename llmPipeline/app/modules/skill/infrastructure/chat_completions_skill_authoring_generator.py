@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from pathlib import Path
 
 from app.core.llm_env import (
@@ -12,6 +11,7 @@ from app.core.llm_env import (
     resolve_llm_provider,
 )
 from app.modules.skill.domain.entities import SkillAuthoringMode, SkillAuthoringReference
+from app.modules.skill.domain.reference_template import extract_markdown_structure
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
@@ -19,15 +19,50 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
 
 
 DEFAULT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_authoring.system.md"
-HEADING_PATTERN = re.compile(r"^ {0,3}#{1,6}\s+\S")
-LIST_ITEM_PATTERN = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+\S")
-TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$")
+DEFAULT_CLASSIFIER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_intent_classifier.system.md"
+DEFAULT_VERIFIER_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "skill_intent_verifier.system.md"
 
 
 class ChatCompletionsSkillAuthoringGenerator:
-    def __init__(self, client: ChatCompletionsJsonClient, system_prompt: str) -> None:
+    def __init__(
+        self,
+        client: ChatCompletionsJsonClient,
+        system_prompt: str,
+        classifier_prompt: str,
+        verifier_prompt: str,
+    ) -> None:
         self._client = client
         self._system_prompt = system_prompt
+        self._classifier_prompt = classifier_prompt
+        self._verifier_prompt = verifier_prompt
+
+    def classify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]:
+        return self._complete_intent(
+            self._classifier_prompt,
+            instruction,
+            references,
+            requested_description,
+        )
+
+    def verify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]:
+        return self._complete_intent(
+            self._verifier_prompt,
+            instruction,
+            references,
+            requested_description,
+        )
 
     def generate(
         self,
@@ -38,16 +73,18 @@ class ChatCompletionsSkillAuthoringGenerator:
         authoring_mode: SkillAuthoringMode,
         requested_name: str | None,
         requested_description: str | None = None,
+        reference_mode: str,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "instruction": instruction,
             "authoring_mode": authoring_mode,
             "requested_name": requested_name,
             "requested_description": requested_description,
+            "reference_mode": reference_mode,
             "interaction_mode": "multi_turn" if allow_clarification else "single_turn",
             "references": [
                 {
-                    "markdown_structure": _extract_markdown_structure(reference.markdown),
+                    "markdown_structure": extract_markdown_structure(reference.markdown),
                 }
                 for reference in references
             ],
@@ -60,39 +97,34 @@ class ChatCompletionsSkillAuthoringGenerator:
         ]
         return self._complete(payload)
 
+    def _complete_intent(
+        self,
+        system_prompt: str,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        requested_description: str | None,
+    ) -> dict[str, object]:
+        return self._client.complete_json(
+            system_prompt,
+            json.dumps(
+                {
+                    "instruction": instruction,
+                    "requested_description": requested_description,
+                    "references": [
+                        {"markdown_structure": extract_markdown_structure(reference.markdown)}
+                        for reference in references
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
     def _complete(self, payload: dict[str, object]) -> dict[str, object]:
         return self._client.complete_json(
             self._system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
         )
-
-
-def _extract_markdown_structure(markdown: str) -> str:
-    lines = markdown.splitlines()
-    structure: list[str] = []
-    fence_marker: str | None = None
-    for index, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith(("```", "~~~")):
-            marker = stripped[:3]
-            if fence_marker is None:
-                fence_marker = marker
-            elif fence_marker == marker:
-                fence_marker = None
-            continue
-        if fence_marker is not None:
-            continue
-        if HEADING_PATTERN.match(line):
-            structure.append(line.rstrip())
-            continue
-        list_item = LIST_ITEM_PATTERN.match(line)
-        if list_item:
-            marker = line[len(list_item.group(1)) :].split(maxsplit=1)[0]
-            structure.append(f"{list_item.group(1)}{marker} [item]")
-            continue
-        if index + 1 < len(lines) and "|" in line and TABLE_SEPARATOR_PATTERN.match(lines[index + 1]):
-            structure.extend((line.rstrip(), lines[index + 1].rstrip()))
-    return "\n".join(structure)
 
 
 def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:
@@ -112,6 +144,12 @@ def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:
         default_base_url=provider_base_url(),
     )
     prompt_path = Path(os.environ.get("SKILL_AUTHORING_SYSTEM_PROMPT", str(DEFAULT_PROMPT)))
+    classifier_prompt_path = Path(
+        os.environ.get("SKILL_INTENT_CLASSIFIER_SYSTEM_PROMPT", str(DEFAULT_CLASSIFIER_PROMPT))
+    )
+    verifier_prompt_path = Path(
+        os.environ.get("SKILL_INTENT_VERIFIER_SYSTEM_PROMPT", str(DEFAULT_VERIFIER_PROMPT))
+    )
     return ChatCompletionsSkillAuthoringGenerator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
@@ -125,4 +163,6 @@ def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:
             )
         ),
         prompt_path.read_text(encoding="utf-8"),
+        classifier_prompt_path.read_text(encoding="utf-8"),
+        verifier_prompt_path.read_text(encoding="utf-8"),
     )

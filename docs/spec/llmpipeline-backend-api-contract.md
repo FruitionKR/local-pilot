@@ -1028,7 +1028,7 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 
 ### 자연어 Skill 작성 — `POST /skills/author`
 
-짧은 자연어 또는 사용자가 직접 작성한 Markdown을 검토 가능한 Skill 제안으로 반환하며 이 단계에서는 DB에 저장하지 않는다. `authoring_mode=enhance`는 LLM으로 내용을 구체화하고, `authoring_mode=preserve`는 사용자의 `instruction`을 변경하지 않은 채 보안 재검토와 내부 metadata 분석만 수행한다. 차단 화면의 `authoring_mode=regenerate`는 규칙 검사에서 찾은 위험 구간을 서버가 `[보안상 제거됨]`으로 치환한 뒤 LLM이 안전한 흐름으로 다시 작성한다. 의미 기반 위험 구간만 남아 있으면 LLM이 정확한 원문 위치를 먼저 반환하고, 서버가 해당 구간을 제거한 뒤 한 번만 재생성한다. Skill 이름은 `/` 뒤에 사용하는 커맨드 식별자이며 lowercase-hyphen 형식만 허용한다. personal Skill은 최종 게시 시 `workspace_id=null`로 만들고 모든 Workspace에서 소유자에게 노출하며, team Skill만 현재 Workspace에 귀속한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않으며, 서버가 LLM 후보를 고정 allowlist와 capability별 Tool 정책으로 검증한다.
+짧은 자연어 또는 사용자가 직접 작성한 Markdown을 검토 가능한 Skill 제안으로 반환하며 이 단계에서는 DB에 저장하지 않는다. `authoring_mode=enhance`는 LLM으로 내용을 구체화하고, `authoring_mode=preserve`는 사용자의 `instruction`을 변경하지 않은 채 보안 재검토와 내부 metadata 분석만 수행한다. 차단 화면의 `authoring_mode=regenerate`는 규칙 검사에서 찾은 위험 구간을 서버가 `[보안상 제거됨]`으로 치환한 뒤 LLM이 안전한 흐름으로 다시 작성한다. 의미 기반 위험 구간만 남아 있으면 LLM이 정확한 원문 위치를 먼저 반환하고, 서버가 해당 구간을 제거한 뒤 한 번만 재생성한다. 서로 다른 system prompt를 사용하는 intent 분류기와 검증기가 각각 요청을 판단하고 `skill_kind`·참조 용도·Tool이 모두 일치할 때만 서버가 `skill_kind`를 capability로 고정 변환한다. 고정 템플릿으로 판단한 참조 문서가 하나일 때만 서버가 추출한 Markdown 구조를 고정 출력 템플릿으로 그대로 조립한다. Skill 이름은 `/` 뒤에 사용하는 커맨드 식별자이며 lowercase-hyphen 형식만 허용한다. personal Skill은 최종 게시 시 `workspace_id=null`로 만들고 모든 Workspace에서 소유자에게 노출하며, team Skill만 현재 Workspace에 귀속한다. 사용자는 `capabilities`와 `allowed_tools`를 보내거나 응답으로 받지 않는다. 지원 Agent action에 매핑할 수 없는 요청과 빈 capability는 검토·게시하지 않는다.
 
 | request 필드 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
@@ -1039,7 +1039,7 @@ mutation tool을 허용하면 planning용 `list_root_items`, `list_folder_childr
 | `description` | string/null | 아니오, 최대 500자 | 보안 재검토 시 그대로 유지할 사용자 검토 설명 |
 | `instruction` | string | 예 | `preserve`는 1~30,000자, `enhance`와 `regenerate`는 1~4,000자 |
 | `authoring_mode` | `preserve`/`enhance`/`regenerate` | 아니오, 기본 `enhance` | 원문 보존, LLM 구체화 또는 차단 내용 안전 재생성 모드 |
-| `reference_document_ids` | string array | 아니오, 최대 3개 | 구조만 참고할 Markdown 문서 ID |
+| `reference_document_ids` | string array | 아니오, 최대 3개 | 구조만 참고할 Markdown 문서 ID. 명시적 템플릿 생성은 정확히 1개만 허용한다. |
 
 참조 ID가 있으면 llmPipeline은 AgentRun Tool Gateway가 아닌 `POST /internal/agent/skill-authoring/references/read`로 Workspace·User 권한이 적용된 현재 문서를 조회한다. 자연어 Skill 작성에는 AgentRun이 없으므로 `run_id`를 만들거나 `/internal/agent/tools/read/*`의 run 검증을 우회하지 않는다. 현재 Spring 전용 route가 미구현이므로 참조 있는 요청은 구현 전까지 동작하지 않으며, 참조 없는 요청은 이 제약을 받지 않는다.
 
@@ -1070,9 +1070,10 @@ Spring은 service token과 현재 Workspace membership, Document 소속·read �
 1. 자연어와 참조 개수·개별/전체 Markdown 크기 검사
 2. instruction·description·참조의 승인 우회·권한 상승·system prompt 탈취·역할 변경 marker 차단
 3. 참조에서 heading·목록 marker·표 header 구조만 추출하고 실제 문서명과 본문을 제외한 비신뢰 user payload로 전달
-4. LLM이 instruction·description·참조 구조에서 marker에 없는 의미 기반 prompt injection·정책 우회도 `blocked`로 판정하고, 서버가 출처별 issue 원문 위치를 검증
-5. 생성 결과의 필수 필드·길이·slug·capability·Tool 교집합 검사
-6. 참조 ID 고정값, credential 형태와 위험 instruction을 다시 차단한 뒤 저장하지 않은 제안 반환
+4. 서로 다른 prompt의 intent 분류기·검증기가 지원 Agent action, 참조 용도, 최소 Tool을 각각 판정하고 전체 일치를 검증
+5. 일치한 `skill_kind`를 서버가 capability로 변환한 뒤 Markdown 생성 LLM이 의미 기반 prompt injection·정책 우회를 `blocked`로 판정하고, 서버가 출처별 issue 원문 위치를 검증
+6. 생성 결과의 필수 필드·길이·slug·비어 있지 않은 capability·Tool 교집합 검사
+7. 참조 ID 고정값, credential 형태와 위험 instruction을 다시 차단한 뒤 저장하지 않은 제안 반환
 
 #### 생성 요청
 
@@ -1109,6 +1110,8 @@ X-Agent-Service-Token: {agent-token}
 
 `authoring_mode=preserve`이면 `skill_markdown`의 본문은 입력 `instruction`과 같아야 한다. 검토 화면의 `보안 재검토`는 현재 Markdown을 이 모드로 다시 보내 내용을 바꾸지 않고 전체 검증한다. 차단 화면의 `AI로 재생성`은 같은 endpoint를 `regenerate`로 호출한다. 규칙 검사에서 찾은 위험 구간은 LLM에 전달하기 전에 `[보안상 제거됨]`으로 치환하며, LLM만 찾은 의미 기반 위험 구간은 판정 응답의 위치를 서버가 검증·제거한 뒤 한 번 재요청한다. 두 동작 모두 DB에 저장하지 않는다. `name`이 전달되면 LLM 결과보다 사용자 커맨드 이름을 우선하고, 없으면 LLM이 lowercase-hyphen 커맨드 이름을 제안한다.
 
+LLM이 사용자 의도를 `fixed-template`으로 판단한 경우에만 서버가 heading, 목록 marker, 표 header·separator를 추출해 `# 고정 출력 템플릿`의 fenced Markdown으로 조립한다. 일반 `structure-reference`는 LLM이 생성한 문서 작성·수정 Skill을 유지한다. 고정 템플릿에서는 LLM이 반환한 `instructions_markdown`을 사용하지 않으며, `AI로 재생성`해도 이 고정 템플릿 블록을 유지한다. 추출할 재사용 구조가 없거나 고정 템플릿으로 문서를 여러 개 선택하면 `400`이다.
+
 #### 보안 차단 응답
 
 입력·참조·생성 결과에서 차단 수준 문제가 발견되면 `status=blocked`와 문제 목록을 반환한다. 검토 화면은 해당 구간과 사유를 표시하고 `최종 게시`를 비활성화한다. 사용자가 내용을 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 다시 호출해야 한다. `AI로 재생성`을 명시적으로 선택한 경우에만 위험 구간을 필수 제거한 안전 제안을 만들며, 원문 보존·재검토 경로에서는 내용을 조용히 바꾸지 않는다.
@@ -1137,11 +1140,11 @@ X-Agent-Service-Token: {agent-token}
 
 참조가 필요한 표현인데 문서가 선택되지 않았으면 문서를 추측하지 않는다. 대신 요청 유형에 맞는 일반 구조와 placeholder를 사용한 제안을 반환하며 사용자가 Markdown을 직접 검토·수정한다. LLM이 `clarification_required`를 반환하면 제안 생성을 한 번 재요청하고, 반복해서 질문을 반환하면 잘못된 생성 결과로 거절한다.
 
-입력 길이·참조 접근·지원하지 않는 내부 metadata는 `400`, request schema 위반은 `422`다. 보안 문제가 발견된 authoring 결과는 `status=blocked`로 반환하며 저장하지 않는다. LLM 또는 내부 연동 실패는 `500`이다.
+입력 길이·참조 접근·지원하지 않는 내부 metadata·지원 Agent action으로 매핑할 수 없는 요청·두 intent 판정의 불일치·단발 입력의 모호함·빈 capability는 `400`, request schema 위반은 `422`다. 채팅에서 분류·검증이 불일치하거나 모호하면 `clarification_required`를 반환한다. 보안 문제가 발견된 authoring 결과는 `status=blocked`로 반환하며 저장하지 않는다. LLM 또는 내부 연동 실패는 `500`이다.
 
 ### 검토된 Skill 최종 게시 — `POST /skills/author/publish`
 
-검토 화면의 `최종 게시`가 호출한다. `workspace_id`, `user_id`, `scope_type`, 최종 `name`, `description`, `instructions_markdown`만 받는다. 서버는 현재 내용을 `preserve` 모드로 LLM과 규칙 검사에 다시 통과시켜 내부 capability·Tool을 재계산하고, 통과한 경우에만 `skills`와 version 1 `published`를 한 transaction으로 저장한다. 새 Skill의 자연어 자동 라우팅 상태는 기본 `enabled`다. 차단되면 `status=blocked`를 반환하고 아무 row도 만들지 않는다.
+검토 화면의 `최종 게시`가 호출한다. `workspace_id`, `user_id`, `scope_type`, 최종 `name`, `description`, `instructions_markdown`만 받는다. 서버는 현재 내용을 `preserve` 모드로 독립 intent 분류·검증과 보안 규칙에 다시 통과시켜 내부 capability·Tool을 재계산하고, 통과한 경우에만 `skills`와 version 1 `published`를 한 transaction으로 저장한다. 새 Skill의 자연어 자동 라우팅 상태는 기본 `enabled`다. 차단되면 아무 row도 만들지 않는다.
 
 ```json
 {

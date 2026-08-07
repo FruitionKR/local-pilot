@@ -666,8 +666,8 @@ flowchart LR
 - **Input:** 개인/팀 범위, 선택적 커맨드 이름, 자연어 또는 직접 작성한 Markdown, preserve/enhance authoring mode, 선택적 참조 문서 ID, 최종 게시·자동 라우팅 변경 요청
 - **Responsibility:** 권한이 확인된 참조 Markdown 구조를 비신뢰 데이터로 격리하고, 원문 보존·AI 구체화·AI 재생성·보안 재검토를 모두 미저장 제안으로 처리한 뒤 최종 게시에서만 version을 저장한다.
 - **Output:** 편집 가능한 Skill Markdown 제안, 위치·이유를 포함한 보안 차단 issue, 채팅 보충 질문, 최종 published version, 완료 작업 기반 proposal
-- **Key Logic:** `preserve`는 현재 Markdown을 바꾸지 않고 재검토하며 `enhance`만 LLM으로 내용을 구체화한다. 최종 게시에서 같은 내용을 다시 검증하고 personal 계정/team Workspace 범위의 커맨드 중복을 transaction 안에서 차단한 뒤 기본 자동 라우팅 ON으로 저장한다. 채팅 `pending_skill_proposal`은 커맨드·범위·본문을 DB 없이 유지한다.
-- **Failure Handling:** 자연어 authoring의 위험한 instruction·지원하지 않는 tool은 `400`, request schema 위반은 `422`로 거절한다. 기존 Skill 관리 API의 없거나 관리할 수 없는 Skill과 version 충돌은 현재 `400`으로 반환한다.
+- **Key Logic:** `preserve`는 현재 Markdown을 바꾸지 않고 재검토하며 `enhance`는 LLM으로 내용을 구체화한다. 서로 다른 prompt의 Skill intent 분류기와 검증기가 `skill_kind`·참조 용도·Tool에 동의해야 서버가 capability를 고정 변환하고 Markdown 생성을 진행한다. 고정 템플릿일 때만 서버가 추출 구조를 고정 Markdown으로 조립한다. 최종 게시에서 같은 내용을 다시 분류·검증하고 personal 계정/team Workspace 범위의 커맨드 중복을 transaction 안에서 차단한 뒤 기본 자동 라우팅 ON으로 저장한다. 채팅 `pending_skill_proposal`은 커맨드·범위·본문을 DB 없이 유지한다.
+- **Failure Handling:** 자연어 authoring의 위험한 instruction, 지원 Agent action에 라우팅할 수 없는 요청, 두 intent 판정의 불일치·단발 입력의 모호함, 빈 capability·지원하지 않는 tool은 `400`, request schema 위반은 `422`로 거절한다. 채팅의 모호함·불일치는 보충 질문으로 반환한다. 기존 Skill 관리 API의 없거나 관리할 수 없는 Skill과 version 충돌은 현재 `400`으로 반환한다.
 - **Why this exists:** 반복 작업 규칙을 자유 형식 prompt가 아닌 검증·version 가능한 Skill로 관리하기 위해 존재한다.
 
 #### 요청별 Skill 선택 (`SelectSkillUseCase`)

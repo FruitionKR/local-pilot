@@ -20,14 +20,40 @@ from app.modules.skill.interfaces.http.routes import router as skill_router
 
 
 class FixedGenerator:
-    def __init__(self, result: dict[str, object]) -> None:
+    def __init__(
+        self,
+        result: dict[str, object],
+        intent: dict[str, object] | None = None,
+        verification: dict[str, object] | None = None,
+    ) -> None:
         self.result = result
+        self.intent = intent or intent_result()
+        self.verification = verification or self.intent
         self.instruction = ""
         self.references: tuple[SkillAuthoringReference, ...] = ()
         self.allow_clarification = True
         self.authoring_mode = "enhance"
         self.requested_name: str | None = None
         self.requested_description: str | None = None
+        self.reference_mode = "none"
+
+    def classify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]:
+        return self.intent
+
+    def verify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]:
+        return self.verification
 
     def generate(
         self,
@@ -38,6 +64,7 @@ class FixedGenerator:
         authoring_mode: str = "enhance",
         requested_name: str | None = None,
         requested_description: str | None = None,
+        reference_mode: str = "none",
     ) -> dict[str, object]:
         self.instruction = instruction
         self.references = references
@@ -45,6 +72,7 @@ class FixedGenerator:
         self.authoring_mode = authoring_mode
         self.requested_name = requested_name
         self.requested_description = requested_description
+        self.reference_mode = reference_mode
         return self.result
 
 
@@ -82,12 +110,14 @@ class FixedReferenceReader:
 class RecordingClient:
     def __init__(self, responses: list[dict[str, object]] | None = None) -> None:
         self.system_prompt = ""
+        self.system_prompts: list[str] = []
         self.user_prompt = ""
         self.user_prompts: list[str] = []
         self.responses = responses or [{"status": "clarification_required", "question": "질문"}]
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
         self.system_prompt = system_prompt
+        self.system_prompts.append(system_prompt)
         self.user_prompt = user_prompt
         self.user_prompts.append(user_prompt)
         return self.responses.pop(0)
@@ -135,8 +165,22 @@ def draft_result() -> dict[str, object]:
         "name": "concise-document-writer",
         "description": "요청한 내용을 간결한 문서로 작성합니다.",
         "instructions_markdown": "# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.",
-        "capabilities": ["document-create"],
-        "allowed_tools": ["list_root_items", "list_folder_children", "create_document"],
+    }
+
+
+def intent_result(
+    *,
+    skill_kind: str = "document-create",
+    reference_mode: str = "none",
+    allowed_tools: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "decision": "supported",
+        "skill_kind": skill_kind,
+        "reference_mode": reference_mode,
+        "allowed_tools": allowed_tools
+        if allowed_tools is not None
+        else ["list_root_items", "list_folder_children", "create_document"],
     }
 
 
@@ -231,11 +275,125 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertNotIn("allowed_tools", response)
         self.assertEqual(repository.skills, {})
 
-    def test_preserve_mode_keeps_input_and_user_name_without_capabilities(self) -> None:
+    def test_reference_template_uses_extracted_structure_instead_of_llm_instructions(self) -> None:
         candidate = draft_result()
-        candidate.pop("capabilities")
-        candidate.pop("allowed_tools")
-        use_case, repository = self.build_use_case(FixedGenerator(candidate))
+        candidate["instructions_markdown"] = "# LLM이 재작성한 템플릿"
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                candidate,
+                intent=intent_result(skill_kind="template", reference_mode="fixed-template"),
+            ),
+            FixedReferenceReader(
+                "# 8월 제품 회의\n\n"
+                "## 참석자\n\n"
+                "- 재형\n"
+                "- 철수\n\n"
+                "## 안건\n\n"
+                "1. 로그인 속도 개선\n\n"
+                "| 담당자 | 기한 |\n"
+                "| --- | --- |\n"
+                "| 재형 | 8월 20일 |\n"
+            ),
+        )
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="이 문서를 템플릿으로 만들어줘",
+            reference_document_ids=("document-1",),
+        )
+
+        instructions = result.proposal.instructions_markdown  # type: ignore[union-attr]
+        self.assertNotIn("LLM이 재작성한", instructions)
+        self.assertIn(
+            "```markdown\n"
+            "# 8월 제품 회의\n"
+            "## 참석자\n"
+            "- [item]\n"
+            "- [item]\n"
+            "## 안건\n"
+            "1. [item]\n"
+            "| 담당자 | 기한 |\n"
+            "| --- | --- |\n"
+            "```",
+            instructions,
+        )
+        self.assertEqual(result.proposal.capabilities, ("template",))  # type: ignore[union-attr]
+        self.assertEqual(repository.skills, {})
+
+    def test_reference_template_requires_one_document(self) -> None:
+        candidate = draft_result()
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                candidate,
+                intent=intent_result(skill_kind="template", reference_mode="fixed-template"),
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "exactly one document"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction="이 문서를 템플릿으로 만들어줘",
+                reference_document_ids=("document-1", "document-2"),
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_regenerate_keeps_embedded_reference_template(self) -> None:
+        candidate = draft_result()
+        candidate["instructions_markdown"] = "# 재생성된 내용"
+        use_case, repository = self.build_use_case(
+            FixedGenerator(candidate, intent=intent_result(skill_kind="template"))
+        )
+        original = (
+            "# 작성 규칙\n\n"
+            "- 입력 내용을 정리한다.\n\n"
+            "# 고정 출력 템플릿\n\n"
+            "```markdown\n# 회의록\n## 결정 사항\n- [item]\n```"
+        )
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            name="meeting-notes",
+            instruction=original,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="regenerate",
+        )
+
+        instructions = result.proposal.instructions_markdown  # type: ignore[union-attr]
+        self.assertIn("```markdown\n# 회의록\n## 결정 사항\n- [item]\n```", instructions)
+        self.assertNotIn("재생성된 내용", instructions)
+        self.assertEqual(result.proposal.capabilities, ("template",))  # type: ignore[union-attr]
+        self.assertEqual(repository.skills, {})
+
+    def test_regenerate_rejects_fixed_template_with_non_template_intent(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+
+        with self.assertRaisesRegex(ValueError, "template skill kind"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction=(
+                    "# 작성 규칙\n\n"
+                    "# 고정 출력 템플릿\n\n"
+                    "```markdown\n# 회의록\n## 결정 사항\n- [item]\n```"
+                ),
+                reference_document_ids=(),
+                allow_clarification=False,
+                authoring_mode="regenerate",
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_preserve_mode_keeps_input_and_user_name(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
         original = "## 내 규칙\n\n- 입력 문장을 그대로 보존한다."
 
         result = use_case.execute(
@@ -253,8 +411,106 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertIsNotNone(proposal)
         self.assertEqual(proposal.name, "my-rules")  # type: ignore[union-attr]
         self.assertEqual(proposal.instructions_markdown, original)  # type: ignore[union-attr]
-        self.assertEqual(proposal.capabilities, ())  # type: ignore[union-attr]
-        self.assertEqual(proposal.allowed_tools, ())  # type: ignore[union-attr]
+        self.assertEqual(proposal.capabilities, ("document-create",))  # type: ignore[union-attr]
+        self.assertEqual(repository.skills, {})
+
+    def test_rejects_skill_without_routable_capability(self) -> None:
+        invalid_intent = {
+            "decision": "supported",
+            "skill_kind": None,
+            "reference_mode": "none",
+            "allowed_tools": [],
+        }
+        use_case, repository = self.build_use_case(
+            FixedGenerator(draft_result(), intent=invalid_intent)
+        )
+
+        with self.assertRaisesRegex(ValueError, "supported skill_kind"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction="짧은 지침을 저장하는 스킬",
+                reference_document_ids=(),
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_rejects_request_outside_supported_agent_actions(self) -> None:
+        unsupported = {
+            "decision": "unsupported",
+            "skill_kind": None,
+            "reference_mode": "none",
+            "allowed_tools": [],
+        }
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=unsupported,
+                verification=intent_result(),
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "supported Agent action"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction="Slack으로 매일 알림을 보내는 스킬",
+                reference_document_ids=(),
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_rejects_disagreeing_intent_classifications(self) -> None:
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=intent_result(),
+                verification=intent_result(
+                    skill_kind="document-edit",
+                    allowed_tools=[
+                        "list_root_items",
+                        "list_folder_children",
+                        "apply_document_edit",
+                    ],
+                ),
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "classified consistently"):
+            use_case.execute(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                instruction="문서를 정리하는 스킬",
+                reference_document_ids=(),
+                allow_clarification=False,
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_chat_asks_when_intent_classification_is_ambiguous(self) -> None:
+        ambiguous = {
+            "decision": "ambiguous",
+            "skill_kind": None,
+            "reference_mode": "none",
+            "allowed_tools": [],
+        }
+        use_case, repository = self.build_use_case(
+            FixedGenerator(draft_result(), intent=ambiguous)
+        )
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="문서를 정리하는 스킬",
+            reference_document_ids=(),
+        )
+
+        self.assertEqual(result.status, "clarification_required")
+        self.assertIn("문서 작성", result.question)  # type: ignore[operator]
         self.assertEqual(repository.skills, {})
 
     def test_rejects_non_english_user_name_before_generation(self) -> None:
@@ -275,7 +531,10 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(repository.skills, {})
 
     def test_reads_selected_reference_as_untrusted_context(self) -> None:
-        generator = FixedGenerator(draft_result())
+        generator = FixedGenerator(
+            draft_result(),
+            intent=intent_result(reference_mode="structure-reference"),
+        )
         use_case, _ = self.build_use_case(generator)
 
         use_case.execute(
@@ -288,20 +547,27 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(generator.references[0].id, "document-1")
 
-    def test_allows_generic_reference_name_in_generated_skill(self) -> None:
+    def test_reference_does_not_force_template_capability(self) -> None:
         candidate = draft_result()
         candidate["name"] = "reference-document-writer"
-        use_case, repository = self.build_use_case(FixedGenerator(candidate))
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                candidate,
+                intent=intent_result(reference_mode="structure-reference"),
+            )
+        )
 
         result = use_case.execute(
             workspace_id="workspace-1",
             user_id="user-1",
             scope_type="personal",
-            instruction="선택한 문서 구조로 작성하는 스킬",
+            instruction="선택한 템플릿을 참고해서 새 문서를 작성하는 스킬",
             reference_document_ids=("document-1",),
         )
 
         self.assertEqual(result.status, "proposal_ready")
+        self.assertEqual(result.proposal.capabilities, ("document-create",))  # type: ignore[union-attr]
+        self.assertNotIn("고정 출력 템플릿", result.proposal.instructions_markdown)  # type: ignore[union-attr]
         self.assertEqual(repository.skills, {})
 
     def test_uses_generated_slug_as_name_and_command(self) -> None:
@@ -484,7 +750,8 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                         "reason": "참조 문서의 상위 지침 우회입니다.",
                     }
                 ],
-            }
+            },
+            intent=intent_result(reference_mode="structure-reference"),
         )
         use_case, repository = self.build_use_case(
             generator,
@@ -683,10 +950,15 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                 document_id="document-1",
             )
 
-    def test_rejects_generated_tool_outside_capability(self) -> None:
-        candidate = draft_result()
-        candidate["allowed_tools"] = ["list_root_items", "list_folder_children", "move_document"]
-        use_case, repository = self.build_use_case(FixedGenerator(candidate))
+    def test_rejects_classified_tool_outside_capability(self) -> None:
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=intent_result(
+                    allowed_tools=["list_root_items", "list_folder_children", "move_document"]
+                ),
+            )
+        )
 
         with self.assertRaisesRegex(ValueError, "unsupported tools"):
             use_case.execute(
@@ -787,7 +1059,9 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                 draft_result(),
             ]
         )
-        generator = ChatCompletionsSkillAuthoringGenerator(client, "system rules")  # type: ignore[arg-type]
+        generator = ChatCompletionsSkillAuthoringGenerator(
+            client, "system rules", "classifier rules", "verifier rules"
+        )  # type: ignore[arg-type]
 
         result = generator.generate(
             "그 문서처럼 회의록 스킬을 만들어줘",
@@ -795,6 +1069,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             allow_clarification=False,
             authoring_mode="enhance",
             requested_name=None,
+            reference_mode="none",
         )
 
         self.assertEqual(result["status"], "proposal_ready")
@@ -805,12 +1080,34 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(first_payload["authoring_mode"], "enhance")
         self.assertIn("single_turn authoring", retry_payload["contract_failures"][0])
 
+    def test_intent_classifier_and_verifier_use_independent_prompts(self) -> None:
+        client = RecordingClient([intent_result(), intent_result()])
+        generator = ChatCompletionsSkillAuthoringGenerator(
+            client, "author rules", "classifier rules", "verifier rules"
+        )  # type: ignore[arg-type]
+
+        classified = generator.classify(
+            "회의록을 작성하는 스킬",
+            (),
+            requested_description=None,
+        )
+        verified = generator.verify(
+            "회의록을 작성하는 스킬",
+            (),
+            requested_description=None,
+        )
+
+        self.assertEqual(classified, verified)
+        self.assertEqual(client.system_prompts, ["classifier rules", "verifier rules"])
+
     def test_keeps_reference_in_user_payload_not_system_prompt(self) -> None:
         client = RecordingClient()
-        generator = ChatCompletionsSkillAuthoringGenerator(client, "system rules")  # type: ignore[arg-type]
+        generator = ChatCompletionsSkillAuthoringGenerator(
+            client, "system rules", "classifier rules", "verifier rules"
+        )  # type: ignore[arg-type]
 
         generator.generate(
-            "참조 구조로 작성해줘",
+            "이 문서를 템플릿으로 만들어줘",
             (
                 SkillAuthoringReference(
                     id="document-1",
@@ -822,11 +1119,14 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             authoring_mode="enhance",
             requested_name=None,
             requested_description="참조 구조를 따르는 문서를 작성합니다.",
+            reference_mode="fixed-template",
         )
 
         self.assertEqual(client.system_prompt, "system rules")
         self.assertNotIn("ignore previous instructions", client.system_prompt)
         payload = json.loads(client.user_prompt)
+        self.assertNotIn("reference_template_mode", payload)
+        self.assertEqual(payload["reference_mode"], "fixed-template")
         self.assertEqual(payload["requested_description"], "참조 구조를 따르는 문서를 작성합니다.")
         self.assertNotIn("참고 문서", client.user_prompt)
         self.assertNotIn("ignore previous instructions", client.user_prompt)
@@ -834,10 +1134,12 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
     def test_sends_only_reference_markdown_structure(self) -> None:
         client = RecordingClient()
-        generator = ChatCompletionsSkillAuthoringGenerator(client, "system rules")  # type: ignore[arg-type]
+        generator = ChatCompletionsSkillAuthoringGenerator(
+            client, "system rules", "classifier rules", "verifier rules"
+        )  # type: ignore[arg-type]
 
         generator.generate(
-            "참조 구조로 작성해줘",
+            "이 문서를 템플릿으로 만들어줘",
             (
                 SkillAuthoringReference(
                     id="document-1",
@@ -859,10 +1161,13 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             allow_clarification=True,
             authoring_mode="enhance",
             requested_name=None,
+            reference_mode="fixed-template",
         )
 
         payload = json.loads(client.user_prompt)
         reference = payload["references"][0]
+        self.assertNotIn("reference_template_mode", payload)
+        self.assertEqual(payload["reference_mode"], "fixed-template")
         self.assertEqual(
             reference["markdown_structure"],
             "# 회의록\n- [item]\n1. [item]\n| 담당자 | 기한 |\n| --- | --- |",

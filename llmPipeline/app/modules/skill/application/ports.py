@@ -42,6 +42,22 @@ class SkillDraftGeneratorPort(Protocol):
 
 
 class SkillAuthoringGeneratorPort(Protocol):
+    def classify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]: ...
+
+    def verify(
+        self,
+        instruction: str,
+        references: tuple[SkillAuthoringReference, ...],
+        *,
+        requested_description: str | None,
+    ) -> dict[str, object]: ...
+
     def generate(
         self,
         instruction: str,
@@ -51,6 +67,7 @@ class SkillAuthoringGeneratorPort(Protocol):
         authoring_mode: SkillAuthoringMode,
         requested_name: str | None,
         requested_description: str | None,
+        reference_mode: str,
     ) -> dict[str, object]: ...
 
 

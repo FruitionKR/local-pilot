@@ -22,6 +22,11 @@ from app.modules.skill.domain.policy import (
     validate_skill_name,
     with_required_planning_reads,
 )
+from app.modules.skill.domain.reference_template import (
+    build_reference_template_instructions,
+    extract_fixed_reference_template,
+    extract_markdown_structure,
+)
 from app.modules.skill.domain.safety import SkillSafetyIssue, inspect_skill_instructions
 
 
@@ -111,6 +116,20 @@ class AuthorSkillUseCase:
                 reference_issues,
             )
 
+        intent = _verified_intent(
+            self._generator,
+            instruction,
+            references,
+            description,
+        )
+        if intent is None:
+            if allow_clarification:
+                return SkillAuthoringResult(
+                    status="clarification_required",
+                    question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                )
+            raise ValueError("Skill request could not be classified consistently.")
+        capability, reference_mode, allowed_tools = intent
         candidate = self._generator.generate(
             instruction,
             references,
@@ -118,6 +137,7 @@ class AuthorSkillUseCase:
             authoring_mode=authoring_mode,
             requested_name=name,
             requested_description=description,
+            reference_mode=reference_mode,
         )
         status = candidate.get("status")
         if status == "blocked":
@@ -135,6 +155,20 @@ class AuthorSkillUseCase:
                 references,
                 issues,
             )
+            intent = _verified_intent(
+                self._generator,
+                instruction,
+                references,
+                description,
+            )
+            if intent is None:
+                if allow_clarification:
+                    return SkillAuthoringResult(
+                        status="clarification_required",
+                        question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                    )
+                raise ValueError("Skill request could not be classified consistently.")
+            capability, reference_mode, allowed_tools = intent
             candidate = self._generator.generate(
                 instruction,
                 references,
@@ -142,6 +176,7 @@ class AuthorSkillUseCase:
                 authoring_mode=authoring_mode,
                 requested_name=name,
                 requested_description=description,
+                reference_mode=reference_mode,
             )
             status = candidate.get("status")
             if status == "blocked":
@@ -170,15 +205,29 @@ class AuthorSkillUseCase:
         resolved_name = name or _required_text(candidate, "slug", 63)
         resolved_name = validate_skill_name(resolved_name)
         resolved_description = description or _required_text(candidate, "description", MAX_DESCRIPTION_CHARS)
+        fixed_template = None
+        if reference_mode == "fixed-template":
+            if len(references) != 1:
+                raise ValueError("Reference template authoring requires exactly one document.")
+            fixed_template = extract_markdown_structure(references[0].markdown)
+            if not fixed_template.strip():
+                raise ValueError("Reference document has no reusable Markdown structure.")
+        elif authoring_mode == "regenerate":
+            fixed_template = extract_fixed_reference_template(instruction)
+        if fixed_template is not None and capability != "template":
+            raise ValueError("Fixed templates require the template skill kind.")
         instructions = (
-            instruction
+            build_reference_template_instructions(fixed_template)
+            if fixed_template is not None
+            else instruction
             if authoring_mode == "preserve"
             else _required_text(candidate, "instructions_markdown", MAX_INSTRUCTIONS_CHARS)
         )
         if len(instructions.splitlines()) > MAX_INSTRUCTIONS_LINES:
             raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_LINES} lines.")
-        capabilities = _capabilities(candidate.get("capabilities"))
-        allowed_tools = with_required_planning_reads(_tools(candidate.get("allowed_tools")))
+        if len(instructions) > MAX_INSTRUCTIONS_CHARS:
+            raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_CHARS} characters.")
+        capabilities: tuple[SkillCapability, ...] = (capability,)
         validate_allowed_tools(capabilities, allowed_tools)
         output_issues = (
             _tag_issues(inspect_skill_instructions(resolved_name), "name")
@@ -463,14 +512,65 @@ def _tag_issues(
     )
 
 
-def _capabilities(value: object) -> tuple[SkillCapability, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError("Skill authoring result capabilities must be an array.")
-    if any(item not in CAPABILITY_TOOLS for item in value):
-        raise ValueError("Skill authoring result contains an unsupported capability.")
-    return tuple(cast(SkillCapability, item) for item in value)
+def _verified_intent(
+    generator: SkillAuthoringGeneratorPort,
+    instruction: str,
+    references: tuple[SkillAuthoringReference, ...],
+    description: str | None,
+) -> tuple[SkillCapability, str, tuple[SkillTool, ...]] | None:
+    classification = _intent_result(
+        generator.classify(
+            instruction,
+            references,
+            requested_description=description,
+        ),
+        bool(references),
+    )
+    verification = _intent_result(
+        generator.verify(
+            instruction,
+            references,
+            requested_description=description,
+        ),
+        bool(references),
+    )
+    if "unsupported" in {classification[0], verification[0]}:
+        raise ValueError("Skill request does not map to a supported Agent action.")
+    if classification[0] != "supported" or classification != verification:
+        return None
+    capability = classification[1]
+    assert capability is not None
+    return capability, classification[2], classification[3]
+
+
+def _intent_result(
+    value: dict[str, object],
+    has_references: bool,
+) -> tuple[str, SkillCapability | None, str, tuple[SkillTool, ...]]:
+    decision = value.get("decision")
+    if decision not in {"supported", "unsupported", "ambiguous"}:
+        raise ValueError("Skill intent result contains an invalid decision.")
+    reference_mode = _reference_mode(value.get("reference_mode"), has_references)
+    if decision != "supported":
+        if value.get("skill_kind") is not None or value.get("allowed_tools") != []:
+            raise ValueError("Unsupported or ambiguous Skill intent must not grant permissions.")
+        return cast(str, decision), None, reference_mode, ()
+    skill_kind = value.get("skill_kind")
+    if not isinstance(skill_kind, str) or skill_kind not in CAPABILITY_TOOLS:
+        raise ValueError("Skill intent result requires a supported skill_kind.")
+    if reference_mode == "fixed-template" and skill_kind != "template":
+        raise ValueError("Fixed reference templates require the template skill kind.")
+    capability = cast(SkillCapability, skill_kind)
+    tools = with_required_planning_reads(_tools(value.get("allowed_tools")))
+    validate_allowed_tools((capability,), tools)
+    return "supported", capability, reference_mode, tuple(sorted(tools))
+
+
+def _reference_mode(value: object, has_references: bool) -> str:
+    allowed = {"none", "fixed-template", "structure-reference"} if has_references else {"none"}
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError("Skill authoring result contains an invalid reference mode.")
+    return value
 
 
 def _tools(value: object) -> tuple[SkillTool, ...]:

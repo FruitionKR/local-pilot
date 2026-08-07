@@ -147,7 +147,7 @@ def _validate_definition(
         raise ValueError("Skill name and slug must match.")
     if not description.strip() or not instructions_markdown.strip():
         raise ValueError("name, description, and instructions_markdown are required.")
-    if any(capability not in CAPABILITY_TOOLS for capability in capabilities):
+    if not capabilities or any(capability not in CAPABILITY_TOOLS for capability in capabilities):
         raise ValueError("capabilities must contain supported values.")
     validate_allowed_tools(capabilities, allowed_tools)
 

@@ -652,10 +652,11 @@ Skill 관리 화면은 사용자가 직접 작성한 원문을 보존하는 auth
     1. AgentRun Tool과 분리된 Skill authoring 전용 read endpoint에서 Workspace·User 권한으로 참조 문서 metadata와 Markdown을 조회한다.
     2. 입력과 참조의 크기·prompt injection을 먼저 검사한다.
     3. 참조 Markdown에서 heading·목록 marker·표 header 구조만 추출하고, 실제 문서명과 본문을 제외한 비신뢰 데이터로 LLM에 전달한다.
-    4. 생성된 name, description, instructions, capability와 Tool을 다시 검사한다.
-    5. 사용자에게 capability와 Tool을 제외한 Skill Markdown과 보안 결과를 반환하고 DB에는 저장하지 않는다.
+    4. 서로 다른 prompt의 intent 분류기와 검증기가 `skill_kind`, 참조 용도, Tool을 각각 판정한다.
+    5. 두 판정이 전부 일치할 때만 서버가 `skill_kind`를 capability로 변환하고 Markdown을 생성한다.
+    6. 사용자에게 capability와 Tool을 제외한 Skill Markdown과 보안 결과를 반환하고 DB에는 저장하지 않는다.
 
-Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 세부 정보가 부족해도 보충 질문 대신 편집 가능한 일반 구조를 반환한다. 커맨드 식별자는 lowercase-hyphen이며 입력하지 않으면 LLM이 후보를 제안한다. personal Skill은 계정 전체, team Skill은 현재 Workspace에 귀속한다. `preserve`는 현재 Markdown을 변경하지 않고 보안 재검토하며, `enhance`는 자연어를 구체화한다. 차단 화면의 `regenerate`는 규칙 검사에서 찾은 위험 구간을 필수 제거한 뒤 안전한 흐름으로 재작성한다. 세 모드 모두 제안만 반환한다.
+Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 세부 정보가 부족해도 보충 질문 대신 편집 가능한 일반 구조를 반환한다. 다만 intent 판단이 모호하거나 두 판정이 불일치하면 지원 작업을 명확히 적도록 `400`으로 거절한다. 커맨드 식별자는 lowercase-hyphen이며 입력하지 않으면 LLM이 후보를 제안한다. personal Skill은 계정 전체, team Skill은 현재 Workspace에 귀속한다. `preserve`는 현재 Markdown을 변경하지 않고 보안 재검토하며, `enhance`는 자연어를 구체화한다. 차단 화면의 `regenerate`는 규칙 검사에서 찾은 위험 구간을 필수 제거한 뒤 안전한 흐름으로 재작성한다. 분류기와 검증기는 참조 문서의 용도를 고정 템플릿과 일반 구조 참고로 각각 구분하고, 고정 템플릿으로 일치하게 판단한 참조 문서가 하나일 때만 서버가 추출한 heading·목록 marker·표 header를 고정 출력 템플릿으로 그대로 조립한다. 세 모드 모두 제안만 반환하며, 지원 Agent action에 매핑할 수 없는 요청은 제안·게시하지 않는다. 채팅의 모호함·불일치는 보충 질문으로 반환한다.
 
 입력·description·참조·생성 결과에서 규칙 검사 또는 LLM 의미 검사로 차단 보안 문제가 발견되면 `status=blocked`와 출처·위치·이유를 반환하고 `최종 게시`를 막는다. 참조 문제는 문서 ID를 함께 반환한다. 사용자가 해당 문구를 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 눌러 `preserve` 검증을 다시 수행한다. `AI로 재생성`은 `regenerate`로 위험 구간을 제거하고 다시 작성한다. 원문 보존 경로에서는 내용을 자동으로 조용히 삭제하지 않는다.
 
@@ -690,6 +691,7 @@ Router가 `skill_authoring`을 반환해도 현재 사용자 메시지나 진행
 저장 또는 preview 전에 시스템은 다음 항목을 검사한다.
 
 - 필수 필드와 slug 형식
+- 최소 1개의 라우팅 가능한 capability
 - capability와 `allowed_tools`의 호환성
 - 중복 slug와 접근 범위
 - 상위 정책, 승인 또는 권한 우회를 요구하는 instructions
