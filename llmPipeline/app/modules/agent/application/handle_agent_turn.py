@@ -1,7 +1,8 @@
+import re
 from dataclasses import replace
 
 from app.modules.agent.application.ports import AgentTurnRouterPort
-from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult
+from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult, PendingSkillProposal
 from app.modules.agent_run.application.ports import AgentRunStarterPort
 from app.modules.agent_run.domain.entities import StartAgentRunRequest
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
@@ -10,9 +11,17 @@ from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, Mar
 from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.entities import ConversationContext
+from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
-from app.modules.skill.domain.entities import Skill
+from app.modules.skill.domain.entities import (
+    Skill,
+    SkillAuthoringProposal,
+    SkillAuthoringResult,
+    SkillScopeType,
+)
+from app.modules.skill.domain.policy import validate_skill_name
+from app.modules.skill.domain.safety import inspect_skill_instructions
 
 
 CLARIFY_MARKDOWN_TARGET_MESSAGE = "수정할 Markdown 범위를 선택한 뒤 다시 요청해 주세요."
@@ -21,6 +30,17 @@ DEFERRED_TEMPLATE_MESSAGE = "template 기반 전체 문서 재구성은 이후 �
 CLARIFY_INSERT_AFTER_TARGET_MESSAGE = "내용을 추가할 현재 섹션을 선택한 뒤 다시 요청해 주세요."
 CLARIFY_SKILL_MESSAGE = "이 요청에 적용할 Skill을 선택하거나 Skill 없이 계속해 주세요."
 CLARIFY_MUTATION_INTENT_MESSAGE = "변경 작업은 대화나 참조 문서가 아닌 현재 메시지에 직접 요청해 주세요."
+BLOCKED_SKILL_AUTHORING_MESSAGE = "보안 문제가 있는 내용을 제거하거나 수정한 뒤 다시 시도해 주세요."
+TITLE_REVISION_PATTERN = re.compile(
+    r"(?:제목|이름|커맨드|식별자)(?:을|를)?\s*(?:[\"“「](.+?)[\"”」]|(.+?))\s*(?:로|으로)\s*(?:바꿔|변경|수정)"
+)
+PUBLISH_SKILL_PATTERN = re.compile(
+    r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
+    r"(?:please\s+)?(?:publish|post)(?:\s+(?:it|this|the\s+skill))?",
+    re.IGNORECASE,
+)
+SECURITY_REVIEW_PATTERN = re.compile(r"보안\s*(?:재)?검토|다시\s*검증|security\s*(?:re)?view", re.IGNORECASE)
+REGENERATE_PATTERN = re.compile(r"(?:AI로\s*)?재생성|다시\s*(?:만들어|작성)|regenerate", re.IGNORECASE)
 
 
 class HandleAgentTurnUseCase:
@@ -32,6 +52,7 @@ class HandleAgentTurnUseCase:
         markdown_create_use_case: GenerateMarkdownDocumentUseCase,
         skill_selector: SelectSkillUseCase | None = None,
         agent_run_starter: AgentRunStarterPort | None = None,
+        skill_authorer: AuthorSkillUseCase | None = None,
         skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
     ) -> None:
         self._router = router
@@ -40,6 +61,7 @@ class HandleAgentTurnUseCase:
         self._markdown_create_use_case = markdown_create_use_case
         self._skill_selector = skill_selector
         self._agent_run_starter = agent_run_starter
+        self._skill_authorer = skill_authorer
         self._skill_draft_proposer = skill_draft_proposer
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
@@ -91,17 +113,81 @@ class HandleAgentTurnUseCase:
                     route=route,
                     message="Skill로 만들 완료 작업을 선택해 주세요.",
                 )
-            if self._skill_draft_proposer is None:
+            if (
+                self._skill_draft_proposer is None
+                or self._skill_authorer is None
+                or not request.workspace_id
+                or not request.user_id
+            ):
                 raise ValueError("Skill draft proposal is not configured.")
+            scope_type = _skill_scope_type(request)
+            if scope_type is None:
+                return AgentTurnResult(
+                    action="clarify",
+                    route=route,
+                    message="개인 스킬로 만들까요, 현재 팀 스킬로 만들까요?",
+                )
             proposal = self._skill_draft_proposer.execute(
                 source_runs=request.skill_draft_sources,
                 user_directives=request.skill_draft_user_directives,
                 excluded_literals=request.skill_draft_excluded_literals,
             )
+            reviewed = self._skill_authorer.review_draft(
+                workspace_id=request.workspace_id,
+                user_id=request.user_id,
+                scope_type=scope_type,
+                draft=proposal,
+            )
             return AgentTurnResult(
-                action="skill_draft_proposal",
+                action="skill_authoring",
                 route=route,
-                skill_draft_proposal=proposal,
+                message=(
+                    BLOCKED_SKILL_AUTHORING_MESSAGE
+                    if reviewed.status == "blocked"
+                    else _skill_authoring_message(reviewed)
+                ),
+                skill_authoring_result=reviewed,
+            )
+
+        if route.action == "skill_authoring":
+            if not request.workspace_id or not request.user_id:
+                raise ValueError("Skill authoring requires workspace_id and user_id.")
+            pending_proposal = (
+                request.conversation_context.pending_skill_proposal
+                if request.conversation_context
+                else None
+            )
+            if pending_proposal is not None:
+                authored = self._handle_pending_skill(request, pending_proposal)
+            else:
+                if self._skill_authorer is None:
+                    raise ValueError("Skill authoring is not configured.")
+                scope_type = _skill_scope_type(request)
+                if scope_type is None:
+                    authored = SkillAuthoringResult(
+                        status="clarification_required",
+                        question="개인 스킬로 만들까요, 현재 팀 스킬로 만들까요?",
+                    )
+                else:
+                    authored = self._skill_authorer.execute(
+                        workspace_id=request.workspace_id,
+                        user_id=request.user_id,
+                        scope_type=scope_type,
+                        instruction=_skill_authoring_instruction(request),
+                        reference_document_ids=request.skill_reference_document_ids,
+                        allow_clarification=True,
+                        authoring_mode=request.skill_authoring_mode,
+                    )
+            message = (
+                BLOCKED_SKILL_AUTHORING_MESSAGE
+                if authored.status == "blocked"
+                else authored.question or _skill_authoring_message(authored)
+            )
+            return AgentTurnResult(
+                action="skill_authoring",
+                route=route,
+                message=message,
+                skill_authoring_result=authored,
             )
 
         if route.action in {"folder_organize", "workspace_workflow"}:
@@ -213,6 +299,77 @@ class HandleAgentTurnUseCase:
         )
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 
+    def _handle_pending_skill(
+        self,
+        request: AgentTurnRequest,
+        proposal: PendingSkillProposal,
+    ) -> SkillAuthoringResult:
+        if self._skill_authorer is None:
+            raise ValueError("Skill authoring is not configured.")
+        if PUBLISH_SKILL_PATTERN.fullmatch(request.message.strip()):
+            return self._skill_authorer.publish(
+                workspace_id=request.workspace_id or "",
+                user_id=request.user_id or "",
+                scope_type=proposal.scope_type,
+                name=proposal.name,
+                description=proposal.description,
+                instructions_markdown=proposal.instructions_markdown,
+            )
+        if SECURITY_REVIEW_PATTERN.search(request.message):
+            return self._skill_authorer.execute(
+                workspace_id=request.workspace_id or "",
+                user_id=request.user_id or "",
+                scope_type=proposal.scope_type,
+                name=proposal.name,
+                description=proposal.description,
+                instruction=proposal.instructions_markdown,
+                reference_document_ids=(),
+                allow_clarification=False,
+                authoring_mode="preserve",
+            )
+        if REGENERATE_PATTERN.search(request.message):
+            return self._skill_authorer.execute(
+                workspace_id=request.workspace_id or "",
+                user_id=request.user_id or "",
+                scope_type=proposal.scope_type,
+                name=proposal.name,
+                instruction=proposal.instructions_markdown,
+                reference_document_ids=(),
+                allow_clarification=False,
+                authoring_mode="regenerate",
+            )
+        match = TITLE_REVISION_PATTERN.search(request.message.strip())
+        if match is not None:
+            name = validate_skill_name(match.group(1) or match.group(2) or "")
+            issues = inspect_skill_instructions(name)
+            if issues:
+                return SkillAuthoringResult(status="blocked", issues=issues)
+            return SkillAuthoringResult(
+                status="proposal_ready",
+                proposal=SkillAuthoringProposal(
+                    workspace_id=request.workspace_id or "",
+                    user_id=request.user_id or "",
+                    scope_type=proposal.scope_type,
+                    name=name,
+                    description=proposal.description,
+                    instructions_markdown=proposal.instructions_markdown,
+                ),
+            )
+        scope_type = _scope_from_text(request.message)
+        if scope_type is not None:
+            return SkillAuthoringResult(
+                status="proposal_ready",
+                proposal=SkillAuthoringProposal(
+                    workspace_id=request.workspace_id or "",
+                    user_id=request.user_id or "",
+                    scope_type=scope_type,
+                    name=proposal.name,
+                    description=proposal.description,
+                    instructions_markdown=proposal.instructions_markdown,
+                ),
+            )
+        raise ValueError("현재 제안은 게시, 재생성, 보안 재검토, 커맨드·범위 변경을 지원합니다.")
+
     def _prepare_skill_selection(self, request: AgentTurnRequest) -> PreparedSkillSelection:
         if self._skill_selector is not None:
             return self._skill_selector.prepare(request)
@@ -236,6 +393,33 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
         start_line=1,
         end_line=max(1, markdown_line_count(markdown)),
     )
+
+
+def _skill_authoring_instruction(request: AgentTurnRequest) -> str:
+    summary = (
+        request.conversation_context.recent_conversation_summary
+        if request.conversation_context and request.conversation_context.recent_conversation_summary
+        else None
+    )
+    return f"{summary.strip()}\n\n사용자의 현재 답변:\n{request.message}" if summary else request.message
+
+
+def _skill_scope_type(request: AgentTurnRequest) -> SkillScopeType | None:
+    return request.skill_scope_type or _scope_from_text(request.message)
+
+
+def _scope_from_text(message: str) -> SkillScopeType | None:
+    personal = re.search(r"(?:개인|personal)(?:\s*스킬)?", message, re.IGNORECASE) is not None
+    team = re.search(r"(?:팀|현재\s*워크스페이스|team)(?:\s*스킬)?", message, re.IGNORECASE) is not None
+    if personal == team:
+        return None
+    return "personal" if personal else "team"
+
+
+def _skill_authoring_message(result: SkillAuthoringResult) -> str:
+    if result.status == "published" and result.proposal is not None:
+        return f"게시했습니다: /{result.proposal.name}"
+    return "Skill 제안을 만들었습니다. Markdown과 보안 결과를 확인한 뒤 게시해 주세요."
 
 
 def _skill_instructions(skill: Skill | None) -> str | None:

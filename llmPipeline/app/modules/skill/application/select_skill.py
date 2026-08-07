@@ -52,7 +52,7 @@ class SelectSkillUseCase:
         explicit = request.skill_mode == "explicit" or request.skill_id is not None or slash_slug is not None
         if explicit:
             skill = self._explicit_skill(request, slash_slug)
-            if skill.status != "enabled" or skill.enabled_version is None:
+            if skill.enabled_version is None:
                 raise SkillDisabledError(skill.id)
             prepared = replace(
                 request,
