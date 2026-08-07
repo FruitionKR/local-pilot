@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * 저장된 채팅 세션을 llmPipeline이 처리할 수 있는 Markdown 원문으로 직렬화한다.
- * 형식은 docs/spec/chat-to-wiki-contract.md §4를 따른다.
+ * 형식은 docs/backlog/spec/chat-to-wiki-contract.md §4를 따른다.
  *
  * 문답(pair) 1쌍을 하나의 단위로 만들고, 각 문답 앞에 원본을 특정하는 {@code [session_id:pair_id]} prefix를 붙인다.
  */

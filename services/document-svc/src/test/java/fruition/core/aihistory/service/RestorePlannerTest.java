@@ -18,7 +18,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 복구 판정 시나리오. 설계 문서 {@code docs/design/ai-operation-log.md} §5.4의 기대값을 그대로 고정한다.
+ * 복구 판정 시나리오. 설계 문서 {@code docs/backlog/design/ai-operation-log.md} §5.4의 기대값을 그대로 고정한다.
  *
  * <p>기준 상태는 {@code A → B → C → A2 → D} 순서의 ingest다. 괄호 안 숫자는 그 기여가 만든 revision이다.
  *

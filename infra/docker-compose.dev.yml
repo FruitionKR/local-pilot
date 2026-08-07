@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     container_name: fruition-postgresql-dev
     restart: unless-stopped
-    # access/core/ai 3개 database·runtime/migration 계정 분리 (docs/Fruition_AWS_MSA_Architecture.md §3)
+    # access/core/ai 3개 database·runtime/migration 계정 분리 (docs/backlog/Fruition_AWS_MSA_Architecture.md §3)
     # 계정·권한 생성은 postgres/init-db-isolation.sh가 최초 기동 시 수행한다.
     environment:
       POSTGRES_DB: postgres

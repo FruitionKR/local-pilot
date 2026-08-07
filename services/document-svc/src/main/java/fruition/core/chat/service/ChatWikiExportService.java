@@ -26,7 +26,7 @@ import java.util.Set;
  * 채팅 세션을 Wiki page화하기 위한 export 오케스트레이션.
  *
  * 세션을 Markdown으로 직렬화·마스킹한 뒤, 문서 저장/큐 등록은 {@link DocumentService}에 위임한다.
- * 실제 위키 생성은 기존 문서 ingestion 파이프라인이 담당한다. (docs/spec/chat-to-wiki-contract.md)
+ * 실제 위키 생성은 기존 문서 ingestion 파이프라인이 담당한다. (docs/backlog/spec/chat-to-wiki-contract.md)
  *
  * 완료 후 세션↔source wiki page 연결은, 파이프라인이 DB에 직접 기록하는 완료 상태를
  * {@link ChatWikiExportReconciler}가 폴링으로 감지해 처리한다.

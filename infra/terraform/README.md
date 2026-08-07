@@ -1,6 +1,6 @@
 # AWS 전환 Terraform
 
-`docs/Fruition_AWS_MSA_Architecture.md` §8 소규모 사용자 피드백 profile의 IaC.
+`docs/backlog/Fruition_AWS_MSA_Architecture.md` §8 소규모 사용자 피드백 profile의 IaC.
 Kafka는 MSK가 아니라 EKS 안 Strimzi(§8.3)를 그대로 쓴다 — `k8s/base/kafka.yaml`.
 
 ## 만드는 것

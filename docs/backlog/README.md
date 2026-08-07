@@ -1,12 +1,27 @@
 # Backlog 문서
 
-이 디렉터리는 현재 구현 기준과 다르거나, 구현 전 설계 단계에서 작성된 이전 자료를 보관한다.
-현재 API 계약과 실행 기준은 `docs/` 최상위 문서와 `docs/spec/`의 최신 문서를 우선한다.
-현재 MSA 목표 구조는 `docs/Fruition_AWS_MSA_Architecture.md`를 따른다.
+이 디렉터리는 현재 구현 기준과 다르거나, 구현 전 설계 단계에서 작성된 이전 자료, 그리고 운영이 끝난 날짜별 이슈·changelog를 보관한다.
 
-보관 문서를 참고할 때는 각 파일 상단의 이전 자료 안내와 최신 참조 문서를 먼저 확인한다.
+현행 기준 문서는 `docs/` 최상위 4개와 ADR이다:
+`architecture.md` · `api.md` · `data-model.md` · `demo-script.md` · `adr/`
 
-## 보관 문서
+아래 목록의 `docs/spec/…`, `docs/issue/…`, `docs/changelog/…`, `docs/msa/…` 경로는 2026-08-07 이관으로 전부 이 디렉터리 내부(`spec/`, `issue/`, `changelog/`, `msa/`) 경로로 읽는다.
+
+## 2026-08-07 일괄 이관 (문서 구조 개편)
+
+현행 4문서 + ADR 체계로 압축하면서 이관한 자료:
+
+- `msa/` — 전환기 현행 아키텍처·배포·실검증·서비스 맵 (→ `docs/architecture.md`로 압축. `service-map.md`는 분리 전 구조 설명이라 현행과 불일치)
+- `spec/` — API 상세 명세(`spec/api/`)·SDD·계약 문서 33개 (→ `docs/api.md`로 요약)
+- `issue/` — 역할별 날짜 이슈 문서. **2026-08-07자 미해결 항목 포함** (`issue/ai/2026-08-07.md`: ai 테이블 이전 차단 지점, `issue/infra/2026-08-07.md`: Terraform apply 대기, `issue/backend/2026-08-07.md`)
+- `changelog/` — 역할별 변경 기록 (ai/backend/frontend/infra). 운영 종료, 이후 기록은 git 이력·현행 문서 갱신으로 대체
+- `design/`, `evaluation/`, `llm-wiki/` — 설계 초안·LLM 평가 리포트·파이프라인 흐름 문서
+- `Fruition_AWS_MSA_Architecture.md` — MSA 전환 목표 문서 (달성분은 `docs/architecture.md`에 반영)
+- `Fruition_MVP_Architecture.md`, `Fruition_MVP_Erd.md` (→ `docs/data-model.md`로 압축), `Fruition_MVP_API_Contract.md`(최신판, 동명 구판 덮어씀), `Fruition_User_Story.md`, `fruition_역할별_날짜형_마일스톤.md 19-24-05-163.md`
+- `local-runbook.md` (→ `docs/demo-script.md`로 압축), `pdf-to-markdown-guide.md`, `python_convention.md`, `backend-llmpipeline-integration.md`(최신판 덮어씀), `development.md`(최신판 덮어씀)
+- `skills/claude/sdd-interviewer/`, `skills/codex/sdd-interviewer/` — `docs/spec/sdd` 아래에 SDD를 작성하던 스킬. spec 이관과 함께 운영 종료 (`.claude/skills/`·`.codex/skills/`에서 이동)
+
+## 보관 문서 (2026-08-07 이전 이관분)
 
 - `development.md` — 백엔드/프론트엔드 도입 전 개발 환경 기록. 현재 실행 기준은 `docs/local-runbook.md`.
 - `Fruition_MSA_Proposal.md` — 4서비스와 SQS를 전제로 한 초기 AWS MSA 제안서. 현재 구조는 `docs/Fruition_AWS_MSA_Architecture.md`.

@@ -16,7 +16,7 @@ import java.util.Set;
  * 복구 판정. 기여 명단만 보고 페이지마다 삭제·복원·재조립을 가른다.
  *
  * <p>본문을 읽지 않는 순수 계산이라 미리보기가 가볍고 저장소 접근이 없다.
- * 판정 근거는 설계 문서 {@code docs/design/ai-operation-log.md} §5.1이다.
+ * 판정 근거는 설계 문서 {@code docs/backlog/design/ai-operation-log.md} §5.1이다.
  *
  * <p>입력에는 <b>비활성 기여도 포함</b>해야 한다. 복원 목적지가 유효한지 판단하려면
  * 그 revision이 담고 있던 기여를 알아야 하는데, 이전 복구로 꺼진 기여가 그 안에 들어 있을 수 있다.

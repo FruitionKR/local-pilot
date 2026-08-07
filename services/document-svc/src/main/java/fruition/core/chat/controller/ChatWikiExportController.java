@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 채팅 Wiki page화 API. 세션을 Markdown 문서로 직렬화해 기존 문서 ingestion 파이프라인에 넣는다.
- * (docs/spec/features/chat-wiki-export.md)
+ * (docs/backlog/spec/chat-to-wiki-contract.md)
  */
 @RestController
 @RequestMapping("/api/workspaces/{workspace_id}/chat/sessions")

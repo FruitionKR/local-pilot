@@ -1,6 +1,6 @@
 # Kubernetes (kind) 로컬 배포
 
-전 서비스를 Kubernetes로 실행하기 위한 매니페스트. `docs/Fruition_AWS_MSA_Architecture.md`(EKS·Strimzi Kafka·KEDA) 방향의 로컬(kind) 검증판이다.
+전 서비스를 Kubernetes로 실행하기 위한 매니페스트. `docs/backlog/Fruition_AWS_MSA_Architecture.md`(EKS·Strimzi Kafka·KEDA) 방향의 로컬(kind) 검증판이다.
 환경변수 계약은 `infra/docker-compose.deploy.yml`·`infra/docker-compose.pipeline.yml`의 environment 블록을 그대로 옮기고 호스트명만 k8s Service DNS로 바꿨다.
 
 ## 구성

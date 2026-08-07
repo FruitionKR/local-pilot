@@ -1,4 +1,4 @@
-# AWS(EKS) overlay — docs/Fruition_AWS_MSA_Architecture.md §8 소규모 profile.
+# AWS(EKS) overlay — docs/backlog/Fruition_AWS_MSA_Architecture.md §8 소규모 profile.
 # 상태 계층은 RDS·ElastiCache·S3(Terraform: infra/terraform), Kafka는 base의 Strimzi 그대로.
 # REPLACE_ME_* 값은 README.md 절차대로 terraform output으로 치환한 뒤 apply한다.
 apiVersion: kustomize.config.k8s.io/v1beta1

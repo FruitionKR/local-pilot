@@ -11,7 +11,7 @@
 
 | 스킬 | 하는 일 |
 |------|---------|
-| `commit` | 보안 점검 -> changelog 갱신 -> 한글 Conventional Commits 메시지 작성 -> 커밋 생성 |
+| `commit` | 보안 점검 -> 현행 문서 갱신 -> 한글 Conventional Commits 메시지 작성 -> 커밋 생성 |
 | `pr` | 미커밋 변경 확인(있으면 commit 스킬 선행) -> PR 보안 점검 -> 브랜치/PR 흐름 확인 -> PR 작성 |
 | `refine-user-story` | 사용자 스토리 한 섹션을 코드·테스트·설정과 대조해 제약조건과 성공·실패 시나리오로 정리 |
 | `review` | 로컬 변경분 또는 GitHub PR을 버그·정합성·보안 중심으로 리뷰 |

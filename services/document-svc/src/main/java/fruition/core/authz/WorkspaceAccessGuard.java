@@ -79,7 +79,7 @@ public class WorkspaceAccessGuard {
         String key = KEY_PREFIX + workspaceId + ":" + userId;
         String cached = redisTemplate.opsForValue().get(key);
         if (cached != null) {
-            // 판정 근거 로그 — 인가 우회 의심 사례 추적용 (docs/issue/backend/2026-08-07.md)
+            // 판정 근거 로그 — 인가 우회 의심 사례 추적용 (docs/backlog/issue/backend/2026-08-07.md)
             log.debug("[authz] cache hit workspace={} user={} role={}", workspaceId, userId, cached);
             return cached;
         }

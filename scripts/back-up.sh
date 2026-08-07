@@ -20,7 +20,7 @@ fail() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/local-runbook.md의 요구사항을 확인하세요."
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/demo-script.md의 요구사항을 확인하세요."
 }
 
 cleanup() {

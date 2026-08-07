@@ -1,11 +1,11 @@
 ---
 name: commit
-description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 전 보안 점검 → changelog 갱신 → Conventional Commits 형식의 한글 커밋 메시지 작성 순서로 진행하는 절차.
+description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 전 보안 점검 → 현행 문서 갱신 → Conventional Commits 형식의 한글 커밋 메시지 작성 순서로 진행하는 절차.
 ---
 
 # 커밋 절차
 
-**Run in order: security check → changelog → commit message → commit. Do not skip steps.**
+**Run in order: security check → current docs update → commit message → commit. Do not skip steps.**
 
 ## 1. 커밋 전 보안 점검
 
@@ -17,17 +17,16 @@ description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 �
 - `.env.example`, 문서, 테스트 fixture에 있는 예시값과 placeholder는 실제 비밀값과 구분하되, 실제 값처럼 보이거나 혼동 가능성이 있으면 사용자에게 확인한다.
 - 비밀값 또는 공개하면 안 되는 정보가 발견되면 커밋 생성을 중단하고, 어떤 파일과 항목이 문제인지 사용자에게 보고한 뒤 제거 또는 교체가 완료된 경우에만 진행한다.
 
-## 2. changelog 갱신
+## 2. 현행 문서 갱신
 
-- changelog는 파일 수정 직후가 아니라 커밋을 준비하거나 생성할 때 갱신한다.
-- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 포함된 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
-- Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
-- 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
-- AI/pipeline(llmPipeline) 기능 코드 변경은 `docs/changelog/ai.md`에 기록한다.
-- 인프라, DevOps, Docker, 배포 환경 코드 또는 설정 변경은 `docs/changelog/infra.md`에 기록한다.
-- 여러 기능 영역에 걸친 코드 변경은 해당하는 changelog를 모두 갱신한다.
-- 이슈 문서 정리, 작업 지침 변경, 단순 문서 이동처럼 기능 코드 변경이 없는 커밋은 changelog를 갱신하지 않는다.
-- changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
+- 날짜별 changelog(`docs/changelog/`)·이슈 문서(`docs/issue/`) 운영은 2026-08-07 종료 — 새로 만들지 않는다 (루트 `CLAUDE.md` §8).
+- 대신 커밋에 포함된 변경으로 현행 문서 내용이 실제와 달라지는 경우, 해당 문서를 같은 커밋에서 갱신한다:
+  - 서비스 경계·통신·인가·배포 변경 → `docs/architecture.md`
+  - API 계약 변경 → `docs/api.md`
+  - 저장소·테이블·소유권 변경 → `docs/data-model.md`
+  - 구동·데모 절차 변경 → `docs/demo-script.md`
+  - 중요한 아키텍처 결정 추가/변경 → `docs/adr/NNNN-<kebab-제목>.md`
+- 문서 내용과 무관한 커밋은 문서를 건드리지 않는다.
 
 ## 3. 커밋 메시지
 

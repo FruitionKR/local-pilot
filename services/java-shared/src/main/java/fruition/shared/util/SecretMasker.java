@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /**
  * 채팅 원문을 Wiki page화 전에 저장할 때, 눈에 띄는 비밀값을 best-effort로 마스킹한다.
- * (docs/spec/chat-to-wiki-contract.md §12.4)
+ * (docs/backlog/spec/chat-to-wiki-contract.md §12.4)
  *
  * 정규식 기반 best-effort이므로 모든 비밀값을 보장하지 못한다. 명백한 패턴만 {@code [REDACTED]}로 치환한다.
  */

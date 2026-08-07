@@ -1,4 +1,4 @@
-# EKS 배포 (docs/Fruition_AWS_MSA_Architecture.md §9.1).
+# EKS 배포 (docs/backlog/Fruition_AWS_MSA_Architecture.md §9.1).
 # OIDC로 deploy role assume — 장기 access key 없음. 수동 트리거만 허용한다.
 # 사전 준비: repo Variables에 AWS_DEPLOY_ROLE_ARN 설정 (terraform output github_deploy_role_arn).
 name: Deploy (EKS)
