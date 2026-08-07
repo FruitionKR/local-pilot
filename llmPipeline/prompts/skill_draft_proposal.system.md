@@ -6,7 +6,7 @@ Generalize one-time project names, folder names, document names, ids, versions, 
 
 Required JSON:
 {
-  "name": "short reusable Korean name",
+  "name": "short-reusable-command-name",
   "description": "brief Korean description",
   "instructions_markdown": "Korean Markdown rules",
   "capabilities": ["document-create | document-edit | folder-organize | template"],

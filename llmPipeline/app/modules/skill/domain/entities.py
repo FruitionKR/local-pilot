@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from app.modules.skill.domain.safety import SkillSafetyIssue
+
 
 SkillCapability = Literal["document-create", "document-edit", "folder-organize", "template"]
 SkillTool = Literal[
@@ -20,6 +22,7 @@ SkillTool = Literal[
     "apply_document_edit",
 ]
 SkillScopeType = Literal["personal", "team"]
+SkillAuthoringMode = Literal["preserve", "enhance"]
 SkillStatus = Literal["enabled", "disabled"]
 SkillVersionStatus = Literal["draft", "published", "rejected"]
 
@@ -44,7 +47,7 @@ class SkillVersion:
 @dataclass(frozen=True)
 class Skill:
     id: str
-    workspace_id: str
+    workspace_id: str | None
     scope_type: SkillScopeType
     owner_user_id: str | None
     slug: str
@@ -89,7 +92,21 @@ class SkillAuthoringReference:
 
 
 @dataclass(frozen=True)
+class SkillAuthoringProposal:
+    workspace_id: str
+    user_id: str
+    scope_type: SkillScopeType
+    name: str
+    description: str
+    instructions_markdown: str
+    capabilities: tuple[SkillCapability, ...] = ()
+    allowed_tools: tuple[SkillTool, ...] = ()
+
+
+@dataclass(frozen=True)
 class SkillAuthoringResult:
-    status: Literal["clarification_required", "draft_created"]
+    status: Literal["clarification_required", "blocked", "proposal_ready", "published"]
     question: str | None = None
+    proposal: SkillAuthoringProposal | None = None
     skill: Skill | None = None
+    issues: tuple[SkillSafetyIssue, ...] = ()

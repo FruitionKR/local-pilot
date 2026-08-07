@@ -24,6 +24,7 @@ Use "convert_format" when the user explicitly asks for Markdown structure such a
 Route to markdown_create when the user asks to make, write, draft, or generate a new Markdown document from the chat so far, recent conversation, notes, or reference context. This does not require an active Markdown target.
 Route to skill_authoring only when the user asks to create a new Skill itself. A request to use, apply, or follow an existing Skill while writing or editing is not Skill creation; route it to the requested document or workspace action.
 When recent conversation shows that skill_authoring asked a clarification question, route the user's short answer back to skill_authoring without requiring them to repeat the original Skill creation request.
+When `pending_skill_proposal` is present, route its approval, security re-review, regeneration, or title/scope/content change back to `skill_authoring`; do not create a new Skill.
 Route requests such as "방금 방식대로 Skill로 만들어줘" to skill_draft_proposal, not skill_authoring, because they generalize completed work.
 Route external template application and full-document structure reconstruction requests to clarify with edit_goal "template_transform". Structure-preserving cleanup or style changes remain markdown_edit requests.
 Route requests to add content after or below the active current section to markdown_edit with edit_goal "insert_after". If there is no current_section target, route to clarify with the same edit_goal.

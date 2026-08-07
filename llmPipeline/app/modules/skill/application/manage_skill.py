@@ -1,4 +1,3 @@
-import re
 from uuid import uuid4
 
 from app.modules.skill.application.ports import ManageSkillRepositoryPort
@@ -8,12 +7,14 @@ from app.modules.skill.domain.entities import (
     SkillScopeType,
     SkillTool,
     SkillVersion,
+    SkillVersionStatus,
 )
-from app.modules.skill.domain.policy import CAPABILITY_TOOLS, validate_allowed_tools
+from app.modules.skill.domain.policy import (
+    CAPABILITY_TOOLS,
+    validate_allowed_tools,
+    validate_skill_name,
+)
 from app.modules.skill.domain.safety import inspect_skill_instructions
-
-
-SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
 class ManageSkillUseCase:
@@ -30,7 +31,7 @@ class ManageSkillUseCase:
         capabilities: tuple[SkillCapability, ...],
         allowed_tools: tuple[SkillTool, ...],
     ) -> SkillVersion:
-        _validate_definition("preview", name, description, instructions_markdown, capabilities, allowed_tools)
+        _validate_definition(name, name, description, instructions_markdown, capabilities, allowed_tools)
         return _new_version(
             skill_id="preview",
             version=1,
@@ -42,7 +43,7 @@ class ManageSkillUseCase:
             allowed_tools=allowed_tools,
         )
 
-    def create_draft(
+    def create_published(
         self,
         *,
         workspace_id: str,
@@ -66,19 +67,23 @@ class ManageSkillUseCase:
             instructions_markdown=instructions_markdown,
             capabilities=capabilities,
             allowed_tools=allowed_tools,
+            status="published",
         )
+        if _blocked_issues(version):
+            raise ValueError("Skill version has blocked safety issues.")
         skill = Skill(
             id=skill_id,
-            workspace_id=workspace_id,
+            workspace_id=workspace_id if scope_type == "team" else None,
             scope_type=scope_type,
             owner_user_id=user_id if scope_type == "personal" else None,
             slug=slug,
-            status="disabled",
+            status="enabled",
+            enabled_version=version,
             latest_version=version,
         )
-        return self._repository.create(skill, version)
+        return self._repository.create_published(skill, version)
 
-    def create_draft_version(
+    def update_published(
         self,
         *,
         workspace_id: str,
@@ -92,7 +97,7 @@ class ManageSkillUseCase:
     ) -> Skill:
         skill = self._require_manageable(workspace_id, user_id, skill_id)
         _validate_definition(
-            skill.slug,
+            name,
             name,
             description,
             instructions_markdown,
@@ -100,27 +105,20 @@ class ManageSkillUseCase:
             allowed_tools,
         )
         latest_version = skill.latest_version or skill.enabled_version
-        next_version = (latest_version.version if latest_version else 0) + 1
         version = _new_version(
             skill_id=skill.id,
-            version=next_version,
+            version=(latest_version.version if latest_version else 0) + 1,
             user_id=user_id,
             name=name,
             description=description,
             instructions_markdown=instructions_markdown,
             capabilities=capabilities,
             allowed_tools=allowed_tools,
+            status="published",
         )
-        return self._repository.save_draft_version(skill, version)
-
-    def publish(self, workspace_id: str, user_id: str, skill_id: str, version_id: str) -> Skill:
-        skill = self._require_manageable(workspace_id, user_id, skill_id)
-        version = skill.latest_version
-        if version is None or version.id != version_id or version.status != "draft":
-            raise ValueError("Draft Skill version not found.")
         if _blocked_issues(version):
             raise ValueError("Skill version has blocked safety issues.")
-        return self._repository.publish(workspace_id, user_id, skill_id, version_id)
+        return self._repository.save_published_version(skill, version)
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
         skill = self._require_manageable(workspace_id, user_id, skill_id)
@@ -143,11 +141,13 @@ def _validate_definition(
     capabilities: tuple[SkillCapability, ...],
     allowed_tools: tuple[SkillTool, ...],
 ) -> None:
-    if not SLUG_PATTERN.fullmatch(slug):
-        raise ValueError("slug must contain lowercase letters, numbers, or hyphens.")
-    if not name.strip() or not description.strip() or not instructions_markdown.strip():
+    validate_skill_name(slug)
+    validate_skill_name(name)
+    if slug != name:
+        raise ValueError("Skill name and slug must match.")
+    if not description.strip() or not instructions_markdown.strip():
         raise ValueError("name, description, and instructions_markdown are required.")
-    if not capabilities or any(capability not in CAPABILITY_TOOLS for capability in capabilities):
+    if any(capability not in CAPABILITY_TOOLS for capability in capabilities):
         raise ValueError("capabilities must contain supported values.")
     validate_allowed_tools(capabilities, allowed_tools)
 
@@ -162,6 +162,7 @@ def _new_version(
     instructions_markdown: str,
     capabilities: tuple[SkillCapability, ...],
     allowed_tools: tuple[SkillTool, ...],
+    status: SkillVersionStatus = "draft",
 ) -> SkillVersion:
     issues = inspect_skill_instructions(instructions_markdown)
     return SkillVersion(
@@ -174,7 +175,7 @@ def _new_version(
         capabilities=capabilities,
         allowed_tools=allowed_tools,
         lint_result={"issues": [issue.__dict__ for issue in issues]},
-        status="draft",
+        status=status,
         created_by=user_id,
     )
 

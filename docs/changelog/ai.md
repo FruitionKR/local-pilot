@@ -8,14 +8,24 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ### feat: 자연어 기반 Skill authoring API 추가
 
-- `POST /skills/author`가 짧은 자연어와 선택적 참조 문서 ID를 받아 LLM으로 구체적인 Skill Markdown을 생성하고 비활성 draft로 저장하도록 추가
+- `POST /skills/author`가 짧은 자연어와 선택적 참조 문서 ID를 받아 저장하지 않은 Skill Markdown 제안을 반환하도록 추가
 - `/agent/turn`의 일반 “Skill 만들어줘” 요청도 `skill_authoring`으로 분류해 같은 작성 UseCase를 사용하고, “방금 방식대로” 요청은 기존 완료 AgentRun proposal 흐름으로 유지
-- Skill 관리 화면의 단발 자연어 작성은 정보가 부족해도 일반 placeholder를 사용한 편집 가능한 draft를 반환하고, 멀티턴 채팅만 필요한 경우 보충 질문을 허용
+- Skill 관리 화면의 단발 자연어 작성은 정보가 부족해도 일반 placeholder를 사용한 편집 가능한 제안을 반환하고, 멀티턴 채팅만 필요한 경우 보충 질문을 허용
 - 채팅 보충 질문 뒤의 짧은 답변은 `recent_conversation_summary`에 유지된 Skill 생성 요청을 확인해 authoring 흐름으로 복귀
+- `POST /skills/author`에 선택적 커맨드와 `preserve`/`enhance` 모드를 추가해 사용자 원문 보존과 LLM 구체화를 분리하고, 보안 차단 issue는 위치·이유와 함께 반환하며 저장을 막음
+- Skill 제목을 `/` 뒤에 사용하는 lowercase-hyphen 커맨드 이름으로 통일하고, `name`과 `slug`에 같은 값을 저장하도록 변경
+- personal Skill은 `workspace_id`에 저장하지 않고 소유자 계정 전체에서 조회·사용하도록 Skill repository 범위를 분리
+- personal은 계정, team은 Workspace 범위로 같은 커맨드 이름의 중복 생성을 차단
+- capability·Tool이 필요 없는 instruction-only Skill은 빈 내부 권한으로 저장 가능하도록 허용
+- 채팅의 `pending_skill_proposal`로 커맨드·개인/팀 범위·Markdown을 DB 없이 유지하고, AI 재생성·보안 재검토·자연어 게시 승인을 같은 `AuthorSkillUseCase`로 처리
 - 참조 문서는 임의 AgentRun ID 없이 Skill authoring 전용 Backend read endpoint로 조회하고, 실제 문서명·본문은 제외한 heading·목록 marker·표 header 구조만 비신뢰 데이터로 전달하며 prompt injection, credential, 고정 참조값과 capability 밖 Tool을 저장 전에 차단
-- 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown과 draft 식별자만 반환
+- 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown·범위·보안 issue만 반환
+- `POST /skills/author/publish`가 최종 Markdown을 LLM과 규칙으로 다시 검증한 뒤 version 1을 `published`, 자연어 자동 라우팅을 기본 ON으로 transaction 저장
+- DB draft와 별도 `/skills/{skill_id}/publish` 없이 미저장 proposal을 최종 게시
+- Skill 수정은 새 draft 대신 검증된 published version으로 바로 교체하고, 자동 라우팅 OFF 상태를 유지
+- 자연어 자동 라우팅을 끈 published Skill도 명시적 `/command`로 계속 실행하도록 선택 조건을 분리
 - OpenAI `skill-creator`의 간결한 작성·trigger description·progressive disclosure 원칙을 기존 `ChatCompletionsJsonClient` prompt에 적용하고 별도 런타임 의존성은 추가하지 않음
-- Skill authoring·Agent router 관련 단위 테스트 `83 passed`, Python compile과 `git diff --check` 통과
+- Skill authoring·Agent router·HTTP route 관련 단위 테스트 `106 passed`, Python compile과 `git diff --check` 통과
 
 ### refactor: Agent 실행 흐름을 LangGraph로 전환
 

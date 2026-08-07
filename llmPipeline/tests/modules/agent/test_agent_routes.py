@@ -17,7 +17,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
-from app.modules.skill.domain.entities import Skill, SkillAuthoringResult, SkillVersion
+from app.modules.skill.domain.entities import SkillAuthoringProposal, SkillAuthoringResult
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
@@ -112,8 +112,8 @@ class UnexpectedFailureUseCase:
 class AmbiguousSkillUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         candidates = (
-            SkillCandidate("skill-1", "version-1", "분기 정리", "분기별로 정리합니다.", ("folder-organize",)),
-            SkillCandidate("skill-2", "version-2", "팀 정리", "팀별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-1", "version-1", "quarterly-organizer", "분기별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-2", "version-2", "team-organizer", "팀별로 정리합니다.", ("folder-organize",)),
         )
         return AgentTurnResult(
             action="clarify",
@@ -144,16 +144,6 @@ class QueuedAgentRunUseCase:
 
 class AuthoredSkillUseCase:
     def execute(self, request: object) -> AgentTurnResult:
-        version = SkillVersion(
-            id="version-authored",
-            skill_id="skill-authored",
-            version=1,
-            name="회의록 작성",
-            description="회의 내용을 정리합니다.",
-            instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
-            capabilities=("document-create",),
-            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
-        )
         return AgentTurnResult(
             action="skill_authoring",
             route=AgentTurnRoute(
@@ -161,17 +151,16 @@ class AuthoredSkillUseCase:
                 confidence=1.0,
                 reason="direct Skill creation request",
             ),
-            message="Skill 초안을 만들었습니다.",
+            message="Skill 제안을 만들었습니다.",
             skill_authoring_result=SkillAuthoringResult(
-                status="draft_created",
-                skill=Skill(
-                    id="skill-authored",
+                status="proposal_ready",
+                proposal=SkillAuthoringProposal(
                     workspace_id="workspace-1",
+                    user_id="user-1",
                     scope_type="personal",
-                    owner_user_id="user-1",
-                    slug="meeting-notes",
-                    status="disabled",
-                    latest_version=version,
+                    name="meeting-notes",
+                    description="회의 내용을 정리합니다.",
+                    instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
                 ),
             ),
         )

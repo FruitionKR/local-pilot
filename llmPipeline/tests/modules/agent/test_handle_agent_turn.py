@@ -6,6 +6,7 @@ from app.modules.agent.domain.entities import (
     AgentConversationContext,
     AgentTurnRequest,
     AgentTurnRoute,
+    PendingSkillProposal,
 )
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
@@ -27,6 +28,7 @@ from app.modules.query.domain.entities import (
 from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.domain.entities import (
+    SkillAuthoringProposal,
     SkillAuthoringResult,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
@@ -129,28 +131,53 @@ class RecordingAgentRunStarter:
 class RecordingSkillAuthorer:
     def __init__(self) -> None:
         self.kwargs: dict[str, object] = {}
+        self.publish_kwargs: dict[str, object] = {}
 
     def execute(self, **kwargs: object) -> SkillAuthoringResult:
         self.kwargs = kwargs
+        return SkillAuthoringResult(
+            status="proposal_ready",
+            proposal=SkillAuthoringProposal(
+                workspace_id=str(kwargs["workspace_id"]),
+                user_id=str(kwargs["user_id"]),
+                scope_type=str(kwargs["scope_type"]),  # type: ignore[arg-type]
+                name="meeting-notes",
+                description="회의 내용을 정해진 구조로 작성합니다.",
+                instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+            ),
+        )
+
+    def publish(self, **kwargs: object) -> SkillAuthoringResult:
+        self.publish_kwargs = kwargs
         version = SkillVersion(
             id="version-authored",
             skill_id="skill-authored",
             version=1,
-            name="회의록 작성",
+            name="meeting-notes",
             description="회의 내용을 정해진 구조로 작성합니다.",
             instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
             capabilities=("document-create",),
             allowed_tools=("list_root_items", "list_folder_children", "create_document"),
+            status="published",
         )
         return SkillAuthoringResult(
-            status="draft_created",
+            status="published",
+            proposal=SkillAuthoringProposal(
+                workspace_id=str(kwargs["workspace_id"]),
+                user_id=str(kwargs["user_id"]),
+                scope_type=str(kwargs["scope_type"]),  # type: ignore[arg-type]
+                name=str(kwargs["name"]),
+                description=str(kwargs["description"]),
+                instructions_markdown=str(kwargs["instructions_markdown"]),
+            ),
             skill=Skill(
                 id="skill-authored",
-                workspace_id=str(kwargs["workspace_id"]),
+                workspace_id=None,
                 scope_type="personal",
                 owner_user_id=str(kwargs["user_id"]),
                 slug="meeting-notes",
-                status="disabled",
+                status="enabled",
+                enabled_version=version,
                 latest_version=version,
             ),
         )
@@ -168,7 +195,7 @@ def document_skill(capability: str = "document-create") -> Skill:
             id="version-1",
             skill_id="skill-1",
             version=1,
-            name="간결한 문서",
+            name="brief",
             description="문서를 간결하게 작성합니다.",
             instructions_markdown="핵심 내용을 세 문단 이내로 작성한다.",
             capabilities=(capability,),  # type: ignore[arg-type]
@@ -220,18 +247,105 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         )
 
         self.assertEqual(result.action, "skill_authoring")
-        self.assertEqual(result.skill_authoring_result.status, "draft_created")  # type: ignore[union-attr]
+        self.assertEqual(result.skill_authoring_result.status, "proposal_ready")  # type: ignore[union-attr]
         self.assertEqual(authorer.kwargs["reference_document_ids"], ("document-1",))
         self.assertEqual(authorer.kwargs["scope_type"], "personal")
         self.assertTrue(authorer.kwargs["allow_clarification"])
         self.assertIn("회의록 Skill을 만들어", authorer.kwargs["instruction"])
         self.assertIn("주간 회의록 문서요", authorer.kwargs["instruction"])
 
+    def test_pending_skill_title_revision_updates_only_the_proposal(self) -> None:
+        authorer = RecordingSkillAuthorer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(
+                    action="skill_authoring",
+                    confidence=1.0,
+                    reason="pending Skill title revision",
+                )
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_authorer=authorer,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="제목을 weekly-meeting-notes로 바꿔줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(result.skill_authoring_result.status, "proposal_ready")  # type: ignore[union-attr]
+        self.assertEqual(result.skill_authoring_result.proposal.name, "weekly-meeting-notes")  # type: ignore[union-attr]
+        self.assertEqual(authorer.kwargs, {})
+
+    def test_pending_skill_approval_publishes_after_revalidation(self) -> None:
+        authorer = RecordingSkillAuthorer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(action="skill_authoring", confidence=1.0, reason="approval")
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_authorer=authorer,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="이대로 게시해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(result.skill_authoring_result.status, "published")  # type: ignore[union-attr]
+        self.assertEqual(authorer.publish_kwargs["name"], "meeting-notes")
+
     def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
         class Generator:
             def generate(self, source_runs: object, user_directives: object) -> dict[str, object]:
                 return {
-                    "name": "프로젝트 문서 정리",
+                    "name": "project-document-organizer",
                     "description": "프로젝트별로 관련 문서를 정리합니다.",
                     "instructions_markdown": "관련성이 명확한 문서만 이동한다.",
                     "capabilities": ["folder-organize"],

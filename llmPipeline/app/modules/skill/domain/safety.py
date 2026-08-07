@@ -8,6 +8,8 @@ class SkillSafetyIssue:
     text: str
     reason: str
     severity: str = "blocked"
+    start: int | None = None
+    end: int | None = None
 
 
 BLOCKED_INSTRUCTION_MARKERS = {
@@ -47,19 +49,29 @@ def inspect_skill_instructions(instructions_markdown: str) -> tuple[SkillSafetyI
     for category, markers in BLOCKED_INSTRUCTION_MARKERS.items():
         marker = next((candidate for candidate in markers if candidate in lowered), None)
         if marker:
+            start = lowered.find(marker)
             issues.append(
                 SkillSafetyIssue(
                     category=category,
                     text=marker,
                     reason="Skill은 시스템 권한·승인·tool 정책을 변경할 수 없습니다.",
+                    start=start,
+                    end=start + len(marker),
                 )
             )
-    if any(pattern.search(instructions_markdown) for pattern in CREDENTIAL_PATTERNS):
+    credential_match = None
+    for pattern in CREDENTIAL_PATTERNS:
+        credential_match = pattern.search(instructions_markdown)
+        if credential_match:
+            break
+    if credential_match:
         issues.append(
             SkillSafetyIssue(
                 category="credential",
                 text="[credential]",
                 reason="Skill에는 인증정보를 포함할 수 없습니다.",
+                start=credential_match.start(),
+                end=credential_match.end(),
             )
         )
     return tuple(issues)

@@ -39,6 +39,11 @@ COMPLETED_WORK_REQUEST_PATTERN = re.compile(
     r"(?:just now|earlier|previous).{0,30}(?:method|work|result|process|workflow)",
     re.IGNORECASE,
 )
+PUBLISH_SKILL_PATTERN = re.compile(
+    r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
+    r"\b(?:publish|post)\b",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "markdown_edit",
@@ -75,6 +80,16 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 if request.conversation_context
                 else {}
             ),
+            "pending_skill_proposal": (
+                {
+                    "scope_type": request.conversation_context.pending_skill_proposal.scope_type,
+                    "name": request.conversation_context.pending_skill_proposal.name,
+                    "description": request.conversation_context.pending_skill_proposal.description,
+                    "instructions_markdown": request.conversation_context.pending_skill_proposal.instructions_markdown,
+                }
+                if request.conversation_context and request.conversation_context.pending_skill_proposal
+                else None
+            ),
             "active_markdown_context": {
                 "has_markdown": bool(request.active_markdown_context and request.active_markdown_context.markdown.strip()),
                 "target": (
@@ -88,6 +103,8 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 ),
             },
             "skill_mode": request.skill_mode,
+            "skill_scope_type": request.skill_scope_type,
+            "skill_authoring_mode": request.skill_authoring_mode,
             "available_skills": [
                 {
                     "id": skill.id,
@@ -152,6 +169,16 @@ def build_agent_turn_router() -> AgentTurnRouterPort:
 
 def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     lowered = request.message.lower()
+    if (
+        request.conversation_context
+        and request.conversation_context.pending_skill_proposal
+        and PUBLISH_SKILL_PATTERN.search(lowered)
+    ):
+        return AgentTurnRoute(
+            action="skill_authoring",
+            confidence=1.0,
+            reason="explicit approval for pending Skill proposal",
+        )
     requests_new_skill = _requests_new_skill(lowered)
     has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
     if (
@@ -191,7 +218,10 @@ def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) 
         if request.conversation_context and request.conversation_context.recent_conversation_summary
         else ""
     )
-    if not _requests_new_skill(f"{request.message}\n{summary}"):
+    has_pending_proposal = bool(
+        request.conversation_context and request.conversation_context.pending_skill_proposal
+    )
+    if not has_pending_proposal and not _requests_new_skill(f"{request.message}\n{summary}"):
         return ["skill_authoring requires an explicit request to create a new Skill"]
     if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
         return ["completed work must use skill_draft_proposal instead of skill_authoring"]

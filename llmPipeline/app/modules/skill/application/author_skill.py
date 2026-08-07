@@ -6,6 +6,8 @@ from app.modules.skill.application.ports import (
     SkillReferenceReaderPort,
 )
 from app.modules.skill.domain.entities import (
+    SkillAuthoringMode,
+    SkillAuthoringProposal,
     SkillAuthoringReference,
     SkillAuthoringResult,
     SkillCapability,
@@ -15,16 +17,16 @@ from app.modules.skill.domain.entities import (
 from app.modules.skill.domain.policy import (
     CAPABILITY_TOOLS,
     validate_allowed_tools,
+    validate_skill_name,
     with_required_planning_reads,
 )
-from app.modules.skill.domain.safety import inspect_skill_instructions
+from app.modules.skill.domain.safety import SkillSafetyIssue, inspect_skill_instructions
 
 
 MAX_INSTRUCTION_CHARS = 4_000
 MAX_REFERENCE_COUNT = 3
 MAX_REFERENCE_CHARS = 40_000
 MAX_TOTAL_REFERENCE_CHARS = 80_000
-MAX_NAME_CHARS = 100
 MAX_DESCRIPTION_CHARS = 500
 MAX_INSTRUCTIONS_CHARS = 30_000
 MAX_INSTRUCTIONS_LINES = 500
@@ -51,18 +53,31 @@ class AuthorSkillUseCase:
         instruction: str,
         reference_document_ids: tuple[str, ...],
         allow_clarification: bool = True,
+        name: str | None = None,
+        description: str | None = None,
+        authoring_mode: SkillAuthoringMode = "enhance",
     ) -> SkillAuthoringResult:
         instruction = instruction.strip()
-        if not instruction or len(instruction) > MAX_INSTRUCTION_CHARS:
-            raise ValueError(f"instruction must contain 1-{MAX_INSTRUCTION_CHARS} characters.")
+        max_instruction_chars = (
+            MAX_INSTRUCTIONS_CHARS if authoring_mode == "preserve" else MAX_INSTRUCTION_CHARS
+        )
+        if not instruction or len(instruction) > max_instruction_chars:
+            raise ValueError(f"instruction must contain 1-{max_instruction_chars} characters.")
         if len(reference_document_ids) > MAX_REFERENCE_COUNT:
             raise ValueError(f"reference_document_ids supports at most {MAX_REFERENCE_COUNT} documents.")
         if len(set(reference_document_ids)) != len(reference_document_ids):
             raise ValueError("reference_document_ids must not contain duplicates.")
         if any(not document_id.strip() for document_id in reference_document_ids):
             raise ValueError("reference_document_ids must contain non-empty ids.")
-        if inspect_skill_instructions(instruction):
-            raise ValueError("Skill authoring request contains blocked safety instructions.")
+        input_issues = inspect_skill_instructions(instruction)
+        if input_issues:
+            return SkillAuthoringResult(status="blocked", issues=input_issues)
+        if name is not None:
+            name = validate_skill_name(name)
+        if description is not None:
+            description = description.strip()
+            if not description or len(description) > MAX_DESCRIPTION_CHARS:
+                raise ValueError(f"description must contain 1-{MAX_DESCRIPTION_CHARS} characters.")
 
         references = tuple(
             self._reference_reader.read(
@@ -72,12 +87,16 @@ class AuthorSkillUseCase:
             )
             for document_id in reference_document_ids
         )
-        _validate_references(references)
+        reference_issues = _validate_references(references)
+        if reference_issues:
+            return SkillAuthoringResult(status="blocked", issues=reference_issues)
 
         candidate = self._generator.generate(
             instruction,
             references,
             allow_clarification=allow_clarification,
+            authoring_mode=authoring_mode,
+            requested_name=name,
         )
         status = candidate.get("status")
         if status == "clarification_required":
@@ -90,40 +109,83 @@ class AuthorSkillUseCase:
                 status="clarification_required",
                 question=question,
             )
-        if status != "draft_created":
+        if status != "proposal_ready":
             raise ValueError("Skill authoring result has an unsupported status.")
 
-        name = _required_text(candidate, "name", MAX_NAME_CHARS)
-        description = _required_text(candidate, "description", MAX_DESCRIPTION_CHARS)
-        instructions = _required_text(candidate, "instructions_markdown", MAX_INSTRUCTIONS_CHARS)
+        resolved_name = name or _required_text(candidate, "slug", 63)
+        resolved_name = validate_skill_name(resolved_name)
+        resolved_description = description or _required_text(candidate, "description", MAX_DESCRIPTION_CHARS)
+        instructions = (
+            instruction
+            if authoring_mode == "preserve"
+            else _required_text(candidate, "instructions_markdown", MAX_INSTRUCTIONS_CHARS)
+        )
         if len(instructions.splitlines()) > MAX_INSTRUCTIONS_LINES:
             raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_LINES} lines.")
         capabilities = _capabilities(candidate.get("capabilities"))
         allowed_tools = with_required_planning_reads(_tools(candidate.get("allowed_tools")))
         validate_allowed_tools(capabilities, allowed_tools)
-        if inspect_skill_instructions("\n".join((name, description, instructions))):
-            raise ValueError("Generated Skill contains blocked safety instructions.")
+        output_issues = inspect_skill_instructions("\n".join((resolved_name, resolved_description, instructions)))
+        if output_issues:
+            return SkillAuthoringResult(status="blocked", issues=output_issues)
         _reject_reference_literals(
-            (name, description, instructions),
+            (resolved_name, resolved_description, instructions),
             tuple(reference.id for reference in references),
         )
 
-        skill = self._skill_manager.create_draft(
+        proposal = SkillAuthoringProposal(
             workspace_id=workspace_id,
             user_id=user_id,
             scope_type=scope_type,
-            slug=_required_text(candidate, "slug", 63),
-            name=name,
-            description=description,
+            name=resolved_name,
+            description=resolved_description,
             instructions_markdown=instructions,
             capabilities=capabilities,
             allowed_tools=allowed_tools,
         )
-        return SkillAuthoringResult(status="draft_created", skill=skill)
+        return SkillAuthoringResult(status="proposal_ready", proposal=proposal)
+
+    def publish(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        scope_type: SkillScopeType,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+    ) -> SkillAuthoringResult:
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=name,
+            description=description,
+            instruction=instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        if reviewed.status != "proposal_ready" or reviewed.proposal is None:
+            return reviewed
+        proposal = reviewed.proposal
+        skill = self._skill_manager.create_published(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            slug=proposal.name,
+            name=proposal.name,
+            description=proposal.description,
+            instructions_markdown=proposal.instructions_markdown,
+            capabilities=proposal.capabilities,
+            allowed_tools=proposal.allowed_tools,
+        )
+        return SkillAuthoringResult(status="published", proposal=proposal, skill=skill)
 
 
-def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> None:
+def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> tuple[SkillSafetyIssue, ...]:
     total_chars = 0
+    issues: list[SkillSafetyIssue] = []
     for reference in references:
         markdown = reference.markdown
         if not markdown.strip():
@@ -131,10 +193,10 @@ def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> Non
         if len(markdown) > MAX_REFERENCE_CHARS:
             raise ValueError(f"Each reference document supports at most {MAX_REFERENCE_CHARS} characters.")
         total_chars += len(markdown)
-        if inspect_skill_instructions(f"{reference.name}\n{markdown}"):
-            raise ValueError("Reference document contains blocked safety instructions.")
+        issues.extend(inspect_skill_instructions(f"{reference.name}\n{markdown}"))
     if total_chars > MAX_TOTAL_REFERENCE_CHARS:
         raise ValueError(f"Reference documents support at most {MAX_TOTAL_REFERENCE_CHARS} characters in total.")
+    return tuple(issues)
 
 
 def _required_text(candidate: dict[str, object], key: str, max_chars: int) -> str:
@@ -148,14 +210,18 @@ def _required_text(candidate: dict[str, object], key: str, max_chars: int) -> st
 
 
 def _capabilities(value: object) -> tuple[SkillCapability, ...]:
-    if not isinstance(value, list) or not value or not all(isinstance(item, str) for item in value):
-        raise ValueError("Skill authoring result capabilities are required.")
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Skill authoring result capabilities must be an array.")
     if any(item not in CAPABILITY_TOOLS for item in value):
         raise ValueError("Skill authoring result contains an unsupported capability.")
     return tuple(cast(SkillCapability, item) for item in value)
 
 
 def _tools(value: object) -> tuple[SkillTool, ...]:
+    if value is None:
+        return ()
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError("Skill authoring result allowed_tools must be an array.")
     known_tools = {tool for tools in CAPABILITY_TOOLS.values() for tool in tools}

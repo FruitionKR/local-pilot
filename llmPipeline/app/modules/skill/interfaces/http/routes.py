@@ -12,6 +12,7 @@ from app.modules.skill.interfaces.http.dependencies import (
 )
 from app.modules.skill.interfaces.http.schemas import (
     CreateSkillRequest,
+    PublishAuthoredSkillRequest,
     SkillAuthoringRequest,
     SkillAuthoringResponse,
     SkillActorRequest,
@@ -37,9 +38,31 @@ def author_skill(
             workspace_id=payload.workspace_id,
             user_id=payload.user_id,
             scope_type=payload.scope_type,
+            name=payload.name,
+            description=payload.description,
             instruction=payload.instruction,
+            authoring_mode=payload.authoring_mode,
             reference_document_ids=tuple(payload.reference_document_ids),
             allow_clarification=False,
+        )
+        return SkillAuthoringResponse.from_domain(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/author/publish", response_model=SkillAuthoringResponse)
+def publish_authored_skill(
+    payload: PublishAuthoredSkillRequest,
+    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
+) -> SkillAuthoringResponse:
+    try:
+        result = use_case.publish(
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
+            scope_type=payload.scope_type,
+            name=payload.name,
+            description=payload.description,
+            instructions_markdown=payload.instructions_markdown,
         )
         return SkillAuthoringResponse.from_domain(result)
     except ValueError as exc:
@@ -87,7 +110,7 @@ def create_skill(
     use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
 ) -> SkillResponse:
     try:
-        skill = use_case.create_draft(
+        skill = use_case.create_published(
             workspace_id=payload.workspace_id,
             user_id=payload.user_id,
             scope_type=payload.scope_type,
@@ -132,7 +155,7 @@ def update_skill(
     use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
 ) -> SkillResponse:
     try:
-        skill = use_case.create_draft_version(
+        skill = use_case.update_published(
             workspace_id=payload.workspace_id,
             user_id=payload.user_id,
             skill_id=skill_id,
@@ -142,21 +165,6 @@ def update_skill(
             capabilities=tuple(payload.capabilities),
             allowed_tools=tuple(payload.allowed_tools),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillResponse.from_domain(skill)
-
-
-@router.post("/{skill_id}/publish", response_model=SkillResponse)
-def publish_skill(
-    skill_id: str,
-    payload: SkillActorRequest,
-    use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
-) -> SkillResponse:
-    if payload.version_id is None:
-        raise HTTPException(status_code=400, detail="version_id is required.")
-    try:
-        skill = use_case.publish(payload.workspace_id, payload.user_id, skill_id, payload.version_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SkillResponse.from_domain(skill)

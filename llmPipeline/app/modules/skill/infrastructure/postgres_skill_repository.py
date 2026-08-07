@@ -55,17 +55,22 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
             rows = conn.execute(
                 SKILL_SELECT
                 + """
-                WHERE s.workspace_id = %s
-                  AND s.status = 'enabled'
+                WHERE s.status = 'enabled'
                   AND s.enabled_version_id IS NOT NULL
-                  AND EXISTS (
-                      SELECT 1 FROM workspace_members member
-                      WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                  AND (
+                      (s.scope_type = 'personal' AND s.owner_user_id = %s)
+                      OR (
+                          s.scope_type = 'team'
+                          AND s.workspace_id = %s
+                          AND EXISTS (
+                              SELECT 1 FROM workspace_members member
+                              WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                          )
+                      )
                   )
-                  AND (s.scope_type = 'team' OR s.owner_user_id = %s)
                 ORDER BY s.scope_type, COALESCE(ev.name, ''), s.id
                 """,
-                (workspace_id, user_id, user_id),
+                (user_id, workspace_id, user_id),
             ).fetchall()
         return [_row_to_skill(row) for row in rows]
 
@@ -74,15 +79,20 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
             rows = conn.execute(
                 SKILL_SELECT
                 + """
-                WHERE s.workspace_id = %s
-                  AND EXISTS (
-                      SELECT 1 FROM workspace_members member
-                      WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                WHERE (
+                      (s.scope_type = 'personal' AND s.owner_user_id = %s)
+                      OR (
+                          s.scope_type = 'team'
+                          AND s.workspace_id = %s
+                          AND EXISTS (
+                              SELECT 1 FROM workspace_members member
+                              WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                          )
+                      )
                   )
-                  AND (s.scope_type = 'team' OR s.owner_user_id = %s)
                 ORDER BY s.scope_type, COALESCE(ev.name, lv.name, ''), s.id
                 """,
-                (workspace_id, user_id, user_id),
+                (user_id, workspace_id, user_id),
             ).fetchall()
         return [_row_to_skill(row) for row in rows]
 
@@ -92,17 +102,17 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
     def get_accessible_by_slug(self, workspace_id: str, user_id: str, slug: str) -> Skill | None:
         return self._get_with_access_filter(workspace_id, user_id, "s.slug = %s", slug)
 
-    def get_manageable(self, workspace_id: str, user_id: str, skill_id: str) -> Skill | None:
+    def get_manageable(self, workspace_id: str | None, user_id: str, skill_id: str) -> Skill | None:
         with database.connect() as conn:
             row = conn.execute(
                 SKILL_SELECT
                 + """
-                WHERE s.workspace_id = %s
-                  AND s.id = %s
+                WHERE s.id = %s
                   AND (
                       (s.scope_type = 'personal' AND s.owner_user_id = %s)
                       OR (
                           s.scope_type = 'team'
+                          AND s.workspace_id = %s
                           AND EXISTS (
                               SELECT 1 FROM workspace_members member
                               WHERE member.workspace_id = s.workspace_id
@@ -112,64 +122,48 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
                       )
                   )
                 """,
-                (workspace_id, skill_id, user_id, user_id),
+                (skill_id, user_id, workspace_id, user_id),
             ).fetchone()
         return _row_to_skill(row) if row else None
 
-    def create(self, skill: Skill, version: SkillVersion) -> Skill:
+    def create_published(self, skill: Skill, version: SkillVersion) -> Skill:
         with database.connect() as conn:
             _require_manage_scope(conn, skill.workspace_id, version.created_by or "", skill.scope_type)
+            _ensure_slug_available(conn, skill, skill.slug)
             conn.execute(
                 """
                 INSERT INTO skills (id, workspace_id, scope_type, owner_user_id, slug, status)
-                VALUES (%s, %s, %s, %s, %s, 'disabled')
+                VALUES (%s, %s, %s, %s, %s, 'enabled')
                 """,
                 (skill.id, skill.workspace_id, skill.scope_type, skill.owner_user_id, skill.slug),
             )
             _insert_version(conn, version)
-        saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
-        if saved is None:
-            raise ValueError("Created Skill could not be loaded.")
-        return saved
-
-    def save_draft_version(self, skill: Skill, version: SkillVersion) -> Skill:
-        with database.connect() as conn:
-            _insert_version(conn, version)
-            conn.execute("UPDATE skills SET updated_at = now() WHERE id = %s", (skill.id,))
-        saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
-        if saved is None:
-            raise ValueError("Updated Skill could not be loaded.")
-        return saved
-
-    def publish(self, workspace_id: str, user_id: str, skill_id: str, version_id: str) -> Skill:
-        with database.connect() as conn:
-            manageable = _lock_manageable(conn, workspace_id, user_id, skill_id)
-            if manageable is None:
-                raise ValueError("Skill not found or not manageable.")
-            version = conn.execute(
-                "SELECT status, lint_result FROM skill_versions WHERE id = %s AND skill_id = %s FOR UPDATE",
-                (version_id, skill_id),
-            ).fetchone()
-            if not version or version["status"] != "draft":
-                raise ValueError("Draft Skill version not found.")
-            issues = (version["lint_result"] or {}).get("issues", [])
-            if any(isinstance(issue, dict) and issue.get("severity") == "blocked" for issue in issues):
-                raise ValueError("Skill version has blocked safety issues.")
             conn.execute(
-                "UPDATE skill_versions SET status = 'published', published_at = now() WHERE id = %s",
-                (version_id,),
+                "UPDATE skills SET enabled_version_id = %s, updated_at = now() WHERE id = %s",
+                (version.id, skill.id),
             )
+        saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
+        if saved is None:
+            raise ValueError("Published Skill could not be loaded.")
+        return saved
+
+    def save_published_version(self, skill: Skill, version: SkillVersion) -> Skill:
+        with database.connect() as conn:
+            if _lock_manageable(conn, skill.workspace_id, version.created_by or "", skill.id) is None:
+                raise ValueError("Skill not found or not manageable.")
+            _ensure_slug_available(conn, skill, version.name, exclude_skill_id=skill.id)
+            _insert_version(conn, version)
             conn.execute(
                 """
                 UPDATE skills
-                SET enabled_version_id = %s, status = 'enabled', updated_at = now()
+                SET slug = %s, enabled_version_id = %s, updated_at = now()
                 WHERE id = %s
                 """,
-                (version_id, skill_id),
+                (version.name, version.id, skill.id),
             )
-        saved = self.get_manageable(workspace_id, user_id, skill_id)
+        saved = self.get_manageable(skill.workspace_id, version.created_by or "", skill.id)
         if saved is None:
-            raise ValueError("Published Skill could not be loaded.")
+            raise ValueError("Updated Skill could not be loaded.")
         return saved
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
@@ -195,7 +189,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def _get_with_access_filter(
         self,
-        workspace_id: str,
+        workspace_id: str | None,
         user_id: str,
         reference_clause: str,
         reference: str,
@@ -204,15 +198,21 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
             row = conn.execute(
                 SKILL_SELECT
                 + f"""
-                WHERE s.workspace_id = %s
-                  AND {reference_clause}
-                  AND EXISTS (
-                      SELECT 1 FROM workspace_members member
-                      WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                WHERE {reference_clause}
+                  AND (
+                      (s.scope_type = 'personal' AND s.owner_user_id = %s)
+                      OR (
+                          s.scope_type = 'team'
+                          AND s.workspace_id = %s
+                          AND EXISTS (
+                              SELECT 1 FROM workspace_members member
+                              WHERE member.workspace_id = s.workspace_id AND member.user_id = %s
+                          )
+                      )
                   )
-                  AND (s.scope_type = 'team' OR s.owner_user_id = %s)
+                ORDER BY CASE WHEN s.scope_type = 'personal' THEN 0 ELSE 1 END, s.id
                 """,
-                (workspace_id, reference, user_id, user_id),
+                (reference, user_id, workspace_id, user_id),
             ).fetchone()
         return _row_to_skill(row) if row else None
 
@@ -222,8 +222,9 @@ def _insert_version(conn: Any, version: SkillVersion) -> None:
         """
         INSERT INTO skill_versions (
             id, skill_id, version, name, description, instructions_markdown,
-            capabilities, allowed_tools, lint_result, status, created_by
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft', %s)
+            capabilities, allowed_tools, lint_result, status, created_by, published_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                  CASE WHEN %s = 'published' THEN now() ELSE NULL END)
         """,
         (
             version.id,
@@ -235,12 +236,18 @@ def _insert_version(conn: Any, version: SkillVersion) -> None:
             list(version.capabilities),
             list(version.allowed_tools),
             Json(version.lint_result or {}),
+            version.status,
             version.created_by,
+            version.status,
         ),
     )
 
 
-def _require_manage_scope(conn: Any, workspace_id: str, user_id: str, scope_type: str) -> None:
+def _require_manage_scope(conn: Any, workspace_id: str | None, user_id: str, scope_type: str) -> None:
+    if scope_type == "personal":
+        return
+    if not workspace_id:
+        raise ValueError("Team Skill requires a workspace.")
     row = conn.execute(
         "SELECT role FROM workspace_members WHERE workspace_id = %s AND user_id = %s",
         (workspace_id, user_id),
@@ -249,16 +256,44 @@ def _require_manage_scope(conn: Any, workspace_id: str, user_id: str, scope_type
         raise ValueError("Workspace Skill management is not allowed.")
 
 
-def _lock_manageable(conn: Any, workspace_id: str, user_id: str, skill_id: str) -> dict[str, Any] | None:
+def _ensure_slug_available(
+    conn: Any,
+    skill: Skill,
+    slug: str,
+    *,
+    exclude_skill_id: str | None = None,
+) -> None:
+    filters = ["s.slug = %s"]
+    params: list[object] = [slug]
+    if skill.scope_type == "personal":
+        filters.extend(("s.scope_type = 'personal'", "s.owner_user_id = %s"))
+        params.append(skill.owner_user_id)
+    else:
+        if skill.workspace_id is None:
+            raise ValueError("Team Skill requires a workspace.")
+        filters.extend(("s.scope_type = 'team'", "s.workspace_id = %s"))
+        params.append(skill.workspace_id)
+    if exclude_skill_id is not None:
+        filters.append("s.id <> %s")
+        params.append(exclude_skill_id)
+    if conn.execute(
+        "SELECT 1 FROM skills s WHERE " + " AND ".join(filters) + " LIMIT 1",
+        tuple(params),
+    ).fetchone():
+        raise ValueError("Skill command already exists in this scope.")
+
+
+def _lock_manageable(conn: Any, workspace_id: str | None, user_id: str, skill_id: str) -> dict[str, Any] | None:
     return conn.execute(
         """
         SELECT s.*
         FROM skills s
-        WHERE s.workspace_id = %s AND s.id = %s
+        WHERE s.id = %s
           AND (
               (s.scope_type = 'personal' AND s.owner_user_id = %s)
               OR (
                   s.scope_type = 'team'
+                  AND s.workspace_id = %s
                   AND EXISTS (
                       SELECT 1 FROM workspace_members member
                       WHERE member.workspace_id = s.workspace_id
@@ -269,7 +304,7 @@ def _lock_manageable(conn: Any, workspace_id: str, user_id: str, skill_id: str) 
           )
         FOR UPDATE
         """,
-        (workspace_id, skill_id, user_id, user_id),
+        (skill_id, user_id, workspace_id, user_id),
     ).fetchone()
 
 

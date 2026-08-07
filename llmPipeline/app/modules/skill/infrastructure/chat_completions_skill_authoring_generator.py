@@ -11,7 +11,7 @@ from app.core.llm_env import (
     provider_base_url,
     resolve_llm_provider,
 )
-from app.modules.skill.domain.entities import SkillAuthoringReference
+from app.modules.skill.domain.entities import SkillAuthoringMode, SkillAuthoringReference
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
@@ -35,9 +35,13 @@ class ChatCompletionsSkillAuthoringGenerator:
         references: tuple[SkillAuthoringReference, ...],
         *,
         allow_clarification: bool,
+        authoring_mode: SkillAuthoringMode,
+        requested_name: str | None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "instruction": instruction,
+            "authoring_mode": authoring_mode,
+            "requested_name": requested_name,
             "interaction_mode": "multi_turn" if allow_clarification else "single_turn",
             "references": [
                 {
@@ -50,7 +54,7 @@ class ChatCompletionsSkillAuthoringGenerator:
         if allow_clarification or result.get("status") != "clarification_required":
             return result
         payload["contract_failures"] = [
-            "single_turn authoring must create a conservative editable draft instead of asking a question"
+            "single_turn authoring must create a conservative editable proposal instead of asking a question"
         ]
         return self._complete(payload)
 

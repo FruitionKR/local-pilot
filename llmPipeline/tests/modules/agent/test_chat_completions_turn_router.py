@@ -5,6 +5,7 @@ from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
     AgentConversationContext,
     AgentTurnRequest,
+    PendingSkillProposal,
     SkillCandidate,
 )
 from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
@@ -64,6 +65,45 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         )
 
         self.assertEqual(route.action, "skill_authoring")
+
+    def test_accepts_pending_proposal_title_revision_without_repeated_create_request(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="제목을 weekly-meeting-notes로 바꿔줘",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="# 작성 절차",
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "skill_authoring")
+        payload = json.loads(client.calls[0][1])
+        self.assertEqual(payload["pending_skill_proposal"]["name"], "meeting-notes")
+
+    def test_pending_proposal_publish_approval_is_guarded_without_llm(self) -> None:
+        route = _local_guard(
+            AgentTurnRequest(
+                message="이대로 게시해줘",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="# 작성 절차",
+                    )
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "skill_authoring")  # type: ignore[union-attr]
 
     def test_accepts_direct_skill_creation_with_modifier(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
@@ -181,7 +221,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                     SkillCandidate(
                         id="skill-1",
                         version_id="version-1",
-                        name="폴더 정리",
+                        name="folder-organize",
                         description="프로젝트별로 문서를 정리합니다.",
                         capabilities=("folder-organize",),
                     ),

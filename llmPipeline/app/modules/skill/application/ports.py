@@ -1,6 +1,11 @@
 from typing import Protocol
 
-from app.modules.skill.domain.entities import Skill, SkillAuthoringReference, SkillDraftSourceRun
+from app.modules.skill.domain.entities import (
+    Skill,
+    SkillAuthoringMode,
+    SkillAuthoringReference,
+    SkillDraftSourceRun,
+)
 
 
 class SkillRepositoryPort(Protocol):
@@ -15,16 +20,13 @@ class SkillRepositoryPort(Protocol):
 
 
 class ManageSkillRepositoryPort(Protocol):
-    def create(self, skill: Skill, version: object) -> Skill:
+    def create_published(self, skill: Skill, version: object) -> Skill:
         ...
 
-    def get_manageable(self, workspace_id: str, user_id: str, skill_id: str) -> Skill | None:
+    def get_manageable(self, workspace_id: str | None, user_id: str, skill_id: str) -> Skill | None:
         ...
 
-    def save_draft_version(self, skill: Skill, version: object) -> Skill:
-        ...
-
-    def publish(self, workspace_id: str, user_id: str, skill_id: str, version_id: str) -> Skill:
+    def save_published_version(self, skill: Skill, version: object) -> Skill:
         ...
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
@@ -46,6 +48,8 @@ class SkillAuthoringGeneratorPort(Protocol):
         references: tuple[SkillAuthoringReference, ...],
         *,
         allow_clarification: bool,
+        authoring_mode: SkillAuthoringMode,
+        requested_name: str | None,
     ) -> dict[str, object]: ...
 
 

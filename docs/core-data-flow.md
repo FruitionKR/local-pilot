@@ -193,7 +193,7 @@ flowchart LR
 
 - **Input:** AgentTurnRequest의 message, conversation context, active Markdown context, 선택적 Skill scope·참조 문서 ID
 - **Responsibility:** Spring 요청을 AI Pipeline `/agent/turn` payload로 변환하고 Markdown 작업 또는 자연어 Skill authoring 응답을 중계한다.
-- **Output:** AI Pipeline JSON 응답 또는 Tool 권한이 숨겨진 Skill Markdown draft
+- **Output:** AI Pipeline JSON 응답 또는 Tool 권한이 숨겨진 미저장 Skill Markdown proposal
 - **Key Logic:** connect·read timeout, target field snake_case 변환, `400/422` 응답 보존
 - **Failure Handling:** timeout·빈 응답·기타 Pipeline 장애는 `503`, Pipeline의 `400/422`는 그 상태로 전달한다.
 - **Why this exists:** Spring domain service에서 AI Pipeline의 HTTP 규약과 장애 처리를 분리하기 위해 존재한다.
@@ -641,7 +641,7 @@ flowchart LR
 
     subgraph INTERNAL[AI Pipeline 내부 구현]
         AUTHOR["자연어 Skill 작성·필터링"]
-        SKILL["Skill 초안·버전 관리"]
+        SKILL["Skill 제안·게시·버전 관리"]
         SELECT["요청별 Skill 선택"]
         PLAN["Agent 계획·승인 관리"]
         EXECUTE["승인된 Agent 작업 실행"]
@@ -652,7 +652,7 @@ flowchart LR
     UI -. 미구현 .-> SPRING
     SPRING -. 미구현 .-> AUTHOR
     SPRING -. 미구현 .-> SKILL
-    AUTHOR -->|검증된 비활성 draft| SKILL
+    AUTHOR -->|검증된 미저장 제안| SKILL
     SKILL --> SELECT --> PLAN --> EXECUTE
     SKILL --> DB
     PLAN --> DB
@@ -661,12 +661,12 @@ flowchart LR
 
 **Status:** 내부 구현. 기본값 `AGENT_SKILLS_ENABLED=false`이며 Spring 공개 API와 internal tool endpoint가 아직 없다.
 
-#### Skill 초안·버전 관리 (`AuthorSkillUseCase`, `ManageSkillUseCase`, `ProposeSkillDraftUseCase`)
+#### Skill 제안·게시·버전 관리 (`AuthorSkillUseCase`, `ManageSkillUseCase`, `ProposeSkillDraftUseCase`)
 
-- **Input:** 짧은 자연어, 선택적 참조 문서 ID, 수동 Skill 정의, draft source operation, publish·enable 요청
-- **Responsibility:** AgentRun과 분리된 Skill authoring 전용 Backend read endpoint로 권한이 확인된 참조 Markdown을 받고, heading·목록·표 header 구조만 추출해 비신뢰 데이터로 격리하며 Skill Markdown 생성과 초안·version·publish·enable lifecycle을 관리한다.
-- **Output:** 수동 입력의 편집 가능한 Skill Markdown draft, 채팅의 선택적 보충 질문, immutable published version, 완료 작업 기반 draft proposal
-- **Key Logic:** 수동 입력은 질문 없이 일반 placeholder draft 생성, 채팅은 멀티턴 보충 질문 허용, 입력·참조·출력 안전 검사, capability-tool 교집합, mutation tool에 필요한 read tool 보완, 비활성 draft 저장과 별도 publish
+- **Input:** 개인/팀 범위, 선택적 커맨드 이름, 자연어 또는 직접 작성한 Markdown, preserve/enhance authoring mode, 선택적 참조 문서 ID, 최종 게시·자동 라우팅 변경 요청
+- **Responsibility:** 권한이 확인된 참조 Markdown 구조를 비신뢰 데이터로 격리하고, 원문 보존·AI 구체화·AI 재생성·보안 재검토를 모두 미저장 제안으로 처리한 뒤 최종 게시에서만 version을 저장한다.
+- **Output:** 편집 가능한 Skill Markdown 제안, 위치·이유를 포함한 보안 차단 issue, 채팅 보충 질문, 최종 published version, 완료 작업 기반 proposal
+- **Key Logic:** `preserve`는 현재 Markdown을 바꾸지 않고 재검토하며 `enhance`만 LLM으로 내용을 구체화한다. 최종 게시에서 같은 내용을 다시 검증하고 personal 계정/team Workspace 범위의 커맨드 중복을 transaction 안에서 차단한 뒤 기본 자동 라우팅 ON으로 저장한다. 채팅 `pending_skill_proposal`은 커맨드·범위·본문을 DB 없이 유지한다.
 - **Failure Handling:** 자연어 authoring의 위험한 instruction·지원하지 않는 tool은 `400`, request schema 위반은 `422`로 거절한다. 기존 Skill 관리 API의 없거나 관리할 수 없는 Skill과 version 충돌은 현재 `400`으로 반환한다.
 - **Why this exists:** 반복 작업 규칙을 자유 형식 prompt가 아닌 검증·version 가능한 Skill로 관리하기 위해 존재한다.
 
@@ -675,8 +675,8 @@ flowchart LR
 - **Input:** 사용자 요청, slash Skill 선택, Workspace·User context
 - **Responsibility:** slash·auto·off mode에 따라 실행에 사용할 Skill version을 결정한다.
 - **Output:** 선택된 Skill route와 allowed capability·tool
-- **Key Logic:** enabled·published version 필터, scope 우선순위, 명시적 slash 선택 우선
-- **Failure Handling:** 비활성·없는 Skill은 `400/404`, auto 후보가 없으면 Skill 없는 기본 Agent 경로로 진행한다.
+- **Key Logic:** 자연어 자동 선택은 `status=enabled`인 published version만 사용하고, 명시적 `/command`는 자동 라우팅 OFF여도 접근 가능한 published version이면 실행한다.
+- **Failure Handling:** 미게시·없는 Skill은 `400/404`, auto 후보가 없으면 Skill 없는 기본 Agent 경로로 진행한다.
 - **Why this exists:** Skill 저장 구조와 실제 요청 routing 규칙을 분리하기 위해 존재한다.
 
 #### Agent 계획·승인 관리 (`StartAgentRunUseCase`, `ApproveAgentPlanUseCase`)

@@ -33,7 +33,7 @@ ToolValue = Literal[
 
 class SkillDefinitionRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
-    name: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     description: str = Field(..., min_length=1)
     instructions_markdown: str = Field(..., min_length=1)
     capabilities: list[CapabilityValue] = Field(..., min_length=1)
@@ -44,42 +44,81 @@ class SkillAuthoringRequest(BaseModel):
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]
-    instruction: str = Field(..., min_length=1, max_length=4_000)
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9-]{0,62}$",
+    )
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    instruction: str = Field(..., min_length=1, max_length=30_000)
+    authoring_mode: Literal["preserve", "enhance"] = "enhance"
     reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
 
 
 class SkillAuthoringResponse(BaseModel):
-    status: Literal["clarification_required", "draft_created"]
+    status: Literal["clarification_required", "blocked", "proposal_ready", "published"]
     question: str | None = None
     skill_id: str | None = None
     version_id: str | None = None
+    scope_type: Literal["personal", "team"] | None = None
+    name: str | None = None
+    description: str | None = None
     skill_markdown: str | None = None
+    issues: list[dict[str, object]] = Field(default_factory=list)
 
     @classmethod
     def from_domain(cls, result: SkillAuthoringResult) -> "SkillAuthoringResponse":
+        if result.proposal is not None:
+            proposal = result.proposal
+            skill = result.skill
+            version = skill.enabled_version if skill else None
+            return cls(
+                status=result.status,
+                skill_id=skill.id if skill else None,
+                version_id=version.id if version else None,
+                scope_type=proposal.scope_type,
+                name=proposal.name,
+                description=proposal.description,
+                skill_markdown=_skill_markdown(
+                    proposal.name,
+                    proposal.description,
+                    proposal.instructions_markdown,
+                ),
+            )
         if result.skill is None:
-            return cls(status=result.status, question=result.question)
-        version = result.skill.latest_version
+            return cls(
+                status=result.status,
+                question=result.question,
+                issues=[issue.__dict__ for issue in result.issues],
+            )
+        version = result.skill.enabled_version or result.skill.latest_version
         if version is None:
-            raise ValueError("Authored Skill draft version is missing.")
+            raise ValueError("Authored Skill version is missing.")
         return cls(
             status=result.status,
             skill_id=result.skill.id,
             version_id=version.id,
-            skill_markdown=(
-                "---\n"
-                f"name: {json.dumps(version.name, ensure_ascii=False)}\n"
-                f"description: {json.dumps(version.description, ensure_ascii=False)}\n"
-                "---\n\n"
-                f"{version.instructions_markdown}"
-            ),
+            scope_type=result.skill.scope_type,
+            name=version.name,
+            description=version.description,
+            skill_markdown=_skill_markdown(version.name, version.description, version.instructions_markdown),
         )
+
+
+class PublishAuthoredSkillRequest(BaseModel):
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    scope_type: Literal["personal", "team"]
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    description: str = Field(..., min_length=1, max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
 
 
 class CreateSkillRequest(SkillDefinitionRequest):
     workspace_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]
-    slug: str = Field(..., min_length=1, max_length=63)
+    slug: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
 class UpdateSkillRequest(SkillDefinitionRequest):
@@ -89,7 +128,6 @@ class UpdateSkillRequest(SkillDefinitionRequest):
 class SkillActorRequest(BaseModel):
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
-    version_id: str | None = Field(default=None, min_length=1)
 
 
 class SkillVersionResponse(BaseModel):
@@ -120,7 +158,7 @@ class SkillVersionResponse(BaseModel):
 
 class SkillResponse(BaseModel):
     id: str
-    workspace_id: str
+    workspace_id: str | None
     scope_type: str
     owner_user_id: str | None
     slug: str
@@ -208,3 +246,13 @@ class SkillDraftProposalResponse(BaseModel):
             source_run_ids=list(proposal.source_run_ids),
             persisted=proposal.persisted,
         )
+
+
+def _skill_markdown(name: str, description: str, instructions_markdown: str) -> str:
+    return (
+        "---\n"
+        f"name: {json.dumps(name, ensure_ascii=False)}\n"
+        f"description: {json.dumps(description, ensure_ascii=False)}\n"
+        "---\n\n"
+        f"{instructions_markdown}"
+    )
