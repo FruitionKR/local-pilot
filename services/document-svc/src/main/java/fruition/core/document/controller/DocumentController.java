@@ -365,17 +365,17 @@ public class DocumentController {
 
     @Operation(
         summary = "Markdown 본문 저장",
-        description = "전체 Markdown을 수동 저장합니다. base_version이 현재 version과 일치할 때만 반영합니다.")
+        description = "전체 Markdown을 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "저장 성공 또는 동일 본문 no-op",
             content = @Content(schema = @Schema(implementation = DocumentContentSaveResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 Markdown 또는 base_version",
+        @ApiResponse(responseCode = "400", description = "잘못된 Markdown, base_revision 또는 revision_write_id",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "403", description = "문서 소유자가 아님",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "문서 version 충돌",
+        @ApiResponse(responseCode = "409", description = "편집 revision 또는 revision_write_id 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "413", description = "Markdown 5MB 초과",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
@@ -387,16 +387,43 @@ public class DocumentController {
             @PathVariable("document_id") String documentId,
             @Parameter(description = "저장할 전체 Markdown 본문", required = true)
             @RequestPart("markdown") String markdown,
-            @Parameter(description = "클라이언트가 조회한 현재 문서 version", example = "1", required = true)
-            @RequestPart("base_version") String baseVersion,
+            @Parameter(description = "클라이언트가 조회한 현재 편집 revision", example = "1", required = true)
+            @RequestPart("base_revision") String baseRevision,
+            @Parameter(description = "같은 저장 재시도에 재사용하는 write ID", required = true)
+            @RequestPart("revision_write_id") String revisionWriteId,
             @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
             @RequestPart(value = "source", required = false) String source,
             @Parameter(description = "AI 편집 적용 표. `POST /agent/turns` 응답의 apply_operation_id를 그대로 전달하면 AI 작업 로그가 남습니다.")
             @RequestPart(value = "apply_operation_id", required = false) String applyOperationId) {
         return ResponseEntity.ok(
                 documentService.saveContent(
-                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseVersion),
-                        source, applyOperationId));
+                        workspaceId, userId, documentId, markdown, parseBaseVersion(baseRevision),
+                        revisionWriteId, source, applyOperationId));
+    }
+
+    @Operation(
+        summary = "PDF Markdown 변환",
+        description = "PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을 편집 가능 placeholder 문서를 즉시 만들어 반환하고, 실제 변환은 백그라운드에서 진행됩니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "변환 요청 접수 및 placeholder 문서 생성",
+            content = @Content(schema = @Schema(implementation = DocumentUploadResponse.class))),
+        @ApiResponse(responseCode = "400", description = "PDF 원본 문서가 아니거나 잘못된 Idempotency-Key",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "문서 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Idempotency-Key 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{document_id}/convert-markdown")
+    public ResponseEntity<DocumentUploadResponse> convertMarkdown(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "PDF 원본 문서 ID", example = "doc_abc12345")
+            @PathVariable("document_id") String documentId,
+            @Parameter(description = "요청 멱등 키", required = true)
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(documentService.convertToMarkdown(workspaceId, userId, documentId, idempotencyKey));
     }
 
     @Operation(

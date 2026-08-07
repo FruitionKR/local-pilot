@@ -21,6 +21,7 @@ export function DocumentSidebar({
   fileDropTarget,
   editing,
   contextMenu,
+  convertContextTarget,
   uploadInputRef,
   activeView,
   noteEditStates,
@@ -45,6 +46,7 @@ export function DocumentSidebar({
   onCancelEditing,
   onRenameContextTarget,
   onAddMarkdownFromContext,
+  onConvertContextTarget,
   onDeleteContextTarget
 }: {
   projects: Project[];
@@ -54,6 +56,7 @@ export function DocumentSidebar({
   fileDropTarget: FileDropTarget | null;
   editing: EditingState | null;
   contextMenu: ContextMenuState | null;
+  convertContextTarget: { isDisabled: boolean } | null;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
   noteEditStates: Record<string, NoteEditState>;
@@ -78,6 +81,7 @@ export function DocumentSidebar({
   onCancelEditing: () => void;
   onRenameContextTarget: () => void;
   onAddMarkdownFromContext: () => void;
+  onConvertContextTarget: () => void;
   onDeleteContextTarget: () => void;
 }) {
   const onlyProject = projects.length === 1 ? projects[0] : null;
@@ -145,9 +149,11 @@ export function DocumentSidebar({
         {contextMenu && (
           <ContextMenu
             contextMenu={contextMenu}
+            convertTarget={convertContextTarget}
             onRenameContextTarget={onRenameContextTarget}
             onAddProject={onAddProject}
             onAddMarkdownFromContext={onAddMarkdownFromContext}
+            onConvertContextTarget={onConvertContextTarget}
             onDeleteContextTarget={onDeleteContextTarget}
           />
         )}

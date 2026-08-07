@@ -6,6 +6,13 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-07
 
+### feat: PDF 원본 "Markdown으로 변환" 액션
+
+- 문서 사이드바 우클릭 컨텍스트 메뉴에 "Markdown으로 변환" 추가 — PDF 원본
+  (`mimeType: application/pdf`)에만 노출, 업로드/처리 중이면 비활성.
+- `convertDocumentToMarkdown` API(202, Idempotency-Key uuid) 호출 후 기존 목록
+  재동기화로 새 문서가 '변환 중' 상태로 표시(별도 폴링 미추가 — 기존 갱신 경로 재사용).
+
 ### feat: 문서 저장 계약을 base_revision·revision_write_id로 전환
 
 - 노트 저장(`saveNoteDraft`)이 backend MongoDB 전환 계약에 맞춰 `base_revision` +

@@ -15,6 +15,7 @@ import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.domain.DocumentStatus;
 import fruition.core.document.exception.DocumentNotFoundException;
+import fruition.core.document.exception.InvalidDocumentConvertRequestException;
 import fruition.core.document.exception.MarkdownDiffTooLargeException;
 import fruition.core.document.service.DocumentService;
 import fruition.core.document.service.DocumentExportService;
@@ -288,20 +289,24 @@ class DocumentControllerTest {
     void saveContent_multipartPassesMarkdownAndBaseVersion() throws Exception {
         Instant updatedAt = Instant.now();
         when(documentService.saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null, null))
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, "write_1", null, null))
                 .thenReturn(new DocumentContentSaveResponse(
                         "doc_edit", 4, "a".repeat(64), updatedAt, true));
         MockMultipartFile markdown = new MockMultipartFile(
                 "markdown", "", "text/plain",
                 "# 변경\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        MockMultipartFile baseVersion = new MockMultipartFile(
-                "base_version", "", "text/plain",
+        MockMultipartFile baseRevision = new MockMultipartFile(
+                "base_revision", "", "text/plain",
                 "3".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile revisionWriteId = new MockMultipartFile(
+                "revision_write_id", "", "text/plain",
+                "write_1".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         mockMvc.perform(multipart(
                         "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
                         .file(markdown)
-                        .file(baseVersion)
+                        .file(baseRevision)
+                        .file(revisionWriteId)
                         .with(request -> {
                             request.setMethod("PUT");
                             return request;
@@ -313,7 +318,7 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.changed").value(true));
 
         verify(documentService).saveContent(
-                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, null, null);
+                WORKSPACE_ID, USER_ID, "doc_edit", "# 변경\n", 3L, "write_1", null, null);
     }
 
     @Test
@@ -321,14 +326,18 @@ class DocumentControllerTest {
         MockMultipartFile markdown = new MockMultipartFile(
                 "markdown", "", "text/plain",
                 "# 본문\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        MockMultipartFile baseVersion = new MockMultipartFile(
-                "base_version", "", "text/plain",
+        MockMultipartFile baseRevision = new MockMultipartFile(
+                "base_revision", "", "text/plain",
                 "invalid".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile revisionWriteId = new MockMultipartFile(
+                "revision_write_id", "", "text/plain",
+                "write_1".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         mockMvc.perform(multipart(
                         "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
                         .file(markdown)
-                        .file(baseVersion)
+                        .file(baseRevision)
+                        .file(revisionWriteId)
                         .with(request -> {
                             request.setMethod("PUT");
                             return request;
@@ -380,6 +389,64 @@ class DocumentControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("MARKDOWN_DIFF_TOO_LARGE"));
+    }
+
+    @Test
+    void convertMarkdown_passesIdempotencyKeyAndReturns202WithPlaceholder() throws Exception {
+        DocumentUploadResponse response = new DocumentUploadResponse(
+                "doc_placeholder",
+                "보고서.md",
+                "text/markdown",
+                15,
+                DocumentStatus.processing,
+                null,
+                Instant.now(),
+                true,
+                1,
+                DocumentRole.EDITABLE
+        );
+        when(documentService.convertToMarkdown(WORKSPACE_ID, USER_ID, "doc_pdf", "convert-key"))
+                .thenReturn(response);
+
+        mockMvc.perform(post(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_pdf/convert-markdown")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "convert-key"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.id").value("doc_placeholder"))
+                .andExpect(jsonPath("$.filename").value("보고서.md"))
+                .andExpect(jsonPath("$.status").value("processing"))
+                .andExpect(jsonPath("$.editable").value(true))
+                .andExpect(jsonPath("$.document_role").value("EDITABLE"));
+
+        verify(documentService).convertToMarkdown(WORKSPACE_ID, USER_ID, "doc_pdf", "convert-key");
+    }
+
+    @Test
+    void convertMarkdown_unknownDocument_returns404() throws Exception {
+        when(documentService.convertToMarkdown(WORKSPACE_ID, USER_ID, "doc_unknown", "convert-key"))
+                .thenThrow(new DocumentNotFoundException("doc_unknown"));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_unknown/convert-markdown")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "convert-key"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("DOCUMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void convertMarkdown_nonPdfDocument_returns400() throws Exception {
+        when(documentService.convertToMarkdown(WORKSPACE_ID, USER_ID, "doc_md", "convert-key"))
+                .thenThrow(new InvalidDocumentConvertRequestException(
+                        "PDF 원본 문서만 Markdown으로 변환할 수 있습니다."));
+
+        mockMvc.perform(post(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_md/convert-markdown")
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "convert-key"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_DOCUMENT_CONVERT_REQUEST"));
     }
 
     @Test

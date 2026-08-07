@@ -8,6 +8,19 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-07
 
+### feat: PDF 원본 Markdown 변환 제품 흐름 연결
+
+- `POST /api/workspaces/{wid}/documents/{id}/convert-markdown`(202) — PDF 원본 검증
+  + Idempotency-Key, placeholder markdown 문서 즉시 생성(`source_document_id` 연결)
+  후 `document_convert_queue`(V21) 등록.
+- `DocumentConvertWorker`(2초 폴링·stuck 복구, 기존 처리 큐 패턴)와 `ConverterClient`
+  (S3 원본 → converter `/convert`, read timeout 900s) — 완료 시 Mongo edit store로
+  본문 반영(write_id `convert:{queueId}` 멱등) 후 completed, 실패 시 failed+원인.
+- **버그 수정: afterCommit 콜백에서 기본(REQUIRED) 트랜잭션 INSERT가 조용히 유실**
+  — 이미 커밋된 트랜잭션에 참여해 커밋되지 않는 문제. REQUIRES_NEW로 교체.
+  같은 패턴이 `requestProcessingAfterCommit`에도 존재(`docs/issue/backend/2026-08-07.md`).
+- E2E 실검증: PDF 업로드→변환 요청→OCR→markdown 문서 completed·본문 확인.
+
 ### feat: 문서 편집 원본 MongoDB 전환과 edit outbox 발행 (§3.1)
 
 - 문서 본문·편집 revision·write-id를 MongoDB(`document_edit_states`·`document_edit_writes`·

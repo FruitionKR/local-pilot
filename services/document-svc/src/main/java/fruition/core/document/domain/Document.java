@@ -210,6 +210,32 @@ public class Document {
         this.processedAt = this.uploadedAt;
     }
 
+    /** PDF → Markdown 변환 placeholder: 변환이 끝날 때까지 processing 상태를 유지하고 원본 문서를 연결한다. */
+    public void initializeConvertPlaceholder(
+            String sourceDocumentId,
+            UUID folderId,
+            String currentContentHash,
+            long byteSize,
+            long sortOrder
+    ) {
+        this.sourceDocumentId = sourceDocumentId;
+        this.folderId = folderId;
+        this.currentContentHash = currentContentHash;
+        this.byteSize = byteSize;
+        this.sortOrder = sortOrder;
+    }
+
+    /** PDF → Markdown 변환 완료: 변환 본문 기준으로 크기·해시를 갱신하고 completed로 전환한다. */
+    public void completeConvert(String contentHash, long byteSize, Instant now) {
+        this.contentHash = contentHash;
+        this.currentContentHash = contentHash;
+        this.byteSize = byteSize;
+        this.status = DocumentStatus.completed;
+        this.processedAt = now;
+        this.errorMessage = null;
+        this.updatedAt = now;
+    }
+
     public void placeAtRoot(long sortOrder) {
         this.sortOrder = sortOrder;
         this.folderId = null;

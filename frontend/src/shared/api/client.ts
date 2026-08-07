@@ -10,6 +10,7 @@ export const ERROR_MESSAGES = {
   uploadFailed: "문서 업로드에 실패했습니다.",
   documentDeleteFailed: "문서 삭제에 실패했습니다.",
   documentRenameFailed: "문서 이름 변경에 실패했습니다.",
+  documentConvertFailed: "Markdown 변환 요청에 실패했습니다.",
   noteDraftLoadFailed: "노트 draft를 불러오지 못했습니다.",
   noteDraftSaveFailed: "노트 draft를 저장하지 못했습니다.",
   documentOriginalLoadFailed: "원본 문서를 불러오지 못했습니다.",

@@ -1,5 +1,5 @@
 import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import type { DocumentBlocksResponse, DocumentUploadResponse } from "@/entities/document/model/document";
+import type { DocumentBlocksResponse, DocumentItemResponse, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();
@@ -13,6 +13,22 @@ export async function uploadDocumentFile(file: File) {
   });
 
   return parseJsonOrThrow<DocumentUploadResponse>(response, ERROR_MESSAGES.uploadFailed);
+}
+
+/**
+ * PDF 원본 문서의 Markdown 변환을 요청한다.
+ * 202와 함께 processing 상태로 생성된 markdown 문서 요약을 반환한다.
+ */
+export async function convertDocumentToMarkdown(documentId: string) {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/convert-markdown`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() }
+    }
+  );
+  return parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
 }
 
 /** 문서를 삭제한다. 성공 시 204를 반환한다. */

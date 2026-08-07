@@ -235,6 +235,7 @@ export function HomeWorkspace() {
         fileDropTarget={projectTree.fileDropTarget}
         editing={projectTree.editing}
         contextMenu={projectTree.contextMenu}
+        convertContextTarget={projectTree.convertContextTarget}
         uploadInputRef={upload.uploadInputRef}
         activeView={activeView}
         noteEditStates={noteEditStates}
@@ -262,6 +263,7 @@ export function HomeWorkspace() {
           const target = projectTree.takeMarkdownTargetFromContext();
           if (target) upload.createMarkdownFile(target.projectId, target.folderId);
         }}
+        onConvertContextTarget={projectTree.convertContextTargetToMarkdown}
         onDeleteContextTarget={projectTree.deleteContextTarget}
       />
 

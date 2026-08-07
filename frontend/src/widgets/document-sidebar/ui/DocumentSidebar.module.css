@@ -877,6 +877,12 @@
   background: #323232;
 }
 
+.folder-context-menu button:disabled {
+  color: #7a7a7a;
+  background: transparent;
+  cursor: default;
+}
+
 .folder-context-menu button.danger {
   color: #c2372f;
 }

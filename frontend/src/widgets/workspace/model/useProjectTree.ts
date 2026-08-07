@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent, MutableRefObject } from "react";
 import { useEffect, useRef, useState } from "react";
-import { deleteDocument, renameDocument } from "@/entities/document";
+import { convertDocumentToMarkdown, deleteDocument, renameDocument } from "@/entities/document";
 import { getSelectedWorkspaceId } from "@/shared/lib/auth";
 import {
   findTreeItem,
@@ -183,6 +183,29 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     return target;
   }
 
+  // 컨텍스트 메뉴 대상이 PDF 원본 문서일 때만 Markdown 변환 메뉴를 노출한다.
+  const contextMenuProject = contextMenu ? projects.find((project) => project.id === contextMenu.projectId) : null;
+  const contextMenuItem = contextMenu?.itemId && contextMenuProject
+    ? findTreeItem(contextMenuProject.items, contextMenu.itemId)
+    : null;
+  const convertContextTarget = contextMenuItem?.documentId && contextMenuItem.mimeType === "application/pdf"
+    ? {
+      // 원본이 아직 처리 중이면 변환을 시작할 수 없어 비활성화한다.
+      isDisabled: contextMenuItem.status === "uploading" || contextMenuItem.status === "processing"
+    }
+    : null;
+
+  // Markdown 변환을 요청한다. 성공·실패 모두 서버 상태로 재동기화해
+  // 새 문서가 '변환 중' 상태로 목록에 나타나게 한다.
+  function convertContextTargetToMarkdown() {
+    const documentId = contextMenuItem?.documentId;
+    setContextMenu(null);
+    if (!documentId) return;
+    void convertDocumentToMarkdown(documentId)
+      .then(() => refreshRef.current())
+      .catch(() => refreshRef.current());
+  }
+
   // 컨텍스트 메뉴의 삭제는 즉시 실행하지 않고 확인 모달을 연다. 실제 삭제는 confirmDelete에서 수행한다.
   function deleteContextTarget() {
     if (!contextMenu) return;
@@ -335,6 +358,8 @@ export function useProjectTree({ refreshRef }: { refreshRef: MutableRefObject<()
     openProjectMenu,
     renameContextTarget,
     takeMarkdownTargetFromContext,
+    convertContextTarget,
+    convertContextTargetToMarkdown,
     deleteContextTarget,
     confirmDelete,
     cancelDelete,
