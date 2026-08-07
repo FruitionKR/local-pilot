@@ -104,6 +104,23 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_authoring")  # type: ignore[union-attr]
 
+    def test_pending_proposal_publish_negation_is_not_treated_as_approval(self) -> None:
+        route = _local_guard(
+            AgentTurnRequest(
+                message="아직 publish 하지 마",
+                conversation_context=AgentConversationContext(
+                    pending_skill_proposal=PendingSkillProposal(
+                        scope_type="personal",
+                        name="meeting-notes",
+                        description="회의 내용을 정리합니다.",
+                        instructions_markdown="# 작성 절차",
+                    )
+                ),
+            )
+        )
+
+        self.assertIsNone(route)
+
     def test_pending_proposal_followups_are_guarded_without_llm(self) -> None:
         context = AgentConversationContext(
             pending_skill_proposal=PendingSkillProposal(

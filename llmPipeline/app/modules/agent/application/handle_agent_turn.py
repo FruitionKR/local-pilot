@@ -35,7 +35,8 @@ TITLE_REVISION_PATTERN = re.compile(
     r"(?:제목|이름|커맨드|식별자)(?:을|를)?\s*(?:[\"“「](.+?)[\"”」]|(.+?))\s*(?:로|으로)\s*(?:바꿔|변경|수정)"
 )
 PUBLISH_SKILL_PATTERN = re.compile(
-    r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|\b(?:publish|post)\b",
+    r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
+    r"(?:please\s+)?(?:publish|post)(?:\s+(?:it|this|the\s+skill))?",
     re.IGNORECASE,
 )
 SECURITY_REVIEW_PATTERN = re.compile(r"보안\s*(?:재)?검토|다시\s*검증|security\s*(?:re)?view", re.IGNORECASE)
@@ -305,7 +306,7 @@ class HandleAgentTurnUseCase:
     ) -> SkillAuthoringResult:
         if self._skill_authorer is None:
             raise ValueError("Skill authoring is not configured.")
-        if PUBLISH_SKILL_PATTERN.search(request.message):
+        if PUBLISH_SKILL_PATTERN.fullmatch(request.message.strip()):
             return self._skill_authorer.publish(
                 workspace_id=request.workspace_id or "",
                 user_id=request.user_id or "",

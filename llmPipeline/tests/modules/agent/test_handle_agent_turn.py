@@ -401,6 +401,47 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.skill_authoring_result.status, "published")  # type: ignore[union-attr]
         self.assertEqual(authorer.publish_kwargs["name"], "meeting-notes")
 
+    def test_pending_skill_publish_negation_does_not_publish(self) -> None:
+        authorer = RecordingSkillAuthorer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(
+                AgentTurnRoute(action="skill_authoring", confidence=1.0, reason="pending")
+            ),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            skill_authorer=authorer,  # type: ignore[arg-type]
+        )
+
+        with self.assertRaisesRegex(ValueError, "현재 제안은"):
+            use_case.execute(
+                AgentTurnRequest(
+                    message="아직 publish 하지 마",
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    conversation_context=AgentConversationContext(
+                        pending_skill_proposal=PendingSkillProposal(
+                            scope_type="personal",
+                            name="meeting-notes",
+                            description="회의 내용을 정리합니다.",
+                            instructions_markdown="# 작성 절차",
+                        )
+                    ),
+                )
+            )
+
+        self.assertEqual(authorer.publish_kwargs, {})
+
     def test_skill_draft_proposal_uses_completed_sources_without_saving(self) -> None:
         class Generator:
             def generate(self, source_runs: object, user_directives: object) -> dict[str, object]:

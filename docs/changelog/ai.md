@@ -28,6 +28,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - 완료 AgentRun 기반 proposal도 공통 `AuthorSkillUseCase`에서 재검토하고 검토 단계에서 성공 작업의 내부 권한 상한을 유지하며 사용자 응답에서는 capability·Tool을 숨김
 - 생성 결과가 차단되면 위험 구간을 마스킹한 미저장 Skill Markdown과 issue를 함께 반환해 검토 화면에서 수정 가능하도록 변경
 - pending proposal의 재생성·보안 재검토·커맨드·범위 변경은 LLM 호출 없이 `skill_authoring` 후속 흐름으로 고정
+- pending proposal 게시를 명시적인 긍정 승인 문장 전체 일치로 제한해 `do not publish` 같은 부정문이 저장을 실행하지 않도록 보강
 - 보안 검토를 우회하던 직접 `POST /skills`를 제거하고 `PATCH /skills/{skill_id}`도 사용자 Markdown만 받아 같은 `AuthorSkillUseCase`에서 재검증
 - DB migration 없이 개인 계정·팀 Workspace별 커맨드 advisory lock을 추가해 동시 중복 생성 경쟁을 직렬화
 - 같은 Skill의 동시 수정은 parent row lock 안에서 다음 version 번호를 다시 계산해 version 충돌을 방지
@@ -35,7 +36,7 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 - Skill 수정은 새 draft 대신 검증된 published version으로 바로 교체하고, 자동 라우팅 OFF 상태를 유지
 - 자연어 자동 라우팅을 끈 published Skill도 명시적 `/command`로 계속 실행하도록 선택 조건을 분리
 - OpenAI `skill-creator`의 간결한 작성·trigger description·progressive disclosure 원칙을 기존 `ChatCompletionsJsonClient` prompt에 적용하고 별도 런타임 의존성은 추가하지 않음
-- Skill module 단위 테스트 `74 passed`, llmPipeline 전체 `544 passed`; Python compile과 `git diff --check` 통과
+- Skill module 단위 테스트 `74 passed`, llmPipeline 전체 `546 passed`; Python compile과 `git diff --check` 통과
 
 ### refactor: Agent 실행 흐름을 LangGraph로 전환
 

@@ -41,7 +41,7 @@ COMPLETED_WORK_REQUEST_PATTERN = re.compile(
 )
 PUBLISH_SKILL_PATTERN = re.compile(
     r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
-    r"\b(?:publish|post)\b",
+    r"(?:please\s+)?(?:publish|post)(?:\s+(?:it|this|the\s+skill))?",
     re.IGNORECASE,
 )
 PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
@@ -182,7 +182,7 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     if (
         has_pending_proposal
         and (
-            PUBLISH_SKILL_PATTERN.search(lowered)
+            PUBLISH_SKILL_PATTERN.fullmatch(lowered.strip())
             or PENDING_SKILL_FOLLOWUP_PATTERN.search(lowered)
         )
     ):
