@@ -55,8 +55,8 @@ pnpm-debug.log*
 
 # LLM pipeline generated outputs
 pipeline_api/runs/
-services/ai-svc/pipeline/runs/
-services/ai-svc/pipeline/.langgraph_api/
+services/ai/pipeline/runs/
+services/ai/pipeline/.langgraph_api/
 /tmp/
 /paddle_cache/
 

@@ -1,7 +1,7 @@
 services:
   pipeline-api:
     build:
-      context: ../services/ai-svc/pipeline
+      context: ../services/ai/pipeline
     container_name: fruition-pipeline-api-dev
     restart: unless-stopped
     environment:
@@ -45,7 +45,7 @@ services:
         condition: service_healthy
   ingest-worker:
     build:
-      context: ../services/ai-svc/pipeline
+      context: ../services/ai/pipeline
     container_name: fruition-ingest-worker-dev
     restart: unless-stopped
     command: ["python", "-m", "app.workers.ingest_worker"]
@@ -81,7 +81,7 @@ services:
 
   edit-event-consumer:
     build:
-      context: ../services/ai-svc/pipeline
+      context: ../services/ai/pipeline
     container_name: fruition-edit-event-consumer-dev
     restart: unless-stopped
     command: ["python", "-m", "app.workers.edit_event_consumer"]
@@ -98,7 +98,7 @@ services:
 
   pipeline-agent-worker:
     build:
-      context: ../services/ai-svc/pipeline
+      context: ../services/ai/pipeline
     container_name: fruition-pipeline-agent-worker-dev
     restart: unless-stopped
     profiles: ["agent-skills"]

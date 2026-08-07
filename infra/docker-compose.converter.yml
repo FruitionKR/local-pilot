@@ -3,7 +3,7 @@ name: fruition-local-tools
 services:
   markitdown:
     build:
-      context: ../services/ai-svc/converter
+      context: ../services/ai/converter
     container_name: fruition-markitdown
     read_only: true
     cap_drop:

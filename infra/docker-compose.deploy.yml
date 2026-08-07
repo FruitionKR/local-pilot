@@ -9,7 +9,7 @@ name: fruition-mvp-dev
 services:
   document-svc:
     build:
-      context: ../services
+      context: ../services/backend
       dockerfile: document-svc/Dockerfile
     container_name: fruition-document-svc-dev
     restart: unless-stopped
@@ -71,7 +71,7 @@ services:
 
   access-svc:
     build:
-      context: ../services
+      context: ../services/backend
       dockerfile: access-svc/Dockerfile
     container_name: fruition-access-svc-dev
     restart: unless-stopped

@@ -32,11 +32,11 @@
 cd <repo-root>
 
 # 1. 이미지 빌드 (java 서비스는 빌드 컨텍스트가 services/ 루트)
-docker build -t fruition-document-svc:dev -f services/document-svc/Dockerfile services
-docker build -t fruition-access-svc:dev -f services/access-svc/Dockerfile services
-docker build -t fruition-mvp-dev-pipeline-api:latest services/ai-svc/pipeline
-docker build -t fruition-mvp-dev-ingest-worker:latest services/ai-svc/pipeline
-docker build -t fruition-converter:latest services/ai-svc/converter
+docker build -t fruition-document-svc:dev -f services/backend/document-svc/Dockerfile services/backend
+docker build -t fruition-access-svc:dev -f services/backend/access-svc/Dockerfile services/backend
+docker build -t fruition-mvp-dev-pipeline-api:latest services/ai/pipeline
+docker build -t fruition-mvp-dev-ingest-worker:latest services/ai/pipeline
+docker build -t fruition-converter:latest services/ai/converter
 
 # 2. 클러스터 생성
 kind create cluster --name fruition --config k8s/kind/cluster.yaml

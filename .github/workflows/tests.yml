@@ -3,22 +3,22 @@ name: Tests
 on:
   pull_request:
     paths:
-      - 'services/access-svc/**'
-      - 'services/document-svc/**'
-      - 'services/java-shared/**'
-      - 'frontend/**'
-      - 'services/ai-svc/pipeline/**'
+      - 'services/backend/access-svc/**'
+      - 'services/backend/document-svc/**'
+      - 'services/backend/java-shared/**'
+      - 'services/frontend/**'
+      - 'services/ai/pipeline/**'
       - '.github/workflows/tests.yml'
   push:
     branches:
       - dev
       - main
     paths:
-      - 'services/access-svc/**'
-      - 'services/document-svc/**'
-      - 'services/java-shared/**'
-      - 'frontend/**'
-      - 'services/ai-svc/pipeline/**'
+      - 'services/backend/access-svc/**'
+      - 'services/backend/document-svc/**'
+      - 'services/backend/java-shared/**'
+      - 'services/frontend/**'
+      - 'services/ai/pipeline/**'
       - '.github/workflows/tests.yml'
 
 concurrency:
@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: services
+        working-directory: services/backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +56,9 @@ jobs:
         with:
           name: backend-test-report
           path: |
-            services/access-svc/build/reports/tests/test
-            services/document-svc/build/reports/tests/test
-            services/java-shared/build/reports/tests/test
+            services/backend/access-svc/build/reports/tests/test
+            services/backend/document-svc/build/reports/tests/test
+            services/backend/java-shared/build/reports/tests/test
 
   frontend:
     name: Frontend (node --test)
@@ -66,7 +66,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: frontend
+        working-directory: services/frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,7 +76,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: services/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -93,7 +93,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: services/ai-svc/pipeline
+        working-directory: services/ai/pipeline
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: services/ai-svc/pipeline/requirements.txt
+          cache-dependency-path: services/ai/pipeline/requirements.txt
 
       - name: Install dependencies
         run: |

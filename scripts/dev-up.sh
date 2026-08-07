@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
-SERVICES_DIR="$ROOT_DIR/services"
-FRONTEND_DIR="$ROOT_DIR/frontend"
+SERVICES_DIR="$ROOT_DIR/services/backend"
+FRONTEND_DIR="$ROOT_DIR/services/frontend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"

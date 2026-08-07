@@ -42,10 +42,10 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           TAG: ${{ github.sha }}
         run: |
-          docker build -t "$REGISTRY/fruition-document-svc:$TAG" -f services/document-svc/Dockerfile services
-          docker build -t "$REGISTRY/fruition-access-svc:$TAG" -f services/access-svc/Dockerfile services
-          docker build -t "$REGISTRY/fruition-pipeline:$TAG" services/ai-svc/pipeline
-          docker build -t "$REGISTRY/fruition-converter:$TAG" services/ai-svc/converter
+          docker build -t "$REGISTRY/fruition-document-svc:$TAG" -f services/backend/document-svc/Dockerfile services/backend
+          docker build -t "$REGISTRY/fruition-access-svc:$TAG" -f services/backend/access-svc/Dockerfile services/backend
+          docker build -t "$REGISTRY/fruition-pipeline:$TAG" services/ai/pipeline
+          docker build -t "$REGISTRY/fruition-converter:$TAG" services/ai/converter
           docker push "$REGISTRY/fruition-document-svc:$TAG"
           docker push "$REGISTRY/fruition-access-svc:$TAG"
           docker push "$REGISTRY/fruition-pipeline:$TAG"

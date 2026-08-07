@@ -56,7 +56,7 @@ docker compose -f infra/docker-compose.dev.yml ps
 수동 실행 시(터미널 2개).
 
 ```sh
-cd services
+cd services/backend
 ./gradlew :document-svc:bootRun   # :8080, Flyway migration 수행
 ./gradlew :access-svc:bootRun     # :8081, document-svc 기동 후
 ```
@@ -97,7 +97,7 @@ pipeline-api만 필요하면 `./scripts/ai-up.sh` 사용 가능.
 또는 수동 실행.
 
 ```sh
-cd frontend
+cd services/frontend
 npm install
 npm run dev
 ```

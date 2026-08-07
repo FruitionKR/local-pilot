@@ -38,7 +38,7 @@ tasks.named('bootRun') {
 	doFirst {
 		environment('SPRING_PROFILES_ACTIVE', System.getenv('SPRING_PROFILES_ACTIVE') ?: 'local')
 		environment('SERVER_PORT', System.getenv('SERVER_PORT') ?: '8081')
-		def envFile = file("$projectDir/../../infra/.env")
+		def envFile = file("$projectDir/../../../infra/.env")
 		// Docker 빌드처럼 상위 경로가 없는 환경에서는 경로가 디렉터리로 정규화될 수 있어 isFile로 가드한다.
 		if (envFile.isFile()) {
 			envFile.readLines().each { line ->

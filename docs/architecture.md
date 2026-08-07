@@ -11,13 +11,16 @@ frontend (Next.js, Vercel)
   └─ 그 외 ───────────────────────────────────────────▶ document-svc
 
 services/
-├─ access-svc/     Spring, :8081  로그인·OAuth·세션·워크스페이스·멤버·권한 projection 소유
-├─ document-svc/   Spring, :8080  문서·채팅·Wiki·query, Flyway(스키마) 소유, stateless
-├─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)
-└─ ai-svc/
+├─ front/
+│  └─ frontend/    Next.js (Vercel 배포)
+├─ back/           Gradle 멀티프로젝트 루트 (gradlew·settings.gradle)
+│  ├─ access-svc/     Spring, :8081  로그인·OAuth·세션·워크스페이스·멤버·권한 projection 소유
+│  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki·query, Flyway(스키마) 소유, stateless
+│  └─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)
+└─ ai/
    ├─ pipeline/    FastAPI, 내부 전용  동기 query·agent·lint + GET /documents (LLM·임베딩)
-   ├─ ingest-worker  Kafka consumer   ai.ingest.command 소비 → 문서/Wiki ingest
-   ├─ edit-event-consumer  Kafka consumer  document.edit.event 소비 → 파생물 stale 추적 (ai_db)
+   │                └ 같은 이미지로 ingest-worker(ai.ingest.command 소비)·
+   │                  edit-event-consumer(document.edit.event 소비, ai_db) 실행
    └─ converter/   FastAPI, 내부 전용  PDF→Markdown 변환 (document-svc 변환 큐 경유)
 
 상태 계층: PostgreSQL(access_db·core_db 분리) · MongoDB(문서 편집 원본) · Redis · Kafka · MinIO/S3
