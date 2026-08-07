@@ -10,12 +10,9 @@ CREATE TABLE source_folders (
     delete_operation_id uuid,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
-    CONSTRAINT fk_source_folders_workspace
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    -- users/workspaces는 access_db 소유 — FK 없이 ID만 보관 (MSA DB 분리)
     CONSTRAINT fk_source_folders_parent
-        FOREIGN KEY (parent_folder_id) REFERENCES source_folders(id) ON DELETE CASCADE,
-    CONSTRAINT fk_source_folders_deleted_by
-        FOREIGN KEY (deleted_by) REFERENCES users(id) ON DELETE SET NULL
+        FOREIGN KEY (parent_folder_id) REFERENCES source_folders(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_source_folders_parent_order
@@ -94,9 +91,8 @@ ALTER TABLE documents
     ADD CONSTRAINT fk_documents_parent_document
         FOREIGN KEY (parent_document_id) REFERENCES documents(id) ON DELETE SET NULL,
     ADD CONSTRAINT fk_documents_source_folder
-        FOREIGN KEY (source_folder_id) REFERENCES source_folders(id) ON DELETE SET NULL,
-    ADD CONSTRAINT fk_documents_deleted_by
-        FOREIGN KEY (deleted_by) REFERENCES users(id) ON DELETE SET NULL;
+        FOREIGN KEY (source_folder_id) REFERENCES source_folders(id) ON DELETE SET NULL;
+    -- users/workspaces는 access_db 소유 — deleted_by FK 없이 ID만 보관 (MSA DB 분리)
 
 CREATE INDEX idx_documents_normalized_filename
     ON documents(workspace_id, normalized_filename);
@@ -137,8 +133,7 @@ CREATE TABLE idempotency_records (
     response_body jsonb,
     created_at timestamp with time zone NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    CONSTRAINT fk_idempotency_records_user
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    -- users/workspaces는 access_db 소유 — user_id FK 없이 ID만 보관 (MSA DB 분리)
     CONSTRAINT uq_idempotency_records_scope_key
         UNIQUE (user_id, endpoint_scope, idempotency_key)
 );

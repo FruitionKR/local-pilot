@@ -43,8 +43,7 @@ class DocumentApplicationTests {
 				"pipeline_runs",
 				"wiki_page_embeddings",
 				"wiki_embedding_vectors",
-				"wiki_embedding_units",
-				"wiki_schemas"
+				"wiki_embedding_units"
 		}) {
 			Boolean exists = jdbcTemplate.queryForObject(
 					"SELECT to_regclass(?) IS NOT NULL",

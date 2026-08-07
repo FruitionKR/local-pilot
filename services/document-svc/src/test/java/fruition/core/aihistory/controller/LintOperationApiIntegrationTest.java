@@ -64,19 +64,8 @@ class LintOperationApiIntegrationTest {
         workspaceId = "ws_" + suffix;
         pageId = "wp_" + suffix;
 
-        jdbcTemplate.update("""
-                INSERT INTO users(id, display_name, email, created_at, updated_at)
-                VALUES (?, '통합 테스트', ?, now(), now())
-                """, userId, userId + "@example.com");
-        jdbcTemplate.update("""
-                INSERT INTO workspaces(id, name, created_at, updated_at)
-                VALUES (?, 'lint 통합 테스트', now(), now())
-                """, workspaceId);
-        jdbcTemplate.update("""
-                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
-                VALUES (now(), 'OWNER', ?, ?)
-                """, userId, workspaceId);
-        // guard가 Redis projection을 읽으므로 멤버십을 projection에도 심는다.
+        // users/workspaces/workspace_members는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
+        // guard가 Redis projection을 읽으므로 멤버십을 projection에 심는다.
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
         jdbcTemplate.update("""
                 INSERT INTO wiki_pages(id, created_at, page_type, slug, status, title, updated_at,
@@ -169,19 +158,7 @@ class LintOperationApiIntegrationTest {
         String operationId = executeLint();
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         String outsiderId = "user_" + suffix;
-        String outsiderWorkspaceId = "ws_" + suffix;
-        jdbcTemplate.update("""
-                INSERT INTO users(id, display_name, email, created_at, updated_at)
-                VALUES (?, '외부 사용자', ?, now(), now())
-                """, outsiderId, outsiderId + "@example.com");
-        jdbcTemplate.update("""
-                INSERT INTO workspaces(id, name, created_at, updated_at)
-                VALUES (?, '다른 워크스페이스', now(), now())
-                """, outsiderWorkspaceId);
-        jdbcTemplate.update("""
-                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
-                VALUES (now(), 'OWNER', ?, ?)
-                """, outsiderId, outsiderWorkspaceId);
+        // users/workspaces/workspace_members는 access_db 소유 — 외부 사용자는 projection에 멤버십이 없으면 충분하다.
 
         mockMvc.perform(get("/api/workspaces/" + workspaceId
                         + "/ai-operation-logs/" + operationId)

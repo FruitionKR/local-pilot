@@ -50,17 +50,7 @@ class FolderServiceIntegrationTest {
         String suffix = UUID.randomUUID().toString();
         userId = "user_" + suffix;
         workspaceId = "ws_" + suffix;
-        jdbcTemplate.update(
-                "INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, NULL, now(), now())",
-                userId, userId + "@example.com", "tester");
-        jdbcTemplate.update(
-                "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
-                workspaceId, "workspace");
-        jdbcTemplate.update(
-                "INSERT INTO workspace_members(joined_at, role, user_id, workspace_id) "
-                        + "VALUES (now(), 'OWNER', ?, ?)",
-                userId, workspaceId);
+        // users/workspaces는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
         seedAuthzProjection(userId, "OWNER");
     }
 
@@ -369,13 +359,7 @@ class FolderServiceIntegrationTest {
 
     private String insertMember(String role) {
         String memberId = "member_" + UUID.randomUUID();
-        jdbcTemplate.update(
-                "INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, NULL, now(), now())",
-                memberId, memberId + "@example.com", "member");
-        jdbcTemplate.update(
-                "INSERT INTO workspace_members(joined_at, role, user_id, workspace_id) VALUES (now(), ?, ?, ?)",
-                role, memberId, workspaceId);
+        // users/workspace_members는 access_db 소유 — guard가 읽는 projection만 심는다 (MSA DB 분리).
         seedAuthzProjection(memberId, role);
         return memberId;
     }

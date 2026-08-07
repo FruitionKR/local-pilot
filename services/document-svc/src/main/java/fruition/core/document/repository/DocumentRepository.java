@@ -51,11 +51,10 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
             @Param("workspaceId") String workspaceId
     );
 
-    // Workspace entity는 access-svc 소유라 JPQL로 참조할 수 없다 — 테이블 기준 native query로 조회한다.
+    // workspaces는 access_db 소유라 여기서 조인할 수 없다.
+    // workspace 유효성은 WorkspaceAccessGuard(projection/내부 API)가 담당한다.
     @Query(value = "SELECT d.* FROM documents d WHERE d.id = :documentId "
-            + "AND d.deleted_at IS NULL "
-            + "AND EXISTS (SELECT w.id FROM workspaces w "
-            + "WHERE w.id = d.workspace_id AND w.deleted_at IS NULL)", nativeQuery = true)
+            + "AND d.deleted_at IS NULL", nativeQuery = true)
     Optional<Document> findByIdInActiveWorkspace(
             @Param("documentId") String documentId
     );

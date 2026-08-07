@@ -65,14 +65,7 @@ class WikiPageLockIntegrationTest {
         pageA = "wp_a_" + suffix;
         pageB = "wp_b_" + suffix;
 
-        jdbcTemplate.update("""
-                INSERT INTO users(id, display_name, email, created_at, updated_at)
-                VALUES (?, '테스터', ?, now(), now())
-                """, userId, userId + "@example.com");
-        jdbcTemplate.update("""
-                INSERT INTO workspaces(id, name, created_at, updated_at)
-                VALUES (?, '잠금 테스트', now(), now())
-                """, workspaceId);
+        // users/workspaces는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
         insertPage(pageA, userId, "page-a");
         insertPage(pageB, userId, "page-b");
     }

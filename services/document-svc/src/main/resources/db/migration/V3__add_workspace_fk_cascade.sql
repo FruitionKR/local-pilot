@@ -18,23 +18,8 @@
 
 -- ===== 소유 관계: ON DELETE CASCADE =====
 
--- documents
-ALTER TABLE documents
-    ADD CONSTRAINT fk_documents_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
-ALTER TABLE documents
-    ADD CONSTRAINT fk_documents_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
--- wiki_pages (workspace_id CASCADE로 concept page 고아 버그 해소)
-ALTER TABLE wiki_pages
-    ADD CONSTRAINT fk_wiki_pages_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
-ALTER TABLE wiki_pages
-    ADD CONSTRAINT fk_wiki_pages_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
--- chat_sessions
-ALTER TABLE chat_sessions
-    ADD CONSTRAINT fk_chat_sessions_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
-ALTER TABLE chat_sessions
-    ADD CONSTRAINT fk_chat_sessions_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+-- users/workspaces는 access_db 소유 — FK 없이 ID만 보관 (MSA DB 분리).
+-- documents/wiki_pages/chat_sessions의 workspace·user FK는 여기서 걸지 않는다.
 
 -- documents 하위
 ALTER TABLE source_blocks

@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-07
 
+### feat: PostgreSQL access/core 분리와 계정 격리
+
+- 단일 `fruition_mvp` DB를 `access_db`/`core_db`/`ai_db` + runtime(DML)·migration(DDL)
+  계정 6개로 분리. 타 서비스 DB write 불가 (`infra/postgres/init-db-isolation.sh`,
+  validation 스크립트로 실검증: runtime CREATE 거부·타 DB write 거부).
+- access-svc가 **자체 Flyway 소유** 시작: V1 baseline(users·oauth·refresh·email verification·
+  workspaces·members·idempotency 7테이블, 실DB pg_dump 기반) + V2 세션 스키마
+  (`initialize-schema=never` 전환 — runtime 계정은 DDL 불가).
+- document-svc 마이그레이션에서 access 테이블·교차 FK 13건 제거(V1·V3·V9·V15·V20,
+  V7/V10/V14는 no-op화). `DocumentRepository.findByIdInActiveWorkspace`의 workspaces
+  EXISTS 서브쿼리 제거 — workspace 유효성은 WorkspaceAccessGuard가 전담.
+- Idempotency 테이블은 각 DB에 서비스별 사본(코드는 java-shared 공유 유지).
+- ai 테이블(pipeline_runs·임베딩)은 core_db 전환기 동거 — ai_runtime 별도 계정으로
+  접속(차단 사유 실측: `docs/issue/ai/2026-08-07.md`).
+- 테스트: access-svc 108 + document-svc 435 통과. 로컬 스택 실검증(가입→문서 흐름,
+  access_db 10테이블/core_db 26테이블 분리 확인).
+
 ### feat: backend를 access-svc·document-svc로 물리 분리 (MSA Phase 3)
 
 - 단일 Spring 앱을 Gradle 멀티프로젝트 3개로 분할: `access-svc`(:8081, 인증·OAuth·

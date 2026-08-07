@@ -98,19 +98,17 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void migration_createsWorkspaceSoftDeleteColumns() {
-        List<String> columns = jdbcTemplate.queryForList(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                  AND table_name = 'workspaces'
-                """,
-                String.class
-        );
-
-        assertThat(columns).contains("deleted_at", "deleted_by");
-        assertThat(columns).doesNotContain("current_version");
+    void migration_doesNotCreateAccessOwnedTables() {
+        // users/workspaces 등은 access_db 소유 — core migration이 만들지 않아야 한다 (MSA DB 분리).
+        for (String table : List.of("users", "user_oauth_accounts", "user_refresh_tokens",
+                "email_verifications", "workspaces", "workspace_members")) {
+            Boolean exists = jdbcTemplate.queryForObject(
+                    "SELECT to_regclass(?) IS NOT NULL",
+                    Boolean.class,
+                    "public." + table
+            );
+            assertThat(exists).as(table).isFalse();
+        }
     }
 
     @Test
@@ -118,7 +116,6 @@ class DocumentEditingSchemaIntegrationTest {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
 
         insertDocument("doc_parent_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
         insertDocument("doc_same_" + suffix, workspaceId, userId, "parent.md", "same-hash", "EDITABLE");
@@ -173,16 +170,7 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String sourceId = "doc_source_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
-        jdbcTemplate.update(
-                """
-                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
-                VALUES (now(), 'OWNER', ?, ?)
-                """,
-                userId,
-                workspaceId
-        );
-        // guard가 Redis projection을 읽으므로 멤버십을 projection에도 심는다.
+        // guard가 Redis projection을 읽으므로 멤버십을 projection에 심는다 (access 테이블은 access_db 소유).
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
         insertDocument(sourceId, workspaceId, userId, "보고서.md", "source-hash", "EDITABLE");
         jdbcTemplate.update(
@@ -234,7 +222,6 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String documentId = "doc_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
         insertWorkspaceMember(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "문서.md", "original-hash", "EDITABLE");
         jdbcTemplate.update(
@@ -305,7 +292,6 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String documentId = "doc_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
         insertWorkspaceMember(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "회의 결과.md", "original-hash", "EDITABLE");
         jdbcTemplate.update(
@@ -345,7 +331,6 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String documentId = "doc_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
         insertWorkspaceMember(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "문서.md", "hash", "EDITABLE");
 
@@ -392,37 +377,29 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void workspaceSoftDeleteAndRestore_preservesChildrenAndControlsMembershipAccess() {
+    void findByIdInActiveWorkspace_filtersOnlyDocumentSoftDelete() {
+        // workspaces는 access_db 소유 — workspace 유효성은 WorkspaceAccessGuard(projection/내부 API)가
+        // 담당하고, 이 쿼리는 문서 soft delete 여부만 거른다 (MSA DB 분리).
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String documentId = "doc_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
         insertWorkspaceMember(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "문서.md", "hash", "EDITABLE");
 
-        // 워크스페이스 소프트 삭제는 access-svc 소유이므로 여기서는 그 결과(deleted_at 마킹)를 SQL로 재현한다.
+        assertThat(documentRepository.findByIdInActiveWorkspace(documentId)).isPresent();
+
         jdbcTemplate.update(
-                "UPDATE workspaces SET deleted_at = now(), deleted_by = ? WHERE id = ?",
+                "UPDATE documents SET deleted_at = now(), deleted_by = ? WHERE id = ?",
                 userId,
-                workspaceId
+                documentId
         );
 
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM documents WHERE workspace_id = ?",
-                Integer.class,
-                workspaceId
-        )).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM workspace_members WHERE workspace_id = ?",
-                Integer.class,
-                workspaceId
-        )).isEqualTo(1);
         assertThat(documentRepository.findByIdInActiveWorkspace(documentId)).isEmpty();
 
         jdbcTemplate.update(
-                "UPDATE workspaces SET deleted_at = NULL, deleted_by = NULL WHERE id = ?",
-                workspaceId
+                "UPDATE documents SET deleted_at = NULL, deleted_by = NULL WHERE id = ?",
+                documentId
         );
 
         assertThat(documentRepository.findByIdInActiveWorkspace(documentId)).isPresent();
@@ -435,7 +412,6 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String documentId = "doc_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "기존.md", "hash-before", "EDITABLE");
 
         Instant renamedAt = Instant.now();
@@ -491,8 +467,6 @@ class DocumentEditingSchemaIntegrationTest {
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
         String otherWorkspaceId = "ws_other_" + suffix;
-        insertUserAndWorkspace(userId, workspaceId);
-        insertWorkspace(otherWorkspaceId, userId);
 
         insertDocument("doc_visible_" + suffix, workspaceId, userId, "보고서.md", "visible-hash", "EDITABLE");
         insertDocument("doc_deleted_" + suffix, workspaceId, userId, "보고서 삭제.md", "deleted-hash", "EDITABLE");
@@ -531,7 +505,6 @@ class DocumentEditingSchemaIntegrationTest {
         String documentId = "doc_" + suffix;
         UUID parentFolderId = UUID.randomUUID();
         UUID childFolderId = UUID.randomUUID();
-        insertUserAndWorkspace(userId, workspaceId);
         insertDocument(documentId, workspaceId, userId, "note.md", "note-hash", "EDITABLE");
 
         jdbcTemplate.update(
@@ -642,18 +615,7 @@ class DocumentEditingSchemaIntegrationTest {
                 postgresContainer.getUsername(),
                 postgresContainer.getPassword()
         ); Statement statement = connection.createStatement()) {
-            statement.executeUpdate(
-                    """
-                    INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
-                    VALUES ('user_backfill', 'backfill@example.com', 'tester', NULL, now(), now())
-                    """
-            );
-            statement.executeUpdate(
-                    """
-                    INSERT INTO workspaces(id, name, created_at, updated_at)
-                    VALUES ('ws_backfill', 'workspace', now(), now())
-                    """
-            );
+            // users/workspaces는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
             statement.executeUpdate(legacyDocumentInsert(
                     "doc_a", "첫 문서.md", "text/markdown", "hash-a", "sources/doc_a"
             ));
@@ -738,42 +700,9 @@ class DocumentEditingSchemaIntegrationTest {
         );
     }
 
-    private void insertUserAndWorkspace(String userId, String workspaceId) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at)
-                VALUES (?, ?, ?, NULL, now(), now())
-                """,
-                userId,
-                userId + "@example.com",
-                "tester"
-        );
-        jdbcTemplate.update(
-                "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
-                workspaceId,
-                "workspace"
-        );
-    }
-
     private void insertWorkspaceMember(String userId, String workspaceId) {
-        jdbcTemplate.update(
-                """
-                INSERT INTO workspace_members(joined_at, role, user_id, workspace_id)
-                VALUES (now(), 'OWNER', ?, ?)
-                """,
-                userId,
-                workspaceId
-        );
-        // guard가 Redis projection을 읽으므로 멤버십을 projection에도 심는다.
+        // workspace_members는 access_db 소유 — guard가 읽는 Redis projection만 심는다 (MSA DB 분리).
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
-    }
-
-    private void insertWorkspace(String workspaceId, String userId) {
-        jdbcTemplate.update(
-                "INSERT INTO workspaces(id, name, created_at, updated_at) VALUES (?, ?, now(), now())",
-                workspaceId,
-                "workspace-" + userId
-        );
     }
 
     private void insertDocument(

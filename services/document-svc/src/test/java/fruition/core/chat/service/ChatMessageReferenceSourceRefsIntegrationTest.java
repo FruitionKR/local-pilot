@@ -38,16 +38,7 @@ class ChatMessageReferenceSourceRefsIntegrationTest {
 
     @Test
     void sourceRefs_roundTripsThroughConverterAndStoresSnakeCaseKeys() {
-        // User/Workspace entity는 access-svc 소유라 FK 부모 행은 SQL로 직접 넣는다.
-        entityManager.createNativeQuery(
-                        "INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at) "
-                                + "VALUES ('user_srcrefs_test', 'srcrefs@example.com', 'tester', NULL, now(), now())")
-                .executeUpdate();
-        entityManager.createNativeQuery(
-                        "INSERT INTO workspaces(id, name, created_at, updated_at) "
-                                + "VALUES ('ws_srcrefs_test', 'ws', now(), now())")
-                .executeUpdate();
-
+        // users/workspaces는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
         ChatSession session = new ChatSession("session_srcrefs_test", "ws_srcrefs_test", "user_srcrefs_test", null);
         chatSessionRepository.save(session);
         ChatMessage assistantMessage = new ChatMessage("chat_srcrefs_assistant", session, "pair_srcrefs",

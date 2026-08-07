@@ -5,7 +5,12 @@ services:
     container_name: fruition-pipeline-api-dev
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fruition}:${POSTGRES_PASSWORD:-fruition_dev_password}@postgresql:5432/${POSTGRES_DB:-fruition_mvp}
+      # 전환기: pipeline은 core_db에 ai_runtime 계정으로 접속한다 (ai_db 분리 완료 전까지)
+      DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
+      # ai_db 1단계 분리: wiki_schemas·document_derived_state는 ai_db에 둔다
+      AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
+      # ai_db 스키마 적용(멱등)은 pipeline-api 기동 시에만 수행한다
+      AI_DB_MIGRATION_URL: postgresql://${AI_DB_MIGRATION_USER:-ai_migration}:${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
@@ -45,7 +50,10 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "app.workers.ingest_worker"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fruition}:${POSTGRES_PASSWORD:-fruition_dev_password}@postgresql:5432/${POSTGRES_DB:-fruition_mvp}
+      # 전환기: pipeline은 core_db에 ai_runtime 계정으로 접속한다 (ai_db 분리 완료 전까지)
+      DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
+      # ai_db 1단계 분리: wiki_schemas·document_derived_state는 ai_db에 둔다
+      AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       INGEST_COMMAND_TOPIC: ${INGEST_COMMAND_TOPIC:-ai.ingest.command}
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
@@ -71,6 +79,23 @@ services:
       kafka:
         condition: service_healthy
 
+  edit-event-consumer:
+    build:
+      context: ../services/ai-svc/pipeline
+    container_name: fruition-edit-event-consumer-dev
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.edit_event_consumer"]
+    environment:
+      # document.edit.event → ai_db document_derived_state 추적 (core_db 접속 없음)
+      AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      DOCUMENT_EDIT_EVENT_TOPIC: ${DOCUMENT_EDIT_EVENT_TOPIC:-document.edit.event}
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
   pipeline-agent-worker:
     build:
       context: ../services/ai-svc/pipeline
@@ -79,7 +104,10 @@ services:
     profiles: ["agent-skills"]
     command: ["python", "agent_worker.py"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-fruition}:${POSTGRES_PASSWORD:-fruition_dev_password}@postgresql:5432/${POSTGRES_DB:-fruition_mvp}
+      # 전환기: pipeline은 core_db에 ai_runtime 계정으로 접속한다 (ai_db 분리 완료 전까지)
+      DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
+      # ai_db 1단계 분리: wiki_schemas·document_derived_state는 ai_db에 둔다
+      AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}

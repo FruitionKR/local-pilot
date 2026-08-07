@@ -11,8 +11,7 @@
 --   - chat_partial_wiki: session_id가 가리키는 chat_sessions.workspace_id
 -- backfill 불가능한 고아 행(참조 대상이 사라진 행)은 삭제한다.
 --
--- FK는 V3 관례를 따라 workspaces(id) ON DELETE CASCADE.
--- (workspaces는 링크 insert보다 항상 먼저 존재하므로 DEFERRABLE은 불필요)
+-- users/workspaces는 access_db 소유 — FK 없이 ID만 보관 (MSA DB 분리).
 
 -- ===== wiki_page_links =====
 ALTER TABLE wiki_page_links ADD COLUMN workspace_id character varying(255);
@@ -25,8 +24,6 @@ WHERE p.id = l.from_page_id;
 DELETE FROM wiki_page_links WHERE workspace_id IS NULL;
 
 ALTER TABLE wiki_page_links ALTER COLUMN workspace_id SET NOT NULL;
-ALTER TABLE wiki_page_links
-    ADD CONSTRAINT fk_wpl_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
 CREATE INDEX idx_wiki_page_links_workspace ON wiki_page_links (workspace_id);
 
 -- ===== document_wiki_links =====
@@ -40,8 +37,6 @@ WHERE p.id = l.wiki_page_id;
 DELETE FROM document_wiki_links WHERE workspace_id IS NULL;
 
 ALTER TABLE document_wiki_links ALTER COLUMN workspace_id SET NOT NULL;
-ALTER TABLE document_wiki_links
-    ADD CONSTRAINT fk_dwl_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
 CREATE INDEX idx_document_wiki_links_workspace ON document_wiki_links (workspace_id);
 
 -- ===== chat_partial_wiki =====
@@ -55,6 +50,4 @@ WHERE s.id = w.session_id;
 DELETE FROM chat_partial_wiki WHERE workspace_id IS NULL;
 
 ALTER TABLE chat_partial_wiki ALTER COLUMN workspace_id SET NOT NULL;
-ALTER TABLE chat_partial_wiki
-    ADD CONSTRAINT fk_cpw_workspace FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE;
 CREATE INDEX idx_chat_partial_wiki_workspace ON chat_partial_wiki (workspace_id);

@@ -5,9 +5,8 @@
 -- 1) source_folders 테이블과 제약·인덱스를 folders로 일반화
 ALTER TABLE source_folders RENAME TO folders;
 ALTER INDEX idx_source_folders_parent_order RENAME TO idx_folders_parent_order;
-ALTER TABLE folders RENAME CONSTRAINT fk_source_folders_workspace TO fk_folders_workspace;
+-- users/workspaces는 access_db 소유 — V9에서 workspace·deleted_by FK를 만들지 않으므로 rename 대상도 없다 (MSA DB 분리).
 ALTER TABLE folders RENAME CONSTRAINT fk_source_folders_parent TO fk_folders_parent;
-ALTER TABLE folders RENAME CONSTRAINT fk_source_folders_deleted_by TO fk_folders_deleted_by;
 
 -- 2) documents: 역할별 배치 제약과 부모 문서 계층 제거
 ALTER TABLE documents DROP CONSTRAINT documents_role_parent_check;

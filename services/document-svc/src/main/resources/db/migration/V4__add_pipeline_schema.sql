@@ -66,50 +66,5 @@ CREATE INDEX IF NOT EXISTS idx_wiki_embedding_units_page
 CREATE INDEX IF NOT EXISTS idx_wiki_embedding_units_vector
     ON public.wiki_embedding_units (embedding_vector_id);
 
-CREATE TABLE IF NOT EXISTS public.wiki_schemas (
-    id text PRIMARY KEY,
-    workspace_id text NOT NULL,
-    user_id text NOT NULL,
-    name text NOT NULL,
-    raw_markdown text NOT NULL,
-    sanitized_global_markdown text NOT NULL DEFAULT '',
-    sanitized_query_markdown text NOT NULL DEFAULT '',
-    sanitized_ingest_markdown text NOT NULL DEFAULT '',
-    sanitized_edit_markdown text NOT NULL DEFAULT '',
-    sanitized_concept_markdown text NOT NULL DEFAULT '',
-    sanitized_template_markdown text NOT NULL DEFAULT '',
-    preview_markdown text NOT NULL DEFAULT '',
-    lint_result jsonb NOT NULL DEFAULT '{}'::jsonb,
-    status text NOT NULL,
-    schema_version text NOT NULL DEFAULT '1.0',
-    created_at timestamp with time zone NOT NULL DEFAULT now(),
-    updated_at timestamp with time zone NOT NULL DEFAULT now(),
-    activated_at timestamp with time zone
-);
-
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'wiki_schemas' AND column_name = 'project_id'
-    ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'wiki_schemas' AND column_name = 'workspace_id'
-    ) THEN
-        ALTER TABLE public.wiki_schemas RENAME COLUMN project_id TO workspace_id;
-    END IF;
-END $$;
-
-ALTER TABLE public.wiki_schemas
-    ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'default';
-ALTER TABLE public.wiki_schemas ALTER COLUMN user_id DROP DEFAULT;
-
-DROP INDEX IF EXISTS public.idx_wiki_schemas_project_status;
-DROP INDEX IF EXISTS public.uq_wiki_schemas_one_active_per_project;
-
-CREATE INDEX IF NOT EXISTS idx_wiki_schemas_workspace_user_status
-    ON public.wiki_schemas (workspace_id, user_id, status);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_wiki_schemas_one_active_per_workspace_user
-    ON public.wiki_schemas (workspace_id, user_id)
-    WHERE status = 'active';
+-- wiki_schemas는 ai_db로 이전됨 (services/ai-svc/pipeline/db/ai_schema.sql 소유).
+-- dev DB는 일회용이라 데이터 이관 없이 CREATE 블록만 제거했다.

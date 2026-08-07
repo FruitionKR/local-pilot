@@ -22,10 +22,7 @@ CREATE TABLE ai_operation_logs (
     created_at             timestamp with time zone NOT NULL,
     completed_at           timestamp with time zone,
     PRIMARY KEY (operation_id),
-    CONSTRAINT fk_ai_operation_logs_workspace
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-    CONSTRAINT fk_ai_operation_logs_user
-        FOREIGN KEY (user_id) REFERENCES users(id),
+    -- users/workspaces는 access_db 소유 — FK 없이 ID만 보관 (MSA DB 분리)
     CONSTRAINT fk_ai_operation_logs_target_document
         FOREIGN KEY (target_document_id) REFERENCES documents(id) ON DELETE SET NULL,
     CONSTRAINT fk_ai_operation_logs_restored_from

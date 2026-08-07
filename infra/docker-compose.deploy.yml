@@ -16,6 +16,8 @@ services:
     depends_on:
       postgresql:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
@@ -24,9 +26,14 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       POSTGRES_HOST: postgresql
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-fruition_mvp}
-      POSTGRES_USER: ${POSTGRES_USER:-fruition}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fruition_dev_password}
+      # document-svc는 core_db 전용 계정으로 접속한다 (runtime=DML, migration=flyway)
+      CORE_DB_NAME: ${CORE_DB_NAME:-core_db}
+      CORE_DB_RUNTIME_USER: ${CORE_DB_RUNTIME_USER:-core_runtime}
+      CORE_DB_RUNTIME_PASSWORD: ${CORE_DB_RUNTIME_PASSWORD:-core_runtime_dev_password}
+      CORE_DB_MIGRATION_USER: ${CORE_DB_MIGRATION_USER:-core_migration}
+      CORE_DB_MIGRATION_PASSWORD: ${CORE_DB_MIGRATION_PASSWORD:-core_migration_dev_password}
+      # 문서 편집 상태 원본 (single-node replica set)
+      DOCUMENT_MONGODB_URI: mongodb://mongodb:27017/fruition_document?replicaSet=rs0&directConnection=true
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
@@ -49,6 +56,8 @@ services:
       WIKI_RESTORE_INGEST_ENDPOINT: http://pipeline-api:8000/wiki/ingest-restore-runs
       WIKI_RESTORE_LINT_ENDPOINT: http://pipeline-api:8000/wiki/lint-restore-runs
       WIKI_PAGE_ENDPOINT: http://pipeline-api:8000/wiki/pages
+      # PDF → Markdown 변환기(docker-compose.converter.yml의 markitdown) — 컨테이너 네트워크 경유
+      CONVERTER_ENDPOINT: http://markitdown:8000
       # pipeline이 콜백을 보낼 document-svc 주소 — 컨테이너 이름 기준
       CALLBACK_BASE_URL: http://document-svc:8080
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
@@ -78,9 +87,12 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       POSTGRES_HOST: postgresql
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-fruition_mvp}
-      POSTGRES_USER: ${POSTGRES_USER:-fruition}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fruition_dev_password}
+      # access-svc는 access_db 전용 계정으로 접속한다 (runtime=DML, migration=flyway)
+      ACCESS_DB_NAME: ${ACCESS_DB_NAME:-access_db}
+      ACCESS_DB_RUNTIME_USER: ${ACCESS_DB_RUNTIME_USER:-access_runtime}
+      ACCESS_DB_RUNTIME_PASSWORD: ${ACCESS_DB_RUNTIME_PASSWORD:-access_runtime_dev_password}
+      ACCESS_DB_MIGRATION_USER: ${ACCESS_DB_MIGRATION_USER:-access_migration}
+      ACCESS_DB_MIGRATION_PASSWORD: ${ACCESS_DB_MIGRATION_PASSWORD:-access_migration_dev_password}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-change-me-please-32bytes-min}

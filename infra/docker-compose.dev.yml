@@ -5,19 +5,86 @@ services:
     image: postgres:16-alpine
     container_name: fruition-postgresql-dev
     restart: unless-stopped
+    # access/core/ai 3개 database·runtime/migration 계정 분리 (docs/Fruition_AWS_MSA_Architecture.md §3)
+    # 계정·권한 생성은 postgres/init-db-isolation.sh가 최초 기동 시 수행한다.
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-fruition_mvp}
-      POSTGRES_USER: ${POSTGRES_USER:-fruition}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fruition_dev_password}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-fruition_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-fruition_admin_dev_password}
+      ACCESS_DB_NAME: ${ACCESS_DB_NAME:-access_db}
+      ACCESS_DB_RUNTIME_USER: ${ACCESS_DB_RUNTIME_USER:-access_runtime}
+      ACCESS_DB_RUNTIME_PASSWORD: ${ACCESS_DB_RUNTIME_PASSWORD:-access_runtime_dev_password}
+      ACCESS_DB_MIGRATION_USER: ${ACCESS_DB_MIGRATION_USER:-access_migration}
+      ACCESS_DB_MIGRATION_PASSWORD: ${ACCESS_DB_MIGRATION_PASSWORD:-access_migration_dev_password}
+      CORE_DB_NAME: ${CORE_DB_NAME:-core_db}
+      CORE_DB_RUNTIME_USER: ${CORE_DB_RUNTIME_USER:-core_runtime}
+      CORE_DB_RUNTIME_PASSWORD: ${CORE_DB_RUNTIME_PASSWORD:-core_runtime_dev_password}
+      CORE_DB_MIGRATION_USER: ${CORE_DB_MIGRATION_USER:-core_migration}
+      CORE_DB_MIGRATION_PASSWORD: ${CORE_DB_MIGRATION_PASSWORD:-core_migration_dev_password}
+      AI_DB_NAME: ${AI_DB_NAME:-ai_db}
+      AI_DB_RUNTIME_USER: ${AI_DB_RUNTIME_USER:-ai_runtime}
+      AI_DB_RUNTIME_PASSWORD: ${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}
+      AI_DB_MIGRATION_USER: ${AI_DB_MIGRATION_USER:-ai_migration}
+      AI_DB_MIGRATION_PASSWORD: ${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgresql-data:/var/lib/postgresql/data
+      - ./postgres/init-db-isolation.sh:/docker-entrypoint-initdb.d/10-db-isolation.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # 계정 격리 검증 (docker compose --profile validation up db-isolation-validate)
+  db-isolation-validate:
+    image: postgres:16-alpine
+    container_name: fruition-db-isolation-validate
+    profiles: ["validation"]
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgresql
+      POSTGRES_PORT: 5432
+      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER:-fruition_admin}
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-fruition_admin_dev_password}
+      ACCESS_DB_NAME: ${ACCESS_DB_NAME:-access_db}
+      ACCESS_DB_RUNTIME_USER: ${ACCESS_DB_RUNTIME_USER:-access_runtime}
+      ACCESS_DB_RUNTIME_PASSWORD: ${ACCESS_DB_RUNTIME_PASSWORD:-access_runtime_dev_password}
+      ACCESS_DB_MIGRATION_USER: ${ACCESS_DB_MIGRATION_USER:-access_migration}
+      ACCESS_DB_MIGRATION_PASSWORD: ${ACCESS_DB_MIGRATION_PASSWORD:-access_migration_dev_password}
+      CORE_DB_NAME: ${CORE_DB_NAME:-core_db}
+      CORE_DB_RUNTIME_USER: ${CORE_DB_RUNTIME_USER:-core_runtime}
+      CORE_DB_RUNTIME_PASSWORD: ${CORE_DB_RUNTIME_PASSWORD:-core_runtime_dev_password}
+      CORE_DB_MIGRATION_USER: ${CORE_DB_MIGRATION_USER:-core_migration}
+      CORE_DB_MIGRATION_PASSWORD: ${CORE_DB_MIGRATION_PASSWORD:-core_migration_dev_password}
+      AI_DB_NAME: ${AI_DB_NAME:-ai_db}
+      AI_DB_RUNTIME_USER: ${AI_DB_RUNTIME_USER:-ai_runtime}
+      AI_DB_RUNTIME_PASSWORD: ${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}
+      AI_DB_MIGRATION_USER: ${AI_DB_MIGRATION_USER:-ai_migration}
+      AI_DB_MIGRATION_PASSWORD: ${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}
+    volumes:
+      - ./postgres/validate-db-isolation.sh:/usr/local/bin/validate-db-isolation:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/validate-db-isolation"]
+
+  # 문서 편집 상태 원본 (§3.1). 트랜잭션 사용을 위해 single-node replica set으로 기동한다.
+  mongodb:
+    image: mongo:7.0
+    container_name: fruition-mongodb-dev
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      # 미초기화 상태면 rs.initiate 수행 후 정상 판정
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate().ok }' | grep -q 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
 
   kafka:
     image: apache/kafka:3.9.0
@@ -56,6 +123,9 @@ services:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
           --create --if-not-exists --topic ai.ingest.command --partitions 12 --replication-factor 1
+        # 문서 편집 outbox 이벤트 (key=document_id, MongoDB outbox publisher가 발행)
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic document.edit.event --partitions 12 --replication-factor 1
     restart: "no"
 
   redis:
@@ -108,3 +178,4 @@ services:
 volumes:
   postgresql-data:
   minio-data:
+  mongodb-data:

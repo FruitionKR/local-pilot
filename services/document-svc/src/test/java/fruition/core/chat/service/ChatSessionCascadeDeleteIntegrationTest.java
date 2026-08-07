@@ -39,16 +39,7 @@ class ChatSessionCascadeDeleteIntegrationTest {
     @Test
     void deletingSession_cascadesToMessagesReferencesAndRelatedPages() {
         // chat_sessions.workspace_id/user_id FK(CASCADE)를 위해 부모 행을 먼저 만든다.
-        // User/Workspace entity는 access-svc 소유라 여기서는 SQL로 직접 넣는다.
-        entityManager.createNativeQuery(
-                        "INSERT INTO users(id, email, display_name, password_hash, created_at, updated_at) "
-                                + "VALUES ('user_cascade_test', 'cascade@example.com', 'tester', NULL, now(), now())")
-                .executeUpdate();
-        entityManager.createNativeQuery(
-                        "INSERT INTO workspaces(id, name, created_at, updated_at) "
-                                + "VALUES ('ws_cascade_test', 'ws', now(), now())")
-                .executeUpdate();
-
+        // users/workspaces는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
         ChatSession session = new ChatSession("session_cascade_test", "ws_cascade_test", "user_cascade_test", null);
         chatSessionRepository.save(session);
 

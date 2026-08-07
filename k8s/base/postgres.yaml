@@ -1,3 +1,122 @@
+# dev compose(infra/docker-compose.dev.yml)와 동일하게 admin 계정으로 기동하고,
+# infra/postgres/init-db-isolation.sh와 같은 스크립트로 access/core/ai 3개 DB와
+# runtime/migration 계정을 최초 기동 시 생성한다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: fruition
+data:
+  # infra/postgres/init-db-isolation.sh 사본 — 원본 변경 시 함께 갱신할 것
+  10-db-isolation.sh: |
+    #!/usr/bin/env bash
+    set -Eeuo pipefail
+
+    validate_identifier() {
+      local value="$1"
+      local label="$2"
+
+      [[ "$value" =~ ^[a-z_][a-z0-9_]*$ ]] || {
+        printf '[db-init] ERROR: %s는 PostgreSQL 식별자 형식이어야 합니다: %s\n' "$label" "$value" >&2
+        exit 1
+      }
+    }
+
+    create_role() {
+      local role="$1"
+      local password="$2"
+
+      psql --username "$POSTGRES_USER" --dbname postgres --set=ON_ERROR_STOP=1 \
+        --set=role="$role" --set=password="$password" <<'SQL'
+    SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', :'role', :'password')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'role')
+    \gexec
+    SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', :'role', :'password')
+    \gexec
+    SQL
+    }
+
+    create_database() {
+      local database="$1"
+      local migration_role="$2"
+      local runtime_role="$3"
+
+      psql --username "$POSTGRES_USER" --dbname postgres --set=ON_ERROR_STOP=1 \
+        --set=database="$database" --set=migration_role="$migration_role" --set=runtime_role="$runtime_role" <<'SQL'
+    SELECT format('CREATE DATABASE %I OWNER %I', :'database', :'migration_role')
+    WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'database')
+    \gexec
+    SELECT format('ALTER DATABASE %I OWNER TO %I', :'database', :'migration_role')
+    \gexec
+    SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'database')
+    \gexec
+    SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'database', :'migration_role')
+    \gexec
+    SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'database', :'runtime_role')
+    \gexec
+    SQL
+
+      psql --username "$POSTGRES_USER" --dbname "$database" --set=ON_ERROR_STOP=1 \
+        --set=migration_role="$migration_role" --set=runtime_role="$runtime_role" <<'SQL'
+    REVOKE ALL ON SCHEMA public FROM PUBLIC;
+    SELECT format('ALTER SCHEMA public OWNER TO %I', :'migration_role')
+    \gexec
+    SELECT format('GRANT USAGE, CREATE ON SCHEMA public TO %I', :'migration_role')
+    \gexec
+    SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'runtime_role')
+    \gexec
+    SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', :'runtime_role')
+    \gexec
+    SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I', :'runtime_role')
+    \gexec
+    SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'migration_role', :'runtime_role')
+    \gexec
+    SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migration_role', :'runtime_role')
+    \gexec
+    SQL
+    }
+
+    for variable_name in \
+      ACCESS_DB_NAME ACCESS_DB_RUNTIME_USER ACCESS_DB_MIGRATION_USER \
+      CORE_DB_NAME CORE_DB_RUNTIME_USER CORE_DB_MIGRATION_USER \
+      AI_DB_NAME AI_DB_RUNTIME_USER AI_DB_MIGRATION_USER; do
+      validate_identifier "${!variable_name}" "$variable_name"
+    done
+
+    create_role "$ACCESS_DB_RUNTIME_USER" "$ACCESS_DB_RUNTIME_PASSWORD"
+    create_role "$ACCESS_DB_MIGRATION_USER" "$ACCESS_DB_MIGRATION_PASSWORD"
+    create_role "$CORE_DB_RUNTIME_USER" "$CORE_DB_RUNTIME_PASSWORD"
+    create_role "$CORE_DB_MIGRATION_USER" "$CORE_DB_MIGRATION_PASSWORD"
+    create_role "$AI_DB_RUNTIME_USER" "$AI_DB_RUNTIME_PASSWORD"
+    create_role "$AI_DB_MIGRATION_USER" "$AI_DB_MIGRATION_PASSWORD"
+
+    create_database "$ACCESS_DB_NAME" "$ACCESS_DB_MIGRATION_USER" "$ACCESS_DB_RUNTIME_USER"
+    create_database "$CORE_DB_NAME" "$CORE_DB_MIGRATION_USER" "$CORE_DB_RUNTIME_USER"
+    create_database "$AI_DB_NAME" "$AI_DB_MIGRATION_USER" "$AI_DB_RUNTIME_USER"
+
+    # 전환기: ai 테이블(pipeline_runs·임베딩)이 core_db에 동거하므로 ai_runtime에 core_db DML을 허용한다.
+    # 물리 ai_db 이전이 끝나면 이 블록을 제거할 것 (docs/msa/current-architecture.md §4 참조).
+    psql --username "$POSTGRES_USER" --dbname postgres --set=ON_ERROR_STOP=1 \
+      --set=database="$CORE_DB_NAME" --set=role="$AI_DB_RUNTIME_USER" <<'SQL'
+    SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'database', :'role')
+    \gexec
+    SQL
+    psql --username "$POSTGRES_USER" --dbname "$CORE_DB_NAME" --set=ON_ERROR_STOP=1 \
+      --set=migration_role="$CORE_DB_MIGRATION_USER" --set=role="$AI_DB_RUNTIME_USER" <<'SQL'
+    SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'role')
+    \gexec
+    SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', :'role')
+    \gexec
+    SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %I', :'role')
+    \gexec
+    SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'migration_role', :'role')
+    \gexec
+    SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migration_role', :'role')
+    \gexec
+    SQL
+
+    printf '[db-init] access/core/ai database와 runtime/migration 계정 구성을 완료했습니다.\n'
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -35,34 +154,100 @@ spec:
           ports:
             - containerPort: 5432
           env:
+            # admin은 DB·계정 초기화 전용 — 앱은 access/core/ai 분리 계정으로 접속한다
             - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: fruition-config
-                  key: POSTGRES_DB
+              value: postgres
             - name: POSTGRES_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: fruition-config
-                  key: POSTGRES_USER
+              value: fruition_admin
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: fruition-secret
-                  key: POSTGRES_PASSWORD
+                  key: POSTGRES_ADMIN_PASSWORD
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+            # init 스크립트 입력 (DB·계정 이름은 configmap, 비밀번호는 secret)
+            - name: ACCESS_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: ACCESS_DB_NAME
+            - name: ACCESS_DB_RUNTIME_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: ACCESS_DB_RUNTIME_USER
+            - name: ACCESS_DB_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: ACCESS_DB_RUNTIME_PASSWORD
+            - name: ACCESS_DB_MIGRATION_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: ACCESS_DB_MIGRATION_USER
+            - name: ACCESS_DB_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: ACCESS_DB_MIGRATION_PASSWORD
+            - name: CORE_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: CORE_DB_NAME
+            - name: CORE_DB_RUNTIME_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: CORE_DB_RUNTIME_USER
+            - name: CORE_DB_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: CORE_DB_RUNTIME_PASSWORD
+            - name: CORE_DB_MIGRATION_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: fruition-config
+                  key: CORE_DB_MIGRATION_USER
+            - name: CORE_DB_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: CORE_DB_MIGRATION_PASSWORD
+            # ai_db는 아직 앱 소비자가 없어 이름을 여기서 직접 지정한다
+            - name: AI_DB_NAME
+              value: ai_db
+            - name: AI_DB_RUNTIME_USER
+              value: ai_runtime
+            - name: AI_DB_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: AI_DB_RUNTIME_PASSWORD
+            - name: AI_DB_MIGRATION_USER
+              value: ai_migration
+            - name: AI_DB_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fruition-secret
+                  key: AI_DB_MIGRATION_PASSWORD
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "fruition", "-d", "fruition_mvp"]
+              command: ["pg_isready", "-U", "fruition_admin", "-d", "postgres"]
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", "fruition", "-d", "fruition_mvp"]
+              command: ["pg_isready", "-U", "fruition_admin", "-d", "postgres"]
             initialDelaySeconds: 30
             periodSeconds: 10
           resources:
@@ -75,6 +260,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: postgresql-data
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+            defaultMode: 0555
 ---
 apiVersion: v1
 kind: Service

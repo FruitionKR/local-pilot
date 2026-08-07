@@ -6,6 +6,19 @@
 
 ## 2026-08-07
 
+### feat: PostgreSQL 3-DB·계정 격리 로컬 인프라
+
+- postgres 컨테이너가 최초 기동 시 `access_db`/`core_db`/`ai_db` + runtime/migration
+  계정 6개를 자동 생성(`infra/postgres/init-db-isolation.sh`, 참조 브랜치
+  feat/msa-db-isolation 포팅). ai_runtime에는 core_db 전환기 grant 포함.
+- 격리 검증 컨테이너 추가: `docker compose --profile validation up db-isolation-validate`
+  — 비superuser·own DML·runtime CREATE 거부·타 DB write 거부 검사.
+- compose(dev/pipeline/deploy)와 k8s(base configmap·secret·postgres init ConfigMap),
+  `.env.example`을 새 계약(ACCESS_DB_*/CORE_DB_*/AI_* env)으로 전환.
+- MongoDB(replica set rs0) dev compose 서비스는 문서 편집 원본 전환 커밋에서 사용
+  (같은 파일에 포함되어 이 커밋에 동반됨). 주의: colima bind mount 캐시로 수정
+  스크립트가 컨테이너에 부분 반영될 수 있음 — 재기동 또는 docker cp로 해소.
+
 ### feat: Kubernetes 매니페스트 도입 (kind 로컬 검증 완료)
 
 - `k8s/` 신설: kind 클러스터 구성 + Strimzi Kafka(KRaft, `ai.ingest.command` 12
