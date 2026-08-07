@@ -1,0 +1,43 @@
+# Kafka `ai.ingest.command` 컨슈머 (consumer group: ingest-worker).
+# replicas는 KEDA ScaledObject가 1~4로 관리한다 (keda-scaledobject.yaml).
+# HTTP 서버가 없어 probe는 프로세스 생존(컨테이너 종료 시 재시작) 수준으로 둔다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-worker
+  namespace: fruition
+  labels:
+    app: ingest-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingest-worker
+  template:
+    metadata:
+      labels:
+        app: ingest-worker
+    spec:
+      containers:
+        - name: ingest-worker
+          image: fruition-mvp-dev-ingest-worker:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.workers.ingest_worker"]
+          envFrom:
+            - configMapRef:
+                name: fruition-config
+            - secretRef:
+                name: fruition-secret
+          volumeMounts:
+            - name: runs
+              mountPath: /app/runs
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: runs
+          persistentVolumeClaim:
+            claimName: pipeline-runs

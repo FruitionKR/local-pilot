@@ -3,14 +3,15 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
-BACKEND_DIR="$ROOT_DIR/backend"
-FRONTEND_DIR="$ROOT_DIR/frontend"
+SERVICES_DIR="$ROOT_DIR/services/backend"
+FRONTEND_DIR="$ROOT_DIR/services/frontend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
 PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
 
-BACKEND_PID=""
+DOCUMENT_PID=""
+ACCESS_PID=""
 FRONTEND_PID=""
 
 log() {
@@ -23,15 +24,18 @@ fail() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/local-runbook.md의 요구사항을 확인하세요."
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/demo-script.md의 요구사항을 확인하세요."
 }
 
 cleanup() {
   if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
     kill "$FRONTEND_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
-    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+  if [[ -n "${ACCESS_PID:-}" ]] && kill -0 "$ACCESS_PID" >/dev/null 2>&1; then
+    kill "$ACCESS_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${DOCUMENT_PID:-}" ]] && kill -0 "$DOCUMENT_PID" >/dev/null 2>&1; then
+    kill "$DOCUMENT_PID" >/dev/null 2>&1 || true
   fi
 }
 
@@ -180,22 +184,33 @@ start_infra() {
 start_pipeline() {
   log "Pipeline API를 시작합니다."
   cleanup_stale_pipeline_orphans
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api ingest-worker edit-event-consumer
   wait_for_url "http://localhost:8000/health" "Pipeline API" 120
 }
 
 start_backend() {
   local java21_home="$1"
 
-  log "백엔드를 시작합니다. Java 21: $java21_home"
+  # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
+  log "document-svc를 시작합니다. Java 21: $java21_home"
   (
-    cd "$BACKEND_DIR"
+    cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
   ) &
-  BACKEND_PID="$!"
+  DOCUMENT_PID="$!"
 
-  wait_for_url "http://localhost:8080/actuator/health" "백엔드"
+  wait_for_url "http://localhost:8080/actuator/health" "document-svc"
+
+  log "access-svc를 시작합니다. Java 21: $java21_home"
+  (
+    cd "$SERVICES_DIR"
+    SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
+      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+  ) &
+  ACCESS_PID="$!"
+
+  wait_for_url "http://localhost:8081/actuator/health" "access-svc"
 }
 
 start_frontend() {
@@ -235,16 +250,17 @@ main() {
   cat <<'INFO'
 
 [dev-up] 로컬 개발 서버가 실행 중입니다.
-  - Frontend: http://localhost:3000
-  - Backend:  http://localhost:8080
-  - Pipeline: http://localhost:8000
-  - Swagger:  http://localhost:8080/swagger-ui.html
-  - MinIO:    http://localhost:9001
+  - Frontend:     http://localhost:3000
+  - Document-svc: http://localhost:8080
+  - Access-svc:   http://localhost:8081
+  - Pipeline:     http://localhost:8000
+  - Swagger:      http://localhost:8080/swagger-ui.html
+  - MinIO:        http://localhost:9001
 
 [dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
 INFO
 
-  wait "$BACKEND_PID" "$FRONTEND_PID"
+  wait "$DOCUMENT_PID" "$ACCESS_PID" "$FRONTEND_PID"
 }
 
 main "$@"

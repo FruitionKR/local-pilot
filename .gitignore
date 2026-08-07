@@ -55,8 +55,8 @@ pnpm-debug.log*
 
 # LLM pipeline generated outputs
 pipeline_api/runs/
-llmPipeline/runs/
-llmPipeline/.langgraph_api/
+services/ai/pipeline/runs/
+services/ai/pipeline/.langgraph_api/
 /tmp/
 /paddle_cache/
 
@@ -64,3 +64,7 @@ llmPipeline/.langgraph_api/
 .playwright-mcp/
 **/.playwright-mcp/
 /*.png
+output/playwright/
+
+# Terraform 로컬 캐시 (lock 파일은 커밋 대상)
+infra/terraform/.terraform/

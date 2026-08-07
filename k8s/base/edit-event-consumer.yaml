@@ -1,0 +1,37 @@
+# Kafka `document.edit.event` 컨슈머 (consumer group: derived-state-tracker).
+# ai_db document_derived_state에 문서별 최신 편집 상태를 upsert해 파생물 stale을 추적한다.
+# ingest-worker와 같은 이미지를 쓰고 command만 다르다. HTTP 서버가 없어 probe는
+# 프로세스 생존(컨테이너 종료 시 재시작) 수준으로 둔다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edit-event-consumer
+  namespace: fruition
+  labels:
+    app: edit-event-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: edit-event-consumer
+  template:
+    metadata:
+      labels:
+        app: edit-event-consumer
+    spec:
+      containers:
+        - name: edit-event-consumer
+          image: fruition-mvp-dev-ingest-worker:latest
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.workers.edit_event_consumer"]
+          envFrom:
+            - configMapRef:
+                name: fruition-config
+            - secretRef:
+                name: fruition-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

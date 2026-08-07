@@ -1,0 +1,174 @@
+/* 문서 버전 기록(서버 버전 목록·diff·복원) 패널. 문서 화면 위 오버레이. */
+.history-panel {
+  position: absolute;
+  top: 56px;
+  right: 24px;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 360px;
+  max-height: calc(100% - 96px);
+  padding: 16px;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  background: #1e1e1e;
+  color: #e7e7e7;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.history-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-panel-header strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.history-panel-header button {
+  border: none;
+  background: transparent;
+  color: #9a9a9a;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.history-empty,
+.history-nodiff {
+  margin: 0;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-error {
+  margin: 0;
+  color: #ff8f87;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #262626;
+  color: #e7e7e7;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-item:hover {
+  background: #2f2f2f;
+}
+
+.history-item.is-selected {
+  border-color: #315efb;
+  background: #1d2740;
+}
+
+.history-item-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.history-item-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #315efb;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.history-item-time {
+  flex: none;
+  color: #8a8a8a;
+  font-size: 11px;
+}
+
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.history-diff {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  background: #161616;
+}
+
+.history-diff code {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 22px;
+  padding: 2px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.history-diff code.is-delete {
+  background: rgba(155, 28, 28, 0.22);
+  color: #ff9d95;
+}
+
+.history-diff code.is-insert {
+  background: rgba(6, 118, 71, 0.22);
+  color: #6fdba6;
+}
+
+.history-diff code.is-context {
+  color: #9a9a9a;
+}
+
+.history-diff code.is-gap {
+  color: #6a6a6a;
+  background: #1b1b1b;
+  text-align: center;
+}
+
+.history-restore {
+  align-self: flex-end;
+  padding: 7px 14px;
+  border: 1px solid #315efb;
+  border-radius: 8px;
+  background: #315efb;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.history-restore:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

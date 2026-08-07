@@ -3,11 +3,12 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
-BACKEND_DIR="$ROOT_DIR/backend"
+SERVICES_DIR="$ROOT_DIR/services/backend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
-BACKEND_PID=""
+DOCUMENT_PID=""
+ACCESS_PID=""
 
 log() {
   printf '[back-up] %s\n' "$*"
@@ -19,12 +20,15 @@ fail() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/local-runbook.md의 요구사항을 확인하세요."
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/demo-script.md의 요구사항을 확인하세요."
 }
 
 cleanup() {
-  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
-    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+  if [[ -n "${ACCESS_PID:-}" ]] && kill -0 "$ACCESS_PID" >/dev/null 2>&1; then
+    kill "$ACCESS_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${DOCUMENT_PID:-}" ]] && kill -0 "$DOCUMENT_PID" >/dev/null 2>&1; then
+    kill "$DOCUMENT_PID" >/dev/null 2>&1 || true
   fi
 }
 
@@ -128,18 +132,22 @@ wait_for_postgres() {
   fail "PostgreSQL 컨테이너가 준비되지 않았습니다."
 }
 
-wait_for_backend() {
+wait_for_service() {
+  local url="$1"
+  local label="$2"
+  local pid="$3"
+
   for _ in $(seq 1 60); do
-    if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1; then
-      log "백엔드 응답 확인: http://localhost:8080/actuator/health"
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      log "$label 응답 확인: $url"
       return
     fi
 
-    kill -0 "$BACKEND_PID" >/dev/null 2>&1 || fail "백엔드 프로세스가 시작 중 종료되었습니다."
+    kill -0 "$pid" >/dev/null 2>&1 || fail "$label 프로세스가 시작 중 종료되었습니다."
     sleep 1
   done
 
-  fail "백엔드 응답을 확인하지 못했습니다: http://localhost:8080/actuator/health"
+  fail "$label 응답을 확인하지 못했습니다: $url"
 }
 
 main() {
@@ -147,8 +155,9 @@ main() {
   ensure_env_file
   ensure_docker
 
-  if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1; then
-    log "백엔드가 이미 실행 중입니다: http://localhost:8080"
+  if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
+    && curl -fsS "http://localhost:8081/actuator/health" >/dev/null 2>&1; then
+    log "백엔드가 이미 실행 중입니다: document-svc http://localhost:8080, access-svc http://localhost:8081"
     return
   fi
 
@@ -161,16 +170,26 @@ main() {
 
   trap cleanup INT TERM EXIT
 
-  log "백엔드를 시작합니다. Java 21: $java21_home"
+  # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
+  log "document-svc를 시작합니다. Java 21: $java21_home"
   (
-    cd "$BACKEND_DIR"
-    ./gradlew bootRun -Porg.gradle.java.installations.paths="$java21_home"
+    cd "$SERVICES_DIR"
+    ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
   ) &
-  BACKEND_PID="$!"
+  DOCUMENT_PID="$!"
 
-  wait_for_backend
+  wait_for_service "http://localhost:8080/actuator/health" "document-svc" "$DOCUMENT_PID"
+
+  log "access-svc를 시작합니다. Java 21: $java21_home"
+  (
+    cd "$SERVICES_DIR"
+    ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+  ) &
+  ACCESS_PID="$!"
+
+  wait_for_service "http://localhost:8081/actuator/health" "access-svc" "$ACCESS_PID"
   log "종료하려면 Ctrl-C를 누르거나 scripts/back-down.sh를 실행하세요."
-  wait "$BACKEND_PID"
+  wait "$DOCUMENT_PID" "$ACCESS_PID"
 }
 
 main "$@"

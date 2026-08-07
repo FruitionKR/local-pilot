@@ -1,0 +1,78 @@
+# EKS 배포 (docs/backlog/Fruition_AWS_MSA_Architecture.md §9.1).
+# OIDC로 deploy role assume — 장기 access key 없음. 수동 트리거만 허용한다.
+# 사전 준비: repo Variables에 AWS_DEPLOY_ROLE_ARN 설정 (terraform output github_deploy_role_arn).
+name: Deploy (EKS)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+  EKS_CLUSTER: fruition-eks
+
+concurrency:
+  group: deploy-eks
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 이미지 빌드·push (java 서비스는 빌드 컨텍스트가 services/ 루트 — k8s/README.md와 동일)
+      - name: Build and push images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/fruition-document-svc:$TAG" -f services/backend/document-svc/Dockerfile services/backend
+          docker build -t "$REGISTRY/fruition-access-svc:$TAG" -f services/backend/access-svc/Dockerfile services/backend
+          docker build -t "$REGISTRY/fruition-pipeline:$TAG" services/ai/pipeline
+          docker build -t "$REGISTRY/fruition-converter:$TAG" services/ai/converter
+          docker push "$REGISTRY/fruition-document-svc:$TAG"
+          docker push "$REGISTRY/fruition-access-svc:$TAG"
+          docker push "$REGISTRY/fruition-pipeline:$TAG"
+          docker push "$REGISTRY/fruition-converter:$TAG"
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Deploy
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        working-directory: k8s/overlays/aws
+        run: |
+          kustomize edit set image \
+            fruition-document-svc="$REGISTRY/fruition-document-svc:$TAG" \
+            fruition-access-svc="$REGISTRY/fruition-access-svc:$TAG" \
+            fruition-mvp-dev-pipeline-api="$REGISTRY/fruition-pipeline:$TAG" \
+            fruition-mvp-dev-ingest-worker="$REGISTRY/fruition-pipeline:$TAG" \
+            fruition-converter="$REGISTRY/fruition-converter:$TAG"
+          kubectl apply -k .
+
+      - name: Wait for rollout
+        run: |
+          for d in document-svc access-svc pipeline-api ingest-worker edit-event-consumer converter; do
+            kubectl -n fruition rollout status deploy/"$d" --timeout=600s
+          done
+
+      # smoke test — ALB 통과 health 확인 (도메인 연결 후 활성화)
+      # - run: curl -fsS https://api.<domain>/actuator/health
