@@ -1,118 +1,123 @@
-# Fruition MVP
+# Fruition
 
-Fruition MVP는 사용자가 파일명을 정확히 기억하지 못해도, 개념이나 질문만으로 관련 Wiki page와 원본 근거를 찾을 수 있는지 검증하기 위한 웹 기반 지식화 데모입니다.
+> 인증된 workspace 안의 문서를 Wiki 지식과 근거 기반 채팅으로 연결하는 지식화 서비스
 
-MVP의 핵심 가설은 단순 파일 검색이나 일반 RAG가 아니라, 업로드한 원본 문서를 LLM이 `source page`와 `concept page`로 컴파일하고, 이 Wiki page들을 그래프와 채팅 인터페이스에서 함께 탐색할 때 실제 사용 가치가 생긴다는 것입니다.
+## 1. Problem
 
-## 대상 사용자
+문서가 여러 파일과 폴더에 흩어지면 사용자는 파일명이나 저장 위치를 기억해야 원하는 지식과 원문 근거를 찾을 수 있다. Fruition은 문서의 원본을 보존하면서 문서에서 Wiki page와 관계를 만들고, 질문에 답할 때 관련 page와 근거를 함께 보여주는 것을 목표로 한다.
 
-초기 사용자는 논문, 강의자료, 과제 자료, 개인 필기처럼 한 주제에 묶인 문서를 많이 다루는 대학원생, 학부 연구생, 고학년 대학생입니다.
+## 2. Current Solution
 
-처음 검증할 문서 세트는 하나의 과목이나 연구 주제에 묶인 PDF, Markdown, 강의자료, 논문, 과제 자료입니다. MVP에서는 30~50개 정도의 문서를 기준으로, 비슷한 개념이 여러 파일에 흩어져 있어도 사용자가 원하는 원문과 Wiki page를 찾을 수 있는지 확인합니다.
+현재 `dev` 브랜치 구현은 다음 흐름을 제공한다.
 
-## 핵심 사용자 경험
+- 이메일·OAuth 기반 인증과 workspace·멤버십 관리
+- PDF/Markdown 문서 업로드와 원본·메타데이터 저장
+- Markdown 문서 비동기 처리와 Wiki ingestion. PDF converter는 별도 실행 서비스이며 자동 upload flow에는 아직 연결되지 않음
+- source/concept Wiki page 생성과 Wiki graph·schema·maintenance 기능
+- Wiki 기반 채팅 질의, 답변 근거와 관련 page 조회
+- Markdown 편집, 콘텐츠 버전·diff·복원, 편집 잠금
+- AI 작업 로그와 pipeline 실행 상태 관리
 
-웹 데모는 로그인 없이 시작합니다.
+주요 public API 경계는 Spring Boot backend이며, Python `llmPipeline`은 내부 문서 처리·검색·Wiki·Agent 실행 서비스로 동작한다.
 
-사용자는 왼쪽 사이드바에 파일을 업로드하고, 업로드된 원본 파일을 flat list로 확인합니다. 원본 파일은 수정하지 않는 raw source로 보관하며, 그래프의 직접 node로 쓰지 않습니다.
+## 3. Architecture Overview
 
-LLM은 원본 문서를 읽고 원본을 대표하는 `source page`와 지식 단위인 `concept page`를 생성합니다. 화면의 메인 그래프는 원본 파일이 아니라 이 Wiki page들을 node로 보여주고, page 사이의 의미 관계를 edge로 표현합니다.
+```mermaid
+flowchart LR
+    USER[사용자 브라우저]
+    FRONT[Next.js Frontend]
+    BACK[Spring Boot Backend<br/>Public API + Auth + Worker]
+    PIPE[FastAPI llmPipeline<br/>Ingestion + Query + Wiki + Agent]
+    DB[(PostgreSQL)]
+    STORE[(MinIO<br/>S3-compatible Object Storage)]
+    CONVERTER[PDF Converter<br/>선택적 별도 서비스]
+    LLM[외부 LLM Provider]
 
-오른쪽 채팅 영역에서 사용자가 자연어로 질문하면, 시스템은 관련 Wiki page를 우선 읽고 답변합니다. 답변에 사용된 source/concept page와 연결 path는 그래프에서 함께 하이라이트합니다.
-
-```text
-왼쪽 사이드바
-  원본 파일 목록
-
-메인 왼쪽 영역
-  Wiki graph
-  - source page node
-  - concept page node
-  - page 간 연결 edge
-
-메인 오른쪽 영역
-  LLM 채팅
-  - 질문 입력
-  - Wiki 기반 답변
-  - 답변에 사용된 node/path 하이라이트
+    USER --> FRONT
+    FRONT --> BACK
+    BACK --> DB
+    BACK --> STORE
+    BACK --> PIPE
+    PIPE --> DB
+    PIPE --> STORE
+    PIPE --> LLM
+    CONVERTER -. 별도/선택적 .-> PIPE
 ```
 
-## MVP 범위
+현재 구조의 상세 설명은 [아키텍처 문서](./docs/architecture.md)를 참고한다.
 
-MVP에서 반드시 검증할 흐름은 아래 하나입니다.
+## 4. Key Technical Challenges
 
-```text
-문서 업로드 -> LLM Wiki page 생성 -> Wiki 기반 자연어 질문 -> 근거가 있는 답변 확인
+- 문서 업로드와 LLM 처리를 분리하면서 처리 상태와 재시작 동작을 보장하기
+- Spring Boot와 `llmPipeline` 사이의 내부 실행 계약과 공용 PostgreSQL 스키마를 유지하기
+- workspace 멤버십을 기준으로 문서·Wiki·채팅 데이터를 격리하기
+- Wiki 답변의 source reference와 관련 page를 함께 보존하기
+- Markdown 변경의 버전·diff·복원과 AI 작업 이력을 연결하기
+
+## 5. Tech Stack
+
+| 영역 | 기술 |
+|---|---|
+| Frontend | Next.js, React, TypeScript |
+| Backend | Java 21, Spring Boot, Spring Security |
+| AI/Pipeline | Python, FastAPI, LLM provider SDK |
+| Primary Database | PostgreSQL 16, Flyway |
+| Object Storage | MinIO, S3-compatible API |
+| Local Infrastructure | Docker Compose |
+| API Documentation | springdoc OpenAPI |
+
+## 6. Scope and Non-goals
+
+현재 구현의 기준은 로컬 개발 환경과 `dev` 브랜치 코드다. AWS MSA, Kafka·Redis 기반 확장, 별도 서비스 분할과 같은 목표 구조는 현재 런타임 설명이 아니라 [백로그](./docs/backlog/)에 보관한다.
+
+현재 MVP에서 우선하지 않는 범위는 다음과 같다.
+
+- 완전한 single-writer 구조로의 pipeline 산출물 이전
+- 대규모 이벤트 스트리밍과 다중 리전 운영
+- 모든 문서 형식에 대한 OCR·고급 레이아웃 복원
+- 운영 환경의 최종 AWS 배포 토폴로지 확정
+
+## 7. Documentation
+
+- [Architecture](./docs/architecture.md) — C1/C2, 핵심 데이터 흐름, 책임, 실패·보안·확장성
+- [API](./docs/api.md) — 현재 public/internal API 그룹과 계약 기준
+- [Data Model](./docs/data-model.md) — Flyway 기준 테이블·상태·저장소 모델
+- [Demo Script](./docs/demo-script.md) — 현재 구현 시연 순서와 확인 포인트
+- [Architecture Decision Records](./docs/adr/) — 주요 기술 선택과 후속 부채
+- [Backlog](./docs/backlog/) — 과거 설계와 완료된 이슈 기록
+
+## 8. Local Development
+
+실행 요구사항과 시연 순서는 [Demo Script](./docs/demo-script.md)를 먼저 확인한다.
+
+```sh
+cp infra/.env.example infra/.env
+./scripts/dev-up.sh
 ```
 
-최소 기능은 다음과 같습니다.
+기본 주소:
 
-- 사용자가 PDF 또는 Markdown 문서 업로드
-- 업로드한 문서에서 본문 텍스트 추출
-- 원본 파일, 서비스 관리 정보, Wiki Markdown 분리 저장
-- 고정된 Wiki 작성 가이드라인으로 source page와 concept page 생성
-- 생성된 Wiki page 탐색
-- source page에서 원본 출처 확인
-- 자연어 질문에 대해 Wiki page 기반 답변 생성
-- 답변에 사용된 Wiki page와 원본 근거 표시
-- 문서 처리 성공/실패와 생성된 Wiki page를 최소 로그로 확인
+- Frontend: `http://localhost:3000`
+- Backend health: `http://localhost:8080/actuator/health`
+- Pipeline health: `http://localhost:8000/health`
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
 
-## Wiki Page 모델
-
-`source page`는 원본 문서 1개에 대응되는 요약/출처 페이지입니다. 원본 파일 URI, 문서 요약, 핵심 내용, 추출된 concept 목록, 원본 근거를 담습니다.
-
-`concept page`는 문서에서 추출된 개념, 방법론, 기술, 문제, 주장 같은 지식 단위입니다. MVP에서는 `Definition`, `Key Points`, `Evidence`, `Related Concepts` 네 가지 섹션만 생성합니다.
-
-이 구조의 목적은 원본 파일과 Wiki graph를 분리하는 것입니다. 원본은 보존 대상이고, 그래프에서 탐색되는 지식 단위는 LLM이 생성한 Wiki page입니다.
-
-## 데이터 흐름
+## 9. Repository Structure
 
 ```text
-원본 파일 업로드
-  -> Object Storage의 sources/에 원본 저장
-  -> AppDB의 documents에 파일 관리 정보 저장
-  -> MarkItDown으로 본문 텍스트 추출
-  -> LLM Wiki Builder가 source page 생성
-  -> 문서에서 concept page 생성 또는 기존 concept page와 연결
-  -> wiki_page_links로 Wiki page 간 관계 저장
-  -> wiki_pages를 node, wiki_page_links를 edge로 화면 그래프 표시
-  -> 사용자가 채팅하면 관련 Wiki page를 읽고 답변
-  -> 답변에 사용된 node와 path를 그래프에서 하이라이트
+backend/      Spring Boot public API and domain logic
+frontend/     Next.js web application
+llmPipeline/  FastAPI ingestion/query/wiki/agent service
+infra/        Local PostgreSQL, MinIO, pipeline, converter configuration
+docs/
+  architecture.md
+  api.md
+  data-model.md
+  demo-script.md
+  adr/         Architecture Decision Records
+  backlog/     과거 MVP 문서·설계·마일스톤·이슈 기록
 ```
 
-## 저장 원칙
-
-원본 파일과 Wiki Markdown은 같은 객체 스토리지에 저장하되 prefix를 분리합니다.
-
-```text
-sources/documents/{document_id}/original.{ext}
-sources/documents/{document_id}/extracted.txt
-wiki/sources/{document_slug}.md
-wiki/concepts/{concept_slug}.md
-```
-
-AppDB는 파일 본문을 저장하지 않고, 문서 ID, 처리 상태, 원본 URI, 추출 텍스트 URI, Wiki page URI, page 연결 관계만 관리합니다.
-
-## MVP에서 제외하는 것
-
-아래 기능은 핵심 가설 검증 이후 확장 범위로 둡니다.
-
-- 로그인, 팀, 권한, 외부 공유
-- 별도 작업 큐와 재시도 시스템
-- Elasticsearch, vector database, graph database
-- Wiki page 승인/롤백, 감사 로그 고도화
-- 중복 concept 병합과 모순 후보 탐지
-- HWP/HWPX, OCR, 이미지 기반 문서 처리
-- 채팅 답변을 새로운 Wiki page로 승격하는 기능
-
-## 기술 방향
-
-MVP는 Spring Boot 백엔드, PostgreSQL AppDB, S3 호환 Object Storage, 컨테이너 기반 PDF 변환 워커, 외부 LLM API를 중심으로 구성합니다.
-
-현재 로컬 개발 인프라는 PostgreSQL과 MinIO를 기준으로 시작합니다. PDF 변환은 별도 converter 컨테이너에서 `pdfinfo`, `pdffonts`, `ocrmypdf`, `tesseract`, `ghostscript`, `markitdown[pdf]` 조합으로 처리하며, DOCX/PPTX/XLSX 등은 데모 필요에 따라 확장합니다.
-
-상세 아키텍처와 ERD는 [Fruition_MVP_Architecture.md](./docs/Fruition_MVP_Architecture.md)를 기준으로 관리합니다.
-
-## 저작권
+## License
 
 Copyright (c) 2026 Fruition KR
