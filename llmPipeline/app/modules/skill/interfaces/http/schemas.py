@@ -1,10 +1,11 @@
+import json
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.skill.domain.entities import (
     Skill,
-    SkillDraftProposal,
+    SkillAuthoringResult,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
     SkillVersion,
@@ -31,27 +32,106 @@ ToolValue = Literal[
 
 class SkillDefinitionRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
-    name: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     description: str = Field(..., min_length=1)
     instructions_markdown: str = Field(..., min_length=1)
     capabilities: list[CapabilityValue] = Field(..., min_length=1)
     allowed_tools: list[ToolValue] = Field(default_factory=list)
 
 
-class CreateSkillRequest(SkillDefinitionRequest):
+class SkillAuthoringRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]
-    slug: str = Field(..., min_length=1, max_length=63)
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9-]{0,62}$",
+    )
+    description: str | None = Field(default=None, min_length=1, max_length=500)
+    instruction: str = Field(..., min_length=1, max_length=30_000)
+    authoring_mode: Literal["preserve", "enhance", "regenerate"] = "enhance"
+    reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
 
 
-class UpdateSkillRequest(SkillDefinitionRequest):
+class SkillAuthoringResponse(BaseModel):
+    status: Literal["clarification_required", "blocked", "proposal_ready", "published"]
+    question: str | None = None
+    skill_id: str | None = None
+    version_id: str | None = None
+    scope_type: Literal["personal", "team"] | None = None
+    name: str | None = None
+    description: str | None = None
+    skill_markdown: str | None = None
+    issues: list[dict[str, object]] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, result: SkillAuthoringResult) -> "SkillAuthoringResponse":
+        if result.proposal is not None:
+            proposal = result.proposal
+            skill = result.skill
+            version = skill.enabled_version if skill else None
+            return cls(
+                status=result.status,
+                skill_id=skill.id if skill else None,
+                version_id=version.id if version else None,
+                scope_type=proposal.scope_type,
+                name=proposal.name,
+                description=proposal.description,
+                skill_markdown=_skill_markdown(
+                    proposal.name,
+                    proposal.description,
+                    proposal.instructions_markdown,
+                ),
+                issues=[issue.__dict__ for issue in result.issues],
+            )
+        if result.skill is None:
+            return cls(
+                status=result.status,
+                question=result.question,
+                issues=[issue.__dict__ for issue in result.issues],
+            )
+        version = result.skill.enabled_version or result.skill.latest_version
+        if version is None:
+            raise ValueError("Authored Skill version is missing.")
+        return cls(
+            status=result.status,
+            skill_id=result.skill.id,
+            version_id=version.id,
+            scope_type=result.skill.scope_type,
+            name=version.name,
+            description=version.description,
+            skill_markdown=_skill_markdown(version.name, version.description, version.instructions_markdown),
+        )
+
+
+class PublishAuthoredSkillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    scope_type: Literal["personal", "team"]
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    description: str = Field(..., min_length=1, max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+
+
+class UpdateSkillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    description: str = Field(..., min_length=1, max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
 
 
 class SkillActorRequest(BaseModel):
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
-    version_id: str | None = Field(default=None, min_length=1)
 
 
 class SkillVersionResponse(BaseModel):
@@ -82,7 +162,7 @@ class SkillVersionResponse(BaseModel):
 
 class SkillResponse(BaseModel):
     id: str
-    workspace_id: str
+    workspace_id: str | None
     scope_type: str
     owner_user_id: str | None
     slug: str
@@ -145,28 +225,18 @@ class SkillDraftSourceRunRequest(BaseModel):
 
 
 class SkillDraftProposalRequest(BaseModel):
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    scope_type: Literal["personal", "team"]
     source_runs: list[SkillDraftSourceRunRequest] = Field(..., min_length=1)
     user_directives: list[str] = Field(default_factory=list)
     excluded_literals: list[str] = Field(default_factory=list)
 
-
-class SkillDraftProposalResponse(BaseModel):
-    name: str
-    description: str
-    instructions_markdown: str
-    capabilities: list[str]
-    allowed_tools: list[str]
-    source_run_ids: list[str]
-    persisted: bool
-
-    @classmethod
-    def from_domain(cls, proposal: SkillDraftProposal) -> "SkillDraftProposalResponse":
-        return cls(
-            name=proposal.name,
-            description=proposal.description,
-            instructions_markdown=proposal.instructions_markdown,
-            capabilities=list(proposal.capabilities),
-            allowed_tools=list(proposal.allowed_tools),
-            source_run_ids=list(proposal.source_run_ids),
-            persisted=proposal.persisted,
-        )
+def _skill_markdown(name: str, description: str, instructions_markdown: str) -> str:
+    return (
+        "---\n"
+        f"name: {json.dumps(name, ensure_ascii=False)}\n"
+        f"description: {json.dumps(description, ensure_ascii=False)}\n"
+        "---\n\n"
+        f"{instructions_markdown}"
+    )

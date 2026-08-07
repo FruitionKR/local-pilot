@@ -11,16 +11,34 @@ from app.modules.agent_run.infrastructure.postgres_agent_run_repository import _
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 class PostgresAgentJobRepository:
-    def delete_expired_runs(self) -> int:
+    def list_expired_run_ids(self) -> tuple[str, ...]:
+        with database.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM agent_runs
+                WHERE finished_at < now() - interval '90 days'
+                  AND status = ANY(%s)
+                """,
+                (["completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"],),
+            ).fetchall()
+        return tuple(row["id"] for row in rows)
+
+    def delete_expired_runs(self, run_ids: tuple[str, ...]) -> int:
+        if not run_ids:
+            return 0
         with database.connect() as conn:
             rows = conn.execute(
                 """
                 DELETE FROM agent_runs
-                WHERE finished_at < now() - interval '90 days'
+                WHERE id = ANY(%s)
+                  AND finished_at < now() - interval '90 days'
                   AND status = ANY(%s)
                 RETURNING id
                 """,
-                (["completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"],),
+                (
+                    list(run_ids),
+                    ["completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"],
+                ),
             ).fetchall()
         return len(rows)
 
@@ -30,13 +48,25 @@ class PostgresAgentJobRepository:
             row = conn.execute(
                 """
                 WITH candidate AS (
-                    SELECT id
-                    FROM agent_jobs
-                    WHERE attempt_count < 3
-                      AND available_at <= now()
-                      AND (status = 'queued' OR (status = 'leased' AND leased_until < now()))
-                    ORDER BY created_at
-                    FOR UPDATE SKIP LOCKED
+                    SELECT pending.id
+                    FROM agent_jobs pending
+                    WHERE pending.attempt_count < 3
+                      AND pending.available_at <= now()
+                      AND (
+                          pending.status = 'queued'
+                          OR (pending.status = 'leased' AND pending.leased_until < now())
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM agent_jobs predecessor
+                          WHERE predecessor.run_id = pending.run_id
+                            AND predecessor.attempt_count < 3
+                            AND predecessor.status IN ('queued', 'leased')
+                            AND (predecessor.created_at, predecessor.id)
+                                < (pending.created_at, pending.id)
+                      )
+                    ORDER BY pending.created_at, pending.id
+                    FOR UPDATE OF pending SKIP LOCKED
                     LIMIT 1
                 )
                 UPDATE agent_jobs job
@@ -268,20 +298,6 @@ class PostgresAgentJobRepository:
                 (run_id, plan_id),
             ).fetchall()
         return {row["operation_id"]: row["response_metadata"] or {} for row in rows}
-
-    def enqueue_verification(self, run_id: str) -> None:
-        with database.connect() as conn:
-            run = conn.execute("SELECT status FROM agent_runs WHERE id = %s FOR UPDATE", (run_id,)).fetchone()
-            if run is None or run["status"] == "cancelled":
-                return
-            conn.execute("UPDATE agent_runs SET status = 'verifying', updated_at = now() WHERE id = %s", (run_id,))
-            conn.execute(
-                """
-                INSERT INTO agent_jobs (id, run_id, job_type, status)
-                VALUES (%s, %s, 'verification', 'queued')
-                """,
-                (str(uuid4()), run_id),
-            )
 
     def finish_run_from_operations(self, run_id: str) -> None:
         with database.connect() as conn:

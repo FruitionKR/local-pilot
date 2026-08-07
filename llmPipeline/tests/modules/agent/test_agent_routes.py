@@ -17,6 +17,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
+from app.modules.skill.domain.entities import SkillAuthoringProposal, SkillAuthoringResult
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
@@ -111,8 +112,8 @@ class UnexpectedFailureUseCase:
 class AmbiguousSkillUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         candidates = (
-            SkillCandidate("skill-1", "version-1", "분기 정리", "분기별로 정리합니다.", ("folder-organize",)),
-            SkillCandidate("skill-2", "version-2", "팀 정리", "팀별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-1", "version-1", "quarterly-organizer", "분기별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-2", "version-2", "team-organizer", "팀별로 정리합니다.", ("folder-organize",)),
         )
         return AgentTurnResult(
             action="clarify",
@@ -141,6 +142,30 @@ class QueuedAgentRunUseCase:
         )
 
 
+class AuthoredSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        return AgentTurnResult(
+            action="skill_authoring",
+            route=AgentTurnRoute(
+                action="skill_authoring",
+                confidence=1.0,
+                reason="direct Skill creation request",
+            ),
+            message="Skill 제안을 만들었습니다.",
+            skill_authoring_result=SkillAuthoringResult(
+                status="proposal_ready",
+                proposal=SkillAuthoringProposal(
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    scope_type="personal",
+                    name="meeting-notes",
+                    description="회의 내용을 정리합니다.",
+                    instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                ),
+            ),
+        )
+
+
 class FailingAgentRouteUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise AgentTurnRouteContractError(["secret-internal-detail"])
@@ -157,6 +182,22 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_returns_authored_skill_markdown_without_permissions(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(
+                message="회의록 스킬을 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            ),
+            use_case=AuthoredSkillUseCase(),  # type: ignore[arg-type]
+        )
+
+        body = response.model_dump()
+        self.assertEqual(body["action"], "skill_authoring")
+        self.assertIn("# 작성 절차", body["skill_authoring"]["skill_markdown"])
+        self.assertNotIn("capabilities", body["skill_authoring"])
+        self.assertNotIn("allowed_tools", body["skill_authoring"])
+
     def test_agent_turn_rejects_oversized_or_obfuscated_input(self) -> None:
         deeply_nested_reference: dict[str, object] = {"value": "document"}
         for _ in range(13):

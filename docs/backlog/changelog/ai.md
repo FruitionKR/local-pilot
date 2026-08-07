@@ -6,6 +6,46 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ## 2026-08-06
 
+### feat: 자연어 기반 Skill authoring API 추가
+
+- `POST /skills/author`가 짧은 자연어와 선택적 참조 문서 ID를 받아 저장하지 않은 Skill Markdown 제안을 반환하도록 추가
+- `/agent/turn`의 일반 “Skill 만들어줘” 요청도 `skill_authoring`으로 분류해 같은 작성 UseCase를 사용하고, “방금 방식대로” 요청은 기존 완료 AgentRun proposal 흐름으로 유지
+- Skill 관리 화면의 단발 자연어 작성은 정보가 부족해도 일반 placeholder를 사용한 편집 가능한 제안을 반환하고, 멀티턴 채팅만 필요한 경우 보충 질문을 허용
+- 채팅 보충 질문 뒤의 짧은 답변은 `recent_conversation_summary`에 유지된 Skill 생성 요청을 확인해 authoring 흐름으로 복귀
+- `POST /skills/author`에 선택적 커맨드와 `preserve`/`enhance` 모드를 추가해 사용자 원문 보존과 LLM 구체화를 분리하고, 보안 차단 issue는 위치·이유와 함께 반환하며 저장을 막음
+- Skill 제목을 `/` 뒤에 사용하는 lowercase-hyphen 커맨드 이름으로 통일하고, `name`과 `slug`에 같은 값을 저장하도록 변경
+- personal Skill은 `workspace_id`에 저장하지 않고 소유자 계정 전체에서 조회·사용하도록 Skill repository 범위를 분리
+- personal은 계정, team은 Workspace 범위로 같은 커맨드 이름의 중복 생성을 차단
+- 모든 Skill이 최소 1개의 Agent capability에 연결되도록 검증하고, 지원하지 않는 작업을 기존 capability에 억지로 매핑하지 않고 거절
+- 서로 다른 system prompt의 Skill intent 분류기·검증기가 `skill_kind`·참조 용도·Tool에 합의해야 capability를 확정하고, 불일치·모호함은 fail-closed 처리
+- 채팅의 `pending_skill_proposal`로 커맨드·개인/팀 범위·Markdown을 DB 없이 유지하고, AI 재생성·보안 재검토·자연어 게시 승인을 같은 `AuthorSkillUseCase`로 처리
+- 참조 문서는 임의 AgentRun ID 없이 Skill authoring 전용 Backend read endpoint로 조회하고, 실제 문서명·본문은 제외한 heading·목록 marker·표 header 구조만 비신뢰 데이터로 전달하며 prompt injection, credential, 고정 참조값과 capability 밖 Tool을 저장 전에 차단
+- LLM이 참조 문서의 용도를 고정 템플릿과 일반 구조 참고로 구분하고, 고정 템플릿에서만 서버가 추출한 Markdown 구조를 조립하며 AI 재생성에서도 해당 블록을 유지
+- 내부 `capabilities`·`allowed_tools`는 응답에서 숨기고 사용자에게 Markdown·범위·보안 issue만 반환
+- `POST /skills/author/publish`가 최종 Markdown을 LLM과 규칙으로 다시 검증한 뒤 version 1을 `published`, 자연어 자동 라우팅을 기본 ON으로 transaction 저장
+- 차단 화면의 AI 재생성은 위험 구간을 서버에서 제거한 뒤 `regenerate` 모드로 다시 작성하고, 규칙 marker에 없는 의미 기반 prompt injection도 LLM의 `blocked` 판정과 서버 검증 위치로 표시
+- instruction뿐 아니라 description·참조 구조의 의미 기반 injection도 출처별로 검증하고, 참조 issue에는 문서 ID와 해당 문서 기준 위치를 반환
+- 완료 AgentRun 기반 proposal도 공통 `AuthorSkillUseCase`에서 재검토하고 검토 단계에서 성공 작업의 내부 권한 상한을 유지하며 사용자 응답에서는 capability·Tool을 숨김
+- 생성 결과가 차단되면 위험 구간을 마스킹한 미저장 Skill Markdown과 issue를 함께 반환해 검토 화면에서 수정 가능하도록 변경
+- pending proposal의 재생성·보안 재검토·커맨드·범위 변경은 LLM 호출 없이 `skill_authoring` 후속 흐름으로 고정
+- pending proposal 게시를 명시적인 긍정 승인 문장 전체 일치로 제한해 `do not publish` 같은 부정문이 저장을 실행하지 않도록 보강
+- 보안 검토를 우회하던 직접 `POST /skills`를 제거하고 `PATCH /skills/{skill_id}`도 사용자 Markdown만 받아 같은 `AuthorSkillUseCase`에서 재검증
+- DB migration 없이 개인 계정·팀 Workspace별 커맨드 advisory lock을 추가해 동시 중복 생성 경쟁을 직렬화
+- 같은 Skill의 동시 수정은 parent row lock 안에서 다음 version 번호를 다시 계산해 version 충돌을 방지
+- DB draft와 별도 `/skills/{skill_id}/publish` 없이 미저장 proposal을 최종 게시
+- Skill 수정은 새 draft 대신 검증된 published version으로 바로 교체하고, 자동 라우팅 OFF 상태를 유지
+- 자연어 자동 라우팅을 끈 published Skill도 명시적 `/command`로 계속 실행하도록 선택 조건을 분리
+- OpenAI `skill-creator`의 간결한 작성·trigger description·progressive disclosure 원칙을 기존 `ChatCompletionsJsonClient` prompt에 적용하고 별도 런타임 의존성은 추가하지 않음
+- Skill module 단위 테스트 `74 passed`, llmPipeline 전체 `546 passed`; Python compile과 `git diff --check` 통과
+
+### refactor: Agent 실행 흐름을 LangGraph로 전환
+
+- 수동 planning·승인 대기·최대 40단계 실행·verification 분기를 LangGraph state graph와 PostgreSQL checkpoint 재개 흐름으로 전환
+- run별 job 순서를 직렬화하고 DB/checkpoint 사이 재시작 경계를 terminal·clarification·plan 상태로 멱등 복구
+- Tool 조회 원문은 checkpoint에서 제외하고 Agent graph LangSmith tracing을 비활성화하며, 90일 만료 시 checkpoint를 AgentRun보다 먼저 삭제
+- Spring Flyway가 관리할 checkpoint schema 요구사항을 `docs/issue/backend/2026-08-06.md`에 기록
+- llmPipeline 전체 테스트 `719 passed`, `57 subtests passed`; Python compile과 `git diff --check` 통과
+
 ### fix: Agent prompt injection 실행 경계 보강
 
 - `/agent/turn` 입력과 planning hierarchy·Skill instruction·Tool observation에 크기·중첩·제어 문자 검증을 적용

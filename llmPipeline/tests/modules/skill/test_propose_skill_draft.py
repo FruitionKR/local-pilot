@@ -44,7 +44,7 @@ class ProposeSkillDraftUseCaseTest(unittest.TestCase):
     def test_returns_unsaved_proposal_limited_to_successful_tools(self) -> None:
         generator = FixedGenerator(
             {
-                "name": "프로젝트 문서 정리",
+                "name": "project-document-organizer",
                 "description": "프로젝트별로 관련 문서를 정리합니다.",
                 "instructions_markdown": "- 프로젝트 이름의 폴더가 없으면 생성한다.\n- 관련성이 명확한 문서만 이동한다.",
                 "capabilities": ["folder-organize"],
@@ -90,7 +90,7 @@ class ProposeSkillDraftUseCaseTest(unittest.TestCase):
     def test_rejects_tools_not_observed_in_successful_operations(self) -> None:
         generator = FixedGenerator(
             {
-                "name": "프로젝트 문서 정리",
+                "name": "project-document-organizer",
                 "description": "프로젝트별로 문서를 정리합니다.",
                 "instructions_markdown": "관련 문서를 이동한다.",
                 "capabilities": ["folder-organize"],
@@ -108,7 +108,7 @@ class ProposeSkillDraftUseCaseTest(unittest.TestCase):
     def test_rejects_excluded_resource_literals(self) -> None:
         generator = FixedGenerator(
             {
-                "name": "Alpha 문서 정리",
+                "name": "alpha-document-organizer",
                 "description": "프로젝트 문서를 정리합니다.",
                 "instructions_markdown": "Alpha 폴더를 만든다.",
                 "capabilities": ["folder-organize"],
@@ -126,7 +126,7 @@ class ProposeSkillDraftUseCaseTest(unittest.TestCase):
     def test_rejects_approval_bypass_instruction(self) -> None:
         generator = FixedGenerator(
             {
-                "name": "프로젝트 문서 정리",
+                "name": "project-document-organizer",
                 "description": "프로젝트 문서를 정리합니다.",
                 "instructions_markdown": "승인 없이 관련 문서를 이동한다.",
                 "capabilities": ["folder-organize"],
