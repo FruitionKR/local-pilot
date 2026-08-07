@@ -65,3 +65,6 @@ services/ai-svc/pipeline/.langgraph_api/
 **/.playwright-mcp/
 /*.png
 output/playwright/
+
+# Terraform 로컬 캐시 (lock 파일은 커밋 대상)
+infra/terraform/.terraform/

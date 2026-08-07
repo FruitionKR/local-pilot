@@ -6,6 +6,24 @@
 
 ## 2026-08-07
 
+### feat: AWS 배포 IaC와 EKS overlay·deploy workflow
+
+- `infra/terraform/` 신설 — 목표 문서 §8 소규모 profile: VPC(2AZ·NAT 1),
+  EKS(General t3.large 2/2/3 On-Demand + AI Worker Spot 0/0/2 taint) + IRSA 4종,
+  **RDS 2대 분할**(access/core, t4g.small Single-AZ), ElastiCache(t4g.micro),
+  S3(versioning·lifecycle)+앱 IAM 키, ECR 4 repo, GitHub OIDC deploy role,
+  Secrets Manager `fruition/app`(DB URL·계정 비밀번호 자동, 나머지 CHANGE_ME,
+  이후 콘솔 관리 — ignore_changes), Budget 500/700. `terraform validate` 통과.
+- `k8s/overlays/aws/` — base 참조 + ECR 이미지 치환, NodePort→ClusterIP,
+  ALB Ingress(host 기반: api.→document, access.→access — Vercel rewrite가 path
+  분기 담당), ExternalSecret←Secrets Manager, deployment별 RDS host 주입,
+  §8.2 resource 상향. pipeline-runs PVC(RWO) 제약으로 ingest-worker는
+  pipeline-api와 podAffinity 동일 노드 배치(S3 이전 시 해제).
+- `.github/workflows/deploy.yml` — workflow_dispatch 수동 트리거, OIDC →
+  이미지 4종 빌드·ECR push(SHA 태그) → kustomize set image → rollout 대기.
+- Kafka는 MSK가 아니라 EKS 내 Strimzi 유지(§8.3). 잔여 수동 절차는
+  `infra/terraform/README.md`·`docs/issue/infra/2026-08-07.md`.
+
 ### feat: edit-event-consumer 배포 단위와 k8s base kustomization
 
 - `k8s/base/edit-event-consumer.yaml` 신규(ingest-worker 이미지 재사용, replicas 1),
