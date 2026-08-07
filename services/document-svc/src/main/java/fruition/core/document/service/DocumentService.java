@@ -45,10 +45,18 @@ import fruition.core.document.dto.DocumentTrashResponse;
 import fruition.core.document.dto.DocumentBlockResponse;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentWikiPageRef;
+import fruition.core.document.domain.DocumentConvertQueue;
 import fruition.core.document.domain.DocumentProcessingQueue;
+import fruition.core.document.exception.DocumentConvertException;
+import fruition.core.document.exception.InvalidDocumentConvertRequestException;
+import fruition.core.document.repository.ConverterClient;
+import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.DocumentProcessingQueueRepository;
 import fruition.core.document.repository.IngestCommandPublisher;
 import fruition.core.document.repository.DocumentEditStateRepository;
+import fruition.core.document.mongo.MongoDocumentEditSaveResult;
+import fruition.core.document.mongo.MongoDocumentEditState;
+import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.shared.idempotency.IdempotencyRecordRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
@@ -72,6 +80,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -97,6 +106,7 @@ public class DocumentService {
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     private static final int STALLED_THRESHOLD_SECONDS = 60;
     private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
+    private static final String CONVERT_PLACEHOLDER_MARKDOWN = "PDF 변환 중...\n";
 
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
@@ -109,9 +119,12 @@ public class DocumentService {
     private final WikiPageLinkRepository wikiPageLinkRepository;
     private final SourceBlockRepository sourceBlockRepository;
     private final DocumentProcessingQueueRepository queueRepository;
+    private final DocumentConvertQueueRepository convertQueueRepository;
+    private final ConverterClient converterClient;
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
+    private final MongoDocumentEditStore mongoDocumentEditStore;
     private final DocumentContentVersionRepository contentVersionRepository;
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
@@ -133,9 +146,12 @@ public class DocumentService {
                            WikiPageLinkRepository wikiPageLinkRepository,
                            SourceBlockRepository sourceBlockRepository,
                            DocumentProcessingQueueRepository queueRepository,
+                           DocumentConvertQueueRepository convertQueueRepository,
+                           ConverterClient converterClient,
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
+                           MongoDocumentEditStore mongoDocumentEditStore,
                            DocumentContentVersionRepository contentVersionRepository,
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
@@ -156,9 +172,12 @@ public class DocumentService {
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.sourceBlockRepository = sourceBlockRepository;
         this.queueRepository = queueRepository;
+        this.convertQueueRepository = convertQueueRepository;
+        this.converterClient = converterClient;
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
+        this.mongoDocumentEditStore = mongoDocumentEditStore;
         this.contentVersionRepository = contentVersionRepository;
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
@@ -747,6 +766,192 @@ public class DocumentService {
         requestProcessingAfterCommit(documentId);
     }
 
+    /**
+     * PDF 원본 문서의 Markdown 변환을 요청한다. 변환 결과를 담을 placeholder Markdown 문서를 즉시 만들어
+     * 반환하고, 실제 변환은 convert queue worker가 백그라운드에서 수행한다.
+     */
+    @Transactional
+    public DocumentUploadResponse convertToMarkdown(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey
+    ) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        validateIdempotencyKey(idempotencyKey);
+        Document source = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!isPdf(source)) {
+            throw new InvalidDocumentConvertRequestException("PDF 원본 문서만 Markdown으로 변환할 수 있습니다.");
+        }
+        if (source.getSourceUri() == null) {
+            throw new InvalidDocumentConvertRequestException("원본 파일이 없는 문서는 변환할 수 없습니다.");
+        }
+
+        String endpointScope = convertEndpointScope(workspaceId);
+        String requestHash = requestHash(documentId, "convert-markdown", "");
+        Optional<DocumentUploadResponse> replay =
+                replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+
+        // placeholder: display_name은 원본에서 확장자를 뗀 이름, filename은 <이름>.md
+        DocumentEditingRules.Filename filename =
+                DocumentEditingRules.rename(source.getDisplayName(), "document.md");
+        DocumentEditingRules.MarkdownContent content =
+                DocumentEditingRules.markdown(CONVERT_PLACEHOLDER_MARKDOWN);
+        String placeholderId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        Document placeholder = new Document(
+                placeholderId,
+                workspaceId,
+                userId,
+                filename.filename(),
+                "text/markdown",
+                content.bytes().length,
+                null,
+                null,
+                "convert"
+        );
+        long sortOrder = placementSortOrder(workspaceId, source.getFolderId(), DocumentRole.EDITABLE);
+        placeholder.initializeConvertPlaceholder(
+                source.getId(),
+                source.getFolderId(),
+                content.contentHash(),
+                content.bytes().length,
+                sortOrder
+        );
+        documentRepository.save(placeholder);
+        editStateRepository.save(new DocumentEditState(
+                placeholderId, content.markdown(), content.contentHash()));
+        requestConvertAfterCommit(placeholderId, source.getId());
+
+        DocumentUploadResponse response = toUploadResponse(placeholder, true);
+        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
+        log.info("[문서 변환 요청 등록] workspaceId={} sourceDocumentId={} placeholderDocumentId={}",
+                workspaceId, documentId, placeholderId);
+        return response;
+    }
+
+    private boolean isPdf(Document document) {
+        return "application/pdf".equals(document.getMimeType())
+                || document.getNormalizedFilename().endsWith(".pdf");
+    }
+
+    private String convertEndpointScope(String workspaceId) {
+        return "POST:/api/workspaces/" + workspaceId + "/documents/convert-markdown";
+    }
+
+    private void requestConvertAfterCommit(String documentId, String sourceDocumentId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            log.info("[문서 변환 큐 즉시 등록] documentId={} transactionActive=false", documentId);
+            transactionTemplate.execute(status -> {
+                convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
+                log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
+                return null;
+            });
+            return;
+        }
+        log.info("[문서 변환 큐 등록 예약] documentId={} afterCommit=true", documentId);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // afterCommit 시점에는 바깥 트랜잭션 리소스가 아직 스레드에 묶여 있어
+                // 기본 REQUIRED로 참여하면 INSERT가 커밋되지 않고 버려진다 — 반드시 새 트랜잭션.
+                TransactionTemplate requiresNew =
+                        new TransactionTemplate(transactionTemplate.getTransactionManager());
+                requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                requiresNew.execute(status -> {
+                    convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
+                    log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
+                    return null;
+                });
+            }
+        });
+    }
+
+    /**
+     * convert queue worker 전용. 원본 PDF를 변환기로 변환해 placeholder Markdown 문서 본문에 반영한다.
+     * 실패(변환기 4xx/5xx·timeout·원본 읽기 실패)는 placeholder 문서를 failed로 반영하고 원인을 로그로 남긴다.
+     */
+    void doConvert(long queueId, String documentId, String sourceDocumentId) {
+        Document placeholder = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
+        if (placeholder == null) {
+            log.warn("[문서 변환 생략] documentId={} reason=document_not_found", documentId);
+            return;
+        }
+        try {
+            Document source = documentRepository.findById(sourceDocumentId)
+                    .orElseThrow(() -> new DocumentConvertException(
+                            "원본 문서를 찾을 수 없습니다: " + sourceDocumentId));
+            byte[] pdfBytes = readOriginalBytes(source);
+            log.info("[문서 변환 시작] documentId={} sourceDocumentId={} pdfByteSize={}",
+                    documentId, sourceDocumentId, pdfBytes.length);
+            String markdown = converterClient.convertPdf(source.getFilename(), pdfBytes);
+            DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+            applyConvertedMarkdown(queueId, placeholder, content);
+            log.info("[문서 변환 완료] documentId={} sourceDocumentId={} markdownByteSize={}",
+                    documentId, sourceDocumentId, content.bytes().length);
+        } catch (Exception e) {
+            // DocumentConvertException 메시지에 변환기 상태 코드(422/504/503 등) 원인이 담겨 온다.
+            Instant now = Instant.now();
+            transactionTemplate.execute(status -> {
+                documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
+                        doc.markProcessingFailed("PDF 변환에 실패했습니다: " + e.getMessage(), now));
+                return null;
+            });
+            log.warn("[문서 변환 실패 반영] documentId={} sourceDocumentId={} error={}",
+                    documentId, sourceDocumentId, e.getMessage());
+        }
+    }
+
+    private byte[] readOriginalBytes(Document source) {
+        if (source.getSourceUri() == null) {
+            throw new DocumentConvertException("원본 파일 경로가 없습니다: " + source.getId());
+        }
+        try (InputStream stream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(storageProps.getBucket())
+                        .object(normalizeObjectKey(source.getSourceUri()))
+                        .build())) {
+            return stream.readAllBytes();
+        } catch (Exception e) {
+            throw new DocumentConvertException("원본 PDF를 읽지 못했습니다: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 변환 Markdown을 placeholder 문서에 반영한다. 시스템 쓰기라 revision 충돌 우려가 없어 base_revision 1로
+     * 저장하고, write_id({@code convert:<queueId>}) 재시도는 Mongo write receipt가 멱등하게 처리한다.
+     */
+    private void applyConvertedMarkdown(
+            long queueId,
+            Document placeholder,
+            DocumentEditingRules.MarkdownContent content
+    ) {
+        DocumentEditState legacyState = editStateRepository.findById(placeholder.getId())
+                .orElseThrow(() -> new DocumentConvertException(
+                        "placeholder 편집 상태를 찾을 수 없습니다: " + placeholder.getId()));
+        MongoDocumentEditSaveResult result = mongoDocumentEditStore.save(
+                placeholder.getWorkspaceId(),
+                placeholder.getId(),
+                content.markdown(),
+                content.contentHash(),
+                1L,
+                "convert:" + queueId,
+                placeholder.getUserId(),
+                placeholder.getCurrentVersion(),
+                legacyState
+        );
+        projectContentVersions(placeholder.getId(), content.markdown(), result);
+        Instant now = Instant.now();
+        transactionTemplate.execute(status -> {
+            documentRepository.findByIdInActiveWorkspace(placeholder.getId()).ifPresent(doc ->
+                    doc.completeConvert(content.contentHash(), content.bytes().length, now));
+            return null;
+        });
+    }
+
     void doRequestProcessing(String documentId) {
         Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
         if (document == null) {
@@ -871,6 +1076,7 @@ public class DocumentService {
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         editStateInitializer.initializeIfNeeded(doc);
         Optional<DocumentEditState> editState = editStateRepository.findById(documentId);
+        Optional<MongoDocumentEditState> mongoEditState = mongoDocumentEditStore.findState(documentId);
 
         List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
         List<DocumentWikiPageRef> wikiPages = buildWikiPageRefs(links);
@@ -893,11 +1099,14 @@ public class DocumentService {
                 doc.getDisplayName(),
                 fileTypeOf(doc),
                 doc.getDocumentRole(),
-                isEditable(doc, editState.isPresent()),
+                isEditable(doc, mongoEditState.isPresent() || editState.isPresent()),
                 doc.getCurrentVersion(),
+                mongoEditState.map(MongoDocumentEditState::getRevision).orElse(doc.getCurrentVersion()),
                 doc.getSourceDocumentId(),
-                doc.getUpdatedAt(),
-                editState.map(DocumentEditState::getMarkdown).orElse(null),
+                mongoEditState.map(MongoDocumentEditState::getUpdatedAt)
+                        .orElse(doc.getUpdatedAt()),
+                mongoEditState.map(MongoDocumentEditState::getMarkdown)
+                        .orElseGet(() -> editState.map(DocumentEditState::getMarkdown).orElse(null)),
                 editLockService.getStatus(doc.getId())
         );
     }
@@ -959,36 +1168,40 @@ public class DocumentService {
                 .toList();
     }
 
-    @Transactional
     public DocumentContentSaveResponse saveContent(
             String workspaceId,
             String userId,
             String documentId,
             String markdown,
-            Long baseVersion,
+            Long baseRevision,
+            String revisionWriteId,
             String source
     ) {
-        return saveContent(workspaceId, userId, documentId, markdown, baseVersion, source, null);
+        return saveContent(workspaceId, userId, documentId, markdown, baseRevision, revisionWriteId, source, null);
     }
 
     /**
+     * 본문 저장은 MongoDB store가 한 transaction으로 처리한다(state·write receipt·outbox).
+     * PostgreSQL에는 version read model(document_content_versions)만 projection한다.
+     *
      * @param applyOperationId Agent turn에서 발급한 적용 표. 검증에 성공하면 AI 작업 로그를 남긴다.
      *                         {@code source} 문자열은 클라이언트가 임의로 넣을 수 있어 신뢰하지 않는다.
      */
-    @Transactional
     public DocumentContentSaveResponse saveContent(
             String workspaceId,
             String userId,
             String documentId,
             String markdown,
-            Long baseVersion,
+            Long baseRevision,
+            String revisionWriteId,
             String source,
             String applyOperationId
     ) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        if (baseVersion == null || baseVersion < 1) {
-            throw new InvalidMarkdownContentException("base_version은 1 이상이어야 합니다.");
+        if (baseRevision == null || baseRevision < 1) {
+            throw new InvalidMarkdownContentException("base_revision은 1 이상이어야 합니다.");
         }
+        validateRevisionWriteId(revisionWriteId);
 
         Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
@@ -997,64 +1210,89 @@ public class DocumentService {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
         editLockService.requireWritable(documentId, userId);
-        if (document.getCurrentVersion() != baseVersion) {
-            // 편집안이 오래된 base를 바탕으로 하고 있다. 본 트랜잭션은 롤백되므로
-            // 시도 기록은 별도 트랜잭션으로 남긴다.
+
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState legacyState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        MongoDocumentEditSaveResult result;
+        try {
+            result = mongoDocumentEditStore.save(
+                    workspaceId,
+                    documentId,
+                    content.markdown(),
+                    content.contentHash(),
+                    baseRevision,
+                    revisionWriteId,
+                    userId,
+                    document.getCurrentVersion(),
+                    legacyState
+            );
+        } catch (DocumentVersionConflictException conflict) {
+            // 편집안이 오래된 base를 바탕으로 하고 있다. 시도 기록은 별도 트랜잭션으로 남긴다.
             if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
                 operationRecorder.recordConflict(
                         applyOperationId, workspaceId, userId, documentId, Instant.now());
             }
-            throw versionConflict();
+            throw conflict;
         }
-
-        editStateInitializer.initializeIfNeeded(document);
-        DocumentEditState editState = editStateRepository.findById(documentId)
-                .orElseThrow(() -> new InvalidMarkdownContentException(
-                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
-        if (content.hasSameContent(document.getCurrentContentHash())) {
-            return new DocumentContentSaveResponse(
-                    documentId,
-                    document.getCurrentVersion(),
-                    document.getCurrentContentHash(),
-                    document.getUpdatedAt(),
-                    false
-            );
-        }
-
-        Instant updatedAt = Instant.now();
-        int updated = documentRepository.updateContentIfVersionMatches(
-                documentId,
-                workspaceId,
-                baseVersion,
-                content.contentHash(),
-                content.bytes().length,
-                updatedAt
-        );
-        if (updated == 0) {
-            throw conditionalUpdateFailure(workspaceId, documentId);
-        }
-        String previousMarkdown = editState.getMarkdown();
-        recordContentVersion(documentId, baseVersion, previousMarkdown,
-                editState.getContentHash(), userId, updatedAt);
-        editState.update(content.markdown(), content.contentHash(), updatedAt);
-        recordContentVersion(documentId, baseVersion + 1, content.markdown(),
-                content.contentHash(), userId, updatedAt);
+        projectContentVersions(documentId, content.markdown(), result);
 
         // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
-        // 문서 저장과 같은 트랜잭션이라 한쪽만 남는 상황이 생기지 않는다.
-        if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
-            operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
-                    baseVersion, baseVersion + 1, previousMarkdown, content.markdown(), updatedAt);
-            contentVersionRepository.linkOperation(documentId, baseVersion + 1, applyOperationId);
+        if (result.changed() && applyOperationStore.consume(applyOperationId, userId, documentId)) {
+            transactionTemplate.execute(status -> {
+                operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                        result.baseRevision(), result.revision(), result.baseMarkdown(),
+                        content.markdown(), result.updatedAt());
+                contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                return null;
+            });
         }
 
         return new DocumentContentSaveResponse(
                 documentId,
-                baseVersion + 1,
-                content.contentHash(),
-                updatedAt,
-                true
+                result.revision(),
+                result.contentHash(),
+                result.updatedAt(),
+                result.changed()
+        );
+    }
+
+    private void validateRevisionWriteId(String revisionWriteId) {
+        if (revisionWriteId == null || revisionWriteId.isBlank() || revisionWriteId.length() > 255) {
+            throw new InvalidIdempotencyKeyException(
+                    "revision_write_id는 1자 이상 255자 이하여야 합니다.");
+        }
+    }
+
+    /**
+     * Mongo 저장 결과를 PostgreSQL version read model로 projection한다.
+     * commit 뒤 projection이 실패해도 같은 revision_write_id 재시도가 receipt를 replay해 복구한다.
+     */
+    private void projectContentVersions(
+            String documentId,
+            String resultMarkdown,
+            MongoDocumentEditSaveResult result
+    ) {
+        if (!result.changed()) {
+            return;
+        }
+        recordContentVersion(
+                documentId,
+                result.baseRevision(),
+                result.baseMarkdown(),
+                result.baseContentHash(),
+                result.actorUserId(),
+                result.updatedAt()
+        );
+        recordContentVersion(
+                documentId,
+                result.revision(),
+                resultMarkdown,
+                result.contentHash(),
+                result.actorUserId(),
+                result.updatedAt()
         );
     }
 
@@ -1072,7 +1310,10 @@ public class DocumentService {
                 .map(s -> new DocumentContentVersionListResponse.Item(
                         s.getVersion(), s.getContentHash(), s.getCreatedBy(), s.getCreatedAt()))
                 .toList();
-        return new DocumentContentVersionListResponse(documentId, document.getCurrentVersion(), items);
+        long editRevision = mongoDocumentEditStore.findState(documentId)
+                .map(MongoDocumentEditState::getRevision)
+                .orElse(document.getCurrentVersion());
+        return new DocumentContentVersionListResponse(documentId, editRevision, items);
     }
 
     /** 특정 버전의 전체 Markdown. */
@@ -1113,7 +1354,15 @@ public class DocumentService {
         DocumentContentVersion target = contentVersionRepository
                 .findById(new DocumentContentVersionId(documentId, version))
                 .orElseThrow(() -> new DocumentContentVersionNotFoundException(documentId, version));
-        return saveContent(workspaceId, userId, documentId, target.getMarkdown(), baseVersion, null);
+        return saveContent(
+                workspaceId,
+                userId,
+                documentId,
+                target.getMarkdown(),
+                baseVersion,
+                "restore:" + version + ":" + baseVersion,
+                null
+        );
     }
 
     private Document loadEditableForVersion(String workspaceId, String userId, String documentId) {
@@ -1149,8 +1398,14 @@ public class DocumentService {
         DocumentEditState editState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new InvalidMarkdownContentException(
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        // 최신 편집본은 Mongo가 canonical이다. 없으면 legacy PG 상태로 대체한다.
+        Optional<MongoDocumentEditState> mongoEditState = mongoDocumentEditStore.findState(documentId);
+        String currentMarkdown = mongoEditState.map(MongoDocumentEditState::getMarkdown)
+                .orElse(editState.getMarkdown());
+        String currentContentHash = mongoEditState.map(MongoDocumentEditState::getContentHash)
+                .orElse(editState.getContentHash());
 
-        byte[] bytes = editState.getMarkdown().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = currentMarkdown.getBytes(StandardCharsets.UTF_8);
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
                     PutObjectArgs.builder()
@@ -1164,9 +1419,9 @@ public class DocumentService {
             throw new DocumentUploadException("문서 원본 갱신 중 오류가 발생했습니다.", e);
         }
 
-        document.reopenForReingest(editState.getContentHash(), bytes.length);
+        document.reopenForReingest(currentContentHash, bytes.length);
         log.info("[문서 재ingest DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={}",
-                documentId, contentHashPrefix(editState.getContentHash()), bytes.length);
+                documentId, contentHashPrefix(currentContentHash), bytes.length);
         requestProcessingAfterCommit(documentId);
         return new DocumentIngestResponse(documentId, document.getStatus());
     }

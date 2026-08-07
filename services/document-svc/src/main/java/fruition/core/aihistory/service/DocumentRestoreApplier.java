@@ -26,8 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 갱신이 이미 그 안에 있고, 되돌리기라고 다르게 처리할 이유가 없다. 적용 표를 넘기지 않으므로
  * {@code document_edit} 로그는 생기지 않는다.
  *
- * <p>문서 저장과 변경내역 기록은 <b>한 트랜잭션</b>이어야 한다. 나뉘면 문서만 바뀌고 감사 기록이
- * 없는 상태가 생긴다. {@code saveContent}가 {@code REQUIRED}라 이 트랜잭션에 참여한다.
+ * <p>본문 저장은 MongoDB transaction으로 커밋되고, PostgreSQL 변경내역 기록은 이 트랜잭션에서
+ * 커밋된다. 기록이 실패해도 같은 revision_write_id 재시도가 Mongo receipt를 replay해
+ * 같은 결과로 복구할 수 있다.
  */
 @Component
 public class DocumentRestoreApplier {
@@ -54,7 +55,8 @@ public class DocumentRestoreApplier {
 
         DocumentContentSaveResponse saved = documentService.saveContent(
                 restore.getWorkspaceId(), restore.getUserId(), plan.documentId(),
-                target.getMarkdown(), plan.fromVersion(), null, null);
+                target.getMarkdown(), plan.fromVersion(),
+                "op-restore:" + restore.getOperationId(), null, null);
 
         if (!saved.changed()) {
             throw new InvalidRestoreRequestException(

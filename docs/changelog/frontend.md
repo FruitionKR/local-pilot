@@ -4,6 +4,14 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-07
+
+### feat: 문서 저장 계약을 base_revision·revision_write_id로 전환
+
+- 노트 저장(`saveNoteDraft`)이 backend MongoDB 전환 계약에 맞춰 `base_revision` +
+  `revision_write_id`(crypto.randomUUID)를 전송한다. 재시도 멱등 처리 기반.
+- 편집 기준 버전을 상세 응답의 `edit_revision` 우선으로 사용(`current_version` 폴백).
+
 ## 2026-08-06
 
 ### feat: access token silent refresh

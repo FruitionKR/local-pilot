@@ -4,6 +4,7 @@ import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.dto.DocumentExportResult;
 import fruition.core.document.exception.DocumentNotFoundException;
+import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
@@ -32,6 +33,7 @@ class DocumentExportServiceTest {
     @Mock DocumentRepository documentRepository;
     @Mock DocumentEditStateRepository editStateRepository;
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
+    @Mock MongoDocumentEditStore mongoDocumentEditStore;
 
     DocumentExportService exportService;
 
@@ -39,7 +41,7 @@ class DocumentExportServiceTest {
     void setUp() {
         exportService = new DocumentExportService(
                 documentRepository, editStateRepository,
-                workspaceAccessGuard);
+                workspaceAccessGuard, mongoDocumentEditStore);
     }
 
     @Test

@@ -1,8 +1,13 @@
 package fruition.core.config;
 
+import jakarta.persistence.EntityManagerFactory;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * JPA 배선. 애플리케이션 클래스에 직접 붙이면 @WebMvcTest 같은 slice 테스트까지
@@ -12,4 +17,15 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EntityScan(basePackages = {"fruition.core", "fruition.shared.idempotency"})
 @EnableJpaRepositories(basePackages = {"fruition.core", "fruition.shared.idempotency"})
 public class JpaConfig {
+
+    /**
+     * mongoTransactionManager 빈이 등록되면 Boot이 JPA transactionManager 자동 구성을
+     * 건너뛰므로(@ConditionalOnMissingBean) 직접 정의한다. @Transactional과 TransactionTemplate의
+     * 기본 대상은 PostgreSQL이어야 하므로 @Primary로 둔다.
+     */
+    @Bean
+    @Primary
+    PlatformTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
+        return new JpaTransactionManager(entityManagerFactory);
+    }
 }

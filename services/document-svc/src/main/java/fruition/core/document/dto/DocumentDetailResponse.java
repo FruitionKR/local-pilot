@@ -30,6 +30,7 @@ public record DocumentDetailResponse(
         @JsonProperty("document_role") DocumentRole documentRole,
         boolean editable,
         @JsonProperty("current_version") long currentVersion,
+        @JsonProperty("edit_revision") long editRevision,
         @JsonProperty("source_document_id") String sourceDocumentId,
         @JsonProperty("updated_at") Instant updatedAt,
         String markdown,

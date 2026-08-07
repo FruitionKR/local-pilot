@@ -27,6 +27,8 @@ import fruition.core.document.exception.DocumentWriteForbiddenException;
 import fruition.shared.idempotency.IdempotencyConflictException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
+import fruition.core.document.mongo.MongoDocumentEditSaveResult;
+import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.DocumentProcessingQueueRepository;
 import fruition.core.document.repository.IngestCommandPublisher;
 import fruition.core.document.repository.DocumentEditStateRepository;
@@ -52,6 +54,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,6 +67,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
@@ -88,9 +92,12 @@ class DocumentServiceBlocksTest {
     @Mock WikiPageLinkRepository wikiPageLinkRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
     @Mock DocumentProcessingQueueRepository queueRepository;
+    @Mock fruition.core.document.repository.DocumentConvertQueueRepository convertQueueRepository;
+    @Mock fruition.core.document.repository.ConverterClient converterClient;
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock MongoDocumentEditStore mongoDocumentEditStore;
     @Mock fruition.core.document.repository.DocumentContentVersionRepository contentVersionRepository;
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.core.document.service.DocumentEditLockService editLockService;
@@ -105,14 +112,32 @@ class DocumentServiceBlocksTest {
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandPublisher, documentWikiLinkRepository, wikiPageRepository,
-                wikiPageLinkRepository, sourceBlockRepository, queueRepository, transactionTemplate,
-                editStateInitializer, editStateRepository, contentVersionRepository, markdownDiffService,
+                wikiPageLinkRepository, sourceBlockRepository, queueRepository,
+                convertQueueRepository, converterClient, transactionTemplate,
+                editStateInitializer, editStateRepository, mongoDocumentEditStore,
+                contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.core.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,
                 ingestOperationStarter,
                 "http://localhost:8080");
+        // 기본 저장 결과: base revision + 1로 변경 성공. 필요한 테스트는 개별로 다시 stub한다.
+        lenient().when(mongoDocumentEditStore.save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class)))
+                .thenAnswer(invocation -> {
+                    DocumentEditState base = invocation.getArgument(8);
+                    return new MongoDocumentEditSaveResult(
+                            invocation.getArgument(4),
+                            base.getMarkdown(),
+                            base.getContentHash(),
+                            invocation.<Long>getArgument(4) + 1,
+                            invocation.getArgument(3),
+                            Instant.now(),
+                            invocation.getArgument(6),
+                            true);
+                });
     }
 
     private void stubOwnedWorkspace() {
@@ -178,8 +203,8 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("기존 Markdown 상세 조회 시 편집 상태를 lazy 초기화한다")
-    void findById_existingMarkdown_initializesEditState() {
+    @DisplayName("상세 조회는 metadata current_version과 Mongo edit_revision을 분리한다")
+    void findById_separatesMetadataVersionAndEditRevision() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_lazy",
@@ -196,12 +221,16 @@ class DocumentServiceBlocksTest {
         when(documentWikiLinkRepository.findAllByIdDocumentId("doc_lazy")).thenReturn(List.of());
         when(editStateRepository.findById("doc_lazy"))
                 .thenReturn(Optional.of(new DocumentEditState("doc_lazy", "# 제목", "edit-hash")));
+        when(mongoDocumentEditStore.findState("doc_lazy"))
+                .thenReturn(Optional.of(new fruition.core.document.mongo.MongoDocumentEditState(
+                        "doc_lazy", WORKSPACE_ID, "# Mongo 본문", 7, "mongo-hash", USER_ID, Instant.now())));
 
         DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, "doc_lazy");
 
         verify(editStateInitializer).initializeIfNeeded(document);
-        assertThat(response.markdown()).isEqualTo("# 제목");
+        assertThat(response.markdown()).isEqualTo("# Mongo 본문");
         assertThat(response.currentVersion()).isEqualTo(1);
+        assertThat(response.editRevision()).isEqualTo(7);
         assertThat(response.editable()).isTrue();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
     }
@@ -427,23 +456,23 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(documentRepository.updateContentIfVersionMatches(
-                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
-                .thenReturn(1);
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null);
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
-        assertThat(editState.getMarkdown()).isEqualTo("# 변경\n");
-        assertThat(editState.getContentHash()).isEqualTo(response.contentHash());
+        // PostgreSQL legacy 상태는 더 이상 갱신하지 않는다 — canonical은 Mongo다.
+        assertThat(editState.getMarkdown()).isEqualTo("old");
         assertThat(document.getContentHash()).isEqualTo("original-hash");
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
+                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
     }
 
     @Test
-    @DisplayName("source=agent 저장은 새 버전 스냅샷을 기록한다")
-    void saveContent_sourceAgent_recordsSnapshot() {
+    @DisplayName("source=agent 저장도 PostgreSQL version read model을 갱신한다")
+    void saveContent_sourceAgent_projectsVersions() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -453,21 +482,23 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(documentRepository.updateContentIfVersionMatches(
-                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
-                .thenReturn(1);
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "agent");
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", "agent");
 
         assertThat(response.changed()).isTrue();
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
+                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
+        verify(contentVersionRepository).insertIfAbsent(
+                eq(document.getId()), eq(1L), eq("old"), eq(editState.getContentHash()), eq(USER_ID), any());
         verify(contentVersionRepository).insertIfAbsent(
                 eq(document.getId()), eq(2L), eq("# 변경\n"), anyString(), eq(USER_ID), any());
     }
 
     @Test
-    @DisplayName("수동 저장도 변경 전후 버전 스냅샷을 남긴다")
-    void saveContent_manualRecordsBeforeAndAfterSnapshots() {
+    @DisplayName("수동 저장은 PostgreSQL version read model의 변경 전후 snapshot을 갱신한다")
+    void saveContent_manualProjectsBeforeAndAfterSnapshots() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -477,21 +508,65 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(documentRepository.updateContentIfVersionMatches(
-                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
-                .thenReturn(1);
 
-        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, null);
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null);
 
         verify(contentVersionRepository).insertIfAbsent(
-                eq(document.getId()), eq(1L), eq("old"), anyString(), eq(USER_ID), any());
+                eq(document.getId()), eq(1L), eq("old"), eq(editState.getContentHash()), eq(USER_ID), any());
         verify(contentVersionRepository).insertIfAbsent(
                 eq(document.getId()), eq(2L), eq("# 변경\n"), anyString(), eq(USER_ID), any());
     }
 
     @Test
-    @DisplayName("버전 복원은 대상 본문을 새 version으로 적용하고 변경 전후 스냅샷을 남긴다")
-    void restoreContentVersion_appliesTargetAndRecordsSnapshots() {
+    @DisplayName("version projection 실패 뒤 같은 revision_write_id 재시도로 누락 snapshot을 복구한다")
+    void saveContent_projectionFailure_replayRepairsVersionReadModel() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        String resultHash = DocumentEditingRules.markdown("# 변경\n").contentHash();
+        Instant updatedAt = Instant.parse("2026-08-07T00:00:00Z");
+        MongoDocumentEditSaveResult replayResult = new MongoDocumentEditSaveResult(
+                1, "old", editState.getContentHash(), 2, resultHash, updatedAt, USER_ID, true);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(mongoDocumentEditStore.save(
+                WORKSPACE_ID, document.getId(), "# 변경\n", resultHash,
+                1L, "write_1", USER_ID, 1L, editState))
+                .thenReturn(replayResult);
+        when(contentVersionRepository.insertIfAbsent(
+                document.getId(), 1L, "old", editState.getContentHash(), USER_ID, updatedAt))
+                .thenReturn(1);
+        when(contentVersionRepository.insertIfAbsent(
+                document.getId(), 2L, "# 변경\n", resultHash, USER_ID, updatedAt))
+                .thenThrow(new IllegalStateException("projection 실패"))
+                .thenReturn(1);
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("projection 실패");
+
+        DocumentContentSaveResponse recovered = documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null);
+
+        assertThat(recovered.currentVersion()).isEqualTo(2);
+        verify(mongoDocumentEditStore, times(2)).save(
+                WORKSPACE_ID, document.getId(), "# 변경\n", resultHash,
+                1L, "write_1", USER_ID, 1L, editState);
+        verify(contentVersionRepository, times(2)).insertIfAbsent(
+                document.getId(), 1L, "old", editState.getContentHash(), USER_ID, updatedAt);
+        verify(contentVersionRepository, times(2)).insertIfAbsent(
+                document.getId(), 2L, "# 변경\n", resultHash, USER_ID, updatedAt);
+    }
+
+    @Test
+    @DisplayName("버전 복원은 대상 본문을 새 Mongo revision으로 적용한다")
+    void restoreContentVersion_appliesTargetThroughMongoStore() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -505,19 +580,14 @@ class DocumentServiceBlocksTest {
                 new fruition.core.document.domain.DocumentContentVersionId(document.getId(), 5L)))
                 .thenReturn(Optional.of(new fruition.core.document.domain.DocumentContentVersion(
                         document.getId(), 5L, "# 예전\n", "old-hash", USER_ID, java.time.Instant.now())));
-        when(documentRepository.updateContentIfVersionMatches(
-                eq(document.getId()), eq(WORKSPACE_ID), eq(1L), anyString(), anyLong(), any()))
-                .thenReturn(1);
 
         DocumentContentSaveResponse response = documentService.restoreContentVersion(
                 WORKSPACE_ID, USER_ID, document.getId(), 5L, 1L);
 
         assertThat(response.currentVersion()).isEqualTo(2);
-        assertThat(editState.getMarkdown()).isEqualTo("# 예전\n");
-        verify(contentVersionRepository).insertIfAbsent(
-                eq(document.getId()), eq(1L), eq("current"), anyString(), eq(USER_ID), any());
-        verify(contentVersionRepository).insertIfAbsent(
-                eq(document.getId()), eq(2L), eq("# 예전\n"), anyString(), eq(USER_ID), any());
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 예전\n"), anyString(),
+                eq(1L), eq("restore:5:1"), eq(USER_ID), eq(1L), eq(editState));
     }
 
     @Test
@@ -588,11 +658,12 @@ class DocumentServiceBlocksTest {
                 .when(editLockService).requireWritable(document.getId(), USER_ID);
 
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "agent"))
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", "agent"))
                 .isInstanceOf(fruition.core.document.exception.DocumentLockedException.class);
-        // 잠금 차단은 버전 갱신·스냅샷 이전에 일어난다
-        verify(documentRepository, never()).updateContentIfVersionMatches(
-                anyString(), anyString(), anyLong(), anyString(), anyLong(), any());
+        // 잠금 차단은 Mongo 저장·스냅샷 이전에 일어난다
+        verify(mongoDocumentEditStore, never()).save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class));
         verify(contentVersionRepository, never()).insertIfAbsent(
                 anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
@@ -611,15 +682,20 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(mongoDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq(markdown), eq(hash),
+                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState)))
+                .thenReturn(new MongoDocumentEditSaveResult(
+                        1, markdown, hash, 1, hash, editState.getUpdatedAt(), USER_ID, false));
 
         DocumentContentSaveResponse response = documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L, null);
+                WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L, "write_1", null);
 
         assertThat(response.changed()).isFalse();
         assertThat(response.currentVersion()).isEqualTo(1);
-        assertThat(response.updatedAt()).isEqualTo(document.getUpdatedAt());
-        verify(documentRepository, never()).updateContentIfVersionMatches(
-                anyString(), anyString(), anyLong(), anyString(), anyLong(), any());
+        assertThat(response.updatedAt()).isEqualTo(editState.getUpdatedAt());
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -631,13 +707,19 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_edit/original", "hash");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
+        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash");
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(mongoDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
+                eq(2L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState)))
+                .thenThrow(new DocumentVersionConflictException("충돌"));
 
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L, null))
+                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L, "write_1", null))
                 .isInstanceOf(DocumentVersionConflictException.class);
         doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, "member_2");
         assertThatThrownBy(() -> documentService.saveContent(
-                WORKSPACE_ID, "member_2", document.getId(), "new", 1L, null))
+                WORKSPACE_ID, "member_2", document.getId(), "new", 1L, "write_2", null))
                 .isInstanceOf(DocumentWriteForbiddenException.class);
     }
 

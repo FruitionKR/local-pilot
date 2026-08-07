@@ -6,6 +6,12 @@
 
 ## 2026-08-07
 
+### feat: MongoDB(replica set)·document.edit.event topic 인프라
+
+- k8s에 mongodb 매니페스트 추가(mongo:7.0 단일 replica set rs0 — 트랜잭션 필요),
+  Strimzi `document.edit.event` KafkaTopic(partitions 12) 추가.
+- dev compose kafka-init에 `document.edit.event` topic 생성 추가(auto-create off 환경).
+
 ### feat: PostgreSQL 3-DB·계정 격리 로컬 인프라
 
 - postgres 컨테이너가 최초 기동 시 `access_db`/`core_db`/`ai_db` + runtime/migration

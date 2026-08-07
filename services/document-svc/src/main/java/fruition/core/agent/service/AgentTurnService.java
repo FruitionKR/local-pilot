@@ -42,7 +42,8 @@ public class AgentTurnService {
         // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
         editLockService.requireWritable(request.documentId(), userId);
         // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
-        if (document.currentVersion() != request.baseVersion()) {
+        // 본문 편집 기준 version은 Mongo edit_revision이다(없으면 current_version과 같다).
+        if (document.editRevision() != request.baseVersion()) {
             throw new DocumentVersionConflictException(
                     "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
         }

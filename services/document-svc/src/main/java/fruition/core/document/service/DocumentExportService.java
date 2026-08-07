@@ -5,6 +5,8 @@ import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentExportResult;
 import fruition.core.document.exception.DocumentNotFoundException;
+import fruition.core.document.mongo.MongoDocumentEditState;
+import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
@@ -19,15 +21,18 @@ public class DocumentExportService {
     private final DocumentRepository documentRepository;
     private final DocumentEditStateRepository editStateRepository;
     private final WorkspaceAccessGuard workspaceAccessGuard;
+    private final MongoDocumentEditStore mongoDocumentEditStore;
 
     public DocumentExportService(
             DocumentRepository documentRepository,
             DocumentEditStateRepository editStateRepository,
-            WorkspaceAccessGuard workspaceAccessGuard
+            WorkspaceAccessGuard workspaceAccessGuard,
+            MongoDocumentEditStore mongoDocumentEditStore
     ) {
         this.documentRepository = documentRepository;
         this.editStateRepository = editStateRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
+        this.mongoDocumentEditStore = mongoDocumentEditStore;
     }
 
     @Transactional(readOnly = true)
@@ -43,12 +48,16 @@ public class DocumentExportService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new DocumentNotFoundException(documentId);
         }
-        DocumentEditState editState = editStateRepository.findById(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        // 최신 편집본은 Mongo가 canonical이다. 없으면 legacy PG 상태로 대체한다.
+        String markdown = mongoDocumentEditStore.findState(documentId)
+                .map(MongoDocumentEditState::getMarkdown)
+                .orElseGet(() -> editStateRepository.findById(documentId)
+                        .map(DocumentEditState::getMarkdown)
+                        .orElseThrow(() -> new DocumentNotFoundException(documentId)));
 
         return new DocumentExportResult(
                 document.getDisplayName() + ".md",
-                editState.getMarkdown().getBytes(StandardCharsets.UTF_8)
+                markdown.getBytes(StandardCharsets.UTF_8)
         );
     }
 }

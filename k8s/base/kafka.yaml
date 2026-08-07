@@ -68,3 +68,15 @@ metadata:
 spec:
   partitions: 12
   replicas: 1
+---
+# 문서 편집 outbox 이벤트 (key=document_id, MongoDB outbox publisher가 발행)
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: document.edit.event
+  namespace: fruition
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 12
+  replicas: 1

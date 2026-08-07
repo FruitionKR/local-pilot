@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -14,6 +15,7 @@ public interface DocumentContentVersionRepository
         extends JpaRepository<DocumentContentVersion, DocumentContentVersionId> {
 
     /** 콘텐츠 스냅샷을 남긴다. 같은 (document_id, version)이 이미 있으면 무시한다(초기본 중복 기록 방지). */
+    @Transactional
     @Modifying
     @Query(value = """
             INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_by, created_at)

@@ -8,6 +8,20 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-07
 
+### feat: 문서 편집 원본 MongoDB 전환과 edit outbox 발행 (§3.1)
+
+- 문서 본문·편집 revision·write-id를 MongoDB(`document_edit_states`·`document_edit_writes`·
+  `document_edit_outbox`)로 이전 — 본문 갱신+revision 증가+write receipt+outbox 저장을
+  **단일 Mongo 트랜잭션**으로 처리(참조 브랜치 feat/msa-mongodb-outbox 포팅).
+- PUT content 계약 변경: `base_version` → `base_revision` + `revision_write_id`(멱등 재시도).
+  상세 응답에 `edit_revision` 추가. PostgreSQL에는 metadata·버전 스냅샷 projection 유지.
+- `MongoDocumentEditOutboxPublisher`(신규): 미발행 outbox를 Kafka `document.edit.event`
+  (key=document_id)로 발행 — at-least-once, 문서별 순서 보존.
+- `JpaConfig`에 `@Primary` JpaTransactionManager 명시 — mongoTransactionManager 등장으로
+  JPA @Transactional 자동 구성이 꺼지는 문제 예방.
+- E2E 실검증: 저장(rev 2)→같은 write_id 재생(멱등, 동일 응답)→낡은 revision 409→
+  outbox 발행·Kafka 소비 확인. 테스트 444+108 통과.
+
 ### feat: PostgreSQL access/core 분리와 계정 격리
 
 - 단일 `fruition_mvp` DB를 `access_db`/`core_db`/`ai_db` + runtime(DML)·migration(DDL)
