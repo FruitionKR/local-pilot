@@ -1,3 +1,4 @@
+# workspace_members는 access_db로 분리됨 — 이 모듈 활성화 전에 접근 방식 재설계 필요
 from __future__ import annotations
 
 from typing import Any

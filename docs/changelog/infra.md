@@ -6,6 +6,13 @@
 
 ## 2026-08-07
 
+### feat: edit-event-consumer 배포 단위와 k8s base kustomization
+
+- `k8s/base/edit-event-consumer.yaml` 신규(ingest-worker 이미지 재사용, replicas 1),
+  `k8s/base/kustomization.yaml` 신설 — 앱 계층만 포함(상태 계층은 kind 전용으로 제외,
+  AWS overlay가 이 base를 참조).
+- compose에 `edit-event-consumer` 서비스 추가(필요 env만 축소 주입).
+
 ### feat: MongoDB(replica set)·document.edit.event topic 인프라
 
 - k8s에 mongodb 매니페스트 추가(mongo:7.0 단일 replica set rs0 — 트랜잭션 필요),

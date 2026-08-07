@@ -25,6 +25,9 @@ import signal
 
 from aiokafka import AIOKafkaConsumer
 
+from app.modules.wiki_ingestion.infrastructure import (
+    postgres_wiki_ingestion_repository as database,
+)
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_run_repository,
     get_pipeline_run_use_case,
@@ -88,6 +91,8 @@ def _handle(command: dict) -> None:
 
 
 async def consume() -> None:
+    # ai_db 스키마 준비 보장 (api 기동 경로와 동일한 공용 부트스트랩)
+    database.ensure_ai_schema()
     consumer = AIOKafkaConsumer(
         TOPIC,
         bootstrap_servers=BOOTSTRAP_SERVERS,

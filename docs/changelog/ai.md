@@ -4,6 +4,24 @@ llmPipeline(AI/LLM/pipeline) 변경 이력입니다. 날짜 역순으로 기록�
 
 ---
 
+## 2026-08-07
+
+### feat: ai 계층 데이터 분리 1단계와 document.edit.event consumer
+
+- access 테이블(workspaces·workspace_members) 직접 참조 5곳 제거 — workspace 검증은
+  document-svc 인가 계층 담당. skill 모듈은 비활성(AGENT_SKILLS_ENABLED=false) 유지,
+  재설계 필요 주석만 추가.
+- pipeline 접속을 core_db의 ai_runtime 계정으로 전환(`DATABASE_URL`), **ai_db 신설**:
+  python 소유 `db/ai_schema.sql`(멱등) + 기동 시 부트스트랩(`AI_DB_MIGRATION_URL` 있을
+  때 적용, `AI_DATABASE_URL`로 verify). `wiki_schemas`를 ai_db로 이전(5개 ai 테이블 중
+  유일하게 교차 결합 0 — 나머지 4개 차단 사유는 `docs/issue/ai/2026-08-07.md`).
+- `app/workers/edit_event_consumer.py` 신설 — `document.edit.event` 소비 →
+  `document_derived_state`(ai_db) upsert(revision 역행 방지 멱등). 편집 hash vs
+  ingest hash 불일치로 파생물 stale 판정(조회 시 계산). ingest 완료 시
+  best-effort로 ingested hash 갱신.
+- E2E 실검증: 편집→outbox→Kafka→consumer→ai_db 행 생성, stale=true 판정,
+  재발행·revision 역행 멱등 확인.
+
 ## 2026-08-06
 
 ### feat: ingest Kafka worker 신설

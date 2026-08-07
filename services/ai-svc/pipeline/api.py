@@ -64,6 +64,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("[startup] Flyway DB 스키마 확인 실패")
         raise
+    # ai_db는 python이 소유한다 — AI_DB_MIGRATION_URL이 있으면 멱등 DDL 적용 후 검증.
+    try:
+        database.ensure_ai_schema()
+        logger.info("[startup] ai_db 스키마 확인 완료")
+    except Exception:
+        logger.exception("[startup] ai_db 스키마 확인 실패")
+        raise
     yield
 
 

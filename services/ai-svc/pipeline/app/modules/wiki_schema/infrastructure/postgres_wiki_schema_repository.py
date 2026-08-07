@@ -11,7 +11,7 @@ from app.modules.wiki_schema.domain.entities import SchemaFragments, SchemaIssue
 
 class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
     def save(self, record: WikiSchemaRecord) -> WikiSchemaRecord:
-        with database.connect() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 INSERT INTO wiki_schemas (
@@ -55,12 +55,12 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
         return _row_to_record(row)
 
     def get(self, schema_id: str) -> WikiSchemaRecord | None:
-        with database.connect() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute("SELECT * FROM wiki_schemas WHERE id = %s", (schema_id,)).fetchone()
         return _row_to_record(row) if row else None
 
     def activate(self, schema_id: str) -> WikiSchemaRecord:
-        with database.connect() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute("SELECT workspace_id, user_id FROM wiki_schemas WHERE id = %s", (schema_id,)).fetchone()
             if not row:
                 raise ValueError("Schema not found.")
@@ -86,7 +86,7 @@ class PostgresWikiSchemaRepository(WikiSchemaRepositoryPort):
         return _row_to_record(activated)
 
     def get_active(self, workspace_id: str, user_id: str) -> WikiSchemaRecord | None:
-        with database.connect() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 SELECT *

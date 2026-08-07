@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from contextlib import nullcontext
 from datetime import date
+from pathlib import Path
 from typing import Any, Callable
 
 import psycopg
@@ -77,6 +79,9 @@ def _slugify(value: str) -> str:
     return text or "untitled"
 
 
+logger = logging.getLogger(__name__)
+
+
 def database_url() -> str:
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_DSN")
     if not url:
@@ -86,6 +91,18 @@ def database_url() -> str:
 
 def connect() -> psycopg.Connection:
     return psycopg.connect(database_url(), row_factory=dict_row)
+
+
+def ai_database_url() -> str:
+    url = os.environ.get("AI_DATABASE_URL")
+    if not url:
+        raise RuntimeError("Set AI_DATABASE_URL before using ai_db-backed APIs")
+    return url
+
+
+def connect_ai() -> psycopg.Connection:
+    """ai_db 전용 연결 (wiki_schemas·document_derived_state)."""
+    return psycopg.connect(ai_database_url(), row_factory=dict_row)
 
 
 REQUIRED_TABLES = (
@@ -99,8 +116,15 @@ REQUIRED_TABLES = (
     "wiki_page_embeddings",
     "wiki_embedding_vectors",
     "wiki_embedding_units",
-    "wiki_schemas",
 )
+
+# ai_db는 python이 소유한다 — db/ai_schema.sql이 원본 DDL
+AI_DB_REQUIRED_TABLES = (
+    "wiki_schemas",
+    "document_derived_state",
+)
+
+_AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sql"
 
 
 def verify_schema() -> None:
@@ -120,6 +144,41 @@ def verify_schema() -> None:
     if missing_tables:
         missing = ", ".join(missing_tables)
         raise RuntimeError(f"Flyway migration is required; missing tables: {missing}")
+
+
+def ensure_ai_schema() -> None:
+    """ai_db 스키마 부트스트랩.
+
+    AI_DB_MIGRATION_URL이 설정돼 있으면 db/ai_schema.sql(멱등 DDL)을 적용하고,
+    없으면 적용은 건너뛴다. 이후 AI_DATABASE_URL로 필수 테이블 존재를 검증한다.
+    api·worker 기동 경로가 공통으로 호출한다.
+    """
+    migration_url = os.environ.get("AI_DB_MIGRATION_URL")
+    if migration_url:
+        ddl = _AI_SCHEMA_SQL_PATH.read_text(encoding="utf-8")
+        with psycopg.connect(migration_url) as conn:
+            conn.execute(ddl)
+        logger.info("[startup] ai_db 스키마 적용 완료 (db/ai_schema.sql)")
+    verify_ai_schema()
+
+
+def verify_ai_schema() -> None:
+    """ai_db 필수 테이블이 준비됐는지 확인한다."""
+    with connect_ai() as conn:
+        rows = conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = ANY(%s)
+            """,
+            (list(AI_DB_REQUIRED_TABLES),),
+        ).fetchall()
+    existing_tables = {row["table_name"] for row in rows}
+    missing_tables = sorted(set(AI_DB_REQUIRED_TABLES) - existing_tables)
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(f"ai_db schema is not ready; missing tables: {missing}")
 
 
 def get_document(document_id: str) -> dict | None:
@@ -153,21 +212,20 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         document_id = row["document_id"] if row else None
         if document_id:
+            # workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
             active_document = conn.execute(
                 """
                 SELECT d.id
                 FROM documents d
-                JOIN workspaces w ON w.id = d.workspace_id
                 WHERE d.id = %s
                   AND d.deleted_at IS NULL
-                  AND w.deleted_at IS NULL
-                FOR SHARE OF d, w
+                FOR SHARE OF d
                 """,
                 (document_id,),
             ).fetchone()
             if active_document is None:
                 raise PipelineRunCancelledError(
-                    "Pipeline run cancelled because its document or workspace is inactive."
+                    "Pipeline run cancelled because its document is inactive."
                 )
             embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
             manifest["source_contribution"] = _source_contribution_payload(
@@ -191,7 +249,32 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
             """,
             (Json(manifest), run_id),
         )
+    # core 트랜잭션 커밋 후 ai_db 파생 추적을 갱신한다.
+    # 파생 추적은 best-effort — 원자성 비대상. 실패해도 ingest 결과에 영향 없다.
+    if document_id:
+        _mark_derived_state_ingested(document_id)
     return embedded_page_ids
+
+
+def _mark_derived_state_ingested(document_id: str) -> None:
+    try:
+        with connect_ai() as conn:
+            conn.execute(
+                """
+                UPDATE document_derived_state
+                SET ingested_hash = last_edit_hash,
+                    last_ingested_at = now(),
+                    updated_at = now()
+                WHERE document_id = %s
+                """,
+                (document_id,),
+            )
+    except Exception:
+        logger.warning(
+            "[derived-state] ingest 완료 반영 실패 (best-effort, 무시) document_id=%s",
+            document_id,
+            exc_info=True,
+        )
 
 
 def fail_pipeline_run(run_id: str, error: str) -> None:
@@ -199,18 +282,13 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
     with connect() as conn:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         if row and row["document_id"]:
+            # workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
             conn.execute(
                 """
                 UPDATE documents
                 SET status = 'failed', processed_at = now(), error_message = %s
                 WHERE id = %s
                   AND deleted_at IS NULL
-                  AND EXISTS (
-                      SELECT 1
-                      FROM workspaces w
-                      WHERE w.id = documents.workspace_id
-                        AND w.deleted_at IS NULL
-                  )
                 """,
                 (error_message, row["document_id"]),
             )
@@ -287,13 +365,12 @@ def touch_pipeline_run(run_id: str) -> bool:
               AND pr.status = 'running'
               AND (
                   pr.document_id IS NULL
+                  -- workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
                   OR EXISTS (
                       SELECT 1
                       FROM documents d
-                      JOIN workspaces w ON w.id = d.workspace_id
                       WHERE d.id = pr.document_id
                         AND d.deleted_at IS NULL
-                        AND w.deleted_at IS NULL
                   )
               )
             RETURNING pr.id
