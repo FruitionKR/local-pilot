@@ -2,7 +2,7 @@
 
 ## 1. 문서 정보
 
-- 상태: Draft
+- 상태: Backend Complete (Frontend Blob 표시 후속)
 - 작성일: 2026-07-23
 - 기능 SDD: [`markdown-document-assets.md`](../markdown-document-assets.md)
 
@@ -19,47 +19,47 @@
 - 관련 요구사항: `REQ-004`, `REQ-006`~`REQ-008`
 - 작업: `document_assets`, `document_asset_references`, FK·정리 인덱스 추가
 - 완료 조건:
-  - [ ] 다대다 참조와 workspace 경계 테스트
-  - [ ] reference가 남은 asset 삭제 차단
+  - [x] 다대다 참조와 workspace 경계 테스트
+  - [x] reference가 남은 asset 삭제 차단
 
 ### TASK-002 Multipart 저장 계약
 
 - 관련 요구사항: `REQ-001`, `REQ-003`
 - 작업: metadata와 `attachment_<uuid>` file part, 이미지 없는 저장, 치환 응답 구현
 - 완료 조건:
-  - [ ] placeholder 누락·중복·미사용 file 전체 거절
-  - [ ] 이미지 없는 수동 저장 회귀 통과
+  - [x] placeholder 누락·중복·미사용 file 전체 거절
+  - [x] 이미지 없는 수동 저장 회귀 통과
 
 ### TASK-003 이미지 검증
 
 - 관련 요구사항: `REQ-002`, `REQ-004`
 - 작업: signature·decoder·dimension·10MB·20개·100MB 검증
 - 완료 조건:
-  - [ ] MIME 위장·SVG·손상 파일 거절
-  - [ ] GIF bytes 보존과 WebP dimension 검증
+  - [x] MIME 위장·SVG·손상 파일 거절
+  - [x] GIF bytes 보존과 WebP dimension 검증
 
 ### TASK-004 MinIO와 DB 보상
 
 - 관련 요구사항: `REQ-003`
 - 작업: asset key 생성, object 저장, 조건부 DB 갱신, 실패 보상·orphan 기록
 - 완료 조건:
-  - [ ] MinIO 실패 시 DB 무변경
-  - [ ] 충돌·DB 실패 시 신규 object 삭제
+  - [x] MinIO 실패 시 DB 무변경
+  - [x] 충돌·DB 실패 시 신규 object 삭제
 
 ### TASK-005 Reference 동기화
 
 - 관련 요구사항: `REQ-006`, `REQ-008`
 - 작업: GFM parser 추출, workspace batch 검증, reference diff, 복제 reference 복사
 - 완료 조건:
-  - [ ] 다른 workspace asset 저장 거절
-  - [ ] 중복 사용 reference 하나 유지
+  - [x] 다른 workspace asset 저장 거절
+  - [x] 중복 사용 reference 하나 유지
 
 ### TASK-006 이미지 조회·프론트 표시
 
 - 관련 요구사항: `REQ-005`
 - 작업: 멤버 전용 stream, private cache·ETag·nosniff, JWT Blob renderer
 - 완료 조건:
-  - [ ] 비멤버 `404`
+  - [x] 비멤버 `404`
   - [ ] Blob cache·revoke 컴포넌트 테스트
 
 ### TASK-007 미참조 정리
@@ -67,26 +67,26 @@
 - 관련 요구사항: `REQ-007`, `REQ-008`
 - 작업: 7일 worker, `SKIP LOCKED`, MinIO 성공 후 DB 삭제, orphan 정리
 - 완료 조건:
-  - [ ] 재참조·소프트 삭제 asset 유지
-  - [ ] MinIO 실패 재시도
+  - [x] 재참조·소프트 삭제 asset 유지
+  - [x] MinIO 실패 재시도
 
 ### TASK-008 ZIP 내보내기
 
 - 관련 요구사항: `REQ-009`
 - 작업: URL 상대 경로 치환, 파일명 충돌, 100개·100MB 제한, 임시 ZIP 정리
 - 완료 조건:
-  - [ ] 로컬 Markdown 이미지 표시
-  - [ ] 외부 URL fetch 없음
-  - [ ] 누락 asset 불완전 ZIP 미반환
+  - [x] 로컬 Markdown 이미지 표시
+  - [x] 외부 URL fetch 없음
+  - [x] 누락 asset 불완전 ZIP 미반환
 
 ### TASK-009 계약·보안·회귀
 
 - 관련 요구사항: 전체
 - 작업: API·OpenAPI·요구사항 추적표와 전체 통합 테스트
 - 완료 조건:
-  - [ ] Markdown 5MB와 이미지 100MB 제한 구분
-  - [ ] bytes·storage key 로그 미노출
-  - [ ] 전체 테스트와 `git diff --check` 통과
+  - [x] Markdown 5MB와 이미지 100MB 제한 구분
+  - [x] bytes·storage key 로그 미노출
+  - [x] 전체 테스트와 `git diff --check` 통과
 
 ## 4. 실행 순서
 

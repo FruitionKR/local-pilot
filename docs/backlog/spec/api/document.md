@@ -45,14 +45,19 @@ Markdown MIME 또는 `.md`/`.markdown` 파일은 `EDITABLE`, PDF는 `ORIGINAL`�
 | `400` | `INVALID_DOCUMENT_FILENAME` | 표시 이름 또는 `base_version`이 유효하지 않음 |
 | `400` | `INVALID_DOCUMENT_VERSION` | multipart `base_version`이 1 이상의 정수가 아님 |
 | `400` | `INVALID_MARKDOWN_CONTENT` | Markdown이 `null`이거나 편집할 수 없는 문서 |
+| `400` | `INVALID_DOCUMENT_ASSET` | placeholder·multipart part 대응이 올바르지 않거나 이미지가 손상됨 |
 | `403` | `DOCUMENT_WRITE_FORBIDDEN` | 문서 소유자가 아닌 멤버의 변경 |
 | `404` | `WORKSPACE_NOT_FOUND` | 활성 workspace 멤버십 없음 |
 | `404` | `DOCUMENT_NOT_FOUND` | 활성 문서 또는 요구되는 편집 상태 없음 |
 | `404` | `DOCUMENT_ORIGINAL_NOT_FOUND` | 원본 스트림을 찾을 수 없음 |
+| `404` | `DOCUMENT_ASSET_NOT_FOUND` | 비멤버·다른 workspace·없는 관리 이미지 |
 | `409` | `DOCUMENT_VERSION_CONFLICT` | `base_version` 불일치 |
 | `409` | `IDEMPOTENCY_KEY_REUSED` | 멱등 키를 다른 요청에 재사용 |
 | `413` | `MARKDOWN_CONTENT_TOO_LARGE` | UTF-8 Markdown이 5MB 초과 |
+| `413` | `DOCUMENT_ASSET_TOO_LARGE` | 이미지당 10MB, 저장당 20개·100MB 또는 dimension 제한 초과 |
 | `415` | `UNSUPPORTED_FILE_TYPE` | PDF 또는 Markdown이 아닌 업로드 |
+| `415` | `UNSUPPORTED_DOCUMENT_ASSET` | PNG·JPEG·WebP·GIF가 아닌 이미지 |
+| `422` | `DOCUMENT_ASSET_EXPORT_FAILED` | ZIP asset 누락·조회 실패 또는 100개·100MB 초과 |
 
 ## 2. 사용자 API
 
@@ -168,8 +173,11 @@ source block이 없는 직접 생성 문서는 빈 `blocks` 배열을 반환한�
 
 - 소유자 전용
 - Content-Type: `multipart/form-data`
-- Part `markdown`: 저장할 전체 Markdown 문자열
-- Part `base_version`: 1 이상의 정수 문자열
+- 이미지가 없으면 Part `markdown`과 1 이상의 정수 문자열 Part `base_version`을 사용한다.
+- 신규 이미지가 있으면 Part `metadata`에 `{"markdown":"...","base_version":1}` JSON을 보내고,
+  각 file part 이름을 `attachment_<uuid>`로 지정한다. Markdown은 `attachment://<uuid>` placeholder를 사용한다.
+- 선택 Part `apply_operation_id`는 `POST /agent/turns`가 발급한 적용 표이며 검증 성공 시 AI 편집 로그와 연결한다.
+- PNG·JPEG·WebP·GIF만 허용한다. 이미지당 10MB, 저장당 20개·100MB, dimension 16,384px 제한을 적용한다.
 - 자동 저장이 아닌 명시적 수동 저장 API다.
 - 동일 본문은 `changed=false`이며 version과 수정 시각을 변경하지 않는다.
 
@@ -179,11 +187,20 @@ source block이 없는 직접 생성 문서는 빈 `blocks` 배열을 반환한�
   "current_version": 2,
   "content_hash": "sha256...",
   "updated_at": "2026-07-25T00:00:00Z",
-  "changed": true
+  "changed": true,
+  "markdown": "![diagram](/api/workspaces/ws_.../assets/asset_uuid/content)",
+  "attachments": [
+    {
+      "attachment_id": "attachment_uuid",
+      "asset_id": "asset_uuid",
+      "content_path": "/api/workspaces/ws_.../assets/asset_uuid/content"
+    }
+  ]
 }
 ```
 
-이미지 attachment part와 placeholder 치환은 아직 지원하지 않으며 assets 후속 task 범위다.
+본문·asset metadata·reference는 같은 DB transaction에서 반영한다. MinIO 선저장 후 DB 실패나 version
+충돌이 발생하면 이번 요청의 신규 object를 보상 삭제한다.
 
 ### 2.8 이름 변경
 
@@ -274,11 +291,13 @@ source block이 없는 직접 생성 문서는 빈 `blocks` 배열을 반환한�
 
 - 모든 활성 workspace 멤버가 사용할 수 있다.
 - 활성 `EDITABLE` 문서의 최신 편집 상태를 UTF-8로 반환한다.
-- Content-Type: `text/markdown;charset=UTF-8`
-- Content-Disposition: 현재 `display_name`을 사용하는 `.md` attachment
+- 관리 이미지 reference가 없으면 `text/markdown;charset=UTF-8`과 현재 `display_name`의 `.md` attachment를 반환한다.
+- 관리 이미지가 있으면 `application/zip`과 현재 `display_name`의 `.zip` attachment를 반환한다.
+- ZIP에는 `.md`와 `assets/` 이미지가 포함되며 관리 URL은 `./assets/<filename>`으로 치환된다.
+- 같은 원본 파일명은 `-2`, `-3` suffix로 충돌을 해소하고 외부 URL은 원문을 유지하며 fetch하지 않는다.
+- 이미지 최대 100개·합계 100MB를 적용하고 asset 누락이나 object 조회 실패 시 `422 DOCUMENT_ASSET_EXPORT_FAILED`로 전체 실패한다.
 - `base_version`을 요구하지 않고 문서 상태를 변경하지 않는다.
 - 원본 자료와 편집 상태가 없는 문서는 `404 DOCUMENT_NOT_FOUND`다.
-- 이미지 URL은 Markdown 문자열 그대로 유지한다. 이미지 ZIP은 assets 후속 task 범위다.
 
 ## 3. Pipeline callback API
 

@@ -34,3 +34,36 @@ def test_verify_schema_reports_missing_tables() -> None:
         pytest.raises(RuntimeError, match="missing tables: pipeline_runs"),
     ):
         database.verify_schema()
+
+
+def test_cleanup_deleted_wiki_pages_removes_only_workspace_targets() -> None:
+    queries = []
+
+    def execute(query, params):
+        normalized = " ".join(query.split())
+        queries.append((normalized, params))
+        result = Mock()
+        if normalized.startswith("SELECT id FROM wiki_pages"):
+            result.fetchall.return_value = [{"id": "C1"}]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            result.fetchall.return_value = [{"embedding_vector_id": "vector-1"}]
+        else:
+            result.fetchall.return_value = []
+        return result
+
+    connection = Mock()
+    connection.execute.side_effect = execute
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    with patch.object(database, "connect", return_value=connection):
+        database.cleanup_deleted_wiki_pages("ws-1", ["C1", "outside-page"])
+
+    assert queries[0][1] == ("ws-1", ["C1", "outside-page"])
+    assert "FOR UPDATE" in queries[0][0]
+    assert any("DELETE FROM wiki_page_links" in query for query, _ in queries)
+    assert any("DELETE FROM document_wiki_links" in query for query, _ in queries)
+    assert any("DELETE FROM wiki_page_embeddings" in query for query, _ in queries)
+    assert any("DELETE FROM wiki_embedding_units" in query for query, _ in queries)
+    assert any("DELETE FROM wiki_embedding_vectors" in query for query, _ in queries)
+    assert queries[-1][1] == (["C1"],)

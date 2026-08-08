@@ -46,13 +46,19 @@
 | GET | `/documents/{id}` | 상세 + 최신 `markdown` + `wiki_pages`. `current_version`이 이후 `base_version` |
 | GET | `/documents/{id}/original` | 업로드 원본 스트리밍(MinIO). 직접 생성 문서는 404 |
 | GET | `/documents/{id}/blocks` | 원본 block 목록(`block_id`, `text`) |
-| PUT | `/documents/{id}/content` | 본문 수동 저장(multipart: `markdown`, `base_version`). 동일 본문 `changed=false`, 5MB 초과 413 |
+| PUT | `/documents/{id}/content` | 본문 수동 저장(multipart: `markdown`, `base_revision`, `revision_write_id`). 동일 본문 `changed=false`, 5MB 초과 413. 이미지 포함 저장은 `metadata`(JSON: `markdown`+`base_version`) + `attachment_*` file part — 본문 placeholder `attachment://{uuid}`가 asset content 경로로 치환되고 응답 `attachments`에 매핑 반환. 이미지 개당 50MB·합계 100MB 초과 413, 미지원 형식 415 |
 | PATCH | `/documents/{id}/rename` | `display_name` 변경(확장자 보존) |
 | POST | `/documents/{id}/duplicate` | EDITABLE 복제(201). 이름 `복사본 (N)` 서버 결정 |
 | DELETE | `/documents/{id}` | 소프트 삭제 |
 | GET | `/documents/trash` | 휴지통(멤버 전체 조회 가능, `deleted_at` 내림차순) |
 | POST | `/documents/{id}/restore` | 복구(역할별 최상위 마지막 위치) |
-| GET | `/documents/{id}/export` | 최신 편집 Markdown 다운로드(text/markdown attachment) |
+| GET | `/documents/{id}/export` | 최신 편집 Markdown 다운로드(text/markdown attachment). 관리 이미지를 참조하는 문서는 `.md`+`assets/`를 담은 ZIP(application/zip)으로 반환(이미지 100개·합계 100MB 초과 시 오류) |
+
+문서 이미지 asset(베이스 `/api/workspaces/{workspace_id}/assets`):
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/assets/{asset_id}/content` | 이미지 바이너리 스트리밍. ETag(content hash) 조건부 요청 304 지원. 멤버 전용, 타 워크스페이스 asset은 404 |
 
 파이프라인 콜백(내부, 베이스 `/api/documents`):
 

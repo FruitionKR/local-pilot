@@ -11,6 +11,7 @@ from app.core.llm_env import (
     provider_base_url,
     resolve_llm_provider,
 )
+from app.core.untrusted_input import validate_untrusted_payload
 from app.modules.agent_run.domain.execution import AgentExecutionDecision
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
@@ -42,25 +43,23 @@ class ChatCompletionsExecutionDecider:
         observations: tuple[dict[str, object], ...],
         allowed_read_tools: tuple[str, ...],
     ) -> AgentExecutionDecision:
+        payload = {
+            "instruction": instruction,
+            "plan": {
+                "id": plan.id,
+                "version": plan.version,
+                "summary": plan.summary,
+                "operation_hash": plan.operation_hash,
+                "operations": [_operation_payload(operation) for operation in plan.operations],
+            },
+            "ready_operations": [_operation_payload(operation) for operation in ready_operations],
+            "observations": list(observations[-10:]),
+            "allowed_read_tools": list(allowed_read_tools),
+        }
+        validate_untrusted_payload(payload)
         value = self._client.complete_json(
             self._system_prompt,
-            json.dumps(
-                {
-                    "instruction": instruction,
-                    "plan": {
-                        "id": plan.id,
-                        "version": plan.version,
-                        "summary": plan.summary,
-                        "operation_hash": plan.operation_hash,
-                        "operations": [_operation_payload(operation) for operation in plan.operations],
-                    },
-                    "ready_operations": [_operation_payload(operation) for operation in ready_operations],
-                    "observations": list(observations[-10:]),
-                    "allowed_read_tools": list(allowed_read_tools),
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(payload, ensure_ascii=False, indent=2),
         )
         return normalize_execution_decision(value)
 

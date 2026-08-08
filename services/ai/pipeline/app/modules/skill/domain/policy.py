@@ -1,4 +1,18 @@
+import re
+
 from app.modules.skill.domain.entities import SkillCapability, SkillTool
+
+
+SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def validate_skill_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise ValueError("Skill name is required.")
+    if not SKILL_NAME_PATTERN.fullmatch(normalized):
+        raise ValueError("Skill name must contain lowercase letters, numbers, or hyphens.")
+    return normalized
 
 
 READ_TOOLS: frozenset[SkillTool] = frozenset(

@@ -11,7 +11,7 @@ def enabled_skill(skill_id: str = "skill-1", slug: str = "organize") -> Skill:
         id=f"{skill_id}-v1",
         skill_id=skill_id,
         version=1,
-        name="폴더 정리",
+        name=slug,
         description="문서와 폴더를 목적에 맞게 정리합니다.",
         instructions_markdown="관련 문서를 한 폴더에 모은다.",
         capabilities=("folder-organize",),
@@ -29,21 +29,82 @@ def enabled_skill(skill_id: str = "skill-1", slug: str = "organize") -> Skill:
     )
 
 
+def personal_skill(skill_id: str = "personal-1", slug: str = "my-skill") -> Skill:
+    version = SkillVersion(
+        id=f"{skill_id}-v1",
+        skill_id=skill_id,
+        version=1,
+        name=slug,
+        description="개인 Skill",
+        instructions_markdown="개인 규칙을 적용한다.",
+        capabilities=(),
+        status="published",
+    )
+    return Skill(
+        id=skill_id,
+        workspace_id=None,
+        scope_type="personal",
+        owner_user_id="user-1",
+        slug=slug,
+        status="enabled",
+        enabled_version=version,
+    )
+
+
 class InMemorySkillRepository:
     def __init__(self, skills: list[Skill]) -> None:
         self.skills = skills
 
+    @staticmethod
+    def _is_accessible(skill: Skill, workspace_id: str, user_id: str) -> bool:
+        return (skill.scope_type == "personal" and skill.owner_user_id == user_id) or (
+            skill.scope_type == "team" and skill.workspace_id == workspace_id
+        )
+
     def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
-        return [skill for skill in self.skills if skill.status == "enabled"]
+        return [
+            skill
+            for skill in self.skills
+            if skill.status == "enabled"
+            and self._is_accessible(skill, workspace_id, user_id)
+        ]
 
     def get_accessible(self, workspace_id: str, user_id: str, skill_id: str) -> Skill | None:
-        return next((skill for skill in self.skills if skill.id == skill_id), None)
+        return next(
+            (
+                skill
+                for skill in self.skills
+                if skill.id == skill_id and self._is_accessible(skill, workspace_id, user_id)
+            ),
+            None,
+        )
 
     def get_accessible_by_slug(self, workspace_id: str, user_id: str, slug: str) -> Skill | None:
-        return next((skill for skill in self.skills if skill.slug == slug), None)
+        skills = [
+            skill
+            for skill in self.skills
+            if skill.slug == slug and self._is_accessible(skill, workspace_id, user_id)
+        ]
+        return next((skill for skill in skills if skill.scope_type == "personal"), None) or (
+            skills[0] if skills else None
+        )
 
 
 class SkillSelectionTest(unittest.TestCase):
+    def test_personal_skill_is_available_in_another_workspace(self) -> None:
+        use_case = SelectSkillUseCase(InMemorySkillRepository([personal_skill()]))  # type: ignore[arg-type]
+
+        selection = use_case.prepare(
+            AgentTurnRequest(
+                message="개인 규칙을 적용해줘",
+                workspace_id="workspace-2",
+                user_id="user-1",
+            )
+        )
+
+        self.assertIsNone(selection.skills[0].workspace_id)
+        self.assertEqual(selection.request.available_skills[0].name, "my-skill")
+
     def test_disabled_feature_does_not_query_repository_in_auto_mode(self) -> None:
         class FailingRepository(InMemorySkillRepository):
             def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
@@ -165,10 +226,27 @@ class SkillSelectionTest(unittest.TestCase):
                 )
             )
 
-    def test_disabled_explicit_skill_is_an_error(self) -> None:
+    def test_auto_routing_disabled_skill_still_supports_explicit_use(self) -> None:
         skill = enabled_skill()
         disabled = Skill(**{**skill.__dict__, "status": "disabled"})
         use_case = SelectSkillUseCase(InMemorySkillRepository([disabled]))  # type: ignore[arg-type]
+
+        selection = use_case.prepare(
+            AgentTurnRequest(
+                message="정리해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                skill_mode="explicit",
+                skill_id="skill-1",
+            )
+        )
+
+        self.assertEqual(selection.explicit_skill_id, "skill-1")
+
+    def test_unpublished_explicit_skill_is_an_error(self) -> None:
+        skill = enabled_skill()
+        unpublished = Skill(**{**skill.__dict__, "status": "disabled", "enabled_version": None})
+        use_case = SelectSkillUseCase(InMemorySkillRepository([unpublished]))  # type: ignore[arg-type]
 
         with self.assertRaises(SkillDisabledError):
             use_case.prepare(

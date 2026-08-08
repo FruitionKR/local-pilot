@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,12 +28,36 @@ TEMPLATE_DEFERRED_MARKERS = (
 )
 INSERT_AFTER_POSITION_MARKERS = ("아래에", "아래로", "뒤에", "뒤로", "after", "below")
 INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append", "add")
+NEW_SKILL_REQUEST_PATTERN = re.compile(
+    r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
+    r"(?:만들어|생성해|정의해|작성해)|"
+    r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
+    re.IGNORECASE,
+)
+COMPLETED_WORK_REQUEST_PATTERN = re.compile(
+    r"(?:방금|아까|이전|앞서).{0,20}(?:방식|작업|결과|과정|흐름)|"
+    r"(?:just now|earlier|previous).{0,30}(?:method|work|result|process|workflow)",
+    re.IGNORECASE,
+)
+PUBLISH_SKILL_PATTERN = re.compile(
+    r"(?:이대로\s*)?(?:게시|등록)(?:해|해줘|해주세요|하자)|"
+    r"(?:please\s+)?(?:publish|post)(?:\s+(?:it|this|the\s+skill))?",
+    re.IGNORECASE,
+)
+PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
+    r"보안\s*(?:재)?검토|다시\s*검증|security\s*(?:re)?view|"
+    r"(?:AI로\s*)?재생성|다시\s*(?:만들어|작성)|regenerate|"
+    r"(?:제목|이름|커맨드|식별자).*(?:바꿔|변경|수정)|"
+    r"(?:개인|팀)(?:\s*(?:스킬|skill))?(?:로|으로)?\s*(?:해|바꿔|변경|수정)",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
     "markdown_edit",
     "markdown_create",
     "folder_organize",
     "workspace_workflow",
+    "skill_authoring",
     "skill_draft_proposal",
     "clarify",
     "reject",
@@ -62,6 +87,16 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 if request.conversation_context
                 else {}
             ),
+            "pending_skill_proposal": (
+                {
+                    "scope_type": request.conversation_context.pending_skill_proposal.scope_type,
+                    "name": request.conversation_context.pending_skill_proposal.name,
+                    "description": request.conversation_context.pending_skill_proposal.description,
+                    "instructions_markdown": request.conversation_context.pending_skill_proposal.instructions_markdown,
+                }
+                if request.conversation_context and request.conversation_context.pending_skill_proposal
+                else None
+            ),
             "active_markdown_context": {
                 "has_markdown": bool(request.active_markdown_context and request.active_markdown_context.markdown.strip()),
                 "target": (
@@ -75,6 +110,8 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 ),
             },
             "skill_mode": request.skill_mode,
+            "skill_scope_type": request.skill_scope_type,
+            "skill_authoring_mode": request.skill_authoring_mode,
             "available_skills": [
                 {
                     "id": skill.id,
@@ -87,6 +124,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
+        failures.extend(_skill_authoring_failures(route, request))
         if not failures:
             return route
 
@@ -96,6 +134,7 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
+        retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
         return retried_route
@@ -137,8 +176,28 @@ def build_agent_turn_router() -> AgentTurnRouterPort:
 
 def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     lowered = request.message.lower()
+    has_pending_proposal = bool(
+        request.conversation_context and request.conversation_context.pending_skill_proposal
+    )
+    if (
+        has_pending_proposal
+        and (
+            PUBLISH_SKILL_PATTERN.fullmatch(lowered.strip())
+            or PENDING_SKILL_FOLLOWUP_PATTERN.search(lowered)
+        )
+    ):
+        return AgentTurnRoute(
+            action="skill_authoring",
+            confidence=1.0,
+            reason="explicit approval for pending Skill proposal",
+        )
+    requests_new_skill = _requests_new_skill(lowered)
     has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
-    if not has_template_skill and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS):
+    if (
+        not requests_new_skill
+        and not has_template_skill
+        and any(marker in lowered for marker in TEMPLATE_DEFERRED_MARKERS)
+    ):
         return AgentTurnRoute(
             action="clarify",
             confidence=1.0,
@@ -157,6 +216,28 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             edit_goal="insert_after",
         )
     return None
+
+
+def _requests_new_skill(message: str) -> bool:
+    return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
+
+
+def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
+    if route.action != "skill_authoring":
+        return []
+    summary = (
+        request.conversation_context.recent_conversation_summary
+        if request.conversation_context and request.conversation_context.recent_conversation_summary
+        else ""
+    )
+    has_pending_proposal = bool(
+        request.conversation_context and request.conversation_context.pending_skill_proposal
+    )
+    if not has_pending_proposal and not _requests_new_skill(f"{request.message}\n{summary}"):
+        return ["skill_authoring requires an explicit request to create a new Skill"]
+    if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
+        return ["completed work must use skill_draft_proposal instead of skill_authoring"]
+    return []
 
 
 def _normalize_route(value: dict[str, Any]) -> tuple[AgentTurnRoute, list[str]]:

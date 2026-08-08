@@ -6,7 +6,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.agent_run.interfaces.http.routes import router as agent_run_router
@@ -32,6 +33,16 @@ AGENT_SKILLS_ENABLED = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() i
     "yes",
     "on",
 }
+
+
+def require_internal_token(
+    token: str | None = Header(default=None, alias="X-Internal-Token"),
+) -> None:
+    expected = os.environ.get("INTERNAL_CALLBACK_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal service authentication is not configured.")
+    if token is None or not compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid internal service token.")
 
 
 def require_agent_service_token(
@@ -75,6 +86,32 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def authenticate_internal_request(request: Request, call_next):
+    """본문 파싱(422)보다 내부 토큰 검증(401/503)이 먼저 판정되도록 middleware에서 막는다."""
+    path = request.url.path
+    if path == "/agent/turn" or path.startswith(
+        (
+            "/query",
+            "/pipeline",
+            "/chat-wiki",
+            "/wiki/",
+            "/wiki-schema",
+            "/documents/",
+        )
+    ):
+        try:
+            require_internal_token(request.headers.get("X-Internal-Token"))
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+    return await call_next(request)
+
+
 internal_token_dependencies = [Depends(require_internal_token)]
 app.include_router(
     agent_router,

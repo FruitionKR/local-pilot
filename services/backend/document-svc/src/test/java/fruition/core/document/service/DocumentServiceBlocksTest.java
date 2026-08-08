@@ -57,6 +57,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -102,6 +104,9 @@ class DocumentServiceBlocksTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.core.document.service.DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    @Mock DocumentAssetReferenceParser assetReferenceParser;
+    @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
 
@@ -117,6 +122,8 @@ class DocumentServiceBlocksTest {
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
+                assetReferenceSynchronizer,
+                assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.core.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,
@@ -468,6 +475,29 @@ class DocumentServiceBlocksTest {
         verify(mongoDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
                 eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
+    }
+
+    @Test
+    @DisplayName("이미지를 첨부하지 않는 저장도 본문 기준으로 asset 참조를 동기화한다")
+    void saveContent_synchronizesAssetReferencesFromMarkdown() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        UUID retainedAssetId = UUID.randomUUID();
+        String retained = "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + retainedAssetId + "/content)\n";
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        var reference = new DocumentAssetReferenceParser.ManagedAssetReference(WORKSPACE_ID, retainedAssetId);
+        when(assetReferenceParser.parse(retained)).thenReturn(Set.of(reference));
+
+        documentService.saveContent(WORKSPACE_ID, USER_ID, document.getId(), retained, 1L, "write_sync", null);
+
+        verify(assetReferenceSynchronizer).synchronize(
+                document.getId(), WORKSPACE_ID, Set.of(reference));
     }
 
     @Test
@@ -855,6 +885,7 @@ class DocumentServiceBlocksTest {
         assertThat(documentCaptor.getValue().getSourceUri()).isNull();
         assertThat(documentCaptor.getValue().getContentHash()).isNull();
         assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
+        verify(assetReferenceSynchronizer).copyReferences(source.getId(), response.id());
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
     }
 

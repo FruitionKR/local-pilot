@@ -23,6 +23,8 @@ import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.dto.DocumentTrashResponse;
 import fruition.core.document.exception.InvalidDocumentVersionException;
+import fruition.core.document.service.DocumentAssetContentService;
+import fruition.core.document.exception.InvalidMarkdownContentException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -40,8 +42,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
+import org.springframework.util.LinkedMultiValueMap;
 
-import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
@@ -58,13 +61,16 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final DocumentExportService documentExportService;
+    private final DocumentAssetContentService documentAssetContentService;
 
     public DocumentController(
             DocumentService documentService,
-            DocumentExportService documentExportService
+            DocumentExportService documentExportService,
+            DocumentAssetContentService documentAssetContentService
     ) {
         this.documentService = documentService;
         this.documentExportService = documentExportService;
+        this.documentAssetContentService = documentAssetContentService;
     }
 
     @Operation(
@@ -207,7 +213,7 @@ public class DocumentController {
 
     @Operation(
         summary = "Markdown 원문 내보내기",
-        description = "요청 시점의 최신 Markdown 편집본을 UTF-8 .md 파일로 다운로드합니다."
+        description = "최신 Markdown 편집본을 내보냅니다. 관리 이미지가 있으면 이미지와 Markdown을 ZIP으로 반환합니다."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Markdown 다운로드"),
@@ -226,10 +232,10 @@ public class DocumentController {
                 .build();
 
         return ResponseEntity.ok()
-                .contentType(new MediaType("text", "markdown", StandardCharsets.UTF_8))
-                .contentLength(result.bytes().length)
+                .contentType(MediaType.parseMediaType(result.contentType()))
+                .contentLength(result.contentLength())
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
-                .body(new InputStreamResource(new ByteArrayInputStream(result.bytes())));
+                .body(new InputStreamResource(result.content()));
     }
 
     @Operation(summary = "원본 문서 block 목록 조회", description = "원본 문서를 block 단위로 나눈 텍스트 목록을 반환합니다. 답변 인용 클릭 시 원본 block 하이라이트에 사용됩니다.")
@@ -365,7 +371,7 @@ public class DocumentController {
 
     @Operation(
         summary = "Markdown 본문 저장",
-        description = "전체 Markdown을 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다.")
+        description = "전체 Markdown과 신규 이미지를 저장합니다. base_revision이 현재 편집 revision과 일치할 때만 반영하며 revision_write_id 재시도는 기존 결과를 반환합니다. 이미지 포함 저장은 metadata part를 사용합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "저장 성공 또는 동일 본문 no-op",
             content = @Content(schema = @Schema(implementation = DocumentContentSaveResponse.class))),
@@ -377,7 +383,9 @@ public class DocumentController {
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "편집 revision 또는 revision_write_id 충돌",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "413", description = "Markdown 5MB 초과",
+        @ApiResponse(responseCode = "413", description = "Markdown 5MB 또는 이미지 제한 초과",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "415", description = "지원하지 않는 이미지 형식",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PutMapping(path = "/{document_id}/content", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -385,16 +393,36 @@ public class DocumentController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @PathVariable("document_id") String documentId,
-            @Parameter(description = "저장할 전체 Markdown 본문", required = true)
-            @RequestPart("markdown") String markdown,
-            @Parameter(description = "클라이언트가 조회한 현재 편집 revision", example = "1", required = true)
-            @RequestPart("base_revision") String baseRevision,
-            @Parameter(description = "같은 저장 재시도에 재사용하는 write ID", required = true)
-            @RequestPart("revision_write_id") String revisionWriteId,
+            @Parameter(description = "이미지 포함 저장 metadata JSON")
+            @RequestPart(value = "metadata", required = false) String metadata,
+            @Parameter(description = "저장할 전체 Markdown 본문")
+            @RequestPart(value = "markdown", required = false) String markdown,
+            @Parameter(description = "클라이언트가 조회한 현재 편집 revision", example = "1")
+            @RequestPart(value = "base_revision", required = false) String baseRevision,
+            @Parameter(description = "같은 저장 재시도에 재사용하는 write ID")
+            @RequestPart(value = "revision_write_id", required = false) String revisionWriteId,
             @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
             @RequestPart(value = "source", required = false) String source,
             @Parameter(description = "AI 편집 적용 표. `POST /agent/turns` 응답의 apply_operation_id를 그대로 전달하면 AI 작업 로그가 남습니다.")
-            @RequestPart(value = "apply_operation_id", required = false) String applyOperationId) {
+            @RequestPart(value = "apply_operation_id", required = false) String applyOperationId,
+            MultipartHttpServletRequest multipartRequest) {
+        if (metadata != null) {
+            // attachment 후보뿐 아니라 업로드된 file part를 모두 넘겨, 계약에 없는 part는 parser가 거절하게 한다.
+            LinkedMultiValueMap<String, MultipartFile> fileParts = new LinkedMultiValueMap<>();
+            multipartRequest.getMultiFileMap().forEach((partName, files) -> {
+                boolean uploadedFile = files.stream().anyMatch(file ->
+                        file.getOriginalFilename() != null && !file.getOriginalFilename().isBlank());
+                if (partName.startsWith("attachment_") || uploadedFile) {
+                    fileParts.put(partName, files);
+                }
+            });
+            return ResponseEntity.ok(documentAssetContentService.save(
+                    workspaceId, userId, documentId, metadata, fileParts, applyOperationId));
+        }
+        if (markdown == null || baseRevision == null || revisionWriteId == null) {
+            throw new InvalidMarkdownContentException(
+                    "markdown·base_revision·revision_write_id part가 필요합니다. (이미지 포함 저장은 metadata part 사용)");
+        }
         return ResponseEntity.ok(
                 documentService.saveContent(
                         workspaceId, userId, documentId, markdown, parseBaseVersion(baseRevision),

@@ -90,6 +90,9 @@ class DocumentServiceConvertTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    @Mock DocumentAssetReferenceParser assetReferenceParser;
+    @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
 
@@ -105,6 +108,8 @@ class DocumentServiceConvertTest {
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
+                assetReferenceSynchronizer,
+                assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.core.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,

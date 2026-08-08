@@ -24,6 +24,7 @@ import fruition.shared.security.JwtTokenProvider;
 import fruition.core.config.SecurityConfig;
 import fruition.core.CoreExceptionHandler;
 import fruition.core.authz.WorkspaceNotFoundException;
+import fruition.core.document.service.DocumentAssetContentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -33,6 +34,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.HttpHeaders;
 
 import java.util.List;
+import java.util.UUID;
 import java.time.Instant;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -50,6 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.hamcrest.Matchers.containsString;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @WebMvcTest(DocumentController.class)
 @Import({CoreExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
@@ -62,6 +65,7 @@ class DocumentControllerTest {
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean DocumentService documentService;
     @MockBean DocumentExportService documentExportService;
+    @MockBean DocumentAssetContentService documentAssetContentService;
 
     private String bearerToken() {
         return "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
@@ -89,7 +93,7 @@ class DocumentControllerTest {
         byte[] bytes = "# 최신 본문\n한글".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         when(documentExportService.exportMarkdown(
                 WORKSPACE_ID, USER_ID, "doc_export"))
-                .thenReturn(new DocumentExportResult("회의 결과.md", bytes));
+                .thenReturn(DocumentExportResult.markdown("회의 결과.md", bytes));
 
         mockMvc.perform(get(
                         "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_export/export")
@@ -101,6 +105,20 @@ class DocumentControllerTest {
                         HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
                 .andExpect(header().string(
                         HttpHeaders.CONTENT_DISPOSITION, containsString("filename*=")));
+    }
+
+    @Test
+    void export_withImagesReturnsZipContentType() throws Exception {
+        byte[] bytes = new byte[]{1, 2, 3};
+        when(documentExportService.exportMarkdown(WORKSPACE_ID, USER_ID, "doc_zip"))
+                .thenReturn(DocumentExportResult.zip(
+                        "이미지 문서.zip", bytes.length, new java.io.ByteArrayInputStream(bytes)));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/documents/doc_zip/export")
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("application/zip"))
+                .andExpect(content().bytes(bytes));
     }
 
     @Test
@@ -345,6 +363,72 @@ class DocumentControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_DOCUMENT_VERSION"));
+    }
+
+    @Test
+    void saveContent_metadataMultipartDelegatesAssetSave() throws Exception {
+        UUID attachmentId = UUID.randomUUID();
+        String metadataJson = """
+                {"markdown":"![](attachment://%s)","base_version":3}
+                """.formatted(attachmentId);
+        when(documentAssetContentService.save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(),
+                eq("operation_1")))
+                .thenReturn(new DocumentContentSaveResponse(
+                        "doc_edit", 4, "a".repeat(64), Instant.now(), true,
+                        "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + UUID.randomUUID() + "/content)",
+                        List.of()));
+
+        mockMvc.perform(multipart(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
+                        .file(new MockMultipartFile(
+                                "metadata", "", "application/json", metadataJson.getBytes()))
+                        .file(new MockMultipartFile(
+                                "attachment_" + attachmentId, "image.png", "image/png", new byte[]{1}))
+                        .file(new MockMultipartFile(
+                                "apply_operation_id", "", "text/plain", "operation_1".getBytes()))
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        })
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.current_version").value(4))
+                .andExpect(jsonPath("$.markdown").isString());
+
+        verify(documentAssetContentService).save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(),
+                eq("operation_1"));
+    }
+
+    @Test
+    void saveContent_metadataForwardsUnknownUploadedFileForContractValidation() throws Exception {
+        String metadataJson = """
+                {"markdown":"# 본문","base_version":3}
+                """;
+        when(documentAssetContentService.save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), any(), eq(null)))
+                .thenReturn(new DocumentContentSaveResponse(
+                        "doc_edit", 3, "a".repeat(64), Instant.now(), false, "# 본문", List.of()));
+
+        mockMvc.perform(multipart(
+                        "/api/workspaces/" + WORKSPACE_ID + "/documents/doc_edit/content")
+                        .file(new MockMultipartFile(
+                                "metadata", "", "application/json", metadataJson.getBytes()))
+                        .file(new MockMultipartFile(
+                                "unexpected_file", "image.png", "image/png", new byte[]{1}))
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        })
+                        .header("Authorization", bearerToken()))
+                .andExpect(status().isOk());
+
+        var files = org.mockito.ArgumentCaptor.forClass(org.springframework.util.MultiValueMap.class);
+        verify(documentAssetContentService).save(
+                eq(WORKSPACE_ID), eq(USER_ID), eq("doc_edit"), eq(metadataJson), files.capture(), eq(null));
+        assertThat(files.getValue()).containsKey("unexpected_file");
+        assertThat(files.getValue()).doesNotContainKey("metadata");
     }
 
     @Test

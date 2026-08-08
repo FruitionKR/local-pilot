@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.shared.util.StorageProperties;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentAsset;
+import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
@@ -129,6 +131,9 @@ public class DocumentService {
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    private final DocumentAssetReferenceParser assetReferenceParser;
+    private final DocumentAssetRepository assetRepository;
     private final ObjectMapper objectMapper;
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
@@ -156,6 +161,9 @@ public class DocumentService {
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
+                           DocumentAssetReferenceSynchronizer assetReferenceSynchronizer,
+                           DocumentAssetReferenceParser assetReferenceParser,
+                           DocumentAssetRepository assetRepository,
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
@@ -182,6 +190,9 @@ public class DocumentService {
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.assetReferenceSynchronizer = assetReferenceSynchronizer;
+        this.assetReferenceParser = assetReferenceParser;
+        this.assetRepository = assetRepository;
         this.objectMapper = objectMapper;
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
@@ -381,6 +392,7 @@ public class DocumentService {
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
                 duplicateId, content.markdown(), content.contentHash()));
+        assetReferenceSynchronizer.copyReferences(documentId, duplicateId);
 
         DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
         saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
@@ -1238,6 +1250,12 @@ public class DocumentService {
             throw conflict;
         }
         projectContentVersions(documentId, content.markdown(), result);
+        if (result.changed()) {
+            // 이미지를 첨부하지 않는 저장에서도 본문에 남은 관리 이미지를 기준으로 참조를 맞춘다.
+            // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
+            assetReferenceSynchronizer.synchronize(
+                    documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
+        }
 
         // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
         if (result.changed() && applyOperationStore.consume(applyOperationId, userId, documentId)) {
@@ -1294,6 +1312,84 @@ public class DocumentService {
                 result.actorUserId(),
                 result.updatedAt()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public void validateContentSave(
+            String workspaceId, String userId, String documentId, long baseVersion,
+            String applyOperationId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
+        }
+        editLockService.requireWritable(documentId, userId);
+        // 본문 canonical은 Mongo다. storage 업로드 전에 낡은 base를 조기에 거른다(권위 판정은 저장 시점의 Mongo save).
+        long currentRevision = mongoDocumentEditStore.findState(documentId)
+                .map(MongoDocumentEditState::getRevision)
+                .orElse(document.getCurrentVersion());
+        if (currentRevision != baseVersion) {
+            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                operationRecorder.recordConflict(
+                        applyOperationId, workspaceId, userId, documentId, Instant.now());
+            }
+            throw versionConflict();
+        }
+    }
+
+    /**
+     * 이미지 포함 저장. asset row는 본문보다 먼저 커밋해 참조 무결성을 확보하고
+     * (실패 시 orphan은 cleanup worker가 정리), 본문 저장은 Mongo 기반 saveContent를 재사용한다.
+     * revision_write_id는 base revision과 content hash로 결정해 같은 요청 재시도를 멱등하게 만든다.
+     */
+    public DocumentContentSaveResponse saveContentWithAssets(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            long baseVersion,
+            Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
+            String applyOperationId
+    ) {
+        validateContentSave(workspaceId, userId, documentId, baseVersion, applyOperationId);
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        Instant updatedAt = Instant.now();
+        List<DocumentAsset> assets = storedAssets.values().stream()
+                .map(stored -> new DocumentAsset(
+                        stored.assetId(), workspaceId, userId,
+                        stored.validated().originalFilename(), stored.validated().contentType(),
+                        stored.validated().bytes().length, stored.validated().width(), stored.validated().height(),
+                        stored.validated().contentHash(), stored.objectKey(), updatedAt))
+                .toList();
+        transactionTemplate.execute(status -> {
+            assetRepository.saveAll(assets);
+            return null;
+        });
+
+        String revisionWriteId = "assets:" + documentId + ":" + baseVersion + ":" + content.contentHash();
+        DocumentContentSaveResponse saved;
+        try {
+            saved = saveContent(workspaceId, userId, documentId, content.markdown(),
+                    baseVersion, revisionWriteId, null, applyOperationId);
+        } catch (RuntimeException exception) {
+            transactionTemplate.execute(status -> {
+                assetRepository.deleteAllInBatch(assets);
+                return null;
+            });
+            throw exception;
+        }
+        if (!saved.changed()) {
+            // 본문이 그대로면 새 asset row도 남기지 않는다. object storage 정리는 호출부가 한다.
+            transactionTemplate.execute(status -> {
+                assetRepository.deleteAllInBatch(assets);
+                return null;
+            });
+        }
+        return new DocumentContentSaveResponse(
+                saved.documentId(), saved.currentVersion(), saved.contentHash(), saved.updatedAt(),
+                saved.changed(), content.markdown(), List.of());
     }
 
     private void recordContentVersion(String documentId, long version, String markdown,

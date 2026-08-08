@@ -20,9 +20,10 @@ class Response:
         return None
 
 
-def test_result_callback_retries_server_errors_with_same_payload() -> None:
+def test_result_callback_retries_server_errors_with_same_payload(monkeypatch) -> None:
     requests = []
     sleeps = []
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "test-callback-token")
 
     def urlopen(request, timeout):
         requests.append((request, timeout))
@@ -55,11 +56,15 @@ def test_result_callback_retries_server_errors_with_same_payload() -> None:
     assert [request.data for request, _timeout in requests] == [
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ] * 3
+    assert {
+        request.headers["X-internal-token"] for request, _timeout in requests
+    } == {"secret-token"}
     assert sleeps == [1.0, 2.0]
 
 
-def test_result_callback_does_not_retry_conflict() -> None:
+def test_result_callback_does_not_retry_conflict(monkeypatch) -> None:
     attempts = 0
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "test-callback-token")
 
     def urlopen(request, timeout):
         nonlocal attempts
@@ -88,9 +93,10 @@ def test_result_callback_does_not_retry_conflict() -> None:
     assert attempts == 1
 
 
-def test_result_callback_retries_unprocessable_result() -> None:
+def test_result_callback_retries_unprocessable_result(monkeypatch) -> None:
     attempts = 0
     rewrites = []
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "test-callback-token")
 
     def urlopen(request, timeout):
         nonlocal attempts
