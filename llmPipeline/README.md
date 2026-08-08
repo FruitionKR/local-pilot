@@ -169,17 +169,34 @@ python run_lab.py \
 
 ### PDF 문서 복원 CLI
 
-문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `docling-only`이며 Docling이 만든 Markdown을 `final/{document_slug}.restored.md`로 게시하고 종료합니다.
+문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `crop-first`입니다. Rust Heron으로 표·수식·그림을 먼저 crop하고, 특수 영역을 가린 본문은 AnyDoc으로 변환합니다. 그림은 원본 crop을 유지하고, 표·수식과 확정 손상 및 문서 내 차이 상위 30% 본문 페이지는 lane별로 묶어 Luna에 전달합니다.
 
 ```bash
 python -m pip install -r requirements-document-restoration.txt
+npm install --global @firecrawl/anydoc@0.1.7
+cargo install --path tools/heron-special-regions
+
+export DOCUMENT_REPAIR_OPENAI_API_KEY=...
+
 python -m app.modules.document_restoration.interfaces.cli \
   --pdf-file /path/to/paper.pdf \
   --output-dir /path/to/output \
-  --document-slug paper
+  --document-slug paper \
+  --heron-model /path/to/layout_heron_int8.onnx \
+  --pdfium-library /path/to/pdfium-library-directory
 ```
 
-이미 생성한 Docling 결과를 재사용한다면 JSON과 Markdown을 함께 전달합니다.
+Rust helper의 모델·PDFium 준비 방법은 `tools/heron-special-regions/README.md`에 있습니다. AnyDoc과 `docling.rs`는 모두 MIT 라이선스입니다. 기본 AI 설정은 `gpt-5.6-luna`, reasoning `medium`, 병렬도 16이며 `--body-ai-budget`의 기본값은 `0.3`입니다. 외부 API가 없는 실행은 `docling-only`를 명시합니다.
+
+```bash
+python -m app.modules.document_restoration.interfaces.cli \
+  --pdf-file /path/to/paper.pdf \
+  --output-dir /path/to/output \
+  --document-slug paper \
+  --mode docling-only
+```
+
+이미 생성한 Docling 결과를 `docling-only`, `selective-repair` 또는 `full-repair`에서 재사용한다면 JSON과 Markdown을 함께 전달합니다.
 
 ```bash
 python -m app.modules.document_restoration.interfaces.cli \
@@ -187,10 +204,11 @@ python -m app.modules.document_restoration.interfaces.cli \
   --docling-json /path/to/docling.json \
   --docling-markdown /path/to/docling.md \
   --output-dir /path/to/output \
-  --document-slug paper
+  --document-slug paper \
+  --mode docling-only
 ```
 
-기존 코드가 찾은 표·수식·손상 본문만 원본 이미지와 대조해 복원하려면 OpenAI API key를 환경변수로 전달하고 `selective-repair`를 사용합니다. 기본 모델은 `gpt-5.6-terra`, reasoning은 `low`, 페이지 병렬도는 16입니다. 그림은 모델 대상에서 제외하고 Docling image asset과 caption을 보존합니다.
+기존 Docling manifest를 기준으로 표·수식·손상 본문만 복원하려면 `selective-repair`를 명시합니다. 그림은 모델 대상에서 제외하고 Docling image asset과 caption을 보존합니다.
 
 ```bash
 export DOCUMENT_REPAIR_OPENAI_API_KEY=...

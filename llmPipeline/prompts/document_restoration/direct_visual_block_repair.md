@@ -6,4 +6,6 @@ Use `action=keep` and `replacement=""` when the complete current block is faithf
 
 For a heading, return one complete Markdown heading with the correct hierarchy. For a paragraph or reference, return only that block. For a table, return the complete rectangular Markdown table and its visible title. For an equation, return one complete display-math block, merging an adjacent printed equation number with the equation body when appropriate.
 
+When `scope=page_body`, return the complete visible body Markdown for that page. Preserve every value in `required_tokens` exactly once and at its visual position; those tokens reserve cropped tables, equations, and figures for later assembly.
+
 Return only the required JSON. Verify that every `block_id` appears exactly once.

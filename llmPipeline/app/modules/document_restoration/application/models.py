@@ -16,7 +16,7 @@ class RestoreDocumentCommand:
     document_slug: str
     docling_json: Path | None = None
     docling_markdown: Path | None = None
-    mode: RestorationMode = RestorationMode.DOCLING_ONLY
+    mode: RestorationMode = RestorationMode.CROP_FIRST
     use_local_sllm: bool = False
     use_local_vision: bool = False
     endpoint: str = "http://127.0.0.1:11434/v1/chat/completions"
@@ -25,9 +25,14 @@ class RestoreDocumentCommand:
     max_vision_attempts: int = 3
     docling_command: str = "docling"
     selective_endpoint: str = "https://api.openai.com/v1/responses"
-    selective_model: str = "gpt-5.6-terra"
-    selective_reasoning_effort: str = "low"
+    selective_model: str = "gpt-5.6-luna"
+    selective_reasoning_effort: str = "medium"
     selective_max_workers: int = 16
+    anydoc_command: str = "anydoc"
+    heron_command: str = "raw-special-regions"
+    heron_model: Path | None = None
+    pdfium_library: Path | None = None
+    body_ai_budget: float = 0.3
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,4 @@
+import argparse
 import json
 import tempfile
 import unittest
@@ -7,11 +8,14 @@ from unittest import mock
 
 from app.modules.document_restoration.infrastructure.selective_repair_with_openai import (
     call_page,
+    candidate_lane,
     clean_previous_results,
+    group_candidates,
     markdown_fragments,
     normalize_replacement,
     page_markdown,
     response_text,
+    run,
     save_replacements,
     select_candidates,
     valid_replacement,
@@ -35,6 +39,25 @@ class SelectiveRepairWithOpenAITest(unittest.TestCase):
         self.assertEqual(
             [block["id"] for block in select_candidates(blocks)],
             ["table", "equation", "damaged"],
+        )
+
+    def test_groups_text_separately_from_tables_and_equations(self) -> None:
+        blocks = [
+            {"id": "text", "type": "paragraph", "page": 1},
+            {"id": "table", "type": "table_candidate", "page": 1},
+            {"id": "equation", "type": "equation_candidate", "page": 1},
+        ]
+
+        grouped = group_candidates(blocks)
+
+        self.assertEqual(candidate_lane(blocks[0]), "text")
+        self.assertEqual(
+            [block["id"] for block in grouped[(1, "special")]],
+            ["table", "equation"],
+        )
+        self.assertEqual(
+            [block["id"] for block in grouped[(1, "text")]],
+            ["text"],
         )
 
     def test_extracts_fragments_and_pages_from_detected_markdown(self) -> None:
@@ -78,6 +101,44 @@ Second
             normalize_replacement("equation_candidate", r"\[x_{1}=1\]"),
             "$$\nx_{1}=1\n$$",
         )
+        self.assertTrue(
+            valid_replacement(
+                "paragraph",
+                "Body XQ001QX",
+                ["XQ001QX"],
+            )
+        )
+        self.assertFalse(
+            valid_replacement(
+                "paragraph",
+                "Body without marker",
+                ["XQ001QX"],
+            )
+        )
+
+    def test_rejects_keep_when_replacement_is_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            counts = save_replacements(
+                Path(temp_dir),
+                [
+                    {
+                        "id": "heron_table_p001_001",
+                        "type": "table_candidate",
+                        "replacement_required": True,
+                    }
+                ],
+                {
+                    "results": [
+                        {
+                            "block_id": "heron_table_p001_001",
+                            "action": "keep",
+                            "replacement": "",
+                        }
+                    ]
+                },
+            )
+
+        self.assertEqual(counts, {"replace": 0, "keep": 0, "rejected": 1})
 
     def test_extracts_structured_output_text(self) -> None:
         payload = {"results": []}
@@ -243,6 +304,126 @@ Second
             self.assertFalse(stale_recovered.exists())
             self.assertFalse(preserved_evaluation.exists())
             self.assertFalse(preserved_recovered.exists())
+
+    def test_retries_only_failed_or_rejected_items(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_file = root / "manifest.json"
+            detected_markdown = root / "detected.md"
+            output_dir = root / "output"
+            blocks = [
+                {
+                    "id": "equation",
+                    "type": "equation_candidate",
+                    "page": 1,
+                    "order": 1,
+                    "bbox": [0, 0, 10, 10],
+                },
+                {
+                    "id": "table",
+                    "type": "table_candidate",
+                    "page": 1,
+                    "order": 2,
+                    "bbox": [0, 10, 10, 20],
+                },
+                {
+                    "id": "text",
+                    "type": "paragraph",
+                    "page": 1,
+                    "order": 3,
+                    "bbox": [0, 20, 10, 30],
+                    "source_text": "damaged",
+                    "text_decision": "needs_text_adjudication",
+                },
+            ]
+            manifest_file.write_text(json.dumps(blocks), encoding="utf-8")
+            detected_markdown.write_text("## Page 1\n", encoding="utf-8")
+            text_calls = 0
+
+            def fake_call_page(**kwargs: object) -> tuple[dict, dict]:
+                nonlocal text_calls
+                payload = kwargs["payload"]
+                ids = [block["block_id"] for block in payload["blocks"]]
+                if ids == ["equation", "table"]:
+                    return {
+                        "results": [
+                            {
+                                "block_id": "equation",
+                                "action": "replace",
+                                "replacement": "broken",
+                            },
+                            {
+                                "block_id": "table",
+                                "action": "keep",
+                                "replacement": "",
+                            },
+                        ]
+                    }, {"total_tokens": 10}
+                if ids == ["equation"]:
+                    return {
+                        "results": [
+                            {
+                                "block_id": "equation",
+                                "action": "replace",
+                                "replacement": "$$\nx=1\n$$",
+                            }
+                        ]
+                    }, {"total_tokens": 3}
+                text_calls += 1
+                if text_calls == 1:
+                    raise TimeoutError
+                return {
+                    "results": [
+                        {
+                            "block_id": "text",
+                            "action": "keep",
+                            "replacement": "",
+                        }
+                    ]
+                }, {"total_tokens": 2}
+
+            args = argparse.Namespace(
+                pdf_file=root / "source.pdf",
+                manifest_file=manifest_file,
+                detected_markdown=detected_markdown,
+                output_dir=output_dir,
+                endpoint="https://api.openai.test/v1/responses",
+                model="gpt-5.6-luna",
+                reasoning_effort="low",
+                max_workers=2,
+            )
+            with (
+                mock.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.render_page",
+                    return_value="page-image",
+                ),
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.block_image",
+                    return_value="block-image",
+                ),
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.call_page",
+                    side_effect=fake_call_page,
+                ),
+            ):
+                summary = run(args)
+
+            self.assertEqual(summary["group_calls"], 2)
+            self.assertEqual(summary["fallback_calls"], 2)
+            self.assertEqual(summary["calls"], 4)
+            self.assertTrue(
+                (
+                    output_dir
+                    / "layout"
+                    / "auto"
+                    / "recovered_blocks"
+                    / "equation.md"
+                ).exists()
+            )
 
 
 if __name__ == "__main__":
