@@ -44,28 +44,29 @@ public class SkillExecutionResolver {
     public SkillExecutionPlan resolve(String workspaceId, String userId, String message) {
         Matcher matcher = EXPLICIT_COMMAND.matcher(message.strip());
         if (matcher.matches()) {
-            Skill skill = skillRepository.findAccessibleByCommand(workspaceId, userId, matcher.group(1))
-                    .orElseThrow(SkillNotFoundException::new);
+            Skill skill = skillRepository.findAccessibleByCommand(
+                            workspaceId, userId, matcher.group(1), PageRequest.of(0, 1)).stream()
+                    .findFirst().orElseThrow(SkillNotFoundException::new);
             String remainingMessage = matcher.group(2) == null ? "" : matcher.group(2).strip();
             if (remainingMessage.isBlank()) remainingMessage = "Skill을 실행해 주세요.";
-            return SkillExecutionPlan.explicit(remainingMessage, definition(skill));
+            return SkillExecutionPlan.explicit(remainingMessage, definition(workspaceId, skill));
         }
         List<SkillExecutionDefinition> candidates = skillRepository
                 .findAutoRoutingCandidates(workspaceId, userId, PageRequest.of(0, 20)).stream()
-                .flatMap(this::availableDefinition)
+                .flatMap(skill -> availableDefinition(workspaceId, skill))
                 .toList();
         return SkillExecutionPlan.auto(message, candidates);
     }
 
-    private Stream<SkillExecutionDefinition> availableDefinition(Skill skill) {
+    private Stream<SkillExecutionDefinition> availableDefinition(String workspaceId, Skill skill) {
         try {
-            return Stream.of(definition(skill));
+            return Stream.of(definition(workspaceId, skill));
         } catch (SkillReferenceStaleException exception) {
             return Stream.empty();
         }
     }
 
-    private SkillExecutionDefinition definition(Skill skill) {
+    private SkillExecutionDefinition definition(String workspaceId, Skill skill) {
         SkillVersion version = versionRepository.findFirstBySkillIdOrderByVersionDesc(skill.getId())
                 .orElseThrow(SkillNotFoundException::new);
         try {
@@ -76,7 +77,7 @@ public class SkillExecutionResolver {
             List<SkillExecutionDefinition.ReferenceDocument> snapshots = references.stream()
                     .map(reference -> {
                         boolean current = documentRepository
-                                .findByIdAndWorkspaceIdAndDeletedAtIsNull(reference.id(), skill.getWorkspaceId())
+                                .findByIdAndWorkspaceIdAndDeletedAtIsNull(reference.id(), workspaceId)
                                 .filter(document -> reference.contentHash().equals(document.getCurrentContentHash()))
                                 .isPresent();
                         if (!current) throw new SkillReferenceStaleException();

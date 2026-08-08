@@ -14,16 +14,18 @@ import java.util.Optional;
 public interface SkillRepository extends JpaRepository<Skill, String> {
     @Query("""
             SELECT s FROM Skill s
-            WHERE s.workspaceId = :workspaceId AND s.deletedAt IS NULL
-              AND (s.scope = fruition.skill.domain.SkillScope.team OR s.ownerUserId = :userId)
+            WHERE s.deletedAt IS NULL
+              AND ((s.scope = fruition.skill.domain.SkillScope.team AND s.workspaceId = :workspaceId)
+                OR (s.scope = fruition.skill.domain.SkillScope.personal AND s.ownerUserId = :userId))
             ORDER BY CASE WHEN s.scope = fruition.skill.domain.SkillScope.team THEN 0 ELSE 1 END, s.command
             """)
     List<Skill> findAccessible(@Param("workspaceId") String workspaceId, @Param("userId") String userId);
 
     @Query("""
             SELECT s FROM Skill s
-            WHERE s.id = :skillId AND s.workspaceId = :workspaceId AND s.deletedAt IS NULL
-              AND (s.scope = fruition.skill.domain.SkillScope.team OR s.ownerUserId = :userId)
+            WHERE s.id = :skillId AND s.deletedAt IS NULL
+              AND ((s.scope = fruition.skill.domain.SkillScope.team AND s.workspaceId = :workspaceId)
+                OR (s.scope = fruition.skill.domain.SkillScope.personal AND s.ownerUserId = :userId))
             """)
     Optional<Skill> findAccessibleById(@Param("workspaceId") String workspaceId,
                                        @Param("userId") String userId,
@@ -31,33 +33,45 @@ public interface SkillRepository extends JpaRepository<Skill, String> {
 
     @Query("""
             SELECT s FROM Skill s
-            WHERE s.workspaceId = :workspaceId AND s.command = :command AND s.deletedAt IS NULL
-              AND (s.scope = fruition.skill.domain.SkillScope.team OR s.ownerUserId = :userId)
+            WHERE s.command = :command AND s.deletedAt IS NULL
+              AND ((s.scope = fruition.skill.domain.SkillScope.team AND s.workspaceId = :workspaceId)
+                OR (s.scope = fruition.skill.domain.SkillScope.personal AND s.ownerUserId = :userId))
+            ORDER BY CASE WHEN s.scope = fruition.skill.domain.SkillScope.team THEN 0 ELSE 1 END
             """)
-    Optional<Skill> findAccessibleByCommand(@Param("workspaceId") String workspaceId,
-                                            @Param("userId") String userId,
-                                            @Param("command") String command);
+    List<Skill> findAccessibleByCommand(@Param("workspaceId") String workspaceId,
+                                        @Param("userId") String userId,
+                                        @Param("command") String command,
+                                        Pageable pageable);
 
     @Query("""
             SELECT s FROM Skill s
-            WHERE s.workspaceId = :workspaceId AND s.deletedAt IS NULL AND s.autoRoutingEnabled = true
-              AND (s.scope = fruition.skill.domain.SkillScope.team OR s.ownerUserId = :userId)
-            ORDER BY s.updatedAt DESC, s.id ASC
+            WHERE s.deletedAt IS NULL AND s.autoRoutingEnabled = true
+              AND ((s.scope = fruition.skill.domain.SkillScope.team AND s.workspaceId = :workspaceId)
+                OR (s.scope = fruition.skill.domain.SkillScope.personal AND s.ownerUserId = :userId))
+            ORDER BY s.updatedAt DESC,
+              CASE WHEN s.scope = fruition.skill.domain.SkillScope.team THEN 0 ELSE 1 END, s.id ASC
             """)
     List<Skill> findAutoRoutingCandidates(@Param("workspaceId") String workspaceId,
                                           @Param("userId") String userId,
                                           Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT s FROM Skill s WHERE s.id = :skillId AND s.workspaceId = :workspaceId AND s.deletedAt IS NULL")
+    @Query("""
+            SELECT s FROM Skill s WHERE s.id = :skillId AND s.deletedAt IS NULL
+              AND ((s.scope = fruition.skill.domain.SkillScope.team AND s.workspaceId = :workspaceId)
+                OR s.scope = fruition.skill.domain.SkillScope.personal)
+            """)
     Optional<Skill> findActiveForUpdate(@Param("workspaceId") String workspaceId,
                                         @Param("skillId") String skillId);
 
     @Query("""
             SELECT COUNT(s) > 0 FROM Skill s
-            WHERE s.workspaceId = :workspaceId AND s.command = :command AND s.deletedAt IS NULL
+            WHERE s.command = :command AND s.deletedAt IS NULL
               AND s.id <> :excludedId
-              AND (:teamScope = true OR s.scope = fruition.skill.domain.SkillScope.team OR s.ownerUserId = :userId)
+              AND ((:teamScope = true AND s.scope = fruition.skill.domain.SkillScope.team
+                    AND s.workspaceId = :workspaceId)
+                OR (:teamScope = false AND s.scope = fruition.skill.domain.SkillScope.personal
+                    AND s.ownerUserId = :userId))
             """)
     boolean commandExists(@Param("workspaceId") String workspaceId, @Param("userId") String userId,
                           @Param("command") String command, @Param("teamScope") boolean teamScope,

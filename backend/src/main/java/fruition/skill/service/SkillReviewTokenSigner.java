@@ -22,9 +22,10 @@ public class SkillReviewTokenSigner {
         this.secret = secret.getBytes(StandardCharsets.UTF_8);
     }
 
-    public String issue(String definitionHash, String safetyResult) {
+    public String issue(String workspaceId, String userId, String definitionHash, String safetyResult) {
         try {
-            Payload payload = new Payload(definitionHash, safetyResult, Instant.now().plusSeconds(600).getEpochSecond());
+            Payload payload = new Payload(
+                    workspaceId, userId, definitionHash, safetyResult, Instant.now().plusSeconds(600).getEpochSecond());
             String encoded = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(objectMapper.writeValueAsBytes(payload));
             return encoded + "." + sign(encoded);
@@ -33,14 +34,16 @@ public class SkillReviewTokenSigner {
         }
     }
 
-    public String verify(String token, String expectedHash) {
+    public String verify(String token, String workspaceId, String userId, String expectedHash) {
         try {
             String[] parts = token.split("\\.", 2);
             if (parts.length != 2 || !constantTimeEquals(sign(parts[0]), parts[1])) {
                 throw invalid();
             }
             Payload payload = objectMapper.readValue(Base64.getUrlDecoder().decode(parts[0]), Payload.class);
-            if (!payload.definitionHash().equals(expectedHash)
+            if (!payload.workspaceId().equals(workspaceId)
+                    || !payload.userId().equals(userId)
+                    || !payload.definitionHash().equals(expectedHash)
                     || payload.expiresAt() < Instant.now().getEpochSecond()) {
                 throw invalid();
             }
@@ -68,5 +71,6 @@ public class SkillReviewTokenSigner {
         return new InvalidSkillRequestException("검토 토큰이 만료되었거나 Skill 내용과 일치하지 않습니다.");
     }
 
-    private record Payload(String definitionHash, String safetyResult, long expiresAt) {}
+    private record Payload(
+            String workspaceId, String userId, String definitionHash, String safetyResult, long expiresAt) {}
 }

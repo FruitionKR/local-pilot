@@ -40,8 +40,9 @@ class SkillExecutionResolverTest {
     void explicitCommandSelectsLatestVersionAndRemovesCommandFromMessage() {
         Skill skill = skill("meeting-summary");
         SkillVersion version = version(skill);
-        when(skillRepository.findAccessibleByCommand("ws_1", "user_1", "meeting-summary"))
-                .thenReturn(Optional.of(skill));
+        when(skillRepository.findAccessibleByCommand(
+                "ws_1", "user_1", "meeting-summary", PageRequest.of(0, 1)))
+                .thenReturn(List.of(skill));
         when(versionRepository.findFirstBySkillIdOrderByVersionDesc(skill.getId()))
                 .thenReturn(Optional.of(version));
 
@@ -68,8 +69,9 @@ class SkillExecutionResolverTest {
 
     @Test
     void unknownExplicitCommandIsRejected() {
-        when(skillRepository.findAccessibleByCommand("ws_1", "user_1", "missing"))
-                .thenReturn(Optional.empty());
+        when(skillRepository.findAccessibleByCommand(
+                "ws_1", "user_1", "missing", PageRequest.of(0, 1)))
+                .thenReturn(List.of());
 
         assertThatThrownBy(() -> resolver.resolve("ws_1", "user_1", "/missing 실행해줘"))
                 .isInstanceOf(SkillNotFoundException.class);

@@ -9,7 +9,7 @@ import java.util.UUID;
 @Table(name = "skills")
 public class Skill {
     @Id private String id;
-    @Column(name = "workspace_id", nullable = false) private String workspaceId;
+    @Column(name = "workspace_id") private String workspaceId;
     @Enumerated(EnumType.STRING)
     @Column(name = "scope_type", nullable = false) private SkillScope scope;
     @Column(name = "owner_user_id") private String ownerUserId;
@@ -30,12 +30,13 @@ public class Skill {
         this.autoRoutingEnabled = true;
         this.createdAt = Instant.now();
         this.updatedAt = createdAt;
-        changeIdentity(scope, command, userId);
+        changeIdentity(scope, command, userId, workspaceId);
     }
 
-    public void changeIdentity(SkillScope scope, String command, String requesterId) {
+    public void changeIdentity(SkillScope scope, String command, String requesterId, String currentWorkspaceId) {
         this.scope = scope;
         this.ownerUserId = scope == SkillScope.personal ? requesterId : null;
+        this.workspaceId = scope == SkillScope.team ? currentWorkspaceId : null;
         this.command = command;
         this.updatedAt = Instant.now();
     }

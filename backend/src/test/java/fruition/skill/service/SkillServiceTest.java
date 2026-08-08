@@ -61,7 +61,9 @@ class SkillServiceTest {
         when(referenceDocumentLoader.load("ws_1", request.referenceDocumentIds())).thenReturn(references);
         when(requester.review("ws_1", "user_1", request, references))
                 .thenReturn(new ObjectMapper().readTree("{\"has_blocked_issues\":false}"));
-        when(tokenSigner.issue(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        when(tokenSigner.issue(
+                org.mockito.ArgumentMatchers.eq("ws_1"), org.mockito.ArgumentMatchers.eq("user_1"),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
                 .thenReturn("review-token");
 
         var result = service.review("ws_1", "user_1", request);

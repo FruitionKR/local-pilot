@@ -12,18 +12,28 @@ class SkillReviewTokenSignerTest {
 
     @Test
     void tokenAcceptsOnlyReviewedDefinitionHash() {
-        String token = signer.issue("hash-1", "{\"publish_allowed\":true}");
+        String token = signer.issue("ws_1", "user_1", "hash-1", "{\"publish_allowed\":true}");
 
-        assertThat(signer.verify(token, "hash-1")).contains("publish_allowed");
-        assertThatThrownBy(() -> signer.verify(token, "hash-2"))
+        assertThat(signer.verify(token, "ws_1", "user_1", "hash-1")).contains("publish_allowed");
+        assertThatThrownBy(() -> signer.verify(token, "ws_1", "user_1", "hash-2"))
+                .isInstanceOf(InvalidSkillRequestException.class);
+    }
+
+    @Test
+    void tokenCannotBeReusedByAnotherUserOrWorkspace() {
+        String token = signer.issue("ws_1", "user_1", "hash-1", "{}");
+
+        assertThatThrownBy(() -> signer.verify(token, "ws_2", "user_1", "hash-1"))
+                .isInstanceOf(InvalidSkillRequestException.class);
+        assertThatThrownBy(() -> signer.verify(token, "ws_1", "user_2", "hash-1"))
                 .isInstanceOf(InvalidSkillRequestException.class);
     }
 
     @Test
     void tamperedTokenIsRejected() {
-        String token = signer.issue("hash-1", "{}");
+        String token = signer.issue("ws_1", "user_1", "hash-1", "{}");
 
-        assertThatThrownBy(() -> signer.verify(token + "x", "hash-1"))
+        assertThatThrownBy(() -> signer.verify(token + "x", "ws_1", "user_1", "hash-1"))
                 .isInstanceOf(InvalidSkillRequestException.class);
     }
 }

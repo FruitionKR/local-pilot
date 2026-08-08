@@ -8,6 +8,23 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-08
 
+### feat: personal Skill을 사용자 전역 범위로 확장
+
+**변경된 것**
+
+- personal Skill의 `workspace_id`를 `null`로 전환해 소유자의 모든 Workspace에서 목록·상세·자동완성·실행에
+  사용할 수 있게 했다. team Skill은 기존처럼 해당 Workspace에 귀속된다.
+- personal과 team에 같은 command를 허용하고, 두 Skill이 함께 접근 가능하면 team Skill을 우선한다.
+- command 중복 검사는 personal은 사용자 단위, team은 Workspace 단위로 분리했다.
+- personal 참조 문서는 현재 Workspace에서 접근 가능한 경우에만 유효하게 처리한다.
+- 검토 토큰을 `workspaceId`, `userId`, definition hash에 함께 귀속해 다른 사용자·Workspace의 재사용을
+  차단했다.
+- 기존 personal 데이터를 전역 범위로 이관하는 `V21` migration을 추가했다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+
 ### feat: Spring Skill 실행 snapshot을 Agent 요청에 연결
 
 **변경된 것**

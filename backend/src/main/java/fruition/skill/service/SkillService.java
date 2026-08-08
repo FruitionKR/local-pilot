@@ -67,7 +67,8 @@ public class SkillService {
         ObjectNode response = result.deepCopy();
         response.put("publish_allowed", allowed);
         if (allowed) {
-            response.put("review_token", tokenSigner.issue(definitionHash(request, references), result.toString()));
+            response.put("review_token", tokenSigner.issue(
+                    workspaceId, userId, definitionHash(request, references), result.toString()));
         }
         return response;
     }
@@ -77,11 +78,11 @@ public class SkillService {
         SkillDraftRequest draft = request.draft();
         List<SkillReferenceDocument> references = prepareForPublish(workspaceId, userId, draft);
         String hash = definitionHash(draft, references);
-        String safetyResult = tokenSigner.verify(request.reviewToken(), hash);
+        String safetyResult = tokenSigner.verify(request.reviewToken(), workspaceId, userId, hash);
         ensureCommandAvailable(workspaceId, userId, draft, "");
         Skill skill = skillRepository.save(new Skill(workspaceId, userId, scope(draft), draft.command()));
         SkillVersion version = versionRepository.save(version(skill, 1, draft, references, safetyResult, hash, userId));
-        return detail(skill, version);
+        return detail(workspaceId, skill, version);
     }
 
     @Transactional(readOnly = true)
@@ -98,7 +99,7 @@ public class SkillService {
     public SkillDetailResponse get(String workspaceId, String userId, String skillId) {
         requireMember(workspaceId, userId);
         Skill skill = accessible(workspaceId, userId, skillId);
-        return detail(skill, latest(skill));
+        return detail(workspaceId, skill, latest(skill));
     }
 
     @Transactional(readOnly = true)
@@ -127,12 +128,12 @@ public class SkillService {
         SkillDraftRequest draft = request.draft();
         List<SkillReferenceDocument> references = prepareForPublish(workspaceId, userId, draft);
         String hash = definitionHash(draft, references);
-        String safetyResult = tokenSigner.verify(request.reviewToken(), hash);
+        String safetyResult = tokenSigner.verify(request.reviewToken(), workspaceId, userId, hash);
         ensureCommandAvailable(workspaceId, userId, draft, skillId);
-        skill.changeIdentity(scope(draft), draft.command(), userId);
+        skill.changeIdentity(scope(draft), draft.command(), userId, workspaceId);
         SkillVersion next = versionRepository.save(
                 version(skill, current.getVersion() + 1, draft, references, safetyResult, hash, userId));
-        return detail(skill, next);
+        return detail(workspaceId, skill, next);
     }
 
     @Transactional
@@ -141,7 +142,7 @@ public class SkillService {
         Skill skill = skillRepository.findActiveForUpdate(workspaceId, skillId).orElseThrow(SkillNotFoundException::new);
         ensureManageable(skill, userId);
         skill.setAutoRoutingEnabled(enabled);
-        return detail(skill, latest(skill));
+        return detail(workspaceId, skill, latest(skill));
     }
 
     @Transactional
@@ -190,7 +191,8 @@ public class SkillService {
     }
 
     private void ensureCommandAvailable(String workspaceId, String userId, SkillDraftRequest draft, String excludedId) {
-        skillRepository.lockCommand(workspaceId + ":" + draft.command());
+        String lockOwner = scope(draft) == SkillScope.team ? workspaceId : userId;
+        skillRepository.lockCommand(scope(draft).name() + ":" + lockOwner + ":" + draft.command());
         if (skillRepository.commandExists(workspaceId, userId, draft.command(), scope(draft) == SkillScope.team, excludedId)) {
             throw new SkillConflictException("SKILL_COMMAND_CONFLICT", "이미 사용 중인 command입니다.");
         }
@@ -221,7 +223,7 @@ public class SkillService {
                 skill.getScope().name(), skill.isAutoRoutingEnabled(), true, true);
     }
 
-    private SkillDetailResponse detail(Skill skill, SkillVersion version) {
+    private SkillDetailResponse detail(String currentWorkspaceId, Skill skill, SkillVersion version) {
         try {
             List<String> capabilities = objectMapper.readValue(version.getCapabilities(), new TypeReference<>() {});
             List<String> tools = objectMapper.readValue(version.getAllowedTools(), new TypeReference<>() {});
@@ -230,7 +232,7 @@ public class SkillService {
             List<SkillDetailResponse.ReferenceDocument> references = stored.stream()
                     .map(reference -> new SkillDetailResponse.ReferenceDocument(reference.id(), reference.name(),
                             reference.contentHash(), documentRepository
-                            .findByIdAndWorkspaceIdAndDeletedAtIsNull(reference.id(), skill.getWorkspaceId())
+                            .findByIdAndWorkspaceIdAndDeletedAtIsNull(reference.id(), currentWorkspaceId)
                             .filter(document -> reference.contentHash().equals(document.getCurrentContentHash()))
                             .isPresent() ? "available" : "unavailable"))
                     .toList();
