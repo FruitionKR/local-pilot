@@ -5,6 +5,7 @@ from app.modules.skill.domain.entities import (
     SkillAuthoringMode,
     SkillAuthoringReference,
     SkillDraftSourceRun,
+    SkillVersion,
 )
 
 
@@ -20,13 +21,13 @@ class SkillRepositoryPort(Protocol):
 
 
 class ManageSkillRepositoryPort(Protocol):
-    def create_published(self, skill: Skill, version: object) -> Skill:
+    def create_published(self, skill: Skill, version: SkillVersion) -> Skill:
         ...
 
     def get_manageable(self, workspace_id: str | None, user_id: str, skill_id: str) -> Skill | None:
         ...
 
-    def save_published_version(self, skill: Skill, version: object) -> Skill:
+    def save_published_version(self, skill: Skill, version: SkillVersion) -> Skill:
         ...
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:

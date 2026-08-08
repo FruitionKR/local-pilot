@@ -39,6 +39,7 @@ MAX_INSTRUCTIONS_CHARS = 30_000
 MAX_INSTRUCTIONS_LINES = 500
 MAX_QUESTION_CHARS = 500
 MAX_LLM_ISSUES = 10
+REGENERATE_GENERATION_ATTEMPTS = 2
 
 
 class AuthorSkillUseCase:
@@ -116,45 +117,10 @@ class AuthorSkillUseCase:
                 reference_issues,
             )
 
-        intent = _verified_intent(
-            self._generator,
-            instruction,
-            references,
-            description,
+        generation_attempts = (
+            REGENERATE_GENERATION_ATTEMPTS if authoring_mode == "regenerate" else 1
         )
-        if intent is None:
-            if allow_clarification:
-                return SkillAuthoringResult(
-                    status="clarification_required",
-                    question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
-                )
-            raise ValueError("Skill request could not be classified consistently.")
-        capability, reference_mode, allowed_tools = intent
-        candidate = self._generator.generate(
-            instruction,
-            references,
-            allow_clarification=allow_clarification,
-            authoring_mode=authoring_mode,
-            requested_name=name,
-            requested_description=description,
-            reference_mode=reference_mode,
-        )
-        status = candidate.get("status")
-        if status == "blocked":
-            issues = _llm_safety_issues(
-                candidate.get("issues"),
-                instruction=instruction,
-                description=description,
-                references=references,
-            )
-            if authoring_mode != "regenerate":
-                return SkillAuthoringResult(status="blocked", issues=issues)
-            instruction, description, references = _redact_sources(
-                instruction,
-                description,
-                references,
-                issues,
-            )
+        for attempt in range(generation_attempts):
             intent = _verified_intent(
                 self._generator,
                 instruction,
@@ -165,7 +131,10 @@ class AuthorSkillUseCase:
                 if allow_clarification:
                     return SkillAuthoringResult(
                         status="clarification_required",
-                        question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                        question=(
+                            "이 Skill이 수행할 작업이 문서 작성, 문서 수정, "
+                            "폴더 정리, 템플릿 중 무엇인지 알려 주세요."
+                        ),
                     )
                 raise ValueError("Skill request could not be classified consistently.")
             capability, reference_mode, allowed_tools = intent
@@ -179,16 +148,22 @@ class AuthorSkillUseCase:
                 reference_mode=reference_mode,
             )
             status = candidate.get("status")
-            if status == "blocked":
-                return SkillAuthoringResult(
-                    status="blocked",
-                    issues=_llm_safety_issues(
-                        candidate.get("issues"),
-                        instruction=instruction,
-                        description=description,
-                        references=references,
-                    ),
-                )
+            if status != "blocked":
+                break
+            issues = _llm_safety_issues(
+                candidate.get("issues"),
+                instruction=instruction,
+                description=description,
+                references=references,
+            )
+            if attempt == generation_attempts - 1:
+                return SkillAuthoringResult(status="blocked", issues=issues)
+            instruction, description, references = _redact_sources(
+                instruction,
+                description,
+                references,
+                issues,
+            )
         if status == "clarification_required":
             if not allow_clarification:
                 raise ValueError("Single-turn Skill authoring must return an editable draft.")
