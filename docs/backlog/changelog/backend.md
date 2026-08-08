@@ -8,6 +8,22 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-08
 
+### docs: 기존 API Swagger 기능 설명 보강
+
+**변경된 것**
+
+- 전체 Backend endpoint에 `@Operation` 설명이 노출되도록 Agent, 폴더, Navigation, Query run,
+  Skill, Wiki maintenance, Wiki Schema controller의 누락 annotation을 추가했다.
+- 주요 정상·실패 응답과 path, query, `Idempotency-Key` parameter의 의미를 실제 서비스 동작에 맞춰
+  문서화했다.
+- 채팅 세션 삭제 API에 삭제 범위 설명을 추가했다.
+
+**검증**
+
+- 전체 85개 request mapping과 `@Operation` 수 일치 확인
+- `cd backend && ./gradlew compileJava` 통과
+- `cd backend && ./gradlew test` 통과
+
 ### feat: personal Skill을 사용자 전역 범위로 확장
 
 **변경된 것**
