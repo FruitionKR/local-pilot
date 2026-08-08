@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from app.core.response_preferences import OutputLanguage, ResponseLength
+
 
 @dataclass(frozen=True)
 class WikiPage:
@@ -140,6 +142,9 @@ class QueryContext:
     answer_context: str
     workspace_id: str | None = None
     user_id: str | None = None
+    output_language: OutputLanguage | None = None
+    response_length: ResponseLength | None = None
+    allow_web_search: bool | None = None
 
 
 @dataclass(frozen=True)

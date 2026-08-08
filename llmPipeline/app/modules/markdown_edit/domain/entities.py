@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from app.core.response_preferences import OutputLanguage
 
 TargetType = Literal["selection", "current_section", "whole_document"]
 EditOperationType = Literal["replace", "insert_after"]
@@ -66,6 +67,7 @@ class MarkdownCreateRequest:
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
     skill_instructions: str | None = None
+    output_language: OutputLanguage | None = None
 
 
 @dataclass(frozen=True)

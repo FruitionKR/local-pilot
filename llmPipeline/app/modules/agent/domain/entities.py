@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from app.core.response_preferences import OutputLanguage, ResponseLength
 from app.modules.markdown_edit.domain.entities import (
     GeneratedMarkdownDocument,
     MarkdownEditOperation,
@@ -75,6 +76,9 @@ class AgentTurnRequest:
     skill_scope_type: SkillScopeType | None = None
     skill_authoring_mode: SkillAuthoringMode = "enhance"
     skill_reference_document_ids: tuple[str, ...] = ()
+    output_language: OutputLanguage | None = None
+    response_length: ResponseLength | None = None
+    allow_web_search: bool | None = None
 
 
 @dataclass(frozen=True)

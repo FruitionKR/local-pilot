@@ -102,6 +102,7 @@ class HandleAgentTurnUseCase:
                         else {}
                     ),
                     skill_instructions=_skill_instructions(selected_skill),
+                    output_language=request.output_language,
                 )
             )
             return AgentTurnResult(action="markdown_create", route=route, generated_markdown=result.document)
@@ -296,6 +297,9 @@ class HandleAgentTurnUseCase:
             workspace_id=request.workspace_id or "",
             user_id=request.user_id,
             conversation_context=_to_query_conversation_context(request),
+            output_language=request.output_language,
+            response_length=request.response_length,
+            allow_web_search=request.allow_web_search,
         )
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 

@@ -814,6 +814,32 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("external knowledge", result.evidence_snippets[0].text)
         self.assertIn("[1]", result.answer.content)
 
+    def test_does_not_call_web_search_when_request_disallows_it(self) -> None:
+        pages = []
+        web_search = FakeWebSearch([])
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=ScoreSearch({}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            web_search=web_search,
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute(
+            "RAG가 뭐야?",
+            workspace_id="ws_test",
+            output_language="en",
+            allow_web_search=False,
+        )
+
+        self.assertEqual(web_search.queries, [])
+        self.assertNotEqual(
+            result.retrieval_summary.stop_reason,
+            "web_search_fallback",
+        )
+        self.assertTrue(result.answer.content.startswith("The provided evidence"))
+
     def test_query_evaluator_reviews_generated_answer_and_can_keep_internal_answer_when_seed_score_is_low(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]
         answer_generator = RecordingAnswerGenerator("index.md는 위키 페이지 카탈로그입니다. [1]")

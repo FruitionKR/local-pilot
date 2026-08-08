@@ -842,6 +842,9 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 | `user_id` | string/null | 아니오 | 아니오 | 선택 User context |
 | `recent_conversation_summary` | string/null | 아니오 | 아니오 | 대화 요약 |
 | `reference_context` | object/null | 아니오 | 아니오 | 지시어·개념 context |
+| `output_language` | `ko`/`en`/`document`/null | 아니오 | 후속 작업 | 답변 언어. `document`는 근거 문서 언어를 따른다. |
+| `response_length` | `concise`/`balanced`/`detailed`/null | 아니오 | 후속 작업 | 답변 설명 밀도다. |
+| `allow_web_search` | boolean/null | 아니오 | 후속 작업 | `false`이면 요청 단위 web fallback을 금지한다. |
 
 #### Spring이 받는 값
 
@@ -1589,6 +1592,9 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `active_markdown_context` | object/null | 아니오 | 예 | Markdown snapshot과 target |
 | `workspace_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 scope |
 | `user_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 actor |
+| `output_language` | `ko`/`en`/`document`/null | 아니오 | 후속 작업 | 채팅 답변 언어와 새 문서 생성의 기본 언어다. |
+| `response_length` | `concise`/`balanced`/`detailed`/null | 아니오 | 후속 작업 | 채팅 답변 설명 밀도다. |
+| `allow_web_search` | boolean/null | 아니오 | 후속 작업 | `chat_answer`의 요청 단위 web fallback 허용 여부다. |
 | `skill_mode` | `auto`/`explicit`/`off` | 아니오 | 기능 사용 시 | 기본 `auto` |
 | `skill_id` | string/null | 조건부 | explicit일 때 | 명시적 Skill ID |
 | `skill_draft_sources` | array | 아니오 | 아니오 | Skill 초안 생성에 사용할 Agent Run source. 기본 `[]` |

@@ -25,3 +25,9 @@
 - 재편입 영향 Page를 원문 문서별 최신 active contribution JSON으로 다시 조립해 수정·삭제 전 주장과 근거를 제거한다.
 - 다른 활성 문서의 근거는 유지하고, Concept Markdown과 embedding unit을 같은 lint transaction에서 갱신한다.
 - dry-run 후보 보고와 operation별 `rebuild` artifact 저장을 추가하고 llmPipeline 전체 테스트 `803 passed, 61 subtests passed`로 검증했다.
+
+### feat: Query·Agent 응답 개인 설정 계약 구현
+
+- Query와 Agent turn에 optional `output_language`, `response_length`, `allow_web_search`를 추가하고 동일한 trusted prompt 규칙을 적용했다.
+- Markdown 편집 언어는 유지하고 새 문서 생성은 사용자 지시 언어를 우선하도록 분리했다.
+- 요청이 web search를 금지하면 직접 fallback과 evaluator route를 모두 차단하며, llmPipeline 전체 테스트 `809 passed, 61 subtests passed`로 검증했다.

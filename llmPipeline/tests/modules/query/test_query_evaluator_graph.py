@@ -20,6 +20,7 @@ class FakeQueryEvaluator:
     def __init__(self, evaluations: list[QueryEvaluation]) -> None:
         self.evaluations = evaluations
         self.calls: list[GeneratedAnswer] = []
+        self.web_search_availability: list[bool] = []
 
     def evaluate(
         self,
@@ -30,11 +31,42 @@ class FakeQueryEvaluator:
         web_search_available: bool = False,
     ) -> QueryEvaluation:
         self.calls.append(answer)
+        self.web_search_availability.append(web_search_available)
         index = min(len(self.calls) - 1, len(self.evaluations) - 1)
         return self.evaluations[index]
 
 
 class QueryEvaluatorGraphTest(unittest.TestCase):
+    def test_request_can_disable_web_fallback_for_evaluator(self) -> None:
+        answer_generator = SequencedAnswerGenerator(["내부 답변입니다."])
+        query_evaluator = FakeQueryEvaluator(
+            [QueryEvaluation(route="internal_supported")]
+        )
+        graph = LangGraphQueryEvaluatorGraph(
+            query_answer_assembler=QueryAnswerAssembler(answer_generator),
+            query_evaluator=query_evaluator,
+            web_search_available=True,
+            max_attempts=1,
+        )
+        context = QueryContext(
+            question="질문",
+            graph_context=GraphContext(),
+            traversal_paths=[],
+            related_pages=[],
+            evidence_snippets=[],
+            answer_context="질문",
+            allow_web_search=False,
+        )
+
+        graph.run(
+            question="질문",
+            query_context=context,
+            stop_reason="no_relevant_seed",
+            event_publisher=None,
+        )
+
+        self.assertEqual(query_evaluator.web_search_availability, [False])
+
     def test_langgraph_query_evaluator_retries_with_feedback(self) -> None:
         answer_generator = SequencedAnswerGenerator(
             [

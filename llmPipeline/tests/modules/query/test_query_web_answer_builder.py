@@ -68,6 +68,8 @@ class QueryWebAnswerBuilderTest(unittest.TestCase):
                 retrieval_query="kubernetes operator",
             ),
             event_publisher=event_publisher,
+            output_language="en",
+            response_length="concise",
         )
 
         self.assertIsNotNone(result)
@@ -82,6 +84,8 @@ class QueryWebAnswerBuilderTest(unittest.TestCase):
         self.assertIsNotNone(answer_generator.last_context)
         assert answer_generator.last_context is not None
         self.assertIn("# Web Fallback Answer Policy", answer_generator.last_context.answer_context)
+        self.assertEqual(answer_generator.last_context.output_language, "en")
+        self.assertEqual(answer_generator.last_context.response_length, "concise")
 
 
 if __name__ == "__main__":

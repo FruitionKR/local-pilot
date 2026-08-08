@@ -2,6 +2,7 @@ import hashlib
 import re
 from collections.abc import Callable
 
+from app.core.response_preferences import OutputLanguage, ResponseLength
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.ports import QueryEventPublisherPort, WebSearchPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
@@ -38,6 +39,8 @@ class QueryWebAnswerBuilder:
         question: str,
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
+        output_language: OutputLanguage | None = None,
+        response_length: ResponseLength | None = None,
     ) -> QueryAnswer | None:
         web_results = self._search_web(
             query_rewrite.retrieval_query,
@@ -57,6 +60,9 @@ class QueryWebAnswerBuilder:
             graph_context=graph_context,
             traversal_paths=[],
             answer_mode="web_fallback",
+            output_language=output_language,
+            response_length=response_length,
+            allow_web_search=True,
         )
         answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(query_context)
         self._publish(
@@ -110,6 +116,11 @@ class QueryWebAnswerBuilder:
             original_question=question,
             answer_mode="internal_web_augmented",
             embedding_units_by_page_id=self._embedding_unit_loader(related_pages),
+            workspace_id=query_context.workspace_id,
+            user_id=query_context.user_id,
+            output_language=query_context.output_language,
+            response_length=query_context.response_length,
+            allow_web_search=query_context.allow_web_search,
         )
         answer, evidence_snippets = self._query_answer_assembler.generate_supported_answer(augmented_context)
         self._publish(

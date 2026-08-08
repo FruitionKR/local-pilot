@@ -78,6 +78,9 @@ class AgentTurnRequestBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_AGENT_MESSAGE_LENGTH)
     workspace_id: str | None = Field(default=None, min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
+    output_language: Literal["ko", "en", "document"] | None = None
+    response_length: Literal["concise", "balanced", "detailed"] | None = None
+    allow_web_search: bool | None = None
     conversation_context: AgentConversationContextRequest | None = None
     active_markdown_context: ActiveMarkdownContextRequest | None = None
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
@@ -99,6 +102,9 @@ class AgentTurnRequestBody(BaseModel):
             message=self.message,
             workspace_id=self.workspace_id,
             user_id=self.user_id,
+            output_language=self.output_language,
+            response_length=self.response_length,
+            allow_web_search=self.allow_web_search,
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
             skill_mode=self.skill_mode,
