@@ -41,6 +41,7 @@ class RunPipelineUseCase:
 
     def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
         with _PIPELINE_EXECUTION_LOCK:
+            manifest: dict[str, Any] = {}
             try:
                 self._ensure_active(run_id)
                 manifest = self._runner.run(
@@ -78,7 +79,7 @@ class RunPipelineUseCase:
                     and command.result_callback_url
                     and self._result_notifier is not None
                 ):
-                    payload = _failed_result_payload(command, exc)
+                    payload = _failed_result_payload(command, exc, manifest)
                     try:
                         self._result_notifier.notify(
                             command.result_callback_url,
@@ -142,6 +143,7 @@ def _result_payload(
 def _failed_result_payload(
     command: PipelineRunCommand,
     error: Exception,
+    manifest: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "operation_id": command.operation_id,
@@ -151,5 +153,5 @@ def _failed_result_payload(
         "user_id": command.user_id,
         "target_document_id": command.source_document_id,
         "summary": str(error),
-        "changed_pages": [],
+        "changed_pages": manifest.get("operation_artifacts", []),
     }
