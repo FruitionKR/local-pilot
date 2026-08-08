@@ -1,14 +1,18 @@
 from pathlib import Path
 
-from provider_e2e import run_provider_e2e
+from provider_e2e import _probe_markdown_create, run_provider_e2e
 
 
 class _Client:
+    def __init__(self) -> None:
+        self.system_prompts: list[str] = []
+
     def complete_json(
         self,
         system_prompt: str,
         user_prompt: str,
     ) -> dict[str, object]:
+        self.system_prompts.append(system_prompt)
         if "Stage=ChunkSemanticExtraction" in system_prompt:
             return {
                 "chunk_id": "provider-e2e",
@@ -80,3 +84,11 @@ def test_records_safe_failure_and_continues_other_probes() -> None:
     assert "secret" not in str(results[0])
     assert results[1]["passed"] is True
     assert results[2]["passed"] is True
+
+
+def test_markdown_create_uses_creation_prompt() -> None:
+    client = _Client()
+
+    _probe_markdown_create(client)  # type: ignore[arg-type]
+
+    assert "Markdown document creation engine" in client.system_prompts[0]

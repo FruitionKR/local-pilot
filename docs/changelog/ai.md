@@ -31,3 +31,9 @@
 - Query와 Agent turn에 optional `output_language`, `response_length`, `allow_web_search`를 추가하고 동일한 trusted prompt 규칙을 적용했다.
 - Markdown 편집 언어는 유지하고 새 문서 생성은 사용자 지시 언어를 우선하도록 분리했다.
 - 요청이 web search를 금지하면 직접 fallback과 evaluator route를 모두 차단하며, llmPipeline 전체 테스트 `809 passed, 61 subtests passed`로 검증했다.
+
+### fix: OpenAI provider 실환경 E2E runner 수정
+
+- 별도 provider env 파일 없이 기존 `infra/.env`의 공통 `LLM_API_KEY`를 기본으로 읽도록 했다.
+- `gpt-5-nano`가 허용하는 `temperature=1.0`을 사용하고, `markdown_create`에 생성 전용 prompt를 전달하도록 수정했다.
+- OpenAI 실제 smoke 3종과 llmPipeline 전체 테스트 `810 passed, 61 subtests passed`를 통과했다. Gemini·Claude 실환경 검증은 남아 있다.
