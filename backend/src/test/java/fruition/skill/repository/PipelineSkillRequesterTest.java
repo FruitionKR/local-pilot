@@ -65,14 +65,6 @@ class PipelineSkillRequesterTest {
         assertThat(capturedUri.get()).isEqualTo("/skills/refine");
     }
 
-    @Test
-    void publish_usesPlannedAtomicPublishPathAndReviewToken() {
-        requester().publish("ws_1", "user_1", draft(), references(), "review-token");
-
-        assertThat(capturedUri.get()).isEqualTo("/skills/publish-reviewed");
-        assertThat(capturedBody.get()).contains("\"review_token\":\"review-token\"");
-    }
-
     private PipelineSkillRequester requester() {
         String endpoint = "http://localhost:" + server.getAddress().getPort() + "/skills";
         return new PipelineSkillRequester(endpoint, "agent-token", 5);

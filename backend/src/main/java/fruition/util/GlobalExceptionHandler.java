@@ -50,6 +50,8 @@ import fruition.skill.exception.PipelineSkillException;
 import fruition.skill.exception.SkillReferenceDocumentNotFoundException;
 import fruition.skill.exception.SkillReferenceDocumentTooLargeException;
 import fruition.skill.exception.TeamSkillForbiddenException;
+import fruition.skill.exception.SkillNotFoundException;
+import fruition.skill.exception.SkillConflictException;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.EmailVerificationNotFoundException;
 import fruition.user.exception.InvalidCredentialsException;
@@ -103,6 +105,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTeamSkillForbidden(TeamSkillForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("TEAM_SKILL_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSkillNotFound(SkillNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("SKILL_NOT_FOUND", "Skill을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(SkillConflictException.class)
+    public ResponseEntity<ErrorResponse> handleSkillConflict(SkillConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(e.getCode(), e.getMessage()));
     }
 
     @ExceptionHandler(SkillReferenceDocumentNotFoundException.class)

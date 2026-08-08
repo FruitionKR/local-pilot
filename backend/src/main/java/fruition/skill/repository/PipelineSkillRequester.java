@@ -40,27 +40,21 @@ public class PipelineSkillRequester {
     public JsonNode refine(
             String workspaceId, String userId, SkillDraftRequest draft,
             List<SkillReferenceDocument> references) {
-        return post("/refine", payload(workspaceId, userId, draft, references, null));
+        return post("/refine", payload(workspaceId, userId, draft, references));
     }
 
     public JsonNode review(
             String workspaceId, String userId, SkillDraftRequest draft,
             List<SkillReferenceDocument> references) {
-        return post("/preview", payload(workspaceId, userId, draft, references, null));
-    }
-
-    public JsonNode publish(
-            String workspaceId, String userId, SkillDraftRequest draft,
-            List<SkillReferenceDocument> references, String reviewToken) {
-        return post("/publish-reviewed", payload(workspaceId, userId, draft, references, reviewToken));
+        return post("/preview", payload(workspaceId, userId, draft, references));
     }
 
     private SkillPayload payload(
             String workspaceId, String userId, SkillDraftRequest draft,
-            List<SkillReferenceDocument> references, String reviewToken) {
+            List<SkillReferenceDocument> references) {
         return new SkillPayload(
                 workspaceId, userId, draft.command(), draft.name(), draft.description(), draft.instructions(),
-                draft.scope(), draft.capabilities(), draft.allowedTools(), references, reviewToken);
+                draft.scope(), draft.capabilities(), draft.allowedTools(), references);
     }
 
     private JsonNode post(String path, Object body) {
@@ -102,7 +96,6 @@ public class PipelineSkillRequester {
             @JsonProperty("scope_type") String scope,
             List<String> capabilities,
             @JsonProperty("allowed_tools") List<String> allowedTools,
-            @JsonProperty("reference_documents") List<SkillReferenceDocument> referenceDocuments,
-            @JsonProperty("review_token") String reviewToken
+            @JsonProperty("reference_documents") List<SkillReferenceDocument> referenceDocuments
     ) {}
 }

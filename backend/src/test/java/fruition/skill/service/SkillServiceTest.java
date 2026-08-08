@@ -2,10 +2,10 @@ package fruition.skill.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.skill.dto.SkillDraftRequest;
-import fruition.skill.exception.TeamSkillForbiddenException;
 import fruition.skill.repository.PipelineSkillRequester;
-import fruition.workspace.domain.WorkspaceMember;
-import fruition.workspace.domain.WorkspaceRole;
+import fruition.skill.repository.SkillRepository;
+import fruition.skill.repository.SkillVersionRepository;
+import fruition.document.repository.DocumentRepository;
 import fruition.workspace.repository.WorkspaceMemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,12 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,20 +25,24 @@ class SkillServiceTest {
     @Mock WorkspaceMemberRepository memberRepository;
     @Mock SkillReferenceDocumentLoader referenceDocumentLoader;
     @Mock PipelineSkillRequester requester;
+    @Mock SkillRepository skillRepository;
+    @Mock SkillVersionRepository versionRepository;
+    @Mock DocumentRepository documentRepository;
+    @Mock SkillReviewTokenSigner tokenSigner;
 
     private SkillService service;
 
     @BeforeEach
     void setUp() {
-        service = new SkillService(memberRepository, referenceDocumentLoader, requester);
+        service = new SkillService(memberRepository, referenceDocumentLoader, requester,
+                skillRepository, versionRepository, documentRepository, tokenSigner, new ObjectMapper());
     }
 
     @Test
     void refine_personalSkillLoadsReferencesAndCallsPipeline() throws Exception {
-        WorkspaceMember member = mock(WorkspaceMember.class);
         SkillDraftRequest request = request("personal");
         var references = List.of(new SkillReferenceDocument("doc_1", "문서", "hash", "본문"));
-        when(memberRepository.findByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(Optional.of(member));
+        when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(true);
         when(referenceDocumentLoader.load("ws_1", request.referenceDocumentIds())).thenReturn(references);
         when(requester.refine("ws_1", "user_1", request, references))
                 .thenReturn(new ObjectMapper().readTree("{\"draft\":{\"command\":\"summary\"}}"));
@@ -54,17 +54,20 @@ class SkillServiceTest {
     }
 
     @Test
-    void review_teamSkillRejectsMemberBeforeReferenceOrPipelineCall() {
+    void review_teamSkillAllowsMember() throws Exception {
         SkillDraftRequest request = request("team");
-        WorkspaceMember member = member(WorkspaceRole.MEMBER);
-        when(memberRepository.findByWorkspace_IdAndUser_Id("ws_1", "user_1"))
-                .thenReturn(Optional.of(member));
+        var references = List.of(new SkillReferenceDocument("doc_1", "문서", "hash", "본문"));
+        when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(true);
+        when(referenceDocumentLoader.load("ws_1", request.referenceDocumentIds())).thenReturn(references);
+        when(requester.review("ws_1", "user_1", request, references))
+                .thenReturn(new ObjectMapper().readTree("{\"has_blocked_issues\":false}"));
+        when(tokenSigner.issue(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("review-token");
 
-        assertThatThrownBy(() -> service.review("ws_1", "user_1", request))
-                .isInstanceOf(TeamSkillForbiddenException.class);
+        var result = service.review("ws_1", "user_1", request);
 
-        verify(referenceDocumentLoader, never()).load("ws_1", request.referenceDocumentIds());
-        verify(requester, never()).review("ws_1", "user_1", request, List.of());
+        assertThat(result.path("publish_allowed").asBoolean()).isTrue();
+        assertThat(result.path("review_token").asText()).isEqualTo("review-token");
     }
 
     private SkillDraftRequest request(String scope) {
@@ -72,9 +75,4 @@ class SkillServiceTest {
                 "summary", "요약", "문서를 요약한다.", scope, List.of("doc_1"), null, null, null);
     }
 
-    private WorkspaceMember member(WorkspaceRole role) {
-        WorkspaceMember member = mock(WorkspaceMember.class);
-        when(member.getRole()).thenReturn(role);
-        return member;
-    }
 }
