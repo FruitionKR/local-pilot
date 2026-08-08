@@ -59,7 +59,7 @@ EMAIL_PATTERN = re.compile(
 )
 PHONE_PATTERNS = (
     re.compile(r"(?<!\d)(?:\+82[-. ]?)?0?1[016789][-. ]?\d{3,4}[-. ]?\d{4}(?!\d)"),
-    re.compile(r"(?<!\d)0(?:2|[3-6]\d)[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)"),
+    re.compile(r"(?<!\d)0(?:2|[3-6]\d|70|80)[-. ]?\d{3,4}[-. ]?\d{4}(?!\d)"),
     re.compile(r"(?<!\d)\+\d(?:[-. ]?\d){7,14}(?!\d)"),
 )
 RESIDENT_REGISTRATION_PATTERN = re.compile(r"(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)")
@@ -97,7 +97,7 @@ PERSONAL_FIELD_PATTERN = re.compile(
         re.escape(label)
         for label in sorted(PERSONAL_FIELD_CATEGORIES, key=len, reverse=True)
     )
-    + r")[ \t]*[:：][ \t]*(?P<value>[^\r\n]*)$",
+    + r")[ \t]*[:：][ \t]*(?P<value>[^\r\n]*)\r?$",
     re.IGNORECASE | re.MULTILINE,
 )
 TABLE_SEPARATOR_PATTERN = re.compile(

@@ -83,6 +83,18 @@ def test_detects_international_phone_number() -> None:
     assert [issue.category for issue in issues] == ["personal_phone"]
 
 
+def test_detects_070_and_080_phone_numbers() -> None:
+    issues = inspect_skill_instructions("문의 070-1234-5678, 수신자 부담 080-123-4567")
+
+    assert [issue.category for issue in issues] == ["personal_phone", "personal_phone"]
+
+
+def test_detects_personal_field_values_with_crlf() -> None:
+    issues = inspect_skill_instructions("이름: 홍길동\r\n주소: 서울시 중구\r\n")
+
+    assert [issue.category for issue in issues] == ["personal_name", "personal_address"]
+
+
 def test_does_not_treat_dates_versions_or_invalid_numbers_as_personal_data() -> None:
     value = (
         "작성일 2026-08-04, version 1234, "

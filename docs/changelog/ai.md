@@ -6,7 +6,7 @@
 
 - Skill 입력·설명·참조 원문·생성 결과·최종 게시에서 이메일, 전화번호, 검증된 주민등록번호·카드번호, 계좌번호와 이름·주소 필드값을 차단한다.
 - JWT·Bearer를 포함한 여러 credential을 첫 항목에서 멈추지 않고 모두 반환하며, 비정형 개인정보·기밀정보는 의미 검사가 보완한다.
-- 빈 필드·밑줄 템플릿·표 header는 허용하고 실제 값과 명시적 개인정보 placeholder만 차단하며, llmPipeline 전체 테스트 `822 passed, 61 subtests passed`로 검증했다.
+- 빈 필드·밑줄 템플릿·표 header는 허용하고 실제 값과 명시적 개인정보 placeholder만 차단하며, llmPipeline 전체 테스트 `825 passed, 61 subtests passed`로 검증했다.
 
 ### refactor: Skill 작성 재생성 흐름 정리
 
