@@ -1,3 +1,5 @@
+import json
+
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     merge_active_cluster_markdown,
     parse_active_cluster_lint,
@@ -110,6 +112,288 @@ back electromotive force, BEMF
         "Back EMF는 토크 리플 및 코깅 토크와 함께 최적화 대상이다. [doc_a:B0002]",
         "제조 공차는 Back EMF 응답에 영향을 준다. [doc_b:B0003]",
     ]
+
+
+def test_semantic_reconciliation_rebuilds_from_latest_contribution_per_document(
+    monkeypatch,
+) -> None:
+    rows = [
+        {
+            "page_id": "page-shared",
+            "slug": "shared",
+            "title": "공유 개념",
+            "markdown_uri": "wiki/current/shared.md",
+            "operation_id": "op-A-new",
+            "source_document_id": "doc-A",
+            "sequence_revision": 3,
+        },
+        {
+            "page_id": "page-shared",
+            "slug": "shared",
+            "title": "공유 개념",
+            "markdown_uri": "wiki/current/shared.md",
+            "operation_id": "op-B",
+            "source_document_id": "doc-B",
+            "sequence_revision": 2,
+        },
+    ]
+
+    class Result:
+        def fetchall(self):
+            return rows
+
+    class Connection:
+        def __init__(self):
+            self.updates = []
+
+        def execute(self, query, params):
+            if "WITH affected_pages" in query:
+                assert params == (["doc-A"], "user-1", "ws-1")
+                return Result()
+            self.updates.append((query, params))
+            return Result()
+
+    def contribution(operation_id, document_id, definition, evidence):
+        return {
+            "operation_id": operation_id,
+            "document_id": document_id,
+            "page_id": "page-shared",
+            "concept": {
+                "slug": "shared",
+                "title": "공유 개념",
+                "definition": definition,
+                "display_reference_ids": ["B0001"],
+                "source_document_ids": [document_id],
+                "evidence_claim_ids": [f"ev-{document_id}"],
+            },
+            "evidence_units": [
+                {
+                    "evidence_id": f"ev-{document_id}",
+                    "claim": evidence,
+                    "anchor_reference_ids": ["B0001"],
+                    "related_concept_slugs": ["shared"],
+                    "source_document_id": document_id,
+                }
+            ],
+            "source_key_points": [],
+            "links": [],
+        }
+
+    objects = {
+        "wiki/ws-1/pages/page-shared/ops/op-A-new.json": contribution(
+            "op-A-new",
+            "doc-A",
+            "최신 정의",
+            "최신 주장",
+        ),
+        "wiki/ws-1/pages/page-shared/ops/op-B.json": contribution(
+            "op-B",
+            "doc-B",
+            "다른 문서 정의",
+            "다른 문서 주장",
+        ),
+    }
+    read_keys = []
+    embeddings = []
+    connection = Connection()
+    monkeypatch.setattr(
+        repository,
+        "read_text_object",
+        lambda key: read_keys.append(key)
+        or json.dumps(objects[key], ensure_ascii=False),
+    )
+    monkeypatch.setattr(
+        repository,
+        "_read_optional_text_object",
+        lambda _key: "# 공유 개념\n\n## Evidence\n- 이전 주장 [doc-A:B0001]\n",
+    )
+    monkeypatch.setattr(
+        repository,
+        "_persist_embedding_units",
+        lambda *args: embeddings.append(args),
+    )
+
+    result = repository.reconcile_concept_page_semantics(
+        "user-1",
+        "ws-1",
+        [{"document_id": "doc-A"}],
+        apply=True,
+        operation_id="lint-1",
+        connection=connection,
+    )
+
+    rebuilt = result["_semantic_page_changes"][0]["markdown"]
+    assert "이전 주장" not in rebuilt
+    assert "최신 주장" in rebuilt
+    assert "다른 문서 주장" in rebuilt
+    assert read_keys == [
+        "wiki/ws-1/pages/page-shared/ops/op-A-new.json",
+        "wiki/ws-1/pages/page-shared/ops/op-B.json",
+    ]
+    assert len(connection.updates) == 1
+    assert len(embeddings) == 1
+    assert result["applied_semantic_reconciliations"] == [
+        result["semantic_reconciliation_candidates"][0]
+    ]
+
+    read_keys.clear()
+    stale_result = repository.reconcile_concept_page_semantics(
+        "user-1",
+        "ws-1",
+        [{"document_id": "doc-A", "stale_concept_slugs": ["shared"]}],
+        apply=False,
+        connection=connection,
+    )
+
+    assert read_keys == ["wiki/ws-1/pages/page-shared/ops/op-B.json"]
+    assert stale_result["semantic_reconciliation_candidates"][0][
+        "operation_ids"
+    ] == ["op-B"]
+
+
+def test_semantic_reconciliation_deletes_page_without_remaining_contributions(
+    monkeypatch,
+) -> None:
+    page_rows = [
+        {
+            "page_id": "page-stale",
+            "slug": "stale",
+            "title": "Stale",
+            "markdown_uri": "wiki/current/stale.md",
+            "operation_id": "op-stale",
+            "source_document_id": "doc-1",
+            "sequence_revision": 1,
+        }
+    ]
+
+    class Result:
+        def __init__(self, rows=None):
+            self._rows = rows or []
+
+        def fetchall(self):
+            return self._rows
+
+    class Connection:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, query, params):
+            self.queries.append((query, params))
+            if "WITH affected_pages" in query:
+                return Result(page_rows)
+            if "SELECT id" in query and "FROM wiki_pages" in query:
+                return Result([{"id": "page-stale"}])
+            return Result()
+
+    connection = Connection()
+    monkeypatch.setattr(
+        repository,
+        "read_text_object",
+        lambda _key: (_ for _ in ()).throw(AssertionError("contribution read")),
+    )
+
+    result = repository.reconcile_concept_page_semantics(
+        "user-1",
+        "ws-1",
+        [{"document_id": "doc-1", "stale_concept_slugs": ["stale"]}],
+        apply=True,
+        operation_id="lint-1",
+        connection=connection,
+    )
+
+    assert result["semantic_reconciliation_candidates"] == [
+        {
+            "page_id": "page-stale",
+            "slug": "stale",
+            "reason": "no_active_contributions",
+            "source_document_ids": [],
+            "operation_ids": [],
+        }
+    ]
+    assert result["applied_semantic_reconciliations"] == result[
+        "semantic_reconciliation_candidates"
+    ]
+    assert any(
+        "DELETE FROM wiki_embedding_units" in query
+        for query, _params in connection.queries
+    )
+    assert any(
+        "UPDATE wiki_pages SET status = 'deleted'" in query
+        for query, _params in connection.queries
+    )
+
+
+def test_semantic_reconciliation_dry_run_does_not_update_page_or_embedding(
+    monkeypatch,
+) -> None:
+    class Result:
+        def fetchall(self):
+            return [
+                {
+                    "page_id": "page-1",
+                    "slug": "shared",
+                    "title": "Shared",
+                    "markdown_uri": "wiki/current.md",
+                    "operation_id": "op-1",
+                    "source_document_id": "doc-1",
+                    "sequence_revision": 1,
+                }
+            ]
+
+    class Connection:
+        def __init__(self):
+            self.execute_count = 0
+
+        def execute(self, _query, _params):
+            self.execute_count += 1
+            return Result()
+
+    contribution = {
+        "operation_id": "op-1",
+        "document_id": "doc-1",
+        "page_id": "page-1",
+        "concept": {
+            "slug": "shared",
+            "title": "Shared",
+            "definition": "최신 정의",
+            "source_document_ids": ["doc-1"],
+            "evidence_claim_ids": [],
+        },
+        "evidence_units": [],
+        "source_key_points": [],
+        "links": [],
+    }
+    connection = Connection()
+    monkeypatch.setattr(
+        repository,
+        "read_text_object",
+        lambda _key: json.dumps(contribution, ensure_ascii=False),
+    )
+    monkeypatch.setattr(
+        repository,
+        "_read_optional_text_object",
+        lambda _key: "이전 본문",
+    )
+    monkeypatch.setattr(
+        repository,
+        "_persist_embedding_units",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("embedding write")),
+    )
+
+    result = repository.reconcile_concept_page_semantics(
+        "user-1",
+        "ws-1",
+        [{"document_id": "doc-1"}],
+        apply=False,
+        connection=connection,
+    )
+
+    assert connection.execute_count == 1
+    assert result["semantic_reconciliation_candidates"][0]["page_id"] == (
+        "page-1"
+    )
+    assert result["applied_semantic_reconciliations"] == []
+    assert result["_semantic_page_changes"] == []
 
 
 def test_append_concept_evidence_replaces_placeholder_and_deduplicates() -> None:

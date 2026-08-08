@@ -11,6 +11,7 @@ from app.core.llm_env import (
     resolve_llm_provider,
 )
 from app.core.llm_prompt import with_schema_prompt
+from app.core.response_preferences import with_response_preferences
 from app.modules.query.application.ports import AnswerGeneratorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
@@ -57,13 +58,17 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
 
     def generate_answer(self, context: QueryContext) -> GeneratedAnswer:
         content = self._client.complete_text(
-            with_schema_prompt(
-                self._system_prompt,
-                self._schema_prompt_provider(
-                    "query",
-                    context.workspace_id,
-                    context.user_id,
+            with_response_preferences(
+                with_schema_prompt(
+                    self._system_prompt,
+                    self._schema_prompt_provider(
+                        "query",
+                        context.workspace_id,
+                        context.user_id,
+                    ),
                 ),
+                context.output_language,
+                context.response_length,
             ),
             context.answer_context,
         ).strip()

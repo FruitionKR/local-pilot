@@ -323,6 +323,12 @@ class WikiLintOut(BaseModel):
     invalid_promotions: list[dict[str, Any]]
     reconciliation_candidates: list[dict[str, Any]]
     applied_reconciliations: list[dict[str, Any]]
+    semantic_reconciliation_candidates: list[dict[str, Any]] = Field(
+        default_factory=list
+    )
+    applied_semantic_reconciliations: list[dict[str, Any]] = Field(
+        default_factory=list
+    )
     applied_cluster_reconciliation: dict[str, list[dict[str, Any]]]
     materialized_promotions: list[dict[str, Any]]
     merged_promotions: list[dict[str, Any]]

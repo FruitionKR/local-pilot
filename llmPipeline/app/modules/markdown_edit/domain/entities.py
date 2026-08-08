@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import Literal
 
-
 TargetType = Literal["selection", "current_section", "whole_document"]
 EditOperationType = Literal["replace", "insert_after"]
+OutputLanguage = Literal["ko", "en", "document"]
 
 
 def operation_for_edit_goal(edit_goal: str | None) -> EditOperationType:
@@ -66,6 +66,7 @@ class MarkdownCreateRequest:
     conversation_summary: str | None = None
     reference_context: dict[str, object] | None = None
     skill_instructions: str | None = None
+    output_language: OutputLanguage | None = None
 
 
 @dataclass(frozen=True)

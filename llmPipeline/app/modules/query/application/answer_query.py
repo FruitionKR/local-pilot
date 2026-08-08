@@ -33,10 +33,12 @@ from app.modules.query.domain.entities import (
     EvidenceSnippet,
     GeneratedAnswer,
     GraphContext,
+    OutputLanguage,
     QueryAnswer,
     QueryContext,
     QueryEvaluation,
     QueryRewrite,
+    ResponseLength,
     RetrievedPage,
     TraversalPath,
     WikiPage,
@@ -155,6 +157,9 @@ class AnswerQueryUseCase:
         user_id: str | None = None,
         event_publisher: QueryEventPublisherPort | None = None,
         conversation_context: ConversationContext | None = None,
+        output_language: OutputLanguage | None = None,
+        response_length: ResponseLength | None = None,
+        allow_web_search: bool | None = None,
     ) -> QueryAnswer:
         event_publisher = event_publisher or self._event_publisher
         query = Question(question)
@@ -181,11 +186,22 @@ class AnswerQueryUseCase:
             event_publisher,
         )
 
-        if self._query_evaluator is None and self._should_use_web_fallback(
-            candidates.source_scores,
-            candidates.concept_scores,
+        web_search_allowed = allow_web_search is not False
+        if (
+            web_search_allowed
+            and self._query_evaluator is None
+            and self._should_use_web_fallback(
+                candidates.source_scores,
+                candidates.concept_scores,
+            )
         ):
-            fallback_answer = self._answer_from_web_search(query.normalized, query_rewrite, event_publisher)
+            fallback_answer = self._answer_from_web_search(
+                query.normalized,
+                query_rewrite,
+                event_publisher,
+                output_language,
+                response_length,
+            )
             if fallback_answer is not None:
                 return fallback_answer
 
@@ -197,6 +213,9 @@ class AnswerQueryUseCase:
             conversation_context=conversation_context,
             candidates=candidates,
             event_publisher=event_publisher,
+            output_language=output_language,
+            response_length=response_length,
+            allow_web_search=allow_web_search,
         )
         answer, evidence_snippets, evaluated_context, query_evaluation = self._query_evaluator_graph.run(
             question=query.normalized,
@@ -205,15 +224,20 @@ class AnswerQueryUseCase:
             event_publisher=event_publisher,
         )
         if query_evaluation is not None:
-            if query_evaluation.route == "web_fallback":
+            if web_search_allowed and query_evaluation.route == "web_fallback":
                 fallback_answer = self._answer_from_web_search(
                     query.normalized,
                     self._query_rewrite_for_web(query_rewrite, query_evaluation),
                     event_publisher,
+                    output_language,
+                    response_length,
                 )
                 if fallback_answer is not None:
                     return fallback_answer
-            if query_evaluation.route == "internal_web_augmented":
+            if (
+                web_search_allowed
+                and query_evaluation.route == "internal_web_augmented"
+            ):
                 augmented_answer = self._answer_from_internal_web_augmented(
                     question=query.normalized,
                     query_rewrite=self._query_rewrite_for_web(query_rewrite, query_evaluation),
@@ -230,6 +254,8 @@ class AnswerQueryUseCase:
             answer,
             evidence_snippets,
             internal_context.stop_reason,
+            output_language,
+            query.normalized,
         )
 
         summary = build_retrieval_summary(
@@ -261,6 +287,9 @@ class AnswerQueryUseCase:
         workspace_id: str,
         user_id: str | None,
         conversation_context: ConversationContext | None,
+        output_language: OutputLanguage | None,
+        response_length: ResponseLength | None,
+        allow_web_search: bool | None,
         candidates: _ScoredWikiCandidates,
         event_publisher: QueryEventPublisherPort | None,
     ) -> _InternalQueryContext:
@@ -301,6 +330,9 @@ class AnswerQueryUseCase:
             ),
             workspace_id=workspace_id,
             user_id=user_id,
+            output_language=output_language,
+            response_length=response_length,
+            allow_web_search=allow_web_search,
         )
         self._publish(
             event_publisher,
@@ -546,11 +578,17 @@ class AnswerQueryUseCase:
         answer: GeneratedAnswer,
         evidence_snippets: list[EvidenceSnippet],
         stop_reason: str,
+        output_language: OutputLanguage | None,
+        question: str,
     ) -> tuple[GeneratedAnswer, list[EvidenceSnippet], str]:
         if evaluation is None:
             if stop_reason != "no_relevant_seed":
                 return answer, evidence_snippets, stop_reason
-            unsupported = self._unsupported_answer(evidence_snippets)
+            unsupported = self._unsupported_answer(
+                evidence_snippets,
+                output_language,
+                question,
+            )
             unsupported, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(
                 unsupported,
                 evidence_snippets,
@@ -562,7 +600,11 @@ class AnswerQueryUseCase:
         if evaluation.route not in {"unsupported", "revise_answer"}:
             return answer, evidence_snippets, stop_reason
 
-        unsupported = self._unsupported_answer(evidence_snippets)
+        unsupported = self._unsupported_answer(
+            evidence_snippets,
+            output_language,
+            question,
+        )
         unsupported, evidence_snippets = self._query_answer_assembler.renumber_used_evidence(
             unsupported,
             evidence_snippets,
@@ -594,6 +636,8 @@ class AnswerQueryUseCase:
         question: str,
         query_rewrite: QueryRewrite,
         event_publisher: QueryEventPublisherPort | None,
+        output_language: OutputLanguage | None,
+        response_length: ResponseLength | None,
     ) -> QueryAnswer | None:
         if self._query_web_answer_builder is None:
             return None
@@ -601,6 +645,8 @@ class AnswerQueryUseCase:
             question=question,
             query_rewrite=query_rewrite,
             event_publisher=event_publisher,
+            output_language=output_language,
+            response_length=response_length,
         )
 
     def _answer_from_internal_web_augmented(
@@ -636,7 +682,30 @@ class AnswerQueryUseCase:
             for page_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)[:limit]
         ]
 
-    def _unsupported_answer(self, evidence_snippets: list[EvidenceSnippet]) -> GeneratedAnswer:
+    def _unsupported_answer(
+        self,
+        evidence_snippets: list[EvidenceSnippet],
+        output_language: OutputLanguage | None,
+        question: str,
+    ) -> GeneratedAnswer:
+        reference_text = evidence_snippets[0].text if evidence_snippets else question
+        use_english = output_language == "en" or (
+            output_language == "document"
+            and not any("가" <= char <= "힣" for char in reference_text)
+        )
+        if use_english:
+            if not evidence_snippets:
+                return GeneratedAnswer(
+                    content="The provided evidence does not directly answer the question."
+                )
+            nearest = evidence_snippets[0]
+            return GeneratedAnswer(
+                content=(
+                    "The provided evidence does not directly answer the question. "
+                    "The closest evidence also does not directly explain the topic. "
+                    f"[{nearest.rank}]"
+                )
+            )
         if not evidence_snippets:
             return GeneratedAnswer(content="제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.")
         nearest = evidence_snippets[0]

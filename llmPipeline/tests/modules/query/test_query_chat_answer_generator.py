@@ -37,6 +37,30 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertIn("citation markers like [1]", client.calls[0][0])
         self.assertEqual(client.calls[0][0], QUERY_ANSWER_SYSTEM_PROMPT)
 
+    def test_adds_trusted_language_and_length_preferences_to_system_prompt(
+        self,
+    ) -> None:
+        client = FakeChatClient()
+        generator = QueryChatAnswerGenerator(client)
+        context = QueryContext(
+            question="Explain it",
+            graph_context=GraphContext(),
+            traversal_paths=[],
+            related_pages=[],
+            evidence_snippets=[],
+            answer_context="# User Question\nExplain it",
+            output_language="en",
+            response_length="detailed",
+        )
+
+        generator.generate_answer(context)
+
+        system_prompt = client.calls[0][0]
+        self.assertIn("# Response Preferences", system_prompt)
+        self.assertIn("Write the response in English.", system_prompt)
+        self.assertIn("Give a detailed explanation", system_prompt)
+        self.assertNotIn("output_language", client.calls[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,56 +1,43 @@
 ---
 name: commit
-description: Use when Codex is asked to create, prepare, amend, or help with a git commit in this repository. Triggers include "커밋해줘", "커밋하자", "커밋 준비", "저장해둬", "commit", "git commit". Follow security checks, related issue review and completion archival, changelog updates when applicable, Korean Conventional Commits message writing, and commit creation in order.
+description: 커밋을 생성하거나 준비할 때 반드시 사용. 커밋 전 보안 점검 → changelog 갱신 → Conventional Commits 형식의 한글 커밋 메시지 작성 순서로 진행하는 절차.
 ---
 
-# Commit Procedure
+# 커밋 절차
 
-Run in order: security check -> issue review -> changelog -> commit message -> commit. Do not skip steps.
+**Run in order: security check → changelog → commit message → commit. Do not skip steps.**
 
-## 1. Pre-Commit Security Check
+## 1. 커밋 전 보안 점검
 
-Stop before commit if real secrets are found.
+**Stop before commit if real secrets are found.**
 
-- Before creating a commit, always inspect changed files and tracked files for real secrets.
-- Check for API keys, access keys, secret keys, tokens, passwords, private keys, credentials, certificates/keystores, real `.env` files, production endpoints, and account information.
-- Use `git status --short`, `git diff --cached`, `git diff`, `git ls-files`, and search tools to identify files that will be committed.
-- Distinguish placeholders in `.env.example`, docs, and test fixtures from real secrets. If a value looks real or ambiguous, ask the user before proceeding.
-- If a secret or non-public value is found, stop the commit, report the file and item, and continue only after it is removed or replaced.
+- 커밋 생성 전에는 항상 변경분과 추적 대상 파일에 실제 비밀값이 포함되어 있지 않은지 점검한다.
+- 점검 대상에는 API key, access key, secret key, token, password, private key, credential, 인증서/keystore, 실제 `.env` 파일, 운영 endpoint나 계정 정보가 포함된다.
+- `git status --short`, `git diff --cached`, `git diff`, `git ls-files`와 검색 도구를 활용해 커밋에 포함될 파일을 확인한다.
+- `.env.example`, 문서, 테스트 fixture에 있는 예시값과 placeholder는 실제 비밀값과 구분하되, 실제 값처럼 보이거나 혼동 가능성이 있으면 사용자에게 확인한다.
+- 비밀값 또는 공개하면 안 되는 정보가 발견되면 커밋 생성을 중단하고, 어떤 파일과 항목이 문제인지 사용자에게 보고한 뒤 제거 또는 교체가 완료된 경우에만 진행한다.
 
-## 2. Review Related Issues
+## 2. changelog 갱신
 
-- Before updating the changelog, compare staged and unstaged changes with unresolved documents under `docs/issue/frontend/`, `docs/issue/backend/`, `docs/issue/ai/`, and `docs/issue/infra/`.
-- Never create a date file directly under `docs/issue/`. If a changed or directly related legacy root issue file is found, move unresolved sections to the current day's role-folder issue document and archive resolved sections as described below.
-- Use changed paths, implemented behavior, API names, and verification evidence to find related issues. Do not mark an issue complete only because its title or topic resembles the change.
-- Treat an issue as resolved only when the current changes satisfy its completion conditions and the relevant tests or verification pass.
-- If every unresolved item in an issue document is resolved, record the completion evidence, move its content to `docs/backlog/issue-YYYY-MM-DD.md`, remove the role-folder issue document, and update `docs/backlog/README.md` in the same commit.
-- If the destination backlog file already exists, merge the completed content under a role-labeled section. Never overwrite or discard existing backlog content.
-- If only part of an issue document is resolved, move only the completed sections to the matching backlog document. Move the remaining sections to the current day's `docs/issue/<role>/YYYY-MM-DD.md` and leave a move notice with links in the older issue document.
-- Keep completed implementation history in the applicable `docs/changelog/` file; keep `docs/issue/` limited to work another team member still needs to perform.
-- If issue maintenance would modify files outside the user's approved scope, explain the files, reason, and impact, then obtain explicit approval before writing.
-- When feature work reveals a related unresolved requirement, tell the user before committing what remains and why the current changes do not resolve it. Do not silently ignore it, mark it complete, or expand implementation scope without approval.
+- changelog는 파일 수정 직후가 아니라 커밋을 준비하거나 생성할 때 갱신한다.
+- 프론트엔드, 백엔드, AI/pipeline 기능 코드의 수정 또는 추가가 포함된 커밋에만 `docs/changelog/` 아래의 관련 changelog를 갱신한다.
+- Java/Spring 백엔드 기능 코드 변경은 `docs/changelog/backend.md`에 기록한다.
+- 프론트엔드 기능 코드 변경은 `docs/changelog/frontend.md`에 기록한다.
+- AI/pipeline(llmPipeline) 기능 코드 변경은 `docs/changelog/ai.md`에 기록한다.
+- 인프라, DevOps, Docker, 배포 환경 코드 또는 설정 변경은 `docs/changelog/infra.md`에 기록한다.
+- 여러 기능 영역에 걸친 코드 변경은 해당하는 changelog를 모두 갱신한다.
+- 이슈 문서 정리, 작업 지침 변경, 단순 문서 이동처럼 기능 코드 변경이 없는 커밋은 changelog를 갱신하지 않는다.
+- changelog에는 변경 배경, 추가/변경된 내용, 검증 결과 또는 남은 주의사항을 한글로 간결하게 정리한다.
 
-## 3. Update Changelog
+## 3. 커밋 메시지
 
-- Update changelog when preparing or creating the commit, not immediately after editing files.
-- Update files under `docs/changelog/` only for frontend, backend, AI/pipeline, infrastructure, DevOps, Docker, or deployment behavior changes.
-- For Java/Spring backend feature changes, update `docs/changelog/backend.md`.
-- For frontend feature changes, update `docs/changelog/frontend.md`.
-- For AI/pipeline (`llmPipeline`) feature changes, update `docs/changelog/ai.md`.
-- For infrastructure, DevOps, Docker, deployment environment code, or configuration changes, update `docs/changelog/infra.md`.
-- If a commit spans multiple functional areas, update every relevant changelog.
-- Do not update changelog for issue-document cleanup, agent instruction changes, simple document moves, or other changes without functional code impact.
-- Write changelog entries in Korean. Keep them concise and include change background, changed behavior, verification result, or remaining cautions.
+- 커밋 메시지는 `fix:`, `feat:`, `docs:`, `chore:`, `refactor:`, `test:` 같은 Conventional Commits 형식을 사용한다.
+- 커밋 메시지 제목과 본문 설명은 한글로 작성한다.
+- Conventional Commits 접두사, 브랜치명, 명령어, 파일명, API 이름처럼 원문 유지가 필요한 값은 영어를 그대로 사용한다.
+- 제목은 간결하게 작성하고, 한 커밋이 담는 변경 범위를 한글로 명확히 표현한다.
+- 예: `feat: 로컬 Docker 개발 환경 추가`
 
-## 4. Write Commit Message
+## 4. 커밋 생성
 
-- Use Conventional Commits prefixes such as `fix:`, `feat:`, `docs:`, `chore:`, `refactor:`, and `test:`.
-- Write the commit title and body explanation in Korean.
-- Preserve English for Conventional Commits prefixes, branch names, commands, file names, API names, and other original identifiers.
-- Keep the title concise and clearly describe the commit scope in Korean.
-- Example: `feat: 로컬 Docker 개발 환경 추가`
-
-## 5. Create Commit
-
-- Create the commit only after the security check passes and applicable issue and changelog updates are included.
-- If issue or changelog updates are required, include those files in the same commit.
+- 보안 점검 통과와 changelog 반영(해당 시)을 확인한 뒤 커밋을 생성한다.
+- changelog 갱신이 필요한 커밋이면 changelog 파일을 같은 커밋에 포함한다.

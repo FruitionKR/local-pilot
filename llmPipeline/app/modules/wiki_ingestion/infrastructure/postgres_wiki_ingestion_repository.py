@@ -22,6 +22,10 @@ from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     refs_in_text as _refs_in_text,
 )
 from app.modules.wiki_ingestion.infrastructure.concept_evidence import append_concept_evidence
+from app.modules.wiki_ingestion.infrastructure.concept_contribution_rebuild import (
+    load_concept_contributions,
+    rebuild_concept_page,
+)
 from app.modules.wiki_ingestion.infrastructure.embedding_units import clean_unit_text as _clean_unit_text
 from app.modules.wiki_ingestion.infrastructure.markdown_sections import (
     markdown_list_section as _markdown_list_section,
@@ -91,10 +95,11 @@ def connect() -> psycopg.Connection:
 def cleanup_deleted_wiki_pages(
     workspace_id: str,
     page_ids: list[str],
+    connection: psycopg.Connection | None = None,
 ) -> None:
     if not page_ids:
         return
-    with connect() as conn:
+    with _connection_scope(connection) as conn:
         rows = conn.execute(
             """
             SELECT id
@@ -691,12 +696,23 @@ def lint_orphan_wiki_links(
     workspace_id: str,
     *,
     apply: bool,
+    reconciliation_candidates: list[dict[str, Any]] | None = None,
     connection: psycopg.Connection | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
+    stale_contributions = {
+        (str(candidate["document_id"]), str(slug))
+        for candidate in reconciliation_candidates or []
+        for slug in candidate.get("stale_concept_slugs", [])
+    }
     with _connection_scope(connection) as conn:
         contribution_rows = conn.execute(
             """
-            SELECT contribution.active,
+            SELECT contribution.page_id,
+                   page.slug,
+                   contribution.ingest_operation_id,
+                   contribution.source_document_id,
+                   contribution.sequence_revision,
+                   contribution.active,
                    contribution.object_key
             FROM wiki_page_contributions contribution
             JOIN wiki_pages page ON page.id = contribution.page_id
@@ -727,7 +743,9 @@ def lint_orphan_wiki_links(
         ).fetchall()
 
         managed_contributions = []
-        active_contributions = []
+        latest_active_by_source: dict[
+            tuple[str, str], tuple[int, dict[str, Any]]
+        ] = {}
         for row in contribution_rows:
             payload = json.loads(read_text_object(str(row["object_key"])))
             if not isinstance(payload, dict):
@@ -736,7 +754,29 @@ def lint_orphan_wiki_links(
                 )
             managed_contributions.append(payload)
             if bool(row["active"]):
-                active_contributions.append(payload)
+                if stale_contributions and (
+                    str(row.get("source_document_id") or ""),
+                    str(row["slug"]),
+                ) in stale_contributions:
+                    continue
+                source_key = str(
+                    row.get("source_document_id")
+                    or row["ingest_operation_id"]
+                )
+                key = (str(row["page_id"]), source_key)
+                sequence = int(row["sequence_revision"])
+                if (
+                    key not in latest_active_by_source
+                    or sequence > latest_active_by_source[key][0]
+                ):
+                    latest_active_by_source[key] = (sequence, payload)
+        active_contributions = [
+            payload
+            for _sequence, payload in sorted(
+                latest_active_by_source.values(),
+                key=lambda item: item[0],
+            )
+        ]
 
         current_links = [
             {
@@ -775,6 +815,196 @@ def lint_orphan_wiki_links(
     return {
         "orphan_link_candidates": candidates,
         "removed_orphan_links": removed,
+    }
+
+
+def reconcile_concept_page_semantics(
+    user_id: str,
+    workspace_id: str,
+    reconciliation_candidates: list[dict[str, Any]],
+    *,
+    apply: bool,
+    operation_id: str | None = None,
+    connection: psycopg.Connection | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    document_ids = _unique_keep_order(
+        [str(item["document_id"]) for item in reconciliation_candidates]
+    )
+    stale_contributions = {
+        (str(candidate["document_id"]), str(slug))
+        for candidate in reconciliation_candidates
+        for slug in candidate.get("stale_concept_slugs", [])
+    }
+    if not document_ids:
+        return {
+            "semantic_reconciliation_candidates": [],
+            "applied_semantic_reconciliations": [],
+        }
+
+    with _connection_scope(connection) as conn:
+        rows = conn.execute(
+            """
+            WITH affected_pages AS (
+                SELECT DISTINCT page_id
+                FROM wiki_page_contributions
+                WHERE active = true
+                  AND source_document_id = ANY(%s)
+            ),
+            ranked AS (
+                SELECT contribution.page_id,
+                       contribution.ingest_operation_id,
+                       contribution.source_document_id,
+                       contribution.sequence_revision,
+                       row_number() OVER (
+                           PARTITION BY contribution.page_id,
+                                        COALESCE(
+                                            contribution.source_document_id::text,
+                                            contribution.ingest_operation_id::text
+                                        )
+                           ORDER BY contribution.sequence_revision DESC
+                       ) AS contribution_rank
+                FROM wiki_page_contributions contribution
+                JOIN affected_pages affected
+                  ON affected.page_id = contribution.page_id
+                WHERE contribution.active = true
+            )
+            SELECT page.id AS page_id,
+                   page.slug,
+                   page.title,
+                   page.markdown_uri,
+                   ranked.ingest_operation_id AS operation_id,
+                   ranked.source_document_id,
+                   ranked.sequence_revision
+            FROM ranked
+            JOIN wiki_pages page ON page.id = ranked.page_id
+            WHERE ranked.contribution_rank = 1
+              AND page.page_type = 'concept'
+              AND page.status = 'active'
+              AND page.user_id = %s
+              AND page.workspace_id = %s
+            ORDER BY page.id, ranked.sequence_revision
+            """,
+            (document_ids, user_id, workspace_id),
+        ).fetchall()
+
+        candidates: list[dict[str, Any]] = []
+        page_changes: list[dict[str, Any]] = []
+        rows_by_page: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            rows_by_page.setdefault(str(row["page_id"]), []).append(row)
+
+        for page_id, page_rows in rows_by_page.items():
+            current_page_rows = page_rows
+            page_rows = [
+                row
+                for row in page_rows
+                if (
+                    str(row.get("source_document_id") or ""),
+                    str(row["slug"]),
+                )
+                not in stale_contributions
+            ]
+            if not page_rows:
+                candidate = {
+                    "page_id": page_id,
+                    "slug": str(current_page_rows[0]["slug"]),
+                    "reason": "no_active_contributions",
+                    "source_document_ids": [],
+                    "operation_ids": [],
+                }
+                candidates.append(candidate)
+                if apply:
+                    cleanup_deleted_wiki_pages(
+                        workspace_id,
+                        [page_id],
+                        connection=conn,
+                    )
+                continue
+            contributions = load_concept_contributions(
+                workspace_id=workspace_id,
+                page_id=page_id,
+                keep_contributions=[
+                    {
+                        "operation_id": str(row["operation_id"]),
+                        "sequence": int(row["sequence_revision"]),
+                    }
+                    for row in page_rows
+                ],
+                read_text=read_text_object,
+            )
+            rebuilt = rebuild_concept_page(contributions)
+            current_markdown = _read_optional_text_object(
+                str(page_rows[0]["markdown_uri"])
+            )
+            if rebuilt.markdown == current_markdown:
+                continue
+
+            candidate = {
+                "page_id": page_id,
+                "slug": str(page_rows[0]["slug"]),
+                "reason": "latest_active_contributions_changed",
+                "source_document_ids": _unique_keep_order(
+                    [
+                        str(row["source_document_id"])
+                        for row in page_rows
+                        if row.get("source_document_id")
+                    ]
+                ),
+                "operation_ids": list(rebuilt.operation_ids),
+            }
+            candidates.append(candidate)
+            if not apply:
+                continue
+            if not operation_id:
+                raise ValueError(
+                    "operation_id is required to apply semantic reconciliation"
+                )
+            markdown_uri = storage_uri(
+                f"wiki/{workspace_id}/pages/{page_id}/ops/{operation_id}.md"
+            )
+            conn.execute(
+                """
+                UPDATE wiki_pages
+                SET summary = %s,
+                    markdown_uri = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (
+                    _markdown_section(rebuilt.markdown, "Definition"),
+                    markdown_uri,
+                    page_id,
+                ),
+            )
+            _persist_embedding_units(
+                conn,
+                page_id,
+                str(page_rows[0].get("source_document_id") or ""),
+                rebuilt.markdown,
+            )
+            page_changes.append(
+                {
+                    "page_id": page_id,
+                    "slug": str(page_rows[0]["slug"]),
+                    "title": str(page_rows[0]["title"]),
+                    "definition": _markdown_section(
+                        rebuilt.markdown,
+                        "Definition",
+                    ),
+                    "markdown": rebuilt.markdown,
+                    "content_action": "rebuild",
+                    "claims": [],
+                    "source_document_ids": candidate[
+                        "source_document_ids"
+                    ],
+                    "source_operation_ids": candidate["operation_ids"],
+                }
+            )
+
+    return {
+        "semantic_reconciliation_candidates": candidates,
+        "applied_semantic_reconciliations": candidates if apply else [],
+        "_semantic_page_changes": page_changes,
     }
 
 

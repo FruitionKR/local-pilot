@@ -36,6 +36,9 @@ def answer_query(
             user_id=payload.user_id,
             event_publisher=event_publisher,
             conversation_context=_conversation_context(payload),
+            output_language=payload.output_language,
+            response_length=payload.response_length,
+            allow_web_search=payload.allow_web_search,
         )
     except QueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

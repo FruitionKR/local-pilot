@@ -842,6 +842,9 @@ Workspace Wiki를 검색·탐색하고 근거가 포함된 답변을 반환한�
 | `user_id` | string/null | 아니오 | 아니오 | 선택 User context |
 | `recent_conversation_summary` | string/null | 아니오 | 아니오 | 대화 요약 |
 | `reference_context` | object/null | 아니오 | 아니오 | 지시어·개념 context |
+| `output_language` | `ko`/`en`/`document`/null | 아니오 | 후속 작업 | 답변 언어. `document`는 근거 문서 언어를 따른다. |
+| `response_length` | `concise`/`balanced`/`detailed`/null | 아니오 | 후속 작업 | 답변 설명 밀도다. |
+| `allow_web_search` | boolean/null | 아니오 | 후속 작업 | `false`이면 요청 단위 web fallback을 금지한다. |
 
 #### Spring이 받는 값
 
@@ -1589,6 +1592,9 @@ proxy 방식을 선택한 경우 Spring은 각 mutation 성공 응답의 `SkillR
 | `active_markdown_context` | object/null | 아니오 | 예 | Markdown snapshot과 target |
 | `workspace_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 scope |
 | `user_id` | string/null | 조건부 | 수정 필요 | Skill 선택·AgentRun에서는 필수 actor |
+| `output_language` | `ko`/`en`/`document`/null | 아니오 | 후속 작업 | 채팅 답변 언어와 새 문서 생성의 기본 언어다. |
+| `response_length` | `concise`/`balanced`/`detailed`/null | 아니오 | 후속 작업 | 채팅 답변 설명 밀도다. |
+| `allow_web_search` | boolean/null | 아니오 | 후속 작업 | `chat_answer`의 요청 단위 web fallback 허용 여부다. |
 | `skill_mode` | `auto`/`explicit`/`off` | 아니오 | 기능 사용 시 | 기본 `auto` |
 | `skill_id` | string/null | 조건부 | explicit일 때 | 명시적 Skill ID |
 | `skill_draft_sources` | array | 아니오 | 아니오 | Skill 초안 생성에 사용할 Agent Run source. 기본 `[]` |
@@ -2482,6 +2488,8 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 | `invalid_promotions` | object array | 승격 후보지만 source 근거가 없어 적용할 수 없는 cluster와 이유다. |
 | `reconciliation_candidates` | object array | 재편입으로 무효화된 Source Reference, 오래된 Concept 연결·relation 등 정리 후보다. |
 | `applied_reconciliations` | object array | `dry_run=false`에서 DB에 실제 적용한 구조 정리 결과다. |
+| `semantic_reconciliation_candidates` | object array | 최신 active contribution으로 재조립했을 때 본문이 달라지는 Concept Page 후보다. |
+| `applied_semantic_reconciliations` | object array | `dry_run=false`에서 Markdown과 embedding unit을 실제 갱신한 Concept Page다. |
 | `applied_cluster_reconciliation` | object | active cluster Markdown에서 실제 제거한 `removed_claims`, `removed_relations` 목록이다. |
 | `materialized_promotions` | object array | 이번 실행에서 새 Concept Page로 실제 생성한 승격 결과다. |
 | `merged_promotions` | object array | 새 Page를 만들지 않고 기존 Concept Page에 근거를 병합한 결과다. |

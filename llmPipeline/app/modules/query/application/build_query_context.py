@@ -1,7 +1,15 @@
 from app.modules.query.application.answer_context_formatter import AnswerContextFormatter
 from app.modules.query.application.evidence_selector import EvidenceSelector
 from app.modules.query.application.ports import EmbeddingSearchPort, TextSearchPort
-from app.modules.query.domain.entities import GraphContext, QueryContext, RetrievedPage, TraversalPath, WikiEmbeddingUnit
+from app.modules.query.domain.entities import (
+    GraphContext,
+    OutputLanguage,
+    QueryContext,
+    ResponseLength,
+    RetrievedPage,
+    TraversalPath,
+    WikiEmbeddingUnit,
+)
 
 
 class BuildQueryContextUseCase:
@@ -46,6 +54,9 @@ class BuildQueryContextUseCase:
         embedding_units_by_page_id: dict[str, list[WikiEmbeddingUnit]] | None = None,
         workspace_id: str | None = None,
         user_id: str | None = None,
+        output_language: OutputLanguage | None = None,
+        response_length: ResponseLength | None = None,
+        allow_web_search: bool | None = None,
     ) -> QueryContext:
         evidence_snippets = self._evidence_selector.select(
             evidence_question or question,
@@ -68,4 +79,7 @@ class BuildQueryContextUseCase:
             ),
             workspace_id=workspace_id,
             user_id=user_id,
+            output_language=output_language,
+            response_length=response_length,
+            allow_web_search=allow_web_search,
         )

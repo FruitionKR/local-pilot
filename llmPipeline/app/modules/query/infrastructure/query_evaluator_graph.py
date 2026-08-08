@@ -40,7 +40,10 @@ class LangGraphQueryEvaluatorGraph:
         graph = build_query_evaluator_graph(
             query_answer_assembler=self._query_answer_assembler,
             query_evaluator=self._query_evaluator,
-            web_search_available=self._web_search_available,
+            web_search_available=(
+                self._web_search_available
+                and query_context.allow_web_search is not False
+            ),
             max_attempts=self._max_attempts,
             question=question,
             query_context=query_context,

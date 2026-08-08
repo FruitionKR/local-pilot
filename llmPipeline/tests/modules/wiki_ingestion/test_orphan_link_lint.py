@@ -145,11 +145,19 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
                 return Result(
                     [
                         {
+                            "page_id": "page-shared",
+                            "ingest_operation_id": "B",
+                            "source_document_id": "doc-1",
+                            "sequence_revision": 2,
                             "active": True,
                             "object_key": "wiki/ws/pages/shared/ops/B.json",
                         },
                         {
-                            "active": False,
+                            "page_id": "page-shared",
+                            "ingest_operation_id": "A",
+                            "source_document_id": "doc-1",
+                            "sequence_revision": 1,
+                            "active": True,
                             "object_key": "wiki/ws/pages/shared/ops/A.json",
                         },
                     ]
@@ -242,7 +250,23 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
         wiki_maintenance.database,
         "lint_wiki_workspace",
         lambda *_args, **kwargs: (
-            calls.append(("lint", kwargs["write_log"])) or {"workspace_id": "ws-1"}
+            calls.append(("lint", kwargs["write_log"]))
+            or {
+                "workspace_id": "ws-1",
+                "reconciliation_candidates": [{"document_id": "doc-1"}],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        wiki_maintenance.database,
+        "reconcile_concept_page_semantics",
+        lambda *_args, **kwargs: (
+            calls.append(("semantic", kwargs["connection"] is transaction))
+            or {
+                "semantic_reconciliation_candidates": [{"page_id": "page-1"}],
+                "applied_semantic_reconciliations": [{"page_id": "page-1"}],
+                "_semantic_page_changes": [{"page_id": "page-1"}],
+            }
         ),
     )
     monkeypatch.setattr(
@@ -287,6 +311,7 @@ def test_wiki_maintenance_adds_orphan_link_result_before_writing_log(
     assert calls == [
         "begin",
         ("lint", False),
+        ("semantic", True),
         ("orphan", True),
         ("artifact", "lint-op-1"),
         ("log", [{"reason": "no_active_support"}]),

@@ -49,7 +49,10 @@ class QueryEvaluatorLoop:
                 question=question,
                 stop_reason=stop_reason,
                 query_evaluator=self._query_evaluator,
-                web_search_available=self._web_search_available,
+                web_search_available=(
+                    self._web_search_available
+                    and query_context.allow_web_search is not False
+                ),
                 event_publisher=event_publisher,
             )
             if route_after_evaluation(state, self._max_attempts) != "retry":

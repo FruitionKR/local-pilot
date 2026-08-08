@@ -6,7 +6,11 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditOperation,
     MarkdownEditTarget,
 )
-from app.modules.query.domain.entities import QueryAnswer
+from app.modules.query.domain.entities import (
+    OutputLanguage,
+    QueryAnswer,
+    ResponseLength,
+)
 from app.modules.skill.domain.entities import (
     SkillAuthoringResult,
     SkillAuthoringMode,
@@ -75,6 +79,9 @@ class AgentTurnRequest:
     skill_scope_type: SkillScopeType | None = None
     skill_authoring_mode: SkillAuthoringMode = "enhance"
     skill_reference_document_ids: tuple[str, ...] = ()
+    output_language: OutputLanguage | None = None
+    response_length: ResponseLength | None = None
+    allow_web_search: bool | None = None
 
 
 @dataclass(frozen=True)
