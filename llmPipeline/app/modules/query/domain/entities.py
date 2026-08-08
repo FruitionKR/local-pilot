@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
+from typing import Literal
 
-from app.core.response_preferences import OutputLanguage, ResponseLength
+
+OutputLanguage = Literal["ko", "en", "document"]
+ResponseLength = Literal["concise", "balanced", "detailed"]
 
 
 @dataclass(frozen=True)

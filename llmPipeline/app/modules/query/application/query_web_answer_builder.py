@@ -2,7 +2,6 @@ import hashlib
 import re
 from collections.abc import Callable
 
-from app.core.response_preferences import OutputLanguage, ResponseLength
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.ports import QueryEventPublisherPort, WebSearchPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
@@ -10,9 +9,11 @@ from app.modules.query.application.query_event import publish_query_event
 from app.modules.query.application.retrieval_summary import build_retrieval_summary
 from app.modules.query.domain.entities import (
     GraphContext,
+    OutputLanguage,
     QueryAnswer,
     QueryContext,
     QueryRewrite,
+    ResponseLength,
     RetrievedPage,
     TraversalPath,
     WebSearchResult,

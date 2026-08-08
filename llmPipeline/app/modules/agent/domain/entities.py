@@ -1,13 +1,16 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-from app.core.response_preferences import OutputLanguage, ResponseLength
 from app.modules.markdown_edit.domain.entities import (
     GeneratedMarkdownDocument,
     MarkdownEditOperation,
     MarkdownEditTarget,
 )
-from app.modules.query.domain.entities import QueryAnswer
+from app.modules.query.domain.entities import (
+    OutputLanguage,
+    QueryAnswer,
+    ResponseLength,
+)
 from app.modules.skill.domain.entities import (
     SkillAuthoringResult,
     SkillAuthoringMode,

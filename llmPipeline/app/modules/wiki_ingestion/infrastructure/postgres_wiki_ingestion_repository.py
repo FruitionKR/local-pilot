@@ -95,10 +95,11 @@ def connect() -> psycopg.Connection:
 def cleanup_deleted_wiki_pages(
     workspace_id: str,
     page_ids: list[str],
+    connection: psycopg.Connection | None = None,
 ) -> None:
     if not page_ids:
         return
-    with connect() as conn:
+    with _connection_scope(connection) as conn:
         rows = conn.execute(
             """
             SELECT id
@@ -893,6 +894,7 @@ def reconcile_concept_page_semantics(
             rows_by_page.setdefault(str(row["page_id"]), []).append(row)
 
         for page_id, page_rows in rows_by_page.items():
+            current_page_rows = page_rows
             page_rows = [
                 row
                 for row in page_rows
@@ -903,6 +905,20 @@ def reconcile_concept_page_semantics(
                 not in stale_contributions
             ]
             if not page_rows:
+                candidate = {
+                    "page_id": page_id,
+                    "slug": str(current_page_rows[0]["slug"]),
+                    "reason": "no_active_contributions",
+                    "source_document_ids": [],
+                    "operation_ids": [],
+                }
+                candidates.append(candidate)
+                if apply:
+                    cleanup_deleted_wiki_pages(
+                        workspace_id,
+                        [page_id],
+                        connection=conn,
+                    )
                 continue
             contributions = load_concept_contributions(
                 workspace_id=workspace_id,

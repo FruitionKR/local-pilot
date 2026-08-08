@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from typing import Literal
 
-from app.core.response_preferences import OutputLanguage
-
 TargetType = Literal["selection", "current_section", "whole_document"]
 EditOperationType = Literal["replace", "insert_after"]
+OutputLanguage = Literal["ko", "en", "document"]
 
 
 def operation_for_edit_goal(edit_goal: str | None) -> EditOperationType:

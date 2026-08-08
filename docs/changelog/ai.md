@@ -37,3 +37,9 @@
 - 별도 provider env 파일 없이 기존 `infra/.env`의 공통 `LLM_API_KEY`를 기본으로 읽도록 했다.
 - `gpt-5-nano`가 허용하는 `temperature=1.0`을 사용하고, `markdown_create`에 생성 전용 prompt를 전달하도록 수정했다.
 - OpenAI 실제 smoke 3종과 llmPipeline 전체 테스트 `810 passed, 61 subtests passed`를 통과했다. Gemini·Claude 실환경 검증은 남아 있다.
+
+### fix: 무기여 Concept와 domain 의존성 정리
+
+- 재편입 후 active contribution이 하나도 남지 않은 Concept를 `deleted` 처리하고 Page link와 embedding을 제거한다.
+- Query·Agent·Markdown domain의 `core` 타입 의존을 제거하고 evaluator 호출부 들여쓰기를 정리했다.
+- 완료된 AI issue 이동 안내 파일을 삭제하고 llmPipeline 전체 테스트 `812 passed, 61 subtests passed`로 검증했다.

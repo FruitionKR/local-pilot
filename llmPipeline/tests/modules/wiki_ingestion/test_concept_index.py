@@ -251,6 +251,78 @@ def test_semantic_reconciliation_rebuilds_from_latest_contribution_per_document(
     ] == ["op-B"]
 
 
+def test_semantic_reconciliation_deletes_page_without_remaining_contributions(
+    monkeypatch,
+) -> None:
+    page_rows = [
+        {
+            "page_id": "page-stale",
+            "slug": "stale",
+            "title": "Stale",
+            "markdown_uri": "wiki/current/stale.md",
+            "operation_id": "op-stale",
+            "source_document_id": "doc-1",
+            "sequence_revision": 1,
+        }
+    ]
+
+    class Result:
+        def __init__(self, rows=None):
+            self._rows = rows or []
+
+        def fetchall(self):
+            return self._rows
+
+    class Connection:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, query, params):
+            self.queries.append((query, params))
+            if "WITH affected_pages" in query:
+                return Result(page_rows)
+            if "SELECT id" in query and "FROM wiki_pages" in query:
+                return Result([{"id": "page-stale"}])
+            return Result()
+
+    connection = Connection()
+    monkeypatch.setattr(
+        repository,
+        "read_text_object",
+        lambda _key: (_ for _ in ()).throw(AssertionError("contribution read")),
+    )
+
+    result = repository.reconcile_concept_page_semantics(
+        "user-1",
+        "ws-1",
+        [{"document_id": "doc-1", "stale_concept_slugs": ["stale"]}],
+        apply=True,
+        operation_id="lint-1",
+        connection=connection,
+    )
+
+    assert result["semantic_reconciliation_candidates"] == [
+        {
+            "page_id": "page-stale",
+            "slug": "stale",
+            "reason": "no_active_contributions",
+            "source_document_ids": [],
+            "operation_ids": [],
+        }
+    ]
+    assert result["applied_semantic_reconciliations"] == result[
+        "semantic_reconciliation_candidates"
+    ]
+    assert any(
+        "DELETE FROM wiki_embedding_units" in query
+        for query, _params in connection.queries
+    )
+    assert any(
+        "UPDATE wiki_pages SET status = 'deleted'" in query
+        for query, _params in connection.queries
+    )
+
+
 def test_semantic_reconciliation_dry_run_does_not_update_page_or_embedding(
     monkeypatch,
 ) -> None:

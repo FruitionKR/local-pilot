@@ -1,6 +1,5 @@
 from dataclasses import dataclass, replace
 
-from app.core.response_preferences import OutputLanguage, ResponseLength
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.conversation_context_resolver import contextualize_question, evidence_question
 from app.modules.query.application.ports import (
@@ -34,10 +33,12 @@ from app.modules.query.domain.entities import (
     EvidenceSnippet,
     GeneratedAnswer,
     GraphContext,
+    OutputLanguage,
     QueryAnswer,
     QueryContext,
     QueryEvaluation,
     QueryRewrite,
+    ResponseLength,
     RetrievedPage,
     TraversalPath,
     WikiPage,
