@@ -272,7 +272,8 @@ def assemble(manifest_file: Path, output_dir: Path, output_file: Path) -> None:
             token = str(region["token"])
             replacement = region_markdown(output_dir, output_file, region)
             if token in content:
-                content = content.replace(token, replacement)
+                before, after = content.split(token, 1)
+                content = f"{before}{replacement}{after.replace(token, '')}"
             else:
                 content = f"{content.rstrip()}\n\n{replacement}".strip()
         chunks.append(f"<!-- page {page_number} -->\n\n{content.strip()}")

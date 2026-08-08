@@ -11,7 +11,7 @@
 - 기본 문서 복원 mode를 L107 기반 `crop-first`로 바꾸고 Rust Heron crop, AnyDoc 본문, 30% 본문 Luna route, 페이지 묶음 표·수식 복구와 원본 그림 조립을 제품 stage에 연결했다. `docling-only`는 명시적 fallback으로 유지했다.
 - 문서 복원 모듈 테스트 `67 passed`, llmPipeline 전체 `820 passed, 61 subtests passed`로 lane 분리와 fallback 회귀를 확인했고, 원본 4페이지 smoke에서 표 2·수식 7·그림 4, marker 누락 0을 확인했다.
 - 리뷰 후 본문 Luna 입력을 redacted page와 AnyDoc 초안 각 1개로 제한하고 fenced code block을 허용했으며, `pypdfium2` 기반 PDFium 탐색과 Rust 1.88 clean build·실제 8페이지 Heron 실행을 검증했다. 전체 테스트는 `821 passed, 61 subtests passed`다.
-- 추가 리뷰에서 AI 복원 실패 시 AnyDoc 원문을 보존하되 기존 특수 영역을 중복 조립하지 않도록 수정하고, redacted 본문만 CMap 손상 검사에 사용하도록 변경했으며, Heron `Cargo.lock`과 `--locked` 설치를 추가했다. Rust 1.88 locked build와 전체 테스트 `823 passed, 61 subtests passed`로 검증했다.
+- 추가 리뷰에서 AI 복원 실패 시 AnyDoc 원문을 보존하되 token이 중복돼도 각 특수 영역을 한 번만 조립하도록 수정하고, redacted 본문만 CMap 손상 검사에 사용하도록 변경했으며, Heron `Cargo.lock`과 `--locked` 설치를 추가했다. Rust 1.88 locked build와 전체 테스트 `823 passed, 61 subtests passed`로 검증했다.
 
 ### refactor: Skill 작성 재생성 흐름 정리
 

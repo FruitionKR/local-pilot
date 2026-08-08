@@ -131,7 +131,7 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
                             "page": 1,
                             "order": 0,
                             "type": "paragraph",
-                            "source_text": "AnyDoc 원문 XQ001QX 본문",
+                            "source_text": "AnyDoc 원문 XQ001QX 본문 XQ001QX",
                             "body_broken": True,
                         },
                         {
