@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -11,6 +11,9 @@ class QueryRequest(BaseModel):
     log_callback_url: str | None = None
     recent_conversation_summary: str | None = None
     reference_context: dict[str, Any] | None = None
+    output_language: Literal["ko", "en", "document"] | None = None
+    response_length: Literal["concise", "balanced", "detailed"] | None = None
+    allow_web_search: bool | None = None
 
 
 class RelatedPageResponse(BaseModel):

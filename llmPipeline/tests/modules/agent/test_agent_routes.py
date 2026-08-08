@@ -182,6 +182,18 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_accepts_response_preferences(self) -> None:
+        request = AgentTurnRequestBody(
+            message="Explain this",
+            output_language="en",
+            response_length="concise",
+            allow_web_search=False,
+        ).to_domain()
+
+        self.assertEqual(request.output_language, "en")
+        self.assertEqual(request.response_length, "concise")
+        self.assertFalse(request.allow_web_search)
+
     def test_agent_turn_returns_authored_skill_markdown_without_permissions(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(

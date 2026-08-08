@@ -26,7 +26,7 @@ def persist_lint_operation_artifacts(
         ]
         added_links = _dict_items(change.get("added_links", []))
         removed_links = _dict_items(change.get("removed_links", []))
-        if action not in {"create", "append_evidence"} and not (
+        if action not in {"create", "append_evidence", "rebuild"} and not (
             added_links or removed_links
         ):
             raise ValueError("lint artifact must contain a replayable action")
@@ -116,7 +116,7 @@ def _lint_payload(
         }
         for index, claim in enumerate(claims, start=1)
     ]
-    return {
+    payload = {
         "schema_version": 1,
         "artifact_type": "lint",
         "operation_id": operation_id,
@@ -127,7 +127,9 @@ def _lint_payload(
             "slug": str(change["slug"]),
             "title": str(change.get("title") or change["slug"]),
             "definition": str(change.get("definition") or ""),
-            "source_document_ids": document_ids,
+            "source_document_ids": list(
+                change.get("source_document_ids") or document_ids
+            ),
             "evidence_claim_ids": [
                 str(unit["evidence_id"]) for unit in evidence_units
             ],
@@ -144,6 +146,11 @@ def _lint_payload(
         "added_links": added_links,
         "removed_links": removed_links,
     }
+    if action == "rebuild":
+        payload["source_operation_ids"] = list(
+            change.get("source_operation_ids") or []
+        )
+    return payload
 
 
 def _dict_items(values: Any) -> list[dict[str, Any]]:

@@ -856,6 +856,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="지금까지 이야기한 내용 md로 만들어줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="en",
                 conversation_context=AgentConversationContext(
                     recent_conversation_summary="사용자는 편집과 생성을 분리하는 agent 설계를 논의했다."
                 ),
@@ -869,6 +870,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("편집과 생성을 분리", editor.create_requests[0].conversation_summary or "")
         self.assertEqual(editor.create_requests[0].workspace_id, "workspace-1")
         self.assertEqual(editor.create_requests[0].user_id, "user-1")
+        self.assertEqual(editor.create_requests[0].output_language, "en")
 
     def test_uses_whole_document_when_edit_has_markdown_but_no_target(self) -> None:
         target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
@@ -1080,6 +1082,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="이 문서는 무엇을 설명해?",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="document",
+                response_length="balanced",
+                allow_web_search=False,
             )
         )
 
@@ -1088,6 +1093,12 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(query_use_case.questions, ["이 문서는 무엇을 설명해?"])
         self.assertEqual(query_use_case.kwargs[0]["workspace_id"], "workspace-1")
         self.assertEqual(query_use_case.kwargs[0]["user_id"], "user-1")
+        self.assertEqual(
+            query_use_case.kwargs[0]["output_language"],
+            "document",
+        )
+        self.assertEqual(query_use_case.kwargs[0]["response_length"], "balanced")
+        self.assertFalse(query_use_case.kwargs[0]["allow_web_search"])
 
 
 if __name__ == "__main__":

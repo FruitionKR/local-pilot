@@ -21,6 +21,7 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
 )
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import (
+    DEFAULT_MARKDOWN_CREATE_PROMPT,
     DEFAULT_MARKDOWN_EDIT_PROMPT,
     DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT,
     ChatCompletionsMarkdownEditor,
@@ -46,6 +47,8 @@ REQUIRED_EXTRACTION_KEYS = {
     "needs_neighbor_context",
     "context_problem",
 }
+
+_DEFAULT_ENV_FILE = Path(__file__).parent.parent / "infra" / ".env"
 
 
 def run_provider_e2e(
@@ -108,6 +111,9 @@ def _probe_markdown_create(client: ChatCompletionsJsonClient) -> None:
     document = ChatCompletionsMarkdownEditor(
         client,
         Path(DEFAULT_MARKDOWN_EDIT_PROMPT).read_text(encoding="utf-8"),
+        create_system_prompt=Path(DEFAULT_MARKDOWN_CREATE_PROMPT).read_text(
+            encoding="utf-8"
+        ),
         source_edit_system_prompt=Path(
             DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT
         ).read_text(encoding="utf-8"),
@@ -180,7 +186,7 @@ def parse_args() -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--model", required=True)
-    parser.add_argument("--env-file")
+    parser.add_argument("--env-file", default=str(_DEFAULT_ENV_FILE))
     parser.add_argument("--api-key-env", default="LLM_API_KEY")
     parser.add_argument("--base-url")
     parser.add_argument("--endpoint")
@@ -214,7 +220,7 @@ def main() -> None:
             ),
             api_key=defaults.api_key,
             model=defaults.model or args.model,
-            temperature=0.0,
+            temperature=1.0,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
             provider=defaults.provider,

@@ -758,6 +758,16 @@ Wiki maintenance용 lint 기능이다.
     }
   ],
   "applied_reconciliations": [],
+  "semantic_reconciliation_candidates": [
+    {
+      "page_id": "page_456",
+      "slug": "taguchi-method",
+      "reason": "latest_active_contributions_changed",
+      "source_document_ids": ["doc_123", "doc_456"],
+      "operation_ids": ["op_latest_123", "op_latest_456"]
+    }
+  ],
+  "applied_semantic_reconciliations": [],
   "applied_cluster_reconciliation": {
     "removed_claims": [],
     "removed_relations": []
@@ -801,6 +811,8 @@ Wiki maintenance용 lint 기능이다.
 | `invalid_promotions` | array | 승격 후보로 표시됐지만 source ref가 없어 승격할 수 없는 cluster 목록이다. |
 | `reconciliation_candidates` | array | 최신 재편입에서 수정·삭제된 block과 이전 편입 결과를 비교해 찾은 구조 정리 대상이다. |
 | `applied_reconciliations` | array | `dry_run=false`에서 오래된 문서-concept 연결·해당 문서의 embedding unit과 다른 활성 문서가 지지하지 않는 relation을 실제 정리한 결과다. |
+| `semantic_reconciliation_candidates` | array | 원문 문서별 최신 active contribution으로 다시 조립했을 때 본문이 달라지는 Concept Page 목록이다. dry-run에서도 반환한다. |
+| `applied_semantic_reconciliations` | array | `dry_run=false`에서 Markdown과 embedding unit을 같은 transaction 안에서 실제 갱신한 Concept Page 목록이다. |
 | `applied_cluster_reconciliation` | object | 최신 재편입 기여분과 비교해 active cluster에서 제거한 이전 claim과 relation 후보다. |
 | `materialized_promotions` | array | 이번 lint 실행에서 새 concept page로 실제 승격된 항목이다. `materialize_promotions=true`이고 `dry_run=false`일 때만 생긴다. |
 | `merged_promotions` | array | 이미 존재하는 concept에 evidence만 병합된 승격 후보 목록이다. |
@@ -858,8 +870,9 @@ Wiki maintenance용 lint 기능이다.
 무효화된 source ref가 포함된 cluster는 자동 승격 대상에서 제외되고
 `needs_review`에 포함된다. `dry_run=false`에서는 최신 재편입 기여분에 없는
 이전 claim과 그 claim만 근거로 삼는 relation 후보를 active cluster에서
-제거한다. Concept 본문의 정의·근거 문장을 의미에 맞게 다시 쓰는 작업은 별도
-의미 정합성 단계가 필요하다.
+제거한다. 영향받은 Concept 본문은 Page·원문 문서별 최신 active contribution을
+합쳐 다시 조립하며, 다른 활성 문서가 지지하는 Definition·Evidence·Related
+Concepts는 유지한다.
 
 현재 lint에서 유효한 core relation은 다음 값이다.
 

@@ -1,4 +1,9 @@
 from dataclasses import dataclass, field
+from typing import Literal
+
+
+OutputLanguage = Literal["ko", "en", "document"]
+ResponseLength = Literal["concise", "balanced", "detailed"]
 
 
 @dataclass(frozen=True)
@@ -140,6 +145,9 @@ class QueryContext:
     answer_context: str
     workspace_id: str | None = None
     user_id: str | None = None
+    output_language: OutputLanguage | None = None
+    response_length: ResponseLength | None = None
+    allow_web_search: bool | None = None
 
 
 @dataclass(frozen=True)
