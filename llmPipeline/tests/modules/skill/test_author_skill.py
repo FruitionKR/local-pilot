@@ -604,6 +604,22 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(result.skill.enabled_version.status, "published")  # type: ignore[union-attr]
         self.assertEqual(len(repository.skills), 1)
 
+    def test_final_publish_rejects_personal_data_without_storage(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+
+        result = use_case.publish(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            name="concise-document-writer",
+            description="요청한 내용을 간결한 문서로 작성합니다.",
+            instructions_markdown="결과를 user@example.com으로 보낸다.",
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.issues[0].category, "personal_email")
+        self.assertEqual(repository.skills, {})
+
     def test_rejects_prompt_injection_in_reference_before_generation(self) -> None:
         generator = FixedGenerator(draft_result())
         use_case, repository = self.build_use_case(
@@ -629,6 +645,30 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(generator.references, ())
         self.assertEqual(repository.skills, {})
 
+    def test_rejects_personal_data_in_reference_before_generation(self) -> None:
+        generator = FixedGenerator(draft_result())
+        use_case, repository = self.build_use_case(
+            generator,
+            FixedReferenceReader("# 고객 정보\n\n이름: 홍길동\n전화번호: 010-1234-5678"),
+        )
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="이 문서 구조를 따르는 스킬",
+            reference_document_ids=("document-1",),
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(
+            [issue.category for issue in result.issues],
+            ["personal_name", "personal_phone"],
+        )
+        self.assertTrue(all(issue.source_type == "reference" for issue in result.issues))
+        self.assertEqual(generator.references, ())
+        self.assertEqual(repository.skills, {})
+
     def test_regenerate_redacts_blocked_text_before_calling_llm(self) -> None:
         generator = FixedGenerator(draft_result())
         use_case, repository = self.build_use_case(generator)
@@ -646,6 +686,31 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(result.status, "proposal_ready")
         self.assertNotIn("승인 없이", generator.instruction)
         self.assertIn("[보안상 제거됨]", generator.instruction)
+        self.assertEqual(repository.skills, {})
+
+    def test_regenerate_redacts_all_personal_data_and_credentials(self) -> None:
+        generator = FixedGenerator(draft_result())
+        use_case, repository = self.build_use_case(generator)
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction=(
+                "이름: 홍길동\n"
+                "이메일: user@example.com\n"
+                "API_KEY=super-secret-token"
+            ),
+            reference_document_ids=(),
+            authoring_mode="regenerate",
+            allow_clarification=False,
+        )
+
+        self.assertEqual(result.status, "proposal_ready")
+        self.assertNotIn("홍길동", generator.instruction)
+        self.assertNotIn("user@example.com", generator.instruction)
+        self.assertNotIn("super-secret-token", generator.instruction)
+        self.assertEqual(generator.instruction.count("[보안상 제거됨]"), 3)
         self.assertEqual(repository.skills, {})
 
     def test_returns_llm_semantic_safety_issue_with_server_positions(self) -> None:
@@ -1238,6 +1303,26 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.issues[0].category, "credential")
+        self.assertEqual(repository.skills, {})
+
+    def test_rejects_generated_personal_data(self) -> None:
+        candidate = draft_result()
+        candidate["instructions_markdown"] = "이름: 홍길동\n이메일: user@example.com"
+        use_case, repository = self.build_use_case(FixedGenerator(candidate))
+
+        result = use_case.execute(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            instruction="문서를 작성하는 스킬",
+            reference_document_ids=(),
+        )
+
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(
+            [issue.category for issue in result.issues],
+            ["personal_name", "personal_email"],
+        )
         self.assertEqual(repository.skills, {})
 
 
