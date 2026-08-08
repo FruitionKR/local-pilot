@@ -114,6 +114,15 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
             root = Path(temp_dir)
             manifest_file = root / "manifest.json"
             output_file = root / "final" / "paper.restored.md"
+            table_asset = root / "layout" / "crop_first" / "assets" / "table.png"
+            recovered = root / "layout" / "auto" / "recovered_blocks"
+            table_asset.parent.mkdir(parents=True)
+            recovered.mkdir(parents=True)
+            table_asset.write_bytes(b"table")
+            (recovered / "table.md").write_text(
+                "| UNIQUE_TABLE |\n| --- |\n| 1 |\n",
+                encoding="utf-8",
+            )
             manifest_file.write_text(
                 json.dumps(
                     [
@@ -122,9 +131,17 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
                             "page": 1,
                             "order": 0,
                             "type": "paragraph",
-                            "source_text": "AnyDoc 원문 본문",
+                            "source_text": "AnyDoc 원문 XQ001QX 본문",
                             "body_broken": True,
-                        }
+                        },
+                        {
+                            "id": "table",
+                            "page": 1,
+                            "order": 1,
+                            "type": "table_candidate",
+                            "token": "XQ001QX",
+                            "asset": str(table_asset.relative_to(root)),
+                        },
                     ]
                 ),
                 encoding="utf-8",
@@ -134,7 +151,9 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
 
             result = output_file.read_text(encoding="utf-8")
             self.assertIn("> 본문 자동 복원 실패", result)
-            self.assertIn("AnyDoc 원문 본문", result)
+            self.assertIn("AnyDoc 원문", result)
+            self.assertEqual(result.count("UNIQUE_TABLE"), 1)
+            self.assertNotIn("XQ001QX", result)
 
     def test_checks_missing_unicode_usage_on_redacted_body_page(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -265,10 +265,7 @@ def assemble(manifest_file: Path, output_dir: Path, output_file: Path) -> None:
         regions = sorted(regions_by_page.get(page_number, []), key=lambda item: item["order"])
         content = recovered_text(output_dir, body)
         if content is None and body["body_broken"]:
-            tokens = "\n\n".join(str(region["token"]) for region in regions)
-            content = (
-                f"> 본문 자동 복원 실패\n\n{body['source_text']}\n\n{tokens}"
-            ).strip()
+            content = f"> 본문 자동 복원 실패\n\n{body['source_text']}".strip()
         elif content is None:
             content = str(body["source_text"])
         for region in regions:
