@@ -1,69 +1,82 @@
 ---
 name: review
-description: Use for code review before or after PR creation. Triggers include "리뷰해줘", "코드리뷰", "PR 리뷰", "결실봇 리뷰", "review", "gh review". With no PR number, review unpushed commits (origin/dev..HEAD) and uncommitted changes, printing findings to the terminal. With a PR number, review the PR and post GitHub inline comments. Report only high-confidence findings, focused on bugs, consistency, and security.
+description: >-
+  PR 전용 코드 리뷰. 사용자가 "PR 리뷰"라고 명시적으로 지칭하거나 PR 번호/URL을 줄 때만
+  사용한다. 일반적인 "리뷰해줘" 요청에는 사용하지 않는다. PR 번호가 없으면 다음 PR에
+  담길 미푸시 커밋(origin/dev..HEAD)과 미커밋 변경을 리뷰해 터미널에 출력하고, PR 번호를
+  주면 해당 PR을 리뷰해 GitHub 인라인 코멘트로 게시한다. 버그·정합성·보안 위주로
+  고신뢰 지적만 낸다.
 allowed-tools: Bash(git *) Bash(gh *) Read Grep Glob
 ---
 
-# Review Procedure
+`$ARGUMENTS`를 다음과 같이 해석한다:
+- 맨 앞에 **숫자(PR 번호)** 가 있으면 **PR 모드**, 없으면 **로컬 모드**.
+- 숫자를 뺀 나머지 텍스트가 있으면 **포커스 지시**(더 깊게 볼 영역·파일·주제)로 본다.
 
-Interpret `$ARGUMENTS` as follows.
+출력과 코멘트는 모두 한글로 작성한다.
 
-- If the first token is a number, treat it as the PR number and use PR mode. Otherwise use local mode.
-- If text remains after removing the PR number, treat it as the review focus.
-- Write all user-facing output and GitHub comments in Korean.
+말투·형식은 모드별로 다르다:
+- **PR 모드**: 헤더 `🧶 결실봇 코드리뷰`, `~해요`체로 담백하게. 여는 요약 한두 줄
+  (무엇을 바꿨고 무엇을 확인했는지) + 지적.
+- **로컬 모드**: 결실봇 문체·인사·여는 요약 없이 **문제와 수정 방향 중심**으로만 쓴다.
+  헤더는 `코드리뷰`. 각 항목은 "무엇이 문제인지 → 어떻게 고칠지"만 담는다.
 
-## Tone And Format
+공통: 인사말·칭찬 없이 내용만. 지적 내용·심각도(🚨⚠️💡)·line 번호는 정확히 유지한다.
 
-- PR mode: use the header `🧶 결실봇 코드리뷰`. Use a plain Korean `~해요` tone. The opening summary should be one or two lines that only state what changed and what was reviewed.
-- Local mode: do not use the 결실봇 tone, greetings, or an opening summary. Focus only on issues and fixes. Use the header `코드리뷰`.
-- Common: no greetings or praise. Keep finding details, severity, and line numbers accurate.
+## Step 1 — diff 가져오기
 
-## Step 1 - Get Diff
+- **로컬**: 아직 `dev`에 반영되지 않은 **미푸시 커밋**과 커밋하지 않은 작업분을 대상으로 한다(= 다음 PR에 담길 변경).
+  - base = `origin/dev`. 먼저 `git fetch origin dev`로 최신화한다(로컬 `dev`는 stale일 수 있음). `origin/dev`가 없으면 로컬 `dev`.
+  - 미푸시 커밋 목록: `git log --oneline --no-merges origin/dev..HEAD`
+  - 변경 diff: `git diff origin/dev...HEAD` (merge-base 기준 3-dot, merge 커밋 제외)
+  - 여기에 아직 커밋 안 한 작업분도 포함: `git diff` (unstaged) + `git diff --cached` (staged) + `git status --short`
+  - 미푸시 커밋과 두 diff가 **모두 비어 있으면** `리뷰할 미푸시 커밋·변경이 없습니다.` 출력 후 종료.
+- **PR**: `gh pr diff $ARGUMENTS` + `gh pr view $ARGUMENTS --json title,body`
 
-- Local mode: review unpushed commits (not yet on `dev`) plus uncommitted work (= what the next PR will contain).
-  - Base is `origin/dev`. First run `git fetch origin dev` to refresh it (local `dev` may be stale). If `origin/dev` is absent, use local `dev`.
-  - Unpushed commit list: `git log --oneline --no-merges origin/dev..HEAD`
-  - Change diff: `git diff origin/dev...HEAD` (3-dot from merge-base, excludes merge commits)
-  - Also include uncommitted work: `git diff`, `git diff --cached`, `git status --short`.
-  - If the unpushed commits and both diffs are all empty, print `리뷰할 미푸시 커밋·변경이 없습니다.` and stop.
-- PR mode: inspect `gh pr diff <PR 번호>` and `gh pr view <PR 번호> --json title,body`.
+## Step 2 — 리뷰
 
-## Step 2 - Review
+**변경된 모든 파일을 빠짐없이 검토하는 것이 기본**이다. diff가 크다고 일부 파일만 보고
+넘기지 않는다. 범위를 좁히는 것은 사용자가 명시적으로 요청할 때만 하고, 그 경우 어디까지
+봤는지 밝힌다. (검토는 전부 하되, **보고는 확신 서는 것만** — 커버리지와 보고 기준은 별개다.)
 
-Review every changed file. Do not skip files because the diff is large. Narrow the scope only when the user explicitly asks for a limited scope, and state that scope.
+각 파일에서 **변경(추가/수정)된 라인만 검토**한다. 주변 코드는 맥락 파악용으로만 읽는다.
 
-Inspect only changed lines for findings. Read surrounding code only for context.
+**포커스 지시가 있으면**: 전체는 그대로 빠짐없이 검토하되, 지정된 영역·파일·주제를
+**추가로 더 깊이** 분석하고 그 발견을 우선한다. 단 "~만/only"처럼 범위를 좁히라는
+지시면 그 영역만 검토하고 나머지는 범위 밖임을 밝힌다.
+PR 모드의 요구사항 기준은 PR 설명이다. 로컬 모드는 미푸시 커밋의 **커밋 메시지**와
+변경 코드·주석에서 의도를 파악하고(미커밋 변경은 기준 문구가 없을 수 있음), 의도가 불명확하면 사용자에게 한 번 확인한다.
 
-If a focus instruction is present, still review the full diff and inspect the requested area, file, or topic more deeply. If the user says `only` or `만`, review only that scope and state that the rest is out of scope.
+우선순위 순으로 **확신이 서는 것만** 지적한다. 애매하거나 취향 수준은 넣지 않는다.
 
-In PR mode, use the PR body as the requirement baseline. In local mode, infer intent from the unpushed commit messages plus changed code and comments (uncommitted work may lack a baseline). If intent is unclear, ask the user once.
+1. **버그/로직** — null 참조, 반전된 조건, 예외 삼킴, 트랜잭션 범위, 반환값 미처리
+2. **요구사항** — 커밋/PR 설명 대비 누락·오구현
+3. **정합성** — 스키마↔엔티티↔DTO↔API 필드/타입, 네이밍, 계약 일치
+4. **보안** — injection, 인증/인가 누락, 시크릿 하드코딩·로그 노출
+5. **엣지 케이스** — 빈값/null/경계값, 동시성, 외부 호출 실패
+6. **성능** — N+1, 루프 내 DB 호출, 대용량 전체 로드
+7. **테스트** — 변경 로직에 대응하는 테스트 존재·실효성
+8. **AGENTS.md** — 요청 범위 초과 변경, 추측성 코드, 불필요한 방어 코드
+9. **리팩터링** — 동작을 바꾸지 않는 구조 개선: 중복 제거, 기존 코드/유틸 재사용,
+   불필요한 복잡도 단순화, 죽은 코드 제거, 과도한 추상화. 버그가 아니므로 `♻️`로 표시하고,
+   막연한 "리팩터링하면 좋음"이 아니라 **무엇을 무엇으로 바꿀지 구체적으로** 적는다.
 
-Report only high-confidence findings. Do not include ambiguous or preference-only comments. Prioritize findings in this order:
+## Step 3 — 출력
 
-1. Bugs/logic: null references, inverted conditions, swallowed exceptions, transaction boundaries, ignored return values.
-2. Requirements: missing or incorrect behavior compared with the commit or PR description.
-3. Consistency: schema/entity/DTO/API field or type mismatches, naming, and contract drift.
-4. Security: injection, missing authentication/authorization, hardcoded secrets, leaked secrets in logs.
-5. Edge cases: empty/null/boundary values, concurrency, external call failures.
-6. Performance: N+1 queries, DB calls in loops, large full-load operations.
-7. Tests: missing or ineffective tests for changed behavior.
-8. CLAUDE.md/AGENTS.md: scope creep, speculative code, unnecessary defensive code.
-9. Refactoring: behavior-preserving improvements. Mark only concrete suggestions with `♻️`, such as removing duplication, reusing existing code/utilities, deleting dead code, or removing over-abstraction.
+심각도: 🚨 Critical(버그·보안·요구사항 미충족) · ⚠️ Warning(성능·유지보수·테스트) · 💡 Info(선택 개선)
+🚨⚠️💡는 정확성/품질 문제, `♻️`는 동작을 바꾸지 않는 리팩터링 제안(별도 표시).
+검증한 내용(확인 항목)은 나열하지 말고 **한 줄로 간결하게** 요약한다. 지적(발견 사항)에 집중한다.
 
-## Step 3 - Output
+**로컬 모드** — 터미널 출력.
+파일별이 아니라 **종류(심각도)별로 문단을 나누고**, 각 항목은 도트(`-`)로 적는다.
+각 항목은 ``- `파일:line` — 문제와 수정 방향`` 형식. **발견 사항이 있는 종류만** 문단으로 넣고,
+없는 종류는 생략한다. 문단 순서는 🚨 → ⚠️ → 💡 → ♻️.
 
-Use `🚨 Critical`, `⚠️ Warning`, `💡 Info`, and `♻️ Refactoring` severity groups. `🚨⚠️💡` are correctness or quality issues; `♻️` is for behavior-preserving refactoring suggestions.
-
-Do not list everything verified. Summarize verification briefly in one line and focus on findings.
-
-### Local Mode
-
-Group findings by severity, not by file. Omit empty severity sections.
-
-```markdown
+```
 ## 코드리뷰
 
 **🚨 필수 수정**
+- `파일:line` — 문제 → 수정 방향
 - `파일:line` — 문제와 수정 방향
 
 **⚠️ 권장**
@@ -78,36 +91,28 @@ Group findings by severity, not by file. Omit empty severity sections.
 총계: 🚨 N ⚠️ N 💡 N ♻️ N
 ```
 
-If there are no findings, print `변경분에서 문제를 발견하지 못했습니다.`
+발견 사항이 없으면 `변경분에서 문제를 발견하지 못했습니다.` 출력.
 
-### PR Mode
+**PR 모드** — GitHub Review API로 인라인 코멘트 일괄 게시:
 
-- Use GitHub Review API for inline comments when posting to GitHub.
-- Put comments only on real diff lines with `side: "RIGHT"`.
-- Prefix each comment with severity.
-- Do not repeat the PR title in the summary body.
-- If there are no findings and the user asked to post the review, use `"event": "APPROVE"`.
-- Never merge PRs.
-- The opening summary goes in a Markdown blockquote. Findings are not blockquoted.
+- `line`은 diff에 포함된 실제 라인(`side: "RIGHT"`), diff 밖 라인은 코멘트 제외
+- 코멘트 본문 앞에 심각도 이모지
+- 요약 `body`에 **PR 제목을 반복하지 않는다**(PR 페이지에 이미 있음). 바로 지적으로 들어간다.
+- 여는 요약 문단은 **인용 블록(`>`)** 으로 감싸 배경으로 물러나게 한다. 지적 문단은 감싸지 않는다.
 
 ```bash
 gh repo view --json nameWithOwner
-echo '<JSON>' | gh api repos/{owner}/{repo}/pulls/{PR 번호}/reviews --method POST --input -
+echo '<JSON>' | gh api repos/{owner}/{repo}/pulls/$ARGUMENTS/reviews --method POST --input -
 ```
 
 ```json
 {
-  "body": "> 무엇을 바꿨고 무엇을 확인했는지 한두 줄로 요약해요.\n\n지적 요약 또는 발견 사항 없음",
+  "body": "리뷰 요약 (한글, 건수 포함)",
   "event": "COMMENT",
   "comments": [
-    {
-      "path": "파일경로",
-      "line": 123,
-      "side": "RIGHT",
-      "body": "🚨 문제 설명과 수정 방향"
-    }
+    { "path": "파일경로", "line": 라인, "side": "RIGHT", "body": "🚨 문제 설명" }
   ]
 }
 ```
 
-If there are no findings, post with `"event": "APPROVE"`. If GitHub blocks self-approval for the current account, post the same summary with `"event": "COMMENT"` and tell the user that the approval event was blocked by the self-approval restriction.
+발견 사항이 없으면 `"event": "APPROVE"` 로 게시한다.
