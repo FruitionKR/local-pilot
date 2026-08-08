@@ -9,7 +9,9 @@ from app.modules.wiki_ingestion.application.ports import (
     PipelineRunRepositoryPort,
     PipelineSourceReaderPort,
     WikiMaintenancePort,
+    WikiPageRepositoryPort,
 )
+from app.modules.wiki_ingestion.application.rename_wiki_page import RenameWikiPageUseCase
 from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
 from app.modules.wiki_ingestion.application.restore_wiki_pages import (
     RestoreWikiPagesUseCase,
@@ -25,6 +27,9 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_result_callback import (
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     cleanup_deleted_wiki_pages,
+)
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_page_repository import (
+    PostgresWikiPageRepository,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     read_text_object,
@@ -79,3 +84,13 @@ def get_pipeline_log_reader() -> PipelineLogReaderPort:
 @lru_cache(maxsize=1)
 def get_wiki_maintenance() -> WikiMaintenancePort:
     return PostgresWikiMaintenance()
+
+
+@lru_cache(maxsize=1)
+def get_wiki_page_repository() -> WikiPageRepositoryPort:
+    return PostgresWikiPageRepository()
+
+
+@lru_cache(maxsize=1)
+def get_rename_wiki_page_use_case() -> RenameWikiPageUseCase:
+    return RenameWikiPageUseCase(get_wiki_page_repository())

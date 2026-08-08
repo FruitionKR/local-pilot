@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,11 +11,36 @@ from app.modules.wiki_ingestion.application.models import (
     SourceSnapshotRestoreCommand,
     WikiMaintenanceCommand,
 )
+from app.modules.wiki_ingestion.domain.wiki_page import WikiPageRenameResult
 
 
 DOCUMENT_SEMANTIC_PROMPT = "prompts/semantic_extraction.system.md"
 CHAT_SEMANTIC_PROMPT = "prompts/chat_semantic_extraction.system.md"
 CHAT_APPEND_SEMANTIC_PROMPT = "prompts/chat_semantic_append.system.md"
+
+
+class WikiPageRenameIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(..., min_length=1)
+    workspace_id: str = Field(..., min_length=1)
+    title: str
+    update_slug: bool | None = False
+
+
+class WikiPageRenameOut(BaseModel):
+    id: str
+    page_type: str
+    title: str
+    previous_title: str
+    slug: str
+    previous_slug: str
+    slug_updated: bool
+    updated_at: datetime
+
+    @classmethod
+    def from_domain(cls, result: WikiPageRenameResult) -> "WikiPageRenameOut":
+        return cls(**result.__dict__)
 
 
 class _PipelineRunBase(BaseModel):

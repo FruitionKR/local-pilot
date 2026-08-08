@@ -7,10 +7,23 @@ from app.modules.wiki_ingestion.application.models import (
     SourceSnapshotRestoreCommand,
     WikiMaintenanceCommand,
 )
+from app.modules.wiki_ingestion.domain.wiki_page import WikiPageRenameResult
 
 
 class WikiMaintenancePort(Protocol):
     def lint(self, command: WikiMaintenanceCommand) -> dict[str, Any]: ...
+
+
+class WikiPageRepositoryPort(Protocol):
+    def rename(
+        self,
+        *,
+        wiki_page_id: str,
+        user_id: str,
+        workspace_id: str,
+        title: str,
+        slug: str | None,
+    ) -> WikiPageRenameResult: ...
 
 
 class PipelineRunnerPort(Protocol):

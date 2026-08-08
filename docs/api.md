@@ -231,6 +231,7 @@ FastAPI는 `http://localhost:8000`에서 실행되지만 제품 외부에 공개
 | `POST /pipeline/runs` | 일반 Wiki ingestion 실행 |
 | `POST /pipeline/reingest-runs` | 기존 문서 재ingest |
 | `POST /chat-wiki/runs` | 채팅 export ingestion |
+| `PATCH /wiki/pages/{wiki_page_id}/rename` | Wiki 페이지 제목과 선택적 slug 변경 |
 | `POST /wiki/maintenance/lint` | Wiki lint 및 선택적 수정 |
 | `POST /wiki/ingest-restore-runs` | ingest 결과 복구 재조립 |
 | `POST /wiki/lint-restore-runs` | lint 결과 복구 재조립 |
