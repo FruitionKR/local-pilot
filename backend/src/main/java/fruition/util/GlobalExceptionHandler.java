@@ -52,6 +52,7 @@ import fruition.skill.exception.SkillReferenceDocumentTooLargeException;
 import fruition.skill.exception.TeamSkillForbiddenException;
 import fruition.skill.exception.SkillNotFoundException;
 import fruition.skill.exception.SkillConflictException;
+import fruition.skill.exception.SkillReferenceStaleException;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.EmailVerificationNotFoundException;
 import fruition.user.exception.InvalidCredentialsException;
@@ -117,6 +118,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleSkillConflict(SkillConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillReferenceStaleException.class)
+    public ResponseEntity<ErrorResponse> handleSkillReferenceStale(SkillReferenceStaleException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("SKILL_REFERENCE_STALE", e.getMessage()));
     }
 
     @ExceptionHandler(SkillReferenceDocumentNotFoundException.class)

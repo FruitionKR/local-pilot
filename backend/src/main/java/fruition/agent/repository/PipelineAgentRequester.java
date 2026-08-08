@@ -5,6 +5,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import fruition.agent.dto.AgentTurnRequest;
 import fruition.agent.exception.PipelineAgentException;
+import fruition.skill.dto.SkillExecutionDefinition;
+import fruition.skill.dto.SkillExecutionPlan;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -23,20 +25,26 @@ public class PipelineAgentRequester {
 
     public PipelineAgentRequester(
             @Value("${app.agent.endpoint}") String endpoint,
-            @Value("${app.agent.timeout-seconds:60}") int timeoutSeconds) {
+            @Value("${app.agent.timeout-seconds:60}") int timeoutSeconds,
+            @Value("${app.agent.internal-token}") String internalToken,
+            @Value("${app.agent.service-token}") String agentServiceToken) {
         this.endpoint = endpoint;
         var factory = new SimpleClientHttpRequestFactory();
         factory.setReadTimeout(timeoutSeconds * 1000);
         factory.setConnectTimeout(5000);
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        this.restClient = RestClient.builder()
+                .requestFactory(factory)
+                .defaultHeader("X-Internal-Token", internalToken)
+                .defaultHeader("X-Agent-Service-Token", agentServiceToken)
+                .build();
     }
 
-    public JsonNode request(AgentTurnRequest request) {
+    public JsonNode request(String workspaceId, String userId, AgentTurnRequest request, SkillExecutionPlan skillPlan) {
         try {
             JsonNode response = restClient.post()
                     .uri(endpoint)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(toPayload(request))
+                    .body(toPayload(workspaceId, userId, request, skillPlan))
                     .retrieve()
                     .body(JsonNode.class);
             if (response == null) {
@@ -54,26 +62,39 @@ public class PipelineAgentRequester {
         }
     }
 
-    private PipelineAgentRequest toPayload(AgentTurnRequest request) {
+    private PipelineAgentRequest toPayload(
+            String workspaceId, String userId, AgentTurnRequest request, SkillExecutionPlan skillPlan) {
         AgentTurnRequest.ConversationContext context = request.conversationContext();
         AgentTurnRequest.EditorSnapshot snapshot = request.editorSnapshot();
         AgentTurnRequest.Target target = snapshot.target();
         return new PipelineAgentRequest(
-                request.message(),
+                skillPlan.message(),
+                workspaceId,
+                userId,
                 context == null ? null : new PipelineConversationContext(
                         context.recentConversationSummary(), context.referenceContext()),
                 new ActiveMarkdownContext(
                         snapshot.markdown(),
                         target == null ? null : new MarkdownTarget(
-                                target.type(), target.startLine(), target.endLine()))
+                                target.type(), target.startLine(), target.endLine())),
+                skillPlan.mode(),
+                skillPlan.selectedSkill() == null ? null : skillPlan.selectedSkill().skillId(),
+                skillPlan.selectedSkill(),
+                skillPlan.skillCandidates()
         );
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record PipelineAgentRequest(
             String message,
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
             @JsonProperty("conversation_context") PipelineConversationContext conversationContext,
-            @JsonProperty("active_markdown_context") ActiveMarkdownContext activeMarkdownContext
+            @JsonProperty("active_markdown_context") ActiveMarkdownContext activeMarkdownContext,
+            @JsonProperty("skill_mode") String skillMode,
+            @JsonProperty("skill_id") String skillId,
+            @JsonProperty("selected_skill") SkillExecutionDefinition selectedSkill,
+            @JsonProperty("skill_candidates") java.util.List<SkillExecutionDefinition> skillCandidates
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

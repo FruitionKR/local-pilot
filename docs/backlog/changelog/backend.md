@@ -8,6 +8,28 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ## 2026-08-08
 
+### feat: Spring Skill 실행 snapshot을 Agent 요청에 연결
+
+**변경된 것**
+
+- `/command` 요청은 접근 가능한 Skill의 최신 version을 `selected_skill`로 확정하고 command를 제거한
+  사용자 메시지와 함께 llmPipeline `/agent/turn`에 전달한다.
+- 일반 자연어 요청은 자동 라우팅 ON Skill을 최근 수정 순 최대 20개의 `skill_candidates`로 전달한다.
+- 실행 snapshot에 `skill_id`, `version_id`, instructions, capability, allowed tool, 참조 문서 hash를 담는다.
+- 명시적 Skill 참조가 stale이면 `409 SKILL_REFERENCE_STALE`로 차단하고, 자연어 후보의 stale Skill은
+  후보에서 제외한다.
+- Agent 요청에 `X-Internal-Token`, `X-Agent-Service-Token`을 함께 전송한다.
+
+**검증**
+
+- `cd backend && ./gradlew test --tests 'fruition.agent.*' --tests 'fruition.skill.*'` 통과
+- `cd backend && ./gradlew test` 통과
+
+**후속 작업**
+
+- llmPipeline이 Spring 전달 `selected_skill`, `skill_candidates`를 자체 DB 조회 없이 실행하도록
+  `docs/issue/ai/2026-08-08.md`의 계약을 구현해야 한다.
+
 ### feat: Skill 생성 화면용 Backend 연동 경계 추가
 
 **변경된 것**

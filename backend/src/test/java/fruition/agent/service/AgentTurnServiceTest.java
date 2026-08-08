@@ -9,6 +9,8 @@ import fruition.document.domain.DocumentStatus;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.service.DocumentService;
+import fruition.skill.dto.SkillExecutionPlan;
+import fruition.skill.service.SkillExecutionResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -30,6 +32,7 @@ class AgentTurnServiceTest {
     @Mock DocumentService documentService;
     @Mock fruition.document.service.DocumentEditLockService editLockService;
     @Mock PipelineAgentRequester pipelineAgentRequester;
+    @Mock SkillExecutionResolver skillExecutionResolver;
     fruition.aihistory.service.AgentApplyOperationStore applyOperationStore =
             new fruition.aihistory.service.AgentApplyOperationStore();
 
@@ -38,14 +41,16 @@ class AgentTurnServiceTest {
     @BeforeEach
     void setUp() {
         service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester,
-                applyOperationStore);
+                applyOperationStore, skillExecutionResolver);
     }
 
     @Test
     void turn_verifiesDocumentAndPreservesVersion() throws Exception {
         AgentTurnRequest request = request("whole_document", 1, 2);
         when(documentService.findById("ws_1", "user_1", "doc_1")).thenReturn(document("note.md", "text/markdown"));
-        when(pipelineAgentRequester.request(request))
+        SkillExecutionPlan plan = SkillExecutionPlan.auto(request.message(), List.of());
+        when(skillExecutionResolver.resolve("ws_1", "user_1", request.message())).thenReturn(plan);
+        when(pipelineAgentRequester.request("ws_1", "user_1", request, plan))
                 .thenReturn(new ObjectMapper().readTree("{\"action\":\"markdown_edit\"}"));
 
         AgentTurnResponse response = service.turn("ws_1", "user_1", request);
@@ -64,7 +69,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -74,7 +81,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -85,7 +94,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(DocumentVersionConflictException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     private AgentTurnRequest request(String type, int startLine, int endLine) {
