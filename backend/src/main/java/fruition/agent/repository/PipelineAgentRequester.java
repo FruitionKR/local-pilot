@@ -5,8 +5,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import fruition.agent.dto.AgentTurnRequest;
 import fruition.agent.exception.PipelineAgentException;
-import fruition.skill.dto.SkillExecutionDefinition;
-import fruition.skill.dto.SkillExecutionPlan;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -39,12 +37,12 @@ public class PipelineAgentRequester {
                 .build();
     }
 
-    public JsonNode request(String workspaceId, String userId, AgentTurnRequest request, SkillExecutionPlan skillPlan) {
+    public JsonNode request(String workspaceId, String userId, AgentTurnRequest request) {
         try {
             JsonNode response = restClient.post()
                     .uri(endpoint)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(toPayload(workspaceId, userId, request, skillPlan))
+                    .body(toPayload(workspaceId, userId, request))
                     .retrieve()
                     .body(JsonNode.class);
             if (response == null) {
@@ -63,12 +61,12 @@ public class PipelineAgentRequester {
     }
 
     private PipelineAgentRequest toPayload(
-            String workspaceId, String userId, AgentTurnRequest request, SkillExecutionPlan skillPlan) {
+            String workspaceId, String userId, AgentTurnRequest request) {
         AgentTurnRequest.ConversationContext context = request.conversationContext();
         AgentTurnRequest.EditorSnapshot snapshot = request.editorSnapshot();
         AgentTurnRequest.Target target = snapshot.target();
         return new PipelineAgentRequest(
-                skillPlan.message(),
+                request.message(),
                 workspaceId,
                 userId,
                 context == null ? null : new PipelineConversationContext(
@@ -77,10 +75,7 @@ public class PipelineAgentRequester {
                         snapshot.markdown(),
                         target == null ? null : new MarkdownTarget(
                                 target.type(), target.startLine(), target.endLine())),
-                skillPlan.mode(),
-                skillPlan.selectedSkill() == null ? null : skillPlan.selectedSkill().skillId(),
-                skillPlan.selectedSkill(),
-                skillPlan.skillCandidates()
+                "auto"
         );
     }
 
@@ -91,10 +86,7 @@ public class PipelineAgentRequester {
             @JsonProperty("user_id") String userId,
             @JsonProperty("conversation_context") PipelineConversationContext conversationContext,
             @JsonProperty("active_markdown_context") ActiveMarkdownContext activeMarkdownContext,
-            @JsonProperty("skill_mode") String skillMode,
-            @JsonProperty("skill_id") String skillId,
-            @JsonProperty("selected_skill") SkillExecutionDefinition selectedSkill,
-            @JsonProperty("skill_candidates") java.util.List<SkillExecutionDefinition> skillCandidates
+            @JsonProperty("skill_mode") String skillMode
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

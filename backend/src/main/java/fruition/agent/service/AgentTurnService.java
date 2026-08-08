@@ -9,8 +9,6 @@ import fruition.document.dto.DocumentDetailResponse;
 import fruition.document.exception.DocumentVersionConflictException;
 import fruition.document.service.DocumentEditLockService;
 import fruition.document.service.DocumentService;
-import fruition.skill.service.SkillExecutionResolver;
-import fruition.skill.dto.SkillExecutionPlan;
 import org.springframework.stereotype.Service;
 
 import java.util.Set;
@@ -25,18 +23,15 @@ public class AgentTurnService {
     private final DocumentEditLockService editLockService;
     private final PipelineAgentRequester pipelineAgentRequester;
     private final AgentApplyOperationStore applyOperationStore;
-    private final SkillExecutionResolver skillExecutionResolver;
 
     public AgentTurnService(DocumentService documentService,
                             DocumentEditLockService editLockService,
                             PipelineAgentRequester pipelineAgentRequester,
-                            AgentApplyOperationStore applyOperationStore,
-                            SkillExecutionResolver skillExecutionResolver) {
+                            AgentApplyOperationStore applyOperationStore) {
         this.documentService = documentService;
         this.editLockService = editLockService;
         this.pipelineAgentRequester = pipelineAgentRequester;
         this.applyOperationStore = applyOperationStore;
-        this.skillExecutionResolver = skillExecutionResolver;
     }
 
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
@@ -53,7 +48,6 @@ public class AgentTurnService {
         }
         validateTarget(request.editorSnapshot());
 
-        SkillExecutionPlan skillPlan = skillExecutionResolver.resolve(workspaceId, userId, request.message());
         String requestId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
         String applyOperationId = applyOperationStore.issue(userId, request.documentId());
@@ -62,7 +56,7 @@ public class AgentTurnService {
                 request.baseVersion(),
                 requestId,
                 applyOperationId,
-                pipelineAgentRequester.request(workspaceId, userId, request, skillPlan)
+                pipelineAgentRequester.request(workspaceId, userId, request)
         );
     }
 
