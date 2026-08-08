@@ -19,9 +19,14 @@ from app.modules.wiki_ingestion.application.ports import (
     PipelineSourceReaderPort,
     WikiMaintenancePort,
 )
-from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.application.rename_wiki_page import RenameWikiPageUseCase
 from app.modules.wiki_ingestion.application.restore_wiki_pages import (
     RestoreWikiPagesUseCase,
+)
+from app.modules.wiki_ingestion.application.run_pipeline import RunPipelineUseCase
+from app.modules.wiki_ingestion.domain.wiki_page import (
+    WikiPageNotFoundError,
+    WikiPageSlugConflictError,
 )
 from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_log_reader,
@@ -29,6 +34,7 @@ from app.modules.wiki_ingestion.interfaces.http.dependencies import (
     get_pipeline_run_use_case,
     get_pipeline_source_reader,
     get_restore_wiki_pages_use_case,
+    get_rename_wiki_page_use_case,
     get_wiki_maintenance,
 )
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
@@ -42,11 +48,36 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     ReingestRunIn,
     WikiLintIn,
     WikiLintOut,
+    WikiPageRenameIn,
+    WikiPageRenameOut,
 )
 
 
 router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
+
+
+@router.patch("/wiki/pages/{wiki_page_id}/rename", response_model=WikiPageRenameOut)
+def rename_wiki_page(
+    wiki_page_id: str,
+    payload: WikiPageRenameIn,
+    use_case: RenameWikiPageUseCase = Depends(get_rename_wiki_page_use_case),
+) -> WikiPageRenameOut:
+    try:
+        result = use_case.execute(
+            wiki_page_id=wiki_page_id,
+            user_id=payload.user_id,
+            workspace_id=payload.workspace_id,
+            title=payload.title,
+            update_slug=bool(payload.update_slug),
+        )
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WikiPageSlugConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return WikiPageRenameOut.from_domain(result)
 
 
 @router.post("/wiki/ingest-restore-runs")

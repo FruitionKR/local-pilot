@@ -203,6 +203,56 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         self.assertEqual(payload["status"], "failed")
         self.assertEqual(payload["changed_pages"], [])
 
+    def test_execute_failure_reports_pages_persisted_before_embedding_error(self) -> None:
+        calls: list[object] = []
+        operation_artifacts = [
+            {
+                "page_id": "concept-1",
+                "page_type": "concept",
+                "markdown_key": "wiki/ws/pages/concept-1/ops/op-1.md",
+                "contribution_key": "wiki/ws/pages/concept-1/ops/op-1.json",
+                "content_hash": "sha256:abc",
+            }
+        ]
+
+        class ResultRepository(FakeRepository):
+            def finish(self, run_id, manifest):
+                manifest["operation_artifacts"] = operation_artifacts
+                return ["concept-1"]
+
+        class FailingEmbeddingJob:
+            def start(self, run_id, page_ids):
+                raise RuntimeError("embedding failed")
+
+        class ResultNotifier:
+            def notify(self, callback_url, payload):
+                calls.append(("notify", callback_url, payload))
+
+        use_case = RunPipelineUseCase(
+            runner=FakeRunner(calls),
+            repository=ResultRepository(calls),
+            embedding_job=FailingEmbeddingJob(),
+            result_notifier=ResultNotifier(),
+        )
+        command = PipelineRunCommand(
+            run_id="run-1",
+            operation_id="op-1",
+            result_callback_url="http://backend/result",
+            input="input.md",
+            input_name="input.md",
+            out="runs/run-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
+            source_document_id="doc-1",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "embedding failed"):
+            use_case.execute("run-1", command)
+
+        payload = next(call[2] for call in calls if call[0] == "notify")
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["changed_pages"], operation_artifacts)
+
     def test_execute_connects_pipeline_progress_to_run_heartbeat(self) -> None:
         class ProgressRunner:
             def run(
