@@ -89,7 +89,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 - 커밋을 생성하거나 준비할 때는 반드시 Codex `commit` 스킬(`.codex/skills/commit/SKILL.md`)의 절차를 따른다.
 - PR을 생성하거나 준비할 때는 반드시 Codex `pr` 스킬(`.codex/skills/pr/SKILL.md`)의 절차를 따른다.
-- 코드 리뷰를 요청받으면 Codex `review` 스킬(`.codex/skills/review/SKILL.md`)의 절차를 따른다.
+- 코드 리뷰: 사용자가 "PR 리뷰"라고 명시적으로 지칭하거나 PR 번호/URL을 줄 때만 Codex `review` 스킬(`.codex/skills/review/SKILL.md`)을 사용한다. 그 외 일반 리뷰 요청은 스킬 없이 커밋된 코드(HEAD) 및 `origin/dev` 로그와 비교해 수정된 코드를 직접 검토한다(`git diff HEAD`, `git diff origin/dev...HEAD`, 신규 파일은 `git status --short`로 확인).
 - If a repo-local Codex skill is not auto-discovered, read `SKILLS.md`, then read the matching `.codex/skills/<skill>/SKILL.md`. Do not create or use personal/global proxy skills for these repository workflows.
 - Codex 스킬을 사용할 수 없는 환경에서는 같은 이름의 `.claude/skills/*/SKILL.md` 절차를 fallback으로 읽고 따른다.
 
