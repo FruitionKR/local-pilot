@@ -16,7 +16,7 @@ AnyDoc은 Node 20 이상에서
 `npm install --global @firecrawl/anydoc@0.1.7`로 별도 설치한다.
 
 ```bash
-cargo install --path tools/heron-special-regions
+cargo install --locked --path tools/heron-special-regions
 ```
 
 실행 시 Heron INT8 model과 PDFium library가 필요하다. 아래 명령은

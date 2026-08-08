@@ -174,7 +174,7 @@ python run_lab.py \
 ```bash
 python -m pip install -r requirements-document-restoration.txt
 npm install --global @firecrawl/anydoc@0.1.7
-cargo install --path tools/heron-special-regions
+cargo install --locked --path tools/heron-special-regions
 
 export DOCUMENT_REPAIR_OPENAI_API_KEY=...
 

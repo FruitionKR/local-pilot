@@ -266,7 +266,9 @@ def assemble(manifest_file: Path, output_dir: Path, output_file: Path) -> None:
         content = recovered_text(output_dir, body)
         if content is None and body["body_broken"]:
             tokens = "\n\n".join(str(region["token"]) for region in regions)
-            content = f"> 본문 자동 복원 실패\n\n{tokens}".strip()
+            content = (
+                f"> 본문 자동 복원 실패\n\n{body['source_text']}\n\n{tokens}"
+            ).strip()
         elif content is None:
             content = str(body["source_text"])
         for region in regions:
@@ -347,9 +349,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                 reasons.append("crop_token_mismatch")
             if "\ufffd" in draft:
                 reasons.append("replacement_character")
-            if missing_unicode_usage(document[page_number - 1], missing_fonts):
-                reasons.append("unresolved_font_mapping")
             with fitz.open(body_pdf) as body_document:
+                if missing_unicode_usage(body_document[0], missing_fonts):
+                    reasons.append("unresolved_font_mapping")
                 source_words = normalized_words(body_document[0].get_text("text", sort=False))
             draft_words = normalized_words(draft)
             bodies.append(
