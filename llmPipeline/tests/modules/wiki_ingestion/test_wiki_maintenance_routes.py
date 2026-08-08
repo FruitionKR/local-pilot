@@ -30,6 +30,8 @@ class FakeWikiMaintenance:
             "invalid_promotions": [],
             "reconciliation_candidates": [],
             "applied_reconciliations": [],
+            "semantic_reconciliation_candidates": [{"page_id": "page-1"}],
+            "applied_semantic_reconciliations": [],
             "applied_cluster_reconciliation": {
                 "removed_claims": [],
                 "removed_relations": [],
@@ -52,6 +54,9 @@ def test_wiki_maintenance_route_returns_workspace_result() -> None:
     assert response.workspace_id == "workspace-1"
     assert response.promotion_candidates == ["candidate-1"]
     assert response.orphan_refs == ["doc-1:B9999"]
+    assert response.semantic_reconciliation_candidates == [
+        {"page_id": "page-1"}
+    ]
 
 
 def test_wiki_lint_requires_operation_id_only_when_changes_are_applied() -> None:

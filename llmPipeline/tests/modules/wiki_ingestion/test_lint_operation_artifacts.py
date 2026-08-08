@@ -88,6 +88,36 @@ def test_lint_artifact_requires_at_least_one_replayable_action() -> None:
         raise AssertionError("동작 없는 lint artifact는 저장하면 안 된다")
 
 
+def test_lint_artifact_accepts_semantic_rebuild_action() -> None:
+    writes = []
+
+    persist_lint_operation_artifacts(
+        operation_id="lint-op-1",
+        workspace_id="ws-1",
+        page_changes=[
+            {
+                "page_id": "page-shared",
+                "slug": "shared",
+                "title": "Shared",
+                "markdown": "# Shared\n",
+                "content_action": "rebuild",
+                "claims": [],
+                "source_document_ids": ["doc-1"],
+                "source_operation_ids": ["ingest-op-1"],
+            }
+        ],
+        write_text=lambda key, text, content_type: writes.append(
+            (key, text, content_type)
+        )
+        or key,
+    )
+
+    payload = json.loads(writes[1][1])
+    assert payload["content_action"] == "rebuild"
+    assert payload["concept"]["source_document_ids"] == ["doc-1"]
+    assert payload["source_operation_ids"] == ["ingest-op-1"]
+
+
 def test_persists_link_only_lint_change_for_its_source_page(monkeypatch) -> None:
     link = {
         "source": "concept:shared",

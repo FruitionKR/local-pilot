@@ -50,11 +50,39 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
                 write_log=False,
                 connection=connection,
             )
+            if result.get("reconciliation_candidates"):
+                semantic_result = database.reconcile_concept_page_semantics(
+                    command.user_id,
+                    command.workspace_id,
+                    result["reconciliation_candidates"],
+                    apply=not command.dry_run,
+                    operation_id=command.operation_id,
+                    connection=connection,
+                )
+                semantic_page_changes = semantic_result.pop(
+                    "_semantic_page_changes",
+                    [],
+                )
+                result.update(semantic_result)
+                result.setdefault("_lint_page_changes", []).extend(
+                    semantic_page_changes
+                )
+            else:
+                result.update(
+                    {
+                        "semantic_reconciliation_candidates": [],
+                        "applied_semantic_reconciliations": [],
+                    }
+                )
             result.update(
                 database.lint_orphan_wiki_links(
                     command.user_id,
                     command.workspace_id,
                     apply=not command.dry_run,
+                    reconciliation_candidates=result.get(
+                        "reconciliation_candidates",
+                        [],
+                    ),
                     connection=connection,
                 )
             )

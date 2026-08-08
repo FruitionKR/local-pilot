@@ -35,6 +35,7 @@
 - `issue-2026-07-21.md` — 새 노트 생성, pipeline schema 소유권 충돌, Markdown 편집 router·생성 계약, 이메일 인증 회원가입·비밀번호 재설정 API와 Frontend 연동 해결 기록. 노트 본문 저장 API 잔여분은 `docs/issue/backend/2026-07-21.md`. pipeline 동시 실행·heartbeat는 dev에서 해결(요약은 `docs/changelog/ai.md` 2026-07-21 항목).
 - `issue-ai-2026-07-22.md` — Agent 전체 편집·500 응답, Wiki maintenance HTTP 경계, PDF evaluator 원본 보존 검증 해결 기록.
 - `issue-2026-07-25.md` — Backend의 Markdown 원문 내보내기, wiki-schema·maintenance 프록시, 폴더 트리 영속화와 AI/Pipeline의 활성 schema 주입, `source_related_to` 조합 저장·legacy 정리 절차, Query DB 후보 제한, multi-provider·Claude 지원, 삭제 workspace pipeline 차단 완료 기록. Provider 실환경 E2E는 `docs/issue/ai/2026-07-25.md`에서 계속 관리한다.
+- `issue-2026-07-27.md` — 재편입 후 최신 active contribution 기반 Concept 본문·embedding 의미 정합성 복구 완료 기록.
 - `issue-2026-07-28.md` — AI 편집 승인 저장의 `source=agent` 스냅샷 영속화와 채팅 편입 문서의 워크스페이스 목록·검색 노출, 자동 선택 연결 완료 기록.
 - `issue-2026-07-29.md` — 문서 콘텐츠 버전 영속화, 변경 전후 스냅샷, 비파괴 복원과 GitHub 스타일 Markdown diff API 완료 기록. Frontend 연동은 `docs/issue/frontend/2026-07-23.md`에서 계속 관리한다.
 - `issue-2026-08-03.md` — AI 작업 로그·복구 연동 완료 기록.

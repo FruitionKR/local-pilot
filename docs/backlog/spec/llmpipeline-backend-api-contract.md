@@ -2482,6 +2482,8 @@ Lint count·candidate·applied result·artifact·changed Page를 포함한 `Wiki
 | `invalid_promotions` | object array | 승격 후보지만 source 근거가 없어 적용할 수 없는 cluster와 이유다. |
 | `reconciliation_candidates` | object array | 재편입으로 무효화된 Source Reference, 오래된 Concept 연결·relation 등 정리 후보다. |
 | `applied_reconciliations` | object array | `dry_run=false`에서 DB에 실제 적용한 구조 정리 결과다. |
+| `semantic_reconciliation_candidates` | object array | 최신 active contribution으로 재조립했을 때 본문이 달라지는 Concept Page 후보다. |
+| `applied_semantic_reconciliations` | object array | `dry_run=false`에서 Markdown과 embedding unit을 실제 갱신한 Concept Page다. |
 | `applied_cluster_reconciliation` | object | active cluster Markdown에서 실제 제거한 `removed_claims`, `removed_relations` 목록이다. |
 | `materialized_promotions` | object array | 이번 실행에서 새 Concept Page로 실제 생성한 승격 결과다. |
 | `merged_promotions` | object array | 새 Page를 만들지 않고 기존 Concept Page에 근거를 병합한 결과다. |

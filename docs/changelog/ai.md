@@ -19,3 +19,9 @@
 - 페이지 저장 뒤 후속 단계가 실패해도 실패 콜백의 `changed_pages`에 이미 생성된 operation artifact를 보존한다.
 - operation별 JSON 기여 조각의 저장 필드와 식별자 검증 기반 재조립을 다시 확인했다.
 - llmPipeline 전체 테스트 `800 passed, 61 subtests passed`로 검증했다.
+
+### fix: 재편입 후 Concept 본문 의미 정합성 복구
+
+- 재편입 영향 Page를 원문 문서별 최신 active contribution JSON으로 다시 조립해 수정·삭제 전 주장과 근거를 제거한다.
+- 다른 활성 문서의 근거는 유지하고, Concept Markdown과 embedding unit을 같은 lint transaction에서 갱신한다.
+- dry-run 후보 보고와 operation별 `rebuild` artifact 저장을 추가하고 llmPipeline 전체 테스트 `803 passed, 61 subtests passed`로 검증했다.
