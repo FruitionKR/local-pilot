@@ -6,6 +6,31 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-08
+
+### feat: Skill 생성 화면용 Backend 연동 경계 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/skills/refine`, `/skills/reviews`, `/skills` 공개 API를 추가했다.
+- 인증 사용자의 Workspace membership을 확인하고 `team` 범위는 `OWNER`만 허용한다.
+- 참조 문서는 현재 Workspace 문서 최대 3개만 허용하고, 편집 Markdown 또는 source block 본문을
+  읽어 llmPipeline에 전달한다. 문서당 30,000자, 합계 60,000자를 초과하면 `413`으로 거부한다.
+- llmPipeline 호출에 `X-Agent-Service-Token`을 추가하고 preview는 기존 `POST /skills/preview`
+  계약에 연결했다.
+- 자유 입력 AI 구체화와 원자적 최종 게시는 llmPipeline 후속 구현을 전제로 각각
+  `POST /skills/refine`, `POST /skills/publish-reviewed`에 연결했다.
+- 입력·권한·참조 문서·pipeline 오류를 공개 API 오류로 변환했다.
+
+**검증**
+
+- `cd backend && ./gradlew test --tests 'fruition.skill.*'` 통과
+- `cd backend && ./gradlew test` 통과
+
+**후속 작업**
+
+- llmPipeline 계약 확장은 `docs/issue/ai/2026-08-08.md`에서 관리한다.
+
 ## 2026-08-06
 
 ### refactor: 이미지 asset placeholder 대응 정리와 UUID version 제약 완화
