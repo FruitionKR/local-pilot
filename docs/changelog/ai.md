@@ -10,6 +10,7 @@
 - 같은 4개 PDF·30페이지·445블록을 후보명과 A/B 위치를 숨겨 다시 평가해 제품 Docling 45.17% 대비 L107 89.89%의 실사용 정확도와 +44.72%p paired 개선을 확인했다.
 - 기본 문서 복원 mode를 L107 기반 `crop-first`로 바꾸고 Rust Heron crop, AnyDoc 본문, 30% 본문 Luna route, 페이지 묶음 표·수식 복구와 원본 그림 조립을 제품 stage에 연결했다. `docling-only`는 명시적 fallback으로 유지했다.
 - 문서 복원 모듈 테스트 `67 passed`, llmPipeline 전체 `820 passed, 61 subtests passed`로 lane 분리와 fallback 회귀를 확인했고, 원본 4페이지 smoke에서 표 2·수식 7·그림 4, marker 누락 0을 확인했다.
+- 리뷰 후 본문 Luna 입력을 redacted page와 AnyDoc 초안 각 1개로 제한하고 fenced code block을 허용했으며, `pypdfium2` 기반 PDFium 탐색과 Rust 1.88 clean build·실제 8페이지 Heron 실행을 검증했다. 전체 테스트는 `821 passed, 61 subtests passed`다.
 
 ### refactor: Skill 작성 재생성 흐름 정리
 

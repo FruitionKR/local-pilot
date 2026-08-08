@@ -108,6 +108,8 @@ def valid_replacement(
     block_type: str,
     replacement: str,
     required_tokens: list[str] | None = None,
+    *,
+    scope: str = "block",
 ) -> bool:
     if block_type == "equation_candidate":
         normalized = normalize_replacement(block_type, replacement)
@@ -116,7 +118,9 @@ def valid_replacement(
         return is_valid_markdown_table(replacement)
     if block_type == "heading":
         return bool(re.fullmatch(r"#{1,6}\s+\S[^\n]*", replacement))
-    if not replacement.strip() or "```" in replacement:
+    if not replacement.strip() or (
+        scope != "page_body" and "```" in replacement
+    ):
         return False
     return all(replacement.count(token) == 1 for token in required_tokens or [])
 
@@ -197,6 +201,9 @@ def call_page(
     payload: dict[str, Any],
     images: list[str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    page_body = any(
+        block.get("scope") == "page_body" for block in payload.get("blocks", [])
+    )
     content: list[dict[str, Any]] = [
         {
             "type": "input_text",
@@ -209,7 +216,9 @@ def call_page(
             {
                 "type": "input_image",
                 "image_url": image,
-                "detail": "auto" if sequence == 0 else "original",
+                "detail": (
+                    "original" if page_body or sequence > 0 else "auto"
+                ),
             }
         )
     body = {
@@ -290,6 +299,7 @@ def save_replacements(
             block["type"],
             replacement,
             block.get("required_tokens"),
+            scope=str(block.get("scope", "block")),
         ):
             counts["rejected"] += 1
             continue
@@ -338,6 +348,7 @@ def rejected_candidates(
                 block["type"],
                 str(returned[block["id"]]["replacement"]),
                 block.get("required_tokens"),
+                scope=str(block.get("scope", "block")),
             )
         )
     ]
@@ -364,7 +375,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     def process(key: tuple[int, str]) -> dict[str, Any]:
         page, lane = key
         blocks = grouped[key]
-        page_image = render_page(args.pdf_file, page)
+        page_image = (
+            None
+            if all(block.get("scope") == "page_body" for block in blocks)
+            else render_page(args.pdf_file, page)
+        )
         block_images = {
             block["id"]: block_image(args.output_dir, args.pdf_file, block)
             for block in blocks
@@ -401,13 +416,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 reasoning_effort=args.reasoning_effort,
                 prompt=prompt,
                 payload={
-                    "page_context": pages.get(page, ""),
+                    "page_context": (
+                        ""
+                        if any(
+                            block.get("scope") == "page_body"
+                            for block in request_blocks
+                        )
+                        else pages.get(page, "")
+                    ),
                     "blocks": payload_blocks,
                 },
-                images=[
-                    page_image,
-                    *(block_images[block["id"]] for block in request_blocks),
-                ],
+                images=(
+                    ([] if page_image is None else [page_image])
+                    + [block_images[block["id"]] for block in request_blocks]
+                ),
             )
 
         counts = {"replace": 0, "keep": 0, "rejected": 0, "failed": 0}

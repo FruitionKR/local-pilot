@@ -115,6 +115,14 @@ Second
                 ["XQ001QX"],
             )
         )
+        self.assertTrue(
+            valid_replacement(
+                "paragraph",
+                "```python\nprint('visible code')\n```\nXQ001QX",
+                ["XQ001QX"],
+                scope="page_body",
+            )
+        )
 
     def test_rejects_keep_when_replacement_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -195,7 +203,7 @@ Second
                 model="gpt-5.6-terra",
                 reasoning_effort="low",
                 prompt="restore",
-                payload={"blocks": []},
+                payload={"blocks": [{"scope": "page_body"}]},
                 images=["data:image/png;base64,AA=="],
             )
 
@@ -207,6 +215,10 @@ Second
         self.assertEqual(
             body["input"][1]["content"][1]["type"],
             "input_image",
+        )
+        self.assertEqual(
+            body["input"][1]["content"][1]["detail"],
+            "original",
         )
         self.assertEqual(result, {"results": []})
         self.assertEqual(usage, {"total_tokens": 10})
@@ -424,6 +436,91 @@ Second
                     / "equation.md"
                 ).exists()
             )
+
+    def test_page_body_uses_only_redacted_image_and_one_markdown_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_file = root / "manifest.json"
+            detected_markdown = root / "detected.md"
+            output_dir = root / "output"
+            draft = "Body XQ001QX"
+            manifest_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "anydoc_body_p001",
+                            "type": "paragraph",
+                            "page": 1,
+                            "order": 0,
+                            "bbox": [0, 0, 10, 10],
+                            "source_text": draft,
+                            "asset": "layout/crop_first/body_images/page-001.png",
+                            "scope": "page_body",
+                            "required_tokens": ["XQ001QX"],
+                            "replacement_required": True,
+                            "text_decision": "needs_text_adjudication",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            detected_markdown.write_text(
+                "## Page 1\n\n"
+                "<!-- anydoc_body_p001 type=paragraph bbox=[0, 0, 10, 10] "
+                "confidence=x -->\n"
+                f"{draft}\n",
+                encoding="utf-8",
+            )
+
+            def fake_call_page(**kwargs: object) -> tuple[dict, dict]:
+                payload = kwargs["payload"]
+                self.assertEqual(payload["page_context"], "")
+                self.assertEqual(payload["blocks"][0]["current_markdown"], draft)
+                self.assertEqual(kwargs["images"], ["redacted-page-image"])
+                return {
+                    "results": [
+                        {
+                            "block_id": "anydoc_body_p001",
+                            "action": "replace",
+                            "replacement": (
+                                "```python\nprint('visible code')\n```\nXQ001QX"
+                            ),
+                        }
+                    ]
+                }, {"total_tokens": 10}
+
+            args = argparse.Namespace(
+                pdf_file=root / "source.pdf",
+                manifest_file=manifest_file,
+                detected_markdown=detected_markdown,
+                output_dir=output_dir,
+                endpoint="https://api.openai.test/v1/responses",
+                model="gpt-5.6-luna",
+                reasoning_effort="medium",
+                max_workers=1,
+            )
+            with (
+                mock.patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.render_page"
+                ) as render_page,
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.block_image",
+                    return_value="redacted-page-image",
+                ),
+                mock.patch(
+                    "app.modules.document_restoration.infrastructure."
+                    "selective_repair_with_openai.call_page",
+                    side_effect=fake_call_page,
+                ),
+            ):
+                summary = run(args)
+
+            render_page.assert_not_called()
+            self.assertEqual(summary["calls"], 1)
+            self.assertEqual(summary["pages"][0]["replace"], 1)
 
 
 if __name__ == "__main__":
