@@ -34,6 +34,7 @@ export function useNoteAutosave({
   const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
   const agentRetryRequiredRef = useRef(false);
+  const agentRetryApplyOperationIdRef = useRef<string | undefined>(undefined);
   const agentRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentRetryAttemptsRef = useRef(0);
 
@@ -68,7 +69,11 @@ export function useNoteAutosave({
   }
 
   async function flushSave(candidate: PendingNoteSave): Promise<boolean> {
-    const saveCandidate = applyRequiredAgentSource(candidate, agentRetryRequiredRef.current);
+    const saveCandidate = applyRequiredAgentSource(
+      candidate,
+      agentRetryRequiredRef.current,
+      agentRetryApplyOperationIdRef.current
+    );
     if (conflictRef.current) return false;
     if (saveInFlightRef.current) {
       pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, saveCandidate);
@@ -79,15 +84,20 @@ export function useNoteAutosave({
     setStatus("saving");
     setErrorMessage(null);
     try {
+      if (saveCandidate.source === "agent") {
+        agentRetryApplyOperationIdRef.current = saveCandidate.applyOperationId;
+      }
       const saved = await saveNoteDraft(
         documentId,
         saveCandidate.markdown,
         versionRef.current,
-        saveCandidate.source
+        saveCandidate.source,
+        saveCandidate.applyOperationId
       );
       versionRef.current = saved.content_version;
       setContentVersion(saved.content_version);
       if (saveCandidate.source === "agent") {
+        agentRetryApplyOperationIdRef.current = undefined;
         agentRetryRequiredRef.current = false;
         agentRetryAttemptsRef.current = 0;
         cancelAgentRetry();
@@ -118,15 +128,19 @@ export function useNoteAutosave({
     }
   }
 
-  function queueSave(body: string, source?: "agent") {
+  function queueSave(body: string, source?: "agent", applyOperationId?: string) {
     if (conflictRef.current) return;
     // 새 저장이 밀린 AI 편집분을 그대로 싣고 가므로 예약된 재시도는 버린다.
     cancelAgentRetry();
     revisionRef.current += 1;
+    const saveSource = source ?? (agentRetryRequiredRef.current ? "agent" : undefined);
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),
       revision: revisionRef.current,
-      source: source ?? (agentRetryRequiredRef.current ? "agent" : undefined)
+      source: saveSource,
+      applyOperationId: saveSource === "agent"
+        ? applyOperationId ?? agentRetryApplyOperationIdRef.current
+        : undefined
     };
     setStatus("dirty");
     setErrorMessage(null);
@@ -151,10 +165,12 @@ export function useNoteAutosave({
       timerRef.current = null;
     }
     revisionRef.current += 1;
+    const saveSource = agentRetryRequiredRef.current ? ("agent" as const) : undefined;
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),
       revision: revisionRef.current,
-      source: agentRetryRequiredRef.current ? ("agent" as const) : undefined
+      source: saveSource,
+      applyOperationId: saveSource === "agent" ? agentRetryApplyOperationIdRef.current : undefined
     };
     setErrorMessage(null);
     return flushSave(candidate);

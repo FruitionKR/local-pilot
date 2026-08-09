@@ -43,7 +43,8 @@ export async function saveNoteDraft(
   documentId: string,
   markdown: string,
   expectedContentVersion: number,
-  source?: "agent"
+  source?: "agent",
+  applyOperationId?: string
 ): Promise<NoteContentResponse> {
   const workspaceId = getWorkspaceId();
   const formData = new FormData();
@@ -52,6 +53,7 @@ export async function saveNoteDraft(
   // 같은 저장의 네트워크 재시도를 서버가 멱등 처리할 수 있게 쓰기 ID를 부여한다
   formData.append("revision_write_id", crypto.randomUUID());
   if (source) formData.append("source", source);
+  if (source === "agent") formData.append("apply_operation_id", applyOperationId ?? "");
   const response = await apiFetch(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/content`,
     {
