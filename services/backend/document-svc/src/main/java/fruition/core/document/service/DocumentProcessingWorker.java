@@ -54,13 +54,19 @@ public class DocumentProcessingWorker {
 
         try {
             documentService.doRequestProcessing(documentId);
-        } finally {
+        } catch (Exception e) {
             String finalDocumentId = documentId;
             transactionTemplate.execute(status -> {
-                queueRepository.deleteByDocumentId(finalDocumentId);
-                log.info("[문서 처리 큐 삭제] documentId={}", finalDocumentId);
+                queueRepository.findAllByStatus("processing").stream()
+                        .filter(item -> finalDocumentId.equals(item.getDocumentId()))
+                        .findFirst()
+                        .ifPresent(item -> {
+                            item.setStatus("pending");
+                            queueRepository.save(item);
+                        });
                 return null;
             });
+            log.warn("[문서 처리 command 등록 실패] documentId={} error={}", documentId, e.getMessage());
         }
     }
 }

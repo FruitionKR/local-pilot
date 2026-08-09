@@ -54,7 +54,7 @@ import fruition.core.document.exception.InvalidDocumentConvertRequestException;
 import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.DocumentProcessingQueueRepository;
-import fruition.core.document.repository.IngestCommandPublisher;
+import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
 import fruition.core.document.mongo.MongoDocumentEditState;
@@ -115,7 +115,7 @@ public class DocumentService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
-    private final IngestCommandPublisher ingestCommandPublisher;
+    private final IngestCommandOutbox ingestCommandOutbox;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageLinkRepository wikiPageLinkRepository;
@@ -145,7 +145,7 @@ public class DocumentService {
                            WorkspaceAccessGuard workspaceAccessGuard,
                            MinioClient minioClient,
                            StorageProperties storageProps,
-                           IngestCommandPublisher ingestCommandPublisher,
+                           IngestCommandOutbox ingestCommandOutbox,
                            DocumentWikiLinkRepository documentWikiLinkRepository,
                            WikiPageRepository wikiPageRepository,
                            WikiPageLinkRepository wikiPageLinkRepository,
@@ -174,7 +174,7 @@ public class DocumentService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
-        this.ingestCommandPublisher = ingestCommandPublisher;
+        this.ingestCommandOutbox = ingestCommandOutbox;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
@@ -983,47 +983,37 @@ public class DocumentService {
     }
 
     void doRequestProcessing(String documentId) {
-        Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
-        if (document == null) {
-            log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
-            return;
-        }
-        String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
-        boolean chatWiki = "chat_export".equals(document.getOrigin());
-        log.info("[문서 처리 요청 시작] documentId={} origin={} chatWiki={} workspaceId={} userId={} callbackUrl={} selectionMode={} inputMarkdownPresent={} inputMarkdownLength={}",
-                documentId, document.getOrigin(), chatWiki, document.getWorkspaceId(), document.getUserId(),
-                callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown() != null,
-                document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
-        // llmPipeline 호출 전에 AI 작업 로그를 processing으로 먼저 커밋한다.
-        // 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다.
-        String operationId = ingestOperationStarter
-                .start(document.getWorkspaceId(), document.getUserId(), documentId)
-                .orElse(null);
-        try {
-            String runId = ingestCommandPublisher.publish(documentId, document.getUserId(), document.getWorkspaceId(),
-                    callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki,
-                    operationId,
-                    operationId == null ? null : ingestOperationStarter.resultCallbackUrl(operationId));
-            Instant now = Instant.now();
-            transactionTemplate.execute(status -> {
-                documentRepository.findByIdInActiveWorkspace(documentId)
-                        .ifPresent(doc -> doc.markPipelineStarted(runId, now));
+        String runId = UUID.randomUUID().toString();
+        transactionTemplate.execute(status -> {
+            Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
+            if (document == null) {
+                queueRepository.deleteByDocumentId(documentId);
+                log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
                 return null;
-            });
-            log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
-        } catch (Exception e) {
-            Instant now = Instant.now();
-            if (operationId != null) {
-                ingestOperationStarter.markFailed(operationId,
-                        "ingest command 발행에 실패했습니다: " + e.getMessage());
             }
-            transactionTemplate.execute(status -> {
-                documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
-                        doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
-                return null;
-            });
-            log.warn("[문서 처리 요청 실패 반영] documentId={} error={}", documentId, e.getMessage());
-        }
+            String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
+            boolean chatWiki = "chat_export".equals(document.getOrigin());
+            String operationId = ingestOperationStarter
+                    .start(document.getWorkspaceId(), document.getUserId(), documentId)
+                    .orElse(null);
+            ingestCommandOutbox.enqueue(
+                    runId,
+                    documentId,
+                    document.getUserId(),
+                    document.getWorkspaceId(),
+                    callbackUrl,
+                    document.getSelectionMode(),
+                    document.getPipelineInputMarkdown(),
+                    chatWiki,
+                    operationId,
+                    operationId == null ? null : ingestOperationStarter.resultCallbackUrl(operationId)
+            );
+            document.markPipelineStarted(runId, Instant.now());
+            queueRepository.deleteByDocumentId(documentId);
+            log.info("[문서 처리 command 등록 완료] documentId={} runId={} operationId={}",
+                    documentId, runId, operationId);
+            return null;
+        });
     }
 
     @Transactional

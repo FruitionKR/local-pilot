@@ -11,7 +11,7 @@ backend가 `ai.ingest.command` topic에 발행한 문서/채팅 Wiki ingest 명�
 
 전달 보장:
 - 수동 커밋: 처리(성공/실패 기록)가 끝난 뒤에만 offset을 커밋한다.
-  worker가 중간에 죽으면 재전달되고, 이미 succeeded인 run은 멱등하게 건너뛴다.
+  worker가 중간에 죽으면 재전달되고, 이미 종료된 run은 멱등하게 건너뛴다.
 - 실패한 run의 상태·결과 통지는 기존 use case가 pipeline_runs와 result 콜백으로 기록한다.
 """
 
