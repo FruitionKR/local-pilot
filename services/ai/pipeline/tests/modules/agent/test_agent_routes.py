@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute, SkillCandidate
-from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.agent.domain.exceptions import AgentConfigurationError, AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.routes import handle_agent_turn
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
 from app.modules.markdown_edit.domain.entities import (
@@ -107,6 +107,11 @@ class InvalidMarkdownTargetUseCase:
 class UnexpectedFailureUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise RuntimeError("secret-internal-detail")
+
+
+class UnconfiguredAgentUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise AgentConfigurationError("Skill authoring is not configured.")
 
 
 class AmbiguousSkillUseCase:
@@ -393,6 +398,19 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 422)
         self.assertEqual(raised.exception.detail["code"], "agent_turn_route_contract_failed")
         self.assertNotIn("secret-internal-detail", str(raised.exception.detail))
+
+    def test_agent_turn_maps_configuration_error_to_server_error(self) -> None:
+        with self.assertLogs("app.modules.agent.interfaces.http.routes", level="ERROR"):
+            with self.assertRaises(HTTPException) as raised:
+                handle_agent_turn(
+                    AgentTurnRequestBody(message="문서를 다듬어줘"),
+                    use_case=UnconfiguredAgentUseCase(),  # type: ignore[arg-type]
+                )
+
+        # 서버 배선 문제라 400이 아니라 500이고, 내부 메시지는 응답에 나가지 않는다.
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertEqual(raised.exception.detail["code"], "agent_not_configured")
+        self.assertNotIn("is not configured", str(raised.exception.detail))
 
     def test_agent_turn_hides_unexpected_failure_details(self) -> None:
         with self.assertLogs("app.modules.agent.interfaces.http.routes", level="ERROR") as captured:
