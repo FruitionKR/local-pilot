@@ -100,6 +100,64 @@ curl http://localhost:8000/health
 
 pipeline-api만 필요하면 `./scripts/ai-up.sh` 사용 가능.
 
+### 2-3-1. 기존 데이터 Wiki DB maintenance cutover
+
+신규 빈 환경에는 필요 없다. 기존 `core_db`의 Wiki 현재 상태를 옮길 때는 먼저 외부 요청을 차단하고 `pipeline-api`를 내려 lint/restore/reingest mutation을 막는다. ingest worker의 실행 중 run이 모두 끝난 뒤 worker도 내린다.
+
+```sh
+set -a
+. infra/.env
+set +a
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  stop pipeline-api
+psql "$CORE_DB_MIGRATION_URL" -Atc \
+  "select count(*) from pipeline_runs where status not in ('succeeded','failed','notify_pending')"
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  stop ingest-worker
+```
+
+결과가 0인지 확인하고 core/ai DB snapshot 식별자를 기록한다. 먼저 두 runtime role의 core Wiki DML을 차단한다. `copy`는 active run 0건과 이 권한 차단 상태를 다시 검증한 뒤, 하나의 `REPEATABLE READ READ ONLY` source transaction에서 ID 보존 stream copy와 row count·PK·canonical content hash·고아 참조 검증을 수행한다.
+
+```sh
+services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py lock-core-wiki
+services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py copy \
+  --writes-stopped \
+  --core-snapshot-id '<core snapshot ID>' \
+  --ai-snapshot-id '<ai snapshot ID>'
+```
+
+`copy` 또는 row count·PK·hash·고아 참조 검증이 실패하면 연결을 전환하지 말고 즉시 write fence를 복구한다. 실패한 target transaction은 rollback되므로 ai_db의 부분 복사본을 덮어쓰지 않는다.
+
+```sh
+services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py rollback-core-permissions
+```
+
+외부 요청 차단은 유지한 채 새 이미지의 `pipeline-api`만 올린다.
+
+```sh
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  up -d --build pipeline-api
+```
+
+내부 pipeline API로 ingest/query/lint/restore smoke test를 모두 실행하고, 네 기능이 성공한 경우에만 core 권한을 Agent·Skill·checkpoint 범위로 축소한 뒤 `ingest-worker`를 재개한다.
+
+```sh
+services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py \
+  finalize-core-permissions --smoke-tested ingest query lint restore
+docker compose --env-file infra/.env \
+  -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
+  start ingest-worker
+```
+
+smoke test가 실패하면 worker를 재개하지 않는다. 구버전 이미지와 core DB 연결로 되돌린 뒤 다음 명령으로 core Wiki write 권한을 복구한다.
+
+```sh
+services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py rollback-core-permissions
+```
+
 ### 2-4. 프론트엔드 (:3000)
 
 ```sh

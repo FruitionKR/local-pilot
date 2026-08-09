@@ -85,15 +85,16 @@ def _slugify(value: str) -> str:
 logger = logging.getLogger(__name__)
 
 
-def database_url() -> str:
+def core_database_url() -> str:
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_DSN")
     if not url:
         raise RuntimeError("Set DATABASE_URL or POSTGRES_DSN before using PostgreSQL-backed APIs")
     return url
 
 
-def connect() -> psycopg.Connection:
-    return psycopg.connect(database_url(), row_factory=dict_row)
+def connect_core() -> psycopg.Connection:
+    """Agent·Skill 전환기 core_db 연결."""
+    return psycopg.connect(core_database_url(), row_factory=dict_row)
 
 
 def ai_database_url() -> str:
@@ -104,8 +105,13 @@ def ai_database_url() -> str:
 
 
 def connect_ai() -> psycopg.Connection:
-    """ai_db 전용 연결 (wiki_schemas·document_derived_state)."""
+    """ai-svc 소유 테이블의 ai_db 연결."""
     return psycopg.connect(ai_database_url(), row_factory=dict_row)
+
+
+def connect() -> psycopg.Connection:
+    """Wiki·query·embedding·pipeline run의 기본 ai_db 연결."""
+    return connect_ai()
 
 
 def cleanup_deleted_wiki_pages(
@@ -209,41 +215,20 @@ _AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sq
 
 # ai_db는 python이 소유한다 — db/ai_schema.sql이 원본 DDL
 AI_DB_REQUIRED_TABLES = (
+    *REQUIRED_TABLES,
     "wiki_schemas",
     "document_derived_state",
 )
 
 
 def verify_schema() -> None:
-    """Flyway가 pipeline 필수 테이블을 모두 적용했는지 확인한다."""
-    required_tables = REQUIRED_TABLES
-    if os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        required_tables += AGENT_REQUIRED_TABLES
-    with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = current_schema()
-              AND table_name = ANY(%s)
-            """,
-            (list(required_tables),),
-        ).fetchall()
-    existing_tables = {row["table_name"] for row in rows}
-    missing_tables = sorted(set(required_tables) - existing_tables)
-    if missing_tables:
-        missing = ", ".join(missing_tables)
-        raise RuntimeError(f"Flyway migration is required; missing tables: {missing}")
+    """하위 호환용 ai_db 준비 상태 확인."""
+    verify_ai_schema()
 
 
 def verify_agent_schema() -> None:
     """Agent worker가 사용하는 Agent/Skill/checkpoint 테이블을 확인한다."""
-    with connect() as conn:
+    with connect_core() as conn:
         rows = conn.execute(
             """
             SELECT table_name

@@ -15,40 +15,32 @@ def _connection_with_tables(table_names: tuple[str, ...]) -> Mock:
     return connection
 
 
-def test_verify_schema_accepts_all_flyway_tables() -> None:
-    assert "documents" not in database.REQUIRED_TABLES
-    assert "wiki_page_contributions" not in database.REQUIRED_TABLES
-    connection = _connection_with_tables(database.REQUIRED_TABLES)
+def test_verify_schema_accepts_all_ai_tables() -> None:
+    assert "documents" not in database.AI_DB_REQUIRED_TABLES
+    assert "wiki_page_contributions" not in database.AI_DB_REQUIRED_TABLES
+    connection = _connection_with_tables(database.AI_DB_REQUIRED_TABLES)
 
-    with patch.object(database, "connect", return_value=connection):
+    with patch.object(database, "connect_ai", return_value=connection):
         database.verify_schema()
 
 
 def test_verify_schema_reports_missing_tables() -> None:
     existing_tables = tuple(
-        name for name in database.REQUIRED_TABLES if name != "pipeline_runs"
+        name for name in database.AI_DB_REQUIRED_TABLES if name != "pipeline_runs"
     )
     connection = _connection_with_tables(existing_tables)
 
     with (
-        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "connect_ai", return_value=connection),
         pytest.raises(RuntimeError, match="missing tables: pipeline_runs"),
     ):
-        database.verify_schema()
-
-
-def test_verify_schema_includes_agent_tables_when_feature_is_enabled(monkeypatch) -> None:
-    monkeypatch.setenv("AGENT_SKILLS_ENABLED", "true")
-    connection = _connection_with_tables(database.REQUIRED_TABLES + database.AGENT_REQUIRED_TABLES)
-
-    with patch.object(database, "connect", return_value=connection):
         database.verify_schema()
 
 
 def test_verify_agent_schema_accepts_agent_and_checkpoint_tables() -> None:
     connection = _connection_with_tables(database.AGENT_REQUIRED_TABLES)
 
-    with patch.object(database, "connect", return_value=connection):
+    with patch.object(database, "connect_core", return_value=connection):
         database.verify_agent_schema()
 
 

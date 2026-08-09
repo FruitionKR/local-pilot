@@ -44,7 +44,7 @@ def main() -> None:
     database.verify_agent_schema()
     repository = PostgresAgentJobRepository()
     with psycopg.connect(
-        database.database_url(),
+        database.core_database_url(),
         autocommit=True,
         row_factory=dict_row,
     ) as connection:

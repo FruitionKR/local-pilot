@@ -112,7 +112,7 @@
 
 ## 위키
 
-베이스 `/api/workspaces/{workspace_id}/wiki`. `wiki_pages`와 현재 본문의 논리 소유자는 ai-svc이고 Backend는 workspace 범위를 포함한 내부 API로 조회한다. 물리 저장소는 maintenance cutover 전까지 core_db이며, `wiki_page_versions`는 이후에도 diff·복구 이력용으로 core_db에 유지한다.
+베이스 `/api/workspaces/{workspace_id}/wiki`. `wiki_pages`와 현재 본문은 ai-svc의 ai_db 소유이고 Backend는 workspace 범위를 포함한 내부 API로 조회한다. `wiki_page_versions`는 diff·복구 이력용으로 core_db에 유지한다.
 
 | Method | Path | 설명 |
 |---|---|---|

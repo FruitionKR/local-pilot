@@ -8,8 +8,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | 저장소 | 소유 서비스 | 용도 |
 |---|---|---|
 | **access_db** (PostgreSQL) | access-svc | 사용자·OAuth·refresh token·워크스페이스·멤버 (자체 Flyway) |
-| **core_db** (PostgreSQL) | document-svc / 전환기 ai-svc | 문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력. Wiki 현재 상태·pipeline run·embedding은 maintenance cutover 전까지 물리적으로 동거 |
-| **ai_db** (PostgreSQL) | ai-svc | Wiki schema·문서 파생물 stale 추적. Wiki 현재 상태는 후속 maintenance cutover에서 이전 (`ai_schema.sql`) |
+| **core_db** (PostgreSQL) | document-svc / 전환기 ai-svc | 문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력. Agent/Skill/checkpoint만 전환기 동거 |
+| **ai_db** (PostgreSQL) | ai-svc | Wiki 현재 상태·pipeline run·embedding·schema·문서 파생물 stale 추적 (`ai_schema.sql`) |
 | **MongoDB** | document-svc | 문서 본문·편집 revision·write-id·edit outbox — 단일 트랜잭션 후 outbox → Kafka `document.edit.event` |
 | **Redis** | access-svc / document-svc | 권한 projection·OAuth 교환 코드 / query run 상태·SSE 이벤트 |
 | **S3/MinIO** | document-svc | 문서 원본·snapshot, Wiki markdown 본문 |
@@ -45,8 +45,6 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | document_asset_references | document-svc | 문서 본문↔asset 참조 동기화 | 복합 PK `(document_id, asset_id)`, asset 삭제 RESTRICT — 참조 중 asset 보호 |
 | document_asset_orphans | document-svc | storage 정리 실패 asset 재시도 큐 | `storage_key` UK, `retry_count`, cleanup worker가 소비 |
 | wiki_lint_state | document-svc | workspace별 마지막 lint 성공 시각(needs_lint 판단 기준점) | PK `workspace_id`(access_db 논리 참조), `last_lint_at` |
-| wiki_pages·document_wiki_links·wiki_page_links·source_blocks | ai-svc(전환기 core_db) | Wiki 현재 상태·문서/페이지 관계·source block | Spring은 직접 접근하지 않고 AI 내부 API로 조회 |
-| pipeline_runs·wiki_page_embeddings·wiki_embedding_vectors·wiki_embedding_units | ai-svc(전환기 core_db) | 실행 상태와 검색용 embedding | `user_id`·`workspace_id`를 run에 보존해 documents JOIN 제거 |
 | skills·skill_versions·skill_version_sources | ai-svc | 개인·팀 Skill과 게시 version·생성 근거 | 개인은 `owner_user_id`, 팀은 `workspace_id`; 팀 권한은 access-svc 조회 |
 | agent_runs·agent_plans·agent_plan_operations | ai-svc | Agent 실행·승인 대상 plan·operation | `operation_hash`, 현재 plan, 사용자·workspace 범위 |
 | agent_approvals·agent_jobs·agent_tool_executions·agent_run_artifacts | ai-svc | 승인·lease/retry·Tool 멱등 실행·비동기 artifact | run/plan/operation FK, Tool 호출 수 40회 제한 |
@@ -58,6 +56,10 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 |---|---|---|---|
 | wiki_schemas | ai-svc | 워크스페이스·사용자별 Wiki 생성 규칙 | active 스키마는 소유 범위당 최대 1개(부분 unique index) |
 | document_derived_state | ai-svc | 문서 파생물 stale 추적 | `document.edit.event` consumer가 갱신 |
+| wiki_pages·document_wiki_links·wiki_page_links | ai-svc | Wiki 현재 상태와 문서/페이지 관계 | workspace 범위 unique, DB 밖 document ID는 논리 참조 |
+| source_blocks | ai-svc | 문서 block 텍스트 | 복합 PK `(block_id, document_id)` |
+| pipeline_runs | ai-svc | pipeline 실행 상태 | Spring이 만든 `run_id`, `user_id`·`workspace_id` 보존 |
+| wiki_page_embeddings·wiki_embedding_vectors·wiki_embedding_units | ai-svc | 검색용 embedding | page FK는 ai_db 내부, document ID는 논리 참조 |
 
 ### MongoDB (document-svc)
 
@@ -88,19 +90,18 @@ erDiagram
     chat_messages ||--o{ chat_message_related_pages : ""
 ```
 
-주의: DB 경계를 넘게 될 ID 관계는 V27부터 물리 FK가 아닌 논리 참조다. document-svc는 Wiki 현재 상태를 AI 내부 API로 읽고, 실제 테이블 복사 전까지는 위 전환기 위치를 따른다.
+주의: DB 경계를 넘는 ID 관계는 V27부터 물리 FK가 아닌 논리 참조다. document-svc는 Wiki 현재 상태를 AI 내부 API로 읽는다.
 
 ## 4. 계정 격리 정책
 
 - DB 계정은 **runtime(DML) / migration(DDL) 분리**: `access_runtime/migration`, `core_runtime/migration`, `ai_runtime` (`infra/postgres/init-db-isolation.sh`).
-- 원칙적으로 타 서비스 DB write를 금지한다. 현재 `ai_runtime` core DML은 Wiki/Agent 전환기 예외이며 cutover 뒤 회수한다.
+- 원칙적으로 타 서비스 DB write를 금지한다. 현재 `ai_runtime` core DML은 Agent/Skill/checkpoint 전환기 예외로만 허용한다.
 - 코드 경계도 컴파일러가 강제: access-svc와 document-svc는 서로의 repository를 import하지 않고 내부 API·Redis projection으로만 연결.
 - Idempotency 테이블은 각 DB에 서비스별 사본(코드는 java-shared 공유, 테이블 분리).
 
 ## 5. 전환기 예외
 
-- 대상: Wiki 현재 상태·pipeline run·embedding과 Agent/Skill/checkpoint 테이블.
-- 코드 경계: Spring은 Wiki 현재 상태를 직접 읽지 않고 AI 내부 API를 사용하며, AI는 documents와 core 기여 이력을 내부 API로 조회한다.
-- Wiki 이전: worker 중지·snapshot·ID 보존 복사·검증·연결 전환·기존 테이블 read-only 보존 순서의 maintenance cutover. 폐기 가능한 로컬 개발 DB만 재생성을 허용한다.
+- 대상: Agent/Skill/checkpoint 테이블.
+- Wiki 현재 상태·pipeline run·embedding은 ID를 보존해 ai_db로 이전했다. core의 기존 테이블은 rollback 안정화 기간 동안 read-only로 보존하고 별도 migration에서 제거한다.
 - Agent 이전: Agent 비동기 실행 전환 PR.
 - Agent/Skill/checkpoint DDL의 단일 소유자는 document-svc Flyway이며, pipeline은 `AGENT_SKILLS_ENABLED` 또는 Agent worker 기동 시 필수 테이블만 검증한다. 팀 멤버십은 `workspace_members`를 직접 join하지 않고 access-svc 내부 권한 API로 조회한다.

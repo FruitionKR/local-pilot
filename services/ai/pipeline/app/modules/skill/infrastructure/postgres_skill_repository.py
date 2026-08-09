@@ -54,7 +54,7 @@ SKILL_SELECT = """
 class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
     def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
         team_member = _is_team_member(workspace_id, user_id)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             rows = conn.execute(
                 SKILL_SELECT
                 + """
@@ -76,7 +76,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def list_accessible(self, workspace_id: str, user_id: str) -> list[Skill]:
         team_member = _is_team_member(workspace_id, user_id)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             rows = conn.execute(
                 SKILL_SELECT
                 + """
@@ -102,7 +102,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def get_manageable(self, workspace_id: str | None, user_id: str, skill_id: str) -> Skill | None:
         team_owner = _is_team_owner(workspace_id, user_id)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             row = conn.execute(
                 SKILL_SELECT
                 + """
@@ -122,7 +122,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def create_published(self, skill: Skill, version: SkillVersion) -> Skill:
         _require_manage_scope(skill.workspace_id, version.created_by or "", skill.scope_type)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             _lock_slug_scope(conn, skill, skill.slug)
             _ensure_slug_available(conn, skill, skill.slug)
             conn.execute(
@@ -144,7 +144,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def save_published_version(self, skill: Skill, version: SkillVersion) -> Skill:
         team_owner = _is_team_owner(skill.workspace_id, version.created_by or "")
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             if _lock_manageable(
                 conn,
                 skill.workspace_id,
@@ -172,7 +172,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
 
     def set_enabled(self, workspace_id: str, user_id: str, skill_id: str, enabled: bool) -> Skill:
         team_owner = _is_team_owner(workspace_id, user_id)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             manageable = _lock_manageable(conn, workspace_id, user_id, skill_id, team_owner)
             if manageable is None:
                 raise ValueError("Skill not found or not manageable.")
@@ -200,7 +200,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
         reference: str,
     ) -> Skill | None:
         team_member = _is_team_member(workspace_id, user_id)
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             row = conn.execute(
                 SKILL_SELECT
                 + f"""

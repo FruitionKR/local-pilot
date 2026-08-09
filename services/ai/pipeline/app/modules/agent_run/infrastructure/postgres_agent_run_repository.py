@@ -12,7 +12,7 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepositoryPort):
     def create_with_planning_job(self, run: AgentRun, job_id: str) -> AgentRun:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             row = conn.execute(
                 """
                 INSERT INTO agent_runs (
@@ -39,7 +39,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         return _row_to_run(row)
 
     def get_for_user(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun | None:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             row = conn.execute(
                 """
                 SELECT * FROM agent_runs
@@ -52,7 +52,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
     def get_current_plan_for_user(
         self, workspace_id: str, user_id: str, run_id: str
     ) -> tuple[AgentRun, AgentPlan] | None:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             run_row = conn.execute(
                 """
                 SELECT * FROM agent_runs
@@ -78,7 +78,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         return _row_to_run(run_row), _rows_to_plan(plan_row, operation_rows)
 
     def save_plan(self, run_id: str, plan: AgentPlan) -> None:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             run = conn.execute("SELECT status FROM agent_runs WHERE id = %s FOR UPDATE", (run_id,)).fetchone()
             if run is None or run["status"] not in {"queued", "planning", "clarification_required"}:
                 raise ValueError("AgentRun cannot accept a new plan.")
@@ -132,7 +132,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         approval_id: str,
         job_id: str,
     ) -> AgentRun:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             locked = conn.execute(
                 "SELECT * FROM agent_runs WHERE id = %s AND user_id = %s FOR UPDATE",
                 (run.id, run.user_id),
@@ -177,7 +177,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         return _row_to_run(updated)
 
     def reject(self, workspace_id: str, user_id: str, run_id: str, approval_id: str) -> AgentRun:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             run = _lock_user_run(conn, workspace_id, user_id, run_id)
             if run is None or run["status"] != "awaiting_approval" or run["current_plan_id"] is None:
                 raise ValueError("Agent plan is not awaiting approval.")
@@ -207,7 +207,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         return _row_to_run(updated)
 
     def cancel(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             run = _lock_user_run(conn, workspace_id, user_id, run_id)
             if run is None:
                 raise ValueError("AgentRun not found.")
@@ -245,7 +245,7 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
         instruction: str,
         job_id: str,
     ) -> AgentRun:
-        with database.connect() as conn:
+        with database.connect_core() as conn:
             run = _lock_user_run(conn, workspace_id, user_id, run_id)
             if run is None or run["status"] not in {"awaiting_approval", "clarification_required"}:
                 raise ValueError("AgentRun cannot be revised in its current state.")
