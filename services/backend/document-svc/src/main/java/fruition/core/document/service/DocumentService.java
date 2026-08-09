@@ -697,17 +697,24 @@ public class DocumentService {
         });
     }
 
-    private void requestProcessingAfterCommit(String documentId) {
+    /**
+     * 작업 큐 행을 바깥 트랜잭션이 커밋된 뒤에 등록한다.
+     * 커밋 전에 넣으면 워커가 아직 보이지 않는 문서를 집어갈 수 있어 순서를 보장해야 한다.
+     *
+     * @param queueLabel 로그에 쓰는 큐 이름 (예: "문서 처리 큐")
+     * @param enqueue    큐 행 저장. 새 트랜잭션 안에서 실행된다.
+     */
+    private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            log.info("[문서 처리 큐 즉시 등록] documentId={} transactionActive=false", documentId);
+            log.info("[{} 즉시 등록] documentId={} transactionActive=false", queueLabel, documentId);
             transactionTemplate.execute(status -> {
-                queueRepository.save(new DocumentProcessingQueue(documentId));
-                log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
+                enqueue.run();
+                log.info("[{} 등록 완료] documentId={} status=pending", queueLabel, documentId);
                 return null;
             });
             return;
         }
-        log.info("[문서 처리 큐 등록 예약] documentId={} afterCommit=true", documentId);
+        log.info("[{} 등록 예약] documentId={} afterCommit=true", queueLabel, documentId);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -717,12 +724,17 @@ public class DocumentService {
                         new TransactionTemplate(transactionTemplate.getTransactionManager());
                 requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
                 requiresNew.execute(status -> {
-                    queueRepository.save(new DocumentProcessingQueue(documentId));
-                    log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
+                    enqueue.run();
+                    log.info("[{} 등록 완료] documentId={} status=pending", queueLabel, documentId);
                     return null;
                 });
             }
         });
+    }
+
+    private void requestProcessingAfterCommit(String documentId) {
+        enqueueAfterCommit("문서 처리 큐", documentId,
+                () -> queueRepository.save(new DocumentProcessingQueue(documentId)));
     }
 
     /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
@@ -884,31 +896,8 @@ public class DocumentService {
     }
 
     private void requestConvertAfterCommit(String documentId, String sourceDocumentId) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            log.info("[문서 변환 큐 즉시 등록] documentId={} transactionActive=false", documentId);
-            transactionTemplate.execute(status -> {
-                convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
-                log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
-                return null;
-            });
-            return;
-        }
-        log.info("[문서 변환 큐 등록 예약] documentId={} afterCommit=true", documentId);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // afterCommit 시점에는 바깥 트랜잭션 리소스가 아직 스레드에 묶여 있어
-                // 기본 REQUIRED로 참여하면 INSERT가 커밋되지 않고 버려진다 — 반드시 새 트랜잭션.
-                TransactionTemplate requiresNew =
-                        new TransactionTemplate(transactionTemplate.getTransactionManager());
-                requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-                requiresNew.execute(status -> {
-                    convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
-                    log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
-                    return null;
-                });
-            }
-        });
+        enqueueAfterCommit("문서 변환 큐", documentId,
+                () -> convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId)));
     }
 
     /**
