@@ -43,13 +43,14 @@ def update_conversation_summary(
         or len(conversation_context.recent_messages) < RECENT_MESSAGE_LIMIT
     ):
         return None
-    updated_summary = summarizer.summarize(
-        conversation_context.recent_conversation_summary,
-        conversation_context.recent_messages,
-    ).strip()
-    if not updated_summary:
-        raise ValueError("updated conversation summary must not be empty.")
-    return updated_summary
+    try:
+        updated_summary = summarizer.summarize(
+            conversation_context.recent_conversation_summary,
+            conversation_context.recent_messages,
+        ).strip()
+    except RuntimeError:
+        return None
+    return updated_summary or None
 
 
 def conversation_messages_text(conversation_context: ConversationContext | None) -> str:

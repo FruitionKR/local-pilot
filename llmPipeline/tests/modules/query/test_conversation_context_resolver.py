@@ -23,6 +23,15 @@ class FixedSummarizer:
         return self.summary
 
 
+class FailingSummarizer:
+    def summarize(
+        self,
+        previous_summary: str | None,
+        messages: tuple[ConversationMessage, ...],
+    ) -> str:
+        raise RuntimeError("summary provider unavailable")
+
+
 class ConversationContextResolverTest(unittest.TestCase):
     def test_returns_original_question_without_conversation_context(self) -> None:
         question = "RAG가 뭐야?"
@@ -99,6 +108,18 @@ class ConversationContextResolverTest(unittest.TestCase):
 
         self.assertEqual(updated_summary, "갱신된 누적 요약")
         self.assertEqual(summarizer.calls, [("기존 요약", messages)])
+
+    def test_returns_none_when_summary_update_is_unavailable(self) -> None:
+        context = ConversationContext(
+            recent_messages=tuple(
+                ConversationMessage(role="user", content=f"메시지 {index + 1}")
+                for index in range(RECENT_MESSAGE_LIMIT)
+            )
+        )
+
+        for summarizer in (FixedSummarizer(""), FailingSummarizer()):
+            with self.subTest(summarizer=type(summarizer).__name__):
+                self.assertIsNone(update_conversation_summary(context, summarizer))
 
 
 if __name__ == "__main__":
