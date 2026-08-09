@@ -116,10 +116,7 @@ def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
 
 
 def build_query_conversation_summarizer() -> QueryConversationSummarizer:
-    config = _config_from_env()
-    config.temperature = 0.0
-    config.json_mode = False
-    return QueryConversationSummarizer(ChatCompletionsJsonClient(config))
+    return QueryConversationSummarizer(ChatCompletionsJsonClient(_config_from_env()))
 
 
 def _config_from_env() -> ChatClientConfig:
