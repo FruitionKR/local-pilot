@@ -64,8 +64,24 @@ def select_candidates(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def candidate_lane(block: dict[str, Any]) -> str:
+    if block["type"] in {"table_candidate", "equation_candidate"}:
+        return "special"
+    return "text"
+
+
+def group_candidates(
+    blocks: list[dict[str, Any]],
+) -> dict[tuple[int, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for block in blocks:
+        key = (int(block["page"]), candidate_lane(block))
+        grouped.setdefault(key, []).append(block)
+    return dict(sorted(grouped.items()))
+
+
 def markdown_fragments(markdown: str) -> dict[str, str]:
-    pattern = re.compile(r"<!-- (docling_\S+) type=\S+ bbox=.*? -->\n")
+    pattern = re.compile(r"<!-- (\S+) type=\S+ bbox=.*? -->\n")
     matches = list(pattern.finditer(markdown))
     fragments = {}
     for index, match in enumerate(matches):
@@ -88,7 +104,13 @@ def page_markdown(markdown: str) -> dict[int, str]:
     return pages
 
 
-def valid_replacement(block_type: str, replacement: str) -> bool:
+def valid_replacement(
+    block_type: str,
+    replacement: str,
+    required_tokens: list[str] | None = None,
+    *,
+    scope: str = "block",
+) -> bool:
     if block_type == "equation_candidate":
         normalized = normalize_replacement(block_type, replacement)
         return normalized.count("$$") == 2 and has_balanced_braces(normalized)
@@ -96,7 +118,11 @@ def valid_replacement(block_type: str, replacement: str) -> bool:
         return is_valid_markdown_table(replacement)
     if block_type == "heading":
         return bool(re.fullmatch(r"#{1,6}\s+\S[^\n]*", replacement))
-    return bool(replacement.strip()) and "```" not in replacement
+    if not replacement.strip() or (
+        scope != "page_body" and "```" in replacement
+    ):
+        return False
+    return all(replacement.count(token) == 1 for token in required_tokens or [])
 
 
 def normalize_replacement(block_type: str, replacement: str) -> str:
@@ -175,6 +201,9 @@ def call_page(
     payload: dict[str, Any],
     images: list[str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    page_body = any(
+        block.get("scope") == "page_body" for block in payload.get("blocks", [])
+    )
     content: list[dict[str, Any]] = [
         {
             "type": "input_text",
@@ -187,7 +216,9 @@ def call_page(
             {
                 "type": "input_image",
                 "image_url": image,
-                "detail": "auto" if sequence == 0 else "original",
+                "detail": (
+                    "original" if page_body or sequence > 0 else "auto"
+                ),
             }
         )
     body = {
@@ -255,13 +286,21 @@ def save_replacements(
     for item in returned:
         block = expected[item["block_id"]]
         if item["action"] == "keep":
+            if block.get("replacement_required"):
+                counts["rejected"] += 1
+                continue
             counts["keep"] += 1
             continue
         replacement = normalize_replacement(
             block["type"],
             str(item["replacement"]),
         )
-        if not valid_replacement(block["type"], replacement):
+        if not valid_replacement(
+            block["type"],
+            replacement,
+            block.get("required_tokens"),
+            scope=str(block.get("scope", "block")),
+        ):
             counts["rejected"] += 1
             continue
         text_block = block["type"] in {"paragraph", "heading"}
@@ -291,13 +330,37 @@ def save_replacements(
     return counts
 
 
+def rejected_candidates(
+    blocks: list[dict[str, Any]],
+    result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    returned = {item["block_id"]: item for item in result["results"]}
+    return [
+        block
+        for block in blocks
+        if (
+            returned[block["id"]]["action"] == "keep"
+            and block.get("replacement_required")
+        )
+        or (
+            returned[block["id"]]["action"] == "replace"
+            and not valid_replacement(
+                block["type"],
+                str(returned[block["id"]]["replacement"]),
+                block.get("required_tokens"),
+                scope=str(block.get("scope", "block")),
+            )
+        )
+    ]
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     api_key = os.environ.get("DOCUMENT_REPAIR_OPENAI_API_KEY") or os.environ.get(
         "OPENAI_API_KEY"
     )
     if not api_key:
         raise RuntimeError(
-            "selective-repair에는 DOCUMENT_REPAIR_OPENAI_API_KEY 또는 "
+            "crop-first/selective-repair에는 DOCUMENT_REPAIR_OPENAI_API_KEY 또는 "
             "OPENAI_API_KEY가 필요합니다."
         )
     manifest = json.loads(args.manifest_file.read_text(encoding="utf-8"))
@@ -307,51 +370,113 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     fragments = markdown_fragments(markdown)
     pages = page_markdown(markdown)
     prompt = PROMPT_FILE.read_text(encoding="utf-8")
-    grouped = {
-        page: [block for block in selected if block["page"] == page]
-        for page in sorted({int(block["page"]) for block in selected})
-    }
+    grouped = group_candidates(selected)
 
-    def process(page: int) -> dict[str, Any]:
-        blocks = grouped[page]
-        payload_blocks = [
-            {
-                "block_id": block["id"],
-                "page": block["page"],
-                "order": block["order"],
-                "type": block["type"],
-                "bbox": block["bbox"],
-                "crop_sequence": sequence,
-                "current_markdown": fragments.get(
-                    block["id"],
-                    str(block.get("markdown") or block.get("source_text") or ""),
-                ),
-            }
-            for sequence, block in enumerate(blocks, 1)
-        ]
-        images = [render_page(args.pdf_file, page)]
-        images.extend(block_image(args.output_dir, args.pdf_file, block) for block in blocks)
-        result, usage = call_page(
-            endpoint=args.endpoint,
-            api_key=api_key,
-            model=args.model,
-            reasoning_effort=args.reasoning_effort,
-            prompt=prompt,
-            payload={
-                "page_context": pages.get(page, ""),
-                "blocks": payload_blocks,
-            },
-            images=images,
+    def process(key: tuple[int, str]) -> dict[str, Any]:
+        page, lane = key
+        blocks = grouped[key]
+        page_image = (
+            None
+            if all(block.get("scope") == "page_body" for block in blocks)
+            else render_page(args.pdf_file, page)
         )
-        counts = save_replacements(args.output_dir, blocks, result)
-        return {"page": page, "blocks": len(blocks), **counts, "usage": usage}
+        block_images = {
+            block["id"]: block_image(args.output_dir, args.pdf_file, block)
+            for block in blocks
+        }
+
+        def request(
+            request_blocks: list[dict[str, Any]],
+        ) -> tuple[dict[str, Any], dict[str, Any]]:
+            payload_blocks = [
+                {
+                    "block_id": block["id"],
+                    "page": block["page"],
+                    "order": block["order"],
+                    "type": block["type"],
+                    "bbox": block["bbox"],
+                    "crop_sequence": sequence,
+                    "scope": block.get("scope", "block"),
+                    "required_tokens": block.get("required_tokens", []),
+                    "current_markdown": fragments.get(
+                        block["id"],
+                        str(
+                            block.get("markdown")
+                            or block.get("source_text")
+                            or ""
+                        ),
+                    ),
+                }
+                for sequence, block in enumerate(request_blocks, 1)
+            ]
+            return call_page(
+                endpoint=args.endpoint,
+                api_key=api_key,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                prompt=prompt,
+                payload={
+                    "page_context": (
+                        ""
+                        if any(
+                            block.get("scope") == "page_body"
+                            for block in request_blocks
+                        )
+                        else pages.get(page, "")
+                    ),
+                    "blocks": payload_blocks,
+                },
+                images=(
+                    ([] if page_image is None else [page_image])
+                    + [block_images[block["id"]] for block in request_blocks]
+                ),
+            )
+
+        counts = {"replace": 0, "keep": 0, "rejected": 0, "failed": 0}
+        usage: dict[str, Any] = {}
+        fallback_usage: list[dict[str, Any]] = []
+        batch_error: str | None = None
+        try:
+            result, usage = request(blocks)
+            batch_counts = save_replacements(args.output_dir, blocks, result)
+            for name, count in batch_counts.items():
+                counts[name] += count
+            fallback_blocks = rejected_candidates(blocks, result)
+            counts["rejected"] -= len(fallback_blocks)
+        except (TimeoutError, urllib.error.URLError, ValueError) as exc:
+            batch_error = type(exc).__name__
+            fallback_blocks = blocks
+
+        for block in fallback_blocks:
+            try:
+                result, item_usage = request([block])
+                item_counts = save_replacements(args.output_dir, [block], result)
+            except (TimeoutError, urllib.error.URLError, ValueError):
+                counts["failed"] += 1
+                continue
+            fallback_usage.append(item_usage)
+            for name, count in item_counts.items():
+                counts[name] += count
+
+        return {
+            "page": page,
+            "lane": lane,
+            "blocks": len(blocks),
+            **counts,
+            "usage": usage,
+            "fallback_calls": len(fallback_blocks),
+            "fallback_usage": fallback_usage,
+            "batch_error": batch_error,
+        }
 
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
         page_results = list(executor.map(process, grouped))
     summary = {
         "model": args.model,
         "reasoning_effort": args.reasoning_effort,
-        "calls": len(page_results),
+        "calls": sum(1 + result["fallback_calls"] for result in page_results),
+        "group_calls": len(page_results),
+        "fallback_calls": sum(result["fallback_calls"] for result in page_results),
         "blocks": len(selected),
         "pages": page_results,
     }

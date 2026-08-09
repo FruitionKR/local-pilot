@@ -15,7 +15,10 @@ from app.modules.document_restoration.application.models import (
 from app.modules.document_restoration.application.ports import (
     DocumentRestorationStagesPort,
 )
-from app.modules.document_restoration.domain.entities import RestorationStage
+from app.modules.document_restoration.domain.entities import (
+    RestorationMode,
+    RestorationStage,
+)
 
 
 MODULE_ROOT = "app.modules.document_restoration.infrastructure"
@@ -50,11 +53,13 @@ class SubprocessDocumentRestorationStages(DocumentRestorationStagesPort):
             pdf_file=target_pdf,
             docling_json=target_json,
             docling_markdown=target_markdown,
-            manifest_file=(
-                command.output_dir
-                / "layout"
-                / "auto"
-                / f"{command.document_slug}.docling_primary_manifest.json"
+            manifest_file=command.output_dir
+            / "layout"
+            / "auto"
+            / (
+                f"{command.document_slug}.crop_first_manifest.json"
+                if command.mode is RestorationMode.CROP_FIRST
+                else f"{command.document_slug}.docling_primary_manifest.json"
             ),
         )
 
@@ -119,6 +124,63 @@ class SubprocessDocumentRestorationStages(DocumentRestorationStagesPort):
             command.document_slug,
         ]
         module_args: dict[RestorationStage, tuple[str, list[str]]] = {
+            RestorationStage.PREPARE_CROP_FIRST: (
+                "crop_first_with_anydoc",
+                [
+                    "--pdf-file",
+                    str(prepared.pdf_file),
+                    "--manifest-file",
+                    str(prepared.manifest_file),
+                    "--detected-markdown",
+                    str(
+                        command.output_dir
+                        / "final"
+                        / f"{command.document_slug}.detected.md"
+                    ),
+                    "--output-dir",
+                    str(command.output_dir),
+                    "--anydoc-command",
+                    command.anydoc_command,
+                    "--heron-command",
+                    command.heron_command,
+                    "--body-ai-budget",
+                    str(command.body_ai_budget),
+                    *(
+                        ["--heron-model", str(command.heron_model)]
+                        if command.heron_model
+                        else []
+                    ),
+                    *(
+                        ["--pdfium-library", str(command.pdfium_library)]
+                        if command.pdfium_library
+                        else []
+                    ),
+                ],
+            ),
+            RestorationStage.ASSEMBLE_CROP_FIRST: (
+                "crop_first_with_anydoc",
+                [
+                    "--pdf-file",
+                    str(prepared.pdf_file),
+                    "--manifest-file",
+                    str(prepared.manifest_file),
+                    "--detected-markdown",
+                    str(
+                        command.output_dir
+                        / "final"
+                        / f"{command.document_slug}.detected.md"
+                    ),
+                    "--output-dir",
+                    str(command.output_dir),
+                    "--output-file",
+                    str(
+                        command.output_dir
+                        / "final"
+                        / f"{command.document_slug}.restored.md"
+                    ),
+                    "--assemble-only",
+                ],
+            ),
             RestorationStage.PUBLISH_DOCLING_MARKDOWN: (
                 "publish_docling_markdown",
                 [

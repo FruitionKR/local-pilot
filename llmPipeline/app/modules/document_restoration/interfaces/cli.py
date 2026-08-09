@@ -21,10 +21,10 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=[mode.value for mode in RestorationMode],
-        default=RestorationMode.DOCLING_ONLY.value,
+        default=RestorationMode.CROP_FIRST.value,
         help=(
-            "기본값은 Docling 결과만 게시합니다. 선택 복원은 selective-repair, "
-            "기존 전체 복원은 full-repair를 사용합니다."
+            "기본값은 AnyDoc crop-first입니다. Docling 결과만 게시하려면 "
+            "docling-only를 사용합니다."
         ),
     )
     parser.add_argument(
@@ -42,13 +42,18 @@ def main() -> None:
         "--selective-endpoint",
         default="https://api.openai.com/v1/responses",
     )
-    parser.add_argument("--selective-model", default="gpt-5.6-terra")
+    parser.add_argument("--selective-model", default="gpt-5.6-luna")
     parser.add_argument(
         "--selective-reasoning-effort",
         choices=["none", "low", "medium", "high", "xhigh", "max"],
-        default="low",
+        default="medium",
     )
     parser.add_argument("--selective-max-workers", type=int, default=16)
+    parser.add_argument("--anydoc-command", default="anydoc")
+    parser.add_argument("--heron-command", default="raw-special-regions")
+    parser.add_argument("--heron-model", type=Path)
+    parser.add_argument("--pdfium-library", type=Path)
+    parser.add_argument("--body-ai-budget", type=float, default=0.3)
     args = parser.parse_args()
 
     use_case = RestoreDocumentUseCase(SubprocessDocumentRestorationStages())
@@ -73,6 +78,15 @@ def main() -> None:
             selective_model=args.selective_model,
             selective_reasoning_effort=args.selective_reasoning_effort,
             selective_max_workers=args.selective_max_workers,
+            anydoc_command=args.anydoc_command,
+            heron_command=args.heron_command,
+            heron_model=(
+                args.heron_model.resolve() if args.heron_model else None
+            ),
+            pdfium_library=(
+                args.pdfium_library.resolve() if args.pdfium_library else None
+            ),
+            body_ai_budget=args.body_ai_budget,
         )
     )
 
