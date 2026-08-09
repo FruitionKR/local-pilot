@@ -252,6 +252,7 @@ public class Document {
      */
     public void reopenForChatExportRegeneration(String contentHash, long byteSize, String pipelineInputMarkdown) {
         this.contentHash = contentHash;
+        this.currentContentHash = contentHash; // 재처리 스냅샷 시점에는 편집본과 ingest 본이 같다
         this.byteSize = byteSize;
         this.status = DocumentStatus.processing;
         this.processedAt = null;
@@ -266,6 +267,7 @@ public class Document {
      */
     public void reopenForReingest(String contentHash, long byteSize) {
         this.contentHash = contentHash;
+        this.currentContentHash = contentHash; // 재ingest 스냅샷 시점에는 편집본과 ingest 본이 같다
         this.byteSize = byteSize;
         this.status = DocumentStatus.processing;
         this.processedAt = null;

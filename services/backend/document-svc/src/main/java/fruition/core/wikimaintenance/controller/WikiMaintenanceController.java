@@ -2,9 +2,11 @@ package fruition.core.wikimaintenance.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.wikimaintenance.dto.WikiLintRequest;
+import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +21,13 @@ public class WikiMaintenanceController {
 
     public WikiMaintenanceController(WikiMaintenanceService wikiMaintenanceService) {
         this.wikiMaintenanceService = wikiMaintenanceService;
+    }
+
+    @GetMapping("/status")
+    public ResponseEntity<WikiMaintenanceStatusResponse> status(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(wikiMaintenanceService.status(workspaceId, userId));
     }
 
     @PostMapping("/lint")

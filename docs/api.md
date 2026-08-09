@@ -42,9 +42,9 @@
 |---|---|---|
 | POST | `/documents` | 파일 업로드(multipart, PDF·Markdown만, 415). MD는 EDITABLE, PDF는 ORIGINAL |
 | POST | `/documents/markdown` | Markdown 직접 생성. `display_name`+`markdown`(빈 문자열 허용, null 불가) |
-| GET | `/documents?query=` | 활성 문서 평면 목록. filename/display_name 부분 검색(본문 미검색) |
+| GET | `/documents?query=` | 활성 문서 평면 목록. filename/display_name 부분 검색(본문 미검색). 항목별 `needs_reingest` — 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 true |
 | GET | `/documents/{id}` | 상세 + 최신 `markdown` + `wiki_pages`. `current_version`이 이후 `base_version` |
-| GET | `/documents/{id}/original` | 업로드 원본 스트리밍(MinIO). 직접 생성 문서는 404 |
+| GET | `/documents/{id}/original` | 원본 스트리밍(MinIO). 직접 생성·복제·변환 문서도 생성 시점에 원본을 저장하므로 조회된다 |
 | GET | `/documents/{id}/blocks` | 원본 block 목록(`block_id`, `text`) |
 | PUT | `/documents/{id}/content` | 본문 수동 저장(multipart: `markdown`, `base_revision`, `revision_write_id`). 동일 본문 `changed=false`, 5MB 초과 413. 이미지 포함 저장은 `metadata`(JSON: `markdown`+`base_version`) + `attachment_*` file part — 본문 placeholder `attachment://{uuid}`가 asset content 경로로 치환되고 응답 `attachments`에 매핑 반환. 이미지 개당 50MB·합계 100MB 초과 413, 미지원 형식 415 |
 | PATCH | `/documents/{id}/rename` | `display_name` 변경(확장자 보존) |
@@ -117,7 +117,8 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `.../wiki/maintenance/lint` | Wiki lint 실행. `dryRun` true/생략은 미리보기(로그 없음), false면 lint 작업 등록 후 동기 반영 |
+| POST | `.../wiki/maintenance/lint` | Wiki lint 실행. `dry_run` true/생략은 미리보기(로그 없음), false면 lint 작업 등록 후 동기 반영. 성공 시 `wiki_lint_state.last_lint_at` 기록 |
+| GET | `.../wiki/maintenance/status` | `needs_lint`(마지막 lint 이후 위키 페이지 변경 여부), `last_lint_at`, `last_wiki_change_at` |
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
 | GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`) |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |
