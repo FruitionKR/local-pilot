@@ -1,16 +1,20 @@
 "use client";
 
-import { CheckCircle2, CircleX, X } from "lucide-react";
 import type { DocumentItemResponse } from "@/entities/document";
 import { useDocumentProcessingNotifications } from "../model/useDocumentProcessingNotifications";
+import { useOperationNotifications } from "../model/useOperationNotifications";
+import { usePendingWorkNotifications } from "../model/usePendingWorkNotifications";
 import styles from "./DocumentProcessingNotifications.module.css";
 
+/** 우하단 알림 카드 스택 (Figma 673:3870). 문서 처리 + AI 작업(lint·restore) + 대기 작업 감지 + 버스 발행 알림. */
 export function DocumentProcessingNotifications({
   documents
 }: {
   documents: DocumentItemResponse[];
 }) {
   const { notices, dismissNotice } = useDocumentProcessingNotifications(documents);
+  useOperationNotifications();
+  usePendingWorkNotifications(documents);
 
   if (notices.length === 0) return null;
 
@@ -22,20 +26,39 @@ export function DocumentProcessingNotifications({
           className={styles["notice"]}
           role={notice.kind === "failed" ? "alert" : "status"}
         >
-          {notice.kind === "completed"
-            ? <CheckCircle2 className={styles["is-completed"]} size={18} aria-hidden />
-            : <CircleX className={styles["is-failed"]} size={18} aria-hidden />}
-          <div>
+          <div className={styles["notice-title"]}>
             <strong>{notice.title}</strong>
             <p>{notice.message}</p>
           </div>
-          <button
-            type="button"
-            aria-label={`${notice.title} 닫기`}
-            onClick={() => dismissNotice(notice.id)}
-          >
-            <X size={15} aria-hidden />
-          </button>
+          {notice.action ? (
+            <div className={styles["notice-buttons"]}>
+              <button
+                type="button"
+                className={styles["notice-cancel"]}
+                onClick={() => dismissNotice(notice.id)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={styles["notice-confirm"]}
+                onClick={() => {
+                  notice.action?.onAction();
+                  dismissNotice(notice.id);
+                }}
+              >
+                {notice.action.label}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={styles["notice-confirm"]}
+              onClick={() => dismissNotice(notice.id)}
+            >
+              확인
+            </button>
+          )}
         </div>
       ))}
     </aside>

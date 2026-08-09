@@ -14,6 +14,7 @@ export type TreeItem = {
   byteSize?: number;
   sourceUri?: string;
   uploadedAt?: string;
+  updatedAt?: string;
   graphNodeId?: string;
   active?: boolean;
   children?: TreeItem[];
@@ -63,7 +64,3 @@ export type DocumentProcessingState = "starting" | "running" | "stalled" | "comp
 
 export type NoteSaveStatus = "saved" | "dirty" | "saving" | "error" | "conflict";
 
-export type NoteEditState = {
-  saveStatus: NoteSaveStatus;
-  needsReview: boolean;
-};

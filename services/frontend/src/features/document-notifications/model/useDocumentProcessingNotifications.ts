@@ -4,13 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUserPreferences } from "@/entities/user";
 import type { DocumentItemResponse } from "@/entities/document";
 import type { DocumentStatus } from "@/entities/tree";
+import { publishNotice, subscribeNotices, type NoticePayload } from "./noticeBus";
 
-export type DocumentProcessingNotice = {
-  id: string;
-  kind: "completed" | "failed";
-  title: string;
-  message: string;
-};
+export type DocumentProcessingNotice = NoticePayload & { id: string };
 
 const NOTICE_DURATION_MS = 6000;
 
@@ -46,9 +42,31 @@ export function useDocumentProcessingNotifications(documents: DocumentItemRespon
     setNotices((current) => current.filter((notice) => notice.id !== id));
   }, []);
 
+  // 카드 표시 + 백그라운드 탭이면 브라우저 알림까지. 모든 알림이 이 경로를 지난다.
+  const pushNotice = useCallback((notice: NoticePayload) => {
+    const id = `${notice.kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setNotices((current) => [...current, { id, ...notice }]);
+    // 액션이 있는 카드는 사용자가 선택할 때까지 남긴다.
+    if (!notice.action) {
+      timersRef.current.push(window.setTimeout(() => dismissNotice(id), NOTICE_DURATION_MS));
+    }
+
+    if (
+      browserNotifications
+      && document.visibilityState === "hidden"
+      && "Notification" in window
+      && Notification.permission === "granted"
+    ) {
+      new Notification(notice.title, { body: notice.message });
+    }
+  }, [browserNotifications, dismissNotice]);
+
   useEffect(() => () => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
+
+  // 다른 feature(질의·AI 작업)가 버스로 발행한 알림을 같은 스택에 표시한다.
+  useEffect(() => subscribeNotices(pushNotice), [pushNotice]);
 
   useEffect(() => {
     const currentStatuses = new Map(documents.map((document) => [document.id, document.status]));
@@ -67,28 +85,10 @@ export function useDocumentProcessingNotifications(documents: DocumentItemRespon
     (["completed", "failed"] as const).forEach((kind) => {
       const enabled = kind === "completed" ? completedNotifications : failedNotifications;
       if (counts[kind] === 0 || !enabled) return;
-
-      const text = noticeText(kind, counts[kind]);
-      const id = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      setNotices((current) => [...current, { id, kind, ...text }]);
-      timersRef.current.push(window.setTimeout(() => dismissNotice(id), NOTICE_DURATION_MS));
-
-      if (
-        browserNotifications
-        && document.visibilityState === "hidden"
-        && "Notification" in window
-        && Notification.permission === "granted"
-      ) {
-        new Notification(text.title, { body: text.message });
-      }
+      // 버스를 거쳐야 알림 패널 히스토리에도 남는다. 카드 표시는 구독 경로(pushNotice)가 처리한다.
+      publishNotice({ kind, ...noticeText(kind, counts[kind]) });
     });
-  }, [
-    dismissNotice,
-    documents,
-    browserNotifications,
-    completedNotifications,
-    failedNotifications
-  ]);
+  }, [documents, completedNotifications, failedNotifications]);
 
   return { notices, dismissNotice };
 }

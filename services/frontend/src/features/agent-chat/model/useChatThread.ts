@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchChatMessages, setActiveChatSession, getSessionContext } from "@/entities/chat/api/chat";
+import { useUserPreferences } from "@/entities/user";
 import { runQueryStream, type QueryStageEvent } from "@/entities/wiki/api/wiki";
+import { publishNotice } from "@/features/document-notifications";
 import { getErrorMessage } from "@/shared/lib/errors";
 import { findLastUserMessage } from "@/shared/lib/messages";
 import type { ChatMessageRelatedPageResponse, ChatMessageResponse } from "@/entities/chat/model/chat";
@@ -66,6 +68,8 @@ function buildNextActiveTurn(
  * AgentPanel에서 추출했습니다.
  */
 export function useChatThread(activeSessionId?: string | null) {
+  const { preferences } = useUserPreferences();
+  const queryNotifications = preferences.notifications.query;
   const [messages, setMessages] = useState<ChatMessageResponse[]>([]);
   const [queryErrorMessage, setQueryErrorMessage] = useState<string | null>(null);
   const [chatLoadErrorMessage, setChatLoadErrorMessage] = useState<string | null>(null);
@@ -128,15 +132,22 @@ export function useChatThread(activeSessionId?: string | null) {
 
     let querySucceeded = false;
     let queryRelatedPages: QueryRelatedPageResponse[] = [];
+    const shortQuestion = question.length > 30 ? `${question.slice(0, 30)}…` : question;
     try {
       const queryResponse = await runQueryStream(question, {
         onStage: (event) => setQueryStages((current) => [...current, event])
       });
       querySucceeded = true;
       queryRelatedPages = queryResponse.related_pages ?? [];
+      if (queryNotifications) {
+        publishNotice({ kind: "completed", title: "질의 완료", message: `"${shortQuestion}" 답변이 도착했습니다.` });
+      }
     } catch (error) {
       setQueryErrorMessage(getErrorMessage(error, "질의에 실패했습니다."));
       setActiveTurn(null);
+      if (queryNotifications) {
+        publishNotice({ kind: "failed", title: "질의 실패", message: `"${shortQuestion}" 질의에 실패했습니다.` });
+      }
     } finally {
       setIsLoading(false);
     }

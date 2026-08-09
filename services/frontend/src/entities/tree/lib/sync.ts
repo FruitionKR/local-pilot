@@ -31,7 +31,8 @@ function syncDocumentItems(items: TreeItem[], documents: DocumentItemResponse[])
       mimeType: document.mime_type,
       byteSize: document.byte_size,
       sourceUri: document.source_uri,
-      uploadedAt: document.uploaded_at
+      uploadedAt: document.uploaded_at,
+      updatedAt: document.updated_at
     } : item;
     if (nextItem.children?.length) return { ...nextItem, children: syncDocumentItems(nextItem.children, documents) };
     return nextItem;
@@ -67,6 +68,7 @@ function areTreeItemsShallowEqual(left: TreeItem, right: TreeItem): boolean {
     && left.byteSize === right.byteSize
     && left.sourceUri === right.sourceUri
     && left.uploadedAt === right.uploadedAt
+    && left.updatedAt === right.updatedAt
     && left.graphNodeId === right.graphNodeId
     && left.active === right.active
     && areTreeItemsEqual(left.children ?? [], right.children ?? []);
@@ -98,6 +100,7 @@ export function mergeBackendDataIntoProjects(projects: Project[], documents: Doc
     byteSize: document.byte_size,
     sourceUri: document.source_uri,
     uploadedAt: document.uploaded_at,
+    updatedAt: document.updated_at,
     errorMessage: document.error_message
   }));
   const nextProjects = reconciledProjects.map((project, index) => {

@@ -78,18 +78,9 @@
   white-space: nowrap;
 }
 
-.source-preview-topbar nav button {
-  padding: 0;
-  color: #f0f0f0;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
+/* 상위 폴더는 표시 전용 텍스트 (Figma GNB: SemiBold) */
+.source-preview-topbar nav > span:first-child {
   font-weight: 600;
-}
-
-.source-preview-topbar nav button:hover,
-.source-preview-topbar nav button:focus-visible {
-  color: #ffc117;
 }
 
 .source-preview-topbar nav strong {
@@ -126,6 +117,17 @@
 .source-preview-actions button:focus-visible {
   color: #f0f0f0;
   background: #1e1e1e;
+}
+
+/* 우측 아이콘 탭 그룹 (Figma GNB: 사이드박스 + ⋯ 두 버튼이 붙어 있음) */
+.source-preview-tab {
+  display: flex;
+  align-items: center;
+}
+
+.source-preview-tab-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .source-preview-save-status.is-dirty,
@@ -208,8 +210,14 @@
   color: #f0f0f0;
 }
 
-.source-preview-title-input:focus {
-  box-shadow: 0 0 0 1px #4f4f4f;
+/* 읽기 모드(편집 시작 전): 입력 불가 + 편집 가능해 보이지 않게 */
+.source-preview-title-input:read-only {
+  cursor: default;
+}
+
+.source-preview-title-input:read-only:hover,
+.source-preview-title-input:read-only:focus {
+  color: #8a8a8a;
 }
 
 .source-preview-heading > span {
@@ -311,15 +319,24 @@
 }
 
 /* --- responsive (기존 responsive.css의 source-preview 소유분) --- */
+/* is-main의 right는 agent-panel 반응형 폭(360/330/300)과 항상 일치해야 한다 */
 @media (max-width: 1300px) {
   .source-preview-panel {
     left: var(--sidebar-width, 320px);
+  }
+
+  .source-preview-panel.is-main {
+    right: 330px;
   }
 }
 
 @media (max-width: 1080px) {
   .source-preview-panel {
     left: var(--sidebar-width, 320px);
+  }
+
+  .source-preview-panel.is-main {
+    right: 300px;
   }
 }
 
@@ -346,4 +363,38 @@
   .source-preview-title-input {
     font-size: 28px;
   }
+}
+
+/* 읽기 모드에서 편집기로 전환하는 버튼: 상단 액션 바(... 왼쪽)에 자리한다 */
+.source-preview-actions .source-preview-edit-start {
+  width: auto;
+  height: 28px;
+  padding: 6px 12px;
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.source-preview-actions .source-preview-edit-start:hover,
+.source-preview-actions .source-preview-edit-start:focus-visible {
+  background: #3f3f3f;
+  border-color: #5a5a5a;
+}
+
+/* Cmd/Ctrl+S 저장 시 버튼 눌림 효과 */
+.source-preview-actions .source-preview-edit-start.is-pressed,
+.source-preview-actions .source-preview-edit-start:active {
+  background: #3f3f3f;
+  border-color: #5a5a5a;
+  transform: scale(0.94);
+}
+
+/* 읽기 모드 본문: 클릭하면 편집이 시작됨을 커서로 알린다 */
+.source-preview-read-surface {
+  cursor: text;
+  min-height: 240px;
 }

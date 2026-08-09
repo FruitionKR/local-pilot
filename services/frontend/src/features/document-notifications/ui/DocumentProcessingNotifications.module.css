@@ -1,56 +1,123 @@
+/* 알림 카드 (Figma 673:3870 bottom_up): 콘텐츠 영역 우하단에서 올라오는 320px 카드.
+   에이전트 패널(우측 고정)을 가리지 않도록 패널 폭만큼 왼쪽으로 비켜 놓는다. */
 .notice-stack {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  right: calc(360px + 24px);
+  bottom: 24px;
   z-index: 50;
   display: grid;
-  width: min(360px, calc(100vw - 40px));
+  width: min(320px, calc(100vw - 48px));
   gap: 10px;
+}
+
+:global(.workspace.is-agent-collapsed) .notice-stack {
+  right: 24px;
+}
+
+@media (max-width: 1300px) {
+  .notice-stack {
+    right: calc(330px + 24px);
+  }
+}
+
+@media (max-width: 1080px) {
+  .notice-stack {
+    right: calc(300px + 24px);
+  }
 }
 
 .notice {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 20px 20px 16px;
   color: var(--ink);
-  background: #202020;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+  background: var(--panel);
+  border: 1px solid var(--soft);
+  border-radius: 16px;
+  overflow: hidden;
+  animation: notice-bottom-up 240ms ease-out;
 }
 
-.notice strong {
-  display: block;
-  margin-bottom: 3px;
-  font-size: 13px;
+@keyframes notice-bottom-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.notice p {
+:global([data-reduce-motion="true"]) .notice {
+  animation: none;
+}
+
+.notice-title {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notice-title strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.notice-title p {
   margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.notice > button {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.notice > button:hover {
   color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: normal;
 }
 
-.is-completed {
-  color: var(--source-page);
+/* 액션 카드: 취소 + 실행 2버튼 (Figma 673:3870 취소/수락) */
+.notice-buttons {
+  width: 100%;
+  display: flex;
+  gap: 8px;
 }
 
-.is-failed {
-  color: #ff8d8d;
+.notice-buttons .notice-confirm {
+  flex: 1;
+}
+
+.notice-cancel {
+  flex: 1;
+  padding: 6px 18px;
+  color: #e2e2e2;
+  background: var(--soft);
+  border: 1px solid var(--soft);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.notice-cancel:hover,
+.notice-cancel:focus-visible {
+  background: #3f3f3f;
+  border-color: #3f3f3f;
+}
+
+.notice-confirm {
+  width: 100%;
+  padding: 6px 18px;
+  color: #0a0a0a;
+  background: #e6a800;
+  border: 1px solid #e6a800;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.notice-confirm:hover,
+.notice-confirm:focus-visible {
+  background: var(--yellow);
+  border-color: var(--yellow);
 }
