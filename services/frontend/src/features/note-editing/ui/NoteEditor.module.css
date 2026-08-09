@@ -2,9 +2,10 @@
    note-wysiwyg-editor(milkdown) / note-markdown-editor(codemirror) 규칙을 분리했다.
    milkdown/.ProseMirror/.cm-* 는 서드파티 DOM이 붙이는 전역 클래스라 :global 로 참조한다. */
 
+/* min-height: 100%를 주면 스크롤 컨테이너의 제목·패딩 높이만큼 항상 넘쳐
+   문서를 열자마자 스크롤바가 생긴다. 높이는 내용에 맡긴다. */
 .note-editor-shell {
   position: relative;
-  min-height: 100%;
   padding: 0 0 48px;
 }
 
@@ -20,6 +21,8 @@
   background: transparent;
 }
 
+/* 글자 크기·행간은 읽기 모드(.markdown-viewer)와 동일하게 맞춘다.
+   편집 시작 시 화면이 확대되는 것처럼 보이는 문제 방지 */
 .note-wysiwyg-editor :global(.milkdown .ProseMirror) {
   min-height: 420px;
   padding: 0 0 120px;
@@ -27,8 +30,8 @@
   background: transparent;
   caret-color: var(--yellow);
   font-family: var(--document-font-family);
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .note-wysiwyg-editor :global(.milkdown .ProseMirror:focus) {
@@ -36,20 +39,72 @@
 }
 
 .note-wysiwyg-editor :global(.milkdown .ProseMirror h1) {
-  margin: 0 0 28px;
-  font-size: 34px;
-  letter-spacing: -0.025em;
+  margin: 0 0 12px;
+  font-size: 24px;
+  line-height: 1.25;
 }
 
 .note-wysiwyg-editor :global(.milkdown .ProseMirror h2) {
-  margin: 34px 0 12px;
-  font-size: 24px;
-  letter-spacing: -0.015em;
+  margin: 24px 0 12px;
+  font-size: 19px;
+  line-height: 1.25;
 }
 
 .note-wysiwyg-editor :global(.milkdown .ProseMirror h3) {
-  margin: 28px 0 10px;
-  font-size: 19px;
+  margin: 24px 0 12px;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+/* 읽기 모드 제목은 600, crepe 테마는 400이라 굵기도 맞춘다 */
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h1),
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h2),
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h3),
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h4),
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h5),
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h6) {
+  font-weight: 600;
+}
+
+/* crepe 테마 reset.css가 p 16px, h4~h6 28/24/18px를 직접 지정하므로
+   읽기 모드(.markdown-viewer: 14px, h4~h6는 브라우저 기본) 크기로 덮어쓴다 */
+.note-wysiwyg-editor :global(.milkdown .ProseMirror p) {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h4) {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h5) {
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.note-wysiwyg-editor :global(.milkdown .ProseMirror h6) {
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/* 리스트 줄간격을 읽기 모드(.markdown-viewer li: margin 4px 0)와 맞춘다.
+   리스트 안 문단에는 crepe reset.css의 `padding: 4px 0`과
+   SourcePreviewPanel.module.css의 `.source-preview-content p { margin: 0 0 16px }`이 함께 걸려
+   항목 간격이 43px까지 벌어진다. 리스트 안에서만 둘을 걷어낸다.
+   (리스트 밖 문단은 그대로 둬서 기존 문단 간격이 유지된다) */
+.note-wysiwyg-editor :global(.milkdown .milkdown-list-item-block p) {
+  margin: 0;
+  padding: 2px 0;
+}
+
+/* crepe list-item.css가 마커 박스를 32px로 고정해 행 높이가 문단(14px * 1.65 + 4px)보다 커진다.
+   문단 높이에 맞추면 행 간격이 읽기 모드와 같아지고, label-wrapper가 세로 가운데 정렬이라
+   마커도 첫 줄 중앙에 그대로 남는다. */
+.note-wysiwyg-editor :global(.milkdown .milkdown-list-item-block li .label-wrapper),
+.note-wysiwyg-editor :global(.milkdown .milkdown-list-item-block li .label-wrapper .label) {
+  height: calc(1.65em + 4px);
+  padding: 0;
 }
 
 .note-markdown-editor :global(.cm-editor) {
@@ -108,4 +163,105 @@
   right: 8px;
   color: #8a8a8a;
   content: "|";
+}
+
+/* '/' 슬래시 메뉴: 기본 크기(항목 padding 14px·아이콘 24px·최소폭 220px)가 커서 컴팩트하게 줄인다 */
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .tab-group ul li) {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .menu-groups) {
+  max-height: 320px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .menu-groups .menu-group h6) {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .menu-groups .menu-group li) {
+  min-width: 180px;
+  gap: 10px;
+  padding: 7px 10px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .menu-groups .menu-group li svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-slash-menu .menu-groups .menu-group li > span) {
+  font-size: 13px;
+}
+
+/* 선택 툴바: 기본 버튼 32px + 여백 6px이 커서 컴팩트하게 줄인다 */
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .toolbar-item) {
+  width: 26px;
+  height: 26px;
+  margin: 3px;
+  padding: 4px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .toolbar-item svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .divider) {
+  height: 18px;
+  margin: 7px 4px;
+}
+
+/* 툴바 버튼 hover 설명: 0.5초 뒤 표시되는 커스텀 tooltip (기본 title은 딜레이 조절 불가) */
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar) {
+  overflow: visible;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .toolbar-item[data-tooltip]) {
+  position: relative;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .toolbar-item[data-tooltip]::after) {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 20;
+  padding: 3px 8px;
+  color: #e7e7e7;
+  background: #2a2a2a;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.note-wysiwyg-editor :global(.milkdown .milkdown-toolbar .toolbar-item[data-tooltip]:hover::after) {
+  opacity: 1;
+  transition-delay: 0.5s;
+}
+
+/* 표 행/열 추가 + 버튼: 기본값은 top/left 미지정이라 라인 시작점(맨 위·왼쪽)에 붙는다.
+   transform: translate(-50%)가 이미 있으므로 50%만 주면 라인 정중앙에 온다.
+   타원 방향은 기본값과 반대로: 오른쪽(열 추가) 버튼 = 세로 타원, 아래쪽(행 추가) 버튼 = 가로 타원. */
+.note-wysiwyg-editor :global(.milkdown-table-block .line-handle[data-role="y-line-drag-handle"] .add-button) {
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 28px;
+  padding: 6px 0;
+}
+
+.note-wysiwyg-editor :global(.milkdown-table-block .line-handle[data-role="x-line-drag-handle"] .add-button) {
+  top: 50%;
+  left: 50%;
+  width: 28px;
+  height: 16px;
+  padding: 0 6px;
 }

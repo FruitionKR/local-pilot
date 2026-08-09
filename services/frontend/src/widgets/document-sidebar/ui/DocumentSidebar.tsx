@@ -1,6 +1,6 @@
-import type { ChangeEvent as ReactChangeEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, RefObject } from "react";
+import { useState, type ChangeEvent as ReactChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { cx } from "@/shared/lib/classNames";
-import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, NoteEditState, Project } from "@/entities/tree";
+import type { ContextMenuState, DropTarget, EditingState, FileDropTarget, Project } from "@/entities/tree";
 import { chatBubbleIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
 import { ContextMenu } from "./ContextMenu";
@@ -24,7 +24,6 @@ export function DocumentSidebar({
   convertContextTarget,
   uploadInputRef,
   activeView,
-  noteEditStates,
   onViewChange,
   onStartChat,
   onUploadToProject,
@@ -59,7 +58,6 @@ export function DocumentSidebar({
   convertContextTarget: { isDisabled: boolean } | null;
   uploadInputRef: RefObject<HTMLInputElement | null>;
   activeView: RailView;
-  noteEditStates: Record<string, NoteEditState>;
   onViewChange: (view: RailView) => void;
   onStartChat: () => void;
   onUploadToProject: (projectId: string) => void;
@@ -84,6 +82,7 @@ export function DocumentSidebar({
   onConvertContextTarget: () => void;
   onDeleteContextTarget: () => void;
 }) {
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const onlyProject = projects.length === 1 ? projects[0] : null;
   const isSidebarFileDropTarget = Boolean(
     onlyProject
@@ -106,8 +105,20 @@ export function DocumentSidebar({
       onDrop={onlyProject ? handleDrop : undefined}
     >
       <SidebarWorkspaceHeader />
-      <SidebarMenuRow activeView={activeView} onViewChange={onViewChange} onAddProject={onAddProject} />
-      <DocumentSearch projects={projects} onSelectGraphNode={onSelectGraphNode} />
+      <SidebarMenuRow
+        activeView={activeView}
+        isSearchOpen={isSearchOpen}
+        onViewChange={onViewChange}
+        onToggleSearch={() => setIsSearchOpen((open) => !open)}
+        onAddProject={onAddProject}
+      />
+      {isSearchOpen && (
+        <DocumentSearch
+          projects={projects}
+          onSelectGraphNode={onSelectGraphNode}
+          onClose={() => setIsSearchOpen(false)}
+        />
+      )}
       <input
         ref={uploadInputRef}
         className={styles["upload-picker"]}
@@ -130,7 +141,6 @@ export function DocumentSidebar({
             dropTarget={dropTarget}
             fileDropTarget={fileDropTarget}
             editing={editing}
-            noteEditStates={noteEditStates}
             onMoveItem={onMoveItem}
             onDropFiles={onDropFiles}
             onDragStart={onDragStart}
@@ -169,7 +179,7 @@ export function DocumentSidebar({
         <SvgIcon src={chatBubbleIcon} />
         채팅 시작
       </button>
-      <SidebarProfile />
+      <SidebarProfile projects={projects} />
       <button
         type="button"
         className={styles["sidebar-resize-handle"]}

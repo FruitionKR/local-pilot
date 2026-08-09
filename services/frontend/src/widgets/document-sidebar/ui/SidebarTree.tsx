@@ -11,7 +11,6 @@ export function SidebarTree({
   dropTarget,
   fileDropTarget,
   editing,
-  noteEditStates,
   onMoveItem,
   onDropFiles,
   onDragStart,
@@ -74,7 +73,6 @@ export function SidebarTree({
           dropTarget={dropTarget}
           fileDropTarget={fileDropTarget}
           editing={editing}
-          noteEditStates={noteEditStates}
           onDragStart={onDragStart}
           onDragOverItem={onDragOverItem}
           onFileDragOver={onFileDragOver}

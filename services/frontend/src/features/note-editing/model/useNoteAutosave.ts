@@ -67,12 +67,12 @@ export function useNoteAutosave({
     }, plan.delayMs);
   }
 
-  async function flushSave(candidate: PendingNoteSave) {
+  async function flushSave(candidate: PendingNoteSave): Promise<boolean> {
     const saveCandidate = applyRequiredAgentSource(candidate, agentRetryRequiredRef.current);
-    if (conflictRef.current) return;
+    if (conflictRef.current) return false;
     if (saveInFlightRef.current) {
       pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, saveCandidate);
-      return;
+      return true;
     }
 
     saveInFlightRef.current = true;
@@ -93,6 +93,7 @@ export function useNoteAutosave({
         cancelAgentRetry();
       }
       setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
+      return true;
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
         conflictRef.current = true;
@@ -108,6 +109,7 @@ export function useNoteAutosave({
         setStatus("error");
       }
       setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
+      return false;
     } finally {
       saveInFlightRef.current = false;
       const pending = pendingSaveRef.current;
@@ -140,5 +142,23 @@ export function useNoteAutosave({
     }, AUTOSAVE_DELAY_MS);
   }
 
-  return { status, errorMessage, contentVersion, queueSave };
+  /** 디바운스를 건너뛰고 즉시 저장한다 (Cmd/Ctrl+S, 저장 버튼). 성공 여부를 반환한다. */
+  function saveNow(body: string): Promise<boolean> {
+    if (conflictRef.current) return Promise.resolve(false);
+    cancelAgentRetry();
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    revisionRef.current += 1;
+    const candidate = {
+      markdown: composeEditableNoteMarkdown(marker, body),
+      revision: revisionRef.current,
+      source: agentRetryRequiredRef.current ? ("agent" as const) : undefined
+    };
+    setErrorMessage(null);
+    return flushSave(candidate);
+  }
+
+  return { status, errorMessage, contentVersion, queueSave, saveNow };
 }
