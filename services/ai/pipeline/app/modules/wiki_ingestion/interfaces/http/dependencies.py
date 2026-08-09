@@ -20,9 +20,6 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     PostgresPipelineRunRepository,
     RunLabPipelineRunner,
 )
-from app.modules.wiki_ingestion.infrastructure.pipeline_result_callback import (
-    HttpPipelineResultNotifier,
-)
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     cleanup_deleted_wiki_pages,
 )
@@ -50,7 +47,6 @@ def get_pipeline_run_use_case() -> RunPipelineUseCase:
         runner=RunLabPipelineRunner(),
         repository=get_pipeline_run_repository(),
         embedding_job=ThreadedWikiEmbeddingJob(logger),
-        result_notifier=HttpPipelineResultNotifier(),
     )
 
 
@@ -67,7 +63,6 @@ def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
             write_text_object,
             cleanup_deleted_wiki_pages,
         ),
-        HttpPipelineResultNotifier(),
     )
 
 

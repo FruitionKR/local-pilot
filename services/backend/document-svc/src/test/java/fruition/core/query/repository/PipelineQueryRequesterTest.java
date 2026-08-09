@@ -54,17 +54,6 @@ class PipelineQueryRequesterTest {
                 .doesNotContain("log_callback_url");
     }
 
-    @Test
-    void query_withRequestIdAndCallbackUrl_includesThemInRequestBody() {
-        requester().query("ws_abc123", "질문", "query_abc123", "http://backend:8080/api/query/runs/query_abc123/events/callback");
-
-        assertThat(capturedBody.get())
-                .contains("\"workspace_id\":\"ws_abc123\"")
-                .contains("\"question\":\"질문\"")
-                .contains("\"request_id\":\"query_abc123\"")
-                .contains("\"log_callback_url\":\"http://backend:8080/api/query/runs/query_abc123/events/callback\"");
-    }
-
     private static String minimalPipelineResponseJson() {
         return "{\"answer\":\"답변\",\"related_pages\":[],\"evidence_snippets\":[],"
                 + "\"graph_context\":{\"nodes\":[],\"edges\":[]},\"traversal_paths\":[]}";

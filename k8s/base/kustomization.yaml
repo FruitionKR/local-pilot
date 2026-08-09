@@ -11,6 +11,7 @@ resources:
   - access-svc.yaml
   - pipeline-api.yaml
   - ingest-worker.yaml
+  - task-workers.yaml
   - edit-event-consumer.yaml
   - converter.yaml
   - kafka.yaml

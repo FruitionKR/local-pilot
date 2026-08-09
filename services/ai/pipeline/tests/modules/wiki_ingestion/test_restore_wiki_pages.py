@@ -115,14 +115,6 @@ def _restore(store: ArtifactStore) -> ObjectStorageWikiPageRestore:
     )
 
 
-class Notifier:
-    def __init__(self) -> None:
-        self.calls = []
-
-    def notify(self, callback_url: str, payload: dict) -> None:
-        self.calls.append((callback_url, payload))
-
-
 def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     store = ArtifactStore(
         {
@@ -130,11 +122,7 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
             "wiki/ws-1/pages/C3/ops/B.json": _payload("B", "C3", "B 근거"),
         }
     )
-    notifier = Notifier()
-    use_case = RestoreWikiPagesUseCase(
-        _restore(store),
-        notifier,
-    )
+    use_case = RestoreWikiPagesUseCase(_restore(store))
 
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
@@ -142,7 +130,6 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
@@ -164,7 +151,6 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     )
     assert "A 근거" in store.writes[0][1]
     assert "B 근거" in store.writes[0][1]
-    assert notifier.calls[0][1] == result
 
 
 def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
@@ -367,11 +353,7 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
             "wiki/ws-1/pages/Y/ops/B1.json": _payload("B1", "Y", "다른 문서의 Y"),
         }
     )
-    notifier = Notifier()
-    use_case = RestoreWikiPagesUseCase(
-        _restore(store),
-        notifier,
-    )
+    use_case = RestoreWikiPagesUseCase(_restore(store))
 
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
@@ -379,7 +361,6 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=("A3", "A4", "A5"),
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             source_page=SourceSnapshotRestoreCommand("S1"),
             rebuild_pages=(
                 RebuildPageCommand(
@@ -410,7 +391,6 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
     assert result["deleted_pages"] == ["Z"]
     assert store.writes[0][0] == "wiki/ws-1/pages/S1/ops/restore-1.md"
     assert store.writes[0][1] == "# A2 Source\n"
-    assert notifier.calls[0][1] == result
 
 
 def test_lint_operation_restore_replays_remaining_link_support() -> None:

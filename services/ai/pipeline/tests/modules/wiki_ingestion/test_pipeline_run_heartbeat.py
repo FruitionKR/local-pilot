@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from unittest.mock import Mock, patch
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
@@ -38,11 +39,12 @@ def test_finish_pipeline_run_writes_only_ai_owned_tables() -> None:
     connection.__enter__ = Mock(return_value=connection)
     connection.__exit__ = Mock(return_value=False)
     run_cursor = Mock()
-    run_cursor.fetchone.return_value = {"document_id": "doc-1"}
+    run_cursor.fetchone.return_value = {"document_id": "doc-1", "workspace_id": "ws-1"}
     connection.execute.side_effect = [run_cursor, Mock()]
 
     with (
         patch.object(database, "connect", return_value=connection),
+        patch.object(database, "concept_write_lock", return_value=nullcontext()),
         patch.object(database, "_persist_wiki_outputs") as persist_outputs,
         patch.object(database, "_mark_derived_state_ingested"),
     ):

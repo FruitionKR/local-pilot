@@ -261,6 +261,15 @@ def _persist_concept_pages(
         slug = concept["slug"]
         if slug not in generated_concept_slugs:
             continue
+        existing = conn.execute(
+            """
+            SELECT id, title, summary, markdown_uri
+            FROM wiki_pages
+            WHERE user_id = %s AND workspace_id = %s
+              AND page_type = 'concept' AND slug = %s AND status = 'active'
+            """,
+            (user_id, workspace_id, slug),
+        ).fetchone()
         page_id = resolve_or_create_wiki_page_id(
             conn,
             user_id,
@@ -271,6 +280,27 @@ def _persist_concept_pages(
         concept_id_by_slug[slug] = page_id
         concept_page = concept_pages_by_slug[slug]
         concept_markdown = concept_page["markdown"]
+        title = concept.get("title") or slug
+        summary = concept.get("definition") or concept.get("why_page_worthy") or ""
+        if existing:
+            current_markdown = read_optional_text_object(existing["markdown_uri"])
+            contribution = (manifest.get("concept_contributions") or {}).get(slug) or {}
+            updates = [
+                {
+                    "claim_id": item.get("evidence_id"),
+                    "claim": item.get("claim"),
+                    "refs": item.get("anchor_reference_ids", []),
+                }
+                for item in contribution.get("evidence_units", [])
+                if isinstance(item, dict)
+            ]
+            concept_markdown = (
+                append_concept_evidence(current_markdown, updates)
+                if current_markdown else concept_markdown
+            )
+            concept_page["markdown"] = concept_markdown
+            title = existing.get("title") or title
+            summary = existing.get("summary") or summary
         concept_markdown_uri = upload_wiki_markdown(
             concept_markdown,
             f"wiki/{user_id}/{workspace_id}/concepts/{slug}.md",
@@ -279,9 +309,9 @@ def _persist_concept_pages(
             conn,
             page_id,
             "concept",
-            concept.get("title") or slug,
+            title,
             slug,
-            concept.get("definition") or concept.get("why_page_worthy") or "",
+            summary,
             concept_markdown_uri,
             user_id,
             workspace_id,

@@ -60,6 +60,4 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
             @Param("operationType") OperationType operationType
     );
 
-    /** notify_pending 재시도 잡이 회수 대상을 고를 때 쓴다. */
-    List<OperationLog> findByStatus(OperationStatus status, Pageable pageable);
 }

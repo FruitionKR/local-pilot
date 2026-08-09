@@ -53,6 +53,7 @@ export type AgentTurnResponse = {
   baseVersion: number;
   requestId: string;
   apply_operation_id: string;
+  status: "completed";
   result: AgentTurnResult;
 };
 

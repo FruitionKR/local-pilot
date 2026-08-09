@@ -99,6 +99,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
+    @Mock fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore;
 
     DocumentService documentService;
 
@@ -114,10 +115,9 @@ class DocumentServiceBlocksTest {
                 assetReferenceSynchronizer,
                 assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
-                new fruition.core.aihistory.service.AgentApplyOperationStore(),
+                applyOperationStore,
                 operationRecorder,
-                ingestOperationStarter,
-                "http://localhost:8080");
+                ingestOperationStarter);
         lenient().when(pipelineWikiStateRequester.documentContext(anyString(), anyString()))
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
@@ -663,8 +663,6 @@ class DocumentServiceBlocksTest {
         when(storageProps.getBucket()).thenReturn("bucket");
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, document.getId()))
                 .thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1"))
-                .thenReturn("http://callback/result");
 
         fruition.core.document.dto.DocumentIngestResponse response =
                 documentService.ingest(WORKSPACE_ID, USER_ID, document.getId());
@@ -676,7 +674,7 @@ class DocumentServiceBlocksTest {
         assertThat(document.getContentHash()).isEqualTo(editState.getContentHash());
         verify(ingestCommandOutbox).enqueue(
                 eq(response.runId()), eq(document.getId()), eq(USER_ID), eq(WORKSPACE_ID),
-                anyString(), any(), any(), eq(false), eq("op_ingest_1"), eq("http://callback/result"));
+                any(), any(), eq(false), eq("op_ingest_1"), anyLong(), any());
     }
 
     @Test
@@ -1117,13 +1115,12 @@ class DocumentServiceBlocksTest {
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "chatdoc_1")).thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
         documentService.enqueueIngest(chatDoc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> runId = ArgumentCaptor.forClass(String.class);
         verify(ingestCommandOutbox).enqueue(runId.capture(), eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID),
-                anyString(), eq("full"), any(), chatWiki.capture(), any(), any());
+                eq("full"), any(), chatWiki.capture(), eq("op_ingest_1"), anyLong(), any());
         assertThat(chatWiki.getValue()).isTrue();
         assertThat(chatDoc.getPipelineRunId()).isEqualTo(runId.getValue());
     }
@@ -1134,12 +1131,11 @@ class DocumentServiceBlocksTest {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "doc_up")).thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
         documentService.enqueueIngest(doc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(), any(),
-                chatWiki.capture(), any(), any());
+        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(),
+                chatWiki.capture(), any(), anyLong(), any());
         assertThat(chatWiki.getValue()).isFalse();
     }
 

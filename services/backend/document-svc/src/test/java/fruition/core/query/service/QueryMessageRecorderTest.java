@@ -72,7 +72,7 @@ class QueryMessageRecorderTest {
     }
 
     @Test
-    void methods_useRequiresNewTransaction() throws NoSuchMethodException {
+    void methods_joinCommandTransaction() throws NoSuchMethodException {
         Transactional createTransaction = QueryMessageRecorder.class
                 .getMethod("createPendingPair", String.class, String.class, String.class, String.class,
                         String.class, Instant.class)
@@ -81,7 +81,7 @@ class QueryMessageRecorderTest {
                 .getMethod("markFailed", String.class, String.class)
                 .getAnnotation(Transactional.class);
 
-        assertThat(createTransaction.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
-        assertThat(failTransaction.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+        assertThat(createTransaction.propagation()).isEqualTo(Propagation.REQUIRED);
+        assertThat(failTransaction.propagation()).isEqualTo(Propagation.REQUIRED);
     }
 }

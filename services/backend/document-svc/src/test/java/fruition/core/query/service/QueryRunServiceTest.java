@@ -1,8 +1,7 @@
 package fruition.core.query.service;
 
+import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.query.domain.QueryRun;
-import fruition.core.query.dto.QueryResponse;
-import fruition.core.query.exception.PipelineQueryException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,7 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,70 +21,31 @@ class QueryRunServiceTest {
     @Mock QueryRunStore queryRunStore;
     @Mock QueryEventBroker queryEventBroker;
     @Mock QueryService queryService;
+    @Mock AiCommandOutboxWriter outboxWriter;
 
-    private QueryRunService queryRunService;
+    private QueryRunService service;
 
     @BeforeEach
     void setUp() {
-        // Executor runs the submitted task synchronously on the calling thread,
-        // so assertions below don't need to wait for a background thread.
-        queryRunService = new QueryRunService(
-                queryRunStore, queryEventBroker, queryService, Runnable::run, "http://backend:8080");
+        service = new QueryRunService(queryRunStore, queryEventBroker, queryService,
+                outboxWriter, "ai.query.command");
     }
 
     @Test
-    void start_pipelineSucceeds_marksRunCompletedAndBroadcastsCompletion() {
-        QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
+    void start_createsPendingMessagesAndCommand() {
+        QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123",
+                "질문", Instant.parse("2026-06-20T10:00:00Z"));
         when(queryRunStore.create("ws_abc123", "session_abc123", "질문")).thenReturn(pending);
-        QueryService.QueryMessageContext messageContext = messageContext();
-        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
-        QueryResponse result = new QueryResponse(null, null, null, null, null, null);
-        when(queryService.query("ws_abc123", "session_abc123", "질문", "query_abc123",
-                "http://backend:8080/api/query/runs/query_abc123/events/callback", messageContext))
-                .thenReturn(result);
+        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123"))
+                .thenReturn(new QueryService.QueryMessageContext(
+                        "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt()));
 
-        QueryRun returned = queryRunService.start("ws_abc123", "session_abc123", "질문");
+        QueryRun returned = service.start("ws_abc123", "user_abc123", "session_abc123", "질문");
 
         assertThat(returned).isEqualTo(pending);
-        verify(queryRunStore).markRunning("query_abc123");
-        verify(queryRunStore).markCompleted("query_abc123", result);
-        verify(queryEventBroker).complete("query_abc123");
-    }
-
-    @Test
-    void start_pipelineFails_marksRunFailedAndBroadcastsFailure() {
-        QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("ws_abc123", "session_abc123", "질문")).thenReturn(pending);
-        QueryService.QueryMessageContext messageContext = messageContext();
-        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
-        PipelineQueryException error = new PipelineQueryException(
-                "PIPELINE_UNAVAILABLE", "쿼리 파이프라인을 사용할 수 없습니다.", 503, null);
-        when(queryService.query(eq("ws_abc123"), eq("session_abc123"), eq("질문"), eq("query_abc123"),
-                eq("http://backend:8080/api/query/runs/query_abc123/events/callback"), eq(messageContext)))
-                .thenThrow(error);
-
-        queryRunService.start("ws_abc123", "session_abc123", "질문");
-
-        verify(queryRunStore).markRunning("query_abc123");
-        verify(queryRunStore).markFailed("query_abc123", "쿼리 파이프라인을 사용할 수 없습니다.");
-        verify(queryEventBroker).fail("query_abc123", "쿼리 파이프라인을 사용할 수 없습니다.");
-    }
-
-    @Test
-    void start_unexpectedFailure_marksRunFailedAndBroadcastsGeneralMessage() {
-        QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123", "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("ws_abc123", "session_abc123", "질문")).thenReturn(pending);
-        QueryService.QueryMessageContext messageContext = messageContext();
-        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123")).thenReturn(messageContext);
-        when(queryService.query(eq("ws_abc123"), eq("session_abc123"), eq("질문"), eq("query_abc123"),
-                eq("http://backend:8080/api/query/runs/query_abc123/events/callback"), eq(messageContext)))
-                .thenThrow(new IllegalStateException("DB 연결 종료"));
-
-        queryRunService.start("ws_abc123", "session_abc123", "질문");
-
-        verify(queryRunStore).markRunning("query_abc123");
-        verify(queryRunStore).markFailed("query_abc123", "질의 처리 중 오류가 발생했습니다.");
-        verify(queryEventBroker).fail("query_abc123", "질의 처리 중 오류가 발생했습니다.");
+        verify(outboxWriter).enqueue(org.mockito.ArgumentMatchers.eq("query_abc123"),
+                org.mockito.ArgumentMatchers.eq("ai.query.command"),
+                org.mockito.ArgumentMatchers.eq("session_abc123"), any());
     }
 
     @Test
@@ -93,14 +53,9 @@ class QueryRunServiceTest {
         when(queryRunStore.failStuck(java.time.Duration.ofMinutes(5), "질의 처리 시간이 초과되었습니다."))
                 .thenReturn(java.util.List.of("query_old1", "query_old2"));
 
-        queryRunService.failStuckRuns();
+        service.failStuckRuns();
 
         verify(queryEventBroker).fail("query_old1", "질의 처리 시간이 초과되었습니다.");
         verify(queryEventBroker).fail("query_old2", "질의 처리 시간이 초과되었습니다.");
-    }
-
-    private QueryService.QueryMessageContext messageContext() {
-        return new QueryService.QueryMessageContext(
-                "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", Instant.parse("2026-06-20T10:00:00Z"));
     }
 }

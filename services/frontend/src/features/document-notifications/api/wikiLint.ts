@@ -28,9 +28,26 @@ export async function requestWikiLint(dryRun: boolean): Promise<{ changedPageCou
       body: JSON.stringify({ dry_run: dryRun })
     }
   );
-  const body = await parseJsonOrThrow<{ changed_pages?: unknown[] }>(
+  const queued = await parseJsonOrThrow<{ run_id: string }>(
     response,
     "위키 다듬기 요청에 실패했습니다."
   );
-  return { changedPageCount: body.changed_pages?.length ?? 0 };
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const polled = await apiFetch(
+      `/api/workspaces/${getWorkspaceId()}/wiki/maintenance/runs/${encodeURIComponent(queued.run_id)}`,
+      { cache: "no-store" }
+    );
+    if (polled.status === 404) continue;
+    const run = await parseJsonOrThrow<{
+      status: string;
+      error?: string;
+      manifest?: { task_result?: { changed_pages?: unknown[] } };
+    }>(polled, "위키 다듬기 상태를 불러오지 못했습니다.");
+    if (run.status === "succeeded") {
+      return { changedPageCount: run.manifest?.task_result?.changed_pages?.length ?? 0 };
+    }
+    if (run.status === "failed") throw new Error(run.error || "위키 다듬기에 실패했습니다.");
+  }
+  throw new Error("위키 다듬기 처리 시간이 초과되었습니다.");
 }

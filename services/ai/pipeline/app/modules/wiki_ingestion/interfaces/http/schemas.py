@@ -22,7 +22,6 @@ class _PipelineRunBase(BaseModel):
 
     document_id: str
     operation_id: str | None = None
-    result_callback_url: str | None = None
     input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
@@ -80,15 +79,8 @@ class _PipelineRunBase(BaseModel):
         default=None,
         description="기존 backend 요청 호환 필드이며 Wiki 저장 범위에는 사용하지 않습니다.",
     )
-
-    @model_validator(mode="after")
-    def validate_operation_result_contract(self) -> Self:
-        if bool(self.operation_id) != bool(self.result_callback_url):
-            raise ValueError(
-                "operation_id and result_callback_url must be provided together"
-            )
-        return self
-
+    source_revision: int | None = None
+    source_content_hash: str | None = None
 
 class PipelineRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
@@ -136,14 +128,11 @@ class SourceSnapshotRestoreIn(BaseModel):
 class _OperationRestoreIn(BaseModel):
     operation_id: str
     workspace_id: str
-    result_callback_url: str
     rebuild_pages: list[RebuildPageIn]
     deleted_pages: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_operation_restore(self) -> Self:
-        if not self.result_callback_url.strip():
-            raise ValueError("result_callback_url must not be blank")
         rebuild_page_ids = {page.page_id for page in self.rebuild_pages}
         if rebuild_page_ids.intersection(self.deleted_pages):
             raise ValueError("deleted_pages must not include rebuild_pages")
@@ -221,7 +210,6 @@ class IngestOperationRestoreIn(_OperationRestoreIn):
             restore_to_operation_id=self.restore_to_operation_id,
             cancel_operation_ids=tuple(self.cancel_operation_ids),
             workspace_id=self.workspace_id,
-            result_callback_url=self.result_callback_url,
             source_page=SourceSnapshotRestoreCommand(
                 page_id=self.source_page.page_id,
             ),
@@ -250,7 +238,6 @@ class LintOperationRestoreIn(_OperationRestoreIn):
             operation_id=self.operation_id,
             target_operation_id=self.target_operation_id,
             workspace_id=self.workspace_id,
-            result_callback_url=self.result_callback_url,
             rebuild_pages=self.rebuild_commands(),
             deleted_pages=tuple(self.deleted_pages),
         )

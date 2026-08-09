@@ -6,21 +6,13 @@ from app.modules.wiki_ingestion.application.models import (
     IngestOperationRestoreCommand,
     LintOperationRestoreCommand,
 )
-from app.modules.wiki_ingestion.application.ports import (
-    PipelineResultNotifierPort,
-    WikiPageRestorePort,
-)
+from app.modules.wiki_ingestion.application.ports import WikiPageRestorePort
 from app.modules.wiki_ingestion.domain.operation_recovery import PageRebuildError
 
 
 class RestoreWikiPagesUseCase:
-    def __init__(
-        self,
-        page_restore: WikiPageRestorePort,
-        result_notifier: PipelineResultNotifierPort | None = None,
-    ) -> None:
+    def __init__(self, page_restore: WikiPageRestorePort) -> None:
         self._page_restore = page_restore
-        self._result_notifier = result_notifier
 
     def execute_ingest(
         self,
@@ -66,7 +58,6 @@ class RestoreWikiPagesUseCase:
                 command.workspace_id,
                 deleted_pages,
             )
-        self._notify(command.result_callback_url, result)
         return result
 
     def execute_lint(
@@ -124,7 +115,6 @@ class RestoreWikiPagesUseCase:
                 command.workspace_id,
                 list(command.deleted_pages),
             )
-        self._notify(command.result_callback_url, result)
         return result
 
     def _rebuild_pages(
@@ -174,7 +164,3 @@ class RestoreWikiPagesUseCase:
             "failed_pages": failed_pages,
             **values,
         }
-
-    def _notify(self, callback_url: str | None, result: dict[str, Any]) -> None:
-        if callback_url and self._result_notifier is not None:
-            self._result_notifier.notify(callback_url, result)

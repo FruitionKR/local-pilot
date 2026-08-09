@@ -1,3 +1,37 @@
+x-ai-task-worker: &ai-task-worker
+  build:
+    context: ../services/ai/pipeline
+  restart: unless-stopped
+  command: ["python", "-m", "app.workers.task_worker"]
+  environment: &ai-task-environment
+    DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
+    AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
+    DOCUMENT_INTERNAL_BASE_URL: ${DOCUMENT_INTERNAL_BASE_URL:-http://host.docker.internal:8080}
+    ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
+    KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+    AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+    LLM_BASE_URL: ${LLM_BASE_URL:-}
+    LLM_MODEL: ${LLM_MODEL:-}
+    AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+    INTERNAL_CALLBACK_TOKEN: ${INTERNAL_CALLBACK_TOKEN:-local-internal-callback}
+    S3_ENDPOINT: http://minio:9000
+    S3_BUCKET: ${S3_BUCKET:-fruition-storage}
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:-fruition}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:-fruition_dev_secret}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    postgresql:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   pipeline-api:
     build:
@@ -58,6 +92,9 @@ services:
       ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       INGEST_COMMAND_TOPIC: ${INGEST_COMMAND_TOPIC:-ai.ingest.command}
+      AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
@@ -80,6 +117,32 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  query-task-worker:
+    <<: *ai-task-worker
+    container_name: fruition-query-task-worker-dev
+    environment:
+      <<: *ai-task-environment
+      AI_COMMAND_TOPIC: ${QUERY_COMMAND_TOPIC:-ai.query.command}
+      AI_COMMAND_CONSUMER_GROUP: query-task-worker
+
+  agent-task-worker:
+    <<: *ai-task-worker
+    container_name: fruition-agent-task-worker-dev
+    environment:
+      <<: *ai-task-environment
+      AI_COMMAND_TOPIC: ${AGENT_COMMAND_TOPIC:-ai.agent.command}
+      AI_COMMAND_CONSUMER_GROUP: agent-task-worker
+
+  maintenance-task-worker:
+    <<: *ai-task-worker
+    container_name: fruition-maintenance-task-worker-dev
+    environment:
+      <<: *ai-task-environment
+      AI_COMMAND_TOPIC: ${MAINTENANCE_COMMAND_TOPIC:-ai.maintenance.command}
+      AI_COMMAND_CONSUMER_GROUP: maintenance-task-worker
 
   edit-event-consumer:
     build:

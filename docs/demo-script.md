@@ -89,12 +89,13 @@ docker compose -f infra/docker-compose.converter.yml up -d --build
 curl http://localhost:8010/health
 ```
 
-pipeline-api(:8000)와 워커(ingest-worker, edit-event-consumer). 백엔드 기동 후 실행(스키마 순서 보장).
+pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-event-consumer). 백엔드 기동 후 실행(스키마 순서 보장).
 
 ```sh
 docker compose --env-file infra/.env \
   -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
-  up -d --build pipeline-api ingest-worker edit-event-consumer
+  up -d --build pipeline-api ingest-worker query-task-worker agent-task-worker \
+  maintenance-task-worker edit-event-consumer
 curl http://localhost:8000/health
 ```
 
@@ -180,7 +181,9 @@ npm run dev
 2. 워크스페이스 — 워크스페이스 생성 후 진입.
 3. 문서 업로드 — PDF 업로드 → converter가 Markdown 변환 → pipeline 워커가 처리. 상태가 `processing`에서 완료로 바뀌는지 확인. 멈춰 있으면 `:8000/health`와 `LLM_*` 키 확인.
 4. 문서 편집 — 문서를 열어 내용 수정. 편집 이벤트가 Kafka(`document.edit.event`)로 흘러 파생 상태가 갱신됨.
-5. AI 질의 — 문서/워크스페이스 대상 질의 실행, 업로드 문서 기반 응답 확인.
+5. AI 질의 — 비동기 Query run/SSE가 완료되고 업로드 문서 기반 응답·원문 링크가 저장되는지 확인.
+6. Agent/Lint/Restore — 요청이 즉시 202를 반환하고 각 run 완료 후에만 결과가 반영되는지 확인.
+7. 병렬 ingest — 같은 workspace의 서로 다른 문서를 동시에 올려 병렬 처리되고 동일 slug Concept가 하나만 남는지 확인.
 
 ## 4. 종료·초기화
 

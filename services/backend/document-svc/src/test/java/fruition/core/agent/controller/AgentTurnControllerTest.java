@@ -43,7 +43,9 @@ class AgentTurnControllerTest {
                 4,
                 "agent_request_1",
                 "op_apply_1",
-                objectMapper.readTree("{\"action\":\"markdown_edit\"}")
+                "queued",
+                null,
+                null
         );
         when(agentTurnService.turn(eq(WORKSPACE_ID), eq(USER_ID), any(AgentTurnRequest.class)))
                 .thenReturn(response);
@@ -52,10 +54,10 @@ class AgentTurnControllerTest {
                         .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.documentId").value("doc_1"))
                 .andExpect(jsonPath("$.baseVersion").value(4))
-                .andExpect(jsonPath("$.result.action").value("markdown_edit"));
+                .andExpect(jsonPath("$.status").value("queued"));
     }
 
     @Test

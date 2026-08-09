@@ -38,7 +38,8 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     monkeypatch,
 ) -> None:
     calls: list[object] = []
-    conn = object()
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
     manifest = {
         "normalized": {
             "document": {"title": "문서"},
@@ -149,7 +150,8 @@ def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> Non
         "user_id": "user-1",
         "workspace_id": "workspace-1",
     }
-    conn = object()
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
     page_links: list[tuple[object, ...]] = []
     _stub_followup_writes(monkeypatch)
     monkeypatch.setattr(
@@ -303,7 +305,9 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
         ),
     )
 
-    persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
+    persistence.persist_wiki_outputs(conn, "doc-1", manifest)
 
     assert captured["operation_id"] == "op-1"
     assert captured["workspace_id"] == "workspace-1"

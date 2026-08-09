@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param rebuilding   llmPipeline 결과를 기다리는 중인지. false면 통지가 실패해 보류된 것이다
  */
 public record RestoreExecuteResponse(
+        @JsonProperty("run_id") String runId,
         @JsonProperty("operation_id") String operationId,
         @JsonProperty("restored_from") String restoredFrom,
         @JsonProperty("delete_count") int deleteCount,
@@ -20,7 +21,7 @@ public record RestoreExecuteResponse(
 ) {
     /** 문서 편집 되돌리기. 재작성이 없어 이 시점에 이미 끝나 있다. */
     public static RestoreExecuteResponse forDocument(String operationId, String restoredFrom) {
-        return new RestoreExecuteResponse(operationId, restoredFrom, 0, 1, 0, false, "succeeded");
+        return new RestoreExecuteResponse(null, operationId, restoredFrom, 0, 1, 0, false, "succeeded");
     }
 
     public static RestoreExecuteResponse from(String operationId, String restoredFrom,
@@ -28,8 +29,14 @@ public record RestoreExecuteResponse(
         // 재작성 대상이 없어도 llmPipeline이 링크·임베딩을 정리하고 결과를 보내온다.
         // 확정은 그 결과를 받을 때 하므로 여기서는 완료로 답하지 않는다.
         String status = notified ? "rebuilding" : "notify_pending";
-        return new RestoreExecuteResponse(operationId, restoredFrom,
+        return new RestoreExecuteResponse(null, operationId, restoredFrom,
                 plan.deleteCount(), plan.restoreCount(), plan.rebuildCount(),
                 notified, status);
+    }
+
+    public static RestoreExecuteResponse queued(String runId, String operationId,
+                                                String restoredFrom, RestorePlan plan) {
+        return new RestoreExecuteResponse(runId, operationId, restoredFrom,
+                plan.deleteCount(), plan.restoreCount(), plan.rebuildCount(), true, "queued");
     }
 }

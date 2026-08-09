@@ -65,6 +65,12 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     stored_manifest as _stored_manifest,
 )
 from app.modules.wiki_ingestion.infrastructure.wiki_lint_report import render_lint_log_markdown
+from app.modules.wiki_ingestion.infrastructure.workspace_concept_lock import (
+    concept_write_lock,
+    get_concept_index,
+    invalidate_concept_index,
+    put_concept_index,
+)
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:
@@ -584,23 +590,33 @@ def create_pipeline_run(
 def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
     embedded_page_ids: list[str] = []
     with connect() as conn:
-        row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
-        document_id = row["document_id"] if row else None
-        if document_id:
-            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
-            manifest["source_contribution"] = _source_contribution_payload(
-                manifest
+        row = conn.execute(
+            "SELECT document_id, workspace_id FROM pipeline_runs WHERE id = %s",
+            (run_id,),
+        ).fetchone()
+    document_id = row["document_id"] if row else None
+    workspace_id = row["workspace_id"] if row else None
+    lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
+    with lock:
+        with connect() as conn:
+            if document_id:
+                embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+                manifest["source_contribution"] = _source_contribution_payload(manifest)
+                manifest = _stored_manifest(manifest)
+            conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'succeeded', manifest = %s,
+                    updated_at = now(), finished_at = now()
+                WHERE id = %s
+                """,
+                (Json(manifest), run_id),
             )
-            manifest = _stored_manifest(manifest)
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = 'succeeded', manifest = %s,
-                updated_at = now(), finished_at = now()
-            WHERE id = %s
-            """,
-            (Json(manifest), run_id),
-        )
+        if document_id:
+            try:
+                invalidate_concept_index(str(workspace_id))
+            except Exception:
+                logger.warning("concept index cache invalidation failed", exc_info=True)
     # core 트랜잭션 커밋 후 ai_db 파생 추적을 갱신한다.
     # 파생 추적은 best-effort — 원자성 비대상. 실패해도 ingest 결과에 영향 없다.
     if document_id:
@@ -643,58 +659,6 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
         )
 
 
-def mark_pipeline_notification_pending(
-    run_id: str,
-    error: str,
-    callback_url: str,
-    payload: dict[str, Any],
-    status_code: int | None = None,
-) -> None:
-    with connect() as conn:
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = 'notify_pending', error = %s,
-                manifest = COALESCE(manifest, '{}'::jsonb)
-                    || jsonb_build_object('pending_notification', %s::jsonb),
-                updated_at = now(), finished_at = now()
-            WHERE id = %s
-            """,
-            (
-                truncate_error(error),
-                Json(
-                    {
-                        "callback_url": callback_url,
-                        "payload": payload,
-                        "status_code": status_code,
-                    }
-                ),
-                run_id,
-            ),
-        )
-
-
-def complete_pipeline_notification(run_id: str, status: str) -> None:
-    run_status = "failed" if status == "failed" else "succeeded"
-    with connect() as conn:
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = %s,
-                error = CASE
-                    WHEN %s = 'failed'
-                    THEN manifest #>> '{pending_notification,payload,summary}'
-                    ELSE NULL
-                END,
-                manifest = COALESCE(manifest, '{}'::jsonb)
-                    - 'pending_notification',
-                updated_at = now()
-            WHERE id = %s
-            """,
-            (run_status, run_status, run_id),
-        )
-
-
 def touch_pipeline_run(run_id: str) -> bool:
     with connect() as conn:
         row = conn.execute(
@@ -726,6 +690,12 @@ def get_pipeline_run(run_id: str) -> dict | None:
 
 
 def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "local-workspace") -> list[dict[str, Any]]:
+    try:
+        cached = get_concept_index(workspace_id)
+        if cached is not None:
+            return cached
+    except Exception:
+        logger.warning("concept index cache read failed", exc_info=True)
     with connect() as conn:
         rows = conn.execute(
             """
@@ -743,6 +713,10 @@ def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "
     for row in rows:
         markdown = _read_optional_text_object(row["markdown_uri"])
         concepts.append(_concept_index_from_markdown(row["slug"], row["title"], row["markdown_uri"], markdown))
+    try:
+        put_concept_index(workspace_id, concepts)
+    except Exception:
+        logger.warning("concept index cache write failed", exc_info=True)
     return concepts
 
 

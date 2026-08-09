@@ -68,7 +68,7 @@ class RestoreApplierTest {
         RestorePlan plan = new RestorePlan(
                 List.of(PageRestorePlan.restore("wp_S_A", 1L, "op_a1", 1)));
         WikiPageContribution kept = contribution("wp_S_A", "op_a1", 1, true);
-        Map<String, List<WikiPageContribution>> expected = Map.of("wp_S_A", List.of(kept));
+        Map<String, List<String>> expected = Map.of("wp_S_A", List.of("op_a1:1:1"));
 
         when(contributionRepository.findByPageIds(any())).thenReturn(List.of(kept));
         when(versionRepository.findById(new WikiPageVersionId("wp_S_A", 1L)))
@@ -89,7 +89,7 @@ class RestoreApplierTest {
                 List.of(PageRestorePlan.restore("wp_S_A", 1L, "op_a1", 1)));
         // 계획을 세울 때 본 상태: 기여 1건.
         WikiPageContribution planned = contribution("wp_S_A", "op_a1", 1, true);
-        Map<String, List<WikiPageContribution>> expected = Map.of("wp_S_A", List.of(planned));
+        Map<String, List<String>> expected = Map.of("wp_S_A", List.of("op_a1:1:1"));
 
         // 잠금을 잡고 다시 읽었더니 그사이 동시 ingest가 새 기여를 하나 더 얹었다.
         WikiPageContribution concurrent = contribution("wp_S_A", "op_new", 2, true);
@@ -110,7 +110,7 @@ class RestoreApplierTest {
         RestorePlan plan = new RestorePlan(
                 List.of(PageRestorePlan.restore("wp_S_A", 1L, "op_a1", 1)));
         WikiPageContribution plannedActive = contribution("wp_S_A", "op_a1", 1, true);
-        Map<String, List<WikiPageContribution>> expected = Map.of("wp_S_A", List.of(plannedActive));
+        Map<String, List<String>> expected = Map.of("wp_S_A", List.of("op_a1:1:1"));
 
         // 다른 복구가 그사이 같은 기여를 이미 꺼버렸다.
         WikiPageContribution nowInactive = contribution("wp_S_A", "op_a1", 1, false);

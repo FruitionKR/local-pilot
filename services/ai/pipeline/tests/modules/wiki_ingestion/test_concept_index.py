@@ -169,15 +169,16 @@ def test_resolve_or_create_wiki_page_id_reuses_existing_uuid() -> None:
     class FakeConn:
         def __init__(self) -> None:
             self.rows = []
+            self.page_id = None
 
         def execute(self, _query: str, params: tuple[str, str, str, str]):
             self.rows.append(params)
             return self
 
         def fetchone(self):
-            if len(self.rows) == 1:
-                return None
-            return {"id": "wiki_page_existing"}
+            if self.page_id is None:
+                self.page_id = self.rows[0][0]
+            return {"id": self.page_id}
 
     conn = FakeConn()
 
@@ -186,7 +187,7 @@ def test_resolve_or_create_wiki_page_id_reuses_existing_uuid() -> None:
 
     assert first_id.startswith("wiki_page_")
     assert "back-emf" not in first_id
-    assert second_id == "wiki_page_existing"
+    assert second_id == first_id
 
 
 def test_parse_active_cluster_lint_reads_promotion_relations_and_refs() -> None:

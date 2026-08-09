@@ -49,7 +49,6 @@ class IngestOperationRestoreCommand:
     workspace_id: str
     source_page: SourceSnapshotRestoreCommand
     rebuild_pages: tuple[RebuildPageCommand, ...]
-    result_callback_url: str | None = None
     deleted_pages: tuple[str, ...] = ()
 
 
@@ -59,7 +58,6 @@ class LintOperationRestoreCommand:
     target_operation_id: str
     workspace_id: str
     rebuild_pages: tuple[RebuildPageCommand, ...]
-    result_callback_url: str | None = None
     deleted_pages: tuple[str, ...] = ()
 
 
@@ -83,8 +81,9 @@ class PipelineRunCommand:
     user_id: str
     workspace_id: str
     operation_id: str | None = None
-    result_callback_url: str | None = None
     source_document_id: str | None = None
+    source_revision: int | None = None
+    source_content_hash: str | None = None
     selection_mode: str | None = None
     reingest: bool = False
     input_markdown: str | None = None

@@ -37,25 +37,25 @@ class WikiMaintenanceControllerTest {
     @Test
     void lint_authenticatedReturnsPipelineJson() throws Exception {
         when(wikiMaintenanceService.lint(eq(WORKSPACE_ID), eq(USER_ID), any()))
-                .thenReturn(objectMapper.readTree("{\"cluster_count\":2,\"orphan_refs\":[]}"));
+                .thenReturn(objectMapper.readTree("{\"run_id\":\"run_1\",\"status\":\"queued\"}"));
 
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
                         .header("Authorization", bearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new WikiLintRequest(false, true))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cluster_count").value(2));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("queued"));
     }
 
     @Test
     void lint_authenticatedWithoutBodyReturnsPipelineJson() throws Exception {
         when(wikiMaintenanceService.lint(eq(WORKSPACE_ID), eq(USER_ID), any()))
-                .thenReturn(objectMapper.readTree("{\"cluster_count\":0}"));
+                .thenReturn(objectMapper.readTree("{\"run_id\":\"run_1\",\"status\":\"queued\"}"));
 
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
                         .header("Authorization", bearer()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cluster_count").value(0));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("queued"));
     }
 
     @Test

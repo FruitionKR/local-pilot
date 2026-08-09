@@ -144,20 +144,20 @@ def resolve_or_create_wiki_page_id(
     page_type: str,
     slug: str,
 ) -> str:
+    candidate = f"wiki_page_{uuid.uuid4()}"
     row = conn.execute(
         """
-        SELECT id
-        FROM wiki_pages
-        WHERE user_id = %s
-          AND workspace_id = %s
-          AND page_type = %s
-          AND slug = %s
+        INSERT INTO wiki_pages (
+            id, page_type, title, slug, summary, markdown_uri,
+            user_id, workspace_id, status, created_at, updated_at
+        ) VALUES (%s, %s, %s, %s, NULL, NULL, %s, %s, 'draft', now(), now())
+        ON CONFLICT (user_id, workspace_id, page_type, slug) DO UPDATE
+            SET updated_at = wiki_pages.updated_at
+        RETURNING id
         """,
-        (user_id, workspace_id, page_type, slug),
+        (candidate, page_type, slug, slug, user_id, workspace_id),
     ).fetchone()
-    if row:
-        return row["id"]
-    return f"wiki_page_{uuid.uuid4()}"
+    return str(row["id"])
 
 
 def upsert_wiki_page(

@@ -150,7 +150,8 @@ public class RestoreRebuildApplier {
                     "복구 지시서가 없는 작업입니다: operationId=" + operation.getOperationId());
         }
         try {
-            return objectMapper.readValue(operation.getRestoreManifest(), RestorePlan.class);
+            var root = objectMapper.readTree(operation.getRestoreManifest());
+            return objectMapper.treeToValue(root.has("plan") ? root.get("plan") : root, RestorePlan.class);
         } catch (Exception e) {
             throw new IllegalStateException("복구 지시서를 읽지 못했습니다: operationId="
                     + operation.getOperationId(), e);

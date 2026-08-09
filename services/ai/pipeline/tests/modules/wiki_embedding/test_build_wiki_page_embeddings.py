@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime
 
 from app.modules.wiki_embedding.application.build_wiki_page_embeddings import BuildWikiPageEmbeddingsUseCase, embedding_result
 from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
@@ -8,8 +9,8 @@ class FakeRepository:
     def __init__(self, targets: list[WikiPageEmbeddingTarget], hashes: dict[str, str] | None = None) -> None:
         self.targets = targets
         self.hashes = hashes or {}
-        self.upserts: list[tuple[str, str, str, list[float]]] = []
-        self.failures: list[tuple[str, str, str, str]] = []
+        self.upserts: list[tuple[str, str, str, list[float], datetime]] = []
+        self.failures: list[tuple[str, str, str, str, datetime]] = []
 
     def list_active_pages_by_ids(self, page_ids: list[str]) -> list[WikiPageEmbeddingTarget]:
         page_id_set = set(page_ids)
@@ -24,11 +25,13 @@ class FakeRepository:
         embedding_model: str,
         representation_hash: str,
         embedding_vector: list[float],
+        source_updated_at: datetime,
     ) -> None:
-        self.upserts.append((page_id, embedding_model, representation_hash, embedding_vector))
+        self.upserts.append((page_id, embedding_model, representation_hash, embedding_vector, source_updated_at))
 
-    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str, error: str) -> None:
-        self.failures.append((page_id, embedding_model, representation_hash, error))
+    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str,
+                    error: str, source_updated_at: datetime) -> None:
+        self.failures.append((page_id, embedding_model, representation_hash, error, source_updated_at))
 
 
 class FakeEmbeddingModel:
@@ -49,6 +52,8 @@ class FakeMarkdownReader:
 
 
 class BuildWikiPageEmbeddingsUseCaseTest(unittest.TestCase):
+    UPDATED_AT = datetime(2026, 8, 10, tzinfo=UTC)
+
     def test_embedding_result_uses_stable_response_shape(self) -> None:
         self.assertEqual(
             embedding_result(target_count=2, embedded_count=1, skipped_count=1, failed_count=0),
@@ -57,8 +62,8 @@ class BuildWikiPageEmbeddingsUseCaseTest(unittest.TestCase):
 
     def test_embeds_pages_and_skips_unchanged_hashes(self) -> None:
         targets = [
-            WikiPageEmbeddingTarget("page:one", "One", "summary", "s3://test/one.md"),
-            WikiPageEmbeddingTarget("page:two", "Two", "summary", "s3://test/two.md"),
+            WikiPageEmbeddingTarget("page:one", "One", "summary", "s3://test/one.md", self.UPDATED_AT),
+            WikiPageEmbeddingTarget("page:two", "Two", "summary", "s3://test/two.md", self.UPDATED_AT),
         ]
         reader = FakeMarkdownReader({"s3://test/one.md": "body one", "s3://test/two.md": "body two"})
         repository = FakeRepository(targets)
@@ -76,7 +81,9 @@ class BuildWikiPageEmbeddingsUseCaseTest(unittest.TestCase):
         self.assertEqual(repository.upserts[0][0], "page:two")
 
     def test_marks_page_failed_when_markdown_cannot_be_read(self) -> None:
-        targets = [WikiPageEmbeddingTarget("page:missing", "Missing", "summary", "s3://test/missing.md")]
+        targets = [WikiPageEmbeddingTarget(
+            "page:missing", "Missing", "summary", "s3://test/missing.md", self.UPDATED_AT
+        )]
         repository = FakeRepository(targets)
         use_case = BuildWikiPageEmbeddingsUseCase(repository, FakeEmbeddingModel(), FakeMarkdownReader({}))
 

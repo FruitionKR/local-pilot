@@ -37,17 +37,6 @@ class PipelineRunRepositoryPort(Protocol):
 
     def fail(self, run_id: str, error: str) -> None: ...
 
-    def mark_notification_pending(
-        self,
-        run_id: str,
-        error: str,
-        callback_url: str,
-        payload: dict[str, Any],
-        status_code: int | None = None,
-    ) -> None: ...
-
-    def complete_notification(self, run_id: str, status: str) -> None: ...
-
     def touch(self, run_id: str) -> bool: ...
 
     def get_document(self, document_id: str) -> dict[str, Any] | None: ...
@@ -75,14 +64,6 @@ class PipelineRunRepositoryPort(Protocol):
 
 class WikiEmbeddingJobPort(Protocol):
     def start(self, run_id: str, page_ids: list[str]) -> None: ...
-
-
-class PipelineResultNotifierPort(Protocol):
-    def notify(
-        self,
-        callback_url: str,
-        payload: dict[str, Any],
-    ) -> None: ...
 
 
 class WikiPageRestorePort(Protocol):

@@ -98,7 +98,7 @@ public class QueryController {
         log.info("[질의 요청 수신] mode=async workspaceId={} userId={} sessionId={} questionLength={}",
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
-        QueryRun run = queryRunService.start(workspaceId, sessionId, request.question());
+        QueryRun run = queryRunService.start(workspaceId, userId, sessionId, request.question());
         log.info("[질의 run 응답] requestId={} status={}", run.requestId(), run.status());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(QueryRunCreateResponse.from(run));
     }

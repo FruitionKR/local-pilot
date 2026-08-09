@@ -17,8 +17,8 @@ services/
 │  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki API·query, core Flyway 소유, stateless
 │  └─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)
 └─ ai/
-   ├─ pipeline/    FastAPI, 내부 전용  동기 query·agent·skill·lint + GET /documents (LLM·임베딩)
-   │                └ 같은 이미지로 ingest-worker(ai.ingest.command 소비)·
+   ├─ pipeline/    FastAPI, 내부 전용  동기 query·skill·Wiki 조회 + GET /documents (LLM·임베딩)
+   │                └ 같은 이미지로 ingest/query/agent/maintenance Kafka worker와
    │                  edit-event-consumer(document.edit.event 소비, ai_db) 실행
    └─ converter/   FastAPI, 내부 전용  PDF→Markdown 변환 (document-svc 변환 큐 경유)
 
@@ -33,10 +33,10 @@ services/
 |---|---|---|
 | document → access | `GET /internal/authz/workspaces/{wid}/users/{uid}`, `GET /internal/users/{uid}` (X-Internal-Token) | 권한·표시명 조회 (캐시 miss 시) |
 | access → document | `POST /internal/workspaces/{wid}/initial-note` (X-Internal-Token, best-effort, 커밋 후 호출) | 새 워크스페이스 초기 노트 |
-| document → ai-svc | Kafka `ai.ingest.command` (key=workspace_id) | 비동기 ingest |
-| document → ai-svc | HTTP + X-Internal-Token | query·lint, Wiki 현재 상태 조회, pipeline run 폴링 |
-| document → ai-svc | HTTP + `X-Internal-Token` + `X-Agent-Service-Token` + workspace/user context | Agent turn |
+| document → ai-svc | Kafka `ai.ingest.command`(key=document_id), `ai.query.command`, `ai.agent.command`, `ai.maintenance.command` | 비동기 ingest·Query·Agent·Lint·Restore |
+| document → ai-svc | HTTP + X-Internal-Token | 동기 Query, Wiki 현재 상태 조회, pipeline run 폴링 |
 | document → converter | HTTP (내부 전용, 큐 worker 경유) | PDF→Markdown 변환 (read timeout 900s) |
+| ai-svc → document | Kafka `ai.task.event` | 작업 결과 전달 |
 | ai-svc → document | 내부 HTTP + X-Internal-Token | ingest 원본 metadata·core 기여 이력 조회 |
 | ai-svc → access | `GET /internal/authz/workspaces/{wid}/users/{uid}` + X-Internal-Token | Skill 팀 범위 멤버·owner 확인 |
 | 사용자 인증 | 각 앱이 JWT(iss·aud, HS256 공유 시크릿) 로컬 검증 | access 호출 없이 검증 |
@@ -65,7 +65,9 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 ## 5. 이벤트 처리
 
-본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. ingest 요청은 Spring이 서비스 진입 시 `run_id`를 만들고 core DB의 문서 `processing` 상태·`pipeline_run_id`·operation·`ai_command_outbox`를 한 트랜잭션에 저장한다. AI 파생물 삭제도 같은 outbox를 사용하며 publisher가 Kafka `ai.ingest.command`(key=workspace_id)를 발행한다. 둘 다 at-least-once이며 AI worker는 종료된 `run_id`의 재전달을 실행하지 않는다. document-svc는 `GET /pipeline/runs/{run_id}`를 폴링해 문서 최종 상태를 반영하고 `notify_pending` callback을 재시도한다. ingest topic은 12 partitions, KEDA lag 기반 스케일(min1/max4)을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
+본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다.
+
+ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서를 병렬 처리한다. Concept 확정 구간만 workspace Redis short lock으로 직렬화하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 최종 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
 
 ## 6. 배포
 
@@ -92,7 +94,6 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 | 항목 | 상태 · 트리거 |
 |---|---|
-| Agent/Skill/checkpoint core_db 동거 | 통합 비동기 실행 전환 PR에서 ai_db로 이전 |
+| Agent/Skill/checkpoint core_db 동거 | 별도 DB 이전이 필요해질 때 maintenance cutover로 처리 |
 | JWT HS256 공유 시크릿 | 외부 공개·시크릿 유출 리스크 대두 시 RS256+JWKS 전환 |
-| Query·Agent·Lint·Restore 동기 AI 호출 | 통합 비동기화 PR에서 Kafka command/result event로 전환 |
 | pipeline-runs PVC | S3 아티팩트 이전 완료 시 ingest-worker Spot 노드 활성화 가능 |

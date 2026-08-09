@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
 
 @Component
 public class DocumentPipelineRunReconciler {
@@ -35,14 +34,7 @@ public class DocumentPipelineRunReconciler {
                     if (!document.getId().equals(run.documentId())) {
                         return;
                     }
-                    if ("notify_pending".equals(run.status())) {
-                        try {
-                            requester.retryResultCallback(run.id());
-                        } catch (HttpClientErrorException.Conflict e) {
-                            documentService.applyPipelineResult(
-                                    document.getId(), run.id(), "failed", run.error());
-                        }
-                    } else if ("succeeded".equals(run.status()) || "failed".equals(run.status())) {
+                    if ("succeeded".equals(run.status()) || "failed".equals(run.status())) {
                         documentService.applyPipelineResult(
                                 document.getId(), run.id(), run.status(), run.error());
                     }

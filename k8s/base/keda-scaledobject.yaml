@@ -18,3 +18,57 @@ spec:
         topic: ai.ingest.command
         lagThreshold: "5"
         offsetResetPolicy: earliest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: query-task-worker
+  namespace: fruition
+spec:
+  scaleTargetRef: {name: query-task-worker}
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-kafka-bootstrap.fruition.svc:9092
+        consumerGroup: query-task-worker
+        topic: ai.query.command
+        lagThreshold: "5"
+        offsetResetPolicy: earliest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: agent-task-worker
+  namespace: fruition
+spec:
+  scaleTargetRef: {name: agent-task-worker}
+  minReplicaCount: 1
+  maxReplicaCount: 4
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-kafka-bootstrap.fruition.svc:9092
+        consumerGroup: agent-task-worker
+        topic: ai.agent.command
+        lagThreshold: "5"
+        offsetResetPolicy: earliest
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: maintenance-task-worker
+  namespace: fruition
+spec:
+  scaleTargetRef: {name: maintenance-task-worker}
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka-kafka-bootstrap.fruition.svc:9092
+        consumerGroup: maintenance-task-worker
+        topic: ai.maintenance.command
+        lagThreshold: "2"
+        offsetResetPolicy: earliest

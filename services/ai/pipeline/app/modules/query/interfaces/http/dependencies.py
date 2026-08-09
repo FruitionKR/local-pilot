@@ -9,7 +9,7 @@ from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWi
 from app.modules.query.infrastructure.query_chat_answer_generator import build_query_chat_answer_generator
 from app.modules.query.infrastructure.query_answer_evaluator import build_query_answer_evaluator
 from app.modules.query.infrastructure.query_evaluator_graph import LangGraphQueryEvaluatorGraph
-from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
+from app.modules.query.infrastructure.query_event_publisher import NoOpQueryEventPublisher
 from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 from app.modules.query.infrastructure.web_search import build_web_search
@@ -26,7 +26,7 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
     return AnswerQueryUseCase(
         wiki_repository=PostgresWikiRepository(),
         markdown_reader=MinioWikiMarkdownReader(),
-        event_publisher=build_query_event_publisher(),
+        event_publisher=NoOpQueryEventPublisher(),
         embedding_search=_build_embedding_search(text_search),
         text_search=text_search,
         answer_generator=answer_generator,

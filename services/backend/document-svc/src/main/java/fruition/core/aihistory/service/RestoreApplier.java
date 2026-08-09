@@ -57,7 +57,7 @@ public class RestoreApplier {
 
     @Transactional
     public void apply(OperationLog restore, RestorePlan plan, Set<String> excludedOperationIds,
-                      Map<String, List<WikiPageContribution>> expectedContributions, Instant now) {
+                      Map<String, List<String>> expectedContributionSignatures, Instant now) {
 
         // 여러 복구가 동시에 실행될 때 교착을 피하려고 page_id 순서로 잠근다.
         List<String> pageIds = plan.pages().stream()
@@ -77,7 +77,7 @@ public class RestoreApplier {
         // 잠금을 잡은 뒤에도 계획을 만들 때 본 상태 그대로인지 다시 확인한다. 잠금 전에는 동시에
         // 들어온 ingest가 기여를 바꿔도 알 방법이 없어, 그 상태로 그냥 반영하면 새 기여가 조용히
         // 덮어써진다.
-        verifyContributionsUnchanged(pageIds, expectedContributions);
+        verifyContributionsUnchanged(pageIds, expectedContributionSignatures);
 
         // 제외 대상 기여를 끈다. 행은 지우지 않는다.
         // 지우면 연속 복구에서 이전에 제외한 기여가 다시 살아난다.
@@ -91,7 +91,7 @@ public class RestoreApplier {
             }
         }
 
-        restore.moveTo(OperationStatus.notify_pending);
+        restore.moveTo(OperationStatus.rebuilding);
         operationLogRepository.save(restore);
     }
 
@@ -108,13 +108,13 @@ public class RestoreApplier {
      * 다르면 그사이 다른 작업이 끼어든 것이므로 이 계획을 그대로 반영하면 안 된다.
      */
     private void verifyContributionsUnchanged(List<String> pageIds,
-                                              Map<String, List<WikiPageContribution>> expected) {
+                                              Map<String, List<String>> expected) {
         Map<String, List<WikiPageContribution>> current = new LinkedHashMap<>();
         for (WikiPageContribution contribution : contributionRepository.findByPageIds(pageIds)) {
             current.computeIfAbsent(contribution.getPageId(), key -> new ArrayList<>()).add(contribution);
         }
         for (String pageId : pageIds) {
-            if (!signature(expected.get(pageId)).equals(signature(current.get(pageId)))) {
+            if (!expected.getOrDefault(pageId, List.of()).equals(signature(current.get(pageId)))) {
                 throw new RestorePreviewStaleException();
             }
         }

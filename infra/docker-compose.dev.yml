@@ -119,10 +119,18 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      # partition 수 = ingest worker 병렬 상한. workspace_id key로 워크스페이스별 순서를 보장한다.
+      # partition 수 = ingest worker 병렬 상한. document_id key로 문서별 순서를 보장한다.
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
           --create --if-not-exists --topic ai.ingest.command --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic ai.query.command --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic ai.agent.command --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic ai.maintenance.command --partitions 12 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
+          --create --if-not-exists --topic ai.task.event --partitions 12 --replication-factor 1
         # 문서 편집 outbox 이벤트 (key=document_id, MongoDB outbox publisher가 발행)
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 \
           --create --if-not-exists --topic document.edit.event --partitions 12 --replication-factor 1

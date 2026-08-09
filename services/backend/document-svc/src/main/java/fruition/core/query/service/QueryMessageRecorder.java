@@ -6,7 +6,6 @@ import fruition.core.chat.exception.ChatSessionNotFoundException;
 import fruition.core.chat.repository.ChatMessageRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -24,7 +23,7 @@ public class QueryMessageRecorder {
         this.chatSessionRepository = chatSessionRepository;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void createPendingPair(String sessionId,
                                   String pairId,
                                   String userMessageId,
@@ -41,7 +40,7 @@ public class QueryMessageRecorder {
         chatSessionRepository.save(session);
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void markFailed(String assistantMessageId, String errorMessage) {
         ChatMessage assistantMessage = chatMessageRepository.findById(assistantMessageId)
                 .orElseThrow(() -> new IllegalStateException("처리 중인 assistant 메시지를 찾을 수 없습니다: " + assistantMessageId));

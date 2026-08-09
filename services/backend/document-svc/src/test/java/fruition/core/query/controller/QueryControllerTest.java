@@ -97,7 +97,7 @@ class QueryControllerTest {
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryRun run = QueryRun.pending("query_abc123", WORKSPACE_ID, SESSION_ID, "질문", Instant.now());
-        when(queryRunService.start(WORKSPACE_ID, SESSION_ID, "질문")).thenReturn(run);
+        when(queryRunService.start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문")).thenReturn(run);
 
         mockMvc.perform(post(basePath() + "/query/runs")
                         .header("Authorization", bearerToken())

@@ -51,6 +51,7 @@ class PostgresAgentJobRepository:
                     SELECT pending.id
                     FROM agent_jobs pending
                     WHERE pending.attempt_count < 3
+                      AND pending.job_type IN ('planning', 'execution')
                       AND pending.available_at <= now()
                       AND (
                           pending.status = 'queued'

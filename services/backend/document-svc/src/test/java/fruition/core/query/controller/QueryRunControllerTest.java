@@ -15,20 +15,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,7 +35,6 @@ class QueryRunControllerTest {
 
     private static final String USER_ID = "user_1f9a74af";
     private static final String WORKSPACE_ID = "ws_abc123";
-    private static final String INTERNAL_TOKEN = "test-internal-callback";
 
     @Autowired MockMvc mockMvc;
     @Autowired JwtTokenProvider jwtTokenProvider;
@@ -121,45 +116,4 @@ class QueryRunControllerTest {
         verify(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
     }
 
-    @Test
-    void receiveCallback_unknownRequestId_returns404() throws Exception {
-        when(queryRunStore.find("query_unknown")).thenReturn(Optional.empty());
-
-        mockMvc.perform(post("/api/query/runs/query_unknown/events/callback")
-                        .header("X-Internal-Token", INTERNAL_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"event_type\":\"query.log\",\"stage\":\"query_started\",\"message\":\"시작\"}"))
-                .andExpect(status().isNotFound());
-    }
-
-    @Test
-    void receiveCallback_missingInternalToken_returns401() throws Exception {
-        mockMvc.perform(post("/api/query/runs/query_abc123/events/callback")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"event_type\":\"query.log\",\"stage\":\"query_started\",\"message\":\"시작\"}"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("INVALID_CALLBACK_TOKEN"));
-    }
-
-    @Test
-    void receiveCallback_wrongInternalToken_returns401() throws Exception {
-        mockMvc.perform(post("/api/query/runs/query_abc123/events/callback")
-                        .header("X-Internal-Token", "wrong-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"event_type\":\"query.log\",\"stage\":\"query_started\",\"message\":\"시작\"}"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void receiveCallback_existingRun_publishesToBroker() throws Exception {
-        when(queryRunStore.find("query_abc123")).thenReturn(Optional.of(pendingRun()));
-
-        mockMvc.perform(post("/api/query/runs/query_abc123/events/callback")
-                        .header("X-Internal-Token", INTERNAL_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"event_type\":\"query.log\",\"stage\":\"query_started\",\"message\":\"시작\"}"))
-                .andExpect(status().isOk());
-
-        verify(queryEventBroker).publish(eq("query_abc123"), eq("query_started"), eq("시작"), any());
-    }
 }

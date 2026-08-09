@@ -132,6 +132,17 @@ def test_build_payload_requires_actor_context() -> None:
         ingest_worker._build_payload({"run_id": "run-1", "document_id": "document-1"})
 
 
+def test_terminal_failed_result_keeps_failed_event_status() -> None:
+    command = {"run_id": "run-1", "kind": "document"}
+    result = {"status": "failed", "summary": "pipeline failed"}
+
+    event = ingest_worker._result_event(command, result)
+
+    assert event["event_id"] == "ingest:run-1:failed"
+    assert event["status"] == "failed"
+    assert event["error"] == "pipeline failed"
+
+
 def test_handle_deletes_ai_owned_document_state() -> None:
     command = {
         "kind": "document_deleted",

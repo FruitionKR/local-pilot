@@ -57,11 +57,55 @@ spec:
   entityOperator:
     topicOperator: {}
 ---
-# partition 수 = ingest worker 병렬 상한. workspace_id key로 워크스페이스별 순서 보장.
+# partition 수 = ingest worker 병렬 상한. document_id key로 문서별 순서 보장.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: ai.ingest.command
+  namespace: fruition
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 12
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ai.query.command
+  namespace: fruition
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 12
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ai.agent.command
+  namespace: fruition
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 12
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ai.maintenance.command
+  namespace: fruition
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 12
+  replicas: 1
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: ai.task.event
   namespace: fruition
   labels:
     strimzi.io/cluster: kafka

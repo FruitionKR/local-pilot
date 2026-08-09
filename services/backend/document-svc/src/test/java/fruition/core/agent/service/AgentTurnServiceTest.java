@@ -1,25 +1,28 @@
 package fruition.core.agent.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.agent.dto.AgentTurnRequest;
-import fruition.core.agent.dto.AgentTurnResponse;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
-import fruition.core.agent.repository.PipelineAgentRequester;
+import fruition.core.agent.repository.AgentRunCommandRepository;
+import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.document.domain.DocumentStatus;
-import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.dto.DocumentDetailResponse;
+import fruition.core.document.exception.DocumentVersionConflictException;
+import fruition.core.document.repository.AiCommandOutboxWriter;
+import fruition.core.document.service.DocumentEditLockService;
 import fruition.core.document.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,80 +31,62 @@ import static org.mockito.Mockito.when;
 class AgentTurnServiceTest {
 
     @Mock DocumentService documentService;
-    @Mock fruition.core.document.service.DocumentEditLockService editLockService;
-    @Mock PipelineAgentRequester pipelineAgentRequester;
-    fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore =
-            new fruition.core.aihistory.service.AgentApplyOperationStore();
+    @Mock DocumentEditLockService editLockService;
+    @Mock AgentRunCommandRepository runRepository;
+    @Mock AiCommandOutboxWriter outboxWriter;
+    @Mock AgentApplyOperationStore applyOperationStore;
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
-        service = new AgentTurnService(documentService, editLockService, pipelineAgentRequester,
-                applyOperationStore);
+        service = new AgentTurnService(documentService, editLockService, runRepository,
+                outboxWriter, applyOperationStore, "ai.agent.command");
     }
 
     @Test
-    void turn_verifiesDocumentAndPreservesVersion() throws Exception {
+    void turn_validRequestQueuesDurableRun() {
         AgentTurnRequest request = request("whole_document", 1, 2);
-        when(documentService.findById("ws_1", "user_1", "doc_1")).thenReturn(document("note.md", "text/markdown"));
-        when(pipelineAgentRequester.request("ws_1", "user_1", request))
-                .thenReturn(new ObjectMapper().readTree("{\"action\":\"markdown_edit\"}"));
+        when(documentService.findById("ws_1", "user_1", "doc_1"))
+                .thenReturn(document("note.md", "text/markdown", 7));
+        when(applyOperationStore.newOperationId()).thenReturn("op_apply_1");
 
-        AgentTurnResponse response = service.turn("ws_1", "user_1", request);
+        var response = service.turn("ws_1", "user_1", request);
 
-        assertThat(response.documentId()).isEqualTo("doc_1");
-        assertThat(response.baseVersion()).isEqualTo(7L);
-        assertThat(response.requestId()).startsWith("agent_");
-        assertThat(response.result().path("action").asText()).isEqualTo("markdown_edit");
-        verify(documentService).findById("ws_1", "user_1", "doc_1");
+        assertThat(response.status()).isEqualTo("queued");
+        assertThat(response.applyOperationId()).isEqualTo("op_apply_1");
+        verify(runRepository).create(anyString(), org.mockito.ArgumentMatchers.eq("ws_1"),
+                org.mockito.ArgumentMatchers.eq("user_1"), org.mockito.ArgumentMatchers.eq("doc_1"),
+                org.mockito.ArgumentMatchers.eq(7L), org.mockito.ArgumentMatchers.eq("op_apply_1"),
+                org.mockito.ArgumentMatchers.eq("문서를 점검해줘"));
+        verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
+                org.mockito.ArgumentMatchers.eq("doc_1"), any());
     }
 
     @Test
-    void turn_rejectsNonMarkdownBeforePipelineCall() {
-        AgentTurnRequest request = request("whole_document", 1, 2);
-        when(documentService.findById("ws_1", "user_1", "doc_1")).thenReturn(document("paper.pdf", "application/pdf"));
+    void turn_rejectsNonMarkdownBeforeQueue() {
+        when(documentService.findById("ws_1", "user_1", "doc_1"))
+                .thenReturn(document("paper.pdf", "application/pdf", 7));
 
-        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
+        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request("whole_document", 1, 2)))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request("ws_1", "user_1", request);
+        verify(outboxWriter, never()).enqueue(anyString(), anyString(), anyString(), any());
     }
 
     @Test
-    void turn_rejectsOutOfBoundsTargetBeforePipelineCall() {
-        AgentTurnRequest request = request("whole_document", 1, 3);
-        when(documentService.findById("ws_1", "user_1", "doc_1")).thenReturn(document("note.md", "text/markdown"));
-
-        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
-                .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request("ws_1", "user_1", request);
-    }
-
-    @Test
-    void turn_rejectsStaleBaseVersionBeforePipelineCall() {
-        AgentTurnRequest request = request("whole_document", 1, 2);
+    void turn_rejectsStaleBaseVersionBeforeQueue() {
         when(documentService.findById("ws_1", "user_1", "doc_1"))
                 .thenReturn(document("note.md", "text/markdown", 9));
 
-        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
+        assertThatThrownBy(() -> service.turn("ws_1", "user_1", request("whole_document", 1, 2)))
                 .isInstanceOf(DocumentVersionConflictException.class);
-        verify(pipelineAgentRequester, never()).request("ws_1", "user_1", request);
+        verify(outboxWriter, never()).enqueue(anyString(), anyString(), anyString(), any());
     }
 
     private AgentTurnRequest request(String type, int startLine, int endLine) {
-        return new AgentTurnRequest(
-                "doc_1",
-                7L,
-                "문서를 점검해줘",
-                null,
-                new AgentTurnRequest.EditorSnapshot(
-                        "# 제목\n본문",
-                        new AgentTurnRequest.Target(type, startLine, endLine))
-        );
-    }
-
-    private DocumentDetailResponse document(String filename, String mimeType) {
-        return document(filename, mimeType, 7);
+        return new AgentTurnRequest("doc_1", 7L, "문서를 점검해줘", null,
+                new AgentTurnRequest.EditorSnapshot("# 제목\n본문",
+                        new AgentTurnRequest.Target(type, startLine, endLine)));
     }
 
     private DocumentDetailResponse document(String filename, String mimeType, long currentVersion) {
@@ -110,7 +95,6 @@ class AgentTurnServiceTest {
                 "s3://source", null, Instant.now(), Instant.now(), null, List.of(),
                 null, null, null, filename.substring(0, filename.lastIndexOf('.')),
                 filename.substring(filename.lastIndexOf('.') + 1), null, false, currentVersion,
-                currentVersion, null, Instant.now(), null, null
-        );
+                currentVersion, null, Instant.now(), null, null);
     }
 }

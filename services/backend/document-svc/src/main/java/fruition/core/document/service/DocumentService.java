@@ -41,7 +41,6 @@ import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.dto.DocumentOriginalResult;
 import fruition.core.document.dto.DocumentRenameRequest;
 import fruition.core.document.dto.DocumentRenameResponse;
-import fruition.core.document.dto.DocumentStatusUpdateRequest;
 import fruition.core.document.dto.InternalPipelineDocumentResponse;
 import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.dto.DocumentTrashResponse;
@@ -127,7 +126,6 @@ public class DocumentService {
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
     private final IngestOperationStarter ingestOperationStarter;
-    private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
                            FolderRepository folderRepository,
@@ -152,8 +150,7 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
-                           IngestOperationStarter ingestOperationStarter,
-                           @Value("${app.callback.base-url}") String callbackBaseUrl) {
+                           IngestOperationStarter ingestOperationStarter) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -178,7 +175,6 @@ public class DocumentService {
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
         this.ingestOperationStarter = ingestOperationStarter;
-        this.callbackBaseUrl = callbackBaseUrl;
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
@@ -957,33 +953,17 @@ public class DocumentService {
                 documentId,
                 document.getUserId(),
                 document.getWorkspaceId(),
-                callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events",
                 document.getSelectionMode(),
                 document.getPipelineInputMarkdown(),
                 "chat_export".equals(document.getOrigin()),
                 operationId,
-                ingestOperationStarter.resultCallbackUrl(operationId)
+                document.getCurrentVersion(),
+                document.getCurrentContentHash()
         );
         document.markPipelineStarted(runId, Instant.now());
         log.info("[문서 처리 command 등록 완료] documentId={} runId={} operationId={}",
                 documentId, runId, operationId);
         return runId;
-    }
-
-    @Transactional
-    public void applyPipelineEvent(String documentId, String runId, String stage,
-                                   String message, Map<String, Object> data) {
-        Document doc = documentRepository.findByIdInActiveWorkspace(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
-                documentId, runId, stage, message, data != null ? data.keySet() : List.of());
-        if (runId != null && !runId.equals(doc.getPipelineRunId())) {
-            log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
-                    documentId, runId, doc.getPipelineRunId(), stage);
-            return;
-        }
-        doc.markProcessingHeartbeat(stage, Instant.now());
-        log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
     }
 
     @Transactional
@@ -1048,18 +1028,6 @@ public class DocumentService {
         return new DocumentListResponse(items);
     }
 
-    @Transactional
-    public void updateStatus(String documentId, DocumentStatusUpdateRequest request) {
-        Document document = documentRepository.findByIdInActiveWorkspace(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        document.updateStatus(
-                request.status(),
-                request.extractedTextUri(),
-                request.processedAt(),
-                request.errorMessage()
-        );
-    }
-
     @Transactional(readOnly = true)
     public Optional<InternalPipelineDocumentResponse> findPipelineSource(String documentId) {
         return documentRepository.findByIdInActiveWorkspace(documentId)
@@ -1070,7 +1038,9 @@ public class DocumentService {
                         document.getFilename(),
                         document.getMimeType(),
                         document.getSourceUri(),
-                        document.getExtractedTextUri()
+                        document.getExtractedTextUri(),
+                        document.getCurrentVersion(),
+                        document.getCurrentContentHash()
                 ));
     }
 

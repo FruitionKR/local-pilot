@@ -6,7 +6,7 @@
 
 - 서비스 라우팅: `/api/auth/*`·`/api/workspaces` → access-svc(:8081), 그 외 → document-svc(:8080).
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
-- 사용자 API는 authenticated다. health·OpenAPI와 명시된 내부 callback 경로만 permitAll이며 callback과 `/internal/**`는 `X-Internal-Token`을 별도로 검증한다.
+- 사용자 API는 authenticated다. health·OpenAPI만 permitAll이며 `/internal/**`는 `X-Internal-Token`을 별도로 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`op_` + UUID/난수.
 - 원문: docs/backlog/spec/api/00-common.md
@@ -61,25 +61,20 @@
 |---|---|---|
 | GET | `/assets/{asset_id}/content` | 이미지 바이너리 스트리밍. ETag(content hash) 조건부 요청 304 지원. 멤버 전용, 타 워크스페이스 asset은 404 |
 
-파이프라인 콜백(내부, 베이스 `/api/documents`):
-
-| Method | Path | 설명 |
-|---|---|---|
-| POST | `/api/documents/{id}/pipeline-events` | 진행 heartbeat. 현재 `pipeline_run_id` 불일치 이벤트는 무시 |
-
-최종 상태는 document-svc가 AI의 `GET /pipeline/runs/{run_id}`를 폴링해 반영한다. AI는 `GET /internal/documents/{id}/pipeline-source`로 원본 위치를 조회하며 `documents.status`를 직접 쓰지 않는다.
+최종 상태는 `ai.task.event`를 우선 반영하고, ingest event 유실 시 document-svc가 AI의 `GET /pipeline/runs/{run_id}`를 폴링해 복구한다. AI는 `GET /internal/documents/{id}/pipeline-source`로 원본 위치와 source revision/hash를 조회하며 `documents.status`를 직접 쓰지 않는다.
 
 원문: docs/backlog/spec/api/document.md
 
 ## Agent
 
-베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 URL의 `workspace_id`와 인증된 `user_id`를 확인한 뒤 pipeline에 전달하며, 내부 호출은 `X-Agent-Service-Token`을 사용한다.
+베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 Markdown·편집 lock·base version을 검증하고 `agent_runs`·`agent_jobs`·outbox를 원자 저장한다.
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/agent/turn` | Markdown Agent turn. pipeline 요청 body에 workspace/user context를 포함하며, Markdown 검증·편집 잠금·base version을 Backend에서 먼저 검사 |
+| POST | `/agent/turn` | Markdown Agent turn 등록(202). 응답 `requestId`, `apply_operation_id`, `status=queued` |
+| GET | `/agent/turn/{run_id}` | run 상태 조회. workspace/user 범위를 확인하며 `queued`/`executing`/`completed`/`failed` 반환 |
 
-내부 pipeline의 `/agent/turn`은 공통 `X-Internal-Token`과 `X-Agent-Service-Token`이 모두 필요하고, `/skills/*`·`/agent/runs/*`는 `X-Agent-Service-Token`이 필요하다. Skill 팀 범위 권한은 pipeline이 access-svc의 `/internal/authz/workspaces/{wid}/users/{uid}`를 `X-Internal-Token`으로 조회한다.
+Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 생성된 편집안은 문서를 바꾸지 않으며, 사용자가 저장할 때 base version을 다시 확인하고 `apply_operation_id`를 한 번만 소비한다. 내부 `/skills/*`·`/agent/runs/*`의 기존 `X-Agent-Service-Token` 계약은 유지한다.
 
 ## 채팅
 
@@ -98,14 +93,13 @@
 
 ## 쿼리
 
-질의 생성과 run 조회·SSE는 인증 후 세션/workspace 소유권을 확인한다. run과 SSE replay buffer는 Redis에 저장하며 종료 후 TTL은 10분이다. 외부 API는 비동기 run 계약이지만 현재 Spring executor가 AI의 동기 HTTP 응답을 기다리며, Kafka 전환은 후속 통합 비동기화 PR 범위다.
+질의 생성과 run 조회·SSE는 인증 후 세션/workspace 소유권을 확인한다. run과 SSE replay buffer는 Redis에 저장하며 종료 후 TTL은 10분이다. 비동기 API는 pending chat pair와 command outbox를 원자 저장하고 Kafka worker 결과를 받아 assistant·참조·관련 페이지를 반영한다.
 
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`. 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
 | POST | `.../chat/sessions/{id}/query/runs` | 비동기 질의 시작(202). 응답 `request_id`, `status=pending` |
-| GET | `/api/query/runs/{requestId}/events` | **SSE** 진행 로그 구독. 이벤트 `query.log`/`query.completed`/`query.failed`, buffer 200건 재생, heartbeat 미가동 |
-| POST | `/api/query/runs/{requestId}/events/callback` | 파이프라인 진행 이벤트 수신(내부 콜백) → SSE 발행 |
+| GET | `/api/query/runs/{requestId}/events` | **SSE** 완료 구독. 이벤트 `query.completed`/`query.failed`, buffer 200건 재생 |
 | GET | `/api/query/runs/{requestId}` | run 상태 **폴링**(`pending`/`running`/`completed`/`failed`, 완료 시 `result`) |
 
 원문: docs/backlog/spec/api/query.md
@@ -129,12 +123,12 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `.../wiki/maintenance/lint` | Wiki lint 실행. `dry_run` true/생략은 미리보기(로그 없음), false면 lint 작업 등록 후 동기 반영. 성공 시 `wiki_lint_state.last_lint_at` 기록 |
+| POST | `.../wiki/maintenance/lint` | Wiki lint 등록(202). dry-run/write 모두 `run_id` 반환, write만 `operation_id` 생성 |
+| GET | `.../wiki/maintenance/runs/{run_id}` | lint run 상태와 `manifest.task_result` 조회 |
 | GET | `.../wiki/maintenance/status` | `needs_lint`(마지막 lint 이후 위키 페이지 변경 여부), `last_lint_at`, `last_wiki_change_at` |
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
 | GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`) |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |
-| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행. `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`. ingest는 지목 작업 이후 같은 문서 ingest 전부 취소, 재조립은 llmPipeline에 위임(`rebuilding`) |
-| POST | `/api/ai-operations/{op}/result` | llmPipeline 결과 콜백(내부, `X-Internal-Token`). ingest/재조립 공용, `payload_hash` 멱등, key·hash 검증 후 반영 |
+| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI 재조립 성공 후 core 상태를 반영 |
 
 원문: docs/backlog/spec/api/ai-operation-log.md
