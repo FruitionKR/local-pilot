@@ -109,8 +109,8 @@ flowchart LR
 | 연결됨 | `POST` | `/api/documents/{document_id}/pipeline-events` | `PipelineLog` |
 | 연결됨 | `POST` | `/api/query/runs/{request_id}/events/callback` | `HttpQueryEventPublisher` |
 | 연결됨 | `POST` | `/api/ai-operations/{operation_id}/result` | `HttpPipelineResultNotifier` |
-| Backend route 없음 | `POST` | `/internal/agent/tools/read/{tool_name}` | `BackendToolGateway` |
-| Backend route 없음 | `POST` | `/internal/agent/tools/execute/{tool_name}` | `BackendToolGateway` |
+| 부분 연결 | `POST` | `/internal/agent/tools/read/{tool_name}` | `BackendToolGateway` |
+| 부분 연결 | `POST` | `/internal/agent/tools/execute/{tool_name}` | `BackendToolGateway` |
 
 ### Spring 업무 API가 아닌 llmPipeline API
 
@@ -2086,7 +2086,7 @@ X-Agent-Service-Token: {agent-token}
 - approve 전에 최신 run을 다시 조회하고 화면에 표시한 version/hash를 그대로 보낸다.
 - approve/reject/revise/cancel 버튼은 중복 요청을 막되, 서버의 `409`도 정상적인 상태 경쟁으로 처리한다.
 - operation의 `arguments`와 `reason`은 표시용이며 Spring이 이를 수정해 실행 요청으로 다시 보내지 않는다.
-- Agent Run이 실제 tool을 실행하려면 별도 Spring Tool Gateway인 `/internal/agent/tools/read/{tool_name}`, `/internal/agent/tools/execute/{tool_name}` 구현이 선행돼야 한다.
+- Agent Tool Gateway는 `X-Agent-Service-Token`, Run actor scope, 승인된 현재 plan·operation을 검증한다. 콘텐츠 artifact 저장·조회 계약이 필요한 `create_document`, `apply_document_edit`는 아직 실행하지 않는다.
 
 ## Wiki Schema — Spring 저장·조회 책임 이전 여부 결정 필요
 
@@ -3262,7 +3262,7 @@ Content-Type: application/json
 
 Spring 공개 path의 `workspace_id`는 membership 확인에만 쓰이고 llmPipeline `POST /wiki-schema/{schema_id}/activate`에는 전달되지 않는다. llmPipeline도 `schema_id`만으로 Schema를 활성화하므로 요청 Workspace와 Schema Workspace가 일치한다는 보장이 없다. Schema 관리 책임을 Spring으로 이전하거나 llmPipeline activate 계약에 Workspace·User scope 검증을 추가하기 전에는 공개 연동을 차단해야 한다.
 
-### Agent Tool Backend Route 미구현
+### Agent Tool Backend 콘텐츠 mutation 미연결
 
 llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API를 호출한다.
 
@@ -3270,7 +3270,9 @@ llmPipeline `BackendToolGateway`는 `X-Agent-Service-Token`과 함께 다음 API
 - `POST /internal/agent/tools/execute/{tool_name}`
 - `POST /internal/agent/skill-authoring/references/read` — AgentRun 없는 Skill 참조 문서 전용 조회
 
-하지만 Spring에 세 route를 처리하는 Controller가 없다. Agent Worker가 실행되거나 참조 문서 기반 Skill authoring을 호출하면 현재 `404`가 발생한다.
+Spring은 세 route를 제공한다. read Tool과 폴더·문서 구조 mutation은 연결되어 있으며, 실행 요청은 service token과 Run actor scope를 확인하고 mutation은 승인된 현재 plan·operation까지 일치해야 한다.
+
+다만 `create_document`, `apply_document_edit`는 `content_artifact_id`로 신뢰할 Markdown을 조회하는 Backend 계약이 아직 없어 명시적으로 거절한다. 이 두 Tool을 연결하려면 artifact의 저장 위치, hash 검증, 일회성 또는 만료 정책을 먼저 확정해야 한다.
 
 ### Agent Run clarification 응답 정보 부족
 

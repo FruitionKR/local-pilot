@@ -1,9 +1,7 @@
 package fruition.skill.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.skill.dto.SkillAuthoringRequest;
 import fruition.skill.dto.SkillDraftFromRunsRequest;
-import fruition.skill.dto.SkillPublishRequest;
 import fruition.skill.exception.InvalidSkillRequestException;
 import fruition.skill.repository.PipelineSkillRequester;
 import fruition.workspace.repository.WorkspaceMemberRepository;
@@ -73,20 +71,6 @@ class SkillServiceTest {
         service.draftFromRuns("ws_1", "user_1", request);
 
         verify(requester).draftFromRuns("ws_1", "user_1", request, sources);
-    }
-
-    @Test
-    void publish_linksSourcesOnlyAfterPublishedResponse() throws Exception {
-        SkillPublishRequest request = new SkillPublishRequest(
-                "personal", "meeting-notes", "회의록", "# 작성 절차", List.of("run_1"));
-        when(memberRepository.existsByWorkspace_IdAndUser_Id("ws_1", "user_1")).thenReturn(true);
-        when(requester.publish("ws_1", "user_1", request)).thenReturn(
-                new ObjectMapper().readTree("{\"status\":\"published\",\"version_id\":\"version_1\"}"));
-
-        service.publish("ws_1", "user_1", request);
-
-        verify(sourceLoader).load("ws_1", "user_1", List.of("run_1"));
-        verify(sourceLoader).linkPublishedVersion("version_1", "ws_1", "user_1", List.of("run_1"));
     }
 
     private SkillAuthoringRequest request(String mode, String instruction, List<String> references) {

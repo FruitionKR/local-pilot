@@ -39,18 +39,7 @@ public class SkillService {
 
     public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
         requireMember(workspaceId, userId);
-        if (!request.sourceRunIds().isEmpty()) {
-            sourceLoader.load(workspaceId, userId, request.sourceRunIds());
-        }
-        JsonNode result = requester.publish(workspaceId, userId, request);
-        if (!request.sourceRunIds().isEmpty() && "published".equals(result.path("status").asText())) {
-            String versionId = result.path("version_id").asText();
-            if (versionId.isBlank()) {
-                throw new IllegalStateException("게시된 Skill version ID가 없습니다.");
-            }
-            sourceLoader.linkPublishedVersion(versionId, workspaceId, userId, request.sourceRunIds());
-        }
-        return result;
+        return requester.publish(workspaceId, userId, request);
     }
 
     public JsonNode draftFromRuns(String workspaceId, String userId, SkillDraftFromRunsRequest request) {

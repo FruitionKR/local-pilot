@@ -59,11 +59,10 @@ class PipelineSkillRequesterTest {
     @Test
     void publish_usesAuthorPublishContract() {
         requester().publish("ws_1", "user_1", new SkillPublishRequest(
-                "personal", "meeting-notes", "회의록 작성", "# 작성 절차", List.of("run_1")));
+                "personal", "meeting-notes", "회의록 작성", "# 작성 절차"));
 
         assertThat(uri.get()).isEqualTo("/skills/author/publish");
         assertThat(body.get()).contains("\"instructions_markdown\":\"# 작성 절차\"");
-        assertThat(body.get()).doesNotContain("source_run_ids");
     }
 
     private PipelineSkillRequester requester() {

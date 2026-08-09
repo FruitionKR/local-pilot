@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import fruition.skill.exception.InvalidSkillRequestException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -67,26 +66,6 @@ public class SkillDraftSourceLoader {
                             .toList()));
         }
         return new LoadedSources(sources, List.copyOf(excluded));
-    }
-
-    @Transactional
-    public void linkPublishedVersion(String versionId, String workspaceId, String userId, List<String> runIds) {
-        load(workspaceId, userId, runIds);
-        for (String runId : runIds) {
-            int inserted = jdbcClient.sql("""
-                            INSERT INTO skill_version_sources (skill_version_id, source_agent_run_id)
-                            SELECT :versionId, run.id FROM agent_runs run
-                            WHERE run.id = :runId AND run.workspace_id = :workspaceId
-                              AND run.user_id = :userId AND run.status = 'completed'
-                            ON CONFLICT DO NOTHING
-                            """)
-                    .param("versionId", versionId).param("runId", runId)
-                    .param("workspaceId", workspaceId).param("userId", userId)
-                    .update();
-            if (inserted != 1) {
-                throw new InvalidSkillRequestException("Skill source AgentRun을 연결할 수 없습니다.");
-            }
-        }
     }
 
     private static void addIfPresent(LinkedHashSet<String> values, String value) {
