@@ -187,6 +187,23 @@ REQUIRED_TABLES = (
     "wiki_embedding_units",
 )
 
+AGENT_REQUIRED_TABLES = (
+    "skills",
+    "skill_versions",
+    "skill_version_sources",
+    "agent_runs",
+    "agent_plans",
+    "agent_plan_operations",
+    "agent_approvals",
+    "agent_jobs",
+    "agent_tool_executions",
+    "agent_run_artifacts",
+    "checkpoint_migrations",
+    "checkpoints",
+    "checkpoint_blobs",
+    "checkpoint_writes",
+)
+
 # ai_db는 python이 소유한다 — db/ai_schema.sql이 원본 DDL
 AI_DB_REQUIRED_TABLES = (
     "wiki_schemas",
@@ -198,6 +215,14 @@ _AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sq
 
 def verify_schema() -> None:
     """Flyway가 pipeline 필수 테이블을 모두 적용했는지 확인한다."""
+    required_tables = REQUIRED_TABLES
+    if os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        required_tables += AGENT_REQUIRED_TABLES
     with connect() as conn:
         rows = conn.execute(
             """
@@ -206,13 +231,32 @@ def verify_schema() -> None:
             WHERE table_schema = current_schema()
               AND table_name = ANY(%s)
             """,
-            (list(REQUIRED_TABLES),),
+            (list(required_tables),),
         ).fetchall()
     existing_tables = {row["table_name"] for row in rows}
-    missing_tables = sorted(set(REQUIRED_TABLES) - existing_tables)
+    missing_tables = sorted(set(required_tables) - existing_tables)
     if missing_tables:
         missing = ", ".join(missing_tables)
         raise RuntimeError(f"Flyway migration is required; missing tables: {missing}")
+
+
+def verify_agent_schema() -> None:
+    """Agent worker가 사용하는 Agent/Skill/checkpoint 테이블을 확인한다."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = ANY(%s)
+            """,
+            (list(AGENT_REQUIRED_TABLES),),
+        ).fetchall()
+    existing_tables = {row["table_name"] for row in rows}
+    missing_tables = sorted(set(AGENT_REQUIRED_TABLES) - existing_tables)
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(f"Agent schema is not ready; missing tables: {missing}")
 
 
 def ensure_ai_schema() -> None:
@@ -270,6 +314,7 @@ def create_pipeline_run(run_id: str, document_id: str | None, input_source: str,
             """
             INSERT INTO pipeline_runs (id, document_id, input_source, output_dir, mode, status)
             VALUES (%s, %s, %s, %s, %s, 'running')
+            ON CONFLICT (id) DO NOTHING
             """,
             (run_id, document_id, input_source, output_dir, mode),
         )

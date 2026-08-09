@@ -304,9 +304,14 @@ def _run_pipeline_request(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    run_status = "succeeded"
+    stored_run = repository.get_run(run_id)
+    if isinstance(stored_run, dict) and stored_run.get("status"):
+        run_status = str(stored_run["status"])
+
     return PipelineRunOut(
         run_id=run_id,
-        status="succeeded",
+        status=run_status,
         manifest=manifest,
         output_dir=str(out),
         log_path=str(log_path),

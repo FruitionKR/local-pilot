@@ -36,6 +36,21 @@ def test_verify_schema_reports_missing_tables() -> None:
         database.verify_schema()
 
 
+def test_verify_schema_includes_agent_tables_when_feature_is_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_SKILLS_ENABLED", "true")
+    connection = _connection_with_tables(database.REQUIRED_TABLES + database.AGENT_REQUIRED_TABLES)
+
+    with patch.object(database, "connect", return_value=connection):
+        database.verify_schema()
+
+
+def test_verify_agent_schema_accepts_agent_and_checkpoint_tables() -> None:
+    connection = _connection_with_tables(database.AGENT_REQUIRED_TABLES)
+
+    with patch.object(database, "connect", return_value=connection):
+        database.verify_agent_schema()
+
+
 def test_cleanup_deleted_wiki_pages_removes_only_workspace_targets() -> None:
     queries = []
 

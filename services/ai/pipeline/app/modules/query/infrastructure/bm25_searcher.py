@@ -19,8 +19,15 @@ class Bm25Searcher(TextSearchPort):
         document_lengths = [len(tokens) for tokens in tokenized_documents]
         average_length = sum(document_lengths) / len(document_lengths) if document_lengths else 0.0
         document_frequency = self._document_frequency(tokenized_documents)
+        document_count = len(tokenized_documents)
         raw_scores = [
-            self._score_document(query_terms, tokens, document_frequency, average_length)
+            self._score_document(
+                query_terms,
+                tokens,
+                document_frequency,
+                average_length,
+                document_count,
+            )
             for tokens in tokenized_documents
         ]
         return self._normalize(raw_scores)
@@ -31,12 +38,13 @@ class Bm25Searcher(TextSearchPort):
         document_terms: list[str],
         document_frequency: dict[str, int],
         average_length: float,
+        document_count: int,
     ) -> float:
         if not document_terms:
             return 0.0
 
         counts = Counter(document_terms)
-        document_count = max(1, len(document_frequency))
+        document_count = max(1, document_count)
         document_length = len(document_terms)
         score = 0.0
         for term in query_terms:

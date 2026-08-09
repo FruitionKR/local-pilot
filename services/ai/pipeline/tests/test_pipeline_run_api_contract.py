@@ -519,6 +519,35 @@ def test_pipeline_endpoint_waits_for_synchronous_result() -> None:
     assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
 
 
+def test_pipeline_endpoint_exposes_pending_callback_status() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "source_uri": "documents/document_1.md",
+            "extracted_text_uri": None,
+            "mime_type": "text/markdown",
+            "filename": "document.md",
+        },
+    )
+    repository.get_run.return_value = {"status": "notify_pending"}
+    use_case = _use_case()
+
+    with _pipeline_client(
+        use_case=use_case,
+        repository=repository,
+        source_reader=_source_reader("# Stored Document"),
+    ) as client:
+        response = client.post(
+            "/pipeline/runs",
+            json={"document_id": "document_1", "wait": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "notify_pending"
+
+
 def test_pipeline_run_status_uses_repository_dependency() -> None:
     repository = _repository()
     repository.get_run.return_value = {

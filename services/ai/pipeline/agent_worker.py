@@ -40,6 +40,8 @@ def _cleanup_expired_runs_if_due(
 
 
 def main() -> None:
+    database.verify_schema()
+    database.verify_agent_schema()
     repository = PostgresAgentJobRepository()
     with psycopg.connect(
         database.database_url(),
