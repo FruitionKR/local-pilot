@@ -169,7 +169,8 @@ export function AgentPanel({
       validateMarkdownEditApplication(agentTurnRequest, agentTurnResponse, markdownEditContext);
       const applied = markdownEditContext.applyMarkdown(
         agentTurnRequest.editorSnapshot.markdown,
-        editPreviewState.preview.nextMarkdown
+        editPreviewState.preview.nextMarkdown,
+        agentTurnResponse.apply_operation_id
       );
       if (!applied) throw new Error("적용 직전에 문서가 변경되었습니다. 최신 내용으로 재생성해주세요.");
       setAgentTurnSuccessMessage("AI 편집 결과를 적용했으며 자동 저장을 시작했습니다.");

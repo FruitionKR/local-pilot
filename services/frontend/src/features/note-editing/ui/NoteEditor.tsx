@@ -89,7 +89,7 @@ export function NoteEditor({
     onRegisterSave?.(() => saveNowRef.current(bodyRef.current));
   }, [onRegisterSave]);
 
-  const applyMarkdown = useCallback((expectedMarkdown: string, nextMarkdown: string) => {
+  const applyMarkdown = useCallback((expectedMarkdown: string, nextMarkdown: string, applyOperationId: string) => {
     if (bodyRef.current !== expectedMarkdown) return false;
     bodyRef.current = nextMarkdown;
     programmaticBodyRef.current = nextMarkdown;
@@ -106,7 +106,7 @@ export function NoteEditor({
       tr.setMeta("addToHistory", false);
       view.dispatch(tr);
     });
-    queueSaveRef.current(nextMarkdown, "agent");
+    queueSaveRef.current(nextMarkdown, "agent", applyOperationId);
     return true;
   }, []);
 

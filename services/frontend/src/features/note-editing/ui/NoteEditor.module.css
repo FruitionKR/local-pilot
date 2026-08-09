@@ -90,7 +90,7 @@
 
 /* 리스트 줄간격을 읽기 모드(.markdown-viewer li: margin 4px 0)와 맞춘다.
    리스트 안 문단에는 crepe reset.css의 `padding: 4px 0`과
-   SourcePreviewPanel.module.css의 `.source-preview-content p { margin: 0 0 16px }`이 함께 걸려
+   SourcePreviewPanel.module.css의 `.source-preview-content p { margin: 0 0 8px }`이 함께 걸려
    항목 간격이 43px까지 벌어진다. 리스트 안에서만 둘을 걷어낸다.
    (리스트 밖 문단은 그대로 둬서 기존 문단 간격이 유지된다) */
 .note-wysiwyg-editor :global(.milkdown .milkdown-list-item-block p) {
