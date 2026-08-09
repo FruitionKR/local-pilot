@@ -30,6 +30,29 @@ class _Response:
 
 
 class ChatCompletionsJsonClientTest(unittest.TestCase):
+    def test_normalizes_transport_and_response_decode_errors(self) -> None:
+        client = ChatCompletionsJsonClient(
+            ChatClientConfig(
+                endpoint="https://example.test/chat",
+                api_key="test-key",
+                model="test-model",
+            )
+        )
+
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+            with self.assertRaisesRegex(RuntimeError, "transport or response error"):
+                client.complete_text("system prompt", "user prompt")
+
+        with (
+            patch("urllib.request.urlopen", return_value=_Response()),
+            patch(
+                "app.modules.wiki_generation.infrastructure.chat_completions_llm.json.loads",
+                side_effect=json.JSONDecodeError("invalid JSON", "", 0),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "transport or response error"):
+                client.complete_text("system prompt", "user prompt")
+
     def test_converts_claude_messages_request_and_response(self) -> None:
         client = ChatCompletionsJsonClient(
             ChatClientConfig(

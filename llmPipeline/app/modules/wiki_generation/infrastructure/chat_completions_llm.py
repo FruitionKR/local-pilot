@@ -133,9 +133,9 @@ class ChatCompletionsJsonClient:
             )
             self._write_prompt_log(body, error=f"LLM API HTTP {e.code}: {detail}")
             raise RuntimeError(f"LLM API HTTP {e.code}: {detail}") from e
-        except urllib.error.URLError as e:
-            self._write_prompt_log(body, error=f"LLM API connection error: {e}")
-            raise RuntimeError(f"LLM API connection error: {e}") from e
+        except (OSError, ValueError) as e:
+            self._write_prompt_log(body, error=f"LLM API transport or response error: {e}")
+            raise RuntimeError(f"LLM API transport or response error: {e}") from e
 
         try:
             content = redact_numeric_personal_data(self._response_content(payload))
