@@ -69,6 +69,16 @@
 
 원문: docs/backlog/spec/api/document.md
 
+## Agent
+
+베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 URL의 `workspace_id`와 인증된 `user_id`를 확인한 뒤 pipeline에 전달하며, 내부 호출은 `X-Agent-Service-Token`을 사용한다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/agent/turn` | Markdown Agent turn. pipeline 요청 body에 workspace/user context를 포함하며, Markdown 검증·편집 잠금·base version을 Backend에서 먼저 검사 |
+
+내부 pipeline의 `/agent/turn`은 공통 `X-Internal-Token`과 `X-Agent-Service-Token`이 모두 필요하고, `/skills/*`·`/agent/runs/*`는 `X-Agent-Service-Token`이 필요하다. Skill 팀 범위 권한은 pipeline이 access-svc의 `/internal/authz/workspaces/{wid}/users/{uid}`를 `X-Internal-Token`으로 조회한다.
+
 ## 채팅
 
 베이스 `/api/workspaces/{workspace_id}/chat/sessions`. 세션은 멤버당 최대 10개. 메시지 생성은 쿼리 도메인이 담당(아래 절).

@@ -9,6 +9,7 @@ services:
       DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
       # ai_db 1단계 분리: wiki_schemas·document_derived_state는 ai_db에 둔다
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
+      ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
       # ai_db 스키마 적용(멱등)은 pipeline-api 기동 시에만 수행한다
       AI_DB_MIGRATION_URL: postgresql://${AI_DB_MIGRATION_USER:-ai_migration}:${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
@@ -54,6 +55,7 @@ services:
       DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${CORE_DB_NAME:-core_db}
       # ai_db 1단계 분리: wiki_schemas·document_derived_state는 ai_db에 둔다
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
+      ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       INGEST_COMMAND_TOPIC: ${INGEST_COMMAND_TOPIC:-ai.ingest.command}
       LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
