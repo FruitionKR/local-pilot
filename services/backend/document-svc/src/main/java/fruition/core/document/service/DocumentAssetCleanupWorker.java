@@ -3,6 +3,8 @@ package fruition.core.document.service;
 import fruition.core.document.exception.DocumentAssetStorageException;
 import fruition.core.document.repository.DocumentAssetOrphanRepository;
 import fruition.core.document.repository.DocumentAssetRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -15,7 +17,10 @@ import java.util.UUID;
 @Service
 public class DocumentAssetCleanupWorker {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentAssetCleanupWorker.class);
     private static final Duration RETENTION = Duration.ofDays(7);
+    /** 한 실행에서 처리하는 최대 건수. 저장소 조회 메서드 이름(findTop100…)과 맞춰 둔다. */
+    private static final int BATCH_SIZE = 100;
 
     private final DocumentAssetRepository assetRepository;
     private final DocumentAssetOrphanRepository orphanRepository;
@@ -48,11 +53,21 @@ public class DocumentAssetCleanupWorker {
      *
      * <p>row를 먼저 지우고 object를 나중에 지운다. 후보 조회와 삭제 사이에 asset이 다시 참조되면
      * 조건부 삭제가 0행을 지워 object는 그대로 남는다. 반대 순서면 파일만 사라져 복구할 수 없다.
+     *
+     * <p>한 실행에서 각각 최대 {@value #BATCH_SIZE}건만 처리한다. 상한에 걸렸다는 사실을 로그로
+     * 남겨야 적체가 보인다. 남은 분량은 다음 실행이 이어서 가져간다.
      */
     public void cleanup(Instant now) {
         Instant threshold = now.minus(RETENTION);
 
-        for (Candidate candidate : loadUnreferencedAssets(threshold)) {
+        List<Candidate> unreferenced = loadUnreferencedAssets(threshold);
+        List<Candidate> orphans = loadRetryableOrphans(threshold);
+        if (unreferenced.size() >= BATCH_SIZE || orphans.size() >= BATCH_SIZE) {
+            log.info("[이미지 asset 정리 상한 도달] unreferenced={} orphans={} batchSize={}",
+                    unreferenced.size(), orphans.size(), BATCH_SIZE);
+        }
+
+        for (Candidate candidate : unreferenced) {
             Integer deleted = transactionTemplate.execute(status ->
                     assetRepository.deleteIfStillUnreferenced(candidate.id(), threshold));
             if (deleted == null || deleted == 0) {
@@ -66,7 +81,7 @@ public class DocumentAssetCleanupWorker {
             }
         }
 
-        for (Candidate candidate : loadRetryableOrphans(threshold)) {
+        for (Candidate candidate : orphans) {
             try {
                 objectStorage.delete(candidate.storageKey());
             } catch (DocumentAssetStorageException exception) {

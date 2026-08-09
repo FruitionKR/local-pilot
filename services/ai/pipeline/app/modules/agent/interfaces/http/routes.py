@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
 from app.modules.agent.domain.entities import AgentTurnResult
-from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.agent.domain.exceptions import AgentConfigurationError, AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.schemas import (
     AgentTurnRequestBody,
@@ -77,6 +77,16 @@ def handle_agent_turn(
                 "structure": exc.structure,
                 "start_line": exc.start_line,
                 "end_line": exc.end_line,
+            },
+        ) from exc
+    except AgentConfigurationError as exc:
+        # 요청이 아니라 서버 배선·기능 플래그 문제다. 내부 메시지를 노출하지 않고 500으로 알린다.
+        logger.error("Agent turn 설정 오류: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "agent_not_configured",
+                "message": "Agent 기능을 사용할 수 없습니다.",
             },
         ) from exc
     except ValueError as exc:

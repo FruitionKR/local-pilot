@@ -77,6 +77,21 @@ class DocumentAssetCleanupWorkerTest {
     }
 
     @Test
+    void cleanup_processesAtMostBatchSizePerRun() {
+        // 상한을 넘는 후보가 있어도 한 실행에서는 조회된 만큼만 처리하고 나머지는 다음 실행이 가져간다.
+        List<DocumentAsset> candidates = java.util.stream.IntStream.range(0, 100)
+                .mapToObj(index -> asset("asset-key-" + index))
+                .toList();
+        stubCandidates(candidates, List.of());
+        candidates.forEach(asset ->
+                when(assetRepository.deleteIfStillUnreferenced(asset.getId(), THRESHOLD)).thenReturn(1));
+
+        worker().cleanup(NOW);
+
+        verify(objectStorage, org.mockito.Mockito.times(100)).delete(org.mockito.ArgumentMatchers.startsWith("asset-key-"));
+    }
+
+    @Test
     void cleanup_retriesOrphanAndRecordsFailure() {
         DocumentAssetOrphan orphan = orphan();
         stubCandidates(List.of(), List.of(orphan));

@@ -32,7 +32,9 @@ public class DocumentAssetReferenceParser {
                 if (destination.startsWith("/api/workspaces/")) {
                     Matcher matcher = MANAGED_ASSET_PATH.matcher(destination);
                     if (!matcher.matches()) {
-                        throw new InvalidDocumentAssetException("관리 이미지 경로가 올바르지 않습니다.");
+                        // 어느 이미지가 문제인지 알려야 사용자가 본문에서 찾아 고칠 수 있다.
+                        throw new InvalidDocumentAssetException(
+                                "관리 이미지가 아닌 내부 경로는 본문에 넣을 수 없습니다: " + destination);
                     }
                     references.add(new ManagedAssetReference(
                             matcher.group(1), UUID.fromString(matcher.group(2))));

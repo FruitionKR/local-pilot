@@ -8,6 +8,7 @@ from app.modules.agent.domain.entities import (
     AgentTurnRoute,
     PendingSkillProposal,
 )
+from app.modules.agent.domain.exceptions import AgentConfigurationError
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import (
@@ -573,7 +574,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
         )
 
-        with self.assertRaisesRegex(ValueError, "workspace_id and user_id"):
+        # 배선이 갖춰지지 않은 상태라 요청 오류(ValueError)가 아니라 설정 오류로 끊긴다.
+        with self.assertRaisesRegex(AgentConfigurationError, "workspace_id and user_id"):
             use_case.execute(AgentTurnRequest(message="분기 문서를 정리해줘"))
 
         self.assertEqual(len(router.requests), 1)

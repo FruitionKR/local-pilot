@@ -2,6 +2,7 @@ import re
 from dataclasses import replace
 
 from app.modules.agent.application.ports import AgentTurnRouterPort
+from app.modules.agent.domain.exceptions import AgentConfigurationError
 from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnResult, PendingSkillProposal
 from app.modules.agent_run.application.ports import AgentRunStarterPort
 from app.modules.agent_run.domain.entities import StartAgentRunRequest
@@ -119,7 +120,7 @@ class HandleAgentTurnUseCase:
                 or not request.workspace_id
                 or not request.user_id
             ):
-                raise ValueError("Skill draft proposal is not configured.")
+                raise AgentConfigurationError("Skill draft proposal is not configured.")
             scope_type = _skill_scope_type(request)
             if scope_type is None:
                 return AgentTurnResult(
@@ -151,7 +152,7 @@ class HandleAgentTurnUseCase:
 
         if route.action == "skill_authoring":
             if not request.workspace_id or not request.user_id:
-                raise ValueError("Skill authoring requires workspace_id and user_id.")
+                raise AgentConfigurationError("Skill authoring requires workspace_id and user_id.")
             pending_proposal = (
                 request.conversation_context.pending_skill_proposal
                 if request.conversation_context
@@ -161,7 +162,7 @@ class HandleAgentTurnUseCase:
                 authored = self._handle_pending_skill(request, pending_proposal)
             else:
                 if self._skill_authorer is None:
-                    raise ValueError("Skill authoring is not configured.")
+                    raise AgentConfigurationError("Skill authoring is not configured.")
                 scope_type = _skill_scope_type(request)
                 if scope_type is None:
                     authored = SkillAuthoringResult(
@@ -192,7 +193,7 @@ class HandleAgentTurnUseCase:
 
         if route.action in {"folder_organize", "workspace_workflow"}:
             if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
-                raise ValueError("Workspace workflow requires workspace_id and user_id.")
+                raise AgentConfigurationError("Workspace workflow requires workspace_id and user_id.")
             direct_route = self._router.route(
                 replace(
                     request,
@@ -305,7 +306,7 @@ class HandleAgentTurnUseCase:
         proposal: PendingSkillProposal,
     ) -> SkillAuthoringResult:
         if self._skill_authorer is None:
-            raise ValueError("Skill authoring is not configured.")
+            raise AgentConfigurationError("Skill authoring is not configured.")
         if PUBLISH_SKILL_PATTERN.fullmatch(request.message.strip()):
             return self._skill_authorer.publish(
                 workspace_id=request.workspace_id or "",
