@@ -391,7 +391,7 @@ def _llm_safety_issues(
 ) -> tuple[SkillSafetyIssue, ...]:
     if not isinstance(value, list) or not 1 <= len(value) <= MAX_LLM_ISSUES:
         raise ValueError("Blocked Skill authoring result must contain safety issues.")
-    issues: list[SkillSafetyIssue] = []
+    issues: dict[tuple[str, str | None, int, int], SkillSafetyIssue] = {}
     for value_issue in value:
         if not isinstance(value_issue, dict):
             raise ValueError("Skill authoring safety issue must be an object.")
@@ -418,26 +418,35 @@ def _llm_safety_issues(
         start = source.find(text)
         if start < 0:
             raise ValueError("Skill authoring safety issue text must exist in its source.")
-        issues.append(
-            SkillSafetyIssue(
-                category=category,
-                text=text,
-                reason=reason,
-                start=start,
-                end=start + len(text),
-                source_type=source_type,
-                reference_document_id=reference_document_id,
+        while start >= 0:
+            end = start + len(text)
+            issues.setdefault(
+                (source_type, reference_document_id, start, end),
+                SkillSafetyIssue(
+                    category=category,
+                    text=text,
+                    reason=reason,
+                    start=start,
+                    end=end,
+                    source_type=source_type,
+                    reference_document_id=reference_document_id,
+                ),
             )
-        )
-    return tuple(issues)
+            start = source.find(text, end)
+    return tuple(issues.values())
 
 
 def _redact_issues(source: str, issues: tuple[SkillSafetyIssue, ...]) -> str:
     ranges = sorted(
-        ((issue.start, issue.end) for issue in issues if issue.start is not None and issue.end is not None),
-        reverse=True,
+        {(issue.start, issue.end) for issue in issues if issue.start is not None and issue.end is not None}
     )
+    merged_ranges: list[tuple[int, int]] = []
     for start, end in ranges:
+        if merged_ranges and start < merged_ranges[-1][1]:
+            merged_ranges[-1] = (merged_ranges[-1][0], max(merged_ranges[-1][1], end))
+        else:
+            merged_ranges.append((start, end))
+    for start, end in reversed(merged_ranges):
         source = source[:start] + "[보안상 제거됨]" + source[end:]
     return source
 
