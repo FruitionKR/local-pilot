@@ -14,6 +14,7 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 SKILL_SELECT = """
     SELECT
         s.*,
+        s.command AS slug,
         ev.id AS ev_id,
         ev.skill_id AS ev_skill_id,
         ev.version AS ev_version,
@@ -22,7 +23,7 @@ SKILL_SELECT = """
         ev.instructions_markdown AS ev_instructions_markdown,
         ev.capabilities AS ev_capabilities,
         ev.allowed_tools AS ev_allowed_tools,
-        ev.lint_result AS ev_lint_result,
+        ev.safety_result AS ev_lint_result,
         ev.status AS ev_status,
         ev.created_by AS ev_created_by,
         ev.created_at AS ev_created_at,
@@ -35,7 +36,7 @@ SKILL_SELECT = """
         lv.instructions_markdown AS lv_instructions_markdown,
         lv.capabilities AS lv_capabilities,
         lv.allowed_tools AS lv_allowed_tools,
-        lv.lint_result AS lv_lint_result,
+        lv.safety_result AS lv_lint_result,
         lv.status AS lv_status,
         lv.created_by AS lv_created_by,
         lv.created_at AS lv_created_at,
@@ -98,7 +99,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
         return self._get_with_access_filter(workspace_id, user_id, "s.id = %s", skill_id)
 
     def get_accessible_by_slug(self, workspace_id: str, user_id: str, slug: str) -> Skill | None:
-        return self._get_with_access_filter(workspace_id, user_id, "s.slug = %s", slug)
+        return self._get_with_access_filter(workspace_id, user_id, "s.command = %s", slug)
 
     def get_manageable(self, workspace_id: str | None, user_id: str, skill_id: str) -> Skill | None:
         team_owner = _is_team_owner(workspace_id, user_id)
@@ -127,7 +128,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
             _ensure_slug_available(conn, skill, skill.slug)
             conn.execute(
                 """
-                INSERT INTO skills (id, workspace_id, scope_type, owner_user_id, slug, status)
+                INSERT INTO skills (id, workspace_id, scope_type, owner_user_id, command, status)
                 VALUES (%s, %s, %s, %s, %s, 'enabled')
                 """,
                 (skill.id, skill.workspace_id, skill.scope_type, skill.owner_user_id, skill.slug),
@@ -160,7 +161,7 @@ class PostgresSkillRepository(SkillRepositoryPort, ManageSkillRepositoryPort):
             conn.execute(
                 """
                 UPDATE skills
-                SET slug = %s, enabled_version_id = %s, updated_at = now()
+                SET command = %s, enabled_version_id = %s, updated_at = now()
                 WHERE id = %s
                 """,
                 (version.name, version.id, skill.id),
@@ -225,7 +226,7 @@ def _insert_version(conn: Any, version: SkillVersion) -> None:
         """
         INSERT INTO skill_versions (
             id, skill_id, version, name, description, instructions_markdown,
-            capabilities, allowed_tools, lint_result, status, created_by, published_at
+            capabilities, allowed_tools, safety_result, status, created_by, published_at
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                   CASE WHEN %s = 'published' THEN now() ELSE NULL END)
         """,
@@ -270,7 +271,7 @@ def _ensure_slug_available(
     *,
     exclude_skill_id: str | None = None,
 ) -> None:
-    filters = ["s.slug = %s"]
+    filters = ["s.command = %s"]
     params: list[object] = [slug]
     if skill.scope_type == "personal":
         filters.extend(("s.scope_type = 'personal'", "s.owner_user_id = %s"))

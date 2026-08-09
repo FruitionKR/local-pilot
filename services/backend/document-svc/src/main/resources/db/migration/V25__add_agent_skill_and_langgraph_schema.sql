@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.skills (
     workspace_id text,
     scope_type text NOT NULL,
     owner_user_id text,
-    slug varchar(63) NOT NULL,
+    command varchar(63) NOT NULL,
     status text NOT NULL,
     enabled_version_id text,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.skill_versions (
     instructions_markdown text NOT NULL,
     capabilities text[] NOT NULL DEFAULT ARRAY[]::text[],
     allowed_tools text[] NOT NULL DEFAULT ARRAY[]::text[],
-    lint_result jsonb NOT NULL DEFAULT '{}'::jsonb,
+    safety_result jsonb NOT NULL DEFAULT '{}'::jsonb,
     status text NOT NULL,
     created_by text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -162,11 +162,11 @@ CREATE TABLE IF NOT EXISTS public.agent_run_artifacts (
     expires_at timestamptz
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_personal_slug
-    ON public.skills (owner_user_id, slug)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_personal_command
+    ON public.skills (owner_user_id, command)
     WHERE scope_type = 'personal';
-CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_team_slug
-    ON public.skills (workspace_id, slug)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_team_command
+    ON public.skills (workspace_id, command)
     WHERE scope_type = 'team';
 CREATE INDEX IF NOT EXISTS idx_skill_versions_skill_status
     ON public.skill_versions (skill_id, status, version DESC);
