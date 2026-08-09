@@ -1,5 +1,14 @@
 # AI/Pipeline 변경 기록
 
+## 2026-08-09
+
+### feat: Spring 소유 Skill AI 계약 지원
+
+- Spring이 전달한 사용자 입력과 참조 문서로 저장 없는 Skill 초안을 생성하는 `POST /skills/refine`을 추가했다.
+- `POST /skills/preview`에 규칙 검사와 fail-closed LLM 의미 검사를 결합하고 `checks`, `publish_allowed`를 반환하도록 확장했다.
+- `/agent/turn`이 Spring 전달 Skill 후보·선택 정의를 받아 capability와 `allowed_tools`를 재검증하고 llmPipeline Skill repository 조회 없이 선택할 수 있도록 했다.
+- llmPipeline 전체 테스트 `843 passed, 61 subtests passed`로 검증했다. Spring Agent 요청의 후보 전달 연결은 후속 이슈로 유지한다.
+
 ## 2026-08-08
 
 ### fix: Skill 개인정보 게시 차단 보강

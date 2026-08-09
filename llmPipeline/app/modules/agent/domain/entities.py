@@ -12,6 +12,7 @@ from app.modules.query.domain.entities import (
     ResponseLength,
 )
 from app.modules.skill.domain.entities import (
+    Skill,
     SkillAuthoringResult,
     SkillAuthoringMode,
     SkillDraftSourceRun,
@@ -72,6 +73,7 @@ class AgentTurnRequest:
     active_markdown_context: ActiveMarkdownContext | None = None
     skill_mode: SkillMode = "auto"
     skill_id: str | None = None
+    skill_definitions: tuple[Skill, ...] | None = None
     available_skills: tuple[SkillCandidate, ...] = ()
     skill_draft_sources: tuple[SkillDraftSourceRun, ...] = ()
     skill_draft_user_directives: tuple[str, ...] = ()

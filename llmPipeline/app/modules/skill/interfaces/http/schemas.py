@@ -1,14 +1,19 @@
 import json
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.skill.domain.entities import (
     Skill,
+    SkillAuthoringReference,
     SkillAuthoringResult,
+    SkillDefinitionDraft,
+    SkillDefinitionResult,
     SkillDraftSourceOperation,
     SkillDraftSourceRun,
     SkillVersion,
+    SkillReviewResult,
 )
 
 
@@ -30,13 +35,40 @@ ToolValue = Literal[
 ]
 
 
+class SkillReferenceDocumentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, max_length=255)
+    content_hash: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., min_length=1, max_length=40_000)
+
+    def to_domain(self) -> SkillAuthoringReference:
+        return SkillAuthoringReference(id=self.id, name=self.name, markdown=self.content)
+
+
 class SkillDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workspace_id: str | None = Field(default=None, min_length=1)
     user_id: str = Field(..., min_length=1)
-    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
-    description: str = Field(..., min_length=1)
-    instructions_markdown: str = Field(..., min_length=1)
-    capabilities: list[CapabilityValue] = Field(..., min_length=1)
+    command: str = Field(default="", pattern=r"^$|^[a-z0-9][a-z0-9-]{0,62}$")
+    name: str = Field(..., min_length=1, max_length=63)
+    description: str = Field(default="", max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+    scope_type: Literal["personal", "team"] = "personal"
+    capabilities: list[CapabilityValue] = Field(default_factory=list)
     allowed_tools: list[ToolValue] = Field(default_factory=list)
+    reference_documents: list[SkillReferenceDocumentRequest] = Field(default_factory=list, max_length=3)
+
+    @property
+    def normalized_command(self) -> str:
+        if self.command:
+            return self.command
+        return self.name if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", self.name) else ""
+
+    def references(self) -> tuple[SkillAuthoringReference, ...]:
+        return tuple(reference.to_domain() for reference in self.reference_documents)
 
 
 class SkillAuthoringRequest(BaseModel):
@@ -184,18 +216,66 @@ class SkillResponse(BaseModel):
         )
 
 
+class SkillDraftResponse(BaseModel):
+    command: str
+    name: str
+    description: str
+    instructions_markdown: str
+    scope_type: Literal["personal", "team"]
+    capabilities: list[str]
+    allowed_tools: list[str]
+
+    @classmethod
+    def from_domain(cls, draft: SkillDefinitionDraft) -> "SkillDraftResponse":
+        return cls(
+            command=draft.command,
+            name=draft.name,
+            description=draft.description,
+            instructions_markdown=draft.instructions_markdown,
+            scope_type=draft.scope_type,
+            capabilities=list(draft.capabilities),
+            allowed_tools=list(draft.allowed_tools),
+        )
+
+
+class SkillRefineResponse(BaseModel):
+    draft: SkillDraftResponse | None
+    persisted: Literal[False] = False
+    issues: list[dict[str, object]] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, result: SkillDefinitionResult) -> "SkillRefineResponse":
+        return cls(
+            draft=SkillDraftResponse.from_domain(result.draft) if result.draft else None,
+            issues=[issue.__dict__ for issue in result.issues],
+        )
+
+
+class SkillCheckResponse(BaseModel):
+    name: Literal["rules", "semantic"]
+    passed: bool
+    issues: list[str] = Field(default_factory=list)
+
+
 class SkillPreviewResponse(BaseModel):
+    draft: SkillDraftResponse
+    checks: list[SkillCheckResponse]
+    publish_allowed: bool
     lint_result: dict[str, object]
     has_blocked_issues: bool
 
     @classmethod
-    def from_domain(cls, version: SkillVersion) -> "SkillPreviewResponse":
-        issues = (version.lint_result or {}).get("issues", [])
+    def from_domain(cls, result: SkillReviewResult) -> "SkillPreviewResponse":
+        issues = [issue.__dict__ for issue in result.issues]
         return cls(
-            lint_result=version.lint_result or {},
-            has_blocked_issues=any(
-                isinstance(issue, dict) and issue.get("severity") == "blocked" for issue in issues
-            ),
+            draft=SkillDraftResponse.from_domain(result.draft),
+            checks=[
+                SkillCheckResponse(name=check.name, passed=check.passed, issues=list(check.issues))
+                for check in result.checks
+            ],
+            publish_allowed=result.publish_allowed,
+            lint_result={"issues": issues},
+            has_blocked_issues=not result.publish_allowed,
         )
 
 

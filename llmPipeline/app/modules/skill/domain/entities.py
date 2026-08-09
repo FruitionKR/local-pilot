@@ -110,3 +110,36 @@ class SkillAuthoringResult:
     proposal: SkillAuthoringProposal | None = None
     skill: Skill | None = None
     issues: tuple[SkillSafetyIssue, ...] = ()
+
+
+@dataclass(frozen=True)
+class SkillDefinitionDraft:
+    command: str
+    name: str
+    description: str
+    instructions_markdown: str
+    scope_type: SkillScopeType
+    capabilities: tuple[SkillCapability, ...]
+    allowed_tools: tuple[SkillTool, ...]
+
+
+@dataclass(frozen=True)
+class SkillDefinitionResult:
+    draft: SkillDefinitionDraft | None
+    issues: tuple[SkillSafetyIssue, ...] = ()
+    persisted: Literal[False] = False
+
+
+@dataclass(frozen=True)
+class SkillReviewCheck:
+    name: Literal["rules", "semantic"]
+    passed: bool
+    issues: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SkillReviewResult:
+    draft: SkillDefinitionDraft
+    checks: tuple[SkillReviewCheck, ...]
+    publish_allowed: bool
+    issues: tuple[SkillSafetyIssue, ...] = ()

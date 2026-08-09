@@ -5,6 +5,7 @@ from app.modules.agent.domain.entities import AgentTurnRequest, AgentTurnRoute, 
 from app.modules.skill.application.ports import SkillRepositoryPort
 from app.modules.skill.domain.entities import Skill
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
+from app.modules.skill.domain.policy import validate_allowed_tools
 
 
 SLASH_COMMAND = re.compile(r"^/([a-z0-9][a-z0-9-]{0,62})(?:\s+(.+))?$", re.DOTALL)
@@ -54,6 +55,8 @@ class SelectSkillUseCase:
             skill = self._explicit_skill(request, slash_slug)
             if skill.enabled_version is None:
                 raise SkillDisabledError(skill.id)
+            if request.skill_definitions is not None:
+                _validate_definition(skill)
             prepared = replace(
                 request,
                 message=message,
@@ -63,7 +66,14 @@ class SelectSkillUseCase:
             )
             return PreparedSkillSelection(prepared, (skill,), skill.id)
 
-        skills = tuple(self._repository.list_accessible_enabled(request.workspace_id, request.user_id))
+        skills = (
+            request.skill_definitions
+            if request.skill_definitions is not None
+            else tuple(self._repository.list_accessible_enabled(request.workspace_id, request.user_id))
+        )
+        if request.skill_definitions is not None:
+            for skill in skills:
+                _validate_definition(skill)
         return PreparedSkillSelection(
             request=replace(request, skill_mode="auto", available_skills=tuple(_to_candidate(skill) for skill in skills)),
             skills=skills,
@@ -72,7 +82,16 @@ class SelectSkillUseCase:
     def _explicit_skill(self, request: AgentTurnRequest, slash_slug: str | None) -> Skill:
         assert request.workspace_id is not None
         assert request.user_id is not None
-        if request.skill_id:
+        if request.skill_definitions is not None:
+            skill = next(
+                (
+                    candidate
+                    for candidate in request.skill_definitions
+                    if candidate.id == request.skill_id or candidate.slug == slash_slug
+                ),
+                None,
+            )
+        elif request.skill_id:
             skill = self._repository.get_accessible(request.workspace_id, request.user_id, request.skill_id)
         elif slash_slug:
             skill = self._repository.get_accessible_by_slug(request.workspace_id, request.user_id, slash_slug)
@@ -81,6 +100,13 @@ class SelectSkillUseCase:
         if skill is None:
             raise SkillNotFoundError(request.skill_id or slash_slug or "")
         return skill
+
+
+def _validate_definition(skill: Skill) -> None:
+    version = skill.enabled_version
+    if version is None or version.skill_id != skill.id:
+        raise SkillDisabledError(skill.id)
+    validate_allowed_tools(version.capabilities, version.allowed_tools)
 
 
 def _parse_slash_command(message: str) -> tuple[str, str | None]:

@@ -91,6 +91,47 @@ class InMemorySkillRepository:
 
 
 class SkillSelectionTest(unittest.TestCase):
+    def test_spring_snapshots_do_not_query_pipeline_skill_repository(self) -> None:
+        class FailingRepository(InMemorySkillRepository):
+            def list_accessible_enabled(self, workspace_id: str, user_id: str) -> list[Skill]:
+                raise AssertionError("pipeline Skill repository must not be queried")
+
+            def get_accessible(self, workspace_id: str, user_id: str, skill_id: str) -> Skill | None:
+                raise AssertionError("pipeline Skill repository must not be queried")
+
+        base = enabled_skill()
+        assert base.enabled_version is not None
+        snapshot = Skill(
+            **{
+                **base.__dict__,
+                "enabled_version": SkillVersion(
+                    **{
+                        **base.enabled_version.__dict__,
+                        "allowed_tools": (
+                            "list_root_items",
+                            "list_folder_children",
+                            "move_document",
+                        ),
+                    }
+                ),
+            }
+        )
+        use_case = SelectSkillUseCase(FailingRepository([]))
+
+        selection = use_case.prepare(
+            AgentTurnRequest(
+                message="정리해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                skill_mode="explicit",
+                skill_id=snapshot.id,
+                skill_definitions=(snapshot,),
+            )
+        )
+
+        self.assertEqual(selection.explicit_skill_id, snapshot.id)
+        self.assertEqual(selection.skills, (snapshot,))
+
     def test_personal_skill_is_available_in_another_workspace(self) -> None:
         use_case = SelectSkillUseCase(InMemorySkillRepository([personal_skill()]))  # type: ignore[arg-type]
 

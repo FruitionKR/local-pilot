@@ -12,7 +12,11 @@ from app.modules.skill.domain.entities import (
     SkillAuthoringReference,
     SkillAuthoringResult,
     SkillCapability,
+    SkillDefinitionDraft,
+    SkillDefinitionResult,
     SkillDraftProposal,
+    SkillReviewCheck,
+    SkillReviewResult,
     SkillScopeType,
     SkillTool,
 )
@@ -65,6 +69,7 @@ class AuthorSkillUseCase:
         name: str | None = None,
         description: str | None = None,
         authoring_mode: SkillAuthoringMode = "enhance",
+        references: tuple[SkillAuthoringReference, ...] | None = None,
     ) -> SkillAuthoringResult:
         instruction = instruction.strip()
         max_instruction_chars = (
@@ -98,14 +103,19 @@ class AuthorSkillUseCase:
                     return SkillAuthoringResult(status="blocked", issues=description_issues)
                 description = None
 
-        references = tuple(
-            self._reference_reader.read(
-                workspace_id=workspace_id,
-                user_id=user_id,
-                document_id=document_id,
+        if references is not None:
+            if reference_document_ids:
+                raise ValueError("Use reference documents or reference ids, not both.")
+            _validate_supplied_references(references)
+        else:
+            references = tuple(
+                self._reference_reader.read(
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    document_id=document_id,
+                )
+                for document_id in reference_document_ids
             )
-            for document_id in reference_document_ids
-        )
         reference_issues = _validate_references(references)
         if reference_issues:
             if authoring_mode != "regenerate":
@@ -248,6 +258,133 @@ class AuthorSkillUseCase:
         )
         return SkillAuthoringResult(status="proposal_ready", proposal=proposal)
 
+    def refine_definition(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        command: str,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+        scope_type: SkillScopeType,
+        capabilities: tuple[SkillCapability, ...],
+        allowed_tools: tuple[SkillTool, ...],
+        references: tuple[SkillAuthoringReference, ...],
+    ) -> SkillDefinitionResult:
+        command = command.strip()
+        name_issues = _tag_issues(inspect_skill_instructions(name), "name")
+        if name_issues:
+            return SkillDefinitionResult(draft=None, issues=name_issues)
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=command or None,
+            description=description or None,
+            instruction=instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="enhance",
+            references=references,
+        )
+        proposal = reviewed.proposal
+        if proposal is None:
+            return SkillDefinitionResult(draft=None, issues=reviewed.issues)
+        if capabilities and set(capabilities) != set(proposal.capabilities):
+            raise ValueError("capabilities does not match the refined Skill meaning.")
+        resolved_capabilities = capabilities or proposal.capabilities
+        if allowed_tools and not set(allowed_tools).issubset(proposal.allowed_tools):
+            raise ValueError("allowed_tools exceeds the refined Skill meaning.")
+        resolved_allowed_tools = allowed_tools or proposal.allowed_tools
+        validate_allowed_tools(resolved_capabilities, resolved_allowed_tools)
+        return SkillDefinitionResult(
+            draft=SkillDefinitionDraft(
+                command=command or proposal.name,
+                name=name,
+                description=proposal.description,
+                instructions_markdown=proposal.instructions_markdown,
+                scope_type=scope_type,
+                capabilities=resolved_capabilities,
+                allowed_tools=resolved_allowed_tools,
+            ),
+            issues=reviewed.issues,
+        )
+
+    def review_definition(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        command: str,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+        scope_type: SkillScopeType,
+        capabilities: tuple[SkillCapability, ...],
+        allowed_tools: tuple[SkillTool, ...],
+        references: tuple[SkillAuthoringReference, ...],
+    ) -> SkillReviewResult:
+        draft = SkillDefinitionDraft(
+            command=command,
+            name=name,
+            description=description,
+            instructions_markdown=instructions_markdown,
+            scope_type=scope_type,
+            capabilities=capabilities,
+            allowed_tools=allowed_tools,
+        )
+        safety_issues, rule_failures = _definition_rule_failures(draft, references)
+        if rule_failures:
+            return SkillReviewResult(
+                draft=draft,
+                checks=(
+                    SkillReviewCheck("rules", False, rule_failures),
+                    SkillReviewCheck("semantic", False, ("규칙 검사 실패로 실행하지 않았습니다.",)),
+                ),
+                publish_allowed=False,
+                issues=safety_issues,
+            )
+        try:
+            reviewed = self.execute(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                scope_type=scope_type,
+                name=command,
+                description=description,
+                instruction=instructions_markdown,
+                reference_document_ids=(),
+                allow_clarification=False,
+                authoring_mode="preserve",
+                references=references,
+            )
+        except (RuntimeError, ValueError):
+            return SkillReviewResult(
+                draft=draft,
+                checks=(
+                    SkillReviewCheck("rules", True),
+                    SkillReviewCheck("semantic", False, ("LLM 의미 검사를 완료하지 못했습니다.",)),
+                ),
+                publish_allowed=False,
+            )
+        proposal = reviewed.proposal
+        semantic_failures: list[str] = []
+        if reviewed.status != "proposal_ready" or proposal is None:
+            semantic_failures.append("LLM 의미 검사에서 차단되었습니다.")
+        elif set(proposal.capabilities) != set(capabilities):
+            semantic_failures.append("capabilities가 Skill 의미 검사 결과와 일치하지 않습니다.")
+        elif not set(allowed_tools).issubset(proposal.allowed_tools):
+            semantic_failures.append("allowed_tools가 Skill 의미 검사 범위를 초과합니다.")
+        return SkillReviewResult(
+            draft=draft,
+            checks=(
+                SkillReviewCheck("rules", True),
+                SkillReviewCheck("semantic", not semantic_failures, tuple(semantic_failures)),
+            ),
+            publish_allowed=not semantic_failures,
+            issues=reviewed.issues,
+        )
+
     def publish(
         self,
         *,
@@ -370,6 +507,44 @@ def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> tup
     if total_chars > MAX_TOTAL_REFERENCE_CHARS:
         raise ValueError(f"Reference documents support at most {MAX_TOTAL_REFERENCE_CHARS} characters in total.")
     return tuple(issues)
+
+
+def _validate_supplied_references(references: tuple[SkillAuthoringReference, ...]) -> None:
+    if len(references) > MAX_REFERENCE_COUNT:
+        raise ValueError(f"references supports at most {MAX_REFERENCE_COUNT} documents.")
+    ids = tuple(reference.id for reference in references)
+    if len(set(ids)) != len(ids) or any(not reference_id.strip() for reference_id in ids):
+        raise ValueError("references must contain unique non-empty ids.")
+
+
+def _definition_rule_failures(
+    draft: SkillDefinitionDraft,
+    references: tuple[SkillAuthoringReference, ...],
+) -> tuple[tuple[SkillSafetyIssue, ...], tuple[str, ...]]:
+    failures: list[str] = []
+    try:
+        validate_skill_name(draft.command)
+        if not draft.description.strip():
+            raise ValueError("description is required.")
+        if not draft.capabilities:
+            raise ValueError("capabilities are required.")
+        validate_allowed_tools(draft.capabilities, draft.allowed_tools)
+        _validate_supplied_references(references)
+    except ValueError as exc:
+        failures.append(str(exc))
+    try:
+        reference_issues = _validate_references(references)
+    except ValueError as exc:
+        failures.append(str(exc))
+        reference_issues = ()
+    safety_issues = (
+        _tag_issues(inspect_skill_instructions(draft.name), "name")
+        + _tag_issues(inspect_skill_instructions(draft.description), "description")
+        + _tag_issues(inspect_skill_instructions(draft.instructions_markdown), "instruction")
+        + reference_issues
+    )
+    failures.extend(issue.reason for issue in safety_issues)
+    return safety_issues, tuple(dict.fromkeys(failures))
 
 
 def _required_text(candidate: dict[str, object], key: str, max_chars: int) -> str:

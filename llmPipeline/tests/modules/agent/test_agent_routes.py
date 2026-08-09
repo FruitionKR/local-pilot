@@ -299,6 +299,31 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(getattr(use_case.request, "skill_mode"), "explicit")
         self.assertEqual(getattr(use_case.request, "skill_id"), "skill-1")
 
+    def test_agent_turn_maps_spring_skill_snapshot(self) -> None:
+        request = AgentTurnRequestBody(
+            message="회의를 정리해줘",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            skill_mode="explicit",
+            skill_id="skill-1",
+            selected_skill={
+                "skill_id": "skill-1",
+                "version_id": "version-2",
+                "name": "회의 요약",
+                "description": "회의 내용을 정리합니다.",
+                "instructions_markdown": "결정 사항을 구분한다.",
+                "capabilities": ["document-create"],
+                "allowed_tools": ["list_root_items", "list_folder_children", "create_document"],
+            },
+        ).to_domain()
+
+        self.assertEqual(request.skill_definitions[0].id, "skill-1")  # type: ignore[index]
+        self.assertEqual(request.skill_definitions[0].enabled_version.id, "version-2")  # type: ignore[index,union-attr]
+        self.assertEqual(
+            request.skill_definitions[0].enabled_version.allowed_tools,  # type: ignore[index,union-attr]
+            ("list_root_items", "list_folder_children", "create_document"),
+        )
+
     def test_agent_turn_returns_insert_after_operation(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="현재 섹션 아래에 문제 해결 절을 추가해줘"),

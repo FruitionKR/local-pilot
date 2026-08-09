@@ -15,8 +15,8 @@ from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator
     ChatCompletionsSkillAuthoringGenerator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
-from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
-from app.modules.skill.interfaces.http.routes import router as skill_router
+from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse, SkillDefinitionRequest
+from app.modules.skill.interfaces.http.routes import preview_skill, refine_skill, router as skill_router
 
 
 class FixedGenerator:
@@ -105,6 +105,11 @@ class FixedReferenceReader:
             name="참고 문서",
             markdown=self.markdown,
         )
+
+
+class FailingReferenceReader(FixedReferenceReader):
+    def read(self, **kwargs: object) -> SkillAuthoringReference:
+        raise AssertionError("Spring이 전달한 참조 문서를 다시 조회하면 안 됩니다.")
 
 
 class RecordingClient:
@@ -220,6 +225,125 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(response["name"], "concise-document-writer")
         self.assertEqual(response["description"], "요청한 내용을 간결한 문서로 작성합니다.")
         self.assertIn("# 작성 절차", response["skill_markdown"])
+
+    def test_refine_definition_uses_supplied_reference_and_preserves_identity(self) -> None:
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=intent_result(reference_mode="structure-reference"),
+            ),
+            FailingReferenceReader(),
+        )
+
+        result = use_case.refine_definition(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            command="summary",
+            name="회의 요약",
+            description="",
+            instructions_markdown="회의 내용을 요약한다.",
+            scope_type="personal",
+            capabilities=(),
+            allowed_tools=(),
+            references=(
+                SkillAuthoringReference(
+                    id="document-1",
+                    name="회의록",
+                    markdown="# 회의록\n\n## 결정 사항\n",
+                ),
+            ),
+        )
+
+        self.assertEqual(result.draft.command, "summary")  # type: ignore[union-attr]
+        self.assertEqual(result.draft.name, "회의 요약")  # type: ignore[union-attr]
+        self.assertFalse(result.persisted)
+        self.assertEqual(repository.skills, {})
+
+    def test_refine_route_returns_spring_draft_contract(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+        response = refine_skill(
+            SkillDefinitionRequest(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                command="summary",
+                name="회의 요약",
+                description="",
+                instructions_markdown="회의 내용을 요약한다.",
+                scope_type="personal",
+            ),
+            use_case=use_case,
+        ).model_dump()
+
+        self.assertFalse(response["persisted"])
+        self.assertEqual(response["draft"]["command"], "summary")
+        self.assertEqual(response["draft"]["name"], "회의 요약")
+        self.assertEqual(repository.skills, {})
+
+    def test_refine_rejects_provided_capability_mismatch(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+
+        with self.assertRaisesRegex(ValueError, "capabilities"):
+            use_case.refine_definition(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                command="summary",
+                name="회의 요약",
+                description="회의를 요약합니다.",
+                instructions_markdown="회의 내용을 요약한다.",
+                scope_type="personal",
+                capabilities=("folder-organize",),
+                allowed_tools=(),
+                references=(),
+            )
+
+        self.assertEqual(repository.skills, {})
+
+    def test_preview_route_returns_checks_and_publish_decision(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+        response = preview_skill(
+            SkillDefinitionRequest(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                command="summary",
+                name="회의 요약",
+                description="회의 내용을 요약합니다.",
+                instructions_markdown="회의 내용을 요약한다.",
+                scope_type="personal",
+                capabilities=["document-create"],
+                allowed_tools=["list_root_items", "list_folder_children", "create_document"],
+            ),
+            use_case=use_case,
+        ).model_dump()
+
+        self.assertTrue(response["publish_allowed"])
+        self.assertEqual([check["name"] for check in response["checks"]], ["rules", "semantic"])
+        self.assertFalse(response["has_blocked_issues"])
+        self.assertEqual(repository.skills, {})
+
+    def test_review_definition_fails_closed_when_semantic_check_fails(self) -> None:
+        class FailingGenerator(FixedGenerator):
+            def classify(self, *args: object, **kwargs: object) -> dict[str, object]:
+                raise RuntimeError("provider timeout")
+
+        use_case, repository = self.build_use_case(FailingGenerator(draft_result()))
+
+        result = use_case.review_definition(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            command="summary",
+            name="회의 요약",
+            description="회의 내용을 요약합니다.",
+            instructions_markdown="회의 내용을 요약한다.",
+            scope_type="personal",
+            capabilities=("document-create",),
+            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
+            references=(),
+        )
+
+        self.assertFalse(result.publish_allowed)
+        self.assertFalse(result.checks[-1].passed)
+        self.assertEqual(result.checks[-1].name, "semantic")
+        self.assertEqual(repository.skills, {})
 
     def test_has_no_direct_create_route_that_bypasses_authoring_review(self) -> None:
         direct_create = [

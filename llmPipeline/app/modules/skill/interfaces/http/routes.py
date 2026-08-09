@@ -18,12 +18,38 @@ from app.modules.skill.interfaces.http.schemas import (
     SkillDefinitionRequest,
     SkillDraftProposalRequest,
     SkillPreviewResponse,
+    SkillRefineResponse,
     SkillResponse,
     UpdateSkillRequest,
 )
 
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+
+
+@router.post("/refine", response_model=SkillRefineResponse)
+def refine_skill(
+    payload: SkillDefinitionRequest,
+    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
+) -> SkillRefineResponse:
+    try:
+        result = use_case.refine_definition(
+            workspace_id=payload.workspace_id or "",
+            user_id=payload.user_id,
+            command=payload.normalized_command,
+            name=payload.name,
+            description=payload.description,
+            instructions_markdown=payload.instructions_markdown,
+            scope_type=payload.scope_type,
+            capabilities=tuple(payload.capabilities),
+            allowed_tools=tuple(payload.allowed_tools),
+            references=payload.references(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Skill AI 구체화를 완료하지 못했습니다.") from exc
+    return SkillRefineResponse.from_domain(result)
 
 
 @router.post("/author", response_model=SkillAuthoringResponse)
@@ -93,20 +119,21 @@ def propose_skill_draft(
 @router.post("/preview", response_model=SkillPreviewResponse)
 def preview_skill(
     payload: SkillDefinitionRequest,
-    use_case: ManageSkillUseCase = Depends(get_manage_skill_use_case),
+    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
 ) -> SkillPreviewResponse:
-    try:
-        version = use_case.preview(
-            user_id=payload.user_id,
-            name=payload.name,
-            description=payload.description,
-            instructions_markdown=payload.instructions_markdown,
-            capabilities=tuple(payload.capabilities),
-            allowed_tools=tuple(payload.allowed_tools),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillPreviewResponse.from_domain(version)
+    result = use_case.review_definition(
+        workspace_id=payload.workspace_id or "",
+        user_id=payload.user_id,
+        command=payload.normalized_command,
+        name=payload.name,
+        description=payload.description,
+        instructions_markdown=payload.instructions_markdown,
+        scope_type=payload.scope_type,
+        capabilities=tuple(payload.capabilities),
+        allowed_tools=tuple(payload.allowed_tools),
+        references=payload.references(),
+    )
+    return SkillPreviewResponse.from_domain(result)
 
 
 @router.get("", response_model=list[SkillResponse])

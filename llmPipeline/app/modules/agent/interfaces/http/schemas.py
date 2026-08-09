@@ -1,6 +1,6 @@
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.untrusted_input import validate_untrusted_payload
 from app.modules.agent.domain.entities import (
@@ -11,9 +11,12 @@ from app.modules.agent.domain.entities import (
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import QueryResponse
+from app.modules.skill.domain.entities import Skill, SkillVersion
 from app.modules.skill.interfaces.http.schemas import (
+    CapabilityValue,
     SkillAuthoringResponse,
     SkillDraftSourceRunRequest,
+    ToolValue,
 )
 
 
@@ -74,6 +77,51 @@ class AgentConversationContextRequest(BaseModel):
         )
 
 
+class SkillExecutionReferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    content_hash: str = Field(..., min_length=1)
+
+
+class SkillExecutionDefinitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str = Field(..., min_length=1)
+    version_id: str = Field(..., min_length=1)
+    command: str = Field(default="", pattern=r"^$|^[a-z0-9][a-z0-9-]{0,62}$")
+    name: str = Field(..., min_length=1, max_length=63)
+    description: str = Field(..., min_length=1, max_length=500)
+    instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+    capabilities: list[CapabilityValue] = Field(..., min_length=1)
+    allowed_tools: list[ToolValue] = Field(default_factory=list)
+    reference_documents: list[SkillExecutionReferenceRequest] = Field(default_factory=list, max_length=3)
+
+    def to_domain(self, workspace_id: str | None) -> Skill:
+        version = SkillVersion(
+            id=self.version_id,
+            skill_id=self.skill_id,
+            version=0,
+            name=self.name,
+            description=self.description,
+            instructions_markdown=self.instructions_markdown,
+            capabilities=tuple(self.capabilities),
+            allowed_tools=tuple(self.allowed_tools),
+            status="published",
+        )
+        return Skill(
+            id=self.skill_id,
+            workspace_id=workspace_id,
+            scope_type="team",
+            owner_user_id=None,
+            slug=self.command,
+            status="enabled",
+            enabled_version=version,
+            latest_version=version,
+        )
+
+
 class AgentTurnRequestBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_AGENT_MESSAGE_LENGTH)
     workspace_id: str | None = Field(default=None, min_length=1)
@@ -85,6 +133,8 @@ class AgentTurnRequestBody(BaseModel):
     active_markdown_context: ActiveMarkdownContextRequest | None = None
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
     skill_id: str | None = Field(default=None, min_length=1)
+    selected_skill: SkillExecutionDefinitionRequest | None = None
+    skill_candidates: list[SkillExecutionDefinitionRequest] = Field(default_factory=list, max_length=20)
     skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
     skill_draft_user_directives: list[str] = Field(default_factory=list)
     skill_draft_excluded_literals: list[str] = Field(default_factory=list)
@@ -95,9 +145,26 @@ class AgentTurnRequestBody(BaseModel):
     @model_validator(mode="after")
     def validate_untrusted_input(self) -> Self:
         validate_untrusted_payload(self.model_dump(mode="json"))
+        if self.selected_skill is not None and self.skill_candidates:
+            raise ValueError("selected_skill and skill_candidates cannot be used together.")
+        if self.selected_skill is not None and self.skill_mode != "explicit":
+            raise ValueError("selected_skill requires explicit skill_mode.")
+        if self.skill_candidates and self.skill_mode != "auto":
+            raise ValueError("skill_candidates require auto skill_mode.")
+        if self.selected_skill is not None and self.skill_id not in {None, self.selected_skill.skill_id}:
+            raise ValueError("skill_id must match selected_skill.skill_id.")
         return self
 
     def to_domain(self) -> AgentTurnRequest:
+        skill_definitions = None
+        skill_id = self.skill_id
+        if self.selected_skill is not None:
+            skill_definitions = (self.selected_skill.to_domain(self.workspace_id),)
+            skill_id = skill_id or self.selected_skill.skill_id
+        elif "skill_candidates" in self.model_fields_set:
+            skill_definitions = tuple(
+                definition.to_domain(self.workspace_id) for definition in self.skill_candidates
+            )
         return AgentTurnRequest(
             message=self.message,
             workspace_id=self.workspace_id,
@@ -108,7 +175,8 @@ class AgentTurnRequestBody(BaseModel):
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
             skill_mode=self.skill_mode,
-            skill_id=self.skill_id,
+            skill_id=skill_id,
+            skill_definitions=skill_definitions,
             skill_draft_sources=tuple(source.to_domain() for source in self.skill_draft_sources),
             skill_draft_user_directives=tuple(self.skill_draft_user_directives),
             skill_draft_excluded_literals=tuple(self.skill_draft_excluded_literals),
