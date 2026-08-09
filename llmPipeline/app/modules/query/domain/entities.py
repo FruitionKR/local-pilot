@@ -4,6 +4,7 @@ from typing import Literal
 
 OutputLanguage = Literal["ko", "en", "document"]
 ResponseLength = Literal["concise", "balanced", "detailed"]
+ConversationRole = Literal["user", "assistant"]
 
 
 @dataclass(frozen=True)
@@ -60,8 +61,15 @@ class QueryRewrite:
 
 
 @dataclass(frozen=True)
+class ConversationMessage:
+    role: ConversationRole
+    content: str
+
+
+@dataclass(frozen=True)
 class ConversationContext:
     recent_conversation_summary: str | None = None
+    recent_messages: tuple[ConversationMessage, ...] = ()
     reference_context: dict[str, object] = field(default_factory=dict)
 
 
@@ -175,3 +183,4 @@ class QueryAnswer:
     graph_context: GraphContext
     traversal_paths: list[TraversalPath]
     retrieval_summary: RetrievalSummary
+    updated_conversation_summary: str | None = None

@@ -6,13 +6,21 @@ from app.modules.query.application.query_answer_assembler import QueryAnswerAsse
 from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
 from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWikiMarkdownReader
 from app.modules.query.infrastructure.postgres_wiki_repository import PostgresWikiRepository
-from app.modules.query.infrastructure.query_chat_answer_generator import build_query_chat_answer_generator
+from app.modules.query.infrastructure.query_chat_answer_generator import (
+    build_query_chat_answer_generator,
+    build_query_conversation_summarizer,
+)
 from app.modules.query.infrastructure.query_answer_evaluator import build_query_answer_evaluator
 from app.modules.query.infrastructure.query_evaluator_graph import LangGraphQueryEvaluatorGraph
 from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
 from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 from app.modules.query.infrastructure.web_search import build_web_search
+
+
+@lru_cache(maxsize=1)
+def get_conversation_summarizer():
+    return build_query_conversation_summarizer()
 
 
 @lru_cache(maxsize=1)
@@ -42,6 +50,7 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
         ),
         min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
         query_evaluator_max_attempts=query_evaluator_max_attempts,
+        conversation_summarizer=get_conversation_summarizer(),
     )
 
 

@@ -82,6 +82,14 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 if request.conversation_context
                 else None
             ),
+            "recent_messages": (
+                [
+                    {"role": message.role, "content": message.content}
+                    for message in request.conversation_context.recent_messages
+                ]
+                if request.conversation_context
+                else []
+            ),
             "reference_context": (
                 request.conversation_context.reference_context
                 if request.conversation_context
@@ -230,10 +238,21 @@ def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) 
         if request.conversation_context and request.conversation_context.recent_conversation_summary
         else ""
     )
+    recent_messages = "\n".join(
+        message.content
+        for message in (
+            request.conversation_context.recent_messages
+            if request.conversation_context
+            else ()
+        )
+        if message.role == "user"
+    )
     has_pending_proposal = bool(
         request.conversation_context and request.conversation_context.pending_skill_proposal
     )
-    if not has_pending_proposal and not _requests_new_skill(f"{request.message}\n{summary}"):
+    if not has_pending_proposal and not _requests_new_skill(
+        f"{request.message}\n{summary}\n{recent_messages}"
+    ):
         return ["skill_authoring requires an explicit request to create a new Skill"]
     if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
         return ["completed work must use skill_draft_proposal instead of skill_authoring"]

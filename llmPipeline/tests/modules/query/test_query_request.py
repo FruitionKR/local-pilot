@@ -32,6 +32,26 @@ class QueryRequestTest(unittest.TestCase):
                 output_language="fr",
             )
 
+    def test_accepts_at_most_three_recent_conversation_pairs(self) -> None:
+        request = QueryRequest(
+            workspace_id="ws_target",
+            question="후속 질문",
+            recent_messages=[
+                {"role": "user" if index % 2 == 0 else "assistant", "content": str(index)}
+                for index in range(6)
+            ],
+        )
+
+        self.assertEqual(len(request.recent_messages), 6)
+        with self.assertRaises(ValidationError):
+            QueryRequest(
+                workspace_id="ws_target",
+                question="후속 질문",
+                recent_messages=[
+                    {"role": "user", "content": str(index)} for index in range(7)
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

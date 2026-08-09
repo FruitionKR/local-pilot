@@ -48,10 +48,15 @@ def answer_query(
 
 
 def _conversation_context(payload: QueryRequest) -> ConversationContext | None:
-    if payload.recent_conversation_summary is None and payload.reference_context is None:
+    if (
+        payload.recent_conversation_summary is None
+        and not payload.recent_messages
+        and payload.reference_context is None
+    ):
         return None
     return ConversationContext(
         recent_conversation_summary=payload.recent_conversation_summary,
+        recent_messages=tuple(message.to_domain() for message in payload.recent_messages),
         reference_context=payload.reference_context or {},
     )
 
@@ -59,6 +64,7 @@ def _conversation_context(payload: QueryRequest) -> ConversationContext | None:
 def _to_response(result: QueryAnswer) -> QueryResponse:
     return QueryResponse(
         answer=result.answer.content,
+        updated_conversation_summary=result.updated_conversation_summary,
         related_pages=[
             RelatedPageResponse(
                 id=item.page.id,

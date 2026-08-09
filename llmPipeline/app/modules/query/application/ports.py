@@ -1,6 +1,18 @@
 from typing import Protocol, runtime_checkable
 
-from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation, QueryRewrite, SemanticQueryEmbedding, WebSearchResult, WikiEmbeddingUnit, WikiPage, WikiPageLink
+from app.modules.query.domain.entities import (
+    ConversationMessage,
+    EvidenceSnippet,
+    GeneratedAnswer,
+    QueryContext,
+    QueryEvaluation,
+    QueryRewrite,
+    SemanticQueryEmbedding,
+    WebSearchResult,
+    WikiEmbeddingUnit,
+    WikiPage,
+    WikiPageLink,
+)
 
 
 class WikiRepositoryPort(Protocol):
@@ -57,6 +69,15 @@ class TextSearchPort(Protocol):
 
 class QueryRewritePort(Protocol):
     def rewrite(self, question: str) -> QueryRewrite:
+        ...
+
+
+class ConversationSummarizerPort(Protocol):
+    def summarize(
+        self,
+        previous_summary: str | None,
+        messages: tuple[ConversationMessage, ...],
+    ) -> str:
         ...
 
 

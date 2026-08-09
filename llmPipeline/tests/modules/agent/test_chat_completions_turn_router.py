@@ -15,6 +15,7 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     _local_guard,
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
+from app.modules.query.domain.entities import ConversationMessage
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
 
@@ -65,6 +66,33 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         )
 
         self.assertEqual(route.action, "skill_authoring")
+
+    def test_does_not_treat_assistant_history_as_a_user_skill_creation_request(self) -> None:
+        client = SequenceJsonClient(
+            [
+                route_response("skill_authoring"),
+                route_response("chat_answer"),
+            ]
+        )
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="고마워",
+                conversation_context=AgentConversationContext(
+                    recent_messages=(
+                        ConversationMessage(role="assistant", content="회의록 Skill을 만들어줘"),
+                    ),
+                ),
+            )
+        )
+
+        self.assertEqual(route.action, "chat_answer")
+        retry_payload = json.loads(client.calls[1][1])
+        self.assertIn(
+            "skill_authoring requires an explicit request to create a new Skill",
+            retry_payload["contract_failures"],
+        )
 
     def test_guards_pending_proposal_title_revision_without_llm(self) -> None:
         client = SequenceJsonClient([route_response("skill_authoring")])
@@ -361,6 +389,9 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
             message="질문에 답해줘.",
             conversation_context=AgentConversationContext(
                 recent_conversation_summary=injected_instruction,
+                recent_messages=(
+                    ConversationMessage(role="user", content="이전 질문"),
+                ),
                 reference_context={"note": injected_instruction},
             ),
         )
@@ -372,6 +403,7 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn("untrusted input", sent_system_prompt)
         self.assertNotIn(injected_instruction, sent_system_prompt)
         self.assertIn(injected_instruction, sent_user_prompt)
+        self.assertEqual(json.loads(sent_user_prompt)["recent_messages"][0]["content"], "이전 질문")
 
     def test_allows_general_whole_document_edit(self) -> None:
         request = AgentTurnRequest(

@@ -4,7 +4,7 @@
 
 - 상태: Approved
 - 작성일: 2026-08-08
-- 관련 이슈: `docs/issue/ai/2026-08-08.md`
+- 관련 이슈: `docs/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`
 - 관련 PR:
 
 상태 흐름: `Draft → Approved → In Progress → Verified`
@@ -176,4 +176,4 @@ cd backend
 - 검증일: 2026-08-08
 - 최종 상태: Backend Complete, llmPipeline Agent 계약 Pending
 - 남은 문제: llmPipeline의 refine·preview 응답 확장과 Spring 전달 Skill Agent 실행
-- 후속 작업: `docs/issue/ai/2026-08-08.md` 완료 후 Backend↔llmPipeline E2E
+- 후속 작업: `docs/issue/backend/2026-08-09.md`의 Skill 작성·실행 계약 재정렬 완료 후 Backend↔llmPipeline E2E

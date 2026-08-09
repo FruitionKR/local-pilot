@@ -10,7 +10,7 @@ from app.modules.agent.domain.entities import (
     PendingSkillProposal,
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
-from app.modules.query.interfaces.http.schemas import QueryResponse
+from app.modules.query.interfaces.http.schemas import ConversationMessageRequest, QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
     SkillAuthoringResponse,
     SkillDraftSourceRunRequest,
@@ -61,12 +61,14 @@ class PendingSkillProposalRequest(BaseModel):
 
 class AgentConversationContextRequest(BaseModel):
     recent_conversation_summary: str | None = None
+    recent_messages: list[ConversationMessageRequest] = Field(default_factory=list, max_length=6)
     reference_context: dict[str, Any] | None = None
     pending_skill_proposal: PendingSkillProposalRequest | None = None
 
     def to_domain(self) -> AgentConversationContext:
         return AgentConversationContext(
             recent_conversation_summary=self.recent_conversation_summary,
+            recent_messages=tuple(message.to_domain() for message in self.recent_messages),
             reference_context=self.reference_context or {},
             pending_skill_proposal=(
                 self.pending_skill_proposal.to_domain() if self.pending_skill_proposal else None
@@ -180,6 +182,7 @@ class AgentTurnResponse(BaseModel):
         "reject",
     ]
     route: AgentTurnRouteResponse
+    updated_conversation_summary: str | None = None
     message: str | None = None
     chat: QueryResponse | None = None
     edit: MarkdownEditOperationResponse | None = None
