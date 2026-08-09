@@ -760,6 +760,7 @@ public class DocumentService {
         } catch (Exception e) {
             throw new DocumentUploadException("채팅 export 저장 중 오류가 발생했습니다.", e);
         }
+        registerMinioRollbackCleanup(objectPath);
 
         Document document = new Document(
                 documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
@@ -1543,6 +1544,13 @@ public class DocumentService {
                 .orElse(editState.getMarkdown());
         String currentContentHash = mongoEditState.map(MongoDocumentEditState::getContentHash)
                 .orElse(editState.getContentHash());
+
+        // 원본 경로가 없으면 빈 키로 putObject가 나가 원인을 알기 어려운 500이 된다.
+        // 문서 생성 시점에 원본을 만들지 않던 시절의 행이 여기로 들어온다.
+        if (document.getSourceUri() == null || document.getSourceUri().isBlank()) {
+            throw new InvalidMarkdownContentException(
+                    "원본 파일 경로가 없는 문서는 재처리할 수 없습니다: " + documentId);
+        }
 
         byte[] bytes = currentMarkdown.getBytes(StandardCharsets.UTF_8);
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
