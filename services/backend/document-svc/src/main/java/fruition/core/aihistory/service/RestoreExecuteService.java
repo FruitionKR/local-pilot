@@ -102,7 +102,7 @@ public class RestoreExecuteService {
         Map<String, List<String>> expected = contributionSignatures(contributions);
         OperationLog restore = lifecycle.startQueued(
                 target, manifestJson(new RestoreManifest(plan, excluded, expected)), now);
-        String runId = "maintenance_" + java.util.UUID.randomUUID();
+        String runId = java.util.UUID.randomUUID().toString();
         outboxWriter.enqueue(runId, commandTopic, workspaceId,
                 restoreCommand(runId, restore, target, excluded, plan, sourcePage, expected));
         return RestoreExecuteResponse.queued(runId, restore.getOperationId(), operationId, plan);

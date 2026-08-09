@@ -61,3 +61,33 @@ def test_ai_schema_keeps_pipeline_workspace_status_index() -> None:
     schema = cutover.SCHEMA_PATH.read_text(encoding="utf-8")
     assert "idx_pipeline_runs_workspace_status" in schema
     assert "(workspace_id, status, created_at DESC)" in schema
+
+
+def test_rollback_restores_and_probes_both_runtime_roles(monkeypatch) -> None:
+    monkeypatch.setenv("CORE_DB_MIGRATION_URL", "postgresql://migration")
+    monkeypatch.setenv("CORE_DB_RUNTIME_USER", "core_runtime")
+    monkeypatch.setenv("AI_DB_RUNTIME_USER", "ai_runtime")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    with (
+        patch.object(cutover.psycopg, "connect", return_value=connection),
+        patch.object(cutover, "_assert_table_write") as table_write,
+        patch.object(cutover, "_assert_sequence_write") as sequence_write,
+        patch.object(cutover, "_assert_actual_write") as actual_write,
+    ):
+        cutover.rollback_core_permissions(Namespace())
+
+    assert table_write.call_args_list == [
+        call(connection, "core_runtime", cutover.WIKI_TABLES, True),
+        call(connection, "ai_runtime", cutover.WIKI_TABLES, True),
+    ]
+    assert actual_write.call_args_list == [
+        call(connection, "core_runtime", cutover.WIKI_TABLES),
+        call(connection, "ai_runtime", cutover.WIKI_TABLES),
+    ]
+    assert sequence_write.call_args_list == [
+        call(connection, "core_runtime"),
+        call(connection, "ai_runtime"),
+    ]

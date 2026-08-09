@@ -19,7 +19,6 @@ import static org.mockito.Mockito.when;
 class QueryRunServiceTest {
 
     @Mock QueryRunStore queryRunStore;
-    @Mock QueryEventBroker queryEventBroker;
     @Mock QueryService queryService;
     @Mock AiCommandOutboxWriter outboxWriter;
 
@@ -27,8 +26,7 @@ class QueryRunServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new QueryRunService(queryRunStore, queryEventBroker, queryService,
-                outboxWriter, "ai.query.command");
+        service = new QueryRunService(queryRunStore, queryService, outboxWriter, "ai.query.command");
     }
 
     @Test
@@ -48,14 +46,4 @@ class QueryRunServiceTest {
                 org.mockito.ArgumentMatchers.eq("session_abc123"), any());
     }
 
-    @Test
-    void failStuckRuns_broadcastsTimeoutFailureForEachStuckRun() {
-        when(queryRunStore.failStuck(java.time.Duration.ofMinutes(5), "질의 처리 시간이 초과되었습니다."))
-                .thenReturn(java.util.List.of("query_old1", "query_old2"));
-
-        service.failStuckRuns();
-
-        verify(queryEventBroker).fail("query_old1", "질의 처리 시간이 초과되었습니다.");
-        verify(queryEventBroker).fail("query_old2", "질의 처리 시간이 초과되었습니다.");
-    }
 }

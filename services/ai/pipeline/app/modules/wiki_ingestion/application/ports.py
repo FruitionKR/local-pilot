@@ -33,7 +33,12 @@ class PipelineRunRepositoryPort(Protocol):
         mode: str,
     ) -> None: ...
 
-    def finish(self, run_id: str, manifest: dict[str, Any]) -> list[str]: ...
+    def finish(
+        self,
+        run_id: str,
+        manifest: dict[str, Any],
+        expected_source_hash: str | None = None,
+    ) -> list[str]: ...
 
     def fail(self, run_id: str, error: str) -> None: ...
 
@@ -67,6 +72,14 @@ class WikiEmbeddingJobPort(Protocol):
 
 
 class WikiPageRestorePort(Protocol):
+    def apply_current_state(
+        self,
+        workspace_id: str,
+        changed_pages: list[dict[str, Any]],
+        link_changes: dict[str, list[dict[str, Any]]],
+        replace_links: bool,
+    ) -> None: ...
+
     def cleanup_deleted_pages(
         self,
         workspace_id: str,

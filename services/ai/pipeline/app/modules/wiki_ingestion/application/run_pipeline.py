@@ -48,7 +48,11 @@ class RunPipelineUseCase:
                 )
                 self._ensure_active(run_id)
                 self._ensure_current_source(command)
-                page_ids = self._repository.finish(run_id, manifest)
+                page_ids = self._repository.finish(
+                    run_id,
+                    manifest,
+                    command.source_content_hash,
+                )
                 self._embedding_job.start(run_id, page_ids)
                 return manifest
             except Exception as exc:

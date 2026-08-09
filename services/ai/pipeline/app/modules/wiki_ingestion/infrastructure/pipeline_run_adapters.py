@@ -40,8 +40,13 @@ class PostgresPipelineRunRepository:
             mode,
         )
 
-    def finish(self, run_id: str, manifest: dict[str, Any]) -> list[str]:
-        return database.finish_pipeline_run(run_id, manifest)
+    def finish(
+        self,
+        run_id: str,
+        manifest: dict[str, Any],
+        expected_source_hash: str | None = None,
+    ) -> list[str]:
+        return database.finish_pipeline_run(run_id, manifest, expected_source_hash)
 
     def fail(self, run_id: str, error: str) -> None:
         database.fail_pipeline_run(run_id, error)

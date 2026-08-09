@@ -10,6 +10,7 @@ import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wikimaintenance.domain.WikiLintState;
 import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
+import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.core.wikimaintenance.repository.WikiLintStateRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import org.springframework.stereotype.Service;
@@ -54,7 +55,7 @@ public class WikiMaintenanceService {
         workspaceAccessGuard.requireMember(workspaceId, userId);
         WikiLintRequest safe = request == null ? new WikiLintRequest(null, null) : request;
         boolean dryRun = !Boolean.FALSE.equals(safe.dryRun());
-        String runId = "maintenance_" + UUID.randomUUID();
+        String runId = UUID.randomUUID().toString();
         String operationId = dryRun ? null : operationStarter.start(workspaceId, userId);
         outboxWriter.enqueue(runId, commandTopic, workspaceId,
                 new LintCommand(runId, "lint", workspaceId, userId, operationId,
@@ -66,7 +67,8 @@ public class WikiMaintenanceService {
         workspaceAccessGuard.requireMember(workspaceId, userId);
         var run = runStatusRequester.find(runId)
                 .filter(value -> workspaceId.equals(value.workspaceId()) && userId.equals(value.userId()))
-                .orElseThrow(() -> new IllegalArgumentException("Wiki maintenance run을 찾을 수 없습니다."));
+                .orElseThrow(() -> new PipelineWikiMaintenanceException(
+                        "Wiki maintenance run을 찾을 수 없습니다.", 404, null));
         return objectMapper.valueToTree(run);
     }
 

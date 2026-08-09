@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,6 +83,7 @@ class RestoreExecuteServiceTest {
 
         assertThat(response.status()).isEqualTo("queued");
         assertThat(response.operationId()).isEqualTo("op_restore");
+        assertThat(UUID.fromString(response.runId()).toString()).isEqualTo(response.runId());
         ArgumentCaptor<Object> command = ArgumentCaptor.forClass(Object.class);
         verify(outboxWriter).enqueue(eq(response.runId()), eq("ai.maintenance.command"),
                 eq(WORKSPACE), command.capture());

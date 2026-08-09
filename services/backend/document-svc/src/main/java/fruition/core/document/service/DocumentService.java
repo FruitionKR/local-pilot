@@ -1196,11 +1196,14 @@ public class DocumentService {
                     legacyState
             );
         } catch (DocumentVersionConflictException conflict) {
-            // 편집안이 오래된 base를 바탕으로 하고 있다. 시도 기록은 별도 트랜잭션으로 남긴다.
-            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
-                operationRecorder.recordConflict(
-                        applyOperationId, workspaceId, userId, documentId, Instant.now());
-            }
+            // 적용 표 소비와 conflict 감사 기록은 같은 PostgreSQL 트랜잭션으로 남긴다.
+            transactionTemplate.execute(status -> {
+                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                    operationRecorder.recordConflict(
+                            applyOperationId, workspaceId, userId, documentId, Instant.now());
+                }
+                return null;
+            });
             throw conflict;
         }
         projectContentVersions(documentId, content.markdown(), result);
@@ -1214,12 +1217,14 @@ public class DocumentService {
         }
 
         // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
-        if (result.changed() && applyOperationStore.consume(applyOperationId, userId, documentId)) {
+        if (result.changed()) {
             transactionTemplate.execute(status -> {
-                operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
-                        result.baseRevision(), result.revision(), result.baseMarkdown(),
-                        content.markdown(), result.updatedAt());
-                contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                    operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                            result.baseRevision(), result.revision(), result.baseMarkdown(),
+                            content.markdown(), result.updatedAt());
+                    contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                }
                 return null;
             });
         }
@@ -1430,7 +1435,8 @@ public class DocumentService {
     @Transactional
     public DocumentIngestResponse ingest(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .filter(value -> value.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(document, userId);
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {

@@ -91,6 +91,7 @@ class ArtifactStore:
         self.objects = objects
         self.writes: list[tuple[str, str, str]] = []
         self.cleaned_pages: list[tuple[str, list[str]]] = []
+        self.current_states: list[tuple] = []
 
     def read_text(self, key: str) -> str:
         return self.objects[key]
@@ -102,6 +103,25 @@ class ArtifactStore:
     def cleanup_deleted_pages(self, workspace_id: str, page_ids: list[str]) -> None:
         self.cleaned_pages.append((workspace_id, page_ids))
 
+    def apply_current_state(
+        self,
+        workspace_id: str,
+        changed_pages: list[dict],
+        link_changes: dict[str, list[dict]],
+        replace_links: bool,
+    ) -> None:
+        self.current_states.append(
+            (workspace_id, changed_pages, link_changes, replace_links)
+        )
+
+
+class EmbeddingJob:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def start(self, run_id: str, page_ids: list[str]) -> None:
+        self.calls.append((run_id, page_ids))
+
 
 class StorageReadError(Exception):
     pass
@@ -112,6 +132,7 @@ def _restore(store: ArtifactStore) -> ObjectStorageWikiPageRestore:
         store.read_text,
         store.write_text,
         store.cleanup_deleted_pages,
+        store.apply_current_state,
     )
 
 
@@ -122,7 +143,8 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
             "wiki/ws-1/pages/C3/ops/B.json": _payload("B", "C3", "B 근거"),
         }
     )
-    use_case = RestoreWikiPagesUseCase(_restore(store))
+    embedding_job = EmbeddingJob()
+    use_case = RestoreWikiPagesUseCase(_restore(store), embedding_job)
 
     result = use_case.execute_ingest(
         IngestOperationRestoreCommand(
@@ -151,6 +173,10 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     )
     assert "A 근거" in store.writes[0][1]
     assert "B 근거" in store.writes[0][1]
+    assert store.current_states[0][0] == "ws-1"
+    assert store.current_states[0][1] == result["changed_pages"]
+    assert store.current_states[0][3] is True
+    assert embedding_job.calls == [("restore-1", ["C3"])]
 
 
 def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:

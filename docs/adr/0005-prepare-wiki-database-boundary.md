@@ -13,13 +13,13 @@ AI와 document-svc가 `core_db`의 Wiki 현재 상태를 함께 읽고 쓰고, A
 - active run이 0건이면 두 runtime role의 core Wiki write를 먼저 차단·검증한다. copy 명령도 이 차단 상태를 재검증한 뒤 AI 연결을 `ai_db`로 전환한다. ingest/query/lint/restore smoke test가 모두 성공한 뒤에만 worker를 재개하고 `ai_runtime` core 권한을 Agent/Skill/checkpoint 테이블과 필요한 sequence로 축소한다.
 - 기존 core Wiki 테이블은 안정화 기간에 read-only로 보존한다. copy·검증 실패 시 연결 전환 없이 즉시 `rollback-core-permissions`를 실행한다. smoke 실패 시에도 구버전 연결로 되돌리고 같은 명령으로 core Wiki write 권한을 복구하며, 안정화 후 별도 migration에서 제거한다.
 - 폐기 가능한 로컬 개발 데이터는 DB를 재생성할 수 있지만, 공유·운영 데이터에는 이 예외를 적용하지 않는다.
-- 문서 최종 상태는 document-svc가 run을 폴링해 투영하고, `notify_pending`이면 기존 callback retry API를 호출한다.
+- 이 ADR의 callback·`notify_pending` 복구 결정은 [ADR 0006](0006-async-ai-tasks-and-parallel-ingest.md)으로 대체됐다. 현재 완료 전달 계약은 Kafka result event이고 ingest만 run polling으로 유실을 복구한다.
 
 ## 대안과 기각 사유
 
 - core 테이블 즉시 삭제: ID·원문 연결 보존을 검증할 수 없어 기각했다.
 - dual-write: 현재 zero-downtime 요구가 없고 동기화·보정 경로가 늘어나므로 만들지 않는다.
-- callback만 사용: callback 유실 시 문서 상태가 고착되므로 polling 복구를 함께 둔다.
+- callback만 사용: callback 의존은 ADR 0006에서 제거했고 Kafka result event와 ingest run polling으로 대체했다.
 
 ## 결과
 

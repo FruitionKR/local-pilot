@@ -189,6 +189,101 @@ def cleanup_deleted_wiki_pages(
         )
 
 
+def apply_restored_wiki_state(
+    workspace_id: str,
+    changed_pages: list[dict[str, Any]],
+    link_changes: dict[str, list[dict[str, Any]]],
+    replace_links: bool,
+) -> None:
+    if not changed_pages and not any(link_changes.values()):
+        return
+    with connect() as conn:
+        page_ids = [str(page["page_id"]) for page in changed_pages]
+        rows = conn.execute(
+            """
+            SELECT id, page_type, slug, user_id
+            FROM wiki_pages
+            WHERE workspace_id = %s AND id = ANY(%s) AND status = 'active'
+            """,
+            (workspace_id, page_ids),
+        ).fetchall() if page_ids else []
+        by_id = {str(row["id"]): row for row in rows}
+        if len(by_id) != len(set(page_ids)):
+            raise ValueError("restored Wiki page does not match workspace")
+        by_ref = {
+            f'{row["page_type"]}:{row["slug"]}': row
+            for row in rows
+        }
+        for page in changed_pages:
+            conn.execute(
+                """
+                UPDATE wiki_pages
+                SET markdown_uri = %s, status = 'active', updated_at = now()
+                WHERE id = %s AND workspace_id = %s
+                """,
+                (storage_uri(str(page["markdown_key"])), page["page_id"], workspace_id),
+            )
+
+        if replace_links and page_ids:
+            conn.execute(
+                "DELETE FROM wiki_page_links WHERE from_page_id = ANY(%s)",
+                (page_ids,),
+            )
+
+        def resolve(reference: str, user_id: str) -> str | None:
+            known = by_ref.get(reference)
+            if known is not None and str(known["user_id"]) == user_id:
+                return str(known["id"])
+            page_type, separator, slug = reference.partition(":")
+            if not separator:
+                return None
+            row = conn.execute(
+                """
+                SELECT id
+                FROM wiki_pages
+                WHERE workspace_id = %s AND user_id = %s
+                  AND page_type = %s AND slug = %s AND status = 'active'
+                """,
+                (workspace_id, user_id, page_type, slug),
+            ).fetchone()
+            return str(row["id"]) if row else None
+
+        for link in link_changes.get("removed_links", []):
+            source = by_ref.get(str(link.get("source")))
+            if source is None:
+                continue
+            target_id = resolve(str(link.get("target")), str(source["user_id"]))
+            if target_id:
+                conn.execute(
+                    """
+                    DELETE FROM wiki_page_links
+                    WHERE from_page_id = %s AND to_page_id = %s AND link_type = %s
+                    """,
+                    (source["id"], target_id, link.get("relation") or "related_to"),
+                )
+        user_ids = {str(row["user_id"]) for row in rows}
+        for link in link_changes.get("restored_links", []):
+            source = by_ref.get(str(link.get("source")))
+            if source is None:
+                continue
+            target_id = resolve(str(link.get("target")), str(source["user_id"]))
+            if target_id and target_id != str(source["id"]):
+                _upsert_wiki_page_link(
+                    conn,
+                    str(source["id"]),
+                    target_id,
+                    link.get("relation") or "related_to",
+                    link.get("label"),
+                    link.get("confidence"),
+                    workspace_id,
+                )
+    for user_id in user_ids:
+        try:
+            invalidate_concept_index(user_id, workspace_id)
+        except Exception:
+            logger.warning("concept index cache invalidation failed", exc_info=True)
+
+
 REQUIRED_TABLES = (
     "wiki_pages",
     "document_wiki_links",
@@ -587,14 +682,19 @@ def create_pipeline_run(
         )
 
 
-def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
+def finish_pipeline_run(
+    run_id: str,
+    manifest: dict[str, Any],
+    expected_source_hash: str | None = None,
+) -> list[str]:
     embedded_page_ids: list[str] = []
     with connect() as conn:
         row = conn.execute(
-            "SELECT document_id, workspace_id FROM pipeline_runs WHERE id = %s",
+            "SELECT document_id, user_id, workspace_id FROM pipeline_runs WHERE id = %s",
             (run_id,),
         ).fetchone()
     document_id = row["document_id"] if row else None
+    user_id = row["user_id"] if row else None
     workspace_id = row["workspace_id"] if row else None
     lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
     with lock:
@@ -614,28 +714,34 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
             )
         if document_id:
             try:
-                invalidate_concept_index(str(workspace_id))
+                invalidate_concept_index(str(user_id), str(workspace_id))
             except Exception:
                 logger.warning("concept index cache invalidation failed", exc_info=True)
     # core 트랜잭션 커밋 후 ai_db 파생 추적을 갱신한다.
     # 파생 추적은 best-effort — 원자성 비대상. 실패해도 ingest 결과에 영향 없다.
     if document_id:
-        _mark_derived_state_ingested(document_id)
+        _mark_derived_state_ingested(document_id, expected_source_hash)
     return embedded_page_ids
 
 
-def _mark_derived_state_ingested(document_id: str) -> None:
+def _mark_derived_state_ingested(
+    document_id: str,
+    expected_source_hash: str | None,
+) -> None:
+    if expected_source_hash is None:
+        return
     try:
         with connect_ai() as conn:
             conn.execute(
                 """
                 UPDATE document_derived_state
-                SET ingested_hash = last_edit_hash,
+                SET ingested_hash = %s,
                     last_ingested_at = now(),
                     updated_at = now()
                 WHERE document_id = %s
+                  AND last_edit_hash = %s
                 """,
-                (document_id,),
+                (expected_source_hash, document_id, expected_source_hash),
             )
     except Exception:
         logger.warning(
@@ -691,7 +797,7 @@ def get_pipeline_run(run_id: str) -> dict | None:
 
 def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "local-workspace") -> list[dict[str, Any]]:
     try:
-        cached = get_concept_index(workspace_id)
+        cached = get_concept_index(user_id, workspace_id)
         if cached is not None:
             return cached
     except Exception:
@@ -714,7 +820,7 @@ def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "
         markdown = _read_optional_text_object(row["markdown_uri"])
         concepts.append(_concept_index_from_markdown(row["slug"], row["title"], row["markdown_uri"], markdown))
     try:
-        put_concept_index(workspace_id, concepts)
+        put_concept_index(user_id, workspace_id, concepts)
     except Exception:
         logger.warning("concept index cache write failed", exc_info=True)
     return concepts

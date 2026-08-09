@@ -57,8 +57,13 @@ class FakeRepository:
             )
         )
 
-    def finish(self, run_id: str, manifest: dict[str, object]) -> list[str]:
-        self.calls.append(("finish", run_id, manifest))
+    def finish(
+        self,
+        run_id: str,
+        manifest: dict[str, object],
+        expected_source_hash: str | None = None,
+    ) -> list[str]:
+        self.calls.append(("finish", run_id, manifest, expected_source_hash))
         return ["page-1"]
 
     def fail(self, run_id: str, error: str) -> None:
@@ -125,7 +130,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                 ("touch", "run-1"),
                 ("run", command),
                 ("touch", "run-1"),
-                ("finish", "run-1", {"manifest": "value"}),
+                ("finish", "run-1", {"manifest": "value"}, None),
                 ("embedding", "run-1", ["page-1"]),
             ],
         )

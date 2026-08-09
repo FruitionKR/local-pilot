@@ -193,6 +193,38 @@ def _assert_table_write(conn: psycopg.Connection, role: str, tables: tuple[str, 
         raise RuntimeError(f"core write privilege was not {state}: {', '.join(mismatches)}")
 
 
+def _assert_actual_write(
+    conn: psycopg.Connection,
+    role: str,
+    tables: tuple[str, ...],
+) -> None:
+    conn.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+    try:
+        for table in tables:
+            conn.execute(
+                sql.SQL("DELETE FROM {} WHERE false").format(sql.Identifier(table))
+            )
+    finally:
+        conn.execute("RESET ROLE")
+
+
+def _assert_sequence_write(conn: psycopg.Connection, role: str) -> None:
+    mismatches = []
+    for (sequence,) in conn.execute(
+        "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'"
+    ):
+        granted = conn.execute(
+            "SELECT has_sequence_privilege(%s, %s, 'USAGE,SELECT,UPDATE')",
+            (role, f"public.{sequence}"),
+        ).fetchone()[0]
+        if not granted:
+            mismatches.append(sequence)
+    if mismatches:
+        raise RuntimeError(
+            f"core sequence write privilege was not granted: {', '.join(mismatches)}"
+        )
+
+
 def lock_core_wiki(_: argparse.Namespace) -> None:
     with psycopg.connect(_url("CORE_DB_MIGRATION_URL")) as conn:
         for role in (_role("CORE_DB_RUNTIME_USER"), _role("AI_DB_RUNTIME_USER")):
@@ -218,13 +250,19 @@ def finalize_core_permissions(args: argparse.Namespace) -> None:
 
 
 def rollback_core_permissions(_: argparse.Namespace) -> None:
+    core_role = _role("CORE_DB_RUNTIME_USER")
     ai_role = _role("AI_DB_RUNTIME_USER")
     with psycopg.connect(_url("CORE_DB_MIGRATION_URL")) as conn:
-        conn.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {} TO {}").format(
-            _identifiers(WIKI_TABLES), sql.Identifier(ai_role)
-        ))
-        _grant_agent_access(conn, ai_role)
-        _assert_table_write(conn, ai_role, WIKI_TABLES, True)
+        for role in (core_role, ai_role):
+            conn.execute(sql.SQL(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}"
+            ).format(sql.Identifier(role)))
+            conn.execute(sql.SQL(
+                "GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO {}"
+            ).format(sql.Identifier(role)))
+            _assert_table_write(conn, role, WIKI_TABLES, True)
+            _assert_sequence_write(conn, role)
+            _assert_actual_write(conn, role, WIKI_TABLES)
 
 
 def parser() -> argparse.ArgumentParser:

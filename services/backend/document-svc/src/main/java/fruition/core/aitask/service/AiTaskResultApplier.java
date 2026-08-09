@@ -89,10 +89,14 @@ public class AiTaskResultApplier {
         wikiMaintenanceService.markLintSucceeded(workspaceId);
     }
 
+    @Transactional
     public void applyRestore(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
-        if (receiptExists(eventId)) return;
+        if (jdbcTemplate.update("""
+                INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind)
+                VALUES (?, ?, 'restore') ON CONFLICT (event_id) DO NOTHING
+                """, eventId, runId) == 0) return;
         JsonNode request = required(event, "request");
         String operationId = text(request, "operation_id");
         OperationLog operation = operationLogRepository.findById(operationId)
@@ -101,7 +105,6 @@ public class AiTaskResultApplier {
             restoreLifecycle.fail(operationId,
                     event.path("error").asText("Wiki restore 처리에 실패했습니다."),
                     java.time.Instant.now());
-            saveReceipt(eventId, runId, event.path("kind").asText());
             return;
         }
 
@@ -113,7 +116,6 @@ public class AiTaskResultApplier {
                     manifest.expectedContributions(), java.time.Instant.now());
         }
         operationIngestService.accept(operationId, result);
-        saveReceipt(eventId, runId, event.path("kind").asText());
     }
 
     @Transactional
@@ -144,49 +146,49 @@ public class AiTaskResultApplier {
         }
     }
 
-    private boolean receiptExists(String eventId) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM ai_task_result_receipts WHERE event_id = ?",
-                Integer.class, eventId);
-        return count != null && count > 0;
-    }
-
-    private void saveReceipt(String eventId, String runId, String kind) {
-        jdbcTemplate.update("""
-                INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind)
-                VALUES (?, ?, ?) ON CONFLICT (event_id) DO NOTHING
-                """, eventId, runId, kind);
-    }
-
     @Transactional
     public QueryProjection applyQuery(JsonNode event) {
-        JsonNode request = required(event, "request");
-        String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
-        String status = text(event, "status");
+        boolean first = jdbcTemplate.update("""
+                INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
+                VALUES (?, ?, 'query', CAST(? AS jsonb))
+                ON CONFLICT (run_id, task_kind) WHERE task_kind = 'query' DO NOTHING
+                """, text(event, "event_id"), runId, event.toString()) == 1;
+        JsonNode canonical = first ? event : canonicalQueryEvent(runId);
+        JsonNode request = required(canonical, "request");
+        String status = text(canonical, "status");
         String sessionId = text(request, "session_id");
         String question = text(request, "question");
         QueryService.QueryMessageContext context = objectMapper.convertValue(
                 required(request, "message_context"), QueryService.QueryMessageContext.class);
 
-        boolean first = jdbcTemplate.update("""
-                INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind)
-                VALUES (?, ?, 'query') ON CONFLICT (event_id) DO NOTHING
-                """, eventId, runId) == 1;
         if ("succeeded".equals(status)) {
             PipelineQueryResponse result = objectMapper.convertValue(
-                    required(event, "payload"), PipelineQueryResponse.class);
+                    required(canonical, "payload"), PipelineQueryResponse.class);
             QueryResponse response = first
                     ? queryService.completeAsync(sessionId, question, runId, context, result)
                     : responseFrom(question, context, result);
             return new QueryProjection(runId, response, null);
         }
 
-        String error = event.path("error").asText("질의 처리 중 오류가 발생했습니다.");
+        String error = canonical.path("error").asText("질의 처리 중 오류가 발생했습니다.");
         if (first) {
             queryService.failAsync(runId, context, error);
         }
         return new QueryProjection(runId, null, error);
+    }
+
+    private JsonNode canonicalQueryEvent(String runId) {
+        String payload = jdbcTemplate.queryForObject("""
+                SELECT event_payload::text
+                FROM ai_task_result_receipts
+                WHERE run_id = ? AND task_kind = 'query'
+                """, String.class, runId);
+        try {
+            return objectMapper.readTree(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException("Query terminal event를 읽지 못했습니다: " + runId, e);
+        }
     }
 
     private QueryResponse responseFrom(String question,

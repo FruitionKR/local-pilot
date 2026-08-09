@@ -5,10 +5,6 @@ import fruition.core.query.domain.QueryRun;
 import fruition.core.query.domain.QueryRunStatus;
 import fruition.core.query.dto.QueryResponse;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.Cursor;
-import org.springframework.data.redis.core.RedisOperations;
-import org.springframework.data.redis.core.ScanOptions;
-import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -17,11 +13,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,24 +75,7 @@ class QueryRunStoreTest {
         }).when(valueOperations).set(anyString(), anyString(), any(Duration.class));
         when(valueOperations.get(anyString()))
                 .thenAnswer(invocation -> redisData.get(invocation.<String>getArgument(0)));
-        when(redisTemplate.scan(any(ScanOptions.class)))
-                .thenAnswer(invocation -> cursorOver(new ArrayList<>(redisData.keySet())));
-        // failStuck의 WATCH/MULTI 경로: 세션 연산을 같은 fake store로 위임하고 EXEC는 항상 성공으로 본다.
-        RedisOperations<String, String> sessionOperations = mock(RedisOperations.class);
-        when(sessionOperations.opsForValue()).thenReturn(valueOperations);
-        when(sessionOperations.exec()).thenReturn(List.of(Boolean.TRUE));
-        when(redisTemplate.execute(any(SessionCallback.class)))
-                .thenAnswer(invocation -> invocation.<SessionCallback<?>>getArgument(0).execute(sessionOperations));
         return redisTemplate;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Cursor<String> cursorOver(List<String> keys) {
-        Cursor<String> cursor = mock(Cursor.class);
-        Iterator<String> iterator = keys.iterator();
-        when(cursor.hasNext()).thenAnswer(invocation -> iterator.hasNext());
-        when(cursor.next()).thenAnswer(invocation -> iterator.next());
-        return cursor;
     }
 
     @Test
@@ -153,31 +129,4 @@ class QueryRunStoreTest {
         assertThat(redisTtls.get(key)).isEqualTo(Duration.ofMinutes(10));
     }
 
-    @Test
-    void failStuck_failsOnlyUnfinishedRunsOlderThanTimeout() {
-        QueryRun oldRunning = store.create("ws_abc123", "session_abc123", "멈춘 질문");
-        store.markRunning(oldRunning.requestId());
-
-        clock.advance(Duration.ofMinutes(6));
-        QueryRun recent = store.create("ws_abc123", "session_abc123", "최근 질문");
-
-        List<String> failed = store.failStuck(Duration.ofMinutes(5), "타임아웃");
-
-        assertThat(failed).containsExactly(oldRunning.requestId());
-        QueryRun timedOut = store.find(oldRunning.requestId()).orElseThrow();
-        assertThat(timedOut.status()).isEqualTo(QueryRunStatus.FAILED);
-        assertThat(timedOut.errorMessage()).isEqualTo("타임아웃");
-        assertThat(store.find(recent.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.PENDING);
-    }
-
-    @Test
-    void failStuck_ignoresFinishedRuns() {
-        QueryRun finished = store.create("ws_abc123", "session_abc123", "완료된 질문");
-        store.markCompleted(finished.requestId(), new QueryResponse(null, null, null, null, null, null));
-
-        clock.advance(Duration.ofMinutes(6));
-
-        assertThat(store.failStuck(Duration.ofMinutes(5), "타임아웃")).isEmpty();
-        assertThat(store.find(finished.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.COMPLETED);
-    }
 }

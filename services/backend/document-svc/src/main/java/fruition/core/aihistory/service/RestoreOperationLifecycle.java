@@ -52,13 +52,9 @@ public class RestoreOperationLifecycle {
     }
 
     /**
-     * 반영({@code apply})이나 통지 준비 중 실패하면 여기서 종결 상태로 확정한다.
-     *
-     * <p>{@link #start}와 마찬가지로 REQUIRES_NEW라, 실패를 일으킨 트랜잭션이 롤백되어도
-     * 이 실패 확정은 그대로 커밋된다. 이게 없으면 반영 실패가 {@code applying}에 영구히
-     * 머물러 재시도할 방법이 없다.
+     * Kafka 결과 receipt와 같은 트랜잭션에서 실패 상태를 확정한다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void fail(String restoreOperationId, String reason, Instant now) {
         operationLogRepository.findById(restoreOperationId).ifPresent(restore -> {
             log.warn("[복구 실패 확정] operationId={} reason={}", restoreOperationId, reason);

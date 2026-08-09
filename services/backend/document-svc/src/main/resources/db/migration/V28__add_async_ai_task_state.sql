@@ -2,8 +2,13 @@ CREATE TABLE IF NOT EXISTS ai_task_result_receipts (
     event_id text PRIMARY KEY,
     run_id text NOT NULL,
     task_kind text NOT NULL,
+    event_payload jsonb,
     received_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_task_query_terminal
+    ON ai_task_result_receipts (run_id, task_kind)
+    WHERE task_kind = 'query';
 
 ALTER TABLE agent_runs
     ADD COLUMN IF NOT EXISTS document_id text,

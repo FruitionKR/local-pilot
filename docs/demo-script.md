@@ -129,7 +129,7 @@ services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py co
   --ai-snapshot-id '<ai snapshot ID>'
 ```
 
-`copy` 또는 row count·PK·hash·고아 참조 검증이 실패하면 연결을 전환하지 말고 즉시 write fence를 복구한다. 실패한 target transaction은 rollback되므로 ai_db의 부분 복사본을 덮어쓰지 않는다.
+`copy` 또는 row count·PK·hash·고아 참조 검증이 실패하면 연결을 전환하지 말고 즉시 write fence를 복구한다. 실패한 target transaction은 rollback되므로 ai_db의 부분 복사본을 덮어쓰지 않는다. rollback 명령은 `core_runtime`과 `ai_runtime`의 기존 table·sequence 권한을 모두 복구하고 두 role의 Wiki write를 실제 SQL로 검증한다.
 
 ```sh
 services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py rollback-core-permissions
