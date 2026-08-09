@@ -41,9 +41,15 @@ public class Document {
     @Column(nullable = false)
     private DocumentStatus status;
 
+    /**
+     * 문서 원본의 object key. 항상 평문 키(`sources/documents/{id}/original`)이며 `s3://` 형식을 쓰지 않는다.
+     * 이 값은 document-svc가 조립해 생성자에서만 넣고 이후 바뀌지 않는다.
+     * `s3://<bucket>/<key>` 형식이 들어오는 곳은 파이프라인이 콜백으로 채우는 extractedTextUri 뿐이다.
+     */
     @Column(name = "source_uri")
     private String sourceUri;
 
+    /** 파이프라인이 추출한 텍스트의 위치. 파이프라인이 콜백으로 채우며 `s3://<bucket>/<key>` 형식이다. */
     @Column(name = "extracted_text_uri")
     private String extractedTextUri;
 
@@ -131,6 +137,12 @@ public class Document {
 
     public Document(String id, String workspaceId, String userId, String filename, String mimeType, long byteSize,
                     String sourceUri, String contentHash, String origin) {
+        // 규약 위반을 DB에 눕히지 않고 여기서 끊는다. 표기가 섞이면 쓰기와 읽기가
+        // 서로 다른 키를 가리켜도 오류 없이 조용히 엇갈린다.
+        if (sourceUri != null && sourceUri.startsWith("s3://")) {
+            throw new IllegalArgumentException(
+                    "source_uri는 평문 object key여야 합니다. s3:// 형식은 허용하지 않습니다: " + sourceUri);
+        }
         this.id = id;
         this.workspaceId = workspaceId;
         this.userId = userId;
