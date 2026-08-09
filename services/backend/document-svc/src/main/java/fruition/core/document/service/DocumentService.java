@@ -803,7 +803,7 @@ public class DocumentService {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(document.getSourceUri())
+                            .object(normalizeObjectKey(document.getSourceUri()))
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()
@@ -1546,7 +1546,7 @@ public class DocumentService {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(document.getSourceUri())
+                            .object(normalizeObjectKey(document.getSourceUri()))
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()
