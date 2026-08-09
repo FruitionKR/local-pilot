@@ -81,6 +81,8 @@ export function SourcePreviewPanel({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // 버전 복원 후 문서 본문·버전을 다시 불러오기 위한 카운터
   const [documentReloadCount, setDocumentReloadCount] = useState(0);
+  // 현재 화면에 본문이 올라와 있는 문서. 같은 문서 재조회인지 판별해 깜빡임을 막는다.
+  const loadedDocumentIdRef = useRef<string | null>(null);
   // 문서를 열면 읽기 모드로 시작하고, 편집 시작 버튼이나 본문 클릭으로 편집기로 전환한다.
   const [isEditingStarted, setIsEditingStarted] = useState(false);
   // Cmd/Ctrl+S로 저장할 때 저장 버튼에 눌림 효과를 잠깐 준다.
@@ -255,6 +257,7 @@ export function SourcePreviewPanel({
 
   useEffect(() => {
     if (pageId || !documentId) {
+      loadedDocumentIdRef.current = null;
       setRawMarkdown(null);
       setNoteContentVersion(0);
       setRawDocumentUrl(null);
@@ -263,11 +266,16 @@ export function SourcePreviewPanel({
 
     let ignore = false;
     let objectUrl: string | null = null;
-    setIsLoading(true);
+    // 같은 문서를 다시 받는 경우(편집 시작 전 최신본 확인)에는 화면을 비우지 않는다.
+    // 비우면 본문이 사라졌다가 다시 그려지며 로딩 문구가 뜨고 스크롤이 맨 위로 튄다.
+    const isSameDocumentReload = loadedDocumentIdRef.current === documentId;
     setErrorMessage(null);
-    setRawMarkdown(null);
-    setNoteContentVersion(0);
-    setRawDocumentUrl(null);
+    if (!isSameDocumentReload) {
+      setIsLoading(true);
+      setRawMarkdown(null);
+      setNoteContentVersion(0);
+      setRawDocumentUrl(null);
+    }
 
     const loadDocument = async () => {
       if (isMarkdownFile) {
@@ -303,7 +311,9 @@ export function SourcePreviewPanel({
         if (!ignore) setErrorMessage(getErrorMessage(error, "문서를 불러오지 못했습니다."));
       })
       .finally(() => {
-        if (!ignore) setIsLoading(false);
+        if (ignore) return;
+        loadedDocumentIdRef.current = documentId;
+        setIsLoading(false);
       });
 
     return () => {
@@ -382,6 +392,8 @@ export function SourcePreviewPanel({
                     setNoteSaveStatus("saved");
                     setNoteSaveError(null);
                     setIsEditingStarted(false);
+                    // 읽기 모드가 저장한 본문을 보여주려면 다시 받아야 한다.
+                    // (같은 문서 재조회는 화면을 비우지 않으므로 깜빡임·스크롤 튐은 없다)
                     setDocumentReloadCount((count) => count + 1);
                     // 저장으로 백엔드 needs_reingest가 켜진다. 처리 중 문서가 없으면 목록 폴링이 꺼져 있어
                     // 여기서 직접 다시 받아야 재분석 제안 알림이 저장 직후 뜬다.

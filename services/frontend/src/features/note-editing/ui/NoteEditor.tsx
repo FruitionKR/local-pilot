@@ -11,7 +11,7 @@ import { EditorView } from "@codemirror/view";
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import { editorViewCtx, keymapCtx, parserCtx } from "@milkdown/core";
 import type { KeymapItem } from "@milkdown/core";
-import { historyProviderConfig } from "@milkdown/kit/plugin/history";
+import { closeHistory, history as prosemirrorHistory } from "@milkdown/prose/history";
 import { listItemSchema } from "@milkdown/kit/preset/commonmark";
 import { Slice } from "@milkdown/prose/model";
 import { liftListItem } from "@milkdown/prose/schema-list";
@@ -236,8 +236,14 @@ export function NoteEditor({
     if (sourceMode || !wysiwygRootRef.current) return;
 
     let isDisposed = false;
+    // Crepe의 create/destroy가 비동기라 root를 공유하면 이전 인스턴스 DOM이 남은 채
+    // 다음 인스턴스가 붙어 편집기 높이가 잠깐 두 배가 된다(문서 전환·StrictMode 재실행).
+    // 인스턴스마다 전용 host를 두고 정리 때 동기로 떼어내 겹침을 없앤다.
+    const host = document.createElement("div");
+    wysiwygRootRef.current.appendChild(host);
+
     const crepe = new Crepe({
-      root: wysiwygRootRef.current,
+      root: host,
       defaultValue: bodyRef.current,
       features: {
         [CrepeFeature.AI]: false,
@@ -292,18 +298,43 @@ export function NoteEditor({
       });
     });
     crepe.editor.config((ctx) => {
-      // 입력 하나 단위로 undo되도록 그룹 병합을 끈다 (기본 500ms 내 입력이 한 그룹으로 묶임)
-      ctx.set(historyProviderConfig.key, { newGroupDelay: 0 });
       // commonmark 기본 Backspace(priority 50)보다 먼저 실행시킨다
       ctx.get(keymapCtx).add({ key: "Backspace", priority: 100, onRun: liftListItemOnBackspace });
     });
     crepeRef.current = crepe;
-    void crepe.create();
+    const ready = crepe.create();
+    // 입력 하나가 되돌리기 한 단계가 되도록 history의 그룹 병합을 사실상 끈다.
+    // editor.config로 historyProviderConfig를 넣으면 plugin이 만들어질 때 이미 읽힌 뒤라
+    // 반영되지 않으므로, 생성이 끝난 뒤 ProseMirror state에서 plugin을 교체한다.
+    // newGroupDelay는 0을 쓸 수 없다 — prosemirror-history가 `config.newGroupDelay || 500`으로
+    // 읽어 falsy인 0을 기본값 500으로 되돌린다. 1이 실질적인 최소값이다.
+    void ready.then(() => {
+      if (isDisposed) return;
+      crepe.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const plugins = view.state.plugins.map((plugin) =>
+          (plugin as unknown as { key?: string }).key?.startsWith("history$")
+            ? prosemirrorHistory({ newGroupDelay: 1 })
+            : plugin
+        );
+        view.updateState(view.state.reconfigure({ plugins }));
+        // 변경마다 되돌리기 그룹을 끊어 입력 하나가 한 단계가 되게 한다.
+        // 단, IME 조합 중에는 끊지 않는다. 조합 중간으로 되감으면 문서와 OS IME의 조합 버퍼가
+        // 어긋나 IME가 남은 자모를 다시 합성해 버린다('되'로 되돌렸는데 화면엔 '된'이 되는 증상).
+        const original = view.dispatch.bind(view);
+        view.dispatch = (tr) => {
+          if (tr.docChanged && !view.composing) closeHistory(tr);
+          original(tr);
+        };
+      });
+    });
 
     return () => {
       isDisposed = true;
       if (crepeRef.current === crepe) crepeRef.current = null;
-      void crepe.destroy();
+      // DOM은 먼저 떼어 화면에서 즉시 사라지게 하고, 내부 정리는 create가 끝난 뒤에 한다.
+      host.remove();
+      void ready.catch(() => {}).then(() => crepe.destroy());
     };
   }, [documentId, sourceMode]);
 
