@@ -21,7 +21,7 @@ class DocumentAssetStorageCoordinatorTest {
         DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage, orphans);
         UUID attachmentId = UUID.randomUUID();
 
-        var stored = coordinator.storeAll("ws_1", Map.of(attachmentId, asset("first.png")));
+        var stored = coordinator.storeAll("ws_1", "doc_1", 3L, Map.of(attachmentId, asset("first.png")));
 
         assertThat(stored).containsOnlyKeys(attachmentId);
         assertThat(stored.get(attachmentId).objectKey()).startsWith("assets/ws_1/").endsWith("/content");
@@ -37,9 +37,27 @@ class DocumentAssetStorageCoordinatorTest {
         assets.put(UUID.randomUUID(), asset("first.png"));
         assets.put(UUID.randomUUID(), asset("second.png"));
 
-        assertThatThrownBy(() -> coordinator.storeAll("ws_1", assets))
+        assertThatThrownBy(() -> coordinator.storeAll("ws_1", "doc_1", 3L, assets))
                 .isInstanceOf(DocumentAssetStorageException.class);
         assertThat(storage.deletedKeys).containsExactly(storage.putKeys.getFirst());
+    }
+
+    @Test
+    void storeAll_sameRequestProducesSameAssetIdAndObjectKey() {
+        UUID attachmentId = UUID.randomUUID();
+        RecordingStorage storage = new RecordingStorage(-1);
+        DocumentAssetStorageCoordinator coordinator =
+                new DocumentAssetStorageCoordinator(storage, new RecordingOrphanRegistry());
+
+        var first = coordinator.storeAll("ws_1", "doc_1", 3L, Map.of(attachmentId, asset("a.png")));
+        var retried = coordinator.storeAll("ws_1", "doc_1", 3L, Map.of(attachmentId, asset("a.png")));
+
+        assertThat(retried.get(attachmentId).assetId()).isEqualTo(first.get(attachmentId).assetId());
+        assertThat(retried.get(attachmentId).objectKey()).isEqualTo(first.get(attachmentId).objectKey());
+        // base revision이 다르면 다른 asset이다 (다른 저장이므로 겹쳐 쓰면 안 된다)
+        var nextRevision = coordinator.storeAll("ws_1", "doc_1", 4L, Map.of(attachmentId, asset("a.png")));
+        assertThat(nextRevision.get(attachmentId).assetId())
+                .isNotEqualTo(first.get(attachmentId).assetId());
     }
 
     @Test
@@ -49,7 +67,7 @@ class DocumentAssetStorageCoordinatorTest {
         RecordingOrphanRegistry orphans = new RecordingOrphanRegistry();
         DocumentAssetStorageCoordinator coordinator = new DocumentAssetStorageCoordinator(storage, orphans);
         Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> stored = coordinator.storeAll(
-                "ws_1",
+                "ws_1", "doc_1", 3L,
                 Map.of(UUID.randomUUID(), asset("first.png"), UUID.randomUUID(), asset("second.png")));
 
         coordinator.compensate(stored.values());
