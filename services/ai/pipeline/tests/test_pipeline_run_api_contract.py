@@ -412,7 +412,7 @@ def test_pipeline_endpoint_runs_stored_document_in_background() -> None:
     assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
     registration = use_case.register.call_args.args[0]
     command = use_case.execute.call_args.args[1]
-    assert registration.input_source == "storage:documents/document_1.md"
+    assert registration.input_source == "document:document_1"
     assert command.input_markdown == "# Stored Document"
     assert command.source_document_id == "document_1"
 
@@ -452,7 +452,7 @@ def test_reingest_endpoint_uses_inline_markdown_and_previous_source() -> None:
     assert response.status_code == 200
     registration = use_case.register.call_args.args[0]
     command = use_case.execute.call_args.args[1]
-    assert registration.input_source == "inline:document.md"
+    assert registration.input_source == "document:document_1"
     assert command.reingest is True
     assert command.input_markdown == "# 수정 문서"
     assert command.existing_source_artifact == {"document_id": "document_1"}
@@ -603,8 +603,8 @@ def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
         selection_mode="full",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
         input_name="filtered-chat.md",
-        user_id="request-user",
-        workspace_id="request-workspace",
+        user_id="user_1",
+        workspace_id="workspace_1",
     )
 
     response = pipeline_routes._run_pipeline_request(
@@ -618,8 +618,37 @@ def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
     assert response.status == "running"
     registration = use_case.register.call_args.args[0]
     assert registration.document_id == "chat_document_1"
-    assert registration.input_source == "inline:filtered-chat.md"
+    assert registration.input_source == "document:chat_document_1"
     source_reader.read_text.assert_not_called()
+
+
+def test_pipeline_command_rejects_actor_mismatch_after_registering_run() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+        },
+    )
+    use_case = _use_case()
+    payload = api.PipelineRunIn(
+        document_id="document_1",
+        user_id="other-user",
+        workspace_id="workspace_1",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        pipeline_routes._run_pipeline_request(
+            payload,
+            BackgroundTasks(),
+            use_case,
+            repository,
+            _source_reader(),
+            run_id="run-1",
+        )
+
+    assert exc_info.value.status_code == 409
+    assert use_case.register.call_args.args[0].run_id == "run-1"
 
 
 def test_chat_wiki_inline_markdown_requires_existing_document() -> None:

@@ -218,9 +218,28 @@ def _run_pipeline_request(
     run_id = run_id or str(uuid.uuid4())
     out = Path(payload.out) if payload.out else Path("runs") / f"api_{run_id}"
     log_path = out / "pipeline.log"
+    try:
+        use_case.register(
+            PipelineRunRegistration(
+                run_id=run_id,
+                document_id=payload.document_id,
+                input_source=f"document:{payload.document_id}",
+                output_dir=str(out),
+                mode=payload.mode,
+            )
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     document = _load_document(payload.document_id, repository)
     user_id = str(document["user_id"])
     workspace_id = str(document["workspace_id"])
+    if ((payload.user_id is not None and payload.user_id != user_id)
+            or (payload.workspace_id is not None and payload.workspace_id != workspace_id)):
+        raise HTTPException(
+            status_code=409,
+            detail="Pipeline command actor context does not match the document.",
+        )
     input_name = payload.input_name or "inline.md"
     reingest_source_context = None
     reingest_source_blocks: list[dict[str, Any]] = []
@@ -255,19 +274,6 @@ def _run_pipeline_request(
             document,
             source_reader,
         )
-
-    try:
-        use_case.register(
-            PipelineRunRegistration(
-                run_id=run_id,
-                document_id=payload.document_id,
-                input_source=input_source,
-                output_dir=str(out),
-                mode=payload.mode,
-            )
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     command = _build_pipeline_command(
         payload,

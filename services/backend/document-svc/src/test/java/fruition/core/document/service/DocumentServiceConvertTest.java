@@ -16,7 +16,6 @@ import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.DocumentContentVersionRepository;
 import fruition.core.document.repository.DocumentEditStateRepository;
-import fruition.core.document.repository.DocumentProcessingQueueRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.repository.IngestCommandOutbox;
@@ -79,7 +78,6 @@ class DocumentServiceConvertTest {
     @Mock WikiPageRepository wikiPageRepository;
     @Mock WikiPageLinkRepository wikiPageLinkRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
-    @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock DocumentConvertQueueRepository convertQueueRepository;
     @Mock ConverterClient converterClient;
     @Mock TransactionTemplate transactionTemplate;
@@ -103,7 +101,7 @@ class DocumentServiceConvertTest {
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandOutbox, documentWikiLinkRepository, wikiPageRepository,
-                wikiPageLinkRepository, sourceBlockRepository, queueRepository,
+                wikiPageLinkRepository, sourceBlockRepository,
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,

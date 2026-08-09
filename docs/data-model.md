@@ -33,7 +33,6 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|
 | documents | document-svc | 원본 문서 업로드·처리 상태 | `status`, `content_hash` UK, `pipeline_run_id`, `origin`(upload/chat_export) |
-| document_processing_queue | document-svc | 처리 순서 보장 내부 큐 | `document_id` UK |
 | ai_command_outbox | document-svc | AI command의 transactional outbox | `run_id` UK, Kafka topic·key·payload |
 | wiki_pages | document-svc | AI 생성 Wiki 페이지 | `page_type`(source/concept), `markdown_uri` |
 | document_wiki_links | document-svc | 문서↔Wiki 연결 | 복합 PK `(document_id, wiki_page_id, relation_type)` |
