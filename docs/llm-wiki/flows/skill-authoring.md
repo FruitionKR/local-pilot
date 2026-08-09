@@ -316,7 +316,7 @@ X-Agent-Service-Token: {AGENT_INTERNAL_TOKEN}
 
 Spring은 Workspace membership과 문서 read 권한을 확인한 뒤 `markdown`을 반환해야 한다. 자연어 Skill 작성에는 AgentRun이 없으므로 임의 `run_id`를 만들거나 AgentRun Tool Gateway를 우회하지 않는다.
 
-현재 Spring endpoint는 미구현이다. 따라서 참조 없는 작성은 llmPipeline에서 처리할 수 있지만, 실제 참조 문서 E2E는 이 endpoint가 연결된 뒤 동작한다.
+Spring endpoint는 내부 service token, Workspace membership과 문서 범위를 확인한 뒤 현재 Markdown을 반환한다. 따라서 참조 문서를 포함한 작성도 Spring 공개 Skill API를 통해 연결된다.
 
 ### 크기와 내용 제한
 
@@ -643,7 +643,7 @@ POST /agent/turn
 
 공통 재검토가 계산한 capability나 Tool이 완료 AgentRun proposal의 권한 상한보다 넓어지면 거절한다. 사용자 응답에는 source run ID와 내부 Tool을 포함하지 않는다. 이 결과도 최종 게시 전에는 DB에 저장하지 않는다.
 
-source run의 실제 조회·동일 사용자·Workspace·채팅 권한 검증과 최종 `skill_version_sources` 연결은 Spring Backend의 미구현 범위다.
+Spring Backend는 선택한 source run이 요청 사용자와 Workspace에 속한 `completed` 상태인지, 현재 plan에 성공 operation이 있는지 확인한 뒤 llmPipeline에 필요한 요약과 Tool·이유만 전달한다. 최종 `skill_version_sources` 저장은 Skill version을 생성하는 llmPipeline 게시 transaction에 연결해야 하며 현재 미구현이다.
 
 ## 14. 응답과 실패 분기
 
@@ -686,19 +686,19 @@ HTTP route는 application의 `ValueError`를 현재 일괄 `400`으로 변환한
 - 최종 게시·수정·enable/disable repository 흐름
 - personal 계정/team Workspace 접근과 중복 검사
 - 자동 routing과 명시적 slash routing 분리
+- Spring 내부 Agent Tool read와 폴더·문서 구조 mutation 경계
 
 ### 미연결 범위
 
 - Frontend Skill 관리 화면과 채팅 proposal UI
-- Spring 공개 Skill proxy API
-- Spring의 Skill authoring 전용 참조 문서 read endpoint
-- Spring의 completed AgentRun source 조회·권한 검증
+- llmPipeline 게시 transaction의 `skill_version_sources` 저장
 - Skill 삭제 API와 조회 화면의 삭제 동작
 - 참조 문서 로컬 업로드
+- Agent Tool의 `create_document`, `apply_document_edit`용 content artifact 조회 계약
 
 `AGENT_SKILLS_ENABLED` 기본값은 `false`다. false이면 `/skills/*`와 `/agent/runs/*` router가 등록되지 않고, `/agent/turn`도 Skill authorer를 구성하지 않는다.
 
-현재 llmPipeline 구현에는 Frontend·Spring Backend 코드나 DB SQL/migration이 포함되어 있지 않다. llmPipeline repository는 `skills`, `skill_versions` 등 필요한 table이 Spring이 관리하는 schema에 존재한다고 가정한다.
+Spring은 공개 Skill API와 내부 참조 문서 권한 경계를 제공하고, 작성·게시·조회·수정·활성화 요청을 llmPipeline에 전달한다. DB schema는 Spring migration이 관리하고 실제 Skill 작성·version 저장은 llmPipeline repository가 수행한다.
 
 단위 테스트는 fake LLM과 in-memory repository를 중심으로 검증한다. 실제 운영 model의 분류 정확도와 classifier/verifier 불일치율은 별도 API·evaluation 실행으로 측정해야 한다.
 

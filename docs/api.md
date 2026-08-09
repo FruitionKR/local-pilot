@@ -199,6 +199,15 @@ GET  /api/workspaces/{workspace_id}/wiki-schema/active
 POST /api/workspaces/{workspace_id}/wiki/maintenance/lint
 POST /api/workspaces/{workspace_id}/agent/turn
 
+POST  /api/workspaces/{workspace_id}/skills/author
+POST  /api/workspaces/{workspace_id}/skills/author/publish
+POST  /api/workspaces/{workspace_id}/skills/draft-from-runs/preview
+GET   /api/workspaces/{workspace_id}/skills
+GET   /api/workspaces/{workspace_id}/skills/{skill_id}
+PATCH /api/workspaces/{workspace_id}/skills/{skill_id}
+POST  /api/workspaces/{workspace_id}/skills/{skill_id}/enable
+POST  /api/workspaces/{workspace_id}/skills/{skill_id}/disable
+
 GET  /api/workspaces/{workspace_id}/ai-operation-logs
 GET  /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}
 GET  /api/workspaces/{workspace_id}/ai-operation-logs/{operation_id}/restore-preview
@@ -215,9 +224,10 @@ AI operation log 목록은 `type`, `status`, `cursor`, `size` filtering/paginati
 PATCH /api/documents/{document_id}/status
 POST  /api/documents/{document_id}/pipeline-events
 POST  /api/ai-operations/{operation_id}/result
+POST  /internal/agent/skill-authoring/references/read
 ```
 
-`pipeline-events`는 진행 stage·heartbeat를 전달하고, `ai-operations/{operation_id}/result`는 operation 결과 artifact와 hash를 멱등하게 반영한다. 후자는 `X-Internal-Token`을 검증한다.
+`pipeline-events`는 진행 stage·heartbeat를 전달하고, `ai-operations/{operation_id}/result`는 operation 결과 artifact와 hash를 멱등하게 반영한다. 후자는 `X-Internal-Token`을 검증한다. Skill 참조 문서 조회는 `X-Agent-Service-Token`을 먼저 검증한 뒤 Workspace membership과 현재 문서 범위를 확인해 Markdown을 반환한다.
 
 ## 4. FastAPI internal API
 

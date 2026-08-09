@@ -1,11 +1,13 @@
 package fruition.skill.repository;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
-import fruition.skill.dto.SkillDraftRequest;
+import fruition.skill.dto.SkillAuthoringRequest;
+import fruition.skill.dto.SkillDraftFromRunsRequest;
+import fruition.skill.dto.SkillPublishRequest;
+import fruition.skill.dto.SkillUpdateRequest;
 import fruition.skill.exception.PipelineSkillException;
-import fruition.skill.service.SkillReferenceDocument;
+import fruition.skill.service.SkillDraftSourceLoader.LoadedSources;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -13,8 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
-
-import java.util.List;
 
 @Component
 public class PipelineSkillRequester {
@@ -37,65 +37,125 @@ public class PipelineSkillRequester {
                 .build();
     }
 
-    public JsonNode refine(
-            String workspaceId, String userId, SkillDraftRequest draft,
-            List<SkillReferenceDocument> references) {
-        return post("/refine", payload(workspaceId, userId, draft, references));
+    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request) {
+        return post("/author", new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
+                request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds()));
     }
 
-    public JsonNode review(
-            String workspaceId, String userId, SkillDraftRequest draft,
-            List<SkillReferenceDocument> references) {
-        return post("/preview", payload(workspaceId, userId, draft, references));
+    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
+        return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
+                request.description(), request.instructionsMarkdown()));
     }
 
-    private SkillPayload payload(
-            String workspaceId, String userId, SkillDraftRequest draft,
-            List<SkillReferenceDocument> references) {
-        return new SkillPayload(
-                workspaceId, userId, draft.command(), draft.name(), draft.description(), draft.instructions(),
-                draft.scope(), draft.capabilities(), draft.allowedTools(), references);
+    public JsonNode draftFromRuns(String workspaceId, String userId, SkillDraftFromRunsRequest request,
+                                  LoadedSources sources) {
+        return post("/draft-from-runs/preview", new DraftFromRunsPayload(workspaceId, userId,
+                request.scopeType(), sources.sourceRuns(), request.userDirectives(), sources.excludedLiterals()));
+    }
+
+    public JsonNode list(String workspaceId, String userId) {
+        return get("?workspace_id=" + workspaceId + "&user_id=" + userId);
+    }
+
+    public JsonNode get(String workspaceId, String userId, String skillId) {
+        return get("/" + skillId + "?workspace_id=" + workspaceId + "&user_id=" + userId);
+    }
+
+    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request) {
+        return patch("/" + skillId, new UpdatePayload(workspaceId, userId, request.name(),
+                request.description(), request.instructionsMarkdown()));
+    }
+
+    public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {
+        return post("/" + skillId + (enabled ? "/enable" : "/disable"), new ActorPayload(workspaceId, userId));
+    }
+
+    private JsonNode get(String path) {
+        try {
+            return requireBody(restClient.get().uri(endpoint + path).retrieve().body(JsonNode.class));
+        } catch (ResourceAccessException exception) {
+            throw unavailable("Skill 파이프라인 응답 시간이 초과되었습니다.");
+        } catch (RestClientResponseException exception) {
+            throw translate(exception);
+        }
     }
 
     private JsonNode post(String path, Object body) {
         try {
-            JsonNode response = restClient.post()
-                    .uri(endpoint + path)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(JsonNode.class);
-            if (response == null || response.isNull()) {
-                throw unavailable("Skill 파이프라인 응답이 비어 있습니다.");
-            }
-            return response;
+            return requireBody(restClient.post().uri(endpoint + path).contentType(MediaType.APPLICATION_JSON)
+                    .body(body).retrieve().body(JsonNode.class));
         } catch (ResourceAccessException exception) {
             throw unavailable("Skill 파이프라인 응답 시간이 초과되었습니다.");
         } catch (RestClientResponseException exception) {
-            int status = exception.getStatusCode().value();
-            if (status == 400 || status == 409 || status == 410 || status == 413 || status == 422) {
-                throw new PipelineSkillException(
-                        "Skill 요청이 거부되었습니다.", status, exception.getResponseBodyAsString());
-            }
-            throw unavailable("Skill 파이프라인을 사용할 수 없습니다.");
+            throw translate(exception);
         }
+    }
+
+    private JsonNode patch(String path, Object body) {
+        try {
+            return requireBody(restClient.patch().uri(endpoint + path).contentType(MediaType.APPLICATION_JSON)
+                    .body(body).retrieve().body(JsonNode.class));
+        } catch (ResourceAccessException exception) {
+            throw unavailable("Skill 파이프라인 응답 시간이 초과되었습니다.");
+        } catch (RestClientResponseException exception) {
+            throw translate(exception);
+        }
+    }
+
+    private JsonNode requireBody(JsonNode response) {
+        if (response == null || response.isNull()) {
+            throw unavailable("Skill 파이프라인 응답이 비어 있습니다.");
+        }
+        return response;
+    }
+
+    private PipelineSkillException translate(RestClientResponseException exception) {
+        int status = exception.getStatusCode().value();
+        if (status == 400 || status == 404 || status == 409 || status == 410 || status == 413 || status == 422) {
+            return new PipelineSkillException("Skill 요청이 거부되었습니다.", status,
+                    exception.getResponseBodyAsString());
+        }
+        return unavailable("Skill 파이프라인을 사용할 수 없습니다.");
     }
 
     private PipelineSkillException unavailable(String message) {
         return new PipelineSkillException(message, 503, null);
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record SkillPayload(
+    private record AuthorPayload(
             @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("user_id") String userId,
-            String command,
+            @JsonProperty("scope_type") String scopeType,
             String name,
             String description,
-            @JsonProperty("instructions_markdown") String instructions,
-            @JsonProperty("scope_type") String scope,
-            List<String> capabilities,
-            @JsonProperty("allowed_tools") List<String> allowedTools,
-            @JsonProperty("reference_documents") List<SkillReferenceDocument> referenceDocuments
-    ) {}
+            String instruction,
+            @JsonProperty("authoring_mode") String authoringMode,
+            @JsonProperty("reference_document_ids") java.util.List<String> referenceDocumentIds) {}
+
+    private record PublishPayload(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            @JsonProperty("scope_type") String scopeType,
+            String name,
+            String description,
+            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+
+    private record DraftFromRunsPayload(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            @JsonProperty("scope_type") String scopeType,
+            @JsonProperty("source_runs") java.util.List<?> sourceRuns,
+            @JsonProperty("user_directives") java.util.List<String> userDirectives,
+            @JsonProperty("excluded_literals") java.util.List<String> excludedLiterals) {}
+
+    private record UpdatePayload(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            String name,
+            String description,
+            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+
+    private record ActorPayload(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId) {}
 }
