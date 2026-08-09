@@ -6,6 +6,7 @@
 
 - Write agent behavior constraints in short English imperatives when possible.
 - Write user-facing explanations, commit messages, changelog entries, and PR titles/bodies in Korean.
+- Write code comments and documentation prose in Korean unless there is a clear reason not to.
 - Keep command names, API names, config keys, file paths, branch names, and Conventional Commits prefixes in their original form.
 - If a Korean rule is critical, add a short English equivalent next to it.
 
@@ -28,7 +29,6 @@ Before implementing:
 - No "flexibility" or "configurability" that wasn't requested.
 - No error handling for impossible scenarios.
 - If you write 200 lines and it could be 50, rewrite it.
-- Every user-facing answer must be written in Korean.
 
 Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
@@ -103,8 +103,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 유효하지 않게 됐거나 역사 기록용이 된 문서는 `docs/backlog/`로 이관하고 `docs/backlog/README.md` 목록을 갱신한다.
 - 날짜별 이슈 문서(`docs/issue/`)와 역할별 changelog(`docs/changelog/`) 운영은 2026-08-07에 종료했다. 전부 `docs/backlog/` 아래에 보관돼 있으며, 새로 만들지 않는다.
 
-## 9. 설명과 주석
+## 9. 조사 우선
 
-- 사용자에게 전달하는 설명은 한글로 작성한다.
-- 코드 주석과 문서 설명도 특별한 이유가 없으면 한글로 작성한다.
-- 외부 표준, API 이름, 설정 키, 명령어는 원문을 유지한다.
+**Study prior art before designing. Check installed dependencies before adding new ones.**
+
+- 해결책을 설계하기 전에, 이미 자리 잡은 제품들이 같은 문제를 어떻게 푸는지 먼저 살펴본다. 접근 방식을 처음부터 발명하지 말고 검증된 패턴과 관례를 채택한다.
+- 검증되고 유지보수되는 라이브러리가 전체 복잡도를 낮추거나 안정성을 높인다면 그것을 쓴다. 흔한 기능을 명확한 이유 없이 재구현하지 않는다.
+- 직접 구현하거나 패키지를 추가하기 전에 이미 설치된 의존성부터 확인한다. 문서와 타입을 확인하지 않은 채 "이 라이브러리엔 그 기능이 없다"고 단정하지 않는다.
+
+## 10. 아키텍처 원칙
+
+**No compatibility layers for paths you replace. Grow the system in layers. Decide for the long term.**
+
+- 무언가를 교체할 때 하위 호환을 위한 레이어·폴백·마이그레이션 경로를 새로 만들지 않는다. 내가 대체한 경로는 그 변경에서 함께 삭제한다. 단, 내 변경과 무관한 기존 데드코드는 §4에 따라 언급만 하고 남겨둔다.
+- 시스템은 레이어로 키운다. 엔드투엔드로 동작하는 최소 버전에서 시작해 이미 동작하는 결과물 위에 기능을 하나씩 얹는다. 동작하는 코드를 미완성 복잡도와 맞바꾸지 않는다.
+- 아키텍처 결정은 장기 관점으로 한다. 지금만 넘기고 나중에 교체할 임시방편을 받아들이지 않는다.
