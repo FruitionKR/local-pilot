@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @RestController
 public class InternalWikiContributionController {
@@ -45,17 +43,15 @@ public class InternalWikiContributionController {
             return ResponseEntity.badRequest()
                     .body(ErrorResponse.of("INVALID_REQUEST", "workspace_id와 page_ids가 필요합니다."));
         }
-        var contributions = repository.findByPageIdsAndWorkspaceId(
-                request.pageIds(), request.workspaceId());
-        Set<String> matchedPageIds = contributions.stream()
-                .map(row -> row.getPageId())
-                .collect(Collectors.toSet());
-        if (!matchedPageIds.containsAll(request.pageIds())) {
+        if (!repository.findPageIdsOutsideWorkspace(
+                request.pageIds(), request.workspaceId()).isEmpty()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ErrorResponse.of(
                             "WIKI_PAGE_SCOPE_MISMATCH",
                             "요청한 Wiki page가 workspace 범위와 일치하지 않습니다."));
         }
+        var contributions = repository.findByPageIdsAndWorkspaceId(
+                request.pageIds(), request.workspaceId());
         return ResponseEntity.ok(contributions.stream()
                 .map(row -> new ContributionResponse(row.isActive(), row.getObjectKey()))
                 .toList());

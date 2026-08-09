@@ -46,5 +46,17 @@ public interface WikiPageContributionRepository
             @Param("pageIds") Collection<String> pageIds,
             @Param("workspaceId") String workspaceId);
 
+    @Query(value = """
+            SELECT DISTINCT contribution.page_id
+            FROM wiki_page_contributions contribution
+            JOIN ai_operation_logs operation
+              ON operation.operation_id = contribution.ingest_operation_id
+            WHERE contribution.page_id IN (:pageIds)
+              AND operation.workspace_id <> :workspaceId
+            """, nativeQuery = true)
+    List<String> findPageIdsOutsideWorkspace(
+            @Param("pageIds") Collection<String> pageIds,
+            @Param("workspaceId") String workspaceId);
+
     long countByIdPageIdAndActiveTrue(String pageId);
 }

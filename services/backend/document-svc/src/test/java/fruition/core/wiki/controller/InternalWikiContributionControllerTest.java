@@ -19,8 +19,8 @@ class InternalWikiContributionControllerTest {
 
     @Test
     void find_rejectsPageOutsideWorkspace() {
-        when(repository.findByPageIdsAndWorkspaceId(List.of("page-1"), "ws-1"))
-                .thenReturn(List.of());
+        when(repository.findPageIdsOutsideWorkspace(List.of("page-1"), "ws-1"))
+                .thenReturn(List.of("page-1"));
 
         var response = controller.find(
                 "token",
@@ -31,11 +31,28 @@ class InternalWikiContributionControllerTest {
     }
 
     @Test
+    void find_allowsLegacyPageWithoutContributions() {
+        when(repository.findPageIdsOutsideWorkspace(List.of("legacy-page"), "ws-1"))
+                .thenReturn(List.of());
+        when(repository.findByPageIdsAndWorkspaceId(List.of("legacy-page"), "ws-1"))
+                .thenReturn(List.of());
+
+        var response = controller.find(
+                "token",
+                new InternalWikiContributionController.ContributionRequest(
+                        List.of("legacy-page"), "ws-1"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+    }
+
+    @Test
     void find_returnsScopedContributions() {
         WikiPageContribution contribution = mock(WikiPageContribution.class);
         when(contribution.getPageId()).thenReturn("page-1");
         when(contribution.getObjectKey()).thenReturn("wiki/ws-1/page-1.json");
         when(contribution.isActive()).thenReturn(true);
+        when(repository.findPageIdsOutsideWorkspace(List.of("page-1"), "ws-1"))
+                .thenReturn(List.of());
         when(repository.findByPageIdsAndWorkspaceId(List.of("page-1"), "ws-1"))
                 .thenReturn(List.of(contribution));
 

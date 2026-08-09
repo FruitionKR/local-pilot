@@ -460,6 +460,27 @@ def get_document_wiki_context(
 
 def delete_document_wiki_data(workspace_id: str, document_id: str) -> None:
     with connect() as conn:
+        scope_rows = conn.execute(
+            """
+            SELECT DISTINCT workspace_id
+            FROM (
+                SELECT workspace_id
+                FROM document_wiki_links
+                WHERE document_id = %s
+                UNION ALL
+                SELECT workspace_id
+                FROM pipeline_runs
+                WHERE document_id = %s
+            ) document_scopes
+            WHERE workspace_id IS NOT NULL
+            """,
+            (document_id, document_id),
+        ).fetchall()
+        scopes = {str(row["workspace_id"]) for row in scope_rows}
+        if not scopes:
+            return
+        if scopes != {workspace_id}:
+            raise ValueError("document Wiki state does not match workspace")
         rows = conn.execute(
             """
             SELECT wiki_page_id
@@ -485,9 +506,11 @@ def delete_document_wiki_data(workspace_id: str, document_id: str) -> None:
             UPDATE pipeline_runs
             SET status = 'failed', error = 'source document deleted',
                 updated_at = now(), finished_at = now()
-            WHERE document_id = %s AND status = 'running'
+            WHERE document_id = %s
+              AND workspace_id = %s
+              AND status = 'running'
             """,
-            (document_id,),
+            (document_id, workspace_id),
         )
 
 
