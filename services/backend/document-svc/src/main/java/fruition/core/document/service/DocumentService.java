@@ -1347,10 +1347,15 @@ public class DocumentService {
         );
     }
 
+    /**
+     * object storage 업로드 전에 인가·역할·편집 잠금을 먼저 확인한다.
+     *
+     * <p>base revision은 여기서 보지 않는다. 재전송된 같은 요청은 base가 이미 지나가 있어
+     * 여기서 막으면 저장 계층의 revision_write_id 중복 판정에 닿지 못하고 첫 저장이
+     * 실패로 보인다. revision 판정은 canonical인 Mongo 저장 시점이 담당한다.
+     */
     @Transactional(readOnly = true)
-    public void validateContentSave(
-            String workspaceId, String userId, String documentId, long baseVersion,
-            String applyOperationId) {
+    public void validateContentSavePreconditions(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
         Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
@@ -1359,26 +1364,14 @@ public class DocumentService {
             throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
         }
         editLockService.requireWritable(documentId, userId);
-        // 본문 canonical은 Mongo다. storage 업로드 전에 낡은 base를 조기에 거른다(권위 판정은 저장 시점의 Mongo save).
-        long currentRevision = mongoDocumentEditStore.findState(documentId)
-                .map(MongoDocumentEditState::getRevision)
-                .orElse(document.getCurrentVersion());
-        if (currentRevision != baseVersion) {
-            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
-                operationRecorder.recordConflict(
-                        applyOperationId, workspaceId, userId, documentId, Instant.now());
-            }
-            throw versionConflict();
-        }
     }
 
     /**
      * 이미지 포함 저장. asset row는 본문보다 먼저 커밋해 참조 무결성을 확보하고
      * (실패 시 orphan은 cleanup worker가 정리), 본문 저장은 Mongo 기반 saveContent를 재사용한다.
      *
-     * <p>{@code revisionWriteId}는 호출부가 <b>placeholder 치환 전</b> 요청 본문에서 만든다.
-     * 치환 후 본문으로 만들면 재시도마다 새로 발급되는 asset ID 때문에 값이 달라져
-     * 같은 요청의 재시도를 알아보지 못한다.
+     * <p>{@code revisionWriteId}와 asset ID가 모두 요청 내용에서 결정되므로, 같은 요청이
+     * 재전송되면 본문까지 동일해져 Mongo가 첫 저장 결과를 그대로 돌려준다.
      */
     public DocumentContentSaveResponse saveContentWithAssets(
             String workspaceId,
@@ -1390,7 +1383,6 @@ public class DocumentService {
             Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
             String applyOperationId
     ) {
-        validateContentSave(workspaceId, userId, documentId, baseVersion, applyOperationId);
         DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
         Instant updatedAt = Instant.now();
         List<DocumentAsset> assets = storedAssets.values().stream()

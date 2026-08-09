@@ -44,7 +44,7 @@ class DocumentAssetContentServiceTest {
         when(requestParser.parse(eq("metadata"), any())).thenReturn(parsed);
         when(assetValidator.validateAll(Map.of(attachmentId, file)))
                 .thenReturn(Map.of(attachmentId, validated));
-        when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
+        when(storageCoordinator.storeAll("ws_1", "doc_1", 3L, Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
                 eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), any(), any(), eq("operation_1")))
@@ -80,7 +80,7 @@ class DocumentAssetContentServiceTest {
         when(requestParser.parse(eq("metadata"), any())).thenReturn(parsed);
         when(assetValidator.validateAll(Map.of(attachmentId, file)))
                 .thenReturn(Map.of(attachmentId, validated));
-        when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
+        when(storageCoordinator.storeAll("ws_1", "doc_1", 3L, Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
                 any(), any(), any(), any(), any(Long.class), any(), any(), any()))
