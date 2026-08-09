@@ -14,6 +14,44 @@ from app.modules.document_restoration.infrastructure.subprocess_restoration_stag
 
 
 class SubprocessDocumentRestorationStagesTest(unittest.TestCase):
+    def test_crop_first_stage_passes_external_tool_configuration(self) -> None:
+        command = RestoreDocumentCommand(
+            pdf_file=Path("paper.pdf"),
+            output_dir=Path("output"),
+            document_slug="paper",
+            anydoc_command="npx --yes @firecrawl/anydoc@0.1.7",
+            heron_command="/tools/raw-special-regions",
+            heron_model=Path("/models/heron.onnx"),
+            pdfium_library=Path("/lib/pdfium"),
+        )
+        prepared = PreparedRestoration(
+            pdf_file=Path("output/paper.pdf"),
+            docling_json=Path("output/docling.json"),
+            docling_markdown=Path("output/docling.md"),
+            manifest_file=Path("output/crop-first.json"),
+        )
+
+        with mock.patch("subprocess.run") as run:
+            SubprocessDocumentRestorationStages().run_stage(
+                RestorationStage.PREPARE_CROP_FIRST,
+                command,
+                prepared,
+            )
+
+        args = run.call_args.args[0]
+        self.assertIn(
+            "app.modules.document_restoration.infrastructure.crop_first_with_anydoc",
+            args,
+        )
+        self.assertEqual(
+            args[args.index("--anydoc-command") + 1],
+            "npx --yes @firecrawl/anydoc@0.1.7",
+        )
+        self.assertEqual(
+            args[args.index("--heron-model") + 1],
+            "/models/heron.onnx",
+        )
+
     def test_rejects_incomplete_cached_docling_pair(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

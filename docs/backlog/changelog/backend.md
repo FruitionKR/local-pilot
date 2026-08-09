@@ -6,6 +6,91 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 ---
 
+## 2026-08-08
+
+### docs: 기존 API Swagger 기능 설명 보강
+
+**변경된 것**
+
+- 전체 Backend endpoint에 `@Operation` 설명이 노출되도록 Agent, 폴더, Navigation, Query run,
+  Skill, Wiki maintenance, Wiki Schema controller의 누락 annotation을 추가했다.
+- 주요 정상·실패 응답과 path, query, `Idempotency-Key` parameter의 의미를 실제 서비스 동작에 맞춰
+  문서화했다.
+- 채팅 세션 삭제 API에 삭제 범위 설명을 추가했다.
+
+**검증**
+
+- 전체 85개 request mapping과 `@Operation` 수 일치 확인
+- `cd backend && ./gradlew compileJava` 통과
+- `cd backend && ./gradlew test` 통과
+
+### feat: personal Skill을 사용자 전역 범위로 확장
+
+**변경된 것**
+
+- personal Skill의 `workspace_id`를 `null`로 전환해 소유자의 모든 Workspace에서 목록·상세·자동완성·실행에
+  사용할 수 있게 했다. team Skill은 기존처럼 해당 Workspace에 귀속된다.
+- personal과 team에 같은 command를 허용하고, 두 Skill이 함께 접근 가능하면 team Skill을 우선한다.
+- command 중복 검사는 personal은 사용자 단위, team은 Workspace 단위로 분리했다.
+- personal 참조 문서는 현재 Workspace에서 접근 가능한 경우에만 유효하게 처리한다.
+- 검토 토큰을 `workspaceId`, `userId`, definition hash에 함께 귀속해 다른 사용자·Workspace의 재사용을
+  차단했다.
+- 기존 personal 데이터를 전역 범위로 이관하는 `V21` migration을 추가했다.
+
+**검증**
+
+- `cd backend && ./gradlew test` 통과
+
+### feat: Spring Skill 실행 snapshot을 Agent 요청에 연결
+
+**변경된 것**
+
+- `/command` 요청은 접근 가능한 Skill의 최신 version을 `selected_skill`로 확정하고 command를 제거한
+  사용자 메시지와 함께 llmPipeline `/agent/turn`에 전달한다.
+- 일반 자연어 요청은 자동 라우팅 ON Skill을 최근 수정 순 최대 20개의 `skill_candidates`로 전달한다.
+- 실행 snapshot에 `skill_id`, `version_id`, instructions, capability, allowed tool, 참조 문서 hash를 담는다.
+- 명시적 Skill 참조가 stale이면 `409 SKILL_REFERENCE_STALE`로 차단하고, 자연어 후보의 stale Skill은
+  후보에서 제외한다.
+- Agent 요청에 `X-Internal-Token`, `X-Agent-Service-Token`을 함께 전송한다.
+
+**검증**
+
+- `cd backend && ./gradlew test --tests 'fruition.agent.*' --tests 'fruition.skill.*'` 통과
+- `cd backend && ./gradlew test` 통과
+
+**후속 작업**
+
+- llmPipeline이 Spring 전달 `selected_skill`, `skill_candidates`를 자체 DB 조회 없이 실행하도록
+  `docs/issue/ai/2026-08-08.md`의 계약을 구현해야 한다.
+
+### feat: Skill 생성 화면용 Backend 연동 경계 추가
+
+**변경된 것**
+
+- `POST /api/workspaces/{workspace_id}/skills/refine`, `/skills/reviews`, `/skills` 공개 API를 추가했다.
+- `GET /skills`, `GET /skills/{skill_id}`, `GET /skills/commands`와 수정·자동 라우팅·삭제 API를 추가했다.
+- 인증 사용자의 Workspace membership을 확인하며 `OWNER`, `MEMBER` 모두 team Skill을 관리할 수 있다.
+- 참조 문서는 현재 Workspace 문서 최대 3개만 허용하고, 편집 Markdown 또는 source block 본문을
+  읽어 llmPipeline에 전달한다. 문서당 30,000자, 합계 60,000자를 초과하면 `413`으로 거부한다.
+- llmPipeline 호출에 `X-Agent-Service-Token`을 추가하고 preview는 기존 `POST /skills/preview`
+  계약에 연결했다.
+- `V20`에서 `skills`, `skill_versions`를 추가하고 Spring DB를 Skill의 권위 저장소로 전환했다.
+- Spring이 definition hash 기반 10분 검토 토큰을 발급·검증하고, 검토된 생성·수정을 새 version으로
+  원자적으로 저장한다. llmPipeline의 `/publish-reviewed`는 더 이상 호출하지 않는다.
+- personal·team command 충돌 정책, version 충돌, 참조 snapshot 상태, soft delete와 command 재사용을
+  구현했다. command 경쟁은 transaction advisory lock으로 직렬화한다.
+- 입력·권한·참조 문서·pipeline 오류를 공개 API 오류로 변환했다.
+
+**검증**
+
+- `cd backend && ./gradlew test --tests 'fruition.skill.*'` 통과
+- `cd backend && ./gradlew test` 통과
+
+**후속 작업**
+
+- llmPipeline의 refine·preview 확장 및 Spring 전달 Skill Agent 실행은
+  `docs/issue/ai/2026-08-08.md`에서 관리한다.
+
 ## 2026-08-06
 
 ### refactor: 이미지 asset placeholder 대응 정리와 UUID version 제약 완화

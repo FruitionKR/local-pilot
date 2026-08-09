@@ -51,8 +51,8 @@ class FakeStages:
 
 
 class RestoreDocumentUseCaseTest(unittest.TestCase):
-    def test_runs_docling_only_by_default(self) -> None:
-        stages = FakeStages(needs_docling_baseline=False)
+    def test_runs_crop_first_by_default(self) -> None:
+        stages = FakeStages(needs_docling_baseline=True)
 
         RestoreDocumentUseCase(stages).execute(
             RestoreDocumentCommand(
@@ -64,9 +64,30 @@ class RestoreDocumentUseCaseTest(unittest.TestCase):
 
         self.assertEqual(
             stages.stages,
+            [
+                RestorationStage.PREPARE_CROP_FIRST,
+                RestorationStage.SELECTIVE_REPAIR_WITH_OPENAI,
+                RestorationStage.ASSEMBLE_CROP_FIRST,
+            ],
+        )
+        self.assertEqual(len(stages.written_timings), 3)
+
+    def test_runs_docling_only_when_requested(self) -> None:
+        stages = FakeStages(needs_docling_baseline=False)
+
+        RestoreDocumentUseCase(stages).execute(
+            RestoreDocumentCommand(
+                pdf_file=Path("paper.pdf"),
+                output_dir=Path("output"),
+                document_slug="paper",
+                mode=RestorationMode.DOCLING_ONLY,
+            )
+        )
+
+        self.assertEqual(
+            stages.stages,
             [RestorationStage.PUBLISH_DOCLING_MARKDOWN],
         )
-        self.assertEqual(len(stages.written_timings), 1)
 
     def test_runs_full_repair_stages_when_requested(self) -> None:
         stages = FakeStages(needs_docling_baseline=False)
