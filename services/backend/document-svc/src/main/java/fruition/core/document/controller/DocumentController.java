@@ -403,7 +403,7 @@ public class DocumentController {
             @RequestPart(value = "revision_write_id", required = false) String revisionWriteId,
             @Parameter(description = "저장 출처. AI 편집 승인 시 \"agent\", 수동 저장 시 생략합니다.")
             @RequestPart(value = "source", required = false) String source,
-            @Parameter(description = "AI 편집 적용 표. `POST /agent/turns` 응답의 apply_operation_id를 그대로 전달하면 AI 작업 로그가 남습니다.")
+            @Parameter(description = "AI 편집 적용 표. `POST /agent/turn` 응답의 apply_operation_id를 그대로 전달하면 AI 작업 로그가 남습니다.")
             @RequestPart(value = "apply_operation_id", required = false) String applyOperationId,
             MultipartHttpServletRequest multipartRequest) {
         if (metadata != null) {
