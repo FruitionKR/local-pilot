@@ -1,10 +1,14 @@
 import unittest
+from unittest.mock import patch
 
-from app.modules.query.domain.entities import GraphContext, QueryContext
+from app.modules.query.domain.entities import ConversationMessage, GraphContext, QueryContext
 from app.modules.query.infrastructure.query_chat_answer_generator import (
     QUERY_ANSWER_SYSTEM_PROMPT,
     QueryChatAnswerGenerator,
+    QueryConversationSummarizer,
+    build_query_conversation_summarizer,
 )
+from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig
 
 
 class FakeChatClient:
@@ -60,6 +64,38 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertIn("Write the response in English.", system_prompt)
         self.assertIn("Give a detailed explanation", system_prompt)
         self.assertNotIn("output_language", client.calls[0][1])
+
+    def test_updates_conversation_summary_from_previous_summary_and_messages(self) -> None:
+        client = FakeChatClient()
+        summarizer = QueryConversationSummarizer(client)
+
+        summary = summarizer.summarize(
+            "기존에는 Persistent Wiki를 논의했다.",
+            (
+                ConversationMessage(role="user", content="RAG와 비교해줘"),
+                ConversationMessage(role="assistant", content="축적 방식이 다릅니다."),
+            ),
+        )
+
+        self.assertEqual(summary, "한국어 답변입니다.")
+        self.assertIn("기존에는 Persistent Wiki", client.calls[0][1])
+        self.assertIn("사용자: RAG와 비교해줘", client.calls[0][1])
+
+    def test_conversation_summarizer_preserves_provider_temperature(self) -> None:
+        config = ChatClientConfig(
+            endpoint="https://example.test/chat",
+            api_key="test-key",
+            model="gpt-5-nano",
+            temperature=1.0,
+        )
+
+        with patch(
+            "app.modules.query.infrastructure.query_chat_answer_generator._config_from_env",
+            return_value=config,
+        ):
+            build_query_conversation_summarizer()
+
+        self.assertEqual(config.temperature, 1.0)
 
 
 if __name__ == "__main__":

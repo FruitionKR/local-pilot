@@ -60,8 +60,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 **후속 작업**
 
-- llmPipeline이 Spring 전달 `selected_skill`, `skill_candidates`를 자체 DB 조회 없이 실행하도록
-  `docs/issue/ai/2026-08-08.md`의 계약을 구현해야 한다.
+- Skill 작성·실행 계약 재정렬 후속 작업은
+  `docs/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
 
 ### feat: Skill 생성 화면용 Backend 연동 경계 추가
 
@@ -88,8 +88,8 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 **후속 작업**
 
-- llmPipeline의 refine·preview 확장 및 Spring 전달 Skill Agent 실행은
-  `docs/issue/ai/2026-08-08.md`에서 관리한다.
+- Skill 작성·검토·Agent 실행 계약 후속 작업은
+  `docs/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
 
 ## 2026-08-06
 

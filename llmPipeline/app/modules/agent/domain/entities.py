@@ -7,6 +7,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditTarget,
 )
 from app.modules.query.domain.entities import (
+    ConversationMessage,
     OutputLanguage,
     QueryAnswer,
     ResponseLength,
@@ -59,6 +60,7 @@ class PendingSkillProposal:
 @dataclass(frozen=True)
 class AgentConversationContext:
     recent_conversation_summary: str | None = None
+    recent_messages: tuple[ConversationMessage, ...] = ()
     reference_context: dict[str, object] = field(default_factory=dict)
     pending_skill_proposal: PendingSkillProposal | None = None
 
@@ -106,3 +108,4 @@ class AgentTurnResult:
     run_id: str | None = None
     run_status: str | None = None
     skill_authoring_result: SkillAuthoringResult | None = None
+    updated_conversation_summary: str | None = None

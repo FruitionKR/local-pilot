@@ -36,6 +36,7 @@ class FixedAgentUseCase:
                 summary="대화 내용을 Markdown 문서로 정리했습니다.",
                 markdown="# Agent 설계 메모\n\n- 편집과 생성을 분리한다.",
             ),
+            updated_conversation_summary="갱신된 대화 요약",
         )
 
 
@@ -328,6 +329,7 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(body["route"]["edit_goal"], "create_from_chat")
         self.assertEqual(body["generated_markdown"]["title"], "Agent 설계 메모")
         self.assertIn("# Agent 설계 메모", body["generated_markdown"]["markdown"])
+        self.assertEqual(body["updated_conversation_summary"], "갱신된 대화 요약")
 
     def test_agent_turn_maps_schema_scope_to_domain_request(self) -> None:
         class RecordingUseCase(FixedAgentUseCase):

@@ -1,5 +1,18 @@
 # AI/Pipeline 변경 기록
 
+## 2026-08-09
+
+### feat: Query·Agent 멀티턴 context 계약 추가
+
+- Query와 Agent turn이 누적 요약과 최근 원문 메시지 최대 6개를 함께 사용하도록 `recent_messages` 계약을 추가했다.
+- 최근 메시지 6개가 쌓이면 기존 요약과 합친 `updated_conversation_summary`를 반환하고 Query 경로에서는 같은 메시지를 중복 요약하지 않도록 했다.
+- 대화 요약 LLM 호출이 실패하거나 빈 응답을 반환해도 본 요청과 이미 시작된 AgentRun은 정상 결과를 유지하도록 했다.
+- 대화 요약기가 provider별 Query LLM `temperature` 설정을 덮어쓰지 않도록 했다.
+- 공용 LLM client가 timeout과 응답 decode 오류를 `RuntimeError`로 정규화해 보조 요약 실패가 본 요청으로 전파되지 않도록 했다.
+- 이전 assistant 메시지를 사용자 Skill 생성 의도로 인정하지 않도록 Agent route guard를 제한했다.
+- Backend의 context 저장·전달 후속 작업과 Skill 작성·실행 계약 재정렬을 `docs/issue/backend/2026-08-09.md`에 기록했다.
+- llmPipeline 전체 테스트 `846 passed, 63 subtests passed`로 검증했다.
+
 ## 2026-08-08
 
 ### fix: Skill 개인정보 게시 차단 보강

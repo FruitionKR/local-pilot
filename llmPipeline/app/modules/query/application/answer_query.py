@@ -1,9 +1,14 @@
 from dataclasses import dataclass, replace
 
 from app.modules.query.application.build_query_context import BuildQueryContextUseCase
-from app.modules.query.application.conversation_context_resolver import contextualize_question, evidence_question
+from app.modules.query.application.conversation_context_resolver import (
+    contextualize_question,
+    evidence_question,
+    update_conversation_summary,
+)
 from app.modules.query.application.ports import (
     AnswerGeneratorPort,
+    ConversationSummarizerPort,
     EmbeddingSearchPort,
     QueryEventPublisherPort,
     QueryEvaluatorGraphPort,
@@ -102,6 +107,7 @@ class AnswerQueryUseCase:
         candidate_pool_multiplier: int = 4,
         graph_link_limit: int = 200,
         graph_expansion_depth: int = 3,
+        conversation_summarizer: ConversationSummarizerPort | None = None,
     ) -> None:
         self._wiki_repository = wiki_repository
         self._embedding_search = embedding_search
@@ -142,6 +148,7 @@ class AnswerQueryUseCase:
         self._candidate_pool_multiplier = max(1, candidate_pool_multiplier)
         self._graph_link_limit = max(1, graph_link_limit)
         self._graph_expansion_depth = max(1, graph_expansion_depth)
+        self._conversation_summarizer = conversation_summarizer
         self._query_evaluator_graph = query_evaluator_graph or QueryEvaluatorLoop(
             query_answer_assembler=self._query_answer_assembler,
             query_evaluator=query_evaluator,
@@ -150,6 +157,34 @@ class AnswerQueryUseCase:
         )
 
     def execute(
+        self,
+        question: str,
+        *,
+        workspace_id: str,
+        user_id: str | None = None,
+        event_publisher: QueryEventPublisherPort | None = None,
+        conversation_context: ConversationContext | None = None,
+        output_language: OutputLanguage | None = None,
+        response_length: ResponseLength | None = None,
+        allow_web_search: bool | None = None,
+    ) -> QueryAnswer:
+        updated_summary = update_conversation_summary(
+            conversation_context,
+            self._conversation_summarizer,
+        )
+        result = self._execute(
+            question,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            event_publisher=event_publisher,
+            conversation_context=conversation_context,
+            output_language=output_language,
+            response_length=response_length,
+            allow_web_search=allow_web_search,
+        )
+        return replace(result, updated_conversation_summary=updated_summary)
+
+    def _execute(
         self,
         question: str,
         *,
