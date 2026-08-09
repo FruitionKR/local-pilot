@@ -1,6 +1,9 @@
 package fruition.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import fruition.agent.dto.AgentToolExecuteRequest;
 import fruition.agent.dto.AgentToolReadRequest;
 import fruition.document.dto.DocumentDetailResponse;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,6 +34,7 @@ public class AgentToolService {
             "create_folder", "rename_folder", "move_folder", "move_document", "rename_document");
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
     private final FolderService folderService;
     private final DocumentService documentService;
     private final DocumentPlacementService documentPlacementService;
@@ -37,11 +42,13 @@ public class AgentToolService {
 
     public AgentToolService(
             JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
             FolderService folderService,
             DocumentService documentService,
             DocumentPlacementService documentPlacementService,
             DocumentEditStateRepository editStateRepository) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
         this.folderService = folderService;
         this.documentService = documentService;
         this.documentPlacementService = documentPlacementService;
@@ -138,24 +145,75 @@ public class AgentToolService {
     }
 
     private void requireApprovedOperation(String toolName, AgentToolExecuteRequest request) {
-        Integer count = jdbcTemplate.queryForObject("""
-                SELECT count(*)
+        List<String> approvedArguments = jdbcTemplate.query("""
+                SELECT operation.arguments::text
                   FROM agent_runs run
                   JOIN agent_plans plan ON plan.id = run.current_plan_id
                   JOIN agent_plan_operations operation ON operation.plan_id = plan.id
-                  JOIN agent_approvals approval ON approval.plan_id = plan.id
                  WHERE run.id = ? AND run.workspace_id = ? AND run.user_id = ?
                    AND run.status IN ('executing', 'verifying')
                    AND plan.id = ? AND plan.version = ? AND plan.operation_hash = ?
                    AND plan.status = 'approved'
-                   AND operation.id = ? AND operation.tool_name = ? AND operation.status = 'pending'
-                   AND approval.user_id = run.user_id AND approval.decision = 'approved'
-                   AND approval.plan_version = plan.version AND approval.operation_hash = plan.operation_hash
-                """, Integer.class,
+                   AND operation.id = ? AND operation.tool_name = ? AND operation.status = 'running'
+                   AND EXISTS (
+                       SELECT 1 FROM agent_approvals approval
+                        WHERE approval.plan_id = plan.id AND approval.user_id = run.user_id
+                          AND approval.decision = 'approved' AND approval.plan_version = plan.version
+                          AND approval.operation_hash = plan.operation_hash
+                   )
+                """, (resultSet, rowNumber) -> resultSet.getString(1),
                 request.runId(), request.workspaceId(), request.userId(), request.planId(), request.planVersion(),
                 request.operationHash(), request.operationId(), toolName);
-        if (count == null || count != 1) {
+        if (approvedArguments.size() != 1) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "승인된 현재 Agent operation과 요청이 일치하지 않습니다.");
+        }
+        JsonNode expected = resolveApprovedArguments(
+                parseJson(approvedArguments.getFirst()), request.runId(), request.planId());
+        if (!expected.equals(request.arguments())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "승인된 Agent operation의 arguments와 일치하지 않습니다.");
+        }
+    }
+
+    private JsonNode resolveApprovedArguments(JsonNode value, String runId, String planId) {
+        if (value.isObject()) {
+            if (value.size() == 2 && value.has("$operation_result") && value.has("field")) {
+                String operationId = text(value, "$operation_result");
+                String field = text(value, "field");
+                List<String> results = jdbcTemplate.query("""
+                        SELECT execution.response_metadata::text
+                          FROM agent_tool_executions execution
+                          JOIN agent_plan_operations operation ON operation.id = execution.operation_id
+                         WHERE execution.run_id = ? AND execution.plan_id = ? AND execution.operation_id = ?
+                           AND execution.status = 'succeeded' AND operation.status = 'succeeded'
+                         ORDER BY execution.attempt DESC LIMIT 1
+                        """, (resultSet, rowNumber) -> resultSet.getString(1), runId, planId, operationId);
+                if (results.size() != 1) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "선행 Agent operation 결과를 확인할 수 없습니다.");
+                }
+                JsonNode resolved = parseJson(results.getFirst()).get(field);
+                if (resolved == null) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "선행 Agent operation 결과 필드가 없습니다.");
+                }
+                return resolved.deepCopy();
+            }
+            ObjectNode resolved = objectMapper.createObjectNode();
+            value.properties().forEach(entry -> resolved.set(
+                    entry.getKey(), resolveApprovedArguments(entry.getValue(), runId, planId)));
+            return resolved;
+        }
+        if (value.isArray()) {
+            ArrayNode resolved = objectMapper.createArrayNode();
+            value.forEach(item -> resolved.add(resolveApprovedArguments(item, runId, planId)));
+            return resolved;
+        }
+        return value.deepCopy();
+    }
+
+    private JsonNode parseJson(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "승인된 Agent arguments를 읽을 수 없습니다.");
         }
     }
 

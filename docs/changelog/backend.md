@@ -5,7 +5,8 @@
 ### feat: Agent Tool Backend 접근 경계 연결
 
 - `X-Agent-Service-Token`으로 보호되는 Agent Tool read·execute 내부 endpoint를 추가했다.
-- AgentRun의 사용자·Workspace 범위와 mutation의 승인된 현재 plan·operation을 검증하고 기존 문서·폴더 권한, version, idempotency 처리를 재사용했다.
+- AgentRun의 사용자·Workspace 범위와 mutation의 승인된 현재 plan·operation·arguments를 검증하고 기존 문서·폴더 권한, version, idempotency 처리를 재사용했다.
+- `$operation_result`는 성공한 선행 operation 결과로 해석해 승인 범위를 유지하며, 실행 직전 `running` operation만 허용한다.
 - content artifact 계약이 필요한 `create_document`, `apply_document_edit`는 연결 전까지 명시적으로 차단한다.
 - Agent Tool 대상 테스트와 Backend 전체 테스트를 통과했다.
 

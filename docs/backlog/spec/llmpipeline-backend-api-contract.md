@@ -2086,7 +2086,7 @@ X-Agent-Service-Token: {agent-token}
 - approve 전에 최신 run을 다시 조회하고 화면에 표시한 version/hash를 그대로 보낸다.
 - approve/reject/revise/cancel 버튼은 중복 요청을 막되, 서버의 `409`도 정상적인 상태 경쟁으로 처리한다.
 - operation의 `arguments`와 `reason`은 표시용이며 Spring이 이를 수정해 실행 요청으로 다시 보내지 않는다.
-- Agent Tool Gateway는 `X-Agent-Service-Token`, Run actor scope, 승인된 현재 plan·operation을 검증한다. 콘텐츠 artifact 저장·조회 계약이 필요한 `create_document`, `apply_document_edit`는 아직 실행하지 않는다.
+- Agent Tool Gateway는 `X-Agent-Service-Token`, Run actor scope, 승인된 현재 plan·operation과 arguments를 검증한다. `$operation_result` 참조는 성공한 선행 operation 결과로 해석한 뒤 비교한다. 콘텐츠 artifact 저장·조회 계약이 필요한 `create_document`, `apply_document_edit`는 아직 실행하지 않는다.
 
 ## Wiki Schema — Spring 저장·조회 책임 이전 여부 결정 필요
 
