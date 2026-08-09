@@ -13,9 +13,8 @@ import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
-import fruition.core.wiki.domain.WikiPage;
 import fruition.core.wiki.domain.WikiPageVersion;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,19 +53,19 @@ class RestoreRebuildApplierTest {
 
     @Mock OperationLogRepository operationLogRepository;
     @Mock OperationChangeRepository operationChangeRepository;
-    @Mock WikiPageRepository wikiPageRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock WikiPageVersionRepository versionRepository;
     @Mock LineCounter lineCounter;
-    @Mock WikiPage wikiPage;
 
     private RestoreRebuildApplier applier;
 
     @BeforeEach
     void setUp() {
         applier = new RestoreRebuildApplier(operationLogRepository, operationChangeRepository,
-                wikiPageRepository, versionRepository, lineCounter, new ObjectMapper());
-        when(wikiPage.getWorkspaceId()).thenReturn(WORKSPACE_ID);
-        when(wikiPageRepository.findById(PAGE_ID)).thenReturn(Optional.of(wikiPage));
+                wikiStateRequester, versionRepository, lineCounter, new ObjectMapper());
+        when(wikiStateRequester.lookup(List.of(PAGE_ID), WORKSPACE_ID)).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        PAGE_ID, "concept", "제목", "title", WORKSPACE_ID, "active")));
         when(lineCounter.count(anyString(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), anyString()))
                 .thenReturn(new LineCounter.LineCount(null, null));
     }

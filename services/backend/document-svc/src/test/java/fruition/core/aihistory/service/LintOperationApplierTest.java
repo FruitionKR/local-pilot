@@ -7,10 +7,9 @@ import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.dto.OperationResultRequest;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
-import fruition.core.wiki.domain.WikiPage;
 import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +33,7 @@ class LintOperationApplierTest {
 
     @Mock OperationLogRepository operationLogRepository;
     @Mock OperationChangeRepository operationChangeRepository;
-    @Mock WikiPageRepository wikiPageRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock WikiPageVersionRepository versionRepository;
     @Mock WikiPageContributionRepository contributionRepository;
     @Mock LineCounter lineCounter;
@@ -44,18 +43,18 @@ class LintOperationApplierTest {
     @BeforeEach
     void setUp() {
         applier = new LintOperationApplier(operationLogRepository, operationChangeRepository,
-                wikiPageRepository, versionRepository, contributionRepository, lineCounter);
+                wikiStateRequester, versionRepository, contributionRepository, lineCounter);
     }
 
     @Test
     void apply_updatesVersionWithoutCreatingContribution() {
         OperationLog operation = OperationLog.processing(
                 "op_lint_1", "ws_1", "user_1", OperationType.lint, null, Instant.now());
-        WikiPage page = org.mockito.Mockito.mock(WikiPage.class);
         WikiPageVersion previous = org.mockito.Mockito.mock(WikiPageVersion.class);
         when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(operation));
-        when(wikiPageRepository.findByIdForUpdate("page_1")).thenReturn(Optional.of(page));
-        when(page.getWorkspaceId()).thenReturn("ws_1");
+        when(wikiStateRequester.lookup(List.of("page_1"), "ws_1")).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "page_1", "concept", "제목", "title", "ws_1", "active")));
         when(versionRepository.findTopByIdPageIdOrderByIdRevisionDesc("page_1"))
                 .thenReturn(Optional.of(previous));
         when(previous.getRevision()).thenReturn(3L);
@@ -94,10 +93,10 @@ class LintOperationApplierTest {
     void apply_recordsCreatedForPageWithoutPreviousVersion() {
         OperationLog operation = OperationLog.processing(
                 "op_lint_1", "ws_1", "user_1", OperationType.lint, null, Instant.now());
-        WikiPage page = org.mockito.Mockito.mock(WikiPage.class);
         when(operationLogRepository.findById("op_lint_1")).thenReturn(Optional.of(operation));
-        when(wikiPageRepository.findByIdForUpdate("page_1")).thenReturn(Optional.of(page));
-        when(page.getWorkspaceId()).thenReturn("ws_1");
+        when(wikiStateRequester.lookup(List.of("page_1"), "ws_1")).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "page_1", "concept", "제목", "title", "ws_1", "active")));
         when(versionRepository.findTopByIdPageIdOrderByIdRevisionDesc("page_1"))
                 .thenReturn(Optional.empty());
         when(versionRepository.findMaxRevision("page_1")).thenReturn(0L);

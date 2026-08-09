@@ -6,7 +6,7 @@
 
 - 서비스 라우팅: `/api/auth/*`·`/api/workspaces` → access-svc(:8081), 그 외 → document-svc(:8080).
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
-- `/api/auth/me`·`/api/workspaces/**`는 authenticated, 나머지는 permitAll(파이프라인 콜백 경로 포함). `/api/ai-operations/**`는 `X-Internal-Token` 헤더 검증.
+- 사용자 API는 authenticated다. health·OpenAPI와 명시된 내부 callback 경로만 permitAll이며 callback과 `/internal/**`는 `X-Internal-Token`을 별도로 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`op_` + UUID/난수.
 - 원문: docs/backlog/spec/api/00-common.md
@@ -65,8 +65,9 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| PATCH | `/api/documents/{id}/status` | 처리 상태 갱신(`status` 필수) |
-| POST | `/api/documents/{id}/pipeline-events` | heartbeat. 현재 `pipeline_run_id` 불일치 이벤트는 무시 |
+| POST | `/api/documents/{id}/pipeline-events` | 진행 heartbeat. 현재 `pipeline_run_id` 불일치 이벤트는 무시 |
+
+최종 상태는 document-svc가 AI의 `GET /pipeline/runs/{run_id}`를 폴링해 반영한다. AI는 `GET /internal/documents/{id}/pipeline-source`로 원본 위치를 조회하며 `documents.status`를 직접 쓰지 않는다.
 
 원문: docs/backlog/spec/api/document.md
 
@@ -97,7 +98,7 @@
 
 ## 쿼리
 
-질의 생성은 세션 하위(인증+소유권), run 조작(`/api/query/runs/**`)은 현재 permitAll — `request_id`를 아는 누구나 접근 가능(알려진 이슈). run은 in-memory(TTL: 종료 후 10분, 재시작 시 소실).
+질의 생성과 run 조회·SSE는 인증 후 세션/workspace 소유권을 확인한다. run과 SSE replay buffer는 Redis에 저장하며 종료 후 TTL은 10분이다. 외부 API는 비동기 run 계약이지만 현재 Spring executor가 AI의 동기 HTTP 응답을 기다리며, Kafka 전환은 후속 통합 비동기화 PR 범위다.
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -111,12 +112,12 @@
 
 ## 위키
 
-베이스 `/api/workspaces/{workspace_id}/wiki`. `wiki_pages` 쓰기는 llmPipeline 소유 — Backend는 revision 적재(rename 제외 본문 쓰기 없음). 현재 본문·diff는 `wiki_page_versions` 최신 revision 기준. 삭제 판정은 활성 기여 유무(기여 전부 비활성 = 삭제, 조회 제외).
+베이스 `/api/workspaces/{workspace_id}/wiki`. `wiki_pages`와 현재 본문의 논리 소유자는 ai-svc이고 Backend는 workspace 범위를 포함한 내부 API로 조회한다. 물리 저장소는 maintenance cutover 전까지 core_db이며, `wiki_page_versions`는 이후에도 diff·복구 이력용으로 core_db에 유지한다.
 
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/wiki/graph` | 지식 그래프. `nodes`(source 노드는 `source_document` 포함) + `edges`. 양 끝점이 워크스페이스 내인 링크만 |
-| GET | `/wiki/pages/{id}` | 페이지 상세. `markdown`(최신 revision, 실패 시 null), `source_documents`, `related_pages`(아웃링크) |
+| GET | `/wiki/pages/{id}` | 페이지 상세. AI 현재 `markdown`, `source_documents`, `related_pages`(아웃링크) |
 | GET | `/wiki/pages/{id}/diff?from=&to=` | 두 revision 간 diff(요청 시 계산). 과대 시 422 `MARKDOWN_DIFF_TOO_LARGE`. 삭제된 페이지도 조회 가능 |
 | PATCH | `/wiki/pages/{id}/rename` | 제목 변경. `update_slug=true`면 slug 재생성(충돌 409 `WIKI_PAGE_SLUG_CONFLICT`) |
 

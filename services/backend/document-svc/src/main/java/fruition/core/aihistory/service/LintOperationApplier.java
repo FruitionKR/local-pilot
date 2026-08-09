@@ -11,10 +11,9 @@ import fruition.core.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.core.aihistory.exception.OperationNotFoundException;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
-import fruition.core.wiki.domain.WikiPage;
 import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,20 +29,20 @@ public class LintOperationApplier {
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
-    private final WikiPageRepository wikiPageRepository;
+    private final PipelineWikiStateRequester wikiStateRequester;
     private final WikiPageVersionRepository versionRepository;
     private final WikiPageContributionRepository contributionRepository;
     private final LineCounter lineCounter;
 
     public LintOperationApplier(OperationLogRepository operationLogRepository,
                                 OperationChangeRepository operationChangeRepository,
-                                WikiPageRepository wikiPageRepository,
+                                PipelineWikiStateRequester wikiStateRequester,
                                 WikiPageVersionRepository versionRepository,
                                 WikiPageContributionRepository contributionRepository,
                                 LineCounter lineCounter) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
-        this.wikiPageRepository = wikiPageRepository;
+        this.wikiStateRequester = wikiStateRequester;
         this.versionRepository = versionRepository;
         this.contributionRepository = contributionRepository;
         this.lineCounter = lineCounter;
@@ -71,10 +70,12 @@ public class LintOperationApplier {
 
     private void applyPage(OperationLog operation, LoadedPage page, Instant now) {
         String pageId = page.pageId();
-        WikiPage wikiPage = wikiPageRepository.findByIdForUpdate(pageId)
+        versionRepository.lockPage(pageId);
+        var wikiPage = wikiStateRequester.lookup(List.of(pageId), operation.getWorkspaceId()).stream()
+                .findFirst()
                 .orElseThrow(() -> new InvalidCallbackPayloadException(
                         "Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId));
-        if (!wikiPage.getWorkspaceId().equals(operation.getWorkspaceId())) {
+        if (!wikiPage.workspaceId().equals(operation.getWorkspaceId())) {
             throw new InvalidCallbackPayloadException(
                     "다른 워크스페이스의 페이지입니다: pageId=" + pageId);
         }

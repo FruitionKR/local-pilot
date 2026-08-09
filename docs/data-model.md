@@ -8,8 +8,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | 저장소 | 소유 서비스 | 용도 |
 |---|---|---|
 | **access_db** (PostgreSQL) | access-svc | 사용자·OAuth·refresh token·워크스페이스·멤버 (자체 Flyway) |
-| **core_db** (PostgreSQL) | document-svc | 문서 metadata·폴더·채팅·Wiki·operation·버전 스냅샷 (Flyway 소유) |
-| **ai_db** (PostgreSQL) | ai-svc | wiki_schemas·문서 파생물 stale 추적 (python `ai_schema.sql` 멱등 부트스트랩) |
+| **core_db** (PostgreSQL) | document-svc / 전환기 ai-svc | 문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력. Wiki 현재 상태·pipeline run·embedding은 maintenance cutover 전까지 물리적으로 동거 |
+| **ai_db** (PostgreSQL) | ai-svc | Wiki schema·문서 파생물 stale 추적. Wiki 현재 상태는 후속 maintenance cutover에서 이전 (`ai_schema.sql`) |
 | **MongoDB** | document-svc | 문서 본문·편집 revision·write-id·edit outbox — 단일 트랜잭션 후 outbox → Kafka `document.edit.event` |
 | **Redis** | access-svc / document-svc | 권한 projection·OAuth 교환 코드 / query run 상태·SSE 이벤트 |
 | **S3/MinIO** | document-svc | 문서 원본·snapshot, Wiki markdown 본문 |
@@ -34,10 +34,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 |---|---|---|---|
 | documents | document-svc | 원본 문서 업로드·처리 상태 | `status`, `content_hash` UK, `pipeline_run_id`, `origin`(upload/chat_export) |
 | ai_command_outbox | document-svc | AI command의 transactional outbox | `run_id` UK, Kafka topic·key·payload |
-| wiki_pages | document-svc | AI 생성 Wiki 페이지 | `page_type`(source/concept), `markdown_uri` |
-| document_wiki_links | document-svc | 문서↔Wiki 연결 | 복합 PK `(document_id, wiki_page_id, relation_type)` |
-| wiki_page_links | document-svc | Wiki 페이지 간 방향 링크(그래프 탐색) | 복합 PK `(from, to, link_type)` |
-| source_blocks | document-svc | 문서 block 단위 텍스트 | 복합 PK `(document_id, block_id)`, 파이프라인 적재·Spring 읽기 |
+| wiki_page_versions | document-svc | Wiki 본문 revision 이력 | 복합 PK `(page_id, revision)`, 페이지 ID는 ai_db 논리 참조 |
+| wiki_page_contributions | document-svc | 복구용 ingest 기여 원장 | 복합 PK `(page_id, ingest_operation_id)`, 비활성화 이력 보존 |
 | chat_sessions | document-svc | 채팅 세션(workspace당 10개) | `context_summary`, `wiki_page_id`(full export 연결) |
 | chat_messages | document-svc | 질의응답 메시지 | `pair_id`로 user·assistant 쌍 식별 |
 | chat_message_references | document-svc | 답변 근거 source block 스니펫 | chat_messages 1:N, `source_block_ids` |
@@ -47,6 +45,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | document_asset_references | document-svc | 문서 본문↔asset 참조 동기화 | 복합 PK `(document_id, asset_id)`, asset 삭제 RESTRICT — 참조 중 asset 보호 |
 | document_asset_orphans | document-svc | storage 정리 실패 asset 재시도 큐 | `storage_key` UK, `retry_count`, cleanup worker가 소비 |
 | wiki_lint_state | document-svc | workspace별 마지막 lint 성공 시각(needs_lint 판단 기준점) | PK `workspace_id`(access_db 논리 참조), `last_lint_at` |
+| wiki_pages·document_wiki_links·wiki_page_links·source_blocks | ai-svc(전환기 core_db) | Wiki 현재 상태·문서/페이지 관계·source block | Spring은 직접 접근하지 않고 AI 내부 API로 조회 |
+| pipeline_runs·wiki_page_embeddings·wiki_embedding_vectors·wiki_embedding_units | ai-svc(전환기 core_db) | 실행 상태와 검색용 embedding | `user_id`·`workspace_id`를 run에 보존해 documents JOIN 제거 |
 | skills·skill_versions·skill_version_sources | ai-svc | 개인·팀 Skill과 게시 version·생성 근거 | 개인은 `owner_user_id`, 팀은 `workspace_id`; 팀 권한은 access-svc 조회 |
 | agent_runs·agent_plans·agent_plan_operations | ai-svc | Agent 실행·승인 대상 plan·operation | `operation_hash`, 현재 plan, 사용자·workspace 범위 |
 | agent_approvals·agent_jobs·agent_tool_executions·agent_run_artifacts | ai-svc | 승인·lease/retry·Tool 멱등 실행·비동기 artifact | run/plan/operation FK, Tool 호출 수 40회 제한 |
@@ -58,15 +58,6 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 |---|---|---|---|
 | wiki_schemas | ai-svc | 워크스페이스·사용자별 Wiki 생성 규칙 | active 스키마는 소유 범위당 최대 1개(부분 unique index) |
 | document_derived_state | ai-svc | 문서 파생물 stale 추적 | `document.edit.event` consumer가 갱신 |
-
-### core_db 동거 중인 ai 테이블 (전환기 예외 — §4)
-
-| 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
-|---|---|---|---|
-| pipeline_runs | ai-svc | pipeline 실행 기록 | `status`(terminal: succeeded/failed), `manifest` JSONB |
-| wiki_page_embeddings | ai-svc | 페이지 임베딩(모델별 1행) | PK `(page_id, embedding_model)` |
-| wiki_embedding_vectors | ai-svc | 임베딩 벡터 풀(중복 연산 방지) | `representation_hash`로 재사용 |
-| wiki_embedding_units | ai-svc | 페이지 내 검색 단위 | vectors·pages·documents 참조, `weight` |
 
 ### MongoDB (document-svc)
 
@@ -97,20 +88,19 @@ erDiagram
     chat_messages ||--o{ chat_message_related_pages : ""
 ```
 
-주의: users·workspaces는 access_db, 나머지는 core_db(+동거 ai 테이블)라 위 관계 중 DB 경계를 넘는 것은 물리 FK가 아닌 논리 참조다.
+주의: DB 경계를 넘게 될 ID 관계는 V27부터 물리 FK가 아닌 논리 참조다. document-svc는 Wiki 현재 상태를 AI 내부 API로 읽고, 실제 테이블 복사 전까지는 위 전환기 위치를 따른다.
 
 ## 4. 계정 격리 정책
 
 - DB 계정은 **runtime(DML) / migration(DDL) 분리**: `access_runtime/migration`, `core_runtime/migration`, `ai_runtime` (`infra/postgres/init-db-isolation.sh`).
-- 타 서비스 DB write 불가 — validation 스크립트로 실검증.
+- 원칙적으로 타 서비스 DB write를 금지한다. 현재 `ai_runtime` core DML은 Wiki/Agent 전환기 예외이며 cutover 뒤 회수한다.
 - 코드 경계도 컴파일러가 강제: access-svc와 document-svc는 서로의 repository를 import하지 않고 내부 API·Redis projection으로만 연결.
 - Idempotency 테이블은 각 DB에 서비스별 사본(코드는 java-shared 공유, 테이블 분리).
 
-## 5. 전환기 예외 — ai·Agent 테이블 core_db 동거
+## 5. 전환기 예외
 
-- 대상: `pipeline_runs` + 임베딩 3종(`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units`) 및 Agent/Skill/checkpoint 테이블.
-- 사유: 검색 CTE·ingest 원자성이 core_db 테이블(wiki_pages·source_blocks 등)과 교차해 있어 재설계 선행 필요. 교차 지점 실측은 `docs/backlog/issue/ai/2026-08-07.md`.
-- 안전장치: **ai_runtime 별도 계정**으로 접근 범위를 격리해 소유권은 이미 분리됨.
-- 이전 트리거: AI 부하를 독립 스케일해야 할 때 착수 (1단계로 wiki_schemas는 ai_db 이전 완료).
-- 참고: 파이프라인의 backend 소유 테이블 직접 쓰기(documents.status 등)는 알려진 부채 — 단기 B(마커+인덱스) 적용 완료, 중기 C-poll 전환 예정 (`docs/backlog/spec/pipeline-db-ownership.md`).
+- 대상: Wiki 현재 상태·pipeline run·embedding과 Agent/Skill/checkpoint 테이블.
+- 코드 경계: Spring은 Wiki 현재 상태를 직접 읽지 않고 AI 내부 API를 사용하며, AI는 documents와 core 기여 이력을 내부 API로 조회한다.
+- Wiki 이전: worker 중지·snapshot·ID 보존 복사·검증·연결 전환·기존 테이블 read-only 보존 순서의 maintenance cutover. 폐기 가능한 로컬 개발 DB만 재생성을 허용한다.
+- Agent 이전: Agent 비동기 실행 전환 PR.
 - Agent/Skill/checkpoint DDL의 단일 소유자는 document-svc Flyway이며, pipeline은 `AGENT_SKILLS_ENABLED` 또는 Agent worker 기동 시 필수 테이블만 검증한다. 팀 멤버십은 `workspace_members`를 직접 join하지 않고 access-svc 내부 권한 API로 조회한다.

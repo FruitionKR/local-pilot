@@ -8,7 +8,7 @@ import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.core.wikimaintenance.repository.PipelineWikiMaintenanceRequester;
 import fruition.core.wikimaintenance.repository.PipelineWikiLintResponse;
 import fruition.core.wikimaintenance.repository.WikiLintStateRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.authz.WorkspaceAccessGuard;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +34,7 @@ class WikiMaintenanceServiceTest {
     @Mock LintOperationStarter operationStarter;
     @Mock OperationIngestService operationIngestService;
     @Mock WikiLintStateRepository lintStateRepository;
-    @Mock WikiPageRepository wikiPageRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
 
     private WikiMaintenanceService service;
 
@@ -43,7 +43,7 @@ class WikiMaintenanceServiceTest {
         service = new WikiMaintenanceService(
                 workspaceAccessGuard,
                 requester, operationStarter, operationIngestService,
-                lintStateRepository, wikiPageRepository);
+                lintStateRepository, wikiStateRequester);
     }
 
     @Test

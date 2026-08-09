@@ -42,6 +42,7 @@ import fruition.core.document.dto.DocumentOriginalResult;
 import fruition.core.document.dto.DocumentRenameRequest;
 import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.DocumentStatusUpdateRequest;
+import fruition.core.document.dto.InternalPipelineDocumentResponse;
 import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.dto.DocumentTrashResponse;
 import fruition.core.document.dto.DocumentBlockResponse;
@@ -64,13 +65,7 @@ import fruition.core.document.exception.HierarchyItemNotFoundException;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.aihistory.service.IngestOperationStarter;
 import fruition.core.aihistory.service.OperationRecorder;
-import fruition.core.document.repository.SourceBlockRepository;
-import fruition.core.wiki.domain.DocumentWikiLink;
-import fruition.core.wiki.domain.DocumentWikiRelationType;
-import fruition.core.wiki.domain.WikiPage;
-import fruition.core.wiki.repository.DocumentWikiLinkRepository;
-import fruition.core.wiki.repository.WikiPageLinkRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
@@ -114,10 +109,7 @@ public class DocumentService {
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
     private final IngestCommandOutbox ingestCommandOutbox;
-    private final DocumentWikiLinkRepository documentWikiLinkRepository;
-    private final WikiPageRepository wikiPageRepository;
-    private final WikiPageLinkRepository wikiPageLinkRepository;
-    private final SourceBlockRepository sourceBlockRepository;
+    private final PipelineWikiStateRequester pipelineWikiStateRequester;
     private final DocumentConvertQueueRepository convertQueueRepository;
     private final ConverterClient converterClient;
     private final TransactionTemplate transactionTemplate;
@@ -143,10 +135,7 @@ public class DocumentService {
                            MinioClient minioClient,
                            StorageProperties storageProps,
                            IngestCommandOutbox ingestCommandOutbox,
-                           DocumentWikiLinkRepository documentWikiLinkRepository,
-                           WikiPageRepository wikiPageRepository,
-                           WikiPageLinkRepository wikiPageLinkRepository,
-                           SourceBlockRepository sourceBlockRepository,
+                           PipelineWikiStateRequester pipelineWikiStateRequester,
                            DocumentConvertQueueRepository convertQueueRepository,
                            ConverterClient converterClient,
                            TransactionTemplate transactionTemplate,
@@ -171,10 +160,7 @@ public class DocumentService {
         this.minioClient = minioClient;
         this.storageProps = storageProps;
         this.ingestCommandOutbox = ingestCommandOutbox;
-        this.documentWikiLinkRepository = documentWikiLinkRepository;
-        this.wikiPageRepository = wikiPageRepository;
-        this.wikiPageLinkRepository = wikiPageLinkRepository;
-        this.sourceBlockRepository = sourceBlockRepository;
+        this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.convertQueueRepository = convertQueueRepository;
         this.converterClient = converterClient;
         this.transactionTemplate = transactionTemplate;
@@ -1000,6 +986,22 @@ public class DocumentService {
         log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
     }
 
+    @Transactional
+    public void applyPipelineResult(String documentId, String runId, String status, String error) {
+        Document document = documentRepository.findByIdInActiveWorkspace(documentId)
+                .orElse(null);
+        if (document == null || !runId.equals(document.getPipelineRunId())
+                || document.getStatus() != DocumentStatus.processing) {
+            return;
+        }
+        Instant now = Instant.now();
+        if ("succeeded".equals(status)) {
+            document.updateStatus(DocumentStatus.completed, null, now, null);
+        } else if ("failed".equals(status)) {
+            document.markProcessingFailed(error, now);
+        }
+    }
+
     private String contentHashPrefix(String contentHash) {
         if (contentHash == null) return null;
         return contentHash.substring(0, Math.min(contentHash.length(), 16));
@@ -1058,6 +1060,20 @@ public class DocumentService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public Optional<InternalPipelineDocumentResponse> findPipelineSource(String documentId) {
+        return documentRepository.findByIdInActiveWorkspace(documentId)
+                .map(document -> new InternalPipelineDocumentResponse(
+                        document.getId(),
+                        document.getUserId(),
+                        document.getWorkspaceId(),
+                        document.getFilename(),
+                        document.getMimeType(),
+                        document.getSourceUri(),
+                        document.getExtractedTextUri()
+                ));
+    }
+
     @Transactional
     public DocumentDetailResponse findById(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
@@ -1067,8 +1083,11 @@ public class DocumentService {
         Optional<DocumentEditState> editState = editStateRepository.findById(documentId);
         Optional<MongoDocumentEditState> mongoEditState = mongoDocumentEditStore.findState(documentId);
 
-        List<DocumentWikiLink> links = documentWikiLinkRepository.findAllByIdDocumentId(documentId);
-        List<DocumentWikiPageRef> wikiPages = buildWikiPageRefs(links);
+        List<DocumentWikiPageRef> wikiPages = pipelineWikiStateRequester
+                .documentContext(workspaceId, documentId).pages().stream()
+                .map(page -> new DocumentWikiPageRef(
+                        page.id(), page.pageType(), page.title(), page.slug(), page.relationType(), page.confidence()))
+                .toList();
 
         return new DocumentDetailResponse(
                 doc.getId(),
@@ -1143,30 +1162,6 @@ public class DocumentService {
                     .toLowerCase(java.util.Locale.ROOT);
         }
         return document.getMimeType();
-    }
-
-    private List<DocumentWikiPageRef> buildWikiPageRefs(List<DocumentWikiLink> links) {
-        if (links.isEmpty()) return List.of();
-
-        List<String> wikiPageIds = links.stream()
-                .map(DocumentWikiLink::getWikiPageId)
-                .toList();
-        Map<String, WikiPage> pageMap = wikiPageRepository.findAllById(wikiPageIds).stream()
-                .collect(Collectors.toMap(WikiPage::getId, p -> p));
-
-        return links.stream()
-                .map(link -> {
-                    WikiPage page = pageMap.get(link.getWikiPageId());
-                    return new DocumentWikiPageRef(
-                            link.getWikiPageId(),
-                            page != null ? page.getPageType().name() : null,
-                            page != null ? page.getTitle() : null,
-                            page != null ? page.getSlug() : null,
-                            link.getRelationType().name(),
-                            link.getConfidence()
-                    );
-                })
-                .toList();
     }
 
     public DocumentContentSaveResponse saveContent(
@@ -1735,25 +1730,9 @@ public class DocumentService {
         String sourceUri = document.getSourceUri();
         String extractedTextUri = document.getExtractedTextUri();
 
-        // 이 문서의 source wiki page와 그에 딸린 링크를 명시적으로 삭제한다.
-        // - wiki page id는 opaque UUID이므로 id 문자열 형식이 아니라 document_wiki_links(source_of)로 찾는다.
-        // - wiki_page_links는 link_type이 아니라 삭제되는 source page id(from/to)로 좁혀 지운다.
-        // - concept page는 여러 문서가 공유하므로 삭제하지 않는다.
-        documentWikiLinkRepository
-                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of)
-                .forEach(link -> {
-                    String sourcePageId = link.getWikiPageId();
-                    wikiPageLinkRepository.deleteByIdFromPageIdOrIdToPageId(sourcePageId, sourcePageId);
-                    wikiPageRepository.findById(sourcePageId).ifPresent(wikiPageRepository::delete);
-                });
-
-        // document에 종속된 나머지 데이터를 명시적으로 삭제한다.
-        // 이 테이블들은 DB에 ON DELETE CASCADE FK가 없어(Spring이 생성) document 삭제만으로는 정리되지 않는다.
-        documentWikiLinkRepository.deleteByIdDocumentId(documentId);
-        sourceBlockRepository.deleteByIdDocumentId(documentId);
-
         // document 삭제
         documentRepository.delete(document);
+        ingestCommandOutbox.enqueueDelete(documentId, document.getWorkspaceId());
 
         // commit 이후 MinIO 오브젝트 삭제
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -1804,9 +1783,9 @@ public class DocumentService {
         documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
-        List<DocumentBlockResponse> blocks = sourceBlockRepository
-                .findAllByIdDocumentIdOrderByIdBlockIdAsc(documentId).stream()
-                .map(b -> new DocumentBlockResponse(b.getBlockId(), b.getText()))
+        List<DocumentBlockResponse> blocks = pipelineWikiStateRequester.documentContext(workspaceId, documentId)
+                .sourceBlocks().stream()
+                .map(block -> new DocumentBlockResponse(block.blockId(), block.text()))
                 .toList();
 
         return new DocumentBlocksResponse(documentId, blocks);

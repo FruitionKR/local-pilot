@@ -34,6 +34,8 @@ class RunPipelineUseCase:
         self._repository.create(
             registration.run_id,
             registration.document_id,
+            registration.user_id,
+            registration.workspace_id,
             registration.input_source,
             registration.output_dir,
             registration.mode,

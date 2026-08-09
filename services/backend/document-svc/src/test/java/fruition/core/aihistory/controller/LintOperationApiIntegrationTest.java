@@ -8,6 +8,7 @@ import fruition.core.aihistory.service.WikiObjectReader;
 import fruition.shared.security.JwtTokenProvider;
 import fruition.core.wikimaintenance.repository.PipelineWikiLintResponse;
 import fruition.core.wikimaintenance.repository.PipelineWikiMaintenanceRequester;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,7 @@ class LintOperationApiIntegrationTest {
     @MockBean PipelineWikiMaintenanceRequester maintenanceRequester;
     @MockBean PipelineRestoreRequester restoreRequester;
     @MockBean WikiObjectReader objectReader;
+    @MockBean PipelineWikiStateRequester wikiStateRequester;
 
     private String userId;
     private String workspaceId;
@@ -67,11 +69,10 @@ class LintOperationApiIntegrationTest {
         // users/workspaces/workspace_members는 access_db 소유 — core_db에는 FK가 없어 ID만 쓰면 된다 (MSA DB 분리).
         // guard가 Redis projection을 읽으므로 멤버십을 projection에 심는다.
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
-        jdbcTemplate.update("""
-                INSERT INTO wiki_pages(id, created_at, page_type, slug, status, title, updated_at,
-                                       user_id, workspace_id)
-                VALUES (?, now(), 'concept', ?, 'active', '기존 개념', now(), ?, ?)
-                """, pageId, "concept-" + suffix, userId, workspaceId);
+        when(wikiStateRequester.lookup(java.util.List.of(pageId), workspaceId)).thenReturn(java.util.List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        pageId, "concept", "기존 개념", "concept-" + suffix,
+                        workspaceId, "active")));
 
         String ingestOperationId = "op_ingest_" + suffix;
         jdbcTemplate.update("""

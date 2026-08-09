@@ -67,6 +67,8 @@ class LintOperationRestoreCommand:
 class PipelineRunRegistration:
     run_id: str
     document_id: str | None
+    user_id: str | None
+    workspace_id: str | None
     input_source: str
     output_dir: str
     mode: str

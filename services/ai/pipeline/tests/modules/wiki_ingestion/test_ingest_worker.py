@@ -15,6 +15,8 @@ def test_create_pipeline_run_ignores_duplicate_run_id() -> None:
         database.create_pipeline_run(
             "run-1",
             "document-1",
+            "user-1",
+            "workspace-1",
             "storage:document-1.md",
             "runs/run-1",
             "api",
@@ -72,6 +74,35 @@ def test_handle_retries_running_redelivered_run() -> None:
     )
 
 
+def test_handle_rejects_command_that_reuses_another_run_context() -> None:
+    repository = MagicMock()
+    repository.get_run.return_value = {
+        "status": "running",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+    }
+
+    with patch.object(
+        ingest_worker,
+        "get_pipeline_run_repository",
+        return_value=repository,
+    ):
+        with pytest.raises(ValueError, match="registered run context"):
+            ingest_worker._handle(
+                {
+                    "run_id": "run-1",
+                    "document_id": "document-2",
+                    "workspace_id": "workspace-1",
+                    "user_id": "user-1",
+                }
+            )
+
+    repository.fail.assert_called_once_with(
+        "run-1", "ingest command does not match the registered run context"
+    )
+
+
 def test_handle_records_failure_after_run_registration() -> None:
     repository = MagicMock()
     repository.get_run.return_value = None
@@ -99,3 +130,16 @@ def test_handle_records_failure_after_run_registration() -> None:
 def test_build_payload_requires_actor_context() -> None:
     with pytest.raises(ValueError, match="user_id and workspace_id"):
         ingest_worker._build_payload({"run_id": "run-1", "document_id": "document-1"})
+
+
+def test_handle_deletes_ai_owned_document_state() -> None:
+    command = {
+        "kind": "document_deleted",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+    }
+
+    with patch.object(database, "delete_document_wiki_data") as delete:
+        ingest_worker._handle(command)
+
+    delete.assert_called_once_with("workspace-1", "document-1")

@@ -16,7 +16,8 @@ def _connection_with_tables(table_names: tuple[str, ...]) -> Mock:
 
 
 def test_verify_schema_accepts_all_flyway_tables() -> None:
-    assert "wiki_page_contributions" in database.REQUIRED_TABLES
+    assert "documents" not in database.REQUIRED_TABLES
+    assert "wiki_page_contributions" not in database.REQUIRED_TABLES
     connection = _connection_with_tables(database.REQUIRED_TABLES)
 
     with patch.object(database, "connect", return_value=connection):

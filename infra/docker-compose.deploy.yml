@@ -10,8 +10,16 @@ services:
   pipeline-api:
     environment:
       ACCESS_INTERNAL_BASE_URL: http://access-svc:8081
+      DOCUMENT_INTERNAL_BASE_URL: http://document-svc:8080
     depends_on:
       access-svc:
+        condition: service_healthy
+
+  ingest-worker:
+    environment:
+      DOCUMENT_INTERNAL_BASE_URL: http://document-svc:8080
+    depends_on:
+      document-svc:
         condition: service_healthy
 
   pipeline-agent-worker:
@@ -71,6 +79,7 @@ services:
       WIKI_RESTORE_INGEST_ENDPOINT: http://pipeline-api:8000/wiki/ingest-restore-runs
       WIKI_RESTORE_LINT_ENDPOINT: http://pipeline-api:8000/wiki/lint-restore-runs
       WIKI_PAGE_ENDPOINT: http://pipeline-api:8000/wiki/pages
+      WIKI_STATE_ENDPOINT: http://pipeline-api:8000/wiki
       # PDF → Markdown 변환기(docker-compose.converter.yml의 markitdown) — 컨테이너 네트워크 경유
       CONVERTER_ENDPOINT: http://markitdown:8000
       # pipeline이 콜백을 보낼 document-svc 주소 — 컨테이너 이름 기준

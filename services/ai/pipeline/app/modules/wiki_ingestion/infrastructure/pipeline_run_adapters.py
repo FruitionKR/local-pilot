@@ -24,6 +24,8 @@ class PostgresPipelineRunRepository:
         self,
         run_id: str,
         document_id: str | None,
+        user_id: str | None,
+        workspace_id: str | None,
         input_source: str,
         output_dir: str,
         mode: str,
@@ -31,6 +33,8 @@ class PostgresPipelineRunRepository:
         database.create_pipeline_run(
             run_id,
             document_id,
+            user_id,
+            workspace_id,
             input_source,
             output_dir,
             mode,

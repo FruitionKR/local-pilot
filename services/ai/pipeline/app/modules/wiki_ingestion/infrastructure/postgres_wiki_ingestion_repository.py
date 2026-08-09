@@ -14,7 +14,10 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from app.core.error_text import truncate_error
-from app.core.pipeline_control import PipelineRunCancelledError
+from app.modules.wiki_ingestion.infrastructure.backend_document_reader import (
+    read_contributions,
+    read_document,
+)
 from app.modules.wiki_ingestion.infrastructure.active_cluster_markdown import (
     MATERIALIZED_CORE_RELATIONS,
     cluster_relation_items as _cluster_relation_items,
@@ -175,12 +178,10 @@ def cleanup_deleted_wiki_pages(
 
 
 REQUIRED_TABLES = (
-    "documents",
     "wiki_pages",
     "document_wiki_links",
     "source_blocks",
     "wiki_page_links",
-    "wiki_page_contributions",
     "pipeline_runs",
     "wiki_page_embeddings",
     "wiki_embedding_vectors",
@@ -204,13 +205,13 @@ AGENT_REQUIRED_TABLES = (
     "checkpoint_writes",
 )
 
+_AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sql"
+
 # ai_db는 python이 소유한다 — db/ai_schema.sql이 원본 DDL
 AI_DB_REQUIRED_TABLES = (
     "wiki_schemas",
     "document_derived_state",
 )
-
-_AI_SCHEMA_SQL_PATH = Path(__file__).resolve().parents[4] / "db" / "ai_schema.sql"
 
 
 def verify_schema() -> None:
@@ -295,28 +296,280 @@ def verify_ai_schema() -> None:
 
 
 def get_document(document_id: str) -> dict | None:
+    return read_document(document_id)
+
+
+def get_wiki_graph(workspace_id: str) -> dict[str, list[dict[str, Any]]]:
     with connect() as conn:
-        row = conn.execute(
+        pages = conn.execute(
             """
-            SELECT id, user_id, workspace_id, filename, mime_type, byte_size, status, source_uri, extracted_text_uri,
-                   content_hash, uploaded_at, processed_at, error_message
-            FROM documents
-            WHERE id = %s
+            SELECT page.id, page.page_type, page.title, page.slug, page.summary,
+                   page.status, source_link.document_id AS source_document_id
+            FROM wiki_pages page
+            LEFT JOIN LATERAL (
+                SELECT link.document_id
+                FROM document_wiki_links link
+                WHERE link.wiki_page_id = page.id
+                  AND link.relation_type = 'source_of'
+                ORDER BY link.created_at
+                LIMIT 1
+            ) source_link ON true
+            WHERE page.workspace_id = %s
+              AND page.status = 'active'
+            ORDER BY page.created_at, page.id
+            """,
+            (workspace_id,),
+        ).fetchall()
+        links = conn.execute(
+            """
+            SELECT link.from_page_id, link.to_page_id, link.link_type,
+                   link.label, COALESCE(link.confidence, 0.0) AS confidence
+            FROM wiki_page_links link
+            JOIN wiki_pages source ON source.id = link.from_page_id
+            JOIN wiki_pages target ON target.id = link.to_page_id
+            WHERE link.workspace_id = %s
+              AND source.status = 'active'
+              AND target.status = 'active'
+            ORDER BY link.from_page_id, link.to_page_id, link.link_type
+            """,
+            (workspace_id,),
+        ).fetchall()
+    return {
+        "nodes": [
+            {
+                **{key: value for key, value in dict(page).items() if key != "source_document_id"},
+                "source_document": (
+                    {"id": page["source_document_id"], "filename": None}
+                    if page.get("source_document_id")
+                    else None
+                ),
+            }
+            for page in pages
+        ],
+        "edges": [dict(link) for link in links],
+    }
+
+
+def get_wiki_page(workspace_id: str, page_id: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        page = conn.execute(
+            """
+            SELECT id, page_type, title, slug, summary, markdown_uri, status,
+                   created_at, updated_at
+            FROM wiki_pages
+            WHERE id = %s AND workspace_id = %s AND status = 'active'
+            """,
+            (page_id, workspace_id),
+        ).fetchone()
+        if page is None:
+            return None
+        source_documents = conn.execute(
+            """
+            SELECT document_id AS id, relation_type,
+                   COALESCE(confidence, 0.0) AS confidence
+            FROM document_wiki_links
+            WHERE wiki_page_id = %s AND workspace_id = %s
+            ORDER BY created_at
+            """,
+            (page_id, workspace_id),
+        ).fetchall()
+        related_pages = conn.execute(
+            """
+            SELECT target.id, target.page_type, target.title, target.slug,
+                   link.link_type, link.label,
+                   COALESCE(link.confidence, 0.0) AS confidence
+            FROM wiki_page_links link
+            JOIN wiki_pages target ON target.id = link.to_page_id
+            WHERE link.from_page_id = %s
+              AND link.workspace_id = %s
+              AND target.status = 'active'
+            ORDER BY target.title, target.id
+            """,
+            (page_id, workspace_id),
+        ).fetchall()
+    result = dict(page)
+    result["markdown"] = _read_optional_text_object(page.get("markdown_uri"))
+    result["source_documents"] = [
+        {**dict(document), "filename": None, "source_uri": None}
+        for document in source_documents
+    ]
+    result["related_pages"] = [dict(related) for related in related_pages]
+    return result
+
+
+def lookup_wiki_pages(
+    page_ids: list[str],
+    workspace_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if not page_ids:
+        return []
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, page_type, title, slug, summary, markdown_uri,
+                   user_id, workspace_id, status, created_at, updated_at
+            FROM wiki_pages
+            WHERE id = ANY(%s)
+              AND (%s IS NULL OR workspace_id = %s)
+            ORDER BY id
+            """,
+            (page_ids, workspace_id, workspace_id),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_document_wiki_context(
+    document_id: str,
+    workspace_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    with connect() as conn:
+        pages = conn.execute(
+            """
+            SELECT page.id, page.page_type, page.title, page.slug,
+                   link.relation_type, COALESCE(link.confidence, 0.0) AS confidence
+            FROM document_wiki_links link
+            JOIN wiki_pages page ON page.id = link.wiki_page_id
+            WHERE link.document_id = %s
+              AND link.workspace_id = %s
+              AND page.workspace_id = %s
+              AND page.status = 'active'
+            ORDER BY link.created_at, page.id
+            """,
+            (document_id, workspace_id, workspace_id),
+        ).fetchall()
+        blocks = conn.execute(
+            """
+            SELECT block_id, text
+            FROM source_blocks
+            WHERE document_id = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM document_wiki_links link
+                  WHERE link.document_id = source_blocks.document_id
+                    AND link.workspace_id = %s
+              )
+            ORDER BY block_id
+            """,
+            (document_id, workspace_id),
+        ).fetchall()
+    return {
+        "pages": [dict(page) for page in pages],
+        "source_blocks": [dict(block) for block in blocks],
+    }
+
+
+def delete_document_wiki_data(workspace_id: str, document_id: str) -> None:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT wiki_page_id
+            FROM document_wiki_links
+            WHERE document_id = %s
+              AND workspace_id = %s
+              AND relation_type = 'source_of'
+            """,
+            (document_id, workspace_id),
+        ).fetchall()
+    cleanup_deleted_wiki_pages(
+        workspace_id,
+        [str(row["wiki_page_id"]) for row in rows],
+    )
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM document_wiki_links WHERE document_id = %s AND workspace_id = %s",
+            (document_id, workspace_id),
+        )
+        conn.execute("DELETE FROM source_blocks WHERE document_id = %s", (document_id,))
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET status = 'failed', error = 'source document deleted',
+                updated_at = now(), finished_at = now()
+            WHERE document_id = %s AND status = 'running'
             """,
             (document_id,),
+        )
+
+
+def get_last_wiki_updated_at(workspace_id: str) -> Any | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT MAX(updated_at) AS updated_at FROM wiki_pages WHERE workspace_id = %s",
+            (workspace_id,),
         ).fetchone()
-        return dict(row) if row else None
+    return row.get("updated_at") if row else None
 
 
-def create_pipeline_run(run_id: str, document_id: str | None, input_source: str, output_dir: str, mode: str) -> None:
+def rename_wiki_page(
+    page_id: str,
+    user_id: str,
+    workspace_id: str,
+    title: str,
+    update_slug: bool,
+) -> dict[str, Any] | None:
+    with connect() as conn:
+        page = conn.execute(
+            """
+            SELECT id, page_type, title, slug
+            FROM wiki_pages
+            WHERE id = %s AND user_id = %s AND workspace_id = %s
+              AND status = 'active'
+            FOR UPDATE
+            """,
+            (page_id, user_id, workspace_id),
+        ).fetchone()
+        if page is None:
+            return None
+        slug = _slugify(title) if update_slug else str(page["slug"])
+        updated = conn.execute(
+            """
+            UPDATE wiki_pages
+            SET title = %s, slug = %s, updated_at = now()
+            WHERE id = %s
+            RETURNING updated_at
+            """,
+            (title, slug, page_id),
+        ).fetchone()
+    return {
+        "id": page_id,
+        "page_type": page["page_type"],
+        "title": title,
+        "previous_title": page["title"],
+        "slug": slug,
+        "previous_slug": page["slug"],
+        "slug_updated": update_slug,
+        "updated_at": updated["updated_at"],
+    }
+
+
+def create_pipeline_run(
+    run_id: str,
+    document_id: str | None,
+    user_id: str | None,
+    workspace_id: str | None,
+    input_source: str,
+    output_dir: str,
+    mode: str,
+) -> None:
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO pipeline_runs (id, document_id, input_source, output_dir, mode, status)
-            VALUES (%s, %s, %s, %s, %s, 'running')
+            INSERT INTO pipeline_runs (
+                id, document_id, user_id, workspace_id,
+                input_source, output_dir, mode, status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'running')
             ON CONFLICT (id) DO NOTHING
             """,
-            (run_id, document_id, input_source, output_dir, mode),
+            (
+                run_id,
+                document_id,
+                user_id,
+                workspace_id,
+                input_source,
+                output_dir,
+                mode,
+            ),
         )
 
 
@@ -326,34 +579,11 @@ def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
         row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
         document_id = row["document_id"] if row else None
         if document_id:
-            # workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
-            active_document = conn.execute(
-                """
-                SELECT d.id
-                FROM documents d
-                WHERE d.id = %s
-                  AND d.deleted_at IS NULL
-                FOR SHARE OF d
-                """,
-                (document_id,),
-            ).fetchone()
-            if active_document is None:
-                raise PipelineRunCancelledError(
-                    "Pipeline run cancelled because its document is inactive."
-                )
             embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
             manifest["source_contribution"] = _source_contribution_payload(
                 manifest
             )
             manifest = _stored_manifest(manifest)
-            conn.execute(
-                """
-                UPDATE documents
-                SET status = 'completed', processed_at = now(), error_message = NULL
-                WHERE id = %s
-                """,
-                (document_id,),
-            )
         conn.execute(
             """
             UPDATE pipeline_runs
@@ -394,18 +624,6 @@ def _mark_derived_state_ingested(document_id: str) -> None:
 def fail_pipeline_run(run_id: str, error: str) -> None:
     error_message = truncate_error(error)
     with connect() as conn:
-        row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
-        if row and row["document_id"]:
-            # workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
-            conn.execute(
-                """
-                UPDATE documents
-                SET status = 'failed', processed_at = now(), error_message = %s
-                WHERE id = %s
-                  AND deleted_at IS NULL
-                """,
-                (error_message, row["document_id"]),
-            )
         conn.execute(
             """
             UPDATE pipeline_runs
@@ -477,16 +695,6 @@ def touch_pipeline_run(run_id: str) -> bool:
             SET updated_at = now()
             WHERE pr.id = %s
               AND pr.status = 'running'
-              AND (
-                  pr.document_id IS NULL
-                  -- workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
-                  OR EXISTS (
-                      SELECT 1
-                      FROM documents d
-                      WHERE d.id = pr.document_id
-                        AND d.deleted_at IS NULL
-                  )
-              )
             RETURNING pr.id
             """,
             (run_id,),
@@ -498,7 +706,8 @@ def get_pipeline_run(run_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute(
             """
-            SELECT id, document_id, input_source, output_dir, mode, status,
+            SELECT id, document_id, user_id, workspace_id,
+                   input_source, output_dir, mode, status,
                    manifest, error, created_at, updated_at, finished_at
             FROM pipeline_runs
             WHERE id = %s
@@ -822,26 +1031,26 @@ def lint_orphan_wiki_links(
         # source인 링크만 기록한다), 지금 살아 있고(status='active') 현재
         # wiki_page_links에서 실제로 링크를 source하고 있는 페이지로만 좁혀도
         # find_orphan_links의 판정 결과는 그대로 유지된다.
-        contribution_rows = conn.execute(
+        contribution_page_rows = conn.execute(
             """
-            SELECT contribution.active,
-                   contribution.object_key
-            FROM wiki_page_contributions contribution
-            JOIN wiki_pages page ON page.id = contribution.page_id
-            WHERE contribution.object_key IS NOT NULL
-              AND page.page_type = 'concept'
+            SELECT page.id
+            FROM wiki_pages page
+            WHERE page.page_type = 'concept'
               AND page.status = 'active'
               AND page.user_id = %s
               AND page.workspace_id = %s
               AND EXISTS (
                   SELECT 1
                   FROM wiki_page_links link
-                  WHERE link.from_page_id = contribution.page_id
+                  WHERE link.from_page_id = page.id
               )
-            ORDER BY contribution.sequence_revision
             """,
             (user_id, workspace_id),
         ).fetchall()
+        contribution_rows = read_contributions(
+            [str(row["id"]) for row in contribution_page_rows],
+            workspace_id,
+        )
         link_rows = conn.execute(
             """
             SELECT concat(source_page.page_type, ':', source_page.slug) AS source,

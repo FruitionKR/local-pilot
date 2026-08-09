@@ -1,6 +1,7 @@
 package fruition.core.document.controller;
 
 import fruition.core.document.service.DocumentService;
+import fruition.core.document.dto.InternalPipelineDocumentResponse;
 import fruition.shared.util.ErrorResponse;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -44,6 +46,17 @@ public class InternalDocumentController {
         }
         documentService.createInitialNote(workspaceId, request.userId());
         return ResponseEntity.noContent().build();
+    }
+
+    /** AI pipeline이 core_db에 직접 접속하지 않고 원본 위치와 소유 범위를 조회한다. */
+    @GetMapping("/internal/documents/{document_id}/pipeline-source")
+    public ResponseEntity<?> findPipelineSource(
+            @PathVariable("document_id") String documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        if (!tokenMatches(token)) {
+            return unauthorized();
+        }
+        return ResponseEntity.of(documentService.findPipelineSource(documentId));
     }
 
     /** 길이가 달라도 시간차가 새지 않도록 상수 시간 비교를 쓴다. */

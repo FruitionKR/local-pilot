@@ -38,12 +38,14 @@ class DocumentApplicationTests {
 	}
 
 	@Test
-	void flywayCreatesPipelineTables() {
+	void flywayPreparesWikiBoundaryWithoutDroppingDataTables() {
 		for (String table : new String[]{
 				"pipeline_runs",
 				"wiki_page_embeddings",
 				"wiki_embedding_vectors",
-				"wiki_embedding_units"
+				"wiki_embedding_units",
+				"wiki_pages",
+				"source_blocks"
 		}) {
 			Boolean exists = jdbcTemplate.queryForObject(
 					"SELECT to_regclass(?) IS NOT NULL",
@@ -52,21 +54,23 @@ class DocumentApplicationTests {
 			);
 			assertThat(exists).as(table).isTrue();
 		}
-
-		Boolean updatedAtExists = jdbcTemplate.queryForObject(
-				"""
-				SELECT EXISTS (
-				    SELECT 1
-				    FROM information_schema.columns
-				    WHERE table_schema = 'public'
-				      AND table_name = 'pipeline_runs'
-				      AND column_name = 'updated_at'
-				      AND is_nullable = 'NO'
+		Integer crossDatabaseConstraints = jdbcTemplate.queryForObject("""
+				SELECT count(*)
+				FROM information_schema.table_constraints
+				WHERE constraint_name IN (
+				    'fk_wiki_page_versions_page',
+				    'fk_wiki_page_contributions_page',
+				    'pipeline_runs_document_id_fkey'
 				)
-				""",
-				Boolean.class
-		);
-		assertThat(updatedAtExists).isTrue();
+				""", Integer.class);
+		assertThat(crossDatabaseConstraints).isZero();
+		Integer actorColumns = jdbcTemplate.queryForObject("""
+				SELECT count(*)
+				FROM information_schema.columns
+				WHERE table_name = 'pipeline_runs'
+				  AND column_name IN ('user_id', 'workspace_id')
+				""", Integer.class);
+		assertThat(actorColumns).isEqualTo(2);
 	}
 
 }

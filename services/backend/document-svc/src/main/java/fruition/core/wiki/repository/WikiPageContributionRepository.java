@@ -33,5 +33,18 @@ public interface WikiPageContributionRepository
             """)
     List<WikiPageContribution> findByPageIds(@Param("pageIds") Collection<String> pageIds);
 
+    @Query(value = """
+            SELECT contribution.*
+            FROM wiki_page_contributions contribution
+            JOIN ai_operation_logs operation
+              ON operation.operation_id = contribution.ingest_operation_id
+            WHERE contribution.page_id IN (:pageIds)
+              AND operation.workspace_id = :workspaceId
+            ORDER BY contribution.page_id, contribution.sequence_revision
+            """, nativeQuery = true)
+    List<WikiPageContribution> findByPageIdsAndWorkspaceId(
+            @Param("pageIds") Collection<String> pageIds,
+            @Param("workspaceId") String workspaceId);
+
     long countByIdPageIdAndActiveTrue(String pageId);
 }

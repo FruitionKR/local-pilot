@@ -71,9 +71,22 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
 
 
 def _handle(command: dict) -> None:
+    if command.get("kind") == "document_deleted":
+        database.delete_document_wiki_data(command["workspace_id"], command["document_id"])
+        return
+
     run_id = command["run_id"]
     repository = get_pipeline_run_repository()
     existing = repository.get_run(run_id)
+    if existing and any(
+        existing.get(field) is not None
+        and str(existing[field]) != str(command.get(field))
+        for field in ("document_id", "user_id", "workspace_id")
+    ):
+        error = "ingest command does not match the registered run context"
+        if existing.get("status") not in TERMINAL_STATUSES:
+            repository.fail(run_id, error)
+        raise ValueError(error)
     if existing and existing.get("status") in TERMINAL_STATUSES:
         logger.info(
             "[ingest 재전달 무시] run_id=%s 이미 종료됨 status=%s",
