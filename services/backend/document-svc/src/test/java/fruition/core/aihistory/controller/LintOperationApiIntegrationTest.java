@@ -201,7 +201,7 @@ class LintOperationApiIntegrationTest {
         mockMvc.perform(post("/api/workspaces/" + workspaceId + "/wiki/maintenance/lint")
                         .header("Authorization", bearer())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"materializePromotions\":true,\"dryRun\":true}"))
+                        .content("{\"materialize_promotions\":true,\"dry_run\":true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changed_pages").isEmpty())
                 .andExpect(jsonPath("$.orphan_refs").isArray());
@@ -235,7 +235,7 @@ class LintOperationApiIntegrationTest {
                         + "/wiki/maintenance/lint")
                         .header("Authorization", bearer())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"materializePromotions\":true,\"dryRun\":false}"))
+                        .content("{\"materialize_promotions\":true,\"dry_run\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.operation_id").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();

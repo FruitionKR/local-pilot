@@ -129,6 +129,8 @@ class DocumentServiceBlocksTest {
                 operationRecorder,
                 ingestOperationStarter,
                 "http://localhost:8080");
+        // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
+        lenient().when(storageProps.getBucket()).thenReturn("test-bucket");
         // 기본 저장 결과: base revision + 1로 변경 성공. 필요한 테스트는 개별로 다시 stub한다.
         lenient().when(mongoDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
@@ -279,8 +281,8 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("초기 노트는 MinIO 없이 직접 생성 Markdown과 편집 상태로 저장한다")
-    void createInitialNote_savesDirectMarkdownWithoutMinio() throws Exception {
+    @DisplayName("초기 노트는 원본을 object storage에 쓰고 직접 생성 Markdown과 편집 상태로 저장한다")
+    void createInitialNote_savesDirectMarkdownWithSource() throws Exception {
         documentService.createInitialNote("ws_first", USER_ID);
         documentService.createInitialNote("ws_second", USER_ID);
 
@@ -288,13 +290,15 @@ class DocumentServiceBlocksTest {
         ArgumentCaptor<DocumentEditState> editStates = ArgumentCaptor.forClass(DocumentEditState.class);
         verify(documentRepository, times(2)).save(documents.capture());
         verify(editStateRepository, times(2)).save(editStates.capture());
-        verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+        // 파이프라인은 source_uri로만 본문을 읽으므로 문서를 만들 때 원본도 같이 만든다
+        verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
         assertThat(documents.getAllValues())
                 .allSatisfy(document -> {
                     assertThat(document.getFilename()).isEqualTo("새 노트.md");
                     assertThat(document.getMimeType()).isEqualTo("text/markdown");
                     assertThat(document.getByteSize()).isPositive();
-                    assertThat(document.getSourceUri()).isNull();
+                    assertThat(document.getSourceUri())
+                            .isEqualTo("sources/documents/" + document.getId() + "/original");
                     assertThat(document.getContentHash()).isNull();
                     assertThat(document.getCurrentVersion()).isEqualTo(1);
                     assertThat(document.getStatus()).isEqualTo(fruition.core.document.domain.DocumentStatus.completed);
@@ -324,7 +328,8 @@ class DocumentServiceBlocksTest {
         verify(editStateRepository).save(any(DocumentEditState.class));
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
         assertThat(document.getValue().getFilename()).isEqualTo("새 문서.md");
-        assertThat(document.getValue().getSourceUri()).isNull();
+        assertThat(document.getValue().getSourceUri())
+                .isEqualTo("sources/documents/" + document.getValue().getId() + "/original");
         assertThat(document.getValue().getSortOrder()).isZero();
         assertThat(response.editable()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(1);
@@ -882,7 +887,8 @@ class DocumentServiceBlocksTest {
         ArgumentCaptor<DocumentEditState> editStateCaptor = ArgumentCaptor.forClass(DocumentEditState.class);
         verify(documentRepository).save(documentCaptor.capture());
         verify(editStateRepository).save(editStateCaptor.capture());
-        assertThat(documentCaptor.getValue().getSourceUri()).isNull();
+        assertThat(documentCaptor.getValue().getSourceUri())
+                .isEqualTo("sources/documents/" + documentCaptor.getValue().getId() + "/original");
         assertThat(documentCaptor.getValue().getContentHash()).isNull();
         assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
         verify(assetReferenceSynchronizer).copyReferences(source.getId(), response.id());
