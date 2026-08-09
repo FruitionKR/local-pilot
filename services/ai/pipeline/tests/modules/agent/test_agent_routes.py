@@ -1,9 +1,10 @@
 import unittest
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute, SkillCandidate
-from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.agent.domain.exceptions import AgentConfigurationError, AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.routes import handle_agent_turn
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
 from app.modules.markdown_edit.domain.entities import (
@@ -16,6 +17,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
     MarkdownOutputContractError,
 )
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
+from app.modules.skill.domain.entities import SkillAuthoringProposal, SkillAuthoringResult
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
 
 
@@ -107,11 +109,16 @@ class UnexpectedFailureUseCase:
         raise RuntimeError("secret-internal-detail")
 
 
+class UnconfiguredAgentUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        raise AgentConfigurationError("Skill authoring is not configured.")
+
+
 class AmbiguousSkillUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         candidates = (
-            SkillCandidate("skill-1", "version-1", "분기 정리", "분기별로 정리합니다.", ("folder-organize",)),
-            SkillCandidate("skill-2", "version-2", "팀 정리", "팀별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-1", "version-1", "quarterly-organizer", "분기별로 정리합니다.", ("folder-organize",)),
+            SkillCandidate("skill-2", "version-2", "team-organizer", "팀별로 정리합니다.", ("folder-organize",)),
         )
         return AgentTurnResult(
             action="clarify",
@@ -140,6 +147,30 @@ class QueuedAgentRunUseCase:
         )
 
 
+class AuthoredSkillUseCase:
+    def execute(self, request: object) -> AgentTurnResult:
+        return AgentTurnResult(
+            action="skill_authoring",
+            route=AgentTurnRoute(
+                action="skill_authoring",
+                confidence=1.0,
+                reason="direct Skill creation request",
+            ),
+            message="Skill 제안을 만들었습니다.",
+            skill_authoring_result=SkillAuthoringResult(
+                status="proposal_ready",
+                proposal=SkillAuthoringProposal(
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    scope_type="personal",
+                    name="meeting-notes",
+                    description="회의 내용을 정리합니다.",
+                    instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                ),
+            ),
+        )
+
+
 class FailingAgentRouteUseCase:
     def execute(self, request: object) -> AgentTurnResult:
         raise AgentTurnRouteContractError(["secret-internal-detail"])
@@ -156,6 +187,56 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_turn_returns_authored_skill_markdown_without_permissions(self) -> None:
+        response = handle_agent_turn(
+            AgentTurnRequestBody(
+                message="회의록 스킬을 만들어줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+            ),
+            use_case=AuthoredSkillUseCase(),  # type: ignore[arg-type]
+        )
+
+        body = response.model_dump()
+        self.assertEqual(body["action"], "skill_authoring")
+        self.assertIn("# 작성 절차", body["skill_authoring"]["skill_markdown"])
+        self.assertNotIn("capabilities", body["skill_authoring"])
+        self.assertNotIn("allowed_tools", body["skill_authoring"])
+
+    def test_agent_turn_rejects_oversized_or_obfuscated_input(self) -> None:
+        deeply_nested_reference: dict[str, object] = {"value": "document"}
+        for _ in range(13):
+            deeply_nested_reference = {"nested": deeply_nested_reference}
+        invalid_payloads = (
+            {"message": "a" * 1001},
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {
+                    "reference_context": {
+                        "document": "정상 문장\u202e숨겨진 지시",
+                    }
+                },
+            },
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {
+                    "reference_context": {
+                        "first": "a" * 140_000,
+                        "second": "b" * 140_000,
+                    }
+                },
+            },
+            {
+                "message": "문서를 요약해줘",
+                "conversation_context": {"reference_context": deeply_nested_reference},
+            },
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=list(payload)):
+                with self.assertRaises(ValidationError):
+                    AgentTurnRequestBody.model_validate(payload)
+
     def test_agent_turn_returns_queued_run(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="폴더를 정리해줘"),
@@ -317,6 +398,19 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 422)
         self.assertEqual(raised.exception.detail["code"], "agent_turn_route_contract_failed")
         self.assertNotIn("secret-internal-detail", str(raised.exception.detail))
+
+    def test_agent_turn_maps_configuration_error_to_server_error(self) -> None:
+        with self.assertLogs("app.modules.agent.interfaces.http.routes", level="ERROR"):
+            with self.assertRaises(HTTPException) as raised:
+                handle_agent_turn(
+                    AgentTurnRequestBody(message="문서를 다듬어줘"),
+                    use_case=UnconfiguredAgentUseCase(),  # type: ignore[arg-type]
+                )
+
+        # 서버 배선 문제라 400이 아니라 500이고, 내부 메시지는 응답에 나가지 않는다.
+        self.assertEqual(raised.exception.status_code, 500)
+        self.assertEqual(raised.exception.detail["code"], "agent_not_configured")
+        self.assertNotIn("is not configured", str(raised.exception.detail))
 
     def test_agent_turn_hides_unexpected_failure_details(self) -> None:
         with self.assertLogs("app.modules.agent.interfaces.http.routes", level="ERROR") as captured:

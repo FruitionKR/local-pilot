@@ -191,7 +191,14 @@ export function MarkdownViewer({
           </div>
           );
         })}
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={rehypePlugins} components={components}>
+      {/* 에디터가 빈 줄 보존용으로 써넣는 <br /> 같은 원본 HTML이 글자로 보이지 않게
+          렌더 단계에서만 버린다. 저장된 markdown은 그대로 둔다. */}
+      <ReactMarkdown
+        skipHtml
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={rehypePlugins}
+        components={components}
+      >
         {bodyMarkdown}
       </ReactMarkdown>
     </div>

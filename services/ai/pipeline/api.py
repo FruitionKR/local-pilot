@@ -6,7 +6,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.agent_run.interfaces.http.routes import router as agent_run_router
@@ -32,6 +33,16 @@ AGENT_SKILLS_ENABLED = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() i
     "yes",
     "on",
 }
+
+
+def require_internal_token(
+    token: str | None = Header(default=None, alias="X-Internal-Token"),
+) -> None:
+    expected = os.environ.get("INTERNAL_CALLBACK_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal service authentication is not configured.")
+    if token is None or not compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid internal service token.")
 
 
 def require_agent_service_token(
@@ -75,17 +86,45 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Fruition Pipeline Lab API", version="0.1.0", lifespan=lifespan)
+
+
+# 내부 토큰이 필요한 route의 경로 패턴. include_internal_router가 채우므로
+# 라우터 등록과 middleware 검사 대상이 갈라지지 않는다.
+INTERNAL_TOKEN_ROUTE_PATTERNS: list[Any] = []
+
+
+def include_internal_router(router, dependencies) -> None:
+    """내부 토큰이 필요한 라우터를 등록하고 그 경로를 middleware 검사 대상에 함께 넣는다."""
+    app.include_router(router, dependencies=dependencies)
+    INTERNAL_TOKEN_ROUTE_PATTERNS.extend(route.path_regex for route in router.routes)
+
+
+@app.middleware("http")
+async def authenticate_internal_request(request: Request, call_next):
+    """본문 파싱(422)보다 내부 토큰 검증(401/503)이 먼저 판정되도록 middleware에서 막는다."""
+    path = request.url.path
+    if any(pattern.match(path) for pattern in INTERNAL_TOKEN_ROUTE_PATTERNS):
+        try:
+            require_internal_token(request.headers.get("X-Internal-Token"))
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+    return await call_next(request)
+
+
 internal_token_dependencies = [Depends(require_internal_token)]
-app.include_router(
+# agent turn은 Skill 기능이 켜져 있어도 내부 토큰이 필요하다 (그 위에 agent service token이 더 붙는다).
+include_internal_router(
     agent_router,
-    dependencies=(
-        [Depends(require_agent_service_token)] if AGENT_SKILLS_ENABLED else internal_token_dependencies
-    ),
+    [Depends(require_agent_service_token)] if AGENT_SKILLS_ENABLED else internal_token_dependencies,
 )
-app.include_router(query_router, dependencies=internal_token_dependencies)
-app.include_router(pipeline_router, dependencies=internal_token_dependencies)
-app.include_router(wiki_schema_router, dependencies=internal_token_dependencies)
+include_internal_router(query_router, internal_token_dependencies)
+include_internal_router(pipeline_router, internal_token_dependencies)
+include_internal_router(wiki_schema_router, internal_token_dependencies)
 if AGENT_SKILLS_ENABLED:
+    # agent run·skill 관리 API는 내부 토큰이 아니라 agent service token으로만 보호한다.
     agent_service_dependencies = [Depends(require_agent_service_token)]
     app.include_router(agent_run_router, dependencies=agent_service_dependencies)
     app.include_router(skill_router, dependencies=agent_service_dependencies)
@@ -105,3 +144,7 @@ def get_document(document_id: str) -> dict:
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     return document
+
+
+# app에 직접 붙인 route는 include_internal_router를 타지 않으므로 여기서 검사 대상에 넣는다.
+INTERNAL_TOKEN_ROUTE_PATTERNS.append(app.routes[-1].path_regex)

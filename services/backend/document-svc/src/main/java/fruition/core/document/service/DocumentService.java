@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.shared.util.StorageProperties;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentAsset;
+import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
@@ -129,6 +131,9 @@ public class DocumentService {
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
     private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    private final DocumentAssetReferenceParser assetReferenceParser;
+    private final DocumentAssetRepository assetRepository;
     private final ObjectMapper objectMapper;
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
@@ -156,6 +161,9 @@ public class DocumentService {
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
                            IdempotencyRecordRepository idempotencyRecordRepository,
+                           DocumentAssetReferenceSynchronizer assetReferenceSynchronizer,
+                           DocumentAssetReferenceParser assetReferenceParser,
+                           DocumentAssetRepository assetRepository,
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
@@ -182,6 +190,9 @@ public class DocumentService {
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
         this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.assetReferenceSynchronizer = assetReferenceSynchronizer;
+        this.assetReferenceParser = assetReferenceParser;
+        this.assetRepository = assetRepository;
         this.objectMapper = objectMapper;
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
@@ -367,7 +378,7 @@ public class DocumentService {
                 duplicateFilename.filename(),
                 "text/markdown",
                 content.bytes().length,
-                null,
+                storeMarkdownSource(duplicateId, content.bytes()),
                 null,
                 "duplicate"
         );
@@ -381,6 +392,7 @@ public class DocumentService {
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
                 duplicateId, content.markdown(), content.contentHash()));
+        assetReferenceSynchronizer.copyReferences(documentId, duplicateId);
 
         DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
         saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
@@ -435,7 +447,7 @@ public class DocumentService {
                 filename,
                 "text/markdown",
                 content.bytes().length,
-                null,
+                storeMarkdownSource(documentId, content.bytes()),
                 null,
                 origin
         );
@@ -648,6 +660,29 @@ public class DocumentService {
                 .getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * 새로 만드는 Markdown 문서의 원본을 object storage에 저장하고 object key를 돌려준다.
+     * 파이프라인은 Mongo를 읽지 못하고 source_uri로만 본문을 가져가므로,
+     * 문서 행을 만들 때 원본도 같이 만들어야 이후 ingest가 성립한다.
+     */
+    private String storeMarkdownSource(String documentId, byte[] bytes) {
+        String objectPath = "sources/documents/" + documentId + "/original";
+        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(storageProps.getBucket())
+                            .object(objectPath)
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType("text/markdown")
+                            .build()
+            );
+        } catch (Exception e) {
+            throw new DocumentUploadException("문서 원본 저장 중 오류가 발생했습니다.", e);
+        }
+        registerMinioRollbackCleanup(objectPath);
+        return objectPath;
+    }
+
     private void registerMinioRollbackCleanup(String objectPath) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             return;
@@ -662,27 +697,44 @@ public class DocumentService {
         });
     }
 
-    private void requestProcessingAfterCommit(String documentId) {
+    /**
+     * 작업 큐 행을 바깥 트랜잭션이 커밋된 뒤에 등록한다.
+     * 커밋 전에 넣으면 워커가 아직 보이지 않는 문서를 집어갈 수 있어 순서를 보장해야 한다.
+     *
+     * @param queueLabel 로그에 쓰는 큐 이름 (예: "문서 처리 큐")
+     * @param enqueue    큐 행 저장. 새 트랜잭션 안에서 실행된다.
+     */
+    private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            log.info("[문서 처리 큐 즉시 등록] documentId={} transactionActive=false", documentId);
+            log.info("[{} 즉시 등록] documentId={} transactionActive=false", queueLabel, documentId);
             transactionTemplate.execute(status -> {
-                queueRepository.save(new DocumentProcessingQueue(documentId));
-                log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
+                enqueue.run();
+                log.info("[{} 등록 완료] documentId={} status=pending", queueLabel, documentId);
                 return null;
             });
             return;
         }
-        log.info("[문서 처리 큐 등록 예약] documentId={} afterCommit=true", documentId);
+        log.info("[{} 등록 예약] documentId={} afterCommit=true", queueLabel, documentId);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                transactionTemplate.execute(status -> {
-                    queueRepository.save(new DocumentProcessingQueue(documentId));
-                    log.info("[문서 처리 큐 등록 완료] documentId={} status=pending", documentId);
+                // afterCommit 시점에는 바깥 트랜잭션 리소스가 아직 스레드에 묶여 있어
+                // 기본 REQUIRED로 참여하면 INSERT가 커밋되지 않고 버려진다 — 반드시 새 트랜잭션.
+                TransactionTemplate requiresNew =
+                        new TransactionTemplate(transactionTemplate.getTransactionManager());
+                requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                requiresNew.execute(status -> {
+                    enqueue.run();
+                    log.info("[{} 등록 완료] documentId={} status=pending", queueLabel, documentId);
                     return null;
                 });
             }
         });
+    }
+
+    private void requestProcessingAfterCommit(String documentId) {
+        enqueueAfterCommit("문서 처리 큐", documentId,
+                () -> queueRepository.save(new DocumentProcessingQueue(documentId)));
     }
 
     /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
@@ -720,6 +772,7 @@ public class DocumentService {
         } catch (Exception e) {
             throw new DocumentUploadException("채팅 export 저장 중 오류가 발생했습니다.", e);
         }
+        registerMinioRollbackCleanup(objectPath);
 
         Document document = new Document(
                 documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
@@ -750,7 +803,7 @@ public class DocumentService {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(document.getSourceUri())
+                            .object(normalizeObjectKey(document.getSourceUri()))
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()
@@ -809,7 +862,7 @@ public class DocumentService {
                 filename.filename(),
                 "text/markdown",
                 content.bytes().length,
-                null,
+                storeMarkdownSource(placeholderId, content.bytes()),
                 null,
                 "convert"
         );
@@ -843,31 +896,8 @@ public class DocumentService {
     }
 
     private void requestConvertAfterCommit(String documentId, String sourceDocumentId) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            log.info("[문서 변환 큐 즉시 등록] documentId={} transactionActive=false", documentId);
-            transactionTemplate.execute(status -> {
-                convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
-                log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
-                return null;
-            });
-            return;
-        }
-        log.info("[문서 변환 큐 등록 예약] documentId={} afterCommit=true", documentId);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // afterCommit 시점에는 바깥 트랜잭션 리소스가 아직 스레드에 묶여 있어
-                // 기본 REQUIRED로 참여하면 INSERT가 커밋되지 않고 버려진다 — 반드시 새 트랜잭션.
-                TransactionTemplate requiresNew =
-                        new TransactionTemplate(transactionTemplate.getTransactionManager());
-                requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-                requiresNew.execute(status -> {
-                    convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId));
-                    log.info("[문서 변환 큐 등록 완료] documentId={} status=pending", documentId);
-                    return null;
-                });
-            }
-        });
+        enqueueAfterCommit("문서 변환 큐", documentId,
+                () -> convertQueueRepository.save(new DocumentConvertQueue(documentId, sourceDocumentId)));
     }
 
     /**
@@ -1051,7 +1081,8 @@ public class DocumentService {
                         isEditable(doc, editableDocumentIds.contains(doc.getId())),
                         doc.getCurrentVersion(),
                         doc.getSourceDocumentId(),
-                        doc.getUpdatedAt()
+                        doc.getUpdatedAt(),
+                        needsReingest(doc)
                 ))
                 .toList();
         return new DocumentListResponse(items);
@@ -1117,6 +1148,18 @@ public class DocumentService {
 
     private String itemKindOf(Document document) {
         return document.getDocumentRole() == DocumentRole.EDITABLE ? "page" : "source_file";
+    }
+
+    /**
+     * 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 재분석이 필요하다.
+     * 처리 중이면 이미 재분석이 진행 중이므로 제외한다. 실패(failed)는 기존 오류 표시가 담당한다.
+     */
+    private boolean needsReingest(Document document) {
+        return document.getDocumentRole() == DocumentRole.EDITABLE
+                && document.getStatus() != DocumentStatus.processing
+                && document.getCurrentContentHash() != null
+                && document.getContentHash() != null
+                && !document.getCurrentContentHash().equals(document.getContentHash());
     }
 
     private boolean isEditable(Document document, boolean hasEditState) {
@@ -1238,6 +1281,14 @@ public class DocumentService {
             throw conflict;
         }
         projectContentVersions(documentId, content.markdown(), result);
+        if (result.changed()) {
+            // 재ingest 필요 판단용 projection: 목록 API가 PG만으로 현재 편집본 해시를 비교할 수 있게 한다.
+            documentRepository.updateCurrentContentHash(documentId, result.contentHash(), result.updatedAt());
+            // 이미지를 첨부하지 않는 저장에서도 본문에 남은 관리 이미지를 기준으로 참조를 맞춘다.
+            // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
+            assetReferenceSynchronizer.synchronize(
+                    documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
+        }
 
         // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
         if (result.changed() && applyOperationStore.consume(applyOperationId, userId, documentId)) {
@@ -1294,6 +1345,79 @@ public class DocumentService {
                 result.actorUserId(),
                 result.updatedAt()
         );
+    }
+
+    /**
+     * object storage 업로드 전에 인가·역할·편집 잠금을 먼저 확인한다.
+     *
+     * <p>base revision은 여기서 보지 않는다. 재전송된 같은 요청은 base가 이미 지나가 있어
+     * 여기서 막으면 저장 계층의 revision_write_id 중복 판정에 닿지 못하고 첫 저장이
+     * 실패로 보인다. revision 판정은 canonical인 Mongo 저장 시점이 담당한다.
+     */
+    @Transactional(readOnly = true)
+    public void validateContentSavePreconditions(String workspaceId, String userId, String documentId) {
+        verifyWorkspaceOwnership(workspaceId, userId);
+        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        verifyDocumentOwner(document, userId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 저장할 수 있습니다.");
+        }
+        editLockService.requireWritable(documentId, userId);
+    }
+
+    /**
+     * 이미지 포함 저장. asset row는 본문보다 먼저 커밋해 참조 무결성을 확보하고
+     * (실패 시 orphan은 cleanup worker가 정리), 본문 저장은 Mongo 기반 saveContent를 재사용한다.
+     *
+     * <p>{@code revisionWriteId}와 asset ID가 모두 요청 내용에서 결정되므로, 같은 요청이
+     * 재전송되면 본문까지 동일해져 Mongo가 첫 저장 결과를 그대로 돌려준다.
+     */
+    public DocumentContentSaveResponse saveContentWithAssets(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            long baseVersion,
+            String revisionWriteId,
+            Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
+            String applyOperationId
+    ) {
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        Instant updatedAt = Instant.now();
+        List<DocumentAsset> assets = storedAssets.values().stream()
+                .map(stored -> new DocumentAsset(
+                        stored.assetId(), workspaceId, userId,
+                        stored.validated().originalFilename(), stored.validated().contentType(),
+                        stored.validated().bytes().length, stored.validated().width(), stored.validated().height(),
+                        stored.validated().contentHash(), stored.objectKey(), updatedAt))
+                .toList();
+        transactionTemplate.execute(status -> {
+            assetRepository.saveAll(assets);
+            return null;
+        });
+
+        DocumentContentSaveResponse saved;
+        try {
+            saved = saveContent(workspaceId, userId, documentId, content.markdown(),
+                    baseVersion, revisionWriteId, null, applyOperationId);
+        } catch (RuntimeException exception) {
+            transactionTemplate.execute(status -> {
+                assetRepository.deleteAllInBatch(assets);
+                return null;
+            });
+            throw exception;
+        }
+        if (!saved.changed()) {
+            // 본문이 그대로면 새 asset row도 남기지 않는다. object storage 정리는 호출부가 한다.
+            transactionTemplate.execute(status -> {
+                assetRepository.deleteAllInBatch(assets);
+                return null;
+            });
+        }
+        return new DocumentContentSaveResponse(
+                saved.documentId(), saved.currentVersion(), saved.contentHash(), saved.updatedAt(),
+                saved.changed(), content.markdown(), List.of());
     }
 
     private void recordContentVersion(String documentId, long version, String markdown,
@@ -1405,12 +1529,19 @@ public class DocumentService {
         String currentContentHash = mongoEditState.map(MongoDocumentEditState::getContentHash)
                 .orElse(editState.getContentHash());
 
+        // 원본 경로가 없으면 빈 키로 putObject가 나가 원인을 알기 어려운 500이 된다.
+        // 문서 생성 시점에 원본을 만들지 않던 시절의 행이 여기로 들어온다.
+        if (document.getSourceUri() == null || document.getSourceUri().isBlank()) {
+            throw new InvalidMarkdownContentException(
+                    "원본 파일 경로가 없는 문서는 재처리할 수 없습니다: " + documentId);
+        }
+
         byte[] bytes = currentMarkdown.getBytes(StandardCharsets.UTF_8);
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(document.getSourceUri())
+                            .object(normalizeObjectKey(document.getSourceUri()))
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()

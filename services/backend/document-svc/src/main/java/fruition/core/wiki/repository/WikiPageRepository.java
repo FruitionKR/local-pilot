@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -58,6 +59,10 @@ public interface WikiPageRepository extends JpaRepository<WikiPage, String> {
             """)
     Optional<WikiPage> findAliveByIdAndWorkspaceId(
             @Param("id") String id, @Param("workspaceId") String workspaceId);
+
+    /** needs_lint 판단용: workspace 위키 페이지의 마지막 변경 시각. */
+    @Query("SELECT MAX(p.updatedAt) FROM WikiPage p WHERE p.workspaceId = :workspaceId")
+    Optional<Instant> findMaxUpdatedAtByWorkspaceId(@Param("workspaceId") String workspaceId);
 
     /** 여러 페이지 중 주어진 유형인 것. 복구 지시서에 실을 source page를 고를 때 쓴다. */
     @Query("SELECT p.id FROM WikiPage p WHERE p.id IN :pageIds AND p.pageType = :pageType")

@@ -1,5 +1,5 @@
 import { apiFetch, parseErrorResponse, parseJsonOrThrow, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
-import type { DocumentBlocksResponse, DocumentItemResponse, DocumentUploadResponse } from "@/entities/document/model/document";
+import type { DocumentBlocksResponse, DocumentItemResponse, DocumentRole, DocumentUploadResponse } from "@/entities/document/model/document";
 
 export async function uploadDocumentFile(file: File) {
   const workspaceId = getWorkspaceId();
@@ -13,6 +13,18 @@ export async function uploadDocumentFile(file: File) {
   });
 
   return parseJsonOrThrow<DocumentUploadResponse>(response, ERROR_MESSAGES.uploadFailed);
+}
+
+/** 문서 ingest를 시작한다. 편집 가능 Markdown 전용이라 reflectDocumentToWiki를 거쳐 호출한다. */
+async function startDocumentIngest(documentId: string): Promise<void> {
+  const workspaceId = getWorkspaceId();
+  const response = await apiFetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/ingest`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorResponse(response, "문서 분석 시작에 실패했습니다."));
+  }
 }
 
 /**
@@ -29,6 +41,21 @@ export async function convertDocumentToMarkdown(documentId: string) {
     }
   );
   return parseJsonOrThrow<DocumentItemResponse>(response, ERROR_MESSAGES.documentConvertFailed);
+}
+
+/**
+ * 위키 반영 진입점.
+ * ingest는 편집 가능 Markdown만 받으므로(그 외 400) PDF 등 원본 문서는 Markdown 변환으로 보낸다.
+ */
+export async function reflectDocumentToWiki(
+  documentId: string,
+  documentRole: DocumentRole | undefined
+): Promise<void> {
+  if (documentRole === "EDITABLE") {
+    await startDocumentIngest(documentId);
+    return;
+  }
+  await convertDocumentToMarkdown(documentId);
 }
 
 /** 문서를 삭제한다. 성공 시 204를 반환한다. */

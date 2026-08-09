@@ -1,0 +1,366 @@
+/* 설정 모달 (Figma 771:19544: 1720×920, 좌측 내비 240px + 우측 콘텐츠). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.modal {
+  width: min(1720px, calc(100vw - 200px));
+  height: min(920px, calc(100vh - 160px));
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+/* --- 좌측 내비 --- */
+.nav {
+  width: 240px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-label {
+  margin: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nav-row {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+  color: var(--ink);
+  background: transparent;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+  text-align: left;
+}
+
+button.nav-row:hover,
+button.nav-row:focus-visible {
+  background: var(--soft);
+}
+
+.nav-row.is-active {
+  background: var(--soft);
+}
+
+.nav-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/* --- 우측 콘텐츠 --- */
+.content {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  padding: 36px 40px 36px clamp(40px, 10vw, 180px);
+  overflow-y: auto;
+}
+
+.detail {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 24px clamp(24px, 6vw, 116px) 24px 0;
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-row h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.preview-label {
+  padding: 2px 6px;
+  color: #e2e2e2;
+  background: var(--soft);
+  border: 1px solid var(--subdued);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.title > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.section-line {
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+/* 라벨 + 입력 필드 */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.field label,
+.field-label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+  line-height: 1.2;
+}
+
+.field small {
+  margin-top: -6px;
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+}
+
+.field input {
+  width: min(400px, 100%);
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.field input:focus-visible {
+  outline: none;
+  border-color: var(--soft);
+}
+
+/* 제목/설명 + 우측 액션 행 */
+.row {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.row-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.2;
+}
+
+.row-title strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.28px;
+}
+
+.row-title small {
+  color: var(--subdued);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+}
+
+.btn {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 워크스페이스 아이콘 */
+.ws-icon-outline {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ws-icon {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--panel);
+  border: 8px solid var(--soft);
+  border-radius: 10px;
+  font-size: 40px;
+  font-weight: 500;
+}
+
+/* 자동 저장·알림 토글: 공(ball)을 transform으로 밀어 자연스럽게 전환 */
+.switch {
+  width: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  padding: 1.5px;
+  background: #e2e2e2;
+  border-radius: 100px;
+  transition: background-color 160ms ease;
+}
+
+.switch.is-on {
+  background: var(--yellow);
+}
+
+.switch-ball {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 160ms ease;
+}
+
+.switch.is-on .switch-ball {
+  transform: translateX(13px);
+}
+
+:global([data-reduce-motion="true"]) .switch,
+:global([data-reduce-motion="true"]) .switch-ball {
+  transition: none;
+}
+
+/* AI 모델 */
+.model-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-pill {
+  padding: 6px 12px;
+  color: var(--ink);
+  background: var(--soft);
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.24px;
+  white-space: nowrap;
+}
+
+.close {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+}
+
+.close:hover,
+.close:focus-visible {
+  color: var(--ink);
+}
+
+/* plus 아이콘을 45도 돌려 X로 사용 */
+.close-icon {
+  width: 24px;
+  height: 24px;
+  transform: rotate(45deg);
+}

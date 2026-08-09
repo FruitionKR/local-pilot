@@ -1,0 +1,53 @@
+// AI 작업 로그 (document-svc /ai-operation-logs 응답 계약)
+
+export type OperationType = "document_edit" | "ingest" | "lint" | "restore";
+
+export interface OperationLogItem {
+  operation_id: string;
+  operation_type: OperationType;
+  status: string;
+  target_document_id: string | null;
+  summary: string | null;
+  changed_resource_count: number;
+  restored_from: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface OperationLogListResponse {
+  logs: OperationLogItem[];
+  next_cursor: string | null;
+}
+
+export interface DiffLine {
+  type: "CONTEXT" | "DELETE" | "ADD";
+  old_line: number | null;
+  new_line: number | null;
+  content: string;
+}
+
+export interface DiffHunk {
+  old_start: number;
+  old_lines: number;
+  new_start: number;
+  new_lines: number;
+  lines: DiffLine[];
+}
+
+export interface OperationChange {
+  id: number;
+  resource_type: string;
+  resource_id: string;
+  before_revision: number | null;
+  after_revision: number | null;
+  change_type: string;
+  change_summary: string | null;
+  additions: number | null;
+  deletions: number | null;
+  hunks?: DiffHunk[];
+  diff_too_large?: boolean;
+}
+
+export interface OperationLogDetail extends OperationLogItem {
+  changes: OperationChange[];
+}

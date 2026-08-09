@@ -112,6 +112,43 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
+    void migration_createsDocumentAssetFoundationAndProtectsReferencedAssets() {
+        for (String table : List.of(
+                "document_assets", "document_asset_references", "document_asset_orphans")) {
+            Boolean exists = jdbcTemplate.queryForObject(
+                    "SELECT to_regclass(?) IS NOT NULL",
+                    Boolean.class,
+                    "public." + table
+            );
+            assertThat(exists).as(table).isTrue();
+        }
+
+        String userId = "asset-user-" + UUID.randomUUID();
+        String workspaceId = "asset-workspace-" + UUID.randomUUID();
+        String documentId = "asset-document-" + UUID.randomUUID();
+        UUID assetId = UUID.randomUUID();
+        insertDocument(documentId, workspaceId, userId, "asset.md", "b".repeat(64), DocumentRole.EDITABLE.name());
+        jdbcTemplate.update(
+                """
+                INSERT INTO document_assets(
+                    id, workspace_id, uploaded_by, original_filename, content_type, byte_size,
+                    width, height, content_hash, storage_key, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                """,
+                assetId, workspaceId, userId, "diagram.png", "image/png", 4L,
+                1, 1, "a".repeat(64), "assets/" + assetId
+        );
+        jdbcTemplate.update(
+                "INSERT INTO document_asset_references(document_id, asset_id, created_at) VALUES (?, ?, now())",
+                documentId,
+                assetId
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM document_assets WHERE id = ?", assetId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void documents_allowSameContentAndFolderPlacement() {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
@@ -287,7 +324,7 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
-    void markdownExport_readsLatestEditStateWithoutChangingDocument() {
+    void markdownExport_readsLatestEditStateWithoutChangingDocument() throws Exception {
         String suffix = UUID.randomUUID().toString();
         String userId = "user_" + suffix;
         String workspaceId = "ws_" + suffix;
@@ -314,7 +351,7 @@ class DocumentEditingSchemaIntegrationTest {
                 documentExportService.exportMarkdown(workspaceId, userId, documentId);
 
         assertThat(result.filename()).isEqualTo("회의 결과.md");
-        assertThat(new String(result.bytes(), java.nio.charset.StandardCharsets.UTF_8))
+        assertThat(new String(result.content().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
                 .isEqualTo("# 최신 회의 결과\n한글 본문");
         assertThat(jdbcTemplate.queryForMap(
                 """

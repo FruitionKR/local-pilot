@@ -10,6 +10,7 @@ from app.modules.skill.domain.entities import (
 from app.modules.skill.domain.policy import (
     CAPABILITY_TOOLS,
     validate_allowed_tools,
+    validate_skill_name,
     with_required_planning_reads,
 )
 from app.modules.skill.domain.safety import inspect_skill_instructions
@@ -35,6 +36,7 @@ class ProposeSkillDraftUseCase:
 
         candidate = self._generator.generate(source_runs, user_directives)
         name = _required_text(candidate, "name")
+        name = validate_skill_name(name)
         description = _required_text(candidate, "description")
         instructions = _required_text(candidate, "instructions_markdown")
         capabilities = _capabilities(candidate.get("capabilities"))

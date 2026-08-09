@@ -88,6 +88,13 @@
 
 ---
 
+## 2026-08-05
+
+### fix: Backend와 llmPipeline의 결과 콜백 토큰 공유
+
+- `infra/.env.example`과 pipeline 전용 예시에 `INTERNAL_CALLBACK_TOKEN`을 추가
+- pipeline API 컨테이너에 같은 환경변수를 전달해 Backend의 `app.internal.callback-token`과 공유
+
 ## 2026-08-03
 
 ### feat: Agent worker 실행과 내부 인증 설정 추가

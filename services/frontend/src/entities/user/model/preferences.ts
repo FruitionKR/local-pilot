@@ -25,6 +25,9 @@ export type UserPreferences = {
   notifications: {
     completed: boolean;
     failed: boolean;
+    lint: boolean;
+    restore: boolean;
+    query: boolean;
     browser: boolean;
   };
 };
@@ -49,8 +52,11 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
     }
   },
   notifications: {
-    completed: false,
+    completed: true,
     failed: true,
+    lint: true,
+    restore: true,
+    query: false,
     browser: false
   }
 };
@@ -128,6 +134,18 @@ export function normalizeUserPreferences(value: unknown): UserPreferences {
       failed: booleanValue(
         notifications.failed,
         DEFAULT_USER_PREFERENCES.notifications.failed
+      ),
+      lint: booleanValue(
+        notifications.lint,
+        DEFAULT_USER_PREFERENCES.notifications.lint
+      ),
+      restore: booleanValue(
+        notifications.restore,
+        DEFAULT_USER_PREFERENCES.notifications.restore
+      ),
+      query: booleanValue(
+        notifications.query,
+        DEFAULT_USER_PREFERENCES.notifications.query
       ),
       browser: booleanValue(
         notifications.browser,

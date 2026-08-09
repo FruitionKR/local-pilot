@@ -357,14 +357,14 @@ literal redaction 입력 구성, source run 연결 저장은 Spring Backend와 D
   - 선택이 없을 때 가장 최근 completed run 하나 선택
   - 승인 plan, 성공 Tool과 사용자 수정 지시에서 반복 규칙 추출
   - 고정 resource ID, 일회성 값, 본문, prompt, 인증정보 제거
-  - name, description, capabilities, instructions, allowed_tools proposal
-  - draft 저장 확인과 publish 확인 분리
+  - 내부 name, description, capabilities, instructions, allowed_tools proposal 생성 후 공통 AuthorSkillUseCase 재검토
+  - 사용자에게 Tool을 제외한 Skill Markdown을 보여주고 최종 publish 확인
 - 완료 조건:
   - [ ] 다른 사용자·Workspace·채팅의 AgentRun을 source로 사용할 수 없다.
   - [ ] completed가 아닌 run과 실패·취소 operation을 성공 사례로 사용하지 않는다.
   - [ ] proposal에 실행 당시 folder/document ID와 인증정보가 포함되지 않는다.
-  - [ ] 사용자 확인 전 Skill draft를 저장하지 않는다.
-  - [ ] 저장된 draft는 기존 lint·관리 권한·publish 정책을 통과한다.
+  - [ ] 사용자 확인 전 Skill row나 version을 저장하지 않는다.
+  - [ ] 최종 게시 내용은 기존 lint·LLM·관리 권한·publish 정책을 다시 통과한다.
 
 ### TASK-017 Skill proposal Backend·Frontend 통합
 
@@ -372,12 +372,12 @@ literal redaction 입력 구성, source run 연결 저장은 Spring Backend와 D
 - 변경 대상:
   - Spring `/agent/turn`과 Skill proxy 계약
   - Frontend Agent conversation·완료 run 선택 UI
-  - Skill proposal 확인·수정·저장·publish UI
+  - Skill proposal 확인·수정·최종 publish UI
 - 작업:
   - `skill_draft_proposal` action과 source run 식별자 전달
   - `POST /api/workspaces/{workspace_id}/skills/draft-from-runs/preview` proxy
   - proposal 카드와 고정값 제거 안내
-  - draft 저장 확인과 publish·활성화 확인 분리
+  - 미저장 proposal 검토와 최종 publish 확인 구분
   - 권한·stale source·feature disabled 오류 표시
 - 완료 조건:
   - [ ] “방금 방식대로 Skill로 만들어줘”가 가장 최근 completed run proposal을 반환한다.

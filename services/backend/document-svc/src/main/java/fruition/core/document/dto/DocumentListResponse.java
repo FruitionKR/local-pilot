@@ -34,6 +34,8 @@ public record DocumentListResponse(List<DocumentItem> documents) {
             boolean editable,
             @JsonProperty("current_version") long currentVersion,
             @JsonProperty("source_document_id") String sourceDocumentId,
-            @JsonProperty("updated_at") Instant updatedAt
+            @JsonProperty("updated_at") Instant updatedAt,
+            /** 마지막 ingest 이후 편집본이 바뀌어 재분석이 필요한지 (편집 가능 문서만 true 가능) */
+            @JsonProperty("needs_reingest") boolean needsReingest
     ) {}
 }

@@ -145,6 +145,75 @@ def test_operation_restore_rejects_cancelled_operation_as_active_input() -> None
             raise AssertionError("취소 대상 operation은 활성 입력에 포함할 수 없다")
 
 
+def test_operation_restore_rejects_deleted_page_as_rebuild_target() -> None:
+    common = {
+        "operation_id": "restore-1",
+        "workspace_id": "ws-1",
+        "result_callback_url": "http://backend/result",
+        "rebuild_pages": [{"page_id": "C3", "keep_contributions": []}],
+        "deleted_pages": ["C3"],
+    }
+    payloads = (
+        (IngestOperationRestoreIn, {
+            **common,
+            "restore_to_operation_id": "A2",
+            "cancel_operation_ids": ["A3"],
+            "source_page": {"page_id": "S1"},
+        }),
+        (LintOperationRestoreIn, {
+            **common,
+            "target_operation_id": "lint-B",
+        }),
+    )
+
+    for schema, payload in payloads:
+        try:
+            schema(**payload)
+        except ValueError as exc:
+            assert "deleted_pages" in str(exc)
+        else:
+            raise AssertionError("삭제 Page는 재조립 대상에 포함할 수 없다")
+
+
+def test_ingest_restore_rejects_restored_source_as_deleted() -> None:
+    try:
+        IngestOperationRestoreIn(
+            operation_id="restore-1",
+            workspace_id="ws-1",
+            result_callback_url="http://backend/result",
+            restore_to_operation_id="A2",
+            cancel_operation_ids=["A3"],
+            source_page={"page_id": "S1"},
+            rebuild_pages=[],
+            deleted_pages=["S1"],
+        )
+    except ValueError as exc:
+        assert "source_page" in str(exc)
+    else:
+        raise AssertionError("복원할 Source Page는 삭제 대상에 포함할 수 없다")
+
+
+def test_ingest_restore_rejects_source_as_rebuild_target() -> None:
+    for restore_to_operation_id in (None, "A2"):
+        try:
+            IngestOperationRestoreIn(
+                operation_id="restore-1",
+                workspace_id="ws-1",
+                result_callback_url="http://backend/result",
+                restore_to_operation_id=restore_to_operation_id,
+                cancel_operation_ids=["A3"],
+                source_page={"page_id": "C3"},
+                rebuild_pages=[
+                    {"page_id": "C3", "keep_contributions": []}
+                ],
+                deleted_pages=[],
+            )
+        except ValueError as exc:
+            assert "source_page" in str(exc)
+        else:
+            raise AssertionError("Source Page는 재조립 대상에 포함할 수 없다")
+
+
 def test_ingest_restore_allows_restore_point_contribution() -> None:
     payload = IngestOperationRestoreIn(
         operation_id="restore-1",

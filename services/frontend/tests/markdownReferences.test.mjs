@@ -16,6 +16,8 @@ function renderMarkdown(markdown) {
   return renderToStaticMarkup(React.createElement(
     ReactMarkdown,
     {
+      // MarkdownViewer와 동일하게 원본 HTML을 렌더하지 않는다
+      skipHtml: true,
       remarkPlugins: [remarkGfm],
       rehypePlugins: [createRehypeSourceBlocks(sourceBlocks)]
     },
@@ -186,4 +188,20 @@ test("GFM autolink literal과 strikethrough를 렌더링한다", () => {
   assert.match(html, /<del>삭제된 내용<\/del>/);
   assert.match(html, /data-block-id="B0001"/);
   assert.match(html, /data-block-id="B0002"/);
+});
+
+test("에디터가 빈 줄 보존용으로 남긴 <br />를 글자로 렌더링하지 않는다", () => {
+  const markdown = [
+    "첫 문단",
+    "",
+    "<br />",
+    "",
+    "둘째 문단"
+  ].join("\n");
+
+  const html = renderMarkdown(markdown);
+
+  assert.doesNotMatch(html, /&lt;br \/&gt;/);
+  assert.match(html, /첫 문단/);
+  assert.match(html, /둘째 문단/);
 });

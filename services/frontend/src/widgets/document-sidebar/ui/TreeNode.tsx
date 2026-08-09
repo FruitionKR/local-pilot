@@ -42,7 +42,6 @@ export function TreeNode({
   dropTarget,
   fileDropTarget,
   editing,
-  noteEditStates,
   onDragStart,
   onDragOverItem,
   onFileDragOver,
@@ -96,6 +95,7 @@ export function TreeNode({
           draggedItemId === item.id && styles["is-dragging"],
           isFileDropTarget && styles["is-file-drop-target"],
           item.type === "folder" ? styles["is-folder"] : styles["is-note"],
+          depth > 0 && styles["is-nested"],
           isDropTarget && styles[`is-drop-${dropTarget.position}`]
         )}
         style={{ paddingLeft: TREE_ROW_BASE_PADDING_PX + depth * TREE_ROW_INDENT_PER_DEPTH_PX }}
@@ -131,7 +131,6 @@ export function TreeNode({
               processingStage={item.processingStage}
               errorMessage={item.errorMessage}
               uploadedAt={item.uploadedAt}
-              editState={item.documentId ? noteEditStates[item.documentId] : undefined}
             />
             {fileTypeBadge(item) && <small className={styles["tree-type-badge"]}>{fileTypeBadge(item)}</small>}
             {isFileDropTarget && <small className={styles["tree-drop-hint"]}>여기에 추가</small>}
@@ -151,7 +150,6 @@ export function TreeNode({
           dropTarget={dropTarget}
           fileDropTarget={fileDropTarget}
           editing={editing}
-          noteEditStates={noteEditStates}
           onDragStart={onDragStart}
           onDragOverItem={onDragOverItem}
           onFileDragOver={onFileDragOver}

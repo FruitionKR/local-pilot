@@ -57,7 +57,7 @@ public class AgentTurnService {
                 request.baseVersion(),
                 requestId,
                 applyOperationId,
-                pipelineAgentRequester.request(request)
+                pipelineAgentRequester.request(workspaceId, userId, request)
         );
     }
 

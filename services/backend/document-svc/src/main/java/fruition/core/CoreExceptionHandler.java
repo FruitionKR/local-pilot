@@ -46,11 +46,18 @@ import fruition.core.wiki.exception.WikiPageSlugConflictException;
 import fruition.core.wiki.exception.WikiPageVersionNotFoundException;
 import fruition.shared.util.BaseExceptionHandler;
 import fruition.shared.util.ErrorResponse;
+import fruition.core.document.exception.DocumentAssetExportException;
+import fruition.core.document.exception.DocumentAssetNotFoundException;
+import fruition.core.document.exception.DocumentAssetStorageException;
+import fruition.core.document.exception.DocumentAssetTooLargeException;
+import fruition.core.document.exception.InvalidDocumentAssetException;
+import fruition.core.document.exception.UnsupportedDocumentAssetException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /** document 앱 전용 예외 매핑. 공통 매핑은 {@link BaseExceptionHandler}에서 상속한다. */
 @RestControllerAdvice
@@ -105,11 +112,32 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
                 .body(ErrorResponse.of("WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
 
+    /** multipart 한도를 넘으면 Spring이 요청을 읽기 전에 막는다. 크기 문제임을 413으로 구분해 알린다. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return ResponseEntity
+                .status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("PAYLOAD_TOO_LARGE", "요청 크기가 허용 한도를 초과했습니다."));
+    }
+
+
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentNotFound(DocumentNotFoundException e) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(DocumentAssetNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetNotFound(DocumentAssetNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAssetExportException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetExport(DocumentAssetExportException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_EXPORT_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentWriteForbiddenException.class)
@@ -187,6 +215,29 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_MARKDOWN_CONTENT", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidDocumentAssetException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDocumentAsset(InvalidDocumentAssetException e) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_DOCUMENT_ASSET", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAssetTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetTooLarge(DocumentAssetTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_TOO_LARGE", e.getMessage()));
+    }
+
+    @ExceptionHandler(UnsupportedDocumentAssetException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedDocumentAsset(UnsupportedDocumentAssetException e) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ErrorResponse.of("UNSUPPORTED_DOCUMENT_ASSET", e.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentAssetStorageException.class)
+    public ResponseEntity<ErrorResponse> handleDocumentAssetStorage(DocumentAssetStorageException e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of("DOCUMENT_ASSET_STORAGE_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(MarkdownContentTooLargeException.class)

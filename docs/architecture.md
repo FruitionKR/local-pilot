@@ -17,7 +17,7 @@ services/
 │  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki·query, Flyway(스키마) 소유, stateless
 │  └─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)
 └─ ai/
-   ├─ pipeline/    FastAPI, 내부 전용  동기 query·agent·lint + GET /documents (LLM·임베딩)
+   ├─ pipeline/    FastAPI, 내부 전용  동기 query·agent·skill·lint + GET /documents (LLM·임베딩)
    │                └ 같은 이미지로 ingest-worker(ai.ingest.command 소비)·
    │                  edit-event-consumer(document.edit.event 소비, ai_db) 실행
    └─ converter/   FastAPI, 내부 전용  PDF→Markdown 변환 (document-svc 변환 큐 경유)
@@ -34,9 +34,11 @@ services/
 | document → access | `GET /internal/authz/workspaces/{wid}/users/{uid}`, `GET /internal/users/{uid}` (X-Internal-Token) | 권한·표시명 조회 (캐시 miss 시) |
 | access → document | `POST /internal/workspaces/{wid}/initial-note` (X-Internal-Token, best-effort, 커밋 후 호출) | 새 워크스페이스 초기 노트 |
 | document → ai-svc | Kafka `ai.ingest.command` (key=workspace_id) | 비동기 ingest |
-| document → ai-svc | HTTP + X-Internal-Token | 동기 query·agent·lint |
+| document → ai-svc | HTTP + X-Internal-Token | 동기 query·lint |
+| document → ai-svc | HTTP + `X-Internal-Token` + `X-Agent-Service-Token` + workspace/user context | Agent turn |
 | document → converter | HTTP (내부 전용, 큐 worker 경유) | PDF→Markdown 변환 (read timeout 900s) |
 | ai-svc → document | HTTP 콜백 + X-Internal-Token | 진행 heartbeat·결과 통지 |
+| ai-svc → access | `GET /internal/authz/workspaces/{wid}/users/{uid}` + X-Internal-Token | Skill 팀 범위 멤버·owner 확인 |
 | 사용자 인증 | 각 앱이 JWT(iss·aud, HS256 공유 시크릿) 로컬 검증 | access 호출 없이 검증 |
 
 ## 3. 권한 인가
@@ -58,7 +60,7 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 - access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션) + Redis projection
 - document-svc → **core_db** (문서 metadata·폴더·채팅·Wiki·operation) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
-- ai-svc → **ai_db** (wiki_schemas·파생물 stale 추적) + core_db 동거 4테이블(전환기, ai_runtime 별도 계정)
+- ai-svc → **ai_db** (wiki_schemas·파생물 stale 추적) + core_db 동거 pipeline/embedding·Agent/Skill/checkpoint 테이블(스키마는 document-svc Flyway, runtime은 ai_runtime)
 - DB 계정 runtime(DML)/migration(DDL) 분리, 타 서비스 DB write 불가. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md)
 
 ## 5. 이벤트 처리
@@ -83,7 +85,7 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 - 매니페스트: `k8s/base` + `k8s/overlays/aws` (ingress·external-secrets·KEDA)
 - IaC: `infra/terraform` (EKS·RDS·ElastiCache·S3·ECR·OIDC·Secrets·budgets) — apply는 AWS 계정 준비 후
-- 배포 순서: document-svc 먼저(Flyway 스키마 생성) → access-svc(검증만). `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
+- 배포 순서: document-svc 먼저(Flyway 및 Agent/Skill/checkpoint 스키마 생성) → access-svc(검증만) → pipeline Agent worker. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
 - ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
 
 ## 7. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)

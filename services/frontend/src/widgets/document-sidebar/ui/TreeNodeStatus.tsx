@@ -2,24 +2,26 @@
 
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DocumentProcessingState, NoteEditState, TreeItem } from "@/entities/tree";
+import type { DocumentProcessingState, TreeItem } from "@/entities/tree";
 import { cx } from "@/shared/lib/classNames";
 import styles from "./DocumentSidebar.module.css";
 
 // hover 후 tooltip이 뜨기까지의 지연(ms).
 const TOOLTIP_DELAY_MS = 200;
 
-type BadgeKind = "processing" | "stalled" | "failed";
+type BadgeKind = "pending" | "processing" | "stalled" | "failed";
 
 // 처리 상태 → 뱃지 문구. stage 세부값은 tooltip으로만 노출한다.
 const BADGE_LABEL: Record<BadgeKind, string> = {
+  pending: "대기 중",
   processing: "처리 중",
   stalled: "작업 중",
   failed: "실패"
 };
 
 // status(uploaded/processing/…)와 processing_state(starting/running/stalled/…)를 합쳐
-// 뱃지 종류를 정한다. 우선순위: failed > stalled > processing.
+// 뱃지 종류를 정한다. 우선순위: failed > stalled > processing > pending.
+// uploaded는 ingest가 아직 시작되지 않은 상태라 "처리 중"이 아니라 "대기 중"이다.
 function resolveBadgeKind(
   status: TreeItem["status"],
   processingState: DocumentProcessingState | undefined
@@ -27,15 +29,17 @@ function resolveBadgeKind(
   if (status === "failed" || processingState === "failed") return "failed";
   if (processingState === "stalled") return "stalled";
   if (
-    status === "uploading" || status === "uploaded" || status === "processing"
+    status === "processing"
     || processingState === "starting" || processingState === "running"
   ) return "processing";
+  if (status === "uploading" || status === "uploaded") return "pending";
   return null;
 }
 
 function badgeTitle(kind: BadgeKind, processingStage?: string, errorMessage?: string): string | undefined {
   if (kind === "failed") return errorMessage ?? "처리에 실패했습니다.";
   if (kind === "stalled") return processingStage ? `작업 중: ${processingStage}` : "작업 중입니다.";
+  if (kind === "pending") return "분석 시작 대기 중입니다.";
   return processingStage || undefined;
 }
 
@@ -64,21 +68,19 @@ function tooltipText(
   return lines.length ? lines.join("\n") : undefined;
 }
 
-/** 문서 처리 진행 뱃지(처리 중/작업 중/실패) + 로컬 편집 상태 점을 표시한다. */
+/** 문서 처리 진행 뱃지(처리 중/작업 중/실패)를 표시한다. */
 export function TreeNodeStatus({
   status,
   processingState,
   processingStage,
   errorMessage,
-  uploadedAt,
-  editState
+  uploadedAt
 }: {
   status: TreeItem["status"];
   processingState?: DocumentProcessingState;
   processingStage?: string;
   errorMessage?: string;
   uploadedAt?: string;
-  editState?: NoteEditState;
 }) {
   const badgeRef = useRef<HTMLElement>(null);
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,43 +105,27 @@ export function TreeNodeStatus({
     setTooltipAnchor(null);
   };
 
-  const localStatus = editState?.saveStatus === "error" || editState?.saveStatus === "conflict"
-    ? "error"
-    : editState && (editState.saveStatus !== "saved" || editState.needsReview)
-      ? "changed"
-      : null;
-  if (!badgeKind && !localStatus) return null;
+  if (!badgeKind) return null;
 
   return (
-    <>
-      {badgeKind && (
-        <small
-          ref={badgeRef}
-          className={cx(styles["tree-status"], styles[badgeKind])}
-          aria-label={badgeTooltip}
-          onMouseEnter={openTooltip}
-          onMouseLeave={closeTooltip}
+    <small
+      ref={badgeRef}
+      className={cx(styles["tree-status"], styles[badgeKind])}
+      aria-label={badgeTooltip}
+      onMouseEnter={openTooltip}
+      onMouseLeave={closeTooltip}
+    >
+      {BADGE_LABEL[badgeKind]}
+      {badgeTooltip && tooltipAnchor && createPortal(
+        <span
+          className={styles["tree-tooltip"]}
+          role="tooltip"
+          style={{ left: tooltipAnchor.left, top: tooltipAnchor.top }}
         >
-          {BADGE_LABEL[badgeKind]}
-          {badgeTooltip && tooltipAnchor && createPortal(
-            <span
-              className={styles["tree-tooltip"]}
-              role="tooltip"
-              style={{ left: tooltipAnchor.left, top: tooltipAnchor.top }}
-            >
-              {badgeTooltip}
-            </span>,
-            document.body
-          )}
-        </small>
+          {badgeTooltip}
+        </span>,
+        document.body
       )}
-      {localStatus && (
-        <small
-          className={cx(styles["tree-edit-status"], styles[`is-${localStatus}`])}
-          aria-label={localStatus === "error" ? "저장 문제 있음" : "수정 사항 있음"}
-          title={localStatus === "error" ? "저장 문제 있음" : "수정 사항 또는 AI 점검 대기"}
-        />
-      )}
-    </>
+    </small>
   );
 }

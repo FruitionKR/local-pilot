@@ -162,9 +162,16 @@
 }
 
 .sidebar-workspace-toggle {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border-radius: 6px;
   transition: transform 120ms ease;
+}
+
+.sidebar-workspace-trigger:hover .sidebar-workspace-toggle,
+.sidebar-workspace-trigger:focus-visible .sidebar-workspace-toggle {
+  background: var(--soft);
 }
 
 .sidebar-workspace-toggle.is-open {
@@ -268,7 +275,7 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 20px 16px 16px 24px;
+  padding: 20px 16px 16px 16px;
 }
 
 .sidebar-menu-item {
@@ -309,7 +316,7 @@
 .sidebar-menu-item.is-active {
   width: auto;
   gap: 0;
-  padding: 0 12px 0 0;
+  padding: 0 12px 0 2px;
   border: 0.5px solid var(--line);
   border-radius: 100px;
 }
@@ -319,21 +326,27 @@
   height: 36px;
 }
 
+/* 검색 토글 열림 상태 (Figma 시안엔 없음 — 기존 활성 배경 규칙 준용) */
+.sidebar-menu-item.is-open {
+  color: var(--ink);
+  background: var(--soft);
+}
+
 .sidebar-menu-add {
   margin-left: auto;
   border-radius: 6px;
 }
 
-/* 채팅 시작 버튼 */
+/* 채팅 시작 버튼 (Figma 599:4962: bg secondary/700, py-14, 리스트 좌우 16px 정렬) */
 .sidebar-chat-start {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 10px 12px;
-  padding: 9px 12px;
+  margin: 10px 16px 16px;
+  padding: 14px 12px;
   color: var(--ink);
-  background: var(--bg);
+  background: var(--soft);
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 12px;
@@ -342,68 +355,130 @@
 
 .sidebar-chat-start:hover,
 .sidebar-chat-start:focus-visible {
-  background: var(--soft);
+  background: #3f3f3f;
+  border-color: #5a5a5a;
 }
 
 .sidebar-chat-start :global(.svg-icon) {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
-/* 프로필 푸터 */
+/* 프로필 푸터 (Figma 747:6648: h-60, UserCircle 22px, 온라인 회색, 우측 화살표) */
 .sidebar-profile {
+  position: relative;
+  height: 60px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px 14px;
-  border-top: 1px solid var(--line-soft);
+  padding: 10px 8px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-profile-row {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border-radius: 12px;
+}
+
+.sidebar-profile-user {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .sidebar-profile-avatar {
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #0a0a0a;
-  background: #d7d7d7;
-  border-radius: 50%;
-  font-size: 13px;
-  font-weight: 700;
+  color: #d7d7d7;
 }
 
 .sidebar-profile-info {
   min-width: 0;
-  flex: 1;
   display: grid;
-  gap: 2px;
 }
 
 .sidebar-profile-info strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--ink);
   font-size: 12px;
+  font-weight: 600;
 }
 
 .sidebar-profile-info small {
-  color: #54c26a;
+  color: var(--muted);
   font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
-.sidebar-logout {
+.sidebar-profile-toggle {
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 11px;
+  border-radius: 6px;
 }
 
-.sidebar-logout:hover,
-.sidebar-logout:focus-visible {
+.sidebar-profile-toggle:hover,
+.sidebar-profile-toggle:focus-visible {
   color: var(--ink);
-  text-decoration: underline;
+  background: var(--soft);
+}
+
+.sidebar-profile-toggle-icon {
+  width: 10px;
+  height: 5px;
+  transition: transform 120ms ease;
+}
+
+/* 메뉴가 위로 열리므로 열림 상태에서 화살표를 뒤집는다 */
+.sidebar-profile-toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
+/* 프로필 화살표 클릭 시 위로 열리는 설정/로그아웃 메뉴 */
+.profile-menu {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 4px);
+  z-index: 30;
+  width: 132px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.38);
+}
+
+.profile-menu button {
+  width: 100%;
+  height: 31px;
+  padding: 0 9px;
+  color: var(--ink);
+  background: transparent;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.profile-menu button:hover,
+.profile-menu button:focus-visible {
+  background: var(--soft);
 }
 
 /* --- project-section --- */
@@ -495,14 +570,6 @@
   font-size: 18px;
   font-weight: 600;
   line-height: 1;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-/* + 버튼은 해당 폴더 행에 마우스를 올리거나 포커스가 갈 때만 나타난다. */
-.project-title:hover .project-add-file,
-.project-title:focus-within .project-add-file {
-  opacity: 1;
 }
 
 .project-add-file:hover,
@@ -611,7 +678,7 @@
   position: relative;
   width: 100%;
   max-width: 100%;
-  height: 34px;
+  height: 37px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -629,6 +696,11 @@
 
 .tree-row.is-folder {
   font-weight: 600;
+}
+
+/* 중첩 행은 Figma 기준 33px */
+.tree-row.is-nested {
+  height: 33px;
 }
 
 .tree-row.is-dragging {
@@ -745,21 +817,6 @@
 .tree-status.failed {
   color: #ff8f87;
   background: #3a1f1d;
-}
-
-.tree-edit-status {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  margin-left: 1px;
-  background: var(--yellow);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(255, 193, 23, 0.12);
-}
-
-.tree-edit-status.is-error {
-  background: #ff8f87;
-  box-shadow: 0 0 0 2px rgba(255, 143, 135, 0.12);
 }
 
 /* 파일 행 우측 타입 배지 (PDF/TXT 등) */

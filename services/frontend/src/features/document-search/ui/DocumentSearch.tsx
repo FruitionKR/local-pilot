@@ -1,97 +1,100 @@
 "use client";
 
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { searchIcon, SvgIcon } from "@/shared/ui/SvgIcon";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
+import { formatRelativeTime } from "@/shared/lib/time";
+import { fileIcon, plusIcon, SvgIcon } from "@/shared/ui/SvgIcon";
 import type { SelectableTreeItem } from "@/widgets/document-sidebar/model/types";
-import type { Project, TreeItem } from "@/entities/tree/model/tree";
+import type { Project } from "@/entities/tree/model/tree";
+import { useDocumentSearch, type SearchHit } from "../model/useDocumentSearch";
 import styles from "./DocumentSearch.module.css";
 
-// 드롭다운에 최대로 노출할 결과 수
-const MAX_RESULTS = 8;
-
-type SearchHit = SelectableTreeItem & { projectTitle: string };
-
-/** 트리를 순회하며 선택 가능한 문서/노트(문서ID 또는 그래프노드ID 보유)를 평탄화한다. */
-function collectSelectable(items: TreeItem[], projectTitle: string, acc: SearchHit[]) {
-  for (const item of items) {
-    if (item.documentId || item.graphNodeId) {
-      acc.push({
-        id: item.id,
-        label: item.label,
-        documentId: item.documentId,
-        graphNodeId: item.graphNodeId,
-        projectTitle
-      });
-    }
-    if (item.children?.length) collectSelectable(item.children, projectTitle, acc);
-  }
-}
-
-/** 사이드바 문서명 검색. 입력값으로 트리를 클라이언트 필터링하고, 결과 클릭 시 해당 문서를 연다. */
+/** 중앙 검색 모달 (Figma 757:17248). 문서명을 클라이언트 필터링하고, 결과 클릭 시 해당 문서를 연다. */
 export function DocumentSearch({
   projects,
-  onSelectGraphNode
+  onSelectGraphNode,
+  onClose
 }: {
   projects: Project[];
   onSelectGraphNode: (item: SelectableTreeItem) => void;
+  onClose: () => void;
 }) {
-  const [query, setQuery] = useState("");
+  const { query, setQuery, normalizedQuery, results, overflowCount } = useDocumentSearch(projects);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const allItems = useMemo(() => {
-    const acc: SearchHit[] = [];
-    for (const project of projects) collectSelectable(project.items, project.title, acc);
-    return acc;
-  }, [projects]);
+  useEffect(() => {
+    inputRef.current?.focus();
 
-  const normalizedQuery = query.trim().toLowerCase();
-  const matched = useMemo(() => {
-    if (!normalizedQuery) return [];
-    return allItems.filter((item) => item.label.toLowerCase().includes(normalizedQuery));
-  }, [allItems, normalizedQuery]);
-  const results = matched.slice(0, MAX_RESULTS);
-  const overflowCount = matched.length - results.length;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   function handleSelect(event: ReactMouseEvent<HTMLButtonElement>, item: SearchHit) {
     event.stopPropagation();
     onSelectGraphNode(item);
-    setQuery("");
+    onClose();
   }
 
-  return (
-    <div className={styles["sidebar-search"]} onClick={(event) => event.stopPropagation()}>
-      <label className={styles["sidebar-search-box"]}>
-        <SvgIcon src={searchIcon} className={styles["sidebar-search-icon"]} />
-        <input
-          type="search"
-          placeholder="문서명 검색"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      </label>
-      {normalizedQuery && (
-        <div className={styles["sidebar-search-results"]} role="group" aria-label="문서 검색 결과">
-          {results.length > 0 ? (
-            <>
-              {results.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={styles["sidebar-search-result"]}
-                  onClick={(event) => handleSelect(event, item)}
-                >
-                  <span className={styles["sidebar-search-result-label"]}>{item.label}</span>
-                  <span className={styles["sidebar-search-result-project"]}>{item.projectTitle}</span>
-                </button>
-              ))}
-              {overflowCount > 0 ? (
-                <p className={styles["sidebar-search-more"]}>외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
-              ) : null}
-            </>
+  // 사이드바(z-index 스태킹 컨텍스트) 내부에 렌더되면 편집기 등에 가려지므로 body로 portal한다.
+  return createPortal(
+    <div className={styles["search-overlay"]} onClick={onClose}>
+      <div
+        className={styles["search-modal"]}
+        role="dialog"
+        aria-modal="true"
+        aria-label="채팅 및 프로젝트 검색"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className={styles["search-header"]}>
+          <input
+            ref={inputRef}
+            type="search"
+            placeholder="채팅 및 프로젝트 검색"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button type="button" className={styles["search-close"]} aria-label="검색 닫기" onClick={onClose}>
+            <SvgIcon src={plusIcon} className={styles["search-close-icon"]} />
+          </button>
+        </div>
+        <div className={styles["search-body"]}>
+          {normalizedQuery ? (
+            <div className={styles["search-results"]} role="group" aria-label="문서 검색 결과">
+              {results.length > 0 ? (
+                <>
+                  {results.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={styles["search-result"]}
+                      onClick={(event) => handleSelect(event, item)}
+                    >
+                      <span className={styles["search-result-title"]}>
+                        <SvgIcon src={fileIcon} className={styles["search-result-icon"]} />
+                        <span className={styles["search-result-label"]}>{item.label}</span>
+                      </span>
+                      <span className={styles["search-result-meta"]}>
+                        {item.updatedAt ? formatRelativeTime(item.updatedAt) : item.projectTitle}
+                      </span>
+                    </button>
+                  ))}
+                  {overflowCount > 0 ? (
+                    <p className={styles["search-more"]}>외 {overflowCount}개 더 있습니다. 검색어를 좁혀 주세요.</p>
+                  ) : null}
+                </>
+              ) : (
+                <p className={styles["search-empty"]}>검색 결과가 없습니다.</p>
+              )}
+            </div>
           ) : (
-            <p className={styles["sidebar-search-empty"]}>검색 결과가 없습니다.</p>
+            <p className={styles["search-empty"]}>문서명을 입력해 검색하세요.</p>
           )}
         </div>
-      )}
-    </div>
+      </div>
+    </div>,
+    document.body
   );
 }

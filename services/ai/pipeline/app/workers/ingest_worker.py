@@ -71,8 +71,12 @@ def _handle(command: dict) -> None:
     run_id = command["run_id"]
     repository = get_pipeline_run_repository()
     existing = repository.get_run(run_id)
-    if existing and existing.get("status") == "succeeded":
-        logger.info("[ingest 재전달 무시] run_id=%s 이미 succeeded", run_id)
+    if existing and existing.get("status") in {"succeeded", "failed", "notify_pending"}:
+        logger.info(
+            "[ingest 재전달 무시] run_id=%s 이미 종료됨 status=%s",
+            run_id,
+            existing.get("status"),
+        )
         return
     payload = _build_payload(command)
     logger.info(

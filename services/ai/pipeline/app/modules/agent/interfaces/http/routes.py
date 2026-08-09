@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
 from app.modules.agent.domain.entities import AgentTurnResult
-from app.modules.agent.domain.exceptions import AgentTurnRouteContractError
+from app.modules.agent.domain.exceptions import AgentConfigurationError, AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.schemas import (
     AgentTurnRequestBody,
@@ -22,7 +22,7 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
-from app.modules.skill.interfaces.http.schemas import SkillDraftProposalResponse
+from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -79,6 +79,16 @@ def handle_agent_turn(
                 "end_line": exc.end_line,
             },
         ) from exc
+    except AgentConfigurationError as exc:
+        # 요청이 아니라 서버 배선·기능 플래그 문제다. 내부 메시지를 노출하지 않고 500으로 알린다.
+        logger.error("Agent turn 설정 오류: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "agent_not_configured",
+                "message": "Agent 기능을 사용할 수 없습니다.",
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -123,9 +133,9 @@ def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
         ],
         run_id=result.run_id,
         run_status=result.run_status,
-        skill_draft_proposal=(
-            SkillDraftProposalResponse.from_domain(result.skill_draft_proposal)
-            if result.skill_draft_proposal
+        skill_authoring=(
+            SkillAuthoringResponse.from_domain(result.skill_authoring_result)
+            if result.skill_authoring_result
             else None
         ),
     )

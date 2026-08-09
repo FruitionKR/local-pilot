@@ -90,6 +90,9 @@ class DocumentServiceConvertTest {
     @Mock MarkdownDiffService markdownDiffService;
     @Mock DocumentEditLockService editLockService;
     @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
+    @Mock DocumentAssetReferenceParser assetReferenceParser;
+    @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
 
@@ -105,11 +108,15 @@ class DocumentServiceConvertTest {
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyRecordRepository,
+                assetReferenceSynchronizer,
+                assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
                 new fruition.core.aihistory.service.AgentApplyOperationStore(),
                 operationRecorder,
                 ingestOperationStarter,
                 "http://localhost:8080");
+        // 변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
+        lenient().when(storageProps.getBucket()).thenReturn("fruition-storage");
         // 단위 테스트에서는 transactionTemplate이 콜백을 그대로 실행하게 한다.
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
                 invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));

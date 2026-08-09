@@ -39,7 +39,7 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - 계획이나 대상 version이 바뀌면 기존 승인을 무효화한다.
 - 실행 후 operation별 결과와 최종 폴더·문서 상태를 보여준다.
 - Agent는 실행 사용자의 현재 권한을 넘지 않는다.
-- 현재 채팅에서 선택한 완료 작업을 일반화해 Skill draft를 제안한다.
+- 현재 채팅에서 선택한 완료 작업을 일반화해 저장하지 않은 Skill proposal을 제안한다.
 
 ## 4. 범위
 
@@ -57,8 +57,8 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - AgentRun, plan, 승인, job, tool 실행 이력
 - PostgreSQL 기반 비동기 llmPipeline worker
 - 채팅 안의 계획·승인·진행 상태 UI
-- 현재 채팅의 완료 AgentRun 선택과 Skill draft 제안
-- 일회성 ID를 제거한 작업 규칙 추출, draft 저장 확인, publish 확인
+- 현재 채팅의 완료 AgentRun 선택과 미저장 Skill proposal 제안
+- 일회성 ID를 제거한 작업 규칙 추출, proposal 검토와 최종 publish 확인
 
 ### 제외
 
@@ -74,7 +74,7 @@ Backend에는 Workspace 단위 폴더 트리와 조회, 검색, 생성, 이름 �
 - SKILL.md import/export
 - 별도 AgentRun 상세 화면과 SSE·WebSocket
 - 실패·취소된 operation의 성공 사례 학습
-- 사용자 확인 없는 Skill draft 저장·publish·enable
+- 사용자 확인 없는 Skill proposal publish·enable
 - 승인된 operation을 그대로 재생하는 고정 ID 기반 매크로
 
 ### 사용자와 권한
@@ -176,7 +176,7 @@ Skill은 상위 정책, Backend 권한, 승인 정책, allowed tool을 변경하
 
 ### REQ-005 변경 승인과 취소
 
-읽기, 검색, 계획 생성에는 승인이 필요하지 않다. 모든 Workspace mutation operation은 실행 전에 plan 승인을 받아야 하며 MVP에서는 bypass를 지원하지 않는다. Skill draft 저장과 publish는 REQ-011의 별도 명시적 확인을 따른다.
+읽기, 검색, 계획 생성에는 승인이 필요하지 않다. 모든 Workspace mutation operation은 실행 전에 plan 승인을 받아야 하며 MVP에서는 bypass를 지원하지 않는다. Skill은 게시 전 검토와 최종 게시 확인을 REQ-011에 따라 별도로 처리한다.
 
 승인은 run_id, plan_id, plan_version, operations_hash, 승인자와 승인 시각에 결합한다. 버튼 또는 같은 채팅의 자연어로 승인·거절할 수 있다. 자연어 승인은 해당 채팅에 승인 대기 계획이 정확히 하나일 때만 인증된 승인 API로 처리한다.
 
@@ -303,9 +303,9 @@ Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 r
 - When: Agent가 실행을 결정한다.
 - Then: 실행하지 않고 허용되지 않은 경계로 기록한다.
 
-### REQ-011 완료 작업 기반 Skill draft
+### REQ-011 완료 작업 기반 Skill proposal
 
-사용자가 같은 채팅에서 완료한 작업을 Skill로 만들어 달라고 요청하면 시스템은 선택된 성공 AgentRun과 사용자 수정 지시에서 반복 가능한 규칙을 추출해 Skill draft를 제안해야 한다.
+사용자가 같은 채팅에서 완료한 작업을 Skill로 만들어 달라고 요청하면 시스템은 선택된 성공 AgentRun과 사용자 수정 지시에서 반복 가능한 규칙을 추출해 저장하지 않은 Skill proposal을 제안해야 한다.
 
 - 사용자가 완료 작업과 반영할 사용자 지시 turn을 명시적으로 선택하며, 선택이 없으면 같은 채팅의 가장 최근 completed AgentRun 하나와 그 run에 연결된 요청·수정 지시만 사용한다.
 - failed, conflicted, cancelled operation은 성공한 실행 예시로 사용하지 않는다.
@@ -313,7 +313,7 @@ Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 r
 - 성공한 Tool 종류는 capability와 `allowed_tools` 후보를 좁히는 근거로만 사용한다.
 - 사용자 추가·제외 지시는 반복 가능한 제약 규칙으로 제안한다.
 - LLM은 구조화된 Skill proposal만 반환하며 자동으로 저장·publish·enable하지 않는다.
-- 사용자가 proposal을 확인해야 draft를 저장하고, lint 후 별도 확인을 받아 publish한다.
+- 사용자가 proposal을 확인하고 게시를 승인하면 최종 보안 검증 후 published version으로 바로 저장한다.
 
 #### 인수 조건
 
@@ -325,10 +325,10 @@ Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 r
 - Then: 해당 값을 고정 인자로 저장하지 않고 새 요청에서 다시 식별할 규칙으로 바꾼다.
 - Given: 사용자가 proposal 저장을 확인하지 않았다.
 - When: 응답을 반환한다.
-- Then: Skill draft, published version과 enabled 상태를 만들지 않는다.
-- Given: 사용자가 draft 저장을 확인했다.
-- When: Skill을 저장한다.
-- Then: 선택한 source run 참조와 lint 결과를 기록하고 publish 확인을 별도로 기다린다.
+- Then: Skill row, published version과 enabled 상태를 만들지 않는다.
+- Given: 사용자가 proposal 게시를 승인했다.
+- When: Skill을 최종 저장한다.
+- Then: 선택한 source run 참조와 lint 결과를 기록하고 published version을 활성화한다.
 
 ## 6. 설계
 
@@ -345,15 +345,19 @@ Agent는 Workspace의 폴더·문서 상태를 Frontend snapshot, DB나 내부 r
        │                         → 승인 대기
        │                         → 승인된 mutation Tool 실행
        │                         → 검증
+       ├─ skill_authoring      → 현재 자연어 요구 구체화
+       │                         → 입력·참조·출력 필터링
+       │                         → 미저장 제안 검토
+       │                         → 최종 검증 후 published 저장
        └─ skill_draft_proposal → 완료 AgentRun 일반화
-                                 → 사용자 확인 후 draft 저장
+                                 → 사용자 확인 후 최종 게시
 
 Wiki Schema는 모든 요청에 적용되는 기본 설정으로 유지하고 Skill은 요청별 작업 지침으로 별도 관리한다. Agent는 Workspace 상태에 접근할 때 Spring Backend의 업무 단위 Tool만 사용한다. LLM의 초안·편집안 생성과 reasoning은 Tool이 아니지만 결과를 영속화하는 작업은 반드시 승인된 mutation Tool로 분리한다.
 
 ### 6.2 Skill과 version
 
     skills
-    - id, workspace_id, scope_type, owner_user_id, slug
+    - id, workspace_id(nullable for personal), scope_type, owner_user_id, slug
     - enabled_version_id, status, created_at, updated_at
 
     skill_versions
@@ -364,9 +368,9 @@ Wiki Schema는 모든 요청에 적용되는 기본 설정으로 유지하고 Sk
     skill_version_sources
     - skill_version_id, source_agent_run_id, source_turn_id, source_type, created_at
 
-Enabled Skill 수정은 새 draft version을 만든다. 안전성 검사와 preview 후 publish하면 enabled_version_id를 교체한다. 기존 AgentRun은 시작 당시 version을 유지한다.
+Enabled Skill 수정은 기존 version을 덮어쓰지 않고, 안전성 검사를 통과한 새 published version을 만든 뒤 enabled_version_id를 교체한다. 기존 AgentRun은 시작 당시 version을 유지한다.
 
-완료 작업에서 만든 Skill draft는 사용자가 선택한 source AgentRun과 사용자 지시 turn 참조만 별도 저장한다. 현재 채팅 전체를 암묵적으로 입력하지 않으며 문서 본문, 전체 prompt, 인증정보와 LLM chain-of-thought는 Skill source에 복사하지 않는다.
+완료 작업에서 만든 Skill proposal은 게시 전에는 저장하지 않는다. 최종 게시 시 사용자가 선택한 source AgentRun과 사용자 지시 turn 참조만 별도 저장한다. 현재 채팅 전체를 암묵적으로 입력하지 않으며 문서 본문, 전체 prompt, 인증정보와 LLM chain-of-thought는 Skill source에 복사하지 않는다.
 
 ### 6.3 Capability와 Tool
 
@@ -415,19 +419,19 @@ action과 capability의 호환 관계는 다음과 같다.
 | template | markdown_create, markdown_edit 또는 workspace_workflow | 초안·편집안은 기존 UseCase, 저장·반영은 AgentRun | mutation 전 plan 승인 | document capability Tool의 부분집합 |
 | folder-organize | folder_organize 또는 workspace_workflow | AgentRun과 bounded ReAct | mutation 전 plan 승인 | folder/document 배치 Tool의 부분집합 |
 
-명시한 Skill이 없거나 disabled이거나 접근할 수 없으면 오류를 반환한다. auto 후보 중 하나가 명확히 일치하면 해당 Skill을 적용한다. 여러 후보가 비슷하면 실행하지 않고 Skill 하나 또는 Skill 없이 계속할지를 사용자에게 묻는다. 호환되는 Skill이 없으면 Skill 없이 기존 action을 실행한다. chat_answer에는 Skill을 적용하지 않는다.
+명시한 Skill이 없거나 published version이 없거나 접근할 수 없으면 오류를 반환한다. `disabled`는 자연어 auto 후보에서만 제외하며 명시적 커맨드는 계속 실행할 수 있다. auto 후보 중 하나가 명확히 일치하면 해당 Skill을 적용한다. 여러 후보가 비슷하면 실행하지 않고 Skill 하나 또는 Skill 없이 계속할지를 사용자에게 묻는다. 호환되는 Skill이 없으면 Skill 없이 기존 action을 실행한다. chat_answer에는 Skill을 적용하지 않는다.
 
 Skill instructions는 system·developer 정책, Backend 권한·승인·안전 정책과 사용자 요청보다 낮은 우선순위로 조립한다. 선택 이후에는 정확한 published Skill version을 사용하며 실행 중 enabled version이 바뀌어도 현재 요청에는 영향을 주지 않는다.
 
-#### 6.3.2 document-create 예시: 회의록 작성 Skill
+#### 6.3.2 document-create 예시: meeting-notes Skill
 
-`회의록 작성` Skill은 회의록의 구조와 사실성 규칙을 제공한다. 사용자는 자연어로 요청하거나 Skill을 명시할 수 있다.
+`meeting-notes` Skill은 회의록의 구조와 사실성 규칙을 제공한다. 사용자는 자연어로 요청하거나 Skill을 명시할 수 있다.
 
     사용자:
     오늘 논의한 내용으로 회의록을 만들어줘.
 
     Agent:
-    `회의록 작성` Skill을 적용해 대화에서 확인된 내용으로 회의록을 작성하겠습니다.
+    `meeting-notes` Skill을 적용해 대화에서 확인된 내용으로 회의록을 작성하겠습니다.
     확인되지 않은 참석자, 결정 사항, 담당자와 기한은 임의로 만들지 않습니다.
 
     Agent:
@@ -448,10 +452,10 @@ Skill instructions는 system·developer 정책, Backend 권한·승인·안전 �
 명시적 호출은 같은 방식으로 실행한다.
 
     사용자:
-    /meeting-minutes 오늘 논의한 내용으로 회의록을 만들어줘.
+    /meeting-notes 오늘 논의한 내용으로 회의록을 만들어줘.
 
     Agent:
-    요청한 `회의록 작성` Skill을 적용해 회의록을 작성했습니다.
+    요청한 `meeting-notes` Skill을 적용해 회의록을 작성했습니다.
 
 Markdown 초안을 만드는 단계까지는 상태를 변경하지 않으므로 별도 계획과 승인을 만들지 않는다. Router는 `markdown_create`와 Skill을 선택하고 기존 문서 생성 UseCase에 Skill instructions를 전달한다.
 
@@ -472,12 +476,12 @@ Markdown 초안을 만드는 단계까지는 상태를 변경하지 않으므로
 여러 생성 Skill이 비슷하게 일치하면 결과를 만들기 전에 다음과 같이 묻는다.
 
     Agent:
-    이 요청에는 `회의록 작성`과 `간단 회의 요약` Skill이 모두 비슷하게 맞습니다.
+    이 요청에는 `meeting-notes`와 `quick-meeting-summary` Skill이 모두 비슷하게 맞습니다.
     어느 Skill을 사용할까요? Skill 없이 작성할 수도 있습니다.
 
-#### 6.3.3 document-edit 예시: 공식 문체 교정 Skill
+#### 6.3.3 document-edit 예시: formal-style-editor Skill
 
-`공식 문체 교정` Skill은 의미와 Markdown 구조를 유지하면서 선택 영역의 문체만 변경한다.
+`formal-style-editor` Skill은 의미와 Markdown 구조를 유지하면서 선택 영역의 문체만 변경한다.
 
     사용자:
     이 문단을 공식적인 문체로 정리해줘.
@@ -635,42 +639,59 @@ Skill은 `allowed_tools`를 넓히지 못한다. 예를 들어 Skill이 `create_
 
 ### 6.4 Skill 생성·수정·활성화 흐름
 
-MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회의록 Skill을 만들어줘”라고 요청해 LLM이 Skill을 자동 생성·저장하는 기능은 포함하지 않는다.
+Skill 관리 화면은 사용자가 직접 작성한 원문을 보존하는 authoring과 짧은 자연어를 LLM으로 구체화하는 authoring을 함께 지원한다. 두 방식 모두 게시 전 검토 화면으로 이동하며, 사용자에게 capability·Tool은 보여주지 않는다.
 
-#### 6.4.1 새 Skill 생성
+#### 6.4.1 자연어 Skill authoring
 
-사용자는 다음 정보를 입력한다.
+사용자는 범위, 짧은 자연어와 필요할 때만 참조 문서 ID를 보낸다. capability와 `allowed_tools`를 직접 입력하지 않는다.
 
-    이름: 회의록 작성
-    slug: meeting-minutes
+    사용자:
+    선택한 회의록 문서 구조로 이후 회의록을 작성하는 Skill을 만들어줘.
+
+    시스템:
+    1. AgentRun Tool과 분리된 Skill authoring 전용 read endpoint에서 Workspace·User 권한으로 참조 문서 metadata와 Markdown을 조회한다.
+    2. 입력과 참조의 크기·prompt injection을 먼저 검사한다.
+    3. 참조 Markdown에서 heading·목록 marker·표 header 구조만 추출하고, 실제 문서명과 본문을 제외한 비신뢰 데이터로 LLM에 전달한다.
+    4. 서로 다른 prompt의 intent 분류기와 검증기가 `skill_kind`, 참조 용도, Tool을 각각 판정한다.
+    5. 두 판정이 전부 일치할 때만 서버가 `skill_kind`를 capability로 변환하고 Markdown을 생성한다.
+    6. 사용자에게 capability와 Tool을 제외한 Skill Markdown과 보안 결과를 반환하고 DB에는 저장하지 않는다.
+
+Skill 관리 화면의 `POST /skills/author`는 단발 입력이므로 세부 정보가 부족해도 보충 질문 대신 편집 가능한 일반 구조를 반환한다. 다만 intent 판단이 모호하거나 두 판정이 불일치하면 지원 작업을 명확히 적도록 `400`으로 거절한다. 커맨드 식별자는 lowercase-hyphen이며 입력하지 않으면 LLM이 후보를 제안한다. personal Skill은 계정 전체, team Skill은 현재 Workspace에 귀속한다. `preserve`는 현재 Markdown을 변경하지 않고 보안 재검토하며, `enhance`는 자연어를 구체화한다. 차단 화면의 `regenerate`는 규칙 검사에서 찾은 위험 구간을 필수 제거한 뒤 안전한 흐름으로 재작성한다. 분류기와 검증기는 참조 문서의 용도를 고정 템플릿과 일반 구조 참고로 각각 구분하고, 고정 템플릿으로 일치하게 판단한 참조 문서가 하나일 때만 서버가 추출한 heading·목록 marker·표 header를 고정 출력 템플릿으로 그대로 조립한다. 세 모드 모두 제안만 반환하며, 지원 Agent action에 매핑할 수 없는 요청은 제안·게시하지 않는다. 채팅의 모호함·불일치는 보충 질문으로 반환한다.
+
+입력·description·참조·생성 결과에서 규칙 검사 또는 LLM 의미 검사로 차단 보안 문제가 발견되면 `status=blocked`와 출처·위치·이유를 반환하고 `최종 게시`를 막는다. 참조 문제는 문서 ID를 함께 반환한다. 사용자가 해당 문구를 수정하면 기존 통과 상태를 폐기하고 `보안 재검토`를 눌러 `preserve` 검증을 다시 수행한다. `AI로 재생성`은 `regenerate`로 위험 구간을 제거하고 다시 작성한다. 원문 보존 경로에서는 내용을 자동으로 조용히 삭제하지 않는다.
+
+Skill 관리 화면은 `POST /skills/author`를 직접 호출하고, 채팅의 일반 “Skill 만들어줘” 요청은 `/agent/turn`의 `skill_authoring` action으로 분류한 뒤 같은 `AuthorSkillUseCase`를 호출한다. 저장 범위를 말하지 않으면 채팅에서 개인/현재 팀 중 하나를 확인한다. 제안은 다음 요청의 `pending_skill_proposal`에 `scope_type`, `name`, `description`, `instructions_markdown`으로 유지한다. 커맨드·범위 변경, AI 재생성, 보안 재검토는 이 제안만 갱신하고, “이대로 게시해줘”에서 같은 내용을 다시 검증한 뒤 게시한다. “방금 방식대로 Skill로 만들어줘”처럼 완료 작업을 재사용하는 요청은 `skill_draft_proposal`로 근거와 권한 상한을 계산한 뒤 같은 `AuthorSkillUseCase`의 미저장 검토 결과로 반환한다.
+
+Router가 `skill_authoring`을 반환해도 현재 사용자 메시지나 진행 중 대화 요약에 새 Skill을 만들거나 생성·정의해 달라는 직접 표현이 없으면 실행하지 않는다. “회의록 Skill을 사용해서 문서를 작성해”는 기존 Skill을 적용하는 문서 작업이며 Skill 생성으로 해석하지 않는다.
+
+#### 6.4.2 새 Skill 수동 생성
+
+수동 생성과 채팅 생성은 capability와 Tool을 직접 받지 않고 같은 `AuthorSkillUseCase`를 사용한다. 자연어 Skill 관리 화면은 다음 입력만 사용한다.
+
+    제목(선택): meeting-notes
+    내용: 대화 내용을 정해진 회의록 구조로 작성한다.
+    참고 문서(선택): 회의록 예시
     범위: 개인
-    설명: 대화 내용을 정해진 회의록 구조로 작성한다.
-    capability: document-create
-    instructions:
-      - 제목, 일시, 참석자, 논의 내용, 결정 사항, 후속 작업 순서로 작성한다.
-      - 확인되지 않은 사실은 만들지 않는다.
-      - 담당자와 기한은 제공된 경우에만 표시한다.
-    allowed_tools:
-      - list_root_items
-      - list_folder_children
-      - create_document
+
+화면은 `게시`와 `AI로 구체화`를 제공하지만 두 버튼 모두 게시 전 검토로 이동한다. 전자는 원문을 보존하고 후자는 LLM 생성 결과를 사용한다. 검토 화면은 `AI로 재생성`, `보안 재검토`, `최종 게시`를 제공하며 차단 상태에서는 최종 게시할 수 없다.
 
 개인 Skill은 본인만 생성·관리·사용할 수 있다. 팀 Skill은 Workspace owner/editor만 생성·관리하며 Workspace 멤버가 사용할 수 있다.
 
     사용자:
-    [초안 저장]
+    [게시]
 
     시스템:
-    `회의록 작성` Skill 초안을 저장했습니다.
-    아직 publish되지 않아 실제 요청에는 적용되지 않습니다.
+    `meeting-notes` Skill 제안을 만들었습니다.
+    Markdown과 보안 결과를 확인한 뒤 최종 게시해 주세요.
 
-`POST /skills`는 immutable한 실행 version이 아니라 수정 가능한 draft를 만든다. draft 상태에서는 auto 선택과 명시적 command 대상이 아니다.
+검토 전에는 `skills`와 `skill_versions` row를 만들지 않는다. `POST /skills/author/publish`가 최종 검증을 통과하면 version 1을 `published`로 저장하고 자연어 자동 라우팅을 기본 ON으로 설정한다.
 
-#### 6.4.2 lint와 안전성 검사
+#### 6.4.3 lint와 안전성 검사
 
 저장 또는 preview 전에 시스템은 다음 항목을 검사한다.
 
 - 필수 필드와 slug 형식
+- 최소 1개의 라우팅 가능한 capability
 - capability와 `allowed_tools`의 호환성
 - 중복 slug와 접근 범위
 - 상위 정책, 승인 또는 권한 우회를 요구하는 instructions
@@ -682,7 +703,7 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
 검사에 실패하면 publish를 막고 수정할 위치와 이유를 표시한다. 예를 들어 instructions에 “승인 없이 문서를 이동한다”가 포함되면 해당 지시는 상위 승인 정책을 바꿀 수 없다고 안내한다.
 
-#### 6.4.3 preview
+#### 6.4.4 preview
 
 사용자는 Skill을 저장하거나 publish하기 전에 현재 입력값의 validation과 safety lint 결과를 확인한다. preview는 LLM으로 예시 문서를 생성하거나 실제 폴더 계획을 실행하는 기능이 아니다.
 
@@ -697,30 +718,30 @@ MVP에서는 Skill 관리 화면에서 Skill을 만든다. 채팅에서 “회�
 
 `POST /skills/preview`는 입력 정의를 저장하지 않고 `lint_result`와 `has_blocked_issues`를 반환한다. 실제 문서·폴더 조회와 Tool 실행은 하지 않는다. 사용 예시는 publish 후 일반 요청 흐름에서 확인한다.
 
-#### 6.4.4 publish와 활성화
+#### 6.4.5 publish와 활성화
 
     사용자:
     [Publish]
 
     시스템:
-    `회의록 작성` version 1을 publish했습니다.
-    이제 자연어 요청의 auto 후보와 `/meeting-minutes` 명시적 호출에 사용할 수 있습니다.
+    `meeting-notes` version 1을 publish했습니다.
+    이제 자연어 요청의 auto 후보와 `/meeting-notes` 명시적 호출에 사용할 수 있습니다.
 
-publish는 차단할 safety issue가 없는 draft를 변경 불가능한 published version으로 만들고, 같은 transaction에서 해당 version을 `enabled_version_id`로 지정한다. 별도의 enable 동작은 disable된 published Skill을 다시 활성화할 때 사용한다.
+최종 publish는 검토 중인 미저장 proposal을 다시 보안 검사하고, 통과한 내용을 published version으로 저장하면서 같은 transaction에서 해당 version을 `enabled_version_id`로 지정한다. 별도의 enable 동작은 자연어 자동 라우팅이 꺼진 published Skill을 다시 후보로 넣을 때 사용한다.
 
 여러 Skill을 동시에 enabled할 수 있지만 한 요청에는 최대 하나만 적용한다. 비슷한 후보가 여러 개이면 자동으로 임의 선택하지 않고 사용자에게 사용할 Skill을 묻는다.
 
-#### 6.4.5 enabled Skill 수정
+#### 6.4.6 published Skill 수정
 
-enabled version을 직접 수정하지 않는다. 사용자가 편집을 시작하면 새 draft version을 만든다. 새 version을 작성하는 동안 현재 enabled version은 기존 요청에 계속 사용된다.
+published version을 직접 수정하지 않는다. 사용자가 편집한 내용을 검토하고 보안 검사를 통과하면 새 published version을 만든 뒤 현재 enabled version을 교체한다.
 
     시스템:
-    `회의록 작성` version 2 초안을 만들었습니다.
-    version 1은 새 version을 publish할 때까지 계속 적용됩니다.
+    `meeting-notes` version 2를 게시했습니다.
+    이후 요청부터 version 2가 적용됩니다.
 
-version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2를 사용한다. 이미 시작한 AgentRun은 version 1을 고정해서 사용하며 실행 도중 바뀌지 않는다. disable하면 신규 요청의 후보에서 제외하지만 이미 진행 중인 AgentRun을 임의로 변경하거나 취소하지 않는다. 다시 enable하면 마지막 published version을 후보로 복원한다.
+이미 시작한 AgentRun은 version 1을 고정해서 사용하며 실행 도중 바뀌지 않는다. disable하면 자연어 자동 라우팅 후보에서 제외하지만 명시적 커맨드와 이미 진행 중인 AgentRun에는 영향을 주지 않는다. 다시 enable하면 마지막 published version을 자연어 후보로 복원한다.
 
-#### 6.4.6 완료 작업에서 Skill proposal 생성
+#### 6.4.7 완료 작업에서 Skill proposal 생성
 
 사용자는 현재 채팅에서 완료한 작업을 선택하거나 가장 최근 completed AgentRun을 기준으로 Skill 생성을 요청할 수 있다.
 
@@ -730,7 +751,7 @@ version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2
     Agent:
     최근 완료된 작업에서 다음 규칙을 추출했습니다.
 
-    이름: 프로젝트 문서 정리
+    이름: project-document-organizer
     capability:
       - folder-organize
     instructions:
@@ -747,28 +768,22 @@ version 2가 lint, preview와 publish를 거치면 이후 요청부터 version 2
       - move_document
 
     실행 당시의 프로젝트 이름, folder ID와 document ID는 Skill에 저장하지 않습니다.
-    이 내용으로 Skill draft를 저장할까요?
+    이 내용으로 Skill을 게시할까요?
 
 LLM은 선택한 run의 승인된 계획, 성공한 Tool 실행과 사용자가 명시적으로 선택한 요청·수정 지시 turn만 입력으로 받는다. 현재 채팅 전체, 실패·취소된 operation, 문서 본문, 전체 prompt, 인증정보와 chain-of-thought는 입력에서 제외한다.
 
-#### 6.4.7 draft 저장과 publish 확인
+#### 6.4.8 제안 검토와 최종 게시
 
-Skill proposal은 저장되지 않은 구조화된 응답이다. 사용자가 확인하면 일반 Skill 관리 권한을 검사한 뒤 draft를 저장한다.
-
-    사용자:
-    응, 개인 Skill 초안으로 저장해줘.
-
-    Agent:
-    `프로젝트 문서 정리` draft를 저장했고 lint를 통과했습니다.
-    아직 요청에는 적용되지 않습니다. publish하고 활성화할까요?
+Skill proposal은 저장되지 않은 구조화된 응답이다. 사용자가 수정하면 보안 상태는 `재검토 필요`가 되고, 보안 재검토를 통과한 뒤에만 최종 게시할 수 있다.
 
     사용자:
-    활성화해줘.
+    응, 개인 Skill로 이대로 게시해줘.
 
     Agent:
-    `프로젝트 문서 정리` version 1을 publish하고 활성화했습니다.
+    최종 보안 검증을 통과했습니다.
+    `project-document-organizer` version 1을 게시했습니다.
 
-draft 저장 확인과 publish 확인은 분리한다. proposal 내용이 수정되면 변경된 전체 정의를 다시 보여주고 저장 확인을 받는다. publish는 기존 Skill 안전성 검사와 개인·팀 관리 권한을 그대로 사용한다.
+proposal 내용이 수정되면 변경된 전체 정의와 보안 결과를 다시 보여준다. 최종 게시에서도 전체 검증, 개인·팀 관리 권한과 범위별 커맨드 중복 검사를 다시 수행한다. 게시 후 자동 라우팅을 꺼도 명시적 `/command` 실행은 유지된다.
 
 Skill은 과거 operation을 그대로 재생하는 매크로가 아니다. `source_agent_run_id`는 생성 근거 감사용으로만 저장하며 새 요청에서는 현재 상태를 read Tool로 다시 조사하고 Skill 규칙에 맞는 새 plan을 만든다.
 
@@ -785,7 +800,7 @@ AgentRun은 다음 테이블로 관리한다.
     agent_run_artifacts
     skill_version_sources
 
-AgentRun은 사용자·Workspace, conversation·turn, action, 선택 Skill version, 상태와 현재 plan을 저장한다. Plan은 version, summary, canonical operation hash를 저장한다. Operation은 대상 ID·version·위치·편집 target·artifact 참조·인자·이유·의존 관계를 저장한다. 승인과 Tool 실행은 plan·operation에 연결한다. `skill_version_sources`는 사용자가 선택한 completed AgentRun과 생성된 Skill draft version을 연결한다.
+AgentRun은 사용자·Workspace, conversation·turn, action, 선택 Skill version, 상태와 현재 plan을 저장한다. Plan은 version, summary, canonical operation hash를 저장한다. Operation은 대상 ID·version·위치·편집 target·artifact 참조·인자·이유·의존 관계를 저장한다. 승인과 Tool 실행은 plan·operation에 연결한다. `skill_version_sources`는 사용자가 선택한 completed AgentRun과 최종 게시된 Skill version을 연결한다.
 
 비동기 `create_document`와 `apply_document_edit`에 필요한 Markdown 또는 edit operation은 `agent_run_artifacts`에 실행용 payload로 분리하고 plan에는 artifact ID와 content hash만 저장한다. artifact는 run actor·Workspace에 결합하고 Tool Gateway 전달 전 hash를 검증한다. terminal run에서 더 이상 필요하지 않으면 감사 데이터와 분리해 정리하며 Skill source로 사용하지 않는다.
 
@@ -834,11 +849,11 @@ Frontend는 Spring backend만 호출한다.
     POST /api/workspaces/{workspace_id}/agent/runs/{run_id}/revise
 
     POST  /api/workspaces/{workspace_id}/skills/preview
-    POST  /api/workspaces/{workspace_id}/skills
+    POST  /api/workspaces/{workspace_id}/skills/author
+    POST  /api/workspaces/{workspace_id}/skills/author/publish
     GET   /api/workspaces/{workspace_id}/skills
     GET   /api/workspaces/{workspace_id}/skills/{skill_id}
     PATCH /api/workspaces/{workspace_id}/skills/{skill_id}
-    POST  /api/workspaces/{workspace_id}/skills/{skill_id}/publish
     POST  /api/workspaces/{workspace_id}/skills/{skill_id}/enable
     POST  /api/workspaces/{workspace_id}/skills/{skill_id}/disable
 
@@ -919,7 +934,7 @@ Frontend는 Spring backend만 호출한다.
 
 #### DEC-010 완료 작업에서 Skill 규칙 추출
 
-- 결정: 사용자가 선택한 같은 채팅의 completed AgentRun과 성공 Tool 실행을 일반화해 저장 전 Skill proposal을 만들고, draft 저장과 publish를 각각 확인받는다.
+- 결정: 사용자가 선택한 같은 채팅의 completed AgentRun과 성공 Tool 실행을 일반화해 저장 전 Skill proposal을 만들고, 검토·보안 재검토 뒤 최종 게시를 확인받는다.
 - 이유: 실제로 검증된 작업 방식과 사용자 수정 조건을 재사용하면서 일회성 ID를 고정한 매크로 생성을 막는다.
 - 대안: 전체 채팅 원문을 자동 학습하거나 Tool 호출을 그대로 재생하는 workflow macro를 저장한다.
 - 영향: AgentRun에 conversation·turn 연결, `skill_version_sources`, 구조화된 proposal 계약과 source redaction이 필요하다.

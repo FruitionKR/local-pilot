@@ -219,10 +219,6 @@
   color: #a7a7a7;
 }
 
-.auth-login-links button.is-disabled {
-  cursor: default;
-}
-
 .auth-login-links > span {
   width: 1px;
   height: 12px;

@@ -42,17 +42,23 @@
 |---|---|---|
 | POST | `/documents` | 파일 업로드(multipart, PDF·Markdown만, 415). MD는 EDITABLE, PDF는 ORIGINAL |
 | POST | `/documents/markdown` | Markdown 직접 생성. `display_name`+`markdown`(빈 문자열 허용, null 불가) |
-| GET | `/documents?query=` | 활성 문서 평면 목록. filename/display_name 부분 검색(본문 미검색) |
+| GET | `/documents?query=` | 활성 문서 평면 목록. filename/display_name 부분 검색(본문 미검색). 항목별 `needs_reingest` — 마지막 ingest 스냅샷(content_hash)과 현재 편집본(current_content_hash)이 다르면 true |
 | GET | `/documents/{id}` | 상세 + 최신 `markdown` + `wiki_pages`. `current_version`이 이후 `base_version` |
-| GET | `/documents/{id}/original` | 업로드 원본 스트리밍(MinIO). 직접 생성 문서는 404 |
+| GET | `/documents/{id}/original` | 원본 스트리밍(MinIO). 직접 생성·복제·변환 문서도 생성 시점에 원본을 저장하므로 조회된다 |
 | GET | `/documents/{id}/blocks` | 원본 block 목록(`block_id`, `text`) |
-| PUT | `/documents/{id}/content` | 본문 수동 저장(multipart: `markdown`, `base_version`). 동일 본문 `changed=false`, 5MB 초과 413 |
+| PUT | `/documents/{id}/content` | 본문 수동 저장(multipart: `markdown`, `base_revision`, `revision_write_id`). AI 편집 저장은 `source=agent`와 `apply_operation_id`를 함께 전달한다. 동일 본문 `changed=false`, 5MB 초과 413. 이미지 포함 저장은 `metadata`(JSON: `markdown`+`base_version`) + `attachment_*` file part — 본문 placeholder `attachment://{uuid}`가 asset content 경로로 치환되고 응답 `attachments`에 매핑 반환. 이미지 개당 50MB·합계 100MB 초과 413, 미지원 형식 415 |
 | PATCH | `/documents/{id}/rename` | `display_name` 변경(확장자 보존) |
 | POST | `/documents/{id}/duplicate` | EDITABLE 복제(201). 이름 `복사본 (N)` 서버 결정 |
 | DELETE | `/documents/{id}` | 소프트 삭제 |
 | GET | `/documents/trash` | 휴지통(멤버 전체 조회 가능, `deleted_at` 내림차순) |
 | POST | `/documents/{id}/restore` | 복구(역할별 최상위 마지막 위치) |
-| GET | `/documents/{id}/export` | 최신 편집 Markdown 다운로드(text/markdown attachment) |
+| GET | `/documents/{id}/export` | 최신 편집 Markdown 다운로드(text/markdown attachment). 관리 이미지를 참조하는 문서는 `.md`+`assets/`를 담은 ZIP(application/zip)으로 반환(이미지 100개·합계 100MB 초과 시 오류) |
+
+문서 이미지 asset(베이스 `/api/workspaces/{workspace_id}/assets`):
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/assets/{asset_id}/content` | 이미지 바이너리 스트리밍. ETag(content hash) 조건부 요청 304 지원. 멤버 전용, 타 워크스페이스 asset은 404 |
 
 파이프라인 콜백(내부, 베이스 `/api/documents`):
 
@@ -62,6 +68,16 @@
 | POST | `/api/documents/{id}/pipeline-events` | heartbeat. 현재 `pipeline_run_id` 불일치 이벤트는 무시 |
 
 원문: docs/backlog/spec/api/document.md
+
+## Agent
+
+베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 URL의 `workspace_id`와 인증된 `user_id`를 확인한 뒤 pipeline에 전달하며, 내부 호출은 `X-Agent-Service-Token`을 사용한다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/agent/turn` | Markdown Agent turn. pipeline 요청 body에 workspace/user context를 포함하며, Markdown 검증·편집 잠금·base version을 Backend에서 먼저 검사 |
+
+내부 pipeline의 `/agent/turn`은 공통 `X-Internal-Token`과 `X-Agent-Service-Token`이 모두 필요하고, `/skills/*`·`/agent/runs/*`는 `X-Agent-Service-Token`이 필요하다. Skill 팀 범위 권한은 pipeline이 access-svc의 `/internal/authz/workspaces/{wid}/users/{uid}`를 `X-Internal-Token`으로 조회한다.
 
 ## 채팅
 
@@ -111,7 +127,8 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `.../wiki/maintenance/lint` | Wiki lint 실행. `dryRun` true/생략은 미리보기(로그 없음), false면 lint 작업 등록 후 동기 반영 |
+| POST | `.../wiki/maintenance/lint` | Wiki lint 실행. `dry_run` true/생략은 미리보기(로그 없음), false면 lint 작업 등록 후 동기 반영. 성공 시 `wiki_lint_state.last_lint_at` 기록 |
+| GET | `.../wiki/maintenance/status` | `needs_lint`(마지막 lint 이후 위키 페이지 변경 여부), `last_lint_at`, `last_wiki_change_at` |
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
 | GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`) |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |

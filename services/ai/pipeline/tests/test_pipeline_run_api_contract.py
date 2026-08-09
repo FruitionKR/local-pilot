@@ -74,6 +74,7 @@ def _pipeline_client(
         )
     try:
         with (
+            patch.dict("os.environ", {"INTERNAL_CALLBACK_TOKEN": "test-internal-token"}),
             patch.object(api.database, "verify_schema"),
             patch.object(api.database, "ensure_ai_schema"),
             TestClient(api.app) as client,
@@ -355,7 +356,10 @@ def test_pipeline_command_loads_existing_source_context_for_full() -> None:
 
 
 def test_pipeline_endpoint_rejects_selection_mode() -> None:
-    client = TestClient(api.app)
+    client = TestClient(
+        api.app,
+        headers={"X-Internal-Token": "test-internal-token"},
+    )
 
     response = client.post(
         "/pipeline/runs",
@@ -367,7 +371,10 @@ def test_pipeline_endpoint_rejects_selection_mode() -> None:
 
 
 def test_chat_wiki_endpoint_requires_selection_mode() -> None:
-    client = TestClient(api.app)
+    client = TestClient(
+        api.app,
+        headers={"X-Internal-Token": "test-internal-token"},
+    )
 
     response = client.post(
         "/chat-wiki/runs",
@@ -512,6 +519,35 @@ def test_pipeline_endpoint_waits_for_synchronous_result() -> None:
     assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
 
 
+def test_pipeline_endpoint_exposes_pending_callback_status() -> None:
+    repository = _repository(
+        document={
+            "id": "document_1",
+            "user_id": "user_1",
+            "workspace_id": "workspace_1",
+            "source_uri": "documents/document_1.md",
+            "extracted_text_uri": None,
+            "mime_type": "text/markdown",
+            "filename": "document.md",
+        },
+    )
+    repository.get_run.return_value = {"status": "notify_pending"}
+    use_case = _use_case()
+
+    with _pipeline_client(
+        use_case=use_case,
+        repository=repository,
+        source_reader=_source_reader("# Stored Document"),
+    ) as client:
+        response = client.post(
+            "/pipeline/runs",
+            json={"document_id": "document_1", "wait": True},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "notify_pending"
+
+
 def test_pipeline_run_status_uses_repository_dependency() -> None:
     repository = _repository()
     repository.get_run.return_value = {
@@ -636,3 +672,58 @@ def test_agent_service_token_accepts_matching_value(monkeypatch) -> None:
     monkeypatch.setenv("AGENT_INTERNAL_TOKEN", "expected-token")
 
     api.require_agent_service_token("expected-token")
+
+
+def test_internal_token_is_required_when_not_configured(monkeypatch) -> None:
+    monkeypatch.delenv("INTERNAL_CALLBACK_TOKEN", raising=False)
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.require_internal_token("token")
+
+    assert exc_info.value.status_code == 503
+
+
+def test_internal_token_rejects_invalid_value(monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    with pytest.raises(HTTPException) as exc_info:
+        api.require_internal_token("wrong-token")
+
+    assert exc_info.value.status_code == 401
+
+
+def test_internal_token_accepts_matching_value(monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    api.require_internal_token("expected-token")
+
+
+def test_pipeline_route_rejects_missing_internal_token(monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    response = TestClient(api.app).post(
+        "/pipeline/runs",
+        json={"document_id": "document_1"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_pipeline_route_authenticates_before_parsing_body(monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "expected-token")
+
+    response = TestClient(api.app).post(
+        "/pipeline/runs",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_health_does_not_require_internal_token(monkeypatch) -> None:
+    monkeypatch.delenv("INTERNAL_CALLBACK_TOKEN", raising=False)
+
+    response = TestClient(api.app).get("/health")
+
+    assert response.status_code == 200

@@ -13,6 +13,7 @@
 | Docker + Compose | 최신 | `docker compose version` |
 | Java JDK | 21 | `java -version` |
 | Node.js / npm | 20+ / 10+ | `node -v`, `npm -v` |
+| Python | 3.10+ | `python3 --version` |
 | curl | 기본 | `curl --version` |
 
 환경변수는 `infra/.env`에서 관리. 없으면 예시에서 복사.
@@ -33,6 +34,17 @@ Java 21이 기본이 아니면 경로 지정.
 ```sh
 export JAVA_HOME_21=/path/to/jdk-21
 ```
+
+pipeline 테스트를 로컬에서 실행하려면 가상환경을 만들고 requirements를 설치합니다.
+
+```sh
+python3 -m venv services/ai/pipeline/.venv
+services/ai/pipeline/.venv/bin/python -m pip install -r services/ai/pipeline/requirements-dev.txt
+cd services/ai/pipeline
+.venv/bin/python -m pytest -q --ignore=tests/modules/document_restoration
+```
+
+`document_restoration` 테스트까지 실행하려면 추가로 `requirements-document-restoration.txt`를 설치합니다.
 
 ## 2. 구동 순서
 

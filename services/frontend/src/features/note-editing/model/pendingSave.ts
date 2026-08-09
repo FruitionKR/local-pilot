@@ -2,6 +2,7 @@ export type PendingNoteSave = {
   markdown: string;
   revision: number;
   source?: "agent";
+  applyOperationId?: string;
 };
 
 export function mergePendingNoteSave(
@@ -9,7 +10,12 @@ export function mergePendingNoteSave(
   next: PendingNoteSave
 ): PendingNoteSave {
   if (current?.source !== "agent" && next.source !== "agent") return next;
-  return { ...next, source: "agent" };
+  const applyOperationId = next.applyOperationId ?? current?.applyOperationId;
+  return {
+    ...next,
+    source: "agent",
+    ...(applyOperationId ? { applyOperationId } : {})
+  };
 }
 
 export function recoverPendingNoteSaveAfterAgentFailure(
@@ -46,7 +52,14 @@ export function planAgentRetryAfterFailure(
 
 export function applyRequiredAgentSource(
   candidate: PendingNoteSave,
-  required: boolean
+  required: boolean,
+  applyOperationId?: string
 ): PendingNoteSave {
-  return required ? { ...candidate, source: "agent" } : candidate;
+  if (!required) return candidate;
+  const resolvedApplyOperationId = candidate.applyOperationId ?? applyOperationId;
+  return {
+    ...candidate,
+    source: "agent",
+    ...(resolvedApplyOperationId ? { applyOperationId: resolvedApplyOperationId } : {})
+  };
 }

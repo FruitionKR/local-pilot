@@ -5,7 +5,7 @@ import { AgentPanel } from "@/widgets/agent-panel/ui/AgentPanel";
 import { DocumentSidebar } from "@/widgets/document-sidebar/ui/DocumentSidebar";
 import { Graph } from "@/widgets/graph/ui/Graph";
 import { SchemaWorkspace } from "@/features/schema-manage/ui/SchemaWorkspace";
-import { LogsMockup } from "@/features/logs-mockup";
+import { LogView } from "@/widgets/log-view";
 import { SettingsPanel } from "@/features/settings";
 import { DocumentProcessingNotifications } from "@/features/document-notifications";
 import { railItems, type RailView } from "@/widgets/rail-navigation/ui/RailNavigation";
@@ -25,7 +25,7 @@ import type { ActiveMarkdownEditContext } from "@/features/agent-chat/lib/markdo
 import { createClientId, findTreeItemByDocumentId } from "@/entities/tree";
 import { useResizeHandle } from "../model/useResizeHandle";
 import type { SourceBlockHighlight } from "@/entities/document";
-import type { NoteEditState, TreeItem } from "@/entities/tree";
+import type { TreeItem } from "@/entities/tree";
 import type { ChatWikiExportResponse } from "@/features/wiki-export";
 
 const SIDEBAR_DEFAULT_WIDTH = 320;
@@ -63,7 +63,6 @@ export function HomeWorkspace() {
   const [activeView, setActiveView] = useState<RailView>("home");
   const [markdownEditContext, setMarkdownEditContext] = useState<ActiveMarkdownEditContext | null>(null);
   const [pendingExportDocumentId, setPendingExportDocumentId] = useState<string | null>(null);
-  const [noteEditStates, setNoteEditStates] = useState<Record<string, NoteEditState>>({});
   const sidebarResize = useResizeHandle(SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, () => SIDEBAR_MAX_WIDTH);
   const sourcePreviewResize = useResizeHandle(
     SOURCE_PREVIEW_DEFAULT_WIDTH,
@@ -130,6 +129,10 @@ export function HomeWorkspace() {
     const document = documents.find((item) => item.id === selection.selectedDocumentId);
     return document?.processed_at ?? document?.uploaded_at ?? null;
   }, [documents, selection.selectedDocumentId]);
+  const selectedDocumentRole = useMemo(() => {
+    if (!selection.selectedDocumentId) return undefined;
+    return documents.find((item) => item.id === selection.selectedDocumentId)?.document_role;
+  }, [documents, selection.selectedDocumentId]);
   const firstSidebarNote = useMemo(() => {
     const documentIds = new Set(documents.map((document) => document.id));
     for (const project of projectTree.projects) {
@@ -175,20 +178,6 @@ export function HomeWorkspace() {
     setActiveView("home");
     selection.openSourceBlockPreview(created.id, created.filename, []);
   }
-
-  const handleNoteEditStateChange = useCallback((documentId: string, state: NoteEditState | null) => {
-    setNoteEditStates((current) => {
-      if (state) {
-        const previous = current[documentId];
-        if (previous?.saveStatus === state.saveStatus && previous.needsReview === state.needsReview) return current;
-        return { ...current, [documentId]: state };
-      }
-      if (!current[documentId]) return current;
-      const next = { ...current };
-      delete next[documentId];
-      return next;
-    });
-  }, []);
 
   async function handleChatDocumentExported(response: ChatWikiExportResponse) {
     setPendingExportDocumentId(response.exportDocumentId);
@@ -238,7 +227,6 @@ export function HomeWorkspace() {
         convertContextTarget={projectTree.convertContextTarget}
         uploadInputRef={upload.uploadInputRef}
         activeView={activeView}
-        noteEditStates={noteEditStates}
         onViewChange={handleViewChange}
         onStartChat={() => setIsAgentPanelOpen(true)}
         onUploadToProject={(projectId) => upload.openUploadPicker(projectId, null)}
@@ -280,10 +268,10 @@ export function HomeWorkspace() {
             onResizeStart={sourcePreviewResize.start}
             onMarkdownEditContextChange={setMarkdownEditContext}
             onRenameDocument={projectTree.renameDocumentById}
-            onNoteEditStateChange={handleNoteEditStateChange}
+            onRefreshDocuments={() => void refreshBackendData()}
+            documentRole={selectedDocumentRole}
             parentLabel={selectedDocumentParentLabel}
             editedAt={selectedDocumentEditedAt}
-            onExitDocument={selection.clearTreeGraphSelection}
             isAgentPanelOpen={isAgentPanelOpen}
             onOpenAgentPanel={() => setIsAgentPanelOpen(true)}
             fillMain
@@ -325,7 +313,7 @@ export function HomeWorkspace() {
         activeView === "rules" ? (
           <SchemaWorkspace />
         ) : activeView === "logs" ? (
-          <LogsMockup />
+          <LogView />
         ) : activeView === "settings" ? (
           <SettingsPanel />
         ) : (

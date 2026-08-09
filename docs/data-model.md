@@ -14,6 +14,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | **Redis** | access-svc / document-svc | 권한 projection·OAuth 교환 코드 / query run 상태·SSE 이벤트 |
 | **S3/MinIO** | document-svc | 문서 원본·snapshot, Wiki markdown 본문 |
 
+**object key 표기 규약**: `documents.source_uri`는 항상 평문 키(`sources/documents/{document_id}/original`)다. document-svc가 문서를 만들 때 조립해 넣고 이후 바뀌지 않으며, `s3://` 형식은 `Document` 생성자가 거부한다. `s3://<bucket>/<key>` 형식이 들어오는 컬럼은 파이프라인이 콜백으로 채우는 `documents.extracted_text_uri` 뿐이다. 두 표기가 섞이면 쓰기와 읽기가 서로 다른 키를 가리켜도 오류 없이 어긋나므로, 읽기·쓰기 양쪽 모두 `normalizeObjectKey`를 거친다.
+
 ## 2. DB별 핵심 테이블
 
 ### access_db (access-svc)
@@ -41,6 +43,14 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | chat_message_references | document-svc | 답변 근거 source block 스니펫 | chat_messages 1:N, `source_block_ids` |
 | chat_message_related_pages | document-svc | 답변 관련 Wiki 페이지 목록 | chat_messages 1:N, `relevance_score`·`depth` |
 | chat_partial_wiki | document-svc | partial export 문답↔페이지 멤버십 | `UNIQUE(pair_id, wiki_page_id)` |
+| document_assets | document-svc | 문서 첨부 이미지 metadata(바이너리는 MinIO) | `storage_key` UK, `content_hash`(ETag), `unreferenced_since`(정리 후보 판정). workspace_id·uploaded_by는 access_db 논리 참조(물리 FK 없음) |
+| document_asset_references | document-svc | 문서 본문↔asset 참조 동기화 | 복합 PK `(document_id, asset_id)`, asset 삭제 RESTRICT — 참조 중 asset 보호 |
+| document_asset_orphans | document-svc | storage 정리 실패 asset 재시도 큐 | `storage_key` UK, `retry_count`, cleanup worker가 소비 |
+| wiki_lint_state | document-svc | workspace별 마지막 lint 성공 시각(needs_lint 판단 기준점) | PK `workspace_id`(access_db 논리 참조), `last_lint_at` |
+| skills·skill_versions·skill_version_sources | ai-svc | 개인·팀 Skill과 게시 version·생성 근거 | 개인은 `owner_user_id`, 팀은 `workspace_id`; 팀 권한은 access-svc 조회 |
+| agent_runs·agent_plans·agent_plan_operations | ai-svc | Agent 실행·승인 대상 plan·operation | `operation_hash`, 현재 plan, 사용자·workspace 범위 |
+| agent_approvals·agent_jobs·agent_tool_executions·agent_run_artifacts | ai-svc | 승인·lease/retry·Tool 멱등 실행·비동기 artifact | run/plan/operation FK, Tool 호출 수 40회 제한 |
+| checkpoint_migrations·checkpoints·checkpoint_blobs·checkpoint_writes | ai-svc | LangGraph Agent 중단·재개 상태 | pipeline worker가 사용, document-svc Flyway V25가 생성 |
 
 ### ai_db (ai-svc)
 
@@ -96,10 +106,11 @@ erDiagram
 - 코드 경계도 컴파일러가 강제: access-svc와 document-svc는 서로의 repository를 import하지 않고 내부 API·Redis projection으로만 연결.
 - Idempotency 테이블은 각 DB에 서비스별 사본(코드는 java-shared 공유, 테이블 분리).
 
-## 5. 전환기 예외 — ai 테이블 4개 core_db 동거
+## 5. 전환기 예외 — ai·Agent 테이블 core_db 동거
 
-- 대상: `pipeline_runs` + 임베딩 3종(`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units`).
+- 대상: `pipeline_runs` + 임베딩 3종(`wiki_page_embeddings`·`wiki_embedding_vectors`·`wiki_embedding_units`) 및 Agent/Skill/checkpoint 테이블.
 - 사유: 검색 CTE·ingest 원자성이 core_db 테이블(wiki_pages·source_blocks 등)과 교차해 있어 재설계 선행 필요. 교차 지점 실측은 `docs/backlog/issue/ai/2026-08-07.md`.
 - 안전장치: **ai_runtime 별도 계정**으로 접근 범위를 격리해 소유권은 이미 분리됨.
 - 이전 트리거: AI 부하를 독립 스케일해야 할 때 착수 (1단계로 wiki_schemas는 ai_db 이전 완료).
 - 참고: 파이프라인의 backend 소유 테이블 직접 쓰기(documents.status 등)는 알려진 부채 — 단기 B(마커+인덱스) 적용 완료, 중기 C-poll 전환 예정 (`docs/backlog/spec/pipeline-db-ownership.md`).
+- Agent/Skill/checkpoint DDL의 단일 소유자는 document-svc Flyway이며, pipeline은 `AGENT_SKILLS_ENABLED` 또는 Agent worker 기동 시 필수 테이블만 검증한다. 팀 멤버십은 `workspace_members`를 직접 join하지 않고 access-svc 내부 권한 API로 조회한다.

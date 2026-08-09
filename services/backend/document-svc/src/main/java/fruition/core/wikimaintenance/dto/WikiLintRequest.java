@@ -1,6 +1,8 @@
 package fruition.core.wikimaintenance.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public record WikiLintRequest(
-        Boolean materializePromotions,
-        Boolean dryRun
+        @JsonProperty("materialize_promotions") Boolean materializePromotions,
+        @JsonProperty("dry_run") Boolean dryRun
 ) {}

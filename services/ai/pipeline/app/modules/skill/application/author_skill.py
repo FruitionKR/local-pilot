@@ -1,0 +1,590 @@
+from dataclasses import replace
+from typing import cast
+
+from app.modules.skill.application.manage_skill import ManageSkillUseCase
+from app.modules.skill.application.ports import (
+    SkillAuthoringGeneratorPort,
+    SkillReferenceReaderPort,
+)
+from app.modules.skill.domain.entities import (
+    SkillAuthoringMode,
+    SkillAuthoringProposal,
+    SkillAuthoringReference,
+    SkillAuthoringResult,
+    SkillCapability,
+    SkillDraftProposal,
+    SkillScopeType,
+    SkillTool,
+)
+from app.modules.skill.domain.policy import (
+    CAPABILITY_TOOLS,
+    validate_allowed_tools,
+    validate_skill_name,
+    with_required_planning_reads,
+)
+from app.modules.skill.domain.reference_template import (
+    build_reference_template_instructions,
+    extract_fixed_reference_template,
+    extract_markdown_structure,
+)
+from app.modules.skill.domain.safety import SkillSafetyIssue, inspect_skill_instructions
+
+
+MAX_INSTRUCTION_CHARS = 4_000
+MAX_REFERENCE_COUNT = 3
+MAX_REFERENCE_CHARS = 40_000
+MAX_TOTAL_REFERENCE_CHARS = 80_000
+MAX_DESCRIPTION_CHARS = 500
+MAX_INSTRUCTIONS_CHARS = 30_000
+MAX_INSTRUCTIONS_LINES = 500
+MAX_QUESTION_CHARS = 500
+MAX_LLM_ISSUES = 10
+
+
+class AuthorSkillUseCase:
+    def __init__(
+        self,
+        generator: SkillAuthoringGeneratorPort,
+        reference_reader: SkillReferenceReaderPort,
+        skill_manager: ManageSkillUseCase,
+    ) -> None:
+        self._generator = generator
+        self._reference_reader = reference_reader
+        self._skill_manager = skill_manager
+
+    def execute(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        scope_type: SkillScopeType,
+        instruction: str,
+        reference_document_ids: tuple[str, ...],
+        allow_clarification: bool = True,
+        name: str | None = None,
+        description: str | None = None,
+        authoring_mode: SkillAuthoringMode = "enhance",
+    ) -> SkillAuthoringResult:
+        instruction = instruction.strip()
+        max_instruction_chars = (
+            MAX_INSTRUCTIONS_CHARS if authoring_mode == "preserve" else MAX_INSTRUCTION_CHARS
+        )
+        if not instruction or len(instruction) > max_instruction_chars:
+            raise ValueError(f"instruction must contain 1-{max_instruction_chars} characters.")
+        if len(reference_document_ids) > MAX_REFERENCE_COUNT:
+            raise ValueError(f"reference_document_ids supports at most {MAX_REFERENCE_COUNT} documents.")
+        if len(set(reference_document_ids)) != len(reference_document_ids):
+            raise ValueError("reference_document_ids must not contain duplicates.")
+        if any(not document_id.strip() for document_id in reference_document_ids):
+            raise ValueError("reference_document_ids must contain non-empty ids.")
+        input_issues = _tag_issues(inspect_skill_instructions(instruction), "instruction")
+        if input_issues and authoring_mode != "regenerate":
+            return SkillAuthoringResult(status="blocked", issues=input_issues)
+        if input_issues:
+            instruction = _redact_issues(instruction, input_issues)
+        if name is not None:
+            name = validate_skill_name(name)
+        if description is not None:
+            description = description.strip()
+            if not description or len(description) > MAX_DESCRIPTION_CHARS:
+                raise ValueError(f"description must contain 1-{MAX_DESCRIPTION_CHARS} characters.")
+            description_issues = _tag_issues(
+                inspect_skill_instructions(description),
+                "description",
+            )
+            if description_issues:
+                if authoring_mode != "regenerate":
+                    return SkillAuthoringResult(status="blocked", issues=description_issues)
+                description = None
+
+        references = tuple(
+            self._reference_reader.read(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                document_id=document_id,
+            )
+            for document_id in reference_document_ids
+        )
+        reference_issues = _validate_references(references)
+        if reference_issues:
+            if authoring_mode != "regenerate":
+                return SkillAuthoringResult(status="blocked", issues=reference_issues)
+            instruction, description, references = _redact_sources(
+                instruction,
+                description,
+                references,
+                reference_issues,
+            )
+
+        intent = _verified_intent(
+            self._generator,
+            instruction,
+            references,
+            description,
+        )
+        if intent is None:
+            if allow_clarification:
+                return SkillAuthoringResult(
+                    status="clarification_required",
+                    question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                )
+            raise ValueError("Skill request could not be classified consistently.")
+        capability, reference_mode, allowed_tools = intent
+        candidate = self._generator.generate(
+            instruction,
+            references,
+            allow_clarification=allow_clarification,
+            authoring_mode=authoring_mode,
+            requested_name=name,
+            requested_description=description,
+            reference_mode=reference_mode,
+        )
+        status = candidate.get("status")
+        if status == "blocked":
+            issues = _llm_safety_issues(
+                candidate.get("issues"),
+                instruction=instruction,
+                description=description,
+                references=references,
+            )
+            if authoring_mode != "regenerate":
+                return SkillAuthoringResult(status="blocked", issues=issues)
+            instruction, description, references = _redact_sources(
+                instruction,
+                description,
+                references,
+                issues,
+            )
+            intent = _verified_intent(
+                self._generator,
+                instruction,
+                references,
+                description,
+            )
+            if intent is None:
+                if allow_clarification:
+                    return SkillAuthoringResult(
+                        status="clarification_required",
+                        question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                    )
+                raise ValueError("Skill request could not be classified consistently.")
+            capability, reference_mode, allowed_tools = intent
+            candidate = self._generator.generate(
+                instruction,
+                references,
+                allow_clarification=allow_clarification,
+                authoring_mode=authoring_mode,
+                requested_name=name,
+                requested_description=description,
+                reference_mode=reference_mode,
+            )
+            status = candidate.get("status")
+            if status == "blocked":
+                return SkillAuthoringResult(
+                    status="blocked",
+                    issues=_llm_safety_issues(
+                        candidate.get("issues"),
+                        instruction=instruction,
+                        description=description,
+                        references=references,
+                    ),
+                )
+        if status == "clarification_required":
+            if not allow_clarification:
+                raise ValueError("Single-turn Skill authoring must return an editable draft.")
+            question = _required_text(candidate, "question", MAX_QUESTION_CHARS)
+            if inspect_skill_instructions(question):
+                raise ValueError("Skill authoring question contains blocked safety instructions.")
+            return SkillAuthoringResult(
+                status="clarification_required",
+                question=question,
+            )
+        if status != "proposal_ready":
+            raise ValueError("Skill authoring result has an unsupported status.")
+
+        resolved_name = name or _required_text(candidate, "slug", 63)
+        resolved_name = validate_skill_name(resolved_name)
+        resolved_description = description or _required_text(candidate, "description", MAX_DESCRIPTION_CHARS)
+        fixed_template = None
+        if reference_mode == "fixed-template":
+            if len(references) != 1:
+                raise ValueError("Reference template authoring requires exactly one document.")
+            fixed_template = extract_markdown_structure(references[0].markdown)
+            if not fixed_template.strip():
+                raise ValueError("Reference document has no reusable Markdown structure.")
+        elif authoring_mode == "regenerate":
+            fixed_template = extract_fixed_reference_template(instruction)
+        if fixed_template is not None and capability != "template":
+            raise ValueError("Fixed templates require the template skill kind.")
+        instructions = (
+            build_reference_template_instructions(fixed_template)
+            if fixed_template is not None
+            else instruction
+            if authoring_mode == "preserve"
+            else _required_text(candidate, "instructions_markdown", MAX_INSTRUCTIONS_CHARS)
+        )
+        if len(instructions.splitlines()) > MAX_INSTRUCTIONS_LINES:
+            raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_LINES} lines.")
+        if len(instructions) > MAX_INSTRUCTIONS_CHARS:
+            raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_CHARS} characters.")
+        capabilities: tuple[SkillCapability, ...] = (capability,)
+        validate_allowed_tools(capabilities, allowed_tools)
+        output_issues = (
+            _tag_issues(inspect_skill_instructions(resolved_name), "name")
+            + _tag_issues(inspect_skill_instructions(resolved_description), "description")
+            + _tag_issues(inspect_skill_instructions(instructions), "instruction")
+        )
+        if output_issues:
+            proposal = SkillAuthoringProposal(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                scope_type=scope_type,
+                name=resolved_name,
+                description=_redact_issues(
+                    resolved_description,
+                    tuple(issue for issue in output_issues if issue.source_type == "description"),
+                ),
+                instructions_markdown=_redact_issues(
+                    instructions,
+                    tuple(issue for issue in output_issues if issue.source_type == "instruction"),
+                ),
+                capabilities=capabilities,
+                allowed_tools=allowed_tools,
+            )
+            return SkillAuthoringResult(
+                status="blocked",
+                proposal=proposal,
+                issues=output_issues,
+            )
+        _reject_reference_literals(
+            (resolved_name, resolved_description, instructions),
+            tuple(reference.id for reference in references),
+        )
+
+        proposal = SkillAuthoringProposal(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=resolved_name,
+            description=resolved_description,
+            instructions_markdown=instructions,
+            capabilities=capabilities,
+            allowed_tools=allowed_tools,
+        )
+        return SkillAuthoringResult(status="proposal_ready", proposal=proposal)
+
+    def publish(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        scope_type: SkillScopeType,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+    ) -> SkillAuthoringResult:
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=name,
+            description=description,
+            instruction=instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        if reviewed.status != "proposal_ready" or reviewed.proposal is None:
+            return reviewed
+        proposal = reviewed.proposal
+        skill = self._skill_manager.create_published(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            slug=proposal.name,
+            name=proposal.name,
+            description=proposal.description,
+            instructions_markdown=proposal.instructions_markdown,
+            capabilities=proposal.capabilities,
+            allowed_tools=proposal.allowed_tools,
+        )
+        return SkillAuthoringResult(status="published", proposal=proposal, skill=skill)
+
+    def update(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        skill_id: str,
+        name: str,
+        description: str,
+        instructions_markdown: str,
+    ) -> SkillAuthoringResult:
+        skill = self._skill_manager.get_manageable(workspace_id, user_id, skill_id)
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=skill.scope_type,
+            name=name,
+            description=description,
+            instruction=instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        if reviewed.status != "proposal_ready" or reviewed.proposal is None:
+            return reviewed
+        proposal = reviewed.proposal
+        updated = self._skill_manager.update_published(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            skill_id=skill_id,
+            name=proposal.name,
+            description=proposal.description,
+            instructions_markdown=proposal.instructions_markdown,
+            capabilities=proposal.capabilities,
+            allowed_tools=proposal.allowed_tools,
+        )
+        return SkillAuthoringResult(status="published", proposal=proposal, skill=updated)
+
+    def review_draft(
+        self,
+        *,
+        workspace_id: str,
+        user_id: str,
+        scope_type: SkillScopeType,
+        draft: SkillDraftProposal,
+    ) -> SkillAuthoringResult:
+        reviewed = self.execute(
+            workspace_id=workspace_id,
+            user_id=user_id,
+            scope_type=scope_type,
+            name=draft.name,
+            description=draft.description,
+            instruction=draft.instructions_markdown,
+            reference_document_ids=(),
+            allow_clarification=False,
+            authoring_mode="preserve",
+        )
+        proposal = reviewed.proposal
+        if reviewed.status == "proposal_ready" and proposal is not None and (
+            not set(proposal.capabilities).issubset(draft.capabilities)
+            or not set(proposal.allowed_tools).issubset(draft.allowed_tools)
+        ):
+            raise ValueError("Reviewed Skill must not expand completed AgentRun permissions.")
+        return reviewed
+
+
+def _validate_references(references: tuple[SkillAuthoringReference, ...]) -> tuple[SkillSafetyIssue, ...]:
+    total_chars = 0
+    issues: list[SkillSafetyIssue] = []
+    for reference in references:
+        markdown = reference.markdown
+        if not markdown.strip():
+            raise ValueError("Reference document must contain Markdown.")
+        if len(markdown) > MAX_REFERENCE_CHARS:
+            raise ValueError(f"Each reference document supports at most {MAX_REFERENCE_CHARS} characters.")
+        total_chars += len(markdown)
+        issues.extend(
+            _tag_issues(
+                inspect_skill_instructions(markdown),
+                "reference",
+                reference.id,
+            )
+        )
+    if total_chars > MAX_TOTAL_REFERENCE_CHARS:
+        raise ValueError(f"Reference documents support at most {MAX_TOTAL_REFERENCE_CHARS} characters in total.")
+    return tuple(issues)
+
+
+def _required_text(candidate: dict[str, object], key: str, max_chars: int) -> str:
+    value = candidate.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Skill authoring result {key} is required.")
+    normalized = value.strip()
+    if len(normalized) > max_chars:
+        raise ValueError(f"Skill authoring result {key} supports at most {max_chars} characters.")
+    return normalized
+
+
+def _llm_safety_issues(
+    value: object,
+    *,
+    instruction: str,
+    description: str | None,
+    references: tuple[SkillAuthoringReference, ...],
+) -> tuple[SkillSafetyIssue, ...]:
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_LLM_ISSUES:
+        raise ValueError("Blocked Skill authoring result must contain safety issues.")
+    issues: list[SkillSafetyIssue] = []
+    for value_issue in value:
+        if not isinstance(value_issue, dict):
+            raise ValueError("Skill authoring safety issue must be an object.")
+        category = _required_text(value_issue, "category", 50)
+        source_type = _required_text(value_issue, "source", 20)
+        text = _required_text(value_issue, "text", 500)
+        reason = _required_text(value_issue, "reason", 500)
+        reference_document_id = None
+        if source_type == "instruction":
+            source = instruction
+        elif source_type == "description" and description is not None:
+            source = description
+        elif source_type == "reference":
+            reference_index = value_issue.get("reference_index")
+            if not isinstance(reference_index, int) or isinstance(reference_index, bool):
+                raise ValueError("Reference safety issue requires a reference_index.")
+            if not 0 <= reference_index < len(references):
+                raise ValueError("Reference safety issue index is out of range.")
+            reference = references[reference_index]
+            source = reference.markdown
+            reference_document_id = reference.id
+        else:
+            raise ValueError("Skill authoring safety issue source is unsupported.")
+        start = source.find(text)
+        if start < 0:
+            raise ValueError("Skill authoring safety issue text must exist in its source.")
+        issues.append(
+            SkillSafetyIssue(
+                category=category,
+                text=text,
+                reason=reason,
+                start=start,
+                end=start + len(text),
+                source_type=source_type,
+                reference_document_id=reference_document_id,
+            )
+        )
+    return tuple(issues)
+
+
+def _redact_issues(source: str, issues: tuple[SkillSafetyIssue, ...]) -> str:
+    ranges = sorted(
+        ((issue.start, issue.end) for issue in issues if issue.start is not None and issue.end is not None),
+        reverse=True,
+    )
+    for start, end in ranges:
+        source = source[:start] + "[보안상 제거됨]" + source[end:]
+    return source
+
+
+def _redact_sources(
+    instruction: str,
+    description: str | None,
+    references: tuple[SkillAuthoringReference, ...],
+    issues: tuple[SkillSafetyIssue, ...],
+) -> tuple[str, str | None, tuple[SkillAuthoringReference, ...]]:
+    instruction = _redact_issues(
+        instruction,
+        tuple(issue for issue in issues if issue.source_type == "instruction"),
+    )
+    if any(issue.source_type == "description" for issue in issues):
+        description = None
+    references = tuple(
+        replace(
+            reference,
+            markdown=_redact_issues(
+                reference.markdown,
+                tuple(
+                    issue
+                    for issue in issues
+                    if issue.source_type == "reference"
+                    and issue.reference_document_id == reference.id
+                ),
+            ),
+        )
+        for reference in references
+    )
+    return instruction, description, references
+
+
+def _tag_issues(
+    issues: tuple[SkillSafetyIssue, ...],
+    source_type: str,
+    reference_document_id: str | None = None,
+) -> tuple[SkillSafetyIssue, ...]:
+    return tuple(
+        replace(
+            issue,
+            source_type=source_type,
+            reference_document_id=reference_document_id,
+        )
+        for issue in issues
+    )
+
+
+def _verified_intent(
+    generator: SkillAuthoringGeneratorPort,
+    instruction: str,
+    references: tuple[SkillAuthoringReference, ...],
+    description: str | None,
+) -> tuple[SkillCapability, str, tuple[SkillTool, ...]] | None:
+    classification = _intent_result(
+        generator.classify(
+            instruction,
+            references,
+            requested_description=description,
+        ),
+        bool(references),
+    )
+    verification = _intent_result(
+        generator.verify(
+            instruction,
+            references,
+            requested_description=description,
+        ),
+        bool(references),
+    )
+    if "unsupported" in {classification[0], verification[0]}:
+        raise ValueError("Skill request does not map to a supported Agent action.")
+    if classification[0] != "supported" or classification != verification:
+        return None
+    capability = classification[1]
+    assert capability is not None
+    return capability, classification[2], classification[3]
+
+
+def _intent_result(
+    value: dict[str, object],
+    has_references: bool,
+) -> tuple[str, SkillCapability | None, str, tuple[SkillTool, ...]]:
+    decision = value.get("decision")
+    if decision not in {"supported", "unsupported", "ambiguous"}:
+        raise ValueError("Skill intent result contains an invalid decision.")
+    reference_mode = _reference_mode(value.get("reference_mode"), has_references)
+    if decision != "supported":
+        if value.get("skill_kind") is not None or value.get("allowed_tools") != []:
+            raise ValueError("Unsupported or ambiguous Skill intent must not grant permissions.")
+        return cast(str, decision), None, reference_mode, ()
+    skill_kind = value.get("skill_kind")
+    if not isinstance(skill_kind, str) or skill_kind not in CAPABILITY_TOOLS:
+        raise ValueError("Skill intent result requires a supported skill_kind.")
+    if reference_mode == "fixed-template" and skill_kind != "template":
+        raise ValueError("Fixed reference templates require the template skill kind.")
+    capability = cast(SkillCapability, skill_kind)
+    tools = with_required_planning_reads(_tools(value.get("allowed_tools")))
+    validate_allowed_tools((capability,), tools)
+    return "supported", capability, reference_mode, tuple(sorted(tools))
+
+
+def _reference_mode(value: object, has_references: bool) -> str:
+    allowed = {"none", "fixed-template", "structure-reference"} if has_references else {"none"}
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError("Skill authoring result contains an invalid reference mode.")
+    return value
+
+
+def _tools(value: object) -> tuple[SkillTool, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Skill authoring result allowed_tools must be an array.")
+    known_tools = {tool for tools in CAPABILITY_TOOLS.values() for tool in tools}
+    if any(item not in known_tools for item in value):
+        raise ValueError("Skill authoring result contains an unsupported tool.")
+    return tuple(cast(SkillTool, item) for item in value)
+
+
+def _reject_reference_literals(values: tuple[str, ...], literals: tuple[str, ...]) -> None:
+    output = "\n".join(values).casefold()
+    if any(literal.strip() and literal.strip().casefold() in output for literal in literals):
+        raise ValueError("Generated Skill contains a fixed reference value.")

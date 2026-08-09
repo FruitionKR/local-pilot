@@ -34,6 +34,7 @@ export function useNoteAutosave({
   const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
   const agentRetryRequiredRef = useRef(false);
+  const agentRetryApplyOperationIdRef = useRef<string | undefined>(undefined);
   const agentRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentRetryAttemptsRef = useRef(0);
 
@@ -67,32 +68,42 @@ export function useNoteAutosave({
     }, plan.delayMs);
   }
 
-  async function flushSave(candidate: PendingNoteSave) {
-    const saveCandidate = applyRequiredAgentSource(candidate, agentRetryRequiredRef.current);
-    if (conflictRef.current) return;
+  async function flushSave(candidate: PendingNoteSave): Promise<boolean> {
+    const saveCandidate = applyRequiredAgentSource(
+      candidate,
+      agentRetryRequiredRef.current,
+      agentRetryApplyOperationIdRef.current
+    );
+    if (conflictRef.current) return false;
     if (saveInFlightRef.current) {
       pendingSaveRef.current = mergePendingNoteSave(pendingSaveRef.current, saveCandidate);
-      return;
+      return true;
     }
 
     saveInFlightRef.current = true;
     setStatus("saving");
     setErrorMessage(null);
     try {
+      if (saveCandidate.source === "agent") {
+        agentRetryApplyOperationIdRef.current = saveCandidate.applyOperationId;
+      }
       const saved = await saveNoteDraft(
         documentId,
         saveCandidate.markdown,
         versionRef.current,
-        saveCandidate.source
+        saveCandidate.source,
+        saveCandidate.applyOperationId
       );
       versionRef.current = saved.content_version;
       setContentVersion(saved.content_version);
       if (saveCandidate.source === "agent") {
+        agentRetryApplyOperationIdRef.current = undefined;
         agentRetryRequiredRef.current = false;
         agentRetryAttemptsRef.current = 0;
         cancelAgentRetry();
       }
       setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
+      return true;
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
         conflictRef.current = true;
@@ -108,6 +119,7 @@ export function useNoteAutosave({
         setStatus("error");
       }
       setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
+      return false;
     } finally {
       saveInFlightRef.current = false;
       const pending = pendingSaveRef.current;
@@ -116,15 +128,19 @@ export function useNoteAutosave({
     }
   }
 
-  function queueSave(body: string, source?: "agent") {
+  function queueSave(body: string, source?: "agent", applyOperationId?: string) {
     if (conflictRef.current) return;
     // 새 저장이 밀린 AI 편집분을 그대로 싣고 가므로 예약된 재시도는 버린다.
     cancelAgentRetry();
     revisionRef.current += 1;
+    const saveSource = source ?? (agentRetryRequiredRef.current ? "agent" : undefined);
     const candidate = {
       markdown: composeEditableNoteMarkdown(marker, body),
       revision: revisionRef.current,
-      source: source ?? (agentRetryRequiredRef.current ? "agent" : undefined)
+      source: saveSource,
+      applyOperationId: saveSource === "agent"
+        ? applyOperationId ?? agentRetryApplyOperationIdRef.current
+        : undefined
     };
     setStatus("dirty");
     setErrorMessage(null);
@@ -140,5 +156,25 @@ export function useNoteAutosave({
     }, AUTOSAVE_DELAY_MS);
   }
 
-  return { status, errorMessage, contentVersion, queueSave };
+  /** 디바운스를 건너뛰고 즉시 저장한다 (Cmd/Ctrl+S, 저장 버튼). 성공 여부를 반환한다. */
+  function saveNow(body: string): Promise<boolean> {
+    if (conflictRef.current) return Promise.resolve(false);
+    cancelAgentRetry();
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    revisionRef.current += 1;
+    const saveSource = agentRetryRequiredRef.current ? ("agent" as const) : undefined;
+    const candidate = {
+      markdown: composeEditableNoteMarkdown(marker, body),
+      revision: revisionRef.current,
+      source: saveSource,
+      applyOperationId: saveSource === "agent" ? agentRetryApplyOperationIdRef.current : undefined
+    };
+    setErrorMessage(null);
+    return flushSave(candidate);
+  }
+
+  return { status, errorMessage, contentVersion, queueSave, saveNow };
 }

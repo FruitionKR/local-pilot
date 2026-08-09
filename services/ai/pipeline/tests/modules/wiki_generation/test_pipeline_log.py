@@ -1,9 +1,27 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_generation.infrastructure.pipeline_log import PipelineLog
+
+
+def test_emit_sends_internal_token_to_log_callback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("INTERNAL_CALLBACK_TOKEN", "test-internal-token")
+    log = PipelineLog(
+        tmp_path / "pipeline.log",
+        callback_url="http://backend/pipeline-events",
+    )
+
+    with patch("urllib.request.urlopen") as urlopen:
+        log.emit("변환", "문서를 변환했습니다.")
+
+    request = urlopen.call_args.args[0]
+    assert request.get_header("X-internal-token") == "test-internal-token"
 
 
 def test_emit_reports_pipeline_progress(tmp_path: Path) -> None:
