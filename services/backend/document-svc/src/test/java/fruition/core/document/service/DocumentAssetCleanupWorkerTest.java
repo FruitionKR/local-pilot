@@ -19,6 +19,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -34,29 +36,44 @@ class DocumentAssetCleanupWorkerTest {
     @Mock DocumentAssetRepository assetRepository;
     @Mock DocumentAssetOrphanRepository orphanRepository;
     @Mock DocumentAssetObjectStorage objectStorage;
+    @Mock DocumentAssetOrphanRegistry orphanRegistry;
 
     @Test
-    void cleanup_deletesObjectBeforeAssetRow() {
+    void cleanup_deletesAssetRowBeforeObject() {
         DocumentAsset asset = asset("asset-key");
         stubCandidates(List.of(asset), List.of());
+        when(assetRepository.deleteIfStillUnreferenced(asset.getId(), THRESHOLD)).thenReturn(1);
 
         worker().cleanup(NOW);
 
-        var order = org.mockito.Mockito.inOrder(objectStorage, assetRepository);
+        var order = org.mockito.Mockito.inOrder(assetRepository, objectStorage);
+        order.verify(assetRepository).deleteIfStillUnreferenced(asset.getId(), THRESHOLD);
         order.verify(objectStorage).delete("asset-key");
-        order.verify(assetRepository).deleteById(asset.getId());
     }
 
     @Test
-    void cleanup_storageFailureKeepsAssetRowForRetry() {
+    void cleanup_keepsObjectWhenAssetWasReferencedAgain() {
         DocumentAsset asset = asset("asset-key");
         stubCandidates(List.of(asset), List.of());
+        // 후보 조회 이후 다시 참조돼 조건부 삭제가 0행을 지운 상황
+        when(assetRepository.deleteIfStillUnreferenced(asset.getId(), THRESHOLD)).thenReturn(0);
+
+        worker().cleanup(NOW);
+
+        verify(objectStorage, never()).delete("asset-key");
+    }
+
+    @Test
+    void cleanup_storageFailureAfterRowDeleteRecordsOrphan() {
+        DocumentAsset asset = asset("asset-key");
+        stubCandidates(List.of(asset), List.of());
+        when(assetRepository.deleteIfStillUnreferenced(asset.getId(), THRESHOLD)).thenReturn(1);
         doThrow(new DocumentAssetStorageException("실패", new IllegalStateException()))
                 .when(objectStorage).delete("asset-key");
 
         worker().cleanup(NOW);
 
-        verify(assetRepository, never()).deleteById(asset.getId());
+        verify(orphanRegistry).record(eq(asset.getId()), eq("asset-key"), any());
     }
 
     @Test
@@ -94,7 +111,7 @@ class DocumentAssetCleanupWorkerTest {
 
     private DocumentAssetCleanupWorker worker() {
         return new DocumentAssetCleanupWorker(
-                assetRepository, orphanRepository, objectStorage,
+                assetRepository, orphanRepository, objectStorage, orphanRegistry,
                 new TransactionTemplate(mock(PlatformTransactionManager.class)));
     }
 

@@ -10,15 +10,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.WebRequest;
 
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -49,10 +48,11 @@ public class DocumentAssetController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @PathVariable("asset_id") UUID assetId,
-            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch
+            WebRequest webRequest
     ) {
         var metadata = readService.readMetadata(workspaceId, userId, assetId);
-        if (metadata.etag().equals(ifNoneMatch)) {
+        // 직접 비교하면 W/"..." 약한 validator나 콤마로 이어진 목록에서 304를 놓친다.
+        if (webRequest.checkNotModified(metadata.etag())) {
             return ResponseEntity.status(304)
                     .cacheControl(PRIVATE_CACHE)
                     .eTag(metadata.etag())

@@ -39,7 +39,7 @@ pipeline 테스트를 로컬에서 실행하려면 가상환경을 만들고 req
 
 ```sh
 python3 -m venv services/ai/pipeline/.venv
-services/ai/pipeline/.venv/bin/python -m pip install -r services/ai/pipeline/requirements.txt
+services/ai/pipeline/.venv/bin/python -m pip install -r services/ai/pipeline/requirements-dev.txt
 cd services/ai/pipeline
 .venv/bin/python -m pytest -q --ignore=tests/modules/document_restoration
 ```

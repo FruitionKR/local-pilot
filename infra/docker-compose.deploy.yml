@@ -15,6 +15,9 @@ services:
         condition: service_healthy
 
   pipeline-agent-worker:
+    environment:
+      # host gateway가 아니라 컨테이너 네트워크로 붙어야 document-svc published 포트 없이도 동작한다
+      AGENT_BACKEND_URL: http://document-svc:8080
     depends_on:
       document-svc:
         condition: service_healthy
