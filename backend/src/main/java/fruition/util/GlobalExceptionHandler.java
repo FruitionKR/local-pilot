@@ -45,6 +45,14 @@ import fruition.chat.exception.EmptyChatWikiExportException;
 import fruition.chat.exception.InvalidChatWikiExportRequestException;
 import fruition.query.exception.PipelineQueryException;
 import fruition.query.exception.QueryRunNotFoundException;
+import fruition.skill.exception.InvalidSkillRequestException;
+import fruition.skill.exception.PipelineSkillException;
+import fruition.skill.exception.SkillReferenceDocumentNotFoundException;
+import fruition.skill.exception.SkillReferenceDocumentTooLargeException;
+import fruition.skill.exception.TeamSkillForbiddenException;
+import fruition.skill.exception.SkillNotFoundException;
+import fruition.skill.exception.SkillConflictException;
+import fruition.skill.exception.SkillReferenceStaleException;
 import fruition.user.exception.DuplicateEmailException;
 import fruition.user.exception.EmailVerificationNotFoundException;
 import fruition.user.exception.InvalidCredentialsException;
@@ -77,6 +85,58 @@ import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(PipelineSkillException.class)
+    public ResponseEntity<?> handlePipelineSkill(PipelineSkillException e) {
+        if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBody());
+        }
+        return ResponseEntity.status(e.getHttpStatus())
+                .body(ErrorResponse.of("SKILL_AI_UNAVAILABLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidSkillRequestException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSkillRequest(InvalidSkillRequestException e) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_SKILL_INPUT", e.getMessage()));
+    }
+
+    @ExceptionHandler(TeamSkillForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleTeamSkillForbidden(TeamSkillForbiddenException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("TEAM_SKILL_FORBIDDEN", e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSkillNotFound(SkillNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("SKILL_NOT_FOUND", "Skill을 찾을 수 없습니다."));
+    }
+
+    @ExceptionHandler(SkillConflictException.class)
+    public ResponseEntity<ErrorResponse> handleSkillConflict(SkillConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillReferenceStaleException.class)
+    public ResponseEntity<ErrorResponse> handleSkillReferenceStale(SkillReferenceStaleException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("SKILL_REFERENCE_STALE", e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillReferenceDocumentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSkillReferenceNotFound(SkillReferenceDocumentNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("REFERENCE_DOCUMENT_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillReferenceDocumentTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleSkillReferenceTooLarge(SkillReferenceDocumentTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("REFERENCE_DOCUMENT_TOO_LARGE", e.getMessage()));
+    }
 
     @ExceptionHandler(PipelineWikiPageException.class)
     public ResponseEntity<?> handlePipelineWikiPage(PipelineWikiPageException e) {

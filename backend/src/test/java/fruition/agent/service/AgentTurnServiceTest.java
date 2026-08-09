@@ -45,7 +45,7 @@ class AgentTurnServiceTest {
     void turn_verifiesDocumentAndPreservesVersion() throws Exception {
         AgentTurnRequest request = request("whole_document", 1, 2);
         when(documentService.findById("ws_1", "user_1", "doc_1")).thenReturn(document("note.md", "text/markdown"));
-        when(pipelineAgentRequester.request(request))
+        when(pipelineAgentRequester.request("ws_1", "user_1", request))
                 .thenReturn(new ObjectMapper().readTree("{\"action\":\"markdown_edit\"}"));
 
         AgentTurnResponse response = service.turn("ws_1", "user_1", request);
@@ -64,7 +64,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -74,7 +76,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -85,7 +89,9 @@ class AgentTurnServiceTest {
 
         assertThatThrownBy(() -> service.turn("ws_1", "user_1", request))
                 .isInstanceOf(DocumentVersionConflictException.class);
-        verify(pipelineAgentRequester, never()).request(request);
+        verify(pipelineAgentRequester, never()).request(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     private AgentTurnRequest request(String type, int startLine, int endLine) {
