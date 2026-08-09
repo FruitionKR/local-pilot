@@ -1,12 +1,19 @@
 package fruition.skill.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 public record SkillUpdateRequest(
-        @NotNull @Valid SkillDraftRequest draft,
-        @JsonProperty("review_token") @NotBlank String reviewToken,
-        @JsonProperty("base_version_id") @NotBlank String baseVersionId
+        @NotBlank
+        @Pattern(regexp = "^[a-z0-9][a-z0-9-]{0,62}$")
+        String name,
+        @NotBlank
+        @Size(max = 500)
+        String description,
+        @JsonProperty("instructions_markdown")
+        @NotBlank
+        @Size(max = 30000)
+        String instructionsMarkdown
 ) {}

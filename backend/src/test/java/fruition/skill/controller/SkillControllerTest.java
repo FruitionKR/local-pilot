@@ -8,7 +8,7 @@ import fruition.security.oauth.OAuthExchangeCodeStore;
 import fruition.security.oauth.handler.OAuth2AuthenticationFailureHandler;
 import fruition.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import fruition.security.oauth.service.CustomOAuth2UserService;
-import fruition.skill.dto.SkillDraftRequest;
+import fruition.skill.dto.SkillAuthoringRequest;
 import fruition.skill.service.SkillService;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -32,10 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({GlobalExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
         OAuthExchangeCodeStore.class, OAuth2AuthenticationSuccessHandler.class, OAuth2AuthenticationFailureHandler.class})
 class SkillControllerTest {
-
     private static final String USER_ID = "user_1";
     private static final String WORKSPACE_ID = "ws_1";
-
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JwtTokenProvider jwtTokenProvider;
@@ -43,43 +41,39 @@ class SkillControllerTest {
     @MockBean CustomOAuth2UserService customOAuth2UserService;
 
     @Test
-    void review_authenticatedReturnsPipelineResult() throws Exception {
-        when(skillService.review(eq(WORKSPACE_ID), eq(USER_ID), any(SkillDraftRequest.class)))
-                .thenReturn(objectMapper.readTree("{\"publish_allowed\":true,\"review_token\":\"token\"}"));
+    void author_returnsProposalWithoutInternalTools() throws Exception {
+        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
+                .thenReturn(objectMapper.readTree("{\"status\":\"proposal_ready\",\"name\":\"meeting-notes\"}"));
 
-        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/reviews")
-                        .header("Authorization", bearer())
-                        .contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
+                        .header("Authorization", bearer()).contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.publish_allowed").value(true))
-                .andExpect(jsonPath("$.review_token").value("token"));
+                .andExpect(jsonPath("$.status").value("proposal_ready"))
+                .andExpect(jsonPath("$.allowed_tools").doesNotExist());
     }
 
     @Test
-    void refine_nameOver63CharactersReturns400() throws Exception {
-        SkillDraftRequest request = new SkillDraftRequest(
-                null, "가".repeat(64), "지시사항", "personal", List.of(), null, null, null);
-
-        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/refine")
-                        .header("Authorization", bearer())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
+    void author_ignoresLegacyCapabilitiesField() throws Exception {
+        when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
+                .thenReturn(objectMapper.readTree("{\"status\":\"proposal_ready\"}"));
+        String body = objectMapper.writeValueAsString(validRequest()).replace("}", ",\"capabilities\":[\"document-create\"]}");
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
+                        .header("Authorization", bearer()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
     }
 
     @Test
-    void refine_unauthenticatedReturns401() throws Exception {
-        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/refine")
+    void author_unauthenticatedReturns401() throws Exception {
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isUnauthorized());
     }
 
-    private SkillDraftRequest validRequest() {
-        return new SkillDraftRequest(
-                "meeting-summary", "회의 정리", "회의 내용을 정리한다.", "personal",
-                List.of("doc_1"), null, null, null);
+    private SkillAuthoringRequest validRequest() {
+        return new SkillAuthoringRequest("personal", "meeting-notes", null,
+                "회의록 Skill을 만들어줘", "enhance", List.of());
     }
 
     private String bearer() {
