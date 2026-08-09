@@ -643,7 +643,7 @@ POST /agent/turn
 
 공통 재검토가 계산한 capability나 Tool이 완료 AgentRun proposal의 권한 상한보다 넓어지면 거절한다. 사용자 응답에는 source run ID와 내부 Tool을 포함하지 않는다. 이 결과도 최종 게시 전에는 DB에 저장하지 않는다.
 
-source run의 실제 조회·동일 사용자·Workspace·채팅 권한 검증과 최종 `skill_version_sources` 연결은 Spring Backend의 미구현 범위다.
+Spring Backend는 선택한 source run이 요청 사용자와 Workspace에 속한 `completed` 상태인지, 현재 plan에 성공 operation이 있는지 확인한 뒤 llmPipeline에 필요한 요약과 Tool·이유만 전달한다. 최종 게시 응답에 version ID가 있으면 같은 조건을 다시 확인하고 `skill_version_sources`에 연결한다.
 
 ## 14. 응답과 실패 분기
 
@@ -690,7 +690,6 @@ HTTP route는 application의 `ValueError`를 현재 일괄 `400`으로 변환한
 ### 미연결 범위
 
 - Frontend Skill 관리 화면과 채팅 proposal UI
-- Spring의 completed AgentRun source 조회·권한 검증
 - Skill 삭제 API와 조회 화면의 삭제 동작
 - 참조 문서 로컬 업로드
 
@@ -709,6 +708,7 @@ Spring은 공개 Skill API와 내부 참조 문서 권한 경계를 제공하고
 - 사용자에게 보여주는 authoring 응답에는 capability와 Tool을 노출하지 않는다.
 - 참조 Markdown은 untrusted data이며 선택 문서라는 이유로 내부 지시를 실행하지 않는다.
 - 최종 게시에서 전체 검증을 다시 수행하므로 preview 결과만으로 저장 성공을 보장하지 않는다.
+- Spring이 게시 응답 이후 source를 연결하므로 연결 transaction이 실패하면 게시된 Skill에 source 감사 연결이 누락될 수 있다.
 - 비활성화는 자동 routing만 끄며 명시적 slash 호출을 삭제하지 않는다.
 
 ## 16. 관련 문서

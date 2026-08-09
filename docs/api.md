@@ -201,6 +201,7 @@ POST /api/workspaces/{workspace_id}/agent/turn
 
 POST  /api/workspaces/{workspace_id}/skills/author
 POST  /api/workspaces/{workspace_id}/skills/author/publish
+POST  /api/workspaces/{workspace_id}/skills/draft-from-runs/preview
 GET   /api/workspaces/{workspace_id}/skills
 GET   /api/workspaces/{workspace_id}/skills/{skill_id}
 PATCH /api/workspaces/{workspace_id}/skills/{skill_id}

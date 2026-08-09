@@ -9,6 +9,7 @@ import fruition.security.oauth.handler.OAuth2AuthenticationFailureHandler;
 import fruition.security.oauth.handler.OAuth2AuthenticationSuccessHandler;
 import fruition.security.oauth.service.CustomOAuth2UserService;
 import fruition.skill.dto.SkillAuthoringRequest;
+import fruition.skill.dto.SkillDraftFromRunsRequest;
 import fruition.skill.service.SkillService;
 import fruition.util.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,18 @@ class SkillControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validRequest())))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void draftFromRuns_returnsUnpersistedProposal() throws Exception {
+        when(skillService.draftFromRuns(eq(WORKSPACE_ID), eq(USER_ID), any(SkillDraftFromRunsRequest.class)))
+                .thenReturn(objectMapper.readTree("{\"status\":\"proposal_ready\",\"name\":\"meeting-notes\"}"));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/draft-from-runs/preview")
+                        .header("Authorization", bearer()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scope_type\":\"personal\",\"source_run_ids\":[\"run_1\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("proposal_ready"));
     }
 
     private SkillAuthoringRequest validRequest() {

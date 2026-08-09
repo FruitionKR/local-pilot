@@ -2,6 +2,7 @@ package fruition.skill.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import fruition.skill.dto.SkillAuthoringRequest;
+import fruition.skill.dto.SkillDraftFromRunsRequest;
 import fruition.skill.dto.SkillPublishRequest;
 import fruition.skill.dto.SkillUpdateRequest;
 import fruition.skill.service.SkillService;
@@ -40,6 +41,14 @@ public class SkillController {
             @AuthenticationPrincipal String userId,
             @Valid @RequestBody SkillPublishRequest request) {
         return ResponseEntity.ok(skillService.publish(workspaceId, userId, request));
+    }
+
+    @PostMapping("/draft-from-runs/preview")
+    public ResponseEntity<JsonNode> draftFromRuns(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody SkillDraftFromRunsRequest request) {
+        return ResponseEntity.ok(skillService.draftFromRuns(workspaceId, userId, request));
     }
 
     @GetMapping

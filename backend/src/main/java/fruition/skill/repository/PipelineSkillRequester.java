@@ -3,9 +3,11 @@ package fruition.skill.repository;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import fruition.skill.dto.SkillAuthoringRequest;
+import fruition.skill.dto.SkillDraftFromRunsRequest;
 import fruition.skill.dto.SkillPublishRequest;
 import fruition.skill.dto.SkillUpdateRequest;
 import fruition.skill.exception.PipelineSkillException;
+import fruition.skill.service.SkillDraftSourceLoader.LoadedSources;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -43,6 +45,12 @@ public class PipelineSkillRequester {
     public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
         return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
                 request.description(), request.instructionsMarkdown()));
+    }
+
+    public JsonNode draftFromRuns(String workspaceId, String userId, SkillDraftFromRunsRequest request,
+                                  LoadedSources sources) {
+        return post("/draft-from-runs/preview", new DraftFromRunsPayload(workspaceId, userId,
+                request.scopeType(), sources.sourceRuns(), request.userDirectives(), sources.excludedLiterals()));
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -131,6 +139,14 @@ public class PipelineSkillRequester {
             String name,
             String description,
             @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+
+    private record DraftFromRunsPayload(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            @JsonProperty("scope_type") String scopeType,
+            @JsonProperty("source_runs") java.util.List<?> sourceRuns,
+            @JsonProperty("user_directives") java.util.List<String> userDirectives,
+            @JsonProperty("excluded_literals") java.util.List<String> excludedLiterals) {}
 
     private record UpdatePayload(
             @JsonProperty("workspace_id") String workspaceId,

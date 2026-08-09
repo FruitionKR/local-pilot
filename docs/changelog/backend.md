@@ -2,6 +2,13 @@
 
 ## 2026-08-09
 
+### feat: 완료 AgentRun 기반 Skill 제안 연결
+
+- 선택한 AgentRun의 사용자·Workspace·완료 상태와 성공 operation을 검증해 `/skills/draft-from-runs/preview`로 전달하는 공개 API를 추가했다.
+- AgentRun 실행 기반 schema와 `skill_version_sources`를 추가하고, 게시된 Skill version에 검증된 source Run을 연결했다.
+- llmPipeline 코드는 변경하지 않았으며, 외부 게시 성공 후 Spring source 연결이 실패하면 감사 연결이 누락될 수 있는 transaction 경계를 문서화했다.
+- Skill 테스트와 Backend 전체 테스트를 통과했다.
+
 ### feat: Skill 작성·게시 연동 계약 통일
 
 - Spring 공개 Skill API를 llmPipeline의 `/skills/author`, `/skills/author/publish`, 조회·수정·활성화 계약에 맞춰 proxy 방식으로 통일했다.

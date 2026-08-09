@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record SkillPublishRequest(
         @JsonProperty("scope_type")
         @NotBlank
@@ -19,5 +21,12 @@ public record SkillPublishRequest(
         @JsonProperty("instructions_markdown")
         @NotBlank
         @Size(max = 30000)
-        String instructionsMarkdown
-) {}
+        String instructionsMarkdown,
+        @JsonProperty("source_run_ids")
+        @Size(max = 5)
+        List<@NotBlank String> sourceRunIds
+) {
+    public SkillPublishRequest {
+        sourceRunIds = sourceRunIds == null ? List.of() : List.copyOf(sourceRunIds);
+    }
+}
