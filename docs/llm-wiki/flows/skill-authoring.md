@@ -52,7 +52,7 @@ POST /skills/author                        POST /agent/turn
                 입력 길이·형식 검사
                          │
                          ▼
-             규칙 기반 보안·credential 검사
+          규칙 기반 보안·개인정보·credential 검사
                 ├─ 차단 -> blocked, 미저장
                 └─ 통과
                          │
@@ -255,7 +255,22 @@ LLM을 호출하기 전에 instruction, description과 참조 문서 전체 Mark
 - 시스템 정책·이전 지시 무시
 - system prompt 노출 요구
 - system/developer 역할 변경
-- private key, access key, GitHub·Slack token, password 같은 credential 형태
+- 이메일, 국내·국제 전화번호
+- 날짜·검증번호를 확인한 주민등록번호
+- Luhn 검증을 통과한 결제 카드번호와 계좌번호 문맥
+- `이름`, `주소` 등 개인정보 필드에 들어간 실제 값이나 명시적 placeholder
+- private key, access key, GitHub·Slack token, JWT·Bearer token, password 같은 credential 형태
+
+개인정보 필드가 비어 있거나 밑줄만 있는 템플릿은 허용한다. 표 header 역시 구조만 있으면 허용하지만, 실제 값이나 `[이름]`, `[주소]` 같은 명시적 개인정보 placeholder가 들어간 행은 차단한다.
+
+```text
+이름:                  -> 허용
+이름: __________       -> 허용
+이름: 홍길동           -> 차단
+이름: [이름]           -> 차단
+```
+
+한 입력에서 여러 개인정보나 credential이 발견되면 첫 항목만 반환하지 않고, 겹치는 범위를 제거한 뒤 모든 위치를 문서 순서대로 반환한다.
 
 발견된 문제는 다음 위치 정보를 가진다.
 
@@ -276,7 +291,7 @@ LLM을 호출하기 전에 instruction, description과 참조 문서 전체 Mark
 
 **의미 기반 검사**
 
-정해진 marker와 정확히 일치하지 않는 prompt injection도 작성 LLM이 `blocked`로 반환할 수 있다. 이때 LLM은 원문에 실제로 존재하는 substring과 source를 반환해야 하며, 서버가 위치를 다시 찾지 못하면 잘못된 LLM 결과로 거절한다.
+정해진 marker와 정확히 일치하지 않는 prompt injection, 비정형 개인정보·주소·인증정보와 사내 기밀정보도 작성 LLM이 `blocked`로 반환할 수 있다. 빈 개인정보 필드, 밑줄만 있는 입력란, 표 header와 일반 `[item]` 구조는 개인정보로 판단하지 않는다. LLM은 원문에 실제로 존재하는 substring과 source를 반환해야 하며, 서버가 위치를 다시 찾지 못하면 잘못된 LLM 결과로 거절한다.
 
 LLM이 찾은 위험 구간으로 `regenerate`를 수행할 때는 최초 생성이 차단된 경우에만 위험 구간을 제거하고 intent 판정과 생성을 한 번 더 수행한다. 총 생성 시도는 최대 두 번이며, 두 번째 결과가 다시 차단되면 추가 재시도나 부분 게시 없이 `blocked`로 반환한다.
 
@@ -473,7 +488,7 @@ intent 합의 후 `skill_authoring.system.md`가 name, description과 instructio
 - instructions 최대 30,000자, 최대 500줄
 - capability가 비어 있지 않은가?
 - capability와 Tool이 호환되는가?
-- 생성된 name, description, instructions에 위험 marker나 credential이 없는가?
+- 생성된 name, description, instructions에 위험 marker, 개인정보·기밀정보나 credential이 없는가?
 - 참조 문서 ID 같은 고정값이 결과에 복사되지 않았는가?
 
 통과하면 `proposal_ready`를 반환한다.

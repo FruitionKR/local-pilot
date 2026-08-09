@@ -235,14 +235,15 @@ Vision SLLM 결과가 Markdown 표 형식을 만족하면 최종 문서에 들�
 
 CLI flag의 의미도 구분해야 한다.
 
-- 기본 `--mode docling-only`: Docling Markdown을 최종 산출물로 게시하고 후속 crop·OCR·SLLM 복원을 실행하지 않는다.
-- `--mode selective-repair`: 기존 코드가 검출한 표·수식·손상 text만 원본 페이지와 crop을 첨부해 OpenAI Responses API로 복원한다. 기본값은 `gpt-5.6-terra`, reasoning `low`다.
+- 기본 `--mode crop-first`: Rust Heron으로 표·수식·그림을 crop하고, redaction한 본문은 AnyDoc으로 변환한다. 그림은 원본 asset을 유지하며 표·수식과 확정 손상·차이 상위 30% 본문을 Luna 페이지 묶음으로 복원한다.
+- `--mode docling-only`: Docling Markdown을 최종 산출물로 게시하고 후속 crop·OCR·SLLM 복원을 실행하지 않는다.
+- `--mode selective-repair`: 기존 코드가 검출한 표·수식·손상 text만 원본 페이지와 crop을 첨부해 OpenAI Responses API로 복원한다. 같은 페이지에서도 본문과 표·수식은 별도 lane으로 묶고, 180초 timeout·JSON/ID 불일치·Markdown 검증 탈락 항목만 단건 fallback한다. 그림은 원본 asset을 유지한다. 기본값은 `gpt-5.6-luna`, reasoning `medium`이다.
 - `--mode full-repair`: 기존 검출·crop OCR·규칙 복원과 선택적 SLLM·Vision 단계를 실행한다.
 - `--docling-json`으로 캐시를 재사용하는 `docling-only` 실행은 대응하는 `--docling-markdown`도 함께 전달한다.
 - `--use-local-sllm`: 코드만으로 복원하지 못한 **수식**에 Text SLLM 보완을 허용한다.
 - `--use-local-vision`: 필요한 표·수식·본문·그림에 Vision SLLM 검토를 허용한다.
 
-`selective-repair`는 `DOCUMENT_REPAIR_OPENAI_API_KEY` 또는 `OPENAI_API_KEY`가 필요하다. SLLM·Vision flag는 `full-repair` mode에서만 의미가 있으며, flag를 켰다고 모든 block이 모델에 들어가는 것은 아니다.
+`crop-first`와 `selective-repair`는 `DOCUMENT_REPAIR_OPENAI_API_KEY` 또는 `OPENAI_API_KEY`가 필요하다. SLLM·Vision flag는 `full-repair` mode에서만 의미가 있으며, flag를 켰다고 모든 block이 모델에 들어가는 것은 아니다.
 
 ---
 

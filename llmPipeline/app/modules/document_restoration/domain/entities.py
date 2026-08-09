@@ -2,12 +2,15 @@ from enum import Enum
 
 
 class RestorationMode(str, Enum):
+    CROP_FIRST = "crop-first"
     DOCLING_ONLY = "docling-only"
     SELECTIVE_REPAIR = "selective-repair"
     FULL_REPAIR = "full-repair"
 
 
 class RestorationStage(str, Enum):
+    PREPARE_CROP_FIRST = "prepare_crop_first_with_anydoc"
+    ASSEMBLE_CROP_FIRST = "assemble_crop_first_markdown"
     DOCLING_BASELINE = "docling_baseline"
     PUBLISH_DOCLING_MARKDOWN = "publish_docling_markdown"
     DETECT_LAYOUT_BLOCKS = "detect_layout_blocks"
