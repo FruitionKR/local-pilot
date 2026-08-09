@@ -108,7 +108,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       # document_restoration은 PyMuPDF 등 무거운 의존성이 필요해 별도 requirements를 쓴다.
       # 기본 실행에서는 제외하고, 필요해지면 requirements-document-restoration.txt를 설치해 붙인다.

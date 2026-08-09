@@ -1375,7 +1375,10 @@ public class DocumentService {
     /**
      * 이미지 포함 저장. asset row는 본문보다 먼저 커밋해 참조 무결성을 확보하고
      * (실패 시 orphan은 cleanup worker가 정리), 본문 저장은 Mongo 기반 saveContent를 재사용한다.
-     * revision_write_id는 base revision과 content hash로 결정해 같은 요청 재시도를 멱등하게 만든다.
+     *
+     * <p>{@code revisionWriteId}는 호출부가 <b>placeholder 치환 전</b> 요청 본문에서 만든다.
+     * 치환 후 본문으로 만들면 재시도마다 새로 발급되는 asset ID 때문에 값이 달라져
+     * 같은 요청의 재시도를 알아보지 못한다.
      */
     public DocumentContentSaveResponse saveContentWithAssets(
             String workspaceId,
@@ -1383,6 +1386,7 @@ public class DocumentService {
             String documentId,
             String markdown,
             long baseVersion,
+            String revisionWriteId,
             Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> storedAssets,
             String applyOperationId
     ) {
@@ -1401,7 +1405,6 @@ public class DocumentService {
             return null;
         });
 
-        String revisionWriteId = "assets:" + documentId + ":" + baseVersion + ":" + content.contentHash();
         DocumentContentSaveResponse saved;
         try {
             saved = saveContent(workspaceId, userId, documentId, content.markdown(),

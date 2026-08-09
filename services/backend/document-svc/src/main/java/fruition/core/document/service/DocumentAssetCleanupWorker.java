@@ -20,17 +20,20 @@ public class DocumentAssetCleanupWorker {
     private final DocumentAssetRepository assetRepository;
     private final DocumentAssetOrphanRepository orphanRepository;
     private final DocumentAssetObjectStorage objectStorage;
+    private final DocumentAssetOrphanRegistry orphanRegistry;
     private final TransactionTemplate transactionTemplate;
 
     public DocumentAssetCleanupWorker(
             DocumentAssetRepository assetRepository,
             DocumentAssetOrphanRepository orphanRepository,
             DocumentAssetObjectStorage objectStorage,
+            DocumentAssetOrphanRegistry orphanRegistry,
             TransactionTemplate transactionTemplate
     ) {
         this.assetRepository = assetRepository;
         this.orphanRepository = orphanRepository;
         this.objectStorage = objectStorage;
+        this.orphanRegistry = orphanRegistry;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -42,17 +45,25 @@ public class DocumentAssetCleanupWorker {
     /**
      * object storage 삭제를 트랜잭션 밖에서 수행한다. storage가 느리거나 멈춰도 DB 트랜잭션과
      * 커넥션을 붙잡지 않는다. object 삭제와 row 삭제 모두 멱등이라 다음 실행에서 다시 시도해도 안전하다.
+     *
+     * <p>row를 먼저 지우고 object를 나중에 지운다. 후보 조회와 삭제 사이에 asset이 다시 참조되면
+     * 조건부 삭제가 0행을 지워 object는 그대로 남는다. 반대 순서면 파일만 사라져 복구할 수 없다.
      */
     public void cleanup(Instant now) {
         Instant threshold = now.minus(RETENTION);
 
         for (Candidate candidate : loadUnreferencedAssets(threshold)) {
+            Integer deleted = transactionTemplate.execute(status ->
+                    assetRepository.deleteIfStillUnreferenced(candidate.id(), threshold));
+            if (deleted == null || deleted == 0) {
+                continue; // 다시 참조된 asset. object를 지우면 안 된다.
+            }
             try {
                 objectStorage.delete(candidate.storageKey());
-            } catch (DocumentAssetStorageException ignored) {
-                continue; // DB row를 유지해 다음 worker 실행에서 재시도한다.
+            } catch (DocumentAssetStorageException exception) {
+                // row는 이미 사라졌으므로 orphan으로 넘겨 다음 실행에서 object만 다시 지운다.
+                orphanRegistry.record(candidate.id(), candidate.storageKey(), exception.getMessage());
             }
-            inTransaction(() -> assetRepository.deleteById(candidate.id()));
         }
 
         for (Candidate candidate : loadRetryableOrphans(threshold)) {

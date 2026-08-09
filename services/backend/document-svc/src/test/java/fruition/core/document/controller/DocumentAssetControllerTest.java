@@ -5,6 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.request.WebRequest;
 
 import java.io.ByteArrayInputStream;
 import java.util.UUID;
@@ -30,7 +34,7 @@ class DocumentAssetControllerTest {
         when(readService.openStream(metadata))
                 .thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
 
-        var response = controller.getContent("ws_1", "user_1", assetId, null);
+        var response = controller.getContent("ws_1", "user_1", assetId, webRequest(null));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getHeaders().getContentType().toString()).isEqualTo("image/png");
@@ -48,12 +52,32 @@ class DocumentAssetControllerTest {
                 new DocumentAssetReadService.AssetMetadata(
                         "image/png", 3, "\"hash\"", "assets/ws_1/content"));
 
-        var response = controller.getContent("ws_1", "user_1", assetId, "\"hash\"");
+        var response = controller.getContent("ws_1", "user_1", assetId, webRequest("\"hash\""));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_MODIFIED);
         assertThat(response.getHeaders().getETag()).isEqualTo("\"hash\"");
         assertThat(response.getBody()).isNull();
         assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).contains("private");
         verify(readService, never()).openStream(any());
+    }
+
+    @Test
+    void getContent_weakAndListedEtagsAlsoReturnNotModified() {
+        UUID assetId = UUID.randomUUID();
+        when(readService.readMetadata("ws_1", "user_1", assetId)).thenReturn(
+                new DocumentAssetReadService.AssetMetadata(
+                        "image/png", 3, "\"hash\"", "assets/ws_1/content"));
+
+        assertThat(controller.getContent("ws_1", "user_1", assetId, webRequest("W/\"hash\""))
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_MODIFIED);
+        assertThat(controller.getContent("ws_1", "user_1", assetId, webRequest("\"other\", \"hash\""))
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_MODIFIED);
+        verify(readService, never()).openStream(any());
+    }
+
+    private WebRequest webRequest(String ifNoneMatch) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/workspaces/ws_1/assets");
+        if (ifNoneMatch != null) request.addHeader(HttpHeaders.IF_NONE_MATCH, ifNoneMatch);
+        return new ServletWebRequest(request, new MockHttpServletResponse());
     }
 }

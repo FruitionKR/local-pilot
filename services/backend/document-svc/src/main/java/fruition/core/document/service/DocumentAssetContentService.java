@@ -48,10 +48,14 @@ public class DocumentAssetContentService {
         Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> stored =
                 storageCoordinator.storeAll(workspaceId, validated);
         String finalMarkdown = replacePlaceholders(request.markdown(), workspaceId, stored);
+        // 치환 전 본문으로 만들어야 클라이언트가 같은 요청을 재전송했을 때 같은 write ID가 나온다.
+        // 치환 후 본문은 asset ID가 매번 새로 생겨 재시도를 알아볼 수 없다.
+        String revisionWriteId = "assets:" + documentId + ":" + request.baseVersion()
+                + ":" + DocumentEditingRules.markdown(request.markdown()).contentHash();
         try {
             DocumentContentSaveResponse saved = documentService.saveContentWithAssets(
-                    workspaceId, userId, documentId, finalMarkdown, request.baseVersion(), stored,
-                    applyOperationId);
+                    workspaceId, userId, documentId, finalMarkdown, request.baseVersion(),
+                    revisionWriteId, stored, applyOperationId);
             if (!saved.changed()) storageCoordinator.compensate(stored.values());
             return new DocumentContentSaveResponse(
                     saved.documentId(), saved.currentVersion(), saved.contentHash(), saved.updatedAt(),

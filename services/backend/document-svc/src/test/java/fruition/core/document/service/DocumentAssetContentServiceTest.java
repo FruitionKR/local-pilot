@@ -47,7 +47,7 @@ class DocumentAssetContentServiceTest {
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
-                eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), any(), eq("operation_1")))
+                eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), any(), any(), eq("operation_1")))
                 .thenAnswer(invocation -> new DocumentContentSaveResponse(
                         "doc_1", 4, "a".repeat(64), Instant.now(), true,
                         invocation.getArgument(3), List.of()));
@@ -83,7 +83,7 @@ class DocumentAssetContentServiceTest {
         when(storageCoordinator.storeAll("ws_1", Map.of(attachmentId, validated)))
                 .thenReturn(Map.of(attachmentId, stored));
         when(documentService.saveContentWithAssets(
-                any(), any(), any(), any(), any(Long.class), any(), any()))
+                any(), any(), any(), any(), any(Long.class), any(), any(), any()))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
 
         assertThatThrownBy(() -> service().save(
