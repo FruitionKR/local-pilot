@@ -10,6 +10,7 @@ resources:
   - document-svc.yaml
   - access-svc.yaml
   - pipeline-api.yaml
+  - pipeline-agent-worker.yaml
   - ingest-worker.yaml
   - task-workers.yaml
   - edit-event-consumer.yaml
