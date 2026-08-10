@@ -53,6 +53,7 @@ data:
   OAUTH_FRONTEND_REDIRECT_URI: "http://localhost:3000/oauth/callback"
   # --- pipeline-api / ingest-worker ---
   LLM_PROVIDER: "upstage"
+  AI_ENABLED_PROVIDERS: "openai"
   LLM_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai"
   LLM_MODEL: "gemini-flash-latest"
   LANGSMITH_TRACING: "false"

@@ -41,7 +41,8 @@ class QueryMessageRecorderTest {
         Instant createdAt = Instant.parse("2026-07-21T01:00:00Z");
 
         recorder.createPendingPair(
-                "session_abc123", "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", "질문", createdAt);
+                "session_abc123", "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", "질문", createdAt,
+                "gemini", "gemini-3.6-flash");
 
         ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.forClass(List.class);
         verify(chatMessageRepository).saveAll(captor.capture());
@@ -51,6 +52,8 @@ class QueryMessageRecorderTest {
         assertThat(captor.getValue().get(0).getRole()).isEqualTo("user");
         assertThat(captor.getValue().get(0).getStatus()).isEqualTo("completed");
         assertThat(captor.getValue().get(0).getContent()).isEqualTo("질문");
+        assertThat(captor.getValue().get(0).getAiProvider()).isEqualTo("gemini");
+        assertThat(captor.getValue().get(0).getAiModel()).isEqualTo("gemini-3.6-flash");
         assertThat(captor.getValue().get(1).getRole()).isEqualTo("assistant");
         assertThat(captor.getValue().get(1).getStatus()).isEqualTo("pending");
         assertThat(captor.getValue().get(1).getContent()).isEmpty();

@@ -33,8 +33,10 @@ class QueryRunServiceTest {
     void start_createsPendingMessagesAndCommand() {
         QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123",
                 "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("ws_abc123", "session_abc123", "질문")).thenReturn(pending);
-        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123"))
+        when(queryRunStore.create("ws_abc123", "session_abc123", "openai", "gpt-4.1-mini", "질문"))
+                .thenReturn(pending);
+        when(queryService.prepareMessages("session_abc123", "질문", "query_abc123",
+                "openai", "gpt-4.1-mini"))
                 .thenReturn(new QueryService.QueryMessageContext(
                         "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt()));
 

@@ -1,0 +1,2 @@
+ALTER TABLE users
+    ADD COLUMN web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE;

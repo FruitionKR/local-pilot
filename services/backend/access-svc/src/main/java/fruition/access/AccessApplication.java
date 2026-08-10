@@ -13,6 +13,7 @@ import fruition.shared.util.OpenApiConfig;
  */
 @SpringBootApplication(scanBasePackages = {
         "fruition.access",
+        "fruition.shared.ai",
         "fruition.shared.security",
         "fruition.shared.idempotency"
 })

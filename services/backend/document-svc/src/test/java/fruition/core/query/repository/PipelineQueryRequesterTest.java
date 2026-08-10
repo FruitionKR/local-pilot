@@ -50,8 +50,18 @@ class PipelineQueryRequesterTest {
         assertThat(capturedBody.get())
                 .contains("\"workspace_id\":\"ws_abc123\"")
                 .contains("\"question\":\"질문\"")
+                .contains("\"provider\":\"openai\"")
+                .contains("\"model\":\"gpt-4.1-mini\"")
+                .contains("\"allow_web_search\":false")
                 .doesNotContain("request_id")
                 .doesNotContain("log_callback_url");
+    }
+
+    @Test
+    void query_sendsAllowWebSearchAsBoolean() {
+        requester().query("ws_abc123", "질문", "openai", "gpt-4.1-mini", true);
+
+        assertThat(capturedBody.get()).contains("\"allow_web_search\":true");
     }
 
     private static String minimalPipelineResponseJson() {

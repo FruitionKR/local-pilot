@@ -30,11 +30,40 @@ public class QueryMessageRecorder {
                                   String assistantMessageId,
                                   String question,
                                   Instant createdAt) {
+        createPendingPair(sessionId, pairId, userMessageId, assistantMessageId, question, createdAt,
+                "openai", "gpt-4.1-mini");
+    }
+
+    @Transactional
+    public void createPendingPair(String sessionId,
+                                  String pairId,
+                                  String userMessageId,
+                                  String assistantMessageId,
+                                  String question,
+                                  Instant createdAt,
+                                  String provider,
+                                  String model) {
+        createPendingPair(sessionId, pairId, userMessageId, assistantMessageId, question, createdAt,
+                provider, model, false);
+    }
+
+    @Transactional
+    public void createPendingPair(String sessionId,
+                                  String pairId,
+                                  String userMessageId,
+                                  String assistantMessageId,
+                                  String question,
+                                  Instant createdAt,
+                                  String provider,
+                                  String model,
+                                  boolean webSearchEnabled) {
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ChatSessionNotFoundException(sessionId));
         chatMessageRepository.saveAll(List.of(
-                new ChatMessage(userMessageId, session, pairId, "user", question, "completed", createdAt, null),
-                new ChatMessage(assistantMessageId, session, pairId, "assistant", "", "pending", createdAt, null)
+                new ChatMessage(userMessageId, session, pairId, "user", question, "completed", createdAt,
+                        null, provider, model, webSearchEnabled),
+                new ChatMessage(assistantMessageId, session, pairId, "assistant", "", "pending", createdAt,
+                        null, provider, model, webSearchEnabled)
         ));
         session.touchLastMessageAt(createdAt);
         chatSessionRepository.save(session);

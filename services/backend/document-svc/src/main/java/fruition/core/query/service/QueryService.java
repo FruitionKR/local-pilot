@@ -52,11 +52,33 @@ public class QueryService {
     }
 
     public QueryResponse query(String workspaceId, String sessionId, String question) {
-        QueryMessageContext messageContext = prepareMessages(sessionId, question, null);
-        return querySynchronously(workspaceId, sessionId, question, messageContext);
+        return query(workspaceId, sessionId, question, "openai", "gpt-4.1-mini");
+    }
+
+    public QueryResponse query(String workspaceId, String sessionId, String question,
+                               String provider, String model) {
+        return query(workspaceId, sessionId, question, provider, model, false);
+    }
+
+    public QueryResponse query(String workspaceId, String sessionId, String question,
+                               String provider, String model, boolean webSearchEnabled) {
+        QueryMessageContext messageContext = prepareMessages(
+                sessionId, question, null, provider, model, webSearchEnabled);
+        return querySynchronously(
+                workspaceId, sessionId, question, provider, model, webSearchEnabled, messageContext);
     }
 
     public QueryMessageContext prepareMessages(String sessionId, String question, String requestId) {
+        return prepareMessages(sessionId, question, requestId, "openai", "gpt-4.1-mini");
+    }
+
+    public QueryMessageContext prepareMessages(String sessionId, String question, String requestId,
+                                               String provider, String model) {
+        return prepareMessages(sessionId, question, requestId, provider, model, false);
+    }
+
+    public QueryMessageContext prepareMessages(String sessionId, String question, String requestId,
+                                               String provider, String model, boolean webSearchEnabled) {
         Instant createdAt = Instant.now();
         QueryMessageContext context = new QueryMessageContext(
                 UUID.randomUUID().toString(),
@@ -66,8 +88,15 @@ public class QueryService {
         );
         log.info("[질의 메시지 ID 생성] requestId={} pairId={} userMessageId={} assistantMessageId={}",
                 requestId, context.pairId(), context.userMessageId(), context.assistantMessageId());
-        queryMessageRecorder.createPendingPair(
-                sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question, createdAt);
+        if (webSearchEnabled) {
+            queryMessageRecorder.createPendingPair(
+                    sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question,
+                    createdAt, provider, model, true);
+        } else {
+            queryMessageRecorder.createPendingPair(
+                    sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question,
+                    createdAt, provider, model);
+        }
         log.info("[질의 메시지 선저장 commit 완료] requestId={} pairId={} userStatus=completed assistantStatus=pending",
                 requestId, context.pairId());
         return context;
@@ -76,6 +105,9 @@ public class QueryService {
     private QueryResponse querySynchronously(String workspaceId,
                                              String sessionId,
                                              String question,
+                                             String provider,
+                                             String model,
+                                             boolean webSearchEnabled,
                                              QueryMessageContext messageContext) {
         log.info("[질의 처리 시작] sessionId={} questionLength={}", sessionId, question.length());
         ChatSession session = chatSessionRepository.findById(sessionId)
@@ -88,7 +120,9 @@ public class QueryService {
 
         try {
             log.info("[질의 파이프라인 호출 시작] sessionId={}", sessionId);
-            PipelineQueryResponse pipelineResponse = pipelineQueryClient.query(workspaceId, question);
+            PipelineQueryResponse pipelineResponse = webSearchEnabled
+                    ? pipelineQueryClient.query(workspaceId, question, provider, model, true)
+                    : pipelineQueryClient.query(workspaceId, question, provider, model);
             log.info("[질의 파이프라인 응답 수신] answerLength={} relatedPageCount={} evidenceCount={} traversalPathCount={}",
                     pipelineResponse.answer() != null ? pipelineResponse.answer().length() : 0,
                     pipelineResponse.relatedPages() != null ? pipelineResponse.relatedPages().size() : 0,

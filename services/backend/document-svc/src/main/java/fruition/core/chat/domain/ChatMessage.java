@@ -39,10 +39,32 @@ public class ChatMessage {
     @Column(name = "wiki_page_id")
     private String wikiPageId;
 
+    @Column(name = "ai_provider")
+    private String aiProvider;
+
+    @Column(name = "ai_model")
+    private String aiModel;
+
+    @Column(name = "web_search_enabled")
+    private Boolean webSearchEnabled;
+
     protected ChatMessage() {}
 
     public ChatMessage(String id, ChatSession session, String pairId, String role, String content,
                        String status, Instant createdAt, String errorMessage) {
+        this(id, session, pairId, role, content, status, createdAt, errorMessage, null, null);
+    }
+
+    public ChatMessage(String id, ChatSession session, String pairId, String role, String content,
+                       String status, Instant createdAt, String errorMessage,
+                       String aiProvider, String aiModel) {
+        this(id, session, pairId, role, content, status, createdAt, errorMessage,
+                aiProvider, aiModel, false);
+    }
+
+    public ChatMessage(String id, ChatSession session, String pairId, String role, String content,
+                       String status, Instant createdAt, String errorMessage,
+                       String aiProvider, String aiModel, boolean webSearchEnabled) {
         this.id = id;
         this.session = session;
         this.pairId = pairId;
@@ -51,6 +73,9 @@ public class ChatMessage {
         this.status = status;
         this.createdAt = createdAt;
         this.errorMessage = errorMessage;
+        this.aiProvider = aiProvider;
+        this.aiModel = aiModel;
+        this.webSearchEnabled = webSearchEnabled;
     }
 
     /** 이 메시지(문답)가 세션 위키 source page에 편입됐음을 기록한다. */
@@ -77,4 +102,7 @@ public class ChatMessage {
     public Instant getCreatedAt() { return createdAt; }
     public String getErrorMessage() { return errorMessage; }
     public String getWikiPageId() { return wikiPageId; }
+    public String getAiProvider() { return aiProvider; }
+    public String getAiModel() { return aiModel; }
+    public Boolean getWebSearchEnabled() { return webSearchEnabled; }
 }

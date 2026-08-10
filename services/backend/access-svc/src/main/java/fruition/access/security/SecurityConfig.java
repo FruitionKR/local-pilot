@@ -73,7 +73,7 @@ public class SecurityConfig {
                 // deny-by-default: 공개 경로만 명시하고 나머지는 전부 인증을 요구한다.
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/auth/me", "/api/auth/me/**").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()

@@ -2,6 +2,7 @@ package fruition.core.document.repository;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import fruition.core.authz.WorkspaceAiModelClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -13,22 +14,28 @@ public class IngestCommandOutbox {
 
     private final AiCommandOutboxWriter writer;
     private final String commandTopic;
+    private final WorkspaceAiModelClient workspaceAiModelClient;
 
     public IngestCommandOutbox(AiCommandOutboxWriter writer,
-                               @Value("${app.processing.command-topic}") String commandTopic) {
+                               @Value("${app.processing.command-topic}") String commandTopic,
+                               WorkspaceAiModelClient workspaceAiModelClient) {
         this.writer = writer;
         this.commandTopic = commandTopic;
+        this.workspaceAiModelClient = workspaceAiModelClient;
     }
 
     public void enqueue(String runId, String documentId, String userId, String workspaceId,
                         String selectionMode, String inputMarkdown, boolean chatWiki, String operationId,
                         long sourceRevision, String sourceContentHash) {
+        WorkspaceAiModelClient.AiModelSelection aiModel = workspaceAiModelClient.get(workspaceId);
         IngestCommand command = new IngestCommand(
                 runId,
                 chatWiki ? "chat_wiki" : "document",
                 documentId,
                 userId,
                 workspaceId,
+                aiModel.provider(),
+                aiModel.model(),
                 selectionMode,
                 inputMarkdown,
                 operationId,
@@ -50,6 +57,8 @@ public class IngestCommandOutbox {
             @JsonProperty("document_id") String documentId,
             @JsonProperty("user_id") String userId,
             @JsonProperty("workspace_id") String workspaceId,
+            String provider,
+            String model,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("selection_mode") String selectionMode,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("operation_id") String operationId,

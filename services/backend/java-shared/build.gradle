@@ -17,4 +17,5 @@ dependencies {
 	api 'io.minio:minio:8.5.7'
 	// OpenApiConfig
 	api 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.16'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }

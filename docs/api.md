@@ -13,6 +13,11 @@
 
 ## 인증
 
+- `GET /api/auth/me/settings` — 현재 사용자의 전역 웹 검색 설정 조회
+- `PUT /api/auth/me/settings` — `{"web_search_enabled": true|false}`로 설정 변경
+- 기본값은 `false`이며 모든 워크스페이스의 이후 Query에 적용된다. Query 요청에서는 이 값을 받지 않는다.
+- backend가 AI Query를 호출할 때 저장된 설정을 `allow_web_search` boolean으로 전달한다.
+
 베이스 `/api/auth`. 아래 중 `/me`만 인증 필요.
 
 | Method | Path | 설명 |
@@ -33,6 +38,12 @@
 
 - 워크스페이스 CRUD 자체는 별도 스펙 문서 없음. 회원가입/OAuth 최초 가입 시 `WorkspaceService.createDefault`로 기본 워크스페이스 생성.
 - `/api/workspaces/{workspace_id}/**` 하위 모든 도메인 API는 인증 + 활성 멤버십(`workspace_member`) 검증. 미소유는 존재를 감추고 404 `WORKSPACE_NOT_FOUND`.
+- `GET /api/workspaces/{workspace_id}/ai-model-settings`: OWNER·MEMBER가 workspace AI 모델 설정을 조회.
+- `PUT /api/workspaces/{workspace_id}/ai-model-settings`: OWNER만 활성 model catalog 내 `provider`+`model` 조합으로 변경. 기본값은 `openai`+`gpt-4.1-mini`.
+
+## AI 모델
+
+- `GET /api/ai-models`: `AI_ENABLED_PROVIDERS`에 포함된 provider의 선택 가능 model catalog를 반환한다. API key는 노출하지 않는다.
 
 ## 문서
 
@@ -97,10 +108,10 @@ Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_op
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`. 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
-| POST | `.../chat/sessions/{id}/query/runs` | 비동기 질의 시작(202). 응답 `request_id`, `status=pending` |
+| POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`, 선택 `provider`+`model`(함께 생략 시 workspace 설정). 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
+| POST | `.../chat/sessions/{id}/query/runs` | 비동기 질의 시작(202). 동일한 모델 선택 규칙 적용. 응답 `request_id`, `status=pending` |
 | GET | `/api/query/runs/{requestId}/events` | **SSE** 완료 구독. 이벤트 `query.completed`/`query.failed`, buffer 200건 재생 |
-| GET | `/api/query/runs/{requestId}` | run 상태 **폴링**(`pending`/`running`/`completed`/`failed`, 완료 시 `result`) |
+| GET | `/api/query/runs/{requestId}` | run 상태 **폴링**(`pending`/`running`/`completed`/`failed`, `provider`, `model`, 완료 시 `result`) |
 
 원문: docs/backlog/spec/api/query.md
 

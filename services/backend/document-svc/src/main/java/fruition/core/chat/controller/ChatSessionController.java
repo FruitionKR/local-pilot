@@ -157,7 +157,8 @@ public class ChatSessionController {
                     var relatedPages = relatedPagesByMessageId.getOrDefault(m.getId(), List.of());
                     var partialWikiPageIds = partialPagesByPairId.getOrDefault(m.getPairId(), List.of());
                     return new ChatMessageResponse(m.getId(), m.getPairId(), m.getRole(), m.getContent(), m.getStatus(), m.getCreatedAt(),
-                            relatedPages, refs, m.getWikiPageId(), partialWikiPageIds, m.getErrorMessage());
+                            relatedPages, refs, m.getWikiPageId(), partialWikiPageIds, m.getErrorMessage(),
+                            m.getAiProvider(), m.getAiModel(), m.getWebSearchEnabled());
                 })
                 .toList();
 
