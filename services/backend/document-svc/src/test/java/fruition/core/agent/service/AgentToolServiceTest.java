@@ -7,6 +7,7 @@ import fruition.core.agent.repository.PipelineAgentToolAuthorizationClient;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
 import fruition.core.document.dto.DocumentRenameResponse;
+import fruition.core.document.dto.FolderPositionRequest;
 import fruition.core.document.dto.FolderResponse;
 import fruition.core.document.mongo.MongoDocumentEditState;
 import fruition.core.document.mongo.MongoDocumentEditStore;
@@ -24,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -107,6 +109,46 @@ class AgentToolServiceTest {
         InOrder order = inOrder(authorizationClient, folderService);
         order.verify(authorizationClient).authorizeExecute("create_folder", request);
         order.verify(folderService).create(eq("workspace-1"), eq("user-1"), eq("idem-1"), any());
+    }
+
+    @Test
+    void execute_acceptsExactlyIntegralDecimalsAfterAiAuthorization() throws Exception {
+        UUID folderId = UUID.randomUUID();
+        var arguments = objectMapper.readTree("""
+                {"folder_id":"%s","parent_folder_id":null,"position":1.0,"base_version":3.0}
+                """.formatted(folderId));
+        AgentToolExecuteRequest request = executeRequest(arguments);
+        FolderResponse expected = new FolderResponse(folderId, null, "폴더", 1, 4, null, null);
+        FolderPositionRequest expectedPosition = new FolderPositionRequest(null, 1, 3L);
+        when(folderService.move("workspace-1", "user-1", folderId, "idem-1", expectedPosition))
+                .thenReturn(expected);
+
+        Object result = service.execute("move_folder", request);
+
+        assertThat(result).isSameAs(expected);
+        InOrder order = inOrder(authorizationClient, folderService);
+        order.verify(authorizationClient).authorizeExecute("move_folder", request);
+        order.verify(folderService).move("workspace-1", "user-1", folderId, "idem-1", expectedPosition);
+    }
+
+    @Test
+    void execute_rejectsFractionalAndOutOfRangeNumbersAfterAiAuthorization() throws Exception {
+        UUID folderId = UUID.randomUUID();
+        for (String argumentsJson : List.of(
+                "{\"folder_id\":\"%s\",\"parent_folder_id\":null,\"position\":1,\"base_version\":3.5}",
+                "{\"folder_id\":\"%s\",\"parent_folder_id\":null,\"position\":2147483648,\"base_version\":3}",
+                "{\"folder_id\":\"%s\",\"parent_folder_id\":null,\"position\":1,\"base_version\":9223372036854775808}"
+        )) {
+            AgentToolExecuteRequest request = executeRequest(
+                    objectMapper.readTree(argumentsJson.formatted(folderId)));
+
+            assertThatThrownBy(() -> service.execute("move_folder", request))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            exception -> assertThat(exception.getStatusCode().value()).isEqualTo(400));
+            verify(authorizationClient).authorizeExecute("move_folder", request);
+        }
+
+        verifyNoInteractions(folderService);
     }
 
     @Test

@@ -203,7 +203,7 @@ public class AgentToolService {
 
     private static long positiveLong(JsonNode arguments, String field) {
         JsonNode value = arguments.get(field);
-        if (value == null || !value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 1) {
+        if (!isExactInteger(value) || !value.canConvertToLong() || value.longValue() < 1) {
             throw badRequest(field + " 값은 1 이상이어야 합니다.");
         }
         return value.longValue();
@@ -214,10 +214,15 @@ public class AgentToolService {
         if (value.isNull()) {
             return null;
         }
-        if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 0) {
+        if (!isExactInteger(value) || !value.canConvertToInt() || value.intValue() < 0) {
             throw badRequest(field + " 값은 0 이상이어야 합니다.");
         }
         return value.intValue();
+    }
+
+    private static boolean isExactInteger(JsonNode value) {
+        return value != null && value.isNumber()
+                && value.decimalValue().stripTrailingZeros().scale() <= 0;
     }
 
     private static ResponseStatusException badRequest(String message) {
