@@ -34,6 +34,12 @@ AGENT_SKILLS_ENABLED = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() i
     "yes",
     "on",
 }
+SKILL_API_ENABLED = os.environ.get("SKILL_API_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def require_internal_token(
@@ -124,10 +130,11 @@ include_internal_router(query_router, internal_token_dependencies)
 include_internal_router(pipeline_router, internal_token_dependencies)
 include_internal_router(wiki_schema_router, internal_token_dependencies)
 include_internal_router(agent_run_status_router, internal_token_dependencies)
+agent_service_dependencies = [Depends(require_agent_service_token)]
 if AGENT_SKILLS_ENABLED:
-    # agent run·skill 관리 API는 내부 토큰이 아니라 agent service token으로만 보호한다.
-    agent_service_dependencies = [Depends(require_agent_service_token)]
+    # agent run API는 내부 토큰이 아니라 agent service token으로만 보호한다.
     app.include_router(agent_run_router, dependencies=agent_service_dependencies)
+if SKILL_API_ENABLED:
     app.include_router(skill_router, dependencies=agent_service_dependencies)
 
 

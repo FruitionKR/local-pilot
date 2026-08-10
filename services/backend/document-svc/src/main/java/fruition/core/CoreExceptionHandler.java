@@ -12,6 +12,8 @@ import fruition.core.aihistory.exception.OperationNotFoundException;
 import fruition.core.aihistory.exception.RestorePreviewStaleException;
 import fruition.core.aihistory.exception.WikiObjectReadException;
 import fruition.core.wikischema.exception.PipelineWikiSchemaException;
+import fruition.core.skill.exception.PipelineSkillException;
+import fruition.core.skill.exception.SkillReferenceDocumentTooLargeException;
 import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.core.document.exception.DocumentAlreadyProcessingException;
 import fruition.core.document.exception.DocumentContentVersionNotFoundException;
@@ -64,6 +66,24 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 /** document 앱 전용 예외 매핑. 공통 매핑은 {@link BaseExceptionHandler}에서 상속한다. */
 @RestControllerAdvice
 public class CoreExceptionHandler extends BaseExceptionHandler {
+
+    @ExceptionHandler(PipelineSkillException.class)
+    public ResponseEntity<ErrorResponse> handlePipelineSkill(PipelineSkillException e) {
+        if (e.getHttpStatus() >= 400 && e.getHttpStatus() < 500) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .body(ErrorResponse.of("SKILL_REQUEST_REJECTED", e.getMessage()));
+        }
+        return ResponseEntity.status(e.getHttpStatus())
+                .body(ErrorResponse.of("SKILL_AI_UNAVAILABLE", e.getMessage()));
+    }
+
+    @ExceptionHandler(SkillReferenceDocumentTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleSkillReferenceDocumentTooLarge(
+            SkillReferenceDocumentTooLargeException e
+    ) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(ErrorResponse.of("REFERENCE_DOCUMENT_TOO_LARGE", e.getMessage()));
+    }
 
     @ExceptionHandler(PipelineWikiPageException.class)
     public ResponseEntity<?> handlePipelineWikiPage(PipelineWikiPageException e) {

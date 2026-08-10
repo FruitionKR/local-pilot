@@ -100,6 +100,7 @@ services:
       CHAT_PROCESSING_ENDPOINT: http://pipeline-api:8000/chat-wiki/runs
       QUERY_ENDPOINT: http://pipeline-api:8000/query
       AGENT_STATUS_ENDPOINT: http://pipeline-api:8000/internal/agent/runs
+      SKILL_ENDPOINT: http://pipeline-api:8000/skills
       WIKI_SCHEMA_ENDPOINT: http://pipeline-api:8000/wiki-schema
       WIKI_PAGE_ENDPOINT: http://pipeline-api:8000/wiki/pages
       WIKI_STATE_ENDPOINT: http://pipeline-api:8000/wiki

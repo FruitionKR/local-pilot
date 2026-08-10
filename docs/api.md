@@ -6,7 +6,7 @@
 
 - 서비스 라우팅: `/api/auth/*`·`/api/workspaces` → access-svc(:8081), 그 외 → document-svc(:8080).
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
-- 사용자 API는 authenticated다. health·OpenAPI만 permitAll이다. `/internal/**`는 원칙적으로 `X-Internal-Token`을 검증하고, Agent worker가 document-svc의 Tool을 호출하는 `/internal/agent/tools/**`는 `X-Agent-Service-Token`을 검증한다.
+- 사용자 API는 authenticated다. health·OpenAPI만 permitAll이다. `/internal/**`는 원칙적으로 `X-Internal-Token`을 검증하고, Agent worker가 document-svc의 Tool을 호출하는 `/internal/agent/tools/**`와 Skill 참조 read는 `X-Agent-Service-Token`을 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
 - Query·ingest·lint Kafka command는 backend DB에서 실행 시 선택한 `model`을 전달하며 ai-svc는 이를 해당 실행에만 적용한다. Provider·API key·base URL은 ai-svc env 설정을 사용한다. Query command의 필수 boolean `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하지만, 실제 검색 여부는 기존 evaluator·내부 관련도 fallback 정책이 결정한다. `LLM_API_KEY`·`LLM_BASE_URL`·`TAVILY_API_KEY`는 command에 넣지 않고 ai-svc secret env에서 읽는다.
@@ -96,6 +96,24 @@ Agent Tool P0 내부 계약:
 | POST | `/internal/agent/runs/tool-authorizations/execute` | document-svc가 ai-svc에 plan version·operation hash·tool·선행 operation 결과를 포함한 승인 인자 일치 인가 요청 |
 
 Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 `apply_operation_id`를 operation/version audit와 같은 core 트랜잭션에서 한 번만 소비한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
+
+## Skill
+
+베이스 `/api/workspaces/{workspace_id}/skills`. document-svc는 JWT principal과 path workspace를 신뢰 경계로 삼아 멤버십을 fail-closed 확인한 뒤, `X-Agent-Service-Token`으로 보호된 ai-svc Skill API에 두 scope 값만 추가해 중계한다. Skill·version 저장은 ai_db 소유이며 document-svc는 Skill 엔티티를 저장하지 않는다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/skills/author` | 자연어와 선택적 참조 문서 ID로 미저장 Skill 제안 생성 |
+| POST | `/skills/author/publish` | 검토한 Skill Markdown을 재검증하고 게시 |
+| GET | `/skills` | 개인·현재 Workspace 팀 Skill 목록 |
+| GET | `/skills/{skill_id}` | 접근 가능한 Skill 상세 |
+| PATCH | `/skills/{skill_id}` | 사용자 Markdown을 재검증해 새 게시 version으로 갱신 |
+| POST | `/skills/{skill_id}/enable` | Skill 자동 라우팅 활성화 |
+| POST | `/skills/{skill_id}/disable` | Skill 자동 라우팅 비활성화 |
+
+참조 문서는 ai-svc가 `POST /internal/agent/skill-authoring/references/read`를 호출해 scope와 role을 확인한다. document-svc는 service token, workspace 멤버십과 활성 문서를 검증하고, EDITABLE은 workspace가 일치하는 MongoDB canonical Markdown을 반환한다. ORIGINAL은 role만 반환하며 ai-svc가 소유한 ai_db `source_blocks`를 `block_id` 순으로 조립한다.
+
+ai-svc의 `/skills/*`는 `SKILL_API_ENABLED`(기본 `true`), `/agent/runs/*`는 `AGENT_SKILLS_ENABLED`(기본 `false`)로 독립 제어한다. EDITABLE 참조 Markdown은 문서당 30,000자까지 허용하며 초과 시 413 `REFERENCE_DOCUMENT_TOO_LARGE`를 반환한다. ai-svc가 거부한 Skill 4xx는 상태를 유지하고 `{ "error": { "code": "SKILL_REQUEST_REJECTED", "message": "..." } }` envelope로 정규화한다.
 
 ## 채팅
 

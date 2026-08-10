@@ -982,7 +982,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
     def test_backend_reference_reader_uses_authoring_endpoint_without_agent_run(self) -> None:
         response = MagicMock()
         response.read.return_value = json.dumps(
-            {"markdown": "# 회의록"},
+            {"document_role": "EDITABLE", "markdown": "# 회의록"},
             ensure_ascii=False,
         ).encode("utf-8")
         response.__enter__.return_value = response

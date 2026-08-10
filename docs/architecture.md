@@ -14,7 +14,7 @@ services/
 ├─ frontend/       Next.js (Vercel 배포)
 ├─ backend/        Gradle 멀티프로젝트 루트 (gradlew·settings.gradle)
 │  ├─ access-svc/     Spring, :8081  로그인·OAuth·세션·워크스페이스·멤버·권한 projection 소유
-│  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki API·query, core Flyway 소유, stateless
+│  ├─ document-svc/   Spring, :8080  문서·채팅·Wiki·Skill gateway·query, core Flyway 소유, stateless
 │  └─ java-shared/    라이브러리 모듈  JWT(발급·검증)·공통 예외·Idempotency (앱 아님)
 └─ ai/
    ├─ pipeline/    FastAPI, 내부 전용  동기 query·skill·Wiki 조회 + GET /documents (LLM·임베딩)
@@ -38,10 +38,12 @@ services/
 | access → document | `POST /internal/workspaces/{wid}/initial-note` (X-Internal-Token, best-effort, 커밋 후 호출) | 새 워크스페이스 초기 노트 |
 | document → ai-svc | Kafka `ai.ingest.command`(key=document_id), `ai.query.command`, `ai.agent.command`, `ai.maintenance.command` | 비동기 ingest·Query·Agent·Lint·Restore |
 | document → ai-svc | HTTP + X-Internal-Token | 동기 Query, Wiki 현재 상태 조회, pipeline run 폴링, Agent Tool run·승인 인자 인가 |
+| document → ai-svc | HTTP + X-Agent-Service-Token | JWT Skill 관리 요청 중계 |
 | document → converter | HTTP (내부 전용, 큐 worker 경유) | PDF→Markdown 변환 (read timeout 900s) |
 | ai-svc → document | Kafka `ai.task.event` | 작업 결과 전달 |
 | ai-svc → document | 내부 HTTP + X-Internal-Token | ingest 원본 metadata·core 기여 이력 조회 |
 | ai-svc → document | `POST /internal/agent/tools/{read|execute}/{tool}` + X-Agent-Service-Token | P0 문서·폴더 조회와 승인된 변경 실행. document-svc가 core_db·MongoDB 소유 경계에서 실제 처리 |
+| ai-svc → document | `POST /internal/agent/skill-authoring/references/read` + X-Agent-Service-Token | Skill 참조 scope·role 검증, EDITABLE 최신 Mongo Markdown 조회; ORIGINAL은 ai-svc가 ai_db source block 조립 |
 | ai-svc → access | `GET /internal/authz/workspaces/{wid}/users/{uid}` + X-Internal-Token | Skill 팀 범위 멤버·owner 확인 |
 | 사용자 인증 | 각 앱이 JWT(iss·aud, HS256 공유 시크릿) 로컬 검증 | access 호출 없이 검증 |
 
@@ -63,7 +65,7 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 저장소·테이블 상세는 [data-model.md](data-model.md). 요약:
 
 - access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션·workspace AI 모델 설정) + Redis projection
-- document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력·질의 모델 snapshot) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
+- document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력·질의 모델 snapshot) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot). Skill은 저장하지 않고 JWT 인가와 참조 문서 read 경계만 담당한다.
 - ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적·Agent·Skill·LangGraph checkpoint).
 - DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`은 core DB DML 권한과 연결 설정을 갖지 않는다. Markdown Agent 요청 시 document-svc는 core의 좁은 적용 예약 projection과 outbox만 원자 저장하고, AI run 상태는 scope가 포함된 내부 API로 조회한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
 
