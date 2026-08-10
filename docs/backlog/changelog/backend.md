@@ -2,11 +2,41 @@
 
 Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니다.
 
-> AI/LLM/pipeline(llmPipeline) 변경 이력은 `docs/changelog/ai.md`를 참고하세요.
+> AI/LLM/pipeline(llmPipeline) 변경 이력은 `docs/backlog/changelog/ai.md`를 참고하세요.
 
 ---
 
+## 2026-08-09
+
+### feat: Agent Tool Backend 접근 경계 연결
+
+- `X-Agent-Service-Token`으로 보호되는 Agent Tool read·execute 내부 endpoint를 추가했다.
+- AgentRun의 사용자·Workspace 범위와 mutation의 승인된 현재 plan·operation·arguments를 검증하고 기존 문서·폴더 권한, version, idempotency 처리를 재사용했다.
+- `$operation_result`는 성공한 선행 operation 결과로 해석해 승인 범위를 유지하며, 실행 직전 `running` operation만 허용한다.
+- content artifact 계약이 필요한 `create_document__, `apply_document_edit`는 연결 전까지 명시적으로 차단한다.
+- Agent Tool 대상 테스트와 Backend 전체 테스트를 통과했다.
+
+### feat: 완료 AgentRun 기반 Skill 제안 연결
+
+- 선택한 AgentRun의 사용자·Workspace·완료 상태와 성공 operation을 검증해 `/skills/draft-from-runs/preview`로 전달하는 공개 API를 추가했다.
+- AgentRun 실행 기반 schema와 `skill_version_sources` schema를 추가했으며, runtime source 저장 책임은 Skill version을 생성하는 llmPipeline 게시 transaction에 남겼다.
+- llmPipeline 코드는 변경하지 않고 Spring의 source Run 검증과 proposal proxy 경계만 구현했다.
+- Skill 테스트와 Backend 전체 테스트를 통과했다.
+
+### feat: Skill 작성·게시 연동 계약 통일
+
+- Spring 공개 Skill API를 llmPipeline의 `/skills/author`, `/skills/author/publish`, 조회·수정·활성화 계약에 맞춰 proxy 방식으로 통일했다.
+- 사용자 요청에서 capability와 Tool 선택을 제거하고, 내부 service token과 Workspace membership을 검증하는 참조 문서 Markdown 조회 endpoint를 추가했다.
+- llmPipeline Skill repository가 Spring 관리 schema를 사용할 수 있도록 호환 migration을 추가했다.
+- Skill 전용 테스트 10개와 Backend 전체 테스트 534개를 통과했다.
+
 ## 2026-08-08
+
+### refactor: Skill 라우팅 책임을 LLM Pipeline으로 일원화
+
+- Spring의 `SkillExecutionResolver`와 Skill 후보 snapshot 전송을 제거해 중복 DB 조회를 없앴다.
+- Agent 요청의 자연어 메시지와 `/command`를 변경하지 않고 LLM Pipeline에 전달하도록 계약을 정리했다.
+- Backend 전체 테스트 `./gradlew test`를 통과했다.
 
 ### docs: 기존 API Swagger 기능 설명 보강
 
@@ -61,7 +91,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **후속 작업**
 
 - Skill 작성·실행 계약 재정렬 후속 작업은
-  `docs/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
+  `docs/backlog/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
 
 ### feat: Skill 생성 화면용 Backend 연동 경계 추가
 
@@ -89,7 +119,7 @@ Spring Boot 백엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **후속 작업**
 
 - Skill 작성·검토·Agent 실행 계약 후속 작업은
-  `docs/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
+  `docs/backlog/issue/backend/2026-08-09.md`의 `Skill 작성·실행 계약을 기존 llmPipeline 흐름과 재정렬`에서 관리한다.
 
 ## 2026-08-06
 
@@ -465,7 +495,7 @@ Backend가 로컬에서 처리하므로 되돌리기 속도는 그대로다. llm
 
 **남은 것**
 
-llmPipeline 복구 경로에 DB 접근이 없어, 삭제된 페이지의 링크(`wiki_page_links`·`document_wiki_links`)와 임베딩이 정리되지 않는다. `docs/issue/ai/2026-08-03.md`에 요청 항목으로 남겼다.
+llmPipeline 복구 경로에 DB 접근이 없어, 삭제된 페이지의 링크(`wiki_page_links`·`document_wiki_links`)와 임베딩이 정리되지 않는다. `docs/backlog/issue/ai/2026-08-03.md`에 요청 항목으로 남겼다.
 
 ---
 
@@ -517,7 +547,7 @@ llmPipeline의 ingest 경로가 `markdown_uri`를 갱신하고 Backend가 콜백
 
 **llmPipeline 이슈 문서 정정**
 
-`docs/issue/ai/2026-08-03.md`의 L2-3(`ON CONFLICT`에서 `markdown_uri`·`status` 제거 요청)을 **철회**했다. 전제가 틀렸다. 대신 복구로 삭제된 페이지의 **링크·임베딩 정리**를 요청 항목으로 넣었다. 현재 llmPipeline 복구 경로에 DB 접근이 없어 이 정리가 누락된다.
+`docs/backlog/issue/ai/2026-08-03.md`의 L2-3(`ON CONFLICT`에서 `markdown_uri`·`status` 제거 요청)을 **철회**했다. 전제가 틀렸다. 대신 복구로 삭제된 페이지의 **링크·임베딩 정리**를 요청 항목으로 넣었다. 현재 llmPipeline 복구 경로에 DB 접근이 없어 이 정리가 누락된다.
 
 ---
 
@@ -1005,7 +1035,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 **검증**
 
 - 전체 chat 테스트가 통과했다.
-- 다중 세션 목록·전환 Frontend UI는 `docs/issue/frontend/2026-07-23.md`의 미해결 작업으로 유지한다.
+- 다중 세션 목록·전환 Frontend UI는 `docs/backlog/issue/frontend/2026-07-23.md`의 미해결 작업으로 유지한다.
 
 ### fix: 채팅 편입 문서를 워크스페이스 문서 목록에 노출
 
@@ -1032,7 +1062,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 - 외부 Wiki 페이지 이름 변경 API는 워크스페이스 멤버십만 검증하고 llmPipeline의 `PATCH /wiki/pages/{wiki_page_id}/rename`을 호출하도록 변경했다.
 - 이름 변경 경로에서 Backend의 `wiki_pages` 조회·수정을 제거하고, llmPipeline의 `400`·`404`·`409`·`422` 응답을 보존한다.
 - pipeline endpoint·timeout 설정과 연결 실패 시 `503 WIKI_PAGE_PIPELINE_UNAVAILABLE` 응답을 추가했다.
-- llmPipeline 구현 계약과 완료 조건은 `docs/issue/ai/2026-07-28.md`에 기록했다.
+- llmPipeline 구현 계약과 완료 조건은 `docs/backlog/issue/ai/2026-07-28.md`에 기록했다.
 
 **검증**
 
@@ -1081,7 +1111,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 - 쓰기 계열(`saveContent`·`agent/turn`·버전 복원·재ingest)은 **다른 사용자가 유효한 잠금 보유 중이면 `423 DOCUMENT_EDIT_LOCKED`** 로 차단한다. 잠금이 없거나 만료됐거나 본인 보유면 통과(잠금 강제 아님, 비파괴적).
 - `GET /documents/{id}` 응답에 `edit_lock` 필드(보유자·표시 이름·만료 시각) 추가. 열람은 누구나 가능(읽기 전용), 보이는 내용은 마지막 저장본.
 - heartbeat 상실 시 `409 EDIT_LOCK_LOST`. TTL 기본 45초(`app.document.edit-lock.ttl-seconds`).
-- 설계: `docs/design/document-edit-lock.md`, 프론트 계약: `docs/issue/frontend/2026-07-27.md`.
+- 설계: `docs/design/document-edit-lock.md`, 프론트 계약: `docs/backlog/issue/frontend/2026-07-27.md`.
 
 **검증**: `DocumentEditLockServiceTest`(획득 self/other·heartbeat 상실·requireWritable·getStatus) 통과.
 
@@ -1115,7 +1145,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 - `GET /documents/{id}/versions`(목록), `GET /documents/{id}/versions/{version}`(단건 본문), `POST /documents/{id}/versions/{version}/restore`(비파괴 복원) 추가.
 - 스냅샷은 **AI 편집(`source=agent`)일 때만** 기록한다. `PUT /documents/{id}/content`에 선택적 `source` multipart part를 추가했고, `source=agent`이면 저장 성공 시 스냅샷을 남긴다. 수동 저장은 `source` 생략(스냅샷 없음).
 - 복원은 대상 버전 본문을 새 version으로 저장하며(base_version 낙관적 잠금), 복원 동작 자체는 새 스냅샷을 남기지 않는다.
-- 프론트 연동 계약은 `docs/issue/frontend/2026-07-27.md` 참고(코드는 이 PR에서 건드리지 않음).
+- 프론트 연동 계약은 `docs/backlog/issue/frontend/2026-07-27.md` 참고(코드는 이 PR에서 건드리지 않음).
 
 ---
 
@@ -1286,7 +1316,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- 프론트 maintenance UI 연동은 `docs/issue/frontend/2026-07-23.md`의 `4. wiki maintenance UI`에서 관리한다.
+- 프론트 maintenance UI 연동은 `docs/backlog/issue/frontend/2026-07-23.md`의 `4. wiki maintenance UI`에서 관리한다.
 
 ### feat: wiki-schema Java 프록시 추가
 
@@ -1324,7 +1354,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- 직접 생성 Markdown의 레거시 `/original`은 현재 `404`이며 `docs/issue/backend/2026-07-25.md`에서 후속 관리한다.
+- 직접 생성 Markdown의 레거시 `/original`은 현재 `404`이며 `docs/backlog/issue/backend/2026-07-25.md`에서 후속 관리한다.
 - 비소유 멤버의 문서 이동 허용은 hierarchy `TASK-H008`에서 검증한다.
 
 ### feat: Markdown 원문 내보내기 추가
@@ -1344,8 +1374,8 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 **남은 주의사항**
 
 - 이미지 파일을 포함하는 ZIP 내보내기는 assets SDD TASK-008에서 후속 구현한다.
-- PDF 등 Markdown 외 내보내기 형식은 `docs/issue/backend/2026-07-25.md`에서 관리한다.
-- frontend 다운로드 연동은 `docs/issue/frontend/2026-07-25.md`에서 관리한다.
+- PDF 등 Markdown 외 내보내기 형식은 `docs/backlog/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 다운로드 연동은 `docs/backlog/issue/frontend/2026-07-25.md`에서 관리한다.
 
 ### feat: 문서와 workspace 소프트 삭제 추가
 
@@ -1366,8 +1396,8 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- 페이지·원본 폴더 트리 삭제와 원래 위치 복구는 `docs/issue/backend/2026-07-25.md`에서 관리한다.
-- frontend 휴지통 UI는 `docs/issue/frontend/2026-07-25.md`, 실행 중 pipeline 중단은 `docs/issue/ai/2026-07-25.md`에서 관리한다.
+- 페이지·원본 폴더 트리 삭제와 원래 위치 복구는 `docs/backlog/issue/backend/2026-07-25.md`에서 관리한다.
+- frontend 휴지통 UI는 `docs/backlog/issue/frontend/2026-07-25.md`, 실행 중 pipeline 중단은 `docs/backlog/issue/ai/2026-07-25.md`에서 관리한다.
 
 ## 2026-07-24
 
@@ -1389,8 +1419,8 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- PDF 원본의 `.md` 복제는 변환 편집본 등록 이후 연결하며 `docs/issue/backend/2026-07-24.md`에서 관리한다.
-- frontend 복제 UI와 응답 반영은 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+- PDF 원본의 `.md` 복제는 변환 편집본 등록 이후 연결하며 `docs/backlog/issue/backend/2026-07-24.md`에서 관리한다.
+- frontend 복제 UI와 응답 반영은 `docs/backlog/issue/frontend/2026-07-24.md`에서 후속 관리한다.
 
 ### feat: Markdown 수동 저장과 Notion식 페이지 제목 변경 추가
 
@@ -1412,7 +1442,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- frontend의 저장·rename 계약 변경과 미저장 이탈 경고는 `docs/issue/frontend/2026-07-24.md`에서 후속 관리한다.
+- frontend의 저장·rename 계약 변경과 미저장 이탈 경고는 `docs/backlog/issue/frontend/2026-07-24.md`에서 후속 관리한다.
 - 이미지 attachment 저장은 assets SDD의 후속 task에서 구현한다.
 
 ### fix: 비 Markdown 업로드의 불필요한 pipeline 요청 차단
@@ -1430,7 +1460,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- PDF 복원 CLI 연동과 Markdown을 포함한 내보내기는 `docs/issue/backend/2026-07-24.md`에서 후속 관리한다.
+- PDF 복원 CLI 연동과 Markdown을 포함한 내보내기는 `docs/backlog/issue/backend/2026-07-24.md`에서 후속 관리한다.
 
 ### feat: Markdown 직접 생성과 즉시 편집 업로드 추가
 
@@ -1527,7 +1557,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 
 **남은 주의사항**
 
-- 운영 메일 서버 연동과 dev 발송 stub 제거 작업은 `docs/issue/backend/2026-07-23.md`의 `3. 운영 이메일 인증 메일 서버 연동`에서 관리한다.
+- 운영 메일 서버 연동과 dev 발송 stub 제거 작업은 `docs/backlog/issue/backend/2026-07-23.md`의 `3. 운영 이메일 인증 메일 서버 연동`에서 관리한다.
 
 **검증**
 
@@ -1551,7 +1581,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 **남은 주의사항**
 
 - production 문서 content 영속화가 준비되기 전까지 Backend는 요청의 `baseVersion`을 보존하지만 현재 저장 version과 직접 비교하지 않는다.
-- 실제 chat session 요약·reference context 구성은 `docs/issue/backend/2026-07-22.md`의 후속 작업으로 유지한다.
+- 실제 chat session 요약·reference context 구성은 `docs/backlog/issue/backend/2026-07-22.md`의 후속 작업으로 유지한다.
 
 ## 2026-07-21
 
@@ -1570,7 +1600,7 @@ ingest 한 건이 위키 페이지를 몇 개나 건드리는지 실측 데이�
 - 회원가입은 중복 이메일에 409(존재 노출)를, 비밀번호 재설정은 계정 존재 여부와 무관하게 동일 응답(존재 무노출)을 반환. 재설정 성공 시 해당 사용자 refresh token 전체 폐기.
 - 인증번호 발송은 dev 로그 stub(`LoggingEmailVerificationSender`)로 처리하며, 운영 배포 전 실제 SMTP 발송 구현으로 교체 필요. stub이 활성화된 채 부팅되면 인증번호 로그 노출 위험을 알리는 경고를 남긴다.
 - 일일 상한 초과 429의 `retry_after`는 윈도 내 최고령 요청이 24h를 벗어나는 시점 기준으로 계산한다.
-- 잔여 프론트 작업은 `docs/issue/backend/2026-07-21.md` 참조.
+- 잔여 프론트 작업은 `docs/backlog/issue/backend/2026-07-21.md` 참조.
 
 **검증**
 
@@ -1779,7 +1809,7 @@ FastAPI lifespan이 공용·파이프라인 테이블을 직접 생성해, Backe
 
 **배경**
 
-지금까지 workspace 삭제 시 하위 리소스 정리를 애플리케이션 코드에 의존했고, `WorkspaceService.delete()`의 낡은 주석(`wiki_pages`에 workspace_id가 없다고 오기재) 때문에 **workspace 삭제 시 `wiki_pages`(특히 concept page)가 고아로 남는 버그**가 있었다(`docs/issue/backend/2026-07-15.md` #3). Flyway 도입 이후 이제 DB 레벨 참조 무결성을 세울 수 있게 됐다.
+지금까지 workspace 삭제 시 하위 리소스 정리를 애플리케이션 코드에 의존했고, `WorkspaceService.delete()`의 낡은 주석(`wiki_pages`에 workspace_id가 없다고 오기재) 때문에 **workspace 삭제 시 `wiki_pages`(특히 concept page)가 고아로 남는 버그**가 있었다(`docs/backlog/issue/backend/2026-07-15.md` #3). Flyway 도입 이후 이제 DB 레벨 참조 무결성을 세울 수 있게 됐다.
 
 **변경된 것**
 

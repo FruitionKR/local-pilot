@@ -3284,7 +3284,7 @@ Agent Run status에는 `clarification_required`가 있지만 `AgentRunResponse`�
 
 ### `INTERNAL_CALLBACK_TOKEN` 양방향 적용 불완전
 
-llmPipeline은 Ingestion, Query, Schema, Lint, Restore, Agent 요청에서 `X-Internal-Token`을 검증하고 진행·Query·작업 결과 callback에 같은 헤더를 보낸다. Spring requester는 아직 헤더를 보내지 않아 llmPipeline 호출이 `401`로 실패하며, 진행·Query callback Controller도 헤더를 검증하지 않는다. Backend 잔여 작업은 `docs/issue/backend/2026-08-05.md`에서 추적한다.
+llmPipeline은 Ingestion, Query, Schema, Lint, Restore, Agent 요청에서 `X-Internal-Token`을 검증하고 진행·Query·작업 결과 callback에 같은 헤더를 보낸다. Spring requester는 아직 헤더를 보내지 않아 llmPipeline 호출이 `401`로 실패하며, 진행·Query callback Controller도 헤더를 검증하지 않는다. Backend 잔여 작업은 `docs/backlog/issue/backend/2026-08-05.md`에서 추적한다.
 
 ### Spring과 llmPipeline의 Error Mapping 불일치
 

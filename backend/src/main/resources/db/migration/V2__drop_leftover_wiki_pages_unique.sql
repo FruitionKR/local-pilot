@@ -1,4 +1,4 @@
--- 잔재 unique constraint 제거 (docs/issue/2026-07-16.md 이슈 1)
+-- 잔재 unique constraint 제거 (docs/backlog/issue/2026-07-16.md 이슈 1)
 --
 -- 과거 엔티티 정의의 잔재인 uq_wiki_pages_type_slug (page_type, slug) 가
 -- ddl-auto=update로는 삭제되지 않아 일부 DB에 남아 있다. 이 전역 constraint가

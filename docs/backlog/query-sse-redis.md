@@ -286,6 +286,6 @@ SSE        = 사용자 화면으로 실시간 전달
 ## 참고
 
 - 현재 API 상세: `docs/spec/api/query.md`
-- 실패 처리 기록: `docs/issue/2026-07-21.md`의 `Query 비동기 실패 기록 rollback과 RUNNING 고착`
+- 실패 처리 기록: `docs/backlog/issue/2026-07-21.md`의 `Query 비동기 실패 기록 rollback과 RUNNING 고착`
 - [Redis Pub/Sub 공식 문서](https://redis.io/docs/latest/develop/pubsub/)
 - [Redis Streams 공식 문서](https://redis.io/docs/latest/develop/data-types/streams/)

@@ -4,7 +4,7 @@ PR #101(문서 탐색·Markdown Agent 편집)과 PR #102(이메일 인증 연동
 `frontend/app/_lib/api.ts` 한 파일에서 충돌했다. 여러 Frontend 기능을 동시에
 개발할 때 반복될 구조적 병목을 제거하기 위한 리팩토링 계획을 남긴다.
 
-관련 기록: `docs/changelog/frontend.md`의 PR #101·#102 항목, `docs/issue/frontend/2026-07-23.md`.
+관련 기록: `docs/backlog/changelog/frontend.md`의 PR #101·#102 항목, `docs/backlog/issue/frontend/2026-07-23.md`.
 
 ## 1. 진단: 충돌 원인
 
