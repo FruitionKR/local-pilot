@@ -1,12 +1,14 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 
 class QueryRequest(BaseModel):
     workspace_id: str = Field(..., min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
     question: str = Field(..., min_length=1)
+    model: str = Field(..., min_length=1)
+    allow_web_search: StrictBool
     recent_conversation_summary: str | None = None
     reference_context: dict[str, Any] | None = None
 

@@ -13,6 +13,7 @@ from app.modules.query.infrastructure.query_event_publisher import NoOpQueryEven
 from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 from app.modules.query.infrastructure.web_search import build_web_search
+from app.modules.query.interfaces.http.schemas import QueryRequest
 
 
 def build_answer_query_use_case(
@@ -45,6 +46,13 @@ def build_answer_query_use_case(
         ),
         min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
         query_evaluator_max_attempts=query_evaluator_max_attempts,
+    )
+
+
+def get_query_answer_use_case(payload: QueryRequest) -> AnswerQueryUseCase:
+    return build_answer_query_use_case(
+        model=payload.model,
+        allow_web_search=payload.allow_web_search,
     )
 
 
