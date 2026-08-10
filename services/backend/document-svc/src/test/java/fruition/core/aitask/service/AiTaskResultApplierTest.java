@@ -92,6 +92,26 @@ class AiTaskResultApplierTest {
     }
 
     @Test
+    void duplicateAgentTerminalEventUpdatesProjectionOnlyOnce() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-1:succeeded","run_id":"run-1","kind":"agent",
+                 "status":"succeeded","payload":{"edit":{"changed":true}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-1:succeeded"), eq("run-1"), any()))
+                .thenReturn(1, 0);
+        when(jdbcTemplate.update(
+                org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq(event.get("payload").toString()), eq("run-1"))).thenReturn(1);
+
+        applier.applyAgent(event);
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(
+                org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq(event.get("payload").toString()), eq("run-1"));
+    }
+
+    @Test
     void restoreResultAndReceiptUseRequiredTransaction() throws Exception {
         Transactional apply = AiTaskResultApplier.class.getMethod("applyRestore", JsonNode.class)
                 .getAnnotation(Transactional.class);

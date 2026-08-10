@@ -1,7 +1,7 @@
 # §8.5 + 물리 DB 분할: Access RDS / Core RDS 2 instance.
 # k8s/base/postgres.yaml(pod)을 대체한다.
 # - access-postgres: access_db (users·oauth·workspaces·members)
-# - core-postgres:   core_db (문서·채팅·Wiki) + ai 테이블 전환기 동거(별도 ai_runtime 계정)
+# - core-postgres:   core_db (문서·채팅) + 물리적으로 분리된 ai_db
 # 앱 계정(runtime/migration)은 provisioning 후 infra/postgres/init-db-isolation.sh를
 # 각 endpoint에 psql로 실행해 생성한다 (README 절차 참조).
 resource "random_password" "db_master" {

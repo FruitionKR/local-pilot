@@ -1,6 +1,6 @@
 # ADR-0003: 이벤트 처리 전략 — Kafka + Mongo outbox, 동기 경로는 HTTP 유지
 
-- 상태: 채택 (유실 0 실검증 완료)
+- 상태: 부분 대체 — ingest key와 Query·Agent·Lint 비동기 계약은 [ADR-0006](0006-async-ai-tasks-and-parallel-ingest.md)으로 대체됨
 - 관련: [architecture.md](../architecture.md) §5
 
 ## 맥락
@@ -14,6 +14,8 @@
    - `document.edit.event` (key=document_id): 문서별 순서 보존, edit-event-consumer가 파생물 stale 추적(ai_db).
 2. **Outbox 패턴**: 본문 저장은 Mongo 단일 트랜잭션(본문+revision+write-id+outbox 테이블) → `MongoDocumentEditOutboxPublisher`가 Kafka 발행. at-least-once, 발행 유실 없음.
 3. **동기 경로(query·agent·lint)는 HTTP 유지**: document-svc → pipeline 내부 HTTP + X-Internal-Token, 결과는 HTTP 콜백 + heartbeat.
+
+위 결정 중 `ai.ingest.command`의 `workspace_id` key와 query·agent·lint 동기 HTTP/callback 계약은 ADR-0006이 각각 `document_id` key와 workload별 Kafka command/result event로 대체했다. Mongo outbox와 `document.edit.event` 결정은 그대로 유효하다.
 
 ## 대안과 기각 사유
 

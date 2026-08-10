@@ -12,7 +12,7 @@ import java.util.Base64;
  * <p>{@code source=agent} 문자열은 클라이언트가 임의로 넣을 수 있어 수동 편집을 AI 작업으로
  * 위장할 수 있다. Backend가 발급한 값을 대조해야 로그가 오염되지 않는다.
  *
- * <p>표는 기존 {@code agent_runs}에 저장해 서버 재시작과 다중 인스턴스에서도 유지한다.
+ * <p>표는 core의 좁은 적용 projection에 저장해 서버 재시작과 다중 인스턴스에서도 유지한다.
  */
 @Component
 public class AgentApplyOperationStore {
@@ -38,13 +38,12 @@ public class AgentApplyOperationStore {
             return false;
         }
         return jdbcTemplate.update("""
-                UPDATE agent_runs
-                SET apply_consumed_at = now(), updated_at = now()
+                UPDATE agent_apply_projections
+                SET status = 'consumed', apply_consumed_at = now(), updated_at = now()
                 WHERE apply_operation_id = ?
                   AND user_id = ?
                   AND document_id = ?
-                  AND action = 'markdown_turn'
-                  AND status = 'completed'
+                  AND status = 'ready'
                   AND apply_consumed_at IS NULL
                 """, operationId, userId, documentId) == 1;
     }

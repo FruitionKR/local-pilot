@@ -8,7 +8,7 @@
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
 - 사용자 API는 authenticated다. health·OpenAPI만 permitAll이며 `/internal/**`는 `X-Internal-Token`을 별도로 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
-- ID 형식: `user_`/`doc_`/`session_`/`query_`/`op_` + UUID/난수.
+- ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
 - 원문: docs/backlog/spec/api/00-common.md
 
 ## 인증
@@ -67,14 +67,14 @@
 
 ## Agent
 
-베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 Markdown·편집 lock·base version을 검증하고 `agent_runs`·`agent_jobs`·outbox를 원자 저장한다.
+베이스 `/api/workspaces/{workspace_id}/agent`. document-svc가 Markdown·편집 lock·base version을 검증하고 core 적용 예약 projection·outbox를 원자 저장한다. AI worker가 공급된 `run_id`로 ai_db의 `agent_runs`·결정적 Markdown job을 멱등 생성한다.
 
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/agent/turn` | Markdown Agent turn 등록(202). 응답 `requestId`, `apply_operation_id`, `status=queued` |
-| GET | `/agent/turn/{run_id}` | run 상태 조회. workspace/user 범위를 확인하며 `queued`/`executing`/`completed`/`failed` 반환 |
+| GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI run 생성 전만 core queued projection을 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
 
-Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 생성된 편집안은 문서를 바꾸지 않으며, 사용자가 저장할 때 base version을 다시 확인하고 `apply_operation_id`를 한 번만 소비한다. 내부 `/skills/*`·`/agent/runs/*`의 기존 `X-Agent-Service-Token` 계약은 유지한다.
+Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 `apply_operation_id`를 operation/version audit와 같은 core 트랜잭션에서 한 번만 소비한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/{run_id}`의 `X-Internal-Token` 계약을 유지한다.
 
 ## 채팅
 

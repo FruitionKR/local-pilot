@@ -44,6 +44,10 @@ public class AiTaskResultConsumer {
             applier.applyRestore(event);
             return;
         }
+        if ("agent".equals(event.path("kind").asText())) {
+            applier.applyAgent(event);
+            return;
+        }
         if (!"query".equals(event.path("kind").asText())) return;
         var projection = applier.applyQuery(event);
         if (projection.error() == null) {

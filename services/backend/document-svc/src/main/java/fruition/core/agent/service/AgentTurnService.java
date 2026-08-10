@@ -2,9 +2,12 @@ package fruition.core.agent.service;
 
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
+import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.agent.repository.AgentRunCommandRepository;
+import fruition.core.agent.repository.PipelineAgentRunStatusRequester;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
+import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.dto.DocumentDetailResponse;
 import fruition.core.document.exception.DocumentVersionConflictException;
@@ -16,28 +19,36 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class AgentTurnService {
 
     private static final Set<String> TARGET_TYPES = Set.of("selection", "current_section", "whole_document");
+    private static final Pattern RUN_ID_PATTERN = Pattern.compile("agent_[0-9a-f]{32}");
 
     private final DocumentService documentService;
     private final DocumentEditLockService editLockService;
+    private final WorkspaceAccessGuard workspaceAccessGuard;
     private final AgentRunCommandRepository runRepository;
+    private final PipelineAgentRunStatusRequester statusRequester;
     private final AiCommandOutboxWriter outboxWriter;
     private final AgentApplyOperationStore applyOperationStore;
     private final String commandTopic;
 
     public AgentTurnService(DocumentService documentService,
                             DocumentEditLockService editLockService,
+                            WorkspaceAccessGuard workspaceAccessGuard,
                             AgentRunCommandRepository runRepository,
+                            PipelineAgentRunStatusRequester statusRequester,
                             AiCommandOutboxWriter outboxWriter,
                             AgentApplyOperationStore applyOperationStore,
                             @Value("${app.agent.command-topic}") String commandTopic) {
         this.documentService = documentService;
         this.editLockService = editLockService;
+        this.workspaceAccessGuard = workspaceAccessGuard;
         this.runRepository = runRepository;
+        this.statusRequester = statusRequester;
         this.outboxWriter = outboxWriter;
         this.applyOperationStore = applyOperationStore;
         this.commandTopic = commandTopic;
@@ -63,7 +74,7 @@ public class AgentTurnService {
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
         String applyOperationId = applyOperationStore.newOperationId();
         runRepository.create(runId, workspaceId, userId, request.documentId(),
-                request.baseVersion(), applyOperationId, request.message());
+                request.baseVersion(), applyOperationId);
         outboxWriter.enqueue(runId, commandTopic, request.documentId(),
                 new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
@@ -81,10 +92,30 @@ public class AgentTurnService {
     }
 
     public AgentTurnResponse get(String workspaceId, String userId, String runId) {
-        var run = runRepository.find(workspaceId, userId, runId)
-                .orElseThrow(() -> new InvalidAgentTurnRequestException("Agent run을 찾을 수 없습니다."));
-        return new AgentTurnResponse(run.documentId(), run.baseVersion(), run.runId(),
-                run.applyOperationId(), run.status(), run.result(), run.error());
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        if (!RUN_ID_PATTERN.matcher(runId).matches()) {
+            throw new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다.");
+        }
+        var aiRun = statusRequester.find(workspaceId, userId, runId);
+        if (aiRun.isPresent()) {
+            var run = aiRun.get();
+            if ("completed".equals(run.status()) || "failed".equals(run.status())) {
+                var projection = runRepository.find(workspaceId, userId, runId)
+                        .orElseThrow(() -> new AgentRunNotFoundException(runId));
+                if ("queued".equals(projection.status())) {
+                    return new AgentTurnResponse(projection.documentId(), projection.baseVersion(),
+                            projection.runId(), projection.applyOperationId(), projection.status(),
+                            projection.result(), projection.error());
+                }
+            }
+            return new AgentTurnResponse(run.documentId(), run.baseVersion(), run.id(),
+                    run.applyOperationId(), run.status(), run.result(), run.errorCode());
+        }
+        var queued = runRepository.find(workspaceId, userId, runId)
+                .filter(projection -> "queued".equals(projection.status()))
+                .orElseThrow(() -> new AgentRunNotFoundException(runId));
+        return new AgentTurnResponse(queued.documentId(), queued.baseVersion(), queued.runId(),
+                queued.applyOperationId(), queued.status(), queued.result(), queued.error());
     }
 
     private boolean isMarkdown(DocumentDetailResponse document) {

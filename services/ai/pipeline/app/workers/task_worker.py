@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -59,28 +60,9 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
         "base_version", "apply_operation_id", "message", "editor_snapshot",
     )
     run_id = str(command["run_id"])
-    with database.connect_core() as conn:
-        run = conn.execute(
-            """
-            SELECT workspace_id, user_id, document_id, base_version, apply_operation_id,
-                   status, result
-            FROM agent_runs WHERE id = %s AND action = 'markdown_turn' FOR UPDATE
-            """,
-            (run_id,),
-        ).fetchone()
-        if run is None:
-            raise ValueError("Agent run is not registered")
-        for field in ("workspace_id", "user_id", "document_id", "base_version", "apply_operation_id"):
-            if str(run[field]) != str(command[field]):
-                raise ValueError(f"Agent command does not match registered {field}")
-        if run["status"] == "completed":
-            return dict(run["result"] or {})
-        if run["status"] == "failed":
-            raise ValueError("Agent run is already failed")
-        conn.execute(
-            "UPDATE agent_runs SET status = 'executing', updated_at = now() WHERE id = %s",
-            (run_id,),
-        )
+    state, replay = _register_agent_command(command)
+    if state == "completed":
+        return replay or {}
 
     try:
         payload = AgentTurnRequestBody.model_validate({
@@ -94,7 +76,7 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             get_handle_agent_turn_use_case().execute(payload.to_domain())
         ).model_dump(mode="json")
     except Exception:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             conn.execute(
                 """
                 UPDATE agent_runs SET status = 'failed', error_code = 'agent_turn_failed',
@@ -107,7 +89,7 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
                 (run_id,),
             )
         raise
-    with database.connect_core() as conn:
+    with database.connect_ai() as conn:
         conn.execute(
             """
             UPDATE agent_runs SET status = 'completed', result = %s, error_code = NULL,
@@ -120,6 +102,70 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             (run_id,),
         )
     return result
+
+
+def _agent_command_hash(command: dict[str, Any]) -> str:
+    canonical = json.dumps(command, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+    run_id = str(command["run_id"])
+    envelope_hash = _agent_command_hash(command)
+    with database.connect_ai() as conn:
+        inserted = conn.execute(
+            """
+            INSERT INTO agent_runs (
+                id, workspace_id, user_id, action, status, request_summary,
+                document_id, base_version, apply_operation_id, command_envelope_hash
+            ) VALUES (%s, %s, %s, 'markdown_turn', 'queued', %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
+            """,
+            (
+                run_id,
+                str(command["workspace_id"]),
+                str(command["user_id"]),
+                str(command["message"])[:1000],
+                str(command["document_id"]),
+                int(command["base_version"]),
+                str(command["apply_operation_id"]),
+                envelope_hash,
+            ),
+        ).fetchone()
+        if inserted:
+            conn.execute(
+                """
+                INSERT INTO agent_jobs (id, run_id, job_type, status)
+                VALUES (%s, %s, 'markdown_turn', 'queued')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (f"{run_id}:markdown_turn", run_id),
+            )
+        run = conn.execute(
+            """
+            SELECT status, result, command_envelope_hash
+            FROM agent_runs WHERE id = %s AND action = 'markdown_turn' FOR UPDATE
+            """,
+            (run_id,),
+        ).fetchone()
+        if run is None or run["command_envelope_hash"] != envelope_hash:
+            raise ValueError("Agent command envelope does not match the registered run")
+        if run["status"] == "completed":
+            return "completed", dict(run["result"] or {})
+        if run["status"] == "failed":
+            raise ValueError("Agent run is already failed")
+        if run["status"] == "executing":
+            raise RuntimeError("Agent run is already executing")
+        conn.execute(
+            "UPDATE agent_runs SET status = 'executing', updated_at = now() WHERE id = %s",
+            (run_id,),
+        )
+        conn.execute(
+            "UPDATE agent_jobs SET status = 'executing', updated_at = now() WHERE id = %s",
+            (f"{run_id}:markdown_turn",),
+        )
+    return "execute", None
 
 
 def _handle_lint(command: dict[str, Any]) -> dict[str, Any]:
@@ -237,7 +283,7 @@ def _failure_is_durable(command: dict[str, Any]) -> bool:
         return True
     try:
         if kind == "agent":
-            with database.connect_core() as conn:
+            with database.connect_ai() as conn:
                 row = conn.execute(
                     "SELECT status FROM agent_runs WHERE id = %s",
                     (run_id,),

@@ -92,18 +92,6 @@ def _slugify(value: str) -> str:
 logger = logging.getLogger(__name__)
 
 
-def core_database_url() -> str:
-    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_DSN")
-    if not url:
-        raise RuntimeError("Set DATABASE_URL or POSTGRES_DSN before using PostgreSQL-backed APIs")
-    return url
-
-
-def connect_core() -> psycopg.Connection:
-    """Agent·Skill 전환기 core_db 연결."""
-    return psycopg.connect(core_database_url(), row_factory=dict_row)
-
-
 def ai_database_url() -> str:
     url = os.environ.get("AI_DATABASE_URL")
     if not url:
@@ -320,6 +308,7 @@ AI_DB_REQUIRED_TABLES = (
     *REQUIRED_TABLES,
     "wiki_schemas",
     "document_derived_state",
+    *AGENT_REQUIRED_TABLES,
 )
 
 
@@ -330,7 +319,7 @@ def verify_schema() -> None:
 
 def verify_agent_schema() -> None:
     """Agent worker가 사용하는 Agent/Skill/checkpoint 테이블을 확인한다."""
-    with connect_core() as conn:
+    with connect_ai() as conn:
         rows = conn.execute(
             """
             SELECT table_name

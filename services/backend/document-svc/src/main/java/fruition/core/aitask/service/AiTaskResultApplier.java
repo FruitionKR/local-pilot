@@ -145,6 +145,35 @@ public class AiTaskResultApplier {
                 event.path("error").asText(null));
     }
 
+    @Transactional
+    public void applyAgent(JsonNode event) {
+        String eventId = text(event, "event_id");
+        String runId = text(event, "run_id");
+        if (jdbcTemplate.update("""
+                INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
+                VALUES (?, ?, 'agent', CAST(? AS jsonb))
+                ON CONFLICT (run_id, task_kind) WHERE task_kind = 'agent' DO NOTHING
+                """, eventId, runId, event.toString()) == 0) return;
+
+        int updated;
+        if ("succeeded".equals(text(event, "status"))) {
+            updated = jdbcTemplate.update("""
+                    UPDATE agent_apply_projections
+                    SET status = 'ready', result = CAST(? AS jsonb), error_code = NULL, updated_at = now()
+                    WHERE run_id = ? AND status = 'queued'
+                    """, required(event, "payload").toString(), runId);
+        } else {
+            updated = jdbcTemplate.update("""
+                    UPDATE agent_apply_projections
+                    SET status = 'failed', error_code = ?, updated_at = now()
+                    WHERE run_id = ? AND status = 'queued'
+                    """, event.path("error").asText("agent_turn_failed"), runId);
+        }
+        if (updated != 1) {
+            throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
+        }
+    }
+
     private RestoreExecuteService.RestoreManifest readRestoreManifest(OperationLog operation) {
         try {
             return objectMapper.readValue(operation.getRestoreManifest(),

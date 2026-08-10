@@ -1,7 +1,8 @@
 package fruition.core;
 
-import fruition.core.agent.exception.PipelineAgentException;
+import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
+import fruition.core.agent.exception.PipelineAgentException;
 import fruition.core.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.core.aihistory.exception.InvalidCallbackTokenException;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
@@ -88,6 +89,12 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     @ExceptionHandler(InvalidAgentTurnRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidAgentTurnRequest(InvalidAgentTurnRequestException e) {
         return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_REQUEST", e.getMessage()));
+    }
+
+    @ExceptionHandler(AgentRunNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleAgentRunNotFound(AgentRunNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.of("AGENT_RUN_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(PipelineWikiSchemaException.class)

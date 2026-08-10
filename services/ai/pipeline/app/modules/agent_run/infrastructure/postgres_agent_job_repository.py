@@ -12,7 +12,7 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 class PostgresAgentJobRepository:
     def list_expired_run_ids(self) -> tuple[str, ...]:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             rows = conn.execute(
                 """
                 SELECT id FROM agent_runs
@@ -26,7 +26,7 @@ class PostgresAgentJobRepository:
     def delete_expired_runs(self, run_ids: tuple[str, ...]) -> int:
         if not run_ids:
             return 0
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             rows = conn.execute(
                 """
                 DELETE FROM agent_runs
@@ -44,7 +44,7 @@ class PostgresAgentJobRepository:
 
     def claim_next(self, worker_id: str) -> AgentJob | None:
         lease_token = str(uuid4())
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 WITH candidate AS (
@@ -92,7 +92,7 @@ class PostgresAgentJobRepository:
         )
 
     def heartbeat(self, job: AgentJob) -> bool:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 UPDATE agent_jobs
@@ -105,7 +105,7 @@ class PostgresAgentJobRepository:
         return row is not None
 
     def complete(self, job: AgentJob) -> None:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             updated = conn.execute(
                 """
                 UPDATE agent_jobs SET status = 'completed', updated_at = now()
@@ -119,7 +119,7 @@ class PostgresAgentJobRepository:
 
     def fail(self, job: AgentJob, error_code: str) -> None:
         terminal = job.attempt_count >= 3
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             updated = conn.execute(
                 """
                 UPDATE agent_jobs
@@ -162,7 +162,7 @@ class PostgresAgentJobRepository:
                 )
 
     def load_context(self, run_id: str) -> AgentRunContext:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 SELECT run.*, version.instructions_markdown, version.allowed_tools
@@ -181,7 +181,7 @@ class PostgresAgentJobRepository:
         )
 
     def mark_run_status(self, run_id: str, expected: tuple[str, ...], status: str) -> bool:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 UPDATE agent_runs SET status = %s, updated_at = now()
@@ -192,7 +192,7 @@ class PostgresAgentJobRepository:
         return row is not None
 
     def reserve_tool_call(self, run_id: str) -> bool:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 UPDATE agent_runs
@@ -204,7 +204,7 @@ class PostgresAgentJobRepository:
         return row is not None
 
     def remaining_tool_calls(self, run_id: str) -> int:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 "SELECT GREATEST(40 - tool_call_count, 0) AS remaining FROM agent_runs WHERE id = %s",
                 (run_id,),
@@ -214,7 +214,7 @@ class PostgresAgentJobRepository:
         return row["remaining"]
 
     def request_clarification(self, run_id: str, error_code: str) -> bool:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 UPDATE agent_runs
@@ -226,7 +226,7 @@ class PostgresAgentJobRepository:
         return row is not None
 
     def next_plan_version(self, run_id: str) -> int:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 "SELECT COALESCE(max(version), 0) + 1 AS version FROM agent_plans WHERE run_id = %s",
                 (run_id,),
@@ -234,7 +234,7 @@ class PostgresAgentJobRepository:
         return row["version"]
 
     def load_current_plan(self, run_id: str) -> AgentPlan:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             run = conn.execute("SELECT current_plan_id FROM agent_runs WHERE id = %s", (run_id,)).fetchone()
             if run is None or run["current_plan_id"] is None:
                 raise ValueError("AgentRun current plan not found.")
@@ -246,7 +246,7 @@ class PostgresAgentJobRepository:
         return _rows_to_plan(plan, operations)
 
     def mark_operation(self, operation_id: str, from_statuses: tuple[str, ...], status: str, error_code: str | None = None) -> bool:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             row = conn.execute(
                 """
                 UPDATE agent_plan_operations
@@ -270,7 +270,7 @@ class PostgresAgentJobRepository:
         response_metadata: dict[str, object],
         error_code: str | None,
     ) -> None:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             conn.execute(
                 """
                 INSERT INTO agent_tool_executions (
@@ -289,7 +289,7 @@ class PostgresAgentJobRepository:
             )
 
     def load_operation_results(self, run_id: str, plan_id: str) -> dict[str, dict[str, object]]:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             rows = conn.execute(
                 """
                 SELECT operation_id, response_metadata
@@ -301,7 +301,7 @@ class PostgresAgentJobRepository:
         return {row["operation_id"]: row["response_metadata"] or {} for row in rows}
 
     def finish_run_from_operations(self, run_id: str) -> None:
-        with database.connect_core() as conn:
+        with database.connect_ai() as conn:
             counts = conn.execute(
                 """
                 SELECT operation.status, count(*) AS count

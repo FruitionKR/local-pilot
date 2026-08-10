@@ -40,8 +40,15 @@ def test_verify_schema_reports_missing_tables() -> None:
 def test_verify_agent_schema_accepts_agent_and_checkpoint_tables() -> None:
     connection = _connection_with_tables(database.AGENT_REQUIRED_TABLES)
 
-    with patch.object(database, "connect_core", return_value=connection):
+    with patch.object(database, "connect_ai", return_value=connection):
         database.verify_agent_schema()
+
+
+def test_ai_schema_contains_agent_skill_and_checkpoint_tables() -> None:
+    schema = database._AI_SCHEMA_SQL_PATH.read_text(encoding="utf-8")
+
+    for table in database.AGENT_REQUIRED_TABLES:
+        assert f"{table} (" in schema
 
 
 def test_cleanup_deleted_wiki_pages_removes_only_workspace_targets() -> None:

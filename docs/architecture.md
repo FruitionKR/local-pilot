@@ -60,14 +60,14 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 - access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션) + Redis projection
 - document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
-- ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적). Agent/Skill/checkpoint만 전환기 예외로 `core_db`에 동거한다.
-- DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`의 core write는 Agent/Skill/checkpoint 테이블과 필요한 sequence로 제한한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
+- ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적·Agent·Skill·LangGraph checkpoint).
+- DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`은 core DB DML 권한과 연결 설정을 갖지 않는다. Markdown Agent 요청 시 document-svc는 core의 좁은 적용 예약 projection과 outbox만 원자 저장하고, AI run 상태는 scope가 포함된 내부 API로 조회한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
 
 ## 5. 이벤트 처리
 
 본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다.
 
-ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서를 병렬 처리한다. Concept 확정 구간만 workspace Redis short lock으로 직렬화하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 최종 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
+ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서 LLM·분석을 병렬 처리한다. ingest와 lint `materialize=true`는 Concept 최종 read→merge→object write→DB commit만 `(user_id, workspace_id)` PostgreSQL transaction advisory lock으로 공유 직렬화한다. 기존 ingest Redis short lock은 유지하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
 
 ## 6. 배포
 
@@ -87,13 +87,12 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 
 - 매니페스트: `k8s/base` + `k8s/overlays/aws` (ingress·external-secrets·KEDA)
 - IaC: `infra/terraform` (EKS·RDS·ElastiCache·S3·ECR·OIDC·Secrets·budgets) — apply는 AWS 계정 준비 후
-- 배포 순서: document-svc 먼저(Flyway 및 Agent/Skill/checkpoint 스키마 생성) → access-svc(검증만) → pipeline API/worker. 기존 데이터 환경의 Wiki DB 전환은 [demo-script.md](demo-script.md)의 maintenance cutover 순서를 먼저 따른다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
+- 단계적 전환 배포 순서: document-svc 먼저(core 적용 projection Flyway) → access-svc(검증만) → pipeline API/worker(ai_schema 적용). 기존 데이터 환경은 [demo-script.md](demo-script.md)의 AI 저장소 maintenance cutover로 Agent/Skill/checkpoint까지 ID를 보존해 이전하고 core source를 read-only로 둔다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
 - ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
 
 ## 7. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
 
 | 항목 | 상태 · 트리거 |
 |---|---|
-| Agent/Skill/checkpoint core_db 동거 | 별도 DB 이전이 필요해질 때 maintenance cutover로 처리 |
 | JWT HS256 공유 시크릿 | 외부 공개·시크릿 유출 리스크 대두 시 RS256+JWKS 전환 |
 | pipeline-runs PVC | S3 아티팩트 이전 완료 시 ingest-worker Spot 노드 활성화 가능 |

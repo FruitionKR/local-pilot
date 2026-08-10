@@ -7,6 +7,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -23,6 +25,9 @@ class AgentApplyOperationStoreTest {
 
         assertThat(store.consume("op_1", "user_1", "doc_1")).isTrue();
         assertThat(store.consume("op_1", "user_1", "doc_1")).isFalse();
+        verify(jdbcTemplate, times(2)).update(org.mockito.ArgumentMatchers.contains("agent_apply_projections"),
+                org.mockito.ArgumentMatchers.eq("op_1"), org.mockito.ArgumentMatchers.eq("user_1"),
+                org.mockito.ArgumentMatchers.eq("doc_1"));
     }
 
     @Test

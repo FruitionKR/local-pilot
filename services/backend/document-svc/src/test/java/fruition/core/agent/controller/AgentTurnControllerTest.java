@@ -3,6 +3,8 @@ package fruition.core.agent.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
+import fruition.core.agent.exception.AgentRunNotFoundException;
+import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.agent.service.AgentTurnService;
 import fruition.shared.security.JwtAuthenticationFilter;
 import fruition.shared.security.JwtTokenProvider;
@@ -19,6 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -66,6 +69,29 @@ class AgentTurnControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request())))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getTurn_unknownRunReturns404() throws Exception {
+        String runId = "agent_0123456789abcdef0123456789abcdef";
+        when(agentTurnService.get(WORKSPACE_ID, USER_ID, runId))
+                .thenThrow(new AgentRunNotFoundException(runId));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/agent/turn/" + runId)
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("AGENT_RUN_NOT_FOUND"));
+    }
+
+    @Test
+    void getTurn_malformedRunIdReturns400() throws Exception {
+        when(agentTurnService.get(WORKSPACE_ID, USER_ID, "agent_bad"))
+                .thenThrow(new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다."));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/agent/turn/agent_bad")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
     }
 
     private AgentTurnRequest request() {
