@@ -18,7 +18,7 @@ data:
   CORE_DB_NAME: "core_db"
   CORE_DB_RUNTIME_USER: "core_runtime"
   CORE_DB_MIGRATION_USER: "core_migration"
-  # ai_db 1단계 분리: wiki_schemas·document_derived_state (접속 URL은 Secret)
+  # Wiki 현재 상태와 pipeline run은 ai_db가 소유한다(접속 URL은 Secret).
   AI_DB_NAME: "ai_db"
   AI_DB_RUNTIME_USER: "ai_runtime"
   AI_DB_MIGRATION_USER: "ai_migration"

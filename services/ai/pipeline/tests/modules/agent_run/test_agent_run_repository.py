@@ -32,7 +32,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             run = PostgresAgentRunRepository().revise(
                 "workspace-1",
                 "user-1",

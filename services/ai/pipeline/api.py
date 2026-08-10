@@ -68,20 +68,19 @@ def require_internal_token(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 스키마 버전 관리는 Spring Flyway가 담당하고 pipeline은 준비 상태만 확인한다.
-    try:
-        database.verify_schema()
-        logger.info("[startup] Flyway DB 스키마 확인 완료")
-    except Exception:
-        logger.exception("[startup] Flyway DB 스키마 확인 실패")
-        raise
-    # ai_db는 python이 소유한다 — AI_DB_MIGRATION_URL이 있으면 멱등 DDL 적용 후 검증.
     try:
         database.ensure_ai_schema()
         logger.info("[startup] ai_db 스키마 확인 완료")
     except Exception:
         logger.exception("[startup] ai_db 스키마 확인 실패")
         raise
+    if AGENT_SKILLS_ENABLED:
+        try:
+            database.verify_agent_schema()
+            logger.info("[startup] core_db Agent 스키마 확인 완료")
+        except Exception:
+            logger.exception("[startup] core_db Agent 스키마 확인 실패")
+            raise
     yield
 
 

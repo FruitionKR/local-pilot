@@ -60,8 +60,8 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 - access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션) + Redis projection
 - document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
-- ai-svc → **ai_db** (Wiki schema·파생물 stale 추적). Wiki 현재 상태·source block·embedding·pipeline run과 Agent/Skill/checkpoint는 논리 소유자는 ai-svc지만 maintenance cutover 전까지 `core_db`에 동거한다.
-- DB 계정 runtime(DML)/migration(DDL) 분리. 전환기 `ai_runtime`의 core DML 권한은 Wiki cutover 후 회수한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
+- ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적). Agent/Skill/checkpoint만 전환기 예외로 `core_db`에 동거한다.
+- DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`의 core write는 Agent/Skill/checkpoint 테이블과 필요한 sequence로 제한한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
 
 ## 5. 이벤트 처리
 
@@ -85,14 +85,14 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 - 매니페스트: `k8s/base` + `k8s/overlays/aws` (ingress·external-secrets·KEDA)
 - IaC: `infra/terraform` (EKS·RDS·ElastiCache·S3·ECR·OIDC·Secrets·budgets) — apply는 AWS 계정 준비 후
-- 배포 순서: document-svc 먼저(Flyway 및 Agent/Skill/checkpoint 스키마 생성) → access-svc(검증만) → pipeline Agent worker. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
+- 배포 순서: document-svc 먼저(Flyway 및 Agent/Skill/checkpoint 스키마 생성) → access-svc(검증만) → pipeline API/worker. 기존 데이터 환경의 Wiki DB 전환은 [demo-script.md](demo-script.md)의 maintenance cutover 순서를 먼저 따른다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
 - ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
 
 ## 7. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
 
 | 항목 | 상태 · 트리거 |
 |---|---|
-| Wiki 현재 상태·pipeline run·Agent/Skill/checkpoint core_db 동거 | Wiki는 maintenance cutover PR, Agent 계열은 비동기 실행 전환 PR에서 ai_db로 이전 |
+| Agent/Skill/checkpoint core_db 동거 | 통합 비동기 실행 전환 PR에서 ai_db로 이전 |
 | JWT HS256 공유 시크릿 | 외부 공개·시크릿 유출 리스크 대두 시 RS256+JWKS 전환 |
 | Query·Agent·Lint·Restore 동기 AI 호출 | 통합 비동기화 PR에서 Kafka command/result event로 전환 |
 | pipeline-runs PVC | S3 아티팩트 이전 완료 시 ingest-worker Spot 노드 활성화 가능 |

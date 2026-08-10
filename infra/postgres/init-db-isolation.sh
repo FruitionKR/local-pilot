@@ -83,9 +83,8 @@ create_database "$ACCESS_DB_NAME" "$ACCESS_DB_MIGRATION_USER" "$ACCESS_DB_RUNTIM
 create_database "$CORE_DB_NAME" "$CORE_DB_MIGRATION_USER" "$CORE_DB_RUNTIME_USER"
 create_database "$AI_DB_NAME" "$AI_DB_MIGRATION_USER" "$AI_DB_RUNTIME_USER"
 
-# 전환기: ai 테이블(pipeline_runs·임베딩·Agent/Skill/checkpoint)이 core_db에 동거하므로
-# ai_runtime에 core_db DML을 허용한다.
-# 물리 ai_db 이전이 끝나면 이 블록을 제거할 것 (docs/architecture.md §4 참조).
+# bootstrap 시 Agent/Skill/checkpoint Flyway 테이블이 아직 없으므로 우선 core DML을 허용한다.
+# Wiki cutover smoke test 뒤 wiki_db_cutover.py가 Agent 계열만 다시 허용하고 광범위 권한을 회수한다.
 psql --username "$POSTGRES_USER" --dbname postgres --set=ON_ERROR_STOP=1 \
   --set=database="$CORE_DB_NAME" --set=role="$AI_DB_RUNTIME_USER" <<'SQL'
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'database', :'role')

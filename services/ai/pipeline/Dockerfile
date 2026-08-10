@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY agent_worker.py api.py run_lab.py ./
+COPY agent_worker.py api.py run_lab.py wiki_db_cutover.py ./
 COPY app ./app
 COPY db ./db
 COPY prompts ./prompts

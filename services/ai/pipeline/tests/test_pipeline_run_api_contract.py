@@ -75,7 +75,6 @@ def _pipeline_client(
     try:
         with (
             patch.dict("os.environ", {"INTERNAL_CALLBACK_TOKEN": "test-internal-token"}),
-            patch.object(api.database, "verify_schema"),
             patch.object(api.database, "ensure_ai_schema"),
             TestClient(api.app) as client,
         ):
@@ -86,15 +85,13 @@ def _pipeline_client(
         api.app.dependency_overrides.update(previous_overrides)
 
 
-def test_pipeline_lifespan_verifies_flyway_schema() -> None:
+def test_pipeline_lifespan_verifies_ai_schema() -> None:
     with (
-        patch.object(api.database, "verify_schema") as verify_schema,
         patch.object(api.database, "ensure_ai_schema") as ensure_ai_schema,
         TestClient(api.app),
     ):
         pass
 
-    verify_schema.assert_called_once_with()
     ensure_ai_schema.assert_called_once_with()
 
 

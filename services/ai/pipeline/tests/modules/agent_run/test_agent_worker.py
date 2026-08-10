@@ -219,7 +219,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             run_ids = PostgresAgentJobRepository().list_expired_run_ids()
 
         self.assertEqual(run_ids, ("run-1", "run-2"))
@@ -236,7 +236,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             deleted_count = PostgresAgentJobRepository().delete_expired_runs(("run-1", "run-2"))
 
         self.assertEqual(deleted_count, 1)
@@ -251,7 +251,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             PostgresAgentJobRepository().claim_next("worker-1")
 
         query = connection.execute.call_args.args[0]
@@ -784,7 +784,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             remaining = PostgresAgentJobRepository().remaining_tool_calls("run-1")
 
         self.assertEqual(remaining, 17)
@@ -798,7 +798,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             updated = PostgresAgentJobRepository().request_clarification(
                 "run-1",
                 "react_replan_state_changed",
@@ -816,7 +816,7 @@ class AgentWorkerTest(unittest.TestCase):
         connection_context.__enter__.return_value = connection
         job = MagicMock(id="job-1", run_id="run-1", attempt_count=3, lease_token="lease-1")
 
-        with patch.object(database, "connect", return_value=connection_context):
+        with patch.object(database, "connect_core", return_value=connection_context):
             PostgresAgentJobRepository().fail(job, "RuntimeError")
 
         operation_update, operation_parameters = connection.execute.call_args_list[1].args
