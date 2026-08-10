@@ -17,6 +17,18 @@ def test_event_uses_common_command_envelope() -> None:
         "access_token": "access-secret",
         "db_password": "password-secret",
         "client_secret": "client-secret",
+        "apiKey": "camel-api-secret",
+        "accessToken": "camel-access-secret",
+        "dbPassword": "camel-password-secret",
+        "clientSecret": "camel-client-secret",
+        "metadata": {
+            "api_key": "nested-api-secret",
+            "ordinary": {"value": "keep"},
+        },
+        "items": [
+            {"secret": "list-secret", "ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
         "max_tokens": 1024,
     }
 
@@ -29,6 +41,11 @@ def test_event_uses_common_command_envelope() -> None:
         "workspace_id": "workspace-1",
         "user_id": "user-1",
         "operation_id": None,
+        "metadata": {"ordinary": {"value": "keep"}},
+        "items": [
+            {"ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
         "max_tokens": 1024,
     }
     assert event["payload"] == {"answer": "ok"}

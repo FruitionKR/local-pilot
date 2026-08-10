@@ -188,6 +188,18 @@ def test_event_request_excludes_top_level_secrets() -> None:
         "access_token": "access-secret",
         "db_password": "password-secret",
         "client_secret": "client-secret",
+        "apiKey": "camel-api-secret",
+        "accessToken": "camel-access-secret",
+        "dbPassword": "camel-password-secret",
+        "clientSecret": "camel-client-secret",
+        "metadata": {
+            "api_key": "nested-api-secret",
+            "ordinary": {"value": "keep"},
+        },
+        "items": [
+            {"secret": "list-secret", "ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
         "max_tokens": 1024,
     }
 
@@ -196,6 +208,11 @@ def test_event_request_excludes_top_level_secrets() -> None:
     assert event["request"] == {
         "run_id": "run-1",
         "kind": "document",
+        "metadata": {"ordinary": {"value": "keep"}},
+        "items": [
+            {"ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
         "max_tokens": 1024,
     }
 
