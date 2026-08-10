@@ -10,6 +10,7 @@
 ## 2026-08-10 검토 기록
 
 - `ai-async-pr1-pr4-review-consensus.md` — PR #156~#159 누적 통합 리뷰. merge 전 필수 13건, 판단 보류·추가 합의 3건, 최종 배포 전 Agent DB 이전 조건 1건.
+- `changelog/backend.md`·`changelog/infra.md` — PR #163에서 작성된 2026-08-10 변경 기록을 종료된 역할별 changelog 역사 자료에 통합 이관.
 
 ## 2026-08-07 일괄 이관 (문서 구조 개편)
 

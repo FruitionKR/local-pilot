@@ -3,6 +3,7 @@ package fruition.access.user.controller;
 import fruition.access.user.dto.UserSettingsRequest;
 import fruition.access.user.dto.UserSettingsResponse;
 import fruition.access.user.service.UserSettingsService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,7 @@ public class UserSettingsController {
     @PutMapping
     public ResponseEntity<UserSettingsResponse> update(
             @AuthenticationPrincipal String userId,
-            @RequestBody UserSettingsRequest request) {
+            @Valid @RequestBody UserSettingsRequest request) {
         return ResponseEntity.ok(userSettingsService.update(userId, request.webSearchEnabled()));
     }
 }

@@ -108,7 +108,7 @@ Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_op
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`, 선택 `provider`+`model`(함께 생략 시 workspace 설정). 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
+| POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`, 선택 `provider`+`model`(함께 생략 시 `openai`+`gpt-4.1-mini`). 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
 | POST | `.../chat/sessions/{id}/query/runs` | 비동기 질의 시작(202). 동일한 모델 선택 규칙 적용. 응답 `request_id`, `status=pending` |
 | GET | `/api/query/runs/{requestId}/events` | **SSE** 완료 구독. 이벤트 `query.completed`/`query.failed`, buffer 200건 재생 |
 | GET | `/api/query/runs/{requestId}` | run 상태 **폴링**(`pending`/`running`/`completed`/`failed`, `provider`, `model`, 완료 시 `result`) |
