@@ -60,19 +60,28 @@ public class QueryRunStore {
         }, ACTIVE_RUN_TTL);
     }
 
-    public void markCompleted(String requestId, QueryResponse result) {
-        update(requestId, run -> {
+    public boolean markCompleted(String requestId, QueryResponse result) {
+        return finish(requestId, run -> {
             log.info("[질의 run 상태 변경] requestId={} {}->completed", requestId, run.status());
             return run.completed(result, clock.instant());
-        }, FINISHED_RUN_TTL);
+        });
     }
 
-    public void markFailed(String requestId, String errorMessage) {
-        update(requestId, run -> {
+    public boolean markFailed(String requestId, String errorMessage) {
+        return finish(requestId, run -> {
             log.warn("[질의 run 상태 변경] requestId={} {}->failed error={}",
                     requestId, run.status(), errorMessage);
             return run.failed(errorMessage, clock.instant());
-        }, FINISHED_RUN_TTL);
+        });
+    }
+
+    private boolean finish(String requestId, UnaryOperator<QueryRun> mutation) {
+        Optional<QueryRun> current = find(requestId);
+        if (current.isEmpty() || current.get().isFinished()) {
+            return false;
+        }
+        write(mutation.apply(current.get()), FINISHED_RUN_TTL);
+        return true;
     }
 
     private void update(String requestId, UnaryOperator<QueryRun> mutation, Duration ttl) {

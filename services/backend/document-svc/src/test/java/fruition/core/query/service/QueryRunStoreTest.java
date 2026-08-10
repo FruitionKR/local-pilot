@@ -101,7 +101,7 @@ class QueryRunStoreTest {
         store.markRunning(run.requestId());
         assertThat(store.find(run.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.RUNNING);
 
-        store.markCompleted(run.requestId(), result);
+        assertThat(store.markCompleted(run.requestId(), result)).isTrue();
         QueryRun completed = store.find(run.requestId()).orElseThrow();
         assertThat(completed.status()).isEqualTo(QueryRunStatus.COMPLETED);
         assertThat(completed.result()).isEqualTo(result);
@@ -111,11 +111,23 @@ class QueryRunStoreTest {
     void markFailed_updatesStatusAndErrorMessage() {
         QueryRun run = store.create("ws_abc123", "session_abc123", "질문");
 
-        store.markFailed(run.requestId(), "파이프라인 오류");
+        assertThat(store.markFailed(run.requestId(), "파이프라인 오류")).isTrue();
 
         QueryRun failed = store.find(run.requestId()).orElseThrow();
         assertThat(failed.status()).isEqualTo(QueryRunStatus.FAILED);
         assertThat(failed.errorMessage()).isEqualTo("파이프라인 오류");
+    }
+
+    @Test
+    void terminalRunRejectsDuplicateAndContradictoryTransitions() {
+        QueryRun run = store.create("ws_abc123", "session_abc123", "질문");
+        QueryResponse first = new QueryResponse(null, null, null, null, null, null);
+
+        assertThat(store.markCompleted(run.requestId(), first)).isTrue();
+        assertThat(store.markCompleted(run.requestId(), first)).isFalse();
+        assertThat(store.markFailed(run.requestId(), "뒤늦은 실패")).isFalse();
+        assertThat(store.find(run.requestId()).orElseThrow().status())
+                .isEqualTo(QueryRunStatus.COMPLETED);
     }
 
     // evictExpired가 제거되고 만료는 Redis TTL이 담당하므로, active/finished TTL이 다르게 적용되는지 검증한다.

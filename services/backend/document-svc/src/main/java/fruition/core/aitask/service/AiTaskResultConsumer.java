@@ -44,11 +44,13 @@ public class AiTaskResultConsumer {
         if (!"query".equals(event.path("kind").asText())) return;
         var projection = applier.applyQuery(event);
         if (projection.error() == null) {
-            queryRunStore.markCompleted(projection.runId(), projection.response());
-            queryEventBroker.complete(projection.runId());
+            if (queryRunStore.markCompleted(projection.runId(), projection.response())) {
+                queryEventBroker.complete(projection.runId());
+            }
         } else {
-            queryRunStore.markFailed(projection.runId(), projection.error());
-            queryEventBroker.fail(projection.runId(), projection.error());
+            if (queryRunStore.markFailed(projection.runId(), projection.error())) {
+                queryEventBroker.fail(projection.runId(), projection.error());
+            }
         }
     }
 }
