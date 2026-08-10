@@ -68,7 +68,13 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(PipelineSkillException.class)
-    public ResponseEntity<ErrorResponse> handlePipelineSkill(PipelineSkillException e) {
+    public ResponseEntity<?> handlePipelineSkill(PipelineSkillException e) {
+        if (e.getHttpStatus() == HttpStatus.PAYLOAD_TOO_LARGE.value()
+                && e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            return ResponseEntity.status(e.getHttpStatus())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(e.getResponseBody());
+        }
         if (e.getHttpStatus() >= 400 && e.getHttpStatus() < 500) {
             return ResponseEntity.status(e.getHttpStatus())
                     .body(ErrorResponse.of("SKILL_REQUEST_REJECTED", e.getMessage()));

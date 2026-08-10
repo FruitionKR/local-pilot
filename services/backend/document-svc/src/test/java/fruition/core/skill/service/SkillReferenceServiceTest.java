@@ -62,7 +62,7 @@ class SkillReferenceServiceTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1", "ws_1"))
                 .thenReturn(Optional.of(document));
         when(editState.getWorkspaceId()).thenReturn("ws_1");
-        when(editState.getMarkdown()).thenReturn("가".repeat(40001));
+        when(editState.getMarkdown()).thenReturn("가".repeat(30001));
         when(mongoDocumentEditStore.findState("doc_1")).thenReturn(Optional.of(editState));
 
         assertThatThrownBy(() -> service.read("ws_1", "user_1", "doc_1"))

@@ -4,6 +4,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.modules.skill.domain.entities import SkillAuthoringReference
+from app.modules.skill.domain.exceptions import ReferenceDocumentTooLargeError
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
     list_source_blocks,
 )
@@ -42,6 +43,8 @@ class BackendSkillReferenceReader:
             with urlopen(request, timeout=self._timeout_seconds) as response:
                 value = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
+            if exc.code == 413:
+                raise ReferenceDocumentTooLargeError() from exc
             if exc.code in {400, 403, 404}:
                 raise ValueError("Reference document is not accessible.") from exc
             raise RuntimeError("Skill reference service request failed.") from exc

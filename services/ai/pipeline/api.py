@@ -13,6 +13,7 @@ from app.modules.agent.interfaces.http.routes import router as agent_router
 from app.modules.agent_run.interfaces.http.routes import internal_router as agent_run_status_router
 from app.modules.agent_run.interfaces.http.routes import router as agent_run_router
 from app.modules.query.interfaces.http.routes import router as query_router
+from app.modules.skill.interfaces.http.routes import agent_router as agent_skill_router
 from app.modules.skill.interfaces.http.routes import router as skill_router
 from app.modules.wiki_ingestion.interfaces.http.routes import router as pipeline_router
 from app.modules.wiki_ingestion.interfaces.http.schemas import (
@@ -134,6 +135,7 @@ agent_service_dependencies = [Depends(require_agent_service_token)]
 if AGENT_SKILLS_ENABLED:
     # agent run API는 내부 토큰이 아니라 agent service token으로만 보호한다.
     app.include_router(agent_run_router, dependencies=agent_service_dependencies)
+    app.include_router(agent_skill_router, dependencies=agent_service_dependencies)
 if SKILL_API_ENABLED:
     app.include_router(skill_router, dependencies=agent_service_dependencies)
 
