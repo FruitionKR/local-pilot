@@ -1047,4 +1047,4 @@ lint의 고아 간선 재생 입력이다.
 - `docs/llm-wiki/flows/ingest.md`
 - `docs/llm-wiki/flows/lint.md`
 - `docs/spec/llmpipeline-backend-output-contract.md`
-- `docs/issue/ai/2026-07-27.md`
+- `docs/backlog/issue/ai/2026-07-27.md`

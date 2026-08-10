@@ -68,7 +68,7 @@ Check relevant evidence in this order:
 4. Active configuration and migrations.
 5. Frontend input validation, request construction, redirects, and visible errors.
 6. Unit and integration tests.
-7. API specifications, changelogs, issue documents, and backlog records as secondary context.
+7. API specifications and backlog records as secondary context.
 
 Verify exact limits, normalization, fallback behavior, uniqueness scope, transaction boundaries, side effects, token or lock lifetime, status codes, and error redirects. Label configurable values as defaults.
 

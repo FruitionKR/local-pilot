@@ -60,7 +60,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - FSD 이동 전 `frontend/app/_lib/*`를 가리키던 Markdown 테스트 import를 현재 `src` 경로로
   갱신했다. production `postcss` override는 보안 패치 버전 `8.5.24`로 올렸다.
 - 계정 동기화·AI 답변 설정·앱 종료 후 push 알림은 frontend에서 동작하는 것처럼 노출하지 않고
-  `docs/issue/backend/2026-07-28.md`, `docs/issue/ai/2026-07-28.md`에 후속 계약으로 분리했다.
+  `docs/backlog/issue/backend/2026-07-28.md`, `docs/backlog/issue/ai/2026-07-28.md`에 후속 계약으로 분리했다.
 - 검증: `npm run lint`, `npm exec tsc -- --noEmit --incremental false`, `npm run test:markdown`
   47건, `npm run test:user-preferences` 4건, `npm run build`, `npm audit --omit=dev`를 통과했다.
   로컬 전체 스택에서 회원가입·설정 reload 복원·Graph 필터·Markdown 업로드/조회/자동 저장을
@@ -229,7 +229,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - `login/page.tsx`의 "아이디 찾기" 버튼에 비활성 유지 사유를 코드 주석으로 명시했다. 이 서비스는 이메일=아이디이며 이메일 외 고유 2차 식별자(전화번호 등)를 수집하지 않아 아이디/이메일 조회 기능이 성립하지 않는다.
 - 동작 변경 없음(주석만). 인증 4흐름(로그인·회원가입·비밀번호 찾기·재설정) 화면↔API 정합성을 코드로 재검증했고 `lint`/`tsc --noEmit`/`build` 모두 통과했다.
-- 라이브 4흐름 브라우저 검증(Backend 기동 필요)과 가입 후 자동 로그인 실패 UX는 `docs/issue/frontend/2026-07-23.md` §11로 이관했다.
+- 라이브 4흐름 브라우저 검증(Backend 기동 필요)과 가입 후 자동 로그인 실패 UX는 `docs/backlog/issue/frontend/2026-07-23.md` §11로 이관했다.
 
 ### fix: 문서명 검색 접근성·결과 잘림 표시 개선 (PR #104 리뷰 반영)
 
@@ -292,7 +292,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
   - `_components/schema/` 신규: `SchemaWorkspace`(컨테이너), `SchemaEditorForm`(name + markdown), `SchemaPreviewCard`(정리 조각 + SchemaIssue 경고 + activate), `SchemaList`(활성/draft 배지 + 활성화). rail "규칙" 뷰에 마운트.
   - `_styles/history.css`, `_styles/schema.css` 신규 + `globals.css` @import, `_lib/api.ts`·`_lib/types.ts` 배럴에 schema re-export 1줄씩.
 - 검증: `tsc --noEmit`, `next lint`, `next build`, `test:markdown`(46 pass) 통과.
-- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 `docs/issue/backend/2026-07-23.md`, `docs/backlog/issue-2026-07-25.md`의 `AI/Pipeline — 활성 wiki-schema를 agent turn에 주입`, `docs/issue/frontend/2026-07-23.md`(항목 10)를 참조한다.
+- 서버 배선(본문 영속화·wiki-schema Java 프록시·agent 스키마 주입)은 `docs/backlog/issue/backend/2026-07-23.md`, `docs/backlog/issue-2026-07-25.md`의 `AI/Pipeline — 활성 wiki-schema를 agent turn에 주입`, `docs/backlog/issue/frontend/2026-07-23.md`(항목 10)를 참조한다.
 
 ### refactor: `_lib` God 파일을 도메인 모듈로 분할
 
@@ -310,7 +310,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **참고**
 
 - `markdownAgent.ts` 분할은 raw-node `--experimental-strip-types` 유닛테스트와 tsc(bundler) 확장자 요구가 충돌해 단일 파일로 유지했다.
-- 계획 문서: `docs/issue/frontend/2026-07-23-parallel-dev-refactor.md`.
+- 계획 문서: `docs/backlog/issue/frontend/2026-07-23-parallel-dev-refactor.md`.
 
 ### feat: Markdown 문서 편집 경험 개선
 
@@ -330,7 +330,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **남은 주의사항**
 
 - Backend는 업로드 직후 pipeline을 자동 실행하므로 수동·일괄 Ingest UI는 포함하지 않았다.
-- 업로드와 Ingest 분리 및 편집 Markdown 재처리는 `docs/issue/backend/2026-07-23.md`의 `4. 문서 업로드와 Ingest 분리 및 편집 Markdown 재처리`에 남겼다.
+- 업로드와 Ingest 분리 및 편집 Markdown 재처리는 `docs/backlog/issue/backend/2026-07-23.md`의 `4. 문서 업로드와 Ingest 분리 및 편집 Markdown 재처리`에 남겼다.
 
 ## 2026-07-22
 
@@ -369,7 +369,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 **남은 주의사항**
 
-- 폴더 트리는 Backend API가 없어 현재 workspace별 `localStorage`에 임시 저장한다. production 영속화 작업은 `docs/issue/backend/2026-07-22.md`에 유지한다.
+- 폴더 트리는 Backend API가 없어 현재 workspace별 `localStorage`에 임시 저장한다. production 영속화 작업은 `docs/backlog/issue/backend/2026-07-22.md`에 유지한다.
 
 ### fix: 노트 편집기 컨텍스트 발행과 draft 조회 최적화
 
@@ -523,7 +523,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - `npm run build` 통과.
 - editor와 저장 사이에 block 변환을 두지 않아 Markdown 원문을 그대로 유지한다.
-- 저장은 local profile의 메모리 mock이며 backend 재시작 시 사라진다. production 저장 후속 작업은 `docs/issue/backend/2026-07-21.md`에 남겨두었다.
+- 저장은 local profile의 메모리 mock이며 backend 재시작 시 사라진다. production 저장 후속 작업은 `docs/backlog/issue/backend/2026-07-21.md`에 남겨두었다.
 
 ### fix: 사이드바 메뉴 hover 박스 제거
 
@@ -549,7 +549,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 **검증 및 주의사항**
 
 - `npm run build` 통과.
-- 노트 본문을 다시 저장하는 API는 아직 없어 편집기 연동은 후속 backend 계약이 필요하다. `docs/issue/backend/2026-07-21.md`의 `2. 노트 본문 저장 API 부재`에 기록했다.
+- 노트 본문을 다시 저장하는 API는 아직 없어 편집기 연동은 후속 backend 계약이 필요하다. `docs/backlog/issue/backend/2026-07-21.md`의 `2. 노트 본문 저장 API 부재`에 기록했다.
 
 ### fix: 인증 정보 URL 노출과 중복 이메일 가입 흐름 교정
 
@@ -568,7 +568,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 
 - 브라우저에서 로그인 실패 후 URL이 `/login`으로 유지되고, 중복 이메일 인증 요청이 `?view=signup`에 머물며 오류를 표시하는 것을 확인했다.
 - `npm run lint`, `npx tsc --noEmit --incremental false`, `npm run build` 통과.
-- 실제 이메일 인증 API가 없어 인증 요청 시 계정이 먼저 생성되는 임시 우회다. 후속 backend 계약과 완료 조건은 `docs/issue/backend/2026-07-21.md`에 기록했다.
+- 실제 이메일 인증 API가 없어 인증 요청 시 계정이 먼저 생성되는 임시 우회다. 후속 backend 계약과 완료 조건은 `docs/backlog/issue/backend/2026-07-21.md`에 기록했다.
 
 ### fix: 채팅 위키 내보내기 selection_mode 값 교정 및 워크스페이스 이름 중복 조회 제거
 
@@ -614,7 +614,7 @@ React 프론트엔드 변경 이력입니다. 날짜 역순으로 기록합니�
 - `useProjectTree`의 `deleteContextTarget`·`commitEditing`에서 대상 트리 아이템에 `documentId`가 있으면 실제 문서로 간주해 API를 호출하도록 배선
 - 성공·실패 모두 `refreshBackendData`로 서버 상태와 재동기화. 삭제 실패 시 문서가 트리에 다시 나타나고, 이름 변경 실패 시 이전 이름으로 원복
 - `useProjectTree`가 `useBackendData`보다 먼저 생성되는 순서 문제로 `refreshBackendData`는 `refreshRef`(ref)로 주입
-- 빈 문서 생성은 백엔드에 대응 endpoint가 없어 미구현. 백엔드 이슈로 기록: `docs/issue/backend/2026-07-20.md` 이슈 1
+- 빈 문서 생성은 백엔드에 대응 endpoint가 없어 미구현. 백엔드 이슈로 기록: `docs/backlog/issue/backend/2026-07-20.md` 이슈 1
 
 ## 2026-07-20
 

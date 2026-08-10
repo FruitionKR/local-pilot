@@ -4,7 +4,7 @@
 
 - 상태: Draft
 - 작성일: YYYY-MM-DD
-- 관련 이슈: `docs/issue/YYYY-MM-DD.md`
+- 관련 이슈: `docs/backlog/issue/YYYY-MM-DD.md`
 - 관련 PR:
 
 상태 흐름: `Draft → Approved → In Progress → Verified`

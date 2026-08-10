@@ -221,7 +221,7 @@
 - 변경 대상:
   - 신규 `docs/spec/api/ai-operation-log.md`
   - `docs/spec/api/00-common.md`
-  - `docs/changelog/backend.md`
+  - `docs/backlog/changelog/backend.md`
 - 작업:
   - API 스펙 작성 — 경로·요청·응답·예외 매핑
   - 전역 예외 핸들러 표에 신규 예외 추가

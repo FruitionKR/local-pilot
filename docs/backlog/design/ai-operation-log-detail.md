@@ -999,8 +999,8 @@ F8. 재조립 결과 수신
 
 F9. 문서·이슈
     docs/spec/api/ai-operation-log.md
-    docs/issue/ai/2026-07-30.md    llmPipeline 계약
-    docs/issue/infra/2026-07-30.md wiki/ prefix 쓰기 권한
+    docs/backlog/issue/ai/2026-07-30.md    llmPipeline 계약
+    docs/backlog/issue/infra/2026-07-30.md wiki/ prefix 쓰기 권한
     → verify: 문서 경로·예외가 실제 컨트롤러와 일치
 ```
 

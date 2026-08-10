@@ -1,4 +1,4 @@
--- workspace 삭제 연쇄를 위한 DB 레벨 FK 추가 (docs/issue/backend/2026-07-15.md #3)
+-- workspace 삭제 연쇄를 위한 DB 레벨 FK 추가 (docs/backlog/issue/backend/2026-07-15.md #3)
 --
 -- 배경: 지금까지 workspace 삭제 시 하위 리소스 정리를 앱 코드에 의존했고,
 -- wiki_pages(특히 concept page)는 아무데서도 안 지워져 고아로 남는 버그가 있었다.

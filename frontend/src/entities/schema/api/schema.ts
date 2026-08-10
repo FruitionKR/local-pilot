@@ -3,7 +3,7 @@ import type { SchemaFragments, SchemaIssue, WikiSchema, WikiSchemaPreview } from
 
 // [임시 목업] wiki-schema Java 프록시가 아직 없으므로 클라이언트 목업으로 화면을 구동한다.
 // 실제 배선 시 이 파일의 함수 본문만 apiFetch 호출로 교체하면 된다(시그니처 유지).
-// 상호참조: docs/issue/backend/2026-07-23.md(Java 프록시), docs/issue/ai/2026-07-23.md(agent 주입)
+// 상호참조: docs/backlog/issue/backend/2026-07-23.md(Java 프록시), docs/backlog/issue/ai/2026-07-23.md(agent 주입)
 const STORAGE_KEY = "fruition.wiki_schema.mock.v1";
 const MOCK_LATENCY_MS = 250;
 

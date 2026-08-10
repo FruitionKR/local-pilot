@@ -5,8 +5,8 @@
 - 상태: Draft
 - 작성일: 2026-08-03
 - 관련 이슈:
-  - docs/issue/backend/2026-08-04.md
-  - docs/issue/frontend/2026-08-04.md
+  - docs/backlog/issue/backend/2026-08-04.md
+  - docs/backlog/issue/frontend/2026-08-04.md
 - 관련 PR:
 - 관련 작업 계획: docs/spec/sdd/tasks/agent-skills-and-folder-organization-tasks.md
 - 관련 문서:
