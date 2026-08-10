@@ -1,11 +1,94 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.modules.agent_run.infrastructure.postgres_agent_run_repository import PostgresAgentRunRepository
-from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+from app.modules.agent_run.infrastructure.postgres_agent_run_repository import (
+    PostgresAgentRunRepository,
+    _canonical_json,
+)
+from app.modules.wiki_ingestion.infrastructure import (
+    postgres_wiki_ingestion_repository as database,
+)
 
 
 class AgentRunRepositoryTest(unittest.TestCase):
+    def test_authorizes_only_exact_approved_running_operation_arguments(self) -> None:
+        connection = MagicMock()
+        operation_result = MagicMock()
+        operation_result.fetchone.return_value = {
+            "arguments": {
+                "name": "하위 폴더",
+                "parent_folder_id": {
+                    "$operation_result": "operation-1",
+                    "field": "id",
+                },
+            }
+        }
+        executions_result = MagicMock()
+        executions_result.fetchall.return_value = [
+            {
+                "operation_id": "operation-1",
+                "response_metadata": {"id": "folder-1"},
+            }
+        ]
+        connection.execute.side_effect = [operation_result, executions_result]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect_ai", return_value=connection_context):
+            authorized = PostgresAgentRunRepository().authorize_tool_execute(
+                run_id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                plan_id="plan-1",
+                plan_version=2,
+                operation_hash="a" * 64,
+                operation_id="operation-2",
+                tool_name="create_folder",
+                arguments={"name": "하위 폴더", "parent_folder_id": "folder-1"},
+            )
+
+        self.assertTrue(authorized)
+        query, parameters = connection.execute.call_args_list[0].args
+        self.assertIn("run.current_plan_id", query)
+        self.assertIn("operation.status = 'running'", query)
+        self.assertIn("approval.decision = 'approved'", query)
+        self.assertEqual(parameters[-1], "create_folder")
+
+    def test_rejects_tampered_or_type_changed_approved_arguments(self) -> None:
+        for actual_arguments in (
+            {"name": "변조", "base_version": 1},
+            {"name": "승인", "base_version": True},
+        ):
+            with self.subTest(arguments=actual_arguments):
+                connection = MagicMock()
+                operation_result = MagicMock()
+                operation_result.fetchone.return_value = {
+                    "arguments": {"name": "승인", "base_version": 1}
+                }
+                executions_result = MagicMock()
+                executions_result.fetchall.return_value = []
+                connection.execute.side_effect = [operation_result, executions_result]
+                connection_context = MagicMock()
+                connection_context.__enter__.return_value = connection
+
+                with patch.object(database, "connect_ai", return_value=connection_context):
+                    authorized = PostgresAgentRunRepository().authorize_tool_execute(
+                        run_id="run-1",
+                        workspace_id="workspace-1",
+                        user_id="user-1",
+                        plan_id="plan-1",
+                        plan_version=1,
+                        operation_hash="a" * 64,
+                        operation_id="operation-1",
+                        tool_name="rename_folder",
+                        arguments=actual_arguments,
+                    )
+
+                self.assertFalse(authorized)
+
+    def test_json_comparison_distinguishes_boolean_from_integer(self) -> None:
+        self.assertNotEqual(_canonical_json(True), _canonical_json(1))
+
     def test_revise_clears_previous_clarification_error_code(self) -> None:
         connection = MagicMock()
         locked_result = MagicMock()

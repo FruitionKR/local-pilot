@@ -73,6 +73,26 @@ class AgentRunManagementRepositoryPort(AgentApprovalRepositoryPort, Protocol):
         ...
 
 
+class AgentToolAuthorizationRepositoryPort(Protocol):
+    def authorize_tool_read(self, workspace_id: str, user_id: str, run_id: str) -> bool:
+        ...
+
+    def authorize_tool_execute(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        plan_id: str,
+        plan_version: int,
+        operation_hash: str,
+        operation_id: str,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> bool:
+        ...
+
+
 class AgentPlanRepositoryPort(Protocol):
     def save_plan(self, run_id: str, plan: AgentPlan) -> None:
         ...

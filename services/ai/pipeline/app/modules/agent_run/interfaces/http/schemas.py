@@ -28,6 +28,19 @@ class ReviseAgentPlanRequest(AgentRunActorRequest):
     instruction: str = Field(..., min_length=1, max_length=1000)
 
 
+class AgentToolReadAuthorizationRequest(AgentRunActorRequest):
+    run_id: str = Field(..., min_length=1)
+
+
+class AgentToolExecuteAuthorizationRequest(AgentToolReadAuthorizationRequest):
+    plan_id: str = Field(..., min_length=1)
+    plan_version: int = Field(..., ge=1)
+    operation_hash: str = Field(..., min_length=64, max_length=64)
+    operation_id: str = Field(..., min_length=1)
+    tool_name: str = Field(..., min_length=1)
+    arguments: dict[str, object]
+
+
 class AgentPlanOperationResponse(BaseModel):
     id: str
     sequence: int

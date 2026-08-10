@@ -1,9 +1,12 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.modules.agent_run.application.approve_agent_plan import ApproveAgentPlanUseCase
-from app.modules.agent_run.application.ports import AgentRunManagementRepositoryPort
+from app.modules.agent_run.application.ports import (
+    AgentRunManagementRepositoryPort,
+    AgentToolAuthorizationRepositoryPort,
+)
 from app.modules.agent_run.interfaces.http.dependencies import (
     get_agent_run_repository,
     get_approve_agent_plan_use_case,
@@ -11,14 +14,45 @@ from app.modules.agent_run.interfaces.http.dependencies import (
 from app.modules.agent_run.interfaces.http.schemas import (
     AgentRunActorRequest,
     AgentRunResponse,
+    AgentToolExecuteAuthorizationRequest,
+    AgentToolReadAuthorizationRequest,
     ApproveAgentPlanRequest,
     MarkdownAgentRunStatusResponse,
     ReviseAgentPlanRequest,
 )
 
-
 router = APIRouter(prefix="/agent/runs", tags=["agent-runs"])
 internal_router = APIRouter(prefix="/internal/agent/runs", tags=["internal-agent-runs"])
+
+
+@internal_router.post("/tool-authorizations/read", status_code=status.HTTP_204_NO_CONTENT)
+def authorize_agent_tool_read(
+    payload: AgentToolReadAuthorizationRequest,
+    repository: AgentToolAuthorizationRepositoryPort = Depends(get_agent_run_repository),
+) -> Response:
+    if not repository.authorize_tool_read(payload.workspace_id, payload.user_id, payload.run_id):
+        raise HTTPException(status_code=404, detail="AgentRun not found.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@internal_router.post("/tool-authorizations/execute", status_code=status.HTTP_204_NO_CONTENT)
+def authorize_agent_tool_execute(
+    payload: AgentToolExecuteAuthorizationRequest,
+    repository: AgentToolAuthorizationRepositoryPort = Depends(get_agent_run_repository),
+) -> Response:
+    if not repository.authorize_tool_execute(
+        run_id=payload.run_id,
+        workspace_id=payload.workspace_id,
+        user_id=payload.user_id,
+        plan_id=payload.plan_id,
+        plan_version=payload.plan_version,
+        operation_hash=payload.operation_hash,
+        operation_id=payload.operation_id,
+        tool_name=payload.tool_name,
+        arguments=payload.arguments,
+    ):
+        raise HTTPException(status_code=409, detail="Approved Agent operation does not match.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @internal_router.get("/{run_id}", response_model=MarkdownAgentRunStatusResponse)
