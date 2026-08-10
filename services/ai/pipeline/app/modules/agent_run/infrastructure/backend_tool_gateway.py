@@ -89,7 +89,7 @@ def build_backend_tool_gateway() -> BackendToolGateway:
     if not token:
         raise RuntimeError("Set AGENT_INTERNAL_TOKEN for the Agent worker.")
     return BackendToolGateway(
-        os.environ.get("AGENT_BACKEND_URL", "http://backend:8080"),
+        os.environ.get("AGENT_BACKEND_URL", "http://document-svc:8080"),
         token,
         int(os.environ.get("AGENT_TOOL_TIMEOUT_SECONDS", "30")),
     )

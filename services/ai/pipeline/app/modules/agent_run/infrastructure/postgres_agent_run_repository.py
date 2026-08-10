@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from psycopg.types.json import Json
 
-from app.modules.agent_run.application.ports import AgentApprovalRepositoryPort, AgentRunRepositoryPort
+from app.modules.agent_run.application.ports import (
+    AgentApprovalRepositoryPort,
+    AgentRunRepositoryPort,
+)
 from app.modules.agent_run.domain.entities import AgentRun
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
-from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
+from app.modules.wiki_ingestion.infrastructure import (
+    postgres_wiki_ingestion_repository as database,
+)
 
 
 class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepositoryPort):
@@ -48,6 +54,91 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                 (run_id, workspace_id, user_id),
             ).fetchone()
         return _row_to_run(row) if row else None
+
+    def authorize_tool_read(self, workspace_id: str, user_id: str, run_id: str) -> bool:
+        with database.connect_ai() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM agent_runs
+                WHERE id = %s AND workspace_id = %s AND user_id = %s
+                """,
+                (run_id, workspace_id, user_id),
+            ).fetchone()
+        return row is not None
+
+    def authorize_tool_execute(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        plan_id: str,
+        plan_version: int,
+        operation_hash: str,
+        operation_id: str,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> bool:
+        with database.connect_ai() as conn:
+            operation = conn.execute(
+                """
+                SELECT operation.arguments
+                FROM agent_runs run
+                JOIN agent_plans plan
+                  ON plan.id = run.current_plan_id AND plan.run_id = run.id
+                JOIN agent_plan_operations operation
+                  ON operation.plan_id = plan.id
+                WHERE run.id = %s AND run.workspace_id = %s AND run.user_id = %s
+                  AND run.status IN ('executing', 'verifying')
+                  AND plan.id = %s AND plan.version = %s AND plan.operation_hash = %s
+                  AND plan.status = 'approved'
+                  AND operation.id = %s AND operation.tool_name = %s
+                  AND operation.status = 'running'
+                  AND EXISTS (
+                      SELECT 1 FROM agent_approvals approval
+                      WHERE approval.run_id = run.id AND approval.plan_id = plan.id
+                        AND approval.user_id = run.user_id
+                        AND approval.decision = 'approved'
+                        AND approval.plan_version = plan.version
+                        AND approval.operation_hash = plan.operation_hash
+                  )
+                """,
+                (
+                    run_id,
+                    workspace_id,
+                    user_id,
+                    plan_id,
+                    plan_version,
+                    operation_hash,
+                    operation_id,
+                    tool_name,
+                ),
+            ).fetchone()
+            if operation is None:
+                return False
+            result_rows = conn.execute(
+                """
+                SELECT DISTINCT ON (execution.operation_id)
+                       execution.operation_id, execution.response_metadata
+                FROM agent_tool_executions execution
+                JOIN agent_plan_operations operation
+                  ON operation.id = execution.operation_id
+                 AND operation.plan_id = execution.plan_id
+                WHERE execution.run_id = %s AND execution.plan_id = %s
+                  AND execution.status = 'succeeded' AND operation.status = 'succeeded'
+                ORDER BY execution.operation_id, execution.attempt DESC
+                """,
+                (run_id, plan_id),
+            ).fetchall()
+        results = {
+            row["operation_id"]: row["response_metadata"] or {}
+            for row in result_rows
+        }
+        try:
+            expected = _resolve_approved_arguments(operation["arguments"], results)
+            return _canonical_json(expected) == _canonical_json(arguments)
+        except (TypeError, ValueError):
+            return False
 
     def get_markdown_turn_status(
         self, workspace_id: str, user_id: str, run_id: str
@@ -349,3 +440,35 @@ def _lock_user_run(
         """,
         (run_id, workspace_id, user_id),
     ).fetchone()
+
+
+def _resolve_approved_arguments(value: object, results: dict[str, dict[str, object]]) -> object:
+    if isinstance(value, dict):
+        if set(value) == {"$operation_result", "field"}:
+            operation_id = value["$operation_result"]
+            field = value["field"]
+            if (
+                not isinstance(operation_id, str)
+                or not isinstance(field, str)
+                or operation_id not in results
+                or field not in results[operation_id]
+            ):
+                raise ValueError("Approved Agent operation result cannot be resolved.")
+            return results[operation_id][field]
+        return {
+            key: _resolve_approved_arguments(item, results)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_approved_arguments(item, results) for item in value]
+    return value
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )

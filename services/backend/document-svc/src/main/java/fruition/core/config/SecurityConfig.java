@@ -1,5 +1,6 @@
 package fruition.core.config;
 
+import fruition.core.agent.security.AgentServiceTokenFilter;
 import fruition.shared.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,11 +28,14 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final List<String> corsAllowedOrigins;
+    private final String agentServiceToken;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                          @Value("${app.cors.allowed-origins}") List<String> corsAllowedOrigins) {
+                          @Value("${app.cors.allowed-origins}") List<String> corsAllowedOrigins,
+                          @Value("${AGENT_INTERNAL_TOKEN:}") String agentServiceToken) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.corsAllowedOrigins = corsAllowedOrigins;
+        this.agentServiceToken = agentServiceToken;
     }
 
     @Bean
@@ -62,7 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new AgentServiceTokenFilter(agentServiceToken), JwtAuthenticationFilter.class);
 
         return http.build();
     }

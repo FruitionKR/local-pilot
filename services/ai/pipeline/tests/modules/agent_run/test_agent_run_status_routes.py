@@ -1,10 +1,25 @@
-from fastapi import HTTPException
-import pytest
+import os
+from unittest.mock import patch
 
-from app.modules.agent_run.interfaces.http.routes import get_markdown_agent_run
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+
+import api
+from app.modules.agent_run.interfaces.http.dependencies import get_agent_run_repository
+from app.modules.agent_run.interfaces.http.routes import (
+    authorize_agent_tool_execute,
+    get_markdown_agent_run,
+)
+from app.modules.agent_run.interfaces.http.schemas import (
+    AgentToolExecuteAuthorizationRequest,
+)
 
 
 class ScopedRepository:
+    def __init__(self) -> None:
+        self.read_authorizations = 0
+
     def get_markdown_turn_status(self, workspace_id: str, user_id: str, run_id: str):
         if (workspace_id, user_id, run_id) != ("workspace-1", "user-1", "run-1"):
             return None
@@ -17,6 +32,13 @@ class ScopedRepository:
             "result": {"edit": {"changed": True}},
             "error_code": None,
         }
+
+    def authorize_tool_read(self, workspace_id: str, user_id: str, run_id: str) -> bool:
+        self.read_authorizations += 1
+        return (workspace_id, user_id, run_id) == ("workspace-1", "user-1", "run-1")
+
+    def authorize_tool_execute(self, **values) -> bool:
+        return values["arguments"] == {"document_id": "document-1"}
 
 
 def test_internal_status_lookup_is_scoped_to_workspace_and_user() -> None:
@@ -31,3 +53,58 @@ def test_internal_status_lookup_is_scoped_to_workspace_and_user() -> None:
         get_markdown_agent_run("run-1", "workspace-2", "user-1", ScopedRepository())
 
     assert raised.value.status_code == 404
+
+
+def test_execute_authorization_rejects_argument_mismatch() -> None:
+    payload = AgentToolExecuteAuthorizationRequest(
+        run_id="run-1",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        plan_id="plan-1",
+        plan_version=1,
+        operation_hash="a" * 64,
+        operation_id="operation-1",
+        tool_name="rename_document",
+        arguments={"document_id": "tampered"},
+    )
+
+    with pytest.raises(HTTPException) as raised:
+        authorize_agent_tool_execute(payload, ScopedRepository())
+
+    assert raised.value.status_code == 409
+
+
+def test_tool_authorization_route_requires_internal_token_before_repository() -> None:
+    repository = ScopedRepository()
+    previous_overrides = dict(api.app.dependency_overrides)
+    api.app.dependency_overrides[get_agent_run_repository] = lambda: repository
+    try:
+        with (
+            patch.dict(os.environ, {"INTERNAL_CALLBACK_TOKEN": "test-internal-token"}),
+            patch.object(api.database, "ensure_ai_schema"),
+            TestClient(api.app) as client,
+        ):
+            unauthorized = client.post(
+                "/internal/agent/runs/tool-authorizations/read",
+                json={
+                    "run_id": "run-1",
+                    "workspace_id": "workspace-1",
+                    "user_id": "user-1",
+                },
+            )
+            authorized = client.post(
+                "/internal/agent/runs/tool-authorizations/read",
+                headers={"X-Internal-Token": "test-internal-token"},
+                json={
+                    "run_id": "run-1",
+                    "workspace_id": "workspace-1",
+                    "user_id": "user-1",
+                },
+            )
+    finally:
+        api.app.dependency_overrides.clear()
+        api.app.dependency_overrides.update(previous_overrides)
+
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 204
+    assert repository.read_authorizations == 1
