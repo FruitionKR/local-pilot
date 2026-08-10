@@ -15,7 +15,7 @@ import fruition.core.wiki.domain.WikiPageContribution;
 import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.domain.WikiPageVersionId;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,18 +39,18 @@ public class RestoreApplier {
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
-    private final WikiPageRepository wikiPageRepository;
+    private final PipelineWikiStateRequester wikiStateRequester;
     private final WikiPageVersionRepository versionRepository;
     private final WikiPageContributionRepository contributionRepository;
 
     public RestoreApplier(OperationLogRepository operationLogRepository,
                           OperationChangeRepository operationChangeRepository,
-                          WikiPageRepository wikiPageRepository,
+                          PipelineWikiStateRequester wikiStateRequester,
                           WikiPageVersionRepository versionRepository,
                           WikiPageContributionRepository contributionRepository) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
-        this.wikiPageRepository = wikiPageRepository;
+        this.wikiStateRequester = wikiStateRequester;
         this.versionRepository = versionRepository;
         this.contributionRepository = contributionRepository;
     }
@@ -65,8 +65,13 @@ public class RestoreApplier {
                 .sorted()
                 .toList();
         for (String pageId : pageIds) {
-            wikiPageRepository.findByIdForUpdate(pageId).orElseThrow(() ->
-                    new InvalidRestoreRequestException("Wiki 페이지를 찾을 수 없습니다: pageId=" + pageId));
+            versionRepository.lockPage(pageId);
+        }
+        Set<String> existingPageIds = wikiStateRequester.lookup(pageIds, restore.getWorkspaceId()).stream()
+                .map(PipelineWikiStateRequester.WikiPageSnapshot::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!existingPageIds.containsAll(pageIds)) {
+            throw new InvalidRestoreRequestException("Wiki 페이지를 찾을 수 없습니다.");
         }
 
         // 잠금을 잡은 뒤에도 계획을 만들 때 본 상태 그대로인지 다시 확인한다. 잠금 전에는 동시에

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.aihistory.service.LintOperationStarter;
 import fruition.core.aihistory.dto.OperationResultRequest;
 import fruition.core.aihistory.service.OperationIngestService;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wikimaintenance.domain.WikiLintState;
 import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
@@ -23,20 +23,20 @@ public class WikiMaintenanceService {
     private final LintOperationStarter operationStarter;
     private final OperationIngestService operationIngestService;
     private final WikiLintStateRepository lintStateRepository;
-    private final WikiPageRepository wikiPageRepository;
+    private final PipelineWikiStateRequester wikiStateRequester;
 
     public WikiMaintenanceService(WorkspaceAccessGuard workspaceAccessGuard,
                                   PipelineWikiMaintenanceRequester requester,
                                   LintOperationStarter operationStarter,
                                   OperationIngestService operationIngestService,
                                   WikiLintStateRepository lintStateRepository,
-                                  WikiPageRepository wikiPageRepository) {
+                                  PipelineWikiStateRequester wikiStateRequester) {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.requester = requester;
         this.operationStarter = operationStarter;
         this.operationIngestService = operationIngestService;
         this.lintStateRepository = lintStateRepository;
-        this.wikiPageRepository = wikiPageRepository;
+        this.wikiStateRequester = wikiStateRequester;
     }
 
     public JsonNode lint(String workspaceId, String userId, WikiLintRequest request) {
@@ -73,8 +73,7 @@ public class WikiMaintenanceService {
         Instant lastLintAt = lintStateRepository.findById(workspaceId)
                 .map(WikiLintState::getLastLintAt)
                 .orElse(null);
-        Instant lastWikiChangeAt = wikiPageRepository.findMaxUpdatedAtByWorkspaceId(workspaceId)
-                .orElse(null);
+        Instant lastWikiChangeAt = wikiStateRequester.lastUpdatedAt(workspaceId);
         boolean needsLint = lastWikiChangeAt != null
                 && (lastLintAt == null || lastWikiChangeAt.isAfter(lastLintAt));
         return new WikiMaintenanceStatusResponse(needsLint, lastLintAt, lastWikiChangeAt);

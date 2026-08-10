@@ -25,6 +25,8 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     List<Document> findAllByWorkspaceId(String workspaceId);
 
+    List<Document> findAllByStatusAndPipelineRunIdIsNotNull(DocumentStatus status);
+
     /** 호환 문서 목록: 채팅 편입 문서를 포함한 활성 문서를 공용 순서로 조회한다. */
     @Query("SELECT d FROM Document d WHERE d.workspaceId = :workspaceId "
             + "AND d.deletedAt IS NULL "

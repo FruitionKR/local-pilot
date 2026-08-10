@@ -5,8 +5,7 @@ import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.dto.PageRestorePlan;
 import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
-import fruition.core.wiki.domain.WikiPageType;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,13 +37,13 @@ class RestoreTargetValidatorTest {
     private static final String USER = "user_1";
     private static final Instant NOW = Instant.parse("2026-08-04T00:00:00Z");
 
-    @Mock WikiPageRepository wikiPageRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
 
     private RestoreTargetValidator validator;
 
     @BeforeEach
     void setUp() {
-        validator = new RestoreTargetValidator(wikiPageRepository);
+        validator = new RestoreTargetValidator(wikiStateRequester);
     }
 
     @Test
@@ -79,8 +78,9 @@ class RestoreTargetValidatorTest {
         RestorePlan plan = new RestorePlan(List.of(
                 PageRestorePlan.rebuild("wp_C7", List.of()),
                 PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1)));
-        when(wikiPageRepository.findIdsByPageType(List.of("wp_C7", "wp_S_A"), WikiPageType.source))
-                .thenReturn(List.of("wp_S_A"));
+        when(wikiStateRequester.lookup(List.of("wp_C7", "wp_S_A"), WORKSPACE)).thenReturn(List.of(
+                new PipelineWikiStateRequester.WikiPageSnapshot(
+                        "wp_S_A", "source", "제목", "title", WORKSPACE, "active")));
 
         PageRestorePlan sourcePage = validator.requireApplicable(target(OperationType.ingest), plan);
 
@@ -93,7 +93,7 @@ class RestoreTargetValidatorTest {
     @DisplayName("ingest인데 원문 페이지가 없으면 거절한다")
     void rejectsIngestWithoutSourcePage() {
         RestorePlan plan = new RestorePlan(List.of(PageRestorePlan.rebuild("wp_C7", List.of())));
-        when(wikiPageRepository.findIdsByPageType(any(), any())).thenReturn(List.of());
+        when(wikiStateRequester.lookup(any(), any())).thenReturn(List.of());
 
         assertThatThrownBy(() -> validator.requireApplicable(target(OperationType.ingest), plan))
                 .isInstanceOf(InvalidRestoreRequestException.class)
@@ -106,7 +106,7 @@ class RestoreTargetValidatorTest {
         RestorePlan plan = new RestorePlan(List.of(PageRestorePlan.rebuild("wp_C3", List.of())));
 
         assertThat(validator.requireApplicable(target(OperationType.lint), plan)).isNull();
-        verify(wikiPageRepository, never()).findIdsByPageType(any(), any());
+        verify(wikiStateRequester, never()).lookup(any(), any());
     }
 
     private OperationLog target(OperationType type) {

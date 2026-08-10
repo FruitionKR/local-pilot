@@ -21,8 +21,8 @@ def list_reconciliation_candidates(
         WITH scoped_runs AS (
             SELECT run.id AS pipeline_run_id,
                    run.document_id,
-                   document.user_id,
-                   document.workspace_id,
+                   run.user_id,
+                   run.workspace_id,
                    run.manifest,
                    row_number() OVER (
                        PARTITION BY run.document_id
@@ -31,13 +31,10 @@ def list_reconciliation_candidates(
                                 run.id DESC
                    ) AS run_rank
             FROM pipeline_runs run
-            JOIN documents document ON document.id = run.document_id
-            -- workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
             WHERE run.status = 'succeeded'
               AND run.manifest IS NOT NULL
-              AND document.user_id = %s
-              AND document.workspace_id = %s
-              AND document.deleted_at IS NULL
+              AND run.user_id = %s
+              AND run.workspace_id = %s
         )
         SELECT current_run.pipeline_run_id,
                current_run.document_id,
@@ -141,13 +138,10 @@ def active_relation_keys(
         SELECT DISTINCT ON (run.document_id)
                run.manifest
         FROM pipeline_runs run
-        JOIN documents document ON document.id = run.document_id
-        -- workspaces는 access_db로 분리됨 — workspace 존재 검증은 document-svc 인가 계층 담당
         WHERE run.status = 'succeeded'
           AND run.manifest IS NOT NULL
-          AND document.user_id = %s
-          AND document.workspace_id = %s
-          AND document.deleted_at IS NULL
+          AND run.user_id = %s
+          AND run.workspace_id = %s
         ORDER BY run.document_id,
                  run.finished_at DESC NULLS LAST,
                  run.created_at DESC,

@@ -6,13 +6,11 @@ import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.RestorePreviewStaleException;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
-import fruition.core.wiki.domain.WikiPage;
 import fruition.core.wiki.domain.WikiPageContribution;
-import fruition.core.wiki.domain.WikiPageType;
 import fruition.core.wiki.domain.WikiPageVersion;
 import fruition.core.wiki.domain.WikiPageVersionId;
 import fruition.core.wiki.repository.WikiPageContributionRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wiki.repository.WikiPageVersionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +43,7 @@ class RestoreApplierTest {
 
     @Mock OperationLogRepository operationLogRepository;
     @Mock OperationChangeRepository operationChangeRepository;
-    @Mock WikiPageRepository wikiPageRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock WikiPageVersionRepository versionRepository;
     @Mock WikiPageContributionRepository contributionRepository;
 
@@ -54,10 +52,12 @@ class RestoreApplierTest {
     @BeforeEach
     void setUp() {
         applier = new RestoreApplier(operationLogRepository, operationChangeRepository,
-                wikiPageRepository, versionRepository, contributionRepository);
-        when(wikiPageRepository.findByIdForUpdate(any()))
-                .thenAnswer(call -> Optional.of(
-                        new WikiPage(call.getArgument(0), WikiPageType.source, "t", "slug", "", null)));
+                wikiStateRequester, versionRepository, contributionRepository);
+        org.mockito.Mockito.lenient().when(wikiStateRequester.lookup(any(), any()))
+                .thenAnswer(invocation -> ((List<String>) invocation.getArgument(0)).stream()
+                        .map(id -> new PipelineWikiStateRequester.WikiPageSnapshot(
+                                id, "source", "제목", "title", WORKSPACE, "active"))
+                        .toList());
     }
 
     @Test

@@ -5,8 +5,6 @@ import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.shared.idempotency.IdempotencyRecord;
-import fruition.core.document.domain.SourceBlock;
-import fruition.core.document.domain.SourceBlockId;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentContentSaveResponse;
 import fruition.core.document.dto.DocumentContentDiffResponse;
@@ -33,11 +31,8 @@ import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.shared.idempotency.IdempotencyRecordRepository;
 import fruition.core.document.repository.DocumentRepository;
-import fruition.core.document.repository.SourceBlockRepository;
 import fruition.shared.util.StorageProperties;
-import fruition.core.wiki.repository.DocumentWikiLinkRepository;
-import fruition.core.wiki.repository.WikiPageLinkRepository;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.authz.WorkspaceNotFoundException;
 import io.minio.MinioClient;
@@ -88,10 +83,7 @@ class DocumentServiceBlocksTest {
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
     @Mock IngestCommandOutbox ingestCommandOutbox;
-    @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
-    @Mock WikiPageRepository wikiPageRepository;
-    @Mock WikiPageLinkRepository wikiPageLinkRepository;
-    @Mock SourceBlockRepository sourceBlockRepository;
+    @Mock PipelineWikiStateRequester pipelineWikiStateRequester;
     @Mock fruition.core.document.repository.DocumentConvertQueueRepository convertQueueRepository;
     @Mock fruition.core.document.repository.ConverterClient converterClient;
     @Mock TransactionTemplate transactionTemplate;
@@ -114,8 +106,7 @@ class DocumentServiceBlocksTest {
     void setUp() {
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
-                ingestCommandOutbox, documentWikiLinkRepository, wikiPageRepository,
-                wikiPageLinkRepository, sourceBlockRepository,
+                ingestCommandOutbox, pipelineWikiStateRequester,
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
@@ -127,6 +118,8 @@ class DocumentServiceBlocksTest {
                 operationRecorder,
                 ingestOperationStarter,
                 "http://localhost:8080");
+        lenient().when(pipelineWikiStateRequester.documentContext(anyString(), anyString()))
+                .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
         lenient().when(storageProps.getBucket()).thenReturn("test-bucket");
         // 기본 저장 결과: base revision + 1로 변경 성공. 필요한 테스트는 개별로 다시 stub한다.
@@ -162,10 +155,10 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_1f9a74af/original", "hash1");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1f9a74af", WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_1f9a74af")).thenReturn(List.of(
-                new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0005"), "다섯 번째 block 본문"),
-                new SourceBlock(new SourceBlockId("doc_1f9a74af", "B0006"), "여섯 번째 block 본문")
-        ));
+        when(pipelineWikiStateRequester.documentContext(WORKSPACE_ID, "doc_1f9a74af")).thenReturn(
+                new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of(
+                        new PipelineWikiStateRequester.SourceBlock("B0005", "다섯 번째 block 본문"),
+                        new PipelineWikiStateRequester.SourceBlock("B0006", "여섯 번째 block 본문"))));
 
         DocumentBlocksResponse response = documentService.blocks(WORKSPACE_ID, USER_ID, "doc_1f9a74af");
 
@@ -184,7 +177,6 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_empty/original", "hash2");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_empty", WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("doc_empty")).thenReturn(List.of());
 
         DocumentBlocksResponse response = documentService.blocks(WORKSPACE_ID, USER_ID, "doc_empty");
 
@@ -228,7 +220,6 @@ class DocumentServiceBlocksTest {
         );
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_lazy", WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(documentWikiLinkRepository.findAllByIdDocumentId("doc_lazy")).thenReturn(List.of());
         when(editStateRepository.findById("doc_lazy"))
                 .thenReturn(Optional.of(new DocumentEditState("doc_lazy", "# 제목", "edit-hash")));
         when(mongoDocumentEditStore.findState("doc_lazy"))
@@ -781,8 +772,6 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdForUpdate(
                 document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(documentWikiLinkRepository.findAllByIdDocumentId(document.getId()))
-                .thenReturn(List.of());
 
         DocumentDetailResponse detail =
                 documentService.findById(WORKSPACE_ID, memberId, document.getId());
@@ -833,8 +822,7 @@ class DocumentServiceBlocksTest {
         assertThat(response.filename()).isEqualTo("새 제목.md");
         assertThat(response.displayName()).isEqualTo("새 제목");
         assertThat(response.currentVersion()).isEqualTo(2);
-        verifyNoInteractions(documentWikiLinkRepository);
-        verifyNoInteractions(wikiPageRepository);
+        verifyNoInteractions(pipelineWikiStateRequester);
         verifyNoInteractions(editStateRepository);
     }
 
@@ -1027,7 +1015,7 @@ class DocumentServiceBlocksTest {
         assertThat(response.deleted()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
         verify(documentRepository, never()).delete(any(Document.class));
-        verify(sourceBlockRepository, never()).deleteByIdDocumentId(anyString());
+        verify(ingestCommandOutbox, never()).enqueueDelete(anyString(), anyString());
         verify(minioClient, never()).removeObject(any(RemoveObjectArgs.class));
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
     }

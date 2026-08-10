@@ -7,11 +7,8 @@ import fruition.core.chat.repository.ChatPartialWikiRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentStatus;
-import fruition.core.document.domain.SourceBlock;
 import fruition.core.document.repository.DocumentRepository;
-import fruition.core.document.repository.SourceBlockRepository;
-import fruition.core.wiki.domain.DocumentWikiRelationType;
-import fruition.core.wiki.repository.DocumentWikiLinkRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,8 +26,8 @@ import java.util.regex.Pattern;
 /**
  * 채팅 Wiki page화 export의 처리 완료를 폴링으로 감지해 후처리한다.
  *
- * 파이프라인은 완료 시 documents.status='completed'와 wiki_pages/links/source_blocks를 한 트랜잭션으로 DB에 직접
- * 쓴다(백엔드 콜백 미경유). 그래서 완료를 push로 받을 수 없어, 완료된 chat_export 문서를 주기적으로 훑어 후처리한다.
+ * Backend가 pipeline run 상태를 폴링해 완료 처리한 chat_export 문서를 주기적으로 훑고,
+ * Wiki 현재 상태는 pipeline 내부 API로 읽어 후처리한다.
  * <ul>
  *   <li><b>full</b>: (1) source wiki page를 세션에 연결하고 (2) 편입된 문답을 {@code chat_messages.wiki_page_id}로
  *       마킹한다(= 다음 full에서 필터로 제외).</li>
@@ -52,21 +49,18 @@ public class ChatWikiExportReconciler {
     private static final Pattern PAIR_REF = Pattern.compile("\\[([^:\\]]+):([^\\]]+)\\]");
 
     private final DocumentRepository documentRepository;
-    private final DocumentWikiLinkRepository documentWikiLinkRepository;
-    private final SourceBlockRepository sourceBlockRepository;
+    private final PipelineWikiStateRequester pipelineWikiStateRequester;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final ChatPartialWikiRepository chatPartialWikiRepository;
 
     public ChatWikiExportReconciler(DocumentRepository documentRepository,
-                                    DocumentWikiLinkRepository documentWikiLinkRepository,
-                                    SourceBlockRepository sourceBlockRepository,
+                                    PipelineWikiStateRequester pipelineWikiStateRequester,
                                     ChatSessionRepository chatSessionRepository,
                                     ChatMessageRepository chatMessageRepository,
                                     ChatPartialWikiRepository chatPartialWikiRepository) {
         this.documentRepository = documentRepository;
-        this.documentWikiLinkRepository = documentWikiLinkRepository;
-        this.sourceBlockRepository = sourceBlockRepository;
+        this.pipelineWikiStateRequester = pipelineWikiStateRequester;
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.chatPartialWikiRepository = chatPartialWikiRepository;
@@ -81,8 +75,10 @@ public class ChatWikiExportReconciler {
             // source_blocks의 [session_id:pair_id]에서 세션과 문답을 파싱
             String sessionId = null;
             Set<String> pairIds = new LinkedHashSet<>();
-            for (SourceBlock block : sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc(document.getId())) {
-                Matcher matcher = PAIR_REF.matcher(block.getText());
+            var wikiContext = pipelineWikiStateRequester.documentContext(
+                    document.getWorkspaceId(), document.getId());
+            for (var block : wikiContext.sourceBlocks()) {
+                Matcher matcher = PAIR_REF.matcher(block.text());
                 if (matcher.find()) {
                     if (sessionId == null) {
                         sessionId = matcher.group(1);
@@ -94,7 +90,11 @@ public class ChatWikiExportReconciler {
                 continue; // 아직 source_blocks 없거나 prefix 없음
             }
 
-            String wikiPageId = resolveSourcePageId(document.getId());
+            String wikiPageId = wikiContext.pages().stream()
+                    .filter(page -> "source_of".equals(page.relationType()))
+                    .map(PipelineWikiStateRequester.DocumentPage::id)
+                    .findFirst()
+                    .orElse(null);
             if (wikiPageId == null) {
                 continue;
             }
@@ -118,15 +118,6 @@ public class ChatWikiExportReconciler {
             document.markReconciled(Instant.now());
             documentRepository.save(document);
         }
-    }
-
-    private String resolveSourcePageId(String documentId) {
-        return documentWikiLinkRepository
-                .findAllByIdDocumentIdAndIdRelationType(documentId, DocumentWikiRelationType.source_of)
-                .stream()
-                .findFirst()
-                .map(link -> link.getWikiPageId())
-                .orElse(null);
     }
 
     /** 세션을 source page에 연결한다. 아직 미연결인 세션만 연결한다(멱등, 다중 full 문서에도 무한 재기록/flip 방지). 새로 연결했으면 true. */

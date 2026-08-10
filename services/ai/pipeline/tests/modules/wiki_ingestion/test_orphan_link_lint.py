@@ -141,19 +141,8 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
     class Connection:
         def execute(self, query, _params):
             normalized = " ".join(query.split())
-            if "FROM wiki_page_contributions" in normalized:
-                return Result(
-                    [
-                        {
-                            "active": True,
-                            "object_key": "wiki/ws/pages/shared/ops/B.json",
-                        },
-                        {
-                            "active": False,
-                            "object_key": "wiki/ws/pages/shared/ops/A.json",
-                        },
-                    ]
-                )
+            if "SELECT page.id" in normalized:
+                return Result([{"id": "page-shared"}])
             if "FROM wiki_page_links link" in normalized:
                 return Result(
                     [
@@ -185,6 +174,20 @@ def test_postgres_lint_reads_active_contribution_logs_and_removes_orphan(
         raise AssertionError("shared lint transaction을 사용해야 한다")
 
     monkeypatch.setattr(repository, "connect", unexpected_connect)
+    monkeypatch.setattr(
+        repository,
+        "read_contributions",
+        lambda page_ids, workspace_id: [
+            {
+                "active": True,
+                "object_key": "wiki/ws/pages/shared/ops/B.json",
+            },
+            {
+                "active": False,
+                "object_key": "wiki/ws/pages/shared/ops/A.json",
+            },
+        ],
+    )
     monkeypatch.setattr(
         repository,
         "read_text_object",

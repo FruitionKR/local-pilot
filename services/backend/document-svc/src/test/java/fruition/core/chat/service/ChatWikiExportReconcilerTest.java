@@ -6,13 +6,8 @@ import fruition.core.chat.repository.ChatPartialWikiRepository;
 import fruition.core.chat.repository.ChatSessionRepository;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentStatus;
-import fruition.core.document.domain.SourceBlock;
-import fruition.core.document.domain.SourceBlockId;
 import fruition.core.document.repository.DocumentRepository;
-import fruition.core.document.repository.SourceBlockRepository;
-import fruition.core.wiki.domain.DocumentWikiLink;
-import fruition.core.wiki.domain.DocumentWikiRelationType;
-import fruition.core.wiki.repository.DocumentWikiLinkRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,8 +30,7 @@ import static org.mockito.Mockito.when;
 class ChatWikiExportReconcilerTest {
 
     @Mock DocumentRepository documentRepository;
-    @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
-    @Mock SourceBlockRepository sourceBlockRepository;
+    @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock ChatSessionRepository chatSessionRepository;
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatPartialWikiRepository chatPartialWikiRepository;
@@ -45,8 +39,8 @@ class ChatWikiExportReconcilerTest {
 
     @BeforeEach
     void setUp() {
-        reconciler = new ChatWikiExportReconciler(documentRepository, documentWikiLinkRepository,
-                sourceBlockRepository, chatSessionRepository, chatMessageRepository, chatPartialWikiRepository);
+        reconciler = new ChatWikiExportReconciler(documentRepository, wikiStateRequester,
+                chatSessionRepository, chatMessageRepository, chatPartialWikiRepository);
     }
 
     private Document chatExportDoc(String mode) {
@@ -62,12 +56,12 @@ class ChatWikiExportReconcilerTest {
         Document doc = chatExportDoc("full");
         when(documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed))
                 .thenReturn(List.of(doc));
-        when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("chatdoc_1")).thenReturn(List.of(
-                new SourceBlock(new SourceBlockId("chatdoc_1", "B0001"), "[session_1:pair_1]Q : 질문\nA : 답변")));
-        DocumentWikiLink link = mock(DocumentWikiLink.class);
-        when(link.getWikiPageId()).thenReturn("wiki_1");
-        when(documentWikiLinkRepository.findAllByIdDocumentIdAndIdRelationType("chatdoc_1", DocumentWikiRelationType.source_of))
-                .thenReturn(List.of(link));
+        when(wikiStateRequester.documentContext("ws_1", "chatdoc_1")).thenReturn(
+                new PipelineWikiStateRequester.DocumentWikiContext(
+                        List.of(new PipelineWikiStateRequester.DocumentPage(
+                                "wiki_1", "source", "제목", "title", "source_of", 1.0)),
+                        List.of(new PipelineWikiStateRequester.SourceBlock(
+                                "B0001", "[session_1:pair_1]Q : 질문\nA : 답변"))));
         when(chatSessionRepository.findById("session_1"))
                 .thenReturn(Optional.of(new ChatSession("session_1", "ws_1", "user_1", "제목")));
         when(chatMessageRepository.findAllBySession_IdAndPairIdIn(eq("session_1"), any())).thenReturn(List.of());
@@ -84,7 +78,8 @@ class ChatWikiExportReconcilerTest {
         Document doc = chatExportDoc("full");
         when(documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed))
                 .thenReturn(List.of(doc));
-        when(sourceBlockRepository.findAllByIdDocumentIdOrderByIdBlockIdAsc("chatdoc_1")).thenReturn(List.of());
+        when(wikiStateRequester.documentContext("ws_1", "chatdoc_1")).thenReturn(
+                new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
 
         reconciler.reconcile();
 

@@ -256,6 +256,22 @@ class LintOperationRestoreIn(_OperationRestoreIn):
         )
 
 
+class WikiPageLookupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_ids: list[str]
+    workspace_id: str | None = None
+
+
+class WikiPageRenameIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str = Field(min_length=1)
+    workspace_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    update_slug: bool = False
+
+
 class WikiLintIn(BaseModel):
     user_id: str = "local-user"
     workspace_id: str = "local-workspace"

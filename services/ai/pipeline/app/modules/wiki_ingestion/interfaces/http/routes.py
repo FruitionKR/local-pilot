@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
+from psycopg.errors import UniqueViolation
 
 from app.modules.wiki_ingestion.application.models import (
     PipelineRunCommand,
@@ -42,11 +43,69 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     ReingestRunIn,
     WikiLintIn,
     WikiLintOut,
+    WikiPageLookupIn,
+    WikiPageRenameIn,
+)
+from app.modules.wiki_ingestion.infrastructure import (
+    postgres_wiki_ingestion_repository as database,
 )
 
 
 router = APIRouter(tags=["pipeline"])
 logger = logging.getLogger("fruition.pipeline")
+
+
+@router.get("/wiki/graph")
+def get_wiki_graph(workspace_id: str) -> dict[str, Any]:
+    return database.get_wiki_graph(workspace_id)
+
+
+@router.post("/wiki/pages/lookup")
+def lookup_wiki_pages(payload: WikiPageLookupIn) -> list[dict[str, Any]]:
+    return database.lookup_wiki_pages(payload.page_ids, payload.workspace_id)
+
+
+@router.get("/wiki/pages/{page_id}")
+def get_wiki_page(page_id: str, workspace_id: str) -> dict[str, Any]:
+    page = database.get_wiki_page(workspace_id, page_id)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Wiki page not found")
+    return page
+
+
+@router.patch("/wiki/pages/{page_id}/rename")
+def rename_wiki_page(page_id: str, payload: WikiPageRenameIn) -> dict[str, Any]:
+    try:
+        page = database.rename_wiki_page(
+            page_id,
+            payload.user_id,
+            payload.workspace_id,
+            payload.title,
+            payload.update_slug,
+        )
+    except UniqueViolation as exc:
+        raise HTTPException(status_code=409, detail="Wiki page slug conflict") from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail="Wiki page not found")
+    return page
+
+
+@router.get("/wiki/documents/{document_id}/context")
+def get_document_wiki_context(
+    document_id: str,
+    workspace_id: str,
+) -> dict[str, Any]:
+    return database.get_document_wiki_context(document_id, workspace_id)
+
+
+@router.delete("/wiki/workspaces/{workspace_id}/documents/{document_id}")
+def delete_document_wiki_data(workspace_id: str, document_id: str) -> None:
+    database.delete_document_wiki_data(workspace_id, document_id)
+
+
+@router.get("/wiki/workspaces/{workspace_id}/last-updated")
+def get_last_wiki_updated(workspace_id: str) -> dict[str, Any]:
+    return {"updated_at": database.get_last_wiki_updated_at(workspace_id)}
 
 
 @router.post("/wiki/ingest-restore-runs")
@@ -223,6 +282,8 @@ def _run_pipeline_request(
             PipelineRunRegistration(
                 run_id=run_id,
                 document_id=payload.document_id,
+                user_id=payload.user_id,
+                workspace_id=payload.workspace_id,
                 input_source=f"document:{payload.document_id}",
                 output_dir=str(out),
                 mode=payload.mode,

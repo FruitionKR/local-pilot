@@ -54,6 +54,21 @@ public class IngestCommandOutbox {
         }
     }
 
+    public void enqueueDelete(String documentId, String workspaceId) {
+        String commandId = UUID.randomUUID().toString();
+        try {
+            repository.save(new AiCommandOutbox(
+                    commandId,
+                    commandId,
+                    commandTopic,
+                    workspaceId,
+                    objectMapper.writeValueAsString(new DeleteCommand("document_deleted", documentId, workspaceId))
+            ));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("document delete command 직렬화 실패: documentId=" + documentId, e);
+        }
+    }
+
     record IngestCommand(
             @JsonProperty("run_id") String runId,
             String kind,
@@ -65,5 +80,11 @@ public class IngestCommandOutbox {
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("input_markdown") String inputMarkdown,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("operation_id") String operationId,
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("result_callback_url") String resultCallbackUrl
+    ) {}
+
+    record DeleteCommand(
+            String kind,
+            @JsonProperty("document_id") String documentId,
+            @JsonProperty("workspace_id") String workspaceId
     ) {}
 }

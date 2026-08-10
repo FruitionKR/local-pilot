@@ -40,12 +40,23 @@ class FakeRepository:
         self,
         run_id: str,
         document_id: str | None,
+        user_id: str,
+        workspace_id: str,
         input_source: str,
         output_dir: str,
         mode: str,
     ) -> None:
         self.calls.append(
-            ("create", run_id, document_id, input_source, output_dir, mode)
+            (
+                "create",
+                run_id,
+                document_id,
+                user_id,
+                workspace_id,
+                input_source,
+                output_dir,
+                mode,
+            )
         )
 
     def finish(self, run_id: str, manifest: dict[str, object]) -> list[str]:
@@ -107,6 +118,8 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         registration = PipelineRunRegistration(
             run_id="run-1",
             document_id="doc-1",
+            user_id="user-1",
+            workspace_id="workspace-1",
             input_source="storage:doc-1.md",
             output_dir="runs/run-1",
             mode="api",
@@ -131,6 +144,8 @@ class RunPipelineUseCaseTest(unittest.TestCase):
                     "create",
                     "run-1",
                     "doc-1",
+                    "user-1",
+                    "workspace-1",
                     "storage:doc-1.md",
                     "runs/run-1",
                     "api",

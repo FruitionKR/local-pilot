@@ -5,8 +5,7 @@ import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.dto.PageRestorePlan;
 import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
-import fruition.core.wiki.domain.WikiPageType;
-import fruition.core.wiki.repository.WikiPageRepository;
+import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -21,10 +20,10 @@ import java.util.Set;
 @Component
 public class RestoreTargetValidator {
 
-    private final WikiPageRepository wikiPageRepository;
+    private final PipelineWikiStateRequester wikiStateRequester;
 
-    public RestoreTargetValidator(WikiPageRepository wikiPageRepository) {
-        this.wikiPageRepository = wikiPageRepository;
+    public RestoreTargetValidator(PipelineWikiStateRequester wikiStateRequester) {
+        this.wikiStateRequester = wikiStateRequester;
     }
 
     /**
@@ -51,7 +50,7 @@ public class RestoreTargetValidator {
         if (target.getOperationType() != OperationType.ingest) {
             return null;
         }
-        return requireSourcePage(plan);
+        return requireSourcePage(plan, target.getWorkspaceId());
     }
 
     /**
@@ -64,10 +63,12 @@ public class RestoreTargetValidator {
      * 테이블은 llmPipeline이 관리하고 문서 재처리 과정에서 지워질 수 있어, 페이지 자신이 들고
      * 있는 값을 보는 편이 안전하다.
      */
-    private PageRestorePlan requireSourcePage(RestorePlan plan) {
+    private PageRestorePlan requireSourcePage(RestorePlan plan, String workspaceId) {
         List<String> pageIds = plan.pages().stream().map(PageRestorePlan::pageId).toList();
-        Set<String> sourcePageIds = Set.copyOf(
-                wikiPageRepository.findIdsByPageType(pageIds, WikiPageType.source));
+        Set<String> sourcePageIds = wikiStateRequester.lookup(pageIds, workspaceId).stream()
+                .filter(page -> "source".equals(page.pageType()))
+                .map(PipelineWikiStateRequester.WikiPageSnapshot::id)
+                .collect(java.util.stream.Collectors.toSet());
         return plan.pages().stream()
                 .filter(page -> sourcePageIds.contains(page.pageId()))
                 .findFirst()
