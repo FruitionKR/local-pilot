@@ -70,7 +70,8 @@ class SkillReferenceTokenFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         String token = request.getHeader("X-Agent-Service-Token");
-        if (token == null || !MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8), serviceToken)) {
+        if (serviceToken.length == 0 || token == null || !MessageDigest.isEqual(
+                token.getBytes(StandardCharsets.UTF_8), serviceToken)) {
             exceptionResolver.resolveException(request, response, null, new InvalidCallbackTokenException());
             return;
         }
