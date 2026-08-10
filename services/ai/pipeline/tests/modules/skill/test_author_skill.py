@@ -3,6 +3,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
 from app.modules.skill.domain.entities import (
@@ -15,6 +18,7 @@ from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator
     ChatCompletionsSkillAuthoringGenerator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
+from app.modules.skill.interfaces.http.dependencies import get_author_skill_use_case
 from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 from app.modules.skill.interfaces.http.routes import router as skill_router
 
@@ -982,7 +986,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
     def test_backend_reference_reader_uses_authoring_endpoint_without_agent_run(self) -> None:
         response = MagicMock()
         response.read.return_value = json.dumps(
-            {"markdown": "# 회의록"},
+            {"document_role": "EDITABLE", "markdown": "# 회의록"},
             ensure_ascii=False,
         ).encode("utf-8")
         response.__enter__.return_value = response
@@ -1044,6 +1048,39 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
                 user_id="user-1",
                 document_id="document-1",
             )
+
+    def test_author_route_preserves_reference_document_too_large_envelope(self) -> None:
+        reader = BackendSkillReferenceReader("http://backend:8080", "service-token")
+        use_case, _ = self.build_use_case(FixedGenerator(draft_result()), reader)  # type: ignore[arg-type]
+        application = FastAPI()
+        application.include_router(skill_router)
+        application.dependency_overrides[get_author_skill_use_case] = lambda: use_case
+
+        with patch(
+            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+            side_effect=HTTPError("url", 413, "Payload Too Large", {}, None),
+        ):
+            response = TestClient(application).post(
+                "/skills/author",
+                json={
+                    "workspace_id": "workspace-1",
+                    "user_id": "user-1",
+                    "scope_type": "personal",
+                    "instruction": "회의록 Skill을 만들어줘",
+                    "reference_document_ids": ["document-1"],
+                },
+            )
+
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(
+            response.json(),
+            {
+                "error": {
+                    "code": "REFERENCE_DOCUMENT_TOO_LARGE",
+                    "message": "EDITABLE 참조 문서는 30,000자 이하여야 합니다.",
+                }
+            },
+        )
 
     def test_backend_reference_reader_preserves_service_failure(self) -> None:
         reader = BackendSkillReferenceReader("http://backend:8080", "service-token")

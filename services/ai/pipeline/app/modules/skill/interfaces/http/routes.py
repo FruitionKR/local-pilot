@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.manage_skill import ManageSkillUseCase
 from app.modules.skill.application.propose_skill_draft import ProposeSkillDraftUseCase
 from app.modules.skill.application.ports import SkillRepositoryPort
+from app.modules.skill.domain.exceptions import ReferenceDocumentTooLargeError
 from app.modules.skill.interfaces.http.dependencies import (
     get_author_skill_use_case,
     get_manage_skill_use_case,
@@ -24,13 +26,14 @@ from app.modules.skill.interfaces.http.schemas import (
 
 
 router = APIRouter(prefix="/skills", tags=["skills"])
+agent_router = APIRouter(prefix="/skills", tags=["skills"])
 
 
 @router.post("/author", response_model=SkillAuthoringResponse)
 def author_skill(
     payload: SkillAuthoringRequest,
     use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
-) -> SkillAuthoringResponse:
+) -> SkillAuthoringResponse | JSONResponse:
     try:
         result = use_case.execute(
             workspace_id=payload.workspace_id,
@@ -44,6 +47,11 @@ def author_skill(
             allow_clarification=False,
         )
         return SkillAuthoringResponse.from_domain(result)
+    except ReferenceDocumentTooLargeError as exc:
+        return JSONResponse(
+            status_code=413,
+            content={"error": {"code": exc.code, "message": str(exc)}},
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -67,7 +75,7 @@ def publish_authored_skill(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/draft-from-runs/preview", response_model=SkillAuthoringResponse)
+@agent_router.post("/draft-from-runs/preview", response_model=SkillAuthoringResponse)
 def propose_skill_draft(
     payload: SkillDraftProposalRequest,
     use_case: ProposeSkillDraftUseCase = Depends(get_propose_skill_draft_use_case),
