@@ -270,7 +270,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
             ],
         )
 
-    def test_execute_serializes_runs_across_use_case_instances(self) -> None:
+    def test_execute_does_not_serialize_pipeline_analysis(self) -> None:
         first_entered = Event()
         release_first = Event()
         second_entered = Event()
@@ -331,7 +331,7 @@ class RunPipelineUseCaseTest(unittest.TestCase):
         first.start()
         self.assertTrue(first_entered.wait(timeout=1))
         second.start()
-        self.assertFalse(second_entered.wait(timeout=0.1))
+        self.assertTrue(second_entered.wait(timeout=1))
         release_first.set()
         first.join(timeout=1)
         second.join(timeout=1)

@@ -42,6 +42,7 @@ from app.modules.wiki_ingestion.infrastructure.object_storage import (
     write_text_object,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
+    lock_concept_persistence as _lock_concept_persistence,
     persist_wiki_outputs as _persist_wiki_outputs,
 )
 from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
@@ -908,6 +909,37 @@ def _concept_index_from_markdown(slug: str, title: str, markdown_uri: str, markd
 PromotionPageGenerator = Callable[[dict[str, Any]], dict[str, Any]]
 
 
+def _cluster_reconciliation_state(
+    candidates: list[dict[str, Any]],
+) -> tuple[
+    set[str],
+    set[tuple[str, str, str]],
+    set[tuple[str, str, str, tuple[str, ...]]],
+]:
+    source_refs = {
+        ref
+        for candidate in candidates
+        if candidate.get("_cluster_reconciliation_ready", False)
+        for ref in candidate["invalidated_source_refs"]
+    }
+    claim_signatures = {
+        tuple(signature)
+        for candidate in candidates
+        for signature in candidate["_current_claim_signatures"]
+    }
+    relation_signatures = {
+        (
+            str(signature[0]),
+            str(signature[1]),
+            str(signature[2]),
+            tuple(str(item) for item in signature[3]),
+        )
+        for candidate in candidates
+        for signature in candidate["_current_relation_signatures"]
+    }
+    return source_refs, claim_signatures, relation_signatures
+
+
 def lint_wiki_workspace(
     user_id: str = "local-user",
     workspace_id: str = "local-workspace",
@@ -934,34 +966,20 @@ def lint_wiki_workspace(
         for candidate in reconciliation_candidates
         for ref in candidate["invalidated_source_refs"]
     }
-    cluster_reconciliation_source_refs = {
-        ref
-        for candidate in reconciliation_candidates
-        if candidate.get("_cluster_reconciliation_ready", False)
-        for ref in candidate["invalidated_source_refs"]
-    }
-    current_claim_signatures = {
-        tuple(signature)
-        for candidate in reconciliation_candidates
-        for signature in candidate["_current_claim_signatures"]
-    }
-    current_relation_signatures = {
-        (
-            str(signature[0]),
-            str(signature[1]),
-            str(signature[2]),
-            tuple(str(item) for item in signature[3]),
-        )
-        for candidate in reconciliation_candidates
-        for signature in candidate["_current_relation_signatures"]
-    }
+    (
+        cluster_reconciliation_source_refs,
+        current_claim_signatures,
+        current_relation_signatures,
+    ) = _cluster_reconciliation_state(reconciliation_candidates)
     applied_cluster_reconciliation = {
         "removed_claims": [],
         "removed_relations": [],
     }
     pending_active_markdown: str | None = None
     pending_archived_sections: list[str] = []
-    if apply_reconciliation:
+    if apply_reconciliation and not (
+        materialize_promotions and promotion_page_generator is not None
+    ):
         (
             reconciled_markdown,
             removed_claims,
@@ -1064,7 +1082,9 @@ def lint_wiki_workspace(
         "merged_promotions": [],
         "materialized_relations": [],
     }
-    if apply_reconciliation:
+    if apply_reconciliation and not (
+        materialize_promotions and promotion_page_generator is not None
+    ):
         with _connection_scope(connection) as conn:
             result["applied_reconciliations"] = _apply_structural_reconciliation(
                 conn,
@@ -1085,14 +1105,22 @@ def lint_wiki_workspace(
                 active_markdown,
                 promotion_page_generator,
                 operation_id=operation_id,
+                apply_reconciliation=apply_reconciliation,
             )
         result["materialized_promotions"] = materialized["promotions"]
         result["merged_promotions"] = materialized["merged_promotions"]
         result["materialized_relations"] = materialized["relations"]
         result["_lint_page_changes"] = materialized["page_changes"]
-        if materialized["active_markdown"] is not None:
-            pending_active_markdown = materialized["active_markdown"]
+        pending_active_markdown = materialized["active_markdown"]
         pending_archived_sections = materialized["archived_sections"]
+        if apply_reconciliation:
+            result["applied_reconciliations"] = materialized[
+                "applied_reconciliations"
+            ]
+            result["applied_cluster_reconciliation"] = {
+                "removed_claims": materialized["removed_claims"],
+                "removed_relations": materialized["removed_relations"],
+            }
         result["active_path"] = active_path
     if pending_active_markdown is not None or pending_archived_sections:
         result["_lint_object_changes"] = {
@@ -1378,12 +1406,79 @@ def _materialize_promotion_candidates(
     promotion_page_generator: PromotionPageGenerator,
     *,
     operation_id: str | None = None,
+    apply_reconciliation: bool = False,
 ) -> dict[str, Any]:
-    active_sections = _cluster_sections_by_id(active_markdown)
     archived_sections: list[str] = []
     materialized_promotions: list[dict[str, Any]] = []
     merged_promotions: list[dict[str, Any]] = []
     page_changes: list[dict[str, Any]] = []
+    existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
+    eligible_cluster_ids = {cluster["id"] for cluster in clusters}
+    prepared_pages: dict[str, dict[str, Any]] = {}
+    for cluster in clusters:
+        cluster_id = cluster["id"]
+        if cluster.get("promotion_status") != "candidate":
+            continue
+        if not cluster.get("promotion_source_refs"):
+            continue
+        claims = [claim for claim in cluster.get("claims", []) if claim.get("refs")]
+        if not claims or cluster_id in existing_concept_ids:
+            continue
+        source_refs = _unique_keep_order(ref for claim in claims for ref in claim.get("refs", []))
+        prepared_pages[cluster_id] = promotion_page_generator(
+            {
+                **cluster,
+                "claims": claims,
+                "source_blocks": _source_blocks_for_refs(conn, source_refs),
+            }
+        )
+
+    _lock_concept_persistence(conn, user_id, workspace_id)
+    applied_reconciliations: list[dict[str, Any]] = []
+    reconciliation_source_refs: set[str] = set()
+    current_claim_signatures: set[tuple[str, str, str]] = set()
+    current_relation_signatures: set[
+        tuple[str, str, str, tuple[str, ...]]
+    ] = set()
+    if apply_reconciliation:
+        reconciliation_candidates = _list_reconciliation_candidates(
+            conn,
+            user_id,
+            workspace_id,
+        )
+        (
+            reconciliation_source_refs,
+            current_claim_signatures,
+            current_relation_signatures,
+        ) = _cluster_reconciliation_state(reconciliation_candidates)
+        applied_reconciliations = _apply_structural_reconciliation(
+            conn,
+            reconciliation_candidates,
+            _active_relation_keys(conn, user_id, workspace_id),
+        )
+    latest_active_markdown = _read_optional_text_object(
+        f"wiki/{user_id}/{workspace_id}/clusters/active.md"
+    ) or ""
+    removed_claims: list[dict[str, Any]] = []
+    removed_relations: list[dict[str, Any]] = []
+    active_markdown_changed = False
+    if apply_reconciliation:
+        reconciled_markdown, removed_claims, removed_relations = (
+            _reconcile_active_cluster_invalidations(
+                latest_active_markdown,
+                reconciliation_source_refs,
+                current_claim_signatures,
+                current_relation_signatures,
+            )
+        )
+        active_markdown_changed = reconciled_markdown != latest_active_markdown
+        latest_active_markdown = reconciled_markdown
+    clusters = [
+        cluster
+        for cluster in _parse_active_cluster_lint(latest_active_markdown)
+        if cluster["id"] in eligible_cluster_ids
+    ]
+    active_sections = _cluster_sections_by_id(latest_active_markdown)
     existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
     for cluster in clusters:
         cluster_id = cluster["id"]
@@ -1418,15 +1513,21 @@ def _materialize_promotion_candidates(
                         f"{section}\n\n### Archived\nmerged_to: concept:{cluster_id}\nmerged_at: {_today_iso()}"
                     )
             continue
+        page = prepared_pages.get(cluster_id)
+        if page is None:
+            continue
         source_refs = _unique_keep_order(ref for claim in claims for ref in claim.get("refs", []))
-        source_blocks = _source_blocks_for_refs(conn, source_refs)
-        promotion_input = {
-            **cluster,
-            "claims": claims,
-            "source_blocks": source_blocks,
-        }
-        page = promotion_page_generator(promotion_input)
-        markdown = str(page.get("markdown") or "").strip()
+        markdown = append_concept_evidence(
+            str(page.get("markdown") or "").strip(),
+            [
+                {
+                    "claim_id": claim.get("id"),
+                    "claim": claim.get("claim") or claim.get("text"),
+                    "refs": claim.get("refs", []),
+                }
+                for claim in claims
+            ],
+        ).strip()
         title = str(page.get("title") or cluster_id).strip()
         slug = _slugify(str(page.get("slug") or cluster_id))
         if not markdown or not slug or slug == "untitled":
@@ -1462,7 +1563,7 @@ def _materialize_promotion_candidates(
             archived_sections.append(f"{section}\n\n### Archived\npromoted_to: concept:{slug}\npromoted_at: {_today_iso()}")
     # 관계 재료화는 promotion이 모두 끝나 existing_concept_ids가 완성된 뒤 한 곳에서만 수행한다(근거 검증·dedup 포함).
     materialized_relations = _materialize_active_relation_candidates(conn, clusters, existing_concept_ids, workspace_id)
-    active_markdown_update = None
+    active_markdown_update = latest_active_markdown if active_markdown_changed else None
     if materialized_promotions or merged_promotions:
         lines = ["# Active Meaning Clusters"]
         for cluster_id in sorted(active_sections):
@@ -1475,6 +1576,9 @@ def _materialize_promotion_candidates(
         "page_changes": page_changes,
         "active_markdown": active_markdown_update,
         "archived_sections": archived_sections,
+        "applied_reconciliations": applied_reconciliations,
+        "removed_claims": removed_claims,
+        "removed_relations": removed_relations,
     }
 
 

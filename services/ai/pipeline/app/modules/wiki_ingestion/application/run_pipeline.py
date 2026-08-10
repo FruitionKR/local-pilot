@@ -1,4 +1,3 @@
-from threading import Lock
 from typing import Any
 
 from app.core.pipeline_control import PipelineRunCancelledError
@@ -11,9 +10,6 @@ from app.modules.wiki_ingestion.application.ports import (
     PipelineRunRepositoryPort,
     WikiEmbeddingJobPort,
 )
-
-
-_PIPELINE_EXECUTION_LOCK = Lock()
 
 
 class RunPipelineUseCase:
@@ -39,25 +35,24 @@ class RunPipelineUseCase:
         )
 
     def execute(self, run_id: str, command: PipelineRunCommand) -> dict[str, Any]:
-        with _PIPELINE_EXECUTION_LOCK:
-            try:
-                self._ensure_active(run_id)
-                manifest = self._runner.run(
-                    command,
-                    progress_callback=lambda: self._repository.touch(run_id),
-                )
-                self._ensure_active(run_id)
-                self._ensure_current_source(command)
-                page_ids = self._repository.finish(
-                    run_id,
-                    manifest,
-                    command.source_content_hash,
-                )
-                self._embedding_job.start(run_id, page_ids)
-                return manifest
-            except Exception as exc:
-                self._repository.fail(run_id, str(exc))
-                raise
+        try:
+            self._ensure_active(run_id)
+            manifest = self._runner.run(
+                command,
+                progress_callback=lambda: self._repository.touch(run_id),
+            )
+            self._ensure_active(run_id)
+            self._ensure_current_source(command)
+            page_ids = self._repository.finish(
+                run_id,
+                manifest,
+                command.source_content_hash,
+            )
+            self._embedding_job.start(run_id, page_ids)
+            return manifest
+        except Exception as exc:
+            self._repository.fail(run_id, str(exc))
+            raise
 
     def _ensure_current_source(self, command: PipelineRunCommand) -> None:
         if command.source_document_id is None or (

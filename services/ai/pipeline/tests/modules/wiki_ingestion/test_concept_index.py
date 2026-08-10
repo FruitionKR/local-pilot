@@ -344,6 +344,186 @@ def test_materialize_active_relation_candidates_links_existing_concepts_only() -
     ]
 
 
+def test_lint_materialize_keeps_concurrent_ingest_updates(monkeypatch) -> None:
+    calls = []
+    materialized_clusters = []
+    active_markdown = {
+        "value": """# Active Meaning Clusters
+
+## cluster: shared
+
+### Evidence Claims
+- claim_001: 기존 근거 [doc-1:B0001]
+
+### Promotion
+status: candidate
+source_refs: [doc-1]
+"""
+    }
+    concept_indexes = iter(({}, {"shared": "page-shared"}))
+
+    def candidate(run_id, claim_signatures=None, relation_signatures=None):
+        return {
+            "pipeline_run_id": run_id,
+            "document_id": "doc-2",
+            "user_id": "user-1",
+            "workspace_id": "workspace-1",
+            "invalidated_source_refs": ["doc-2:B0001"],
+            "stale_concept_slugs": [],
+            "stale_relations": [],
+            "structural_reconciled": False,
+            "_cluster_reconciliation_ready": True,
+            "_current_claim_signatures": claim_signatures or [],
+            "_current_relation_signatures": relation_signatures or [],
+        }
+
+    reconciliation_candidates = iter(
+        (
+            [candidate("run-before-ingest")],
+            [
+                candidate(
+                    "run-after-ingest",
+                    [
+                        ["shared", "claim_002", "ingest 중 추가된 근거 [doc-2:B0001]"]
+                    ],
+                    [
+                        [
+                            "shared",
+                            "concept:target",
+                            "supports_or_enables",
+                            ["doc-2:B0001"],
+                        ]
+                    ],
+                )
+            ],
+        )
+    )
+
+    class Result:
+        def fetchone(self):
+            return {
+                "id": "page-shared",
+                "title": "Shared",
+                "summary": "공유 개념",
+                "markdown_uri": "wiki/user-1/workspace-1/concepts/shared.md",
+            }
+
+    class Connection:
+        def execute(self, _query, _params):
+            return Result()
+
+    monkeypatch.setattr(
+        repository,
+        "_load_existing_concept_ids_by_slug",
+        lambda *_args: next(concept_indexes),
+    )
+    monkeypatch.setattr(repository, "_orphan_source_refs", lambda _refs: [])
+
+    def load_reconciliation_candidates(*_args):
+        candidates = next(reconciliation_candidates)
+        calls.append(
+            "candidates:fresh"
+            if candidates[0]["_current_claim_signatures"]
+            else "candidates:stale"
+        )
+        return candidates
+
+    monkeypatch.setattr(
+        repository,
+        "_list_reconciliation_candidates",
+        load_reconciliation_candidates,
+    )
+    monkeypatch.setattr(repository, "_active_relation_keys", lambda *_args: set())
+    monkeypatch.setattr(
+        repository,
+        "_apply_structural_reconciliation",
+        lambda _conn, candidates, _relation_keys: (
+            calls.append("structural")
+            or [{"pipeline_run_id": candidates[0]["pipeline_run_id"]}]
+        ),
+    )
+    monkeypatch.setattr(repository, "_source_blocks_for_refs", lambda *_args: [])
+    monkeypatch.setattr(
+        repository,
+        "_read_optional_text_object",
+        lambda path: (
+            active_markdown["value"]
+            if path.endswith("clusters/active.md")
+            else "# Shared\n\n## Evidence\n- ingest가 먼저 저장한 근거\n"
+        ),
+    )
+    monkeypatch.setattr(
+        repository,
+        "_lock_concept_persistence",
+        lambda *_args: calls.append("lock"),
+    )
+    monkeypatch.setattr(repository, "_upsert_wiki_page", lambda *_args: None)
+    monkeypatch.setattr(repository, "_persist_embedding_units", lambda *_args: None)
+    monkeypatch.setattr(
+        repository,
+        "_materialize_active_relation_candidates",
+        lambda _conn, clusters, *_args: materialized_clusters.extend(clusters) or [],
+    )
+
+    def generate_page(_input):
+        calls.append("llm")
+        active_markdown["value"] = """# Active Meaning Clusters
+
+## cluster: shared
+
+### Evidence Claims
+- claim_001: 기존 근거 [doc-1:B0001]
+- claim_002: ingest 중 추가된 근거 [doc-2:B0001]
+
+### Core Relation Candidates
+- target: concept:target
+  relation: supports_or_enables
+  evidence: [doc-2:B0001]
+  reason: ingest 중 추가된 관계
+
+### Promotion
+status: candidate
+source_refs: [doc-1, doc-2]
+
+## cluster: ingest-new
+
+### Evidence Claims
+- claim_003: ingest가 추가한 cluster [doc-2:B0002]
+"""
+        return {"slug": "shared", "title": "Shared", "markdown": "# Shared"}
+
+    result = repository.lint_wiki_workspace(
+        "user-1",
+        "workspace-1",
+        materialize_promotions=True,
+        promotion_page_generator=generate_page,
+        apply_reconciliation=True,
+        operation_id="lint-op-1",
+        write_log=False,
+        connection=Connection(),
+    )
+
+    assert calls == [
+        "candidates:stale",
+        "llm",
+        "lock",
+        "candidates:fresh",
+        "structural",
+    ]
+    assert result["applied_reconciliations"] == [
+        {"pipeline_run_id": "run-after-ingest"}
+    ]
+    assert result["applied_cluster_reconciliation"] == {
+        "removed_claims": [],
+        "removed_relations": [],
+    }
+    assert "ingest 중 추가된 근거" in result["_lint_page_changes"][0]["markdown"]
+    assert materialized_clusters[0]["claims"][1]["id"] == "claim_002"
+    assert materialized_clusters[0]["relations"][0]["target"] == "concept:target"
+    assert "ingest 중 추가된 관계" in result["_lint_object_changes"][
+        "archived_sections"
+    ][0]
+
 def test_lint_wiki_workspace_dry_run_does_not_write_log(monkeypatch) -> None:
     writes = []
     monkeypatch.setattr(repository, "_read_optional_text_object", lambda _path: "")

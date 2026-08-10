@@ -33,6 +33,19 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     resolve_page_id,
     source_summary,
 )
+
+
+def lock_concept_persistence(
+    conn: psycopg.Connection,
+    user_id: str,
+    workspace_id: str,
+) -> None:
+    conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"concept-persistence:{user_id}:{workspace_id}",),
+    )
+
+
 def persist_wiki_outputs(
     conn: psycopg.Connection,
     document_id: str,
@@ -54,6 +67,18 @@ def persist_wiki_outputs(
             "source",
             document_id,
         )
+    _persist_source_blocks(conn, document_id, manifest)
+    source_page_id = _persist_source_page(
+        conn,
+        document_id,
+        manifest,
+        normalized,
+        user_id,
+        workspace_id,
+        page_id=source_page_id,
+    )
+    lock_concept_persistence(conn, user_id, workspace_id)
+    if operation_id:
         concept_id_by_slug = _prepare_concept_page_ids(
             conn,
             manifest,
@@ -70,16 +95,6 @@ def persist_wiki_outputs(
                 [],
             ),
         )
-    _persist_source_blocks(conn, document_id, manifest)
-    source_page_id = _persist_source_page(
-        conn,
-        document_id,
-        manifest,
-        normalized,
-        user_id,
-        workspace_id,
-        page_id=source_page_id,
-    )
     concept_page_ids, concept_id_by_slug = _persist_concept_pages(
         conn,
         document_id,
