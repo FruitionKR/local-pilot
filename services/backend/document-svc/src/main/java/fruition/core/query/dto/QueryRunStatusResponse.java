@@ -8,11 +8,15 @@ import fruition.core.query.domain.QueryRun;
 public record QueryRunStatusResponse(
         @JsonProperty("request_id") String requestId,
         String status,
+        String provider,
+        String model,
+        @JsonProperty("web_search_enabled") boolean webSearchEnabled,
         QueryResponse result,
         String error
 ) {
     public static QueryRunStatusResponse from(QueryRun run) {
         return new QueryRunStatusResponse(
-                run.requestId(), run.status().name().toLowerCase(), run.result(), run.errorMessage());
+                run.requestId(), run.status().name().toLowerCase(), run.provider(), run.model(), run.webSearchEnabled(),
+                run.result(), run.errorMessage());
     }
 }

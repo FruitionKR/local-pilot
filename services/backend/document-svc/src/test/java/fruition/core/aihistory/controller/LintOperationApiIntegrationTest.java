@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.TestcontainersConfiguration;
 import fruition.core.document.service.AiCommandOutboxPublisher;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.shared.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class LintOperationApiIntegrationTest {
     @Autowired StringRedisTemplate redisTemplate;
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean AiCommandOutboxPublisher outboxPublisher;
+    @MockBean WorkspaceAiModelClient workspaceAiModelClient;
 
     private String userId;
     private String workspaceId;
@@ -46,6 +48,8 @@ class LintOperationApiIntegrationTest {
         userId = "user_" + suffix;
         workspaceId = "ws_" + suffix;
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
+        org.mockito.Mockito.when(workspaceAiModelClient.get(workspaceId))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-4.1-mini"));
     }
 
     @Test

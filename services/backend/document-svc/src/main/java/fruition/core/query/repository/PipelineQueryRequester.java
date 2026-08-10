@@ -29,7 +29,16 @@ public class PipelineQueryRequester {
     }
 
     public PipelineQueryResponse query(String workspaceId, String question) {
-        return executeQuery(new QueryPayload(workspaceId, question));
+        return query(workspaceId, question, "openai", "gpt-4.1-mini");
+    }
+
+    public PipelineQueryResponse query(String workspaceId, String question, String provider, String model) {
+        return query(workspaceId, question, provider, model, false);
+    }
+
+    public PipelineQueryResponse query(String workspaceId, String question, String provider, String model,
+                                       boolean webSearchEnabled) {
+        return executeQuery(new QueryPayload(workspaceId, question, provider, model, webSearchEnabled));
     }
 
     private PipelineQueryResponse executeQuery(QueryPayload payload) {
@@ -66,5 +75,8 @@ public class PipelineQueryRequester {
 
     private record QueryPayload(
             @JsonProperty("workspace_id") String workspaceId,
-            @JsonProperty("question") String question) {}
+            @JsonProperty("question") String question,
+            String provider,
+            String model,
+            @JsonProperty("allow_web_search") boolean webSearchEnabled) {}
 }

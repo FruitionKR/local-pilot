@@ -3,6 +3,7 @@ package fruition.core;
 import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.agent.exception.PipelineAgentException;
+import fruition.core.ai.WorkspaceAiModelForbiddenException;
 import fruition.core.aihistory.exception.InvalidCallbackPayloadException;
 import fruition.core.aihistory.exception.InvalidCallbackTokenException;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
@@ -365,6 +366,13 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(WorkspaceAiModelForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleWorkspaceAiModelForbidden(WorkspaceAiModelForbiddenException e) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of("WORKSPACE_AI_MODEL_FORBIDDEN", e.getMessage()));
     }
 
     @ExceptionHandler(OperationNotFoundException.class)

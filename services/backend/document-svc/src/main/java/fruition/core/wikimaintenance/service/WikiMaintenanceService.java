@@ -13,6 +13,7 @@ import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
 import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.core.wikimaintenance.repository.WikiLintStateRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.authz.WorkspaceAiModelClient;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ public class WikiMaintenanceService {
     private final PipelineWikiStateRequester wikiStateRequester;
     private final ObjectMapper objectMapper;
     private final String commandTopic;
+    private final WorkspaceAiModelClient workspaceAiModelClient;
 
     public WikiMaintenanceService(WorkspaceAccessGuard workspaceAccessGuard,
                                   LintOperationStarter operationStarter,
@@ -39,7 +41,8 @@ public class WikiMaintenanceService {
                                   WikiLintStateRepository lintStateRepository,
                                   PipelineWikiStateRequester wikiStateRequester,
                                   ObjectMapper objectMapper,
-                                  @Value("${app.maintenance.command-topic}") String commandTopic) {
+                                  @Value("${app.maintenance.command-topic}") String commandTopic,
+                                  WorkspaceAiModelClient workspaceAiModelClient) {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.operationStarter = operationStarter;
         this.outboxWriter = outboxWriter;
@@ -48,6 +51,7 @@ public class WikiMaintenanceService {
         this.wikiStateRequester = wikiStateRequester;
         this.objectMapper = objectMapper;
         this.commandTopic = commandTopic;
+        this.workspaceAiModelClient = workspaceAiModelClient;
     }
 
     @Transactional
@@ -57,9 +61,11 @@ public class WikiMaintenanceService {
         boolean dryRun = !Boolean.FALSE.equals(safe.dryRun());
         String runId = UUID.randomUUID().toString();
         String operationId = dryRun ? null : operationStarter.start(workspaceId, userId);
+        WorkspaceAiModelClient.AiModelSelection aiModel = workspaceAiModelClient.get(workspaceId);
         outboxWriter.enqueue(runId, commandTopic, workspaceId,
                 new LintCommand(runId, "lint", workspaceId, userId, operationId,
-                        Boolean.TRUE.equals(safe.materializePromotions()), dryRun));
+                        Boolean.TRUE.equals(safe.materializePromotions()), dryRun,
+                        aiModel.provider(), aiModel.model()));
         return objectMapper.valueToTree(new LintRunResponse(runId, operationId, "queued"));
     }
 
@@ -95,7 +101,9 @@ public class WikiMaintenanceService {
             @JsonProperty("user_id") String userId,
             @JsonProperty("operation_id") String operationId,
             @JsonProperty("materialize_promotions") boolean materializePromotions,
-            @JsonProperty("dry_run") boolean dryRun
+            @JsonProperty("dry_run") boolean dryRun,
+            String provider,
+            String model
     ) {}
 
     record LintRunResponse(

@@ -20,15 +20,19 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 
 ### access_db (access-svc)
 
+- `users.web_search_enabled`: 사용자 전역 웹 검색 허용 여부(기본값 `false`)
+
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|
 | users | access-svc | 사용자 계정 | `email` UK, `password_hash`(OAuth 전용은 NULL) |
 | user_oauth_accounts | access-svc | OAuth provider 연결 | users 1:N, `(provider, provider_user_id)` |
 | user_refresh_tokens | access-svc | JWT refresh token | `token_hash`(SHA-256), `revoked_at`으로 탈취 감지 |
-| workspaces | access-svc | 격리 단위 | 문서·Wiki·채팅의 소속 기준 |
+| workspaces | access-svc | 격리 단위 | 문서·Wiki·채팅의 소속 기준, `ingest_lint_provider`·`ingest_lint_model` |
 | workspace_members | access-svc | 멤버십(N:M 대비) | 복합 PK `(workspace_id, user_id)`, `role`(owner/member) |
 
 ### core_db (document-svc)
+
+- `chat_messages.web_search_enabled`: 질의 실행 시점의 웹 검색 허용 여부 snapshot
 
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|
@@ -39,7 +43,7 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | wiki_page_versions | document-svc | Wiki 본문 revision 이력 | 복합 PK `(page_id, revision)`, 페이지 ID는 ai_db 논리 참조 |
 | wiki_page_contributions | document-svc | 복구용 ingest 기여 원장 | 복합 PK `(page_id, ingest_operation_id)`, 비활성화 이력 보존 |
 | chat_sessions | document-svc | 채팅 세션(workspace당 10개) | `context_summary`, `wiki_page_id`(full export 연결) |
-| chat_messages | document-svc | 질의응답 메시지 | `pair_id`로 user·assistant 쌍 식별 |
+| chat_messages | document-svc | 질의응답 메시지 | `pair_id`로 user·assistant 쌍 식별, user 질의에 `ai_provider`·`ai_model` snapshot |
 | chat_message_references | document-svc | 답변 근거 source block 스니펫 | chat_messages 1:N, `source_block_ids` |
 | chat_message_related_pages | document-svc | 답변 관련 Wiki 페이지 목록 | chat_messages 1:N, `relevance_score`·`depth` |
 | chat_partial_wiki | document-svc | partial export 문답↔페이지 멤버십 | `UNIQUE(pair_id, wiki_page_id)` |

@@ -39,13 +39,23 @@ public class QueryRunStore {
         this.objectMapper = objectMapper;
     }
 
-    public QueryRun create(String workspaceId, String sessionId, String question) {
+    public QueryRun create(String workspaceId, String sessionId, String provider, String model,
+                           boolean webSearchEnabled, String question) {
         String requestId = "query_" + UUID.randomUUID();
-        QueryRun run = QueryRun.pending(requestId, workspaceId, sessionId, question, clock.instant());
+        QueryRun run = QueryRun.pending(requestId, workspaceId, sessionId, provider, model,
+                webSearchEnabled, question, clock.instant());
         write(run, ACTIVE_RUN_TTL);
         log.info("[질의 run 저장] requestId={} sessionId={} status=pending questionLength={}",
                 requestId, sessionId, question.length());
         return run;
+    }
+
+    public QueryRun create(String workspaceId, String sessionId, String provider, String model, String question) {
+        return create(workspaceId, sessionId, provider, model, false, question);
+    }
+
+    public QueryRun create(String workspaceId, String sessionId, String question) {
+        return create(workspaceId, sessionId, "openai", "gpt-4.1-mini", false, question);
     }
 
     public Optional<QueryRun> find(String requestId) {

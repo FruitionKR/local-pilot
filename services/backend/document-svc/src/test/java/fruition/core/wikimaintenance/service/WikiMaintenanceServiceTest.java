@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.aihistory.service.LintOperationStarter;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.authz.WorkspaceNotFoundException;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.repository.PipelineRunStatusRequester;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
@@ -37,6 +38,7 @@ class WikiMaintenanceServiceTest {
     @Mock PipelineRunStatusRequester runStatusRequester;
     @Mock WikiLintStateRepository lintStateRepository;
     @Mock PipelineWikiStateRequester wikiStateRequester;
+    @Mock WorkspaceAiModelClient workspaceAiModelClient;
 
     private WikiMaintenanceService service;
 
@@ -44,7 +46,9 @@ class WikiMaintenanceServiceTest {
     void setUp() {
         service = new WikiMaintenanceService(workspaceAccessGuard, operationStarter, outboxWriter,
                 runStatusRequester, lintStateRepository, wikiStateRequester, new ObjectMapper(),
-                "ai.maintenance.command");
+                "ai.maintenance.command", workspaceAiModelClient);
+        org.mockito.Mockito.lenient().when(workspaceAiModelClient.get("ws_1"))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-4.1-mini"));
     }
 
     @Test

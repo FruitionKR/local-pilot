@@ -48,16 +48,29 @@ public class AccessUserClient {
 
     /** 사용자 표시명. 없거나 조회에 실패하면 null. */
     public String getDisplayName(String userId) {
+        UserResponse response = getUser(userId);
+        return response == null ? null : response.displayName();
+    }
+
+    /** 내부 조회 실패 시 외부 검색을 허용하지 않는다. */
+    public boolean isWebSearchEnabled(String userId) {
+        UserResponse response = getUser(userId);
+        return response != null && response.webSearchEnabled();
+    }
+
+    private UserResponse getUser(String userId) {
         try {
             UserResponse response = restClient.get()
                     .uri("/internal/users/{userId}", userId)
                     .retrieve()
                     .body(UserResponse.class);
-            return response == null ? null : response.displayName();
+            return response;
         } catch (RestClientException e) {
             return null;
         }
     }
 
-    record UserResponse(@JsonProperty("display_name") String displayName) {}
+    record UserResponse(
+            @JsonProperty("display_name") String displayName,
+            @JsonProperty("web_search_enabled") boolean webSearchEnabled) {}
 }

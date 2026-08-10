@@ -25,6 +25,9 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "web_search_enabled", nullable = false)
+    private boolean webSearchEnabled;
+
     protected User() {}
 
     public User(String id, String email, String displayName, String passwordHash) {
@@ -32,6 +35,7 @@ public class User {
         this.email = email;
         this.displayName = displayName;
         this.passwordHash = passwordHash;
+        this.webSearchEnabled = false;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
@@ -41,10 +45,16 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
+    public void changeWebSearchEnabled(boolean enabled) {
+        this.webSearchEnabled = enabled;
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public String getEmail() { return email; }
     public String getDisplayName() { return displayName; }
     public String getPasswordHash() { return passwordHash; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public boolean isWebSearchEnabled() { return webSearchEnabled; }
 }

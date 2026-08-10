@@ -29,9 +29,12 @@ services/
 
 ## 2. 서비스 간 통신
 
+- Query 실행 전 `document-svc`는 `access-svc` 내부 사용자 조회에서 전역 `web_search_enabled`를 읽는다. 조회 실패 시 외부 검색을 허용하지 않는다.
+- 실행 당시 값은 메시지에 snapshot으로 남고, Query HTTP/Kafka payload에는 `allow_web_search` boolean으로 전달한다.
+
 | 방향 | 방식 | 용도 |
 |---|---|---|
-| document → access | `GET /internal/authz/workspaces/{wid}/users/{uid}`, `GET /internal/users/{uid}` (X-Internal-Token) | 권한·표시명 조회 (캐시 miss 시) |
+| document → access | `GET /internal/authz/workspaces/{wid}/users/{uid}`, `GET /internal/users/{uid}`, `GET·PUT /internal/workspaces/{wid}/ai-model-settings` (X-Internal-Token) | 권한·표시명·workspace AI 모델 설정 조회/변경 |
 | access → document | `POST /internal/workspaces/{wid}/initial-note` (X-Internal-Token, best-effort, 커밋 후 호출) | 새 워크스페이스 초기 노트 |
 | document → ai-svc | Kafka `ai.ingest.command`(key=document_id), `ai.query.command`, `ai.agent.command`, `ai.maintenance.command` | 비동기 ingest·Query·Agent·Lint·Restore |
 | document → ai-svc | HTTP + X-Internal-Token | 동기 Query, Wiki 현재 상태 조회, pipeline run 폴링 |
@@ -58,14 +61,14 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 저장소·테이블 상세는 [data-model.md](data-model.md). 요약:
 
-- access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션) + Redis projection
-- document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
+- access-svc → **access_db** (users·oauth·refresh token·workspaces·members·세션·workspace AI 모델 설정) + Redis projection
+- document-svc → **core_db** (문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력·질의 모델 snapshot) + **MongoDB** (본문·revision·outbox, 단일 트랜잭션) + Redis (query run·SSE) + S3/MinIO (원본·snapshot)
 - ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적·Agent·Skill·LangGraph checkpoint).
 - DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`은 core DB DML 권한과 연결 설정을 갖지 않는다. Markdown Agent 요청 시 document-svc는 core의 좁은 적용 예약 projection과 outbox만 원자 저장하고, AI run 상태는 scope가 포함된 내부 API로 조회한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
 
 ## 5. 이벤트 처리
 
-본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다.
+본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. Query·ingest·lint command에는 적용할 `provider`와 `model` snapshot도 포함한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다.
 
 ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서 LLM·분석을 병렬 처리한다. ingest와 lint `materialize=true`는 Concept 최종 read→merge→object write→DB commit만 `(user_id, workspace_id)` PostgreSQL transaction advisory lock으로 공유 직렬화한다. 기존 ingest Redis short lock은 유지하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
 

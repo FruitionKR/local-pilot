@@ -18,5 +18,9 @@ public record ChatMessageResponse(
         @JsonProperty("wiki_page_id") String wikiPageId,
         @JsonProperty("partial_wiki_page_ids") List<String> partialWikiPageIds,
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        @JsonProperty("error_message") String errorMessage
+        @JsonProperty("error_message") String errorMessage,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String provider,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String model,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @JsonProperty("web_search_enabled") Boolean webSearchEnabled
 ) {}

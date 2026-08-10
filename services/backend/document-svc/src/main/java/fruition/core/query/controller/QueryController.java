@@ -1,12 +1,14 @@
 package fruition.core.query.controller;
 
 import fruition.core.chat.service.ChatSessionService;
+import fruition.core.authz.AccessUserClient;
 import fruition.core.query.domain.QueryRun;
 import fruition.core.query.dto.QueryRequest;
 import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.dto.QueryRunCreateResponse;
 import fruition.core.query.service.QueryRunService;
 import fruition.core.query.service.QueryService;
+import fruition.shared.ai.AiModelCatalog;
 import fruition.shared.util.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,11 +39,17 @@ public class QueryController {
     private final QueryService queryService;
     private final QueryRunService queryRunService;
     private final ChatSessionService chatSessionService;
+    private final AiModelCatalog aiModelCatalog;
+    private final AccessUserClient accessUserClient;
 
-    public QueryController(QueryService queryService, QueryRunService queryRunService, ChatSessionService chatSessionService) {
+    public QueryController(QueryService queryService, QueryRunService queryRunService,
+                           ChatSessionService chatSessionService, AiModelCatalog aiModelCatalog,
+                           AccessUserClient accessUserClient) {
         this.queryService = queryService;
         this.queryRunService = queryRunService;
         this.chatSessionService = chatSessionService;
+        this.aiModelCatalog = aiModelCatalog;
+        this.accessUserClient = accessUserClient;
     }
 
     @Operation(
@@ -73,7 +81,14 @@ public class QueryController {
         log.info("[질의 요청 수신] mode=sync workspaceId={} userId={} sessionId={} questionLength={}",
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
-        return ResponseEntity.ok(queryService.query(workspaceId, sessionId, request.question()));
+        AiModelCatalog.AiModel selected = aiModelCatalog.resolve(request.provider(), request.model());
+        boolean webSearchEnabled = accessUserClient.isWebSearchEnabled(userId);
+        QueryResponse response = webSearchEnabled
+                ? queryService.query(workspaceId, sessionId, request.question(),
+                        selected.provider(), selected.model(), true)
+                : queryService.query(workspaceId, sessionId, request.question(),
+                        selected.provider(), selected.model());
+        return ResponseEntity.ok(response);
     }
 
     @Operation(
@@ -98,7 +113,13 @@ public class QueryController {
         log.info("[질의 요청 수신] mode=async workspaceId={} userId={} sessionId={} questionLength={}",
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
-        QueryRun run = queryRunService.start(workspaceId, userId, sessionId, request.question());
+        AiModelCatalog.AiModel selected = aiModelCatalog.resolve(request.provider(), request.model());
+        boolean webSearchEnabled = accessUserClient.isWebSearchEnabled(userId);
+        QueryRun run = webSearchEnabled
+                ? queryRunService.start(workspaceId, userId, sessionId, request.question(),
+                        selected.provider(), selected.model(), true)
+                : queryRunService.start(workspaceId, userId, sessionId, request.question(),
+                        selected.provider(), selected.model());
         log.info("[질의 run 응답] requestId={} status={}", run.requestId(), run.status());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(QueryRunCreateResponse.from(run));
     }

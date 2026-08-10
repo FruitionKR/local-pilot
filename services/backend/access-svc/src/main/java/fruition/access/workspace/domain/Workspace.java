@@ -7,6 +7,9 @@ import java.time.Instant;
 @Table(name = "workspaces")
 public class Workspace {
 
+    private static final String DEFAULT_AI_PROVIDER = "openai";
+    private static final String DEFAULT_AI_MODEL = "gpt-4.1-mini";
+
     @Id
     private String id;
 
@@ -25,6 +28,12 @@ public class Workspace {
     @Column(name = "deleted_by")
     private String deletedBy;
 
+    @Column(name = "ingest_lint_provider", nullable = false)
+    private String ingestLintProvider;
+
+    @Column(name = "ingest_lint_model", nullable = false)
+    private String ingestLintModel;
+
     protected Workspace() {}
 
     public Workspace(String id, String name) {
@@ -32,6 +41,8 @@ public class Workspace {
         this.name = name;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
+        this.ingestLintProvider = DEFAULT_AI_PROVIDER;
+        this.ingestLintModel = DEFAULT_AI_MODEL;
     }
 
     public void rename(String name) {
@@ -51,10 +62,18 @@ public class Workspace {
         this.updatedAt = restoredAt;
     }
 
+    public void changeIngestLintModel(String provider, String model) {
+        this.ingestLintProvider = provider;
+        this.ingestLintModel = model;
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public String getName() { return name; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
     public String getDeletedBy() { return deletedBy; }
+    public String getIngestLintProvider() { return ingestLintProvider; }
+    public String getIngestLintModel() { return ingestLintModel; }
 }
