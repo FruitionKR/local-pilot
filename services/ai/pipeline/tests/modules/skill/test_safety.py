@@ -36,6 +36,18 @@ def test_detects_each_credential_instead_of_only_the_first() -> None:
     assert [issue.category for issue in issues] == ["credential"] * 4
 
 
+def test_detects_email_before_terminal_period_and_full_country_domain() -> None:
+    value = "연락처 user@example.com. 또는 user@example.com.kr, user@example.net..."
+
+    issues = inspect_skill_instructions(value)
+
+    assert [value[issue.start : issue.end] for issue in issues] == [
+        "user@example.com",
+        "user@example.com.kr",
+        "user@example.net",
+    ]
+
+
 def test_allows_empty_and_underscore_personal_data_templates() -> None:
     value = (
         "name: meeting-summary\n"
@@ -47,6 +59,15 @@ def test_allows_empty_and_underscore_personal_data_templates() -> None:
     )
 
     assert inspect_skill_instructions(value) == ()
+
+
+def test_blocks_personal_data_field_in_markdown_blockquote() -> None:
+    value = "> 이름: 홍길동\n> 주소: ____\n> > 성명: 김철수"
+
+    issues = inspect_skill_instructions(value)
+
+    assert [issue.category for issue in issues] == ["personal_name", "personal_name"]
+    assert [value[issue.start : issue.end] for issue in issues] == ["홍길동", "김철수"]
 
 
 def test_blocks_personal_data_in_single_column_table() -> None:

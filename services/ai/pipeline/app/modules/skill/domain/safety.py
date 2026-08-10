@@ -54,7 +54,7 @@ CREDENTIAL_PATTERNS = (
 )
 EMAIL_PATTERN = re.compile(
     r"(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}"
-    r"(?=$|[^A-Z0-9.-])",
+    r"(?=$|[^A-Z0-9.-]|\.+(?=[^A-Z0-9.-]|$))",
     re.IGNORECASE,
 )
 PHONE_PATTERNS = (
@@ -92,7 +92,7 @@ PERSONAL_FIELD_CATEGORIES = {
     "account number": "bank_account",
 }
 PERSONAL_FIELD_PATTERN = re.compile(
-    r"^[ \t]*(?:(?:[-+*]|\d+[.)])\s+)?(?P<label>"
+    r"^[ \t]*(?:>[ \t]*)*(?:(?:[-+*]|\d+[.)])\s+)?(?P<label>"
     + "|".join(
         re.escape(label)
         for label in sorted(PERSONAL_FIELD_CATEGORIES, key=len, reverse=True)
