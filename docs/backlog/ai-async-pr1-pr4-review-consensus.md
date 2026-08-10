@@ -2,25 +2,25 @@
 
 ## 1. 목적과 검토 범위
 
-이 문서는 다음 stacked PR의 누적 변경을 `origin/dev-msa...0911816c` 기준으로 다시 검토한 결과다.
+이 문서는 다음 stacked PR의 누적 변경을 `origin/dev-msa...750357e3` 기준으로 다시 검토한 결과다. 기준 HEAD 뒤에는 이 문서의 정합성만 갱신하는 커밋이 이어진다.
 
 | PR | 제목 | 기준 브랜치 | 커밋 |
 |---|---|---|---|
 | [#156](https://github.com/FruitionKR/local-pilot/pull/156) | AI command transactional outbox 적용 | `dev-msa` | `a3cebf10`, `25b7b787`, `b81b867f` |
 | [#157](https://github.com/FruitionKR/local-pilot/pull/157) | Wiki DB 경계를 내부 API로 분리 | PR #156 | `cf132ccd`, `75bec422` |
 | [#158](https://github.com/FruitionKR/local-pilot/pull/158) | Wiki 현재 상태를 ai_db로 이전 | PR #157 | `fe647fbd` |
-| [#159](https://github.com/FruitionKR/local-pilot/pull/159) | AI 작업 비동기화와 ingest 병렬 처리 | PR #158 | `0911816c` |
+| [#159](https://github.com/FruitionKR/local-pilot/pull/159) | AI 작업 비동기화와 ingest 병렬 처리 | PR #158 | `0911816c`, `0ef5bc9e`, `13e3a74b`, `750357e3` |
 
-수정자, 감시자, 통합 리뷰어가 182개 변경 파일을 각각 검토한 뒤 이견을 다시 대조했다. 검토 시점에 네 PR은 모두 open·mergeable이고 CI는 성공했지만, 운영 상태 전이와 DB 경계에서 CI가 검출하지 못한 결함이 확인됐다.
+수정자, 감시자, 통합 리뷰어가 누적 195개 변경 파일을 각각 검토하고 이견과 후속 수정까지 대조했다. 최종 재검토 시점에 네 PR은 모두 open·mergeable이고, PR #159의 Backend·Frontend·llmPipeline·Docker Compose CI가 모두 성공했다.
 
 ## 2. 결론
 
-합의된 merge 전 필수 13건은 구현과 로컬 회귀 검증을 마쳤다. 누적 diff 재검토와 PR CI 확인 뒤 merge 여부를 판단한다.
+합의된 merge 전 필수 13건은 구현·로컬 회귀 검증·누적 diff 재검토·PR CI 확인을 마쳤다. 현재 확인된 merge 전 필수 blocker는 없다.
 
 - merge 전 필수: P0 2건, P1 10건, P2 문서 정합성 1건 구현 완료
 - 판단 보류·추가 합의: run polling #5, Concept evidence 경합 #7, 동기 Query 유지 여부 #15
 - 최종 배포 전 필수: Agent run/job/plan의 ai_db 이전과 core 권한 회수 1건
-- 사용자 판단 사항: 누적 재검토 후 merge할지와 Agent DB 이전의 실행 순서만 판단하면 된다. 최종 소유권 목표 자체는 이미 합의됐다.
+- 사용자 판단 사항: PR을 merge할지와 Agent DB 이전의 실행 순서만 판단하면 된다. 최종 소유권 목표 자체는 이미 합의됐다.
 
 이 문서의 합의를 기준으로 PR #159에서 수정했고, 아래 검증 상태를 함께 기록한다.
 
@@ -193,12 +193,12 @@
 
 ## 8. 사용자 판단 체크리스트
 
-- merge 전 필수로 남은 #1~#4, #6, #8~#14, #17을 수정·검증한다.
+- merge 전 필수 #1~#4, #6, #8~#14, #17은 수정·검증과 최종 재검토를 완료했다.
 - #5는 polling 복구 SLO가 필요해질 때 재논의한다.
 - #7은 lost update 시나리오와 최소 row lock 방식을 이해·합의한 뒤 포함 여부를 결정한다.
 - #15는 동기 Query 호환 경로의 공식 지원 여부를 별도로 합의한다.
 - #16은 merge 전에 함께 처리하거나, merge 직후 배포 전 후속 PR로 처리한다.
-- 수정 완료 후 같은 누적 범위로 3자 재검토하고 CI뿐 아니라 event 유실·재전달·lock 만료·cutover rollback 실검증 결과를 확인한다.
+- 현재 merge 전 blocker는 없으며, merge 여부와 #16의 실행 순서만 사용자가 결정한다.
 
 ## 9. 구현·검증 상태
 
@@ -211,3 +211,14 @@
 | Python 전체 | `814 passed`, `61 subtests passed` |
 | Frontend | `npx tsc --noEmit` 성공 |
 | Compose/Kustomize | 전체 Compose 병합 config와 base/AWS overlay build 성공 |
+| PR #159 CI | Backend·Frontend·llmPipeline·Docker Compose 4종 성공 (`750357e3`) |
+
+## 10. 최종 독립 재검토
+
+초기 13건 수정 뒤 독립 리뷰에서 추가로 확인된 세 결함도 다음 커밋에서 닫았다.
+
+- Query terminal projection: `13e3a74b`에서 `QueryRunStore`가 최초 Redis terminal 전이 여부를 반환하게 하고, 그 전이가 성공한 경우에만 SSE complete/fail을 발행한다. 동일 success 재수신과 success 뒤 failed 재수신 회귀 테스트를 추가했다.
+- AI result event 유실: `750357e3`에서 `AiTaskResultConsumer` 전용 listener factory에 unlimited `FixedBackOff`를 적용해 Spring Kafka 기본 유한 재시도 뒤 recover/ack되는 경로를 제거했다. 기본 횟수를 넘긴 12회에도 recover하지 않는 테스트로 확인했다.
+- Restore stale poison event: `750357e3`에서 `RestorePreviewStaleException`만 operation `conflict`와 receipt를 바깥 `applyRestore` transaction에서 함께 확정하고 정상 반환한다. 내부 `RestoreApplier`에는 해당 business conflict의 `noRollbackFor`를 지정해 transaction이 rollback-only가 되지 않게 했으며, 그 밖의 일시 장애는 그대로 throw해 Kafka 재전달에 맡기는 회귀 테스트를 추가했다.
+
+최종 결론은 merge 전 필수 blocker 없음, #5·#7·#15 보류, #16 최종 배포·core 권한 회수 전 완료 조건이다.
