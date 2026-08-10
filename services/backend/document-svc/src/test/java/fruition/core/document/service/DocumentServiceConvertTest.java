@@ -16,10 +16,9 @@ import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.DocumentContentVersionRepository;
 import fruition.core.document.repository.DocumentEditStateRepository;
-import fruition.core.document.repository.DocumentProcessingQueueRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
-import fruition.core.document.repository.IngestCommandPublisher;
+import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.SourceBlockRepository;
 import fruition.shared.idempotency.IdempotencyConflictException;
 import fruition.shared.idempotency.IdempotencyRecord;
@@ -74,12 +73,11 @@ class DocumentServiceConvertTest {
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
-    @Mock IngestCommandPublisher ingestCommandPublisher;
+    @Mock IngestCommandOutbox ingestCommandOutbox;
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock WikiPageLinkRepository wikiPageLinkRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
-    @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock DocumentConvertQueueRepository convertQueueRepository;
     @Mock ConverterClient converterClient;
     @Mock TransactionTemplate transactionTemplate;
@@ -102,8 +100,8 @@ class DocumentServiceConvertTest {
     void setUp() {
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
-                ingestCommandPublisher, documentWikiLinkRepository, wikiPageRepository,
-                wikiPageLinkRepository, sourceBlockRepository, queueRepository,
+                ingestCommandOutbox, documentWikiLinkRepository, wikiPageRepository,
+                wikiPageLinkRepository, sourceBlockRepository,
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,

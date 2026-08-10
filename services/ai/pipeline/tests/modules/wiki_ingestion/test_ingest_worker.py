@@ -32,6 +32,7 @@ def test_handle_skips_terminal_redelivered_run(status: str) -> None:
         "run_id": "run-1",
         "document_id": "document-1",
         "workspace_id": "workspace-1",
+        "user_id": "user-1",
     }
 
     with (
@@ -50,6 +51,7 @@ def test_handle_retries_running_redelivered_run() -> None:
         "run_id": "run-1",
         "document_id": "document-1",
         "workspace_id": "workspace-1",
+        "user_id": "user-1",
     }
 
     with (
@@ -68,3 +70,32 @@ def test_handle_retries_running_redelivered_run() -> None:
         source_reader=get_source_reader.return_value,
         run_id="run-1",
     )
+
+
+def test_handle_records_failure_after_run_registration() -> None:
+    repository = MagicMock()
+    repository.get_run.return_value = None
+    command = {
+        "run_id": "run-1",
+        "document_id": "document-1",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+    }
+
+    with (
+        patch.object(ingest_worker, "get_pipeline_run_repository", return_value=repository),
+        patch.object(
+            ingest_worker,
+            "_run_pipeline_request",
+            side_effect=RuntimeError("document lookup failed"),
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="document lookup failed"):
+            ingest_worker._handle(command)
+
+    repository.fail.assert_called_once_with("run-1", "document lookup failed")
+
+
+def test_build_payload_requires_actor_context() -> None:
+    with pytest.raises(ValueError, match="user_id and workspace_id"):
+        ingest_worker._build_payload({"run_id": "run-1", "document_id": "document-1"})

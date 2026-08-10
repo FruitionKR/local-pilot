@@ -29,8 +29,7 @@ import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
 import fruition.core.document.mongo.MongoDocumentEditStore;
-import fruition.core.document.repository.DocumentProcessingQueueRepository;
-import fruition.core.document.repository.IngestCommandPublisher;
+import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.shared.idempotency.IdempotencyRecordRepository;
 import fruition.core.document.repository.DocumentRepository;
@@ -88,12 +87,11 @@ class DocumentServiceBlocksTest {
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock MinioClient minioClient;
     @Mock StorageProperties storageProps;
-    @Mock IngestCommandPublisher ingestCommandPublisher;
+    @Mock IngestCommandOutbox ingestCommandOutbox;
     @Mock DocumentWikiLinkRepository documentWikiLinkRepository;
     @Mock WikiPageRepository wikiPageRepository;
     @Mock WikiPageLinkRepository wikiPageLinkRepository;
     @Mock SourceBlockRepository sourceBlockRepository;
-    @Mock DocumentProcessingQueueRepository queueRepository;
     @Mock fruition.core.document.repository.DocumentConvertQueueRepository convertQueueRepository;
     @Mock fruition.core.document.repository.ConverterClient converterClient;
     @Mock TransactionTemplate transactionTemplate;
@@ -116,8 +114,8 @@ class DocumentServiceBlocksTest {
     void setUp() {
         documentService = new DocumentService(documentRepository, folderRepository,
                 workspaceAccessGuard, minioClient, storageProps,
-                ingestCommandPublisher, documentWikiLinkRepository, wikiPageRepository,
-                wikiPageLinkRepository, sourceBlockRepository, queueRepository,
+                ingestCommandOutbox, documentWikiLinkRepository, wikiPageRepository,
+                wikiPageLinkRepository, sourceBlockRepository,
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
@@ -147,6 +145,9 @@ class DocumentServiceBlocksTest {
                             invocation.getArgument(6),
                             true);
                 });
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
+                invocation.<org.springframework.transaction.support.TransactionCallback<Object>>getArgument(0)
+                        .doInTransaction(null));
     }
 
     private void stubOwnedWorkspace() {
@@ -423,7 +424,6 @@ class DocumentServiceBlocksTest {
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(editStateRepository).save(any(DocumentEditState.class));
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
-        verifyNoInteractions(queueRepository);
         assertThat(storedDocument.getValue().getStatus()).isEqualTo(
                 fruition.core.document.domain.DocumentStatus.uploaded);
         assertThat(response.status()).isEqualTo(fruition.core.document.domain.DocumentStatus.uploaded);
@@ -448,7 +448,6 @@ class DocumentServiceBlocksTest {
         verify(documentRepository).save(storedDocument.capture());
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(editStateRepository, never()).save(any(DocumentEditState.class));
-        verifyNoInteractions(queueRepository);
         assertThat(storedDocument.getValue().getStatus()).isEqualTo(
                 fruition.core.document.domain.DocumentStatus.uploaded);
         assertThat(storedDocument.getValue().getProcessedAt()).isNull();
@@ -671,13 +670,22 @@ class DocumentServiceBlocksTest {
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(storageProps.getBucket()).thenReturn("bucket");
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, document.getId()))
+                .thenReturn("op_ingest_1");
+        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1"))
+                .thenReturn("http://callback/result");
 
         fruition.core.document.dto.DocumentIngestResponse response =
                 documentService.ingest(WORKSPACE_ID, USER_ID, document.getId());
 
         assertThat(response.id()).isEqualTo(document.getId());
+        assertThat(response.runId()).isEqualTo(document.getPipelineRunId());
+        assertThat(response.runId()).isNotBlank();
         assertThat(document.getStatus()).isEqualTo(fruition.core.document.domain.DocumentStatus.processing);
         assertThat(document.getContentHash()).isEqualTo(editState.getContentHash());
+        verify(ingestCommandOutbox).enqueue(
+                eq(response.runId()), eq(document.getId()), eq(USER_ID), eq(WORKSPACE_ID),
+                anyString(), any(), any(), eq(false), eq("op_ingest_1"), eq("http://callback/result"));
     }
 
     @Test
@@ -1019,7 +1027,6 @@ class DocumentServiceBlocksTest {
         assertThat(response.deleted()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
         verify(documentRepository, never()).delete(any(Document.class));
-        verify(queueRepository, never()).deleteByDocumentId(anyString());
         verify(sourceBlockRepository, never()).deleteByIdDocumentId(anyString());
         verify(minioClient, never()).removeObject(any(RemoveObjectArgs.class));
         verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
@@ -1117,47 +1124,35 @@ class DocumentServiceBlocksTest {
 
     @Test
     @DisplayName("chat_export 문서는 chatWiki=true로 파이프라인 요청을 라우팅한다")
-    void doRequestProcessing_chatExport_routesChatWiki() {
+    void enqueueIngest_chatExport_routesChatWiki() {
         Document chatDoc = new Document("chatdoc_1", WORKSPACE_ID, USER_ID, "c.md", "text/markdown", 10L,
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
-        when(documentRepository.findByIdInActiveWorkspace("chatdoc_1")).thenReturn(Optional.of(chatDoc));
-        when(ingestCommandPublisher.publish(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), any()))
-                .thenReturn("run_1");
-
-        documentService.doRequestProcessing("chatdoc_1");
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "chatdoc_1")).thenReturn("op_ingest_1");
+        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
+        documentService.enqueueIngest(chatDoc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(ingestCommandPublisher).publish(eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID), anyString(),
-                eq("full"), any(), chatWiki.capture(), any(), any());
+        ArgumentCaptor<String> runId = ArgumentCaptor.forClass(String.class);
+        verify(ingestCommandOutbox).enqueue(runId.capture(), eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID),
+                anyString(), eq("full"), any(), chatWiki.capture(), any(), any());
         assertThat(chatWiki.getValue()).isTrue();
+        assertThat(chatDoc.getPipelineRunId()).isEqualTo(runId.getValue());
     }
 
     @Test
     @DisplayName("일반 업로드 문서는 chatWiki=false로 요청한다")
-    void doRequestProcessing_upload_routesGeneric() {
+    void enqueueIngest_upload_routesGeneric() {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
-        when(documentRepository.findByIdInActiveWorkspace("doc_up")).thenReturn(Optional.of(doc));
-        when(ingestCommandPublisher.publish(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), any()))
-                .thenReturn("run_2");
-
-        documentService.doRequestProcessing("doc_up");
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "doc_up")).thenReturn("op_ingest_1");
+        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
+        documentService.enqueueIngest(doc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(ingestCommandPublisher).publish(any(), any(), any(), any(), any(), any(), chatWiki.capture(),
-                any(), any());
+        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(), any(),
+                chatWiki.capture(), any(), any());
         assertThat(chatWiki.getValue()).isFalse();
     }
 
-    @Test
-    @DisplayName("삭제 workspace 문서는 새 pipeline 요청을 시작하지 않는다")
-    void doRequestProcessing_deletedWorkspace_skipsPipeline() {
-        when(documentRepository.findByIdInActiveWorkspace("doc_deleted_workspace"))
-                .thenReturn(Optional.empty());
-
-        documentService.doRequestProcessing("doc_deleted_workspace");
-
-        verifyNoInteractions(ingestCommandPublisher);
-    }
 }

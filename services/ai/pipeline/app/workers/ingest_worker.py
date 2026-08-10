@@ -11,7 +11,7 @@ backend가 `ai.ingest.command` topic에 발행한 문서/채팅 Wiki ingest 명�
 
 전달 보장:
 - 수동 커밋: 처리(성공/실패 기록)가 끝난 뒤에만 offset을 커밋한다.
-  worker가 중간에 죽으면 재전달되고, 이미 succeeded인 run은 멱등하게 건너뛴다.
+  worker가 중간에 죽으면 재전달되고, 이미 종료된 run은 멱등하게 건너뛴다.
 - 실패한 run의 상태·결과 통지는 기존 use case가 pipeline_runs와 result 콜백으로 기록한다.
 """
 
@@ -44,11 +44,14 @@ logger = logging.getLogger("ingest_worker")
 TOPIC = os.environ.get("INGEST_COMMAND_TOPIC", "ai.ingest.command")
 BOOTSTRAP_SERVERS = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 GROUP_ID = os.environ.get("INGEST_CONSUMER_GROUP", "ingest-worker")
+TERMINAL_STATUSES = {"succeeded", "failed", "notify_pending"}
 # ingest 1건이 분 단위라 poll 간격 한도를 넉넉히 둔다. 이 시간을 넘기면 리밸런싱된다.
 MAX_POLL_INTERVAL_MS = int(os.environ.get("INGEST_MAX_POLL_INTERVAL_MS", "1800000"))
 
 
 def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
+    if not command.get("user_id") or not command.get("workspace_id"):
+        raise ValueError("ingest command requires user_id and workspace_id")
     common = {
         "document_id": command["document_id"],
         "user_id": command.get("user_id"),
@@ -71,7 +74,7 @@ def _handle(command: dict) -> None:
     run_id = command["run_id"]
     repository = get_pipeline_run_repository()
     existing = repository.get_run(run_id)
-    if existing and existing.get("status") in {"succeeded", "failed", "notify_pending"}:
+    if existing and existing.get("status") in TERMINAL_STATUSES:
         logger.info(
             "[ingest 재전달 무시] run_id=%s 이미 종료됨 status=%s",
             run_id,
@@ -83,14 +86,18 @@ def _handle(command: dict) -> None:
         "[ingest 실행 시작] run_id=%s kind=%s document_id=%s workspace_id=%s",
         run_id, command.get("kind"), command.get("document_id"), command.get("workspace_id"),
     )
-    _run_pipeline_request(
-        payload,
-        background_tasks=None,
-        use_case=get_pipeline_run_use_case(),
-        repository=repository,
-        source_reader=get_pipeline_source_reader(),
-        run_id=run_id,
-    )
+    try:
+        _run_pipeline_request(
+            payload,
+            background_tasks=None,
+            use_case=get_pipeline_run_use_case(),
+            repository=repository,
+            source_reader=get_pipeline_source_reader(),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        repository.fail(run_id, str(exc))
+        raise
     logger.info("[ingest 실행 완료] run_id=%s", run_id)
 
 
@@ -122,12 +129,18 @@ async def consume() -> None:
                         # 실행은 스레드로 넘겨 이벤트 루프(heartbeat)를 비워 둔다.
                         await asyncio.to_thread(_handle, message.value)
                     except Exception:
-                        # 실패 상태·결과 통지는 use case가 이미 기록했다. 같은 메시지를
-                        # 무한 재소비하지 않도록 커밋하고 넘어간다(재시도는 operation 기반 후속).
                         logger.exception(
                             "[ingest 실행 실패] run_id=%s",
                             message.value.get("run_id") if isinstance(message.value, dict) else "?",
                         )
+                        run_id = message.value.get("run_id") if isinstance(message.value, dict) else None
+                        try:
+                            durable = get_pipeline_run_repository().get_run(run_id) if run_id else None
+                        except Exception:
+                            durable = None
+                        if durable is None or durable.get("status") not in TERMINAL_STATUSES:
+                            # terminal run까지 못 남긴 실패는 offset을 전진시키지 않고 컨테이너 재시작으로 재수신한다.
+                            raise
                     await consumer.commit()
     finally:
         await consumer.stop()

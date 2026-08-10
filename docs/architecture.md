@@ -65,7 +65,7 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 ## 5. 이벤트 처리
 
-본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id) 발행 — at-least-once, 문서별 순서 보존. ingest는 `ai.ingest.command`(key=workspace_id, 12 partitions) + KEDA lag 기반 스케일(min1/max4). 유실 실측: worker 정지 중 발행 → 기동 후 소비 → lag 0. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md)
+본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. ingest 요청은 Spring이 서비스 진입 시 `run_id`를 만들고 core DB의 문서 `processing` 상태·`pipeline_run_id`·operation·`ai_command_outbox`를 한 트랜잭션에 저장한 뒤 publisher가 Kafka `ai.ingest.command`(key=workspace_id)를 발행한다. 둘 다 at-least-once이며 AI worker는 종료된 `run_id`의 재전달을 실행하지 않는다. ingest topic은 12 partitions, KEDA lag 기반 스케일(min1/max4)을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md)
 
 ## 6. 배포
 

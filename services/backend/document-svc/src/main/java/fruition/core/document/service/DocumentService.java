@@ -48,13 +48,11 @@ import fruition.core.document.dto.DocumentBlockResponse;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentWikiPageRef;
 import fruition.core.document.domain.DocumentConvertQueue;
-import fruition.core.document.domain.DocumentProcessingQueue;
 import fruition.core.document.exception.DocumentConvertException;
 import fruition.core.document.exception.InvalidDocumentConvertRequestException;
 import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
-import fruition.core.document.repository.DocumentProcessingQueueRepository;
-import fruition.core.document.repository.IngestCommandPublisher;
+import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
 import fruition.core.document.mongo.MongoDocumentEditState;
@@ -115,12 +113,11 @@ public class DocumentService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final MinioClient minioClient;
     private final StorageProperties storageProps;
-    private final IngestCommandPublisher ingestCommandPublisher;
+    private final IngestCommandOutbox ingestCommandOutbox;
     private final DocumentWikiLinkRepository documentWikiLinkRepository;
     private final WikiPageRepository wikiPageRepository;
     private final WikiPageLinkRepository wikiPageLinkRepository;
     private final SourceBlockRepository sourceBlockRepository;
-    private final DocumentProcessingQueueRepository queueRepository;
     private final DocumentConvertQueueRepository convertQueueRepository;
     private final ConverterClient converterClient;
     private final TransactionTemplate transactionTemplate;
@@ -145,12 +142,11 @@ public class DocumentService {
                            WorkspaceAccessGuard workspaceAccessGuard,
                            MinioClient minioClient,
                            StorageProperties storageProps,
-                           IngestCommandPublisher ingestCommandPublisher,
+                           IngestCommandOutbox ingestCommandOutbox,
                            DocumentWikiLinkRepository documentWikiLinkRepository,
                            WikiPageRepository wikiPageRepository,
                            WikiPageLinkRepository wikiPageLinkRepository,
                            SourceBlockRepository sourceBlockRepository,
-                           DocumentProcessingQueueRepository queueRepository,
                            DocumentConvertQueueRepository convertQueueRepository,
                            ConverterClient converterClient,
                            TransactionTemplate transactionTemplate,
@@ -174,12 +170,11 @@ public class DocumentService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.minioClient = minioClient;
         this.storageProps = storageProps;
-        this.ingestCommandPublisher = ingestCommandPublisher;
+        this.ingestCommandOutbox = ingestCommandOutbox;
         this.documentWikiLinkRepository = documentWikiLinkRepository;
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageLinkRepository = wikiPageLinkRepository;
         this.sourceBlockRepository = sourceBlockRepository;
-        this.queueRepository = queueRepository;
         this.convertQueueRepository = convertQueueRepository;
         this.converterClient = converterClient;
         this.transactionTemplate = transactionTemplate;
@@ -697,29 +692,18 @@ public class DocumentService {
         });
     }
 
-    /**
-     * 작업 큐 행을 바깥 트랜잭션이 커밋된 뒤에 등록한다.
-     * 커밋 전에 넣으면 워커가 아직 보이지 않는 문서를 집어갈 수 있어 순서를 보장해야 한다.
-     *
-     * @param queueLabel 로그에 쓰는 큐 이름 (예: "문서 처리 큐")
-     * @param enqueue    큐 행 저장. 새 트랜잭션 안에서 실행된다.
-     */
+    /** DB 트랜잭션 커밋 뒤 별도 로컬 작업 큐에 등록한다. */
     private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            log.info("[{} 즉시 등록] documentId={} transactionActive=false", queueLabel, documentId);
             transactionTemplate.execute(status -> {
                 enqueue.run();
-                log.info("[{} 등록 완료] documentId={} status=pending", queueLabel, documentId);
                 return null;
             });
             return;
         }
-        log.info("[{} 등록 예약] documentId={} afterCommit=true", queueLabel, documentId);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                // afterCommit 시점에는 바깥 트랜잭션 리소스가 아직 스레드에 묶여 있어
-                // 기본 REQUIRED로 참여하면 INSERT가 커밋되지 않고 버려진다 — 반드시 새 트랜잭션.
                 TransactionTemplate requiresNew =
                         new TransactionTemplate(transactionTemplate.getTransactionManager());
                 requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -730,11 +714,6 @@ public class DocumentService {
                 });
             }
         });
-    }
-
-    private void requestProcessingAfterCommit(String documentId) {
-        enqueueAfterCommit("문서 처리 큐", documentId,
-                () -> queueRepository.save(new DocumentProcessingQueue(documentId)));
     }
 
     /** 채팅 Wiki page화 export 결과. skipped=true면 동일 content가 이미 존재해 새로 만들지 않았다. */
@@ -783,7 +762,7 @@ public class DocumentService {
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
 
-        requestProcessingAfterCommit(documentId);
+        enqueueIngest(document);
 
         return new ExportDocumentResult(documentId, false);
     }
@@ -816,7 +795,7 @@ public class DocumentService {
         log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
                 documentId, contentHashPrefix(fullContentHash), bytes.length,
                 deltaMarkdown != null ? deltaMarkdown.length() : 0);
-        requestProcessingAfterCommit(documentId);
+        enqueueIngest(document);
     }
 
     /**
@@ -982,48 +961,27 @@ public class DocumentService {
         });
     }
 
-    void doRequestProcessing(String documentId) {
-        Document document = documentRepository.findByIdInActiveWorkspace(documentId).orElse(null);
-        if (document == null) {
-            log.warn("[문서 처리 요청 생략] documentId={} reason=document_not_found", documentId);
-            return;
-        }
-        String callbackUrl = callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events";
-        boolean chatWiki = "chat_export".equals(document.getOrigin());
-        log.info("[문서 처리 요청 시작] documentId={} origin={} chatWiki={} workspaceId={} userId={} callbackUrl={} selectionMode={} inputMarkdownPresent={} inputMarkdownLength={}",
-                documentId, document.getOrigin(), chatWiki, document.getWorkspaceId(), document.getUserId(),
-                callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown() != null,
-                document.getPipelineInputMarkdown() != null ? document.getPipelineInputMarkdown().length() : 0);
-        // llmPipeline 호출 전에 AI 작업 로그를 processing으로 먼저 커밋한다.
-        // 콜백이 도착했을 때 대조할 등록값이 없으면 결과를 받아들일 수 없다.
-        String operationId = ingestOperationStarter
-                .start(document.getWorkspaceId(), document.getUserId(), documentId)
-                .orElse(null);
-        try {
-            String runId = ingestCommandPublisher.publish(documentId, document.getUserId(), document.getWorkspaceId(),
-                    callbackUrl, document.getSelectionMode(), document.getPipelineInputMarkdown(), chatWiki,
-                    operationId,
-                    operationId == null ? null : ingestOperationStarter.resultCallbackUrl(operationId));
-            Instant now = Instant.now();
-            transactionTemplate.execute(status -> {
-                documentRepository.findByIdInActiveWorkspace(documentId)
-                        .ifPresent(doc -> doc.markPipelineStarted(runId, now));
-                return null;
-            });
-            log.info("[문서 처리 run 기록 완료] documentId={} runId={}", documentId, runId);
-        } catch (Exception e) {
-            Instant now = Instant.now();
-            if (operationId != null) {
-                ingestOperationStarter.markFailed(operationId,
-                        "ingest command 발행에 실패했습니다: " + e.getMessage());
-            }
-            transactionTemplate.execute(status -> {
-                documentRepository.findByIdInActiveWorkspace(documentId).ifPresent(doc ->
-                        doc.markProcessingFailed("Pipeline run request failed: " + e.getMessage(), now));
-                return null;
-            });
-            log.warn("[문서 처리 요청 실패 반영] documentId={} error={}", documentId, e.getMessage());
-        }
+    String enqueueIngest(Document document) {
+        String runId = UUID.randomUUID().toString();
+        String documentId = document.getId();
+        String operationId = ingestOperationStarter.start(
+                document.getWorkspaceId(), document.getUserId(), documentId);
+        ingestCommandOutbox.enqueue(
+                runId,
+                documentId,
+                document.getUserId(),
+                document.getWorkspaceId(),
+                callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events",
+                document.getSelectionMode(),
+                document.getPipelineInputMarkdown(),
+                "chat_export".equals(document.getOrigin()),
+                operationId,
+                ingestOperationStarter.resultCallbackUrl(operationId)
+        );
+        document.markPipelineStarted(runId, Instant.now());
+        log.info("[문서 처리 command 등록 완료] documentId={} runId={} operationId={}",
+                documentId, runId, operationId);
+        return runId;
     }
 
     @Transactional
@@ -1553,8 +1511,8 @@ public class DocumentService {
         document.reopenForReingest(currentContentHash, bytes.length);
         log.info("[문서 재ingest DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={}",
                 documentId, contentHashPrefix(currentContentHash), bytes.length);
-        requestProcessingAfterCommit(documentId);
-        return new DocumentIngestResponse(documentId, document.getStatus());
+        String runId = enqueueIngest(document);
+        return new DocumentIngestResponse(documentId, runId, document.getStatus());
     }
 
     @Transactional
@@ -1776,9 +1734,6 @@ public class DocumentService {
         String documentId = document.getId();
         String sourceUri = document.getSourceUri();
         String extractedTextUri = document.getExtractedTextUri();
-
-        // 처리 queue에서 제거
-        queueRepository.deleteByDocumentId(documentId);
 
         // 이 문서의 source wiki page와 그에 딸린 링크를 명시적으로 삭제한다.
         // - wiki page id는 opaque UUID이므로 id 문자열 형식이 아니라 document_wiki_links(source_of)로 찾는다.
