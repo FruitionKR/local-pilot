@@ -108,6 +108,19 @@ patches:
                     memory: 1Gi
                   limits:
                     memory: 2Gi
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: pipeline-agent-worker
+        namespace: fruition
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: pipeline-agent-worker
+                imagePullPolicy: IfNotPresent
   # pipeline-runs PVC(RWO, EBS)를 pipeline-api와 공유하므로 같은 노드에 강제 배치.
   # S3 기반 아티팩트 저장으로 이전하면 이 affinity와 함께 AI Worker 노드 분리를 진행한다.
   - patch: |-

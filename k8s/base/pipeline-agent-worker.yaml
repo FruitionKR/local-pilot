@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline-agent-worker
+  namespace: fruition
+  labels:
+    app: pipeline-agent-worker
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: pipeline-agent-worker
+  template:
+    metadata:
+      labels:
+        app: pipeline-agent-worker
+    spec:
+      containers:
+        - name: pipeline-agent-worker
+          image: fruition-mvp-dev-pipeline-api:latest
+          imagePullPolicy: Never
+          command: ["python", "agent_worker.py"]
+          envFrom:
+            - configMapRef:
+                name: fruition-config
+            - secretRef:
+                name: fruition-secret
+          env:
+            - name: AGENT_BACKEND_URL
+              value: "http://document-svc:8080"
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import pathlib,sys; sys.exit(b'agent_worker.py' not in pathlib.Path('/proc/1/cmdline').read_bytes())"
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
