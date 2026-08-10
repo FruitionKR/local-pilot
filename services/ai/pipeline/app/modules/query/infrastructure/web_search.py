@@ -7,11 +7,6 @@ from app.modules.query.application.ports import WebSearchPort
 from app.modules.query.domain.entities import WebSearchResult
 
 
-class DisabledWebSearch(WebSearchPort):
-    def search(self, query: str) -> list[WebSearchResult]:
-        return []
-
-
 class TavilyWebSearch(WebSearchPort):
     def __init__(
         self,
@@ -69,19 +64,16 @@ class TavilyWebSearch(WebSearchPort):
         return results
 
 
-def build_web_search() -> WebSearchPort | None:
-    mode = os.environ.get("QUERY_WEB_SEARCH_MODE", "disabled").strip().lower()
-    if mode in {"", "disabled", "off", "none"}:
+def build_web_search(enabled: bool = False) -> WebSearchPort | None:
+    if not enabled:
         return None
-    if mode == "tavily":
-        api_key = os.environ.get("TAVILY_API_KEY") or os.environ.get("QUERY_WEB_SEARCH_API_KEY")
-        if not api_key:
-            return DisabledWebSearch()
-        endpoint = os.environ.get("TAVILY_ENDPOINT") or "https://api.tavily.com/search"
-        max_results = _int_env("QUERY_WEB_SEARCH_MAX_RESULTS", 5)
-        timeout_seconds = _int_env("QUERY_WEB_SEARCH_TIMEOUT_SECONDS", 20)
-        return TavilyWebSearch(api_key, endpoint=endpoint, max_results=max_results, timeout_seconds=timeout_seconds)
-    return DisabledWebSearch()
+    api_key = os.environ.get("TAVILY_API_KEY") or os.environ.get("QUERY_WEB_SEARCH_API_KEY")
+    if not api_key:
+        return None
+    endpoint = os.environ.get("TAVILY_ENDPOINT") or "https://api.tavily.com/search"
+    max_results = _int_env("QUERY_WEB_SEARCH_MAX_RESULTS", 5)
+    timeout_seconds = _int_env("QUERY_WEB_SEARCH_TIMEOUT_SECONDS", 20)
+    return TavilyWebSearch(api_key, endpoint=endpoint, max_results=max_results, timeout_seconds=timeout_seconds)
 
 
 def _int_env(name: str, default: int) -> int:

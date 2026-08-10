@@ -1,0 +1,45 @@
+package fruition.core.document.repository;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.core.authz.WorkspaceAiModelClient;
+import fruition.core.document.domain.AiCommandOutbox;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class IngestCommandOutboxTest {
+
+    @Mock AiCommandOutboxRepository outboxRepository;
+    @Mock WorkspaceAiModelClient workspaceAiModelClient;
+
+    @Test
+    void enqueue_serializesProviderAndModelAtOutboxBoundary() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        when(workspaceAiModelClient.get("ws_1"))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("anthropic", "claude-sonnet-5"));
+        AiCommandOutboxWriter writer = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
+        IngestCommandOutbox outbox = new IngestCommandOutbox(
+                writer,
+                "ai.ingest.command", workspaceAiModelClient);
+
+        outbox.enqueue("run_1", "doc_1", "user_1", "ws_1", "full", "# markdown", false,
+                "op_1", 3, "sha256:source");
+
+        ArgumentCaptor<IngestCommandOutbox.IngestCommand> command =
+                ArgumentCaptor.forClass(IngestCommandOutbox.IngestCommand.class);
+        verify(writer).enqueue(eq("run_1"), eq("ai.ingest.command"), eq("doc_1"), command.capture());
+        ArgumentCaptor<AiCommandOutbox> saved = ArgumentCaptor.forClass(AiCommandOutbox.class);
+        verify(outboxRepository).save(saved.capture());
+        assertThat(saved.getValue().getPayload())
+                .contains("\"provider\":\"anthropic\"", "\"model\":\"claude-sonnet-5\"");
+    }
+}

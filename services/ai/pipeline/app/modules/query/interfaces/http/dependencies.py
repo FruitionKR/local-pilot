@@ -13,15 +13,19 @@ from app.modules.query.infrastructure.query_event_publisher import NoOpQueryEven
 from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBasedQueryRewriter
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 from app.modules.query.infrastructure.web_search import build_web_search
+from app.modules.query.interfaces.http.schemas import QueryRequest
 
 
-@lru_cache(maxsize=1)
-def get_answer_query_use_case() -> AnswerQueryUseCase:
+def build_answer_query_use_case(
+    *,
+    model: str | None = None,
+    allow_web_search: bool = False,
+) -> AnswerQueryUseCase:
     text_search = Bm25Searcher()
-    answer_generator = build_query_chat_answer_generator()
+    answer_generator = build_query_chat_answer_generator(model=model)
     query_answer_assembler = QueryAnswerAssembler(answer_generator)
-    query_evaluator = build_query_answer_evaluator()
-    web_search = build_web_search()
+    query_evaluator = build_query_answer_evaluator(model=model)
+    web_search = build_web_search(allow_web_search)
     query_evaluator_max_attempts = _int_env("QUERY_EVALUATOR_MAX_ATTEMPTS", 2)
     return AnswerQueryUseCase(
         wiki_repository=PostgresWikiRepository(),
@@ -43,6 +47,18 @@ def get_answer_query_use_case() -> AnswerQueryUseCase:
         min_internal_relevance_score=_float_env("QUERY_MIN_INTERNAL_RELEVANCE_SCORE", 0.0),
         query_evaluator_max_attempts=query_evaluator_max_attempts,
     )
+
+
+def get_query_answer_use_case(payload: QueryRequest) -> AnswerQueryUseCase:
+    return build_answer_query_use_case(
+        model=payload.model,
+        allow_web_search=payload.allow_web_search,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_answer_query_use_case() -> AnswerQueryUseCase:
+    return build_answer_query_use_case()
 
 
 def _build_embedding_search(text_search: Bm25Searcher):

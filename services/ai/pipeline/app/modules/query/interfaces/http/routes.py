@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.exceptions import QueryError
 from app.modules.query.domain.entities import ConversationContext, QueryAnswer
-from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
+from app.modules.query.interfaces.http.dependencies import get_query_answer_use_case
 from app.modules.query.interfaces.http.schemas import (
     GraphContextResponse,
     EvidenceSnippetResponse,
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/query", tags=["query"])
 @router.post("", response_model=QueryResponse)
 def answer_query(
     payload: QueryRequest,
-    use_case: AnswerQueryUseCase = Depends(get_answer_query_use_case),
+    use_case: AnswerQueryUseCase = Depends(get_query_answer_use_case),
 ) -> QueryResponse:
     try:
         result = use_case.execute(

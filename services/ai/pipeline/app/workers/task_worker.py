@@ -16,7 +16,7 @@ from psycopg.types.json import Json
 from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
-from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
+from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 from app.modules.wiki_ingestion.interfaces.http.dependencies import get_wiki_maintenance
@@ -28,6 +28,7 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     WikiLintOut,
 )
 from app.modules.wiki_ingestion.infrastructure.backend_document_reader import read_contributions
+from app.workers.event_request import without_top_level_secrets
 
 
 logger = logging.getLogger("task_worker")
@@ -39,14 +40,34 @@ MAX_POLL_INTERVAL_MS = int(os.environ.get("AI_TASK_MAX_POLL_INTERVAL_MS", "18000
 
 
 def _required(command: dict[str, Any], *fields: str) -> None:
-    missing = [field for field in fields if command.get(field) in (None, "")]
+    missing = [
+        field
+        for field in fields
+        if command.get(field) in (None, "")
+        or isinstance(command.get(field), str)
+        and not command[field].strip()
+    ]
     if missing:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
 def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
-    _required(command, "run_id", "workspace_id", "user_id", "session_id", "question")
-    result = get_answer_query_use_case().execute(
+    _required(
+        command,
+        "run_id",
+        "workspace_id",
+        "user_id",
+        "session_id",
+        "question",
+        "model",
+        "allow_web_search",
+    )
+    if not isinstance(command["allow_web_search"], bool):
+        raise ValueError("allow_web_search must be a boolean")
+    result = build_answer_query_use_case(
+        model=str(command["model"]).strip(),
+        allow_web_search=command["allow_web_search"],
+    ).execute(
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
         user_id=str(command["user_id"]),
@@ -169,7 +190,7 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
 
 
 def _handle_lint(command: dict[str, Any]) -> dict[str, Any]:
-    _required(command, "run_id", "workspace_id", "user_id")
+    _required(command, "run_id", "workspace_id", "user_id", "model")
     run_id = str(command["run_id"])
     existing = database.get_pipeline_run(run_id)
     if existing:
@@ -186,7 +207,22 @@ def _handle_lint(command: dict[str, Any]) -> dict[str, Any]:
             "kafka:lint", f"runs/{run_id}", "lint",
         )
     try:
-        result = get_wiki_maintenance().lint(WikiLintIn.model_validate(command).to_command())
+        lint_payload = {
+            field: command.get(field)
+            for field in (
+                "user_id",
+                "workspace_id",
+                "operation_id",
+                "materialize_promotions",
+                "dry_run",
+                "model",
+            )
+            if command.get(field) is not None
+        }
+        lint_payload["model"] = str(command["model"]).strip()
+        result = get_wiki_maintenance().lint(
+            WikiLintIn.model_validate(lint_payload).to_command()
+        )
         payload = WikiLintOut.model_validate(result).model_dump(mode="json")
         database.finish_pipeline_run(run_id, {"task_result": payload})
         return payload
@@ -270,7 +306,7 @@ def _event(command: dict[str, Any], status: str, payload: Any = None, error: str
         "workspace_id": command.get("workspace_id"),
         "user_id": command.get("user_id"),
         "operation_id": command.get("operation_id"),
-        "request": command,
+        "request": without_top_level_secrets(command),
         "payload": payload,
         "error": error,
     }

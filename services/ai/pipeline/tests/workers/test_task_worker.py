@@ -12,13 +12,159 @@ def test_event_uses_common_command_envelope() -> None:
         "workspace_id": "workspace-1",
         "user_id": "user-1",
         "operation_id": None,
+        "api_key": "api-secret",
+        "tavily_api_key": "tavily-secret",
+        "access_token": "access-secret",
+        "db_password": "password-secret",
+        "client_secret": "client-secret",
+        "apiKey": "camel-api-secret",
+        "accessToken": "camel-access-secret",
+        "dbPassword": "camel-password-secret",
+        "clientSecret": "camel-client-secret",
+        "metadata": {
+            "api_key": "nested-api-secret",
+            "ordinary": {"value": "keep"},
+        },
+        "items": [
+            {"secret": "list-secret", "ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
+        "max_tokens": 1024,
     }
 
     event = task_worker._event(command, "succeeded", {"answer": "ok"})
 
     assert event["event_id"] == "query:run-1:succeeded"
-    assert event["request"] == command
+    assert event["request"] == {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "operation_id": None,
+        "metadata": {"ordinary": {"value": "keep"}},
+        "items": [
+            {"ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
+        "max_tokens": 1024,
+    }
     assert event["payload"] == {"answer": "ok"}
+
+
+@pytest.mark.parametrize("allow_web_search", [False, True])
+def test_query_command_passes_runtime_model_and_web_search_flag(
+    allow_web_search: bool,
+) -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "질문",
+        "provider": "openai",
+        "model": "  gpt-5.6-terra  ",
+        "allow_web_search": allow_web_search,
+        "api_key": "command-secret",
+        "api_base_url": "https://command.example/v1",
+        "tavily_api_key": "command-tavily-secret",
+    }
+    use_case = MagicMock()
+
+    with (
+        patch.object(
+            task_worker,
+            "build_answer_query_use_case",
+            return_value=use_case,
+        ) as build_use_case,
+        patch.object(task_worker, "query_to_response") as to_response,
+    ):
+        to_response.return_value.model_dump.return_value = {"answer": "ok"}
+        result = task_worker._handle_query(command)
+
+    build_use_case.assert_called_once_with(
+        model="gpt-5.6-terra",
+        allow_web_search=allow_web_search,
+    )
+    assert result == {"answer": "ok"}
+
+
+def test_query_command_requires_boolean_web_search_flag() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "질문",
+        "model": "  gpt-5.6-terra  ",
+        "allow_web_search": "false",
+    }
+
+    with pytest.raises(ValueError, match="must be a boolean"):
+        task_worker._handle_query(command)
+
+
+@pytest.mark.parametrize(
+    ("handler", "command"),
+    [
+        (
+            task_worker._handle_query,
+            {
+                "run_id": "run-1",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "question": "질문",
+                "allow_web_search": False,
+            },
+        ),
+        (
+            task_worker._handle_lint,
+            {
+                "run_id": "run-1",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+            },
+        ),
+    ],
+)
+def test_commands_require_runtime_model(handler, command: dict) -> None:
+    with pytest.raises(ValueError, match="model"):
+        handler(command)
+
+
+def test_lint_command_passes_runtime_model_without_command_overrides() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "lint",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "provider": "openai",
+        "model": "  gpt-5.6-terra  ",
+        "dry_run": True,
+        "api_key": "command-secret",
+        "api_base_url": "https://command.example/v1",
+    }
+    maintenance = MagicMock()
+    maintenance.lint.return_value = {"ok": True}
+
+    with (
+        patch.object(task_worker.database, "get_pipeline_run", return_value=None),
+        patch.object(task_worker.database, "create_pipeline_run"),
+        patch.object(task_worker.database, "finish_pipeline_run"),
+        patch.object(task_worker, "get_wiki_maintenance", return_value=maintenance),
+        patch.object(task_worker.WikiLintOut, "model_validate") as validate_out,
+    ):
+        validate_out.return_value.model_dump.return_value = {"ok": True}
+        result = task_worker._handle_lint(command)
+
+    lint_command = maintenance.lint.call_args.args[0]
+    assert lint_command.provider is None
+    assert lint_command.model == "gpt-5.6-terra"
+    assert lint_command.api_key is None
+    assert lint_command.api_base_url is None
+    assert result == {"ok": True}
 
 
 def test_restore_rejects_changed_contribution_manifest() -> None:

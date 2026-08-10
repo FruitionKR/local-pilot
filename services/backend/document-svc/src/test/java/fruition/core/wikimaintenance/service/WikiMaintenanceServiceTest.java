@@ -5,6 +5,8 @@ import fruition.core.aihistory.service.LintOperationStarter;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.authz.WorkspaceAiModelClient;
+import fruition.core.document.domain.AiCommandOutbox;
+import fruition.core.document.repository.AiCommandOutboxRepository;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.repository.PipelineRunStatusRequester;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
@@ -14,6 +16,7 @@ import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,8 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,18 +40,21 @@ class WikiMaintenanceServiceTest {
 
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock LintOperationStarter operationStarter;
-    @Mock AiCommandOutboxWriter outboxWriter;
+    @Mock AiCommandOutboxRepository outboxRepository;
     @Mock PipelineRunStatusRequester runStatusRequester;
     @Mock WikiLintStateRepository lintStateRepository;
     @Mock PipelineWikiStateRequester wikiStateRequester;
     @Mock WorkspaceAiModelClient workspaceAiModelClient;
 
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private WikiMaintenanceService service;
+    private AiCommandOutboxWriter outboxWriter;
 
     @BeforeEach
     void setUp() {
+        outboxWriter = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
         service = new WikiMaintenanceService(workspaceAccessGuard, operationStarter, outboxWriter,
-                runStatusRequester, lintStateRepository, wikiStateRequester, new ObjectMapper(),
+                runStatusRequester, lintStateRepository, wikiStateRequester, objectMapper,
                 "ai.maintenance.command", workspaceAiModelClient);
         org.mockito.Mockito.lenient().when(workspaceAiModelClient.get("ws_1"))
                 .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-4.1-mini"));
@@ -59,8 +68,13 @@ class WikiMaintenanceServiceTest {
         assertThatCode(() -> UUID.fromString(result.path("run_id").asText()))
                 .doesNotThrowAnyException();
         verify(operationStarter, never()).start(any(), any());
-        verify(outboxWriter).enqueue(any(), org.mockito.ArgumentMatchers.eq("ai.maintenance.command"),
-                org.mockito.ArgumentMatchers.eq("ws_1"), any());
+        ArgumentCaptor<WikiMaintenanceService.LintCommand> command =
+                ArgumentCaptor.forClass(WikiMaintenanceService.LintCommand.class);
+        verify(outboxWriter).enqueue(anyString(), eq("ai.maintenance.command"), eq("ws_1"), command.capture());
+        ArgumentCaptor<AiCommandOutbox> outbox = ArgumentCaptor.forClass(AiCommandOutbox.class);
+        verify(outboxRepository).save(outbox.capture());
+        assertThat(outbox.getValue().getPayload())
+                .contains("\"provider\":\"openai\"", "\"model\":\"gpt-4.1-mini\"");
     }
 
     @Test
@@ -70,8 +84,7 @@ class WikiMaintenanceServiceTest {
         var result = service.lint("ws_1", "user_1", new WikiLintRequest(false, false));
 
         assertThat(result.path("operation_id").asText()).isEqualTo("op_lint_1");
-        verify(outboxWriter).enqueue(any(), org.mockito.ArgumentMatchers.eq("ai.maintenance.command"),
-                org.mockito.ArgumentMatchers.eq("ws_1"), any());
+        verify(outboxRepository).save(any(AiCommandOutbox.class));
     }
 
     @Test
@@ -81,7 +94,7 @@ class WikiMaintenanceServiceTest {
 
         assertThatThrownBy(() -> service.lint("ws_1", "user_2", new WikiLintRequest(null, null)))
                 .isInstanceOf(WorkspaceNotFoundException.class);
-        verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+        verify(outboxRepository, never()).save(any(AiCommandOutbox.class));
     }
 
     @Test

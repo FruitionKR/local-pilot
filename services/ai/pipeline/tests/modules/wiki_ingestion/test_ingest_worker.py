@@ -35,6 +35,7 @@ def test_handle_skips_terminal_redelivered_run(status: str) -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
+        "model": "gpt-5.6-terra",
     }
 
     with (
@@ -54,6 +55,7 @@ def test_handle_retries_running_redelivered_run() -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
+        "model": "gpt-5.6-terra",
     }
 
     with (
@@ -111,6 +113,7 @@ def test_handle_records_failure_after_run_registration() -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
+        "model": "gpt-5.6-terra",
     }
 
     with (
@@ -132,6 +135,39 @@ def test_build_payload_requires_actor_context() -> None:
         ingest_worker._build_payload({"run_id": "run-1", "document_id": "document-1"})
 
 
+def test_build_payload_uses_runtime_model_without_command_overrides() -> None:
+    payload = ingest_worker._build_payload(
+        {
+            "run_id": "run-1",
+            "kind": "document",
+            "document_id": "document-1",
+            "workspace_id": "workspace-1",
+            "user_id": "user-1",
+            "provider": "openai",
+            "model": "  gpt-5.6-terra  ",
+            "api_key": "command-secret",
+            "api_base_url": "https://command.example/v1",
+        }
+    )
+
+    assert payload.provider is None
+    assert payload.model == "gpt-5.6-terra"
+    assert payload.api_key is None
+    assert payload.api_base_url is None
+
+
+def test_build_payload_requires_runtime_model() -> None:
+    with pytest.raises(ValueError, match="requires model"):
+        ingest_worker._build_payload(
+            {
+                "run_id": "run-1",
+                "document_id": "document-1",
+                "workspace_id": "workspace-1",
+                "user_id": "user-1",
+            }
+        )
+
+
 def test_terminal_failed_result_keeps_failed_event_status() -> None:
     command = {"run_id": "run-1", "kind": "document"}
     result = {"status": "failed", "summary": "pipeline failed"}
@@ -141,6 +177,44 @@ def test_terminal_failed_result_keeps_failed_event_status() -> None:
     assert event["event_id"] == "ingest:run-1:failed"
     assert event["status"] == "failed"
     assert event["error"] == "pipeline failed"
+
+
+def test_event_request_excludes_top_level_secrets() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "document",
+        "api_key": "api-secret",
+        "tavily_api_key": "tavily-secret",
+        "access_token": "access-secret",
+        "db_password": "password-secret",
+        "client_secret": "client-secret",
+        "apiKey": "camel-api-secret",
+        "accessToken": "camel-access-secret",
+        "dbPassword": "camel-password-secret",
+        "clientSecret": "camel-client-secret",
+        "metadata": {
+            "api_key": "nested-api-secret",
+            "ordinary": {"value": "keep"},
+        },
+        "items": [
+            {"secret": "list-secret", "ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
+        "max_tokens": 1024,
+    }
+
+    event = ingest_worker._event(command, "succeeded")
+
+    assert event["request"] == {
+        "run_id": "run-1",
+        "kind": "document",
+        "metadata": {"ordinary": {"value": "keep"}},
+        "items": [
+            {"ordinary": "keep"},
+            {"ordinary": {"value": "keep-too"}},
+        ],
+        "max_tokens": 1024,
+    }
 
 
 def test_handle_deletes_ai_owned_document_state() -> None:

@@ -1,19 +1,117 @@
 import unittest
+from unittest.mock import Mock, patch
 
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+import api
+from app.modules.query.domain.entities import GraphContext
+from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
 from app.modules.query.interfaces.http.schemas import QueryRequest
 
 
 class QueryRequestTest(unittest.TestCase):
     def test_workspace_id_is_required(self) -> None:
         with self.assertRaises(ValidationError):
-            QueryRequest(question="질문")
+            QueryRequest(question="질문", model="test-model", allow_web_search=False)
 
     def test_accepts_workspace_scoped_query(self) -> None:
-        request = QueryRequest(workspace_id="ws_target", question="질문")
+        request = QueryRequest(
+            workspace_id="ws_target",
+            question="질문",
+            model="test-model",
+            allow_web_search=False,
+        )
 
         self.assertEqual(request.workspace_id, "ws_target")
+
+    def test_model_is_required_and_non_empty(self) -> None:
+        payloads = (
+            {
+                "workspace_id": "ws_target",
+                "question": "질문",
+                "allow_web_search": False,
+            },
+            {
+                "workspace_id": "ws_target",
+                "question": "질문",
+                "model": "",
+                "allow_web_search": False,
+            },
+        )
+
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValidationError):
+                    QueryRequest(**payload)
+
+    def test_allow_web_search_rejects_non_boolean_values(self) -> None:
+        for value in ("false", 0, 1):
+            with self.subTest(value=value):
+                with self.assertRaises(ValidationError):
+                    QueryRequest(
+                        workspace_id="ws_target",
+                        question="질문",
+                        model="test-model",
+                        allow_web_search=value,
+                    )
+
+    def test_query_route_propagates_model_and_web_search(self) -> None:
+        use_case = Mock()
+        use_case.execute.return_value = Mock(
+            answer=Mock(content="답변"),
+            related_pages=[],
+            evidence_snippets=[],
+            graph_context=GraphContext(),
+            traversal_paths=[],
+        )
+
+        with (
+            patch.object(api.database, "ensure_ai_schema"),
+            patch.dict("os.environ", {"INTERNAL_CALLBACK_TOKEN": "test-token"}),
+            patch(
+                "app.modules.query.interfaces.http.dependencies.build_answer_query_use_case",
+                return_value=use_case,
+            ) as build_use_case,
+            TestClient(api.app) as client,
+        ):
+            response = client.post(
+                "/query",
+                json={
+                    "workspace_id": "ws_target",
+                    "question": "질문",
+                    "model": "request-model",
+                    "allow_web_search": True,
+                },
+                headers={"X-Internal-Token": "test-token"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        build_use_case.assert_called_once_with(
+            model="request-model",
+            allow_web_search=True,
+        )
+        use_case.execute.assert_called_once_with(
+            "질문",
+            workspace_id="ws_target",
+            user_id=None,
+            conversation_context=None,
+        )
+
+    def test_cached_default_query_use_case_remains_available(self) -> None:
+        get_answer_query_use_case.cache_clear()
+        try:
+            with patch(
+                "app.modules.query.interfaces.http.dependencies.build_answer_query_use_case",
+                return_value=Mock(),
+            ) as build_use_case:
+                first = get_answer_query_use_case()
+                second = get_answer_query_use_case()
+
+            self.assertIs(first, second)
+            build_use_case.assert_called_once_with()
+        finally:
+            get_answer_query_use_case.cache_clear()
 
 
 if __name__ == "__main__":
