@@ -5,6 +5,7 @@ import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,6 +36,15 @@ public class WikiMaintenanceController {
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
             @RequestBody(required = false) WikiLintRequest request) {
-        return ResponseEntity.ok(wikiMaintenanceService.lint(workspaceId, userId, request));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(wikiMaintenanceService.lint(workspaceId, userId, request));
+    }
+
+    @GetMapping("/runs/{run_id}")
+    public ResponseEntity<JsonNode> run(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId) {
+        return ResponseEntity.ok(wikiMaintenanceService.run(workspaceId, userId, runId));
     }
 }

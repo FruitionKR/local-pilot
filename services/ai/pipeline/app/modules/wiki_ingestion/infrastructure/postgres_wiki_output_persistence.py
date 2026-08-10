@@ -33,6 +33,19 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     resolve_page_id,
     source_summary,
 )
+
+
+def lock_concept_persistence(
+    conn: psycopg.Connection,
+    user_id: str,
+    workspace_id: str,
+) -> None:
+    conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"concept-persistence:{user_id}:{workspace_id}",),
+    )
+
+
 def persist_wiki_outputs(
     conn: psycopg.Connection,
     document_id: str,
@@ -54,6 +67,18 @@ def persist_wiki_outputs(
             "source",
             document_id,
         )
+    _persist_source_blocks(conn, document_id, manifest)
+    source_page_id = _persist_source_page(
+        conn,
+        document_id,
+        manifest,
+        normalized,
+        user_id,
+        workspace_id,
+        page_id=source_page_id,
+    )
+    lock_concept_persistence(conn, user_id, workspace_id)
+    if operation_id:
         concept_id_by_slug = _prepare_concept_page_ids(
             conn,
             manifest,
@@ -70,16 +95,6 @@ def persist_wiki_outputs(
                 [],
             ),
         )
-    _persist_source_blocks(conn, document_id, manifest)
-    source_page_id = _persist_source_page(
-        conn,
-        document_id,
-        manifest,
-        normalized,
-        user_id,
-        workspace_id,
-        page_id=source_page_id,
-    )
     concept_page_ids, concept_id_by_slug = _persist_concept_pages(
         conn,
         document_id,
@@ -261,6 +276,15 @@ def _persist_concept_pages(
         slug = concept["slug"]
         if slug not in generated_concept_slugs:
             continue
+        existing = conn.execute(
+            """
+            SELECT id, title, summary, markdown_uri
+            FROM wiki_pages
+            WHERE user_id = %s AND workspace_id = %s
+              AND page_type = 'concept' AND slug = %s AND status = 'active'
+            """,
+            (user_id, workspace_id, slug),
+        ).fetchone()
         page_id = resolve_or_create_wiki_page_id(
             conn,
             user_id,
@@ -271,6 +295,27 @@ def _persist_concept_pages(
         concept_id_by_slug[slug] = page_id
         concept_page = concept_pages_by_slug[slug]
         concept_markdown = concept_page["markdown"]
+        title = concept.get("title") or slug
+        summary = concept.get("definition") or concept.get("why_page_worthy") or ""
+        if existing:
+            current_markdown = read_optional_text_object(existing["markdown_uri"])
+            contribution = (manifest.get("concept_contributions") or {}).get(slug) or {}
+            updates = [
+                {
+                    "claim_id": item.get("evidence_id"),
+                    "claim": item.get("claim"),
+                    "refs": item.get("anchor_reference_ids", []),
+                }
+                for item in contribution.get("evidence_units", [])
+                if isinstance(item, dict)
+            ]
+            concept_markdown = (
+                append_concept_evidence(current_markdown, updates)
+                if current_markdown else concept_markdown
+            )
+            concept_page["markdown"] = concept_markdown
+            title = existing.get("title") or title
+            summary = existing.get("summary") or summary
         concept_markdown_uri = upload_wiki_markdown(
             concept_markdown,
             f"wiki/{user_id}/{workspace_id}/concepts/{slug}.md",
@@ -279,9 +324,9 @@ def _persist_concept_pages(
             conn,
             page_id,
             "concept",
-            concept.get("title") or slug,
+            title,
             slug,
-            concept.get("definition") or concept.get("why_page_worthy") or "",
+            summary,
             concept_markdown_uri,
             user_id,
             workspace_id,

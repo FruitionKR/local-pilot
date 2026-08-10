@@ -32,7 +32,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
         connection_context = MagicMock()
         connection_context.__enter__.return_value = connection
 
-        with patch.object(database, "connect_core", return_value=connection_context):
+        with patch.object(database, "connect_ai", return_value=connection_context):
             run = PostgresAgentRunRepository().revise(
                 "workspace-1",
                 "user-1",
@@ -44,6 +44,19 @@ class AgentRunRepositoryTest(unittest.TestCase):
         update_query = connection.execute.call_args_list[2].args[0]
         self.assertIn("error_code = NULL", update_query)
         self.assertIsNone(run.error_code)
+
+    def test_repository_uses_ai_database_connection(self) -> None:
+        connection = MagicMock()
+        result = MagicMock()
+        result.fetchone.return_value = None
+        connection.execute.return_value = result
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect_ai", return_value=connection_context) as connect_ai:
+            PostgresAgentRunRepository().get_for_user("workspace-1", "user-1", "run-1")
+
+        connect_ai.assert_called_once_with()
 
 
 def _run_row(

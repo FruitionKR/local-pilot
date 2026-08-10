@@ -175,3 +175,244 @@ CREATE TABLE IF NOT EXISTS document_derived_state (
 
 CREATE INDEX IF NOT EXISTS idx_document_derived_state_workspace
     ON document_derived_state (workspace_id);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id text PRIMARY KEY,
+    workspace_id text,
+    scope_type text NOT NULL,
+    owner_user_id text,
+    command varchar(63) NOT NULL,
+    status text NOT NULL,
+    enabled_version_id text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT skills_scope_check CHECK (
+        (scope_type = 'personal' AND workspace_id IS NULL AND owner_user_id IS NOT NULL)
+        OR (scope_type = 'team' AND workspace_id IS NOT NULL AND owner_user_id IS NULL)
+    ),
+    CONSTRAINT skills_status_check CHECK (status IN ('enabled', 'disabled'))
+);
+
+CREATE TABLE IF NOT EXISTS skill_versions (
+    id text PRIMARY KEY,
+    skill_id text NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    version integer NOT NULL,
+    name varchar(63) NOT NULL,
+    description text NOT NULL,
+    instructions_markdown text NOT NULL,
+    capabilities text[] NOT NULL DEFAULT ARRAY[]::text[],
+    allowed_tools text[] NOT NULL DEFAULT ARRAY[]::text[],
+    safety_result jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status text NOT NULL,
+    created_by text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    published_at timestamptz,
+    CONSTRAINT skill_versions_version_check CHECK (version > 0),
+    CONSTRAINT skill_versions_status_check CHECK (status IN ('draft', 'published', 'rejected')),
+    CONSTRAINT skill_versions_unique_version UNIQUE (skill_id, version)
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'skills_enabled_version_fk') THEN
+        ALTER TABLE skills ADD CONSTRAINT skills_enabled_version_fk
+            FOREIGN KEY (enabled_version_id) REFERENCES skill_versions(id)
+            DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id text PRIMARY KEY,
+    workspace_id text NOT NULL,
+    user_id text NOT NULL,
+    action text NOT NULL,
+    skill_version_id text REFERENCES skill_versions(id) ON DELETE SET NULL,
+    status text NOT NULL,
+    request_summary text NOT NULL,
+    current_plan_id text,
+    error_code text,
+    tool_call_count integer NOT NULL DEFAULT 0,
+    document_id text,
+    base_version bigint,
+    apply_operation_id text,
+    apply_consumed_at timestamptz,
+    result jsonb,
+    command_envelope_hash varchar(64),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    finished_at timestamptz,
+    CONSTRAINT agent_runs_tool_call_count_check CHECK (tool_call_count BETWEEN 0 AND 40)
+);
+
+ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS command_envelope_hash varchar(64);
+
+CREATE TABLE IF NOT EXISTS skill_version_sources (
+    id text PRIMARY KEY,
+    skill_version_id text NOT NULL REFERENCES skill_versions(id) ON DELETE CASCADE,
+    source_agent_run_id text REFERENCES agent_runs(id) ON DELETE SET NULL,
+    source_turn_id text,
+    source_type text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS agent_plans (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    version integer NOT NULL,
+    summary text NOT NULL,
+    operation_hash text NOT NULL,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT agent_plans_version_check CHECK (version > 0),
+    CONSTRAINT agent_plans_unique_version UNIQUE (run_id, version)
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'agent_runs_current_plan_fk') THEN
+        ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_current_plan_fk
+            FOREIGN KEY (current_plan_id) REFERENCES agent_plans(id)
+            DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS agent_plan_operations (
+    id text PRIMARY KEY,
+    plan_id text NOT NULL REFERENCES agent_plans(id) ON DELETE CASCADE,
+    sequence integer NOT NULL,
+    tool_name text NOT NULL,
+    target_type text NOT NULL,
+    target_id text,
+    base_version bigint,
+    source_parent_id text,
+    destination_parent_id text,
+    arguments jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reason text NOT NULL,
+    depends_on text[] NOT NULL DEFAULT ARRAY[]::text[],
+    status text NOT NULL,
+    error_code text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT agent_plan_operations_unique_sequence UNIQUE (plan_id, sequence)
+);
+
+CREATE TABLE IF NOT EXISTS agent_approvals (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    plan_id text NOT NULL REFERENCES agent_plans(id) ON DELETE CASCADE,
+    plan_version integer NOT NULL,
+    operation_hash text NOT NULL,
+    user_id text NOT NULL,
+    decision text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS agent_jobs (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    job_type text NOT NULL,
+    status text NOT NULL,
+    attempt_count integer NOT NULL DEFAULT 0,
+    available_at timestamptz NOT NULL DEFAULT now(),
+    lease_owner text,
+    lease_token text,
+    leased_until timestamptz,
+    heartbeat_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT agent_jobs_attempt_count_check CHECK (attempt_count >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS agent_tool_executions (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    plan_id text NOT NULL REFERENCES agent_plans(id) ON DELETE CASCADE,
+    operation_id text NOT NULL REFERENCES agent_plan_operations(id) ON DELETE CASCADE,
+    tool_name text NOT NULL,
+    idempotency_key text NOT NULL,
+    attempt integer NOT NULL,
+    status text NOT NULL,
+    response_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error_code text,
+    finished_at timestamptz,
+    CONSTRAINT agent_tool_executions_unique_idempotency UNIQUE (idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS agent_run_artifacts (
+    id text PRIMARY KEY,
+    run_id text NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    workspace_id text NOT NULL,
+    user_id text NOT NULL,
+    content_hash text NOT NULL,
+    purpose text NOT NULL,
+    document_id text,
+    base_version bigint,
+    target jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_personal_command
+    ON skills (owner_user_id, command) WHERE scope_type = 'personal';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_team_command
+    ON skills (workspace_id, command) WHERE scope_type = 'team';
+CREATE INDEX IF NOT EXISTS idx_skill_versions_skill_status
+    ON skill_versions (skill_id, status, version DESC);
+CREATE INDEX IF NOT EXISTS idx_skill_version_sources_run
+    ON skill_version_sources (source_agent_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_actor_status
+    ON agent_runs (workspace_id, user_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_jobs_claim
+    ON agent_jobs (status, available_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_jobs_run
+    ON agent_jobs (run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_plan_operations_plan_status
+    ON agent_plan_operations (plan_id, status, sequence);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_executions_run
+    ON agent_tool_executions (run_id, plan_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_actor
+    ON agent_run_artifacts (workspace_id, user_id, run_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_runs_apply_operation
+    ON agent_runs (apply_operation_id) WHERE apply_operation_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS checkpoint_migrations (v integer PRIMARY KEY);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    checkpoint_id text NOT NULL,
+    parent_checkpoint_id text,
+    type text,
+    checkpoint jsonb NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
+);
+
+CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    channel text NOT NULL,
+    version text NOT NULL,
+    type text NOT NULL,
+    blob bytea,
+    PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
+);
+
+CREATE TABLE IF NOT EXISTS checkpoint_writes (
+    thread_id text NOT NULL,
+    checkpoint_ns text NOT NULL DEFAULT '',
+    checkpoint_id text NOT NULL,
+    task_id text NOT NULL,
+    idx integer NOT NULL,
+    channel text NOT NULL,
+    type text,
+    blob bytea NOT NULL,
+    task_path text NOT NULL DEFAULT '',
+    PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
+);
+
+INSERT INTO checkpoint_migrations (v) VALUES (9) ON CONFLICT (v) DO NOTHING;
+CREATE INDEX IF NOT EXISTS checkpoints_thread_id_idx ON checkpoints (thread_id);
+CREATE INDEX IF NOT EXISTS checkpoint_blobs_thread_id_idx ON checkpoint_blobs (thread_id);
+CREATE INDEX IF NOT EXISTS checkpoint_writes_thread_id_idx ON checkpoint_writes (thread_id);

@@ -9,5 +9,7 @@ public record InternalPipelineDocumentResponse(
         String filename,
         @JsonProperty("mime_type") String mimeType,
         @JsonProperty("source_uri") String sourceUri,
-        @JsonProperty("extracted_text_uri") String extractedTextUri
+        @JsonProperty("extracted_text_uri") String extractedTextUri,
+        @JsonProperty("source_revision") long sourceRevision,
+        @JsonProperty("source_content_hash") String sourceContentHash
 ) {}

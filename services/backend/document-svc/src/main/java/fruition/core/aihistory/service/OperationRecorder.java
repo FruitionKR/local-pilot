@@ -11,7 +11,6 @@ import fruition.core.aihistory.repository.OperationLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -56,9 +55,9 @@ public class OperationRecorder {
     /**
      * base 버전 불일치로 반영하지 못한 시도를 기록한다.
      *
-     * <p>본 트랜잭션은 롤백되므로 <b>별도 트랜잭션</b>으로 커밋해야 로그가 남는다.
+     * <p>적용 표 소비와 같은 PostgreSQL 트랜잭션에서 호출한다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void recordConflict(String operationId, String workspaceId, String userId,
                                String documentId, Instant now) {
         OperationLog conflict = OperationLog.completed(

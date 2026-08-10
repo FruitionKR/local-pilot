@@ -1,8 +1,19 @@
+from threading import Event, Lock, Thread
 from unittest.mock import Mock
+
+import pytest
 
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_output_persistence as persistence,
 )
+
+
+_LOCK_CONCEPT_PERSISTENCE = persistence.lock_concept_persistence
+
+
+@pytest.fixture(autouse=True)
+def _stub_concept_persistence_lock(monkeypatch) -> None:
+    monkeypatch.setattr(persistence, "lock_concept_persistence", lambda *_args: None)
 
 
 def _stub_followup_writes(monkeypatch) -> None:
@@ -38,7 +49,8 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     monkeypatch,
 ) -> None:
     calls: list[object] = []
-    conn = object()
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
     manifest = {
         "normalized": {
             "document": {"title": "문서"},
@@ -89,6 +101,11 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     )
     monkeypatch.setattr(
         persistence,
+        "lock_concept_persistence",
+        lambda *_args: calls.append("lock"),
+    )
+    monkeypatch.setattr(
+        persistence,
         "load_existing_concept_ids_by_slug",
         lambda *_args: calls.append("load_concept_ids") or {},
     )
@@ -112,10 +129,143 @@ def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
         "upsert_source",
         "document_link",
         "embedding_units",
+        "lock",
         "load_concept_ids",
         "delete_source_links",
         "meaning_clusters",
     ]
+
+
+def test_concurrent_concept_updates_keep_both_evidence_units(monkeypatch) -> None:
+    advisory_lock = Lock()
+    first_read = Event()
+    second_read = Event()
+    release_first = Event()
+    read_count_lock = Lock()
+    read_count = 0
+    stored_markdown = {"value": "# Shared\n\n## Evidence\n- 기존 근거\n"}
+    errors: list[Exception] = []
+
+    class Result:
+        def __init__(self, row=None) -> None:
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class Connection:
+        def __init__(self) -> None:
+            self.locked = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            if self.locked:
+                advisory_lock.release()
+
+        def execute(self, query, params):
+            if "pg_advisory_xact_lock" in query:
+                assert params == ("concept-persistence:user-1:workspace-1",)
+                advisory_lock.acquire()
+                self.locked = True
+                return Result()
+            if "SELECT id, title, summary, markdown_uri" in query:
+                return Result(
+                    {
+                        "id": "concept-page-1",
+                        "title": "Shared",
+                        "summary": "공유 개념",
+                        "markdown_uri": "wiki/user-1/workspace-1/concepts/shared.md",
+                    }
+                )
+            return Result()
+
+    def read_markdown(_uri: str) -> str:
+        nonlocal read_count
+        with read_count_lock:
+            read_count += 1
+            current_read = read_count
+        if current_read == 1:
+            first_read.set()
+            release_first.wait(timeout=1)
+        elif current_read == 2:
+            second_read.set()
+        return stored_markdown["value"]
+
+    def write_markdown(markdown: str, _key: str) -> str:
+        stored_markdown["value"] = markdown
+        return "wiki/user-1/workspace-1/concepts/shared.md"
+
+    monkeypatch.setattr(
+        persistence,
+        "lock_concept_persistence",
+        _LOCK_CONCEPT_PERSISTENCE,
+    )
+    monkeypatch.setattr(persistence, "_persist_source_blocks", lambda *_args: None)
+    monkeypatch.setattr(persistence, "_persist_source_page", lambda *_args, **_kwargs: "source-page-1")
+    monkeypatch.setattr(persistence, "_persist_page_links", lambda *_args: None)
+    monkeypatch.setattr(persistence, "delete_source_related_links", lambda *_args: None)
+    monkeypatch.setattr(persistence, "_persist_meaning_cluster_artifacts", lambda *_args: [])
+    monkeypatch.setattr(
+        persistence,
+        "load_existing_concept_ids_by_slug",
+        lambda *_args: {"shared": "concept-page-1"},
+    )
+    monkeypatch.setattr(
+        persistence,
+        "resolve_or_create_wiki_page_id",
+        lambda *_args: "concept-page-1",
+    )
+    monkeypatch.setattr(persistence, "read_optional_text_object", read_markdown)
+    monkeypatch.setattr(persistence, "upload_wiki_markdown", write_markdown)
+    monkeypatch.setattr(persistence, "upsert_wiki_page", lambda *_args: None)
+    monkeypatch.setattr(persistence, "upsert_document_wiki_link", lambda *_args: None)
+    monkeypatch.setattr(persistence, "persist_embedding_units", lambda *_args: None)
+
+    def worker(claim_id: str, claim: str) -> None:
+        manifest = {
+            "normalized": {
+                "document": {"title": "문서"},
+                "concept_ledger": [{"slug": "shared", "title": "Shared"}],
+            },
+            "source_page": {"markdown": "# 문서"},
+            "concept_pages": [{"slug": "shared", "markdown": "# Shared"}],
+            "concept_contributions": {
+                "shared": {
+                    "evidence_units": [
+                        {
+                            "evidence_id": claim_id,
+                            "claim": claim,
+                            "anchor_reference_ids": [f"doc-{claim_id}:B0001"],
+                        }
+                    ]
+                }
+            },
+            "user_id": "user-1",
+            "workspace_id": "workspace-1",
+        }
+        try:
+            with Connection() as conn:
+                persistence.persist_wiki_outputs(conn, f"doc-{claim_id}", manifest)
+        except Exception as exc:
+            errors.append(exc)
+
+    first = Thread(target=worker, args=("one", "첫 번째 근거"))
+    second = Thread(target=worker, args=("two", "두 번째 근거"))
+    first.start()
+    assert first_read.wait(timeout=1)
+    second.start()
+    assert not second_read.wait(timeout=0.1)
+    release_first.set()
+    first.join(timeout=1)
+    second.join(timeout=1)
+
+    assert not errors
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert "첫 번째 근거" in stored_markdown["value"]
+    assert "두 번째 근거" in stored_markdown["value"]
 
 
 def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> None:
@@ -149,7 +299,8 @@ def test_persist_wiki_outputs_persists_concept_and_page_link(monkeypatch) -> Non
         "user_id": "user-1",
         "workspace_id": "workspace-1",
     }
-    conn = object()
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
     page_links: list[tuple[object, ...]] = []
     _stub_followup_writes(monkeypatch)
     monkeypatch.setattr(
@@ -303,7 +454,9 @@ def test_persist_wiki_outputs_connects_operation_artifacts(monkeypatch) -> None:
         ),
     )
 
-    persistence.persist_wiki_outputs(object(), "doc-1", manifest)  # type: ignore[arg-type]
+    conn = Mock()
+    conn.execute.return_value.fetchone.return_value = None
+    persistence.persist_wiki_outputs(conn, "doc-1", manifest)
 
     assert captured["operation_id"] == "op-1"
     assert captured["workspace_id"] == "workspace-1"

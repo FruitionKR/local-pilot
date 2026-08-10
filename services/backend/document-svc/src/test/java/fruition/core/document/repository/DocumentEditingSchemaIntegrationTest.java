@@ -7,6 +7,8 @@ import fruition.core.document.dto.DocumentExportResult;
 import fruition.core.document.dto.DocumentLifecycleRequest;
 import fruition.core.document.service.DocumentExportService;
 import fruition.core.document.service.DocumentService;
+import fruition.core.agent.repository.AgentRunCommandRepository;
+import fruition.core.aihistory.service.AgentApplyOperationStore;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.sql.Connection;
@@ -58,6 +62,51 @@ class DocumentEditingSchemaIntegrationTest {
 
     @Autowired
     DocumentExportService documentExportService;
+
+    @Autowired
+    AgentRunCommandRepository agentRunCommandRepository;
+
+    @Autowired
+    AiCommandOutboxWriter aiCommandOutboxWriter;
+
+    @Autowired
+    AgentApplyOperationStore agentApplyOperationStore;
+
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
+    @Test
+    void agentReservationAndOutboxRollbackTogether() {
+        String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            agentRunCommandRepository.create(runId, "ws-1", "user-1", "doc-1", 1, "op-1");
+            aiCommandOutboxWriter.enqueue(runId, "ai.agent.command", "doc-1", Map.of("run_id", runId));
+            throw new IllegalStateException("rollback");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM agent_apply_projections WHERE run_id = ?", Integer.class, runId))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_command_outbox WHERE run_id = ?", Integer.class, runId))
+                .isZero();
+    }
+
+    @Test
+    void agentApplyProjectionCanBeConsumedOnlyOnceWhenReady() {
+        String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
+        String operationId = "op_" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO agent_apply_projections (
+                    run_id, workspace_id, user_id, document_id, base_version,
+                    apply_operation_id, status
+                ) VALUES (?, 'ws-1', 'user-1', 'doc-1', 1, ?, 'ready')
+                """, runId, operationId);
+
+        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1")).isTrue();
+        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1")).isFalse();
+    }
 
     @Test
     void migration_createsDocumentEditingFoundation() {

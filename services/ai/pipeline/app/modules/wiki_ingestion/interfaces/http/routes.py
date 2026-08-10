@@ -232,19 +232,6 @@ def get_pipeline_run(
     return row
 
 
-@router.post("/pipeline/runs/{run_id}/result-callback/retry")
-def retry_pipeline_result_callback(
-    run_id: str,
-    use_case: RunPipelineUseCase = Depends(get_pipeline_run_use_case),
-) -> dict[str, Any]:
-    try:
-        return use_case.retry_notification(run_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
 @router.get("/pipeline/runs/{run_id}/logs", response_class=PlainTextResponse)
 def get_pipeline_logs(
     run_id: str,
@@ -416,8 +403,9 @@ def _build_pipeline_command(
     return PipelineRunCommand(
         run_id=run_id,
         operation_id=payload.operation_id,
-        result_callback_url=payload.result_callback_url,
         source_document_id=source_document_id,
+        source_revision=payload.source_revision,
+        source_content_hash=payload.source_content_hash,
         selection_mode=getattr(payload, "selection_mode", None),
         reingest=isinstance(payload, ReingestRunIn),
         input=input_name,

@@ -32,12 +32,7 @@ class ThreadedWikiEmbeddingJob:
 
     def _execute(self, run_id: str, page_ids: list[str]) -> None:
         try:
-            use_case = BuildWikiPageEmbeddingsUseCase(
-                repository=PostgresWikiPageEmbeddingRepository(),
-                embedding_model=BgeM3EmbeddingModel(),
-                markdown_reader=MinioMarkdownReader(),
-            )
-            result = use_case.execute(page_ids)
+            result = _build_embeddings(page_ids)
             self._logger.info(
                 "wiki page embedding job completed run_id=%s result=%s",
                 run_id,
@@ -49,3 +44,30 @@ class ThreadedWikiEmbeddingJob:
                 run_id,
                 exc,
             )
+
+
+class SynchronousWikiEmbeddingJob:
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+
+    def start(self, run_id: str, page_ids: list[str]) -> None:
+        if not page_ids:
+            return
+        result = _build_embeddings(page_ids)
+        if result["failed_count"]:
+            raise RuntimeError(
+                f'wiki restore embedding failed: {result["failed_count"]}'
+            )
+        self._logger.info(
+            "wiki restore embedding completed run_id=%s result=%s",
+            run_id,
+            result,
+        )
+
+
+def _build_embeddings(page_ids: list[str]) -> dict:
+    return BuildWikiPageEmbeddingsUseCase(
+        repository=PostgresWikiPageEmbeddingRepository(),
+        embedding_model=BgeM3EmbeddingModel(),
+        markdown_reader=MinioMarkdownReader(),
+    ).execute(page_ids)

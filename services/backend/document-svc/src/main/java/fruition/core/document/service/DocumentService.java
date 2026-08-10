@@ -41,7 +41,6 @@ import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.dto.DocumentOriginalResult;
 import fruition.core.document.dto.DocumentRenameRequest;
 import fruition.core.document.dto.DocumentRenameResponse;
-import fruition.core.document.dto.DocumentStatusUpdateRequest;
 import fruition.core.document.dto.InternalPipelineDocumentResponse;
 import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.dto.DocumentTrashResponse;
@@ -127,7 +126,6 @@ public class DocumentService {
     private final AgentApplyOperationStore applyOperationStore;
     private final OperationRecorder operationRecorder;
     private final IngestOperationStarter ingestOperationStarter;
-    private final String callbackBaseUrl;
 
     public DocumentService(DocumentRepository documentRepository,
                            FolderRepository folderRepository,
@@ -152,8 +150,7 @@ public class DocumentService {
                            ObjectMapper objectMapper,
                            AgentApplyOperationStore applyOperationStore,
                            OperationRecorder operationRecorder,
-                           IngestOperationStarter ingestOperationStarter,
-                           @Value("${app.callback.base-url}") String callbackBaseUrl) {
+                           IngestOperationStarter ingestOperationStarter) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -178,7 +175,6 @@ public class DocumentService {
         this.applyOperationStore = applyOperationStore;
         this.operationRecorder = operationRecorder;
         this.ingestOperationStarter = ingestOperationStarter;
-        this.callbackBaseUrl = callbackBaseUrl;
     }
 
     private void verifyWorkspaceOwnership(String workspaceId, String userId) {
@@ -957,33 +953,17 @@ public class DocumentService {
                 documentId,
                 document.getUserId(),
                 document.getWorkspaceId(),
-                callbackBaseUrl + "/api/documents/" + documentId + "/pipeline-events",
                 document.getSelectionMode(),
                 document.getPipelineInputMarkdown(),
                 "chat_export".equals(document.getOrigin()),
                 operationId,
-                ingestOperationStarter.resultCallbackUrl(operationId)
+                document.getCurrentVersion(),
+                document.getCurrentContentHash()
         );
         document.markPipelineStarted(runId, Instant.now());
         log.info("[문서 처리 command 등록 완료] documentId={} runId={} operationId={}",
                 documentId, runId, operationId);
         return runId;
-    }
-
-    @Transactional
-    public void applyPipelineEvent(String documentId, String runId, String stage,
-                                   String message, Map<String, Object> data) {
-        Document doc = documentRepository.findByIdInActiveWorkspace(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        log.info("[파이프라인 이벤트 수신] documentId={} runId={} stage={} message={} dataKeys={}",
-                documentId, runId, stage, message, data != null ? data.keySet() : List.of());
-        if (runId != null && !runId.equals(doc.getPipelineRunId())) {
-            log.warn("[파이프라인 이벤트 무시] documentId={} requestRunId={} currentRunId={} stage={}",
-                    documentId, runId, doc.getPipelineRunId(), stage);
-            return;
-        }
-        doc.markProcessingHeartbeat(stage, Instant.now());
-        log.info("[문서 처리 heartbeat 반영] documentId={} runId={} stage={}", documentId, runId, stage);
     }
 
     @Transactional
@@ -1048,18 +1028,6 @@ public class DocumentService {
         return new DocumentListResponse(items);
     }
 
-    @Transactional
-    public void updateStatus(String documentId, DocumentStatusUpdateRequest request) {
-        Document document = documentRepository.findByIdInActiveWorkspace(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException(documentId));
-        document.updateStatus(
-                request.status(),
-                request.extractedTextUri(),
-                request.processedAt(),
-                request.errorMessage()
-        );
-    }
-
     @Transactional(readOnly = true)
     public Optional<InternalPipelineDocumentResponse> findPipelineSource(String documentId) {
         return documentRepository.findByIdInActiveWorkspace(documentId)
@@ -1070,7 +1038,9 @@ public class DocumentService {
                         document.getFilename(),
                         document.getMimeType(),
                         document.getSourceUri(),
-                        document.getExtractedTextUri()
+                        document.getExtractedTextUri(),
+                        document.getCurrentVersion(),
+                        document.getCurrentContentHash()
                 ));
     }
 
@@ -1226,11 +1196,14 @@ public class DocumentService {
                     legacyState
             );
         } catch (DocumentVersionConflictException conflict) {
-            // 편집안이 오래된 base를 바탕으로 하고 있다. 시도 기록은 별도 트랜잭션으로 남긴다.
-            if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
-                operationRecorder.recordConflict(
-                        applyOperationId, workspaceId, userId, documentId, Instant.now());
-            }
+            // 적용 표 소비와 conflict 감사 기록은 같은 PostgreSQL 트랜잭션으로 남긴다.
+            transactionTemplate.execute(status -> {
+                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                    operationRecorder.recordConflict(
+                            applyOperationId, workspaceId, userId, documentId, Instant.now());
+                }
+                return null;
+            });
             throw conflict;
         }
         projectContentVersions(documentId, content.markdown(), result);
@@ -1244,12 +1217,14 @@ public class DocumentService {
         }
 
         // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
-        if (result.changed() && applyOperationStore.consume(applyOperationId, userId, documentId)) {
+        if (result.changed()) {
             transactionTemplate.execute(status -> {
-                operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
-                        result.baseRevision(), result.revision(), result.baseMarkdown(),
-                        content.markdown(), result.updatedAt());
-                contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                    operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                            result.baseRevision(), result.revision(), result.baseMarkdown(),
+                            content.markdown(), result.updatedAt());
+                    contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                }
                 return null;
             });
         }
@@ -1460,7 +1435,8 @@ public class DocumentService {
     @Transactional
     public DocumentIngestResponse ingest(String workspaceId, String userId, String documentId) {
         verifyWorkspaceOwnership(workspaceId, userId);
-        Document document = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
+        Document document = documentRepository.findByIdAndWorkspaceIdForUpdate(documentId, workspaceId)
+                .filter(value -> value.getDeletedAt() == null)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         verifyDocumentOwner(document, userId);
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {

@@ -58,10 +58,6 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        // llmPipeline 내부 콜백: 사용자 JWT 대신 컨트롤러에서 X-Internal-Token을 검증한다
-                        .requestMatchers("/api/documents/*/status", "/api/documents/*/pipeline-events").permitAll()
-                        .requestMatchers("/api/query/runs/*/events/callback").permitAll()
-                        .requestMatchers("/api/ai-operations/*/result").permitAll()
                         // access(인증 서비스)가 호출하는 내부 API: 컨트롤러에서 X-Internal-Token을 검증한다
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())

@@ -1,6 +1,7 @@
 package fruition.core.document.repository;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import fruition.shared.http.PipelineClientFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -34,17 +35,14 @@ public class PipelineRunStatusRequester {
         }
     }
 
-    public void retryResultCallback(String runId) {
-        restClient.post()
-                .uri(endpoint + "/" + runId + "/result-callback/retry")
-                .retrieve()
-                .toBodilessEntity();
-    }
-
     public record PipelineRunStatus(
             String id,
             @JsonProperty("document_id") String documentId,
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            String mode,
             String status,
-            String error
+            String error,
+            JsonNode manifest
     ) {}
 }

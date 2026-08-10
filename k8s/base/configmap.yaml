@@ -28,6 +28,10 @@ data:
   REDIS_PORT: "6379"
   KAFKA_BOOTSTRAP_SERVERS: "kafka-kafka-bootstrap:9092"
   INGEST_COMMAND_TOPIC: "ai.ingest.command"
+  QUERY_COMMAND_TOPIC: "ai.query.command"
+  AGENT_COMMAND_TOPIC: "ai.agent.command"
+  MAINTENANCE_COMMAND_TOPIC: "ai.maintenance.command"
+  AI_TASK_EVENT_TOPIC: "ai.task.event"
   DOCUMENT_EDIT_EVENT_TOPIC: "document.edit.event"
   S3_ENDPOINT: "http://minio:9000"
   S3_BUCKET: "fruition-storage"
@@ -35,11 +39,8 @@ data:
   PROCESSING_ENDPOINT: "http://pipeline-api:8000/pipeline/runs"
   CHAT_PROCESSING_ENDPOINT: "http://pipeline-api:8000/chat-wiki/runs"
   QUERY_ENDPOINT: "http://pipeline-api:8000/query"
-  AGENT_ENDPOINT: "http://pipeline-api:8000/agent/turn"
+  AGENT_STATUS_ENDPOINT: "http://pipeline-api:8000/internal/agent/runs"
   WIKI_SCHEMA_ENDPOINT: "http://pipeline-api:8000/wiki-schema"
-  WIKI_MAINTENANCE_ENDPOINT: "http://pipeline-api:8000/wiki/maintenance/lint"
-  WIKI_RESTORE_INGEST_ENDPOINT: "http://pipeline-api:8000/wiki/ingest-restore-runs"
-  WIKI_RESTORE_LINT_ENDPOINT: "http://pipeline-api:8000/wiki/lint-restore-runs"
   WIKI_PAGE_ENDPOINT: "http://pipeline-api:8000/wiki/pages"
   WIKI_STATE_ENDPOINT: "http://pipeline-api:8000/wiki"
   # PDF → Markdown 변환기(converter Service, ClusterIP) — document-svc가 내부 호출
@@ -48,8 +49,6 @@ data:
   # access-svc -> document-svc(/internal/workspaces/*/initial-note)
   ACCESS_INTERNAL_BASE_URL: "http://access-svc:8081"
   DOCUMENT_INTERNAL_BASE_URL: "http://document-svc:8080"
-  # pipeline·ingest-worker가 콜백을 보낼 document-svc 주소 (access-svc는 콜백을 받지 않는다)
-  CALLBACK_BASE_URL: "http://document-svc:8080"
   CORS_ALLOWED_ORIGINS: "http://localhost:3000"
   OAUTH_FRONTEND_REDIRECT_URI: "http://localhost:3000/oauth/callback"
   # --- pipeline-api / ingest-worker ---

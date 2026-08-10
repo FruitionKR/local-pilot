@@ -40,6 +40,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     self._embedding_model.model_name,
                     item.representation_hash,
                     str(exc),
+                    item.source_updated_at,
                 )
             return embedding_result(len(targets), embedded_count, skipped_count, len(pending))
 
@@ -50,6 +51,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     self._embedding_model.model_name,
                     item.representation_hash,
                     vector,
+                    item.source_updated_at,
                 )
                 embedded_count += 1
             except Exception as exc:
@@ -59,6 +61,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     self._embedding_model.model_name,
                     item.representation_hash,
                     str(exc),
+                    item.source_updated_at,
                 )
 
         return embedding_result(len(targets), embedded_count, skipped_count, failed_count)
@@ -77,6 +80,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     self._embedding_model.model_name,
                     representation_hash,
                     str(exc),
+                    target.updated_at,
                 )
                 continue
             representation = self._representation(target, markdown)
@@ -85,6 +89,7 @@ class BuildWikiPageEmbeddingsUseCase:
                     page_id=target.page_id,
                     representation=representation,
                     representation_hash=self._hash(representation),
+                    source_updated_at=target.updated_at,
                 )
             )
         return inputs, failed_count

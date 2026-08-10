@@ -1,70 +1,75 @@
 package fruition.core.wikimaintenance.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import fruition.core.aihistory.service.LintOperationStarter;
-import fruition.core.aihistory.dto.OperationResultRequest;
-import fruition.core.aihistory.service.OperationIngestService;
+import fruition.core.document.repository.AiCommandOutboxWriter;
+import fruition.core.document.repository.PipelineRunStatusRequester;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.wikimaintenance.domain.WikiLintState;
 import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
-import fruition.core.wikimaintenance.repository.PipelineWikiMaintenanceRequester;
+import fruition.core.wikimaintenance.exception.PipelineWikiMaintenanceException;
 import fruition.core.wikimaintenance.repository.WikiLintStateRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Service
 public class WikiMaintenanceService {
 
     private final WorkspaceAccessGuard workspaceAccessGuard;
-    private final PipelineWikiMaintenanceRequester requester;
     private final LintOperationStarter operationStarter;
-    private final OperationIngestService operationIngestService;
+    private final AiCommandOutboxWriter outboxWriter;
+    private final PipelineRunStatusRequester runStatusRequester;
     private final WikiLintStateRepository lintStateRepository;
     private final PipelineWikiStateRequester wikiStateRequester;
+    private final ObjectMapper objectMapper;
+    private final String commandTopic;
 
     public WikiMaintenanceService(WorkspaceAccessGuard workspaceAccessGuard,
-                                  PipelineWikiMaintenanceRequester requester,
                                   LintOperationStarter operationStarter,
-                                  OperationIngestService operationIngestService,
+                                  AiCommandOutboxWriter outboxWriter,
+                                  PipelineRunStatusRequester runStatusRequester,
                                   WikiLintStateRepository lintStateRepository,
-                                  PipelineWikiStateRequester wikiStateRequester) {
+                                  PipelineWikiStateRequester wikiStateRequester,
+                                  ObjectMapper objectMapper,
+                                  @Value("${app.maintenance.command-topic}") String commandTopic) {
         this.workspaceAccessGuard = workspaceAccessGuard;
-        this.requester = requester;
         this.operationStarter = operationStarter;
-        this.operationIngestService = operationIngestService;
+        this.outboxWriter = outboxWriter;
+        this.runStatusRequester = runStatusRequester;
         this.lintStateRepository = lintStateRepository;
         this.wikiStateRequester = wikiStateRequester;
+        this.objectMapper = objectMapper;
+        this.commandTopic = commandTopic;
     }
 
+    @Transactional
     public JsonNode lint(String workspaceId, String userId, WikiLintRequest request) {
         workspaceAccessGuard.requireMember(workspaceId, userId);
-        if (request == null || !Boolean.FALSE.equals(request.dryRun())) {
-            return requester.lint(workspaceId, userId, request, null).body();
-        }
+        WikiLintRequest safe = request == null ? new WikiLintRequest(null, null) : request;
+        boolean dryRun = !Boolean.FALSE.equals(safe.dryRun());
+        String runId = UUID.randomUUID().toString();
+        String operationId = dryRun ? null : operationStarter.start(workspaceId, userId);
+        outboxWriter.enqueue(runId, commandTopic, workspaceId,
+                new LintCommand(runId, "lint", workspaceId, userId, operationId,
+                        Boolean.TRUE.equals(safe.materializePromotions()), dryRun));
+        return objectMapper.valueToTree(new LintRunResponse(runId, operationId, "queued"));
+    }
 
-        String operationId = operationStarter.start(workspaceId, userId);
-        try {
-            var response = requester.lint(workspaceId, userId, request, operationId);
-            operationIngestService.accept(operationId, new OperationResultRequest(
-                    response.operationId(), "lint", "succeeded", workspaceId, userId, null,
-                    "Wiki lint로 페이지 " + response.changedPages().size() + "개를 변경했습니다.",
-                    response.changedPages().stream()
-                            .map(page -> new OperationResultRequest.ChangedPage(
-                                    page.pageId(), page.pageType(), page.markdownKey(),
-                                    page.contributionKey(), page.contentHash(), false))
-                            .toList(),
-                    java.util.List.of()));
-            // lint가 바꾼 페이지의 updated_at보다 뒤 시각을 기록해, lint 자신의 변경이
-            // 곧바로 needs_lint를 다시 켜는 루프를 막는다.
-            lintStateRepository.upsert(workspaceId, Instant.now());
-            return response.body();
-        } catch (RuntimeException e) {
-            operationStarter.markFailed(operationId, e.getMessage());
-            throw e;
-        }
+    public JsonNode run(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        var run = runStatusRequester.find(runId)
+                .filter(value -> workspaceId.equals(value.workspaceId()) && userId.equals(value.userId()))
+                .orElseThrow(() -> new PipelineWikiMaintenanceException(
+                        "Wiki maintenance run을 찾을 수 없습니다.", 404, null));
+        return objectMapper.valueToTree(run);
     }
 
     /** 마지막 lint 성공 이후 위키 페이지가 변경됐으면 needs_lint = true. */
@@ -78,4 +83,24 @@ public class WikiMaintenanceService {
                 && (lastLintAt == null || lastWikiChangeAt.isAfter(lastLintAt));
         return new WikiMaintenanceStatusResponse(needsLint, lastLintAt, lastWikiChangeAt);
     }
+
+    public void markLintSucceeded(String workspaceId) {
+        lintStateRepository.upsert(workspaceId, Instant.now());
+    }
+
+    record LintCommand(
+            @JsonProperty("run_id") String runId,
+            String kind,
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("user_id") String userId,
+            @JsonProperty("operation_id") String operationId,
+            @JsonProperty("materialize_promotions") boolean materializePromotions,
+            @JsonProperty("dry_run") boolean dryRun
+    ) {}
+
+    record LintRunResponse(
+            @JsonProperty("run_id") String runId,
+            @JsonProperty("operation_id") String operationId,
+            String status
+    ) {}
 }

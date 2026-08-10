@@ -7,7 +7,7 @@ from app.modules.wiki_ingestion.application.models import (
     LintOperationRestoreCommand,
 )
 from app.modules.wiki_ingestion.application.ports import (
-    PipelineResultNotifierPort,
+    WikiEmbeddingJobPort,
     WikiPageRestorePort,
 )
 from app.modules.wiki_ingestion.domain.operation_recovery import PageRebuildError
@@ -17,10 +17,10 @@ class RestoreWikiPagesUseCase:
     def __init__(
         self,
         page_restore: WikiPageRestorePort,
-        result_notifier: PipelineResultNotifierPort | None = None,
+        embedding_job: WikiEmbeddingJobPort | None = None,
     ) -> None:
         self._page_restore = page_restore
-        self._result_notifier = result_notifier
+        self._embedding_job = embedding_job
 
     def execute_ingest(
         self,
@@ -61,12 +61,25 @@ class RestoreWikiPagesUseCase:
             failed_pages=failed_pages,
             deleted_pages=deleted_pages,
         )
+        self._page_restore.apply_current_state(
+            command.workspace_id,
+            changed_pages,
+            {
+                "removed_links": [],
+                "restored_links": [
+                    link
+                    for page in changed_pages
+                    for link in page.get("supported_links", [])
+                ],
+            },
+            True,
+        )
         if deleted_pages:
             self._page_restore.cleanup_deleted_pages(
                 command.workspace_id,
                 deleted_pages,
             )
-        self._notify(command.result_callback_url, result)
+        self._start_embeddings(command.operation_id, changed_pages)
         return result
 
     def execute_lint(
@@ -119,13 +132,30 @@ class RestoreWikiPagesUseCase:
             link_changes=link_changes,
             failed_actions=failed_actions,
         )
+        self._page_restore.apply_current_state(
+            command.workspace_id,
+            changed_pages,
+            link_changes,
+            False,
+        )
         if command.deleted_pages:
             self._page_restore.cleanup_deleted_pages(
                 command.workspace_id,
                 list(command.deleted_pages),
             )
-        self._notify(command.result_callback_url, result)
+        self._start_embeddings(command.operation_id, changed_pages)
         return result
+
+    def _start_embeddings(
+        self,
+        run_id: str,
+        changed_pages: list[dict[str, Any]],
+    ) -> None:
+        if self._embedding_job is not None:
+            self._embedding_job.start(
+                run_id,
+                [str(page["page_id"]) for page in changed_pages],
+            )
 
     def _rebuild_pages(
         self,
@@ -174,7 +204,3 @@ class RestoreWikiPagesUseCase:
             "failed_pages": failed_pages,
             **values,
         }
-
-    def _notify(self, callback_url: str | None, result: dict[str, Any]) -> None:
-        if callback_url and self._result_notifier is not None:
-            self._result_notifier.notify(callback_url, result)

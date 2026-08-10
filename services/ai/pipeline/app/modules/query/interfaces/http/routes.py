@@ -4,7 +4,6 @@ from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.domain.exceptions import QueryError
 from app.modules.query.domain.entities import ConversationContext, QueryAnswer
 from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
-from app.modules.query.infrastructure.query_event_publisher import build_query_event_publisher
 from app.modules.query.interfaces.http.schemas import (
     GraphContextResponse,
     EvidenceSnippetResponse,
@@ -26,15 +25,10 @@ def answer_query(
     use_case: AnswerQueryUseCase = Depends(get_answer_query_use_case),
 ) -> QueryResponse:
     try:
-        event_publisher = build_query_event_publisher(
-            callback_url=payload.log_callback_url,
-            request_id=payload.request_id,
-        )
         result = use_case.execute(
             payload.question,
             workspace_id=payload.workspace_id,
             user_id=payload.user_id,
-            event_publisher=event_publisher,
             conversation_context=_conversation_context(payload),
         )
     except QueryError as exc:

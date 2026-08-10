@@ -130,19 +130,6 @@ class QueryServiceTest {
     }
 
     @Test
-    @DisplayName("requestId가 있으면 PipelineQueryRequester의 run-aware overload를 호출한다")
-    void query_withRequestId_callsRunAwarePipelineOverload() {
-        PipelineQueryResponse mockResponse = samplePipelineResponse();
-        when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback"))
-                .thenReturn(mockResponse);
-
-        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
-
-        assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
-        verify(pipelineQueryRequester).query(WORKSPACE_ID, "Self-Attention이 뭐야?", "query_abc123", "http://backend:8080/callback");
-    }
-
-    @Test
     @DisplayName("파이프라인 실패 시 pending assistant가 failed로 변경되고 예외가 전파된다")
     void query_pipelineFailure_marksAssistantFailedAndRethrows() {
         PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");

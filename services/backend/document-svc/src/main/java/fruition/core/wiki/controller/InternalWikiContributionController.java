@@ -53,7 +53,9 @@ public class InternalWikiContributionController {
         var contributions = repository.findByPageIdsAndWorkspaceId(
                 request.pageIds(), request.workspaceId());
         return ResponseEntity.ok(contributions.stream()
-                .map(row -> new ContributionResponse(row.isActive(), row.getObjectKey()))
+                .map(row -> new ContributionResponse(
+                        row.getPageId(), row.getIngestOperationId(), row.getSourceDocumentId(),
+                        row.getSequenceRevision(), row.isActive(), row.getObjectKey()))
                 .toList());
     }
 
@@ -61,5 +63,12 @@ public class InternalWikiContributionController {
             @JsonProperty("page_ids") List<String> pageIds,
             @JsonProperty("workspace_id") String workspaceId
     ) {}
-    record ContributionResponse(boolean active, @JsonProperty("object_key") String objectKey) {}
+    record ContributionResponse(
+            @JsonProperty("page_id") String pageId,
+            @JsonProperty("ingest_operation_id") String ingestOperationId,
+            @JsonProperty("source_document_id") String sourceDocumentId,
+            @JsonProperty("sequence_revision") long sequenceRevision,
+            boolean active,
+            @JsonProperty("object_key") String objectKey
+    ) {}
 }

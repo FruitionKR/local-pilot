@@ -17,5 +17,7 @@ public record AgentTurnResponse(
         long baseVersion,
         String requestId,
         @JsonProperty("apply_operation_id") String applyOperationId,
-        JsonNode result
+        String status,
+        JsonNode result,
+        String error
 ) {}

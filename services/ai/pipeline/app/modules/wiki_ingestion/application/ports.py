@@ -33,20 +33,14 @@ class PipelineRunRepositoryPort(Protocol):
         mode: str,
     ) -> None: ...
 
-    def finish(self, run_id: str, manifest: dict[str, Any]) -> list[str]: ...
-
-    def fail(self, run_id: str, error: str) -> None: ...
-
-    def mark_notification_pending(
+    def finish(
         self,
         run_id: str,
-        error: str,
-        callback_url: str,
-        payload: dict[str, Any],
-        status_code: int | None = None,
-    ) -> None: ...
+        manifest: dict[str, Any],
+        expected_source_hash: str | None = None,
+    ) -> list[str]: ...
 
-    def complete_notification(self, run_id: str, status: str) -> None: ...
+    def fail(self, run_id: str, error: str) -> None: ...
 
     def touch(self, run_id: str) -> bool: ...
 
@@ -77,15 +71,15 @@ class WikiEmbeddingJobPort(Protocol):
     def start(self, run_id: str, page_ids: list[str]) -> None: ...
 
 
-class PipelineResultNotifierPort(Protocol):
-    def notify(
+class WikiPageRestorePort(Protocol):
+    def apply_current_state(
         self,
-        callback_url: str,
-        payload: dict[str, Any],
+        workspace_id: str,
+        changed_pages: list[dict[str, Any]],
+        link_changes: dict[str, list[dict[str, Any]]],
+        replace_links: bool,
     ) -> None: ...
 
-
-class WikiPageRestorePort(Protocol):
     def cleanup_deleted_pages(
         self,
         workspace_id: str,

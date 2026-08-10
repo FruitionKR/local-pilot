@@ -131,5 +131,7 @@ assert_cross_write_denied "$CORE_DB_RUNTIME_USER" "$CORE_DB_RUNTIME_PASSWORD" "$
 assert_cross_write_denied "$CORE_DB_MIGRATION_USER" "$CORE_DB_MIGRATION_PASSWORD" "$AI_DB_NAME"
 assert_cross_write_denied "$AI_DB_RUNTIME_USER" "$AI_DB_RUNTIME_PASSWORD" "$ACCESS_DB_NAME"
 assert_cross_write_denied "$AI_DB_MIGRATION_USER" "$AI_DB_MIGRATION_PASSWORD" "$ACCESS_DB_NAME"
+assert_cross_write_denied "$AI_DB_RUNTIME_USER" "$AI_DB_RUNTIME_PASSWORD" "$CORE_DB_NAME"
+assert_cross_write_denied "$AI_DB_MIGRATION_USER" "$AI_DB_MIGRATION_PASSWORD" "$CORE_DB_NAME"
 
 log 'runtime/migration 비superuser, own DML 성공, runtime CREATE 거부, 타 DB write 거부를 확인했습니다.'

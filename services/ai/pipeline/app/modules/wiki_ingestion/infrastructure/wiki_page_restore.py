@@ -26,10 +26,29 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
         read_text: Callable[[str], str],
         write_text: Callable[[str, str, str], str],
         cleanup_deleted_pages: Callable[[str, list[str]], None],
+        apply_current_state: Callable[
+            [str, list[dict[str, Any]], dict[str, list[dict[str, Any]]], bool],
+            None,
+        ],
     ) -> None:
         self._read_text = read_text
         self._write_text = write_text
         self._cleanup_deleted_pages = cleanup_deleted_pages
+        self._apply_current_state = apply_current_state
+
+    def apply_current_state(
+        self,
+        workspace_id: str,
+        changed_pages: list[dict[str, Any]],
+        link_changes: dict[str, list[dict[str, Any]]],
+        replace_links: bool,
+    ) -> None:
+        self._apply_current_state(
+            workspace_id,
+            changed_pages,
+            link_changes,
+            replace_links,
+        )
 
     def cleanup_deleted_pages(
         self,

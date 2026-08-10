@@ -144,45 +144,11 @@ def test_pipeline_run_accepts_legacy_document_scope_fields() -> None:
     assert payload.wiki_evaluation_loop is True
 
 
-def test_pipeline_run_accepts_operation_result_contract() -> None:
-    payload = api.PipelineRunIn(
-        document_id="document_1",
-        operation_id="op_1",
-        result_callback_url="http://backend/api/ai-operations/op_1/result",
-    )
-
-    assert payload.operation_id == "op_1"
-    assert (
-        payload.result_callback_url
-        == "http://backend/api/ai-operations/op_1/result"
-    )
-
-
-@pytest.mark.parametrize(
-    ("operation_id", "result_callback_url"),
-    [
-        ("op_1", None),
-        (None, "http://backend/api/ai-operations/op_1/result"),
-    ],
-)
-def test_pipeline_run_rejects_incomplete_operation_result_contract(
-    operation_id: str | None,
-    result_callback_url: str | None,
-) -> None:
-    with pytest.raises(ValueError, match="must be provided together"):
-        api.PipelineRunIn(
-            document_id="document_1",
-            operation_id=operation_id,
-            result_callback_url=result_callback_url,
-        )
-
-
-def test_pipeline_command_includes_operation_result_contract() -> None:
+def test_pipeline_command_includes_operation_id() -> None:
     repository = _repository()
     payload = api.PipelineRunIn(
         document_id="document_1",
         operation_id="op_1",
-        result_callback_url="http://backend/api/ai-operations/op_1/result",
     )
 
     command = pipeline_routes._build_pipeline_command(
@@ -199,10 +165,6 @@ def test_pipeline_command_includes_operation_result_contract() -> None:
     )
 
     assert command.operation_id == "op_1"
-    assert (
-        command.result_callback_url
-        == "http://backend/api/ai-operations/op_1/result"
-    )
 
 
 def test_chat_wiki_run_accepts_selection_mode() -> None:
@@ -514,35 +476,6 @@ def test_pipeline_endpoint_waits_for_synchronous_result() -> None:
     assert response.json()["status"] == "succeeded"
     assert response.json()["manifest"] == {"manifest": "value"}
     assert [item[0] for item in use_case.mock_calls] == ["register", "execute"]
-
-
-def test_pipeline_endpoint_exposes_pending_callback_status() -> None:
-    repository = _repository(
-        document={
-            "id": "document_1",
-            "user_id": "user_1",
-            "workspace_id": "workspace_1",
-            "source_uri": "documents/document_1.md",
-            "extracted_text_uri": None,
-            "mime_type": "text/markdown",
-            "filename": "document.md",
-        },
-    )
-    repository.get_run.return_value = {"status": "notify_pending"}
-    use_case = _use_case()
-
-    with _pipeline_client(
-        use_case=use_case,
-        repository=repository,
-        source_reader=_source_reader("# Stored Document"),
-    ) as client:
-        response = client.post(
-            "/pipeline/runs",
-            json={"document_id": "document_1", "wait": True},
-        )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "notify_pending"
 
 
 def test_pipeline_run_status_uses_repository_dependency() -> None:

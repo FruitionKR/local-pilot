@@ -1,4 +1,5 @@
 from typing import Protocol
+from datetime import datetime
 
 from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 
@@ -16,10 +17,12 @@ class WikiPageEmbeddingRepositoryPort(Protocol):
         embedding_model: str,
         representation_hash: str,
         embedding_vector: list[float],
+        source_updated_at: datetime,
     ) -> None:
         ...
 
-    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str, error: str) -> None:
+    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str,
+                    error: str, source_updated_at: datetime) -> None:
         ...
 
 
@@ -35,4 +38,3 @@ class EmbeddingModelPort(Protocol):
 class MarkdownReaderPort(Protocol):
     def read_markdown(self, markdown_uri: str) -> str:
         ...
-

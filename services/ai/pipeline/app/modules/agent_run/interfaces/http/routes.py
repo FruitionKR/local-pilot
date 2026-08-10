@@ -12,11 +12,26 @@ from app.modules.agent_run.interfaces.http.schemas import (
     AgentRunActorRequest,
     AgentRunResponse,
     ApproveAgentPlanRequest,
+    MarkdownAgentRunStatusResponse,
     ReviseAgentPlanRequest,
 )
 
 
 router = APIRouter(prefix="/agent/runs", tags=["agent-runs"])
+internal_router = APIRouter(prefix="/internal/agent/runs", tags=["internal-agent-runs"])
+
+
+@internal_router.get("/{run_id}", response_model=MarkdownAgentRunStatusResponse)
+def get_markdown_agent_run(
+    run_id: str,
+    workspace_id: str,
+    user_id: str,
+    repository: AgentRunManagementRepositoryPort = Depends(get_agent_run_repository),
+) -> MarkdownAgentRunStatusResponse:
+    run = repository.get_markdown_turn_status(workspace_id, user_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="AgentRun not found.")
+    return MarkdownAgentRunStatusResponse.model_validate(run)
 
 
 @router.get("/{run_id}", response_model=AgentRunResponse)

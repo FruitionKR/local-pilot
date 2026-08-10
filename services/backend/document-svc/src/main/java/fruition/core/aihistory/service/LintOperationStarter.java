@@ -22,7 +22,7 @@ public class LintOperationStarter {
         this.operationLogRepository = operationLogRepository;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public String start(String workspaceId, String userId) {
         String operationId = "op_" + randomSuffix();
         operationLogRepository.save(OperationLog.processing(

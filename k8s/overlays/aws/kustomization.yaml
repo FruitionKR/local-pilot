@@ -159,3 +159,39 @@ patches:
             containers:
               - name: edit-event-consumer
                 imagePullPolicy: IfNotPresent
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: query-task-worker
+        namespace: fruition
+      spec:
+        template:
+          spec:
+            containers:
+              - name: query-task-worker
+                imagePullPolicy: IfNotPresent
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: agent-task-worker
+        namespace: fruition
+      spec:
+        template:
+          spec:
+            containers:
+              - name: agent-task-worker
+                imagePullPolicy: IfNotPresent
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: maintenance-task-worker
+        namespace: fruition
+      spec:
+        template:
+          spec:
+            containers:
+              - name: maintenance-task-worker
+                imagePullPolicy: IfNotPresent

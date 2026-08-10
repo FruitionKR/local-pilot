@@ -9,6 +9,16 @@ class AgentRunActorRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
 
 
+class MarkdownAgentRunStatusResponse(BaseModel):
+    id: str
+    document_id: str
+    base_version: int
+    apply_operation_id: str
+    status: str
+    result: dict[str, object] | None
+    error_code: str | None
+
+
 class ApproveAgentPlanRequest(AgentRunActorRequest):
     plan_version: int = Field(..., ge=1)
     operation_hash: str = Field(..., min_length=64, max_length=64)

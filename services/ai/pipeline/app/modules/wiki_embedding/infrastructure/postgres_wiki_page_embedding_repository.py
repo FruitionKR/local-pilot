@@ -1,4 +1,5 @@
 import psycopg
+from datetime import datetime
 
 from app.core.error_text import truncate_error
 from app.modules.wiki_embedding.application.ports import WikiPageEmbeddingRepositoryPort
@@ -6,10 +7,10 @@ from app.modules.wiki_embedding.domain.entities import WikiPageEmbeddingTarget
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
 
 
-def _lock_active_page(conn: psycopg.Connection, page_id: str) -> bool:
+def _lock_active_page(conn: psycopg.Connection, page_id: str, updated_at: datetime) -> bool:
     return conn.execute(
-        "SELECT 1 FROM wiki_pages WHERE id = %s AND status = 'active' FOR UPDATE",
-        (page_id,),
+        "SELECT 1 FROM wiki_pages WHERE id = %s AND status = 'active' AND updated_at = %s FOR UPDATE",
+        (page_id, updated_at),
     ).fetchone() is not None
 
 
@@ -20,7 +21,7 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
         with database.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, title, summary, markdown_uri
+                SELECT id, title, summary, markdown_uri, updated_at
                 FROM wiki_pages
                 WHERE status = 'active'
                   AND id = ANY(%s)
@@ -34,6 +35,7 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
                 title=row["title"],
                 summary=row["summary"],
                 markdown_uri=row["markdown_uri"],
+                updated_at=row["updated_at"],
             )
             for row in rows
         ]
@@ -60,9 +62,10 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
         embedding_model: str,
         representation_hash: str,
         embedding_vector: list[float],
+        source_updated_at: datetime,
     ) -> None:
         with database.connect() as conn:
-            if not _lock_active_page(conn, page_id):
+            if not _lock_active_page(conn, page_id, source_updated_at):
                 return
             conn.execute(
                 """
@@ -89,10 +92,11 @@ class PostgresWikiPageEmbeddingRepository(WikiPageEmbeddingRepositoryPort):
                 (page_id, embedding_model, representation_hash, embedding_vector, len(embedding_vector)),
             )
 
-    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str, error: str) -> None:
+    def mark_failed(self, page_id: str, embedding_model: str, representation_hash: str,
+                    error: str, source_updated_at: datetime) -> None:
         error_message = truncate_error(error)
         with database.connect() as conn:
-            if not _lock_active_page(conn, page_id):
+            if not _lock_active_page(conn, page_id, source_updated_at):
                 return
             try:
                 conn.execute(

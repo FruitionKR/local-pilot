@@ -42,6 +42,7 @@ from app.modules.wiki_ingestion.infrastructure.object_storage import (
     write_text_object,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_output_persistence import (
+    lock_concept_persistence as _lock_concept_persistence,
     persist_wiki_outputs as _persist_wiki_outputs,
 )
 from app.modules.wiki_ingestion.infrastructure.source_contribution_reconciliation import (
@@ -65,6 +66,12 @@ from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
     stored_manifest as _stored_manifest,
 )
 from app.modules.wiki_ingestion.infrastructure.wiki_lint_report import render_lint_log_markdown
+from app.modules.wiki_ingestion.infrastructure.workspace_concept_lock import (
+    concept_write_lock,
+    get_concept_index,
+    invalidate_concept_index,
+    put_concept_index,
+)
 
 
 def _unique_keep_order(values: list[str]) -> list[str]:
@@ -83,18 +90,6 @@ def _slugify(value: str) -> str:
 
 
 logger = logging.getLogger(__name__)
-
-
-def core_database_url() -> str:
-    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_DSN")
-    if not url:
-        raise RuntimeError("Set DATABASE_URL or POSTGRES_DSN before using PostgreSQL-backed APIs")
-    return url
-
-
-def connect_core() -> psycopg.Connection:
-    """Agent·Skill 전환기 core_db 연결."""
-    return psycopg.connect(core_database_url(), row_factory=dict_row)
 
 
 def ai_database_url() -> str:
@@ -183,6 +178,101 @@ def cleanup_deleted_wiki_pages(
         )
 
 
+def apply_restored_wiki_state(
+    workspace_id: str,
+    changed_pages: list[dict[str, Any]],
+    link_changes: dict[str, list[dict[str, Any]]],
+    replace_links: bool,
+) -> None:
+    if not changed_pages and not any(link_changes.values()):
+        return
+    with connect() as conn:
+        page_ids = [str(page["page_id"]) for page in changed_pages]
+        rows = conn.execute(
+            """
+            SELECT id, page_type, slug, user_id
+            FROM wiki_pages
+            WHERE workspace_id = %s AND id = ANY(%s) AND status = 'active'
+            """,
+            (workspace_id, page_ids),
+        ).fetchall() if page_ids else []
+        by_id = {str(row["id"]): row for row in rows}
+        if len(by_id) != len(set(page_ids)):
+            raise ValueError("restored Wiki page does not match workspace")
+        by_ref = {
+            f'{row["page_type"]}:{row["slug"]}': row
+            for row in rows
+        }
+        for page in changed_pages:
+            conn.execute(
+                """
+                UPDATE wiki_pages
+                SET markdown_uri = %s, status = 'active', updated_at = now()
+                WHERE id = %s AND workspace_id = %s
+                """,
+                (storage_uri(str(page["markdown_key"])), page["page_id"], workspace_id),
+            )
+
+        if replace_links and page_ids:
+            conn.execute(
+                "DELETE FROM wiki_page_links WHERE from_page_id = ANY(%s)",
+                (page_ids,),
+            )
+
+        def resolve(reference: str, user_id: str) -> str | None:
+            known = by_ref.get(reference)
+            if known is not None and str(known["user_id"]) == user_id:
+                return str(known["id"])
+            page_type, separator, slug = reference.partition(":")
+            if not separator:
+                return None
+            row = conn.execute(
+                """
+                SELECT id
+                FROM wiki_pages
+                WHERE workspace_id = %s AND user_id = %s
+                  AND page_type = %s AND slug = %s AND status = 'active'
+                """,
+                (workspace_id, user_id, page_type, slug),
+            ).fetchone()
+            return str(row["id"]) if row else None
+
+        for link in link_changes.get("removed_links", []):
+            source = by_ref.get(str(link.get("source")))
+            if source is None:
+                continue
+            target_id = resolve(str(link.get("target")), str(source["user_id"]))
+            if target_id:
+                conn.execute(
+                    """
+                    DELETE FROM wiki_page_links
+                    WHERE from_page_id = %s AND to_page_id = %s AND link_type = %s
+                    """,
+                    (source["id"], target_id, link.get("relation") or "related_to"),
+                )
+        user_ids = {str(row["user_id"]) for row in rows}
+        for link in link_changes.get("restored_links", []):
+            source = by_ref.get(str(link.get("source")))
+            if source is None:
+                continue
+            target_id = resolve(str(link.get("target")), str(source["user_id"]))
+            if target_id and target_id != str(source["id"]):
+                _upsert_wiki_page_link(
+                    conn,
+                    str(source["id"]),
+                    target_id,
+                    link.get("relation") or "related_to",
+                    link.get("label"),
+                    link.get("confidence"),
+                    workspace_id,
+                )
+    for user_id in user_ids:
+        try:
+            invalidate_concept_index(user_id, workspace_id)
+        except Exception:
+            logger.warning("concept index cache invalidation failed", exc_info=True)
+
+
 REQUIRED_TABLES = (
     "wiki_pages",
     "document_wiki_links",
@@ -218,6 +308,7 @@ AI_DB_REQUIRED_TABLES = (
     *REQUIRED_TABLES,
     "wiki_schemas",
     "document_derived_state",
+    *AGENT_REQUIRED_TABLES,
 )
 
 
@@ -228,7 +319,7 @@ def verify_schema() -> None:
 
 def verify_agent_schema() -> None:
     """Agent worker가 사용하는 Agent/Skill/checkpoint 테이블을 확인한다."""
-    with connect_core() as conn:
+    with connect_ai() as conn:
         rows = conn.execute(
             """
             SELECT table_name
@@ -581,45 +672,66 @@ def create_pipeline_run(
         )
 
 
-def finish_pipeline_run(run_id: str, manifest: dict[str, Any]) -> list[str]:
+def finish_pipeline_run(
+    run_id: str,
+    manifest: dict[str, Any],
+    expected_source_hash: str | None = None,
+) -> list[str]:
     embedded_page_ids: list[str] = []
     with connect() as conn:
-        row = conn.execute("SELECT document_id FROM pipeline_runs WHERE id = %s", (run_id,)).fetchone()
-        document_id = row["document_id"] if row else None
-        if document_id:
-            embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
-            manifest["source_contribution"] = _source_contribution_payload(
-                manifest
+        row = conn.execute(
+            "SELECT document_id, user_id, workspace_id FROM pipeline_runs WHERE id = %s",
+            (run_id,),
+        ).fetchone()
+    document_id = row["document_id"] if row else None
+    user_id = row["user_id"] if row else None
+    workspace_id = row["workspace_id"] if row else None
+    lock = concept_write_lock(str(workspace_id), run_id) if document_id else nullcontext()
+    with lock:
+        with connect() as conn:
+            if document_id:
+                embedded_page_ids = _persist_wiki_outputs(conn, document_id, manifest)
+                manifest["source_contribution"] = _source_contribution_payload(manifest)
+                manifest = _stored_manifest(manifest)
+            conn.execute(
+                """
+                UPDATE pipeline_runs
+                SET status = 'succeeded', manifest = %s,
+                    updated_at = now(), finished_at = now()
+                WHERE id = %s
+                """,
+                (Json(manifest), run_id),
             )
-            manifest = _stored_manifest(manifest)
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = 'succeeded', manifest = %s,
-                updated_at = now(), finished_at = now()
-            WHERE id = %s
-            """,
-            (Json(manifest), run_id),
-        )
+        if document_id:
+            try:
+                invalidate_concept_index(str(user_id), str(workspace_id))
+            except Exception:
+                logger.warning("concept index cache invalidation failed", exc_info=True)
     # core 트랜잭션 커밋 후 ai_db 파생 추적을 갱신한다.
     # 파생 추적은 best-effort — 원자성 비대상. 실패해도 ingest 결과에 영향 없다.
     if document_id:
-        _mark_derived_state_ingested(document_id)
+        _mark_derived_state_ingested(document_id, expected_source_hash)
     return embedded_page_ids
 
 
-def _mark_derived_state_ingested(document_id: str) -> None:
+def _mark_derived_state_ingested(
+    document_id: str,
+    expected_source_hash: str | None,
+) -> None:
+    if expected_source_hash is None:
+        return
     try:
         with connect_ai() as conn:
             conn.execute(
                 """
                 UPDATE document_derived_state
-                SET ingested_hash = last_edit_hash,
+                SET ingested_hash = %s,
                     last_ingested_at = now(),
                     updated_at = now()
                 WHERE document_id = %s
+                  AND last_edit_hash = %s
                 """,
-                (document_id,),
+                (expected_source_hash, document_id, expected_source_hash),
             )
     except Exception:
         logger.warning(
@@ -640,58 +752,6 @@ def fail_pipeline_run(run_id: str, error: str) -> None:
             WHERE id = %s
             """,
             (error_message, run_id),
-        )
-
-
-def mark_pipeline_notification_pending(
-    run_id: str,
-    error: str,
-    callback_url: str,
-    payload: dict[str, Any],
-    status_code: int | None = None,
-) -> None:
-    with connect() as conn:
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = 'notify_pending', error = %s,
-                manifest = COALESCE(manifest, '{}'::jsonb)
-                    || jsonb_build_object('pending_notification', %s::jsonb),
-                updated_at = now(), finished_at = now()
-            WHERE id = %s
-            """,
-            (
-                truncate_error(error),
-                Json(
-                    {
-                        "callback_url": callback_url,
-                        "payload": payload,
-                        "status_code": status_code,
-                    }
-                ),
-                run_id,
-            ),
-        )
-
-
-def complete_pipeline_notification(run_id: str, status: str) -> None:
-    run_status = "failed" if status == "failed" else "succeeded"
-    with connect() as conn:
-        conn.execute(
-            """
-            UPDATE pipeline_runs
-            SET status = %s,
-                error = CASE
-                    WHEN %s = 'failed'
-                    THEN manifest #>> '{pending_notification,payload,summary}'
-                    ELSE NULL
-                END,
-                manifest = COALESCE(manifest, '{}'::jsonb)
-                    - 'pending_notification',
-                updated_at = now()
-            WHERE id = %s
-            """,
-            (run_status, run_status, run_id),
         )
 
 
@@ -726,6 +786,12 @@ def get_pipeline_run(run_id: str) -> dict | None:
 
 
 def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "local-workspace") -> list[dict[str, Any]]:
+    try:
+        cached = get_concept_index(user_id, workspace_id)
+        if cached is not None:
+            return cached
+    except Exception:
+        logger.warning("concept index cache read failed", exc_info=True)
     with connect() as conn:
         rows = conn.execute(
             """
@@ -743,6 +809,10 @@ def list_active_concept_index(user_id: str = "local-user", workspace_id: str = "
     for row in rows:
         markdown = _read_optional_text_object(row["markdown_uri"])
         concepts.append(_concept_index_from_markdown(row["slug"], row["title"], row["markdown_uri"], markdown))
+    try:
+        put_concept_index(user_id, workspace_id, concepts)
+    except Exception:
+        logger.warning("concept index cache write failed", exc_info=True)
     return concepts
 
 
@@ -828,6 +898,37 @@ def _concept_index_from_markdown(slug: str, title: str, markdown_uri: str, markd
 PromotionPageGenerator = Callable[[dict[str, Any]], dict[str, Any]]
 
 
+def _cluster_reconciliation_state(
+    candidates: list[dict[str, Any]],
+) -> tuple[
+    set[str],
+    set[tuple[str, str, str]],
+    set[tuple[str, str, str, tuple[str, ...]]],
+]:
+    source_refs = {
+        ref
+        for candidate in candidates
+        if candidate.get("_cluster_reconciliation_ready", False)
+        for ref in candidate["invalidated_source_refs"]
+    }
+    claim_signatures = {
+        tuple(signature)
+        for candidate in candidates
+        for signature in candidate["_current_claim_signatures"]
+    }
+    relation_signatures = {
+        (
+            str(signature[0]),
+            str(signature[1]),
+            str(signature[2]),
+            tuple(str(item) for item in signature[3]),
+        )
+        for candidate in candidates
+        for signature in candidate["_current_relation_signatures"]
+    }
+    return source_refs, claim_signatures, relation_signatures
+
+
 def lint_wiki_workspace(
     user_id: str = "local-user",
     workspace_id: str = "local-workspace",
@@ -854,34 +955,20 @@ def lint_wiki_workspace(
         for candidate in reconciliation_candidates
         for ref in candidate["invalidated_source_refs"]
     }
-    cluster_reconciliation_source_refs = {
-        ref
-        for candidate in reconciliation_candidates
-        if candidate.get("_cluster_reconciliation_ready", False)
-        for ref in candidate["invalidated_source_refs"]
-    }
-    current_claim_signatures = {
-        tuple(signature)
-        for candidate in reconciliation_candidates
-        for signature in candidate["_current_claim_signatures"]
-    }
-    current_relation_signatures = {
-        (
-            str(signature[0]),
-            str(signature[1]),
-            str(signature[2]),
-            tuple(str(item) for item in signature[3]),
-        )
-        for candidate in reconciliation_candidates
-        for signature in candidate["_current_relation_signatures"]
-    }
+    (
+        cluster_reconciliation_source_refs,
+        current_claim_signatures,
+        current_relation_signatures,
+    ) = _cluster_reconciliation_state(reconciliation_candidates)
     applied_cluster_reconciliation = {
         "removed_claims": [],
         "removed_relations": [],
     }
     pending_active_markdown: str | None = None
     pending_archived_sections: list[str] = []
-    if apply_reconciliation:
+    if apply_reconciliation and not (
+        materialize_promotions and promotion_page_generator is not None
+    ):
         (
             reconciled_markdown,
             removed_claims,
@@ -984,7 +1071,9 @@ def lint_wiki_workspace(
         "merged_promotions": [],
         "materialized_relations": [],
     }
-    if apply_reconciliation:
+    if apply_reconciliation and not (
+        materialize_promotions and promotion_page_generator is not None
+    ):
         with _connection_scope(connection) as conn:
             result["applied_reconciliations"] = _apply_structural_reconciliation(
                 conn,
@@ -1005,14 +1094,22 @@ def lint_wiki_workspace(
                 active_markdown,
                 promotion_page_generator,
                 operation_id=operation_id,
+                apply_reconciliation=apply_reconciliation,
             )
         result["materialized_promotions"] = materialized["promotions"]
         result["merged_promotions"] = materialized["merged_promotions"]
         result["materialized_relations"] = materialized["relations"]
         result["_lint_page_changes"] = materialized["page_changes"]
-        if materialized["active_markdown"] is not None:
-            pending_active_markdown = materialized["active_markdown"]
+        pending_active_markdown = materialized["active_markdown"]
         pending_archived_sections = materialized["archived_sections"]
+        if apply_reconciliation:
+            result["applied_reconciliations"] = materialized[
+                "applied_reconciliations"
+            ]
+            result["applied_cluster_reconciliation"] = {
+                "removed_claims": materialized["removed_claims"],
+                "removed_relations": materialized["removed_relations"],
+            }
         result["active_path"] = active_path
     if pending_active_markdown is not None or pending_archived_sections:
         result["_lint_object_changes"] = {
@@ -1298,12 +1395,79 @@ def _materialize_promotion_candidates(
     promotion_page_generator: PromotionPageGenerator,
     *,
     operation_id: str | None = None,
+    apply_reconciliation: bool = False,
 ) -> dict[str, Any]:
-    active_sections = _cluster_sections_by_id(active_markdown)
     archived_sections: list[str] = []
     materialized_promotions: list[dict[str, Any]] = []
     merged_promotions: list[dict[str, Any]] = []
     page_changes: list[dict[str, Any]] = []
+    existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
+    eligible_cluster_ids = {cluster["id"] for cluster in clusters}
+    prepared_pages: dict[str, dict[str, Any]] = {}
+    for cluster in clusters:
+        cluster_id = cluster["id"]
+        if cluster.get("promotion_status") != "candidate":
+            continue
+        if not cluster.get("promotion_source_refs"):
+            continue
+        claims = [claim for claim in cluster.get("claims", []) if claim.get("refs")]
+        if not claims or cluster_id in existing_concept_ids:
+            continue
+        source_refs = _unique_keep_order(ref for claim in claims for ref in claim.get("refs", []))
+        prepared_pages[cluster_id] = promotion_page_generator(
+            {
+                **cluster,
+                "claims": claims,
+                "source_blocks": _source_blocks_for_refs(conn, source_refs),
+            }
+        )
+
+    _lock_concept_persistence(conn, user_id, workspace_id)
+    applied_reconciliations: list[dict[str, Any]] = []
+    reconciliation_source_refs: set[str] = set()
+    current_claim_signatures: set[tuple[str, str, str]] = set()
+    current_relation_signatures: set[
+        tuple[str, str, str, tuple[str, ...]]
+    ] = set()
+    if apply_reconciliation:
+        reconciliation_candidates = _list_reconciliation_candidates(
+            conn,
+            user_id,
+            workspace_id,
+        )
+        (
+            reconciliation_source_refs,
+            current_claim_signatures,
+            current_relation_signatures,
+        ) = _cluster_reconciliation_state(reconciliation_candidates)
+        applied_reconciliations = _apply_structural_reconciliation(
+            conn,
+            reconciliation_candidates,
+            _active_relation_keys(conn, user_id, workspace_id),
+        )
+    latest_active_markdown = _read_optional_text_object(
+        f"wiki/{user_id}/{workspace_id}/clusters/active.md"
+    ) or ""
+    removed_claims: list[dict[str, Any]] = []
+    removed_relations: list[dict[str, Any]] = []
+    active_markdown_changed = False
+    if apply_reconciliation:
+        reconciled_markdown, removed_claims, removed_relations = (
+            _reconcile_active_cluster_invalidations(
+                latest_active_markdown,
+                reconciliation_source_refs,
+                current_claim_signatures,
+                current_relation_signatures,
+            )
+        )
+        active_markdown_changed = reconciled_markdown != latest_active_markdown
+        latest_active_markdown = reconciled_markdown
+    clusters = [
+        cluster
+        for cluster in _parse_active_cluster_lint(latest_active_markdown)
+        if cluster["id"] in eligible_cluster_ids
+    ]
+    active_sections = _cluster_sections_by_id(latest_active_markdown)
     existing_concept_ids = _load_existing_concept_ids_by_slug(conn, user_id, workspace_id)
     for cluster in clusters:
         cluster_id = cluster["id"]
@@ -1338,15 +1502,21 @@ def _materialize_promotion_candidates(
                         f"{section}\n\n### Archived\nmerged_to: concept:{cluster_id}\nmerged_at: {_today_iso()}"
                     )
             continue
+        page = prepared_pages.get(cluster_id)
+        if page is None:
+            continue
         source_refs = _unique_keep_order(ref for claim in claims for ref in claim.get("refs", []))
-        source_blocks = _source_blocks_for_refs(conn, source_refs)
-        promotion_input = {
-            **cluster,
-            "claims": claims,
-            "source_blocks": source_blocks,
-        }
-        page = promotion_page_generator(promotion_input)
-        markdown = str(page.get("markdown") or "").strip()
+        markdown = append_concept_evidence(
+            str(page.get("markdown") or "").strip(),
+            [
+                {
+                    "claim_id": claim.get("id"),
+                    "claim": claim.get("claim") or claim.get("text"),
+                    "refs": claim.get("refs", []),
+                }
+                for claim in claims
+            ],
+        ).strip()
         title = str(page.get("title") or cluster_id).strip()
         slug = _slugify(str(page.get("slug") or cluster_id))
         if not markdown or not slug or slug == "untitled":
@@ -1382,7 +1552,7 @@ def _materialize_promotion_candidates(
             archived_sections.append(f"{section}\n\n### Archived\npromoted_to: concept:{slug}\npromoted_at: {_today_iso()}")
     # 관계 재료화는 promotion이 모두 끝나 existing_concept_ids가 완성된 뒤 한 곳에서만 수행한다(근거 검증·dedup 포함).
     materialized_relations = _materialize_active_relation_candidates(conn, clusters, existing_concept_ids, workspace_id)
-    active_markdown_update = None
+    active_markdown_update = latest_active_markdown if active_markdown_changed else None
     if materialized_promotions or merged_promotions:
         lines = ["# Active Meaning Clusters"]
         for cluster_id in sorted(active_sections):
@@ -1395,6 +1565,9 @@ def _materialize_promotion_candidates(
         "page_changes": page_changes,
         "active_markdown": active_markdown_update,
         "archived_sections": archived_sections,
+        "applied_reconciliations": applied_reconciliations,
+        "removed_claims": removed_claims,
+        "removed_relations": removed_relations,
     }
 
 

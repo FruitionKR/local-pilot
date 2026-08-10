@@ -2,6 +2,7 @@ import logging
 from functools import lru_cache
 
 from app.modules.wiki_embedding.infrastructure.threaded_wiki_embedding_job import (
+    SynchronousWikiEmbeddingJob,
     ThreadedWikiEmbeddingJob,
 )
 from app.modules.wiki_ingestion.application.ports import (
@@ -20,10 +21,8 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     PostgresPipelineRunRepository,
     RunLabPipelineRunner,
 )
-from app.modules.wiki_ingestion.infrastructure.pipeline_result_callback import (
-    HttpPipelineResultNotifier,
-)
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
+    apply_restored_wiki_state,
     cleanup_deleted_wiki_pages,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
@@ -50,7 +49,6 @@ def get_pipeline_run_use_case() -> RunPipelineUseCase:
         runner=RunLabPipelineRunner(),
         repository=get_pipeline_run_repository(),
         embedding_job=ThreadedWikiEmbeddingJob(logger),
-        result_notifier=HttpPipelineResultNotifier(),
     )
 
 
@@ -66,8 +64,9 @@ def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
             read_text_object,
             write_text_object,
             cleanup_deleted_wiki_pages,
+            apply_restored_wiki_state,
         ),
-        HttpPipelineResultNotifier(),
+        SynchronousWikiEmbeddingJob(logger),
     )
 
 

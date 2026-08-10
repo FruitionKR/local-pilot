@@ -3,10 +3,8 @@ import os
 import time
 from uuid import uuid4
 
-import psycopg
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from psycopg.rows import dict_row
 
 from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
 from app.modules.agent_run.infrastructure.backend_tool_gateway import build_backend_tool_gateway
@@ -43,11 +41,8 @@ def main() -> None:
     database.verify_schema()
     database.verify_agent_schema()
     repository = PostgresAgentJobRepository()
-    with psycopg.connect(
-        database.core_database_url(),
-        autocommit=True,
-        row_factory=dict_row,
-    ) as connection:
+    with database.connect_ai() as connection:
+        connection.autocommit = True
         checkpointer = PostgresSaver(
             connection,
             serde=JsonPlusSerializer(allowed_msgpack_modules=()),

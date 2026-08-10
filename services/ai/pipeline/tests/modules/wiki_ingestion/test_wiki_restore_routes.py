@@ -45,7 +45,6 @@ def test_ingest_restore_route_preserves_source_and_contribution_order() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3", "A4", "A5"],
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             source_page={"page_id": "S1"},
             rebuild_pages=[
                 {
@@ -77,7 +76,6 @@ def test_lint_restore_route_identifies_deleted_affected_pages() -> None:
             operation_id="restore-2",
             target_operation_id="lint-B",
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             rebuild_pages=[],
             deleted_pages=["C9"],
         ),
@@ -97,7 +95,6 @@ def test_operation_restore_rejects_cancelled_operation_as_active_input() -> None
             "restore_to_operation_id": "A2",
             "cancel_operation_ids": ["A3", "A4", "A5"],
             "workspace_id": "ws-1",
-            "result_callback_url": "http://backend/result",
             "source_page": {"page_id": "S1"},
             "rebuild_pages": [
                 {
@@ -112,7 +109,6 @@ def test_operation_restore_rejects_cancelled_operation_as_active_input() -> None
             "operation_id": "restore-1",
             "target_operation_id": "lint-B",
             "workspace_id": "ws-1",
-            "result_callback_url": "http://backend/result",
             "rebuild_pages": [
                 {
                     "page_id": "C3",
@@ -149,7 +145,6 @@ def test_operation_restore_rejects_deleted_page_as_rebuild_target() -> None:
     common = {
         "operation_id": "restore-1",
         "workspace_id": "ws-1",
-        "result_callback_url": "http://backend/result",
         "rebuild_pages": [{"page_id": "C3", "keep_contributions": []}],
         "deleted_pages": ["C3"],
     }
@@ -180,7 +175,6 @@ def test_ingest_restore_rejects_restored_source_as_deleted() -> None:
         IngestOperationRestoreIn(
             operation_id="restore-1",
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3"],
             source_page={"page_id": "S1"},
@@ -199,7 +193,6 @@ def test_ingest_restore_rejects_source_as_rebuild_target() -> None:
             IngestOperationRestoreIn(
                 operation_id="restore-1",
                 workspace_id="ws-1",
-                result_callback_url="http://backend/result",
                 restore_to_operation_id=restore_to_operation_id,
                 cancel_operation_ids=["A3"],
                 source_page={"page_id": "C3"},
@@ -220,7 +213,6 @@ def test_ingest_restore_allows_restore_point_contribution() -> None:
         restore_to_operation_id="A2",
         cancel_operation_ids=["A3", "A4", "A5"],
         workspace_id="ws-1",
-        result_callback_url="http://backend/result",
         source_page={"page_id": "S1"},
         rebuild_pages=[
             {
@@ -243,7 +235,6 @@ def test_ingest_restore_rejects_invalid_cancel_range() -> None:
                 restore_to_operation_id="A2",
                 cancel_operation_ids=cancel_operation_ids,
                 workspace_id="ws-1",
-                result_callback_url="http://backend/result",
                 source_page={"page_id": "S1"},
                 rebuild_pages=[],
             )
@@ -260,7 +251,6 @@ def test_ingest_restore_requires_new_restore_operation_id() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3"],
             workspace_id="ws-1",
-            result_callback_url="http://backend/result",
             source_page={"page_id": "S1"},
             rebuild_pages=[],
         )

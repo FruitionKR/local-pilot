@@ -77,7 +77,7 @@ public class OperationApplier {
         // 부분 실패여도 이미 만든 페이지는 기록한다.
         // 안 그러면 Wiki에는 있는데 로그에 없는 페이지가 영영 복구 대상에서 빠진다.
         OperationStatus status = request.isFailure()
-                ? OperationStatus.partially_succeeded
+                ? (recorded == 0 ? OperationStatus.failed : OperationStatus.partially_succeeded)
                 : OperationStatus.succeeded;
         operation.complete(status, request.summary(), recorded, payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), recorded);

@@ -1,6 +1,6 @@
 # ADR-0001: 주 데이터베이스 선택 — PostgreSQL 물리 분리 + MongoDB 본문 저장
 
-- 상태: 채택 (2026-08 기준 운영 반영 완료)
+- 상태: 부분 대체 — 결정 4는 [ADR-0005](0005-prepare-wiki-database-boundary.md)로 대체됨
 - 관련: [architecture.md](../architecture.md) §4, [data-model.md](../data-model.md)
 
 ## 맥락
@@ -12,7 +12,7 @@
 1. **PostgreSQL을 서비스별 물리 DB로 분리**: access_db(access-svc) / core_db(document-svc) / ai_db(ai-svc). AWS에서는 Access RDS + Core RDS 2 instance.
 2. **DB 계정 격리**: 서비스마다 runtime(DML)/migration(DDL) 계정 분리, 타 서비스 DB write 불가 (`infra/postgres/init-db-isolation.sh`, validation 스크립트로 실검증).
 3. **문서 본문·편집 revision은 MongoDB**: `document_edit_states`·`document_edit_writes`·`document_edit_outbox`를 단일 Mongo 트랜잭션으로 기록. AWS에서는 MongoDB Atlas.
-4. **전환기 예외**: ai 테이블 4개(pipeline_runs·임베딩 3종)는 core_db 동거 유지 — 검색 CTE·ingest 원자성 재설계가 선행돼야 이전 가능. ai_runtime 별도 계정으로 안전 확보. AI 독립 스케일이 필요해지는 시점에 이전.
+4. **전환기 예외(대체됨)**: AI 테이블을 core_db에 유지한다는 결정은 ADR-0005의 maintenance cutover로 대체됐다. Wiki·pipeline run·embedding·Agent·Skill·checkpoint는 ai_db가 소유하고 `ai_runtime`은 core DB에 접근하지 않는다.
 
 ## 대안과 기각 사유
 

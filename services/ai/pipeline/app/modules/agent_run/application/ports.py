@@ -51,6 +51,11 @@ class AgentRunManagementRepositoryPort(AgentApprovalRepositoryPort, Protocol):
     def get_for_user(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun | None:
         ...
 
+    def get_markdown_turn_status(
+        self, workspace_id: str, user_id: str, run_id: str
+    ) -> dict[str, object] | None:
+        ...
+
     def reject(self, workspace_id: str, user_id: str, run_id: str, approval_id: str) -> AgentRun:
         ...
 

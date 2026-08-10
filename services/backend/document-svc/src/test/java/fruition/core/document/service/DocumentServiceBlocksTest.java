@@ -99,6 +99,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
     @Mock fruition.core.aihistory.service.OperationRecorder operationRecorder;
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
+    @Mock fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore;
 
     DocumentService documentService;
 
@@ -114,10 +115,9 @@ class DocumentServiceBlocksTest {
                 assetReferenceSynchronizer,
                 assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
-                new fruition.core.aihistory.service.AgentApplyOperationStore(),
+                applyOperationStore,
                 operationRecorder,
-                ingestOperationStarter,
-                "http://localhost:8080");
+                ingestOperationStarter);
         lenient().when(pipelineWikiStateRequester.documentContext(anyString(), anyString()))
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
@@ -522,6 +522,58 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("Agent 적용 표 소비와 성공 감사 기록을 한 PostgreSQL transaction에서 처리한다")
+    void saveContent_agentApplyConsumesTokenWithAuditAndVersionLink() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(applyOperationStore.consume("op-agent", USER_ID, document.getId())).thenReturn(true);
+
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-agent", "agent", "op-agent");
+
+        verify(applyOperationStore).consume("op-agent", USER_ID, document.getId());
+        verify(operationRecorder).recordDocumentEdit(
+                eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
+        verify(contentVersionRepository).linkOperation(document.getId(), 2L, "op-agent");
+    }
+
+    @Test
+    @DisplayName("Agent conflict도 적용 표 소비와 감사 기록을 한 PostgreSQL transaction에서 처리한다")
+    void saveContent_agentConflictConsumesTokenWithAudit() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "hash");
+        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(mongoDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState)))
+                .thenThrow(new DocumentVersionConflictException("충돌"));
+        when(applyOperationStore.consume("op-agent", USER_ID, document.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "new", 2L,
+                "write-agent-conflict", "agent", "op-agent"))
+                .isInstanceOf(DocumentVersionConflictException.class);
+
+        verify(applyOperationStore).consume("op-agent", USER_ID, document.getId());
+        verify(operationRecorder).recordConflict(
+                eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()), any());
+    }
+
+    @Test
     @DisplayName("수동 저장은 PostgreSQL version read model의 변경 전후 snapshot을 갱신한다")
     void saveContent_manualProjectsBeforeAndAfterSnapshots() {
         stubOwnedWorkspace();
@@ -657,14 +709,12 @@ class DocumentServiceBlocksTest {
         document.updateStatus(fruition.core.document.domain.DocumentStatus.completed, null, java.time.Instant.now(), null);
         DocumentEditState editState = new DocumentEditState(
                 document.getId(), "# 편집본\n", DocumentEditingRules.markdown("# 편집본\n").contentHash());
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+        when(documentRepository.findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(storageProps.getBucket()).thenReturn("bucket");
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, document.getId()))
                 .thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1"))
-                .thenReturn("http://callback/result");
 
         fruition.core.document.dto.DocumentIngestResponse response =
                 documentService.ingest(WORKSPACE_ID, USER_ID, document.getId());
@@ -674,9 +724,10 @@ class DocumentServiceBlocksTest {
         assertThat(response.runId()).isNotBlank();
         assertThat(document.getStatus()).isEqualTo(fruition.core.document.domain.DocumentStatus.processing);
         assertThat(document.getContentHash()).isEqualTo(editState.getContentHash());
+        verify(documentRepository).findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID);
         verify(ingestCommandOutbox).enqueue(
                 eq(response.runId()), eq(document.getId()), eq(USER_ID), eq(WORKSPACE_ID),
-                anyString(), any(), any(), eq(false), eq("op_ingest_1"), eq("http://callback/result"));
+                any(), any(), eq(false), eq("op_ingest_1"), anyLong(), any());
     }
 
     @Test
@@ -1117,13 +1168,12 @@ class DocumentServiceBlocksTest {
                 "sources/documents/chatdoc_1/original", "h_chat", "chat_export");
         chatDoc.assignSelectionMode("full");
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "chatdoc_1")).thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
         documentService.enqueueIngest(chatDoc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> runId = ArgumentCaptor.forClass(String.class);
         verify(ingestCommandOutbox).enqueue(runId.capture(), eq("chatdoc_1"), eq(USER_ID), eq(WORKSPACE_ID),
-                anyString(), eq("full"), any(), chatWiki.capture(), any(), any());
+                eq("full"), any(), chatWiki.capture(), eq("op_ingest_1"), anyLong(), any());
         assertThat(chatWiki.getValue()).isTrue();
         assertThat(chatDoc.getPipelineRunId()).isEqualTo(runId.getValue());
     }
@@ -1134,12 +1184,11 @@ class DocumentServiceBlocksTest {
         Document doc = new Document("doc_up", WORKSPACE_ID, USER_ID, "u.pdf", "application/pdf", 10L,
                 "sources/documents/doc_up/original", "h_up"); // origin 기본값 "upload"
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, "doc_up")).thenReturn("op_ingest_1");
-        when(ingestOperationStarter.resultCallbackUrl("op_ingest_1")).thenReturn("http://callback/result");
         documentService.enqueueIngest(doc);
 
         ArgumentCaptor<Boolean> chatWiki = ArgumentCaptor.forClass(Boolean.class);
-        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(), any(),
-                chatWiki.capture(), any(), any());
+        verify(ingestCommandOutbox).enqueue(anyString(), any(), any(), any(), any(), any(),
+                chatWiki.capture(), any(), anyLong(), any());
         assertThat(chatWiki.getValue()).isFalse();
     }
 
