@@ -70,24 +70,30 @@ class QueryChatAnswerGenerator(AnswerGeneratorPort):
         return GeneratedAnswer(content=content)
 
 
-def build_query_chat_answer_generator() -> QueryChatAnswerGenerator:
+def build_query_chat_answer_generator(
+    *,
+    model: str | None = None,
+) -> QueryChatAnswerGenerator:
     return QueryChatAnswerGenerator(
-        ChatCompletionsJsonClient(_config_from_env()),
+        ChatCompletionsJsonClient(_config_from_env(model=model)),
         schema_prompt_provider=get_active_schema_prompt,
     )
 
 
-def _config_from_env() -> ChatClientConfig:
+def _config_from_env(
+    *,
+    model: str | None = None,
+) -> ChatClientConfig:
     api_key = _api_key()
     if not api_key:
         raise RuntimeError("Set QUERY_LLM_API_KEY or LLM_API_KEY before enabling query answer generation.")
-    model = _model()
-    if not model:
+    resolved_model = model or _model()
+    if not resolved_model:
         raise RuntimeError("Set QUERY_LLM_MODEL or LLM_MODEL before enabling query answer generation.")
     return ChatClientConfig(
         endpoint=_endpoint(),
         api_key=api_key,
-        model=model,
+        model=resolved_model,
         temperature=_float_env("QUERY_LLM_TEMPERATURE", 0.2),
         timeout_seconds=_int_env("QUERY_LLM_TIMEOUT_SECONDS", 180),
         max_tokens=_optional_int_env("QUERY_LLM_MAX_TOKENS"),

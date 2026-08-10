@@ -9,6 +9,7 @@
 - 사용자 API는 authenticated다. health·OpenAPI만 permitAll이며 `/internal/**`는 `X-Internal-Token`을 별도로 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
+- Query·ingest·lint Kafka command는 backend DB에서 실행 시 선택한 `model`을 전달하며 ai-svc는 이를 해당 실행에만 적용한다. Provider·API key·base URL은 ai-svc env 설정을 사용한다. Query command의 필수 boolean `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하지만, 실제 검색 여부는 기존 evaluator·내부 관련도 fallback 정책이 결정한다. `LLM_API_KEY`·`LLM_BASE_URL`·`TAVILY_API_KEY`는 command에 넣지 않고 ai-svc secret env에서 읽는다.
 - 원문: docs/backlog/spec/api/00-common.md
 
 ## 인증

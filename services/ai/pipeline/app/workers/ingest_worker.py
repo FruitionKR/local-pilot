@@ -38,6 +38,7 @@ from app.modules.wiki_ingestion.interfaces.http.schemas import (
     ChatWikiRunIn,
     PipelineRunIn,
 )
+from app.workers.event_request import without_top_level_secrets
 
 logger = logging.getLogger("ingest_worker")
 
@@ -53,6 +54,8 @@ MAX_POLL_INTERVAL_MS = int(os.environ.get("INGEST_MAX_POLL_INTERVAL_MS", "180000
 def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
     if not command.get("user_id") or not command.get("workspace_id"):
         raise ValueError("ingest command requires user_id and workspace_id")
+    if not str(command.get("model") or "").strip():
+        raise ValueError("ingest command requires model")
     common = {
         "document_id": command["document_id"],
         "user_id": command.get("user_id"),
@@ -60,6 +63,7 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
         "operation_id": command.get("operation_id"),
         "source_revision": command.get("source_revision"),
         "source_content_hash": command.get("source_content_hash"),
+        "model": str(command["model"]).strip(),
         "wait": True,
     }
     if command.get("kind") == "chat_wiki":
@@ -94,7 +98,7 @@ def _event(command: dict, status: str, payload: dict | None = None, error: str |
         "workspace_id": command.get("workspace_id"),
         "user_id": command.get("user_id"),
         "operation_id": command.get("operation_id"),
-        "request": command,
+        "request": without_top_level_secrets(command),
         "payload": payload,
         "error": error,
     }

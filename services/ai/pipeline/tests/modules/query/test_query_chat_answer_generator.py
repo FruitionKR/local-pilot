@@ -1,9 +1,11 @@
 import unittest
+from unittest.mock import patch
 
 from app.modules.query.domain.entities import GraphContext, QueryContext
 from app.modules.query.infrastructure.query_chat_answer_generator import (
     QUERY_ANSWER_SYSTEM_PROMPT,
     QueryChatAnswerGenerator,
+    _config_from_env,
 )
 
 
@@ -36,6 +38,23 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertIn("Answer in Korean.", client.calls[0][0])
         self.assertIn("citation markers like [1]", client.calls[0][0])
         self.assertEqual(client.calls[0][0], QUERY_ANSWER_SYSTEM_PROMPT)
+
+    def test_runtime_model_overrides_environment_model(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "LLM_PROVIDER": "claude",
+                "LLM_API_KEY": "secret",
+                "LLM_MODEL": "environment-model",
+            },
+            clear=True,
+        ):
+            config = _config_from_env(model="runtime-model")
+
+        self.assertEqual(config.model, "runtime-model")
+        self.assertEqual(config.endpoint, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(config.api_key, "secret")
+        self.assertIsNone(config.provider)
 
 
 if __name__ == "__main__":

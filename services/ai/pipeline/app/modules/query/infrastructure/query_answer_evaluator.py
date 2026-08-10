@@ -73,7 +73,10 @@ class QueryAnswerEvaluator(QueryEvaluatorPort):
         return _normalize_evaluation(raw)
 
 
-def build_query_answer_evaluator() -> QueryEvaluatorPort | None:
+def build_query_answer_evaluator(
+    *,
+    model: str | None = None,
+) -> QueryEvaluatorPort | None:
     mode = os.environ.get("QUERY_EVALUATOR_MODE", "disabled").strip().lower()
     if mode in {"", "disabled", "off", "none"}:
         return None
@@ -82,8 +85,8 @@ def build_query_answer_evaluator() -> QueryEvaluatorPort | None:
     api_key = _api_key()
     if not api_key:
         return None
-    model = _model()
-    if not model:
+    resolved_model = model or _model()
+    if not resolved_model:
         return None
     prompt_path = Path(os.environ.get("QUERY_EVALUATOR_PROMPT", str(DEFAULT_QUERY_EVALUATOR_PROMPT)))
     system_prompt = prompt_path.read_text(encoding="utf-8")
@@ -92,7 +95,7 @@ def build_query_answer_evaluator() -> QueryEvaluatorPort | None:
             ChatClientConfig(
                 endpoint=_endpoint(),
                 api_key=api_key,
-                model=model,
+                model=resolved_model,
                 temperature=_float_env("QUERY_EVALUATOR_TEMPERATURE", 0.0),
                 timeout_seconds=_int_env("QUERY_EVALUATOR_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("QUERY_EVALUATOR_MAX_TOKENS"),
