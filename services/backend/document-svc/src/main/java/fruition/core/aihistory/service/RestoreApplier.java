@@ -55,7 +55,7 @@ public class RestoreApplier {
         this.contributionRepository = contributionRepository;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = RestorePreviewStaleException.class)
     public void apply(OperationLog restore, RestorePlan plan, Set<String> excludedOperationIds,
                       Map<String, List<String>> expectedContributionSignatures, Instant now) {
 

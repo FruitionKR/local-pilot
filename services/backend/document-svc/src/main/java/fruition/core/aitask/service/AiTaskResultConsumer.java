@@ -26,7 +26,10 @@ public class AiTaskResultConsumer {
         this.queryEventBroker = queryEventBroker;
     }
 
-    @KafkaListener(topics = "${app.ai-task.result-topic}", groupId = "${app.ai-task.result-consumer-group}")
+    @KafkaListener(
+            topics = "${app.ai-task.result-topic}",
+            groupId = "${app.ai-task.result-consumer-group}",
+            containerFactory = "aiTaskResultKafkaListenerContainerFactory")
     public void consume(String raw) throws Exception {
         JsonNode event = objectMapper.readTree(raw);
         if ("ingest".equals(event.path("kind").asText())) {

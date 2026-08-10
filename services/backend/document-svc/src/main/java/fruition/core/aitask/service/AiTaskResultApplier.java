@@ -6,11 +6,13 @@ import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.repository.PipelineQueryResponse;
 import fruition.core.query.service.QueryService;
 import fruition.core.aihistory.dto.OperationResultRequest;
+import fruition.core.aihistory.exception.RestorePreviewStaleException;
 import fruition.core.aihistory.service.LintOperationStarter;
 import fruition.core.aihistory.service.OperationIngestService;
 import fruition.core.wikimaintenance.repository.PipelineWikiLintResponse;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import fruition.core.aihistory.service.RestoreApplier;
 import fruition.core.aihistory.service.RestoreExecuteService;
@@ -112,8 +114,14 @@ public class AiTaskResultApplier {
                 required(event, "payload"), OperationResultRequest.class);
         if (!operation.getStatus().isTerminal()) {
             RestoreExecuteService.RestoreManifest manifest = readRestoreManifest(operation);
-            restoreApplier.apply(operation, manifest.plan(), manifest.excludedOperationIds(),
-                    manifest.expectedContributions(), java.time.Instant.now());
+            try {
+                restoreApplier.apply(operation, manifest.plan(), manifest.excludedOperationIds(),
+                        manifest.expectedContributions(), java.time.Instant.now());
+            } catch (RestorePreviewStaleException e) {
+                operation.complete(OperationStatus.conflict, e.getMessage(),
+                        operation.getChangedResourceCount(), null, java.time.Instant.now());
+                return;
+            }
         }
         operationIngestService.accept(operationId, result);
     }

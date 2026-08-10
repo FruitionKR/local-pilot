@@ -2,6 +2,9 @@ package fruition.core.aitask.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationStatus;
+import fruition.core.aihistory.exception.RestorePreviewStaleException;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import fruition.core.aihistory.service.LintOperationStarter;
 import fruition.core.aihistory.service.OperationIngestService;
@@ -19,9 +22,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -88,10 +98,72 @@ class AiTaskResultApplierTest {
         Transactional fail = RestoreOperationLifecycle.class
                 .getMethod("fail", String.class, String.class, java.time.Instant.class)
                 .getAnnotation(Transactional.class);
+        Transactional restoreApply = java.util.Arrays.stream(RestoreApplier.class.getMethods())
+                .filter(method -> method.getName().equals("apply"))
+                .findFirst().orElseThrow().getAnnotation(Transactional.class);
 
         assertThat(apply).isNotNull();
         assertThat(apply.propagation()).isEqualTo(Propagation.REQUIRED);
         assertThat(fail.propagation()).isEqualTo(Propagation.REQUIRED);
+        assertThat(restoreApply.noRollbackFor()).containsExactly(RestorePreviewStaleException.class);
+    }
+
+    @Test
+    void restoreStaleConflictCommitsConflictWithReceiptWithoutRetry() throws Exception {
+        OperationLog operation = org.mockito.Mockito.mock(OperationLog.class);
+        when(jdbcTemplate.update(any(String.class),
+                eq("restore-event-1"), eq("restore-run-1"))).thenReturn(1);
+        when(operationLogRepository.findById("restore-op")).thenReturn(Optional.of(operation));
+        when(operation.getStatus()).thenReturn(OperationStatus.applying);
+        when(operation.getRestoreManifest()).thenReturn(restoreManifest());
+        doThrow(new RestorePreviewStaleException()).when(restoreApplier)
+                .apply(eq(operation), any(), any(), any(), any());
+
+        assertThatCode(() -> applier.applyRestore(restoreEvent())).doesNotThrowAnyException();
+
+        verify(operation).complete(eq(OperationStatus.conflict),
+                eq("복구 대상이 변경되었습니다. 미리보기를 다시 확인해 주세요."),
+                eq(0), isNull(), any());
+        verify(operationIngestService, never()).accept(any(), any());
+    }
+
+    @Test
+    void restoreTransientFailureIsRetriedByKafka() throws Exception {
+        OperationLog operation = org.mockito.Mockito.mock(OperationLog.class);
+        when(jdbcTemplate.update(any(String.class),
+                eq("restore-event-1"), eq("restore-run-1"))).thenReturn(1);
+        when(operationLogRepository.findById("restore-op")).thenReturn(Optional.of(operation));
+        when(operation.getStatus()).thenReturn(OperationStatus.applying);
+        when(operation.getRestoreManifest()).thenReturn(restoreManifest());
+        doThrow(new IllegalStateException("temporary")).when(restoreApplier)
+                .apply(eq(operation), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> applier.applyRestore(restoreEvent()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("temporary");
+
+        verify(operation, never()).complete(any(), any(), anyInt(), any(), any());
+        verify(operationIngestService, never()).accept(any(), any());
+    }
+
+    private JsonNode restoreEvent() {
+        var root = objectMapper.createObjectNode();
+        root.put("event_id", "restore-event-1");
+        root.put("run_id", "restore-run-1");
+        root.put("kind", "restore_execute");
+        root.put("status", "succeeded");
+        root.putObject("request").put("operation_id", "restore-op");
+        var payload = root.putObject("payload");
+        payload.put("operation_id", "restore-op");
+        payload.put("status", "succeeded");
+        payload.putArray("changed_pages");
+        return root;
+    }
+
+    private String restoreManifest() {
+        return """
+                {"plan":{"pages":[]},"excluded_operation_ids":[],"expected_contributions":{}}
+                """;
     }
 
     private String event(String eventId, String status, String answer, String error) {
