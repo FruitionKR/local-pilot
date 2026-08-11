@@ -862,12 +862,14 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
             markdown="---\ntitle: 배포 가이드\n---\n\n배포를 하기 전에 테스트해야 한다.",
             target=TARGET,
             edit_goal="style_change",
+            output_language="en",
         )
 
         result = editor.generate_edit(request)
 
         self.assertEqual(len(client.calls), 1)
         self.assertIn("plain-text segments", client.calls[0][0])
+        self.assertIn("Write the response in English.", client.calls[0][0])
         sent_payload = json.loads(client.calls[0][1])
         self.assertEqual(sent_payload["mode"], "source_range_text_edit")
         self.assertIn("title: 배포 가이드", sent_payload["markdown_context"])

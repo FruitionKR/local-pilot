@@ -713,32 +713,33 @@ class AnswerQueryUseCase:
         question: str,
     ) -> GeneratedAnswer:
         reference_text = evidence_snippets[0].text if evidence_snippets else question
-        use_english = output_language == "en" or (
-            output_language == "document"
-            and not any("가" <= char <= "힣" for char in reference_text)
-        )
-        if use_english:
-            if not evidence_snippets:
-                return GeneratedAnswer(
-                    content="The provided evidence does not directly answer the question."
-                )
-            nearest = evidence_snippets[0]
-            return GeneratedAnswer(
-                content=(
-                    "The provided evidence does not directly answer the question. "
-                    "The closest evidence also does not directly explain the topic. "
-                    f"[{nearest.rank}]"
-                )
-            )
-        if not evidence_snippets:
-            return GeneratedAnswer(content="제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.")
-        nearest = evidence_snippets[0]
-        return GeneratedAnswer(
-            content=(
+        language = _fallback_language(output_language, reference_text, question)
+        no_evidence, with_evidence = {
+            "en": (
+                "The provided evidence does not directly answer the question.",
+                "The provided evidence does not directly answer the question. "
+                "The closest evidence also does not directly explain the topic.",
+            ),
+            "ja": (
+                "提供された根拠には、質問に直接答える内容がありません。",
+                "提供された根拠には、質問に直接答える内容がありません。"
+                "最も近い根拠も質問の主題を直接説明していません。",
+            ),
+            "zh": (
+                "提供的证据中没有能够直接回答问题的内容。",
+                "提供的证据中没有能够直接回答问题的内容。"
+                "最接近的证据也没有直接解释该主题。",
+            ),
+            "ko": (
+                "제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다.",
                 "제공된 근거에서 질문에 직접 답할 내용을 찾지 못했습니다. "
-                f"가장 가까운 근거도 질문 주제를 직접 설명하지 않습니다. [{nearest.rank}]"
-            )
-        )
+                "가장 가까운 근거도 질문 주제를 직접 설명하지 않습니다.",
+            ),
+        }[language]
+        if not evidence_snippets:
+            return GeneratedAnswer(content=no_evidence)
+        nearest = evidence_snippets[0]
+        return GeneratedAnswer(content=f"{with_evidence} [{nearest.rank}]")
 
     def _load_markdown_for_related_pages(self, related_pages: list[RetrievedPage]) -> list[RetrievedPage]:
         if self._markdown_reader is None:
@@ -793,3 +794,18 @@ class AnswerQueryUseCase:
         data: dict[str, object] | None = None,
     ) -> None:
         publish_query_event(event_publisher, stage, message, data)
+
+
+def _fallback_language(output_language: OutputLanguage | None, reference_text: str, question: str) -> str:
+    if output_language == "en":
+        return "en"
+    if output_language != "document":
+        return "ko"
+    text = reference_text or question
+    if any("가" <= char <= "힣" for char in text):
+        return "ko"
+    if any("ぁ" <= char <= "ヿ" for char in text):
+        return "ja"
+    if any("一" <= char <= "鿿" for char in text):
+        return "zh"
+    return "en"

@@ -949,7 +949,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                     "s3://test/source:wiki.md": (
                         "---\ndocument_id: doc_wiki\n---\n\n"
                         "## Key Points\n"
-                        "- LLM Wiki Source는 내부 근거로 답변 생성에 사용됩니다. [B0001]\n"
+                        "- この根拠は質問の主題を直接説明していません。 [B0001]\n"
                     )
                 }
             ),
@@ -957,13 +957,18 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_evaluator_max_attempts=2,
         )
 
-        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?", workspace_id="ws_test")
+        result = use_case.execute(
+            "この文書は何を説明していますか？",
+            workspace_id="ws_test",
+            output_language="document",
+        )
 
         self.assertEqual(len(query_evaluator.calls), 2)
         self.assertEqual(len(answer_generator.contexts), 2)
         self.assertIn("인용을 직접 근거와 일치시키세요.", answer_generator.contexts[1].answer_context)
         self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_unresolved")
         self.assertNotIn("수정 답변입니다.", result.answer.content)
+        self.assertIn("提供された根拠", result.answer.content)
 
     def test_query_evaluator_can_request_web_fallback_after_reviewing_answer(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

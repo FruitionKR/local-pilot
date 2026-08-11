@@ -900,6 +900,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="줄여줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="en",
                 active_markdown_context=ActiveMarkdownContext(
                     markdown="첫 줄\n둘째 줄\n긴 문장입니다.\n반복 문장입니다.\n마지막 문장입니다.",
                     target=target,
@@ -914,6 +915,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(editor.requests[0].edit_goal, "shorten")
         self.assertEqual(editor.requests[0].workspace_id, "workspace-1")
         self.assertEqual(editor.requests[0].user_id, "user-1")
+        self.assertEqual(editor.requests[0].output_language, "en")
 
     def test_executes_markdown_create_action(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
@@ -1193,6 +1195,35 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(query_use_case.kwargs[0]["output_language"], "document")
         self.assertEqual(query_use_case.kwargs[0]["response_length"], "balanced")
         self.assertFalse(query_use_case.kwargs[0]["allow_web_search"])
+
+    def test_uses_web_search_query_use_case_when_requested(self) -> None:
+        default_query_use_case = FakeQueryUseCase()
+        web_search_query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(AgentTurnRoute(action="chat_answer", confidence=0.9, reason="question")),
+            query_use_case=default_query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            web_search_query_use_case_factory=lambda: web_search_query_use_case,  # type: ignore[arg-type]
+        )
+
+        use_case.execute(
+            AgentTurnRequest(message="최신 정보를 찾아줘", workspace_id="workspace-1", allow_web_search=True)
+        )
+
+        self.assertEqual(default_query_use_case.questions, [])
+        self.assertEqual(web_search_query_use_case.questions, ["최신 정보를 찾아줘"])
+        self.assertTrue(web_search_query_use_case.kwargs[0]["allow_web_search"])
 
 
 if __name__ == "__main__":

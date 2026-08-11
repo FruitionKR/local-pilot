@@ -29,6 +29,7 @@ class MarkdownEditRequest:
     conversation_summary: str | None = None
     edit_goal: str | None = None
     skill_instructions: str | None = None
+    output_language: OutputLanguage | None = None
 
 
 @dataclass(frozen=True)

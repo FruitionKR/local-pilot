@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from dataclasses import replace
 
 from app.modules.agent.application.ports import AgentTurnRouterPort
@@ -58,6 +59,7 @@ class HandleAgentTurnUseCase:
         skill_authorer: AuthorSkillUseCase | None = None,
         skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
         conversation_summarizer: ConversationSummarizerPort | None = None,
+        web_search_query_use_case_factory: Callable[[], AnswerQueryUseCase] | None = None,
     ) -> None:
         self._router = router
         self._query_use_case = query_use_case
@@ -68,6 +70,7 @@ class HandleAgentTurnUseCase:
         self._skill_authorer = skill_authorer
         self._skill_draft_proposer = skill_draft_proposer
         self._conversation_summarizer = conversation_summarizer
+        self._web_search_query_use_case_factory = web_search_query_use_case_factory
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         if not request.message.strip():
@@ -281,6 +284,7 @@ class HandleAgentTurnUseCase:
                     conversation_summary=_conversation_context_text(request),
                     edit_goal=route.edit_goal,
                     skill_instructions=_skill_instructions(selected_skill),
+                    output_language=request.output_language,
                 )
             )
             return AgentTurnResult(action="markdown_edit", route=route, edit=result.edit)
@@ -312,7 +316,12 @@ class HandleAgentTurnUseCase:
             query_kwargs["response_length"] = request.response_length
         if request.allow_web_search is not None:
             query_kwargs["allow_web_search"] = request.allow_web_search
-        answer = self._query_use_case.execute(request.message, **query_kwargs)
+        query_use_case = (
+            self._web_search_query_use_case_factory()
+            if request.allow_web_search is True and self._web_search_query_use_case_factory is not None
+            else self._query_use_case
+        )
+        answer = query_use_case.execute(request.message, **query_kwargs)
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 
     def _handle_pending_skill(
