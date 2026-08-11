@@ -25,12 +25,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class FolderServiceTest {
@@ -51,6 +54,9 @@ class FolderServiceTest {
         service = new FolderService(workspaceAccessGuard,
                 folderRepository, documentRepository,
                 idempotencyService, siblingReorderer);
+        lenient().when(idempotencyService.execute(
+                any(), any(), any(), any(), any(), anyInt(), any(), any()))
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<?>>getArgument(7).get());
     }
 
     private void memberOk() {
@@ -58,8 +64,6 @@ class FolderServiceTest {
     }
 
     private void noReplay() {
-        when(idempotencyService.replay(any(), any(), any(), any(), eq(FolderResponse.class)))
-                .thenReturn(Optional.empty());
     }
 
     @Test
@@ -76,12 +80,13 @@ class FolderServiceTest {
         assertThat(response.sortOrder()).isEqualTo(4);
         assertThat(response.currentVersion()).isEqualTo(1);
         verify(folderRepository).save(any(Folder.class));
-        verify(idempotencyService).save(eq(USER_ID), any(), eq("key-1"), any(), eq(201), any(), any());
+        verify(idempotencyService).execute(
+                eq(USER_ID), any(), eq("key-1"), any(), eq(FolderResponse.class),
+                eq(201), any(), any());
     }
 
     @Test
     void create_trimsAndRejectsBlankName() {
-        memberOk();
         assertThatThrownBy(() -> service.create(WORKSPACE_ID, USER_ID, "key-1",
                 new FolderCreateRequest("   ", null)))
                 .isInstanceOf(InvalidHierarchyRequestException.class);
@@ -99,11 +104,11 @@ class FolderServiceTest {
 
     @Test
     void create_returnsReplayWithoutSaving() {
-        memberOk();
         UUID id = UUID.randomUUID();
         FolderResponse stored = new FolderResponse(id, null, "자료", 0, 1, null, null);
-        when(idempotencyService.replay(any(), any(), any(), any(), eq(FolderResponse.class)))
-                .thenReturn(Optional.of(stored));
+        doReturn(stored).when(idempotencyService).execute(
+                any(), any(), any(), any(), eq(FolderResponse.class),
+                anyInt(), any(), any());
 
         FolderResponse response = service.create(WORKSPACE_ID, USER_ID, "key-1",
                 new FolderCreateRequest("자료", null));

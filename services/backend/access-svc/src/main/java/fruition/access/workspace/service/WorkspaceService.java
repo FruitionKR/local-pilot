@@ -1,11 +1,6 @@
 package fruition.access.workspace.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import fruition.shared.idempotency.IdempotencyRecord;
-import fruition.shared.idempotency.IdempotencyConflictException;
-import fruition.shared.idempotency.InvalidIdempotencyKeyException;
-import fruition.shared.idempotency.IdempotencyRecordRepository;
+import fruition.shared.idempotency.IdempotencyService;
 import fruition.access.user.repository.UserRepository;
 import fruition.access.workspace.domain.Workspace;
 import fruition.access.workspace.domain.WorkspaceMember;
@@ -24,12 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -39,23 +29,20 @@ public class WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final DocumentInternalClient documentInternalClient;
-    private final IdempotencyRecordRepository idempotencyRecordRepository;
-    private final ObjectMapper objectMapper;
+    private final IdempotencyService idempotencyService;
     private final AuthzProjectionStore authzProjectionStore;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository,
                             WorkspaceMemberRepository workspaceMemberRepository,
                             UserRepository userRepository,
                             DocumentInternalClient documentInternalClient,
-                            IdempotencyRecordRepository idempotencyRecordRepository,
-                            ObjectMapper objectMapper,
+                            IdempotencyService idempotencyService,
                             AuthzProjectionStore authzProjectionStore) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
         this.documentInternalClient = documentInternalClient;
-        this.idempotencyRecordRepository = idempotencyRecordRepository;
-        this.objectMapper = objectMapper;
+        this.idempotencyService = idempotencyService;
         this.authzProjectionStore = authzProjectionStore;
     }
 
@@ -91,27 +78,22 @@ public class WorkspaceService {
             String workspaceId,
             String idempotencyKey
     ) {
-        validateIdempotencyKey(idempotencyKey);
-        Workspace workspace = findOwnedIncludingDeleted(userId, workspaceId);
         String endpointScope = "DELETE:/api/workspaces";
-        String requestHash = requestHash(workspaceId, "delete");
-        Optional<WorkspaceLifecycleResponse> replay =
-                replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-        if (workspace.getDeletedAt() != null) {
-            throw new WorkspaceNotFoundException(workspaceId);
-        }
-
-        Instant deletedAt = Instant.now();
-        workspace.softDelete(userId, deletedAt);
-        // 삭제된 워크스페이스는 멤버 전원이 NONE 판정이 되도록 projection을 무효화한다.
-        authzProjectionStore.evictWorkspace(workspaceId);
-        WorkspaceLifecycleResponse response =
-                new WorkspaceLifecycleResponse(workspaceId, true, deletedAt);
-        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
-        return response;
+        String requestHash = idempotencyService.requestHash(workspaceId, "delete");
+        return idempotencyService.execute(
+                userId, endpointScope, idempotencyKey, requestHash,
+                WorkspaceLifecycleResponse.class, 200, WorkspaceLifecycleResponse::id,
+                () -> {
+                    Workspace workspace = findOwnedIncludingDeleted(userId, workspaceId);
+                    if (workspace.getDeletedAt() != null) {
+                        throw new WorkspaceNotFoundException(workspaceId);
+                    }
+                    Instant deletedAt = Instant.now();
+                    workspace.softDelete(userId, deletedAt);
+                    // 삭제된 워크스페이스는 멤버 전원이 NONE 판정이 되도록 projection을 무효화한다.
+                    authzProjectionStore.evictWorkspace(workspaceId);
+                    return new WorkspaceLifecycleResponse(workspaceId, true, deletedAt);
+                });
     }
 
     @Transactional
@@ -120,26 +102,21 @@ public class WorkspaceService {
             String workspaceId,
             String idempotencyKey
     ) {
-        validateIdempotencyKey(idempotencyKey);
-        Workspace workspace = findOwnedIncludingDeleted(userId, workspaceId);
         String endpointScope = "POST:/api/workspaces/restore";
-        String requestHash = requestHash(workspaceId, "restore");
-        Optional<WorkspaceLifecycleResponse> replay =
-                replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-        if (workspace.getDeletedAt() == null) {
-            throw new WorkspaceNotFoundException(workspaceId);
-        }
-
-        workspace.restore(Instant.now());
-        // 복구 즉시 캐시된 NONE 판정이 남지 않도록 projection을 무효화한다.
-        authzProjectionStore.evictWorkspace(workspaceId);
-        WorkspaceLifecycleResponse response =
-                new WorkspaceLifecycleResponse(workspaceId, false, null);
-        saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
-        return response;
+        String requestHash = idempotencyService.requestHash(workspaceId, "restore");
+        return idempotencyService.execute(
+                userId, endpointScope, idempotencyKey, requestHash,
+                WorkspaceLifecycleResponse.class, 200, WorkspaceLifecycleResponse::id,
+                () -> {
+                    Workspace workspace = findOwnedIncludingDeleted(userId, workspaceId);
+                    if (workspace.getDeletedAt() == null) {
+                        throw new WorkspaceNotFoundException(workspaceId);
+                    }
+                    workspace.restore(Instant.now());
+                    // 복구 즉시 캐시된 NONE 판정이 남지 않도록 projection을 무효화한다.
+                    authzProjectionStore.evictWorkspace(workspaceId);
+                    return new WorkspaceLifecycleResponse(workspaceId, false, null);
+                });
     }
 
     public WorkspaceTrashResponse trash(String userId) {
@@ -203,78 +180,6 @@ public class WorkspaceService {
                         WorkspaceRole.OWNER
                 )
                 .orElseThrow(() -> new WorkspaceNotFoundException(workspaceId));
-    }
-
-    private void validateIdempotencyKey(String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 255) {
-            throw new InvalidIdempotencyKeyException(
-                    "Idempotency-Key는 1자 이상 255자 이하여야 합니다.");
-        }
-    }
-
-    private Optional<WorkspaceLifecycleResponse> replayIdempotentRequest(
-            String userId,
-            String endpointScope,
-            String idempotencyKey,
-            String requestHash
-    ) {
-        Optional<IdempotencyRecord> found =
-                idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                        userId, endpointScope, idempotencyKey);
-        if (found.isEmpty()) {
-            return Optional.empty();
-        }
-        IdempotencyRecord record = found.get();
-        if (!record.getExpiresAt().isAfter(Instant.now())) {
-            idempotencyRecordRepository.delete(record);
-            idempotencyRecordRepository.flush();
-            return Optional.empty();
-        }
-        if (!record.getRequestHash().equals(requestHash)) {
-            throw new IdempotencyConflictException(
-                    "같은 Idempotency-Key를 다른 요청에 사용할 수 없습니다.");
-        }
-        try {
-            return Optional.of(objectMapper.readValue(
-                    record.getResponseBody(), WorkspaceLifecycleResponse.class));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("멱등성 응답을 복원할 수 없습니다.", exception);
-        }
-    }
-
-    private void saveIdempotencyRecord(
-            String userId,
-            String endpointScope,
-            String idempotencyKey,
-            String requestHash,
-            WorkspaceLifecycleResponse response
-    ) {
-        Instant now = Instant.now();
-        try {
-            idempotencyRecordRepository.save(new IdempotencyRecord(
-                    UUID.randomUUID(),
-                    userId,
-                    endpointScope,
-                    idempotencyKey,
-                    requestHash,
-                    200,
-                    response.id(),
-                    objectMapper.writeValueAsString(response),
-                    now,
-                    now.plusSeconds(24 * 60 * 60)
-            ));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("멱등성 응답을 저장할 수 없습니다.", exception);
-        }
-    }
-
-    private String requestHash(String workspaceId, String action) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest((workspaceId + "\0" + action).getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", exception);
-        }
     }
 
     private WorkspaceResponse toResponse(Workspace workspace) {

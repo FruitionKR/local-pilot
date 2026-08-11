@@ -20,8 +20,7 @@ import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.shared.idempotency.IdempotencyConflictException;
-import fruition.shared.idempotency.IdempotencyRecord;
-import fruition.shared.idempotency.IdempotencyRecordRepository;
+import fruition.shared.idempotency.IdempotencyService;
 import fruition.shared.util.StorageProperties;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
@@ -53,6 +52,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -81,7 +81,7 @@ class DocumentServiceConvertTest {
     @Mock DocumentContentVersionRepository contentVersionRepository;
     @Mock MarkdownDiffService markdownDiffService;
     @Mock DocumentEditLockService editLockService;
-    @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock IdempotencyService idempotencyService;
     @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
     @Mock DocumentAssetReferenceParser assetReferenceParser;
     @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
@@ -99,7 +99,7 @@ class DocumentServiceConvertTest {
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
-                editLockService, idempotencyRecordRepository,
+                editLockService, idempotencyService,
                 assetReferenceSynchronizer,
                 assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
@@ -111,6 +111,12 @@ class DocumentServiceConvertTest {
         // 단위 테스트에서는 transactionTemplate이 콜백을 그대로 실행하게 한다.
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
                 invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
+        lenient().when(idempotencyService.replay(
+                anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(Optional.empty());
+        lenient().doCallRealMethod().when(idempotencyService).validateKey(any());
+        lenient().doCallRealMethod().when(idempotencyService).requestHash(any(String[].class));
+        lenient().when(idempotencyService.currentExecutionId()).thenReturn(Optional.empty());
     }
 
     private Document sourcePdf() {
@@ -134,8 +140,6 @@ class DocumentServiceConvertTest {
         Document source = sourcePdf();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(SOURCE_DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                eq(USER_ID), anyString(), eq("convert-key"))).thenReturn(Optional.empty());
         when(documentRepository.findMaxRootSortOrder(WORKSPACE_ID, DocumentRole.EDITABLE)).thenReturn(2L);
 
         DocumentUploadResponse response = documentService.convertToMarkdown(
@@ -164,7 +168,9 @@ class DocumentServiceConvertTest {
         assertThat(savedQueue.getValue().getSourceDocumentId()).isEqualTo(SOURCE_DOCUMENT_ID);
         assertThat(savedQueue.getValue().getStatus()).isEqualTo("pending");
 
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).save(
+                eq(USER_ID), anyString(), eq("convert-key"), anyString(),
+                eq(201), anyString(), any());
         assertThat(response.id()).isEqualTo(placeholder.getId());
         assertThat(response.status()).isEqualTo(DocumentStatus.processing);
         assertThat(response.editable()).isTrue();
@@ -204,20 +210,13 @@ class DocumentServiceConvertTest {
         stubOwnedWorkspace();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(SOURCE_DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(sourcePdf()));
-        String requestHash = sha256(SOURCE_DOCUMENT_ID + "\0convert-markdown\0");
         Instant now = Instant.now();
-        String responseBody = """
-                {"id":"doc_replay","filename":"보고서.md","mime_type":"text/markdown","byte_size":10,
-                 "status":"processing","source_uri":null,"uploaded_at":"%s","editable":true,
-                 "current_version":1,"document_role":"EDITABLE"}
-                """.formatted(now);
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                USER_ID, "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/convert-markdown", "convert-key"))
-                .thenReturn(Optional.of(new IdempotencyRecord(
-                        UUID.randomUUID(), USER_ID,
-                        "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/convert-markdown",
-                        "convert-key", requestHash, 201, "doc_replay", responseBody,
-                        now, now.plusSeconds(3600))));
+        DocumentUploadResponse stored = new DocumentUploadResponse(
+                "doc_replay", "보고서.md", "text/markdown", 10,
+                DocumentStatus.processing, null, now, true, 1, DocumentRole.EDITABLE);
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("convert-key"), anyString(),
+                eq(DocumentUploadResponse.class))).thenReturn(Optional.of(stored));
 
         DocumentUploadResponse response = documentService.convertToMarkdown(
                 WORKSPACE_ID, USER_ID, SOURCE_DOCUMENT_ID, "convert-key");
@@ -233,12 +232,10 @@ class DocumentServiceConvertTest {
         stubOwnedWorkspace();
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(SOURCE_DOCUMENT_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(sourcePdf()));
-        Instant now = Instant.now();
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                eq(USER_ID), anyString(), eq("convert-key")))
-                .thenReturn(Optional.of(new IdempotencyRecord(
-                        UUID.randomUUID(), USER_ID, "scope", "convert-key",
-                        "다른-요청-hash", 201, "doc_other", null, now, now.plusSeconds(3600))));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("convert-key"), anyString(),
+                eq(DocumentUploadResponse.class)))
+                .thenThrow(new IdempotencyConflictException("충돌"));
 
         assertThatThrownBy(() -> documentService.convertToMarkdown(
                 WORKSPACE_ID, USER_ID, SOURCE_DOCUMENT_ID, "convert-key"))

@@ -10,7 +10,7 @@ import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentProcessingState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.domain.DocumentStatus;
-import fruition.shared.idempotency.IdempotencyRecord;
+import fruition.shared.idempotency.IdempotencyService;
 import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.exception.DocumentOriginalNotFoundException;
 import fruition.core.document.exception.DocumentUploadException;
@@ -21,6 +21,7 @@ import fruition.core.document.exception.InvalidDocumentFilenameException;
 import fruition.core.document.exception.InvalidDocumentVersionException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.shared.idempotency.IdempotencyConflictException;
+import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.core.document.exception.InvalidMarkdownContentException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
 import fruition.core.document.dto.DocumentDetailResponse;
@@ -57,7 +58,6 @@ import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
 import fruition.core.document.mongo.MongoDocumentEditState;
 import fruition.core.document.mongo.MongoDocumentEditStore;
-import fruition.shared.idempotency.IdempotencyRecordRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.exception.HierarchyItemNotFoundException;
@@ -118,7 +118,7 @@ public class DocumentService {
     private final DocumentContentVersionRepository contentVersionRepository;
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
-    private final IdempotencyRecordRepository idempotencyRecordRepository;
+    private final IdempotencyService idempotencyService;
     private final DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
     private final DocumentAssetReferenceParser assetReferenceParser;
     private final DocumentAssetRepository assetRepository;
@@ -143,7 +143,7 @@ public class DocumentService {
                            DocumentContentVersionRepository contentVersionRepository,
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
-                           IdempotencyRecordRepository idempotencyRecordRepository,
+                           IdempotencyService idempotencyService,
                            DocumentAssetReferenceSynchronizer assetReferenceSynchronizer,
                            DocumentAssetReferenceParser assetReferenceParser,
                            DocumentAssetRepository assetRepository,
@@ -167,7 +167,7 @@ public class DocumentService {
         this.contentVersionRepository = contentVersionRepository;
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
-        this.idempotencyRecordRepository = idempotencyRecordRepository;
+        this.idempotencyService = idempotencyService;
         this.assetReferenceSynchronizer = assetReferenceSynchronizer;
         this.assetReferenceParser = assetReferenceParser;
         this.assetRepository = assetRepository;
@@ -204,7 +204,8 @@ public class DocumentService {
                     markdownUpload ? DocumentEditingRules.markdown(bytes) : null;
             String contentHash = markdownUpload ? markdownContent.contentHash() : sha256(bytes);
             String endpointScope = uploadEndpointScope(workspaceId);
-            String requestHash = requestHash(filename.trim(), mimeType, contentHash);
+            String requestHash = requestHash(
+                    filename.trim(), mimeType, contentHash, String.valueOf(folderId));
 
             Optional<DocumentUploadResponse> replay = replayIdempotentRequest(
                     userId, endpointScope, idempotencyKey, requestHash);
@@ -215,7 +216,7 @@ public class DocumentService {
             log.info("[문서 업로드 요청] workspaceId={} userId={} filename={} contentType={} size={}",
                     workspaceId, userId, file.getOriginalFilename(), file.getContentType(), file.getSize());
 
-            String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+            String documentId = newDocumentId();
             objectPath = "sources/documents/" + documentId + "/original";
             log.info("[문서 원본 저장 시작] documentId={} bucket={} objectPath={} mimeType={} byteSize={}",
                     documentId, storageProps.getBucket(), objectPath, mimeType, bytes.length);
@@ -261,6 +262,7 @@ public class DocumentService {
         } catch (InvalidDocumentFilenameException
                  | InvalidIdempotencyKeyException
                  | IdempotencyConflictException
+                 | IdempotencyInProgressException
                  | InvalidMarkdownContentException
                  | MarkdownContentTooLargeException e) {
             throw e;
@@ -290,7 +292,9 @@ public class DocumentService {
                 DocumentEditingRules.rename(request.displayName(), "document.md");
         DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(request.markdown());
         String endpointScope = markdownEndpointScope(workspaceId);
-        String requestHash = requestHash(filename.filename(), "text/markdown", content.contentHash());
+        String requestHash = requestHash(
+                filename.filename(), "text/markdown", content.contentHash(),
+                String.valueOf(request.folderId()));
 
         Optional<DocumentUploadResponse> replay =
                 replayIdempotentRequest(userId, endpointScope, idempotencyKey, requestHash);
@@ -330,7 +334,7 @@ public class DocumentService {
         String requestHash = requestHash(documentId, "duplicate", "");
         Optional<DocumentDuplicateResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentDuplicateResponse.class, this::toDuplicateResponse);
+                DocumentDuplicateResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -347,7 +351,7 @@ public class DocumentService {
         DocumentEditingRules.MarkdownContent content =
                 DocumentEditingRules.markdown(sourceEditState.getMarkdown());
 
-        String duplicateId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        String duplicateId = newDocumentId();
         Document duplicate = new Document(
                 duplicateId,
                 workspaceId,
@@ -416,7 +420,7 @@ public class DocumentService {
             String origin,
             UUID folderId
     ) {
-        String documentId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        String documentId = newDocumentId();
         Document document = new Document(
                 documentId,
                 workspaceId,
@@ -486,9 +490,7 @@ public class DocumentService {
     }
 
     private void validateIdempotencyKey(String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 255) {
-            throw new InvalidIdempotencyKeyException("Idempotency-Key는 1자 이상 255자 이하여야 합니다.");
-        }
+        idempotencyService.validateKey(idempotencyKey);
     }
 
     private <T> Optional<T> replayIdempotentRequest(
@@ -496,39 +498,10 @@ public class DocumentService {
             String endpointScope,
             String idempotencyKey,
             String requestHash,
-            Class<T> responseType,
-            java.util.function.Function<Document, T> fallback
+            Class<T> responseType
     ) {
-        Optional<IdempotencyRecord> found =
-                idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                        userId, endpointScope, idempotencyKey);
-        if (found.isEmpty()) {
-            return Optional.empty();
-        }
-
-        IdempotencyRecord record = found.get();
-        if (!record.getExpiresAt().isAfter(Instant.now())) {
-            idempotencyRecordRepository.delete(record);
-            idempotencyRecordRepository.flush();
-            return Optional.empty();
-        }
-        if (!record.getRequestHash().equals(requestHash)) {
-            throw new IdempotencyConflictException("같은 Idempotency-Key를 다른 요청에 사용할 수 없습니다.");
-        }
-
-        if (record.getResponseBody() != null) {
-            try {
-                return Optional.of(objectMapper.readValue(
-                        record.getResponseBody(), responseType));
-            } catch (JsonProcessingException exception) {
-                throw new IllegalStateException("멱등성 응답을 복원할 수 없습니다.", exception);
-            }
-        }
-
-        Document document = documentRepository.findById(record.getResourceId())
-                .orElseThrow(() -> new IdempotencyConflictException(
-                        "멱등성 기록의 기존 문서를 찾을 수 없습니다."));
-        return Optional.of(fallback.apply(document));
+        return idempotencyService.replay(
+                userId, endpointScope, idempotencyKey, requestHash, responseType);
     }
 
     private Optional<DocumentUploadResponse> replayIdempotentRequest(
@@ -539,9 +512,7 @@ public class DocumentService {
     ) {
         return replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentUploadResponse.class,
-                document -> toUploadResponse(
-                        document, editStateRepository.existsById(document.getId())));
+                DocumentUploadResponse.class);
     }
 
     private void saveIdempotencyRecord(
@@ -552,25 +523,9 @@ public class DocumentService {
             Object response,
             String resourceId
     ) {
-        Instant now = Instant.now();
-        String responseBody;
-        try {
-            responseBody = objectMapper.writeValueAsString(response);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("멱등성 응답을 저장할 수 없습니다.", exception);
-        }
-        idempotencyRecordRepository.save(new IdempotencyRecord(
-                UUID.randomUUID(),
-                userId,
-                endpointScope,
-                idempotencyKey,
-                requestHash,
-                201,
-                resourceId,
-                responseBody,
-                now,
-                now.plusSeconds(24 * 60 * 60)
-        ));
+        idempotencyService.save(
+                userId, endpointScope, idempotencyKey, requestHash,
+                201, resourceId, response);
     }
 
     private void saveIdempotencyRecord(
@@ -580,8 +535,9 @@ public class DocumentService {
             String requestHash,
             DocumentLifecycleResponse response
     ) {
-        saveIdempotencyRecord(
-                userId, endpointScope, idempotencyKey, requestHash, response, response.id());
+        idempotencyService.save(
+                userId, endpointScope, idempotencyKey, requestHash,
+                200, response.id(), response);
     }
 
     private void saveIdempotencyRecord(
@@ -632,9 +588,13 @@ public class DocumentService {
         );
     }
 
-    private String requestHash(String filename, String mimeType, String contentHash) {
-        return sha256((filename + "\0" + mimeType + "\0" + contentHash)
-                .getBytes(StandardCharsets.UTF_8));
+    private String requestHash(String... parts) {
+        return idempotencyService.requestHash(parts);
+    }
+
+    private String newDocumentId() {
+        UUID id = idempotencyService.currentExecutionId().orElseGet(UUID::randomUUID);
+        return "doc_" + id.toString().replace("-", "");
     }
 
     /**
@@ -815,7 +775,7 @@ public class DocumentService {
                 DocumentEditingRules.rename(source.getDisplayName(), "document.md");
         DocumentEditingRules.MarkdownContent content =
                 DocumentEditingRules.markdown(CONVERT_PLACEHOLDER_MARKDOWN);
-        String placeholderId = "doc_" + UUID.randomUUID().toString().replace("-", "");
+        String placeholderId = newDocumentId();
         Document placeholder = new Document(
                 placeholderId,
                 workspaceId,
@@ -1580,7 +1540,7 @@ public class DocumentService {
                 documentId, "delete", Long.toString(request.baseVersion()));
         Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+                DocumentLifecycleResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -1653,7 +1613,7 @@ public class DocumentService {
                 documentId, "restore", Long.toString(request.baseVersion()));
         Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+                DocumentLifecycleResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -1727,16 +1687,6 @@ public class DocumentService {
             throw new InvalidDocumentVersionException(
                     "base_version은 1 이상의 정수여야 합니다.");
         }
-    }
-
-    private DocumentLifecycleResponse toLifecycleResponse(Document document) {
-        return new DocumentLifecycleResponse(
-                document.getId(),
-                document.getCurrentVersion(),
-                document.getDeletedAt() != null,
-                document.getDeletedAt(),
-                document.getSortOrder()
-        );
     }
 
     private void deleteMinioObject(String uri) {

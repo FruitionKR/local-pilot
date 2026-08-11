@@ -22,12 +22,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentPlacementServiceTest {
@@ -49,6 +52,9 @@ class DocumentPlacementServiceTest {
         service = new DocumentPlacementService(
                 workspaceAccessGuard,
                 documentRepository, folderRepository, idempotencyService, siblingReorderer);
+        lenient().when(idempotencyService.execute(
+                any(), any(), any(), any(), any(), anyInt(), any(), any()))
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<?>>getArgument(7).get());
     }
 
     private Document document() {
@@ -60,8 +66,6 @@ class DocumentPlacementServiceTest {
     }
 
     private void noReplay() {
-        when(idempotencyService.replay(any(), any(), any(), any(), eq(DocumentPositionResponse.class)))
-                .thenReturn(Optional.empty());
     }
 
     @Test
@@ -130,17 +134,17 @@ class DocumentPlacementServiceTest {
 
         verify(documentRepository).moveIfVersionMatches(eq(DOCUMENT_ID), eq(WORKSPACE_ID), eq(1L),
                 eq(targetFolderId), eq(1L), any());
-        verify(idempotencyService).save(eq(USER_ID), any(), eq("k1"), any(), eq(200), eq(DOCUMENT_ID), any());
+        verify(idempotencyService).execute(
+                eq(USER_ID), any(), eq("k1"), any(), eq(DocumentPositionResponse.class),
+                eq(200), any(), any());
     }
 
     @Test
     void move_returnsReplayWithoutUpdating() {
-        memberOk();
-        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT_ID, WORKSPACE_ID))
-                .thenReturn(Optional.of(document()));
         DocumentPositionResponse stored = new DocumentPositionResponse(DOCUMENT_ID, null, 3, 2);
-        when(idempotencyService.replay(any(), any(), any(), any(), eq(DocumentPositionResponse.class)))
-                .thenReturn(Optional.of(stored));
+        doReturn(stored).when(idempotencyService).execute(
+                any(), any(), any(), any(), eq(DocumentPositionResponse.class),
+                anyInt(), any(), any());
 
         service.move(WORKSPACE_ID, USER_ID, DOCUMENT_ID, "k1", new DocumentPositionRequest(null, null, 1L));
 

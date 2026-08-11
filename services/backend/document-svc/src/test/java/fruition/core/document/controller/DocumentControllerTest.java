@@ -25,6 +25,8 @@ import fruition.core.config.SecurityConfig;
 import fruition.core.CoreExceptionHandler;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.document.service.DocumentAssetContentService;
+import fruition.shared.idempotency.IdempotencyInProgressException;
+import fruition.shared.idempotency.IdempotencyConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -219,6 +221,38 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.id").value("doc_uploaded"));
 
         verify(documentService).upload(eq(WORKSPACE_ID), eq(USER_ID), eq("up-key"), eq(folderId), any());
+    }
+
+    @Test
+    void upload_inProgressReturns409WithIdempotencyCode() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "노트.md", "text/markdown",
+                "# 본문".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(documentService.upload(eq(WORKSPACE_ID), eq(USER_ID), eq("same-key"), eq(null), any()))
+                .thenThrow(new IdempotencyInProgressException("같은 요청이 처리 중입니다."));
+
+        mockMvc.perform(multipart("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .file(file)
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "same-key"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_IN_PROGRESS"));
+    }
+
+    @Test
+    void upload_conflictReturnsCurrentIdempotencyContractCode() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "노트.md", "text/markdown",
+                "# 본문".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(documentService.upload(eq(WORKSPACE_ID), eq(USER_ID), eq("same-key"), eq(null), any()))
+                .thenThrow(new IdempotencyConflictException("다른 요청입니다."));
+
+        mockMvc.perform(multipart("/api/workspaces/" + WORKSPACE_ID + "/documents")
+                        .file(file)
+                        .header("Authorization", bearerToken())
+                        .header("Idempotency-Key", "same-key"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_CONFLICT"));
     }
 
     @Test
