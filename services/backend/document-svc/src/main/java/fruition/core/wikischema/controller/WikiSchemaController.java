@@ -111,56 +111,56 @@ public class WikiSchemaController {
 
     @Schema(name = "WikiSchemaPreviewResponse", requiredProperties = {"fragments", "issues", "preview_markdown", "has_blocked_issues"})
     private static final class WikiSchemaPreviewResponseSchema {
-        private WikiSchemaFragmentsSchema fragments;
-        private java.util.List<WikiSchemaIssueSchema> issues;
-        private String preview_markdown;
-        private boolean has_blocked_issues;
+        public WikiSchemaFragmentsSchema fragments;
+        public java.util.List<WikiSchemaIssueSchema> issues;
+        public String preview_markdown;
+        public boolean has_blocked_issues;
     }
 
     @Schema(name = "WikiSchemaDraftResponse", requiredProperties = "wiki_schema")
     private static final class WikiSchemaDraftResponseSchema {
-        private WikiSchemaResponseSchema wiki_schema;
+        public WikiSchemaResponseSchema wiki_schema;
     }
 
     @Schema(name = "WikiSchemaResponse", requiredProperties = {"id", "workspace_id", "user_id", "name", "raw_markdown", "fragments", "issues", "preview_markdown", "has_blocked_issues", "status", "schema_version"})
     private static final class WikiSchemaResponseSchema {
-        private String id;
-        private String workspace_id;
-        private String user_id;
-        private String name;
-        private String raw_markdown;
-        private WikiSchemaFragmentsSchema fragments;
-        private java.util.List<WikiSchemaIssueSchema> issues;
-        private String preview_markdown;
-        private boolean has_blocked_issues;
-        private String status;
-        private String schema_version;
+        public String id;
+        public String workspace_id;
+        public String user_id;
+        public String name;
+        public String raw_markdown;
+        public WikiSchemaFragmentsSchema fragments;
+        public java.util.List<WikiSchemaIssueSchema> issues;
+        public String preview_markdown;
+        public boolean has_blocked_issues;
+        public String status;
+        public String schema_version;
         @Schema(nullable = true)
-        private String created_at;
+        public String created_at;
         @Schema(nullable = true)
-        private String updated_at;
+        public String updated_at;
         @Schema(nullable = true)
-        private String activated_at;
+        public String activated_at;
     }
 
     @Schema(name = "WikiSchemaFragmentsResponse", requiredProperties = {"global_markdown", "query_markdown", "ingest_markdown", "edit_markdown", "concept_markdown", "template_markdown"})
     private static final class WikiSchemaFragmentsSchema {
-        private String global_markdown;
-        private String query_markdown;
-        private String ingest_markdown;
-        private String edit_markdown;
-        private String concept_markdown;
-        private String template_markdown;
+        public String global_markdown;
+        public String query_markdown;
+        public String ingest_markdown;
+        public String edit_markdown;
+        public String concept_markdown;
+        public String template_markdown;
     }
 
     @Schema(name = "WikiSchemaIssueResponse", requiredProperties = {"severity", "category", "text", "reason"})
     private static final class WikiSchemaIssueSchema {
         @Schema(allowableValues = {"blocked", "unclear"})
-        private String severity;
-        private String category;
-        private String text;
-        private String reason;
+        public String severity;
+        public String category;
+        public String text;
+        public String reason;
         @Schema(nullable = true)
-        private String section;
+        public String section;
     }
 }

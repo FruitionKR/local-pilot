@@ -7,6 +7,7 @@ import fruition.core.config.SecurityConfig;
 import fruition.core.CoreExceptionHandler;
 import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
+import io.swagger.v3.core.converter.ModelConverters;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @WebMvcTest(WikiMaintenanceController.class)
 @Import({CoreExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
@@ -64,6 +66,17 @@ class WikiMaintenanceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new WikiLintRequest(false, true))))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void swaggerSchema_exposesWikiLintProperties() throws Exception {
+        var schema = ModelConverters.getInstance()
+                .read(Class.forName(WikiMaintenanceController.class.getName() + "$WikiLintResponseSchema"))
+                .get("WikiLintResponse");
+
+        assertThat(schema.getProperties()).containsKeys("run_id", "operation_id", "status");
+        assertThat(schema.getRequired()).contains("run_id", "operation_id", "status");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) schema.getProperties().get("operation_id")).getNullable()).isTrue();
     }
 
     private String bearer() {

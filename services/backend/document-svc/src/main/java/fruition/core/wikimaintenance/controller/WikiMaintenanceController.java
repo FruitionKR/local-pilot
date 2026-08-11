@@ -85,9 +85,9 @@ public class WikiMaintenanceController {
 
     @Schema(name = "WikiLintResponse", requiredProperties = {"run_id", "operation_id", "status"})
     private static final class WikiLintResponseSchema {
-        private String run_id;
+        public String run_id;
         @Schema(nullable = true)
-        private String operation_id;
-        private String status;
+        public String operation_id;
+        public String status;
     }
 }

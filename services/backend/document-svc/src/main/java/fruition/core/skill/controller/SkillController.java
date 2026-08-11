@@ -238,30 +238,30 @@ public class SkillController {
 
     @Schema(name = "SkillResponse", requiredProperties = {"id", "workspace_id", "scope_type", "owner_user_id", "slug", "status", "enabled_version", "latest_version"})
     private static final class SkillResponseSchema {
-        private String id;
+        public String id;
         @Schema(nullable = true)
-        private String workspace_id;
-        private String scope_type;
+        public String workspace_id;
+        public String scope_type;
         @Schema(nullable = true)
-        private String owner_user_id;
-        private String slug;
-        private String status;
+        public String owner_user_id;
+        public String slug;
+        public String status;
         @Schema(nullable = true)
-        private SkillVersionResponseSchema enabled_version;
+        public SkillVersionResponseSchema enabled_version;
         @Schema(nullable = true)
-        private SkillVersionResponseSchema latest_version;
+        public SkillVersionResponseSchema latest_version;
     }
 
     @Schema(name = "SkillVersionResponse", requiredProperties = {"id", "version", "name", "description", "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status"})
     private static final class SkillVersionResponseSchema {
-        private String id;
-        private int version;
-        private String name;
-        private String description;
-        private String instructions_markdown;
-        private java.util.List<String> capabilities;
-        private java.util.List<String> allowed_tools;
-        private java.util.Map<String, Object> lint_result;
-        private String status;
+        public String id;
+        public int version;
+        public String name;
+        public String description;
+        public String instructions_markdown;
+        public java.util.List<String> capabilities;
+        public java.util.List<String> allowed_tools;
+        public java.util.Map<String, Object> lint_result;
+        public String status;
     }
 }
