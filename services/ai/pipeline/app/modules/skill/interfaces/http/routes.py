@@ -32,8 +32,8 @@ agent_router = APIRouter(prefix="/skills", tags=["skills"])
 @router.post("/author", response_model=SkillAuthoringResponse)
 def author_skill(
     payload: SkillAuthoringRequest,
-    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
 ) -> SkillAuthoringResponse | JSONResponse:
+    use_case = get_author_skill_use_case(provider=payload.provider, model=payload.model)
     try:
         result = use_case.execute(
             workspace_id=payload.workspace_id,
@@ -59,8 +59,8 @@ def author_skill(
 @router.post("/author/publish", response_model=SkillAuthoringResponse)
 def publish_authored_skill(
     payload: PublishAuthoredSkillRequest,
-    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
 ) -> SkillAuthoringResponse:
+    use_case = get_author_skill_use_case(provider=payload.provider, model=payload.model)
     try:
         result = use_case.publish(
             workspace_id=payload.workspace_id,
@@ -78,9 +78,9 @@ def publish_authored_skill(
 @agent_router.post("/draft-from-runs/preview", response_model=SkillAuthoringResponse)
 def propose_skill_draft(
     payload: SkillDraftProposalRequest,
-    use_case: ProposeSkillDraftUseCase = Depends(get_propose_skill_draft_use_case),
-    authorer: AuthorSkillUseCase = Depends(get_author_skill_use_case),
 ) -> SkillAuthoringResponse:
+    use_case = get_propose_skill_draft_use_case(provider=payload.provider, model=payload.model)
+    authorer = get_author_skill_use_case(provider=payload.provider, model=payload.model)
     try:
         proposal = use_case.execute(
             source_runs=tuple(source.to_domain() for source in payload.source_runs),
@@ -143,8 +143,8 @@ def get_skill(
 def update_skill(
     skill_id: str,
     payload: UpdateSkillRequest,
-    use_case: AuthorSkillUseCase = Depends(get_author_skill_use_case),
 ) -> SkillAuthoringResponse:
+    use_case = get_author_skill_use_case(provider=payload.provider, model=payload.model)
     try:
         result = use_case.update(
             workspace_id=payload.workspace_id,

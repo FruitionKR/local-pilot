@@ -8,10 +8,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AiModelCatalogTest {
     @Test
     void enabledModels_returnsOnlyEnabledProviders() {
-        AiModelCatalog catalog = new AiModelCatalog("openai,gemini");
+        AiModelCatalog catalog = new AiModelCatalog("openai,gemini,claude");
 
         assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::provider)
-                .containsOnly("openai", "gemini");
+                .containsExactly("openai", "gemini", "claude");
+        assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::model)
+                .containsExactly("gpt-5-nano", "gemini-2.5-flash-lite", "claude-3-5-haiku-20241022");
     }
 
     @Test
@@ -19,7 +21,7 @@ class AiModelCatalogTest {
         AiModelCatalog catalog = new AiModelCatalog("openai");
 
         assertThat(catalog.resolve(null, null))
-                .isEqualTo(new AiModelCatalog.AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"));
+                .isEqualTo(new AiModelCatalog.AiModel("openai", "gpt-5-nano", "GPT-5 nano"));
     }
 
     @Test
@@ -28,7 +30,11 @@ class AiModelCatalogTest {
 
         assertThatThrownBy(() -> catalog.resolve("openai", null))
                 .isInstanceOf(InvalidAiModelException.class);
-        assertThatThrownBy(() -> catalog.resolve("claude", "claude-sonnet-5"))
+        assertThatThrownBy(() -> catalog.resolve(null, "gpt-5-nano"))
+                .isInstanceOf(InvalidAiModelException.class);
+        assertThatThrownBy(() -> catalog.resolve("claude", "claude-legacy"))
+                .isInstanceOf(InvalidAiModelException.class);
+        assertThatThrownBy(() -> catalog.resolve("openai", "gemini-2.5-flash-lite"))
                 .isInstanceOf(InvalidAiModelException.class);
     }
 }

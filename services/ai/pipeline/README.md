@@ -17,12 +17,11 @@ docker compose --env-file infra/.env -f infra/docker-compose.dev.yml -f infra/do
 필수 환경변수는 `infra/.env`에 둡니다.
 
 ```env
-LLM_PROVIDER=openai
-LLM_API_KEY=...
-LLM_BASE_URL=
-LLM_MODEL=gpt-4.1-mini
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+ANTHROPIC_API_KEY=...
 PIPELINE_API_PORT=8000
-DATABASE_URL=postgresql://...@postgresql:5432/...
+AI_DATABASE_URL=postgresql://...@postgresql:5432/ai_db
 S3_ENDPOINT=http://minio:9000
 ```
 
@@ -37,7 +36,7 @@ QUERY_EVALUATOR_MODE=llm
 QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 
-LLM 호출은 `LLM_PROVIDER`에 지정한 OpenAI, Gemini, Claude, Upstage 또는 generic provider를 사용합니다. API key·base URL·model override는 provider와 관계없이 `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`로 전달합니다. `LANGSMITH_TRACING=true`이고 `LANGSMITH_API_KEY`가 설정되어 있으면 query evaluator와 Wiki ingest evaluator의 LangGraph node 실행과 LLM span이 LangSmith project에 기록됩니다. API key가 없으면 graph 실행은 유지하고 tracing만 생략합니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+LLM 호출은 `openai/gpt-5-nano`(기본, reasoning `minimal`), `gemini/gemini-2.5-flash-lite`(reasoning `low`), `claude/claude-3-5-haiku-20241022`(extended thinking 없음)만 지원합니다. provider/model은 API·DB·Kafka payload에서 선택하며 env override는 없습니다. base URL은 provider별로 고정하고 key는 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 선택 provider의 값만 사용합니다. live provider 호출에는 key가 필요하지만 mock 통합 테스트에는 필요하지 않습니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
 
 LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 
@@ -50,10 +49,10 @@ LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 
 ### LangGraph Studio에서 evaluator graph 보기
 
-`langgraph.json`은 `llmPipeline/langgraph.json`에 있습니다. 이 설정은 `query_evaluator`, `wiki_ingest_evaluator` graph를 Studio/Agent Server에 노출하고, 환경변수는 `../infra/.env`에서 읽습니다. `wiki_ingest_evaluator` Studio graph는 production과 같은 topology builder를 사용하며 구조와 retry 분기를 시각화·시뮬레이션합니다. 실제 LLM 입출력은 pipeline 실행 후 LangSmith trace에서 확인합니다.
+`langgraph.json`은 이 디렉터리의 `langgraph.json`에 있습니다. 이 설정은 `query_evaluator`, `wiki_ingest_evaluator` graph를 Studio/Agent Server에 노출합니다. `wiki_ingest_evaluator` Studio graph는 production과 같은 topology builder를 사용하며 구조와 retry 분기를 시각화·시뮬레이션합니다. 실제 LLM 입출력은 pipeline 실행 후 LangSmith trace에서 확인합니다.
 
 ```bash
-cd llmPipeline
+cd services/ai/pipeline
 ./.venv/bin/python -m pip install -U "langgraph-cli[inmem]"
 ./.venv/bin/langgraph dev
 ```
@@ -148,14 +147,16 @@ Studio에서 `query_evaluator` 또는 `wiki_ingest_evaluator` graph를 선택할
 `llmPipeline` 폴더에서 실행합니다.
 
 ```bash
+export OPENAI_API_KEY=...
 python run_lab.py \
   --input examples/llm-wiki.md \
   --out runs/llm_wiki_demo \
   --mode api \
+  --provider openai \
+  --model gpt-5-nano \
   --source-page-mode section-polish \
   --concept-page-mode skeleton \
-  --max-eval-attempts 2 \
-  --env-file ../infra/.env
+  --max-eval-attempts 2
 ```
 
 기본 정책:
@@ -190,7 +191,7 @@ python -m app.modules.document_restoration.interfaces.cli \
   --document-slug paper
 ```
 
-표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 OpenAI API key를 환경변수로 전달합니다. 기본 모델은 `gpt-5.6-luna`, reasoning은 `medium`, 페이지 병렬도는 16입니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
+표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 OpenAI API key를 환경변수로 전달합니다. 해당 복원 CLI의 선택 보완 옵션과 reasoning 값은 CLI help 및 코드 기본값을 따릅니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
 
 ```bash
 export DOCUMENT_REPAIR_OPENAI_API_KEY=...
@@ -510,13 +511,15 @@ FastAPI에서 `document_id`로 실행한 경우 성공 시 DB에도 저장합니
 ### CLI로 `llm-wiki.md` 실행
 
 ```bash
+export OPENAI_API_KEY=...
 python run_lab.py \
   --input examples/llm-wiki.md \
   --out runs/llm_wiki_latest \
   --mode api \
+  --provider openai \
+  --model gpt-5-nano \
   --source-page-mode section-polish \
-  --concept-page-mode skeleton \
-  --env-file ../infra/.env
+  --concept-page-mode skeleton
 ```
 
 확인할 파일:
@@ -534,8 +537,12 @@ runs/llm_wiki_latest/manifest.json
 ```bash
 curl -X POST http://localhost:8000/pipeline/runs \
   -H "Content-Type: application/json" \
+  -H "X-Internal-Token: ${INTERNAL_CALLBACK_TOKEN}" \
   -d '{
+    "document_id": "doc_inline",
     "input_markdown": "# LLM Wiki\n\nLLM이 지속 관리하는 위키...",
+    "provider": "openai",
+    "model": "gpt-5-nano",
     "out": "runs/api_inline_llm_wiki",
     "mode": "api",
     "source_page_mode": "section-polish",
@@ -549,8 +556,11 @@ curl -X POST http://localhost:8000/pipeline/runs \
 ```bash
 curl -X POST http://localhost:8000/pipeline/runs \
   -H "Content-Type: application/json" \
+  -H "X-Internal-Token: ${INTERNAL_CALLBACK_TOKEN}" \
   -d '{
     "document_id": "doc_123",
+    "provider": "openai",
+    "model": "gpt-5-nano",
     "mode": "api",
     "source_page_mode": "section-polish",
     "concept_page_mode": "skeleton",

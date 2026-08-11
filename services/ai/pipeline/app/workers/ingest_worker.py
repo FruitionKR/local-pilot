@@ -54,8 +54,8 @@ MAX_POLL_INTERVAL_MS = int(os.environ.get("INGEST_MAX_POLL_INTERVAL_MS", "180000
 def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
     if not command.get("user_id") or not command.get("workspace_id"):
         raise ValueError("ingest command requires user_id and workspace_id")
-    if not str(command.get("model") or "").strip():
-        raise ValueError("ingest command requires model")
+    if not str(command.get("provider") or "").strip() or not str(command.get("model") or "").strip():
+        raise ValueError("ingest command requires provider and model")
     common = {
         "document_id": command["document_id"],
         "user_id": command.get("user_id"),
@@ -64,6 +64,7 @@ def _build_payload(command: dict) -> PipelineRunIn | ChatWikiRunIn:
         "source_revision": command.get("source_revision"),
         "source_content_hash": command.get("source_content_hash"),
         "model": str(command["model"]).strip(),
+        "provider": str(command.get("provider") or "").strip(),
         "wait": True,
     }
     if command.get("kind") == "chat_wiki":

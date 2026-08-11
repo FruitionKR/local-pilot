@@ -11,6 +11,8 @@ public record AgentTurnRequest(
         @NotBlank String documentId,
         @NotNull @Min(0) Long baseVersion,
         @NotBlank String message,
+        String provider,
+        String model,
         ConversationContext conversationContext,
         @NotNull @Valid EditorSnapshot editorSnapshot
 ) {

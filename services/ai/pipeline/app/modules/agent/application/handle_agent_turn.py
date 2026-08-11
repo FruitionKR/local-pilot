@@ -246,6 +246,8 @@ class HandleAgentTurnUseCase:
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
                     instruction=request.message,
+                    provider=request.provider,
+                    model=request.model,
                     action=route.action,
                     skill_version_id=skill_version_id,
                 )

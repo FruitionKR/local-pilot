@@ -19,5 +19,7 @@ public record SkillPublishRequest(
         @JsonProperty("instructions_markdown")
         @NotBlank
         @Size(max = 30000)
-        String instructionsMarkdown
+        String instructionsMarkdown,
+        @NotBlank String provider,
+        @NotBlank String model
 ) {}

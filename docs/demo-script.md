@@ -25,7 +25,7 @@ cp infra/.env.example infra/.env
 필수 키 이름(값은 각자 채움, 시크릿 커밋 금지).
 
 - 공통: `JWT_SECRET`
-- AI 기능 사용 시: `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`
+- AI 기능 사용 시: ai-svc secret env `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 사용할 provider의 키
 - 소셜 로그인 사용 시(선택): `GOOGLE_CLIENT_ID/SECRET`, `NAVER_CLIENT_ID/SECRET`, `KAKAO_CLIENT_ID/SECRET`
 - 이메일 로그인 데모용 고정 인증 코드: `AUTH_EMAIL_DEV_FIXED_CODE`
 
@@ -181,7 +181,7 @@ npm run dev
 
 1. 로그인 — `http://localhost:3000` 접속, 이메일 가입/로그인. 인증 코드는 `infra/.env`의 `AUTH_EMAIL_DEV_FIXED_CODE` 값 입력. (OAuth 키 설정 시 소셜 로그인도 가능)
 2. 워크스페이스 — 워크스페이스 생성 후 진입.
-3. 문서 업로드 — PDF 업로드 → converter가 Markdown 변환 → pipeline 워커가 처리. 상태가 `processing`에서 완료로 바뀌는지 확인. 멈춰 있으면 `:8000/health`와 `LLM_*` 키 확인.
+3. 문서 업로드 — PDF 업로드 → converter가 Markdown 변환 → pipeline 워커가 처리. 상태가 `processing`에서 완료로 바뀌는지 확인. 멈춰 있으면 `:8000/health`와 선택 provider secret key를 확인.
 4. 문서 편집 — 문서를 열어 내용 수정. 편집 이벤트가 Kafka(`document.edit.event`)로 흘러 파생 상태가 갱신됨.
 5. AI 질의 — 비동기 Query run/SSE가 완료되고 업로드 문서 기반 응답·원문 링크가 저장되는지 확인.
 6. Agent/Lint/Restore — 요청이 즉시 202를 반환하고 각 run 완료 후에만 결과가 반영되는지 확인.

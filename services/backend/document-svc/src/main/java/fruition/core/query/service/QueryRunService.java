@@ -31,7 +31,7 @@ public class QueryRunService {
 
     @Transactional
     public QueryRun start(String workspaceId, String userId, String sessionId, String question) {
-        return start(workspaceId, userId, sessionId, question, "openai", "gpt-4.1-mini");
+        return start(workspaceId, userId, sessionId, question, "openai", "gpt-5-nano");
     }
 
     @Transactional

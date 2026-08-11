@@ -2,6 +2,8 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.llm_env import resolve_llm_selection
+
 from app.modules.wiki_ingestion.application.models import (
     IngestOperationRestoreCommand,
     LintOperationRestoreCommand,
@@ -25,8 +27,7 @@ class _PipelineRunBase(BaseModel):
     input_name: str | None = None
     out: str | None = None
     mode: Literal["api", "generic-chat"] = "api"
-    provider: Literal["openai", "gemini", "claude", "upstage", "generic"] | None = None
-    env_file: str | None = None
+    provider: Literal["openai", "gemini", "claude"]
     source_page_mode: Literal["auto", "skeleton", "section-polish"] = "auto"
     concept_page_mode: Literal[
         "auto",
@@ -40,15 +41,7 @@ class _PipelineRunBase(BaseModel):
     )
     max_packet_chars: int = 7000
     overlap_blocks: int = 1
-    endpoint: str | None = None
-    api_base_url: str | None = None
-    api_key_env: str | None = None
-    api_key: str | None = None
-    model: str | None = None
-    temperature: float = 0.2
-    timeout_seconds: int = 180
-    max_tokens: int | None = None
-    json_mode: bool = False
+    model: str
     concept_system_prompt: str = "prompts/concept_page_generation.system.md"
     concept_resolution_system_prompt: str = "prompts/concept_resolution.system.md"
     section_polish_system_prompt: str = "prompts/section_polish.system.md"
@@ -81,6 +74,11 @@ class _PipelineRunBase(BaseModel):
     )
     source_revision: int | None = None
     source_content_hash: str | None = None
+
+    @model_validator(mode="after")
+    def validate_model_selection(self) -> Self:
+        resolve_llm_selection(self.provider, self.model)
+        return self
 
 class PipelineRunIn(_PipelineRunBase):
     system_prompt: str = DOCUMENT_SEMANTIC_PROMPT
@@ -265,20 +263,18 @@ class WikiLintIn(BaseModel):
     operation_id: str | None = None
     materialize_promotions: bool = False
     dry_run: bool = True
-    provider: Literal["openai", "gemini", "claude", "upstage", "generic"] | None = None
-    endpoint: str | None = None
-    api_base_url: str | None = None
-    api_key_env: str | None = None
-    api_key: str | None = None
-    model: str | None = None
-    temperature: float = 0.2
-    timeout_seconds: int = 180
-    max_tokens: int | None = None
+    provider: Literal["openai", "gemini", "claude"]
+    model: str
 
     @model_validator(mode="after")
     def validate_operation_id(self) -> Self:
         if not self.dry_run and not str(self.operation_id or "").strip():
             raise ValueError("operation_id is required when dry_run is false")
+        return self
+
+    @model_validator(mode="after")
+    def validate_model_selection(self) -> Self:
+        resolve_llm_selection(self.provider, self.model)
         return self
 
     def to_command(self) -> WikiMaintenanceCommand:

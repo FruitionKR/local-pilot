@@ -3,6 +3,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.untrusted_input import validate_untrusted_payload
+from app.core.llm_env import resolve_llm_selection
 from app.modules.agent.domain.entities import (
     ActiveMarkdownContext,
     AgentConversationContext,
@@ -78,6 +79,8 @@ class AgentConversationContextRequest(BaseModel):
 
 class AgentTurnRequestBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_AGENT_MESSAGE_LENGTH)
+    provider: str = Field(..., min_length=1)
+    model: str = Field(..., min_length=1)
     workspace_id: str | None = Field(default=None, min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
     output_language: Literal["ko", "en", "document"] | None = None
@@ -96,12 +99,15 @@ class AgentTurnRequestBody(BaseModel):
 
     @model_validator(mode="after")
     def validate_untrusted_input(self) -> Self:
+        resolve_llm_selection(self.provider, self.model)
         validate_untrusted_payload(self.model_dump(mode="json"))
         return self
 
     def to_domain(self) -> AgentTurnRequest:
         return AgentTurnRequest(
             message=self.message,
+            provider=self.provider,
+            model=self.model,
             workspace_id=self.workspace_id,
             user_id=self.user_id,
             output_language=self.output_language,

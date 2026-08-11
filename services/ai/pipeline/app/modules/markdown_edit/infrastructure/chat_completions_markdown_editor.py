@@ -11,10 +11,9 @@ from app.core.llm_env import (
     chat_completions_endpoint,
     float_env,
     int_env,
-    model_from_env,
     optional_int_env,
-    provider_base_url,
-    resolve_llm_provider,
+    provider_api_key_env,
+    resolve_llm_selection,
 )
 from app.core.llm_prompt import with_schema_and_skill_prompt
 from app.core.response_preferences import with_response_preferences
@@ -316,13 +315,15 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
         return result, failures, raw
 
 
-def build_markdown_editor() -> MarkdownEditorPort:
-    api_key = _api_key()
+def build_markdown_editor(
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+) -> MarkdownEditorPort:
+    resolved_provider, resolved_model = resolve_llm_selection(provider, model)
+    api_key = _api_key(resolved_provider)
     if not api_key:
-        raise RuntimeError("Set MARKDOWN_EDIT_LLM_API_KEY, QUERY_LLM_API_KEY, or LLM_API_KEY.")
-    model = _model()
-    if not model:
-        raise RuntimeError("Set MARKDOWN_EDIT_LLM_MODEL, QUERY_LLM_MODEL, or LLM_MODEL.")
+        raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)}.")
     prompt_path = Path(os.environ.get("MARKDOWN_EDIT_SYSTEM_PROMPT", str(DEFAULT_MARKDOWN_EDIT_PROMPT)))
     create_prompt_path = Path(os.environ.get("MARKDOWN_CREATE_SYSTEM_PROMPT", str(DEFAULT_MARKDOWN_CREATE_PROMPT)))
     source_edit_prompt_path = Path(
@@ -331,13 +332,14 @@ def build_markdown_editor() -> MarkdownEditorPort:
     return ChatCompletionsMarkdownEditor(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=_endpoint(),
+                endpoint=_endpoint(resolved_provider),
                 api_key=api_key,
-                model=model,
-                temperature=_float_env("MARKDOWN_EDIT_LLM_TEMPERATURE", 0.2),
+                model=resolved_model,
+                temperature=None,
                 timeout_seconds=_int_env("MARKDOWN_EDIT_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("MARKDOWN_EDIT_LLM_MAX_TOKENS"),
                 json_mode=True,
+                provider=resolved_provider,
             )
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
@@ -514,25 +516,15 @@ def _contract_string(
     return value
 
 
-def _endpoint() -> str:
+def _endpoint(provider: str | None = None) -> str:
     return chat_completions_endpoint(
-        endpoint_env_names=("MARKDOWN_EDIT_LLM_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("MARKDOWN_EDIT_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
+        provider=provider,
     )
 
 
-def _api_key() -> str | None:
+def _api_key(provider: str | None = None) -> str | None:
     return api_key_from_env(
-        key_env_name="MARKDOWN_EDIT_LLM_API_KEY_ENV",
-        key_env_names=("MARKDOWN_EDIT_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
-    )
-
-
-def _model() -> str:
-    return model_from_env(
-        ("MARKDOWN_EDIT_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
-        "solar-pro2" if resolve_llm_provider() == "upstage" else "",
+        provider=provider,
     )
 
 

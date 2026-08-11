@@ -79,7 +79,10 @@ from app.modules.wiki_ingestion.infrastructure.file_io import ensure_dir, write_
 from app.modules.wiki_ingestion.infrastructure.object_storage import read_text_object
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
+    provider_api_key_env,
     provider_api_endpoint,
+    provider_base_url,
+    resolve_llm_selection,
     resolve_llm_provider_defaults,
 )
 
@@ -118,17 +121,15 @@ class _SourcePagePreparation:
 
 
 def parse_args() -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Fruition v0.9 API pipeline lab v6 (Upstage Solar Pro 2 default)")
+    ap = argparse.ArgumentParser(description="Fruition API pipeline lab")
     ap.add_argument("--input", required=True, help="Input Markdown file")
     ap.add_argument("--out", default="runs/latest", help="Output directory")
     ap.add_argument("--mode", choices=["api", "generic-chat"], default="api", help="api/generic-chat=OpenAI-compatible chat-completions")
     ap.add_argument(
         "--provider",
         choices=SUPPORTED_LLM_PROVIDERS,
-        default=None,
-        help="LLM provider preset. If omitted, uses LLM_PROVIDER and then upstage.",
+        required=True,
     )
-    ap.add_argument("--env-file", help="Optional .env file to load before resolving API settings")
     ap.add_argument(
         "--source-page-mode",
         choices=["auto", "skeleton", "section-polish"],
@@ -144,16 +145,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--max-packet-chars", type=int, default=7000)
     ap.add_argument("--overlap-blocks", type=int, default=1)
 
-    # OpenAI-compatible chat-completions API options. Upstage Solar Pro 2 is the default provider preset.
-    ap.add_argument("--endpoint", help="Full chat-completions endpoint. If omitted, uses {api_base_url}/chat/completions")
-    ap.add_argument("--api-base-url", help="Base URL for OpenAI-compatible APIs. Upstage default: https://api.upstage.ai/v1")
-    ap.add_argument("--api-key-env", help="API key environment variable. Default: LLM_API_KEY")
-    ap.add_argument("--api-key", help="API key value. Prefer env var for safety")
-    ap.add_argument("--model", help="Model name. Override with LLM_MODEL or --model")
-    ap.add_argument("--temperature", type=float, default=0.2)
+    ap.add_argument("--model", required=True)
     ap.add_argument("--timeout-seconds", type=int, default=180)
-    ap.add_argument("--max-tokens", type=int, default=None)
-    ap.add_argument("--json-mode", action="store_true", help="Send response_format={type: json_object}; disable if your provider rejects it")
     ap.add_argument("--log-path", help="Pipeline progress log path. Default: {out}/pipeline.log")
     ap.add_argument("--log-callback-url", help="Optional URL to POST each Korean pipeline log event to")
     ap.add_argument("--save-debug-json", action="store_true", help="Save intermediate/debug JSON such as raw LLM outputs, document.json, block_map.json, and api_config.json")
@@ -180,39 +173,16 @@ def parse_args() -> argparse.Namespace:
 
 
 
-def load_env_file(path_like: str | None) -> None:
-    """Tiny .env loader; avoids python-dotenv dependency. Existing env wins."""
-    if not path_like:
-        return
-    env_path = Path(path_like)
-    if not env_path.exists():
-        raise SystemExit(f".env file not found: {path_like}")
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
 def resolve_api_defaults(command: PipelineRunCommand) -> PipelineRunCommand:
-    """Resolve provider-specific API defaults after optional .env loading."""
+    """Resolve and validate the fixed provider/model selection."""
+    provider, model = resolve_llm_selection(command.provider, command.model)
     defaults = resolve_llm_provider_defaults(
-        provider=command.provider,
-        base_url=command.api_base_url,
-        api_key_env=command.api_key_env,
-        api_key=command.api_key,
-        model=command.model,
+        provider=provider,
+        model=model,
     )
     return replace(
         command,
         provider=defaults.provider,
-        api_base_url=defaults.base_url,
-        api_key_env=defaults.api_key_env,
-        api_key=defaults.api_key,
         model=defaults.model,
     )
 
@@ -227,26 +197,25 @@ def read_prompt(path_like: str) -> str:
 
 
 def resolve_endpoint(args: PipelineRunCommand) -> str:
-    if args.endpoint:
-        return args.endpoint
-    return provider_api_endpoint(args.api_base_url, args.provider)
+    return provider_api_endpoint(provider_base_url(args.provider), args.provider)
 
 
 def load_api_client(args: PipelineRunCommand) -> ChatCompletionsJsonClient:
-    api_key = args.api_key or os.environ.get(args.api_key_env)
+    api_key_env = provider_api_key_env(args.provider)
+    api_key = os.environ.get(api_key_env)
     if not api_key:
-        raise SystemExit(f"Missing API key. Set {args.api_key_env}=... or pass --api-key")
+        raise SystemExit(f"Missing API key. Set {api_key_env}")
     if not args.model:
-        raise SystemExit("Missing model. Pass --model or set LLM_MODEL")
+        raise SystemExit("Missing model. Pass --model")
     return ChatCompletionsJsonClient(
         ChatClientConfig(
             endpoint=resolve_endpoint(args),
             api_key=api_key,
             model=args.model,
-            temperature=args.temperature,
+            temperature=None,
             timeout_seconds=args.timeout_seconds,
-            max_tokens=args.max_tokens,
-            json_mode=args.json_mode,
+            max_tokens=None,
+            json_mode=True,
             provider=args.provider,
         )
     )
@@ -563,14 +532,8 @@ def _prepare_api_client(
             out / "api_config.json",
             {
                 "provider": args.provider,
-                "endpoint": resolve_endpoint(args),
-                "api_base_url": args.api_base_url,
-                "api_key_source": "--api-key" if args.api_key else args.api_key_env,
                 "model": args.model,
-                "temperature": args.temperature,
                 "timeout_seconds": args.timeout_seconds,
-                "max_tokens": args.max_tokens,
-                "json_mode": args.json_mode,
                 "secret_values_saved": False,
             },
         )
@@ -580,7 +543,6 @@ def _prepare_api_client(
         {
             "provider": args.provider,
             "model": args.model,
-            "endpoint": resolve_endpoint(args),
         },
     )
     return api_client
@@ -1140,7 +1102,6 @@ def run_pipeline(
     command: PipelineRunCommand,
     progress_callback: Callable[[], bool | None] | None = None,
 ) -> dict:
-    load_env_file(command.env_file)
     args = resolve_api_defaults(command)
     input_text = getattr(args, "input_markdown", None)
     input_source_name = getattr(args, "input_name", None) or getattr(args, "input", None) or "inline.md"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,7 @@ def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
             endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
+            provider="openai",
             temperature=0.0,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
@@ -49,6 +51,7 @@ def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
             endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
+            provider="openai",
             temperature=0.2,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
@@ -147,10 +150,10 @@ def _partial_fence_rejection(client: TestClient) -> dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="실제 /agent/turn + Qwen Markdown 편집 E2E")
-    parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1/chat/completions")
-    parser.add_argument("--api-key", default="ollama")
-    parser.add_argument("--model", default="qwen2.5:7b")
+    parser = argparse.ArgumentParser(description="실제 /agent/turn + OpenAI Markdown 편집 E2E")
+    parser.add_argument("--endpoint", default="https://api.openai.com/v1/chat/completions")
+    parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", ""))
+    parser.add_argument("--model", default="gpt-5-nano")
     parser.add_argument("--prompt", default=str(DEFAULT_MARKDOWN_EDIT_PROMPT))
     parser.add_argument("--source-edit-prompt", default=str(DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT))
     parser.add_argument("--router-prompt", default=str(DEFAULT_AGENT_TURN_ROUTER_PROMPT))

@@ -33,5 +33,6 @@ def _is_secret_field(name: str) -> bool:
     return (
         normalized == "api_key"
         or normalized.endswith("_api_key")
+        or normalized in {"api_base_url", "base_url"}
         or not parts.isdisjoint(_SECRET_FIELD_PARTS)
     )

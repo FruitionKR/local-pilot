@@ -44,27 +44,39 @@ def test_wiki_maintenance_route_returns_workspace_result() -> None:
     maintenance = FakeWikiMaintenance()
 
     response = lint_wiki_workspace(
-        WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+        WikiLintIn(
+            user_id="user-1",
+            workspace_id="workspace-1",
+            provider="openai",
+            model="gpt-5-nano",
+        ),
         maintenance=maintenance,
     )
 
     assert maintenance.commands[0].dry_run is True
+    assert maintenance.commands[0].provider == "openai"
+    assert maintenance.commands[0].model == "gpt-5-nano"
     assert response.workspace_id == "workspace-1"
     assert response.promotion_candidates == ["candidate-1"]
     assert response.orphan_refs == ["doc-1:B9999"]
 
 
 def test_wiki_lint_requires_operation_id_only_when_changes_are_applied() -> None:
-    assert WikiLintIn(dry_run=True).operation_id is None
+    assert WikiLintIn(provider="openai", model="gpt-5-nano", dry_run=True).operation_id is None
 
     try:
-        WikiLintIn(dry_run=False)
+        WikiLintIn(provider="openai", model="gpt-5-nano", dry_run=False)
     except ValidationError as exc:
         assert "operation_id" in str(exc)
     else:
         raise AssertionError("실행 lint는 operation_id가 필요해야 한다")
 
-    payload = WikiLintIn(dry_run=False, operation_id="lint-op-1")
+    payload = WikiLintIn(
+        provider="openai",
+        model="gpt-5-nano",
+        dry_run=False,
+        operation_id="lint-op-1",
+    )
 
     assert payload.to_command().operation_id == "lint-op-1"
 
@@ -82,7 +94,12 @@ def test_wiki_maintenance_route_hides_unexpected_failure_details() -> None:
 
     try:
         lint_wiki_workspace(
-            WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+            WikiLintIn(
+                user_id="user-1",
+                workspace_id="workspace-1",
+                provider="openai",
+                model="gpt-5-nano",
+            ),
             maintenance=FailingWikiMaintenance(),
         )
     except HTTPException as exc:
@@ -100,7 +117,12 @@ def test_wiki_maintenance_route_returns_configuration_error_as_bad_request() -> 
 
     try:
         lint_wiki_workspace(
-            WikiLintIn(user_id="user-1", workspace_id="workspace-1"),
+            WikiLintIn(
+                user_id="user-1",
+                workspace_id="workspace-1",
+                provider="openai",
+                model="gpt-5-nano",
+            ),
             maintenance=InvalidConfigurationWikiMaintenance(),
         )
     except HTTPException as exc:

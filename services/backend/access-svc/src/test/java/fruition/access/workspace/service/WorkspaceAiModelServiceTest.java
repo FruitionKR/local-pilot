@@ -25,7 +25,7 @@ class WorkspaceAiModelServiceTest {
     @BeforeEach
     void setUp() {
         service = new WorkspaceAiModelService(
-                workspaceRepository, new AiModelCatalog("openai,claude"));
+                workspaceRepository, new AiModelCatalog("openai,gemini,claude"));
         workspace = new Workspace("ws_1", "테스트");
     }
 
@@ -36,7 +36,7 @@ class WorkspaceAiModelServiceTest {
         var response = service.getInternal("ws_1");
 
         assertThat(response.ingestLint().provider()).isEqualTo("openai");
-        assertThat(response.ingestLint().model()).isEqualTo("gpt-4.1-mini");
+        assertThat(response.ingestLint().model()).isEqualTo("gpt-5-nano");
     }
 
     @Test
@@ -44,9 +44,9 @@ class WorkspaceAiModelServiceTest {
         when(workspaceRepository.findById("ws_1")).thenReturn(Optional.of(workspace));
 
         var response = service.updateInternal("ws_1", new WorkspaceAiModelRequest(
-                new WorkspaceAiModelRequest.AiModelSelection("claude", "claude-sonnet-5")));
+                new WorkspaceAiModelRequest.AiModelSelection("claude", "claude-3-5-haiku-20241022")));
 
         assertThat(response.ingestLint().provider()).isEqualTo("claude");
-        assertThat(response.ingestLint().model()).isEqualTo("claude-sonnet-5");
+        assertThat(response.ingestLint().model()).isEqualTo("claude-3-5-haiku-20241022");
     }
 }

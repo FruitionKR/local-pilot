@@ -24,7 +24,9 @@ public record SkillAuthoringRequest(
         String authoringMode,
         @JsonProperty("reference_document_ids")
         @Size(max = 3)
-        List<@NotBlank String> referenceDocumentIds
+        List<@NotBlank String> referenceDocumentIds,
+        @NotBlank String provider,
+        @NotBlank String model
 ) {
     public SkillAuthoringRequest {
         authoringMode = authoringMode == null ? "enhance" : authoringMode;

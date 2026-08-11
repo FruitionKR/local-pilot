@@ -36,12 +36,13 @@ public class PipelineSkillRequester {
 
     public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request) {
         return post("/author", new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds()));
+                request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds(),
+                request.provider(), request.model()));
     }
 
     public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
         return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instructionsMarkdown()));
+                request.description(), request.instructionsMarkdown(), request.provider(), request.model()));
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -62,7 +63,7 @@ public class PipelineSkillRequester {
 
     public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request) {
         return patch("/" + skillId, new UpdatePayload(workspaceId, userId, request.name(),
-                request.description(), request.instructionsMarkdown()));
+                request.description(), request.instructionsMarkdown(), request.provider(), request.model()));
     }
 
     public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {
@@ -130,7 +131,9 @@ public class PipelineSkillRequester {
             String description,
             String instruction,
             @JsonProperty("authoring_mode") String authoringMode,
-            @JsonProperty("reference_document_ids") java.util.List<String> referenceDocumentIds) {}
+            @JsonProperty("reference_document_ids") java.util.List<String> referenceDocumentIds,
+            String provider,
+            String model) {}
 
     private record PublishPayload(
             @JsonProperty("workspace_id") String workspaceId,
@@ -138,14 +141,18 @@ public class PipelineSkillRequester {
             @JsonProperty("scope_type") String scopeType,
             String name,
             String description,
-            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+            @JsonProperty("instructions_markdown") String instructionsMarkdown,
+            String provider,
+            String model) {}
 
     private record UpdatePayload(
             @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("user_id") String userId,
             String name,
             String description,
-            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+            @JsonProperty("instructions_markdown") String instructionsMarkdown,
+            String provider,
+            String model) {}
 
     private record ActorPayload(
             @JsonProperty("workspace_id") String workspaceId,

@@ -14,9 +14,11 @@ import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.agent.repository.PipelineAgentRunStatusRequester;
 import fruition.core.document.service.DocumentEditLockService;
 import fruition.core.document.service.DocumentService;
+import fruition.shared.ai.AiModelCatalog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,13 +45,14 @@ class AgentTurnServiceTest {
     @Mock PipelineAgentRunStatusRequester statusRequester;
     @Mock AiCommandOutboxWriter outboxWriter;
     @Mock AgentApplyOperationStore applyOperationStore;
+    private final AiModelCatalog aiModelCatalog = new AiModelCatalog("openai,gemini,claude");
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
         service = new AgentTurnService(documentService, editLockService, workspaceAccessGuard, runRepository,
-                statusRequester, outboxWriter, applyOperationStore, "ai.agent.command");
+                statusRequester, outboxWriter, applyOperationStore, aiModelCatalog, "ai.agent.command");
     }
 
     @Test
@@ -66,8 +69,12 @@ class AgentTurnServiceTest {
         verify(runRepository).create(anyString(), org.mockito.ArgumentMatchers.eq("ws_1"),
                 org.mockito.ArgumentMatchers.eq("user_1"), org.mockito.ArgumentMatchers.eq("doc_1"),
                 org.mockito.ArgumentMatchers.eq(7L), org.mockito.ArgumentMatchers.eq("op_apply_1"));
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), any());
+                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+        assertThat(command.getValue().provider()).isEqualTo("openai");
+        assertThat(command.getValue().model()).isEqualTo("gpt-5-nano");
     }
 
     @Test
@@ -169,7 +176,7 @@ class AgentTurnServiceTest {
     }
 
     private AgentTurnRequest request(String type, int startLine, int endLine) {
-        return new AgentTurnRequest("doc_1", 7L, "문서를 점검해줘", null,
+        return new AgentTurnRequest("doc_1", 7L, "문서를 점검해줘", "openai", "gpt-5-nano", null,
                 new AgentTurnRequest.EditorSnapshot("# 제목\n본문",
                         new AgentTurnRequest.Target(type, startLine, endLine)));
     }

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand
+from app.modules.wiki_ingestion.application.models import WikiMaintenanceCommand as _WikiMaintenanceCommand
 from app.modules.wiki_ingestion.domain.orphan_link_lint import (
     find_orphan_links,
 )
@@ -10,6 +10,12 @@ from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as repository,
 )
 from app.modules.wiki_ingestion.infrastructure import wiki_maintenance
+
+
+def WikiMaintenanceCommand(**data: object) -> _WikiMaintenanceCommand:
+    data.setdefault("provider", "openai")
+    data.setdefault("model", "gpt-5-nano")
+    return _WikiMaintenanceCommand(**data)
 
 
 def test_lint_keeps_link_supported_by_any_active_contribution() -> None:

@@ -13,7 +13,8 @@ from typing import Any
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from psycopg.types.json import Json
 
-from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
+from app.core.llm_env import resolve_llm_selection
+from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
@@ -80,23 +81,28 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
 def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
     _required(
         command, "run_id", "workspace_id", "user_id", "document_id",
-        "base_version", "apply_operation_id", "message", "editor_snapshot",
+        "base_version", "apply_operation_id", "message", "provider", "model", "editor_snapshot",
     )
     run_id = str(command["run_id"])
+    payload = AgentTurnRequestBody.model_validate({
+        "message": command["message"],
+        "provider": command.get("provider"),
+        "model": command.get("model"),
+        "workspace_id": command["workspace_id"],
+        "user_id": command["user_id"],
+        "conversation_context": command.get("conversation_context"),
+        "active_markdown_context": command["editor_snapshot"],
+    })
     state, replay = _register_agent_command(command)
     if state == "completed":
         return replay or {}
 
     try:
-        payload = AgentTurnRequestBody.model_validate({
-            "message": command["message"],
-            "workspace_id": command["workspace_id"],
-            "user_id": command["user_id"],
-            "conversation_context": command.get("conversation_context"),
-            "active_markdown_context": command["editor_snapshot"],
-        })
         result = agent_to_response(
-            get_handle_agent_turn_use_case().execute(payload.to_domain())
+            build_handle_agent_turn_use_case(
+                provider=payload.provider,
+                model=payload.model,
+            ).execute(payload.to_domain())
         ).model_dump(mode="json")
     except Exception:
         with database.connect_ai() as conn:
@@ -134,14 +140,16 @@ def _agent_command_hash(command: dict[str, Any]) -> str:
 
 def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
     run_id = str(command["run_id"])
+    provider, model = resolve_llm_selection(command["provider"], command["model"])
     envelope_hash = _agent_command_hash(command)
     with database.connect_ai() as conn:
         inserted = conn.execute(
             """
             INSERT INTO agent_runs (
                 id, workspace_id, user_id, action, status, request_summary,
-                document_id, base_version, apply_operation_id, command_envelope_hash
-            ) VALUES (%s, %s, %s, 'markdown_turn', 'queued', %s, %s, %s, %s, %s)
+                provider, model, document_id, base_version, apply_operation_id,
+                command_envelope_hash
+            ) VALUES (%s, %s, %s, 'markdown_turn', 'queued', %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             RETURNING id
             """,
@@ -150,6 +158,8 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
                 str(command["workspace_id"]),
                 str(command["user_id"]),
                 str(command["message"])[:1000],
+                provider,
+                model,
                 str(command["document_id"]),
                 int(command["base_version"]),
                 str(command["apply_operation_id"]),
@@ -192,7 +202,7 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
 
 
 def _handle_lint(command: dict[str, Any]) -> dict[str, Any]:
-    _required(command, "run_id", "workspace_id", "user_id", "model")
+    _required(command, "run_id", "workspace_id", "user_id", "provider", "model")
     run_id = str(command["run_id"])
     existing = database.get_pipeline_run(run_id)
     if existing:
@@ -217,11 +227,13 @@ def _handle_lint(command: dict[str, Any]) -> dict[str, Any]:
                 "operation_id",
                 "materialize_promotions",
                 "dry_run",
+                "provider",
                 "model",
             )
             if command.get(field) is not None
         }
         lint_payload["model"] = str(command["model"]).strip()
+        lint_payload["provider"] = str(command["provider"]).strip()
         result = get_wiki_maintenance().lint(
             WikiLintIn.model_validate(lint_payload).to_command()
         )

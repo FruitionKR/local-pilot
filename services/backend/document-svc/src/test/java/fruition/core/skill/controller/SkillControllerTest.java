@@ -63,7 +63,8 @@ class SkillControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                 "personal", "meeting-notes", null,
-                                "회의록 Skill을 만들어줘", "enhance", List.of("doc_1")))))
+                                "회의록 Skill을 만들어줘", "enhance", List.of("doc_1"),
+                                "openai", "gpt-5-nano"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("proposal_ready"))
                 .andExpect(jsonPath("$.name").value("meeting-notes"));
@@ -78,6 +79,16 @@ class SkillControllerTest {
     }
 
     @Test
+    void author_requiresProviderAndModel() throws Exception {
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scope_type\":\"personal\",\"instruction\":\"회의록 Skill을 만들어줘\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
     void author_pipelineValidationFailureUsesStandardErrorEnvelope() throws Exception {
         when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
                 .thenThrow(new PipelineSkillException(
@@ -88,7 +99,8 @@ class SkillControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                 "personal", "meeting-notes", null,
-                                "회의록 Skill을 만들어줘", "enhance", List.of()))))
+                                "회의록 Skill을 만들어줘", "enhance", List.of(),
+                                "openai", "gpt-5-nano"))))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("SKILL_REQUEST_REJECTED"))
                 .andExpect(jsonPath("$.error.message").value("Skill 요청이 거부되었습니다."))
@@ -129,7 +141,8 @@ class SkillControllerTest {
                     "agent-token",
                     5
             );
-            var service = new SkillService(mock(WorkspaceAccessGuard.class), requester);
+            var service = new SkillService(mock(WorkspaceAccessGuard.class), requester,
+                    new fruition.shared.ai.AiModelCatalog("openai,gemini,claude"));
             when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
                     .thenAnswer(invocation -> service.author(
                             WORKSPACE_ID,
@@ -142,7 +155,8 @@ class SkillControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                     "personal", "meeting-notes", null,
-                                    "회의록 Skill을 만들어줘", "enhance", List.of("doc_1")))))
+                                    "회의록 Skill을 만들어줘", "enhance", List.of("doc_1"),
+                                    "openai", "gpt-5-nano"))))
                     .andExpect(status().isPayloadTooLarge())
                     .andExpect(jsonPath("$.error.code").value("REFERENCE_DOCUMENT_TOO_LARGE"))
                     .andExpect(jsonPath("$.error.message")

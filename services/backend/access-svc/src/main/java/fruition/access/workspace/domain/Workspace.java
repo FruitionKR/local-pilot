@@ -8,7 +8,7 @@ import java.time.Instant;
 public class Workspace {
 
     private static final String DEFAULT_AI_PROVIDER = "openai";
-    private static final String DEFAULT_AI_MODEL = "gpt-4.1-mini";
+    private static final String DEFAULT_AI_MODEL = "gpt-5-nano";
 
     @Id
     private String id;

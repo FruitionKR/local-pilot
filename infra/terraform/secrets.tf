@@ -28,7 +28,9 @@ resource "aws_secretsmanager_secret_version" "app" {
     JWT_SECRET              = "CHANGE_ME_32BYTES_MIN"
     INTERNAL_CALLBACK_TOKEN = "CHANGE_ME"
     AGENT_INTERNAL_TOKEN    = "CHANGE_ME"
-    LLM_API_KEY             = "CHANGE_ME"
+    OPENAI_API_KEY          = ""
+    GEMINI_API_KEY          = ""
+    ANTHROPIC_API_KEY       = ""
     LANGSMITH_API_KEY       = ""
     TAVILY_API_KEY          = ""
   })

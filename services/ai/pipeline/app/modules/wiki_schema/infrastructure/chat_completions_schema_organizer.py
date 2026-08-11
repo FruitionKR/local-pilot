@@ -8,12 +8,6 @@ from typing import Any, Protocol
 from app.core.llm_env import (
     api_key_from_env,
     chat_completions_endpoint,
-    float_env,
-    int_env,
-    model_from_env,
-    optional_int_env,
-    provider_base_url,
-    resolve_llm_provider,
 )
 from app.modules.wiki_generation.infrastructure.chat_completions_llm import ChatClientConfig, ChatCompletionsJsonClient
 from app.modules.wiki_schema.application.ports import SchemaOrganizerPort
@@ -51,12 +45,10 @@ class ChatCompletionsSchemaOrganizer(SchemaOrganizerPort):
 
 def build_schema_organizer() -> SchemaOrganizerPort:
     endpoint = _endpoint()
-    api_key = _api_key() or ("ollama" if _is_local_ollama_endpoint(endpoint) else None)
+    api_key = _api_key()
     if not api_key:
-        raise RuntimeError("Set WIKI_SCHEMA_LLM_API_KEY, QUERY_LLM_API_KEY, or LLM_API_KEY.")
-    model = _model()
-    if not model:
-        raise RuntimeError("Set WIKI_SCHEMA_LLM_MODEL, QUERY_LLM_MODEL, or LLM_MODEL.")
+        raise RuntimeError("Set OPENAI_API_KEY.")
+    model = "gpt-5-nano"
     prompt_path = Path(os.environ.get("WIKI_SCHEMA_SYSTEM_PROMPT", str(DEFAULT_SCHEMA_ORGANIZER_PROMPT)))
     return ChatCompletionsSchemaOrganizer(
         ChatCompletionsJsonClient(
@@ -64,10 +56,11 @@ def build_schema_organizer() -> SchemaOrganizerPort:
                 endpoint=endpoint,
                 api_key=api_key,
                 model=model,
-                temperature=_float_env("WIKI_SCHEMA_LLM_TEMPERATURE", 0.0),
-                timeout_seconds=_int_env("WIKI_SCHEMA_LLM_TIMEOUT_SECONDS", 180),
-                max_tokens=_optional_int_env("WIKI_SCHEMA_LLM_MAX_TOKENS") or 1200,
+                temperature=None,
+                timeout_seconds=180,
+                max_tokens=1200,
                 json_mode=True,
+                provider="openai",
             )
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),
@@ -107,30 +100,15 @@ def _string_list(value: Any) -> list[str]:
 
 def _endpoint() -> str:
     return chat_completions_endpoint(
-        endpoint_env_names=("WIKI_SCHEMA_LLM_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("WIKI_SCHEMA_LLM_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
+        provider="openai",
     )
 
 
 def _api_key() -> str | None:
     return api_key_from_env(
-        key_env_name="WIKI_SCHEMA_LLM_API_KEY_ENV",
-        key_env_names=("WIKI_SCHEMA_LLM_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
+        provider="openai",
         strip=True,
     )
-
-
-def _model() -> str:
-    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
-    return model_from_env(
-        ("WIKI_SCHEMA_LLM_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
-        default,
-    )
-
-
-def _is_local_ollama_endpoint(endpoint: str) -> bool:
-    return "127.0.0.1:11434" in endpoint or "localhost:11434" in endpoint
 
 
 def _float_env(name: str, default: float) -> float:

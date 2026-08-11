@@ -63,7 +63,7 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         "session_id": "session-1",
         "question": "질문",
         "provider": "openai",
-        "model": "  gpt-5.6-terra  ",
+        "model": "  gpt-5-nano  ",
         "allow_web_search": allow_web_search,
         "api_key": "command-secret",
         "api_base_url": "https://command.example/v1",
@@ -84,7 +84,7 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
 
     build_use_case.assert_called_once_with(
         provider="openai",
-        model="gpt-5.6-terra",
+        model="gpt-5-nano",
         allow_web_search=allow_web_search,
     )
     assert result == {"answer": "ok"}
@@ -99,7 +99,7 @@ def test_query_command_requires_boolean_web_search_flag() -> None:
         "session_id": "session-1",
         "question": "질문",
         "provider": "openai",
-        "model": "  gpt-5.6-terra  ",
+        "model": "  gpt-5-nano  ",
         "allow_web_search": "false",
     }
 
@@ -118,6 +118,7 @@ def test_query_command_requires_boolean_web_search_flag() -> None:
                 "user_id": "user-1",
                 "session_id": "session-1",
                 "question": "질문",
+                "provider": "openai",
                 "allow_web_search": False,
             },
         ),
@@ -127,6 +128,7 @@ def test_query_command_requires_boolean_web_search_flag() -> None:
                 "run_id": "run-1",
                 "workspace_id": "workspace-1",
                 "user_id": "user-1",
+                "provider": "openai",
             },
         ),
     ],
@@ -143,7 +145,7 @@ def test_lint_command_passes_runtime_model_without_command_overrides() -> None:
         "workspace_id": "workspace-1",
         "user_id": "user-1",
         "provider": "openai",
-        "model": "  gpt-5.6-terra  ",
+        "model": "  gpt-5-nano  ",
         "dry_run": True,
         "api_key": "command-secret",
         "api_base_url": "https://command.example/v1",
@@ -162,10 +164,8 @@ def test_lint_command_passes_runtime_model_without_command_overrides() -> None:
         result = task_worker._handle_lint(command)
 
     lint_command = maintenance.lint.call_args.args[0]
-    assert lint_command.provider is None
-    assert lint_command.model == "gpt-5.6-terra"
-    assert lint_command.api_key is None
-    assert lint_command.api_base_url is None
+    assert lint_command.provider == "openai"
+    assert lint_command.model == "gpt-5-nano"
     assert result == {"ok": True}
 
 
@@ -211,6 +211,8 @@ def test_agent_command_registers_supplied_run_and_deterministic_job_once() -> No
         "base_version": 7,
         "apply_operation_id": "op-1",
         "message": "문서를 정리해줘",
+        "provider": "gemini",
+        "model": " gemini-2.5-flash-lite ",
         "editor_snapshot": {"markdown": "# 제목"},
     }
     connection = MagicMock()
@@ -233,6 +235,9 @@ def test_agent_command_registers_supplied_run_and_deterministic_job_once() -> No
 
     assert state == "execute"
     assert result is None
+    run_insert = connection.execute.call_args_list[0]
+    assert "provider, model" in run_insert.args[0]
+    assert run_insert.args[1][4:6] == ("gemini", "gemini-2.5-flash-lite")
     job_insert = connection.execute.call_args_list[1]
     assert job_insert.args[1][0] == f"{command['run_id']}:markdown_turn"
 
@@ -247,6 +252,8 @@ def test_repeated_agent_command_rejects_changed_envelope() -> None:
         "base_version": 7,
         "apply_operation_id": "op-1",
         "message": "변경된 요청",
+        "provider": "openai",
+        "model": "gpt-5-nano",
         "editor_snapshot": {"markdown": "# 제목"},
     }
     connection = MagicMock()
@@ -280,6 +287,8 @@ def test_repeated_identical_agent_command_reuses_completed_result() -> None:
         "base_version": 7,
         "apply_operation_id": "op-1",
         "message": "문서를 정리해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
         "editor_snapshot": {"markdown": "# 제목"},
     }
     connection = MagicMock()

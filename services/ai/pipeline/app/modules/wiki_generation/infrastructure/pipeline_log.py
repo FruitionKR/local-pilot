@@ -13,6 +13,9 @@ from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_ingestion.infrastructure.file_io import append_text
 
 
+_PRIVATE_EVENT_KEYS = {"api_key", "base_url", "endpoint", "secret", "token"}
+
+
 class PipelineLog:
     def __init__(
         self,
@@ -35,7 +38,11 @@ class PipelineLog:
             "timestamp": now,
             "stage": stage,
             "message": message,
-            "data": {key: str(value) for key, value in (data or {}).items()},
+            "data": {
+                key: str(value)
+                for key, value in (data or {}).items()
+                if key.lower() not in _PRIVATE_EVENT_KEYS
+            },
         }
         lines = [f"[{now}] [{stage}] {message}"]
         for key, value in event["data"].items():

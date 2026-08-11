@@ -1,5 +1,4 @@
 import os
-from functools import lru_cache
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
@@ -17,11 +16,6 @@ from app.modules.query.infrastructure.rule_based_query_rewriter import RuleBased
 from app.modules.query.infrastructure.stored_wiki_page_embedding_search import StoredWikiPageEmbeddingSearch
 from app.modules.query.infrastructure.web_search import build_web_search
 from app.modules.query.interfaces.http.schemas import QueryRequest
-
-
-@lru_cache(maxsize=1)
-def get_conversation_summarizer():
-    return build_query_conversation_summarizer()
 
 
 def build_answer_query_use_case(
@@ -69,11 +63,6 @@ def get_query_answer_use_case(payload: QueryRequest) -> AnswerQueryUseCase:
         model=payload.model,
         allow_web_search=payload.allow_web_search,
     )
-
-
-@lru_cache(maxsize=1)
-def get_answer_query_use_case() -> AnswerQueryUseCase:
-    return build_answer_query_use_case()
 
 
 def _build_embedding_search(text_search: Bm25Searcher):

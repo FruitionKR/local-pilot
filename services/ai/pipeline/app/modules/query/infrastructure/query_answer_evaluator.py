@@ -8,10 +8,8 @@ from app.core.llm_env import (
     chat_completions_endpoint,
     float_env,
     int_env,
-    model_from_env,
     optional_int_env,
-    provider_base_url,
-    resolve_llm_provider,
+    resolve_llm_selection,
 )
 from app.modules.query.application.ports import QueryEvaluatorPort
 from app.modules.query.domain.entities import GeneratedAnswer, QueryContext, QueryEvaluation
@@ -87,11 +85,10 @@ def build_query_answer_evaluator(
         return None
     if mode != "llm":
         return None
-    api_key = _api_key()
+    resolved_provider, resolved_model = resolve_llm_selection(provider, model)
+    api_key = _api_key(resolved_provider)
     if not api_key:
         return None
-    resolved_provider = resolve_llm_provider(provider)
-    resolved_model = model or _model(resolved_provider)
     if not resolved_model:
         return None
     prompt_path = Path(os.environ.get("QUERY_EVALUATOR_PROMPT", str(DEFAULT_QUERY_EVALUATOR_PROMPT)))
@@ -102,7 +99,7 @@ def build_query_answer_evaluator(
                 endpoint=_endpoint(resolved_provider),
                 api_key=api_key,
                 model=resolved_model,
-                temperature=_float_env("QUERY_EVALUATOR_TEMPERATURE", 0.0),
+                temperature=None,
                 timeout_seconds=_int_env("QUERY_EVALUATOR_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("QUERY_EVALUATOR_MAX_TOKENS"),
                 json_mode=True,
@@ -151,25 +148,13 @@ def _normalize_evaluation(
 
 def _endpoint(provider: str | None = None) -> str:
     return chat_completions_endpoint(
-        endpoint_env_names=("QUERY_EVALUATOR_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("QUERY_EVALUATOR_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(provider),
         provider=provider,
     )
 
 
-def _api_key() -> str | None:
+def _api_key(provider: str | None = None) -> str | None:
     return api_key_from_env(
-        key_env_name="QUERY_EVALUATOR_API_KEY_ENV",
-        key_env_names=("QUERY_EVALUATOR_API_KEY", "QUERY_LLM_API_KEY", "LLM_API_KEY"),
-    )
-
-
-def _model(provider: str | None = None) -> str:
-    default = "solar-pro2" if resolve_llm_provider(provider) == "upstage" else ""
-    return model_from_env(
-        ("QUERY_EVALUATOR_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
-        default,
+        provider=provider,
     )
 
 

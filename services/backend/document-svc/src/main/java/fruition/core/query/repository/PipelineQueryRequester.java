@@ -29,7 +29,7 @@ public class PipelineQueryRequester {
     }
 
     public PipelineQueryResponse query(String workspaceId, String question) {
-        return query(workspaceId, question, "openai", "gpt-4.1-mini");
+        return query(workspaceId, question, "openai", "gpt-5-nano");
     }
 
     public PipelineQueryResponse query(String workspaceId, String question, String provider, String model) {

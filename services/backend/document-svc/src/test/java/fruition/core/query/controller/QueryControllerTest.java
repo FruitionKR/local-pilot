@@ -59,7 +59,7 @@ class QueryControllerTest {
     @Test
     void query_ownedSession_returns200() throws Exception {
         when(aiModelCatalog.resolve(null, null))
-                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"));
+                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-5-nano", "GPT-5 nano"));
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryResponse response = new QueryResponse(
@@ -67,7 +67,7 @@ class QueryControllerTest {
                 new QueryResponse.MessageSummary("chat_assistant_1", "assistant", "답변", "completed", Instant.now()),
                 null, null, null, null);
         when(queryService.query(eq(WORKSPACE_ID), eq(SESSION_ID), eq("질문"),
-                eq("openai"), eq("gpt-4.1-mini"), eq(false))).thenReturn(response);
+                eq("openai"), eq("gpt-5-nano"), eq(false))).thenReturn(response);
 
         mockMvc.perform(post(basePath() + "/query")
                         .header("Authorization", bearerToken())
@@ -80,14 +80,14 @@ class QueryControllerTest {
     @Test
     void query_webSearchAllowed_passesRequestSetting() throws Exception {
         when(aiModelCatalog.resolve(null, null))
-                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"));
+                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-5-nano", "GPT-5 nano"));
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryResponse response = new QueryResponse(
                 new QueryResponse.MessageSummary("chat_user_1", "user", "질문", "completed", Instant.now()),
                 new QueryResponse.MessageSummary("chat_assistant_1", "assistant", "답변", "completed", Instant.now()),
                 null, null, null, null);
-        when(queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-4.1-mini", true))
+        when(queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true))
                 .thenReturn(response);
 
         mockMvc.perform(post(basePath() + "/query")
@@ -96,7 +96,7 @@ class QueryControllerTest {
                         .content(objectMapper.writeValueAsString(new QueryRequest("질문", null, null, true))))
                 .andExpect(status().isOk());
 
-        verify(queryService).query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-4.1-mini", true);
+        verify(queryService).query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
     }
 
     @Test
@@ -133,13 +133,13 @@ class QueryControllerTest {
     @Test
     void createRun_ownedSession_returns202() throws Exception {
         when(aiModelCatalog.resolve(null, null))
-                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"));
+                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-5-nano", "GPT-5 nano"));
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryRun run = QueryRun.pending(
-                "query_abc123", WORKSPACE_ID, SESSION_ID, "openai", "gpt-4.1-mini", false, "질문", Instant.now());
+                "query_abc123", WORKSPACE_ID, SESSION_ID, "openai", "gpt-5-nano", false, "질문", Instant.now());
         when(queryRunService.start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문",
-                "openai", "gpt-4.1-mini", false)).thenReturn(run);
+                "openai", "gpt-5-nano", false)).thenReturn(run);
 
         mockMvc.perform(post(basePath() + "/query/runs")
                         .header("Authorization", bearerToken())
@@ -153,13 +153,13 @@ class QueryControllerTest {
     @Test
     void createRun_webSearchAllowed_passesRequestSetting() throws Exception {
         when(aiModelCatalog.resolve(null, null))
-                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"));
+                .thenReturn(new AiModelCatalog.AiModel("openai", "gpt-5-nano", "GPT-5 nano"));
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID))
                 .thenReturn(new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null));
         QueryRun run = QueryRun.pending(
-                "query_abc123", WORKSPACE_ID, SESSION_ID, "openai", "gpt-4.1-mini", true, "질문", Instant.now());
+                "query_abc123", WORKSPACE_ID, SESSION_ID, "openai", "gpt-5-nano", true, "질문", Instant.now());
         when(queryRunService.start(WORKSPACE_ID, USER_ID, SESSION_ID, "질문",
-                "openai", "gpt-4.1-mini", true)).thenReturn(run);
+                "openai", "gpt-5-nano", true)).thenReturn(run);
 
         mockMvc.perform(post(basePath() + "/query/runs")
                         .header("Authorization", bearerToken())
@@ -168,6 +168,6 @@ class QueryControllerTest {
                 .andExpect(status().isAccepted());
 
         verify(queryRunService).start(
-                WORKSPACE_ID, USER_ID, SESSION_ID, "질문", "openai", "gpt-4.1-mini", true);
+                WORKSPACE_ID, USER_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
     }
 }

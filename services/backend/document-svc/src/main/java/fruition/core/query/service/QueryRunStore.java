@@ -55,7 +55,7 @@ public class QueryRunStore {
     }
 
     public QueryRun create(String workspaceId, String sessionId, String question) {
-        return create(workspaceId, sessionId, "openai", "gpt-4.1-mini", false, question);
+        return create(workspaceId, sessionId, "openai", "gpt-5-nano", false, question);
     }
 
     public Optional<QueryRun> find(String requestId) {

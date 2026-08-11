@@ -31,24 +31,24 @@ class WorkspaceAiModelSettingsControllerTest {
     @Test
     void get_memberCanReadSetting() {
         when(client.get("ws_1")).thenReturn(
-                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-4.1-mini"));
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
 
         var response = controller.get("user_1", "ws_1");
 
         verify(accessGuard).requireMember("ws_1", "user_1");
-        assertThat(response.getBody().ingestLint().model()).isEqualTo("gpt-4.1-mini");
+        assertThat(response.getBody().ingestLint().model()).isEqualTo("gpt-5-nano");
     }
 
     @Test
     void update_ownerCanChangeSetting() {
         when(accessGuard.getRole("ws_1", "owner_1")).thenReturn("OWNER");
-        when(client.update("ws_1", "claude", "claude-sonnet-5")).thenReturn(
-                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-sonnet-5"));
+        when(client.update("ws_1", "claude", "claude-3-5-haiku-20241022")).thenReturn(
+                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-3-5-haiku-20241022"));
 
         var response = controller.update("owner_1", "ws_1",
                 new WorkspaceAiModelSettingsController.SettingsRequest(
                         new WorkspaceAiModelSettingsController.AiModelSelection(
-                                "claude", "claude-sonnet-5")));
+                                "claude", "claude-3-5-haiku-20241022")));
 
         assertThat(response.getBody().ingestLint().provider()).isEqualTo("claude");
     }
@@ -59,7 +59,7 @@ class WorkspaceAiModelSettingsControllerTest {
         when(accessGuard.getRole("ws_1", "other_1")).thenReturn("NONE");
 
         var request = new WorkspaceAiModelSettingsController.SettingsRequest(
-                new WorkspaceAiModelSettingsController.AiModelSelection("openai", "gpt-4.1-mini"));
+                new WorkspaceAiModelSettingsController.AiModelSelection("openai", "gpt-5-nano"));
         assertThatThrownBy(() -> controller.update("member_1", "ws_1", request))
                 .isInstanceOf(WorkspaceAiModelForbiddenException.class);
         assertThatThrownBy(() -> controller.update("other_1", "ws_1", request))

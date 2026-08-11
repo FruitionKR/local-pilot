@@ -41,10 +41,10 @@ class QueryRunServiceTest {
     void start_createsPendingMessagesAndCommand() {
         QueryRun pending = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123",
                 "질문", Instant.parse("2026-06-20T10:00:00Z"));
-        when(queryRunStore.create("ws_abc123", "session_abc123", "openai", "gpt-4.1-mini", "질문"))
+        when(queryRunStore.create("ws_abc123", "session_abc123", "openai", "gpt-5-nano", "질문"))
                 .thenReturn(pending);
         when(queryService.prepareMessages("session_abc123", "질문", "query_abc123",
-                "openai", "gpt-4.1-mini"))
+                "openai", "gpt-5-nano"))
                 .thenReturn(new QueryService.QueryMessageContext(
                         "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt()));
 
@@ -58,7 +58,8 @@ class QueryRunServiceTest {
         ArgumentCaptor<AiCommandOutbox> outbox = ArgumentCaptor.forClass(AiCommandOutbox.class);
         verify(outboxRepository).save(outbox.capture());
         assertThat(outbox.getValue().getPayload())
-                .contains("\"model\":\"gpt-4.1-mini\"", "\"allow_web_search\":false");
+                .contains("\"provider\":\"openai\"", "\"model\":\"gpt-5-nano\"",
+                        "\"allow_web_search\":false");
     }
 
 }

@@ -47,14 +47,8 @@ def main() -> None:
             connection,
             serde=JsonPlusSerializer(allowed_msgpack_modules=()),
         )
-        worker = AgentWorker(
-            repository=repository,
-            run_repository=PostgresAgentRunRepository(),
-            tool_gateway=build_backend_tool_gateway(),
-            plan_generator=build_plan_generator(),
-            execution_decider=build_execution_decider(),
-            checkpointer=checkpointer,
-        )
+        run_repository = PostgresAgentRunRepository()
+        tool_gateway = build_backend_tool_gateway()
         worker_id = os.environ.get("AGENT_WORKER_ID", f"agent-worker-{uuid4()}")
         poll_seconds = float(os.environ.get("AGENT_WORKER_POLL_SECONDS", "1"))
         next_cleanup_at = 0.0
@@ -69,6 +63,24 @@ def main() -> None:
             if job is None:
                 time.sleep(poll_seconds)
                 continue
+            context = repository.load_context(job.run_id)
+            if context.run.provider is None or context.run.model is None:
+                repository.fail(job, "missing_llm_selection")
+                continue
+            worker = AgentWorker(
+                repository=repository,
+                run_repository=run_repository,
+                tool_gateway=tool_gateway,
+                plan_generator=build_plan_generator(
+                    provider=context.run.provider,
+                    model=context.run.model,
+                ),
+                execution_decider=build_execution_decider(
+                    provider=context.run.provider,
+                    model=context.run.model,
+                ),
+                checkpointer=checkpointer,
+            )
             worker.process(job)
 
 

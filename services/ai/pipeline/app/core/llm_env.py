@@ -1,18 +1,25 @@
+from __future__ import annotations
+
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 
-SUPPORTED_LLM_PROVIDERS = ("openai", "gemini", "claude", "upstage", "generic")
+SUPPORTED_LLM_PROVIDERS = ("openai", "gemini", "claude")
+SUPPORTED_LLM_MODELS = {
+    "openai": "gpt-5-nano",
+    "gemini": "gemini-2.5-flash-lite",
+    "claude": "claude-3-5-haiku-20241022",
+}
 _PROVIDER_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "claude": "https://api.anthropic.com/v1",
-    "upstage": "https://api.upstage.ai/v1",
-    "generic": "https://api.openai.com/v1",
 }
-_PROVIDER_DEFAULT_MODELS = {
-    "upstage": "solar-pro2",
+_PROVIDER_API_KEY_ENVS = {
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
 }
 
 
@@ -25,16 +32,44 @@ class LlmProviderDefaults:
     model: str | None
 
 
+def resolve_llm_selection(provider: str | None, model: str | None) -> tuple[str, str]:
+    if (provider is None) != (model is None):
+        raise ValueError("provider and model must be provided together")
+    if provider is None or model is None:
+        raise ValueError("provider and model are required")
+    resolved_provider = resolve_llm_provider(provider)
+    resolved_model = model.strip()
+    if resolved_model != SUPPORTED_LLM_MODELS[resolved_provider]:
+        raise ValueError(
+            f"Unsupported model for {resolved_provider}: {resolved_model}. "
+            f"Expected {SUPPORTED_LLM_MODELS[resolved_provider]}"
+        )
+    return resolved_provider, resolved_model
+
+
 def resolve_llm_provider(provider: str | None = None) -> str:
-    resolved = (provider or os.environ.get("LLM_PROVIDER") or "upstage").strip().lower()
+    resolved = (provider or "openai").strip().lower()
     if resolved not in SUPPORTED_LLM_PROVIDERS:
         supported = ", ".join(SUPPORTED_LLM_PROVIDERS)
-        raise ValueError(f"Unsupported LLM_PROVIDER: {resolved}. Expected one of: {supported}")
+        raise ValueError(f"Unsupported provider: {resolved}. Expected one of: {supported}")
     return resolved
 
 
 def provider_base_url(provider: str | None = None) -> str:
     return _PROVIDER_BASE_URLS[resolve_llm_provider(provider)]
+
+
+def provider_api_key_env(provider: str | None = None) -> str:
+    return _PROVIDER_API_KEY_ENVS[resolve_llm_provider(provider)]
+
+
+def inference_profile(provider: str, model: str) -> dict[str, str]:
+    resolved_provider, resolved_model = resolve_llm_selection(provider, model)
+    if resolved_provider == "openai":
+        return {"reasoning_effort": "minimal"}
+    if resolved_provider == "gemini":
+        return {"reasoning_effort": "low"}
+    return {}
 
 
 def provider_api_endpoint(
@@ -54,52 +89,33 @@ def resolve_llm_provider_defaults(
     model: str | None = None,
 ) -> LlmProviderDefaults:
     resolved_provider = resolve_llm_provider(provider)
-    resolved_key_env = api_key_env or "LLM_API_KEY"
+    resolved_key_env = provider_api_key_env(resolved_provider)
+    if api_key_env and api_key_env != resolved_key_env:
+        raise ValueError(f"API key env is fixed to {resolved_key_env}")
+    if base_url and base_url != provider_base_url(resolved_provider):
+        raise ValueError("Provider base URL is fixed")
+    if model is not None:
+        _, model = resolve_llm_selection(resolved_provider, model)
     resolved_key = api_key or os.environ.get(resolved_key_env)
-    resolved_model = (
-        model
-        or os.environ.get("LLM_MODEL")
-        or _PROVIDER_DEFAULT_MODELS.get(resolved_provider)
-    )
     return LlmProviderDefaults(
         provider=resolved_provider,
-        base_url=base_url
-        or os.environ.get("LLM_BASE_URL")
-        or provider_base_url(resolved_provider),
+        base_url=provider_base_url(resolved_provider),
         api_key_env=resolved_key_env,
         api_key=resolved_key,
-        model=resolved_model,
+        model=model,
     )
 
 
-def chat_completions_endpoint(
-    *,
-    endpoint_env_names: Iterable[str],
-    base_url_env_names: Iterable[str],
-    default_base_url: str,
-    provider: str | None = None,
-) -> str:
-    endpoint = first_env(endpoint_env_names)
-    if endpoint:
-        return endpoint
-    base_url = first_env(base_url_env_names) or default_base_url
-    return provider_api_endpoint(base_url, provider)
+def chat_completions_endpoint(*, provider: str | None = None) -> str:
+    return provider_api_endpoint(provider_base_url(provider), provider)
 
 
 def api_key_from_env(
     *,
-    key_env_name: str,
-    key_env_names: Iterable[str],
+    provider: str | None = None,
     strip: bool = False,
 ) -> str | None:
-    key_env = os.environ.get(key_env_name)
-    if key_env and os.environ.get(key_env):
-        return _normalize(os.environ[key_env], strip)
-    return first_env(key_env_names, strip=strip)
-
-
-def model_from_env(env_names: Iterable[str], default: str) -> str:
-    return first_env(env_names) or default
+    return first_env((provider_api_key_env(provider),), strip=strip)
 
 
 def first_env(env_names: Iterable[str], *, strip: bool = False) -> str | None:

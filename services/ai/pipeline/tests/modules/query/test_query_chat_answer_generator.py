@@ -42,19 +42,19 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertIn("citation markers like [1]", client.calls[0][0])
         self.assertEqual(client.calls[0][0], QUERY_ANSWER_SYSTEM_PROMPT)
 
-    def test_runtime_model_overrides_environment_model(self) -> None:
+    def test_request_snapshot_overrides_legacy_environment_model(self) -> None:
         with patch.dict(
             "os.environ",
             {
-                "LLM_PROVIDER": "claude",
-                "LLM_API_KEY": "secret",
+                "GEMINI_API_KEY": "secret",
+                "LLM_API_KEY": "legacy-key",
                 "LLM_MODEL": "environment-model",
             },
             clear=True,
         ):
-            config = _config_from_env(provider="gemini", model="runtime-model")
+            config = _config_from_env(provider="gemini", model="gemini-2.5-flash-lite")
 
-        self.assertEqual(config.model, "runtime-model")
+        self.assertEqual(config.model, "gemini-2.5-flash-lite")
         self.assertEqual(config.endpoint, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         self.assertEqual(config.api_key, "secret")
         self.assertEqual(config.provider, "gemini")
@@ -97,12 +97,12 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         self.assertIn("기존에는 Persistent Wiki", client.calls[0][1])
         self.assertIn("사용자: RAG와 비교해줘", client.calls[0][1])
 
-    def test_conversation_summarizer_preserves_provider_temperature(self) -> None:
+    def test_conversation_summarizer_uses_request_snapshot(self) -> None:
         config = ChatClientConfig(
             endpoint="https://example.test/chat",
             api_key="test-key",
             model="gpt-5-nano",
-            temperature=1.0,
+            provider="openai",
         )
 
         with patch(
@@ -111,7 +111,7 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         ) as config_from_env:
             build_query_conversation_summarizer(provider="openai", model="gpt-5-nano")
 
-        self.assertEqual(config.temperature, 1.0)
+        self.assertEqual(config.provider, "openai")
         config_from_env.assert_called_once_with(provider="openai", model="gpt-5-nano")
 
 

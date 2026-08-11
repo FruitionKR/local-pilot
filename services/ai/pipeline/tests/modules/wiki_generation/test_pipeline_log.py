@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,3 +60,27 @@ def test_emit_propagates_inactive_pipeline_signal(tmp_path: Path) -> None:
 
     with pytest.raises(PipelineRunCancelledError):
         log.emit("변환", "문서를 변환했습니다.")
+
+
+def test_emit_excludes_private_llm_fields_from_callback_payload(tmp_path: Path) -> None:
+    log = PipelineLog(tmp_path / "pipeline.log", callback_url="http://backend/events")
+
+    with patch("urllib.request.urlopen") as urlopen:
+        log.emit(
+            "API 설정",
+            "클라이언트를 준비했습니다.",
+            {
+                "provider": "gemini",
+                "model": "gemini-2.5-flash-lite",
+                "endpoint": "https://provider.example/v1",
+                "base_url": "https://provider.example",
+                "api_key": "secret",
+                "token": "secret-token",
+            },
+        )
+
+    event = json.loads(urlopen.call_args.args[0].data)
+    assert event["data"] == {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash-lite",
+    }

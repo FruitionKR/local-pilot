@@ -10,9 +10,7 @@ from app.modules.document_evaluation.infrastructure.chat_completions_document_ev
 
 
 ENV_NAMES = (
-    "DOCUMENT_EVALUATOR_LLM_ENDPOINT",
-    "DOCUMENT_EVALUATOR_LLM_API_KEY",
-    "DOCUMENT_EVALUATOR_LLM_MODEL",
+    "OPENAI_API_KEY",
 )
 
 
@@ -25,13 +23,20 @@ class OptionalDocumentEvaluatorTest(unittest.TestCase):
 
         self.assertIsNone(evaluator)
 
-    def test_rejects_partial_api_configuration(self) -> None:
+    def test_uses_fixed_openai_configuration(self) -> None:
         clean_env = {name: "" for name in ENV_NAMES}
-        clean_env["DOCUMENT_EVALUATOR_LLM_ENDPOINT"] = "https://example.test/v1/chat/completions"
+        clean_env["OPENAI_API_KEY"] = "openai-key"
 
         with mock.patch.dict(os.environ, clean_env):
-            with self.assertRaisesRegex(RuntimeError, "모두 설정"):
-                build_optional_document_evaluator()
+            evaluator = build_optional_document_evaluator()
+
+        assert evaluator is not None
+        self.assertEqual(evaluator._client.provider, "openai")  # type: ignore[attr-defined]
+        self.assertEqual(evaluator._client.config.model, "gpt-5-nano")  # type: ignore[attr-defined]
+        self.assertEqual(  # type: ignore[attr-defined]
+            evaluator._client.config.endpoint,
+            "https://api.openai.com/v1/chat/completions",
+        )
 
 
 if __name__ == "__main__":
