@@ -68,6 +68,31 @@
 | POST | `/documents/{id}/restore` | 복구(역할별 최상위 마지막 위치) |
 | GET | `/documents/{id}/export` | 최신 편집 Markdown 다운로드(text/markdown attachment). 관리 이미지를 참조하는 문서는 `.md`+`assets/`를 담은 ZIP(application/zip)으로 반환(이미지 100개·합계 100MB 초과 시 오류) |
 
+문서 폴더·탐색 API:
+
+| Method | Path | 설명 |
+|---|---|---|
+| PATCH | `/documents/{document_id}/position` | 문서를 대상 폴더와 정렬 위치로 이동(`folder_id`, `position`, `base_version`). `Idempotency-Key`로 멱등 처리 |
+
+베이스 `/api/workspaces/{workspace_id}/folders`:
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/` | 최상위 또는 지정한 상위 폴더 아래에 폴더 생성(`name`, 선택적 `parent_folder_id`) |
+| PATCH | `/{folder_id}` | 폴더 이름 변경(`name`, `base_version`) |
+| PATCH | `/{folder_id}/position` | 폴더를 대상 상위 폴더와 정렬 위치로 이동. 자기 자신·하위 폴더로는 이동 불가 |
+| GET | `/{folder_id}/children` | 폴더 바로 아래 하위 폴더·문서를 정렬 순서로 조회 |
+| DELETE | `/{folder_id}` | 폴더와 하위 항목을 휴지통 상태로 전환(`base_version`) |
+| POST | `/{folder_id}/restore` | 삭제된 폴더와 하위 항목을 복구해 유효한 탐색 위치에 배치(`base_version`) |
+
+베이스 `/api/workspaces/{workspace_id}/navigation`:
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/` | 워크스페이스 최상위 폴더·문서를 정렬 순서로 조회 |
+| GET | `/breadcrumb?folder_id=...` 또는 `?document_id=...` | 폴더 또는 문서까지의 상위 폴더 경로 조회. 두 파라미터는 상호 배타적 |
+| GET | `/search?query=` | 폴더 이름·문서 파일명을 검색하고 계층 경로를 반환 |
+
 문서 이미지 asset(베이스 `/api/workspaces/{workspace_id}/assets`):
 
 | Method | Path | 설명 |
@@ -156,6 +181,17 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | PATCH | `/wiki/pages/{id}/rename` | 제목 변경. `update_slug=true`면 slug 재생성(충돌 409 `WIKI_PAGE_SLUG_CONFLICT`) |
 
 원문: docs/backlog/spec/api/wiki.md
+
+## Wiki Schema
+
+베이스 `/api/workspaces/{workspace_id}/wiki-schema`. Wiki 생성 규칙을 저장 전 미리보고 초안으로 저장하며, 활성화 요청과 활성 Schema 조회를 제공한다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/preview` | Schema 규칙을 저장하지 않고 적용해 예상 Wiki 구조를 조회(`rawMarkdown`) |
+| POST | `/drafts` | Wiki 생성 규칙 초안 저장(`rawMarkdown`, 선택적 `name`) |
+| POST | `/{schema_id}/activate` | 선택한 Schema ID의 활성화를 요청 |
+| GET | `/active` | 활성 Wiki Schema 조회(없으면 `null`을 포함한 200 응답) |
 
 ## AI 작업 로그
 

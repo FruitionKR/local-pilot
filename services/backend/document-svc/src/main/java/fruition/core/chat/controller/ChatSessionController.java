@@ -85,7 +85,7 @@ public class ChatSessionController {
         return ResponseEntity.ok(chatSessionService.list(workspaceId, userId));
     }
 
-    @Operation(summary = "채팅 세션 삭제")
+    @Operation(summary = "채팅 세션 삭제", description = "워크스페이스에서 지정한 채팅 세션과 해당 세션의 메시지 기록을 삭제합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "삭제 성공"),
         @ApiResponse(responseCode = "404", description = "세션 또는 워크스페이스를 찾을 수 없음",

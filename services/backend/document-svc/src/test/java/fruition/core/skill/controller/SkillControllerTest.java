@@ -14,6 +14,7 @@ import fruition.core.skill.service.SkillService;
 import fruition.shared.http.PipelineClientFactory;
 import fruition.shared.security.JwtAuthenticationFilter;
 import fruition.shared.security.JwtTokenProvider;
+import io.swagger.v3.core.converter.ModelConverters;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -35,6 +36,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @WebMvcTest({SkillController.class, SkillReferenceController.class})
 @Import({CoreExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
@@ -148,6 +150,36 @@ class SkillControllerTest {
         } finally {
             pipeline.stop(0);
         }
+    }
+
+    @Test
+    void swaggerSchemas_exposeSkillProperties() throws Exception {
+        var skill = ModelConverters.getInstance().read(schemaClass("SkillResponseSchema"))
+                .get("SkillResponse");
+        var version = ModelConverters.getInstance().read(schemaClass("SkillVersionResponseSchema"))
+                .get("SkillVersionResponse");
+
+        assertThat(skill.getProperties()).containsKeys("id", "workspace_id", "enabled_version", "latest_version");
+        assertThat(version.getProperties()).containsKeys("capabilities", "allowed_tools", "lint_result", "status");
+        assertThat(skill.getRequired()).contains("id", "enabled_version", "latest_version");
+        assertThat(version.getRequired()).containsExactlyInAnyOrder("id", "version", "name", "description",
+                "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("workspace_id")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getAllOf())
+                .singleElement()
+                .satisfies(schema -> assertThat(schema.get$ref()).isEqualTo("#/components/schemas/SkillVersionResponse"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("latest_version")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("latest_version")).getAllOf())
+                .singleElement()
+                .satisfies(schema -> assertThat(schema.get$ref()).isEqualTo("#/components/schemas/SkillVersionResponse"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("capabilities")).getItems().getType()).isEqualTo("string");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("allowed_tools")).getItems().getType()).isEqualTo("string");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("lint_result")).getType()).isEqualTo("object");
+    }
+
+    private Class<?> schemaClass(String name) throws ClassNotFoundException {
+        return Class.forName(SkillController.class.getName() + "$" + name);
     }
 
     private String bearer() {

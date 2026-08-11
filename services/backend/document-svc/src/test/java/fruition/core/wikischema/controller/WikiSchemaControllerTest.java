@@ -8,6 +8,7 @@ import fruition.core.CoreExceptionHandler;
 import fruition.core.wikischema.dto.WikiSchemaDraftRequest;
 import fruition.core.wikischema.dto.WikiSchemaPreviewRequest;
 import fruition.core.wikischema.service.WikiSchemaService;
+import io.swagger.v3.core.converter.ModelConverters;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -23,6 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @WebMvcTest(WikiSchemaController.class)
 @Import({CoreExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
@@ -100,6 +102,38 @@ class WikiSchemaControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new WikiSchemaPreviewRequest("# 원문"))))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void swaggerSchemas_exposeWikiSchemaProperties() throws Exception {
+        var preview = ModelConverters.getInstance().read(schemaClass("WikiSchemaPreviewResponseSchema"))
+                .get("WikiSchemaPreviewResponse");
+        var response = ModelConverters.getInstance().read(schemaClass("WikiSchemaResponseSchema"))
+                .get("WikiSchemaResponse");
+        var fragments = ModelConverters.getInstance().read(schemaClass("WikiSchemaFragmentsSchema"))
+                .get("WikiSchemaFragmentsResponse");
+        var issue = ModelConverters.getInstance().read(schemaClass("WikiSchemaIssueSchema"))
+                .get("WikiSchemaIssueResponse");
+
+        assertThat(preview.getProperties()).containsKeys("fragments", "issues", "preview_markdown", "has_blocked_issues");
+        assertThat(response.getProperties()).containsKeys("id", "fragments", "issues", "created_at", "activated_at");
+        assertThat(fragments.getProperties()).containsKeys("global_markdown", "query_markdown", "ingest_markdown", "edit_markdown", "concept_markdown", "template_markdown");
+        assertThat(issue.getProperties()).containsKeys("severity", "category", "text", "reason", "section");
+        assertThat(response.getRequired()).contains("id", "fragments", "issues");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) preview.getProperties().get("fragments")).get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaFragmentsResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) preview.getProperties().get("issues")).getItems().get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaIssueResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("fragments")).get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaFragmentsResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("issues")).getItems().get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaIssueResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("created_at")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) issue.getProperties().get("section")).getNullable()).isTrue();
+    }
+
+    private Class<?> schemaClass(String name) throws ClassNotFoundException {
+        return Class.forName(WikiSchemaController.class.getName() + "$" + name);
     }
 
     private String bearer() {
