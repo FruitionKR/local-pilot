@@ -72,7 +72,7 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| PATCH | `/{id}/position` | 문서를 대상 폴더와 정렬 위치로 이동(`folder_id`, `position`, `base_version`). `Idempotency-Key`로 멱등 처리 |
+| PATCH | `/documents/{document_id}/position` | 문서를 대상 폴더와 정렬 위치로 이동(`folder_id`, `position`, `base_version`). `Idempotency-Key`로 멱등 처리 |
 
 베이스 `/api/workspaces/{workspace_id}/folders`:
 

@@ -5,6 +5,7 @@ import fruition.shared.util.ErrorResponse;
 import fruition.core.wikischema.dto.WikiSchemaDraftRequest;
 import fruition.core.wikischema.dto.WikiSchemaPreviewRequest;
 import fruition.core.wikischema.service.WikiSchemaService;
+import io.swagger.v3.oas.annotations.StringToClassMapItem;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -36,7 +37,12 @@ public class WikiSchemaController {
     @Operation(summary = "Wiki Schema 미리보기", description = "Schema 규칙을 저장하지 않고 적용해 예상 Wiki 구조를 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "미리보기 생성 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = {"fragments", "issues", "preview_markdown", "has_blocked_issues"}, properties = {
+                @StringToClassMapItem(key = "fragments", value = java.util.Map.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class),
+                @StringToClassMapItem(key = "preview_markdown", value = String.class),
+                @StringToClassMapItem(key = "has_blocked_issues", value = Boolean.class)
+            }))),
         @ApiResponse(responseCode = "400", description = "잘못된 Schema 또는 입력",
             content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
@@ -57,7 +63,9 @@ public class WikiSchemaController {
     @Operation(summary = "Wiki Schema 초안 생성", description = "검토할 Wiki 생성 규칙을 초안 상태로 저장합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "초안 생성 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = "wiki_schema", properties = {
+                @StringToClassMapItem(key = "wiki_schema", value = java.util.Map.class)
+            }))),
         @ApiResponse(responseCode = "400", description = "잘못된 Schema 정의",
             content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
@@ -78,7 +86,22 @@ public class WikiSchemaController {
     @Operation(summary = "Wiki Schema 활성화", description = "선택한 Wiki Schema ID의 활성화를 요청합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "활성화 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "workspace_id", "user_id", "name", "raw_markdown", "fragments", "issues", "preview_markdown", "has_blocked_issues", "status", "schema_version"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "user_id", value = String.class),
+                @StringToClassMapItem(key = "name", value = String.class),
+                @StringToClassMapItem(key = "raw_markdown", value = String.class),
+                @StringToClassMapItem(key = "fragments", value = java.util.Map.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class),
+                @StringToClassMapItem(key = "preview_markdown", value = String.class),
+                @StringToClassMapItem(key = "has_blocked_issues", value = Boolean.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "schema_version", value = String.class),
+                @StringToClassMapItem(key = "created_at", value = String.class),
+                @StringToClassMapItem(key = "updated_at", value = String.class),
+                @StringToClassMapItem(key = "activated_at", value = String.class)
+            }))),
         @ApiResponse(responseCode = "404", description = "Schema 또는 워크스페이스를 찾을 수 없음",
             content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
         @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
@@ -96,7 +119,22 @@ public class WikiSchemaController {
     @Operation(summary = "활성 Wiki Schema 조회", description = "활성 Schema가 없으면 null을 포함한 200 응답을 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "활성 Schema 조회 성공(null 가능)",
-            content = @Content(schema = @Schema(implementation = JsonNode.class, nullable = true))),
+            content = @Content(schema = @Schema(type = "object", nullable = true, requiredProperties = {"id", "workspace_id", "user_id", "name", "raw_markdown", "fragments", "issues", "preview_markdown", "has_blocked_issues", "status", "schema_version"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "user_id", value = String.class),
+                @StringToClassMapItem(key = "name", value = String.class),
+                @StringToClassMapItem(key = "raw_markdown", value = String.class),
+                @StringToClassMapItem(key = "fragments", value = java.util.Map.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class),
+                @StringToClassMapItem(key = "preview_markdown", value = String.class),
+                @StringToClassMapItem(key = "has_blocked_issues", value = Boolean.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "schema_version", value = String.class),
+                @StringToClassMapItem(key = "created_at", value = String.class),
+                @StringToClassMapItem(key = "updated_at", value = String.class),
+                @StringToClassMapItem(key = "activated_at", value = String.class)
+            }))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
             content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
         @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",

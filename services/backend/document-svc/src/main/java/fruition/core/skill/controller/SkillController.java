@@ -6,6 +6,8 @@ import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.dto.SkillPublishRequest;
 import fruition.core.skill.dto.SkillUpdateRequest;
 import fruition.core.skill.service.SkillService;
+import io.swagger.v3.oas.annotations.StringToClassMapItem;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -38,7 +40,17 @@ public class SkillController {
     @Operation(summary = "Skill 초안 작성", description = "자연어 요구를 바탕으로 저장 전 Skill 초안을 생성합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "초안 작성 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = "status", properties = {
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "question", value = String.class),
+                @StringToClassMapItem(key = "skill_id", value = String.class),
+                @StringToClassMapItem(key = "version_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "name", value = String.class),
+                @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "skill_markdown", value = String.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class)
+            }))),
         @ApiResponse(responseCode = "400", description = "잘못된 요청",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스 또는 참조 문서를 찾을 수 없음",
@@ -65,7 +77,17 @@ public class SkillController {
     @Operation(summary = "Skill 게시", description = "작성된 Skill 정의를 검토 후 게시합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "게시 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = "status", properties = {
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "question", value = String.class),
+                @StringToClassMapItem(key = "skill_id", value = String.class),
+                @StringToClassMapItem(key = "version_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "name", value = String.class),
+                @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "skill_markdown", value = String.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class)
+            }))),
         @ApiResponse(responseCode = "400", description = "잘못된 Skill 정의",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스 또는 참조 문서를 찾을 수 없음",
@@ -92,7 +114,16 @@ public class SkillController {
     @Operation(summary = "Skill 목록 조회", description = "현재 사용자가 사용할 수 있는 워크스페이스 Skill 목록을 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "목록 조회 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(array = @ArraySchema(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "owner_user_id", value = String.class),
+                @StringToClassMapItem(key = "slug", value = String.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
+                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
+            })))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -112,7 +143,16 @@ public class SkillController {
     @Operation(summary = "Skill 상세 조회", description = "Skill의 현재 정의와 실행 설정을 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "상세 조회 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "owner_user_id", value = String.class),
+                @StringToClassMapItem(key = "slug", value = String.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
+                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
+            }))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -134,7 +174,17 @@ public class SkillController {
     @Operation(summary = "Skill 수정", description = "Skill의 정의를 수정합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "수정 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = "status", properties = {
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "question", value = String.class),
+                @StringToClassMapItem(key = "skill_id", value = String.class),
+                @StringToClassMapItem(key = "version_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "name", value = String.class),
+                @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "skill_markdown", value = String.class),
+                @StringToClassMapItem(key = "issues", value = java.util.List.class)
+            }))),
         @ApiResponse(responseCode = "400", description = "잘못된 Skill 정의",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
@@ -163,7 +213,16 @@ public class SkillController {
     @Operation(summary = "Skill 활성화", description = "Skill을 Agent 실행 대상에 포함합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "활성화 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "owner_user_id", value = String.class),
+                @StringToClassMapItem(key = "slug", value = String.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
+                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
+            }))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -185,7 +244,16 @@ public class SkillController {
     @Operation(summary = "Skill 비활성화", description = "Skill을 Agent 실행 대상에서 제외합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "비활성화 성공",
-            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
+                @StringToClassMapItem(key = "id", value = String.class),
+                @StringToClassMapItem(key = "workspace_id", value = String.class),
+                @StringToClassMapItem(key = "scope_type", value = String.class),
+                @StringToClassMapItem(key = "owner_user_id", value = String.class),
+                @StringToClassMapItem(key = "slug", value = String.class),
+                @StringToClassMapItem(key = "status", value = String.class),
+                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
+                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
+            }))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
