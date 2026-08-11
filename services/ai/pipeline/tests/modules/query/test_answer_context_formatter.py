@@ -50,6 +50,8 @@ class AnswerContextFormatterTest(unittest.TestCase):
         self.assertIn("# Evidence Snippets By Relevance", context)
         self.assertIn("This evidence text is inten...", context)
         self.assertIn("- titles: Source A", context)
+        self.assertIn("answer that supported part first", context)
+        self.assertIn("provided internal documents do not support", context)
 
     def test_adds_web_fallback_policy_for_web_answer_mode(self) -> None:
         context = AnswerContextFormatter().format(

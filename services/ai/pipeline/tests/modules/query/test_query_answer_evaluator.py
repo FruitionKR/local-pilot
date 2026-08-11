@@ -29,3 +29,36 @@ def test_internal_supported_keeps_non_blocking_warnings() -> None:
 
     assert evaluation.route == "internal_supported"
     assert evaluation.warnings == ["표현을 더 간결하게 만들 수 있습니다."]
+
+
+def test_web_route_becomes_internal_revision_when_web_search_is_unavailable() -> None:
+    evaluation = _normalize_evaluation(
+        {
+            "route": "internal_web_augmented",
+            "reason": "내부 문서가 질문의 일부만 설명합니다.",
+            "feedback": "",
+            "web_query": "외부 구현 방법",
+        },
+        web_search_available=False,
+        has_internal_evidence=True,
+    )
+
+    assert evaluation.route == "revise_answer"
+    assert "내부 문서가 직접 뒷받침하는 내용만" in evaluation.feedback
+    assert evaluation.web_query is None
+
+
+def test_web_route_becomes_unsupported_without_internal_evidence_or_web_search() -> None:
+    evaluation = _normalize_evaluation(
+        {
+            "route": "web_fallback",
+            "reason": "내부 근거가 없습니다.",
+            "web_query": "외부 질문",
+        },
+        web_search_available=False,
+        has_internal_evidence=False,
+    )
+
+    assert evaluation.route == "unsupported"
+    assert evaluation.feedback == ""
+    assert evaluation.web_query is None

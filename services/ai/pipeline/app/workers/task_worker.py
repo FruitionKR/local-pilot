@@ -59,12 +59,14 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
         "user_id",
         "session_id",
         "question",
+        "provider",
         "model",
         "allow_web_search",
     )
     if not isinstance(command["allow_web_search"], bool):
         raise ValueError("allow_web_search must be a boolean")
     result = build_answer_query_use_case(
+        provider=str(command["provider"]).strip(),
         model=str(command["model"]).strip(),
         allow_web_search=command["allow_web_search"],
     ).execute(

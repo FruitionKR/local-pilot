@@ -10,7 +10,7 @@
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - `Idempotency-Key`가 적용된 API는 1~255자 키를 사용한다. 실행 선점 lease는 15분이고, 완료 응답은 완료 시점부터 24시간 유지한다. 같은 사용자·endpoint·키의 같은 요청이 완료되면 저장된 응답을 재생하고, 다른 payload는 409 `IDEMPOTENCY_CONFLICT`, lease 내 처리 중인 동시 요청은 409 `IDEMPOTENCY_IN_PROGRESS`로 거절한다. 실행이 실패하거나 lease가 만료되면 같은 키로 재시도할 수 있다.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
-- Query·ingest·lint Kafka command는 backend DB에서 실행 시 선택한 `model`을 전달하며 ai-svc는 이를 해당 실행에만 적용한다. Provider·API key·base URL은 ai-svc env 설정을 사용한다. Query command의 필수 boolean `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하지만, 실제 검색 여부는 기존 evaluator·내부 관련도 fallback 정책이 결정한다. `LLM_API_KEY`·`LLM_BASE_URL`·`TAVILY_API_KEY`는 command에 넣지 않고 ai-svc secret env에서 읽는다.
+- Query·ingest·lint Kafka command는 backend에서 실행 시 선택한 `provider`·`model` snapshot을 전달하며 ai-svc는 이를 해당 실행에만 적용한다. API key·base URL은 ai-svc env 설정을 사용한다. Query command의 필수 boolean `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하고 web route를 허용한다. `false`이면 내부 문서가 뒷받침하는 범위만 답하고 부족한 범위를 명시하며, 내부 근거가 전혀 없을 때만 unsupported로 처리한다. `LLM_API_KEY`·`LLM_BASE_URL`·`TAVILY_API_KEY`는 command에 넣지 않고 ai-svc secret env에서 읽는다.
 - 원문: docs/backlog/spec/api/00-common.md
 
 ## 인증

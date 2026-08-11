@@ -77,12 +77,13 @@ def chat_completions_endpoint(
     endpoint_env_names: Iterable[str],
     base_url_env_names: Iterable[str],
     default_base_url: str,
+    provider: str | None = None,
 ) -> str:
     endpoint = first_env(endpoint_env_names)
     if endpoint:
         return endpoint
     base_url = first_env(base_url_env_names) or default_base_url
-    return provider_api_endpoint(base_url)
+    return provider_api_endpoint(base_url, provider)
 
 
 def api_key_from_env(

@@ -70,11 +70,16 @@ class QueryAnswerEvaluator(QueryEvaluatorPort):
             ],
         }
         raw = self._client.complete_json(self._system_prompt, json.dumps(payload, ensure_ascii=False, indent=2))
-        return _normalize_evaluation(raw)
+        return _normalize_evaluation(
+            raw,
+            web_search_available=web_search_available,
+            has_internal_evidence=bool(context.evidence_snippets),
+        )
 
 
 def build_query_answer_evaluator(
     *,
+    provider: str | None = None,
     model: str | None = None,
 ) -> QueryEvaluatorPort | None:
     mode = os.environ.get("QUERY_EVALUATOR_MODE", "disabled").strip().lower()
@@ -85,7 +90,8 @@ def build_query_answer_evaluator(
     api_key = _api_key()
     if not api_key:
         return None
-    resolved_model = model or _model()
+    resolved_provider = resolve_llm_provider(provider)
+    resolved_model = model or _model(resolved_provider)
     if not resolved_model:
         return None
     prompt_path = Path(os.environ.get("QUERY_EVALUATOR_PROMPT", str(DEFAULT_QUERY_EVALUATOR_PROMPT)))
@@ -93,26 +99,44 @@ def build_query_answer_evaluator(
     return QueryAnswerEvaluator(
         ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=_endpoint(),
+                endpoint=_endpoint(resolved_provider),
                 api_key=api_key,
                 model=resolved_model,
                 temperature=_float_env("QUERY_EVALUATOR_TEMPERATURE", 0.0),
                 timeout_seconds=_int_env("QUERY_EVALUATOR_TIMEOUT_SECONDS", 180),
                 max_tokens=_optional_int_env("QUERY_EVALUATOR_MAX_TOKENS"),
                 json_mode=True,
+                provider=resolved_provider,
             )
         ),
         system_prompt=system_prompt,
     )
 
 
-def _normalize_evaluation(value: dict[str, Any]) -> QueryEvaluation:
+def _normalize_evaluation(
+    value: dict[str, Any],
+    *,
+    web_search_available: bool = True,
+    has_internal_evidence: bool = True,
+) -> QueryEvaluation:
     route = str(value.get("route") or "internal_supported").strip()
     if route not in ALLOWED_ROUTES:
         route = "internal_supported"
     feedback = str(value.get("feedback") or "").strip()
     if route == "internal_supported" and feedback:
         route = "revise_answer"
+    web_query = _optional_text(value.get("web_query"))
+    if not web_search_available and route in {"web_fallback", "internal_web_augmented"}:
+        web_query = None
+        if has_internal_evidence:
+            route = "revise_answer"
+            feedback = (
+                "웹 검색을 사용할 수 없습니다. 현재 내부 문서가 직접 뒷받침하는 내용만 먼저 답하고, "
+                "요청 중 확인할 수 없는 부분은 내부 문서에서 근거를 찾지 못했다고 명시하세요."
+            )
+        else:
+            route = "unsupported"
+            feedback = ""
     return QueryEvaluation(
         route=route,
         evidence_relevance=_bounded_float(value.get("evidence_relevance"), 0.0),
@@ -120,16 +144,17 @@ def _normalize_evaluation(value: dict[str, Any]) -> QueryEvaluation:
         unsupported_refusal_accuracy=_optional_bounded_float(value.get("unsupported_refusal_accuracy")),
         reason=str(value.get("reason") or ""),
         feedback=feedback,
-        web_query=_optional_text(value.get("web_query")),
+        web_query=web_query,
         warnings=[str(item).strip() for item in value.get("warnings", []) if str(item).strip()],
     )
 
 
-def _endpoint() -> str:
+def _endpoint(provider: str | None = None) -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("QUERY_EVALUATOR_ENDPOINT", "QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
         base_url_env_names=("QUERY_EVALUATOR_BASE_URL", "QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
+        default_base_url=provider_base_url(provider),
+        provider=provider,
     )
 
 
@@ -140,8 +165,8 @@ def _api_key() -> str | None:
     )
 
 
-def _model() -> str:
-    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+def _model(provider: str | None = None) -> str:
+    default = "solar-pro2" if resolve_llm_provider(provider) == "upstage" else ""
     return model_from_env(
         ("QUERY_EVALUATOR_MODEL", "QUERY_LLM_MODEL", "LLM_MODEL"),
         default,

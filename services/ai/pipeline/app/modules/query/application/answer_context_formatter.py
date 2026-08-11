@@ -102,8 +102,8 @@ class AnswerContextFormatter:
         else:
             output_policy.extend(
                 [
-                    "- If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported.",
-                    "- For unsupported questions, do not explain the answer from general knowledge; mention only that the provided evidence does not support it and, if useful, name the closest related evidence topic.",
+                    "- If the evidence supports only part of the question, answer that supported part first and then state specifically what the provided internal documents do not support.",
+                    "- If no evidence supports any useful part of the answer, do not answer from general knowledge; say that the provided internal documents do not support the question.",
                 ]
             )
         output_policy.append("")

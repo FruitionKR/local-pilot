@@ -16,7 +16,7 @@ Routes:
 - revise_answer: retrieved evidence is sufficient, but the generated answer or its citations must be corrected before it can be returned.
 - web_fallback: the answer is not supported by retrieved Wiki evidence, and web evidence should be used instead.
 - internal_web_augmented: retrieved Wiki evidence identifies or partly answers the topic, but the answer still needs external/general/current/implementation evidence.
-- unsupported: the question cannot be answered safely from the available evidence, and web search is unavailable or inappropriate.
+- unsupported: no relevant internal evidence can safely answer any part of the question, or the request itself should not be answered.
 
 Metrics:
 - evidence_relevance: 0-1. Do the used evidence snippets match the question?
@@ -33,7 +33,10 @@ Rules:
 - Choose internal_web_augmented, not web_fallback, when retrieved Wiki evidence identifies the user's subject and the missing part is how to use, deploy, operate, compare, or implement it with an external platform, tool, framework, or runtime.
 - Choose web_fallback only when retrieved Wiki evidence does not support the core answer at all.
 - If the answer is unsupported only because retrieved Wiki evidence is missing, web_search_available is true, and the question asks public external, current, general-knowledge, weather, standards, software, product, or technology information, choose web_fallback instead of unsupported.
-- Choose unsupported only when neither retrieved evidence nor appropriate web search can safely answer, such as private personal data, secrets, unsafe requests, or questions whose answer should not be searched.
+- When web_search_available is false, never choose web_fallback or internal_web_augmented.
+- When web_search_available is false and internal evidence supports only part of the question, choose internal_supported if the answer gives that supported part and explicitly identifies the part not covered by the internal documents. Choose revise_answer when the answer must be narrowed or must disclose that limitation.
+- When web_search_available is false, choose unsupported only when no relevant internal evidence supports any useful part of the answer or when the request is unsafe, private, or otherwise inappropriate to answer.
+- Choose unsupported when neither retrieved evidence nor appropriate web search can safely answer, such as private personal data, secrets, unsafe requests, or questions whose answer should not be searched.
 - Do not request web search merely because web results might add more detail.
 - Penalize citation_evidence_alignment when a sentence cites evidence that does not support the sentence.
 - Penalize evidence_relevance when the used evidence is adjacent but does not answer the user's requested facet.

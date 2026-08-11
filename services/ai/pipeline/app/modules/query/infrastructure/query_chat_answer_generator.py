@@ -31,8 +31,8 @@ Do not expose evidence lists, scores, path ids, page ids, page URLs, or internal
 Do not expose internal link type names or implementation labels unless the user explicitly asks for technical details.
 If the context includes a mode-specific answer policy, follow that policy over generic unsupported-answer guidance.
 If the evidence directly answers the question, answer naturally from that evidence.
-If the evidence does not contain a direct definition or explanation, say that the exact answer is not sufficiently supported.
-For unsupported questions, do not explain the answer from general knowledge; mention only that the provided evidence does not support it and, if useful, name the closest related evidence topic.
+If the evidence supports only part of the question, answer that supported part first and then state specifically what the provided internal documents do not support.
+If no evidence supports any useful part of the answer, do not answer from general knowledge; say that the provided internal documents do not support the question.
 Do not create examples, analogies, or fictional cases that are not present in the context.
 If an example is needed, use only entities or cases that appear in the evidence.
 Do not add information from outside the context.
@@ -110,49 +110,55 @@ class QueryConversationSummarizer(ConversationSummarizerPort):
 
 def build_query_chat_answer_generator(
     *,
+    provider: str | None = None,
     model: str | None = None,
 ) -> QueryChatAnswerGenerator:
     return QueryChatAnswerGenerator(
-        ChatCompletionsJsonClient(_config_from_env(model=model)),
+        ChatCompletionsJsonClient(_config_from_env(provider=provider, model=model)),
         schema_prompt_provider=get_active_schema_prompt,
     )
 
 
 def build_query_conversation_summarizer(
     *,
+    provider: str | None = None,
     model: str | None = None,
 ) -> QueryConversationSummarizer:
     return QueryConversationSummarizer(
-        ChatCompletionsJsonClient(_config_from_env(model=model)),
+        ChatCompletionsJsonClient(_config_from_env(provider=provider, model=model)),
     )
 
 
 def _config_from_env(
     *,
+    provider: str | None = None,
     model: str | None = None,
 ) -> ChatClientConfig:
+    resolved_provider = resolve_llm_provider(provider)
     api_key = _api_key()
     if not api_key:
         raise RuntimeError("Set QUERY_LLM_API_KEY or LLM_API_KEY before enabling query answer generation.")
-    resolved_model = model or _model()
+    resolved_model = model or _model(resolved_provider)
     if not resolved_model:
         raise RuntimeError("Set QUERY_LLM_MODEL or LLM_MODEL before enabling query answer generation.")
     return ChatClientConfig(
-        endpoint=_endpoint(),
+        endpoint=_endpoint(resolved_provider),
         api_key=api_key,
         model=resolved_model,
         temperature=_float_env("QUERY_LLM_TEMPERATURE", 0.2),
         timeout_seconds=_int_env("QUERY_LLM_TIMEOUT_SECONDS", 180),
         max_tokens=_optional_int_env("QUERY_LLM_MAX_TOKENS"),
         json_mode=False,
+        provider=resolved_provider,
     )
 
 
-def _endpoint() -> str:
+def _endpoint(provider: str | None = None) -> str:
     return chat_completions_endpoint(
         endpoint_env_names=("QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
         base_url_env_names=("QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
+        default_base_url=provider_base_url(provider),
+        provider=provider,
     )
 
 
@@ -163,8 +169,8 @@ def _api_key() -> str | None:
     )
 
 
-def _model() -> str:
-    default = "solar-pro2" if resolve_llm_provider() == "upstage" else ""
+def _model(provider: str | None = None) -> str:
+    default = "solar-pro2" if resolve_llm_provider(provider) == "upstage" else ""
     return model_from_env(("QUERY_LLM_MODEL", "LLM_MODEL"), default)
 
 

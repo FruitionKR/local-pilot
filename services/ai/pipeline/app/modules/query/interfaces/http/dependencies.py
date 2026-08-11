@@ -26,14 +26,18 @@ def get_conversation_summarizer():
 
 def build_answer_query_use_case(
     *,
+    provider: str | None = None,
     model: str | None = None,
     allow_web_search: bool = False,
 ) -> AnswerQueryUseCase:
     text_search = Bm25Searcher()
-    answer_generator = build_query_chat_answer_generator(model=model)
+    answer_generator = build_query_chat_answer_generator(provider=provider, model=model)
     query_answer_assembler = QueryAnswerAssembler(answer_generator)
-    query_evaluator = build_query_answer_evaluator(model=model)
-    conversation_summarizer = build_query_conversation_summarizer(model=model)
+    query_evaluator = build_query_answer_evaluator(provider=provider, model=model)
+    conversation_summarizer = build_query_conversation_summarizer(
+        provider=provider,
+        model=model,
+    )
     web_search = build_web_search(allow_web_search)
     query_evaluator_max_attempts = _int_env("QUERY_EVALUATOR_MAX_ATTEMPTS", 2)
     return AnswerQueryUseCase(
@@ -61,6 +65,7 @@ def build_answer_query_use_case(
 
 def get_query_answer_use_case(payload: QueryRequest) -> AnswerQueryUseCase:
     return build_answer_query_use_case(
+        provider=payload.provider,
         model=payload.model,
         allow_web_search=payload.allow_web_search,
     )

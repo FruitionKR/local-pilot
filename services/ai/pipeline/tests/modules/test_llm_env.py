@@ -37,6 +37,17 @@ class LlmEnvTest(unittest.TestCase):
                 "https://example.com/v1/chat/completions",
             )
 
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                chat_completions_endpoint(
+                    endpoint_env_names=("PRIMARY_ENDPOINT",),
+                    base_url_env_names=("PRIMARY_BASE_URL",),
+                    default_base_url="https://api.anthropic.com/v1",
+                    provider="claude",
+                ),
+                "https://api.anthropic.com/v1/messages",
+            )
+
     def test_resolves_api_key_from_indirect_or_direct_env(self) -> None:
         with patch.dict("os.environ", {"KEY_ENV": "REAL_KEY", "REAL_KEY": "secret"}, clear=True):
             self.assertEqual(api_key_from_env(key_env_name="KEY_ENV", key_env_names=("FALLBACK_KEY",)), "secret")
