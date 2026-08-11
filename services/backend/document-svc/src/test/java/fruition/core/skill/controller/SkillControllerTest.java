@@ -163,6 +163,8 @@ class SkillControllerTest {
         assertThat(version.getProperties()).containsKeys("capabilities", "allowed_tools", "lint_result", "status");
         assertThat(skill.getRequired()).contains("id", "enabled_version", "latest_version");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("workspace_id")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("latest_version")).getNullable()).isTrue();
     }
 
     private Class<?> schemaClass(String name) throws ClassNotFoundException {

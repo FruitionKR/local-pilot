@@ -246,10 +246,10 @@ public class SkillController {
         public String owner_user_id;
         public String slug;
         public String status;
-        @Schema(nullable = true)
-        public SkillVersionResponseSchema enabled_version;
-        @Schema(nullable = true)
-        public SkillVersionResponseSchema latest_version;
+        @Schema(allOf = SkillVersionResponseSchema.class, nullable = true)
+        public Object enabled_version;
+        @Schema(allOf = SkillVersionResponseSchema.class, nullable = true)
+        public Object latest_version;
     }
 
     @Schema(name = "SkillVersionResponse", requiredProperties = {"id", "version", "name", "description", "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status"})
