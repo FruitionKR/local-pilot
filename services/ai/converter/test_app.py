@@ -7,6 +7,11 @@ from app import process_pdf
 
 
 class ConverterCropFirstBoundaryTest(unittest.TestCase):
+    def test_converter_image_exposes_pipeline_module_path(self) -> None:
+        dockerfile = Path(__file__).with_name("Dockerfile")
+
+        self.assertIn("ENV PYTHONPATH=/app\n", dockerfile.read_text(encoding="utf-8"))
+
     def test_process_pdf_preserves_crop_asset_link_in_markdown(self) -> None:
         fixture = (
             b"\x89PNG\r\n\x1a\n"

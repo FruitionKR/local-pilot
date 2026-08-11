@@ -26,6 +26,7 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
+ENV PYTHONPATH=/app
 ENV RESTORATION_COMMAND="python -m app.modules.document_restoration.interfaces.cli"
 ENV DOCLING_RS_ASSET_DIR=/opt/docling-rs
 ENV DOCLING_LAYOUT_ONNX=/opt/docling-rs/models/layout_heron_int8.onnx

@@ -133,7 +133,8 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
                             "page": 1,
                             "order": 0,
                             "type": "paragraph",
-                            "source_text": "원본 본문",
+                            "source_text": "",
+                            "fallback_text": "원본 본문",
                             "body_broken": True,
                         }
                     ],
@@ -206,6 +207,7 @@ class CropFirstWithAnyDocTest(unittest.TestCase):
                 self.assertIn("body source", body_document[0].get_text())
             manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
             self.assertEqual(manifest[0]["source_text"], "AnyDoc body")
+            self.assertEqual(manifest[0]["fallback_text"], "body source")
 
     def test_run_heron_propagates_detector_failure(self) -> None:
         failure = subprocess.CalledProcessError(

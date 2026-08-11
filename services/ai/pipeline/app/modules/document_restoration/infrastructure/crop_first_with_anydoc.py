@@ -265,7 +265,9 @@ def assemble(manifest_file: Path, output_dir: Path, output_file: Path) -> None:
         regions = sorted(regions_by_page.get(page_number, []), key=lambda item: item["order"])
         content = recovered_text(output_dir, body)
         if content is None and body["body_broken"]:
-            content = f"> 본문 자동 복원 실패\n\n{body['source_text']}".strip()
+            content = (
+                f"> 본문 자동 복원 실패\n\n{body['fallback_text']}"
+            ).strip()
         elif content is None:
             content = str(body["source_text"])
         for region in regions:
@@ -350,7 +352,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             with fitz.open(body_pdf) as body_document:
                 if missing_unicode_usage(body_document[0], missing_fonts):
                     reasons.append("unresolved_font_mapping")
-                source_words = normalized_words(body_document[0].get_text("text", sort=False))
+                fallback_text = body_document[0].get_text("text", sort=False).strip()
+                source_words = normalized_words(fallback_text)
             draft_words = normalized_words(draft)
             bodies.append(
                 {
@@ -365,6 +368,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
                         float(document[page_number - 1].rect.height),
                     ],
                     "source_text": draft,
+                    "fallback_text": fallback_text,
                     "markdown": draft,
                     "asset": str(body_image.relative_to(args.output_dir)),
                     "confidence": "anydoc_crop_first",
