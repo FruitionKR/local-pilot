@@ -52,12 +52,6 @@ public class AccessUserClient {
         return response == null ? null : response.displayName();
     }
 
-    /** 내부 조회 실패 시 외부 검색을 허용하지 않는다. */
-    public boolean isWebSearchEnabled(String userId) {
-        UserResponse response = getUser(userId);
-        return response != null && response.webSearchEnabled();
-    }
-
     private UserResponse getUser(String userId) {
         try {
             UserResponse response = restClient.get()
@@ -70,7 +64,5 @@ public class AccessUserClient {
         }
     }
 
-    record UserResponse(
-            @JsonProperty("display_name") String displayName,
-            @JsonProperty("web_search_enabled") boolean webSearchEnabled) {}
+    record UserResponse(@JsonProperty("display_name") String displayName) {}
 }

@@ -1,7 +1,6 @@
 package fruition.core.query.controller;
 
 import fruition.core.chat.service.ChatSessionService;
-import fruition.core.authz.AccessUserClient;
 import fruition.core.query.domain.QueryRun;
 import fruition.core.query.dto.QueryRequest;
 import fruition.core.query.dto.QueryResponse;
@@ -40,16 +39,13 @@ public class QueryController {
     private final QueryRunService queryRunService;
     private final ChatSessionService chatSessionService;
     private final AiModelCatalog aiModelCatalog;
-    private final AccessUserClient accessUserClient;
 
     public QueryController(QueryService queryService, QueryRunService queryRunService,
-                           ChatSessionService chatSessionService, AiModelCatalog aiModelCatalog,
-                           AccessUserClient accessUserClient) {
+                           ChatSessionService chatSessionService, AiModelCatalog aiModelCatalog) {
         this.queryService = queryService;
         this.queryRunService = queryRunService;
         this.chatSessionService = chatSessionService;
         this.aiModelCatalog = aiModelCatalog;
-        this.accessUserClient = accessUserClient;
     }
 
     @Operation(
@@ -82,12 +78,8 @@ public class QueryController {
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         AiModelCatalog.AiModel selected = aiModelCatalog.resolve(request.provider(), request.model());
-        boolean webSearchEnabled = accessUserClient.isWebSearchEnabled(userId);
-        QueryResponse response = webSearchEnabled
-                ? queryService.query(workspaceId, sessionId, request.question(),
-                        selected.provider(), selected.model(), true)
-                : queryService.query(workspaceId, sessionId, request.question(),
-                        selected.provider(), selected.model());
+        QueryResponse response = queryService.query(workspaceId, sessionId, request.question(),
+                selected.provider(), selected.model(), request.allowWebSearch());
         return ResponseEntity.ok(response);
     }
 
@@ -114,12 +106,8 @@ public class QueryController {
                 workspaceId, userId, sessionId, request.question().length());
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
         AiModelCatalog.AiModel selected = aiModelCatalog.resolve(request.provider(), request.model());
-        boolean webSearchEnabled = accessUserClient.isWebSearchEnabled(userId);
-        QueryRun run = webSearchEnabled
-                ? queryRunService.start(workspaceId, userId, sessionId, request.question(),
-                        selected.provider(), selected.model(), true)
-                : queryRunService.start(workspaceId, userId, sessionId, request.question(),
-                        selected.provider(), selected.model());
+        QueryRun run = queryRunService.start(workspaceId, userId, sessionId, request.question(),
+                selected.provider(), selected.model(), request.allowWebSearch());
         log.info("[질의 run 응답] requestId={} status={}", run.requestId(), run.status());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(QueryRunCreateResponse.from(run));
     }

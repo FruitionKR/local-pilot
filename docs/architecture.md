@@ -29,8 +29,7 @@ services/
 
 ## 2. 서비스 간 통신
 
-- Query 실행 전 `document-svc`는 `access-svc` 내부 사용자 조회에서 전역 `web_search_enabled`를 읽는다. 조회 실패 시 외부 검색을 허용하지 않는다.
-- 실행 당시 값은 메시지에 snapshot으로 남고, Query HTTP/Kafka payload에는 `allow_web_search` boolean으로 전달한다.
+- Query 요청은 질의별 `allow_web_search`를 필수로 전달한다. `document-svc`는 사용자 전역 설정을 조회하지 않고 요청값을 메시지와 run에 snapshot으로 남긴 뒤 Query HTTP/Kafka payload에 전달한다.
 
 | 방향 | 방식 | 용도 |
 |---|---|---|

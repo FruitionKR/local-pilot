@@ -13,11 +13,6 @@
 
 ## 인증
 
-- `GET /api/auth/me/settings` — 현재 사용자의 전역 웹 검색 설정 조회
-- `PUT /api/auth/me/settings` — `{"web_search_enabled": true|false}`로 설정 변경
-- 기본값은 `false`이며 모든 워크스페이스의 이후 Query에 적용된다. Query 요청에서는 이 값을 받지 않는다.
-- backend가 AI Query를 호출할 때 저장된 설정을 `allow_web_search` boolean으로 전달한다.
-
 베이스 `/api/auth`. 아래 중 `/me`만 인증 필요.
 
 | Method | Path | 설명 |
@@ -44,6 +39,11 @@
 ## AI 모델
 
 - `GET /api/ai-models`: `AI_ENABLED_PROVIDERS`에 포함된 provider의 선택 가능 model catalog를 반환한다. API key는 노출하지 않는다.
+
+## Query
+
+- 동기 `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query`와 비동기 `POST .../query/runs` 요청은 `question`, 선택적 `provider`·`model`, 필수 boolean `allow_web_search`를 받는다.
+- `allow_web_search`는 해당 질의에만 적용되며 실행 당시 값은 채팅 메시지와 Query run에 snapshot으로 저장된다.
 
 ## 문서
 
