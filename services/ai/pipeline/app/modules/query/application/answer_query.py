@@ -801,11 +801,17 @@ def _fallback_language(output_language: OutputLanguage | None, reference_text: s
         return "en"
     if output_language != "document":
         return "ko"
-    for text in (reference_text, question):
-        if any("가" <= char <= "힣" for char in text):
-            return "ko"
-        if any("ぁ" <= char <= "ヿ" for char in text):
-            return "ja"
+    if any("가" <= char <= "힣" for char in reference_text):
+        return "ko"
+    if any("ぁ" <= char <= "ヿ" for char in reference_text):
+        return "ja"
+    # `场`은 일본어 상용 한자에 없는 간체자이므로 중국어 문서를 확정한다.
+    if "场" in reference_text:
+        return "zh"
+    if any("가" <= char <= "힣" for char in question):
+        return "ko"
+    if any("ぁ" <= char <= "ヿ" for char in question):
+        return "ja"
     if any("一" <= char <= "鿿" for char in question):
         return "zh"
     return "en"
