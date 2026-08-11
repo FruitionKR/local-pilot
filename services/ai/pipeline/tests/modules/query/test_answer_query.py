@@ -1,6 +1,6 @@
 import unittest
 
-from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.application.answer_query import AnswerQueryUseCase, _fallback_language
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -949,7 +949,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                     "s3://test/source:wiki.md": (
                         "---\ndocument_id: doc_wiki\n---\n\n"
                         "## Key Points\n"
-                        "- この根拠は質問の主題を直接説明していません。 [B0001]\n"
+                        "- 日本国 [B0001]\n"
                     )
                 }
             ),
@@ -969,6 +969,11 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_unresolved")
         self.assertNotIn("수정 답변입니다.", result.answer.content)
         self.assertIn("提供された根拠", result.answer.content)
+
+    def test_document_language_uses_question_when_han_text_is_ambiguous(self) -> None:
+        self.assertEqual(_fallback_language("document", "日本国", "日本国について"), "ja")
+        self.assertEqual(_fallback_language("document", "한국어 문서", "質問"), "ko")
+        self.assertEqual(_fallback_language("document", "こんにちは", "질문"), "ja")
 
     def test_query_evaluator_can_request_web_fallback_after_reviewing_answer(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

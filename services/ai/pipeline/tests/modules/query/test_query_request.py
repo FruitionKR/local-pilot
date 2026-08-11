@@ -108,6 +108,7 @@ class QueryRequestTest(unittest.TestCase):
         use_case = Mock()
         use_case.execute.return_value = Mock(
             answer=Mock(content="답변"),
+            updated_conversation_summary=None,
             related_pages=[],
             evidence_snippets=[],
             graph_context=GraphContext(),

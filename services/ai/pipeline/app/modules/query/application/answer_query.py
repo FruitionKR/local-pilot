@@ -801,11 +801,9 @@ def _fallback_language(output_language: OutputLanguage | None, reference_text: s
         return "en"
     if output_language != "document":
         return "ko"
-    text = reference_text or question
-    if any("가" <= char <= "힣" for char in text):
-        return "ko"
-    if any("ぁ" <= char <= "ヿ" for char in text):
-        return "ja"
-    if any("一" <= char <= "鿿" for char in text):
-        return "zh"
+    for text in (reference_text, question):
+        if any("가" <= char <= "힣" for char in text):
+            return "ko"
+        if any("ぁ" <= char <= "ヿ" for char in text):
+            return "ja"
     return "en"
