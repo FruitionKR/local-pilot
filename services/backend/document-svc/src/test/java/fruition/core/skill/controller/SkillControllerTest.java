@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import fruition.core.CoreExceptionHandler;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.config.SecurityConfig;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.exception.PipelineSkillException;
@@ -63,8 +64,7 @@ class SkillControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                 "personal", "meeting-notes", null,
-                                "회의록 Skill을 만들어줘", "enhance", List.of("doc_1"),
-                                "openai", "gpt-5-nano"))))
+                                "회의록 Skill을 만들어줘", "enhance", List.of("doc_1")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("proposal_ready"))
                 .andExpect(jsonPath("$.name").value("meeting-notes"));
@@ -79,13 +79,12 @@ class SkillControllerTest {
     }
 
     @Test
-    void author_requiresProviderAndModel() throws Exception {
+    void author_acceptsWithoutProviderAndModel() throws Exception {
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
                         .header("Authorization", bearer())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"scope_type\":\"personal\",\"instruction\":\"회의록 Skill을 만들어줘\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -99,8 +98,7 @@ class SkillControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                 "personal", "meeting-notes", null,
-                                "회의록 Skill을 만들어줘", "enhance", List.of(),
-                                "openai", "gpt-5-nano"))))
+                                "회의록 Skill을 만들어줘", "enhance", List.of()))))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.error.code").value("SKILL_REQUEST_REJECTED"))
                 .andExpect(jsonPath("$.error.message").value("Skill 요청이 거부되었습니다."))
@@ -142,7 +140,7 @@ class SkillControllerTest {
                     5
             );
             var service = new SkillService(mock(WorkspaceAccessGuard.class), requester,
-                    new fruition.shared.ai.AiModelCatalog("openai,gemini,claude"));
+                    workspaceAiModelClient());
             when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
                     .thenAnswer(invocation -> service.author(
                             WORKSPACE_ID,
@@ -155,8 +153,7 @@ class SkillControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(new SkillAuthoringRequest(
                                     "personal", "meeting-notes", null,
-                                    "회의록 Skill을 만들어줘", "enhance", List.of("doc_1"),
-                                    "openai", "gpt-5-nano"))))
+                                    "회의록 Skill을 만들어줘", "enhance", List.of("doc_1")))))
                     .andExpect(status().isPayloadTooLarge())
                     .andExpect(jsonPath("$.error.code").value("REFERENCE_DOCUMENT_TOO_LARGE"))
                     .andExpect(jsonPath("$.error.message")
@@ -198,5 +195,12 @@ class SkillControllerTest {
 
     private String bearer() {
         return "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+    }
+
+    private WorkspaceAiModelClient workspaceAiModelClient() {
+        var client = mock(WorkspaceAiModelClient.class);
+        when(client.get(WORKSPACE_ID))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+        return client;
     }
 }

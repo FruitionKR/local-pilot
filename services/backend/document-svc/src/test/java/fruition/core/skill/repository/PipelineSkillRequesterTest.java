@@ -1,6 +1,7 @@
 package fruition.core.skill.repository;
 
 import com.sun.net.httpserver.HttpServer;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.dto.SkillPublishRequest;
 import fruition.core.skill.dto.SkillUpdateRequest;
@@ -51,8 +52,8 @@ class PipelineSkillRequesterTest {
     void author_usesServerControlledWorkspaceUserAndAgentToken() {
         requester().author("ws_1", "user_1", new SkillAuthoringRequest(
                 "personal", "meeting-notes", null,
-                "회의록을 작성해줘", "enhance", List.of("doc_1"),
-                "gemini", "gemini-2.5-flash-lite"));
+                "회의록을 작성해줘", "enhance", List.of("doc_1")),
+                new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-2.5-flash-lite"));
 
         assertThat(method.get()).isEqualTo("POST");
         assertThat(uri.get()).isEqualTo("/skills/author");
@@ -67,10 +68,10 @@ class PipelineSkillRequesterTest {
     }
 
     @Test
-    void publish_usesRequestModelSnapshot() {
-        requester().publish("ws_1", "user_1", new SkillPublishRequest(
-                "team", "meeting-notes", "회의록 작성", "# 작성 절차",
-                "claude", "claude-3-5-haiku-20241022"));
+    void publish_usesWorkspaceModelSnapshot() {
+        requester().publish("ws_1", "user_1",
+                new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차"),
+                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-3-5-haiku-20241022"));
 
         assertThat(method.get()).isEqualTo("POST");
         assertThat(uri.get()).isEqualTo("/skills/author/publish");
@@ -91,8 +92,8 @@ class PipelineSkillRequesterTest {
     @Test
     void update_usesSkillPathAndScopePayload() {
         requester().update("ws_1", "user_1", "skill_1",
-                new SkillUpdateRequest("meeting-notes", "회의록 작성", "# 작성 절차",
-                        "openai", "gpt-5-nano"));
+                new SkillUpdateRequest("meeting-notes", "회의록 작성", "# 작성 절차"),
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
 
         assertThat(method.get()).isEqualTo("PATCH");
         assertThat(uri.get()).isEqualTo("/skills/skill_1");

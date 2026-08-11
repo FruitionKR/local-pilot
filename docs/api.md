@@ -12,7 +12,7 @@
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
 - LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `minimal`, `gemini`/`gemini-2.5-flash-lite`는 `low`, `claude`/`claude-3-5-haiku-20241022`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
 - provider별 base URL은 `openai=https://api.openai.com/v1`, `gemini=https://generativelanguage.googleapis.com/v1beta/openai`, `claude=https://api.anthropic.com/v1`로 고정한다.
-- Ingest·Lint는 workspace AI 모델 설정의 `provider`·`model` snapshot, Query·Markdown Agent·Agent·Skill LLM 경로는 사용자/API 요청 또는 chat/request 설정의 snapshot을 사용한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 전달하며 env override는 없다. API key는 ai-svc secret env의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`에서만 읽고 provider별 고정 base URL을 사용한다.
+- Ingest·Lint·Skill author/publish/update는 workspace AI 모델 설정의 `provider`·`model` snapshot, Query·Markdown Agent·Agent 경로는 사용자/API 요청 또는 chat/request 설정의 snapshot을 사용한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 전달하며 env override는 없다. API key는 ai-svc secret env의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`에서만 읽고 provider별 고정 base URL을 사용한다.
 - API key는 backend 요청·Kafka command/event·application log에 포함하지 않는다. 기존 AI 작업 로그의 조회/결과 API는 LLM 설정을 받지 않는다. 실제 provider 호출 전에는 선택 provider key가 필요하지만 mock 통합 테스트에는 key가 필요 없다.
 - `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하고 web route를 허용한다. `false`이면 내부 문서가 뒷받침하는 범위만 답하고 부족한 범위를 명시하며, 내부 근거가 전혀 없을 때만 unsupported로 처리한다.
 - 원문: docs/backlog/spec/api/00-common.md
@@ -135,15 +135,15 @@ Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_op
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/skills/author` | `scope_type`, `name`, `description`, `instruction`, 선택적 `authoring_mode`·`reference_document_ids`(최대 3), 필수 `provider`·`model` snapshot으로 미저장 Skill 제안 생성 |
-| POST | `/skills/author/publish` | `scope_type`, `name`, `description`, `instructions_markdown`(최대 30,000자), 필수 `provider`·`model` snapshot을 재검증하고 게시 |
+| POST | `/skills/author` | `scope_type`, `name`, `description`, `instruction`, 선택적 `authoring_mode`·`reference_document_ids`(최대 3)로 미저장 Skill 제안 생성. provider/model은 workspace AI 설정 snapshot 사용 |
+| POST | `/skills/author/publish` | `scope_type`, `name`, `description`, `instructions_markdown`(최대 30,000자)로 게시. provider/model은 workspace AI 설정 snapshot 사용 |
 | GET | `/skills` | 개인·현재 Workspace 팀 Skill 목록 |
 | GET | `/skills/{skill_id}` | 접근 가능한 Skill 상세 |
-| PATCH | `/skills/{skill_id}` | `name`, `description`, `instructions_markdown`(최대 30,000자), 필수 `provider`·`model` snapshot을 재검증해 새 게시 version으로 갱신 |
+| PATCH | `/skills/{skill_id}` | `name`, `description`, `instructions_markdown`(최대 30,000자)로 새 게시 version으로 갱신. provider/model은 workspace AI 설정 snapshot 사용 |
 | POST | `/skills/{skill_id}/enable` | Skill 자동 라우팅 활성화 |
 | POST | `/skills/{skill_id}/disable` | Skill 자동 라우팅 비활성화 |
 
-참조 문서는 ai-svc가 `POST /internal/agent/skill-authoring/references/read`를 호출해 scope와 role을 확인한다. document-svc는 service token, workspace 멤버십과 활성 문서를 검증하고, EDITABLE은 workspace가 일치하는 MongoDB canonical Markdown을 반환한다. ORIGINAL은 role만 반환하며 ai-svc가 소유한 ai_db `source_blocks`를 `block_id` 순으로 조립한다. Skill author/publish/update public API body는 `provider`, `model` snapshot을 필수로 받으며, backend는 지원 조합을 검증한 뒤 ai-svc에 `provider`·`model`만 전달한다(key·base URL은 전달하지 않는다). Agent 경유 Skill LLM 호출은 Agent의 chat/request snapshot을 사용한다.
+참조 문서는 ai-svc가 `POST /internal/agent/skill-authoring/references/read`를 호출해 scope와 role을 확인한다. document-svc는 service token, workspace 멤버십과 활성 문서를 검증하고, EDITABLE은 workspace가 일치하는 MongoDB canonical Markdown을 반환한다. ORIGINAL은 role만 반환하며 ai-svc가 소유한 ai_db `source_blocks`를 `block_id` 순으로 조립한다. Skill author/publish/update public API body는 `provider`, `model`을 받지 않으며, backend가 workspace AI 설정을 snapshot해 ai-svc 내부 payload에 `provider`·`model`만 전달한다(key·base URL은 전달하지 않는다). Agent 경유 Skill LLM 호출은 Agent의 chat/request snapshot을 사용한다.
 
 ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skills/draft-from-runs/preview`와 `/agent/runs/*`는 `AGENT_SKILLS_ENABLED`(기본 `false`)로 독립 제어한다. EDITABLE 참조 Markdown은 문서당 30,000자까지 허용하며 초과 시 413 `REFERENCE_DOCUMENT_TOO_LARGE`를 반환한다. ai-svc가 거부한 일반 Skill 4xx는 상태를 유지하고 `{ "error": { "code": "SKILL_REQUEST_REJECTED", "message": "..." } }` envelope로 정규화한다.
 

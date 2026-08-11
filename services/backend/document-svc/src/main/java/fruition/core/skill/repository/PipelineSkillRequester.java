@@ -2,6 +2,7 @@ package fruition.core.skill.repository;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.dto.SkillPublishRequest;
 import fruition.core.skill.dto.SkillUpdateRequest;
@@ -34,15 +35,17 @@ public class PipelineSkillRequester {
                 .build();
     }
 
-    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request) {
+    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request,
+                           WorkspaceAiModelClient.AiModelSelection aiModel) {
         return post("/author", new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
                 request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds(),
-                request.provider(), request.model()));
+                aiModel.provider(), aiModel.model()));
     }
 
-    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
+    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request,
+                            WorkspaceAiModelClient.AiModelSelection aiModel) {
         return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instructionsMarkdown(), request.provider(), request.model()));
+                request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -61,9 +64,10 @@ public class PipelineSkillRequester {
         return get(uri);
     }
 
-    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request) {
+    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request,
+                           WorkspaceAiModelClient.AiModelSelection aiModel) {
         return patch("/" + skillId, new UpdatePayload(workspaceId, userId, request.name(),
-                request.description(), request.instructionsMarkdown(), request.provider(), request.model()));
+                request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {
