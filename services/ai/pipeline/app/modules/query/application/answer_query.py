@@ -806,4 +806,6 @@ def _fallback_language(output_language: OutputLanguage | None, reference_text: s
             return "ko"
         if any("ぁ" <= char <= "ヿ" for char in text):
             return "ja"
+    if any("一" <= char <= "鿿" for char in question):
+        return "zh"
     return "en"

@@ -972,6 +972,8 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
 
     def test_document_language_uses_question_when_han_text_is_ambiguous(self) -> None:
         self.assertEqual(_fallback_language("document", "日本国", "日本国について"), "ja")
+        self.assertEqual(_fallback_language("document", "中国市场", "中国市场是什么？"), "zh")
+        self.assertEqual(_fallback_language("document", "日本市場", "日本市場とは何ですか？"), "ja")
         self.assertEqual(_fallback_language("document", "한국어 문서", "質問"), "ko")
         self.assertEqual(_fallback_language("document", "こんにちは", "질문"), "ja")
 
