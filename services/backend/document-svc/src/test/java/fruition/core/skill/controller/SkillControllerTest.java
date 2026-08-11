@@ -162,6 +162,8 @@ class SkillControllerTest {
         assertThat(skill.getProperties()).containsKeys("id", "workspace_id", "enabled_version", "latest_version");
         assertThat(version.getProperties()).containsKeys("capabilities", "allowed_tools", "lint_result", "status");
         assertThat(skill.getRequired()).contains("id", "enabled_version", "latest_version");
+        assertThat(version.getRequired()).containsExactlyInAnyOrder("id", "version", "name", "description",
+                "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("workspace_id")).getNullable()).isTrue();
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getNullable()).isTrue();
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getAllOf())
