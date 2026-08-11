@@ -3,7 +3,8 @@ name: fruition-local-tools
 services:
   markitdown:
     build:
-      context: ../services/ai/converter
+      context: ../services/ai
+      dockerfile: converter/Dockerfile
     container_name: fruition-markitdown
     read_only: true
     cap_drop:

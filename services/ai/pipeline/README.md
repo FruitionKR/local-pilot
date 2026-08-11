@@ -169,7 +169,7 @@ python run_lab.py \
 
 ### PDF 문서 복원 CLI
 
-문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `docling-only`이며 Docling이 만든 Markdown을 `final/{document_slug}.restored.md`로 게시하고 종료합니다.
+문서 복원 전용 Python 의존성을 설치하고 `llmPipeline` 폴더에서 모듈 CLI를 실행합니다. 기본 mode는 `crop-first`이며 AnyDoc 본문과 Heron 특수 영역 crop을 조립해 `final/{document_slug}.restored.md`를 만듭니다. OpenAI API key가 없거나 OpenAI의 429/5xx 요청이 모두 실패하면 선택 보완을 건너뛰고 이 baseline 결과를 게시합니다.
 
 ```bash
 python -m pip install -r requirements-document-restoration.txt
@@ -190,7 +190,7 @@ python -m app.modules.document_restoration.interfaces.cli \
   --document-slug paper
 ```
 
-기존 코드가 찾은 표·수식·손상 본문만 원본 이미지와 대조해 복원하려면 OpenAI API key를 환경변수로 전달하고 `selective-repair`를 사용합니다. 기본 모델은 `gpt-5.6-terra`, reasoning은 `low`, 페이지 병렬도는 16입니다. 그림은 모델 대상에서 제외하고 Docling image asset과 caption을 보존합니다.
+표·수식·손상 본문을 원본 이미지와 대조해 선택 보완하려면 OpenAI API key를 환경변수로 전달합니다. 기본 모델은 `gpt-5.6-luna`, reasoning은 `medium`, 페이지 병렬도는 16입니다. 그림은 모델 대상에서 제외하고 crop asset을 보존합니다.
 
 ```bash
 export DOCUMENT_REPAIR_OPENAI_API_KEY=...

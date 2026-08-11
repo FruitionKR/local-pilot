@@ -1,35 +1,62 @@
+import base64
+import mimetypes
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 
 app = FastAPI(title="Fruition PDF Converter")
 
-OCR_TIMEOUT_SECONDS = int(os.getenv("OCR_TIMEOUT_SECONDS", "600"))
-MARKDOWN_TIMEOUT_SECONDS = int(os.getenv("MARKDOWN_TIMEOUT_SECONDS", "300"))
+RESTORATION_TIMEOUT_SECONDS = int(os.getenv("RESTORATION_TIMEOUT_SECONDS", "900"))
 PDF_DIAGNOSTIC_TIMEOUT_SECONDS = int(os.getenv("PDF_DIAGNOSTIC_TIMEOUT_SECONDS", "60"))
+RESTORATION_COMMAND = os.getenv("RESTORATION_COMMAND", "document-restoration")
 
 
 def max_upload_bytes() -> int:
     return int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
 
-def ocr_language() -> str:
-    return os.getenv("OCR_LANGUAGE", "kor+eng")
-
-
 def required_commands() -> list[str]:
-    return ["pdfinfo", "pdffonts", "ocrmypdf", "markitdown"]
+    return ["pdfinfo", "pdffonts", shlex.split(RESTORATION_COMMAND)[0]]
 
 
 def missing_commands() -> list[str]:
     return [command for command in required_commands() if shutil.which(command) is None]
+
+
+def embed_local_image_links(markdown: str, markdown_file: Path, output_dir: Path) -> str:
+    pattern = re.compile(
+        r"(?P<prefix>!?\[[^\]]*\]\()(?P<target><[^>]+>|[^)\s]+)(?P<suffix>[^)]*\))"
+    )
+    output_root = output_dir.resolve()
+
+    def replace(match: re.Match[str]) -> str:
+        target = match.group("target")
+        target = target[1:-1] if target.startswith("<") else target
+        parsed = urlsplit(target)
+        if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+            return match.group(0)
+        asset = (markdown_file.parent / unquote(parsed.path)).resolve()
+        try:
+            asset.relative_to(output_root)
+        except ValueError:
+            return match.group(0)
+        mime_type = mimetypes.guess_type(asset.name)[0]
+        if not asset.is_file() or not mime_type or not mime_type.startswith("image/"):
+            return match.group(0)
+        encoded = base64.b64encode(asset.read_bytes()).decode("ascii")
+        return f"{match.group('prefix')}data:{mime_type};base64,{encoded}{match.group('suffix')}"
+
+    return pattern.sub(replace, markdown)
 
 
 @app.get("/health")
@@ -114,8 +141,8 @@ def process_pdf(content: bytes) -> dict[str, str]:
         input_pdf = job_dir / "input.pdf"
         info_txt = job_dir / "info.txt"
         fonts_txt = job_dir / "fonts.txt"
-        fixed_pdf = job_dir / "fixed.pdf"
-        output_md = job_dir / "output.md"
+        output_dir = job_dir / "restoration"
+        output_md = output_dir / "final" / f"{job_dir.name}.restored.md"
         process_log = job_dir / "process.log"
 
         input_pdf.write_bytes(content)
@@ -136,28 +163,25 @@ def process_pdf(content: bytes) -> dict[str, str]:
         )
         run(
             [
-                "ocrmypdf",
-                "-l",
-                ocr_language(),
-                "--force-ocr",
-                "--deskew",
-                "--clean",
-                input_pdf.name,
-                fixed_pdf.name,
+                *shlex.split(RESTORATION_COMMAND),
+                "--pdf-file",
+                str(input_pdf),
+                "--output-dir",
+                str(output_dir),
+                "--document-slug",
+                job_dir.name,
+                "--mode",
+                "crop-first",
             ],
             job_dir,
-            OCR_TIMEOUT_SECONDS,
-            process_log,
-        )
-        run(
-            ["markitdown", fixed_pdf.name, "-o", output_md.name],
-            job_dir,
-            MARKDOWN_TIMEOUT_SECONDS,
+            RESTORATION_TIMEOUT_SECONDS,
             process_log,
         )
 
         return {
-            "markdown": output_md.read_text(encoding="utf-8"),
+            "markdown": embed_local_image_links(
+                output_md.read_text(encoding="utf-8"), output_md, output_dir
+            ),
             "pdfinfo": info_txt.read_text(encoding="utf-8", errors="replace"),
             "pdffonts": fonts_txt.read_text(encoding="utf-8", errors="replace"),
             "process_log": process_log.read_text(encoding="utf-8", errors="replace"),

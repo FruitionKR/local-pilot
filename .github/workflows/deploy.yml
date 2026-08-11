@@ -45,7 +45,7 @@ jobs:
           docker build -t "$REGISTRY/fruition-document-svc:$TAG" -f services/backend/document-svc/Dockerfile services/backend
           docker build -t "$REGISTRY/fruition-access-svc:$TAG" -f services/backend/access-svc/Dockerfile services/backend
           docker build -t "$REGISTRY/fruition-pipeline:$TAG" services/ai/pipeline
-          docker build -t "$REGISTRY/fruition-converter:$TAG" services/ai/converter
+          docker build -t "$REGISTRY/fruition-converter:$TAG" -f services/ai/converter/Dockerfile services/ai
           docker push "$REGISTRY/fruition-document-svc:$TAG"
           docker push "$REGISTRY/fruition-access-svc:$TAG"
           docker push "$REGISTRY/fruition-pipeline:$TAG"
