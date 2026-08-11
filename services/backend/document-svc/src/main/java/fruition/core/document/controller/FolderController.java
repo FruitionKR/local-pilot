@@ -47,18 +47,18 @@ public class FolderController {
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "생성 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = FolderResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 이름 또는 위치",
+        @ApiResponse(responseCode = "400", description = "잘못된 이름 또는 위치, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스 또는 상위 폴더를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping
     public ResponseEntity<FolderResponse> create(
             @PathVariable("workspace_id") String workspaceId,
             @AuthenticationPrincipal String userId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody FolderCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -69,11 +69,11 @@ public class FolderController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "변경 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = FolderResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 이름 또는 version",
+        @ApiResponse(responseCode = "400", description = "잘못된 이름 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "폴더 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "version 또는 멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PatchMapping("/{folder_id}")
@@ -82,7 +82,7 @@ public class FolderController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "이름을 변경할 폴더 ID", required = true)
             @PathVariable("folder_id") UUID folderId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody FolderRenameRequest request) {
         return ResponseEntity.ok(folderService.rename(workspaceId, userId, folderId, idempotencyKey, request));
@@ -92,11 +92,11 @@ public class FolderController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "이동 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = FolderResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+        @ApiResponse(responseCode = "400", description = "잘못된 요청 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "폴더, 대상 폴더 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "순환 이동, version 또는 멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "순환 이동, version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PatchMapping("/{folder_id}/position")
@@ -105,7 +105,7 @@ public class FolderController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "이동할 폴더 ID", required = true)
             @PathVariable("folder_id") UUID folderId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody FolderPositionRequest request) {
         return ResponseEntity.ok(folderService.move(workspaceId, userId, folderId, idempotencyKey, request));
@@ -131,13 +131,13 @@ public class FolderController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "삭제 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = FolderLifecycleResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 version",
+        @ApiResponse(responseCode = "400", description = "잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "403", description = "내용이 있는 폴더를 삭제할 권한이 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "폴더 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "version 또는 멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @DeleteMapping("/{folder_id}")
@@ -146,7 +146,7 @@ public class FolderController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "삭제할 폴더 ID", required = true)
             @PathVariable("folder_id") UUID folderId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DocumentLifecycleRequest request) {
         return ResponseEntity.ok(
@@ -157,11 +157,11 @@ public class FolderController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "복구 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = FolderLifecycleResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 version",
+        @ApiResponse(responseCode = "400", description = "잘못된 version 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "삭제된 폴더 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "version 또는 멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping("/{folder_id}/restore")
@@ -170,7 +170,7 @@ public class FolderController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "복구할 폴더 ID", required = true)
             @PathVariable("folder_id") UUID folderId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DocumentLifecycleRequest request) {
         return ResponseEntity.ok(

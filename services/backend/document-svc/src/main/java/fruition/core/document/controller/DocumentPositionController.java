@@ -36,11 +36,11 @@ public class DocumentPositionController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "이동 성공 또는 멱등 재요청",
             content = @Content(schema = @Schema(implementation = DocumentPositionResponse.class))),
-        @ApiResponse(responseCode = "400", description = "잘못된 위치 또는 version",
+        @ApiResponse(responseCode = "400", description = "잘못된 위치 또는 version, 또는 INVALID_IDEMPOTENCY_KEY(멱등 키 누락/유효하지 않음)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "문서, 대상 폴더 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "version 또는 멱등 키 충돌",
+        @ApiResponse(responseCode = "409", description = "version 충돌, IDEMPOTENCY_CONFLICT(동일 키에 다른 payload 사용) 또는 IDEMPOTENCY_IN_PROGRESS(활성 lease 재사용)",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PatchMapping("/{document_id}/position")
@@ -49,7 +49,7 @@ public class DocumentPositionController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "이동할 문서 ID", required = true)
             @PathVariable("document_id") String documentId,
-            @Parameter(description = "선택적 요청 멱등 키", required = false)
+            @Parameter(description = "요청 멱등 키", required = true)
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DocumentPositionRequest request) {
         return ResponseEntity.ok(
