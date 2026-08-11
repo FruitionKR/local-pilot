@@ -6,7 +6,10 @@ from app.modules.query.infrastructure.query_evaluator_studio_graph import graph
 
 class QueryEvaluatorStudioGraphTest(unittest.TestCase):
     def test_studio_graph_invokes_without_configured_evaluator(self) -> None:
-        with patch("app.modules.query.infrastructure.query_evaluator_studio_graph.build_query_answer_evaluator", return_value=None):
+        with patch(
+            "app.modules.query.infrastructure.query_evaluator_studio_graph.build_query_answer_evaluator",
+            return_value=None,
+        ) as build_evaluator:
             result = graph.invoke(
                 {
                     "question": "LangGraph Studio에서 evaluator graph를 볼 수 있나요?",
@@ -23,6 +26,7 @@ class QueryEvaluatorStudioGraphTest(unittest.TestCase):
                 }
             )
 
+        build_evaluator.assert_called_once_with(provider="openai", model="gpt-5-nano")
         self.assertEqual(result["attempt"], 1)
         self.assertEqual(result["evaluation"]["route"], "internal_supported")
         self.assertIn("reason", result["evaluation"])

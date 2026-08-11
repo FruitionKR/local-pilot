@@ -36,7 +36,7 @@ def generate_answer(state: QueryEvaluatorStudioState) -> QueryEvaluatorStudioSta
 
 
 def evaluate_answer(state: QueryEvaluatorStudioState) -> QueryEvaluatorStudioState:
-    evaluator = build_query_answer_evaluator()
+    evaluator = build_query_answer_evaluator(provider="openai", model="gpt-5-nano")
     if evaluator is None:
         return {
             **state,
