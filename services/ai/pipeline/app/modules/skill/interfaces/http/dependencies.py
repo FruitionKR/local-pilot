@@ -25,15 +25,13 @@ def get_manage_skill_use_case() -> ManageSkillUseCase:
     return ManageSkillUseCase(get_skill_repository())
 
 
-@lru_cache(maxsize=1)
-def get_propose_skill_draft_use_case() -> ProposeSkillDraftUseCase:
-    return ProposeSkillDraftUseCase(build_skill_draft_generator())
+def get_propose_skill_draft_use_case(*, provider: str, model: str) -> ProposeSkillDraftUseCase:
+    return ProposeSkillDraftUseCase(build_skill_draft_generator(provider=provider, model=model))
 
 
-@lru_cache(maxsize=1)
-def get_author_skill_use_case() -> AuthorSkillUseCase:
+def get_author_skill_use_case(*, provider: str, model: str) -> AuthorSkillUseCase:
     return AuthorSkillUseCase(
-        build_skill_authoring_generator(),
+        build_skill_authoring_generator(provider=provider, model=model),
         build_skill_reference_reader(),
         get_manage_skill_use_case(),
     )

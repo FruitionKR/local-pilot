@@ -26,6 +26,8 @@ class StartAgentRunRequest:
     instruction: str
     action: Literal["folder_organize", "workspace_workflow"] = "folder_organize"
     skill_version_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,8 @@ class AgentRun:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     finished_at: datetime | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)

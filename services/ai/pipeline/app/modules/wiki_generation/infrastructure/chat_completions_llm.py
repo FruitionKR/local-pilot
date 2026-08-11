@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from app.core.langsmith_tracing import langsmith_tracing_enabled
-from app.core.llm_env import resolve_llm_provider
+from app.core.llm_env import inference_profile, resolve_llm_selection
 from app.core.llm_prompt import (
     redact_numeric_personal_data,
     with_llm_security_boundary,
@@ -49,7 +49,7 @@ class ChatClientConfig:
     endpoint: str
     api_key: str
     model: str
-    temperature: float = 0.2
+    temperature: float | None = 0.2
     timeout_seconds: int = 180
     max_tokens: int | None = None
     json_mode: bool = False
@@ -61,7 +61,7 @@ class ChatCompletionsJsonClient:
 
     def __init__(self, config: ChatClientConfig) -> None:
         self.config = config
-        self.provider = resolve_llm_provider(config.provider)
+        self.provider, self.config.model = resolve_llm_selection(config.provider, config.model)
         self.prompt_log_dir = os.environ.get("LLM_PROMPT_LOG_DIR", "").strip()
         self._request_index = 0
 
@@ -88,8 +88,8 @@ class ChatCompletionsJsonClient:
                 {"role": "system", "content": with_llm_security_boundary(system_prompt)},
                 {"role": "user", "content": redact_numeric_personal_data(user_prompt)},
             ],
-            "temperature": self.config.temperature,
         }
+        body.update(inference_profile(self.provider, self.config.model))
         if self.config.max_tokens is not None:
             body["max_tokens"] = self.config.max_tokens
         if self.config.json_mode:
@@ -101,12 +101,11 @@ class ChatCompletionsJsonClient:
         if traceable is None or not langsmith_tracing_enabled():
             return self._send_chat_completion(body)
         traced = traceable(
-            name="upstage_chat_completions",
+            name=f"{self.provider}_chat_completions",
             run_type="llm",
             metadata={
-                "provider": os.environ.get("LLM_PROVIDER", "upstage"),
+                "provider": self.provider,
                 "model": self.config.model,
-                "endpoint": self.config.endpoint,
                 "json_mode": self.config.json_mode,
             },
         )(self._send_chat_completion)
@@ -170,7 +169,7 @@ class ChatCompletionsJsonClient:
                 f"{system_prompt}\n\n"
                 "Return only one valid JSON object without Markdown fences."
             )
-        return {
+        request_body: JsonDict = {
             "model": body["model"],
             "system": system_prompt,
             "messages": [
@@ -178,15 +177,15 @@ class ChatCompletionsJsonClient:
                 for message in messages
                 if message.get("role") in {"user", "assistant"}
             ],
-            "temperature": body["temperature"],
             "max_tokens": body.get("max_tokens") or 4096,
         }
+        return request_body
 
     def _response_content(self, payload: JsonDict) -> str:
         if self.provider != "claude":
-            return str(payload["choices"][0]["message"]["content"])
+            return _content_text(payload["choices"][0]["message"]["content"])
         return "".join(
-            str(block.get("text") or "")
+            _content_text(block.get("text"))
             for block in payload["content"]
             if block.get("type") == "text"
         )
@@ -295,6 +294,16 @@ class GenericChatCompletionsSourceAccumulator:
 
 # Backwards-compatible aliases.
 ApiSemanticExtractor = GenericChatCompletionsExtractor
+
+
+def _content_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(_content_text(item) for item in value)
+    if isinstance(value, dict):
+        return str(value.get("text") or value.get("content") or "")
+    return str(value or "")
 ApiConceptPageGenerator = GenericChatCompletionsConceptPageGenerator
 ApiConceptResolver = GenericChatCompletionsConceptResolver
 ApiSectionPolisher = GenericChatCompletionsSectionPolisher

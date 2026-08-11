@@ -11,6 +11,7 @@ from typing import Any
 
 from app.core.pipeline_control import PipelineRunCancelledError
 from app.modules.wiki_ingestion.infrastructure.file_io import append_text
+from app.workers.event_request import without_top_level_secrets
 
 
 class PipelineLog:
@@ -30,12 +31,16 @@ class PipelineLog:
 
     def emit(self, stage: str, message: str, data: dict[str, Any] | None = None) -> None:
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        safe_data = without_top_level_secrets(data or {})
         event = {
             "run_id": self.run_id,
             "timestamp": now,
             "stage": stage,
             "message": message,
-            "data": {key: str(value) for key, value in (data or {}).items()},
+            "data": {
+                key: str(value)
+                for key, value in safe_data.items()
+            },
         }
         lines = [f"[{now}] [{stage}] {message}"]
         for key, value in event["data"].items():

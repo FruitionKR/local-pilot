@@ -31,7 +31,7 @@ public class QueryMessageRecorder {
                                   String question,
                                   Instant createdAt) {
         createPendingPair(sessionId, pairId, userMessageId, assistantMessageId, question, createdAt,
-                "openai", "gpt-4.1-mini");
+                "openai", "gpt-5-nano");
     }
 
     @Transactional

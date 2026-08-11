@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from app.core.llm_env import (
     SUPPORTED_LLM_PROVIDERS,
     provider_api_endpoint,
+    provider_base_url,
+    resolve_llm_selection,
     resolve_llm_provider_defaults,
 )
 from app.modules.agent.domain.entities import AgentTurnRequest
@@ -47,9 +47,6 @@ REQUIRED_EXTRACTION_KEYS = {
     "needs_neighbor_context",
     "context_problem",
 }
-
-_DEFAULT_ENV_FILE = Path(__file__).resolve().parents[3] / "infra" / ".env"
-
 
 def run_provider_e2e(
     client: ChatCompletionsJsonClient,
@@ -159,23 +156,6 @@ def _http_status(error: Exception) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _load_env_file(path_like: str | None) -> None:
-    if not path_like:
-        return
-    path = Path(path_like)
-    if not path.exists():
-        raise SystemExit(f".env file not found: {path}")
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(
-            key.strip(),
-            value.strip().strip('"').strip("'"),
-        )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Provider별 ingestion·Agent·Markdown 실제 API smoke 검증"
@@ -186,10 +166,6 @@ def parse_args() -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--model", required=True)
-    parser.add_argument("--env-file", default=str(_DEFAULT_ENV_FILE))
-    parser.add_argument("--api-key-env", default="LLM_API_KEY")
-    parser.add_argument("--base-url")
-    parser.add_argument("--endpoint")
     parser.add_argument("--timeout-seconds", type=int, default=180)
     parser.add_argument(
         "--prompt-root",
@@ -200,12 +176,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    _load_env_file(args.env_file)
+    provider, model = resolve_llm_selection(args.provider, args.model)
     defaults = resolve_llm_provider_defaults(
-        provider=args.provider,
-        base_url=args.base_url,
-        api_key_env=args.api_key_env,
-        model=args.model,
+        provider=provider,
+        model=model,
     )
     if not defaults.api_key:
         raise SystemExit(
@@ -213,14 +187,10 @@ def main() -> None:
         )
     client = ChatCompletionsJsonClient(
         ChatClientConfig(
-            endpoint=args.endpoint
-            or provider_api_endpoint(
-                defaults.base_url,
-                defaults.provider,
-            ),
+            endpoint=provider_api_endpoint(provider_base_url(defaults.provider), defaults.provider),
             api_key=defaults.api_key,
             model=defaults.model or args.model,
-            temperature=1.0,
+            temperature=None,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
             provider=defaults.provider,

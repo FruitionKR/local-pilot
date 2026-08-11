@@ -11,6 +11,7 @@ from app.modules.wiki_generation.infrastructure.chat_completions_llm import (
     ChatClientConfig,
     ChatCompletionsJsonClient,
 )
+from app.core.llm_env import provider_api_endpoint, provider_base_url
 
 
 DEFAULT_PROMPT = Path(__file__).resolve().parents[4] / "prompts" / "document_evaluator.system.md"
@@ -41,27 +42,20 @@ class ChatCompletionsDocumentEvaluator(DocumentEvaluatorPort):
 
 
 def build_optional_document_evaluator() -> DocumentEvaluatorPort | None:
-    endpoint = os.environ.get("DOCUMENT_EVALUATOR_LLM_ENDPOINT", "").strip()
-    api_key = os.environ.get("DOCUMENT_EVALUATOR_LLM_API_KEY", "").strip()
-    model = os.environ.get("DOCUMENT_EVALUATOR_LLM_MODEL", "").strip()
-    configured = [bool(endpoint), bool(api_key), bool(model)]
-    if not any(configured):
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
         return None
-    if not all(configured):
-        raise RuntimeError(
-            "DOCUMENT_EVALUATOR_LLM_ENDPOINT, DOCUMENT_EVALUATOR_LLM_API_KEY, "
-            "DOCUMENT_EVALUATOR_LLM_MODEL을 모두 설정해야 합니다."
-        )
     prompt_path = Path(os.environ.get("DOCUMENT_EVALUATOR_SYSTEM_PROMPT", str(DEFAULT_PROMPT)))
     return ChatCompletionsDocumentEvaluator(
         client=ChatCompletionsJsonClient(
             ChatClientConfig(
-                endpoint=endpoint,
+                endpoint=provider_api_endpoint(provider_base_url("openai"), "openai"),
                 api_key=api_key,
-                model=model,
-                temperature=0,
-                timeout_seconds=int(os.environ.get("DOCUMENT_EVALUATOR_LLM_TIMEOUT_SECONDS", "180")),
+                model="gpt-5-nano",
+                temperature=None,
+                timeout_seconds=180,
                 json_mode=True,
+                provider="openai",
             )
         ),
         system_prompt=prompt_path.read_text(encoding="utf-8"),

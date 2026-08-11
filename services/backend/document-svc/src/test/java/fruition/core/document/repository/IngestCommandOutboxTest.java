@@ -25,13 +25,13 @@ class IngestCommandOutboxTest {
     void enqueue_serializesProviderAndModelAtOutboxBoundary() {
         ObjectMapper objectMapper = new ObjectMapper();
         when(workspaceAiModelClient.get("ws_1"))
-                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("anthropic", "claude-sonnet-5"));
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-2.5-flash-lite"));
         AiCommandOutboxWriter writer = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
         IngestCommandOutbox outbox = new IngestCommandOutbox(
                 writer,
                 "ai.ingest.command", workspaceAiModelClient);
 
-        outbox.enqueue("run_1", "doc_1", "user_1", "ws_1", "full", "# markdown", false,
+        outbox.enqueue("run_1", "doc_1", "user_1", "ws_1", "full", "# markdown", true,
                 "op_1", 3, "sha256:source");
 
         ArgumentCaptor<IngestCommandOutbox.IngestCommand> command =
@@ -40,6 +40,7 @@ class IngestCommandOutboxTest {
         ArgumentCaptor<AiCommandOutbox> saved = ArgumentCaptor.forClass(AiCommandOutbox.class);
         verify(outboxRepository).save(saved.capture());
         assertThat(saved.getValue().getPayload())
-                .contains("\"provider\":\"anthropic\"", "\"model\":\"claude-sonnet-5\"");
+                .contains("\"kind\":\"chat_wiki\"", "\"provider\":\"gemini\"",
+                        "\"model\":\"gemini-2.5-flash-lite\"");
     }
 }

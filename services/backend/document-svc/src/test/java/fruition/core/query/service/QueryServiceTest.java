@@ -72,7 +72,7 @@ class QueryServiceTest {
     void query_pipelineResponse_savedAndReturned() {
         PipelineQueryResponse mockResponse = samplePipelineResponse();
         when(pipelineQueryRequester.query(WORKSPACE_ID, "Self-Attention이 뭐야?",
-                "openai", "gpt-4.1-mini")).thenReturn(mockResponse);
+                "openai", "gpt-5-nano")).thenReturn(mockResponse);
 
         QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?");
 
@@ -88,7 +88,7 @@ class QueryServiceTest {
 
         verify(queryMessageRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
-                eq("openai"), eq("gpt-4.1-mini"));
+                eq("openai"), eq("gpt-5-nano"));
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
         verify(chatMessageRepository).save(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getRole()).isEqualTo("assistant");
@@ -143,7 +143,7 @@ class QueryServiceTest {
 
         verify(queryMessageRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
-                eq("openai"), eq("gpt-4.1-mini"));
+                eq("openai"), eq("gpt-5-nano"));
         verify(queryMessageRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
     }
 

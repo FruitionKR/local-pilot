@@ -12,24 +12,17 @@ import java.util.stream.Collectors;
 public class AiModelCatalog {
 
     public static final String DEFAULT_PROVIDER = "openai";
-    public static final String DEFAULT_MODEL = "gpt-4.1-mini";
+    public static final String DEFAULT_MODEL = "gpt-5-nano";
 
     private static final List<AiModel> SUPPORTED_MODELS = List.of(
-            new AiModel("openai", "gpt-4.1-mini", "GPT-4.1 mini"),
-            new AiModel("openai", "gpt-5.6-sol", "GPT-5.6 Sol"),
-            new AiModel("openai", "gpt-5.6-terra", "GPT-5.6 Terra"),
-            new AiModel("openai", "gpt-5.6-luna", "GPT-5.6 Luna"),
-            new AiModel("claude", "claude-opus-5", "Claude Opus 5"),
-            new AiModel("claude", "claude-sonnet-5", "Claude Sonnet 5"),
-            new AiModel("claude", "claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
-            new AiModel("gemini", "gemini-3.5-flash", "Gemini 3.5 Flash"),
-            new AiModel("gemini", "gemini-3.6-flash", "Gemini 3.6 Flash"),
-            new AiModel("gemini", "gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite")
+            new AiModel("openai", "gpt-5-nano", "GPT-5 nano"),
+            new AiModel("gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+            new AiModel("claude", "claude-3-5-haiku-20241022", "Claude 3.5 Haiku")
     );
 
     private final Set<String> enabledProviders;
 
-    public AiModelCatalog(@Value("${app.ai.enabled-providers:openai}") String enabledProviders) {
+    public AiModelCatalog(@Value("${app.ai.enabled-providers:openai,gemini,claude}") String enabledProviders) {
         this.enabledProviders = Arrays.stream(enabledProviders.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isEmpty())

@@ -52,7 +52,7 @@ public class QueryService {
     }
 
     public QueryResponse query(String workspaceId, String sessionId, String question) {
-        return query(workspaceId, sessionId, question, "openai", "gpt-4.1-mini");
+        return query(workspaceId, sessionId, question, "openai", "gpt-5-nano");
     }
 
     public QueryResponse query(String workspaceId, String sessionId, String question,
@@ -69,7 +69,7 @@ public class QueryService {
     }
 
     public QueryMessageContext prepareMessages(String sessionId, String question, String requestId) {
-        return prepareMessages(sessionId, question, requestId, "openai", "gpt-4.1-mini");
+        return prepareMessages(sessionId, question, requestId, "openai", "gpt-5-nano");
     }
 
     public QueryMessageContext prepareMessages(String sessionId, String question, String requestId,

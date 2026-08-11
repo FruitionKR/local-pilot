@@ -102,8 +102,8 @@ kubectl -n fruition get scaledobject
 
 ## 참고·한계
 
-- DB 접속 env는 서비스별 분리 계약을 따른다: access-svc는 `ACCESS_DB_*`, document-svc는 `CORE_DB_*`(+ `DOCUMENT_MONGODB_URI`), pipeline·ingest-worker는 전환기 동안 `DATABASE_URL`(ai_runtime@core_db)을 쓴다. 이름류는 configmap, 비밀번호는 secret에 있다.
-- `secret.yaml`은 compose dev 기본값과 동일한 로컬 개발용 값이다. 실제 LLM 호출은 `LLM_API_KEY` 덮어쓰기 필요 (secret.yaml 상단 주석 참조). 운영에서는 Secret 관리 도구로 대체할 것.
+- DB 접속 env는 서비스별 분리 계약을 따른다: access-svc는 `ACCESS_DB_*`, document-svc는 `CORE_DB_*`(+ `DOCUMENT_MONGODB_URI`), pipeline·ingest-worker는 `AI_DATABASE_URL`(ai_runtime@ai_db)을 쓴다. 이름류는 configmap, 비밀번호는 secret에 있다.
+- `secret.yaml`은 compose dev 기본값과 동일한 로컬 개발용 값이다. 실제 LLM 호출은 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY` 중 해당 키를 덮어써야 한다(모델·base URL은 API/DB snapshot과 provider 고정값을 사용). 운영에서는 Secret 관리 도구로 대체할 것.
 - `pipeline-runs` PVC는 RWO라 단일 노드에서만 pipeline-api·ingest-worker 공유가 가능하다. 멀티 노드 전환 시 S3 기반 아티팩트 저장으로 이전 필요.
 - postgres·minio·kafka는 single replica 구성 — 로컬 검증용이며 EKS 전환 시 관리형(RDS/S3/MSK 또는 Strimzi HA)으로 대체한다.
 - 클러스터 삭제: `kind delete cluster --name fruition`

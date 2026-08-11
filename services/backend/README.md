@@ -169,10 +169,11 @@ Docker Compose 인프라 기동 시에도 동일한 파일을 사용하므로 �
 | `S3_SECRET_KEY` | `fruition_dev_secret` | MinIO 시크릿 키 |
 | `S3_BUCKET` | `fruition-storage` | 오브젝트 스토리지 버킷명 |
 | `PROCESSING_ENDPOINT` | `http://localhost:8000/pipeline/runs` | FastAPI 문서 처리 파이프라인 실행 엔드포인트 |
-| `LLM_API_KEY` | (없음) | 선택한 provider의 API 키 — LLM 기능 사용 시 필요 |
-| `LLM_PROVIDER` | `openai` | LLM 프로바이더 |
-| `LLM_BASE_URL` | provider 기본값 | LLM API base URL override |
-| `LLM_MODEL` | `gpt-4.1-mini` | 사용할 LLM 모델명 |
+| `OPENAI_API_KEY` | (없음) | ai-svc가 OpenAI live 호출에 사용하는 secret |
+| `GEMINI_API_KEY` | (없음) | ai-svc가 Gemini live 호출에 사용하는 secret |
+| `ANTHROPIC_API_KEY` | (없음) | ai-svc가 Claude live 호출에 사용하는 secret |
+
+provider/model은 사용자 설정·API·DB·Kafka payload snapshot에서 정하며 backend env override와 API key 전달은 없다. 지원 조합은 `openai/gpt-5-nano`(기본), `gemini/gemini-2.5-flash-lite`, `claude/claude-3-5-haiku-20241022`다.
 
 ---
 

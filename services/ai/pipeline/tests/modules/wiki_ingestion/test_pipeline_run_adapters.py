@@ -1,9 +1,15 @@
 from unittest.mock import Mock, patch
 
-from app.modules.wiki_ingestion.application.models import PipelineRunCommand
+from app.modules.wiki_ingestion.application.models import PipelineRunCommand as _PipelineRunCommand
 from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     RunLabPipelineRunner,
 )
+
+
+def PipelineRunCommand(**data: object) -> _PipelineRunCommand:
+    data.setdefault("provider", "openai")
+    data.setdefault("model", "gpt-5-nano")
+    return _PipelineRunCommand(**data)
 
 
 def test_run_lab_pipeline_runner_passes_typed_command_without_conversion() -> None:

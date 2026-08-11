@@ -229,6 +229,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     skill_version_id text REFERENCES skill_versions(id) ON DELETE SET NULL,
     status text NOT NULL,
     request_summary text NOT NULL,
+    provider text,
+    model text,
     current_plan_id text,
     error_code text,
     tool_call_count integer NOT NULL DEFAULT 0,
@@ -245,6 +247,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 );
 
 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS command_envelope_hash varchar(64);
+ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS provider text;
+ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS model text;
 
 CREATE TABLE IF NOT EXISTS skill_version_sources (
     id text PRIMARY KEY,

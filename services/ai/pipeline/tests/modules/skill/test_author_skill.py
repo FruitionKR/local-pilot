@@ -16,6 +16,7 @@ from app.modules.skill.domain.entities import (
 )
 from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator import (
     ChatCompletionsSkillAuthoringGenerator,
+    build_skill_authoring_generator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
 from app.modules.skill.interfaces.http.dependencies import get_author_skill_use_case
@@ -189,6 +190,18 @@ def intent_result(
 
 
 class AuthorSkillUseCaseTest(unittest.TestCase):
+    def test_skill_builder_uses_request_llm_snapshot(self) -> None:
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "claude-key"}, clear=True):
+            generator = build_skill_authoring_generator(
+                provider="claude",
+                model="claude-3-5-haiku-20241022",
+            )
+
+        client = generator._client  # type: ignore[attr-defined]
+        self.assertEqual(client.provider, "claude")
+        self.assertEqual(client.config.model, "claude-3-5-haiku-20241022")
+        self.assertEqual(client.config.api_key, "claude-key")
+
     def build_use_case(
         self,
         generator: FixedGenerator,
@@ -1056,15 +1069,27 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         application.include_router(skill_router)
         application.dependency_overrides[get_author_skill_use_case] = lambda: use_case
 
-        with patch(
-            "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
-            side_effect=HTTPError("url", 413, "Payload Too Large", {}, None),
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_API_KEY": "test-key",
+                    "AGENT_INTERNAL_TOKEN": "agent-token",
+                    "DOCUMENT_INTERNAL_BASE_URL": "http://backend:8080",
+                },
+            ),
+            patch(
+                "app.modules.skill.infrastructure.backend_skill_reference_reader.urlopen",
+                side_effect=HTTPError("url", 413, "Payload Too Large", {}, None),
+            ),
         ):
             response = TestClient(application).post(
                 "/skills/author",
                 json={
                     "workspace_id": "workspace-1",
                     "user_id": "user-1",
+                    "provider": "openai",
+                    "model": "gpt-5-nano",
                     "scope_type": "personal",
                     "instruction": "회의록 Skill을 만들어줘",
                     "reference_document_ids": ["document-1"],

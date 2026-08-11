@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -6,7 +7,8 @@ from pydantic import ValidationError
 from app.modules.agent.domain.entities import AgentTurnResult, AgentTurnRoute, SkillCandidate
 from app.modules.agent.domain.exceptions import AgentConfigurationError, AgentTurnRouteContractError
 from app.modules.agent.interfaces.http.routes import handle_agent_turn
-from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
+from app.modules.agent.interfaces.http.dependencies import get_handle_agent_turn_use_case
+from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody as _AgentTurnRequestBody
 from app.modules.markdown_edit.domain.entities import (
     GeneratedMarkdownDocument,
     MarkdownEditOperation,
@@ -19,6 +21,15 @@ from app.modules.markdown_edit.domain.markdown_output_contract import (
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 from app.modules.skill.domain.entities import SkillAuthoringProposal, SkillAuthoringResult
 from app.modules.skill.domain.exceptions import SkillDisabledError, SkillNotFoundError
+
+
+class AgentTurnRequestBody(_AgentTurnRequestBody):
+    """기존 라우트 단위 테스트에 request-scoped LLM 선택 기본값을 채운다."""
+
+    def __init__(self, **data: object) -> None:
+        data.setdefault("provider", "openai")
+        data.setdefault("model", "gpt-5-nano")
+        super().__init__(**data)
 
 
 class FixedAgentUseCase:
@@ -188,6 +199,23 @@ class DisabledSkillUseCase:
 
 
 class AgentRoutesTest(unittest.TestCase):
+    def test_agent_use_case_is_built_from_request_snapshot(self) -> None:
+        payload = AgentTurnRequestBody(
+            message="문서를 정리해줘",
+            provider="gemini",
+            model="gemini-2.5-flash-lite",
+        )
+        with patch(
+            "app.modules.agent.interfaces.http.dependencies.build_handle_agent_turn_use_case",
+            return_value=object(),
+        ) as build_use_case:
+            get_handle_agent_turn_use_case(payload)
+
+        build_use_case.assert_called_once_with(
+            provider="gemini",
+            model="gemini-2.5-flash-lite",
+        )
+
     def test_agent_turn_accepts_response_preferences(self) -> None:
         request = AgentTurnRequestBody(
             message="Explain this",

@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
@@ -12,6 +13,7 @@ from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor i
     DEFAULT_MARKDOWN_EDIT_PROMPT,
     DEFAULT_MARKDOWN_SOURCE_EDIT_PROMPT,
     ChatCompletionsMarkdownEditor,
+    build_markdown_editor,
 )
 from app.modules.wiki_generation.infrastructure.json_output_parser import JsonParseError
 
@@ -58,6 +60,18 @@ def source_range_response(segment_id: str, replacement: str) -> dict[str, object
 
 
 class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
+    def test_builder_uses_request_llm_snapshot(self) -> None:
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "gemini-key"}, clear=True):
+            editor = build_markdown_editor(
+                provider="gemini",
+                model="gemini-2.5-flash-lite",
+            )
+
+        client = editor._client  # type: ignore[attr-defined]
+        self.assertEqual(client.provider, "gemini")
+        self.assertEqual(client.config.model, "gemini-2.5-flash-lite")
+        self.assertEqual(client.config.api_key, "gemini-key")
+
     def test_preserves_trailing_newline_for_unchanged_result(self) -> None:
         client = SequenceJsonClient(
             [

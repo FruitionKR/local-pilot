@@ -7,9 +7,7 @@ from app.core.llm_env import (
     api_key_from_env,
     chat_completions_endpoint,
     int_env,
-    model_from_env,
-    provider_base_url,
-    resolve_llm_provider,
+    provider_api_key_env,
 )
 from app.core.untrusted_input import validate_untrusted_payload
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation, build_agent_plan
@@ -125,22 +123,11 @@ def normalize_plan_candidate(
     return build_agent_plan(plan_id, run_id, version, summary, tuple(operations))
 
 
-def build_plan_generator() -> ChatCompletionsPlanGenerator:
-    api_key = api_key_from_env(
-        key_env_name="AGENT_PLAN_LLM_API_KEY_ENV",
-        key_env_names=("AGENT_PLAN_LLM_API_KEY", "LLM_API_KEY"),
-    )
-    model = model_from_env(
-        ("AGENT_PLAN_LLM_MODEL", "LLM_MODEL"),
-        "solar-pro2" if resolve_llm_provider() == "upstage" else "",
-    )
-    if not api_key or not model:
-        raise RuntimeError("Set AGENT_PLAN_LLM_API_KEY or LLM_API_KEY and a model.")
-    endpoint = chat_completions_endpoint(
-        endpoint_env_names=("AGENT_PLAN_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("AGENT_PLAN_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
-    )
+def build_plan_generator(*, provider: str, model: str) -> ChatCompletionsPlanGenerator:
+    api_key = api_key_from_env(provider=provider)
+    if not api_key:
+        raise RuntimeError(f"Set {provider_api_key_env(provider)}.")
+    endpoint = chat_completions_endpoint(provider=provider)
     prompt_path = Path(os.environ.get("AGENT_PLAN_SYSTEM_PROMPT", str(DEFAULT_PLAN_PROMPT)))
     return ChatCompletionsPlanGenerator(
         ChatCompletionsJsonClient(
@@ -152,6 +139,7 @@ def build_plan_generator() -> ChatCompletionsPlanGenerator:
                 timeout_seconds=int_env("AGENT_PLAN_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=None,
                 json_mode=True,
+                provider=provider,
             )
         ),
         prompt_path.read_text(encoding="utf-8"),

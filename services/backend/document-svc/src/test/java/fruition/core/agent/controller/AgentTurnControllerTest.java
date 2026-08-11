@@ -100,6 +100,8 @@ class AgentTurnControllerTest {
                 4L,
                 "문서를 점검해줘",
                 null,
+                null,
+                null,
                 new AgentTurnRequest.EditorSnapshot(
                         "# 제목\n본문",
                         new AgentTurnRequest.Target("whole_document", 1, 2))

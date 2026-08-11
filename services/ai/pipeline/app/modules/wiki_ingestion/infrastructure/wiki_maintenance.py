@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
@@ -140,34 +139,24 @@ class PostgresWikiMaintenance(WikiMaintenancePort):
 
 
 def _lint_api_client(command: WikiMaintenanceCommand) -> ChatCompletionsJsonClient:
-    defaults = resolve_llm_provider_defaults(
-        provider=command.provider,
-        base_url=command.api_base_url,
-        api_key_env=command.api_key_env,
-        api_key=command.api_key,
-        model=command.model,
-    )
-    endpoint = (
-        command.endpoint
-        or os.environ.get("LLM_ENDPOINT")
-        or provider_api_endpoint(defaults.base_url, defaults.provider)
-    )
+    defaults = resolve_llm_provider_defaults(provider=command.provider, model=command.model)
+    endpoint = provider_api_endpoint(defaults.base_url, defaults.provider)
     if not defaults.api_key:
         raise WikiMaintenanceConfigurationError(
-            f"Missing API key. Set {defaults.api_key_env}=... or pass api_key"
+            f"Missing API key. Set {defaults.api_key_env}"
         )
     if not defaults.model:
         raise WikiMaintenanceConfigurationError(
-            "Missing model. Set LLM_MODEL or pass model"
+            "Missing model"
         )
     return ChatCompletionsJsonClient(
         ChatClientConfig(
             endpoint=endpoint,
             api_key=defaults.api_key,
             model=defaults.model,
-            temperature=command.temperature,
-            timeout_seconds=command.timeout_seconds,
-            max_tokens=command.max_tokens,
+            temperature=None,
+            timeout_seconds=180,
+            max_tokens=None,
             json_mode=False,
             provider=defaults.provider,
         )

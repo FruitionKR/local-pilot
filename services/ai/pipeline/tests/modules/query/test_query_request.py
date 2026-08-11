@@ -6,21 +6,21 @@ from pydantic import ValidationError
 
 import api
 from app.modules.query.domain.entities import GraphContext
-from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
+from app.modules.query.interfaces.http.dependencies import get_query_answer_use_case
 from app.modules.query.interfaces.http.schemas import QueryRequest
 
 
 class QueryRequestTest(unittest.TestCase):
     def test_workspace_id_is_required(self) -> None:
         with self.assertRaises(ValidationError):
-            QueryRequest(question="질문", provider="openai", model="test-model", allow_web_search=False)
+            QueryRequest(question="질문", provider="openai", model="gpt-5-nano", allow_web_search=False)
 
     def test_accepts_workspace_scoped_query(self) -> None:
         request = QueryRequest(
             workspace_id="ws_target",
             question="질문",
             provider="openai",
-            model="test-model",
+            model="gpt-5-nano",
             allow_web_search=False,
         )
 
@@ -31,7 +31,7 @@ class QueryRequestTest(unittest.TestCase):
             workspace_id="ws_target",
             question="질문",
             provider="openai",
-            model="test-model",
+            model="gpt-5-nano",
             output_language="en",
             response_length="concise",
             allow_web_search=False,
@@ -47,7 +47,7 @@ class QueryRequestTest(unittest.TestCase):
                 workspace_id="ws_target",
                 question="질문",
                 provider="openai",
-                model="test-model",
+                model="gpt-5-nano",
                 allow_web_search=False,
                 output_language="fr",
             )
@@ -57,7 +57,7 @@ class QueryRequestTest(unittest.TestCase):
             workspace_id="ws_target",
             question="후속 질문",
             provider="openai",
-            model="test-model",
+            model="gpt-5-nano",
             allow_web_search=False,
             recent_messages=[
                 {"role": "user" if index % 2 == 0 else "assistant", "content": str(index)}
@@ -71,7 +71,7 @@ class QueryRequestTest(unittest.TestCase):
                 workspace_id="ws_target",
                 question="후속 질문",
                 provider="openai",
-                model="test-model",
+                model="gpt-5-nano",
                 allow_web_search=False,
                 recent_messages=[
                     {"role": "user", "content": str(index)} for index in range(7)
@@ -97,7 +97,7 @@ class QueryRequestTest(unittest.TestCase):
                 "workspace_id": "ws_target",
                 "question": "질문",
                 "provider": "",
-                "model": "test-model",
+                "model": "gpt-5-nano",
                 "allow_web_search": False,
             },
         )
@@ -115,7 +115,7 @@ class QueryRequestTest(unittest.TestCase):
                         workspace_id="ws_target",
                         question="질문",
                         provider="openai",
-                        model="test-model",
+                        model="gpt-5-nano",
                         allow_web_search=value,
                     )
 
@@ -145,7 +145,7 @@ class QueryRequestTest(unittest.TestCase):
                     "workspace_id": "ws_target",
                     "question": "질문",
                     "provider": "gemini",
-                    "model": "request-model",
+                    "model": "gemini-2.5-flash-lite",
                     "allow_web_search": True,
                 },
                 headers={"X-Internal-Token": "test-token"},
@@ -154,7 +154,7 @@ class QueryRequestTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         build_use_case.assert_called_once_with(
             provider="gemini",
-            model="request-model",
+            model="gemini-2.5-flash-lite",
             allow_web_search=True,
         )
         use_case.execute.assert_called_once_with(
@@ -164,20 +164,25 @@ class QueryRequestTest(unittest.TestCase):
             conversation_context=None,
         )
 
-    def test_cached_default_query_use_case_remains_available(self) -> None:
-        get_answer_query_use_case.cache_clear()
-        try:
-            with patch(
-                "app.modules.query.interfaces.http.dependencies.build_answer_query_use_case",
-                return_value=Mock(),
-            ) as build_use_case:
-                first = get_answer_query_use_case()
-                second = get_answer_query_use_case()
+    def test_request_scoped_query_use_case_uses_payload_snapshot(self) -> None:
+        payload = QueryRequest(
+            workspace_id="ws_target",
+            question="질문",
+            provider="gemini",
+            model="gemini-2.5-flash-lite",
+            allow_web_search=True,
+        )
+        with patch(
+            "app.modules.query.interfaces.http.dependencies.build_answer_query_use_case",
+            return_value=Mock(),
+        ) as build_use_case:
+            get_query_answer_use_case(payload)
 
-            self.assertIs(first, second)
-            build_use_case.assert_called_once_with()
-        finally:
-            get_answer_query_use_case.cache_clear()
+        build_use_case.assert_called_once_with(
+            provider="gemini",
+            model="gemini-2.5-flash-lite",
+            allow_web_search=True,
+        )
 
 
 if __name__ == "__main__":

@@ -6,9 +6,8 @@ from app.core.llm_env import (
     api_key_from_env,
     chat_completions_endpoint,
     int_env,
-    model_from_env,
-    provider_base_url,
-    resolve_llm_provider,
+    provider_api_key_env,
+    resolve_llm_selection,
 )
 from app.modules.skill.domain.entities import SkillAuthoringMode, SkillAuthoringReference
 from app.modules.skill.domain.reference_template import extract_markdown_structure
@@ -127,21 +126,19 @@ class ChatCompletionsSkillAuthoringGenerator:
         )
 
 
-def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:
+def build_skill_authoring_generator(
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+) -> ChatCompletionsSkillAuthoringGenerator:
+    resolved_provider, resolved_model = resolve_llm_selection(provider, model)
     api_key = api_key_from_env(
-        key_env_name="SKILL_AUTHORING_LLM_API_KEY_ENV",
-        key_env_names=("SKILL_AUTHORING_LLM_API_KEY", "SKILL_DRAFT_LLM_API_KEY", "LLM_API_KEY"),
+        provider=resolved_provider,
     )
-    model = model_from_env(
-        ("SKILL_AUTHORING_LLM_MODEL", "SKILL_DRAFT_LLM_MODEL", "LLM_MODEL"),
-        "solar-pro2" if resolve_llm_provider() == "upstage" else "",
-    )
-    if not api_key or not model:
-        raise RuntimeError("Set SKILL_AUTHORING_LLM_API_KEY or LLM_API_KEY and a model.")
+    if not api_key or not resolved_model:
+        raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)} and pass a model.")
     endpoint = chat_completions_endpoint(
-        endpoint_env_names=("SKILL_AUTHORING_LLM_ENDPOINT", "SKILL_DRAFT_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("SKILL_AUTHORING_LLM_BASE_URL", "SKILL_DRAFT_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(),
+        provider=resolved_provider,
     )
     prompt_path = Path(os.environ.get("SKILL_AUTHORING_SYSTEM_PROMPT", str(DEFAULT_PROMPT)))
     classifier_prompt_path = Path(
@@ -155,11 +152,12 @@ def build_skill_authoring_generator() -> ChatCompletionsSkillAuthoringGenerator:
             ChatClientConfig(
                 endpoint=endpoint,
                 api_key=api_key,
-                model=model,
-                temperature=0.0,
+                model=resolved_model,
+                temperature=None,
                 timeout_seconds=int_env("SKILL_AUTHORING_LLM_TIMEOUT_SECONDS", 180),
                 max_tokens=None,
                 json_mode=True,
+                provider=resolved_provider,
             )
         ),
         prompt_path.read_text(encoding="utf-8"),

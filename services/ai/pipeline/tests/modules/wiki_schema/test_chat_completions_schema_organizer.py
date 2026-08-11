@@ -8,8 +8,6 @@ from app.modules.wiki_schema.infrastructure.chat_completions_schema_organizer im
     ChatCompletionsSchemaOrganizer,
     _api_key,
     _endpoint,
-    _is_local_ollama_endpoint,
-    _model,
 )
 
 
@@ -47,35 +45,25 @@ class ChatCompletionsSchemaOrganizerTest(unittest.TestCase):
         self.assertEqual(payload["raw_markdown"], "답변은 한국어로 해줘.")
         self.assertIn("global_markdown", payload["target_sections"])
 
-    def test_defaults_to_shared_upstage_provider(self) -> None:
+    def test_uses_fixed_openai_provider(self) -> None:
         env_keys = [
             "WIKI_SCHEMA_LLM_ENDPOINT",
             "QUERY_LLM_ENDPOINT",
             "LLM_ENDPOINT",
             "WIKI_SCHEMA_LLM_BASE_URL",
             "QUERY_LLM_BASE_URL",
-            "UPSTAGE_BASE_URL",
             "LLM_BASE_URL",
-            "WIKI_SCHEMA_LLM_MODEL",
-            "QUERY_LLM_MODEL",
-            "UPSTAGE_MODEL",
             "LLM_MODEL",
         ]
         with patch.dict(os.environ, {key: "" for key in env_keys}, clear=False):
             endpoint = _endpoint()
-            model = _model()
 
-        self.assertEqual(endpoint, "https://api.upstage.ai/v1/chat/completions")
-        self.assertFalse(_is_local_ollama_endpoint(endpoint))
-        self.assertEqual(model, "solar-pro2")
+        self.assertEqual(endpoint, "https://api.openai.com/v1/chat/completions")
 
     def test_api_key_is_none_when_no_shared_or_override_key_exists(self) -> None:
         env_keys = [
-            "WIKI_SCHEMA_LLM_API_KEY_ENV",
-            "WIKI_SCHEMA_LLM_API_KEY",
-            "QUERY_LLM_API_KEY",
-            "UPSTAGE_API_KEY",
             "LLM_API_KEY",
+            "OPENAI_API_KEY",
         ]
         with patch.dict(os.environ, {key: "" for key in env_keys}, clear=False):
             self.assertIsNone(_api_key())

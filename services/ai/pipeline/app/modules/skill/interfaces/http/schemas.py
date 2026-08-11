@@ -1,8 +1,9 @@
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.llm_env import resolve_llm_selection
 from app.modules.skill.domain.entities import (
     Skill,
     SkillAuthoringResult,
@@ -30,6 +31,16 @@ ToolValue = Literal[
 ]
 
 
+class SkillLlmRequest(BaseModel):
+    provider: str = Field(..., min_length=1)
+    model: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_model_selection(self) -> "SkillLlmRequest":
+        resolve_llm_selection(self.provider, self.model)
+        return self
+
+
 class SkillDefinitionRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -39,7 +50,7 @@ class SkillDefinitionRequest(BaseModel):
     allowed_tools: list[ToolValue] = Field(default_factory=list)
 
 
-class SkillAuthoringRequest(BaseModel):
+class SkillAuthoringRequest(SkillLlmRequest):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: str = Field(..., min_length=1)
@@ -108,7 +119,7 @@ class SkillAuthoringResponse(BaseModel):
         )
 
 
-class PublishAuthoredSkillRequest(BaseModel):
+class PublishAuthoredSkillRequest(SkillLlmRequest):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: str = Field(..., min_length=1)
@@ -119,7 +130,7 @@ class PublishAuthoredSkillRequest(BaseModel):
     instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
 
 
-class UpdateSkillRequest(BaseModel):
+class UpdateSkillRequest(SkillLlmRequest):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: str = Field(..., min_length=1)
@@ -224,7 +235,7 @@ class SkillDraftSourceRunRequest(BaseModel):
         )
 
 
-class SkillDraftProposalRequest(BaseModel):
+class SkillDraftProposalRequest(SkillLlmRequest):
     workspace_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)
     scope_type: Literal["personal", "team"]

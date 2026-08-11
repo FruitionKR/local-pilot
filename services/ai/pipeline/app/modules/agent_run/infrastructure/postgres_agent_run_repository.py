@@ -22,8 +22,9 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
             row = conn.execute(
                 """
                 INSERT INTO agent_runs (
-                    id, workspace_id, user_id, action, skill_version_id, status, request_summary
-                ) VALUES (%s, %s, %s, %s, %s, 'queued', %s)
+                    id, workspace_id, user_id, action, skill_version_id, status, request_summary,
+                    provider, model
+                ) VALUES (%s, %s, %s, %s, %s, 'queued', %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -33,6 +34,8 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
                     run.action,
                     run.skill_version_id,
                     run.request_summary,
+                    run.provider,
+                    run.model,
                 ),
             ).fetchone()
             conn.execute(
@@ -389,6 +392,8 @@ def _row_to_run(row: dict[str, Any]) -> AgentRun:
         skill_version_id=row["skill_version_id"],
         status=row["status"],
         request_summary=row["request_summary"],
+        provider=row.get("provider"),
+        model=row.get("model"),
         current_plan_id=row["current_plan_id"],
         error_code=row["error_code"],
         created_at=row["created_at"],

@@ -1,8 +1,11 @@
 package fruition.core.skill.service;
 
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.skill.dto.SkillAuthoringRequest;
+import fruition.core.skill.dto.SkillPublishRequest;
+import fruition.core.skill.dto.SkillUpdateRequest;
 import fruition.core.skill.repository.PipelineSkillRequester;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -21,13 +25,16 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class SkillServiceTest {
 
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
+    @Mock WorkspaceAiModelClient workspaceAiModelClient;
     @Mock PipelineSkillRequester requester;
 
     private SkillService service;
 
     @BeforeEach
     void setUp() {
-        service = new SkillService(workspaceAccessGuard, requester);
+        service = new SkillService(workspaceAccessGuard, requester, workspaceAiModelClient);
+        lenient().when(workspaceAiModelClient.get("ws_1"))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
     }
 
     @Test
@@ -39,7 +46,23 @@ class SkillServiceTest {
         service.author("ws_1", "user_1", request);
 
         verify(workspaceAccessGuard).requireMember("ws_1", "user_1");
-        verify(requester).author("ws_1", "user_1", request);
+        verify(workspaceAiModelClient).get("ws_1");
+        verify(requester).author("ws_1", "user_1", request,
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+    }
+
+    @Test
+    void publish_andUpdate_forwardWorkspaceModelSnapshot() {
+        var publish = new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차");
+        var update = new SkillUpdateRequest("meeting-notes", "회의록 수정", "# 수정 절차");
+
+        service.publish("ws_1", "user_1", publish);
+        service.update("ws_1", "user_1", "skill_1", update);
+
+        verify(requester).publish("ws_1", "user_1", publish,
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+        verify(requester).update("ws_1", "user_1", "skill_1", update,
+                new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
     }
 
     @Test

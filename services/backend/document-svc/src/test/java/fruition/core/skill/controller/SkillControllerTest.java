@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import fruition.core.CoreExceptionHandler;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.config.SecurityConfig;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.exception.PipelineSkillException;
@@ -78,6 +79,15 @@ class SkillControllerTest {
     }
 
     @Test
+    void author_acceptsWithoutProviderAndModel() throws Exception {
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/skills/author")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scope_type\":\"personal\",\"instruction\":\"회의록 Skill을 만들어줘\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void author_pipelineValidationFailureUsesStandardErrorEnvelope() throws Exception {
         when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
                 .thenThrow(new PipelineSkillException(
@@ -129,7 +139,8 @@ class SkillControllerTest {
                     "agent-token",
                     5
             );
-            var service = new SkillService(mock(WorkspaceAccessGuard.class), requester);
+            var service = new SkillService(mock(WorkspaceAccessGuard.class), requester,
+                    workspaceAiModelClient());
             when(skillService.author(eq(WORKSPACE_ID), eq(USER_ID), any(SkillAuthoringRequest.class)))
                     .thenAnswer(invocation -> service.author(
                             WORKSPACE_ID,
@@ -184,5 +195,12 @@ class SkillControllerTest {
 
     private String bearer() {
         return "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+    }
+
+    private WorkspaceAiModelClient workspaceAiModelClient() {
+        var client = mock(WorkspaceAiModelClient.class);
+        when(client.get(WORKSPACE_ID))
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
+        return client;
     }
 }

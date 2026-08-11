@@ -49,7 +49,7 @@ class LintOperationApiIntegrationTest {
         workspaceId = "ws_" + suffix;
         redisTemplate.opsForValue().set("authz:role:" + workspaceId + ":" + userId, "OWNER");
         org.mockito.Mockito.when(workspaceAiModelClient.get(workspaceId))
-                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-4.1-mini"));
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("openai", "gpt-5-nano"));
     }
 
     @Test

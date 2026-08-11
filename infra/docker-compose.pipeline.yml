@@ -11,10 +11,9 @@ x-ai-task-worker: &ai-task-worker
     AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
     REDIS_HOST: redis
     REDIS_PORT: "6379"
-    LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
-    LLM_API_KEY: ${LLM_API_KEY:-}
-    LLM_BASE_URL: ${LLM_BASE_URL:-}
-    LLM_MODEL: ${LLM_MODEL:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     TAVILY_API_KEY: ${TAVILY_API_KEY:-}
     QUERY_EMBEDDING_MODE: ${QUERY_EMBEDDING_MODE:-text-only}
     QUERY_EVALUATOR_MODE: ${QUERY_EVALUATOR_MODE:-disabled}
@@ -51,10 +50,9 @@ services:
       ACCESS_INTERNAL_BASE_URL: ${ACCESS_INTERNAL_BASE_URL:-http://host.docker.internal:8081}
       # ai_db 스키마 적용(멱등)은 pipeline-api 기동 시에만 수행한다
       AI_DB_MIGRATION_URL: postgresql://${AI_DB_MIGRATION_USER:-ai_migration}:${AI_DB_MIGRATION_PASSWORD:-ai_migration_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
-      LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-local-pilot-dev}
@@ -99,10 +97,9 @@ services:
       AI_TASK_EVENT_TOPIC: ${AI_TASK_EVENT_TOPIC:-ai.task.event}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-local-pilot-dev}
@@ -174,10 +171,9 @@ services:
     command: ["python", "agent_worker.py"]
     environment:
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
-      LLM_PROVIDER: ${LLM_PROVIDER:-upstage}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AGENT_BACKEND_URL: http://host.docker.internal:8080
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
       AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}

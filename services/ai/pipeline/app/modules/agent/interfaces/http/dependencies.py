@@ -1,4 +1,3 @@
-from functools import lru_cache
 import os
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
@@ -10,9 +9,9 @@ from app.modules.markdown_edit.application.generate_markdown_edit import Generat
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import build_markdown_editor
 from app.modules.query.interfaces.http.dependencies import (
     build_answer_query_use_case,
-    get_answer_query_use_case,
-    get_conversation_summarizer,
+    build_query_conversation_summarizer,
 )
+from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
 from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.infrastructure.postgres_skill_repository import PostgresSkillRepository
 from app.modules.skill.interfaces.http.dependencies import (
@@ -21,23 +20,31 @@ from app.modules.skill.interfaces.http.dependencies import (
 )
 
 
-@lru_cache(maxsize=1)
-def get_handle_agent_turn_use_case() -> HandleAgentTurnUseCase:
-    markdown_editor = build_markdown_editor()
+def build_handle_agent_turn_use_case(*, provider: str, model: str) -> HandleAgentTurnUseCase:
+    markdown_editor = build_markdown_editor(provider=provider, model=model)
+    query_use_case = build_answer_query_use_case(provider=provider, model=model)
     feature_enabled = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
     return HandleAgentTurnUseCase(
-        router=build_agent_turn_router(),
-        query_use_case=get_answer_query_use_case(),
-        web_search_query_use_case_factory=lambda: build_answer_query_use_case(allow_web_search=True),
+        router=build_agent_turn_router(provider=provider, model=model),
+        query_use_case=query_use_case,
+        web_search_query_use_case_factory=lambda: build_answer_query_use_case(
+            provider=provider, model=model, allow_web_search=True
+        ),
         markdown_edit_use_case=GenerateMarkdownEditUseCase(markdown_editor),
         markdown_create_use_case=GenerateMarkdownDocumentUseCase(markdown_editor),
         skill_selector=SelectSkillUseCase(PostgresSkillRepository(), feature_enabled=feature_enabled),
         agent_run_starter=StartAgentRunUseCase(PostgresAgentRunRepository(), feature_enabled=feature_enabled),
-        skill_authorer=(get_author_skill_use_case() if feature_enabled else None),
+        skill_authorer=(get_author_skill_use_case(provider=provider, model=model) if feature_enabled else None),
         skill_draft_proposer=(
-            get_propose_skill_draft_use_case()
+            get_propose_skill_draft_use_case(provider=provider, model=model)
             if feature_enabled
             else None
         ),
-        conversation_summarizer=get_conversation_summarizer(),
+        conversation_summarizer=build_query_conversation_summarizer(
+            provider=provider, model=model
+        ),
     )
+
+
+def get_handle_agent_turn_use_case(payload: AgentTurnRequestBody) -> HandleAgentTurnUseCase:
+    return build_handle_agent_turn_use_case(provider=payload.provider, model=payload.model)

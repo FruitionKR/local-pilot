@@ -1,7 +1,9 @@
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from app.modules.wiki_ingestion.application.models import PipelineRunCommand
 from run_lab import (
+    _prepare_api_client,
     parse_args,
     pipeline_command_from_cli_args,
     resolve_api_defaults,
@@ -9,53 +11,44 @@ from run_lab import (
 )
 
 
-def test_wiki_evaluation_loop_is_enabled_by_default() -> None:
-    with patch("sys.argv", ["run_lab.py", "--input", "input.md"]):
-        args = parse_args()
-
-    assert args.wiki_evaluation_loop is True
-
-
-def test_wiki_evaluation_loop_can_be_disabled() -> None:
-    with patch("sys.argv", ["run_lab.py", "--input", "input.md", "--no-wiki-evaluation-loop"]):
-        args = parse_args()
-
-    assert args.wiki_evaluation_loop is False
-
-
-def test_cli_args_are_converted_to_typed_pipeline_command() -> None:
+def _args(*extra: str):
     with patch(
         "sys.argv",
         [
             "run_lab.py",
             "--input",
-            "inputs/document.md",
-            "--out",
-            "runs/cli",
+            "input.md",
             "--provider",
-            "generic",
-            "--no-wiki-evaluation-loop",
+            "openai",
+            "--model",
+            "gpt-5-nano",
+            *extra,
         ],
     ):
-        args = parse_args()
+        return parse_args()
 
+
+def test_wiki_evaluation_loop_is_enabled_by_default() -> None:
+    assert _args().wiki_evaluation_loop is True
+
+
+def test_wiki_evaluation_loop_can_be_disabled() -> None:
+    assert _args("--no-wiki-evaluation-loop").wiki_evaluation_loop is False
+
+
+def test_cli_args_are_converted_to_typed_pipeline_command() -> None:
+    args = _args("--out", "runs/cli")
     command = pipeline_command_from_cli_args(args)
 
     assert command.run_id is None
-    assert command.input == "inputs/document.md"
-    assert command.input_name == "inputs/document.md"
+    assert command.input == "input.md"
+    assert command.input_name == "input.md"
     assert command.out == "runs/cli"
-    assert command.provider == "generic"
-    assert command.wiki_evaluation_loop is False
+    assert command.provider == "openai"
+    assert command.model == "gpt-5-nano"
 
 
-def test_api_defaults_return_resolved_command_without_mutating_input(
-    monkeypatch,
-) -> None:
-    monkeypatch.delenv("UPSTAGE_BASE_URL", raising=False)
-    monkeypatch.delenv("LLM_BASE_URL", raising=False)
-    monkeypatch.delenv("UPSTAGE_MODEL", raising=False)
-    monkeypatch.delenv("LLM_MODEL", raising=False)
+def test_api_defaults_validate_and_preserve_request_snapshot() -> None:
     command = PipelineRunCommand(
         run_id=None,
         input="input.md",
@@ -63,44 +56,22 @@ def test_api_defaults_return_resolved_command_without_mutating_input(
         out="runs/cli",
         user_id="local-user",
         workspace_id="local-workspace",
-    )
-
-    resolved = resolve_api_defaults(command)
-
-    assert command.api_base_url is None
-    assert command.api_key_env is None
-    assert command.model is None
-    assert resolved.api_base_url == "https://api.upstage.ai/v1"
-    assert resolved.provider == "upstage"
-    assert resolved.api_key_env == "LLM_API_KEY"
-    assert resolved.model == "solar-pro2"
-
-
-def test_api_defaults_use_unified_provider_environment(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_PROVIDER", "gemini")
-    monkeypatch.setenv("LLM_API_KEY", "gemini-key")
-    monkeypatch.setenv("LLM_MODEL", "gemini-model")
-    monkeypatch.setenv("UPSTAGE_API_KEY", "legacy-key")
-    command = PipelineRunCommand(
-        run_id=None,
-        input="input.md",
-        input_name="input.md",
-        out="runs/cli",
-        user_id="local-user",
-        workspace_id="local-workspace",
+        provider="gemini",
+        model="gemini-2.5-flash-lite",
     )
 
     resolved = resolve_api_defaults(command)
 
     assert resolved.provider == "gemini"
-    assert resolved.api_base_url == "https://generativelanguage.googleapis.com/v1beta/openai"
-    assert resolved.api_key == "gemini-key"
-    assert resolved.api_key_env == "LLM_API_KEY"
-    assert resolved.model == "gemini-model"
+    assert resolved.model == "gemini-2.5-flash-lite"
+    assert command.provider == "gemini"
+    assert command.model == "gemini-2.5-flash-lite"
+    assert resolve_endpoint(resolved) == (
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
 
 
-def test_claude_uses_messages_endpoint(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_PROVIDER", "claude")
+def test_claude_uses_messages_endpoint() -> None:
     command = PipelineRunCommand(
         run_id=None,
         input="input.md",
@@ -108,8 +79,43 @@ def test_claude_uses_messages_endpoint(monkeypatch) -> None:
         out="runs/cli",
         user_id="local-user",
         workspace_id="local-workspace",
+        provider="claude",
+        model="claude-3-5-haiku-20241022",
     )
 
-    resolved = resolve_api_defaults(command)
+    assert resolve_endpoint(command) == "https://api.anthropic.com/v1/messages"
 
-    assert resolve_endpoint(resolved) == "https://api.anthropic.com/v1/messages"
+
+def test_api_debug_and_log_metadata_exclude_provider_endpoint(tmp_path: Path) -> None:
+    command = PipelineRunCommand(
+        run_id=None,
+        input="input.md",
+        input_name="input.md",
+        out=str(tmp_path),
+        user_id="local-user",
+        workspace_id="local-workspace",
+        mode="api",
+        provider="openai",
+        model="gpt-5-nano",
+        save_debug_json=True,
+    )
+    log = MagicMock()
+
+    with (
+        patch("run_lab.load_api_client", return_value=object()),
+        patch("run_lab.write_json") as write_json,
+    ):
+        _prepare_api_client(command, tmp_path, log)
+
+    debug_payload = write_json.call_args.args[1]
+    assert debug_payload == {
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "timeout_seconds": 180,
+        "secret_values_saved": False,
+    }
+    log.emit.assert_called_once_with(
+        "API 설정",
+        "LLM API 클라이언트를 준비했습니다.",
+        {"provider": "openai", "model": "gpt-5-nano"},
+    )

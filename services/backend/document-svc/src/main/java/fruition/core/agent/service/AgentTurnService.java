@@ -12,6 +12,7 @@ import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.dto.DocumentDetailResponse;
 import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.service.DocumentEditLockService;
+import fruition.shared.ai.AiModelCatalog;
 import fruition.core.document.service.DocumentService;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ public class AgentTurnService {
     private final PipelineAgentRunStatusRequester statusRequester;
     private final AiCommandOutboxWriter outboxWriter;
     private final AgentApplyOperationStore applyOperationStore;
+    private final AiModelCatalog aiModelCatalog;
     private final String commandTopic;
 
     public AgentTurnService(DocumentService documentService,
@@ -43,6 +45,7 @@ public class AgentTurnService {
                             PipelineAgentRunStatusRequester statusRequester,
                             AiCommandOutboxWriter outboxWriter,
                             AgentApplyOperationStore applyOperationStore,
+                            AiModelCatalog aiModelCatalog,
                             @Value("${app.agent.command-topic}") String commandTopic) {
         this.documentService = documentService;
         this.editLockService = editLockService;
@@ -51,6 +54,7 @@ public class AgentTurnService {
         this.statusRequester = statusRequester;
         this.outboxWriter = outboxWriter;
         this.applyOperationStore = applyOperationStore;
+        this.aiModelCatalog = aiModelCatalog;
         this.commandTopic = commandTopic;
     }
 
@@ -69,6 +73,7 @@ public class AgentTurnService {
                     "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
         }
         validateTarget(request.editorSnapshot());
+        AiModelCatalog.AiModel selectedModel = aiModelCatalog.resolve(request.provider(), request.model());
 
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
@@ -78,6 +83,7 @@ public class AgentTurnService {
         outboxWriter.enqueue(runId, commandTopic, request.documentId(),
                 new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
+                        selectedModel.provider(), selectedModel.model(),
                         CommandConversationContext.from(request.conversationContext()),
                         CommandEditorSnapshot.from(request.editorSnapshot())));
         return new AgentTurnResponse(
@@ -144,6 +150,8 @@ public class AgentTurnService {
             @com.fasterxml.jackson.annotation.JsonProperty("base_version") long baseVersion,
             @com.fasterxml.jackson.annotation.JsonProperty("apply_operation_id") String applyOperationId,
             String message,
+            String provider,
+            String model,
             @com.fasterxml.jackson.annotation.JsonProperty("conversation_context") CommandConversationContext conversationContext,
             @com.fasterxml.jackson.annotation.JsonProperty("editor_snapshot") CommandEditorSnapshot editorSnapshot
     ) {}

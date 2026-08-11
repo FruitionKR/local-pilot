@@ -3,10 +3,16 @@ from collections.abc import Callable
 from threading import Event, Thread
 
 from app.modules.wiki_ingestion.application.run_pipeline import (
-    PipelineRunCommand,
+    PipelineRunCommand as _PipelineRunCommand,
     PipelineRunRegistration,
     RunPipelineUseCase,
 )
+
+
+def PipelineRunCommand(**data: object) -> _PipelineRunCommand:
+    data.setdefault("provider", "openai")
+    data.setdefault("model", "gpt-5-nano")
+    return _PipelineRunCommand(**data)
 
 
 class FakeRunner:

@@ -47,14 +47,8 @@ def main() -> None:
             connection,
             serde=JsonPlusSerializer(allowed_msgpack_modules=()),
         )
-        worker = AgentWorker(
-            repository=repository,
-            run_repository=PostgresAgentRunRepository(),
-            tool_gateway=build_backend_tool_gateway(),
-            plan_generator=build_plan_generator(),
-            execution_decider=build_execution_decider(),
-            checkpointer=checkpointer,
-        )
+        run_repository = PostgresAgentRunRepository()
+        tool_gateway = build_backend_tool_gateway()
         worker_id = os.environ.get("AGENT_WORKER_ID", f"agent-worker-{uuid4()}")
         poll_seconds = float(os.environ.get("AGENT_WORKER_POLL_SECONDS", "1"))
         next_cleanup_at = 0.0
@@ -68,6 +62,35 @@ def main() -> None:
             job = repository.claim_next(worker_id)
             if job is None:
                 time.sleep(poll_seconds)
+                continue
+            try:
+                context = repository.load_context(job.run_id)
+                missing_llm_selection = context.run.provider is None or context.run.model is None
+            except Exception as exc:
+                logger.exception("Agent worker setup 실패: job_id=%s", job.id)
+                repository.fail(job, type(exc).__name__)
+                continue
+            if missing_llm_selection:
+                repository.fail(job, "missing_llm_selection")
+                continue
+            try:
+                worker = AgentWorker(
+                    repository=repository,
+                    run_repository=run_repository,
+                    tool_gateway=tool_gateway,
+                    plan_generator=build_plan_generator(
+                        provider=context.run.provider,
+                        model=context.run.model,
+                    ),
+                    execution_decider=build_execution_decider(
+                        provider=context.run.provider,
+                        model=context.run.model,
+                    ),
+                    checkpointer=checkpointer,
+                )
+            except Exception as exc:
+                logger.exception("Agent worker setup 실패: job_id=%s", job.id)
+                repository.fail(job, type(exc).__name__)
                 continue
             worker.process(job)
 

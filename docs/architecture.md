@@ -1,6 +1,6 @@
 # 아키텍처
 
-기준일 2026-08-10. 상세 이력·검증 원문: `docs/backlog/msa/`, `docs/backlog/Fruition_AWS_MSA_Architecture.md`
+기준일 2026-08-11. 상세 이력·검증 원문: `docs/backlog/msa/`, `docs/backlog/Fruition_AWS_MSA_Architecture.md`
 
 ## 1. 서비스 경계 (전부 독립 배포 단위)
 
@@ -46,7 +46,13 @@ services/
 | ai-svc → access | `GET /internal/authz/workspaces/{wid}/users/{uid}` + X-Internal-Token | Skill 팀 범위 멤버·owner 확인 |
 | 사용자 인증 | 각 앱이 JWT(iss·aud, HS256 공유 시크릿) 로컬 검증 | access 호출 없이 검증 |
 
-## 3. 권한 인가
+## 3. LLM 설정 전달
+
+지원 조합은 `openai/gpt-5-nano`(기본, `reasoning_effort=minimal`), `gemini/gemini-2.5-flash-lite`(`low`), `claude/claude-3-5-haiku-20241022`(extended thinking 없음)뿐이다. Ingest·Lint command와 Skill author/publish/update는 workspace 설정을 snapshot하고, Query·Markdown Agent·Agent 경로는 chat/request 설정을 snapshot한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 오며 env override는 없다.
+
+ai-svc는 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`만 secret env에서 읽고 base URL은 provider별로 고정한다. API key는 backend·Kafka payload/event·log에 넣지 않는다. live provider 호출은 선택 provider key가 필요하고 mock 통합 테스트는 key 없이 실행한다.
+
+## 4. 권한 인가
 
 document-svc는 workspace 멤버십을 DB에서 직접 읽지 않는다:
 
@@ -59,7 +65,7 @@ document-svc는 workspace 멤버십을 DB에서 직접 읽지 않는다:
 
 access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. **access-svc가 죽어도 캐시 warm 상태의 문서 기능은 계속 동작한다**(TTL 내). 실측: access 강제 정지 중 문서 조회 200·업로드 201, cold 캐시는 fail-closed 404. 결정 근거: [adr/0002](adr/0002-choose-auth-strategy.md)
 
-## 4. 데이터 소유
+## 5. 데이터 소유
 
 저장소·테이블 상세는 [data-model.md](data-model.md). 요약:
 
@@ -68,13 +74,13 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 - ai-svc → **ai_db** (Wiki 현재 상태·source block·embedding·pipeline run·schema·파생물 stale 추적·Agent·Skill·LangGraph checkpoint).
 - DB 계정 runtime(DML)/migration(DDL) 분리. `ai_runtime`은 core DB DML 권한과 연결 설정을 갖지 않는다. Markdown Agent 요청 시 document-svc는 core의 좁은 적용 예약 projection과 outbox만 원자 저장하고, AI run 상태는 scope가 포함된 내부 API로 조회한다. 결정 근거: [adr/0001](adr/0001-choose-primary-database.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md)
 
-## 5. 이벤트 처리
+## 6. 이벤트 처리
 
-본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. Query·ingest·lint command에는 적용할 `provider`와 `model` snapshot도 포함한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다.
+본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. Query·ingest·lint command에는 적용할 `provider`와 `model` snapshot도 포함한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다. 기존 AI 작업 로그 조회/결과 경로는 LLM 설정을 받지 않는다.
 
 ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서 LLM·분석을 병렬 처리한다. ingest와 lint `materialize=true`는 Concept 최종 read→merge→object write→DB commit만 `(user_id, workspace_id)` PostgreSQL transaction advisory lock으로 공유 직렬화한다. 기존 ingest Redis short lock은 유지하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
 
-## 6. 배포
+## 7. 배포
 
 배포 단위 = 이미지 = 폴더. 로컬 compose·kind 검증 그대로 AWS 매핑 (코드 변경 0, env만 교체).
 
@@ -95,7 +101,7 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 - 단계적 전환 배포 순서: document-svc 먼저(core 적용 projection Flyway) → access-svc(검증만) → pipeline API/worker(ai_schema 적용). 기존 데이터 환경은 [demo-script.md](demo-script.md)의 AI 저장소 maintenance cutover로 Agent/Skill/checkpoint까지 ID를 보존해 이전하고 core source를 read-only로 둔다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
 - ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
 
-## 7. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
+## 8. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)
 
 | 항목 | 상태 · 트리거 |
 |---|---|

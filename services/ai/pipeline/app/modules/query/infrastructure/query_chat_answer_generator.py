@@ -5,10 +5,9 @@ from app.core.llm_env import (
     chat_completions_endpoint,
     float_env,
     int_env,
-    model_from_env,
     optional_int_env,
-    provider_base_url,
-    resolve_llm_provider,
+    provider_api_key_env,
+    resolve_llm_selection,
 )
 from app.core.llm_prompt import with_schema_prompt
 from app.core.response_preferences import with_response_preferences
@@ -134,18 +133,15 @@ def _config_from_env(
     provider: str | None = None,
     model: str | None = None,
 ) -> ChatClientConfig:
-    resolved_provider = resolve_llm_provider(provider)
-    api_key = _api_key()
+    resolved_provider, resolved_model = resolve_llm_selection(provider, model)
+    api_key = _api_key(resolved_provider)
     if not api_key:
-        raise RuntimeError("Set QUERY_LLM_API_KEY or LLM_API_KEY before enabling query answer generation.")
-    resolved_model = model or _model(resolved_provider)
-    if not resolved_model:
-        raise RuntimeError("Set QUERY_LLM_MODEL or LLM_MODEL before enabling query answer generation.")
+        raise RuntimeError(f"Set {provider_api_key_env(resolved_provider)} before enabling query answer generation.")
     return ChatClientConfig(
         endpoint=_endpoint(resolved_provider),
         api_key=api_key,
         model=resolved_model,
-        temperature=_float_env("QUERY_LLM_TEMPERATURE", 0.2),
+        temperature=None,
         timeout_seconds=_int_env("QUERY_LLM_TIMEOUT_SECONDS", 180),
         max_tokens=_optional_int_env("QUERY_LLM_MAX_TOKENS"),
         json_mode=False,
@@ -155,23 +151,14 @@ def _config_from_env(
 
 def _endpoint(provider: str | None = None) -> str:
     return chat_completions_endpoint(
-        endpoint_env_names=("QUERY_LLM_ENDPOINT", "LLM_ENDPOINT"),
-        base_url_env_names=("QUERY_LLM_BASE_URL", "LLM_BASE_URL"),
-        default_base_url=provider_base_url(provider),
         provider=provider,
     )
 
 
-def _api_key() -> str | None:
+def _api_key(provider: str | None = None) -> str | None:
     return api_key_from_env(
-        key_env_name="QUERY_LLM_API_KEY_ENV",
-        key_env_names=("QUERY_LLM_API_KEY", "LLM_API_KEY"),
+        provider=provider,
     )
-
-
-def _model(provider: str | None = None) -> str:
-    default = "solar-pro2" if resolve_llm_provider(provider) == "upstage" else ""
-    return model_from_env(("QUERY_LLM_MODEL", "LLM_MODEL"), default)
 
 
 def _float_env(name: str, default: float) -> float:

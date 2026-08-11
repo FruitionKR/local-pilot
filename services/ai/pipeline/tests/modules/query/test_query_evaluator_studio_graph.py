@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -6,7 +7,10 @@ from app.modules.query.infrastructure.query_evaluator_studio_graph import graph
 
 class QueryEvaluatorStudioGraphTest(unittest.TestCase):
     def test_studio_graph_invokes_without_configured_evaluator(self) -> None:
-        with patch("app.modules.query.infrastructure.query_evaluator_studio_graph.build_query_answer_evaluator", return_value=None):
+        with patch(
+            "app.modules.query.infrastructure.query_evaluator_studio_graph.build_query_answer_evaluator",
+            return_value=None,
+        ) as build_evaluator:
             result = graph.invoke(
                 {
                     "question": "LangGraph Studio에서 evaluator graph를 볼 수 있나요?",
@@ -23,9 +27,18 @@ class QueryEvaluatorStudioGraphTest(unittest.TestCase):
                 }
             )
 
+        build_evaluator.assert_called_once_with(provider="openai", model="gpt-5-nano")
         self.assertEqual(result["attempt"], 1)
         self.assertEqual(result["evaluation"]["route"], "internal_supported")
         self.assertIn("reason", result["evaluation"])
+
+    def test_studio_graph_falls_back_without_openai_key_in_llm_mode(self) -> None:
+        with patch.dict(os.environ, {"QUERY_EVALUATOR_MODE": "llm"}):
+            os.environ.pop("OPENAI_API_KEY", None)
+            result = graph.invoke({"question": "질문", "answer": "답변"})
+
+        self.assertEqual(result["evaluation"]["route"], "internal_supported")
+        self.assertIn("API key", result["evaluation"]["reason"])
 
 
 if __name__ == "__main__":

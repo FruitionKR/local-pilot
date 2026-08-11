@@ -1,7 +1,8 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, model_validator
 
+from app.core.llm_env import resolve_llm_selection
 from app.modules.query.domain.entities import ConversationMessage
 
 
@@ -25,6 +26,11 @@ class QueryRequest(BaseModel):
     reference_context: dict[str, Any] | None = None
     output_language: Literal["ko", "en", "document"] | None = None
     response_length: Literal["concise", "balanced", "detailed"] | None = None
+
+    @model_validator(mode="after")
+    def validate_model_selection(self) -> "QueryRequest":
+        resolve_llm_selection(self.provider, self.model)
+        return self
 
 
 class RelatedPageResponse(BaseModel):

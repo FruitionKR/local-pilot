@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import statistics
 import time
@@ -452,10 +453,10 @@ def _missing_facts(markdown: str, facts: tuple[str, ...]) -> list[str]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="qwen2.5:7b Markdown/GFM 편집 계약 평가")
-    parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1/chat/completions")
-    parser.add_argument("--api-key", default="ollama")
-    parser.add_argument("--model", default="qwen2.5:7b")
+    parser = argparse.ArgumentParser(description="OpenAI Markdown/GFM 편집 계약 평가")
+    parser.add_argument("--endpoint", default="https://api.openai.com/v1/chat/completions")
+    parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", ""))
+    parser.add_argument("--model", default="gpt-5-nano")
     parser.add_argument("--prompt", default=str(DEFAULT_PROMPT))
     parser.add_argument("--source-edit-prompt", default=str(DEFAULT_SOURCE_EDIT_PROMPT))
     parser.add_argument("--router-prompt", default=str(DEFAULT_ROUTER_PROMPT))
@@ -476,6 +477,7 @@ def main() -> None:
             endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
+            provider="openai",
             temperature=0.2,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,

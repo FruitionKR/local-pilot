@@ -2,6 +2,7 @@ package fruition.core.skill.repository;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.authz.WorkspaceAiModelClient;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.dto.SkillPublishRequest;
 import fruition.core.skill.dto.SkillUpdateRequest;
@@ -34,14 +35,17 @@ public class PipelineSkillRequester {
                 .build();
     }
 
-    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request) {
+    public JsonNode author(String workspaceId, String userId, SkillAuthoringRequest request,
+                           WorkspaceAiModelClient.AiModelSelection aiModel) {
         return post("/author", new AuthorPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds()));
+                request.description(), request.instruction(), request.authoringMode(), request.referenceDocumentIds(),
+                aiModel.provider(), aiModel.model()));
     }
 
-    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request) {
+    public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request,
+                            WorkspaceAiModelClient.AiModelSelection aiModel) {
         return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instructionsMarkdown()));
+                request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -60,9 +64,10 @@ public class PipelineSkillRequester {
         return get(uri);
     }
 
-    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request) {
+    public JsonNode update(String workspaceId, String userId, String skillId, SkillUpdateRequest request,
+                           WorkspaceAiModelClient.AiModelSelection aiModel) {
         return patch("/" + skillId, new UpdatePayload(workspaceId, userId, request.name(),
-                request.description(), request.instructionsMarkdown()));
+                request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode setEnabled(String workspaceId, String userId, String skillId, boolean enabled) {
@@ -130,7 +135,9 @@ public class PipelineSkillRequester {
             String description,
             String instruction,
             @JsonProperty("authoring_mode") String authoringMode,
-            @JsonProperty("reference_document_ids") java.util.List<String> referenceDocumentIds) {}
+            @JsonProperty("reference_document_ids") java.util.List<String> referenceDocumentIds,
+            String provider,
+            String model) {}
 
     private record PublishPayload(
             @JsonProperty("workspace_id") String workspaceId,
@@ -138,14 +145,18 @@ public class PipelineSkillRequester {
             @JsonProperty("scope_type") String scopeType,
             String name,
             String description,
-            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+            @JsonProperty("instructions_markdown") String instructionsMarkdown,
+            String provider,
+            String model) {}
 
     private record UpdatePayload(
             @JsonProperty("workspace_id") String workspaceId,
             @JsonProperty("user_id") String userId,
             String name,
             String description,
-            @JsonProperty("instructions_markdown") String instructionsMarkdown) {}
+            @JsonProperty("instructions_markdown") String instructionsMarkdown,
+            String provider,
+            String model) {}
 
     private record ActorPayload(
             @JsonProperty("workspace_id") String workspaceId,

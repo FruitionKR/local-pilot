@@ -79,6 +79,8 @@ class AgentTurnRequest:
     output_language: OutputLanguage | None = None
     response_length: ResponseLength | None = None
     allow_web_search: bool | None = None
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)

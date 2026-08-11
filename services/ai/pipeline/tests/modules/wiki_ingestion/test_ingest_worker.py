@@ -35,7 +35,8 @@ def test_handle_skips_terminal_redelivered_run(status: str) -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
-        "model": "gpt-5.6-terra",
+        "provider": "openai",
+        "model": "gpt-5-nano",
     }
 
     with (
@@ -55,7 +56,8 @@ def test_handle_retries_running_redelivered_run() -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
-        "model": "gpt-5.6-terra",
+        "provider": "openai",
+        "model": "gpt-5-nano",
     }
 
     with (
@@ -97,6 +99,7 @@ def test_handle_rejects_command_that_reuses_another_run_context() -> None:
                     "document_id": "document-2",
                     "workspace_id": "workspace-1",
                     "user_id": "user-1",
+                    "provider": "openai",
                 }
             )
 
@@ -113,7 +116,8 @@ def test_handle_records_failure_after_run_registration() -> None:
         "document_id": "document-1",
         "workspace_id": "workspace-1",
         "user_id": "user-1",
-        "model": "gpt-5.6-terra",
+        "provider": "openai",
+        "model": "gpt-5-nano",
     }
 
     with (
@@ -135,7 +139,7 @@ def test_build_payload_requires_actor_context() -> None:
         ingest_worker._build_payload({"run_id": "run-1", "document_id": "document-1"})
 
 
-def test_build_payload_uses_runtime_model_without_command_overrides() -> None:
+def test_build_payload_uses_workspace_command_snapshot() -> None:
     payload = ingest_worker._build_payload(
         {
             "run_id": "run-1",
@@ -144,20 +148,18 @@ def test_build_payload_uses_runtime_model_without_command_overrides() -> None:
             "workspace_id": "workspace-1",
             "user_id": "user-1",
             "provider": "openai",
-            "model": "  gpt-5.6-terra  ",
+            "model": "  gpt-5-nano  ",
             "api_key": "command-secret",
             "api_base_url": "https://command.example/v1",
         }
     )
 
-    assert payload.provider is None
-    assert payload.model == "gpt-5.6-terra"
-    assert payload.api_key is None
-    assert payload.api_base_url is None
+    assert payload.provider == "openai"
+    assert payload.model == "gpt-5-nano"
 
 
-def test_build_payload_requires_runtime_model() -> None:
-    with pytest.raises(ValueError, match="requires model"):
+def test_build_payload_requires_runtime_provider_and_model() -> None:
+    with pytest.raises(ValueError, match="requires provider and model"):
         ingest_worker._build_payload(
             {
                 "run_id": "run-1",
@@ -183,7 +185,12 @@ def test_event_request_excludes_top_level_secrets() -> None:
     command = {
         "run_id": "run-1",
         "kind": "document",
+        "provider": "openai",
+        "model": "gpt-5-nano",
         "api_key": "api-secret",
+        "api_base_url": "https://command.example/v1",
+        "base_url": "https://base.example/v1",
+        "endpoint": "https://endpoint.example/v1",
         "tavily_api_key": "tavily-secret",
         "access_token": "access-secret",
         "db_password": "password-secret",
@@ -194,6 +201,9 @@ def test_event_request_excludes_top_level_secrets() -> None:
         "clientSecret": "camel-client-secret",
         "metadata": {
             "api_key": "nested-api-secret",
+            "api_base_url": "https://nested-command.example/v1",
+            "base_url": "https://nested-base.example/v1",
+            "apiEndpoint": "https://nested-endpoint.example/v1",
             "ordinary": {"value": "keep"},
         },
         "items": [
@@ -208,6 +218,8 @@ def test_event_request_excludes_top_level_secrets() -> None:
     assert event["request"] == {
         "run_id": "run-1",
         "kind": "document",
+        "provider": "openai",
+        "model": "gpt-5-nano",
         "metadata": {"ordinary": {"value": "keep"}},
         "items": [
             {"ordinary": "keep"},

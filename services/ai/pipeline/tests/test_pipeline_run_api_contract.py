@@ -47,6 +47,18 @@ def _internal_token_headers() -> dict[str, str]:
     return {"X-Internal-Token": os.environ["INTERNAL_CALLBACK_TOKEN"]}
 
 
+def _pipeline_run_in(**data: object):
+    data.setdefault("provider", "openai")
+    data.setdefault("model", "gpt-5-nano")
+    return api.PipelineRunIn(**data)
+
+
+def _chat_wiki_run_in(**data: object):
+    data.setdefault("provider", "openai")
+    data.setdefault("model", "gpt-5-nano")
+    return api.ChatWikiRunIn(**data)
+
+
 @contextmanager
 def _pipeline_client(
     *,
@@ -97,7 +109,7 @@ def test_pipeline_lifespan_verifies_ai_schema() -> None:
 
 def test_pipeline_run_rejects_chat_selection_mode() -> None:
     try:
-        api.PipelineRunIn(document_id="chat_document_1", selection_mode="full")
+        _pipeline_run_in(document_id="chat_document_1", selection_mode="full")
     except ValidationError as exc:
         assert "selection_mode" in str(exc)
     else:
@@ -106,7 +118,7 @@ def test_pipeline_run_rejects_chat_selection_mode() -> None:
 
 def test_pipeline_run_requires_document_id() -> None:
     try:
-        api.PipelineRunIn()
+        _pipeline_run_in()
     except ValidationError as exc:
         assert "document_id" in str(exc)
     else:
@@ -117,6 +129,8 @@ def test_reingest_run_accepts_empty_markdown() -> None:
     payload = api.ReingestRunIn(
         document_id="document_1",
         input_markdown="",
+        provider="openai",
+        model="gpt-5-nano",
     )
 
     assert payload.input_markdown == ""
@@ -125,7 +139,7 @@ def test_reingest_run_accepts_empty_markdown() -> None:
 def test_pipeline_run_rejects_direct_input() -> None:
     for field in ("input_markdown", "input_path"):
         try:
-            api.PipelineRunIn(document_id="document_1", **{field: "direct-input"})
+            _pipeline_run_in(document_id="document_1", **{field: "direct-input"})
         except ValidationError as exc:
             assert field in str(exc)
         else:
@@ -133,7 +147,7 @@ def test_pipeline_run_rejects_direct_input() -> None:
 
 
 def test_pipeline_run_accepts_legacy_document_scope_fields() -> None:
-    payload = api.PipelineRunIn(
+    payload = _pipeline_run_in(
         document_id="document_1",
         user_id="request-user",
         workspace_id="request-workspace",
@@ -146,7 +160,7 @@ def test_pipeline_run_accepts_legacy_document_scope_fields() -> None:
 
 def test_pipeline_command_includes_operation_id() -> None:
     repository = _repository()
-    payload = api.PipelineRunIn(
+    payload = _pipeline_run_in(
         document_id="document_1",
         operation_id="op_1",
     )
@@ -165,10 +179,12 @@ def test_pipeline_command_includes_operation_id() -> None:
     )
 
     assert command.operation_id == "op_1"
+    assert command.provider == "openai"
+    assert command.model == "gpt-5-nano"
 
 
 def test_chat_wiki_run_accepts_selection_mode() -> None:
-    payload = api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="full")
+    payload = _chat_wiki_run_in(document_id="chat_document_1", selection_mode="full")
 
     assert payload.document_id == "chat_document_1"
     assert payload.selection_mode == "full"
@@ -176,7 +192,7 @@ def test_chat_wiki_run_accepts_selection_mode() -> None:
 
 
 def test_chat_wiki_run_accepts_optional_input_markdown() -> None:
-    payload = api.ChatWikiRunIn(
+    payload = _chat_wiki_run_in(
         document_id="chat_document_1",
         selection_mode="full",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
@@ -198,7 +214,7 @@ def test_chat_wiki_inline_markdown_rejects_partial() -> None:
             "source_markdown": "# Existing Source",
         },
     )
-    payload = api.ChatWikiRunIn(
+    payload = _chat_wiki_run_in(
         document_id="chat_document_1",
         selection_mode="partial",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
@@ -227,7 +243,7 @@ def test_chat_wiki_inline_markdown_rejects_full_without_existing_source() -> Non
             "workspace_id": "workspace_1",
         },
     )
-    payload = api.ChatWikiRunIn(
+    payload = _chat_wiki_run_in(
         document_id="chat_document_1",
         selection_mode="full",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
@@ -250,7 +266,7 @@ def test_chat_wiki_inline_markdown_rejects_full_without_existing_source() -> Non
 
 def test_chat_wiki_run_rejects_unknown_selection_mode() -> None:
     try:
-        api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="append")
+        _chat_wiki_run_in(document_id="chat_document_1", selection_mode="append")
     except ValidationError as exc:
         assert "selection_mode" in str(exc)
     else:
@@ -259,7 +275,7 @@ def test_chat_wiki_run_rejects_unknown_selection_mode() -> None:
 
 def test_chat_wiki_run_requires_document_id() -> None:
     try:
-        api.ChatWikiRunIn(selection_mode="full")
+        _chat_wiki_run_in(selection_mode="full")
     except ValidationError as exc:
         assert "document_id" in str(exc)
     else:
@@ -268,7 +284,7 @@ def test_chat_wiki_run_requires_document_id() -> None:
 
 def test_pipeline_command_includes_selection_mode() -> None:
     repository = _repository()
-    payload = api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="partial")
+    payload = _chat_wiki_run_in(document_id="chat_document_1", selection_mode="partial")
 
     command = pipeline_routes._build_pipeline_command(
         payload,
@@ -294,7 +310,7 @@ def test_pipeline_command_loads_existing_source_context_for_full() -> None:
             "source_markdown": "# Existing Source",
         },
     )
-    payload = api.ChatWikiRunIn(document_id="chat_document_1", selection_mode="full")
+    payload = _chat_wiki_run_in(document_id="chat_document_1", selection_mode="full")
 
     command = pipeline_routes._build_pipeline_command(
         payload,
@@ -364,7 +380,10 @@ def test_pipeline_endpoint_runs_stored_document_in_background() -> None:
         repository=repository,
         source_reader=source_reader,
     ) as client:
-        response = client.post("/pipeline/runs", json={"document_id": "document_1"})
+        response = client.post(
+            "/pipeline/runs",
+            json={"document_id": "document_1", "provider": "openai", "model": "gpt-5-nano"},
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "running"
@@ -405,6 +424,8 @@ def test_reingest_endpoint_uses_inline_markdown_and_previous_source() -> None:
             json={
                 "document_id": "document_1",
                 "input_markdown": "# 수정 문서",
+                "provider": "openai",
+                "model": "gpt-5-nano",
             },
         )
 
@@ -439,6 +460,8 @@ def test_reingest_endpoint_rejects_document_without_existing_source_page() -> No
             json={
                 "document_id": "document_1",
                 "input_markdown": "# 수정 문서",
+                "provider": "openai",
+                "model": "gpt-5-nano",
             },
         )
 
@@ -469,7 +492,12 @@ def test_pipeline_endpoint_waits_for_synchronous_result() -> None:
     ) as client:
         response = client.post(
             "/pipeline/runs",
-            json={"document_id": "document_1", "wait": True},
+            json={
+                "document_id": "document_1",
+                "wait": True,
+                "provider": "openai",
+                "model": "gpt-5-nano",
+            },
         )
 
     assert response.status_code == 200
@@ -528,7 +556,7 @@ def test_chat_wiki_inline_markdown_uses_document_id_as_source_key() -> None:
     use_case = _use_case()
     source_reader = _source_reader()
 
-    payload = api.ChatWikiRunIn(
+    payload = _chat_wiki_run_in(
         document_id="chat_document_1",
         selection_mode="full",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
@@ -561,7 +589,7 @@ def test_pipeline_command_rejects_actor_mismatch_after_registering_run() -> None
         },
     )
     use_case = _use_case()
-    payload = api.PipelineRunIn(
+    payload = _pipeline_run_in(
         document_id="document_1",
         user_id="other-user",
         workspace_id="workspace_1",
@@ -588,7 +616,7 @@ def test_chat_wiki_inline_markdown_requires_existing_document() -> None:
             "source_markdown": "# Existing Source",
         },
     )
-    payload = api.ChatWikiRunIn(
+    payload = _chat_wiki_run_in(
         document_id="missing_document",
         selection_mode="full",
         input_markdown="# Chat Export\n\n[session_1:pair_2]Q : 새 질문\nA : 새 답변",
