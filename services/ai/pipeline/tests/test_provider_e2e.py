@@ -4,11 +4,15 @@ from provider_e2e import run_provider_e2e
 
 
 class _Client:
+    def __init__(self) -> None:
+        self.system_prompts: list[str] = []
+
     def complete_json(
         self,
         system_prompt: str,
         user_prompt: str,
     ) -> dict[str, object]:
+        self.system_prompts.append(system_prompt)
         if "Stage=ChunkSemanticExtraction" in system_prompt:
             return {
                 "chunk_id": "provider-e2e",
@@ -62,6 +66,20 @@ def test_runs_ingestion_agent_and_markdown_contracts() -> None:
         "markdown_create",
     ]
     assert all(result["passed"] for result in results)
+
+
+def test_uses_markdown_create_prompt() -> None:
+    client = _Client()
+
+    run_provider_e2e(
+        client,  # type: ignore[arg-type]
+        prompt_root=Path(__file__).parents[1] / "prompts",
+    )
+
+    assert any(
+        "Markdown document creation engine" in prompt
+        for prompt in client.system_prompts
+    )
 
 
 def test_records_safe_failure_and_continues_other_probes() -> None:
