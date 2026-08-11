@@ -20,8 +20,6 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 
 ### access_db (access-svc)
 
-- `users.web_search_enabled`: 사용자 전역 웹 검색 허용 여부(기본값 `false`)
-
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|
 | users | access-svc | 사용자 계정 | `email` UK, `password_hash`(OAuth 전용은 NULL) |
@@ -32,7 +30,7 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 
 ### core_db (document-svc)
 
-- `chat_messages.web_search_enabled`: 질의 실행 시점의 웹 검색 허용 여부 snapshot
+- `chat_messages.web_search_enabled`: 질의 요청의 `allow_web_search` 실행 시점 snapshot
 
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|

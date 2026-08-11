@@ -59,8 +59,7 @@ public class InternalAuthzController {
             return unauthorized();
         }
         return userRepository.findById(userId)
-                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(new UserResponse(
-                        user.getDisplayName(), user.isWebSearchEnabled())))
+                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(new UserResponse(user.getDisplayName())))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(ErrorResponse.of("USER_NOT_FOUND", "사용자를 찾을 수 없습니다.")));
     }
@@ -79,7 +78,5 @@ public class InternalAuthzController {
 
     record RoleResponse(String role) {}
 
-    record UserResponse(
-            @JsonProperty("display_name") String displayName,
-            @JsonProperty("web_search_enabled") boolean webSearchEnabled) {}
+    record UserResponse(@JsonProperty("display_name") String displayName) {}
 }
