@@ -52,12 +52,12 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
             },
             clear=True,
         ):
-            config = _config_from_env(model="runtime-model")
+            config = _config_from_env(provider="gemini", model="runtime-model")
 
         self.assertEqual(config.model, "runtime-model")
-        self.assertEqual(config.endpoint, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(config.endpoint, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         self.assertEqual(config.api_key, "secret")
-        self.assertIsNone(config.provider)
+        self.assertEqual(config.provider, "gemini")
 
     def test_adds_trusted_language_and_length_preferences_to_system_prompt(self) -> None:
         client = FakeChatClient()
@@ -108,10 +108,11 @@ class QueryChatAnswerGeneratorTest(unittest.TestCase):
         with patch(
             "app.modules.query.infrastructure.query_chat_answer_generator._config_from_env",
             return_value=config,
-        ):
-            build_query_conversation_summarizer()
+        ) as config_from_env:
+            build_query_conversation_summarizer(provider="openai", model="gpt-5-nano")
 
         self.assertEqual(config.temperature, 1.0)
+        config_from_env.assert_called_once_with(provider="openai", model="gpt-5-nano")
 
 
 if __name__ == "__main__":

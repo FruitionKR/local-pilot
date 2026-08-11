@@ -83,6 +83,7 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         result = task_worker._handle_query(command)
 
     build_use_case.assert_called_once_with(
+        provider="openai",
         model="gpt-5.6-terra",
         allow_web_search=allow_web_search,
     )
@@ -97,6 +98,7 @@ def test_query_command_requires_boolean_web_search_flag() -> None:
         "user_id": "user-1",
         "session_id": "session-1",
         "question": "질문",
+        "provider": "openai",
         "model": "  gpt-5.6-terra  ",
         "allow_web_search": "false",
     }

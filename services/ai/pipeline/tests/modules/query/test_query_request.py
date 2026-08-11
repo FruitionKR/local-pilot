@@ -13,12 +13,13 @@ from app.modules.query.interfaces.http.schemas import QueryRequest
 class QueryRequestTest(unittest.TestCase):
     def test_workspace_id_is_required(self) -> None:
         with self.assertRaises(ValidationError):
-            QueryRequest(question="질문", model="test-model", allow_web_search=False)
+            QueryRequest(question="질문", provider="openai", model="test-model", allow_web_search=False)
 
     def test_accepts_workspace_scoped_query(self) -> None:
         request = QueryRequest(
             workspace_id="ws_target",
             question="질문",
+            provider="openai",
             model="test-model",
             allow_web_search=False,
         )
@@ -29,6 +30,7 @@ class QueryRequestTest(unittest.TestCase):
         request = QueryRequest(
             workspace_id="ws_target",
             question="질문",
+            provider="openai",
             model="test-model",
             output_language="en",
             response_length="concise",
@@ -44,6 +46,7 @@ class QueryRequestTest(unittest.TestCase):
             QueryRequest(
                 workspace_id="ws_target",
                 question="질문",
+                provider="openai",
                 model="test-model",
                 allow_web_search=False,
                 output_language="fr",
@@ -53,6 +56,7 @@ class QueryRequestTest(unittest.TestCase):
         request = QueryRequest(
             workspace_id="ws_target",
             question="후속 질문",
+            provider="openai",
             model="test-model",
             allow_web_search=False,
             recent_messages=[
@@ -66,6 +70,7 @@ class QueryRequestTest(unittest.TestCase):
             QueryRequest(
                 workspace_id="ws_target",
                 question="후속 질문",
+                provider="openai",
                 model="test-model",
                 allow_web_search=False,
                 recent_messages=[
@@ -73,17 +78,26 @@ class QueryRequestTest(unittest.TestCase):
                 ],
             )
 
-    def test_model_is_required_and_non_empty(self) -> None:
+    def test_provider_and_model_are_required_and_non_empty(self) -> None:
         payloads = (
             {
                 "workspace_id": "ws_target",
                 "question": "질문",
+                "provider": "openai",
                 "allow_web_search": False,
             },
             {
                 "workspace_id": "ws_target",
                 "question": "질문",
+                "provider": "openai",
                 "model": "",
+                "allow_web_search": False,
+            },
+            {
+                "workspace_id": "ws_target",
+                "question": "질문",
+                "provider": "",
+                "model": "test-model",
                 "allow_web_search": False,
             },
         )
@@ -100,11 +114,12 @@ class QueryRequestTest(unittest.TestCase):
                     QueryRequest(
                         workspace_id="ws_target",
                         question="질문",
+                        provider="openai",
                         model="test-model",
                         allow_web_search=value,
                     )
 
-    def test_query_route_propagates_model_and_web_search(self) -> None:
+    def test_query_route_propagates_provider_model_and_web_search(self) -> None:
         use_case = Mock()
         use_case.execute.return_value = Mock(
             answer=Mock(content="답변"),
@@ -129,6 +144,7 @@ class QueryRequestTest(unittest.TestCase):
                 json={
                     "workspace_id": "ws_target",
                     "question": "질문",
+                    "provider": "gemini",
                     "model": "request-model",
                     "allow_web_search": True,
                 },
@@ -137,6 +153,7 @@ class QueryRequestTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         build_use_case.assert_called_once_with(
+            provider="gemini",
             model="request-model",
             allow_web_search=True,
         )
