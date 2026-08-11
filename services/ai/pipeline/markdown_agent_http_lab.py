@@ -34,13 +34,16 @@ class _UnexpectedQueryUseCase:
         raise RuntimeError("Markdown E2E 시나리오가 query 경로로 잘못 라우팅되었습니다.")
 
 
+DEFAULT_AGENT_PROVIDER = "openai"
+
+
 def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
     router_client = ChatCompletionsJsonClient(
         ChatClientConfig(
             endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
-            provider="openai",
+            provider=DEFAULT_AGENT_PROVIDER,
             temperature=0.0,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
@@ -51,7 +54,7 @@ def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
             endpoint=args.endpoint,
             api_key=args.api_key,
             model=args.model,
-            provider="openai",
+            provider=DEFAULT_AGENT_PROVIDER,
             temperature=0.2,
             timeout_seconds=args.timeout_seconds,
             json_mode=True,
@@ -74,12 +77,14 @@ def _build_use_case(args: argparse.Namespace) -> HandleAgentTurnUseCase:
     )
 
 
-def _selection_cleanup(client: TestClient) -> dict[str, Any]:
+def _selection_cleanup(client: TestClient, model: str) -> dict[str, Any]:
     markdown = "# 배포 안내\n\n배포를 하기 전에 테스트를 한다.\n\n문제가 없으면 승인한다."
     response = client.post(
         "/agent/turn",
         json={
             "message": "선택한 문장만 자연스럽고 간결하게 다듬어줘.",
+            "provider": DEFAULT_AGENT_PROVIDER,
+            "model": model,
             "active_markdown_context": {
                 "markdown": markdown,
                 "target": {"type": "selection", "start_line": 3, "end_line": 3},
@@ -101,12 +106,14 @@ def _selection_cleanup(client: TestClient) -> dict[str, Any]:
     return {"id": "selection_cleanup", "passed": not failures, "failures": failures, "response": body}
 
 
-def _structured_translation(client: TestClient) -> dict[str, Any]:
+def _structured_translation(client: TestClient, model: str) -> dict[str, Any]:
     markdown = "# Deploy guide\n\nRead the [install guide](https://example.com/install).\n\n```bash\n./deploy.sh --prod\n```"
     response = client.post(
         "/agent/turn",
         json={
             "message": "보이는 영어 문장을 한국어로 번역해줘.",
+            "provider": DEFAULT_AGENT_PROVIDER,
+            "model": model,
             "active_markdown_context": {
                 "markdown": markdown,
                 "target": {"type": "whole_document", "start_line": 1, "end_line": 7},
@@ -127,12 +134,14 @@ def _structured_translation(client: TestClient) -> dict[str, Any]:
     return {"id": "structured_translation", "passed": not failures, "failures": failures, "response": body}
 
 
-def _partial_fence_rejection(client: TestClient) -> dict[str, Any]:
+def _partial_fence_rejection(client: TestClient, model: str) -> dict[str, Any]:
     markdown = "# 실행\n\n```bash\n./deploy.sh\n```"
     response = client.post(
         "/agent/turn",
         json={
             "message": "선택한 코드 문장을 자연스럽게 다듬어줘.",
+            "provider": DEFAULT_AGENT_PROVIDER,
+            "model": model,
             "active_markdown_context": {
                 "markdown": markdown,
                 "target": {"type": "selection", "start_line": 4, "end_line": 4},
@@ -170,9 +179,9 @@ def main() -> None:
     try:
         with TestClient(api.app) as client:
             results = [
-                _selection_cleanup(client),
-                _structured_translation(client),
-                _partial_fence_rejection(client),
+                _selection_cleanup(client, args.model),
+                _structured_translation(client, args.model),
+                _partial_fence_rejection(client, args.model),
             ]
     finally:
         api.app.dependency_overrides.pop(get_handle_agent_turn_use_case, None)
