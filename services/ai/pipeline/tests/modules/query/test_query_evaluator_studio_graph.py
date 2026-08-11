@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -30,6 +31,14 @@ class QueryEvaluatorStudioGraphTest(unittest.TestCase):
         self.assertEqual(result["attempt"], 1)
         self.assertEqual(result["evaluation"]["route"], "internal_supported")
         self.assertIn("reason", result["evaluation"])
+
+    def test_studio_graph_falls_back_without_openai_key_in_llm_mode(self) -> None:
+        with patch.dict(os.environ, {"QUERY_EVALUATOR_MODE": "llm"}):
+            os.environ.pop("OPENAI_API_KEY", None)
+            result = graph.invoke({"question": "질문", "answer": "답변"})
+
+        self.assertEqual(result["evaluation"]["route"], "internal_supported")
+        self.assertIn("API key", result["evaluation"]["reason"])
 
 
 if __name__ == "__main__":
