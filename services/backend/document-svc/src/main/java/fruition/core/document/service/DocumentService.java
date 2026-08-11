@@ -334,7 +334,7 @@ public class DocumentService {
         String requestHash = requestHash(documentId, "duplicate", "");
         Optional<DocumentDuplicateResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentDuplicateResponse.class, this::toDuplicateResponse);
+                DocumentDuplicateResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -498,8 +498,7 @@ public class DocumentService {
             String endpointScope,
             String idempotencyKey,
             String requestHash,
-            Class<T> responseType,
-            java.util.function.Function<Document, T> fallback
+            Class<T> responseType
     ) {
         return idempotencyService.replay(
                 userId, endpointScope, idempotencyKey, requestHash, responseType);
@@ -513,9 +512,7 @@ public class DocumentService {
     ) {
         return replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentUploadResponse.class,
-                document -> toUploadResponse(
-                        document, editStateRepository.existsById(document.getId())));
+                DocumentUploadResponse.class);
     }
 
     private void saveIdempotencyRecord(
@@ -1543,7 +1540,7 @@ public class DocumentService {
                 documentId, "delete", Long.toString(request.baseVersion()));
         Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+                DocumentLifecycleResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -1616,7 +1613,7 @@ public class DocumentService {
                 documentId, "restore", Long.toString(request.baseVersion()));
         Optional<DocumentLifecycleResponse> replay = replayIdempotentRequest(
                 userId, endpointScope, idempotencyKey, requestHash,
-                DocumentLifecycleResponse.class, this::toLifecycleResponse);
+                DocumentLifecycleResponse.class);
         if (replay.isPresent()) {
             return replay.get();
         }
@@ -1690,16 +1687,6 @@ public class DocumentService {
             throw new InvalidDocumentVersionException(
                     "base_version은 1 이상의 정수여야 합니다.");
         }
-    }
-
-    private DocumentLifecycleResponse toLifecycleResponse(Document document) {
-        return new DocumentLifecycleResponse(
-                document.getId(),
-                document.getCurrentVersion(),
-                document.getDeletedAt() != null,
-                document.getDeletedAt(),
-                document.getSortOrder()
-        );
     }
 
     private void deleteMinioObject(String uri) {

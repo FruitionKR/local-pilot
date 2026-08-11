@@ -30,7 +30,10 @@ public class IdempotencyService {
 
     private final IdempotencyRecordRepository repository;
     private final ObjectMapper objectMapper;
+    /** 선점·해제 전용. 호출자 트랜잭션이 롤백돼도 살아남아야 하므로 항상 별도 트랜잭션이다. */
     private final TransactionTemplate transaction;
+    /** 실행 전용. 호출자 트랜잭션에 합류해 비즈니스 변경과 완료 기록을 한 트랜잭션에 둔다. */
+    private final TransactionTemplate actionTransaction;
     private final Clock clock;
     private final ThreadLocal<ActiveClaim> currentClaim = new ThreadLocal<>();
 
@@ -50,6 +53,8 @@ public class IdempotencyService {
         this.clock = clock;
         this.transaction = new TransactionTemplate(transactionManager);
         this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.actionTransaction = new TransactionTemplate(transactionManager);
+        this.actionTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
     }
 
     public void validateKey(String idempotencyKey) {
@@ -89,7 +94,8 @@ public class IdempotencyService {
         ActiveClaim previousClaim = currentClaim.get();
         currentClaim.set(new ActiveClaim(claim, previousClaim));
         try {
-            T response = transaction.execute(status -> {
+            T response = actionTransaction.execute(status -> {
+                registerReleaseOnRollback(claim);
                 T executed = action.get();
                 String responseBody = serialize(executed);
                 if (repository.complete(
@@ -181,6 +187,22 @@ public class IdempotencyService {
         } else {
             currentClaim.set(previousClaim);
         }
+    }
+
+    /**
+     * 실행 트랜잭션이 커밋되지 않으면 선점을 해제한다.
+     * 호출자 트랜잭션에 합류한 경우 완료 기록도 함께 롤백되므로, 그 시점에 선점을 반드시 풀어야 한다.
+     */
+    private void registerReleaseOnRollback(Claim claim) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    transaction.executeWithoutResult(
+                            ignored -> repository.release(claim.id(), claim.token()));
+                }
+            }
+        });
     }
 
     private Claim claim(String userId, String endpointScope, String idempotencyKey, String requestHash) {

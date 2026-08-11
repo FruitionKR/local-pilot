@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,6 +34,9 @@ class IdempotencyServiceIntegrationTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    PlatformTransactionManager transactionManager;
 
     @Test
     void sameKeyConcurrentRequestsExecuteSideEffectOnceAndReplayResponse() throws Exception {
@@ -244,6 +249,26 @@ class IdempotencyServiceIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM idempotency_records WHERE status = 'COMPLETED' AND idempotency_key IN (?, ?)",
                 Integer.class, outerKey, innerKey)).isEqualTo(2);
+    }
+
+    @Test
+    void callerTransactionRollbackDiscardsCompletionAndReleasesClaim() {
+        String key = uniqueKey();
+        TransactionTemplate callerTransaction = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> callerTransaction.executeWithoutResult(status -> {
+            execute(key, "caller-tx-hash", () -> new TestResponse("first"));
+            throw new IllegalStateException("호출자 트랜잭션 실패");
+        })).isInstanceOf(IllegalStateException.class);
+
+        // 완료 기록은 호출자 트랜잭션과 함께 롤백되고, 남은 선점도 해제된다.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM idempotency_records WHERE idempotency_key = ?",
+                Integer.class, key)).isZero();
+
+        // 같은 키를 다시 쓰면 재생이 아니라 새 실행이 이뤄진다.
+        assertThat(execute(key, "caller-tx-hash", () -> new TestResponse("second")))
+                .isEqualTo(new TestResponse("second"));
     }
 
     private TestResponse execute(String key, String hash, java.util.function.Supplier<TestResponse> action) {
