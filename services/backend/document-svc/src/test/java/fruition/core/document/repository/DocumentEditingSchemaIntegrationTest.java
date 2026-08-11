@@ -644,14 +644,15 @@ class DocumentEditingSchemaIntegrationTest {
                 """
                 INSERT INTO idempotency_records(
                     id, user_id, endpoint_scope, idempotency_key, request_hash,
-                    response_status, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, 201, ?, ?)
+                    status, claim_token, response_status, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS', ?, NULL, ?, ?)
                 """,
                 firstRequestId,
                 userId,
                 "POST:/documents/markdown",
                 "same-key",
                 "request-hash",
+                UUID.randomUUID(),
                 Timestamp.from(Instant.now()),
                 Timestamp.from(Instant.now().plusSeconds(86_400))
         );
@@ -659,14 +660,15 @@ class DocumentEditingSchemaIntegrationTest {
                 """
                 INSERT INTO idempotency_records(
                     id, user_id, endpoint_scope, idempotency_key, request_hash,
-                    response_status, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, 201, ?, ?)
+                    status, claim_token, response_status, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS', ?, NULL, ?, ?)
                 """,
                 UUID.randomUUID(),
                 userId,
                 "POST:/documents/markdown",
                 "same-key",
                 "different-request-hash",
+                UUID.randomUUID(),
                 Timestamp.from(Instant.now()),
                 Timestamp.from(Instant.now().plusSeconds(86_400))
         )).isInstanceOf(DataIntegrityViolationException.class);

@@ -2,6 +2,7 @@ package fruition.shared.util;
 
 import fruition.shared.ai.InvalidAiModelException;
 import fruition.shared.idempotency.IdempotencyConflictException;
+import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -45,7 +46,14 @@ public abstract class BaseExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIdempotencyConflict(IdempotencyConflictException e) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of("IDEMPOTENCY_KEY_REUSED", e.getMessage()));
+                .body(ErrorResponse.of("IDEMPOTENCY_CONFLICT", e.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyInProgress(IdempotencyInProgressException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ErrorResponse.of("IDEMPOTENCY_IN_PROGRESS", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidAiModelException.class)

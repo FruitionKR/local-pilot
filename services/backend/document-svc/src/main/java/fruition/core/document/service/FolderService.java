@@ -30,7 +30,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -60,161 +59,134 @@ public class FolderService {
     @Transactional
     public FolderResponse create(String workspaceId, String userId, String idempotencyKey,
                                  FolderCreateRequest request) {
-        verifyMembership(workspaceId, userId);
-        idempotencyService.validateKey(idempotencyKey);
         String name = normalizeName(request.name());
         UUID parentFolderId = request.parentFolderId();
-        verifyParentFolder(workspaceId, parentFolderId);
-
         String scope = "POST:/api/workspaces/" + workspaceId + "/folders";
         String hash = idempotencyService.requestHash(name, String.valueOf(parentFolderId));
-        Optional<FolderResponse> replay =
-                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderResponse.class);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-
-        Folder folder = new Folder(
-                UUID.randomUUID(), workspaceId, parentFolderId, name,
-                nextSortOrder(workspaceId, parentFolderId));
-        folderRepository.save(folder);
-        FolderResponse response = FolderResponse.from(folder);
-        idempotencyService.save(userId, scope, idempotencyKey, hash, 201, folder.getId().toString(), response);
-        return response;
+        return idempotencyService.execute(
+                userId, scope, idempotencyKey, hash, FolderResponse.class, 201,
+                response -> response.id().toString(), () -> {
+                    verifyMembership(workspaceId, userId);
+                    verifyParentFolder(workspaceId, parentFolderId);
+                    Folder folder = new Folder(
+                            UUID.randomUUID(), workspaceId, parentFolderId, name,
+                            nextSortOrder(workspaceId, parentFolderId));
+                    folderRepository.save(folder);
+                    return FolderResponse.from(folder);
+                });
     }
 
     @Transactional
     public FolderResponse rename(String workspaceId, String userId, UUID folderId, String idempotencyKey,
                                  FolderRenameRequest request) {
-        verifyMembership(workspaceId, userId);
-        idempotencyService.validateKey(idempotencyKey);
         String name = normalizeName(request.name());
-        requireFolder(workspaceId, folderId);
-
         String scope = "PATCH:/api/workspaces/" + workspaceId + "/folders/" + folderId;
         String hash = idempotencyService.requestHash(name, String.valueOf(request.baseVersion()));
-        Optional<FolderResponse> replay =
-                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderResponse.class);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-
-        int updated = folderRepository.renameIfVersionMatches(
-                folderId, workspaceId, request.baseVersion(), name, Instant.now());
-        if (updated == 0) {
-            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 이름을 변경할 수 없습니다.");
-        }
-        FolderResponse response = FolderResponse.from(requireFolder(workspaceId, folderId));
-        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
-        return response;
+        return idempotencyService.execute(
+                userId, scope, idempotencyKey, hash, FolderResponse.class, 200,
+                response -> folderId.toString(), () -> {
+                    verifyMembership(workspaceId, userId);
+                    requireFolder(workspaceId, folderId);
+                    int updated = folderRepository.renameIfVersionMatches(
+                            folderId, workspaceId, request.baseVersion(), name, Instant.now());
+                    if (updated == 0) {
+                        throw new HierarchyVersionConflictException("폴더가 이미 변경되어 이름을 변경할 수 없습니다.");
+                    }
+                    return FolderResponse.from(requireFolder(workspaceId, folderId));
+                });
     }
 
     @Transactional
     public FolderResponse move(String workspaceId, String userId, UUID folderId, String idempotencyKey,
                                FolderPositionRequest request) {
-        verifyMembership(workspaceId, userId);
-        idempotencyService.validateKey(idempotencyKey);
-        requireFolder(workspaceId, folderId);
         UUID targetParentId = request.parentFolderId();
-        if (targetParentId != null) {
-            verifyParentFolder(workspaceId, targetParentId);
-            if (folderRepository.countAncestorMatches(targetParentId, folderId) > 0) {
-                throw new HierarchyCycleException("폴더를 자기 자신이나 하위 폴더로 이동할 수 없습니다.");
-            }
-        }
-
         String scope = "PATCH:/api/workspaces/" + workspaceId + "/folders/" + folderId + "/position";
         String hash = idempotencyService.requestHash(
                 String.valueOf(targetParentId), String.valueOf(request.position()),
                 String.valueOf(request.baseVersion()));
-        Optional<FolderResponse> replay =
-                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderResponse.class);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-
-        long sortOrder = siblingReorderer.placeFolder(workspaceId, targetParentId, folderId, request.position());
-        int updated = folderRepository.moveIfVersionMatches(
-                folderId, workspaceId, request.baseVersion(), targetParentId, sortOrder, Instant.now());
-        if (updated == 0) {
-            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 이동할 수 없습니다.");
-        }
-        FolderResponse response = FolderResponse.from(requireFolder(workspaceId, folderId));
-        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
-        return response;
+        return idempotencyService.execute(
+                userId, scope, idempotencyKey, hash, FolderResponse.class, 200,
+                response -> folderId.toString(), () -> {
+                    verifyMembership(workspaceId, userId);
+                    requireFolder(workspaceId, folderId);
+                    if (targetParentId != null) {
+                        verifyParentFolder(workspaceId, targetParentId);
+                        if (folderRepository.countAncestorMatches(targetParentId, folderId) > 0) {
+                            throw new HierarchyCycleException("폴더를 자기 자신이나 하위 폴더로 이동할 수 없습니다.");
+                        }
+                    }
+                    long sortOrder = siblingReorderer.placeFolder(
+                            workspaceId, targetParentId, folderId, request.position());
+                    int updated = folderRepository.moveIfVersionMatches(
+                            folderId, workspaceId, request.baseVersion(), targetParentId, sortOrder, Instant.now());
+                    if (updated == 0) {
+                        throw new HierarchyVersionConflictException("폴더가 이미 변경되어 이동할 수 없습니다.");
+                    }
+                    return FolderResponse.from(requireFolder(workspaceId, folderId));
+                });
     }
 
     @Transactional
     public FolderLifecycleResponse delete(String workspaceId, String userId, UUID folderId,
                                           String idempotencyKey, long baseVersion) {
-        verifyMembership(workspaceId, userId);
-        idempotencyService.validateKey(idempotencyKey);
-        requireFolder(workspaceId, folderId);
-        if (hasChildren(workspaceId, folderId) && !isWorkspaceOwner(workspaceId, userId)) {
-            throw new HierarchyWriteForbiddenException("내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있습니다.");
-        }
-
         String scope = "DELETE:/api/workspaces/" + workspaceId + "/folders/" + folderId;
         String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
-        Optional<FolderLifecycleResponse> replay =
-                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-
-        UUID operationId = UUID.randomUUID();
-        Instant now = Instant.now();
-        int updated = folderRepository.softDeleteRootIfVersionMatches(
-                folderId, workspaceId, baseVersion, userId, now, operationId);
-        if (updated == 0) {
-            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 삭제할 수 없습니다.");
-        }
-        folderRepository.softDeleteDescendantFolders(folderId, userId, now, operationId);
-        documentRepository.softDeleteDocumentsInSubtree(folderId, userId, now, operationId);
-
-        FolderLifecycleResponse response = new FolderLifecycleResponse(folderId, baseVersion + 1, true, now, operationId);
-        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
-        return response;
+        return idempotencyService.execute(
+                userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class, 200,
+                response -> folderId.toString(), () -> {
+                    verifyMembership(workspaceId, userId);
+                    requireFolder(workspaceId, folderId);
+                    if (hasChildren(workspaceId, folderId) && !isWorkspaceOwner(workspaceId, userId)) {
+                        throw new HierarchyWriteForbiddenException("내용이 있는 폴더는 워크스페이스 소유자만 삭제할 수 있습니다.");
+                    }
+                    UUID operationId = UUID.randomUUID();
+                    Instant now = Instant.now();
+                    int updated = folderRepository.softDeleteRootIfVersionMatches(
+                            folderId, workspaceId, baseVersion, userId, now, operationId);
+                    if (updated == 0) {
+                        throw new HierarchyVersionConflictException("폴더가 이미 변경되어 삭제할 수 없습니다.");
+                    }
+                    folderRepository.softDeleteDescendantFolders(folderId, userId, now, operationId);
+                    documentRepository.softDeleteDocumentsInSubtree(folderId, userId, now, operationId);
+                    return new FolderLifecycleResponse(
+                            folderId, baseVersion + 1, true, now, operationId);
+                });
     }
 
     @Transactional
     public FolderLifecycleResponse restore(String workspaceId, String userId, UUID folderId,
                                            String idempotencyKey, long baseVersion) {
-        verifyMembership(workspaceId, userId);
-        idempotencyService.validateKey(idempotencyKey);
-        Folder deleted = folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNotNull(folderId, workspaceId)
-                .orElseThrow(() -> new HierarchyItemNotFoundException("삭제된 폴더를 찾을 수 없습니다."));
-        UUID operationId = deleted.getDeleteOperationId();
-
-        // 원래 부모가 아직 살아 있으면 원위치로, 삭제 상태이거나 최상위였다면 최상위 마지막으로 복구한다.
-        UUID originalParent = deleted.getParentFolderId();
-        boolean parentActive = originalParent == null
-                || folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(originalParent, workspaceId).isPresent();
-        UUID targetParent = parentActive ? originalParent : null;
-        long targetSortOrder = parentActive ? deleted.getSortOrder() : nextSortOrder(workspaceId, null);
-
         String scope = "POST:/api/workspaces/" + workspaceId + "/folders/" + folderId + "/restore";
         String hash = idempotencyService.requestHash(String.valueOf(baseVersion));
-        Optional<FolderLifecycleResponse> replay =
-                idempotencyService.replay(userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class);
-        if (replay.isPresent()) {
-            return replay.get();
-        }
-
-        Instant now = Instant.now();
-        int updated = folderRepository.restoreRootIfVersionMatches(
-                folderId, workspaceId, baseVersion, targetParent, targetSortOrder, now);
-        if (updated == 0) {
-            throw new HierarchyVersionConflictException("폴더가 이미 변경되어 복구할 수 없습니다.");
-        }
-        if (operationId != null) {
-            folderRepository.restoreDescendantFolders(folderId, operationId, now);
-            documentRepository.restoreDocumentsInSubtree(folderId, operationId, now);
-        }
-
-        FolderLifecycleResponse response = new FolderLifecycleResponse(folderId, baseVersion + 1, false, null, null);
-        idempotencyService.save(userId, scope, idempotencyKey, hash, 200, folderId.toString(), response);
-        return response;
+        return idempotencyService.execute(
+                userId, scope, idempotencyKey, hash, FolderLifecycleResponse.class, 200,
+                response -> folderId.toString(), () -> {
+                    verifyMembership(workspaceId, userId);
+                    Folder deleted = folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNotNull(
+                                    folderId, workspaceId)
+                            .orElseThrow(() -> new HierarchyItemNotFoundException(
+                                    "삭제된 폴더를 찾을 수 없습니다."));
+                    UUID operationId = deleted.getDeleteOperationId();
+                    UUID originalParent = deleted.getParentFolderId();
+                    boolean parentActive = originalParent == null
+                            || folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                                    originalParent, workspaceId).isPresent();
+                    UUID targetParent = parentActive ? originalParent : null;
+                    long targetSortOrder = parentActive
+                            ? deleted.getSortOrder() : nextSortOrder(workspaceId, null);
+                    Instant now = Instant.now();
+                    int updated = folderRepository.restoreRootIfVersionMatches(
+                            folderId, workspaceId, baseVersion, targetParent, targetSortOrder, now);
+                    if (updated == 0) {
+                        throw new HierarchyVersionConflictException("폴더가 이미 변경되어 복구할 수 없습니다.");
+                    }
+                    if (operationId != null) {
+                        folderRepository.restoreDescendantFolders(folderId, operationId, now);
+                        documentRepository.restoreDocumentsInSubtree(folderId, operationId, now);
+                    }
+                    return new FolderLifecycleResponse(
+                            folderId, baseVersion + 1, false, null, null);
+                });
     }
 
     @Transactional(readOnly = true)

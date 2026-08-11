@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentRole;
-import fruition.shared.idempotency.IdempotencyRecord;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentContentSaveResponse;
 import fruition.core.document.dto.DocumentContentDiffResponse;
@@ -23,13 +22,14 @@ import fruition.core.document.exception.DocumentUploadException;
 import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.exception.DocumentWriteForbiddenException;
 import fruition.shared.idempotency.IdempotencyConflictException;
+import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
 import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
-import fruition.shared.idempotency.IdempotencyRecordRepository;
+import fruition.shared.idempotency.IdempotencyService;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.shared.util.StorageProperties;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
@@ -58,10 +58,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -93,7 +95,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.core.document.repository.DocumentContentVersionRepository contentVersionRepository;
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.core.document.service.DocumentEditLockService editLockService;
-    @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock IdempotencyService idempotencyService;
     @Mock DocumentAssetReferenceSynchronizer assetReferenceSynchronizer;
     @Mock DocumentAssetReferenceParser assetReferenceParser;
     @Mock fruition.core.document.repository.DocumentAssetRepository assetRepository;
@@ -111,7 +113,7 @@ class DocumentServiceBlocksTest {
                 convertQueueRepository, converterClient, transactionTemplate,
                 editStateInitializer, editStateRepository, mongoDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
-                editLockService, idempotencyRecordRepository,
+                editLockService, idempotencyService,
                 assetReferenceSynchronizer,
                 assetReferenceParser, assetRepository,
                 new ObjectMapper().findAndRegisterModules(),
@@ -122,6 +124,12 @@ class DocumentServiceBlocksTest {
                 .thenReturn(new PipelineWikiStateRequester.DocumentWikiContext(List.of(), List.of()));
         // 직접 생성·복제·변환 placeholder도 생성 시점에 원본을 object storage에 쓴다.
         lenient().when(storageProps.getBucket()).thenReturn("test-bucket");
+        lenient().when(idempotencyService.replay(
+                anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(Optional.empty());
+        lenient().doCallRealMethod().when(idempotencyService).validateKey(any());
+        lenient().doCallRealMethod().when(idempotencyService).requestHash(any(String[].class));
+        lenient().when(idempotencyService.currentExecutionId()).thenReturn(Optional.empty());
         // 기본 저장 결과: base revision + 1로 변경 성공. 필요한 테스트는 개별로 다시 stub한다.
         lenient().when(mongoDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
@@ -318,7 +326,7 @@ class DocumentServiceBlocksTest {
         ArgumentCaptor<Document> document = ArgumentCaptor.forClass(Document.class);
         verify(documentRepository).save(document.capture());
         verify(editStateRepository).save(any(DocumentEditState.class));
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).save(any(), any(), any(), any(), anyInt(), any(), any());
         assertThat(document.getValue().getFilename()).isEqualTo("새 문서.md");
         assertThat(document.getValue().getSourceUri())
                 .isEqualTo("sources/documents/" + document.getValue().getId() + "/original");
@@ -359,15 +367,11 @@ class DocumentServiceBlocksTest {
 
         DocumentUploadResponse first =
                 documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", request);
-        ArgumentCaptor<IdempotencyRecord> record = ArgumentCaptor.forClass(IdempotencyRecord.class);
-        verify(idempotencyRecordRepository).save(record.capture());
         verify(documentRepository).save(any(Document.class));
 
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                USER_ID,
-                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/markdown",
-                "same-key"
-        )).thenReturn(Optional.of(record.getValue()));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("same-key"), anyString(),
+                eq(DocumentUploadResponse.class))).thenReturn(Optional.of(first));
         DocumentUploadResponse replay =
                 documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", request);
 
@@ -382,13 +386,10 @@ class DocumentServiceBlocksTest {
         stubOwnedWorkspace();
         MarkdownDocumentCreateRequest firstRequest = new MarkdownDocumentCreateRequest("문서", "# 본문", null);
         documentService.createMarkdown(WORKSPACE_ID, USER_ID, "same-key", firstRequest);
-        ArgumentCaptor<IdempotencyRecord> record = ArgumentCaptor.forClass(IdempotencyRecord.class);
-        verify(idempotencyRecordRepository).save(record.capture());
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                USER_ID,
-                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/markdown",
-                "same-key"
-        )).thenReturn(Optional.of(record.getValue()));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("same-key"), anyString(),
+                eq(DocumentUploadResponse.class)))
+                .thenThrow(new IdempotencyConflictException("충돌"));
 
         assertThatThrownBy(() -> documentService.createMarkdown(
                 WORKSPACE_ID,
@@ -414,13 +415,29 @@ class DocumentServiceBlocksTest {
         verify(documentRepository).save(storedDocument.capture());
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(editStateRepository).save(any(DocumentEditState.class));
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).save(any(), any(), any(), any(), anyInt(), any(), any());
         assertThat(storedDocument.getValue().getStatus()).isEqualTo(
                 fruition.core.document.domain.DocumentStatus.uploaded);
         assertThat(response.status()).isEqualTo(fruition.core.document.domain.DocumentStatus.uploaded);
         assertThat(response.editable()).isTrue();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
         assertThat(response.currentVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void upload_inProgressExceptionIsNotWrapped() {
+        stubOwnedWorkspace();
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "업로드.md", "text/markdown",
+                "# 업로드".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("same-key"), anyString(),
+                eq(DocumentUploadResponse.class)))
+                .thenThrow(new IdempotencyInProgressException("처리 중"));
+
+        assertThatThrownBy(() -> documentService.upload(
+                WORKSPACE_ID, USER_ID, "same-key", null, file))
+                .isInstanceOf(IdempotencyInProgressException.class);
     }
 
     @Test
@@ -939,7 +956,7 @@ class DocumentServiceBlocksTest {
         assertThat(documentCaptor.getValue().getContentHash()).isNull();
         assertThat(editStateCaptor.getValue().getMarkdown()).isEqualTo("# 최신 본문\n");
         verify(assetReferenceSynchronizer).copyReferences(source.getId(), response.id());
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).save(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -959,14 +976,9 @@ class DocumentServiceBlocksTest {
 
         DocumentDuplicateResponse first = documentService.duplicate(
                 WORKSPACE_ID, USER_ID, source.getId(), "same-key");
-        ArgumentCaptor<IdempotencyRecord> recordCaptor =
-                ArgumentCaptor.forClass(IdempotencyRecord.class);
-        verify(idempotencyRecordRepository).save(recordCaptor.capture());
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                USER_ID,
-                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/duplicate",
-                "same-key"
-        )).thenReturn(Optional.of(recordCaptor.getValue()));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("same-key"), anyString(),
+                eq(DocumentDuplicateResponse.class))).thenReturn(Optional.of(first));
 
         DocumentDuplicateResponse replay = documentService.duplicate(
                 WORKSPACE_ID, USER_ID, source.getId(), "same-key");
@@ -974,7 +986,8 @@ class DocumentServiceBlocksTest {
         assertThat(replay).isEqualTo(first);
         verify(documentRepository, times(1)).save(any(Document.class));
         verify(editStateRepository, times(1)).save(any(DocumentEditState.class));
-        verify(idempotencyRecordRepository, times(1)).save(any(IdempotencyRecord.class));
+        verify(idempotencyService, times(1)).save(
+                any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -1001,14 +1014,10 @@ class DocumentServiceBlocksTest {
         when(editStateRepository.findById(secondSource.getId())).thenReturn(Optional.of(secondState));
 
         documentService.duplicate(WORKSPACE_ID, USER_ID, firstSource.getId(), "reused-key");
-        ArgumentCaptor<IdempotencyRecord> recordCaptor =
-                ArgumentCaptor.forClass(IdempotencyRecord.class);
-        verify(idempotencyRecordRepository).save(recordCaptor.capture());
-        when(idempotencyRecordRepository.findByUserIdAndEndpointScopeAndIdempotencyKey(
-                USER_ID,
-                "POST:/api/workspaces/" + WORKSPACE_ID + "/documents/duplicate",
-                "reused-key"
-        )).thenReturn(Optional.of(recordCaptor.getValue()));
+        when(idempotencyService.replay(
+                eq(USER_ID), anyString(), eq("reused-key"), anyString(),
+                eq(DocumentDuplicateResponse.class)))
+                .thenThrow(new IdempotencyConflictException("충돌"));
 
         assertThatThrownBy(() -> documentService.duplicate(
                 WORKSPACE_ID, USER_ID, secondSource.getId(), "reused-key"))
@@ -1068,7 +1077,7 @@ class DocumentServiceBlocksTest {
         verify(documentRepository, never()).delete(any(Document.class));
         verify(ingestCommandOutbox, never()).enqueueDelete(anyString(), anyString());
         verify(minioClient, never()).removeObject(any(RemoveObjectArgs.class));
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).save(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -1141,7 +1150,7 @@ class DocumentServiceBlocksTest {
 
         verify(documentRepository, never()).save(any(Document.class));
         verify(editStateRepository, never()).save(any(DocumentEditState.class));
-        verify(idempotencyRecordRepository, never()).save(any(IdempotencyRecord.class));
+        verify(idempotencyService, never()).save(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -1158,7 +1167,41 @@ class DocumentServiceBlocksTest {
 
         verify(minioClient).putObject(any(PutObjectArgs.class));
         verify(minioClient).removeObject(any(RemoveObjectArgs.class));
-        verify(idempotencyRecordRepository, never()).save(any(IdempotencyRecord.class));
+        verify(idempotencyService, never()).save(any(), any(), any(), any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void upload_reclaimedExecutionUsesDifferentObjectKeySoOldCleanupCannotDeleteNewObject() throws Exception {
+        stubOwnedWorkspace();
+        UUID oldExecutionId = UUID.fromString("77777777-7777-7777-7777-777777777777");
+        UUID newExecutionId = UUID.fromString("88888888-8888-8888-8888-888888888888");
+        when(idempotencyService.currentExecutionId())
+                .thenReturn(Optional.of(oldExecutionId), Optional.of(newExecutionId));
+        when(storageProps.getBucket()).thenReturn("test-bucket");
+        when(documentRepository.save(any(Document.class)))
+                .thenThrow(new RuntimeException("database failure"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "자료.pdf", "application/pdf", new byte[]{1, 2, 3});
+
+        assertThatThrownBy(() -> documentService.upload(
+                WORKSPACE_ID, USER_ID, "upload-key", null, file))
+                .isInstanceOf(DocumentUploadException.class);
+        DocumentUploadResponse retried = documentService.upload(
+                WORKSPACE_ID, USER_ID, "upload-key", null, file);
+
+        ArgumentCaptor<PutObjectArgs> puts = ArgumentCaptor.forClass(PutObjectArgs.class);
+        verify(minioClient, times(2)).putObject(puts.capture());
+        assertThat(puts.getAllValues())
+                .extracting(PutObjectArgs::object)
+                .containsExactly(
+                        "sources/documents/doc_77777777777777777777777777777777/original",
+                        "sources/documents/doc_88888888888888888888888888888888/original");
+        assertThat(retried.id()).isEqualTo("doc_88888888888888888888888888888888");
+        ArgumentCaptor<RemoveObjectArgs> cleanup = ArgumentCaptor.forClass(RemoveObjectArgs.class);
+        verify(minioClient).removeObject(cleanup.capture());
+        assertThat(cleanup.getValue().object())
+                .isEqualTo("sources/documents/doc_77777777777777777777777777777777/original");
     }
 
     @Test

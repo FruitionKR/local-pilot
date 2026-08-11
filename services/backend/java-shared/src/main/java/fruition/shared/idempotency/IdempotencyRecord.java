@@ -36,8 +36,11 @@ public class IdempotencyRecord {
     @Column(name = "request_hash", nullable = false, length = 64)
     private String requestHash;
 
-    @Column(name = "response_status", nullable = false)
-    private int responseStatus;
+    @Column(name = "status", nullable = false, length = 20)
+    private String status;
+
+    @Column(name = "response_status")
+    private Integer responseStatus;
 
     @Column(name = "resource_id")
     private String resourceId;
@@ -60,7 +63,8 @@ public class IdempotencyRecord {
             String endpointScope,
             String idempotencyKey,
             String requestHash,
-            int responseStatus,
+            String status,
+            Integer responseStatus,
             String resourceId,
             String responseBody,
             Instant createdAt,
@@ -71,6 +75,7 @@ public class IdempotencyRecord {
         this.endpointScope = endpointScope;
         this.idempotencyKey = idempotencyKey;
         this.requestHash = requestHash;
+        this.status = status;
         this.responseStatus = responseStatus;
         this.resourceId = resourceId;
         this.responseBody = responseBody;
@@ -83,7 +88,8 @@ public class IdempotencyRecord {
     public String getEndpointScope() { return endpointScope; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getRequestHash() { return requestHash; }
-    public int getResponseStatus() { return responseStatus; }
+    public String getStatus() { return status; }
+    public Integer getResponseStatus() { return responseStatus; }
     public String getResourceId() { return resourceId; }
     public String getResponseBody() { return responseBody; }
     public Instant getCreatedAt() { return createdAt; }

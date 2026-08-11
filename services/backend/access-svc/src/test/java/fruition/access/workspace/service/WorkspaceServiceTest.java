@@ -1,8 +1,6 @@
 package fruition.access.workspace.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import fruition.shared.idempotency.IdempotencyRecord;
-import fruition.shared.idempotency.IdempotencyRecordRepository;
+import fruition.shared.idempotency.IdempotencyService;
 import fruition.access.user.domain.User;
 import fruition.access.user.repository.UserRepository;
 import fruition.access.workspace.domain.Workspace;
@@ -27,6 +25,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,7 +39,7 @@ class WorkspaceServiceTest {
     @Mock WorkspaceMemberRepository workspaceMemberRepository;
     @Mock UserRepository userRepository;
     @Mock DocumentInternalClient documentInternalClient;
-    @Mock IdempotencyRecordRepository idempotencyRecordRepository;
+    @Mock IdempotencyService idempotencyService;
     @Mock AuthzProjectionStore authzProjectionStore;
 
     WorkspaceService workspaceService;
@@ -52,12 +51,14 @@ class WorkspaceServiceTest {
                 workspaceMemberRepository,
                 userRepository,
                 documentInternalClient,
-                idempotencyRecordRepository,
-                new ObjectMapper().findAndRegisterModules(),
+                idempotencyService,
                 authzProjectionStore
         );
         lenient().when(userRepository.getReferenceById(any()))
                 .thenAnswer(invocation -> new User(invocation.getArgument(0), "test@example.com", "test", null));
+        lenient().when(idempotencyService.execute(
+                any(), any(), any(), any(), any(), anyInt(), any(), any()))
+                .thenAnswer(invocation -> invocation.<java.util.function.Supplier<?>>getArgument(7).get());
     }
 
     @Test
@@ -126,7 +127,7 @@ class WorkspaceServiceTest {
         // soft delete는 document 서비스 호출 없이 access 안에서만 끝나야 한다.
         verifyNoInteractions(documentInternalClient);
         verify(workspaceRepository, never()).delete(any());
-        verify(idempotencyRecordRepository).save(any(IdempotencyRecord.class));
+        verify(idempotencyService).execute(any(), any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test
@@ -136,7 +137,6 @@ class WorkspaceServiceTest {
                 .isInstanceOf(WorkspaceNotFoundException.class);
 
         verifyNoInteractions(documentInternalClient);
-        verify(idempotencyRecordRepository, never()).save(any());
     }
 
     @Test
