@@ -5,7 +5,6 @@ import fruition.core.wikimaintenance.dto.WikiLintRequest;
 import fruition.core.wikimaintenance.dto.WikiMaintenanceStatusResponse;
 import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import fruition.shared.util.ErrorResponse;
-import io.swagger.v3.oas.annotations.StringToClassMapItem;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -51,11 +50,7 @@ public class WikiMaintenanceController {
     @Operation(summary = "Wiki 정합성 검사", description = "워크스페이스 Wiki 정합성 검사 실행을 비동기 대기열에 등록합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "202", description = "Wiki 정합성 검사 실행이 대기열에 등록됨",
-            content = @Content(schema = @Schema(type = "object", requiredProperties = {"run_id", "operation_id", "status"}, properties = {
-                @StringToClassMapItem(key = "run_id", value = String.class),
-                @StringToClassMapItem(key = "operation_id", value = String.class),
-                @StringToClassMapItem(key = "status", value = String.class)
-            }))),
+            content = @Content(schema = @Schema(implementation = WikiLintResponseSchema.class))),
         @ApiResponse(responseCode = "400", description = "잘못된 검사 옵션",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
@@ -86,5 +81,13 @@ public class WikiMaintenanceController {
             @Parameter(description = "조회할 검사 실행 ID", required = true)
             @PathVariable("run_id") String runId) {
         return ResponseEntity.ok(wikiMaintenanceService.run(workspaceId, userId, runId));
+    }
+
+    @Schema(name = "WikiLintResponse", requiredProperties = {"run_id", "operation_id", "status"})
+    private static final class WikiLintResponseSchema {
+        private String run_id;
+        @Schema(nullable = true)
+        private String operation_id;
+        private String status;
     }
 }

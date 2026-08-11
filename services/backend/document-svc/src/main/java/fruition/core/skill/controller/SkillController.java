@@ -114,16 +114,7 @@ public class SkillController {
     @Operation(summary = "Skill 목록 조회", description = "현재 사용자가 사용할 수 있는 워크스페이스 Skill 목록을 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "목록 조회 성공",
-            content = @Content(array = @ArraySchema(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
-                @StringToClassMapItem(key = "id", value = String.class),
-                @StringToClassMapItem(key = "workspace_id", value = String.class),
-                @StringToClassMapItem(key = "scope_type", value = String.class),
-                @StringToClassMapItem(key = "owner_user_id", value = String.class),
-                @StringToClassMapItem(key = "slug", value = String.class),
-                @StringToClassMapItem(key = "status", value = String.class),
-                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
-                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
-            })))),
+            content = @Content(array = @ArraySchema(schema = @Schema(implementation = SkillResponseSchema.class)))),
         @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -143,16 +134,7 @@ public class SkillController {
     @Operation(summary = "Skill 상세 조회", description = "Skill의 현재 정의와 실행 설정을 반환합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "상세 조회 성공",
-            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
-                @StringToClassMapItem(key = "id", value = String.class),
-                @StringToClassMapItem(key = "workspace_id", value = String.class),
-                @StringToClassMapItem(key = "scope_type", value = String.class),
-                @StringToClassMapItem(key = "owner_user_id", value = String.class),
-                @StringToClassMapItem(key = "slug", value = String.class),
-                @StringToClassMapItem(key = "status", value = String.class),
-                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
-                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
-            }))),
+            content = @Content(schema = @Schema(implementation = SkillResponseSchema.class))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -213,16 +195,7 @@ public class SkillController {
     @Operation(summary = "Skill 활성화", description = "Skill을 Agent 실행 대상에 포함합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "활성화 성공",
-            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
-                @StringToClassMapItem(key = "id", value = String.class),
-                @StringToClassMapItem(key = "workspace_id", value = String.class),
-                @StringToClassMapItem(key = "scope_type", value = String.class),
-                @StringToClassMapItem(key = "owner_user_id", value = String.class),
-                @StringToClassMapItem(key = "slug", value = String.class),
-                @StringToClassMapItem(key = "status", value = String.class),
-                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
-                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
-            }))),
+            content = @Content(schema = @Schema(implementation = SkillResponseSchema.class))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -244,16 +217,7 @@ public class SkillController {
     @Operation(summary = "Skill 비활성화", description = "Skill을 Agent 실행 대상에서 제외합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "비활성화 성공",
-            content = @Content(schema = @Schema(type = "object", requiredProperties = {"id", "scope_type", "slug", "status"}, properties = {
-                @StringToClassMapItem(key = "id", value = String.class),
-                @StringToClassMapItem(key = "workspace_id", value = String.class),
-                @StringToClassMapItem(key = "scope_type", value = String.class),
-                @StringToClassMapItem(key = "owner_user_id", value = String.class),
-                @StringToClassMapItem(key = "slug", value = String.class),
-                @StringToClassMapItem(key = "status", value = String.class),
-                @StringToClassMapItem(key = "enabled_version", value = java.util.Map.class),
-                @StringToClassMapItem(key = "latest_version", value = java.util.Map.class)
-            }))),
+            content = @Content(schema = @Schema(implementation = SkillResponseSchema.class))),
         @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
@@ -270,5 +234,34 @@ public class SkillController {
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(skillService.setEnabled(workspaceId, userId, skillId, false));
+    }
+
+    @Schema(name = "SkillResponse", requiredProperties = {"id", "workspace_id", "scope_type", "owner_user_id", "slug", "status", "enabled_version", "latest_version"})
+    private static final class SkillResponseSchema {
+        private String id;
+        @Schema(nullable = true)
+        private String workspace_id;
+        private String scope_type;
+        @Schema(nullable = true)
+        private String owner_user_id;
+        private String slug;
+        private String status;
+        @Schema(nullable = true)
+        private SkillVersionResponseSchema enabled_version;
+        @Schema(nullable = true)
+        private SkillVersionResponseSchema latest_version;
+    }
+
+    @Schema(name = "SkillVersionResponse", requiredProperties = {"id", "version", "name", "description", "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status"})
+    private static final class SkillVersionResponseSchema {
+        private String id;
+        private int version;
+        private String name;
+        private String description;
+        private String instructions_markdown;
+        private java.util.List<String> capabilities;
+        private java.util.List<String> allowed_tools;
+        private java.util.Map<String, Object> lint_result;
+        private String status;
     }
 }
