@@ -81,23 +81,23 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
 def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
     _required(
         command, "run_id", "workspace_id", "user_id", "document_id",
-        "base_version", "apply_operation_id", "message", "provider", "model", "editor_snapshot",
+        "base_version", "apply_operation_id", "message", "editor_snapshot",
     )
     run_id = str(command["run_id"])
-    payload = AgentTurnRequestBody.model_validate({
-        "message": command["message"],
-        "provider": command.get("provider"),
-        "model": command.get("model"),
-        "workspace_id": command["workspace_id"],
-        "user_id": command["user_id"],
-        "conversation_context": command.get("conversation_context"),
-        "active_markdown_context": command["editor_snapshot"],
-    })
     state, replay = _register_agent_command(command)
     if state == "completed":
         return replay or {}
 
     try:
+        payload = AgentTurnRequestBody.model_validate({
+            "message": command["message"],
+            "provider": command.get("provider"),
+            "model": command.get("model"),
+            "workspace_id": command["workspace_id"],
+            "user_id": command["user_id"],
+            "conversation_context": command.get("conversation_context"),
+            "active_markdown_context": command["editor_snapshot"],
+        })
         result = agent_to_response(
             build_handle_agent_turn_use_case(
                 provider=payload.provider,
@@ -140,8 +140,19 @@ def _agent_command_hash(command: dict[str, Any]) -> str:
 
 def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
     run_id = str(command["run_id"])
-    provider, model = resolve_llm_selection(command["provider"], command["model"])
+    provider = model = None
+    selection_error: ValueError | None = None
+    raw_provider = command.get("provider")
+    raw_model = command.get("model")
+    if not isinstance(raw_provider, str) or not isinstance(raw_model, str):
+        selection_error = ValueError("provider and model are required")
+    else:
+        try:
+            provider, model = resolve_llm_selection(raw_provider, raw_model)
+        except ValueError as exc:
+            selection_error = exc
     envelope_hash = _agent_command_hash(command)
+    deferred_error: ValueError | RuntimeError | None = None
     with database.connect_ai() as conn:
         inserted = conn.execute(
             """
@@ -175,6 +186,23 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
                 """,
                 (f"{run_id}:markdown_turn", run_id),
             )
+            if selection_error is not None:
+                conn.execute(
+                    """
+                    UPDATE agent_runs
+                    SET status = 'failed', error_code = 'invalid_llm_selection',
+                        updated_at = now(), finished_at = now()
+                    WHERE id = %s
+                    """,
+                    (run_id,),
+                )
+                conn.execute(
+                    """
+                    UPDATE agent_jobs SET status = 'failed', updated_at = now()
+                    WHERE run_id = %s AND job_type = 'markdown_turn'
+                    """,
+                    (run_id,),
+                )
         run = conn.execute(
             """
             SELECT status, result, command_envelope_hash
@@ -184,20 +212,25 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
         ).fetchone()
         if run is None or run["command_envelope_hash"] != envelope_hash:
             raise ValueError("Agent command envelope does not match the registered run")
-        if run["status"] == "completed":
+        if selection_error is not None:
+            deferred_error = selection_error
+        elif run["status"] == "completed":
             return "completed", dict(run["result"] or {})
-        if run["status"] == "failed":
+        elif run["status"] == "failed":
             raise ValueError("Agent run is already failed")
-        if run["status"] == "executing":
+        elif run["status"] == "executing":
             raise RuntimeError("Agent run is already executing")
-        conn.execute(
-            "UPDATE agent_runs SET status = 'executing', updated_at = now() WHERE id = %s",
-            (run_id,),
-        )
-        conn.execute(
-            "UPDATE agent_jobs SET status = 'executing', updated_at = now() WHERE id = %s",
-            (f"{run_id}:markdown_turn",),
-        )
+        else:
+            conn.execute(
+                "UPDATE agent_runs SET status = 'executing', updated_at = now() WHERE id = %s",
+                (run_id,),
+            )
+            conn.execute(
+                "UPDATE agent_jobs SET status = 'executing', updated_at = now() WHERE id = %s",
+                (f"{run_id}:markdown_turn",),
+            )
+    if deferred_error is not None:
+        raise deferred_error
     return "execute", None
 
 

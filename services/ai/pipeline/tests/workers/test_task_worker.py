@@ -1,6 +1,7 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pydantic import ValidationError
 
 from app.workers import task_worker
 
@@ -198,6 +199,199 @@ def test_maintenance_failure_requires_terminal_run() -> None:
         "get_pipeline_run",
         return_value={"status": "failed"},
     ):
+        assert task_worker._failure_is_durable(command) is True
+
+
+def test_unregistered_agent_failure_is_not_durable() -> None:
+    command = {"run_id": "run-1", "kind": "agent"}
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = None
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with patch.object(task_worker.database, "connect_ai", return_value=context):
+        assert task_worker._failure_is_durable(command) is False
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "error_match"),
+    [
+        (None, "gpt-5-nano", "provider and model are required"),
+        ("openai", "unsupported-model", "Unsupported model"),
+        ("gemini", "gpt-5-nano", "Expected gemini-2.5-flash-lite"),
+    ],
+)
+def test_invalid_agent_selection_is_terminally_registered(
+    provider: str | None,
+    model: str | None,
+    error_match: str,
+) -> None:
+    command = {
+        "run_id": "agent_invalid_selection",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "document_id": "document-1",
+        "base_version": 7,
+        "apply_operation_id": "op-1",
+        "message": "문서를 정리해줘",
+        "provider": provider,
+        "model": model,
+        "editor_snapshot": {"markdown": "# 제목"},
+    }
+    connection = MagicMock()
+    inserted = MagicMock()
+    inserted.fetchone.return_value = {"id": command["run_id"]}
+    locked = MagicMock()
+    locked.fetchone.return_value = {
+        "status": "failed",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    connection.execute.side_effect = [inserted, MagicMock(), MagicMock(), MagicMock(), locked]
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+        pytest.raises(ValueError, match=error_match),
+    ):
+        task_worker._handle_agent(command)
+
+    queries = [call.args[0] for call in connection.execute.call_args_list]
+    assert any("UPDATE agent_runs" in query and "status = 'failed'" in query for query in queries)
+    assert any("UPDATE agent_jobs" in query and "status = 'failed'" in query for query in queries)
+    assert context.__exit__.call_args.args[:3] == (None, None, None)
+
+    durability_connection = MagicMock()
+    durability_connection.execute.return_value.fetchone.return_value = {"status": "failed"}
+    durability_context = MagicMock()
+    durability_context.__enter__.return_value = durability_connection
+    with patch.object(task_worker.database, "connect_ai", return_value=durability_context):
+        assert task_worker._failure_is_durable(command) is True
+
+
+def test_replayed_invalid_agent_selection_reuses_failed_run_without_new_job() -> None:
+    command = {
+        "run_id": "agent_invalid_replay",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "document_id": "document-1",
+        "base_version": 7,
+        "apply_operation_id": "op-1",
+        "message": "문서를 정리해줘",
+        "provider": "openai",
+        "model": "unsupported-model",
+        "editor_snapshot": {"markdown": "# 제목"},
+    }
+
+    first_connection = MagicMock()
+    first_inserted = MagicMock()
+    first_inserted.fetchone.return_value = {"id": command["run_id"]}
+    first_locked = MagicMock()
+    first_locked.fetchone.return_value = {
+        "status": "failed",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    first_connection.execute.side_effect = [
+        first_inserted,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        first_locked,
+    ]
+    first_context = MagicMock()
+    first_context.__enter__.return_value = first_connection
+
+    second_connection = MagicMock()
+    second_inserted = MagicMock()
+    second_inserted.fetchone.return_value = None
+    second_locked = MagicMock()
+    second_locked.fetchone.return_value = {
+        "status": "failed",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    second_connection.execute.side_effect = [second_inserted, second_locked]
+    second_context = MagicMock()
+    second_context.__enter__.return_value = second_connection
+
+    with patch.object(
+        task_worker.database,
+        "connect_ai",
+        side_effect=[first_context, second_context],
+    ):
+        with pytest.raises(ValueError, match="Unsupported model"):
+            task_worker._register_agent_command(command)
+        with pytest.raises(ValueError, match="Unsupported model"):
+            task_worker._register_agent_command(command)
+
+    assert second_connection.execute.call_count == 2
+
+
+def test_invalid_agent_payload_is_terminally_registered_after_validation_failure() -> None:
+    command = {
+        "run_id": "agent_invalid_payload",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "document_id": "document-1",
+        "base_version": 7,
+        "apply_operation_id": "op-1",
+        "message": "문서를 정리해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "editor_snapshot": {
+            "markdown": "# 제목",
+            "target": {"type": "selection", "start_line": 0, "end_line": 1},
+        },
+    }
+    registration_connection = MagicMock()
+    inserted = MagicMock()
+    inserted.fetchone.return_value = {"id": command["run_id"]}
+    queued = MagicMock()
+    queued.fetchone.return_value = {
+        "status": "queued",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    registration_connection.execute.side_effect = [
+        inserted,
+        MagicMock(),
+        queued,
+        MagicMock(),
+        MagicMock(),
+    ]
+    registration_context = MagicMock()
+    registration_context.__enter__.return_value = registration_connection
+
+    failure_connection = MagicMock()
+    failure_context = MagicMock()
+    failure_context.__enter__.return_value = failure_connection
+
+    durability_connection = MagicMock()
+    durability_connection.execute.return_value.fetchone.return_value = {"status": "failed"}
+    durability_context = MagicMock()
+    durability_context.__enter__.return_value = durability_connection
+
+    with (
+        patch.object(
+            task_worker.database,
+            "connect_ai",
+            side_effect=[registration_context, failure_context, durability_context],
+        ),
+        pytest.raises(ValidationError),
+    ):
+        task_worker._handle_agent(command)
+
+    failure_queries = [call.args[0] for call in failure_connection.execute.call_args_list]
+    assert any("UPDATE agent_runs" in query and "status = 'failed'" in query for query in failure_queries)
+    assert any("UPDATE agent_jobs" in query and "status = 'failed'" in query for query in failure_queries)
+    assert registration_context.__exit__.call_args.args[:3] == (None, None, None)
+    assert failure_context.__exit__.call_args.args[:3] == (None, None, None)
+    with patch.object(task_worker.database, "connect_ai", return_value=durability_context):
         assert task_worker._failure_is_durable(command) is True
 
 
