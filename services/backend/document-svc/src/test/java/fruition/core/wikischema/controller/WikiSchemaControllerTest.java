@@ -120,6 +120,14 @@ class WikiSchemaControllerTest {
         assertThat(fragments.getProperties()).containsKeys("global_markdown", "query_markdown", "ingest_markdown", "edit_markdown", "concept_markdown", "template_markdown");
         assertThat(issue.getProperties()).containsKeys("severity", "category", "text", "reason", "section");
         assertThat(response.getRequired()).contains("id", "fragments", "issues");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) preview.getProperties().get("fragments")).get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaFragmentsResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) preview.getProperties().get("issues")).getItems().get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaIssueResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("fragments")).get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaFragmentsResponse");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("issues")).getItems().get$ref())
+                .isEqualTo("#/components/schemas/WikiSchemaIssueResponse");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) response.getProperties().get("created_at")).getNullable()).isTrue();
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) issue.getProperties().get("section")).getNullable()).isTrue();
     }

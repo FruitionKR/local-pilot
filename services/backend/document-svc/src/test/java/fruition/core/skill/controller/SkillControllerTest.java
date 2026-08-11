@@ -164,7 +164,16 @@ class SkillControllerTest {
         assertThat(skill.getRequired()).contains("id", "enabled_version", "latest_version");
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("workspace_id")).getNullable()).isTrue();
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("enabled_version")).getAllOf())
+                .singleElement()
+                .satisfies(schema -> assertThat(schema.get$ref()).isEqualTo("#/components/schemas/SkillVersionResponse"));
         assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("latest_version")).getNullable()).isTrue();
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) skill.getProperties().get("latest_version")).getAllOf())
+                .singleElement()
+                .satisfies(schema -> assertThat(schema.get$ref()).isEqualTo("#/components/schemas/SkillVersionResponse"));
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("capabilities")).getItems().getType()).isEqualTo("string");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("allowed_tools")).getItems().getType()).isEqualTo("string");
+        assertThat(((io.swagger.v3.oas.models.media.Schema<?>) version.getProperties().get("lint_result")).getType()).isEqualTo("object");
     }
 
     private Class<?> schemaClass(String name) throws ClassNotFoundException {
