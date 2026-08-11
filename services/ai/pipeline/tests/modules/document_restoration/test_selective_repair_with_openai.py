@@ -1,10 +1,15 @@
+import argparse
 import json
+import os
 import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
 from unittest import mock
 
+from app.modules.document_restoration.infrastructure.crop_first_with_anydoc import (
+    assemble,
+)
 from app.modules.document_restoration.infrastructure.selective_repair_with_openai import (
     call_page,
     clean_previous_results,
@@ -12,6 +17,7 @@ from app.modules.document_restoration.infrastructure.selective_repair_with_opena
     normalize_replacement,
     page_markdown,
     response_text,
+    run,
     save_replacements,
     select_candidates,
     valid_replacement,
@@ -175,6 +181,150 @@ Second
             )
 
         error.read.assert_not_called()
+
+    def test_propagates_retryable_responses_api_errors_for_fallback(self) -> None:
+        for status_code in (429, 500):
+            error = urllib.error.HTTPError(
+                "https://api.openai.test/v1/responses",
+                status_code,
+                "Retry",
+                {},
+                None,
+            )
+            with self.subTest(status_code=status_code), (
+                mock.patch("urllib.request.urlopen", side_effect=error)
+            ), self.assertRaises(urllib.error.HTTPError) as raised:
+                call_page(
+                    endpoint="https://api.openai.test/v1/responses",
+                    api_key="test-key",
+                    model="gpt-5.6-terra",
+                    reasoning_effort="low",
+                    prompt="restore",
+                    payload={"blocks": []},
+                    images=[],
+                )
+
+            self.assertEqual(raised.exception.code, status_code)
+
+    def test_skips_openai_without_api_key_and_keeps_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            manifest_file = output_dir / "manifest.json"
+            detected_markdown = output_dir / "detected.md"
+            manifest_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "body-1",
+                            "page": 1,
+                            "order": 0,
+                            "type": "paragraph",
+                            "source_text": "before XQ001QX after",
+                            "body_broken": False,
+                        },
+                        {
+                            "id": "table-1",
+                            "page": 1,
+                            "order": 1,
+                            "type": "table_candidate",
+                            "token": "XQ001QX",
+                            "asset": "layout/crop_first/assets/specials/table.png",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            asset = (
+                output_dir
+                / "layout"
+                / "crop_first"
+                / "assets"
+                / "specials"
+                / "table.png"
+            )
+            asset.parent.mkdir(parents=True)
+            asset.write_bytes(b"png")
+            detected_markdown.write_text("baseline", encoding="utf-8")
+            args = argparse.Namespace(
+                pdf_file=output_dir / "input.pdf",
+                manifest_file=manifest_file,
+                detected_markdown=detected_markdown,
+                output_dir=output_dir,
+                endpoint="https://api.openai.test/v1/responses",
+                model="gpt-5.6-luna",
+                reasoning_effort="medium",
+                max_workers=1,
+            )
+
+            with mock.patch.dict(
+                os.environ,
+                {"DOCUMENT_REPAIR_OPENAI_API_KEY": "", "OPENAI_API_KEY": ""},
+            ), mock.patch(
+                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.call_page"
+            ) as call_page_mock:
+                summary = run(args)
+
+            self.assertEqual(summary["calls"], 0)
+            self.assertEqual(summary["blocks"], 1)
+            call_page_mock.assert_not_called()
+            output_file = output_dir / "final" / "restored.md"
+            assemble(manifest_file, output_dir, output_file)
+            self.assertIn(
+                "[source crop](../layout/crop_first/assets/specials/table.png)",
+                output_file.read_text(encoding="utf-8"),
+            )
+
+    def test_uses_baseline_when_retryable_openai_errors_exhaust_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            manifest_file = output_dir / "manifest.json"
+            detected_markdown = output_dir / "detected.md"
+            manifest_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "table-1",
+                            "page": 1,
+                            "order": 1,
+                            "type": "table_candidate",
+                            "bbox": [0, 0, 1, 1],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            detected_markdown.write_text("## Page 1\n", encoding="utf-8")
+            args = argparse.Namespace(
+                pdf_file=output_dir / "input.pdf",
+                manifest_file=manifest_file,
+                detected_markdown=detected_markdown,
+                output_dir=output_dir,
+                endpoint="https://api.openai.test/v1/responses",
+                model="gpt-5.6-luna",
+                reasoning_effort="medium",
+                max_workers=1,
+            )
+            error = urllib.error.HTTPError(
+                "https://api.openai.test/v1/responses", 429, "Retry", {}, None
+            )
+
+            with mock.patch.dict(
+                os.environ, {"DOCUMENT_REPAIR_OPENAI_API_KEY": "test-key"}
+            ), mock.patch(
+                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.render_page",
+                return_value="page",
+            ), mock.patch(
+                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.block_image",
+                return_value="crop",
+            ), mock.patch(
+                "app.modules.document_restoration.infrastructure.selective_repair_with_openai.call_page",
+                side_effect=error,
+            ) as call_page_mock:
+                summary = run(args)
+
+            self.assertEqual(call_page_mock.call_count, 2)
+            self.assertEqual(summary["pages"][0]["failed"], 1)
+            self.assertEqual(summary["pages"][0]["batch_error"], "HTTPError")
 
     def test_rejects_invalid_replacement_and_preserves_source(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

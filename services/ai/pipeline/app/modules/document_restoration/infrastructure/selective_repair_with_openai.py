@@ -251,6 +251,8 @@ def call_page(
         with urllib.request.urlopen(request, timeout=180) as raw:
             response = json.loads(raw.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
+        if exc.code == 429 or exc.code >= 500:
+            raise
         raise RuntimeError(f"Responses API HTTP {exc.code}") from exc
     result = json.loads(response_text(response))
     return result, response.get("usage") or {}
@@ -355,17 +357,31 @@ def rejected_candidates(
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    manifest = json.loads(args.manifest_file.read_text(encoding="utf-8"))
+    selected = select_candidates(manifest)
+    clean_previous_results(args.output_dir)
+    summary_file = (
+        args.output_dir / "final" / "selective_repair_summary.json"
+    )
     api_key = os.environ.get("DOCUMENT_REPAIR_OPENAI_API_KEY") or os.environ.get(
         "OPENAI_API_KEY"
     )
     if not api_key:
-        raise RuntimeError(
-            "crop-first/selective-repair에는 DOCUMENT_REPAIR_OPENAI_API_KEY 또는 "
-            "OPENAI_API_KEY가 필요합니다."
+        summary = {
+            "model": args.model,
+            "reasoning_effort": args.reasoning_effort,
+            "calls": 0,
+            "group_calls": 0,
+            "fallback_calls": 0,
+            "blocks": len(selected),
+            "pages": [],
+        }
+        summary_file.parent.mkdir(parents=True, exist_ok=True)
+        summary_file.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
         )
-    manifest = json.loads(args.manifest_file.read_text(encoding="utf-8"))
-    selected = select_candidates(manifest)
-    clean_previous_results(args.output_dir)
+        return summary
     markdown = args.detected_markdown.read_text(encoding="utf-8")
     fragments = markdown_fragments(markdown)
     pages = page_markdown(markdown)
@@ -480,9 +496,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "blocks": len(selected),
         "pages": page_results,
     }
-    summary_file = (
-        args.output_dir / "final" / "selective_repair_summary.json"
-    )
     summary_file.parent.mkdir(parents=True, exist_ok=True)
     summary_file.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
