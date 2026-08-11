@@ -8,7 +8,10 @@ from app.modules.agent_run.infrastructure.postgres_agent_run_repository import P
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import build_markdown_editor
-from app.modules.query.interfaces.http.dependencies import get_answer_query_use_case
+from app.modules.query.interfaces.http.dependencies import (
+    get_answer_query_use_case,
+    get_conversation_summarizer,
+)
 from app.modules.skill.application.select_skill import SelectSkillUseCase
 from app.modules.skill.infrastructure.postgres_skill_repository import PostgresSkillRepository
 from app.modules.skill.interfaces.http.dependencies import (
@@ -34,4 +37,5 @@ def get_handle_agent_turn_use_case() -> HandleAgentTurnUseCase:
             if feature_enabled
             else None
         ),
+        conversation_summarizer=get_conversation_summarizer(),
     )

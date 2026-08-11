@@ -1,6 +1,16 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictBool
+
+from app.modules.query.domain.entities import ConversationMessage
+
+
+class ConversationMessageRequest(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=4000)
+
+    def to_domain(self) -> ConversationMessage:
+        return ConversationMessage(role=self.role, content=self.content)
 
 
 class QueryRequest(BaseModel):
@@ -10,7 +20,10 @@ class QueryRequest(BaseModel):
     model: str = Field(..., min_length=1)
     allow_web_search: StrictBool
     recent_conversation_summary: str | None = None
+    recent_messages: list[ConversationMessageRequest] = Field(default_factory=list, max_length=6)
     reference_context: dict[str, Any] | None = None
+    output_language: Literal["ko", "en", "document"] | None = None
+    response_length: Literal["concise", "balanced", "detailed"] | None = None
 
 
 class RelatedPageResponse(BaseModel):
@@ -61,6 +74,7 @@ class EvidenceSnippetResponse(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
+    updated_conversation_summary: str | None = None
     related_pages: list[RelatedPageResponse]
     evidence_snippets: list[EvidenceSnippetResponse]
     graph_context: GraphContextResponse

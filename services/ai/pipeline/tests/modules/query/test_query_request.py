@@ -25,6 +25,54 @@ class QueryRequestTest(unittest.TestCase):
 
         self.assertEqual(request.workspace_id, "ws_target")
 
+    def test_accepts_response_preferences(self) -> None:
+        request = QueryRequest(
+            workspace_id="ws_target",
+            question="질문",
+            model="test-model",
+            output_language="en",
+            response_length="concise",
+            allow_web_search=False,
+        )
+
+        self.assertEqual(request.output_language, "en")
+        self.assertEqual(request.response_length, "concise")
+        self.assertFalse(request.allow_web_search)
+
+    def test_rejects_unsupported_response_preference(self) -> None:
+        with self.assertRaises(ValidationError):
+            QueryRequest(
+                workspace_id="ws_target",
+                question="질문",
+                model="test-model",
+                allow_web_search=False,
+                output_language="fr",
+            )
+
+    def test_accepts_at_most_three_recent_conversation_pairs(self) -> None:
+        request = QueryRequest(
+            workspace_id="ws_target",
+            question="후속 질문",
+            model="test-model",
+            allow_web_search=False,
+            recent_messages=[
+                {"role": "user" if index % 2 == 0 else "assistant", "content": str(index)}
+                for index in range(6)
+            ],
+        )
+
+        self.assertEqual(len(request.recent_messages), 6)
+        with self.assertRaises(ValidationError):
+            QueryRequest(
+                workspace_id="ws_target",
+                question="후속 질문",
+                model="test-model",
+                allow_web_search=False,
+                recent_messages=[
+                    {"role": "user", "content": str(index)} for index in range(7)
+                ],
+            )
+
     def test_model_is_required_and_non_empty(self) -> None:
         payloads = (
             {

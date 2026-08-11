@@ -262,6 +262,33 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertIn(injected_instruction, sent_user_prompt)
         self.assertEqual(result.document.title, "안전한 문서")
 
+    def test_new_document_uses_language_preference_after_explicit_instruction(self) -> None:
+        client = SequenceJsonClient(
+            [
+                {
+                    "title": "Document",
+                    "summary": "Created a document.",
+                    "markdown": "# Document",
+                }
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(
+            client,
+            "unused",
+            create_system_prompt="create",
+        )  # type: ignore[arg-type]
+
+        editor.generate_markdown(
+            MarkdownCreateRequest(
+                instruction="문서로 만들어줘",
+                output_language="en",
+            )
+        )
+
+        system_prompt = client.calls[0][0]
+        self.assertIn("explicit language in the user instruction", system_prompt)
+        self.assertIn("Write the response in English.", system_prompt)
+
     def test_generates_insert_after_content_without_repeating_section(self) -> None:
         client = SequenceJsonClient(
             [

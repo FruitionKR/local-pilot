@@ -11,6 +11,8 @@ from app.modules.markdown_edit.application.generate_markdown_edit import Generat
 from app.modules.markdown_edit.domain.entities import MarkdownCreateRequest, MarkdownEditRequest, MarkdownEditTarget
 from app.modules.markdown_edit.domain.markdown_target_scope import markdown_line_count
 from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.application.conversation_context_resolver import conversation_messages_text, update_conversation_summary
+from app.modules.query.application.ports import ConversationSummarizerPort
 from app.modules.query.domain.entities import ConversationContext
 from app.modules.skill.application.author_skill import AuthorSkillUseCase
 from app.modules.skill.application.select_skill import PreparedSkillSelection, SelectSkillUseCase
@@ -55,6 +57,7 @@ class HandleAgentTurnUseCase:
         agent_run_starter: AgentRunStarterPort | None = None,
         skill_authorer: AuthorSkillUseCase | None = None,
         skill_draft_proposer: ProposeSkillDraftUseCase | None = None,
+        conversation_summarizer: ConversationSummarizerPort | None = None,
     ) -> None:
         self._router = router
         self._query_use_case = query_use_case
@@ -64,11 +67,24 @@ class HandleAgentTurnUseCase:
         self._agent_run_starter = agent_run_starter
         self._skill_authorer = skill_authorer
         self._skill_draft_proposer = skill_draft_proposer
+        self._conversation_summarizer = conversation_summarizer
 
     def execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         if not request.message.strip():
             raise ValueError("message is required.")
 
+        result = self._execute(request)
+        updated_summary = (
+            result.query_answer.updated_conversation_summary
+            if result.query_answer is not None
+            else update_conversation_summary(
+                _to_query_conversation_context(request),
+                self._conversation_summarizer,
+            )
+        )
+        return replace(result, updated_conversation_summary=updated_summary)
+
+    def _execute(self, request: AgentTurnRequest) -> AgentTurnResult:
         selection = self._prepare_skill_selection(request)
         request = selection.request
         resolved = selection.resolve_route(self._router.route(request))
@@ -92,17 +108,14 @@ class HandleAgentTurnUseCase:
                     instruction=request.message,
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
-                    conversation_summary=(
-                        request.conversation_context.recent_conversation_summary
-                        if request.conversation_context
-                        else None
-                    ),
+                    conversation_summary=_conversation_context_text(request),
                     reference_context=(
                         request.conversation_context.reference_context
                         if request.conversation_context
                         else {}
                     ),
                     skill_instructions=_skill_instructions(selected_skill),
+                    output_language=request.output_language,
                 )
             )
             return AgentTurnResult(action="markdown_create", route=route, generated_markdown=result.document)
@@ -265,11 +278,7 @@ class HandleAgentTurnUseCase:
                     target=target,
                     workspace_id=request.workspace_id,
                     user_id=request.user_id,
-                    conversation_summary=(
-                        request.conversation_context.recent_conversation_summary
-                        if request.conversation_context
-                        else None
-                    ),
+                    conversation_summary=_conversation_context_text(request),
                     edit_goal=route.edit_goal,
                     skill_instructions=_skill_instructions(selected_skill),
                 )
@@ -292,12 +301,18 @@ class HandleAgentTurnUseCase:
                 message="요청한 작업은 현재 지원 범위에서 처리할 수 없습니다.",
             )
 
-        answer = self._query_use_case.execute(
-            request.message,
-            workspace_id=request.workspace_id or "",
-            user_id=request.user_id,
-            conversation_context=_to_query_conversation_context(request),
-        )
+        query_kwargs: dict[str, object] = {
+            "workspace_id": request.workspace_id or "",
+            "user_id": request.user_id,
+            "conversation_context": _to_query_conversation_context(request),
+        }
+        if request.output_language is not None:
+            query_kwargs["output_language"] = request.output_language
+        if request.response_length is not None:
+            query_kwargs["response_length"] = request.response_length
+        if request.allow_web_search is not None:
+            query_kwargs["allow_web_search"] = request.allow_web_search
+        answer = self._query_use_case.execute(request.message, **query_kwargs)
         return AgentTurnResult(action="chat_answer", route=route, query_answer=answer)
 
     def _handle_pending_skill(
@@ -380,10 +395,15 @@ class HandleAgentTurnUseCase:
 def _to_query_conversation_context(request: AgentTurnRequest) -> ConversationContext | None:
     if request.conversation_context is None:
         return None
-    if request.conversation_context.recent_conversation_summary is None and not request.conversation_context.reference_context:
+    if (
+        request.conversation_context.recent_conversation_summary is None
+        and not request.conversation_context.recent_messages
+        and not request.conversation_context.reference_context
+    ):
         return None
     return ConversationContext(
         recent_conversation_summary=request.conversation_context.recent_conversation_summary,
+        recent_messages=request.conversation_context.recent_messages,
         reference_context=request.conversation_context.reference_context,
     )
 
@@ -397,12 +417,17 @@ def _whole_document_target(markdown: str) -> MarkdownEditTarget:
 
 
 def _skill_authoring_instruction(request: AgentTurnRequest) -> str:
-    summary = (
-        request.conversation_context.recent_conversation_summary
-        if request.conversation_context and request.conversation_context.recent_conversation_summary
-        else None
-    )
-    return f"{summary.strip()}\n\n사용자의 현재 답변:\n{request.message}" if summary else request.message
+    context = _conversation_context_text(request)
+    return f"{context}\n\n사용자의 현재 답변:\n{request.message}" if context else request.message
+
+
+def _conversation_context_text(request: AgentTurnRequest) -> str | None:
+    context = _to_query_conversation_context(request)
+    if context is None:
+        return None
+    sections = [context.recent_conversation_summary or "", conversation_messages_text(context)]
+    text = "\n".join(section.strip() for section in sections if section.strip())
+    return text or None
 
 
 def _skill_scope_type(request: AgentTurnRequest) -> SkillScopeType | None:

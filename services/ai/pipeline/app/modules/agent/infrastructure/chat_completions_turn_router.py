@@ -34,6 +34,11 @@ NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
     re.IGNORECASE,
 )
+SKILL_NEGATION_PATTERN = re.compile(
+    r"(?:스킬|skill).{0,30}(?:만들지\s*(?:마|말고)|생성하지\s*(?:마|말고)|작성하지\s*(?:마|말고)|하지\s*말|취소|cancel)|"
+    r"(?:don't|do not|never)\s+(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
+    re.IGNORECASE,
+)
 COMPLETED_WORK_REQUEST_PATTERN = re.compile(
     r"(?:방금|아까|이전|앞서).{0,20}(?:방식|작업|결과|과정|흐름)|"
     r"(?:just now|earlier|previous).{0,30}(?:method|work|result|process|workflow)",
@@ -81,6 +86,14 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
                 request.conversation_context.recent_conversation_summary
                 if request.conversation_context
                 else None
+            ),
+            "recent_messages": (
+                [
+                    {"role": message.role, "content": message.content}
+                    for message in request.conversation_context.recent_messages
+                ]
+                if request.conversation_context
+                else []
             ),
             "reference_context": (
                 request.conversation_context.reference_context
@@ -230,10 +243,24 @@ def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) 
         if request.conversation_context and request.conversation_context.recent_conversation_summary
         else ""
     )
+    recent_messages = (
+        request.conversation_context.recent_messages
+        if request.conversation_context
+        else ()
+    )
+    recent_user_message = next(
+        (message.content for message in reversed(recent_messages) if message.role == "user"),
+        "",
+    )
+    intent_context = recent_user_message if recent_messages else summary
     has_pending_proposal = bool(
         request.conversation_context and request.conversation_context.pending_skill_proposal
     )
-    if not has_pending_proposal and not _requests_new_skill(f"{request.message}\n{summary}"):
+    if SKILL_NEGATION_PATTERN.search(request.message):
+        return ["skill_authoring must not override an explicit current Skill refusal"]
+    if not has_pending_proposal and not _requests_new_skill(
+        f"{request.message}\n{intent_context}"
+    ):
         return ["skill_authoring requires an explicit request to create a new Skill"]
     if COMPLETED_WORK_REQUEST_PATTERN.search(request.message):
         return ["completed work must use skill_draft_proposal instead of skill_authoring"]

@@ -1,7 +1,35 @@
 import unittest
 
-from app.modules.query.application.conversation_context_resolver import contextualize_question, evidence_question
-from app.modules.query.domain.entities import ConversationContext
+from app.modules.query.application.conversation_context_resolver import (
+    RECENT_MESSAGE_LIMIT,
+    contextualize_question,
+    evidence_question,
+    update_conversation_summary,
+)
+from app.modules.query.domain.entities import ConversationContext, ConversationMessage
+
+
+class FixedSummarizer:
+    def __init__(self, summary: str) -> None:
+        self.summary = summary
+        self.calls: list[tuple[str | None, tuple[ConversationMessage, ...]]] = []
+
+    def summarize(
+        self,
+        previous_summary: str | None,
+        messages: tuple[ConversationMessage, ...],
+    ) -> str:
+        self.calls.append((previous_summary, messages))
+        return self.summary
+
+
+class FailingSummarizer:
+    def summarize(
+        self,
+        previous_summary: str | None,
+        messages: tuple[ConversationMessage, ...],
+    ) -> str:
+        raise RuntimeError("summary provider unavailable")
 
 
 class ConversationContextResolverTest(unittest.TestCase):
@@ -46,6 +74,52 @@ class ConversationContextResolverTest(unittest.TestCase):
         )
 
         self.assertEqual(evidence_question(question, context, contextualize_question(question, context)), question)
+
+    def test_includes_recent_messages_in_follow_up_context(self) -> None:
+        context = ConversationContext(
+            recent_messages=(
+                ConversationMessage(role="user", content="Persistent Wiki를 설명해줘"),
+                ConversationMessage(role="assistant", content="지식을 지속해서 축적하는 구조입니다."),
+            )
+        )
+
+        resolved = contextualize_question("그건 RAG와 뭐가 달라?", context)
+
+        self.assertIn("사용자: Persistent Wiki를 설명해줘", resolved)
+        self.assertIn("어시스턴트: 지식을 지속해서 축적하는 구조입니다.", resolved)
+
+    def test_rolls_full_recent_message_window_into_updated_summary(self) -> None:
+        messages = tuple(
+            ConversationMessage(
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"메시지 {index + 1}",
+            )
+            for index in range(RECENT_MESSAGE_LIMIT)
+        )
+        summarizer = FixedSummarizer("갱신된 누적 요약")
+
+        updated_summary = update_conversation_summary(
+            ConversationContext(
+                recent_conversation_summary="기존 요약",
+                recent_messages=messages,
+            ),
+            summarizer,
+        )
+
+        self.assertEqual(updated_summary, "갱신된 누적 요약")
+        self.assertEqual(summarizer.calls, [("기존 요약", messages)])
+
+    def test_returns_none_when_summary_update_is_unavailable(self) -> None:
+        context = ConversationContext(
+            recent_messages=tuple(
+                ConversationMessage(role="user", content=f"메시지 {index + 1}")
+                for index in range(RECENT_MESSAGE_LIMIT)
+            )
+        )
+
+        for summarizer in (FixedSummarizer(""), FailingSummarizer()):
+            with self.subTest(summarizer=type(summarizer).__name__):
+                self.assertIsNone(update_conversation_summary(context, summarizer))
 
 
 if __name__ == "__main__":
