@@ -1,10 +1,18 @@
 package fruition.core.skill.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.shared.util.ErrorResponse;
 import fruition.core.skill.dto.SkillAuthoringRequest;
 import fruition.core.skill.dto.SkillPublishRequest;
 import fruition.core.skill.dto.SkillUpdateRequest;
 import fruition.core.skill.service.SkillService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/workspaces/{workspace_id}/skills")
+@Tag(name = "Skills", description = "재사용 가능한 Agent Skill 작성, 게시 및 실행 설정 API")
 public class SkillController {
 
     private final SkillService skillService;
@@ -26,6 +35,25 @@ public class SkillController {
         this.skillService = skillService;
     }
 
+    @Operation(summary = "Skill 초안 작성", description = "자연어 요구를 바탕으로 저장 전 Skill 초안을 생성합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "초안 작성 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스 또는 참조 문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 이름 또는 버전 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "413", description = "참조 문서 또는 요청 본문이 너무 큼",
+            content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
+        @ApiResponse(responseCode = "422", description = "Skill 요청 검증 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping("/author")
     public ResponseEntity<JsonNode> author(
             @PathVariable("workspace_id") String workspaceId,
@@ -34,6 +62,25 @@ public class SkillController {
         return ResponseEntity.ok(skillService.author(workspaceId, userId, request));
     }
 
+    @Operation(summary = "Skill 게시", description = "작성된 Skill 정의를 검토 후 게시합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "게시 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Skill 정의",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스 또는 참조 문서를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 이름 또는 버전 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "413", description = "요청 본문이 너무 큼",
+            content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
+        @ApiResponse(responseCode = "422", description = "Skill 요청 검증 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping("/author/publish")
     public ResponseEntity<JsonNode> publish(
             @PathVariable("workspace_id") String workspaceId,
@@ -42,6 +89,19 @@ public class SkillController {
         return ResponseEntity.ok(skillService.publish(workspaceId, userId, request));
     }
 
+    @Operation(summary = "Skill 목록 조회", description = "현재 사용자가 사용할 수 있는 워크스페이스 Skill 목록을 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "목록 조회 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @GetMapping
     public ResponseEntity<JsonNode> list(
             @PathVariable("workspace_id") String workspaceId,
@@ -49,34 +109,96 @@ public class SkillController {
         return ResponseEntity.ok(skillService.list(workspaceId, userId));
     }
 
+    @Operation(summary = "Skill 상세 조회", description = "Skill의 현재 정의와 실행 설정을 반환합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "상세 조회 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @GetMapping("/{skill_id}")
     public ResponseEntity<JsonNode> get(
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(description = "조회할 Skill ID", required = true)
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(skillService.get(workspaceId, userId, skillId));
     }
 
+    @Operation(summary = "Skill 수정", description = "Skill의 정의를 수정합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "수정 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "400", description = "잘못된 Skill 정의",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 이름 또는 버전 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "413", description = "요청 본문이 너무 큼",
+            content = @Content(mediaType = "application/json", schema = @Schema(oneOf = {JsonNode.class, ErrorResponse.class}))),
+        @ApiResponse(responseCode = "422", description = "Skill 요청 검증 실패",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PatchMapping("/{skill_id}")
     public ResponseEntity<JsonNode> update(
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(description = "수정할 Skill ID", required = true)
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId,
             @Valid @RequestBody SkillUpdateRequest request) {
         return ResponseEntity.ok(skillService.update(workspaceId, userId, skillId, request));
     }
 
+    @Operation(summary = "Skill 활성화", description = "Skill을 Agent 실행 대상에 포함합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "활성화 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping("/{skill_id}/enable")
     public ResponseEntity<JsonNode> enable(
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(description = "활성화할 Skill ID", required = true)
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(skillService.setEnabled(workspaceId, userId, skillId, true));
     }
 
+    @Operation(summary = "Skill 비활성화", description = "Skill을 Agent 실행 대상에서 제외합니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "비활성화 성공",
+            content = @Content(schema = @Schema(implementation = JsonNode.class))),
+        @ApiResponse(responseCode = "404", description = "Skill 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "Skill 요청 충돌",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "410", description = "Skill이 더 이상 유효하지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "503", description = "llmPipeline 사용 불가",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
     @PostMapping("/{skill_id}/disable")
     public ResponseEntity<JsonNode> disable(
             @PathVariable("workspace_id") String workspaceId,
+            @Parameter(description = "비활성화할 Skill ID", required = true)
             @PathVariable("skill_id") String skillId,
             @AuthenticationPrincipal String userId) {
         return ResponseEntity.ok(skillService.setEnabled(workspaceId, userId, skillId, false));
