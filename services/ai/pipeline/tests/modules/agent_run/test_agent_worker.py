@@ -283,6 +283,93 @@ class AgentWorkerTest(unittest.TestCase):
         self.assertEqual(cleanup_order, ["checkpoint:run-1", "checkpoint:run-2", "runs"])
         repository.delete_expired_runs.assert_called_once_with(("run-1", "run-2"))
 
+    def test_main_fails_leased_job_for_setup_failures_and_missing_selection(self) -> None:
+        for failure in (
+            "load_context",
+            "plan_generator",
+            "execution_decider",
+            "agent_worker",
+            "missing_provider",
+            "missing_model",
+        ):
+            with self.subTest(failure=failure):
+                repository = MagicMock()
+                job = MagicMock(id="job-1", run_id="run-1")
+                repository.claim_next.side_effect = [job, KeyboardInterrupt]
+                context = MagicMock()
+                context.run.provider = None if failure == "missing_provider" else "openai"
+                context.run.model = None if failure == "missing_model" else "gpt-5-nano"
+                repository.load_context.return_value = context
+                plan_generator = MagicMock()
+                execution_decider = MagicMock()
+                worker = MagicMock()
+                connection_context = MagicMock()
+                connection_context.__enter__.return_value = MagicMock()
+
+                with (
+                    patch.object(agent_worker, "database") as database_module,
+                    patch.object(agent_worker, "PostgresAgentJobRepository", return_value=repository),
+                    patch.object(agent_worker, "PostgresAgentRunRepository"),
+                    patch.object(agent_worker, "PostgresSaver"),
+                    patch.object(agent_worker, "build_backend_tool_gateway"),
+                    patch.object(agent_worker, "build_plan_generator", return_value=plan_generator) as plan_builder,
+                    patch.object(
+                        agent_worker,
+                        "build_execution_decider",
+                        return_value=execution_decider,
+                    ) as execution_builder,
+                    patch.object(agent_worker, "AgentWorker", return_value=worker) as worker_factory,
+                    patch.object(agent_worker, "_cleanup_expired_runs_if_due", return_value=0),
+                    patch.object(agent_worker.time, "monotonic", return_value=1),
+                ):
+                    database_module.connect_ai.return_value = connection_context
+                    if failure == "load_context":
+                        repository.load_context.side_effect = RuntimeError("context unavailable")
+                    elif failure == "plan_generator":
+                        plan_builder.side_effect = RuntimeError("missing API key")
+                    elif failure == "execution_decider":
+                        execution_builder.side_effect = RuntimeError("missing API key")
+                    elif failure == "agent_worker":
+                        worker_factory.side_effect = RuntimeError("worker setup failed")
+
+                    with self.assertRaises(KeyboardInterrupt):
+                        agent_worker.main()
+
+                expected_error = "missing_llm_selection" if failure.startswith("missing_") else "RuntimeError"
+                repository.fail.assert_called_once_with(job, expected_error)
+                worker.process.assert_not_called()
+
+    def test_main_does_not_fail_again_when_process_raises(self) -> None:
+        repository = MagicMock()
+        job = MagicMock(id="job-1", run_id="run-1")
+        repository.claim_next.side_effect = [job]
+        context = MagicMock()
+        context.run.provider = "openai"
+        context.run.model = "gpt-5-nano"
+        repository.load_context.return_value = context
+        worker = MagicMock()
+        worker.process.side_effect = RuntimeError("process failure")
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = MagicMock()
+
+        with (
+            patch.object(agent_worker, "database") as database_module,
+            patch.object(agent_worker, "PostgresAgentJobRepository", return_value=repository),
+            patch.object(agent_worker, "PostgresAgentRunRepository"),
+            patch.object(agent_worker, "PostgresSaver"),
+            patch.object(agent_worker, "build_backend_tool_gateway"),
+            patch.object(agent_worker, "build_plan_generator"),
+            patch.object(agent_worker, "build_execution_decider"),
+            patch.object(agent_worker, "AgentWorker", return_value=worker),
+            patch.object(agent_worker, "_cleanup_expired_runs_if_due", return_value=0),
+            patch.object(agent_worker.time, "monotonic", return_value=1),
+        ):
+            database_module.connect_ai.return_value = connection_context
+            with self.assertRaisesRegex(RuntimeError, "process failure"):
+                agent_worker.main()
+
+        repository.fail.assert_not_called()
+
     def test_selected_skill_with_empty_allowed_tools_cannot_read_hierarchy(self) -> None:
         repository = MagicMock()
         worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
