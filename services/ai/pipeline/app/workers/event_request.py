@@ -2,7 +2,7 @@ import re
 from typing import Any
 
 
-_SECRET_FIELD_PARTS = {"token", "password", "secret"}
+_SECRET_FIELD_PARTS = {"token", "password", "secret", "endpoint"}
 
 
 def without_top_level_secrets(command: dict[str, Any]) -> dict[str, Any]:

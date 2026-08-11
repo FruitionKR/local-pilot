@@ -190,6 +190,7 @@ def test_event_request_excludes_top_level_secrets() -> None:
         "api_key": "api-secret",
         "api_base_url": "https://command.example/v1",
         "base_url": "https://base.example/v1",
+        "endpoint": "https://endpoint.example/v1",
         "tavily_api_key": "tavily-secret",
         "access_token": "access-secret",
         "db_password": "password-secret",
@@ -202,6 +203,7 @@ def test_event_request_excludes_top_level_secrets() -> None:
             "api_key": "nested-api-secret",
             "api_base_url": "https://nested-command.example/v1",
             "base_url": "https://nested-base.example/v1",
+            "apiEndpoint": "https://nested-endpoint.example/v1",
             "ordinary": {"value": "keep"},
         },
         "items": [

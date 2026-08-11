@@ -64,6 +64,18 @@ def test_emit_propagates_inactive_pipeline_signal(tmp_path: Path) -> None:
 
 def test_emit_excludes_private_llm_fields_from_callback_payload(tmp_path: Path) -> None:
     log = PipelineLog(tmp_path / "pipeline.log", callback_url="http://backend/events")
+    secret_values = {
+        "top-password",
+        "https://top-base.example",
+        "top-api-key",
+        "https://top-endpoint.example",
+        "top-access-token",
+        "nested-password",
+        "https://nested-base.example",
+        "nested-api-key",
+        "https://nested-endpoint.example",
+        "nested-secret",
+    }
 
     with patch("urllib.request.urlopen") as urlopen:
         log.emit(
@@ -72,15 +84,36 @@ def test_emit_excludes_private_llm_fields_from_callback_payload(tmp_path: Path) 
             {
                 "provider": "gemini",
                 "model": "gemini-2.5-flash-lite",
-                "endpoint": "https://provider.example/v1",
-                "base_url": "https://provider.example",
-                "api_key": "secret",
-                "token": "secret-token",
+                "count": 3,
+                "password": "top-password",
+                "baseURL": "https://top-base.example",
+                "apiKey": "top-api-key",
+                "endpoint": "https://top-endpoint.example",
+                "accessToken": "top-access-token",
+                "metadata": {
+                    "dbPassword": "nested-password",
+                    "apiBaseURL": "https://nested-base.example",
+                    "nestedApiKey": "nested-api-key",
+                    "apiEndpoint": "https://nested-endpoint.example",
+                    "clientSecret": "nested-secret",
+                    "ordinary": {"value": "keep"},
+                },
             },
         )
 
     event = json.loads(urlopen.call_args.args[0].data)
+    log_content = (tmp_path / "pipeline.log").read_text(encoding="utf-8")
+    serialized_event = json.dumps(event, ensure_ascii=False)
+
+    for secret in secret_values:
+        assert secret not in serialized_event
+        assert secret not in log_content
+
     assert event["data"] == {
         "provider": "gemini",
         "model": "gemini-2.5-flash-lite",
+        "count": "3",
+        "metadata": "{'ordinary': {'value': 'keep'}}",
     }
+    assert "provider: gemini" in log_content
+    assert "count: 3" in log_content
