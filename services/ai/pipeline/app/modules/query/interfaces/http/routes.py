@@ -25,12 +25,16 @@ def answer_query(
     use_case: AnswerQueryUseCase = Depends(get_query_answer_use_case),
 ) -> QueryResponse:
     try:
-        result = use_case.execute(
-            payload.question,
-            workspace_id=payload.workspace_id,
-            user_id=payload.user_id,
-            conversation_context=_conversation_context(payload),
-        )
+        execute_kwargs: dict[str, object] = {
+            "workspace_id": payload.workspace_id,
+            "user_id": payload.user_id,
+            "conversation_context": _conversation_context(payload),
+        }
+        if payload.output_language is not None:
+            execute_kwargs["output_language"] = payload.output_language
+        if payload.response_length is not None:
+            execute_kwargs["response_length"] = payload.response_length
+        result = use_case.execute(payload.question, **execute_kwargs)
     except QueryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -39,10 +43,15 @@ def answer_query(
 
 
 def _conversation_context(payload: QueryRequest) -> ConversationContext | None:
-    if payload.recent_conversation_summary is None and payload.reference_context is None:
+    if (
+        payload.recent_conversation_summary is None
+        and not payload.recent_messages
+        and payload.reference_context is None
+    ):
         return None
     return ConversationContext(
         recent_conversation_summary=payload.recent_conversation_summary,
+        recent_messages=tuple(message.to_domain() for message in payload.recent_messages),
         reference_context=payload.reference_context or {},
     )
 
@@ -50,6 +59,7 @@ def _conversation_context(payload: QueryRequest) -> ConversationContext | None:
 def _to_response(result: QueryAnswer) -> QueryResponse:
     return QueryResponse(
         answer=result.answer.content,
+        updated_conversation_summary=result.updated_conversation_summary,
         related_pages=[
             RelatedPageResponse(
                 id=item.page.id,

@@ -10,7 +10,7 @@ from app.modules.agent.domain.entities import (
     PendingSkillProposal,
 )
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
-from app.modules.query.interfaces.http.schemas import QueryResponse
+from app.modules.query.interfaces.http.schemas import ConversationMessageRequest, QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
     SkillAuthoringResponse,
     SkillDraftSourceRunRequest,
@@ -61,12 +61,14 @@ class PendingSkillProposalRequest(BaseModel):
 
 class AgentConversationContextRequest(BaseModel):
     recent_conversation_summary: str | None = None
+    recent_messages: list[ConversationMessageRequest] = Field(default_factory=list, max_length=6)
     reference_context: dict[str, Any] | None = None
     pending_skill_proposal: PendingSkillProposalRequest | None = None
 
     def to_domain(self) -> AgentConversationContext:
         return AgentConversationContext(
             recent_conversation_summary=self.recent_conversation_summary,
+            recent_messages=tuple(message.to_domain() for message in self.recent_messages),
             reference_context=self.reference_context or {},
             pending_skill_proposal=(
                 self.pending_skill_proposal.to_domain() if self.pending_skill_proposal else None
@@ -78,6 +80,9 @@ class AgentTurnRequestBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=MAX_AGENT_MESSAGE_LENGTH)
     workspace_id: str | None = Field(default=None, min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
+    output_language: Literal["ko", "en", "document"] | None = None
+    response_length: Literal["concise", "balanced", "detailed"] | None = None
+    allow_web_search: bool | None = None
     conversation_context: AgentConversationContextRequest | None = None
     active_markdown_context: ActiveMarkdownContextRequest | None = None
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
@@ -99,6 +104,9 @@ class AgentTurnRequestBody(BaseModel):
             message=self.message,
             workspace_id=self.workspace_id,
             user_id=self.user_id,
+            output_language=self.output_language,
+            response_length=self.response_length,
+            allow_web_search=self.allow_web_search,
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
             skill_mode=self.skill_mode,
@@ -174,6 +182,7 @@ class AgentTurnResponse(BaseModel):
         "reject",
     ]
     route: AgentTurnRouteResponse
+    updated_conversation_summary: str | None = None
     message: str | None = None
     chat: QueryResponse | None = None
     edit: MarkdownEditOperationResponse | None = None

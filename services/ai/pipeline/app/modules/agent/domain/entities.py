@@ -6,7 +6,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditOperation,
     MarkdownEditTarget,
 )
-from app.modules.query.domain.entities import QueryAnswer
+from app.modules.query.domain.entities import ConversationMessage, OutputLanguage, QueryAnswer, ResponseLength
 from app.modules.skill.domain.entities import (
     SkillAuthoringResult,
     SkillAuthoringMode,
@@ -55,6 +55,7 @@ class PendingSkillProposal:
 @dataclass(frozen=True)
 class AgentConversationContext:
     recent_conversation_summary: str | None = None
+    recent_messages: tuple[ConversationMessage, ...] = ()
     reference_context: dict[str, object] = field(default_factory=dict)
     pending_skill_proposal: PendingSkillProposal | None = None
 
@@ -75,6 +76,9 @@ class AgentTurnRequest:
     skill_scope_type: SkillScopeType | None = None
     skill_authoring_mode: SkillAuthoringMode = "enhance"
     skill_reference_document_ids: tuple[str, ...] = ()
+    output_language: OutputLanguage | None = None
+    response_length: ResponseLength | None = None
+    allow_web_search: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -99,3 +103,4 @@ class AgentTurnResult:
     run_id: str | None = None
     run_status: str | None = None
     skill_authoring_result: SkillAuthoringResult | None = None
+    updated_conversation_summary: str | None = None

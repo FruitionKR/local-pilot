@@ -1,4 +1,8 @@
+from app.modules.query.application.ports import ConversationSummarizerPort
 from app.modules.query.domain.entities import ConversationContext
+
+
+RECENT_MESSAGE_LIMIT = 6
 
 
 def contextualize_question(question: str, conversation_context: ConversationContext | None) -> str:
@@ -20,9 +24,44 @@ def contextualize_question(question: str, conversation_context: ConversationCont
     if conversation_context.recent_conversation_summary:
         sections.append(conversation_context.recent_conversation_summary.strip())
 
+    recent_messages = conversation_messages_text(conversation_context)
+    if recent_messages:
+        sections.append(recent_messages)
+
     sections.append(question)
 
     return "\n".join(section for section in sections if section.strip()).strip()
+
+
+def update_conversation_summary(
+    conversation_context: ConversationContext | None,
+    summarizer: ConversationSummarizerPort | None,
+) -> str | None:
+    if (
+        conversation_context is None
+        or summarizer is None
+        or len(conversation_context.recent_messages) < RECENT_MESSAGE_LIMIT
+    ):
+        return None
+    try:
+        updated_summary = summarizer.summarize(
+            conversation_context.recent_conversation_summary,
+            conversation_context.recent_messages,
+        ).strip()
+    except RuntimeError:
+        return None
+    return updated_summary or None
+
+
+def conversation_messages_text(conversation_context: ConversationContext | None) -> str:
+    if conversation_context is None:
+        return ""
+    labels = {"user": "사용자", "assistant": "어시스턴트"}
+    return "\n".join(
+        f"{labels[message.role]}: {message.content.strip()}"
+        for message in conversation_context.recent_messages
+        if message.content.strip()
+    )
 
 
 def evidence_question(

@@ -109,6 +109,7 @@ def handle_agent_turn(
 def _to_response(result: AgentTurnResult) -> AgentTurnResponse:
     return AgentTurnResponse(
         action=result.action,
+        updated_conversation_summary=result.updated_conversation_summary,
         route=AgentTurnRouteResponse(
             action=result.route.action,
             confidence=result.route.confidence,

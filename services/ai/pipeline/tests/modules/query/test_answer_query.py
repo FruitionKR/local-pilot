@@ -1,6 +1,6 @@
 import unittest
 
-from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.application.answer_query import AnswerQueryUseCase, _fallback_language
 from app.modules.query.application.traverse_wiki_graph import TraverseWikiGraphUseCase
 from app.modules.query.domain.entities import (
     ConversationContext,
@@ -814,6 +814,28 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertIn("external knowledge", result.evidence_snippets[0].text)
         self.assertIn("[1]", result.answer.content)
 
+    def test_does_not_call_web_search_when_request_disallows_it(self) -> None:
+        web_search = FakeWebSearch([])
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([], []),
+            embedding_search=ScoreSearch({}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            web_search=web_search,
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute(
+            "RAG가 뭐야?",
+            workspace_id="ws_test",
+            output_language="en",
+            allow_web_search=False,
+        )
+
+        self.assertEqual(web_search.queries, [])
+        self.assertNotEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
+        self.assertTrue(result.answer.content.startswith("The provided evidence"))
+
     def test_query_evaluator_reviews_generated_answer_and_can_keep_internal_answer_when_seed_score_is_low(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]
         answer_generator = RecordingAnswerGenerator("index.md는 위키 페이지 카탈로그입니다. [1]")
@@ -927,7 +949,7 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
                     "s3://test/source:wiki.md": (
                         "---\ndocument_id: doc_wiki\n---\n\n"
                         "## Key Points\n"
-                        "- LLM Wiki Source는 내부 근거로 답변 생성에 사용됩니다. [B0001]\n"
+                        "- 日本国 [B0001]\n"
                     )
                 }
             ),
@@ -935,13 +957,26 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
             query_evaluator_max_attempts=2,
         )
 
-        result = use_case.execute("LLM Wiki Source는 어디에 사용돼?", workspace_id="ws_test")
+        result = use_case.execute(
+            "この文書は何を説明していますか？",
+            workspace_id="ws_test",
+            output_language="document",
+        )
 
         self.assertEqual(len(query_evaluator.calls), 2)
         self.assertEqual(len(answer_generator.contexts), 2)
         self.assertIn("인용을 직접 근거와 일치시키세요.", answer_generator.contexts[1].answer_context)
         self.assertEqual(result.retrieval_summary.stop_reason, "query_evaluator_unresolved")
         self.assertNotIn("수정 답변입니다.", result.answer.content)
+        self.assertIn("提供された根拠", result.answer.content)
+
+    def test_document_language_uses_question_when_han_text_is_ambiguous(self) -> None:
+        self.assertEqual(_fallback_language("document", "日本国", "日本国について"), "ja")
+        self.assertEqual(_fallback_language("document", "中国市场", "中国市场是什么？"), "zh")
+        self.assertEqual(_fallback_language("document", "中国市场", "中国市場とは何ですか？"), "zh")
+        self.assertEqual(_fallback_language("document", "日本市場", "日本市場とは何ですか？"), "ja")
+        self.assertEqual(_fallback_language("document", "한국어 문서", "質問"), "ko")
+        self.assertEqual(_fallback_language("document", "こんにちは", "질문"), "ja")
 
     def test_query_evaluator_can_request_web_fallback_after_reviewing_answer(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

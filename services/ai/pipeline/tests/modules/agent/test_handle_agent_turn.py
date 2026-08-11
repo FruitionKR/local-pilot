@@ -21,6 +21,7 @@ from app.modules.markdown_edit.domain.entities import (
     MarkdownEditTarget,
 )
 from app.modules.query.domain.entities import (
+    ConversationMessage,
     GeneratedAnswer,
     GraphContext,
     QueryAnswer,
@@ -48,6 +49,19 @@ class FixedRouter:
         return self.next_route
 
 
+class FixedConversationSummarizer:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def summarize(
+        self,
+        previous_summary: str | None,
+        messages: tuple[ConversationMessage, ...],
+    ) -> str:
+        self.calls += 1
+        return "갱신된 대화 요약"
+
+
 class SequencedRouter:
     def __init__(self, *routes: AgentTurnRoute) -> None:
         self.routes = routes
@@ -62,6 +76,7 @@ class FakeQueryUseCase:
     def __init__(self) -> None:
         self.questions: list[str] = []
         self.kwargs: list[dict[str, object]] = []
+        self.updated_conversation_summary: str | None = None
 
     def execute(self, question: str, **kwargs: object) -> QueryAnswer:
         self.questions.append(question)
@@ -82,6 +97,7 @@ class FakeQueryUseCase:
                 max_depth=0,
                 stop_reason="test",
             ),
+            updated_conversation_summary=self.updated_conversation_summary,
         )
 
 
@@ -226,6 +242,85 @@ def document_skill(capability: str = "document-create") -> Skill:
 
 
 class HandleAgentTurnUseCaseTest(unittest.TestCase):
+    def test_updates_summary_without_removing_recent_messages_from_agent_routing(self) -> None:
+        router = FixedRouter(AgentTurnRoute(action="reject", confidence=1.0, reason="test"))
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        summarizer = FixedConversationSummarizer()
+        use_case = HandleAgentTurnUseCase(
+            router=router,
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            conversation_summarizer=summarizer,  # type: ignore[arg-type]
+        )
+        messages = tuple(
+            ConversationMessage(
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"메시지 {index + 1}",
+            )
+            for index in range(6)
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="현재 요청",
+                conversation_context=AgentConversationContext(recent_messages=messages),
+            )
+        )
+
+        self.assertEqual(result.updated_conversation_summary, "갱신된 대화 요약")
+        self.assertEqual(summarizer.calls, 1)
+        self.assertEqual(router.requests[0].conversation_context.recent_messages, messages)  # type: ignore[union-attr]
+
+    def test_uses_query_summary_without_summarizing_the_same_messages_twice(self) -> None:
+        router = FixedRouter(AgentTurnRoute(action="chat_answer", confidence=1.0, reason="test"))
+        query_use_case = FakeQueryUseCase()
+        query_use_case.updated_conversation_summary = "Query에서 갱신한 요약"
+        summarizer = FixedConversationSummarizer()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=router,
+            query_use_case=query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            conversation_summarizer=summarizer,  # type: ignore[arg-type]
+        )
+        messages = tuple(
+            ConversationMessage(
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"메시지 {index + 1}",
+            )
+            for index in range(6)
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="현재 질문",
+                conversation_context=AgentConversationContext(recent_messages=messages),
+            )
+        )
+
+        self.assertEqual(result.updated_conversation_summary, "Query에서 갱신한 요약")
+        self.assertEqual(summarizer.calls, 0)
+
     def test_pending_skill_regeneration_uses_safe_regenerate_mode(self) -> None:
         authorer = RecordingSkillAuthorer()
         editor = RecordingMarkdownEditor(
@@ -805,6 +900,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="줄여줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="en",
                 active_markdown_context=ActiveMarkdownContext(
                     markdown="첫 줄\n둘째 줄\n긴 문장입니다.\n반복 문장입니다.\n마지막 문장입니다.",
                     target=target,
@@ -819,6 +915,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(editor.requests[0].edit_goal, "shorten")
         self.assertEqual(editor.requests[0].workspace_id, "workspace-1")
         self.assertEqual(editor.requests[0].user_id, "user-1")
+        self.assertEqual(editor.requests[0].output_language, "en")
 
     def test_executes_markdown_create_action(self) -> None:
         target = MarkdownEditTarget(type="selection", start_line=1, end_line=1)
@@ -858,6 +955,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="지금까지 이야기한 내용 md로 만들어줘",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="en",
                 conversation_context=AgentConversationContext(
                     recent_conversation_summary="사용자는 편집과 생성을 분리하는 agent 설계를 논의했다."
                 ),
@@ -871,6 +969,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertIn("편집과 생성을 분리", editor.create_requests[0].conversation_summary or "")
         self.assertEqual(editor.create_requests[0].workspace_id, "workspace-1")
         self.assertEqual(editor.create_requests[0].user_id, "user-1")
+        self.assertEqual(editor.create_requests[0].output_language, "en")
 
     def test_uses_whole_document_when_edit_has_markdown_but_no_target(self) -> None:
         target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=3)
@@ -1082,6 +1181,9 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                 message="이 문서는 무엇을 설명해?",
                 workspace_id="workspace-1",
                 user_id="user-1",
+                output_language="document",
+                response_length="balanced",
+                allow_web_search=False,
             )
         )
 
@@ -1090,6 +1192,38 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(query_use_case.questions, ["이 문서는 무엇을 설명해?"])
         self.assertEqual(query_use_case.kwargs[0]["workspace_id"], "workspace-1")
         self.assertEqual(query_use_case.kwargs[0]["user_id"], "user-1")
+        self.assertEqual(query_use_case.kwargs[0]["output_language"], "document")
+        self.assertEqual(query_use_case.kwargs[0]["response_length"], "balanced")
+        self.assertFalse(query_use_case.kwargs[0]["allow_web_search"])
+
+    def test_uses_web_search_query_use_case_when_requested(self) -> None:
+        default_query_use_case = FakeQueryUseCase()
+        web_search_query_use_case = FakeQueryUseCase()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="",
+                    replacement_markdown="unused",
+                )
+            )
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=FixedRouter(AgentTurnRoute(action="chat_answer", confidence=0.9, reason="question")),
+            query_use_case=default_query_use_case,  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            web_search_query_use_case_factory=lambda: web_search_query_use_case,  # type: ignore[arg-type]
+        )
+
+        use_case.execute(
+            AgentTurnRequest(message="최신 정보를 찾아줘", workspace_id="workspace-1", allow_web_search=True)
+        )
+
+        self.assertEqual(default_query_use_case.questions, [])
+        self.assertEqual(web_search_query_use_case.questions, ["최신 정보를 찾아줘"])
+        self.assertTrue(web_search_query_use_case.kwargs[0]["allow_web_search"])
 
 
 if __name__ == "__main__":

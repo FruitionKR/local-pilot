@@ -17,6 +17,7 @@ from app.core.llm_env import (
     resolve_llm_provider,
 )
 from app.core.llm_prompt import with_schema_and_skill_prompt
+from app.core.response_preferences import with_response_preferences
 from app.modules.markdown_edit.application.ports import MarkdownEditorPort
 from app.modules.markdown_edit.domain.entities import (
     EditOperationType,
@@ -107,14 +108,18 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "markdown": protected.markdown,
             "editable_context": _editable_context_payload(scope, protected.markdown),
         }
-        system_prompt = with_schema_and_skill_prompt(
-            self._system_prompt,
-            self._schema_prompt_provider(
-                "edit",
-                request.workspace_id,
-                request.user_id,
+        system_prompt = with_response_preferences(
+            with_schema_and_skill_prompt(
+                self._system_prompt,
+                self._schema_prompt_provider(
+                    "edit",
+                    request.workspace_id,
+                    request.user_id,
+                ),
+                request.skill_instructions or "",
             ),
-            request.skill_instructions or "",
+            request.output_language,
+            None,
         )
         try:
             result = self._complete_edit(system_prompt, payload, request, protected, scope)
@@ -156,14 +161,18 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             **source_range_payload(plan),
             **_read_only_context_payload(scope),
         }
-        system_prompt = with_schema_and_skill_prompt(
-            self._source_edit_system_prompt,
-            self._schema_prompt_provider(
-                "edit",
-                request.workspace_id,
-                request.user_id,
+        system_prompt = with_response_preferences(
+            with_schema_and_skill_prompt(
+                self._source_edit_system_prompt,
+                self._schema_prompt_provider(
+                    "edit",
+                    request.workspace_id,
+                    request.user_id,
+                ),
+                request.skill_instructions or "",
             ),
-            request.skill_instructions or "",
+            request.output_language,
+            None,
         )
         try:
             result, failures, raw = self._complete_source_range_edit(system_prompt, payload, request, plan)
@@ -256,14 +265,19 @@ class ChatCompletionsMarkdownEditor(MarkdownEditorPort):
             "conversation_summary": request.conversation_summary,
             "reference_context": request.reference_context or {},
         }
-        system_prompt = with_schema_and_skill_prompt(
-            self._create_system_prompt,
-            self._schema_prompt_provider(
-                "edit",
-                request.workspace_id,
-                request.user_id,
+        system_prompt = with_response_preferences(
+            with_schema_and_skill_prompt(
+                self._create_system_prompt,
+                self._schema_prompt_provider(
+                    "edit",
+                    request.workspace_id,
+                    request.user_id,
+                ),
+                request.skill_instructions or "",
             ),
-            request.skill_instructions or "",
+            request.output_language,
+            None,
+            document_creation=True,
         )
         try:
             result, failures, raw = self._complete_markdown_create(system_prompt, payload)
