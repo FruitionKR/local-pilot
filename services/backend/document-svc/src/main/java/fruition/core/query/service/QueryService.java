@@ -191,7 +191,9 @@ public class QueryService {
                 new QueryResponse.MessageSummary(messageContext.assistantMessageId(), "assistant",
                         pipelineResponse.answer(), "completed", assistantMessage.getCreatedAt()),
                 pipelineResponse.relatedPages(), pipelineResponse.evidenceSnippets(),
-                pipelineResponse.graphContext(), pipelineResponse.traversalPaths());
+                pipelineResponse.graphContext(), pipelineResponse.traversalPaths(),
+                pipelineResponse.webSearchRequested(), pipelineResponse.webSearchExecuted(),
+                pipelineResponse.resultCount(), pipelineResponse.errorCode());
     }
 
     private void markAssistantFailed(String requestId,

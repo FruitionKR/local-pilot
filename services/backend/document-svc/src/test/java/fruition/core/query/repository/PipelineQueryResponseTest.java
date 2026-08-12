@@ -28,7 +28,11 @@ class PipelineQueryResponseTest {
                     }
                   ],
                   "graph_context": { "nodes": [], "edges": [] },
-                  "traversal_paths": []
+                  "traversal_paths": [],
+                  "web_search_requested": true,
+                  "web_search_executed": true,
+                  "result_count": 2,
+                  "error_code": null
                 }
                 """;
 
@@ -40,6 +44,10 @@ class PipelineQueryResponseTest {
         assertThat(snippet.sourceDocumentId()).isEqualTo("doc_1f9a74af");
         assertThat(snippet.sourceBlockIds()).isEqualTo(List.of("B0005", "B0006"));
         assertThat(snippet.text()).isEqualTo("원본 block citation이 붙어 있던 근거 문장");
+        assertThat(response.webSearchRequested()).isTrue();
+        assertThat(response.webSearchExecuted()).isTrue();
+        assertThat(response.resultCount()).isEqualTo(2);
+        assertThat(response.errorCode()).isNull();
     }
 
     @Test

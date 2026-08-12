@@ -3,7 +3,15 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from pydantic import ValidationError
 
+from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
 from app.workers import task_worker
+from tests.modules.query.test_answer_query import (
+    EmptyTextSearch,
+    RecordingAnswerGenerator,
+    ScoreSearch,
+    source_page,
+)
 
 
 def test_event_uses_common_command_envelope() -> None:
@@ -88,7 +96,53 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         model="gpt-5-nano",
         allow_web_search=allow_web_search,
     )
+    use_case.execute.assert_called_once_with(
+        "질문",
+        workspace_id="workspace-1",
+        user_id="user-1",
+        allow_web_search=allow_web_search,
+    )
     assert result == {"answer": "ok"}
+
+
+@pytest.mark.parametrize(
+    ("allow_web_search", "expected_telemetry"),
+    [
+        (False, (False, False, None)),
+        (True, (True, False, "web_search_unavailable")),
+    ],
+)
+def test_query_command_preserves_web_search_telemetry_for_low_relevance_without_adapter(
+    allow_web_search: bool,
+    expected_telemetry: tuple[bool, bool, str | None],
+) -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "외부 정보가 뭐야?",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": allow_web_search,
+    }
+    use_case = AnswerQueryUseCase(
+        wiki_repository=InMemoryWikiRepository([source_page("source:seed", "Seed Source")], []),
+        embedding_search=ScoreSearch({"Seed Source": 0.10}),
+        text_search=EmptyTextSearch(),
+        answer_generator=RecordingAnswerGenerator(),
+        min_internal_relevance_score=0.50,
+    )
+
+    with patch.object(task_worker, "build_answer_query_use_case", return_value=use_case):
+        result = task_worker._handle_query(command)
+
+    assert (
+        result["web_search_requested"],
+        result["web_search_executed"],
+        result["error_code"],
+    ) == expected_telemetry
 
 
 def test_query_command_requires_boolean_web_search_flag() -> None:

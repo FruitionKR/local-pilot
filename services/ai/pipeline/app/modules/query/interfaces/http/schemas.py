@@ -86,3 +86,7 @@ class QueryResponse(BaseModel):
     evidence_snippets: list[EvidenceSnippetResponse]
     graph_context: GraphContextResponse
     traversal_paths: list[TraversalPathResponse]
+    web_search_requested: bool
+    web_search_executed: bool
+    result_count: int
+    error_code: str | None = None

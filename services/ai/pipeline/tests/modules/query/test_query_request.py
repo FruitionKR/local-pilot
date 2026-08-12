@@ -128,6 +128,12 @@ class QueryRequestTest(unittest.TestCase):
             evidence_snippets=[],
             graph_context=GraphContext(),
             traversal_paths=[],
+            web_search=Mock(
+                requested=False,
+                executed=False,
+                result_count=0,
+                error_code=None,
+            ),
         )
 
         with (
@@ -162,6 +168,7 @@ class QueryRequestTest(unittest.TestCase):
             workspace_id="ws_target",
             user_id=None,
             conversation_context=None,
+            allow_web_search=True,
         )
 
     def test_request_scoped_query_use_case_uses_payload_snapshot(self) -> None:

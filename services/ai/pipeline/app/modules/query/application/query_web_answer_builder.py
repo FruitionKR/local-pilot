@@ -17,6 +17,7 @@ from app.modules.query.domain.entities import (
     RetrievedPage,
     TraversalPath,
     WebSearchResult,
+    WebSearchTelemetry,
     WikiEmbeddingUnit,
     WikiPage,
 )
@@ -42,10 +43,13 @@ class QueryWebAnswerBuilder:
         event_publisher: QueryEventPublisherPort | None,
         output_language: OutputLanguage | None = None,
         response_length: ResponseLength | None = None,
+        web_search_telemetry: WebSearchTelemetry | None = None,
     ) -> QueryAnswer | None:
+        web_search_telemetry = web_search_telemetry or WebSearchTelemetry(requested=True)
         web_results = self._search_web(
             query_rewrite.retrieval_query,
             event_publisher,
+            web_search_telemetry,
             started_message="내부 Wiki 근거가 부족해 웹 검색 fallback을 시작했습니다.",
             failed_message="웹 검색 fallback이 실패했습니다.",
             empty_message="웹 검색 fallback 결과가 없습니다.",
@@ -70,7 +74,10 @@ class QueryWebAnswerBuilder:
             event_publisher,
             "web_search_answer_generated",
             "웹 검색 근거로 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
+            {
+                **self._telemetry_data(web_search_telemetry),
+                "answer_chars": len(answer.content),
+            },
         )
         return QueryAnswer(
             answer=answer,
@@ -84,6 +91,7 @@ class QueryWebAnswerBuilder:
                 concept_candidate_count=0,
                 stop_reason="web_search_fallback",
             ),
+            web_search=web_search_telemetry,
         )
 
     def answer_from_internal_web_augmented(
@@ -95,10 +103,13 @@ class QueryWebAnswerBuilder:
         traversal_paths: list[TraversalPath],
         stop_reason: str,
         event_publisher: QueryEventPublisherPort | None,
+        web_search_telemetry: WebSearchTelemetry | None = None,
     ) -> QueryAnswer | None:
+        web_search_telemetry = web_search_telemetry or WebSearchTelemetry(requested=True)
         web_results = self._search_web(
             query_rewrite.retrieval_query,
             event_publisher,
+            web_search_telemetry,
             started_message="내부 Wiki 근거에 외부 검색 근거를 보강합니다.",
             failed_message="웹 검색 보강이 실패했습니다.",
             empty_message="웹 검색 보강 결과가 없습니다.",
@@ -128,7 +139,10 @@ class QueryWebAnswerBuilder:
             event_publisher,
             "web_search_answer_generated",
             "내부 Wiki와 웹 검색 근거를 함께 사용해 답변 생성을 완료했습니다.",
-            {"result_count": len(web_results), "answer_chars": len(answer.content)},
+            {
+                **self._telemetry_data(web_search_telemetry),
+                "answer_chars": len(answer.content),
+            },
         )
         return QueryAnswer(
             answer=answer,
@@ -142,6 +156,7 @@ class QueryWebAnswerBuilder:
                 concept_candidate_count=0,
                 stop_reason=stop_reason,
             ),
+            web_search=web_search_telemetry,
         )
 
     def web_results_to_related_pages(self, web_results: list[WebSearchResult]) -> list[RetrievedPage]:
@@ -170,24 +185,49 @@ class QueryWebAnswerBuilder:
         self,
         retrieval_query: str,
         event_publisher: QueryEventPublisherPort | None,
+        web_search_telemetry: WebSearchTelemetry,
         started_message: str,
         failed_message: str,
         empty_message: str,
     ) -> list[WebSearchResult] | None:
+        web_search_telemetry.requested = True
         self._publish(
             event_publisher,
             "web_search_started",
             started_message,
-            {"retrieval_query": retrieval_query},
+            {
+                "retrieval_query": retrieval_query,
+                **self._telemetry_data(web_search_telemetry),
+            },
         )
         try:
             web_results = self._web_search.search(retrieval_query)
-        except Exception as exc:
-            self._publish(event_publisher, "web_search_failed", failed_message, {"error": str(exc)})
+        except Exception:
+            web_search_telemetry.executed = True
+            web_search_telemetry.error_code = "web_search_failed"
+            self._publish(
+                event_publisher,
+                "web_search_failed",
+                failed_message,
+                self._telemetry_data(web_search_telemetry),
+            )
             return None
+        web_search_telemetry.executed = True
+        web_search_telemetry.result_count = len(web_results)
         if not web_results:
-            self._publish(event_publisher, "web_search_empty", empty_message, None)
+            self._publish(
+                event_publisher,
+                "web_search_empty",
+                empty_message,
+                self._telemetry_data(web_search_telemetry),
+            )
             return None
+        self._publish(
+            event_publisher,
+            "web_search_executed",
+            "웹 검색 실행을 완료했습니다.",
+            self._telemetry_data(web_search_telemetry),
+        )
         return web_results
 
     def _merge_related_pages(self, internal_pages: list[RetrievedPage], web_pages: list[RetrievedPage]) -> list[RetrievedPage]:
@@ -215,3 +255,11 @@ class QueryWebAnswerBuilder:
         data: dict[str, object] | None = None,
     ) -> None:
         publish_query_event(event_publisher, stage, message, data)
+
+    def _telemetry_data(self, telemetry: WebSearchTelemetry) -> dict[str, object]:
+        return {
+            "web_search_requested": telemetry.requested,
+            "web_search_executed": telemetry.executed,
+            "result_count": telemetry.result_count,
+            "error_code": telemetry.error_code,
+        }

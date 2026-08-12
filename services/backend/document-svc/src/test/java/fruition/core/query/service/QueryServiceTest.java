@@ -80,6 +80,10 @@ class QueryServiceTest {
         assertThat(result.assistantMessage().content()).isEqualTo(mockResponse.answer());
         assertThat(result.relatedPages()).hasSize(2);
         assertThat(result.evidenceSnippets()).hasSize(2);
+        assertThat(result.webSearchRequested()).isFalse();
+        assertThat(result.webSearchExecuted()).isFalse();
+        assertThat(result.resultCount()).isZero();
+        assertThat(result.errorCode()).isNull();
 
         // related_pages role/depth 검증
         assertThat(result.relatedPages().get(0).role()).isEqualTo("seed_source");
@@ -249,11 +253,12 @@ class QueryServiceTest {
 
         return new PipelineQueryResponse(
                 "Index.md는 위키 내 모든 페이지를 카테고리별로 정리한 카탈로그 파일 역할을 합니다. [1]",
-                relatedPages, evidenceSnippets, graphContext, List.of(traversalPath)
+                relatedPages, evidenceSnippets, graphContext, List.of(traversalPath),
+                false, false, 0, null
         );
     }
 
     private PipelineQueryResponse responseWithEvidence(List<PipelineQueryResponse.EvidenceSnippet> evidence) {
-        return new PipelineQueryResponse("답변", List.of(), evidence, null, List.of());
+        return new PipelineQueryResponse("답변", List.of(), evidence, null, List.of(), false, false, 0, null);
     }
 }

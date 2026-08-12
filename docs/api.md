@@ -49,7 +49,7 @@
 ## Query
 
 - 동기 `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query`와 비동기 `POST .../query/runs` 요청은 `question`(blank 불가), 함께 생략하거나 함께 전달하는 선택적 `provider`·`model`, 필수 boolean `allow_web_search`를 받는다. 누락/blank/잘못된 모델 조합은 400 `INVALID_REQUEST`다.
-- `allow_web_search`는 해당 질의에만 적용되며 실행 당시 값은 채팅 메시지와 Query run에 snapshot으로 저장된다.
+- `allow_web_search`는 해당 질의에만 적용되며 실행 당시 값은 채팅 메시지와 Query run에 snapshot으로 저장된다. 동기 응답과 비동기 run의 `result`에는 `web_search_requested`, `web_search_executed`, `result_count`, `error_code`가 포함된다. `error_code`는 `web_search_unavailable` 또는 `web_search_failed` 중 하나이며, 웹 검색 결과 URL·인증 토큰은 포함하지 않는다.
 
 ## 문서
 

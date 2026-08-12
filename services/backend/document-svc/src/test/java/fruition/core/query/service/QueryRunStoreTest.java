@@ -96,7 +96,7 @@ class QueryRunStoreTest {
     @Test
     void markRunning_thenMarkCompleted_updatesStatusAndResult() {
         QueryRun run = store.create("ws_abc123", "session_abc123", "질문");
-        QueryResponse result = new QueryResponse(null, null, null, null, null, null);
+        QueryResponse result = new QueryResponse(null, null, null, null, null, null, false, false, 0, null);
 
         store.markRunning(run.requestId());
         assertThat(store.find(run.requestId()).orElseThrow().status()).isEqualTo(QueryRunStatus.RUNNING);
@@ -121,7 +121,7 @@ class QueryRunStoreTest {
     @Test
     void terminalRunRejectsDuplicateAndContradictoryTransitions() {
         QueryRun run = store.create("ws_abc123", "session_abc123", "질문");
-        QueryResponse first = new QueryResponse(null, null, null, null, null, null);
+        QueryResponse first = new QueryResponse(null, null, null, null, null, null, false, false, 0, null);
 
         assertThat(store.markCompleted(run.requestId(), first)).isTrue();
         assertThat(store.markCompleted(run.requestId(), first)).isFalse();
@@ -137,7 +137,7 @@ class QueryRunStoreTest {
         String key = "query:run:" + run.requestId();
         assertThat(redisTtls.get(key)).isEqualTo(Duration.ofHours(24));
 
-        store.markCompleted(run.requestId(), new QueryResponse(null, null, null, null, null, null));
+        store.markCompleted(run.requestId(), new QueryResponse(null, null, null, null, null, null, false, false, 0, null));
         assertThat(redisTtls.get(key)).isEqualTo(Duration.ofMinutes(10));
     }
 

@@ -40,7 +40,7 @@ class QueryRunTest {
     @Test
     void completed_setsResultAndCompletedAt_clearsErrorMessage() {
         QueryRun running = QueryRun.pending("query_abc123", "ws_abc123", "session_abc123", "질문", CREATED_AT).running();
-        QueryResponse result = new QueryResponse(null, null, null, null, null, null);
+        QueryResponse result = new QueryResponse(null, null, null, null, null, null, false, false, 0, null);
 
         QueryRun completed = running.completed(result, COMPLETED_AT);
 

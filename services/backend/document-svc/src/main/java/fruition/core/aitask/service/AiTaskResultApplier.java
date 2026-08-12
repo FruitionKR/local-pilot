@@ -335,7 +335,8 @@ public class AiTaskResultApplier {
                 new QueryResponse.MessageSummary(context.assistantMessageId(), "assistant",
                         result.answer(), "completed", context.createdAt()),
                 result.relatedPages(), result.evidenceSnippets(), result.graphContext(),
-                result.traversalPaths());
+                result.traversalPaths(), result.webSearchRequested(), result.webSearchExecuted(),
+                result.resultCount(), result.errorCode());
     }
 
     private JsonNode required(JsonNode node, String field) {

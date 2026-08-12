@@ -74,6 +74,7 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
         user_id=str(command["user_id"]),
+        allow_web_search=command["allow_web_search"],
     )
     return query_to_response(result).model_dump(mode="json")
 

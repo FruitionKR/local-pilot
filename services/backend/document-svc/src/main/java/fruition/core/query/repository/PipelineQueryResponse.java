@@ -9,7 +9,11 @@ public record PipelineQueryResponse(
         @JsonProperty("related_pages") List<RelatedPage> relatedPages,
         @JsonProperty("evidence_snippets") List<EvidenceSnippet> evidenceSnippets,
         @JsonProperty("graph_context") GraphContext graphContext,
-        @JsonProperty("traversal_paths") List<TraversalPath> traversalPaths
+        @JsonProperty("traversal_paths") List<TraversalPath> traversalPaths,
+        @JsonProperty("web_search_requested") boolean webSearchRequested,
+        @JsonProperty("web_search_executed") boolean webSearchExecuted,
+        @JsonProperty("result_count") int resultCount,
+        @JsonProperty("error_code") String errorCode
 ) {
     public record RelatedPage(
             String id,
