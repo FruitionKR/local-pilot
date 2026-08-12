@@ -80,9 +80,13 @@ flyway {
 	url = "jdbc:postgresql://${host}:${port}/${name}"
 	user = flywayDbEnv.CORE_DB_MIGRATION_USER ?: System.getenv('CORE_DB_MIGRATION_USER') ?: 'core_migration'
 	password = flywayDbEnv.CORE_DB_MIGRATION_PASSWORD ?: System.getenv('CORE_DB_MIGRATION_PASSWORD') ?: 'core_migration_dev_password'
-	locations = ['filesystem:src/main/resources/db/migration']
+	locations = ['classpath:db/migration']
 	baselineOnMigrate = true
 	baselineVersion = '1'
+}
+
+tasks.withType(org.flywaydb.gradle.task.AbstractFlywayTask).configureEach {
+	dependsOn tasks.named('classes')
 }
 
 tasks.named('test') {
