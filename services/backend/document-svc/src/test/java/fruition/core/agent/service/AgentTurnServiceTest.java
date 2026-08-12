@@ -349,6 +349,22 @@ class AgentTurnServiceTest {
     }
 
     @Test
+    void get_mapsConsumedCoreProjectionToCompletedAfterAiRunCompletes() {
+        String runId = "agent_0123456789abcdef0123456789abcdef";
+        var result = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("changed", true);
+        when(statusRequester.find("ws_1", "user_1", runId)).thenReturn(Optional.of(
+                new PipelineAgentRunStatusRequester.RunStatus(
+                        runId, "doc_1", 7L, "op_1", "completed", result, null)));
+        when(runRepository.find("ws_1", "user_1", runId)).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        runId, "doc_1", 7L, "op_1", "consumed", result, null)));
+
+        var response = service.get("ws_1", "user_1", runId);
+
+        assertThat(response.status()).isEqualTo("completed");
+    }
+
+    @Test
     void get_404FallbackReturnsReadyProjectionResult() {
         String runId = "agent_0123456789abcdef0123456789abcdef";
         var result = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("changed", true);
@@ -361,6 +377,20 @@ class AgentTurnServiceTest {
 
         assertThat(response.status()).isEqualTo("completed");
         assertThat(response.result()).isSameAs(result);
+    }
+
+    @Test
+    void get_404FallbackMapsConsumedProjectionToCompleted() {
+        String runId = "agent_0123456789abcdef0123456789abcdef";
+        var result = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("changed", true);
+        when(statusRequester.find("ws_1", "user_1", runId)).thenReturn(Optional.empty());
+        when(runRepository.find("ws_1", "user_1", runId)).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        runId, "doc_1", 7L, "op_1", "consumed", result, null)));
+
+        var response = service.get("ws_1", "user_1", runId);
+
+        assertThat(response.status()).isEqualTo("completed");
     }
 
     @Test

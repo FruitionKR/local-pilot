@@ -120,7 +120,7 @@ public class AgentTurnService {
                 if (projection.isPresent()) {
                     var core = projection.get();
                     return new AgentTurnResponse(core.documentId(), core.baseVersion(), core.runId(),
-                            core.applyOperationId(), "ready".equals(core.status()) ? "completed" : core.status(),
+                            core.applyOperationId(), publicStatus(core.status()),
                             core.result(), core.error());
                 }
             }
@@ -130,8 +130,12 @@ public class AgentTurnService {
         var projection = runRepository.find(workspaceId, userId, runId)
                 .orElseThrow(() -> new AgentRunNotFoundException(runId));
         return new AgentTurnResponse(projection.documentId(), projection.baseVersion(), projection.runId(),
-                projection.applyOperationId(), "ready".equals(projection.status()) ? "completed" : projection.status(),
+                projection.applyOperationId(), publicStatus(projection.status()),
                 projection.result(), projection.error());
+    }
+
+    private String publicStatus(String status) {
+        return "ready".equals(status) || "consumed".equals(status) ? "completed" : status;
     }
 
     private boolean isMarkdown(DocumentDetailResponse document) {
