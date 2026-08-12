@@ -1,10 +1,13 @@
 package fruition.core.aihistory.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.domain.ResourceType;
+import fruition.core.aihistory.dto.OperationLogDetailResponse;
 import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import fruition.core.authz.WorkspaceNotFoundException;
@@ -47,7 +50,7 @@ class OperationQueryServiceTest {
     @BeforeEach
     void setUp() {
         service = new OperationQueryService(operationLogRepository, operationChangeRepository,
-                workspaceAccessGuard, diffLoader);
+                workspaceAccessGuard, diffLoader, new ObjectMapper());
     }
 
     @Test
@@ -106,6 +109,175 @@ class OperationQueryServiceTest {
             assertThat(item.changeType()).isEqualTo("updated");
             assertThat(item.hunks()).isEmpty();
         });
+    }
+
+    @Test
+    void detail_returnsQueuedRestorePlanAndResultCounts() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                "doc_A", "op_ingest_1", """
+                        {"plan":{"pages":[
+                          {"pageId":"page_delete","action":"delete","contributionCount":0,"keepContributions":[]},
+                          {"pageId":"page_rebuild","action":"rebuild","contributionCount":2,"keepContributions":[]}
+                        ]}}
+                        """, Instant.now());
+        OperationChange deleted = change(1L, ResourceType.wiki_page, "page_delete", ChangeType.deleted);
+        OperationChange delegated = change(2L, ResourceType.wiki_page, "page_rebuild", ChangeType.delegated);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(restore));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(deleted, delegated));
+        when(diffLoader.load(any())).thenReturn(List.of(
+                new ChangeDiffLoader.Diff(List.of(), false),
+                new ChangeDiffLoader.Diff(List.of(), false)));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.restore()).isNotNull();
+        assertThat(response.restore().plan().deleteCount()).isEqualTo(1);
+        assertThat(response.restore().plan().rebuildCount()).isEqualTo(1);
+        assertThat(response.restore().plan().pages())
+                .extracting(OperationLogDetailResponse.PlanPage::pageId)
+                .containsExactly("page_delete", "page_rebuild");
+        assertThat(response.restore().result().deletedCount()).isEqualTo(1);
+        assertThat(response.restore().result().rebuiltCount()).isZero();
+    }
+
+    @Test
+    void detail_fallsBackToWikiCountsForLegacyManifestAndKeepsDocumentChange() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                "doc_A", "op_ingest_1", "legacy-restore-manifest", Instant.now());
+        OperationChange restoredPage = change(1L, ResourceType.wiki_page,
+                "page_restore", ChangeType.restored);
+        OperationChange restoredDocument = change(2L, ResourceType.document,
+                "doc_A", ChangeType.restored);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(restore));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(restoredPage, restoredDocument));
+        when(diffLoader.load(any())).thenReturn(List.of(
+                new ChangeDiffLoader.Diff(List.of(), false),
+                new ChangeDiffLoader.Diff(List.of(), false)));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.restore().plan().restoreCount()).isEqualTo(1);
+        assertThat(response.restore().result().restoredCount()).isEqualTo(1);
+        assertThat(response.restore().plan().pages())
+                .extracting(OperationLogDetailResponse.PlanPage::pageId)
+                .containsExactly("page_restore");
+        assertThat(response.changes()).extracting(OperationLogDetailResponse.Change::resourceId)
+                .containsExactly("page_restore", "doc_A");
+        assertThat(response.changes()).filteredOn(change -> "doc_A".equals(change.resourceId()))
+                .singleElement()
+                .satisfies(change -> {
+                    assertThat(change.resourceType()).isEqualTo("document");
+                    assertThat(change.changeType()).isEqualTo("restored");
+                });
+    }
+
+    @Test
+    void detail_returnsSucceededRestoreResultFromChanges() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                "doc_A", "op_ingest_1", """
+                        {"plan":{"pages":[
+                          {"pageId":"page_restore","action":"restore","contributionCount":1,"keepContributions":[]},
+                          {"pageId":"page_rebuild","action":"rebuild","contributionCount":2,"keepContributions":[]}
+                        ]}}
+                        """, Instant.now());
+        restore.complete(OperationStatus.succeeded, "복구 완료", 3, "hash", Instant.now());
+        OperationChange restored = change(1L, ResourceType.wiki_page, "page_restore", ChangeType.restored);
+        OperationChange rebuilt = change(2L, ResourceType.wiki_page, "page_rebuild", ChangeType.rebuilt);
+        OperationChange link = change(3L, ResourceType.relation_link, "page_a|supports|page_b", ChangeType.link_restored);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(restore));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(restored, rebuilt, link));
+        when(diffLoader.load(any())).thenReturn(List.of(
+                new ChangeDiffLoader.Diff(List.of(), false),
+                new ChangeDiffLoader.Diff(List.of(), false),
+                new ChangeDiffLoader.Diff(List.of(), false)));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.status()).isEqualTo("succeeded");
+        assertThat(response.restore().result().restoredCount()).isEqualTo(1);
+        assertThat(response.restore().result().rebuiltCount()).isEqualTo(1);
+        assertThat(response.restore().result().restoredLinkCount()).isEqualTo(1);
+        assertThat(response.changes()).extracting(OperationLogDetailResponse.Change::resourceId)
+                .containsExactly("page_restore", "page_rebuild", "page_a|supports|page_b");
+    }
+
+    @Test
+    void detail_returnsFailedRestoreResultWithoutCallbackDetails() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                "doc_A", "op_ingest_1", """
+                        {"plan":{"pages":[
+                          {"pageId":"page_rebuild","action":"rebuild","contributionCount":2,"keepContributions":[]}
+                        ]},"callbackUrl":"http://internal/callback","previewToken":"secret"}
+                        """, Instant.now());
+        restore.complete(OperationStatus.failed, "실패", 1, "hash", Instant.now());
+        OperationChange failed = change(1L, ResourceType.wiki_page, "page_rebuild", ChangeType.rebuild_failed);
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(restore));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(failed));
+        when(diffLoader.load(any())).thenReturn(List.of(new ChangeDiffLoader.Diff(List.of(), false)));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.status()).isEqualTo("failed");
+        assertThat(response.restore().result().failedCount()).isEqualTo(1);
+        assertThat(response.restore().plan().pages()).singleElement()
+                .satisfies(page -> assertThat(page.pageId()).isEqualTo("page_rebuild"));
+        assertThat(response.restore().toString()).doesNotContain("callbackUrl", "previewToken", "secret");
+    }
+
+    @Test
+    void detail_returnsFailedActionAfterRestartWithoutManifestDetails() {
+        doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        OperationLog restore = OperationLog.applying(OPERATION_ID, WORKSPACE_ID, USER_ID,
+                "doc_A", "op_ingest_1", """
+                        {"callbackUrl":"http://internal/callback","previewToken":"secret",
+                         "providerPayload":{"objectKey":"wiki/private.json","content":"raw"}}
+                        """, Instant.now());
+        restore.complete(OperationStatus.partially_succeeded, "부분 실패", 1, "hash", Instant.now());
+        OperationChange failed = change(1L, ResourceType.action, "op_lint_1", ChangeType.action_failed);
+        when(failed.getChangeSummary()).thenReturn("restore_links: operation_log_missing");
+        when(operationLogRepository.findByOperationIdAndWorkspaceId(OPERATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(restore));
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID))
+                .thenReturn(List.of(failed));
+        when(diffLoader.load(any())).thenReturn(List.of(new ChangeDiffLoader.Diff(List.of(), false)));
+
+        var response = service.detail(WORKSPACE_ID, USER_ID, OPERATION_ID);
+
+        assertThat(response.restore().result().failedCount()).isEqualTo(1);
+        assertThat(response.changes()).singleElement().satisfies(change -> {
+            assertThat(change.resourceType()).isEqualTo("action");
+            assertThat(change.resourceId()).isEqualTo("op_lint_1");
+            assertThat(change.changeType()).isEqualTo("action_failed");
+            assertThat(change.changeSummary()).isEqualTo("restore_links: operation_log_missing");
+        });
+        assertThat(response.restore().plan().pages()).isEmpty();
+        assertThat(response.toString()).doesNotContain(
+                "callbackUrl", "previewToken", "secret", "providerPayload", "objectKey", "raw");
+    }
+
+    private OperationChange change(long id, ResourceType resourceType, String resourceId,
+                                   ChangeType changeType) {
+        OperationChange change = org.mockito.Mockito.mock(OperationChange.class);
+        when(change.getId()).thenReturn(id);
+        when(change.getResourceType()).thenReturn(resourceType);
+        when(change.getResourceId()).thenReturn(resourceId);
+        when(change.getChangeType()).thenReturn(changeType);
+        when(change.getChangeSummary()).thenReturn(null);
+        when(change.getAdditions()).thenReturn(null);
+        when(change.getDeletions()).thenReturn(null);
+        return change;
     }
 
     @Test

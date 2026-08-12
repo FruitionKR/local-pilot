@@ -2,10 +2,15 @@ package fruition.core.aihistory.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import fruition.core.aihistory.service.ChangeDiffLoader;
-import fruition.core.document.dto.DocumentContentDiffResponse;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationType;
+import fruition.core.aihistory.domain.ResourceType;
+import fruition.core.aihistory.service.ChangeDiffLoader;
+import fruition.core.document.dto.DocumentContentDiffResponse;
 
 import java.time.Instant;
 import java.util.List;
@@ -26,8 +31,19 @@ public record OperationLogDetailResponse(
         @JsonProperty("restored_from") String restoredFrom,
         @JsonProperty("created_at") Instant createdAt,
         @JsonProperty("completed_at") Instant completedAt,
-        List<Change> changes
+        List<Change> changes,
+        @JsonInclude(JsonInclude.Include.NON_NULL) RestoreSummary restore
 ) {
+
+    /** 기존 호출부를 위한 생성자. 복구가 아니면 restore는 응답에서 생략된다. */
+    public OperationLogDetailResponse(String operationId, String operationType, String status,
+                                      String targetDocumentId, String summary,
+                                      int changedResourceCount, String restoredFrom,
+                                      Instant createdAt, Instant completedAt,
+                                      List<Change> changes) {
+        this(operationId, operationType, status, targetDocumentId, summary,
+                changedResourceCount, restoredFrom, createdAt, completedAt, changes, null);
+    }
 
     /**
      * @param beforeRevision 손대기 직전 버전. null이면 새로 만든 것
@@ -65,7 +81,126 @@ public record OperationLogDetailResponse(
         }
     }
 
+    /** 복구 지시서와 실제 감사 변경분 중 사용자에게 필요한 값만 노출한다. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RestoreSummary(
+            RestorePlanSummary plan,
+            RestoreResult result
+    ) {
+        public static RestoreSummary from(OperationLog log, List<Change> changes,
+                                          ObjectMapper objectMapper) {
+            RestorePlanSummary plan = readPlan(log.getRestoreManifest(), objectMapper);
+            if (plan == null) {
+                plan = RestorePlanSummary.fromChanges(changes);
+            }
+            return new RestoreSummary(plan, RestoreResult.from(changes));
+        }
+
+        private static RestorePlanSummary readPlan(String manifest, ObjectMapper objectMapper) {
+            if (manifest == null || objectMapper == null) {
+                return null;
+            }
+            try {
+                JsonNode root = objectMapper.readTree(manifest);
+                JsonNode plan = root.has("plan") ? root.get("plan") : root;
+                RestorePlan value = objectMapper.treeToValue(plan, RestorePlan.class);
+                return RestorePlanSummary.from(value);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+    }
+
+    public record RestorePlanSummary(
+            @JsonProperty("delete_count") int deleteCount,
+            @JsonProperty("restore_count") int restoreCount,
+            @JsonProperty("rebuild_count") int rebuildCount,
+            List<PlanPage> pages
+    ) {
+        static RestorePlanSummary from(RestorePlan plan) {
+            List<PlanPage> pages = plan.pages().stream()
+                    .map(page -> new PlanPage(page.pageId(), page.action().name(),
+                            page.contributionCount()))
+                    .toList();
+            return new RestorePlanSummary(plan.deleteCount(), plan.restoreCount(),
+                    plan.rebuildCount(), pages);
+        }
+
+        static RestorePlanSummary fromChanges(List<Change> changes) {
+            int delete = count(changes, ResourceType.wiki_page, ChangeType.deleted);
+            int restore = count(changes, ResourceType.wiki_page, ChangeType.restored);
+            int rebuild = count(changes, ResourceType.wiki_page, ChangeType.delegated);
+            List<PlanPage> pages = changes.stream()
+                    .filter(change -> change.resourceType().equals(ResourceType.wiki_page.name()))
+                    .filter(change -> change.changeType().equals(ChangeType.deleted.name())
+                            || change.changeType().equals(ChangeType.restored.name())
+                            || change.changeType().equals(ChangeType.delegated.name()))
+                    .map(change -> new PlanPage(change.resourceId(),
+                            ChangeType.delegated.name().equals(change.changeType())
+                                    ? "rebuild" : change.changeType(), null))
+                    .toList();
+            return new RestorePlanSummary(delete, restore, rebuild, pages);
+        }
+
+        private static int count(List<Change> changes, ResourceType resourceType,
+                                 ChangeType changeType) {
+            return (int) changes.stream()
+                    .filter(change -> resourceType.name().equals(change.resourceType()))
+                    .filter(change -> changeType.name().equals(change.changeType()))
+                    .count();
+        }
+    }
+
+    public record PlanPage(
+            @JsonProperty("page_id") String pageId,
+            String action,
+            @JsonProperty("contribution_count") Integer contributionCount
+    ) {}
+
+    public record RestoreResult(
+            @JsonProperty("deleted_count") int deletedCount,
+            @JsonProperty("restored_count") int restoredCount,
+            @JsonProperty("rebuilt_count") int rebuiltCount,
+            @JsonProperty("failed_count") int failedCount,
+            @JsonProperty("removed_link_count") int removedLinkCount,
+            @JsonProperty("restored_link_count") int restoredLinkCount
+    ) {
+        static RestoreResult from(List<Change> changes) {
+            return new RestoreResult(
+                    count(changes, ResourceType.wiki_page, ChangeType.deleted),
+                    count(changes, ResourceType.wiki_page, ChangeType.restored),
+                    count(changes, ResourceType.wiki_page, ChangeType.rebuilt),
+                    countFailed(changes),
+                    count(changes, ResourceType.relation_link, ChangeType.link_removed),
+                    count(changes, ResourceType.relation_link, ChangeType.link_restored));
+        }
+
+        private static int countFailed(List<Change> changes) {
+            return (int) changes.stream()
+                    .filter(change -> change.changeType().equals(ChangeType.rebuild_failed.name())
+                            || change.changeType().equals(ChangeType.action_failed.name()))
+                    .map(Change::resourceId)
+                    .distinct()
+                    .count();
+        }
+
+        private static int count(List<Change> changes, ResourceType resourceType,
+                                 ChangeType changeType) {
+            return (int) changes.stream()
+                    .filter(change -> resourceType.name().equals(change.resourceType()))
+                    .filter(change -> changeType.name().equals(change.changeType()))
+                    .map(Change::resourceId)
+                    .distinct()
+                    .count();
+        }
+    }
+
     public static OperationLogDetailResponse from(OperationLog log, List<Change> changes) {
+        return from(log, changes, null);
+    }
+
+    public static OperationLogDetailResponse from(OperationLog log, List<Change> changes,
+                                                  ObjectMapper objectMapper) {
         return new OperationLogDetailResponse(
                 log.getOperationId(),
                 log.getOperationType().name(),
@@ -76,6 +211,8 @@ public record OperationLogDetailResponse(
                 log.getRestoredFrom(),
                 log.getCreatedAt(),
                 log.getCompletedAt(),
-                changes);
+                changes,
+                log.getOperationType() == OperationType.restore
+                        ? RestoreSummary.from(log, changes, objectMapper) : null);
     }
 }

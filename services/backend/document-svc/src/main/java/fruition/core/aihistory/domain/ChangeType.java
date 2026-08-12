@@ -15,6 +15,8 @@ public enum ChangeType {
     rebuilt,
     /** 재조립이 실패한 경우. 사유는 change_summary에 남긴다. */
     rebuild_failed,
+    /** 페이지 이외 복구 조치가 실패한 경우. */
+    action_failed,
     /** llmPipeline 복구가 relation link를 제거하거나 복원한 경우. */
     link_removed,
     link_restored

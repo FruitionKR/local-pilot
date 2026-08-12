@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 재조립 결과를 DB에 반영해 복구 작업을 끝낸다. 저장소 읽기를 마친 뒤 <b>한 트랜잭션</b>으로 처리한다.
@@ -38,6 +39,11 @@ import java.util.Set;
  */
 @Component
 public class RestoreRebuildApplier {
+
+    private static final Pattern SAFE_IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.-]{0,254}");
+    private static final Set<String> SAFE_FAILURE_CODES = Set.of(
+            "assembly_failed", "concept_rebuild_failed", "contribution_missing",
+            "operation_log_missing", "source_snapshot_missing");
 
     private final OperationLogRepository operationLogRepository;
     private final OperationChangeRepository operationChangeRepository;
@@ -77,6 +83,7 @@ public class RestoreRebuildApplier {
             recordFailure(operation, failed, targetCounts);
         }
         recordReportedChanges(operation, request);
+        recordFailedActions(operation, request);
 
         int changed = (int) operationChangeRepository.countByOperationId(operationId);
         OperationStatus status = request.failedPagesOrEmpty().isEmpty() && !request.isFailure()
@@ -119,6 +126,23 @@ public class RestoreRebuildApplier {
         }
         for (OperationResultRequest.Link link : links.restoredLinks()) {
             recordLink(operation, link, ChangeType.link_restored, "링크를 복원했습니다.");
+        }
+    }
+
+    private void recordFailedActions(OperationLog operation, OperationResultRequest request) {
+        for (OperationResultRequest.FailedAction failed : request.failedActionsOrEmpty()) {
+            String action = safeIdentifier(failed.action());
+            String resourceId = safeIdentifier(failed.resourceId());
+            if (action == null || resourceId == null
+                    || operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                    operation.getOperationId(), resourceId, ChangeType.action_failed)) {
+                continue;
+            }
+            String reason = safeFailureCode(failed.reason());
+            String summary = reason == null ? action : action + ": " + reason;
+            operationChangeRepository.save(new OperationChange(
+                    operation.getOperationId(), ResourceType.action, resourceId,
+                    null, null, ChangeType.action_failed, summary, null, null));
         }
     }
 
@@ -233,7 +257,15 @@ public class RestoreRebuildApplier {
         operationChangeRepository.save(new OperationChange(
                 operation.getOperationId(), ResourceType.wiki_page, pageId,
                 maxRevision == 0 ? null : maxRevision, null, ChangeType.rebuild_failed,
-                failed.reason() == null ? "재조립에 실패했습니다." : failed.reason(), null, null));
+                safeFailureCode(failed.reason()), null, null));
+    }
+
+    private String safeIdentifier(String value) {
+        return value != null && SAFE_IDENTIFIER.matcher(value).matches() ? value : null;
+    }
+
+    private String safeFailureCode(String value) {
+        return SAFE_FAILURE_CODES.contains(value) ? value : null;
     }
 
     private int targetCount(Map<String, Integer> targetCounts, String pageId) {

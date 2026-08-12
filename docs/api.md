@@ -214,9 +214,32 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | GET | `.../wiki/maintenance/runs/{run_id}` | lint run 상태와 `manifest.task_result` 조회 |
 | GET | `.../wiki/maintenance/status` | `needs_lint`(마지막 lint 이후 위키 페이지 변경 여부), `last_lint_at`, `last_wiki_change_at` |
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
-| GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`) |
+| GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`). restore 작업에는 검증 가능한 계획·결과 요약을 `restore`로 추가 |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |
 | POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI가 현재 본문·링크·embedding을 갱신한 뒤 core 감사 상태를 원자 반영 |
+
+복구 상세의 `restore`는 복구 작업에만 포함되며, `plan`에는 고정된 페이지별 `delete`/`restore`/`rebuild` 조치와 조치별 개수가, `result`에는 `changes[]`에서 집계한 페이지·링크·실패 효과 개수가 담긴다. `failed_actions`는 `changes[]`에 `resource_type=action`, `change_type=action_failed`로 저장하며 안정적인 action/resource ID와 공개된 실패 코드만 노출한다. 실제 page/resource ID와 효과는 기존 `changes[]`가 기준이므로 결과에 다시 복제하지 않는다. 비복구 작업은 기존 응답과 같이 `restore` 필드를 생략하며, 내부 callback URL·preview token·provider payload/error·기여 object key와 원본 `restore_manifest`는 반환하지 않는다.
+
+```json
+{
+  "restore": {
+    "plan": {
+      "delete_count": 1,
+      "restore_count": 1,
+      "rebuild_count": 1,
+      "pages": [{"page_id": "wp_C3", "action": "rebuild", "contribution_count": 2}]
+    },
+    "result": {
+      "deleted_count": 1,
+      "restored_count": 1,
+      "rebuilt_count": 0,
+      "failed_count": 1,
+      "removed_link_count": 2,
+      "restored_link_count": 1
+    }
+  }
+}
+```
 
 AI 내부 FastAPI 요청은 Pydantic schema 검증을 따른다. Query는 `workspace_id`, `question`, `provider`, `model`, `allow_web_search`가 필수이고 `recent_messages`는 최대 6개, `output_language`는 `ko|en|document`, `response_length`는 `concise|balanced|detailed`다. Pipeline ingest/reingest/chat-wiki는 `document_id`, `provider`, `model`이 필수이며 `selection_mode`는 `full|partial`, Lint는 `provider`, `model`이 필수이고 write(`dry_run=false`)에는 `operation_id`가 필수다. Agent·Skill 내부 요청도 provider/model pair를 필수로 검증하며 schema 오류는 422다.
 

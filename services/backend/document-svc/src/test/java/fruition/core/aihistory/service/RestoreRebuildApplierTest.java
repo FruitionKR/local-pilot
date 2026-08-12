@@ -152,6 +152,27 @@ class RestoreRebuildApplierTest {
     }
 
     @Test
+    @DisplayName("페이지 실패가 없어도 failed_actions를 action_failed 변경으로 남긴다")
+    void recordsFailedActionWithoutFailedPage() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of(), null,
+                List.of(new OperationResultRequest.FailedAction(
+                        "restore_links", "op_lint_1", "operation_log_missing")));
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        assertThat(captor.getValue().getResourceType()).isEqualTo(ResourceType.action);
+        assertThat(captor.getValue().getResourceId()).isEqualTo("op_lint_1");
+        assertThat(captor.getValue().getChangeType()).isEqualTo(ChangeType.action_failed);
+        assertThat(captor.getValue().getChangeSummary())
+                .isEqualTo("restore_links: operation_log_missing");
+    }
+
+    @Test
     @DisplayName("callback이 보고한 삭제 페이지와 링크 변경을 감사 로그로 기록한다")
     void recordsReportedPageAndLinkChanges() {
         givenOperation(manifest(PageRestorePlan.delete("C9")));
@@ -233,6 +254,40 @@ class RestoreRebuildApplierTest {
         applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
 
         verify(operationChangeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("같은 failed_action callback은 변경을 중복 기록하지 않는다")
+    void skipsDuplicateFailedAction() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        when(operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                OPERATION_ID, "op_lint_1", ChangeType.action_failed)).thenReturn(true);
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of(), null,
+                List.of(new OperationResultRequest.FailedAction(
+                        "restore_links", "op_lint_1", "operation_log_missing")));
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        verify(operationChangeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("알 수 없는 실패 사유와 URL은 변경 요약에 남기지 않는다")
+    void sanitizesFailedActionSummary() {
+        givenOperation(manifest(PageRestorePlan.delete("C9")));
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "lint_restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                null, List.of(), List.of(), List.of(), null,
+                List.of(new OperationResultRequest.FailedAction(
+                        "restore_links", "op_lint_1", "https://provider/payload?token=secret")));
+
+        applier.apply(OPERATION_ID, request, List.of(), "hash", NOW);
+
+        ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+        verify(operationChangeRepository).save(captor.capture());
+        assertThat(captor.getValue().getChangeSummary()).isEqualTo("restore_links");
     }
 
     @Test
