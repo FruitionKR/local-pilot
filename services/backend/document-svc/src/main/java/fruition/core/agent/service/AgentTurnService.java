@@ -117,10 +117,11 @@ public class AgentTurnService {
             var run = aiRun.get();
             if ("completed".equals(run.status())) {
                 var projection = runRepository.find(workspaceId, userId, runId);
-                if (projection.isPresent() && "queued".equals(projection.get().status())) {
-                    var queued = projection.get();
-                    return new AgentTurnResponse(queued.documentId(), queued.baseVersion(), queued.runId(),
-                            queued.applyOperationId(), queued.status(), queued.result(), queued.error());
+                if (projection.isPresent()) {
+                    var core = projection.get();
+                    return new AgentTurnResponse(core.documentId(), core.baseVersion(), core.runId(),
+                            core.applyOperationId(), "ready".equals(core.status()) ? "completed" : core.status(),
+                            core.result(), core.error());
                 }
             }
             return new AgentTurnResponse(run.documentId(), run.baseVersion(), run.id(),

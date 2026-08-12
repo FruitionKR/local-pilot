@@ -331,6 +331,24 @@ class AgentTurnServiceTest {
     }
 
     @Test
+    void get_prefersFailedCoreProjectionOverAiCompleted() {
+        String runId = "agent_0123456789abcdef0123456789abcdef";
+        var result = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("changed", true);
+        when(statusRequester.find("ws_1", "user_1", runId)).thenReturn(Optional.of(
+                new PipelineAgentRunStatusRequester.RunStatus(
+                        runId, "doc_1", 7L, "op_1", "completed", result, null)));
+        when(runRepository.find("ws_1", "user_1", runId)).thenReturn(Optional.of(
+                new AgentRunCommandRepository.RunView(
+                        runId, "doc_1", 7L, "op_1", "failed", null, "agent_turn_failed")));
+
+        var response = service.get("ws_1", "user_1", runId);
+
+        assertThat(response.status()).isEqualTo("failed");
+        assertThat(response.error()).isEqualTo("agent_turn_failed");
+        assertThat(response.result()).isNull();
+    }
+
+    @Test
     void get_404FallbackReturnsReadyProjectionResult() {
         String runId = "agent_0123456789abcdef0123456789abcdef";
         var result = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("changed", true);
