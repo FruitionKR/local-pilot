@@ -184,7 +184,7 @@ start_infra() {
 start_pipeline() {
   log "Pipeline API를 시작합니다."
   cleanup_stale_pipeline_orphans
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api ingest-worker edit-event-consumer
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api ingest-worker query-task-worker agent-task-worker maintenance-task-worker edit-event-consumer
   wait_for_url "http://localhost:8000/health" "Pipeline API" 120
 }
 
