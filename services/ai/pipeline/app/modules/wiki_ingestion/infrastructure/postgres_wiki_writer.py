@@ -4,6 +4,8 @@ import uuid
 
 import psycopg
 
+from app.modules.wiki_generation.domain.text_utils import slugify
+
 from app.modules.wiki_ingestion.infrastructure.embedding_units import (
     extract_embedding_units,
     hash_text,
@@ -144,6 +146,7 @@ def resolve_or_create_wiki_page_id(
     page_type: str,
     slug: str,
 ) -> str:
+    slug = slugify(slug)
     candidate = f"wiki_page_{uuid.uuid4()}"
     row = conn.execute(
         """
@@ -171,6 +174,7 @@ def upsert_wiki_page(
     user_id: str,
     workspace_id: str,
 ) -> None:
+    slug = slugify(slug)
     conn.execute(
         """
         INSERT INTO wiki_pages (id, page_type, title, slug, summary, markdown_uri, user_id, workspace_id, status, created_at, updated_at)

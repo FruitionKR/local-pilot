@@ -20,6 +20,8 @@ def slugify(text: str) -> str:
     text = re.sub(r"[^a-z0-9가-힣]+", "-", text)
     text = re.sub(r"-+", "-", text).strip("-")
     # Keep English slugs where possible. Korean-only title still becomes valid but less ideal.
+    if len(text) > 255:
+        text = f"{text[:246]}-{sha1_short(text)}"
     return text or "untitled"
 
 

@@ -1,11 +1,16 @@
+import os
+import uuid
 from threading import Event, Lock, Thread
 from unittest.mock import Mock
 
 import pytest
+import psycopg
 
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_output_persistence as persistence,
 )
+from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import upsert_wiki_page
+from app.modules.wiki_generation.domain.text_utils import sha1_short, slugify
 
 
 _LOCK_CONCEPT_PERSISTENCE = persistence.lock_concept_persistence
@@ -28,6 +33,75 @@ def _stub_followup_writes(monkeypatch) -> None:
         "_persist_meaning_cluster_artifacts",
         lambda *_args: [],
     )
+
+
+def test_long_generated_concept_title_keeps_value_and_bounds_identity_slug() -> None:
+    title = "Generated concept " + ("x" * 260)
+    raw_slug = "generated-concept-" + ("x" * 260)
+    conn = Mock()
+
+    upsert_wiki_page(
+        conn,
+        "page-1",
+        "concept",
+        title,
+        raw_slug,
+        "summary",
+        "wiki/page.md",
+        "user-1",
+        "workspace-1",
+    )
+
+    _query, params = conn.execute.call_args.args
+    assert len(params[2]) == 278
+    assert params[2] == title
+    assert len(params[3]) == 255
+    assert params[3] == f"{raw_slug[:246]}-{sha1_short(raw_slug)}"
+
+
+def test_migrated_postgres_schema_keeps_long_title_and_bounds_slug() -> None:
+    runtime_url = os.environ.get("AI_DATABASE_URL")
+    migration_url = os.environ.get("AI_DB_MIGRATION_URL")
+    if not runtime_url or not migration_url:
+        pytest.skip("AI_DATABASE_URL and AI_DB_MIGRATION_URL are required")
+
+    from app.modules.wiki_ingestion.infrastructure import (
+        postgres_wiki_ingestion_repository as database,
+    )
+
+    database.ensure_ai_schema()
+    title = "Generated concept " + ("x" * 260)
+    raw_slug = "generated-concept-" + ("x" * 260)
+    expected_slug = slugify(raw_slug)
+    page_id = f"wiki_slug_test_{uuid.uuid4()}"
+
+    with psycopg.connect(runtime_url) as conn:
+        upsert_wiki_page(
+            conn,
+            page_id,
+            "concept",
+            title,
+            raw_slug,
+            "summary",
+            "wiki/page.md",
+            "wiki-slug-test-user",
+            "wiki-slug-test-workspace",
+        )
+        row = conn.execute(
+            "SELECT title, slug FROM wiki_pages WHERE id = %s",
+            (page_id,),
+        ).fetchone()
+        conn.rollback()
+
+    assert row == (title, expected_slug)
+
+
+def test_long_slugs_with_different_tails_keep_distinct_identity() -> None:
+    first = slugify("same-prefix-" + ("a" * 260))
+    second = slugify("same-prefix-" + ("b" * 260))
+
+    assert first != second
+    assert len(first) == len(second) == 255
 
 
 def test_persist_source_blocks_clears_existing_rows_for_empty_blocks() -> None:

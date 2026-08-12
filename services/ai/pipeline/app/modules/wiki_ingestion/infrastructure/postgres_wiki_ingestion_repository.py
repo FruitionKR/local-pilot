@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from app.core.error_text import truncate_error
+from app.modules.wiki_generation.domain.text_utils import slugify
 from app.modules.wiki_ingestion.infrastructure.backend_document_reader import (
     read_contributions,
     read_document,
@@ -81,13 +82,6 @@ def _unique_keep_order(values: list[str]) -> list[str]:
 
 def _today_iso() -> str:
     return date.today().isoformat()
-
-
-def _slugify(value: str) -> str:
-    text = value.strip().lower()
-    text = re.sub(r"[^a-z0-9가-힣]+", "-", text)
-    text = re.sub(r"-+", "-", text).strip("-")
-    return text or "untitled"
 
 
 logger = logging.getLogger(__name__)
@@ -766,7 +760,7 @@ def rename_wiki_page(
         ).fetchone()
         if page is None:
             return None
-        slug = _slugify(title) if update_slug else str(page["slug"])
+        slug = slugify(title) if update_slug else str(page["slug"])
         updated = conn.execute(
             """
             UPDATE wiki_pages
@@ -1665,7 +1659,7 @@ def _materialize_promotion_candidates(
             ],
         ).strip()
         title = str(page.get("title") or cluster_id).strip()
-        slug = _slugify(str(page.get("slug") or cluster_id))
+        slug = slugify(str(page.get("slug") or cluster_id))
         if not markdown or not slug or slug == "untitled":
             continue
         page_id = _resolve_or_create_wiki_page_id(conn, user_id, workspace_id, "concept", slug)
