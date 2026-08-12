@@ -190,7 +190,9 @@ class AgentTurnControllerTest {
                             .header("Authorization", token)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.error.message").value("요청 형식이 올바르지 않습니다."));
         }
     }
 
