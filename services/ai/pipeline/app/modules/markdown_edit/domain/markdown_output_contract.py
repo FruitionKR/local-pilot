@@ -267,7 +267,23 @@ def _asks_for_blockquote(instruction: str) -> bool:
 
 
 def _asks_for_heading(instruction: str) -> bool:
-    return "제목" in instruction or "heading" in instruction
+    if not ("제목" in instruction or "heading" in instruction):
+        return False
+    clauses = re.split(r"(?:[.!?;\n]+|,?\s+\b(?:but|and)\b|(?:하고|하지만|그렇지만|다만))", instruction, flags=re.IGNORECASE)
+    for clause in clauses:
+        preserve = re.search(r"(?:제목|heading)[^.!?\n]*(?:유지|보존|그대로|preserve|keep|unchanged)", clause, re.IGNORECASE)
+        request = re.search(
+            r"(?:"
+            r"(?:제목|heading)[^.!?\n]*(?:추가|생성|작성|수정|변경|바꿔|교체|\b(?:add|create|edit|change|replace)\b)"
+            r"|(?:추가|생성|작성|수정|변경|바꿔|교체|\b(?:add|create|edit|change|replace)\b)[^.!?\n]*(?:제목|heading)"
+            r")",
+            clause,
+            re.IGNORECASE,
+        )
+        negation = re.search(r"(?:\b(?:do\s+not|don't|not)\b|하지\s*말고|말고)", clause, re.IGNORECASE)
+        if request is not None and negation is None and (preserve is None or request.end() <= preserve.end()):
+            return True
+    return False
 
 
 def _asks_for_bold(instruction: str) -> bool:

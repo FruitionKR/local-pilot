@@ -84,6 +84,22 @@ def test_cleanup_deleted_wiki_pages_removes_only_workspace_targets() -> None:
     assert queries[-1][1] == (["C1"],)
 
 
+def test_lookup_wiki_pages_casts_optional_workspace_parameter() -> None:
+    connection = Mock()
+    result = Mock()
+    result.fetchall.return_value = [{"id": "C1"}]
+    connection.execute.return_value = result
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    with patch.object(database, "connect", return_value=connection):
+        assert database.lookup_wiki_pages(["C1"], "ws-1") == [{"id": "C1"}]
+
+    query, params = connection.execute.call_args.args
+    assert "(%s::text IS NULL OR workspace_id = %s)" in query
+    assert params == (["C1"], "ws-1", "ws-1")
+
+
 def test_delete_document_wiki_data_rejects_wrong_workspace() -> None:
     connection = Mock()
     scope_result = Mock()

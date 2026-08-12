@@ -31,6 +31,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class LintOperationApplierTest {
 
+    private static final String CONTENT_HASH =
+            "sha256:9d564752bf9b42a1f90fb7548ac6c6bd653f619ceeccd7f950bd5d60eaf2033a";
+
     @Mock OperationLogRepository operationLogRepository;
     @Mock OperationChangeRepository operationChangeRepository;
     @Mock PipelineWikiStateRequester wikiStateRequester;
@@ -70,13 +73,14 @@ class LintOperationApplierTest {
         applier.apply("op_lint_1", request,
                 List.of(new LintOperationApplier.LoadedPage(
                         "page_1", "wiki/ws_1/pages/page_1/ops/op_lint_1.md",
-                        "# 정리된 본문", "sha256:lint")),
+                        "# 정리된 본문", CONTENT_HASH)),
                 "payload-hash", Instant.now());
 
         ArgumentCaptor<WikiPageVersion> versionCaptor = ArgumentCaptor.forClass(WikiPageVersion.class);
         verify(versionRepository).save(versionCaptor.capture());
         assertThat(versionCaptor.getValue().getRevision()).isEqualTo(4L);
         assertThat(versionCaptor.getValue().getContributionCount()).isEqualTo(2);
+        assertThat(versionCaptor.getValue().getContentHash()).isEqualTo(CONTENT_HASH);
         assertThat(versionCaptor.getValue().getOperationId()).isEqualTo("op_lint_1");
 
         ArgumentCaptor<OperationChange> changeCaptor = ArgumentCaptor.forClass(OperationChange.class);

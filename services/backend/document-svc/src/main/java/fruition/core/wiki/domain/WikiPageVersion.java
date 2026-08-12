@@ -33,7 +33,7 @@ public class WikiPageVersion {
     @Column(name = "markdown_key", nullable = false, columnDefinition = "TEXT")
     private String markdownKey;
 
-    @Column(name = "content_hash", nullable = false, length = 64)
+    @Column(name = "content_hash", nullable = false, length = 71)
     private String contentHash;
 
     @Column(name = "operation_id")

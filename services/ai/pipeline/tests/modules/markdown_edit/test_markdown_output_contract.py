@@ -219,6 +219,49 @@ class MarkdownOutputContractTest(unittest.TestCase):
         self.assertIn("bold text must use `**` delimiters", failures)
         self.assertIn("italic text must use `*` delimiters", failures)
 
+    def test_allows_sentence_only_selection_when_title_must_be_preserved(self) -> None:
+        request = MarkdownEditRequest(
+            instruction="3번째 줄의 원래 문장만 교체하세요. 제목과 나머지 Markdown은 그대로 보존하세요.",
+            markdown="# 제목\n첫 번째 문장입니다.\n원래 문장입니다.",
+            target=MarkdownEditTarget(type="selection", start_line=3, end_line=3),
+            edit_goal="cleanup",
+        )
+
+        self.assertEqual(validate_markdown_output(request, "교체된 문장입니다."), [])
+
+    def test_requires_heading_only_for_heading_actions(self) -> None:
+        cases = (
+            ("제목은 그대로 유지해줘.", False),
+            ("제목은 그대로 유지하고 본문만 수정해줘.", False),
+            ("본문을 변경하고 제목은 유지해줘.", False),
+            ("Keep the heading unchanged.", False),
+            ("Keep the heading unchanged, but change the body.", False),
+            ("Change the body, but keep the heading unchanged.", False),
+            ("Do not change the heading; keep it unchanged.", False),
+            ("제목을 추가하지 말고 본문만 수정해줘.", False),
+            ("제목을 추가해줘.", True),
+            ("제목을 생성해줘.", True),
+            ("제목을 변경해줘.", True),
+            ("기존 제목은 유지하고 새 제목을 추가해줘.", True),
+            ("Add a heading.", True),
+            ("Create a heading.", True),
+            ("Change the heading.", True),
+            ("Keep the heading unchanged, but add a heading.", True),
+        )
+
+        for instruction, expects_heading in cases:
+            with self.subTest(instruction=instruction):
+                request = MarkdownEditRequest(
+                    instruction=instruction,
+                    markdown="본문입니다.",
+                    target=TARGET,
+                    edit_goal="convert_format",
+                )
+
+                failures = validate_markdown_output(request, "본문입니다.")
+
+                self.assertEqual("heading must start with `# ` through `###### `" in failures, expects_heading)
+
     def test_validates_exact_format_contracts(self) -> None:
         numbered_request = MarkdownEditRequest(
             instruction="번호 목록으로 바꿔줘.",

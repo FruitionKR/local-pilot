@@ -486,7 +486,7 @@ def lookup_wiki_pages(
                    user_id, workspace_id, status, created_at, updated_at
             FROM wiki_pages
             WHERE id = ANY(%s)
-              AND (%s IS NULL OR workspace_id = %s)
+              AND (%s::text IS NULL OR workspace_id = %s)
             ORDER BY id
             """,
             (page_ids, workspace_id, workspace_id),
