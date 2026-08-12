@@ -19,6 +19,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -58,6 +60,53 @@ class WikiMaintenanceControllerTest {
                         .header("Authorization", bearer()))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.status").value("queued"));
+    }
+
+    @Test
+    void lint_strictBooleanValuesBindOnlyJsonBooleansAndNull() throws Exception {
+        when(wikiMaintenanceService.lint(eq(WORKSPACE_ID), eq(USER_ID), any()))
+                .thenReturn(objectMapper.readTree("{\"run_id\":\"run_1\",\"status\":\"queued\"}"));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"materialize_promotions\":true,\"dry_run\":false}"))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"materialize_promotions\":null,\"dry_run\":null}"))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"materialize_promotions\":true}"))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dry_run\":false}"))
+                .andExpect(status().isAccepted());
+
+        verify(wikiMaintenanceService).lint(eq(WORKSPACE_ID), eq(USER_ID), eq(new WikiLintRequest(true, false)));
+        verify(wikiMaintenanceService).lint(eq(WORKSPACE_ID), eq(USER_ID), eq(new WikiLintRequest(null, null)));
+        verify(wikiMaintenanceService).lint(eq(WORKSPACE_ID), eq(USER_ID), eq(new WikiLintRequest(true, null)));
+        verify(wikiMaintenanceService).lint(eq(WORKSPACE_ID), eq(USER_ID), eq(new WikiLintRequest(null, false)));
+    }
+
+    @Test
+    void lint_invalidBooleanScalarsReturn400WithoutInvokingService() throws Exception {
+        for (String field : new String[]{"materialize_promotions", "dry_run"}) {
+            for (String value : new String[]{"0", "1", "1.5", "\"true\"", "\"invalid\"", "[]", "{}"}) {
+                mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/wiki/maintenance/lint")
+                                .header("Authorization", bearer())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"" + field + "\":" + value + "}"))
+                        .andExpect(status().isBadRequest());
+            }
+        }
+
+        verifyNoInteractions(wikiMaintenanceService);
     }
 
     @Test

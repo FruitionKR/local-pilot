@@ -132,6 +132,53 @@ class QueryServiceTest {
     }
 
     @Test
+    @DisplayName("웹 근거와 로컬 근거는 모두 반환하고 로컬 근거만 저장한다")
+    void query_mixedEvidence_returnsBothAndPersistsOnlyLocal() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "로컬 근거"),
+                new PipelineQueryResponse.EvidenceSnippet(
+                        2, "web:search-123", List.of(), List.of(
+                        new PipelineQueryResponse.SourceRef("web:search-123", "web-block")), "웹 근거")
+        );
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "질문", "openai", "gpt-5-nano", true))
+                .thenReturn(response);
+
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
+                "openai", "gpt-5-nano", true);
+
+        assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).hasSize(1);
+        assertThat(refCaptor.getValue().get(0).getDocumentId()).isEqualTo(DOCUMENT_ID);
+    }
+
+    @Test
+    @DisplayName("웹 근거만 있으면 응답은 완료되고 저장할 참조는 비어 있다")
+    void query_allWebEvidence_completesWithEmptySavedReferences() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, "web:search-123", List.of(), List.of(
+                        new PipelineQueryResponse.SourceRef("web:search-123", "web-block")), "웹 근거")
+        );
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(WORKSPACE_ID, "질문", "openai", "gpt-5-nano", true))
+                .thenReturn(response);
+
+        QueryResponse result = queryService.query(WORKSPACE_ID, SESSION_ID, "질문",
+                "openai", "gpt-5-nano", true);
+
+        assertThat(result.assistantMessage().status()).isEqualTo("completed");
+        assertThat(result.evidenceSnippets()).containsExactlyElementsOf(evidence);
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).isEmpty();
+    }
+
+    @Test
     @DisplayName("파이프라인 실패 시 pending assistant가 failed로 변경되고 예외가 전파된다")
     void query_pipelineFailure_marksAssistantFailedAndRethrows() {
         PipelineQueryException pipelineError = new PipelineQueryException("PIPELINE_UNAVAILABLE", "pipeline 연결 실패", 503, "{\"error\": \"service unavailable\"}");
@@ -204,5 +251,9 @@ class QueryServiceTest {
                 "Index.md는 위키 내 모든 페이지를 카테고리별로 정리한 카탈로그 파일 역할을 합니다. [1]",
                 relatedPages, evidenceSnippets, graphContext, List.of(traversalPath)
         );
+    }
+
+    private PipelineQueryResponse responseWithEvidence(List<PipelineQueryResponse.EvidenceSnippet> evidence) {
+        return new PipelineQueryResponse("답변", List.of(), evidence, null, List.of());
     }
 }

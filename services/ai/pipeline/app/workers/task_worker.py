@@ -97,6 +97,10 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
             "active_markdown_context": command["editor_snapshot"],
+            "skill_draft_sources": command.get("skill_draft_sources", []),
+            "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
+            "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),
+            "skill_scope_type": command.get("skill_scope_type"),
         })
         result = agent_to_response(
             build_handle_agent_turn_use_case(

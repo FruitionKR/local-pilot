@@ -36,6 +36,7 @@ public interface DocumentContentVersionRepository
     @Query("""
             UPDATE DocumentContentVersion v SET v.operationId = :operationId
             WHERE v.id.documentId = :documentId AND v.id.version = :version
+              AND v.operationId IS NULL
             """)
     int linkOperation(
             @Param("documentId") String documentId,

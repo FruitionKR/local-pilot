@@ -189,6 +189,54 @@ def test_unknown_command_is_rejected() -> None:
         task_worker._handle({"run_id": "run-1", "kind": "unknown"})
 
 
+def test_agent_command_copies_skill_draft_fields_into_agent_request() -> None:
+    command = {
+        "run_id": "agent_0123456789abcdef0123456789abcdef",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "document_id": "document-1",
+        "base_version": 7,
+        "apply_operation_id": "op-1",
+        "message": "Skill로 만들어줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "conversation_context": None,
+        "editor_snapshot": {"markdown": "# 제목"},
+        "skill_draft_sources": [{
+            "run_id": "agent_source",
+            "status": "completed",
+            "request_summary": "정식 요청",
+            "plan_summary": "정식 계획",
+            "successful_operations": [{"tool_name": "move_document", "reason": "정식 이유"}],
+        }],
+        "skill_draft_user_directives": ["일반화해줘"],
+        "skill_draft_excluded_literals": ["secret-doc"],
+        "skill_scope_type": "team",
+    }
+    use_case = MagicMock()
+    response = MagicMock()
+    response.model_dump.return_value = {"ok": True}
+    connection = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker, "_register_agent_command", return_value=("execute", None)),
+        patch.object(task_worker, "build_handle_agent_turn_use_case", return_value=use_case),
+        patch.object(task_worker, "agent_to_response", return_value=response),
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+    ):
+        assert task_worker._handle_agent(command) == {"ok": True}
+
+    request = use_case.execute.call_args.args[0]
+    assert request.skill_draft_sources[0].request_summary == "정식 요청"
+    assert request.skill_draft_sources[0].successful_operations[0].tool_name == "move_document"
+    assert request.skill_draft_user_directives == ("일반화해줘",)
+    assert request.skill_draft_excluded_literals == ("secret-doc",)
+    assert request.skill_scope_type == "team"
+
+
 def test_maintenance_failure_requires_terminal_run() -> None:
     command = {"run_id": "run-1", "kind": "lint"}
 

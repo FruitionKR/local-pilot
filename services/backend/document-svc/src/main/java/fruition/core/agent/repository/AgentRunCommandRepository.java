@@ -1,6 +1,8 @@
 package fruition.core.agent.repository;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -11,8 +13,11 @@ import java.util.Optional;
 public class AgentRunCommandRepository {
 
     private final JdbcTemplate jdbcTemplate;
-    public AgentRunCommandRepository(JdbcTemplate jdbcTemplate) {
+    private final ObjectMapper objectMapper;
+
+    public AgentRunCommandRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public void create(String runId, String workspaceId, String userId, String documentId,
@@ -33,8 +38,17 @@ public class AgentRunCommandRepository {
                 """, rs -> rs.next() ? Optional.of(new RunView(
                         rs.getString("run_id"), rs.getString("document_id"), rs.getLong("base_version"),
                         rs.getString("apply_operation_id"), rs.getString("status"),
-                        null, rs.getString("error_code"))) : Optional.empty(),
+                        readResult(rs.getString("result")), rs.getString("error_code"))) : Optional.empty(),
                 runId, workspaceId, userId);
+    }
+
+    private JsonNode readResult(String value) {
+        if (value == null) return null;
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Agent 결과를 읽지 못했습니다.", e);
+        }
     }
 
     public record RunView(String runId, String documentId, long baseVersion,

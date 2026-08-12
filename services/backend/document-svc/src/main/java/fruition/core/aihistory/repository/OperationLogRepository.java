@@ -5,6 +5,7 @@ import fruition.core.aihistory.domain.OperationStatus;
 import fruition.core.aihistory.domain.OperationType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,27 @@ import java.util.List;
 import java.util.Optional;
 
 public interface OperationLogRepository extends JpaRepository<OperationLog, String> {
+
+    /** 같은 문서 편집 conflict 재시도는 기존 감사 행을 그대로 사용한다. */
+    @Modifying
+    @Query(value = """
+            INSERT INTO ai_operation_logs(
+                operation_id, workspace_id, user_id, operation_type, target_document_id,
+                status, summary, changed_resource_count, created_at, completed_at
+            ) VALUES (
+                :operationId, :workspaceId, :userId, 'document_edit', :documentId,
+                'conflict', :summary, 0, :now, :now
+            )
+            ON CONFLICT (operation_id) DO NOTHING
+            """, nativeQuery = true)
+    int insertConflictIfAbsent(
+            @Param("operationId") String operationId,
+            @Param("workspaceId") String workspaceId,
+            @Param("userId") String userId,
+            @Param("documentId") String documentId,
+            @Param("summary") String summary,
+            @Param("now") Instant now
+    );
 
     Optional<OperationLog> findByOperationIdAndWorkspaceId(String operationId, String workspaceId);
 

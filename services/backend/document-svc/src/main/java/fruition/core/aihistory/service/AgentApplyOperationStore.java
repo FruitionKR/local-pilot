@@ -33,19 +33,70 @@ public class AgentApplyOperationStore {
      *
      * @return 이 사용자·문서에 발급된 유효한 표면 {@code true}
      */
-    public boolean consume(String operationId, String userId, String documentId) {
-        if (operationId == null || operationId.isBlank()) {
+    public boolean consume(String operationId, String userId, String documentId, String revisionWriteId) {
+        if (operationId == null || operationId.isBlank()
+                || revisionWriteId == null || revisionWriteId.isBlank() || revisionWriteId.length() > 255) {
             return false;
         }
-        return jdbcTemplate.update("""
+        if (jdbcTemplate.update("""
                 UPDATE agent_apply_projections
-                SET status = 'consumed', apply_consumed_at = now(), updated_at = now()
+                SET status = 'consumed', apply_revision_write_id = ?, apply_consumed_at = now(), updated_at = now()
                 WHERE apply_operation_id = ?
                   AND user_id = ?
                   AND document_id = ?
                   AND status = 'ready'
                   AND apply_consumed_at IS NULL
-                """, operationId, userId, documentId) == 1;
+                """, revisionWriteId, operationId, userId, documentId) == 1) {
+            return true;
+        }
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM agent_apply_projections
+                    WHERE apply_operation_id = ?
+                      AND user_id = ?
+                      AND document_id = ?
+                      AND status = 'consumed'
+                      AND apply_consumed_at IS NOT NULL
+                      AND apply_revision_write_id = ?
+                )
+                """, Boolean.class, operationId, userId, documentId, revisionWriteId));
+    }
+
+    public boolean consume(String operationId, String userId, String documentId, String revisionWriteId,
+                           long baseRevision, String markdown) {
+        if (operationId == null || operationId.isBlank()
+                || revisionWriteId == null || revisionWriteId.isBlank() || revisionWriteId.length() > 255
+                || markdown == null) {
+            return false;
+        }
+        if (jdbcTemplate.update("""
+                UPDATE agent_apply_projections
+                SET status = 'consumed', apply_revision_write_id = ?, apply_consumed_at = now(), updated_at = now()
+                WHERE apply_operation_id = ?
+                  AND user_id = ?
+                  AND document_id = ?
+                  AND base_version = ?
+                  AND ready_markdown = ?
+                  AND status = 'ready'
+                  AND apply_consumed_at IS NULL
+                """, revisionWriteId, operationId, userId, documentId, baseRevision, markdown) == 1) {
+            return true;
+        }
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM agent_apply_projections
+                    WHERE apply_operation_id = ?
+                      AND user_id = ?
+                      AND document_id = ?
+                      AND base_version = ?
+                      AND ready_markdown = ?
+                      AND status = 'consumed'
+                      AND apply_consumed_at IS NOT NULL
+                      AND apply_revision_write_id = ?
+                )
+                """, Boolean.class, operationId, userId, documentId, baseRevision, markdown, revisionWriteId));
     }
 
     private String randomSuffix() {

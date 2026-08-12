@@ -38,6 +38,7 @@ services/
 | document → ai-svc | Kafka `ai.ingest.command`(key=document_id), `ai.query.command`, `ai.agent.command`, `ai.maintenance.command` | 비동기 ingest·Query·Agent·Lint·Restore |
 | document → ai-svc | HTTP + X-Internal-Token | 동기 Query, Wiki 현재 상태 조회, pipeline run 폴링, Agent Tool run·승인 인자 인가 |
 | document → ai-svc | HTTP + X-Agent-Service-Token | JWT Skill 관리 요청 중계 |
+| document → ai-svc | `GET /agent/runs/{run_id}` + X-Agent-Service-Token | Skill draft source를 workspace/user scope로 canonical 조회 |
 | document → converter | HTTP (내부 전용, 큐 worker 경유) | PDF→Markdown 변환 (read timeout 900s) |
 | ai-svc → document | Kafka `ai.task.event` | 작업 결과 전달 |
 | ai-svc → document | 내부 HTTP + X-Internal-Token | ingest 원본 metadata·core 기여 이력 조회 |
@@ -76,7 +77,7 @@ access-svc는 멤버십 변경 시 projection을 write-through/무효화한다. 
 
 ## 6. 이벤트 처리
 
-본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. Query·ingest·lint command에는 적용할 `provider`와 `model` snapshot도 포함한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 결과를 `ai.task.event`로 보낸다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. HTTP 결과 callback은 사용하지 않는다. 기존 AI 작업 로그 조회/결과 경로는 LLM 설정을 받지 않는다.
+본문 저장은 Mongo 트랜잭션(본문+revision+write-id+outbox) 후 outbox publisher가 Kafka `document.edit.event`(key=document_id)를 발행한다. AI 작업은 Spring이 `run_id`와 필요 시 `operation_id`를 먼저 만들고 domain 상태와 `ai_command_outbox`를 같은 core DB 트랜잭션에 저장한 뒤 발행한다. Query·ingest·lint command에는 적용할 `provider`와 `model` snapshot도 포함한다. AI worker는 전달받은 `run_id`를 그대로 사용하고 최종 결과를 Kafka `ai.task.event`로 보낸다. `log_callback_url`은 실행 중 `pipeline.log` 진행 로그 전송에만 사용하며 HTTP result callback은 사용하지 않는다. document-svc는 `ai_task_result_receipts`로 결과를 멱등 반영하며 ingest는 AI run 폴링으로 event 유실도 복구한다. 기존 AI 작업 로그 조회/결과 경로는 LLM 설정을 받지 않는다.
 
 ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 같은 workspace의 서로 다른 문서 LLM·분석을 병렬 처리한다. ingest와 lint `materialize=true`는 Concept 최종 read→merge→object write→DB commit만 `(user_id, workspace_id)` PostgreSQL transaction advisory lock으로 공유 직렬화한다. 기존 ingest Redis short lock은 유지하고 `(user_id, workspace_id, page_type, slug)` unique + `INSERT ... ON CONFLICT ... RETURNING id`가 중복 생성을 차단한다. Concept index cache는 commit 후 무효화하며, source revision/content hash와 page `updated_at`가 오래된 ingest·embedding 결과를 차단한다. workload별 worker는 별도 consumer group과 KEDA lag 기준을 사용한다. 결정 근거: [adr/0003](adr/0003-choose-event-processing-strategy.md), [adr/0005](adr/0005-prepare-wiki-database-boundary.md), [adr/0006](adr/0006-async-ai-tasks-and-parallel-ingest.md)
 

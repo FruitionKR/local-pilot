@@ -1,9 +1,12 @@
 import json
+import re
 import unittest
 
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
+from app.modules.agent_run.infrastructure.agent_worker import _READ_TOOL_ARGUMENTS
 from app.modules.agent_run.infrastructure.chat_completions_execution_decider import (
     ChatCompletionsExecutionDecider,
+    DEFAULT_EXECUTION_PROMPT,
     normalize_execution_decision,
 )
 
@@ -19,6 +22,26 @@ class CapturingClient:
 
 
 class ExecutionDeciderTest(unittest.TestCase):
+    def test_execution_prompt_read_tools_match_dispatcher_contract(self) -> None:
+        prompt = DEFAULT_EXECUTION_PROMPT.read_text(encoding="utf-8")
+        enum_match = re.search(r'\{"action":"read","tool_name":"([^"]+)"', prompt)
+        self.assertIsNotNone(enum_match)
+        assert enum_match is not None
+        self.assertEqual(
+            enum_match.group(1).split(" | "), list(_READ_TOOL_ARGUMENTS),
+        )
+        prompt_tools = {
+            tool_name: set(json.loads(arguments))
+            for tool_name, arguments in re.findall(
+                r"- (\w+): (\{.*?\})", prompt
+            )
+        }
+
+        self.assertEqual(
+            prompt_tools,
+            {tool: set(args) for tool, args in _READ_TOOL_ARGUMENTS.items()},
+        )
+
     def test_rejects_obfuscated_tool_observation_before_decision(self) -> None:
         client = CapturingClient(
             {"action": "execute_operation", "operation_id": "plan-1-op-1"}

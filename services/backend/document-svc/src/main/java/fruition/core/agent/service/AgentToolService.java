@@ -37,7 +37,9 @@ public class AgentToolService {
             "list_root_items", Set.of(),
             "list_folder_children", Set.of("folder_id"),
             "get_document_metadata", Set.of("document_id"),
-            "get_document_content", Set.of("document_id"));
+            "get_document_content", Set.of("document_id"),
+            "search_hierarchy", Set.of("query"),
+            "get_breadcrumb", Set.of("folder_id", "document_id"));
     private static final Map<String, Set<String>> EXECUTE_TOOL_ARGUMENTS = Map.of(
             "create_folder", Set.of("name", "parent_folder_id"),
             "rename_folder", Set.of("folder_id", "name", "base_version"),
@@ -82,6 +84,9 @@ public class AgentToolService {
                     request.workspaceId(), request.userId(), uuid(request.arguments(), "folder_id"));
             case "get_document_metadata" -> documentMetadata(request);
             case "get_document_content" -> documentContent(request);
+            case "search_hierarchy" -> folderService.search(
+                    request.workspaceId(), request.userId(), text(request.arguments(), "query"));
+            case "get_breadcrumb" -> breadcrumb(request);
             default -> throw badRequest("지원하지 않는 read Tool입니다.");
         };
     }
@@ -133,6 +138,16 @@ public class AgentToolService {
                 "markdown", state.getMarkdown(),
                 "content_hash", state.getContentHash(),
                 "edit_revision", state.getRevision());
+    }
+
+    private Object breadcrumb(AgentToolReadRequest request) {
+        JsonNode arguments = request.arguments();
+        UUID folderId = nullableUuid(arguments, "folder_id");
+        String documentId = nullableText(arguments, "document_id");
+        if ((folderId == null) == (documentId == null)) {
+            throw badRequest("folder_id 또는 document_id 중 하나만 지정해야 합니다.");
+        }
+        return folderService.breadcrumb(request.workspaceId(), request.userId(), folderId, documentId);
     }
 
     private Document requireDocument(String workspaceId, String userId, String documentId) {
@@ -187,6 +202,11 @@ public class AgentToolService {
             throw badRequest(field + " 값이 올바르지 않습니다.");
         }
         return value.textValue();
+    }
+
+    private static String nullableText(JsonNode arguments, String field) {
+        JsonNode value = arguments.get(field);
+        return value.isNull() ? null : text(arguments, field);
     }
 
     private static UUID uuid(JsonNode arguments, String field) {

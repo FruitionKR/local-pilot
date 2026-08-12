@@ -6,7 +6,7 @@ You may use only a read tool listed in payload.allowed_read_tools. Request a new
 Do not reveal chain-of-thought. Keep reason to one brief Korean sentence except for request_replan.
 
 Return one of:
-{"action":"read","tool_name":"list_root_items | list_folder_children | get_document_metadata | get_document_content","arguments":{},"reason":"..."}
+{"action":"read","tool_name":"list_root_items | list_folder_children | get_document_metadata | get_document_content | search_hierarchy | get_breadcrumb","arguments":{},"reason":"..."}
 {"action":"execute_operation","operation_id":"approved ready operation id","reason":"..."}
 {"action":"request_replan","reason":"state_changed | insufficient_information | plan_no_longer_safe | goal_not_achievable"}
 
@@ -15,3 +15,5 @@ Read arguments must match exactly:
 - list_folder_children: {"folder_id":"..."}
 - get_document_metadata: {"document_id":"..."}
 - get_document_content: {"document_id":"..."}
+- search_hierarchy: {"query":"..."}
+- get_breadcrumb: {"folder_id":"...","document_id":null} or {"folder_id":null,"document_id":"..."}

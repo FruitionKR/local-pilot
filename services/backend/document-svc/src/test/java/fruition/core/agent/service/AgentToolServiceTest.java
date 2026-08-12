@@ -6,6 +6,7 @@ import fruition.core.agent.dto.AgentToolReadRequest;
 import fruition.core.agent.repository.PipelineAgentToolAuthorizationClient;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
+import fruition.core.document.dto.BreadcrumbResponse;
 import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.FolderPositionRequest;
 import fruition.core.document.dto.FolderResponse;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -92,6 +94,39 @@ class AgentToolServiceTest {
         order.verify(authorizationClient).authorizeRead(request);
         order.verify(workspaceAccessGuard).requireMember("workspace-1", "user-1");
         order.verify(mongoDocumentEditStore).findState("document-1");
+    }
+
+    @Test
+    void read_dispatchesSearchAndBreadcrumbAfterAiAuthorization() throws Exception {
+        var searchArguments = objectMapper.readTree("{\"query\":\"보고서\"}");
+        var breadcrumbArguments = objectMapper.readTree(
+                "{\"folder_id\":null,\"document_id\":\"document-1\"}");
+        var search = new fruition.core.document.dto.HierarchySearchResponse(List.of());
+        var breadcrumb = new BreadcrumbResponse(List.of());
+        when(folderService.search("workspace-1", "user-1", "보고서")).thenReturn(search);
+        when(folderService.breadcrumb("workspace-1", "user-1", null, "document-1"))
+                .thenReturn(breadcrumb);
+
+        assertThat(service.read("search_hierarchy", readRequest(searchArguments))).isSameAs(search);
+        assertThat(service.read("get_breadcrumb", readRequest(breadcrumbArguments))).isSameAs(breadcrumb);
+        InOrder order = inOrder(authorizationClient, folderService);
+        order.verify(authorizationClient).authorizeRead(any());
+        order.verify(folderService).search("workspace-1", "user-1", "보고서");
+        order.verify(authorizationClient).authorizeRead(any());
+        order.verify(folderService).breadcrumb("workspace-1", "user-1", null, "document-1");
+    }
+
+    @Test
+    void read_rejectsInvalidBreadcrumbArgumentsAfterAuthorization() throws Exception {
+        for (String json : List.of(
+                "{\"folder_id\":null,\"document_id\":null}",
+                "{\"folder_id\":\"11111111-1111-1111-1111-111111111111\",\"document_id\":\"document-1\"}",
+                "{\"folder_id\":\"not-a-uuid\",\"document_id\":null}")) {
+            assertThatThrownBy(() -> service.read("get_breadcrumb", readRequest(objectMapper.readTree(json))))
+                    .isInstanceOf(ResponseStatusException.class);
+        }
+        verify(authorizationClient, times(3)).authorizeRead(any());
+        verifyNoInteractions(folderService);
     }
 
     @Test
@@ -192,5 +227,9 @@ class AgentToolServiceTest {
         return new AgentToolExecuteRequest(
                 "run-1", "workspace-1", "user-1", "plan-1", 1, "a".repeat(64),
                 "operation-1", "idem-1", arguments);
+    }
+
+    private AgentToolReadRequest readRequest(com.fasterxml.jackson.databind.JsonNode arguments) {
+        return new AgentToolReadRequest("run-1", "workspace-1", "user-1", arguments);
     }
 }

@@ -64,6 +64,7 @@ import fruition.core.document.exception.HierarchyItemNotFoundException;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.aihistory.service.IngestOperationStarter;
 import fruition.core.aihistory.service.OperationRecorder;
+import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
 import io.minio.GetObjectArgs;
@@ -672,7 +673,8 @@ public class DocumentService {
         if (selectionMode == null || selectionMode.isBlank()) {
             throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
         }
-        Optional<Document> existing = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
+        Optional<Document> existing = documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                workspaceId, "chat_export", contentHash, selectionMode);
         if (existing.isPresent()) {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
@@ -680,6 +682,24 @@ public class DocumentService {
         String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+
+        Document candidate = new Document(
+                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
+                objectPath, contentHash, "chat_export");
+        candidate.assignSelectionMode(selectionMode);
+        if (documentRepository.reserveChatExport(
+                candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),
+                candidate.getFilename(), candidate.getDisplayName(), candidate.getNormalizedFilename(),
+                candidate.getMimeType(), candidate.getByteSize(), candidate.getStatus().name(),
+                candidate.getSourceUri(), candidate.getContentHash(), candidate.getCurrentContentHash(),
+                candidate.getCurrentVersion(), candidate.getDocumentRole().name(), candidate.getSortOrder(),
+                candidate.getUploadedAt(), candidate.getUpdatedAt(), selectionMode) == 0) {
+            Document canonical = documentRepository
+                    .findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                            workspaceId, "chat_export", contentHash, selectionMode)
+                    .orElseThrow(() -> new IllegalStateException("chat export canonical 문서를 찾을 수 없습니다."));
+            return new ExportDocumentResult(canonical.getId(), true);
+        }
 
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
@@ -695,11 +715,8 @@ public class DocumentService {
         }
         registerMinioRollbackCleanup(objectPath);
 
-        Document document = new Document(
-                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
-                objectPath, contentHash, "chat_export");
-        document.assignSelectionMode(selectionMode);
-        documentRepository.save(document);
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new IllegalStateException("예약한 chat export 문서를 찾을 수 없습니다."));
         log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
@@ -1123,6 +1140,21 @@ public class DocumentService {
             String source,
             String applyOperationId
     ) {
+        return saveContent(workspaceId, userId, documentId, markdown, baseRevision, revisionWriteId,
+                source, applyOperationId, false);
+    }
+
+    private DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseRevision,
+            String revisionWriteId,
+            String source,
+            String applyOperationId,
+            boolean applyOperationClaimed
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         if (baseRevision == null || baseRevision < 1) {
             throw new InvalidMarkdownContentException("base_revision은 1 이상이어야 합니다.");
@@ -1137,11 +1169,15 @@ public class DocumentService {
         }
         editLockService.requireWritable(documentId, userId);
 
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        boolean hasApplyOperation = applyOperationId != null && !applyOperationId.isBlank();
+        if (!applyOperationClaimed) {
+            claimApplyOperation(userId, documentId, revisionWriteId, baseRevision, content.markdown(), applyOperationId);
+        }
         editStateInitializer.initializeIfNeeded(document);
         DocumentEditState legacyState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new InvalidMarkdownContentException(
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
         MongoDocumentEditSaveResult result;
         try {
             result = mongoDocumentEditStore.save(
@@ -1156,9 +1192,9 @@ public class DocumentService {
                     legacyState
             );
         } catch (DocumentVersionConflictException conflict) {
-            // 적용 표 소비와 conflict 감사 기록은 같은 PostgreSQL 트랜잭션으로 남긴다.
+            // 적용 표는 저장 전에 이미 소비했으므로 conflict 감사에서 다시 소비하지 않는다.
             transactionTemplate.execute(status -> {
-                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                if (hasApplyOperation) {
                     operationRecorder.recordConflict(
                             applyOperationId, workspaceId, userId, documentId, Instant.now());
                 }
@@ -1176,14 +1212,13 @@ public class DocumentService {
                     documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
         }
 
-        // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
-        if (result.changed()) {
+        // Backend가 발급한 적용 표가 저장 전에 확인된 경우에만 AI 작업으로 기록한다.
+        if (result.changed() && hasApplyOperation) {
             transactionTemplate.execute(status -> {
-                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                if (contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId) == 1) {
                     operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
                             result.baseRevision(), result.revision(), result.baseMarkdown(),
                             content.markdown(), result.updatedAt());
-                    contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
                 }
                 return null;
             });
@@ -1202,6 +1237,16 @@ public class DocumentService {
         if (revisionWriteId == null || revisionWriteId.isBlank() || revisionWriteId.length() > 255) {
             throw new InvalidIdempotencyKeyException(
                     "revision_write_id는 1자 이상 255자 이하여야 합니다.");
+        }
+    }
+
+    void claimApplyOperation(String userId, String documentId, String revisionWriteId, Long baseRevision,
+                             String markdown, String applyOperationId) {
+        if (applyOperationId != null && !applyOperationId.isBlank()
+                && !applyOperationStore.consume(applyOperationId, userId, documentId, revisionWriteId,
+                baseRevision, markdown)) {
+            throw new InvalidAgentTurnRequestException(
+                    "유효하지 않거나 이미 사용된 Agent 적용 표입니다.");
         }
     }
 
@@ -1288,7 +1333,7 @@ public class DocumentService {
         DocumentContentSaveResponse saved;
         try {
             saved = saveContent(workspaceId, userId, documentId, content.markdown(),
-                    baseVersion, revisionWriteId, null, applyOperationId);
+                    baseVersion, revisionWriteId, null, applyOperationId, true);
         } catch (RuntimeException exception) {
             transactionTemplate.execute(status -> {
                 assetRepository.deleteAllInBatch(assets);

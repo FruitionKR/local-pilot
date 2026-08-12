@@ -6,9 +6,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class DocumentAssetContentService {
@@ -43,14 +48,14 @@ public class DocumentAssetContentService {
 
         Map<UUID, DocumentAssetValidator.ValidatedAsset> validated =
                 assetValidator.validateAll(request.attachments());
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(request.markdown());
+        String revisionWriteId = revisionWriteId(request.baseVersion(), content.contentHash(), validated);
+        documentService.claimApplyOperation(userId, documentId, revisionWriteId,
+                request.baseVersion(), content.markdown(), applyOperationId);
 
         Map<UUID, DocumentAssetStorageCoordinator.StoredAsset> stored =
                 storageCoordinator.storeAll(workspaceId, documentId, request.baseVersion(), validated);
         String finalMarkdown = replacePlaceholders(request.markdown(), workspaceId, stored);
-        // write ID도 asset ID도 요청 내용에서 결정된다. 같은 요청을 재전송하면 본문까지 동일해져
-        // 저장 계층이 첫 결과를 그대로 돌려준다.
-        String revisionWriteId = "assets:" + documentId + ":" + request.baseVersion()
-                + ":" + DocumentEditingRules.markdown(request.markdown()).contentHash();
         try {
             DocumentContentSaveResponse saved = documentService.saveContentWithAssets(
                     workspaceId, userId, documentId, finalMarkdown, request.baseVersion(),
@@ -62,6 +67,25 @@ public class DocumentAssetContentService {
         } catch (RuntimeException exception) {
             storageCoordinator.compensate(stored.values());
             throw exception;
+        }
+    }
+
+    private String revisionWriteId(
+            long baseVersion,
+            String markdownHash,
+            Map<UUID, DocumentAssetValidator.ValidatedAsset> validated
+    ) {
+        String attachments = validated.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + ":" + entry.getValue().originalFilename()
+                        + ":" + entry.getValue().contentHash())
+                .collect(Collectors.joining("\0"));
+        try {
+            return "assets:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                    (baseVersion + "\0" + markdownHash + "\0" + attachments)
+                            .getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", exception);
         }
     }
 

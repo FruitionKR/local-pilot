@@ -104,8 +104,13 @@ class DocumentEditingSchemaIntegrationTest {
                 ) VALUES (?, 'ws-1', 'user-1', 'doc-1', 1, ?, 'ready')
                 """, runId, operationId);
 
-        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1")).isTrue();
-        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1")).isFalse();
+        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1", "write-1")).isTrue();
+        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1", "write-1")).isTrue();
+        assertThat(agentApplyOperationStore.consume(operationId, "user-1", "doc-1", "write-2")).isFalse();
+        assertThat(agentApplyOperationStore.consume(operationId, "user-2", "doc-1", "write-1")).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT apply_revision_write_id FROM agent_apply_projections WHERE run_id = ?",
+                String.class, runId)).isEqualTo("write-1");
     }
 
     @Test
@@ -143,6 +148,68 @@ class DocumentEditingSchemaIntegrationTest {
                     "public." + table
             );
             assertThat(exists).as(table).isTrue();
+        }
+    }
+
+    @Test
+    void v34SoftDeletesDuplicateAndPreservesReferencesAndChildren() throws Exception {
+        String databaseName = "v34_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(
+                postgresContainer.getJdbcUrl(), postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = admin.createStatement()) {
+            statement.execute("CREATE DATABASE " + databaseName);
+        }
+
+        String databaseUrl = "jdbc:postgresql://" + postgresContainer.getHost() + ":"
+                + postgresContainer.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT) + "/" + databaseName;
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .target(MigrationVersion.fromVersion("33"))
+                .load()
+                .migrate();
+
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(v34DocumentInsert("doc_v34_canonical", null));
+            statement.executeUpdate(v34DocumentInsert("doc_v34_duplicate", "doc_v34_canonical"));
+            statement.executeUpdate("INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at) "
+                    + "VALUES ('doc_v34_canonical', 'canonical', 'hash-v34', now(), now()), "
+                    + "('doc_v34_duplicate', 'duplicate', 'hash-v34', now(), now())");
+            statement.executeUpdate("INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_at) "
+                    + "VALUES ('doc_v34_canonical', 1, 'canonical', 'hash-v34', now()), "
+                    + "('doc_v34_duplicate', 1, 'duplicate', 'hash-v34', now())");
+        }
+
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .load()
+                .migrate();
+
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            try (ResultSet rows = statement.executeQuery(
+                    "SELECT id, deleted_at, source_document_id FROM documents ORDER BY id")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("id")).isEqualTo("doc_v34_canonical");
+                assertThat(rows.getObject("deleted_at")).isNull();
+                assertThat(rows.getString("source_document_id")).isNull();
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("id")).isEqualTo("doc_v34_duplicate");
+                assertThat(rows.getObject("deleted_at")).isNotNull();
+                assertThat(rows.getString("source_document_id")).isEqualTo("doc_v34_canonical");
+            }
+            try (ResultSet count = statement.executeQuery("SELECT count(*) FROM document_edit_states")) {
+                count.next();
+                assertThat(count.getInt(1)).isEqualTo(2);
+            }
+            try (ResultSet count = statement.executeQuery("SELECT count(*) FROM document_content_versions")) {
+                count.next();
+                assertThat(count.getInt(1)).isEqualTo(2);
+            }
+            assertThatThrownBy(() -> statement.executeUpdate(v34DocumentInsert("doc_v34_new", null)))
+                    .isInstanceOf(Exception.class);
         }
     }
 
@@ -248,6 +315,39 @@ class DocumentEditingSchemaIntegrationTest {
                 "UPDATE documents SET source_document_id = id WHERE id = ?",
                 "doc_original_" + suffix
         )).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void chatExports_areUniqueByWorkspaceHashAndSelectionModeOnly() {
+        String suffix = UUID.randomUUID().toString();
+        String userId = "user_" + suffix;
+        String workspaceId = "ws_" + suffix;
+        String hash = "chat-hash-" + suffix;
+
+        insertDocument("regular_a_" + suffix, workspaceId, userId, "a.md", hash, "EDITABLE");
+        insertDocument("regular_b_" + suffix, workspaceId, userId, "b.md", hash, "EDITABLE");
+        insertDocument("chat_full_" + suffix, workspaceId, userId, "full.md", hash, "EDITABLE");
+        jdbcTemplate.update("UPDATE documents SET origin = 'chat_export', selection_mode = 'full' WHERE id = ?",
+                "chat_full_" + suffix);
+        insertDocument("chat_partial_" + suffix, workspaceId, userId, "partial.md", hash, "EDITABLE");
+        jdbcTemplate.update("UPDATE documents SET origin = 'chat_export', selection_mode = 'partial' WHERE id = ?",
+                "chat_partial_" + suffix);
+
+        insertDocument("chat_duplicate_" + suffix, workspaceId, userId, "duplicate.md", hash, "EDITABLE");
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "UPDATE documents SET origin = 'chat_export', selection_mode = 'full' WHERE id = ?",
+                "chat_duplicate_" + suffix)).isInstanceOf(DataIntegrityViolationException.class);
+
+        jdbcTemplate.update("UPDATE documents SET origin = 'chat_export', selection_mode = 'full', deleted_at = now() WHERE id = ?",
+                "chat_full_" + suffix);
+        insertDocument("chat_reexport_" + suffix, workspaceId, userId, "reexport.md", hash, "EDITABLE");
+        jdbcTemplate.update("UPDATE documents SET origin = 'chat_export', selection_mode = 'full' WHERE id = ?",
+                "chat_reexport_" + suffix);
+
+        String predicate = jdbcTemplate.queryForObject(
+                "SELECT pg_get_expr(indpred, indrelid) FROM pg_index WHERE indexrelid = 'uq_documents_chat_export_workspace_hash_mode'::regclass",
+                String.class);
+        assertThat(predicate).contains("deleted_at IS NULL");
     }
 
     @Test
@@ -839,5 +939,21 @@ class DocumentEditingSchemaIntegrationTest {
                     'completed', '2026-07-24 00:00:00+00', 'user_backfill', 'ws_backfill'
                 )
                 """.formatted(documentId, contentHash, filename, mimeType, sourceUri);
+    }
+
+    private String v34DocumentInsert(String documentId, String sourceDocumentId) {
+        return """
+                INSERT INTO documents(
+                    id, byte_size, content_hash, filename, display_name, normalized_filename,
+                    mime_type, source_uri, status, uploaded_at, updated_at, user_id, workspace_id,
+                    current_content_hash, current_version, document_role, sort_order,
+                    origin, selection_mode, source_document_id
+                ) VALUES (
+                    '%s', 1, 'hash-v34', '%s.md', '%s', '%s.md', 'text/markdown',
+                    NULL, 'completed', now(), now(), 'user-v34', 'workspace-v34',
+                    'hash-v34', 1, 'EDITABLE', 0, 'chat_export', 'selected', %s
+                )
+                """.formatted(documentId, documentId, documentId, documentId,
+                sourceDocumentId == null ? "NULL" : "'" + sourceDocumentId + "'");
     }
 }

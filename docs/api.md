@@ -114,20 +114,22 @@
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/agent/turn` | Markdown Agent turn 등록(202). 응답 `requestId`, `apply_operation_id`, `status=queued` |
-| GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI run 생성 전만 core queued projection을 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
+| GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI 내부 상태 API가 404이면 core projection의 `queued`/`ready`/`failed` 상태와 `result`/`error`를 그대로 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
 
-`POST /agent/turn` 요청은 `documentId`, `baseVersion`(0 이상), `message`, `editorSnapshot`(필수 Markdown 및 선택 target)을 받으며 `provider`·`model`은 함께 생략하거나 함께 전달한다. `conversationContext`는 선택이며, 잘못된 문서 형식/target은 400, version 충돌은 409, 편집 lock은 423이다.
+`POST /agent/turn` 요청은 `documentId`, `baseVersion`(0 이상), `message`, `editorSnapshot`(필수 Markdown 및 선택 target)을 받으며 `provider`·`model`은 함께 생략하거나 함께 전달한다. `conversationContext`는 선택이며, `conversationContext.pendingSkillProposal`은 `scope_type`, `name`, `description`, `instructions_markdown` 전체 필드로 구성된 미게시 제안이다(`published` 필드/상태는 포함하지 않음). 같은 제안의 승인·보안 재검토·재생성·제목/범위 변경 같은 후속 turn에도 이 제안을 전달해 다회차로 처리한다. `skill_draft_sources`는 `{run_id}` selector만 받으며, document-svc가 같은 workspace/user의 완료된 autonomous AgentRun과 성공 operation을 ai-svc에서 다시 읽어 canonical 요약을 Kafka command에 넣는다. 잘못된 문서 형식/target은 400, version 충돌은 409, 편집 lock은 423이다.
+
+AI 편집 적용 저장은 Backend가 발급한 `apply_operation_id`와 요청의 `revision_write_id`를 정확한 pair로 claim한다. 최초 claim은 projection의 `base_version`과 canonical `ready_markdown`이 요청과 일치할 때만 한 번 소비되고, 동일 pair 재시도는 기존 소비를 재사용하며 다른 pair는 거절한다. 결과가 유효하지 않거나 canonical Markdown을 만들 수 없으면 projection은 `failed`가 된다.
 
 Agent Tool P0 내부 계약:
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 `list_root_items`, `list_folder_children`, `get_document_metadata`, `get_document_content`를 호출. document-svc가 workspace 멤버십·문서 scope와 MongoDB canonical 본문을 확인 |
+| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 read Tool을 호출. 필수 arguments는 `list_root_items`=없음, `list_folder_children`=`folder_id`, `search_hierarchy`=`query`, `get_document_metadata`=`document_id`, `get_document_content`=`document_id`, `get_breadcrumb`=`folder_id`와 `document_id`(두 키 필수, 정확히 하나만 non-null)다. document-svc가 workspace 멤버십·문서 scope와 MongoDB canonical 본문을 확인 |
 | POST | `/internal/agent/tools/execute/{tool_name}` | `create_folder`, `rename_folder`, `move_folder`, `move_document`, `rename_document`만 허용. ai_db의 승인된 현재 operation·인자와 정확히 일치해야 document-svc가 멱등 실행 |
 | POST | `/internal/agent/runs/tool-authorizations/read` | document-svc가 `X-Internal-Token`으로 ai-svc에 run/workspace/user scope 조회 인가 요청 |
 | POST | `/internal/agent/runs/tool-authorizations/execute` | document-svc가 ai-svc에 plan version·operation hash·tool·선행 operation 결과를 포함한 승인 인자 일치 인가 요청 |
 
-Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 `apply_operation_id`를 operation/version audit와 같은 core 트랜잭션에서 한 번만 소비한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
+Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 유효한 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 PostgreSQL apply operation row를 projection의 `base_version`·canonical `ready_markdown`과 대조해 `operation_id`+`revision_write_id` exact pair로 원자 claim하고 MongoDB 본문을 저장한 뒤 성공 후 PostgreSQL version link/audit를 별도 transaction에서 기록한다. 유효하지 않은 result event는 `failed`로 기록한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
 
 ## Skill
 
@@ -157,7 +159,7 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | GET | `/chat/sessions` | 본인 세션 목록(최근 메시지 순) |
 | DELETE | `/chat/sessions/{id}` | 세션 삭제(204). 메시지·참조는 FK CASCADE |
 | GET | `/chat/sessions/{id}/messages` | 메시지 기록. references·related_pages·wiki 편입 정보 포함 |
-| POST | `/chat/sessions/{id}/wiki` | wiki export(202). `selection_mode`=`full`\|`partial`(+`pair_ids`), 응답 `status`=`processing`\|`skipped`(content_hash 중복). 완료는 3초 주기 폴링 reconciler가 반영 |
+| POST | `/chat/sessions/{id}/wiki` | wiki export(202). `selection_mode`=`full`\|`partial`(+`pair_ids`), 응답 `status`=`processing`\|`skipped`. 같은 workspace의 `chat_export`는 `(workspace_id, content_hash, selection_mode)` 조합으로 dedup하며, 완료는 3초 주기 폴링 reconciler가 반영 |
 | POST | `/chat/sessions/{id}/wiki/preview` | 직렬화·마스킹된 Markdown 미리보기(text/plain, 저장 없음) |
 
 원문: docs/backlog/spec/api/chat.md

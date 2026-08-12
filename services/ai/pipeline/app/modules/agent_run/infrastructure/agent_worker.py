@@ -45,6 +45,8 @@ _READ_TOOL_ARGUMENTS = {
     "list_folder_children": frozenset({"folder_id"}),
     "get_document_metadata": frozenset({"document_id"}),
     "get_document_content": frozenset({"document_id"}),
+    "search_hierarchy": frozenset({"query"}),
+    "get_breadcrumb": frozenset({"folder_id", "document_id"}),
 }
 
 
@@ -608,7 +610,7 @@ class AgentWorker:
                 and not isinstance(expected_version, bool)
                 and isinstance(expected_hash, str)
                 and bool(expected_hash)
-                and current.get("current_version") == expected_version
+                and current.get("edit_revision") == expected_version
                 and current.get("content_hash") == expected_hash
             )
         if operation.target_type == "document" and operation.tool_name == "rename_document":
@@ -660,11 +662,26 @@ class AgentWorker:
             raise ValueError("Agent selected a read tool that is not allowed.")
         if arguments is None or set(arguments) != _READ_TOOL_ARGUMENTS[tool_name]:
             raise ValueError("Agent read arguments do not match the tool contract.")
-        if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
-            raise ValueError("Agent read arguments must contain non-empty ids.")
-        # document_id/folder_id 값이 승인된 plan이나 이전 tool 응답으로 실제 확인된 id인지 대조한다.
+        if tool_name == "search_hierarchy":
+            if not isinstance(arguments["query"], str) or not arguments["query"].strip():
+                raise ValueError("Agent read arguments must contain a non-empty query.")
+            return tool_name, arguments
+        if tool_name == "get_breadcrumb":
+            folder_id = arguments["folder_id"]
+            document_id = arguments["document_id"]
+            if (folder_id is None) == (document_id is None):
+                raise ValueError("Agent breadcrumb requires exactly one target.")
+            target_id = folder_id if folder_id is not None else document_id
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise ValueError("Agent breadcrumb target must be a non-empty id.")
+            targets = (target_id,)
+        else:
+            if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
+                raise ValueError("Agent read arguments must contain non-empty ids.")
+            targets = arguments.values()
+        # id 값이 승인된 plan이나 이전 tool 응답으로 실제 확인된 id인지 대조한다.
         # (문서 본문 등 신뢰할 수 없는 observations 텍스트만으로는 임의 id를 읽을 수 없다.)
-        if any(value not in known_ids for value in arguments.values()):
+        if any(value not in known_ids for value in targets):
             raise ValueError("Agent read target id is not part of the known workspace state.")
         return tool_name, arguments
 
@@ -712,10 +729,11 @@ def _extract_observed_ids(value: object) -> set[str]:
         item_id = value.get("id")
         if isinstance(item_id, str) and item_id.strip():
             ids.add(item_id)
-        items = value.get("items")
-        if isinstance(items, list):
-            for item in items:
-                ids.update(_extract_observed_ids(item))
+        for key in ("items", "results"):
+            items = value.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    ids.update(_extract_observed_ids(item))
     return ids
 
 

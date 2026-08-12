@@ -157,21 +157,73 @@ public class AiTaskResultApplier {
 
         int updated;
         if ("succeeded".equals(text(event, "status"))) {
-            updated = jdbcTemplate.update("""
-                    UPDATE agent_apply_projections
-                    SET status = 'ready', result = CAST(? AS jsonb), error_code = NULL, updated_at = now()
-                    WHERE run_id = ? AND status = 'queued'
-                    """, required(event, "payload").toString(), runId);
+            JsonNode request = event.get("request");
+            JsonNode payload = event.get("payload");
+            String errorCode = null;
+            if (request == null || !request.isObject()) {
+                errorCode = "agent_result_invalid_request";
+            } else if (payload == null || !payload.isObject()) {
+                errorCode = "agent_result_invalid_payload";
+            } else if (!"markdown_create".equals(payload.path("action").asText())
+                    && !"markdown_edit".equals(payload.path("action").asText())) {
+                errorCode = "agent_result_unsupported_action";
+            } else if (expectedMarkdown(event) == null) {
+                errorCode = "agent_result_missing_canonical_markdown";
+            }
+            if (errorCode != null) {
+                updated = markAgentFailed(runId, errorCode);
+            } else {
+                updated = jdbcTemplate.update("""
+                        UPDATE agent_apply_projections
+                        SET status = 'ready', result = CAST(? AS jsonb), ready_markdown = ?,
+                            error_code = NULL, updated_at = now()
+                        WHERE run_id = ? AND status = 'queued'
+                        """, payload.toString(), expectedMarkdown(event), runId);
+            }
         } else {
-            updated = jdbcTemplate.update("""
-                    UPDATE agent_apply_projections
-                    SET status = 'failed', error_code = ?, updated_at = now()
-                    WHERE run_id = ? AND status = 'queued'
-                    """, event.path("error").asText("agent_turn_failed"), runId);
+            String error = event.path("error").asText(null);
+            updated = markAgentFailed(runId, error == null || error.isBlank() ? "agent_turn_failed" : error);
         }
         if (updated != 1) {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
+    }
+
+    public static String expectedMarkdown(JsonNode event) {
+        JsonNode request = event == null ? null : event.get("request");
+        JsonNode payload = event == null ? null : event.get("payload");
+        if (request == null || !request.isObject() || payload == null || !payload.isObject()) return null;
+        if ("markdown_create".equals(payload.path("action").asText())) {
+            return payload.path("generated_markdown").path("markdown").asText(null);
+        }
+        if (!"markdown_edit".equals(payload.path("action").asText())) return null;
+        String source = request.path("editor_snapshot").path("markdown").asText(null);
+        JsonNode edit = payload.path("edit");
+        int start = edit.path("actual_target").path("start_line").asInt(0);
+        int end = edit.path("actual_target").path("end_line").asInt(0);
+        String replacement = edit.path("replacement_markdown").asText(null);
+        String operation = edit.path("operation").asText(null);
+        if (source == null || replacement == null || start < 1 || end < start || operation == null) return null;
+        java.util.List<String> lines = new java.util.ArrayList<>(java.util.List.of(source.split("\\n", -1)));
+        java.util.List<String> replacementLines = java.util.List.of(replacement.split("\\n", -1));
+        if (end > lines.size()) return null;
+        if ("replace".equals(operation)) {
+            lines.subList(start - 1, end).clear();
+            lines.addAll(start - 1, replacementLines);
+        } else if ("insert_after".equals(operation)) {
+            lines.addAll(end, replacementLines);
+        } else {
+            return null;
+        }
+        return String.join("\n", lines);
+    }
+
+    private int markAgentFailed(String runId, String errorCode) {
+        return jdbcTemplate.update("""
+                UPDATE agent_apply_projections
+                SET status = 'failed', error_code = ?, updated_at = now()
+                WHERE run_id = ? AND status = 'queued'
+                """, errorCode, runId);
     }
 
     private RestoreExecuteService.RestoreManifest readRestoreManifest(OperationLog operation) {

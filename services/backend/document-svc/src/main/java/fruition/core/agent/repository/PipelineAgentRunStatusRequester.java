@@ -17,14 +17,40 @@ import java.util.Optional;
 public class PipelineAgentRunStatusRequester {
 
     private final RestClient restClient;
+    private final RestClient autonomousRunRestClient;
     private final String endpoint;
+    private final String autonomousRunEndpoint;
 
     public PipelineAgentRunStatusRequester(
             PipelineClientFactory clientFactory,
             @Value("${app.agent.status-endpoint}") String endpoint,
+            @Value("${app.agent.run-endpoint}") String autonomousRunEndpoint,
+            @Value("${app.skill.agent-token}") String agentToken,
             @Value("${app.agent.status-timeout-seconds:5}") int timeoutSeconds) {
         this.restClient = clientFactory.restClient(timeoutSeconds);
+        this.autonomousRunRestClient = RestClient.builder()
+                .requestFactory(clientFactory.requestFactory(timeoutSeconds))
+                .defaultHeader("X-Agent-Service-Token", agentToken)
+                .build();
         this.endpoint = endpoint;
+        this.autonomousRunEndpoint = autonomousRunEndpoint;
+    }
+
+    public Optional<AutonomousRun> findAutonomous(String workspaceId, String userId, String runId) {
+        try {
+            return Optional.ofNullable(autonomousRunRestClient.get()
+                    .uri(autonomousRunEndpoint + "/{runId}?workspace_id={workspaceId}&user_id={userId}",
+                            runId, workspaceId, userId)
+                    .retrieve()
+                    .body(AutonomousRun.class));
+        } catch (HttpClientErrorException.NotFound e) {
+            return Optional.empty();
+        } catch (ResourceAccessException e) {
+            throw new PipelineAgentException("AgentRun 조회 시간이 초과되었습니다.", 503, null);
+        } catch (RestClientResponseException e) {
+            throw new PipelineAgentException("AgentRun을 조회하지 못했습니다.", 503,
+                    e.getResponseBodyAsString());
+        }
     }
 
     public Optional<RunStatus> find(String workspaceId, String userId, String runId) {
@@ -52,5 +78,24 @@ public class PipelineAgentRunStatusRequester {
             String status,
             JsonNode result,
             @JsonProperty("error_code") String errorCode
+    ) {}
+
+    public record AutonomousRun(
+            String id,
+            String action,
+            String status,
+            @JsonProperty("request_summary") String requestSummary,
+            Plan plan
+    ) {}
+
+    public record Plan(
+            String summary,
+            java.util.List<Operation> operations
+    ) {}
+
+    public record Operation(
+            @JsonProperty("tool_name") String toolName,
+            String reason,
+            String status
     ) {}
 }

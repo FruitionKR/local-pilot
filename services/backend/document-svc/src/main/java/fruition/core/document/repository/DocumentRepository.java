@@ -17,8 +17,48 @@ import java.util.Optional;
 
 public interface DocumentRepository extends JpaRepository<Document, String> {
 
-    /** 중복 판별: 같은 workspace 안에서만 동일 content_hash를 중복으로 본다. */
-    Optional<Document> findByWorkspaceIdAndContentHash(String workspaceId, String contentHash);
+    /** chat export 중복 판별: 일반 문서는 같은 content를 허용한다. */
+    Optional<Document> findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+            String workspaceId, String origin, String contentHash, String selectionMode);
+
+    /** DB unique index로 chat export를 한 번만 예약한다. 0이면 다른 트랜잭션이 먼저 예약했다. */
+    @Modifying
+    @Query(value = """
+            INSERT INTO documents(
+                id, workspace_id, user_id, filename, display_name, normalized_filename,
+                mime_type, byte_size, status, source_uri, content_hash, current_content_hash,
+                current_version, document_role, sort_order, uploaded_at, updated_at,
+                origin, selection_mode
+            ) VALUES (
+                :id, :workspaceId, :userId, :filename, :displayName, :normalizedFilename,
+                :mimeType, :byteSize, :status, :sourceUri, :contentHash, :currentContentHash,
+                :currentVersion, :documentRole, :sortOrder, :uploadedAt, :updatedAt,
+                'chat_export', :selectionMode
+            )
+            ON CONFLICT (workspace_id, content_hash, selection_mode)
+                WHERE origin = 'chat_export' AND deleted_at IS NULL
+            DO NOTHING
+            """, nativeQuery = true)
+    int reserveChatExport(
+            @Param("id") String id,
+            @Param("workspaceId") String workspaceId,
+            @Param("userId") String userId,
+            @Param("filename") String filename,
+            @Param("displayName") String displayName,
+            @Param("normalizedFilename") String normalizedFilename,
+            @Param("mimeType") String mimeType,
+            @Param("byteSize") long byteSize,
+            @Param("status") String status,
+            @Param("sourceUri") String sourceUri,
+            @Param("contentHash") String contentHash,
+            @Param("currentContentHash") String currentContentHash,
+            @Param("currentVersion") long currentVersion,
+            @Param("documentRole") String documentRole,
+            @Param("sortOrder") long sortOrder,
+            @Param("uploadedAt") java.time.Instant uploadedAt,
+            @Param("updatedAt") java.time.Instant updatedAt,
+            @Param("selectionMode") String selectionMode
+    );
 
     /** 완료 후처리(reconcile) 대상: 아직 후처리 안 된(reconciled_at IS NULL) origin·status 문서. */
     List<Document> findAllByOriginAndStatusAndReconciledAtIsNull(String origin, DocumentStatus status);

@@ -95,20 +95,81 @@ class AiTaskResultApplierTest {
     void duplicateAgentTerminalEventUpdatesProjectionOnlyOnce() throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"event_id":"agent:run-1:succeeded","run_id":"run-1","kind":"agent",
-                 "status":"succeeded","payload":{"edit":{"changed":true}}}
+                 "status":"succeeded","request":{"editor_snapshot":{"markdown":"old"}},
+                 "payload":{"action":"markdown_edit","edit":{"operation":"replace",
+                 "actual_target":{"start_line":1,"end_line":1},"replacement_markdown":"new"}}}
                 """);
         when(jdbcTemplate.update(any(String.class), eq("agent:run-1:succeeded"), eq("run-1"), any()))
                 .thenReturn(1, 0);
         when(jdbcTemplate.update(
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
-                eq(event.get("payload").toString()), eq("run-1"))).thenReturn(1);
+                eq(event.get("payload").toString()), eq("new"), eq("run-1"))).thenReturn(1);
 
         applier.applyAgent(event);
         applier.applyAgent(event);
 
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
-                eq(event.get("payload").toString()), eq("run-1"));
+                eq(event.get("payload").toString()), eq("new"), eq("run-1"));
+    }
+
+    @Test
+    void invalidSuccessfulAgentResultFailsProjectionAndKeepsReceipt() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-2:succeeded","run_id":"run-2","kind":"agent",
+                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-2:succeeded"), eq("run-2"), any()))
+                .thenReturn(1);
+        when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq("agent_result_unsupported_action"), eq("run-2"))).thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq("agent_result_unsupported_action"), eq("run-2"));
+    }
+
+    @Test
+    void failedAgentResultUsesDefaultErrorCodeWhenErrorIsBlank() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-3:failed","run_id":"run-3","kind":"agent",
+                 "status":"failed","error":""}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-3:failed"), eq("run-3"), any()))
+                .thenReturn(1);
+        when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq("agent_turn_failed"), eq("run-3"))).thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
+                eq("agent_turn_failed"), eq("run-3"));
+    }
+
+    @Test
+    void extractsCanonicalMarkdownForSupportedCreateAndEditResults() throws Exception {
+        JsonNode create = objectMapper.readTree("""
+                {"request":{},"payload":{"action":"markdown_create",
+                 "generated_markdown":{"title":"제목","markdown":"# 제목\\n본문"}}}
+                """);
+        JsonNode edit = objectMapper.readTree("""
+                {"request":{"editor_snapshot":{"markdown":"# 제목\\n오래된 문장\\n끝"}},
+                 "payload":{"action":"markdown_edit","edit":{"operation":"replace",
+                 "actual_target":{"start_line":2,"end_line":2},"replacement_markdown":"새 문장"}}}
+                """);
+
+        assertThat(AiTaskResultApplier.expectedMarkdown(create)).isEqualTo("# 제목\n본문");
+        assertThat(AiTaskResultApplier.expectedMarkdown(edit)).isEqualTo("# 제목\n새 문장\n끝");
+    }
+
+    @Test
+    void unsupportedResultCannotProduceCanonicalMarkdown() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"request":{},"payload":{"action":"chat_answer"}}
+                """);
+
+        assertThat(AiTaskResultApplier.expectedMarkdown(event)).isNull();
     }
 
     @Test

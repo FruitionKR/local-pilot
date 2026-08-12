@@ -65,6 +65,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -539,6 +540,29 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
+    @DisplayName("유효하지 않은 Agent 적용 표는 저장 전에 거절한다")
+    void saveContent_invalidApplyOperationId_rejectsBeforeAnyWrite() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(applyOperationStore.consume("op-invalid", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n"))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-agent", "agent", "op-invalid"))
+                .isInstanceOf(fruition.core.agent.exception.InvalidAgentTurnRequestException.class);
+
+        verify(applyOperationStore).consume("op-invalid", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
+        verify(editStateInitializer, never()).initializeIfNeeded(any(Document.class));
+        verifyNoInteractions(mongoDocumentEditStore, contentVersionRepository,
+                assetReferenceSynchronizer, operationRecorder, transactionTemplate);
+    }
+
+    @Test
     @DisplayName("Agent 적용 표 소비와 성공 감사 기록을 한 PostgreSQL transaction에서 처리한다")
     void saveContent_agentApplyConsumesTokenWithAuditAndVersionLink() {
         stubOwnedWorkspace();
@@ -550,17 +574,92 @@ class DocumentServiceBlocksTest {
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(applyOperationStore.consume("op-agent", USER_ID, document.getId())).thenReturn(true);
+        when(applyOperationStore.consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n"))
+                .thenReturn(true);
+        when(contentVersionRepository.linkOperation(document.getId(), 2L, "op-agent")).thenReturn(1);
 
         documentService.saveContent(
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
                 "write-agent", "agent", "op-agent");
 
-        verify(applyOperationStore).consume("op-agent", USER_ID, document.getId());
+        org.mockito.InOrder order = inOrder(applyOperationStore, mongoDocumentEditStore);
+        order.verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
+        order.verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
+                eq(1L), eq("write-agent"), eq(USER_ID), eq(1L), eq(editState));
+        verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(operationRecorder).recordDocumentEdit(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
                 eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
         verify(contentVersionRepository).linkOperation(document.getId(), 2L, "op-agent");
+    }
+
+    @Test
+    @DisplayName("같은 Agent 저장 영수증 재생은 감사 변경을 중복 기록하지 않는다")
+    void saveContent_exactAgentReplay_doesNotRecordSecondAudit() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(applyOperationStore.consume("op-replay", USER_ID, document.getId(), "write-replay", 1L, "# 변경\n"))
+                .thenReturn(true);
+        when(contentVersionRepository.linkOperation(document.getId(), 2L, "op-replay"))
+                .thenReturn(1)
+                .thenReturn(0);
+
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-replay", "agent", "op-replay");
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-replay", "agent", "op-replay");
+
+        verify(operationRecorder).recordDocumentEdit(
+                eq("op-replay"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
+        verify(contentVersionRepository, times(2)).linkOperation(document.getId(), 2L, "op-replay");
+    }
+
+    @Test
+    @DisplayName("Agent 감사 실패 후 재시도는 연결과 감사를 다시 완료한다")
+    void saveContent_auditFailureRetryLinksAndRecordsOnce() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(applyOperationStore.consume("op-retry", USER_ID, document.getId(), "write-retry", 1L, "# 변경\n"))
+                .thenReturn(true);
+        when(contentVersionRepository.linkOperation(document.getId(), 2L, "op-retry"))
+                .thenReturn(1)
+                .thenReturn(1);
+        doThrow(new IllegalStateException("감사 실패")).doNothing()
+                .when(operationRecorder).recordDocumentEdit(
+                        eq("op-retry"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                        eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-retry", "agent", "op-retry"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("감사 실패");
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-retry", "agent", "op-retry");
+
+        verify(contentVersionRepository, times(2)).linkOperation(document.getId(), 2L, "op-retry");
+        verify(operationRecorder, times(2)).recordDocumentEdit(
+                eq("op-retry"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
+                eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
     }
 
     @Test
@@ -578,16 +677,24 @@ class DocumentServiceBlocksTest {
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
                 eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState)))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
-        when(applyOperationStore.consume("op-agent", USER_ID, document.getId())).thenReturn(true);
+        when(applyOperationStore.consume("op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new"))
+                .thenReturn(true);
 
         assertThatThrownBy(() -> documentService.saveContent(
                 WORKSPACE_ID, USER_ID, document.getId(), "new", 2L,
                 "write-agent-conflict", "agent", "op-agent"))
                 .isInstanceOf(DocumentVersionConflictException.class);
 
-        verify(applyOperationStore).consume("op-agent", USER_ID, document.getId());
+        org.mockito.InOrder order = inOrder(applyOperationStore, mongoDocumentEditStore, operationRecorder);
+        order.verify(applyOperationStore).consume(
+                "op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new");
+        order.verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState));
         verify(operationRecorder).recordConflict(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()), any());
+        verify(applyOperationStore, times(1)).consume(
+                "op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new");
     }
 
     @Test
@@ -604,12 +711,13 @@ class DocumentServiceBlocksTest {
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
 
         documentService.saveContent(
-                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null);
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", "   ");
 
         verify(contentVersionRepository).insertIfAbsent(
                 eq(document.getId()), eq(1L), eq("old"), eq(editState.getContentHash()), eq(USER_ID), any());
         verify(contentVersionRepository).insertIfAbsent(
                 eq(document.getId()), eq(2L), eq("# 변경\n"), anyString(), eq(USER_ID), any());
+        verifyNoInteractions(applyOperationStore, operationRecorder);
     }
 
     @Test

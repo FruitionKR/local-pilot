@@ -237,7 +237,8 @@ public class QueryService {
 
         List<ChatMessageReference> refs = new ArrayList<>();
         for (PipelineQueryResponse.EvidenceSnippet snippet : pipelineResponse.evidenceSnippets()) {
-            if (snippet.sourceDocumentId() == null || snippet.text() == null || snippet.text().isBlank()) {
+            if (snippet.sourceDocumentId() == null || snippet.sourceDocumentId().startsWith("web:")
+                    || snippet.text() == null || snippet.text().isBlank()) {
                 continue;
             }
             refs.add(new ChatMessageReference(

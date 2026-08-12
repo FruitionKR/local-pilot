@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import agent_worker
 from langgraph.channels import UntrackedValue
 from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
+from app.modules.agent_run.infrastructure.agent_worker import _known_ids
 from app.modules.agent_run.infrastructure.agent_worker import _resolve_operation_references
 from app.modules.agent_run.domain.entities import AgentRun, AgentRunContext
 from app.modules.agent_run.domain.execution import AgentExecutionDecision
@@ -156,7 +157,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
         gateway = MagicMock()
-        gateway.read.return_value = {"current_version": 2, "content_hash": "sha256:abc"}
+        gateway.read.return_value = {"edit_revision": 2, "content_hash": "sha256:abc"}
         worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
         context = AgentRunContext(
             run=AgentRun(
@@ -174,13 +175,104 @@ class AgentWorkerTest(unittest.TestCase):
 
         result = worker._read_tool(context, "get_document_content", {"document_id": "document-1"})
 
-        self.assertEqual(result["current_version"], 2)
+        self.assertEqual(result["edit_revision"], 2)
         gateway.read.assert_called_once_with(
             "get_document_content",
             run_id="run-1",
             workspace_id="workspace-1",
             user_id="user-1",
             arguments={"document_id": "document-1"},
+        )
+
+    def test_apply_document_edit_verification_uses_edit_revision(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        operation = replace(_approved_plan().operations[0], tool_name="apply_document_edit")
+        response = {"id": "document-1", "current_version": 2, "content_hash": "sha256:abc"}
+
+        for content, expected in (
+            ({"edit_revision": 2, "content_hash": "sha256:abc"}, True),
+            ({"edit_revision": 1, "content_hash": "sha256:abc"}, False),
+            ({"content_hash": "sha256:abc"}, False),
+        ):
+            with self.subTest(content=content):
+                gateway.read.return_value = content
+                self.assertEqual(
+                    worker._verify_operation(_executing_context(), operation, response),
+                    expected,
+                )
+
+    def test_search_and_breadcrumb_reads_use_gateway_with_contract_arguments(self) -> None:
+        repository = MagicMock()
+        repository.reserve_tool_call.return_value = True
+        gateway = MagicMock()
+        gateway.read.side_effect = [{"results": []}, {"path": []}]
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        context = _executing_context()
+
+        self.assertEqual(
+            worker._validate_read_decision(
+                "search_hierarchy", {"query": "보고서"}, ("search_hierarchy",), set()
+            ),
+            ("search_hierarchy", {"query": "보고서"}),
+        )
+        self.assertEqual(
+            worker._read_tool(context, "search_hierarchy", {"query": "보고서"}),
+            {"results": []},
+        )
+        self.assertEqual(
+            worker._read_tool(
+                context,
+                "get_breadcrumb",
+                {"folder_id": "folder-1", "document_id": None},
+            ),
+            {"path": []},
+        )
+        self.assertEqual(gateway.read.call_args_list[0].kwargs["arguments"], {"query": "보고서"})
+        self.assertEqual(
+            gateway.read.call_args_list[1].kwargs["arguments"],
+            {"folder_id": "folder-1", "document_id": None},
+        )
+
+    def test_breadcrumb_requires_one_known_target_and_search_skips_known_id_check(self) -> None:
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            worker._validate_read_decision(
+                "get_breadcrumb",
+                {"folder_id": None, "document_id": None},
+                ("get_breadcrumb",),
+                set(),
+            )
+        with self.assertRaisesRegex(ValueError, "known workspace state"):
+            worker._validate_read_decision(
+                "get_breadcrumb",
+                {"folder_id": "folder-1", "document_id": None},
+                ("get_breadcrumb",),
+                set(),
+            )
+        with self.assertRaisesRegex(ValueError, "non-empty query"):
+            worker._validate_read_decision(
+                "search_hierarchy", {"query": "  "}, ("search_hierarchy",), set()
+            )
+
+    def test_search_result_id_is_available_for_follow_up_read(self) -> None:
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        known_ids = _known_ids(
+            _approved_plan(),
+            [{"result": {"results": [{"id": "document-2", "name": "보고서"}]}}],
+        )
+
+        self.assertEqual(
+            worker._validate_read_decision(
+                "get_document_metadata",
+                {"document_id": "document-2"},
+                ("get_document_metadata",),
+                known_ids,
+            ),
+            ("get_document_metadata", {"document_id": "document-2"}),
         )
 
     def test_resolves_approved_dependency_output_without_changing_other_arguments(self) -> None:
