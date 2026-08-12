@@ -5,7 +5,6 @@ buildscript {
 	repositories { mavenCentral() }
 	dependencies {
 		classpath 'org.postgresql:postgresql:42.7.10'
-		classpath 'org.flywaydb:flyway-database-postgresql:11.7.2'
 	}
 }
 
