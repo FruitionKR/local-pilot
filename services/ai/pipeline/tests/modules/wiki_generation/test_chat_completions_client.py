@@ -73,7 +73,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -101,7 +101,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -120,7 +120,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -138,7 +138,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
         cases = (
             ("openai", "gpt-5-nano", {"reasoning_effort": "minimal"}),
             ("gemini", "gemini-3.1-flash-lite", {"reasoning_effort": "low"}),
-            ("claude", "claude-3-5-haiku-20241022", {}),
+            ("claude", "claude-haiku-4-5-20251001", {}),
         )
         for provider, model, expected_profile in cases:
             with self.subTest(provider=provider):

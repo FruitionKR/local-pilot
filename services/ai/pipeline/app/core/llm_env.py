@@ -9,7 +9,7 @@ SUPPORTED_LLM_PROVIDERS = ("openai", "gemini", "claude")
 SUPPORTED_LLM_MODELS = {
     "openai": "gpt-5-nano",
     "gemini": "gemini-3.1-flash-lite",
-    "claude": "claude-3-5-haiku-20241022",
+    "claude": "claude-haiku-4-5-20251001",
 }
 _PROVIDER_BASE_URLS = {
     "openai": "https://api.openai.com/v1",

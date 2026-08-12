@@ -82,7 +82,7 @@ def test_claude_uses_messages_endpoint() -> None:
         user_id="local-user",
         workspace_id="local-workspace",
         provider="claude",
-        model="claude-3-5-haiku-20241022",
+        model="claude-haiku-4-5-20251001",
     )
 
     assert resolve_endpoint(command) == "https://api.anthropic.com/v1/messages"

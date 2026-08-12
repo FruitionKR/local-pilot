@@ -71,13 +71,13 @@ class PipelineSkillRequesterTest {
     void publish_usesWorkspaceModelSnapshot() {
         requester().publish("ws_1", "user_1",
                 new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차"),
-                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-3-5-haiku-20241022"));
+                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-haiku-4-5-20251001"));
 
         assertThat(method.get()).isEqualTo("POST");
         assertThat(uri.get()).isEqualTo("/skills/author/publish");
         assertThat(body.get())
                 .contains("\"provider\":\"claude\"")
-                .contains("\"model\":\"claude-3-5-haiku-20241022\"")
+                .contains("\"model\":\"claude-haiku-4-5-20251001\"")
                 .doesNotContain("api_key", "base_url");
     }
 

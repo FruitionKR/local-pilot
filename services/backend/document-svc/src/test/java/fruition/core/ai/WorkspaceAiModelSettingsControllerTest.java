@@ -42,13 +42,13 @@ class WorkspaceAiModelSettingsControllerTest {
     @Test
     void update_ownerCanChangeSetting() {
         when(accessGuard.getRole("ws_1", "owner_1")).thenReturn("OWNER");
-        when(client.update("ws_1", "claude", "claude-3-5-haiku-20241022")).thenReturn(
-                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-3-5-haiku-20241022"));
+        when(client.update("ws_1", "claude", "claude-haiku-4-5-20251001")).thenReturn(
+                new WorkspaceAiModelClient.AiModelSelection("claude", "claude-haiku-4-5-20251001"));
 
         var response = controller.update("owner_1", "ws_1",
                 new WorkspaceAiModelSettingsController.SettingsRequest(
                         new WorkspaceAiModelSettingsController.AiModelSelection(
-                                "claude", "claude-3-5-haiku-20241022")));
+                                "claude", "claude-haiku-4-5-20251001")));
 
         assertThat(response.getBody().ingestLint().provider()).isEqualTo("claude");
     }

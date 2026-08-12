@@ -173,7 +173,7 @@ Docker Compose 인프라 기동 시에도 동일한 파일을 사용하므로 �
 | `GEMINI_API_KEY` | (없음) | ai-svc가 Gemini live 호출에 사용하는 secret |
 | `ANTHROPIC_API_KEY` | (없음) | ai-svc가 Claude live 호출에 사용하는 secret |
 
-provider/model은 사용자 설정·API·DB·Kafka payload snapshot에서 정하며 backend env override와 API key 전달은 없다. 지원 조합은 `openai/gpt-5-nano`(기본), `gemini/gemini-3.1-flash-lite`, `claude/claude-3-5-haiku-20241022`다.
+provider/model은 사용자 설정·API·DB·Kafka payload snapshot에서 정하며 backend env override와 API key 전달은 없다. 지원 조합은 `openai/gpt-5-nano`(기본), `gemini/gemini-3.1-flash-lite`, `claude/claude-haiku-4-5-20251001`다.
 
 ---
 
