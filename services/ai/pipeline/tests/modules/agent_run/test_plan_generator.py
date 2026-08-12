@@ -119,6 +119,7 @@ class PlanGeneratorTest(unittest.TestCase):
             "The top-level JSON object contains exactly two keys: summary, a non-empty brief Korean string, and operations, an array of operation objects.",
             prompt,
         )
+        self.assertNotIn("Required JSON:", prompt)
         self.assertNotRegex(prompt, r'"arguments"\s*:\s*\{\s*\}')
         self.assertIn(
             "every key required by the selected backend tool, including nullable keys with explicit null",
