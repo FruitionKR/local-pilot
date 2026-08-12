@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -101,12 +102,31 @@ class QueryControllerTest {
 
     @Test
     void query_missingWebSearchSetting_returns400() throws Exception {
-        mockMvc.perform(post(basePath() + "/query")
-                        .header("Authorization", bearerToken())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"question\":\"질문\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        for (String path : new String[]{"/query", "/query/runs"}) {
+            mockMvc.perform(post(basePath() + path)
+                            .header("Authorization", bearerToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"question\":\"질문\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.error.details[0].field").value("allowWebSearch"));
+        }
+    }
+
+    @Test
+    void query_invalidWebSearchValues_returns400InvalidRequest() throws Exception {
+        for (String path : new String[]{"/query", "/query/runs"}) {
+            for (String value : new String[]{"null", "\"true\"", "1", "1.5", "{}", "[]"}) {
+                mockMvc.perform(post(basePath() + path)
+                                .header("Authorization", bearerToken())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"question\":\"질문\",\"allow_web_search\":" + value + "}"))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+            }
+        }
+
+        verifyNoInteractions(queryService, queryRunService, chatSessionService, aiModelCatalog);
     }
 
     @Test
