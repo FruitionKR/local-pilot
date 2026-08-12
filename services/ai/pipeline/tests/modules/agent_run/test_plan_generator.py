@@ -3,6 +3,7 @@ import unittest
 
 from app.modules.agent_run.infrastructure.chat_completions_plan_generator import (
     ChatCompletionsPlanGenerator,
+    DEFAULT_PLAN_PROMPT,
     normalize_plan_candidate,
 )
 from app.modules.agent_run.domain.entities import ContentArtifactReference
@@ -111,6 +112,20 @@ class PlanGeneratorTest(unittest.TestCase):
 
         self.assertEqual(plan.operations[0].id, "plan-1-op-1")
         self.assertEqual(plan.operations[0].sequence, 1)
+
+    def test_plan_prompt_requires_explicit_arguments_and_create_nulls(self) -> None:
+        prompt = DEFAULT_PLAN_PROMPT.read_text(encoding="utf-8")
+        self.assertIn(
+            "The top-level JSON object contains exactly two keys: summary, a non-empty brief Korean string, and operations, an array of operation objects.",
+            prompt,
+        )
+        self.assertNotIn('"arguments": {}', prompt)
+        self.assertNotIn('"base_version": 1', prompt)
+        self.assertIn(
+            "every key required by the selected backend tool, including nullable keys with explicit null",
+            prompt,
+        )
+        self.assertIn("For create_folder and create_document, target_id and base_version must both be null.", prompt)
 
     def test_rejects_more_than_twenty_operations(self) -> None:
         candidate = {
