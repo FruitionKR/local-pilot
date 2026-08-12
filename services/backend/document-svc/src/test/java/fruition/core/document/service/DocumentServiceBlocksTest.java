@@ -147,6 +147,21 @@ class DocumentServiceBlocksTest {
                             invocation.getArgument(6),
                             true);
                 });
+        lenient().when(mongoDocumentEditStore.save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class), anyString()))
+                .thenAnswer(invocation -> {
+                    DocumentEditState base = invocation.getArgument(8);
+                    return new MongoDocumentEditSaveResult(
+                            invocation.getArgument(4),
+                            base.getMarkdown(),
+                            base.getContentHash(),
+                            invocation.<Long>getArgument(4) + 1,
+                            invocation.getArgument(3),
+                            Instant.now(),
+                            invocation.getArgument(6),
+                            true);
+                });
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
                 invocation.<org.springframework.transaction.support.TransactionCallback<Object>>getArgument(0)
                         .doInTransaction(null));
@@ -559,7 +574,35 @@ class DocumentServiceBlocksTest {
         verify(applyOperationStore).consume("op-invalid", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(editStateInitializer, never()).initializeIfNeeded(any(Document.class));
         verifyNoInteractions(mongoDocumentEditStore, contentVersionRepository,
-                assetReferenceSynchronizer, operationRecorder, transactionTemplate);
+                assetReferenceSynchronizer, operationRecorder);
+    }
+
+    @Test
+    @DisplayName("pending 감사 예약 실패는 본문과 버전을 저장하지 않는다")
+    void saveContent_pendingAuditFailure_rejectsBeforeMongoWrite() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(applyOperationStore.consume("op-pending", USER_ID, document.getId(), "write-pending", 1L, "# 변경\n"))
+                .thenReturn(true);
+        doThrow(new IllegalStateException("pending 감사 실패"))
+                .when(operationRecorder).prepareDocumentEdit(
+                        eq("op-pending"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()), any());
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-pending", "agent", "op-pending"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("pending 감사 실패");
+
+        verify(mongoDocumentEditStore, never()).save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class));
+        verify(contentVersionRepository, never()).insertIfAbsent(
+                anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
 
     @Test
@@ -586,12 +629,52 @@ class DocumentServiceBlocksTest {
         order.verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         order.verify(mongoDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write-agent"), eq(USER_ID), eq(1L), eq(editState));
+                eq(1L), eq("write-agent"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent"));
         verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(operationRecorder).recordDocumentEdit(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
                 eq(1L), eq(2L), eq("old"), eq("# 변경\n"), any());
         verify(contentVersionRepository).linkOperation(document.getId(), 2L, "op-agent");
+    }
+
+    @Test
+    @DisplayName("수동 receipt를 Agent 적용으로 재사용하면 성공 연결과 감사 기록을 남기지 않는다")
+    void saveContent_manualReceiptCannotBeReplayedAsAgentApply() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_edit/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+        MongoDocumentEditSaveResult manualResult = new MongoDocumentEditSaveResult(
+                1, "old", editState.getContentHash(), 2,
+                DocumentEditingRules.markdown("# 변경\n").contentHash(), Instant.now(), USER_ID, true);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(mongoDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
+                eq(1L), eq("write-reused"), eq(USER_ID), eq(1L), eq(editState)))
+                .thenReturn(manualResult);
+        when(applyOperationStore.consume("op-reused", USER_ID, document.getId(), "write-reused", 1L, "# 변경\n"))
+                .thenReturn(true);
+        when(mongoDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
+                eq(1L), eq("write-reused"), eq(USER_ID), eq(1L), eq(editState), eq("op-reused")))
+                .thenThrow(new IdempotencyConflictException("같은 revision_write_id를 다른 저장 요청에 사용할 수 없습니다."));
+
+        documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write-reused", null);
+
+        assertThatThrownBy(() -> documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-reused", "agent", "op-reused"))
+                .isInstanceOf(IdempotencyConflictException.class);
+
+        verify(contentVersionRepository, never()).linkOperation(anyString(), anyLong(), anyString());
+        verify(operationRecorder, never()).recordDocumentEdit(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
+                anyString(), anyString(), any());
     }
 
     @Test
@@ -611,6 +694,9 @@ class DocumentServiceBlocksTest {
         when(contentVersionRepository.linkOperation(document.getId(), 2L, "op-replay"))
                 .thenReturn(1)
                 .thenReturn(0);
+        var linkedVersion = mock(fruition.core.document.domain.DocumentContentVersion.class);
+        when(linkedVersion.getOperationId()).thenReturn("op-replay");
+        when(contentVersionRepository.findById(any())).thenReturn(Optional.of(linkedVersion));
 
         documentService.saveContent(
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
@@ -675,7 +761,7 @@ class DocumentServiceBlocksTest {
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(mongoDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
-                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState)))
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent")))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
         when(applyOperationStore.consume("op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new"))
                 .thenReturn(true);
@@ -690,7 +776,7 @@ class DocumentServiceBlocksTest {
                 "op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new");
         order.verify(mongoDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
-                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState));
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent"));
         verify(operationRecorder).recordConflict(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()), any());
         verify(applyOperationStore, times(1)).consume(

@@ -129,7 +129,7 @@ Agent Tool P0 내부 계약:
 | POST | `/internal/agent/runs/tool-authorizations/read` | document-svc가 `X-Internal-Token`으로 ai-svc에 run/workspace/user scope 조회 인가 요청 |
 | POST | `/internal/agent/runs/tool-authorizations/execute` | document-svc가 ai-svc에 plan version·operation hash·tool·선행 operation 결과를 포함한 승인 인자 일치 인가 요청 |
 
-Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 유효한 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 PostgreSQL apply operation row를 projection의 `base_version`·canonical `ready_markdown`과 대조해 `operation_id`+`revision_write_id` exact pair로 원자 claim하고 MongoDB 본문을 저장한 뒤 성공 후 PostgreSQL version link/audit를 별도 transaction에서 기록한다. 유효하지 않은 result event는 `failed`로 기록한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
+Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 유효한 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 PostgreSQL apply operation row를 projection의 `base_version`·canonical `ready_markdown`과 대조해 `operation_id`+`revision_write_id` exact pair로 claim하고 `document_edit/applying` pending 감사 상태를 먼저 기록한다. 이후 MongoDB 본문 receipt를 저장하고 PostgreSQL version link/audit를 확정하며, 중간 실패 시 같은 `revision_write_id` 재시도가 receipt를 재생해 pending 감사를 완료한다. 유효하지 않은 result event는 `failed`로 기록한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
 
 ## Skill
 

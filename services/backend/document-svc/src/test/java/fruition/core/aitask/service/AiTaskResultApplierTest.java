@@ -19,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
@@ -95,7 +98,9 @@ class AiTaskResultApplierTest {
     void duplicateAgentTerminalEventUpdatesProjectionOnlyOnce() throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"event_id":"agent:run-1:succeeded","run_id":"run-1","kind":"agent",
-                 "status":"succeeded","request":{"editor_snapshot":{"markdown":"old"}},
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1",
+                 "editor_snapshot":{"markdown":"old"}},
                  "payload":{"action":"markdown_edit","edit":{"operation":"replace",
                  "actual_target":{"start_line":1,"end_line":1},"replacement_markdown":"new"}}}
                 """);
@@ -104,6 +109,8 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq(event.get("payload").toString()), eq("new"), eq("run-1"))).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-1")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
 
         applier.applyAgent(event);
         applier.applyAgent(event);
@@ -111,6 +118,30 @@ class AiTaskResultApplierTest {
         verify(jdbcTemplate).update(
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq(event.get("payload").toString()), eq("new"), eq("run-1"));
+    }
+
+    @Test
+    void mismatchedAgentRequestFailsProjectionBeforeReady() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-mismatch:succeeded","run_id":"run-mismatch","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-other","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1",
+                 "editor_snapshot":{"markdown":"old"}},
+                 "payload":{"action":"markdown_edit","edit":{"operation":"replace",
+                 "actual_target":{"start_line":1,"end_line":1},"replacement_markdown":"new"}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-mismatch:succeeded"),
+                eq("run-mismatch"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-mismatch")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'failed'"),
+                eq("agent_result_request_mismatch"), eq("run-mismatch"))).thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(contains("SET status = 'failed'"),
+                eq("agent_result_request_mismatch"), eq("run-mismatch"));
+        verify(jdbcTemplate, never()).update(contains("SET status = 'ready'"), any(), any(), any());
     }
 
     @Test

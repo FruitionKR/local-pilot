@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 
 /** 문서 AI 편집 결과를 AI 작업 로그에 남긴다. */
 @Component
@@ -36,23 +37,60 @@ public class OperationRecorder {
         this.lineCounter = lineCounter;
     }
 
-    /**
-     * AI 편집을 적용한 결과를 기록한다. <b>문서 저장과 같은 트랜잭션에서</b> 호출해야 한다.
-     * 문서만 바뀌고 로그가 없거나 그 반대가 생기지 않는다.
-     */
+    /** Mongo 저장 전에 적용 작업을 pending 감사 상태로 예약한다. */
+    public void prepareDocumentEdit(String operationId, String workspaceId, String userId,
+                                    String documentId, Instant now) {
+        Optional<OperationLog> existing = operationLogRepository.findById(operationId);
+        if (existing.isPresent()) {
+            OperationLog operation = existing.get();
+            if (!isSameDocumentEdit(operation, workspaceId, userId, documentId)
+                    || (operation.getStatus() != OperationStatus.applying
+                    && operation.getStatus() != OperationStatus.succeeded
+                    && operation.getStatus() != OperationStatus.conflict)) {
+                throw new OperationPayloadConflictException(operationId);
+            }
+            return;
+        }
+        operationLogRepository.save(OperationLog.applyingDocumentEdit(
+                operationId, workspaceId, userId, documentId, now));
+    }
+
+    /** PostgreSQL version link와 같은 트랜잭션에서 AI 편집 완료 감사와 변경분을 기록한다. */
     public void recordDocumentEdit(String operationId, String workspaceId, String userId,
                                    String documentId, long beforeVersion, long afterVersion,
                                    String beforeMarkdown, String afterMarkdown, Instant now) {
-        operationLogRepository.save(OperationLog.completed(
-                operationId, workspaceId, userId, OperationType.document_edit, documentId,
-                "AI 편집을 문서에 반영했습니다.", 1, now));
+        OperationLog operation = operationLogRepository.findById(operationId)
+                .orElseGet(() -> OperationLog.completed(
+                        operationId, workspaceId, userId, OperationType.document_edit, documentId,
+                        "AI 편집을 문서에 반영했습니다.", 1, now));
+        if (!isSameDocumentEdit(operation, workspaceId, userId, documentId)) {
+            throw new OperationPayloadConflictException(operationId);
+        }
+        operation.complete(OperationStatus.succeeded, "AI 편집을 문서에 반영했습니다.", 1, null, now);
+        operationLogRepository.save(operation);
 
-        LineCounter.LineCount lines = lineCounter.count(
-                documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
-        operationChangeRepository.save(new OperationChange(
-                operationId, ResourceType.document, documentId,
-                beforeVersion, afterVersion, ChangeType.updated,
-                null, lines.additions(), lines.deletions()));
+        if (!operationChangeRepository.existsByOperationIdAndResourceIdAndChangeType(
+                operationId, documentId, ChangeType.updated)) {
+            LineCounter.LineCount lines = lineCounter.count(
+                    documentId, beforeVersion, beforeMarkdown, afterVersion, afterMarkdown);
+            operationChangeRepository.save(new OperationChange(
+                    operationId, ResourceType.document, documentId,
+                    beforeVersion, afterVersion, ChangeType.updated,
+                    null, lines.additions(), lines.deletions()));
+        }
+    }
+
+    /** 적용 결과가 현재 본문과 같아도 pending 감사 작업은 성공으로 종결한다. */
+    public void completeDocumentEditNoChange(String operationId, String workspaceId, String userId,
+                                             String documentId, Instant now) {
+        OperationLog operation = operationLogRepository.findById(operationId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "적용 감사 작업을 찾을 수 없습니다: operationId=" + operationId));
+        if (!isSameDocumentEdit(operation, workspaceId, userId, documentId)) {
+            throw new OperationPayloadConflictException(operationId);
+        }
+        operation.complete(OperationStatus.succeeded, "AI 편집 결과가 현재 본문과 같습니다.", 0, null, now);
+        operationLogRepository.save(operation);
     }
 
     /**
@@ -71,9 +109,23 @@ public class OperationRecorder {
         OperationLog existing = operationLogRepository.findById(operationId)
                 .orElseThrow(() -> new IllegalStateException(
                         "충돌 감사 기록을 확인할 수 없습니다: operationId=" + operationId));
+        if (isSameDocumentEdit(existing, workspaceId, userId, documentId)
+                && existing.getStatus() == OperationStatus.applying) {
+            existing.complete(OperationStatus.conflict, CONFLICT_SUMMARY, 0, null, now);
+            operationLogRepository.save(existing);
+            return;
+        }
         if (!isSameConflict(existing, workspaceId, userId, documentId)) {
             throw new OperationPayloadConflictException(operationId);
         }
+    }
+
+    private boolean isSameDocumentEdit(OperationLog operation, String workspaceId, String userId,
+                                       String documentId) {
+        return operation.getOperationType() == OperationType.document_edit
+                && Objects.equals(operation.getWorkspaceId(), workspaceId)
+                && Objects.equals(operation.getUserId(), userId)
+                && Objects.equals(operation.getTargetDocumentId(), documentId);
     }
 
     private boolean isSameConflict(OperationLog existing, String workspaceId, String userId,

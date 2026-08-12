@@ -70,7 +70,7 @@ class DocumentAssetContentServiceTest {
             assertThat(mapping.contentPath()).isEqualTo(expectedPath);
         });
         verify(documentService).claimApplyOperation(
-                eq("user_1"), eq("doc_1"), anyString(), eq(3L), anyString(), eq("operation_1"));
+                eq("ws_1"), eq("user_1"), eq("doc_1"), anyString(), eq(3L), anyString(), eq("operation_1"));
         verify(storageCoordinator, never()).compensate(any());
     }
 
@@ -86,7 +86,7 @@ class DocumentAssetContentServiceTest {
                 .thenReturn(Map.of(attachmentId, validated));
         doThrow(new InvalidAgentTurnRequestException("유효하지 않은 적용 표입니다."))
                 .when(documentService).claimApplyOperation(
-                        eq("user_1"), eq("doc_1"), any(), eq(3L), anyString(), eq("operation_1"));
+                        eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), anyString(), eq("operation_1"));
 
         assertThatThrownBy(() -> service().save(
                 "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(),
@@ -125,7 +125,7 @@ class DocumentAssetContentServiceTest {
 
         ArgumentCaptor<String> revisionIds = ArgumentCaptor.forClass(String.class);
         verify(documentService, times(2)).claimApplyOperation(
-                eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
+                eq("ws_1"), eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
         assertThat(revisionIds.getAllValues().get(0))
                 .isNotEqualTo(revisionIds.getAllValues().get(1))
                 .hasSizeLessThanOrEqualTo(255);
@@ -157,7 +157,7 @@ class DocumentAssetContentServiceTest {
 
         ArgumentCaptor<String> revisionIds = ArgumentCaptor.forClass(String.class);
         verify(documentService, times(2)).claimApplyOperation(
-                eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
+                eq("ws_1"), eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
         assertThat(revisionIds.getAllValues().get(0))
                 .isNotEqualTo(revisionIds.getAllValues().get(1))
                 .hasSizeLessThanOrEqualTo(255);

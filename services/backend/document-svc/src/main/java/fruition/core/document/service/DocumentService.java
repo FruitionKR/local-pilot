@@ -1172,7 +1172,8 @@ public class DocumentService {
         DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
         boolean hasApplyOperation = applyOperationId != null && !applyOperationId.isBlank();
         if (!applyOperationClaimed) {
-            claimApplyOperation(userId, documentId, revisionWriteId, baseRevision, content.markdown(), applyOperationId);
+            claimApplyOperation(workspaceId, userId, documentId, revisionWriteId,
+                    baseRevision, content.markdown(), applyOperationId);
         }
         editStateInitializer.initializeIfNeeded(document);
         DocumentEditState legacyState = editStateRepository.findById(documentId)
@@ -1180,17 +1181,13 @@ public class DocumentService {
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
         MongoDocumentEditSaveResult result;
         try {
-            result = mongoDocumentEditStore.save(
-                    workspaceId,
-                    documentId,
-                    content.markdown(),
-                    content.contentHash(),
-                    baseRevision,
-                    revisionWriteId,
-                    userId,
-                    document.getCurrentVersion(),
-                    legacyState
-            );
+            result = hasApplyOperation
+                    ? mongoDocumentEditStore.save(
+                            workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
+                            revisionWriteId, userId, document.getCurrentVersion(), legacyState, applyOperationId)
+                    : mongoDocumentEditStore.save(
+                            workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
+                            revisionWriteId, userId, document.getCurrentVersion(), legacyState);
         } catch (DocumentVersionConflictException conflict) {
             // 적용 표는 저장 전에 이미 소비했으므로 conflict 감사에서 다시 소비하지 않는다.
             transactionTemplate.execute(status -> {
@@ -1202,7 +1199,31 @@ public class DocumentService {
             });
             throw conflict;
         }
-        projectContentVersions(documentId, content.markdown(), result);
+        if (hasApplyOperation) {
+            transactionTemplate.execute(status -> {
+                projectContentVersions(documentId, content.markdown(), result);
+                if (result.changed()) {
+                    int linked = contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                    if (linked == 1) {
+                        operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                                result.baseRevision(), result.revision(), result.baseMarkdown(),
+                                content.markdown(), result.updatedAt());
+                    } else if (!contentVersionRepository.findById(
+                            new DocumentContentVersionId(documentId, result.revision()))
+                            .map(version -> applyOperationId.equals(version.getOperationId()))
+                            .orElse(false)) {
+                        throw new IllegalStateException(
+                                "문서 버전에 Agent 적용 작업을 연결하지 못했습니다: operationId=" + applyOperationId);
+                    }
+                } else {
+                    operationRecorder.completeDocumentEditNoChange(
+                            applyOperationId, workspaceId, userId, documentId, result.updatedAt());
+                }
+                return null;
+            });
+        } else {
+            projectContentVersions(documentId, content.markdown(), result);
+        }
         if (result.changed()) {
             // 재ingest 필요 판단용 projection: 목록 API가 PG만으로 현재 편집본 해시를 비교할 수 있게 한다.
             documentRepository.updateCurrentContentHash(documentId, result.contentHash(), result.updatedAt());
@@ -1210,18 +1231,6 @@ public class DocumentService {
             // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
             assetReferenceSynchronizer.synchronize(
                     documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
-        }
-
-        // Backend가 발급한 적용 표가 저장 전에 확인된 경우에만 AI 작업으로 기록한다.
-        if (result.changed() && hasApplyOperation) {
-            transactionTemplate.execute(status -> {
-                if (contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId) == 1) {
-                    operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
-                            result.baseRevision(), result.revision(), result.baseMarkdown(),
-                            content.markdown(), result.updatedAt());
-                }
-                return null;
-            });
         }
 
         return new DocumentContentSaveResponse(
@@ -1240,14 +1249,21 @@ public class DocumentService {
         }
     }
 
-    void claimApplyOperation(String userId, String documentId, String revisionWriteId, Long baseRevision,
-                             String markdown, String applyOperationId) {
-        if (applyOperationId != null && !applyOperationId.isBlank()
-                && !applyOperationStore.consume(applyOperationId, userId, documentId, revisionWriteId,
-                baseRevision, markdown)) {
-            throw new InvalidAgentTurnRequestException(
-                    "유효하지 않거나 이미 사용된 Agent 적용 표입니다.");
+    void claimApplyOperation(String workspaceId, String userId, String documentId, String revisionWriteId,
+                             Long baseRevision, String markdown, String applyOperationId) {
+        if (applyOperationId == null || applyOperationId.isBlank()) {
+            return;
         }
+        transactionTemplate.execute(status -> {
+            if (!applyOperationStore.consume(applyOperationId, userId, documentId, revisionWriteId,
+                    baseRevision, markdown)) {
+                throw new InvalidAgentTurnRequestException(
+                        "유효하지 않거나 이미 사용된 Agent 적용 표입니다.");
+            }
+            operationRecorder.prepareDocumentEdit(
+                    applyOperationId, workspaceId, userId, documentId, Instant.now());
+            return null;
+        });
     }
 
     /**
