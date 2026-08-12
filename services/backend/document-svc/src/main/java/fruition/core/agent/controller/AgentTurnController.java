@@ -1,6 +1,8 @@
 package fruition.core.agent.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.agent.dto.AgentRunApproveRequest;
+import fruition.core.agent.dto.AgentRunReviseRequest;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
 import fruition.core.agent.service.AgentTurnService;
@@ -74,5 +76,52 @@ public class AgentTurnController {
             @Parameter(description = "조회할 Agent 실행 ID", required = true)
             @PathVariable("run_id") String runId) {
         return ResponseEntity.ok(agentTurnService.get(workspaceId, userId, runId));
+    }
+
+    @Operation(summary = "AgentRun 조회", description = "자율 AgentRun 계획과 실행 상태를 조회합니다.")
+    @GetMapping("/runs/{run_id}")
+    public ResponseEntity<JsonNode> getRun(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId) {
+        return ResponseEntity.ok(agentTurnService.getRun(workspaceId, userId, runId));
+    }
+
+    @Operation(summary = "AgentRun 승인", description = "현재 AgentRun 계획을 승인합니다.")
+    @PostMapping("/runs/{run_id}/approve")
+    public ResponseEntity<JsonNode> approve(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId,
+            @Valid @RequestBody AgentRunApproveRequest request) {
+        return ResponseEntity.ok(agentTurnService.approve(workspaceId, userId, runId, request));
+    }
+
+    @Operation(summary = "AgentRun 거절", description = "현재 AgentRun 계획을 거절합니다.")
+    @PostMapping("/runs/{run_id}/reject")
+    public ResponseEntity<JsonNode> reject(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId) {
+        return ResponseEntity.ok(agentTurnService.reject(workspaceId, userId, runId));
+    }
+
+    @Operation(summary = "AgentRun 취소", description = "현재 AgentRun을 취소합니다.")
+    @PostMapping("/runs/{run_id}/cancel")
+    public ResponseEntity<JsonNode> cancel(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId) {
+        return ResponseEntity.ok(agentTurnService.cancel(workspaceId, userId, runId));
+    }
+
+    @Operation(summary = "AgentRun 계획 수정", description = "현재 AgentRun에 새 계획을 요청합니다.")
+    @PostMapping("/runs/{run_id}/revise")
+    public ResponseEntity<JsonNode> revise(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @PathVariable("run_id") String runId,
+            @Valid @RequestBody AgentRunReviseRequest request) {
+        return ResponseEntity.ok(agentTurnService.revise(workspaceId, userId, runId, request));
     }
 }

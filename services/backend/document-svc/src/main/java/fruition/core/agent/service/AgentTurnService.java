@@ -1,7 +1,10 @@
 package fruition.core.agent.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
+import fruition.core.agent.dto.AgentRunApproveRequest;
+import fruition.core.agent.dto.AgentRunReviseRequest;
 import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.agent.repository.AgentRunCommandRepository;
@@ -132,6 +135,34 @@ public class AgentTurnService {
         return new AgentTurnResponse(projection.documentId(), projection.baseVersion(), projection.runId(),
                 projection.applyOperationId(), publicStatus(projection.status()),
                 projection.result(), projection.error());
+    }
+
+    public JsonNode getRun(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.getAutonomousRun(workspaceId, userId, runId);
+    }
+
+    public JsonNode approve(String workspaceId, String userId, String runId,
+                            AgentRunApproveRequest request) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.approve(workspaceId, userId, runId,
+                request.planVersion(), request.operationHash());
+    }
+
+    public JsonNode reject(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.reject(workspaceId, userId, runId);
+    }
+
+    public JsonNode cancel(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.cancel(workspaceId, userId, runId);
+    }
+
+    public JsonNode revise(String workspaceId, String userId, String runId,
+                           AgentRunReviseRequest request) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.revise(workspaceId, userId, runId, request.instruction());
     }
 
     private String publicStatus(String status) {

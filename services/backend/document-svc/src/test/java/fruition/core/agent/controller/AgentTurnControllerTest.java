@@ -1,10 +1,14 @@
 package fruition.core.agent.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
+import fruition.core.agent.dto.AgentRunApproveRequest;
+import fruition.core.agent.dto.AgentRunReviseRequest;
 import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
+import fruition.core.agent.exception.PipelineAgentException;
 import fruition.core.agent.service.AgentTurnService;
 import fruition.shared.security.JwtAuthenticationFilter;
 import fruition.shared.security.JwtTokenProvider;
@@ -21,10 +25,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 
 @WebMvcTest(AgentTurnController.class)
 @Import({CoreExceptionHandler.class, SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
@@ -92,6 +100,85 @@ class AgentTurnControllerTest {
                         .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void approve_providerConflictReturnsSafeErrorEnvelope() throws Exception {
+        String runId = "run-autonomous";
+        when(agentTurnService.approve(eq(WORKSPACE_ID), eq(USER_ID), eq(runId), any(AgentRunApproveRequest.class)))
+                .thenThrow(new PipelineAgentException("AgentRun 요청이 거부되었습니다.", 409,
+                        "{\"detail\":\"stale plan\"}"));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId + "/approve")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"plan_version\":1,\"operation_hash\":\"" + "a".repeat(64) + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("AGENT_REQUEST_REJECTED"))
+                .andExpect(jsonPath("$.error.message").value("AgentRun 요청이 거부되었습니다."))
+                .andExpect(content().string(not(containsString("stale plan"))));
+    }
+
+    @Test
+    void getRun_providerFailureReturnsUnavailableErrorEnvelope() throws Exception {
+        String runId = "run-autonomous";
+        when(agentTurnService.getRun(WORKSPACE_ID, USER_ID, runId))
+                .thenThrow(new PipelineAgentException("AgentRun 요청 시간이 초과되었습니다.", 503,
+                        "{\"detail\":\"provider secret\"}"));
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId)
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code").value("AGENT_PIPELINE_UNAVAILABLE"))
+                .andExpect(content().string(not(containsString("provider secret"))));
+    }
+
+    @Test
+    void autonomousRunRoutesUseAuthenticatedWorkspaceScope() throws Exception {
+        String runId = "run-autonomous";
+        JsonNode response = objectMapper.readTree("{\"id\":\"run-autonomous\"}");
+        when(agentTurnService.getRun(WORKSPACE_ID, USER_ID, runId)).thenReturn(response);
+        when(agentTurnService.approve(eq(WORKSPACE_ID), eq(USER_ID), eq(runId), any(AgentRunApproveRequest.class)))
+                .thenReturn(response);
+        when(agentTurnService.reject(WORKSPACE_ID, USER_ID, runId)).thenReturn(response);
+        when(agentTurnService.cancel(WORKSPACE_ID, USER_ID, runId)).thenReturn(response);
+        when(agentTurnService.revise(eq(WORKSPACE_ID), eq(USER_ID), eq(runId), any(AgentRunReviseRequest.class)))
+                .thenReturn(response);
+        String token = "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId)
+                        .header("Authorization", token))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId + "/approve")
+                        .header("Authorization", token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"plan_version\":1,\"operation_hash\":\"" + "a".repeat(64) + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId + "/reject")
+                        .header("Authorization", token))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId + "/cancel")
+                        .header("Authorization", token))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/" + runId + "/revise")
+                        .header("Authorization", token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"instruction\":\"계획을 다시 세워줘\"}"))
+                .andExpect(status().isOk());
+
+        verify(agentTurnService).getRun(WORKSPACE_ID, USER_ID, runId);
+        verify(agentTurnService).reject(WORKSPACE_ID, USER_ID, runId);
+        verify(agentTurnService).cancel(WORKSPACE_ID, USER_ID, runId);
+    }
+
+    @Test
+    void autonomousActionBodiesRejectClientActorScope() throws Exception {
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/run-1/approve")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workspace_id\":\"ws-evil\",\"plan_version\":1,\"operation_hash\":\""
+                                + "a".repeat(64) + "\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     private AgentTurnRequest request() {

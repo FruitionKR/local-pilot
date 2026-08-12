@@ -145,6 +145,28 @@ class AiTaskResultApplierTest {
     }
 
     @Test
+    void autonomousAgentResultBecomesReadyWithoutCanonicalMarkdown() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-autonomous:succeeded","run_id":"run-autonomous","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1"},
+                 "payload":{"action":"workspace_workflow","run_id":"run-inner","run_status":"queued"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-autonomous:succeeded"),
+                eq("run-autonomous"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-autonomous")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"),
+                eq(event.get("payload").toString()), isNull(), eq("run-autonomous"))).thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(contains("SET status = 'ready'"),
+                eq(event.get("payload").toString()), isNull(), eq("run-autonomous"));
+        verify(jdbcTemplate, never()).update(contains("SET status = 'failed'"), any(), any());
+    }
+
+    @Test
     void invalidSuccessfulAgentResultFailsProjectionAndKeepsReceipt() throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"event_id":"agent:run-2:succeeded","run_id":"run-2","kind":"agent",

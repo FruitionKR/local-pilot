@@ -1,23 +1,33 @@
 package fruition.core.agent.repository;
 
 import com.sun.net.httpserver.HttpServer;
+import fruition.core.agent.exception.PipelineAgentException;
 import fruition.shared.http.PipelineClientFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PipelineAgentRunStatusRequesterTest {
 
     private HttpServer server;
     private final AtomicReference<String> uri = new AtomicReference<>();
     private final AtomicReference<String> token = new AtomicReference<>();
+    private final AtomicReference<String> method = new AtomicReference<>();
+    private final AtomicReference<String> body = new AtomicReference<>();
+    private final AtomicBoolean slow = new AtomicBoolean();
+    private final AtomicInteger failureStatus = new AtomicInteger();
+    private final AtomicReference<String> failureBody = new AtomicReference<>();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -25,8 +35,35 @@ class PipelineAgentRunStatusRequesterTest {
         server.createContext("/agent/runs", exchange -> {
             uri.set(exchange.getRequestURI().toString());
             token.set(exchange.getRequestHeaders().getFirst("X-Agent-Service-Token"));
-            if (exchange.getRequestURI().getQuery().contains("workspace_id=foreign")) {
+            method.set(exchange.getRequestMethod());
+            try (InputStream input = exchange.getRequestBody()) {
+                body.set(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+            }
+            if (slow.get()) {
+                try {
+                    Thread.sleep(2_000);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+                exchange.close();
+                return;
+            }
+            if (exchange.getRequestURI().getQuery() != null
+                    && exchange.getRequestURI().getQuery().contains("workspace_id=foreign")) {
                 exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+            if (failureStatus.get() != 0) {
+                byte[] response = failureBody.get().getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(failureStatus.get(), response.length);
+                exchange.getResponseBody().write(response);
+                exchange.close();
+                return;
+            }
+            if (exchange.getRequestURI().getPath().endsWith("/approve")) {
+                exchange.sendResponseHeaders(409, 0);
+                exchange.getResponseBody().write("{\"detail\":\"stale plan\"}".getBytes(StandardCharsets.UTF_8));
                 exchange.close();
                 return;
             }
@@ -70,10 +107,96 @@ class PipelineAgentRunStatusRequesterTest {
         assertThat(requester().findAutonomous("foreign", "user-1", "run-1")).isEmpty();
     }
 
+    @Test
+    void lifecycleRequestsUseServiceTokenAndServerInjectedActorScope() {
+        var client = requester();
+
+        client.getAutonomousRun("ws-1", "user-1", "run-1");
+        assertThat(method.get()).isEqualTo("GET");
+        assertThat(uri.get()).isEqualTo("/agent/runs/run-1?workspace_id=ws-1&user_id=user-1");
+        assertThat(token.get()).isEqualTo("agent-token");
+
+        client.reject("ws-1", "user-1", "run-1");
+        assertThat(method.get()).isEqualTo("POST");
+        assertThat(uri.get()).isEqualTo("/agent/runs/run-1/reject");
+        assertThat(body.get()).contains("\"workspace_id\":\"ws-1\"")
+                .contains("\"user_id\":\"user-1\"");
+
+        client.cancel("ws-1", "user-1", "run-1");
+        assertThat(uri.get()).endsWith("/agent/runs/run-1/cancel");
+        client.revise("ws-1", "user-1", "run-1", "계획을 좁혀줘");
+        assertThat(uri.get()).endsWith("/agent/runs/run-1/revise");
+        assertThat(body.get()).contains("계획을 좁혀줘");
+    }
+
+    @Test
+    void lifecycleMapsNotFoundAndConflict() {
+        assertThatThrownBy(() -> requester().getAutonomousRun("foreign", "user-1", "run-1"))
+                .isInstanceOf(fruition.core.agent.exception.AgentRunNotFoundException.class);
+
+        assertThatThrownBy(() -> requester().approve("ws-1", "user-1", "run-1", 1, "hash"))
+                .isInstanceOfSatisfying(fruition.core.agent.exception.PipelineAgentException.class,
+                        exception -> {
+                            assertThat(exception.getHttpStatus()).isEqualTo(409);
+                            assertThat(exception.getResponseBody()).isNull();
+                        });
+    }
+
+    @Test
+    void lifecycleMapsClientErrorsWithoutProviderBodyForEveryAction() {
+        failureStatus.set(409);
+        failureBody.set("{\"detail\":\"stale plan\"}");
+        var client = requester();
+
+        assertClientRejected(() -> client.getAutonomousRun("ws-1", "user-1", "run-1"));
+        assertClientRejected(() -> client.approve("ws-1", "user-1", "run-1", 1, "hash"));
+        assertClientRejected(() -> client.reject("ws-1", "user-1", "run-1"));
+        assertClientRejected(() -> client.cancel("ws-1", "user-1", "run-1"));
+        assertClientRejected(() -> client.revise("ws-1", "user-1", "run-1", "계획을 좁혀줘"));
+    }
+
+    @Test
+    void lifecycleMapsServerErrorToUnavailableWithoutProviderBody() {
+        failureStatus.set(500);
+        failureBody.set("{\"detail\":\"provider secret\"}");
+
+        assertThatThrownBy(() -> requester().getAutonomousRun("ws-1", "user-1", "run-1"))
+                .isInstanceOfSatisfying(fruition.core.agent.exception.PipelineAgentException.class,
+                        exception -> {
+                            assertThat(exception.getHttpStatus()).isEqualTo(503);
+                            assertThat(exception.getResponseBody()).isNull();
+                        });
+    }
+
+    @Test
+    void lifecycleMapsTimeoutToServiceUnavailable() {
+        slow.set(true);
+
+        assertThatThrownBy(() -> requester(1).getAutonomousRun("ws-1", "user-1", "run-1"))
+                .isInstanceOfSatisfying(fruition.core.agent.exception.PipelineAgentException.class,
+                        exception -> {
+                            assertThat(exception.getHttpStatus()).isEqualTo(503);
+                            assertThat(exception.getResponseBody()).isNull();
+                        });
+    }
+
     private PipelineAgentRunStatusRequester requester() {
+        return requester(5);
+    }
+
+    private void assertClientRejected(Runnable request) {
+        assertThatThrownBy(request::run)
+                .isInstanceOfSatisfying(PipelineAgentException.class,
+                        exception -> {
+                            assertThat(exception.getHttpStatus()).isEqualTo(409);
+                            assertThat(exception.getResponseBody()).isNull();
+                        });
+    }
+
+    private PipelineAgentRunStatusRequester requester(int timeoutSeconds) {
         String baseUrl = "http://localhost:" + server.getAddress().getPort();
         return new PipelineAgentRunStatusRequester(
                 new PipelineClientFactory("internal-token"), baseUrl + "/internal/agent/runs",
-                baseUrl + "/agent/runs", "agent-token", 5);
+                baseUrl + "/agent/runs", "agent-token", timeoutSeconds);
     }
 }

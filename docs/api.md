@@ -115,10 +115,19 @@
 |---|---|---|
 | POST | `/agent/turn` | Markdown Agent turn 등록(202). 응답 `requestId`, `apply_operation_id`, `status=queued` |
 | GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI 내부 상태 API가 404이면 core projection의 `queued`/`ready`/`failed` 상태와 `result`/`error`를 그대로 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
+| GET | `/agent/runs/{run_id}` | 현재 workspace 멤버십을 확인한 뒤 자율 AgentRun의 계획·상태를 조회한다. AI AgentRun API에는 Backend가 service token과 path의 workspace·JWT 사용자 scope를 주입한다 |
+| POST | `/agent/runs/{run_id}/approve` | `plan_version`, `operation_hash`로 현재 계획을 승인한다. workspace·user scope는 요청 본문에 받지 않고 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/reject` | 현재 계획을 거절한다. workspace·user scope는 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/cancel` | AgentRun을 취소한다. workspace·user scope는 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/revise` | `instruction`으로 새 계획을 요청한다. workspace·user scope는 요청 본문에 받지 않고 Backend가 주입한다 |
+
+AgentRun lifecycle API가 AI에서 404를 받으면 `AGENT_RUN_NOT_FOUND`(404)를, 그 외 4xx를 받으면 원문을 노출하지 않고 `AGENT_REQUEST_REJECTED`(AI 응답 status 유지)를 반환한다. AI 5xx·timeout·unavailable은 `AGENT_PIPELINE_UNAVAILABLE`(503)로 반환한다.
 
 `POST /agent/turn` 요청은 `documentId`, `baseVersion`(0 이상), `message`, `editorSnapshot`(필수 Markdown 및 선택 target)을 받으며 `provider`·`model`은 함께 생략하거나 함께 전달한다. `conversationContext`는 선택이며, `conversationContext.pendingSkillProposal`은 `scope_type`, `name`, `description`, `instructions_markdown` 전체 필드로 구성된 미게시 제안이다(`published` 필드/상태는 포함하지 않음). 같은 제안의 승인·보안 재검토·재생성·제목/범위 변경 같은 후속 turn에도 이 제안을 전달해 다회차로 처리한다. `skill_draft_sources`는 `{run_id}` selector만 받으며, document-svc가 같은 workspace/user의 완료된 autonomous AgentRun과 성공 operation을 ai-svc에서 다시 읽어 canonical 요약을 Kafka command에 넣는다. 잘못된 문서 형식/target은 400, version 충돌은 409, 편집 lock은 423이다.
 
 AI 편집 적용 저장은 Backend가 발급한 `apply_operation_id`와 요청의 `revision_write_id`를 정확한 pair로 claim한다. 최초 claim은 projection의 `base_version`과 canonical `ready_markdown`이 요청과 일치할 때만 한 번 소비되고, 동일 pair 재시도는 기존 소비를 재사용하며 다른 pair는 거절한다. 결과가 유효하지 않거나 canonical Markdown을 만들 수 없으면 projection은 `failed`가 된다.
+
+`folder_organize`·`workspace_workflow` 결과는 canonical Markdown 없이도 AgentRun projection에 반영한다. 이 결과는 Markdown 적용 대상이 아니므로 `ready_markdown`을 만들지 않으며, 기존 `markdown_create`·`markdown_edit` 결과의 canonical Markdown 검증은 그대로 적용한다.
 
 Agent Tool P0 내부 계약:
 

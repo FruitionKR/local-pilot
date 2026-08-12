@@ -1,6 +1,9 @@
 package fruition.core.agent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.agent.dto.AgentRunApproveRequest;
+import fruition.core.agent.dto.AgentRunReviseRequest;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
@@ -285,6 +288,27 @@ class AgentTurnServiceTest {
 
         verify(workspaceAccessGuard).requireMember("ws_1", "user_1");
         verify(statusRequester, never()).find(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void autonomousLifecycleRequiresMembershipAndForwardsServerScope() {
+        String runId = "run-autonomous";
+        JsonNode response = new ObjectMapper().createObjectNode().put("id", runId);
+        AgentRunApproveRequest approve = new AgentRunApproveRequest(1, "a".repeat(64));
+        AgentRunReviseRequest revise = new AgentRunReviseRequest("계획을 좁혀줘");
+        when(statusRequester.getAutonomousRun("ws_1", "user_1", runId)).thenReturn(response);
+        when(statusRequester.approve("ws_1", "user_1", runId, 1, "a".repeat(64))).thenReturn(response);
+        when(statusRequester.reject("ws_1", "user_1", runId)).thenReturn(response);
+        when(statusRequester.cancel("ws_1", "user_1", runId)).thenReturn(response);
+        when(statusRequester.revise("ws_1", "user_1", runId, "계획을 좁혀줘")).thenReturn(response);
+
+        service.getRun("ws_1", "user_1", runId);
+        service.approve("ws_1", "user_1", runId, approve);
+        service.reject("ws_1", "user_1", runId);
+        service.cancel("ws_1", "user_1", runId);
+        service.revise("ws_1", "user_1", runId, revise);
+
+        verify(workspaceAccessGuard, org.mockito.Mockito.times(5)).requireMember("ws_1", "user_1");
     }
 
     @Test

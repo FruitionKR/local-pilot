@@ -166,10 +166,9 @@ public class AiTaskResultApplier {
                 errorCode = "agent_result_invalid_request";
             } else if (payload == null || !payload.isObject()) {
                 errorCode = "agent_result_invalid_payload";
-            } else if (!"markdown_create".equals(payload.path("action").asText())
-                    && !"markdown_edit".equals(payload.path("action").asText())) {
+            } else if (!isMarkdownAction(payload) && !isAutonomousAction(payload)) {
                 errorCode = "agent_result_unsupported_action";
-            } else if (expectedMarkdown(event) == null) {
+            } else if (isMarkdownAction(payload) && expectedMarkdown(event) == null) {
                 errorCode = "agent_result_missing_canonical_markdown";
             }
             if (errorCode != null) {
@@ -222,6 +221,16 @@ public class AiTaskResultApplier {
             return null;
         }
         return String.join("\n", lines);
+    }
+
+    private static boolean isMarkdownAction(JsonNode payload) {
+        String action = payload.path("action").asText();
+        return "markdown_create".equals(action) || "markdown_edit".equals(action);
+    }
+
+    private static boolean isAutonomousAction(JsonNode payload) {
+        String action = payload.path("action").asText();
+        return "folder_organize".equals(action) || "workspace_workflow".equals(action);
     }
 
     private int markAgentFailed(String runId, String errorCode) {
