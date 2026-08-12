@@ -6,6 +6,8 @@ import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.dto.DocumentRestorePlan;
 import fruition.core.aihistory.dto.PageRestorePlan;
 import fruition.core.aihistory.dto.RestorePlan;
+import fruition.core.aihistory.exception.InvalidRestoreRequestException;
+import fruition.core.aihistory.exception.OperationNotFoundException;
 import fruition.core.aihistory.exception.RestorePreviewStaleException;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.wiki.domain.WikiPageContribution;
@@ -19,16 +21,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -77,7 +82,7 @@ class RestoreExecuteServiceTest {
         when(tokenSigner.matches(TOKEN, TARGET, Map.of("wp_S_A", List.of(contribution))))
                 .thenReturn(true);
         when(validator.requireApplicable(target, plan)).thenReturn(page);
-        when(lifecycle.startQueued(eq(target), anyString(), any())).thenReturn(restore);
+        when(lifecycle.startQueued(eq(target), anyString(), anyString(), any())).thenReturn(Optional.of(restore));
 
         var response = service.execute(WORKSPACE, USER, TARGET, TOKEN);
 
@@ -107,8 +112,54 @@ class RestoreExecuteServiceTest {
         assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
                 .isInstanceOf(RestorePreviewStaleException.class);
 
-        verify(lifecycle, never()).startQueued(any(), anyString(), any());
+        verify(lifecycle, never()).startQueued(any(), anyString(), anyString(), any());
         verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void wikiRestore_rejectsDuplicatePreviewTokenWithoutQueueingAgain() {
+        PageRestorePlan page = PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1);
+        OperationLog target = target(OperationType.ingest);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(scopeResolver.resolve(target)).thenReturn(Set.of("op_a2"));
+        when(previewService.loadContributions(Set.of("op_a2"))).thenReturn(Map.of());
+        when(planner.plan(any(), any())).thenReturn(new RestorePlan(List.of(page)));
+        when(tokenSigner.matches(TOKEN, TARGET, Map.of())).thenReturn(true);
+        when(validator.requireApplicable(target, new RestorePlan(List.of(page)))).thenReturn(page);
+        when(lifecycle.startQueued(eq(target), anyString(), anyString(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(InvalidRestoreRequestException.class)
+                .hasMessage("같은 미리보기 토큰으로 복구가 이미 접수되었습니다.");
+
+        verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void wikiRestore_replayAfterSuccessRejectsBeforeMutableStateStaleness() {
+        PageRestorePlan page = PageRestorePlan.restore("wp_S_A", 2L, "op_a1", 1);
+        OperationLog target = target(OperationType.ingest);
+        OperationLog restore = OperationLog.applying(
+                "op_restore", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        Map<String, List<WikiPageContribution>> contributions = Map.of();
+        RestorePlan plan = new RestorePlan(List.of(page));
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(scopeResolver.resolve(target)).thenReturn(Set.of("op_a2"));
+        when(previewService.loadContributions(Set.of("op_a2"))).thenReturn(contributions);
+        when(planner.plan(any(), any())).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, contributions)).thenReturn(true, false);
+        when(validator.requireApplicable(target, plan)).thenReturn(page);
+        when(lifecycle.isClaimed(eq(TARGET), anyString())).thenReturn(false, true);
+        when(lifecycle.startQueued(eq(target), anyString(), anyString(), any()))
+                .thenReturn(Optional.of(restore));
+
+        service.execute(WORKSPACE, USER, TARGET, TOKEN);
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(InvalidRestoreRequestException.class);
+        verify(lifecycle).startQueued(eq(target), anyString(), anyString(), any());
+        verify(outboxWriter).enqueue(any(), any(), any(), any());
     }
 
     @Test
@@ -120,14 +171,70 @@ class RestoreExecuteServiceTest {
         when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
         when(documentPlanner.plan(target)).thenReturn(plan);
         when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
-        when(lifecycle.start(eq(target), anyString(), any())).thenReturn(restore);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any())).thenReturn(Optional.of(restore));
         when(documentApplier.apply(restore, plan)).thenReturn(7L);
 
         var response = service.execute(WORKSPACE, USER, TARGET, TOKEN);
 
         assertThat(response.status()).isEqualTo("succeeded");
+        ArgumentCaptor<String> tokenHash = ArgumentCaptor.forClass(String.class);
+        verify(lifecycle).start(eq(target), anyString(), tokenHash.capture(), any());
+        assertThat(tokenHash.getValue())
+                .isEqualTo("d131c306d498cf8aa66cbd07b847aa433734eec63cd70b609063b572e9aac140");
         verify(lifecycle).finishDocument(eq("op_restore"), eq(5L), eq(7L), any());
         verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void documentRestore_rejectsDuplicatePreviewTokenBeforeApplyingAgain() {
+        OperationLog target = target(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(documentPlanner.plan(target)).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(InvalidRestoreRequestException.class)
+                .hasMessage("같은 미리보기 토큰으로 복구가 이미 접수되었습니다.");
+
+        verify(documentApplier, never()).apply(any(), any());
+        verify(lifecycle, never()).finishDocument(anyString(), anyLong(), anyLong(), any());
+    }
+
+    @Test
+    void documentRestore_replayAfterSuccessRejectsBeforeMutableStateStaleness() {
+        OperationLog target = target(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        OperationLog restore = OperationLog.applying(
+                "op_restore", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(documentPlanner.plan(target)).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true, false);
+        when(lifecycle.isClaimed(eq(TARGET), anyString())).thenReturn(false, true);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any()))
+                .thenReturn(Optional.of(restore));
+        when(documentApplier.apply(restore, plan)).thenReturn(7L);
+
+        service.execute(WORKSPACE, USER, TARGET, TOKEN);
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(InvalidRestoreRequestException.class);
+        verify(documentApplier).apply(restore, plan);
+        verify(lifecycle).start(eq(target), anyString(), anyString(), any());
+        verify(lifecycle).finishDocument(eq("op_restore"), eq(5L), eq(7L), any());
+    }
+
+    @Test
+    void crossScopeTargetDoesNotProbeRestoreClaim() {
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET))
+                .thenThrow(new OperationNotFoundException(TARGET));
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(OperationNotFoundException.class);
+
+        verifyNoInteractions(lifecycle);
     }
 
     private OperationLog target(OperationType type) {

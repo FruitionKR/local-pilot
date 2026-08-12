@@ -2,6 +2,7 @@ package fruition.core.aihistory.service;
 
 import fruition.core.aihistory.domain.OperationLog;
 import fruition.core.aihistory.domain.OperationStatus;
+import fruition.core.aihistory.domain.OperationType;
 import fruition.core.aihistory.repository.OperationLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 
 /**
  * 복구 작업의 시작과 종료를 각각 별도 트랜잭션으로 커밋한다.
@@ -30,25 +32,42 @@ public class RestoreOperationLifecycle {
         this.operationLogRepository = operationLogRepository;
     }
 
+    /** 인증된 복구 대상에 같은 토큰 지문이 이미 선점됐는지 확인한다. */
+    @Transactional(readOnly = true)
+    public boolean isClaimed(String restoredFrom, String restoreTokenHash) {
+        return operationLogRepository.existsByOperationTypeAndRestoredFromAndRestoreTokenHash(
+                OperationType.restore, restoredFrom, restoreTokenHash);
+    }
+
     /**
      * 복구 작업을 {@code applying}으로 먼저 커밋한다. 반영 중 실패해도 그 상태로 남아
-     * 같은 {@code restore_manifest}로 재시도할 수 있다.
+     * 같은 미리보기 토큰의 재실행은 중복 요청으로 거절된다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public OperationLog start(OperationLog target, String manifestJson, Instant now) {
+    public Optional<OperationLog> start(OperationLog target, String manifestJson,
+                                        String restoreTokenHash, Instant now) {
         String operationId = "op_" + randomSuffix();
-        return operationLogRepository.save(OperationLog.applying(
+        if (operationLogRepository.insertRestoreIfAbsent(
                 operationId, target.getWorkspaceId(), target.getUserId(),
-                target.getTargetDocumentId(), target.getOperationId(), manifestJson, now));
+                target.getTargetDocumentId(), target.getOperationId(), manifestJson,
+                restoreTokenHash, now) == 0) {
+            return Optional.empty();
+        }
+        return operationLogRepository.findById(operationId);
     }
 
     /** Kafka command outbox와 같은 바깥 트랜잭션에 참여해 queued 복구를 등록한다. */
     @Transactional
-    public OperationLog startQueued(OperationLog target, String manifestJson, Instant now) {
+    public Optional<OperationLog> startQueued(OperationLog target, String manifestJson,
+                                               String restoreTokenHash, Instant now) {
         String operationId = "op_" + randomSuffix();
-        return operationLogRepository.save(OperationLog.applying(
+        if (operationLogRepository.insertRestoreIfAbsent(
                 operationId, target.getWorkspaceId(), target.getUserId(),
-                target.getTargetDocumentId(), target.getOperationId(), manifestJson, now));
+                target.getTargetDocumentId(), target.getOperationId(), manifestJson,
+                restoreTokenHash, now) == 0) {
+            return Optional.empty();
+        }
+        return operationLogRepository.findById(operationId);
     }
 
     /**

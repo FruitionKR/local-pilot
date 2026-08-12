@@ -216,7 +216,7 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
 | GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`). restore 작업에는 검증 가능한 계획·결과 요약을 `restore`로 추가 |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |
-| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI가 현재 본문·링크·embedding을 갱신한 뒤 core 감사 상태를 원자 반영 |
+| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`, 같은 토큰 재실행은 기존 요청을 만들지 않고 400 `INVALID_RESTORE_REQUEST`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI가 현재 본문·링크·embedding을 갱신한 뒤 core 감사 상태를 원자 반영 |
 
 복구 상세의 `restore`는 복구 작업에만 포함되며, `plan`에는 고정된 페이지별 `delete`/`restore`/`rebuild` 조치와 조치별 개수가, `result`에는 `changes[]`에서 집계한 페이지·링크·실패 효과 개수가 담긴다. `failed_actions`는 `changes[]`에 `resource_type=action`, `change_type=action_failed`로 저장하며 안정적인 action/resource ID와 공개된 실패 코드만 노출한다. 실제 page/resource ID와 효과는 기존 `changes[]`가 기준이므로 결과에 다시 복제하지 않는다. 비복구 작업은 기존 응답과 같이 `restore` 필드를 생략하며, 내부 callback URL·preview token·provider payload/error·기여 object key와 원본 `restore_manifest`는 반환하지 않는다.
 

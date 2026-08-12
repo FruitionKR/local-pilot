@@ -59,6 +59,10 @@ public class OperationLog {
     @Column(name = "restore_manifest")
     private String restoreManifest;
 
+    /** 같은 미리보기 토큰의 복구 실행을 DB에서 한 번만 선점하기 위한 지문. */
+    @Column(name = "restore_token_hash", length = 64)
+    private String restoreTokenHash;
+
     /** 완료 콜백 payload의 정규화 해시. 같은 payload 재전송과 다른 payload를 가른다. */
     @Column(name = "payload_hash", length = 64)
     private String payloadHash;
@@ -156,6 +160,7 @@ public class OperationLog {
     public int getChangedResourceCount() { return changedResourceCount; }
     public String getRestoredFrom() { return restoredFrom; }
     public String getRestoreManifest() { return restoreManifest; }
+    public String getRestoreTokenHash() { return restoreTokenHash; }
     public String getPayloadHash() { return payloadHash; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getCompletedAt() { return completedAt; }

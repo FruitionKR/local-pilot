@@ -15,6 +15,33 @@ import java.util.Optional;
 
 public interface OperationLogRepository extends JpaRepository<OperationLog, String> {
 
+    /** 같은 복구 미리보기 토큰은 하나의 복구 작업만 원자적으로 선점한다. */
+    @Modifying
+    @Query(value = """
+            INSERT INTO ai_operation_logs(
+                operation_id, workspace_id, user_id, operation_type, target_document_id,
+                status, changed_resource_count, restored_from, restore_manifest,
+                restore_token_hash, created_at
+            ) VALUES (
+                :operationId, :workspaceId, :userId, 'restore', :targetDocumentId,
+                'applying', 0, :restoredFrom, CAST(:restoreManifest AS jsonb),
+                :restoreTokenHash, :now
+            )
+            ON CONFLICT (restored_from, restore_token_hash)
+                WHERE operation_type = 'restore' AND restore_token_hash IS NOT NULL
+            DO NOTHING
+            """, nativeQuery = true)
+    int insertRestoreIfAbsent(
+            @Param("operationId") String operationId,
+            @Param("workspaceId") String workspaceId,
+            @Param("userId") String userId,
+            @Param("targetDocumentId") String targetDocumentId,
+            @Param("restoredFrom") String restoredFrom,
+            @Param("restoreManifest") String restoreManifest,
+            @Param("restoreTokenHash") String restoreTokenHash,
+            @Param("now") Instant now
+    );
+
     /** 같은 문서 편집 conflict 재시도는 기존 감사 행을 그대로 사용한다. */
     @Modifying
     @Query(value = """
@@ -37,6 +64,9 @@ public interface OperationLogRepository extends JpaRepository<OperationLog, Stri
     );
 
     Optional<OperationLog> findByOperationIdAndWorkspaceId(String operationId, String workspaceId);
+
+    boolean existsByOperationTypeAndRestoredFromAndRestoreTokenHash(
+            OperationType operationType, String restoredFrom, String restoreTokenHash);
 
     /**
      * 목록 조회. 최신순이며 {@code cursor}보다 오래된 것만 가져온다.
