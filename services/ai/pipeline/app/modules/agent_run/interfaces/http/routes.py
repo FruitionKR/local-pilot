@@ -12,6 +12,11 @@ from app.modules.agent_run.interfaces.http.dependencies import (
     get_approve_agent_plan_use_case,
 )
 from app.modules.agent_run.interfaces.http.schemas import (
+    AgentArtifactListRequest,
+    AgentArtifactRegisterRequest,
+    AgentArtifactResolveRequest,
+    AgentArtifactResolveResponse,
+    AgentArtifactResponse,
     AgentRunActorRequest,
     AgentRunResponse,
     AgentToolExecuteAuthorizationRequest,
@@ -33,6 +38,62 @@ def authorize_agent_tool_read(
     if not repository.authorize_tool_read(payload.workspace_id, payload.user_id, payload.run_id):
         raise HTTPException(status_code=404, detail="AgentRun not found.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@internal_router.post("/artifacts/register", response_model=AgentArtifactResponse)
+def register_agent_artifact(
+    payload: AgentArtifactRegisterRequest,
+    repository: AgentToolAuthorizationRepositoryPort = Depends(get_agent_run_repository),
+) -> dict[str, object]:
+    try:
+        return repository.register_artifact(
+            run_id=payload.run_id,
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
+            artifact_id=payload.artifact_id,
+            content_hash=payload.content_hash,
+            purpose=payload.purpose,
+            document_id=payload.document_id,
+            base_version=payload.base_version,
+            target=payload.target,
+            markdown=payload.markdown,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="AgentRun or artifact not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@internal_router.post("/artifacts/list", response_model=list[AgentArtifactResponse])
+def list_agent_artifacts(
+    payload: AgentArtifactListRequest,
+    repository: AgentToolAuthorizationRepositoryPort = Depends(get_agent_run_repository),
+) -> list[dict[str, object]]:
+    return repository.list_artifacts(payload.workspace_id, payload.user_id, payload.run_id)
+
+
+@internal_router.post("/artifacts/resolve", response_model=AgentArtifactResolveResponse)
+def resolve_agent_artifact(
+    payload: AgentArtifactResolveRequest,
+    repository: AgentToolAuthorizationRepositoryPort = Depends(get_agent_run_repository),
+) -> dict[str, object]:
+    try:
+        artifact = repository.resolve_artifact(
+            run_id=payload.run_id,
+            workspace_id=payload.workspace_id,
+            user_id=payload.user_id,
+            artifact_id=payload.artifact_id,
+            content_hash=payload.content_hash,
+            purpose=payload.purpose,
+            document_id=payload.document_id,
+            base_version=payload.base_version,
+            target=payload.target,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Agent artifact not found.")
+    return artifact
 
 
 @internal_router.post("/tool-authorizations/execute", status_code=status.HTTP_204_NO_CONTENT)

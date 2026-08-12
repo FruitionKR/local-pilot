@@ -124,8 +124,11 @@ Agent Tool P0 내부 계약:
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 read Tool을 호출. 필수 arguments는 `list_root_items`=없음, `list_folder_children`=`folder_id`, `search_hierarchy`=`query`, `get_document_metadata`=`document_id`, `get_document_content`=`document_id`, `get_breadcrumb`=`folder_id`와 `document_id`(두 키 필수, 정확히 하나만 non-null)다. document-svc가 workspace 멤버십·문서 scope와 MongoDB canonical 본문을 확인 |
-| POST | `/internal/agent/tools/execute/{tool_name}` | `create_folder`, `rename_folder`, `move_folder`, `move_document`, `rename_document`만 허용. ai_db의 승인된 현재 operation·인자와 정확히 일치해야 document-svc가 멱등 실행 |
+| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 read Tool을 호출. 필수 arguments는 `list_root_items`=없음, `list_folder_children`=`folder_id`, `search_hierarchy`=`query`, `get_document_metadata`=`document_id`, `get_document_content`=`document_id`, `get_breadcrumb`=`folder_id`와 `document_id`(두 키 필수, 정확히 하나만 non-null)다. `list_agent_run_artifacts`는 worker planning만 사용하는 내부 helper다. document-svc가 workspace 멤버십·문서 scope를 확인하고 canonical 본문은 MongoDB에서 읽는다 |
+| POST | `/internal/agent/tools/execute/{tool_name}` | `create_folder`, `rename_folder`, `move_folder`, `move_document`, `rename_document`, `create_document`, `apply_document_edit`를 허용한다. ai_db의 승인된 현재 operation·인자와 정확히 일치해야 document-svc가 멱등 실행하며, 문서 생성·편집은 승인된 artifact의 hash·목적·문서/버전/target을 ai-svc에서 다시 검증한 Markdown만 사용한다 |
+| POST | `/internal/agent/runs/artifacts/register` | ai-svc가 run/workspace/user에 결합된 Markdown artifact를 기존 object storage에 저장하고 hash·purpose·target 메타데이터를 ai_db에 기록한다. `X-Internal-Token` 전용이며 입력 artifact는 이 등록을 선행해야 한다 |
+| POST | `/internal/agent/runs/artifacts/list` | worker planning이 같은 run actor scope의 artifact 메타데이터만 조회한다. 본문·object key는 반환하지 않는다 |
+| POST | `/internal/agent/runs/artifacts/resolve` | document-svc가 승인 operation과 일치하는 artifact id/hash/purpose/document/base/target을 전달하면 ai-svc가 scope·metadata·object storage hash를 재검증하고 Markdown을 반환한다. 본문은 `X-Internal-Token` 전용 응답이다 |
 | POST | `/internal/agent/runs/tool-authorizations/read` | document-svc가 `X-Internal-Token`으로 ai-svc에 run/workspace/user scope 조회 인가 요청 |
 | POST | `/internal/agent/runs/tool-authorizations/execute` | document-svc가 ai-svc에 plan version·operation hash·tool·선행 operation 결과를 포함한 승인 인자 일치 인가 요청 |
 

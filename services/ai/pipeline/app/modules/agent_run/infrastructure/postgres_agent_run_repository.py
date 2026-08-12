@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any
 
 from psycopg.types.json import Json
@@ -11,6 +12,11 @@ from app.modules.agent_run.application.ports import (
 )
 from app.modules.agent_run.domain.entities import AgentRun
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
+from app.modules.wiki_ingestion.infrastructure.object_storage import (
+    delete_object,
+    read_text_object,
+    write_text_object,
+)
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
@@ -142,6 +148,107 @@ class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepository
             return _canonical_json(expected) == _canonical_json(arguments)
         except (TypeError, ValueError):
             return False
+
+    def register_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+        markdown: str,
+    ) -> dict[str, object]:
+        _validate_artifact_metadata(purpose, document_id, base_version, target)
+        _validate_content_hash(markdown, content_hash)
+        object_key = _artifact_object_key(run_id, artifact_id)
+        object_written = False
+        try:
+            with database.connect_ai() as conn:
+                run = conn.execute(
+                    "SELECT 1 FROM agent_runs WHERE id = %s AND workspace_id = %s AND user_id = %s",
+                    (run_id, workspace_id, user_id),
+                ).fetchone()
+                if run is None:
+                    raise KeyError("AgentRun not found.")
+                existing = conn.execute(
+                    "SELECT * FROM agent_run_artifacts WHERE id = %s FOR UPDATE",
+                    (artifact_id,),
+                ).fetchone()
+                if existing is not None:
+                    if not _same_artifact(existing, run_id, workspace_id, user_id, content_hash, purpose,
+                                          document_id, base_version, target):
+                        raise ValueError("Agent artifact registration conflicts with an existing artifact.")
+                    return _artifact_metadata(existing)
+                write_text_object(object_key, markdown)
+                object_written = True
+                row = conn.execute(
+                    """
+                    INSERT INTO agent_run_artifacts (
+                        id, run_id, workspace_id, user_id, content_hash, purpose, object_key,
+                        document_id, base_version, target, expires_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now() + interval '1 day')
+                    RETURNING *
+                    """,
+                    (artifact_id, run_id, workspace_id, user_id, content_hash, purpose, object_key,
+                     document_id, base_version, Json(target) if target is not None else None),
+                ).fetchone()
+        except Exception:
+            if object_written:
+                delete_object(object_key)
+            raise
+        return _artifact_metadata(row)
+
+    def list_artifacts(self, workspace_id: str, user_id: str, run_id: str) -> list[dict[str, object]]:
+        with database.connect_ai() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM agent_run_artifacts
+                WHERE run_id = %s AND workspace_id = %s AND user_id = %s
+                  AND (expires_at IS NULL OR expires_at > now())
+                ORDER BY created_at, id
+                """,
+                (run_id, workspace_id, user_id),
+            ).fetchall()
+        return [_artifact_metadata(row) for row in rows]
+
+    def resolve_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        _validate_artifact_metadata(purpose, document_id, base_version, target)
+        with database.connect_ai() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM agent_run_artifacts
+                WHERE id = %s AND run_id = %s AND workspace_id = %s AND user_id = %s
+                  AND (expires_at IS NULL OR expires_at > now())
+                """,
+                (artifact_id, run_id, workspace_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        if not _same_artifact(row, run_id, workspace_id, user_id, content_hash, purpose,
+                              document_id, base_version, target):
+            raise ValueError("Agent artifact metadata does not match the approved operation.")
+        if not row["object_key"]:
+            raise ValueError("Agent artifact object is not registered.")
+        markdown = read_text_object(row["object_key"])
+        _validate_content_hash(markdown, row["content_hash"])
+        return {**_artifact_metadata(row), "markdown": markdown}
 
     def get_markdown_turn_status(
         self, workspace_id: str, user_id: str, run_id: str
@@ -477,3 +584,83 @@ def _canonical_json(value: object) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
+
+
+def _artifact_object_key(run_id: str, artifact_id: str) -> str:
+    scope = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+    suffix = hashlib.sha256(f"{run_id}:{artifact_id}".encode("utf-8")).hexdigest()
+    return f"agent-runs/{scope}/artifacts/{suffix}.md"
+
+
+def _validate_content_hash(markdown: str, content_hash: str) -> None:
+    if len(markdown.encode("utf-8")) > 5 * 1024 * 1024:
+        raise ValueError("Agent artifact Markdown is too large.")
+    expected = f"sha256:{hashlib.sha256(markdown.encode('utf-8')).hexdigest()}"
+    if content_hash != expected:
+        raise ValueError("Agent artifact content hash does not match its content.")
+
+
+def _validate_artifact_metadata(
+    purpose: str,
+    document_id: str | None,
+    base_version: int | None,
+    target: dict[str, object] | None,
+) -> None:
+    if purpose == "create_document":
+        if document_id is not None or base_version is not None or target is not None:
+            raise ValueError("Document creation artifact target is invalid.")
+        return
+    if purpose != "apply_document_edit":
+        raise ValueError("Agent artifact purpose is invalid.")
+    if not document_id or base_version is None or not _is_document_target(target):
+        raise ValueError("Document edit artifact target is invalid.")
+
+
+def _is_document_target(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"type", "start_line", "end_line"}:
+        return False
+    start_line = value.get("start_line")
+    end_line = value.get("end_line")
+    return (
+        value.get("type") in {"selection", "current_section", "whole_document"}
+        and isinstance(start_line, int)
+        and not isinstance(start_line, bool)
+        and isinstance(end_line, int)
+        and not isinstance(end_line, bool)
+        and start_line >= 1
+        and end_line >= start_line
+    )
+
+
+def _same_artifact(
+    row: Any,
+    run_id: str,
+    workspace_id: str,
+    user_id: str,
+    content_hash: str,
+    purpose: str,
+    document_id: str | None,
+    base_version: int | None,
+    target: dict[str, object] | None,
+) -> bool:
+    return (
+        row["run_id"] == run_id
+        and row["workspace_id"] == workspace_id
+        and row["user_id"] == user_id
+        and row["content_hash"] == content_hash
+        and row["purpose"] == purpose
+        and row["document_id"] == document_id
+        and row["base_version"] == base_version
+        and (row["target"] or None) == (target or None)
+    )
+
+
+def _artifact_metadata(row: Any) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "content_hash": row["content_hash"],
+        "purpose": row["purpose"],
+        "document_id": row["document_id"],
+        "base_version": row["base_version"],
+        "target": row["target"],
+    }

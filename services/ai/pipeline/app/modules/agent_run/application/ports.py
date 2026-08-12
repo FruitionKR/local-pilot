@@ -92,6 +92,40 @@ class AgentToolAuthorizationRepositoryPort(Protocol):
     ) -> bool:
         ...
 
+    def register_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+        markdown: str,
+    ) -> dict[str, object]:
+        ...
+
+    def list_artifacts(self, workspace_id: str, user_id: str, run_id: str) -> list[dict[str, object]]:
+        ...
+
+    def resolve_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        ...
+
 
 class AgentPlanRepositoryPort(Protocol):
     def save_plan(self, run_id: str, plan: AgentPlan) -> None:

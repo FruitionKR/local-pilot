@@ -1,9 +1,12 @@
+import hashlib
 import unittest
 from unittest.mock import MagicMock, patch
 
 from app.modules.agent_run.infrastructure.postgres_agent_run_repository import (
     PostgresAgentRunRepository,
     _canonical_json,
+    _validate_artifact_metadata,
+    _validate_content_hash,
 )
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
@@ -140,6 +143,159 @@ class AgentRunRepositoryTest(unittest.TestCase):
             PostgresAgentRunRepository().get_for_user("workspace-1", "user-1", "run-1")
 
         connect_ai.assert_called_once_with()
+
+    def test_artifact_validation_rejects_hash_and_wrong_target(self) -> None:
+        with self.assertRaises(ValueError):
+            _validate_content_hash("# 문서\n", "sha256:wrong")
+        with self.assertRaises(ValueError):
+            _validate_artifact_metadata(
+                "create_document", "document-1", None, None
+            )
+        with self.assertRaises(ValueError):
+            _validate_artifact_metadata(
+                "apply_document_edit",
+                "document-1",
+                2,
+                {"type": "whole_document", "start_line": 0, "end_line": 3},
+            )
+
+    def test_artifact_resolution_is_workspace_and_user_scoped(self) -> None:
+        connection = MagicMock()
+        result = MagicMock()
+        result.fetchone.return_value = None
+        connection.execute.return_value = result
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect_ai", return_value=connection_context):
+            artifact = PostgresAgentRunRepository().resolve_artifact(
+                run_id="run-1",
+                workspace_id="workspace-2",
+                user_id="user-1",
+                artifact_id="artifact-1",
+                content_hash="sha256:abc",
+                purpose="create_document",
+                document_id=None,
+                base_version=None,
+                target=None,
+            )
+
+        self.assertIsNone(artifact)
+        self.assertIn("workspace_id = %s", connection.execute.call_args.args[0])
+        self.assertEqual(connection.execute.call_args.args[1][2], "workspace-2")
+        self.assertEqual(connection.execute.call_args.args[1][3], "user-1")
+
+    def test_register_artifact_stores_only_object_key_and_scoped_metadata(self) -> None:
+        markdown = "# 문서\n"
+        content_hash = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
+        connection = MagicMock()
+        run_result = MagicMock()
+        run_result.fetchone.return_value = {"id": "run-1"}
+        existing_result = MagicMock()
+        existing_result.fetchone.return_value = None
+        inserted_result = MagicMock()
+        inserted_result.fetchone.return_value = {
+            "id": "artifact-1",
+            "run_id": "run-1",
+            "workspace_id": "workspace-1",
+            "user_id": "user-1",
+            "content_hash": content_hash,
+            "purpose": "create_document",
+            "document_id": None,
+            "base_version": None,
+            "target": None,
+        }
+        connection.execute.side_effect = [run_result, existing_result, inserted_result]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with (
+            patch.object(database, "connect_ai", return_value=connection_context),
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.write_text_object"
+            ) as write_text,
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.delete_object"
+            ) as delete_object,
+        ):
+            result = PostgresAgentRunRepository().register_artifact(
+                run_id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                artifact_id="artifact-1",
+                content_hash=content_hash,
+                purpose="create_document",
+                document_id=None,
+                base_version=None,
+                target=None,
+                markdown=markdown,
+            )
+
+        self.assertEqual(result["id"], "artifact-1")
+        write_text.assert_called_once()
+        delete_object.assert_not_called()
+        self.assertNotIn("markdown", result)
+
+    def test_register_artifact_deletes_object_when_db_insert_fails(self) -> None:
+        markdown = "# 문서\n"
+        content_hash = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
+        connection = MagicMock()
+        run_result = MagicMock()
+        run_result.fetchone.return_value = {"id": "run-1"}
+        existing_result = MagicMock()
+        existing_result.fetchone.return_value = None
+        connection.execute.side_effect = [run_result, existing_result, RuntimeError("db failure")]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with (
+            patch.object(database, "connect_ai", return_value=connection_context),
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.write_text_object"
+            ) as write_text,
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.delete_object"
+            ) as delete_object,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "db failure"):
+                PostgresAgentRunRepository().register_artifact(
+                    run_id="run-1",
+                    workspace_id="workspace-1",
+                    user_id="user-1",
+                    artifact_id="artifact-1",
+                    content_hash=content_hash,
+                    purpose="create_document",
+                    document_id=None,
+                    base_version=None,
+                    target=None,
+                    markdown=markdown,
+                )
+
+        write_text.assert_called_once()
+        delete_object.assert_called_once_with(write_text.call_args.args[0])
+
+    def test_register_artifact_rejects_cross_workspace_run(self) -> None:
+        connection = MagicMock()
+        result = MagicMock()
+        result.fetchone.return_value = None
+        connection.execute.return_value = result
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with patch.object(database, "connect_ai", return_value=connection_context):
+            with self.assertRaises(KeyError):
+                PostgresAgentRunRepository().register_artifact(
+                    run_id="run-1",
+                    workspace_id="workspace-2",
+                    user_id="user-1",
+                    artifact_id="artifact-1",
+                    content_hash="sha256:" + hashlib.sha256("# 문서\n".encode()).hexdigest(),
+                    purpose="create_document",
+                    document_id=None,
+                    base_version=None,
+                    target=None,
+                    markdown="# 문서\n",
+                )
 
 
 def _run_row(

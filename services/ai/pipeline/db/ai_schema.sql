@@ -350,12 +350,16 @@ CREATE TABLE IF NOT EXISTS agent_run_artifacts (
     user_id text NOT NULL,
     content_hash text NOT NULL,
     purpose text NOT NULL,
+    object_key text,
     document_id text,
     base_version bigint,
     target jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz
 );
+
+ALTER TABLE agent_run_artifacts
+    ADD COLUMN IF NOT EXISTS object_key text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_personal_command
     ON skills (owner_user_id, command) WHERE scope_type = 'personal';
