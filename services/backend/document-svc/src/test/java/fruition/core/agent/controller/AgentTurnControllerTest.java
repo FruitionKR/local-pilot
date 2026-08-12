@@ -173,12 +173,25 @@ class AgentTurnControllerTest {
 
     @Test
     void autonomousActionBodiesRejectClientActorScope() throws Exception {
-        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/run-1/approve")
-                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"workspace_id\":\"ws-evil\",\"plan_version\":1,\"operation_hash\":\""
-                                + "a".repeat(64) + "\"}"))
-                .andExpect(status().isBadRequest());
+        String token = "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+        for (String body : new String[]{
+                "{\"workspace_id\":\"ws-evil\",\"plan_version\":1,\"operation_hash\":\"" + "a".repeat(64) + "\"}",
+                "{\"user_id\":\"user-evil\",\"plan_version\":1,\"operation_hash\":\"" + "a".repeat(64) + "\"}",
+                "{\"plan_version\":1,\"operation_hash\":\"" + "a".repeat(64) + "\",\"unexpected\":true}",
+                "{\"plan_version\":\"one\",\"operation_hash\":\"" + "a".repeat(64) + "\"}",
+                "{\"plan_version\":1,\"operation_hash\":123}",
+                "{\"instruction\":\"계획을 다시 세워줘\",\"workspace_id\":\"ws-evil\"}",
+                "{\"instruction\":\"계획을 다시 세워줘\",\"user_id\":\"user-evil\"}",
+                "{\"instruction\":\"계획을 다시 세워줘\",\"unexpected\":true}",
+                "{\"instruction\":{\"text\":\"계획\"}}"
+        }) {
+            String action = body.contains("plan_version") ? "approve" : "revise";
+            mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/runs/run-1/" + action)
+                            .header("Authorization", token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     private AgentTurnRequest request() {
