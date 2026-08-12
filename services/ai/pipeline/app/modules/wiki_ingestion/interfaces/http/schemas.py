@@ -121,6 +121,7 @@ class RebuildPageIn(BaseModel):
 
 class SourceSnapshotRestoreIn(BaseModel):
     page_id: str
+    document_id: str = Field(min_length=1)
 
 
 class _OperationRestoreIn(BaseModel):
@@ -210,6 +211,7 @@ class IngestOperationRestoreIn(_OperationRestoreIn):
             workspace_id=self.workspace_id,
             source_page=SourceSnapshotRestoreCommand(
                 page_id=self.source_page.page_id,
+                document_id=self.source_page.document_id,
             ),
             rebuild_pages=self.rebuild_commands(),
             deleted_pages=tuple(self.deleted_pages),

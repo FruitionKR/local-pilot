@@ -32,6 +32,7 @@ class RebuildPageCommand:
 @dataclass(frozen=True)
 class SourceSnapshotRestoreCommand:
     page_id: str
+    document_id: str
 
 
 @dataclass(frozen=True)

@@ -100,19 +100,20 @@ class ArtifactStore:
         self.writes.append((key, text, content_type))
         return f"s3://bucket/{key}"
 
-    def cleanup_deleted_pages(self, workspace_id: str, page_ids: list[str]) -> None:
-        self.cleaned_pages.append((workspace_id, page_ids))
-
-    def apply_current_state(
+    def apply_current_state_and_cleanup(
         self,
+        operation_id: str,
         workspace_id: str,
         changed_pages: list[dict],
         link_changes: dict[str, list[dict]],
         replace_links: bool,
+        deleted_page_ids: list[str],
     ) -> None:
         self.current_states.append(
             (workspace_id, changed_pages, link_changes, replace_links)
         )
+        if deleted_page_ids:
+            self.cleaned_pages.append((workspace_id, deleted_page_ids))
 
 
 class EmbeddingJob:
@@ -131,8 +132,7 @@ def _restore(store: ArtifactStore) -> ObjectStorageWikiPageRestore:
     return ObjectStorageWikiPageRestore(
         store.read_text,
         store.write_text,
-        store.cleanup_deleted_pages,
-        store.apply_current_state,
+        store.apply_current_state_and_cleanup,
     )
 
 
@@ -152,7 +152,7 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -177,6 +177,122 @@ def test_restore_rebuilds_page_from_selected_contribution_json() -> None:
     assert store.current_states[0][1] == result["changed_pages"]
     assert store.current_states[0][3] is True
     assert embedding_job.calls == [("restore-1", ["C3"])]
+
+
+def test_restore_changed_page_carries_restored_metadata_and_contributions() -> None:
+    store = ArtifactStore(
+        {
+            "wiki/ws-1/pages/C3/ops/A.json": _payload("A", "C3", "A 근거"),
+        }
+    )
+    result = RestoreWikiPagesUseCase(_restore(store)).execute_ingest(
+        IngestOperationRestoreCommand(
+            operation_id="restore-1",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
+            workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    page = result["changed_pages"][0]
+    assert page["title"] == "C3"
+    assert page["summary"] == "A 근거"
+    assert page["source_document_ids"] == ["doc-A"]
+
+
+def test_restore_legacy_contribution_without_document_id_keeps_embedding_unbound() -> None:
+    legacy = json.loads(_payload("A", "C3", "A 근거"))
+    legacy.pop("document_id")
+    legacy["concept"].pop("source_document_ids")
+    legacy["evidence_units"][0].pop("source_document_id")
+    store = ArtifactStore(
+        {"wiki/ws-1/pages/C3/ops/A.json": json.dumps(legacy)}
+    )
+
+    result = RestoreWikiPagesUseCase(_restore(store)).execute_ingest(
+        IngestOperationRestoreCommand(
+            operation_id="restore-1",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
+            workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["changed_pages"][0]["source_document_ids"] == []
+
+
+def test_restore_lint_only_contribution_keeps_document_provenance_unbound() -> None:
+    lint = json.loads(_lint_payload("L", "C3", "lint 근거"))
+    lint["concept"]["source_document_ids"] = ["doc-A"]
+    lint["evidence_units"][0]["source_document_id"] = "doc-A"
+    store = ArtifactStore(
+        {"wiki/ws-1/pages/C3/ops/L.json": json.dumps(lint)}
+    )
+
+    result = RestoreWikiPagesUseCase(_restore(store)).execute_lint(
+        LintOperationRestoreCommand(
+            operation_id="restore-1",
+            target_operation_id="L",
+            workspace_id="ws-1",
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("L", "lint:L"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["changed_pages"][0]["source_document_ids"] == []
+
+
+def test_restore_ingest_falls_back_to_document_id() -> None:
+    legacy = json.loads(_payload("A", "C3", "A 근거"))
+    legacy["concept"].pop("source_document_ids")
+    legacy["evidence_units"][0].pop("source_document_id")
+    store = ArtifactStore(
+        {"wiki/ws-1/pages/C3/ops/A.json": json.dumps(legacy)}
+    )
+
+    result = RestoreWikiPagesUseCase(_restore(store)).execute_ingest(
+        IngestOperationRestoreCommand(
+            operation_id="restore-1",
+            restore_to_operation_id=None,
+            cancel_operation_ids=("target-ingest",),
+            workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+            rebuild_pages=(
+                RebuildPageCommand(
+                    page_id="C3",
+                    keep_contributions=(
+                        RestoreContributionCommand("A", "doc-A"),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    assert result["changed_pages"][0]["source_document_ids"] == ["doc-A"]
 
 
 def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
@@ -215,7 +331,7 @@ def test_restore_replays_ingest_and_lint_artifacts_in_operation_order() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -252,7 +368,7 @@ def test_restore_reports_page_failure_and_keeps_other_success() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -296,7 +412,7 @@ def test_restore_treats_object_storage_error_as_page_failure() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -332,7 +448,7 @@ def test_restore_treats_malformed_contribution_as_page_failure() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="C3",
@@ -360,7 +476,7 @@ def test_ingest_restore_without_previous_source_marks_source_deleted() -> None:
             restore_to_operation_id=None,
             cancel_operation_ids=("target-ingest",),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S_A"),
+            source_page=SourceSnapshotRestoreCommand("S_A", "doc-source"),
             rebuild_pages=(),
             deleted_pages=("C1", "C5"),
         )
@@ -387,7 +503,7 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=("A3", "A4", "A5"),
             workspace_id="ws-1",
-            source_page=SourceSnapshotRestoreCommand("S1"),
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
             rebuild_pages=(
                 RebuildPageCommand(
                     page_id="X",
@@ -417,6 +533,26 @@ def test_ingest_operation_restore_returns_from_a5_to_a2() -> None:
     assert result["deleted_pages"] == ["Z"]
     assert store.writes[0][0] == "wiki/ws-1/pages/S1/ops/restore-1.md"
     assert store.writes[0][1] == "# A2 Source\n"
+
+
+def test_source_restore_carries_title_and_summary_metadata() -> None:
+    store = ArtifactStore(
+        {"wiki/ws-1/pages/S1/ops/A.md": "# A 제목\n\n## Summary\nA 요약\n"}
+    )
+
+    result = RestoreWikiPagesUseCase(_restore(store)).execute_ingest(
+        IngestOperationRestoreCommand(
+            operation_id="restore-1",
+            restore_to_operation_id="A",
+            cancel_operation_ids=("B",),
+            workspace_id="ws-1",
+            source_page=SourceSnapshotRestoreCommand("S1", "doc-source"),
+            rebuild_pages=(),
+        )
+    )
+
+    assert result["changed_pages"][0]["title"] == "A 제목"
+    assert result["changed_pages"][0]["summary"] == "A 요약"
 
 
 def test_lint_operation_restore_replays_remaining_link_support() -> None:

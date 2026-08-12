@@ -137,7 +137,7 @@ public class RestoreExecuteService {
                 lint ? target.getOperationId() : null,
                 lint ? null : sourcePage.targetOperationId(),
                 lint ? null : List.copyOf(excluded),
-                lint ? null : new SourcePage(sourcePage.pageId()),
+                lint ? null : new SourcePage(sourcePage.pageId(), target.getTargetDocumentId()),
                 rebuildPages(plan),
                 lint ? deletedPages(plan) : deletedPagesExcept(plan, sourcePage.pageId()),
                 expected);
@@ -211,5 +211,8 @@ public class RestoreExecuteService {
             @com.fasterxml.jackson.annotation.JsonProperty("document_id") String documentId
     ) {}
 
-    record SourcePage(@com.fasterxml.jackson.annotation.JsonProperty("page_id") String pageId) {}
+    record SourcePage(
+            @com.fasterxml.jackson.annotation.JsonProperty("page_id") String pageId,
+            @com.fasterxml.jackson.annotation.JsonProperty("document_id") String documentId
+    ) {}
 }

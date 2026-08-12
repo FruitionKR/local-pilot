@@ -59,6 +59,7 @@ from app.modules.wiki_ingestion.infrastructure.postgres_wiki_writer import (
     read_optional_text_object as _read_optional_text_object,
     resolve_or_create_wiki_page_id as _resolve_or_create_wiki_page_id,
     upload_wiki_markdown as _upload_wiki_markdown,
+    upsert_document_wiki_link as _upsert_document_wiki_link,
     upsert_wiki_page as _upsert_wiki_page,
     upsert_wiki_page_link as _upsert_wiki_page_link,
 )
@@ -116,66 +117,78 @@ def cleanup_deleted_wiki_pages(
     if not page_ids:
         return
     with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT id
-            FROM wiki_pages
-            WHERE workspace_id = %s
-              AND id = ANY(%s)
-            ORDER BY id
-            FOR UPDATE
-            """,
-            (workspace_id, page_ids),
-        ).fetchall()
-        target_ids = [row["id"] for row in rows]
-        if not target_ids:
-            return
-        vector_rows = conn.execute(
-            """
-            SELECT DISTINCT embedding_vector_id
-            FROM wiki_embedding_units
-            WHERE page_id = ANY(%s)
-            """,
-            (target_ids,),
-        ).fetchall()
-        vector_ids = [row["embedding_vector_id"] for row in vector_rows]
+        _cleanup_deleted_wiki_pages(conn, workspace_id, page_ids)
+
+
+def _cleanup_deleted_wiki_pages(
+    conn: psycopg.Connection,
+    workspace_id: str,
+    page_ids: list[str],
+) -> set[str]:
+    if not page_ids:
+        return set()
+    rows = conn.execute(
+        """
+        SELECT id, user_id
+        FROM wiki_pages
+        WHERE workspace_id = %s
+          AND id = ANY(%s)
+        ORDER BY id
+        FOR UPDATE
+        """,
+        (workspace_id, page_ids),
+    ).fetchall()
+    target_ids = [row["id"] for row in rows]
+    if not target_ids:
+        return set()
+    user_ids = {str(row["user_id"]) for row in rows if row.get("user_id")}
+    vector_rows = conn.execute(
+        """
+        SELECT DISTINCT embedding_vector_id
+        FROM wiki_embedding_units
+        WHERE page_id = ANY(%s)
+        """,
+        (target_ids,),
+    ).fetchall()
+    vector_ids = [row["embedding_vector_id"] for row in vector_rows]
+    conn.execute(
+        """
+        DELETE FROM wiki_page_links
+        WHERE from_page_id = ANY(%s)
+           OR to_page_id = ANY(%s)
+        """,
+        (target_ids, target_ids),
+    )
+    conn.execute(
+        "DELETE FROM document_wiki_links WHERE wiki_page_id = ANY(%s)",
+        (target_ids,),
+    )
+    conn.execute(
+        "DELETE FROM wiki_page_embeddings WHERE page_id = ANY(%s)",
+        (target_ids,),
+    )
+    conn.execute(
+        "DELETE FROM wiki_embedding_units WHERE page_id = ANY(%s)",
+        (target_ids,),
+    )
+    if vector_ids:
         conn.execute(
             """
-            DELETE FROM wiki_page_links
-            WHERE from_page_id = ANY(%s)
-               OR to_page_id = ANY(%s)
+            DELETE FROM wiki_embedding_vectors vector
+            WHERE vector.id = ANY(%s)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM wiki_embedding_units unit
+                  WHERE unit.embedding_vector_id = vector.id
+              )
             """,
-            (target_ids, target_ids),
+            (vector_ids,),
         )
-        conn.execute(
-            "DELETE FROM document_wiki_links WHERE wiki_page_id = ANY(%s)",
-            (target_ids,),
-        )
-        conn.execute(
-            "DELETE FROM wiki_page_embeddings WHERE page_id = ANY(%s)",
-            (target_ids,),
-        )
-        conn.execute(
-            "DELETE FROM wiki_embedding_units WHERE page_id = ANY(%s)",
-            (target_ids,),
-        )
-        if vector_ids:
-            conn.execute(
-                """
-                DELETE FROM wiki_embedding_vectors vector
-                WHERE vector.id = ANY(%s)
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM wiki_embedding_units unit
-                      WHERE unit.embedding_vector_id = vector.id
-                  )
-                """,
-                (vector_ids,),
-            )
-        conn.execute(
-            "UPDATE wiki_pages SET status = 'deleted', updated_at = now() WHERE id = ANY(%s)",
-            (target_ids,),
-        )
+    conn.execute(
+        "UPDATE wiki_pages SET status = 'deleted', updated_at = now() WHERE id = ANY(%s)",
+        (target_ids,),
+    )
+    return user_ids
 
 
 def apply_restored_wiki_state(
@@ -184,15 +197,73 @@ def apply_restored_wiki_state(
     link_changes: dict[str, list[dict[str, Any]]],
     replace_links: bool,
 ) -> None:
-    if not changed_pages and not any(link_changes.values()):
+    user_ids = _apply_restored_wiki_state(
+        workspace_id,
+        changed_pages,
+        link_changes,
+        replace_links,
+    )
+    for user_id in user_ids:
+        try:
+            invalidate_concept_index(user_id, workspace_id)
+        except Exception:
+            logger.warning("concept index cache invalidation failed", exc_info=True)
+
+
+def apply_restored_wiki_state_and_cleanup(
+    operation_id: str,
+    workspace_id: str,
+    changed_pages: list[dict[str, Any]],
+    link_changes: dict[str, list[dict[str, Any]]],
+    replace_links: bool,
+    deleted_page_ids: list[str],
+) -> None:
+    if not changed_pages and not any(link_changes.values()) and not deleted_page_ids:
         return
-    with connect() as conn:
+    with concept_write_lock(workspace_id, operation_id):
+        with connect() as conn:
+            user_ids = _apply_restored_wiki_state(
+                workspace_id,
+                changed_pages,
+                link_changes,
+                replace_links,
+                conn,
+            )
+            user_ids.update(
+                _cleanup_deleted_wiki_pages(conn, workspace_id, deleted_page_ids)
+            )
+        for user_id in user_ids:
+            try:
+                invalidate_concept_index(user_id, workspace_id)
+            except Exception:
+                logger.warning("concept index cache invalidation failed", exc_info=True)
+
+
+def _apply_restored_wiki_state(
+    workspace_id: str,
+    changed_pages: list[dict[str, Any]],
+    link_changes: dict[str, list[dict[str, Any]]],
+    replace_links: bool,
+    conn: psycopg.Connection | None = None,
+) -> set[str]:
+    if not changed_pages and not any(link_changes.values()):
+        return set()
+    user_ids: set[str] = set()
+    with (connect() if conn is None else nullcontext(conn)) as conn:
         page_ids = [str(page["page_id"]) for page in changed_pages]
         rows = conn.execute(
             """
-            SELECT id, page_type, slug, user_id
+            SELECT id, page_type, slug, user_id,
+                   (
+                       SELECT link.document_id
+                       FROM document_wiki_links link
+                       WHERE link.wiki_page_id = wiki_pages.id
+                         AND link.relation_type = 'source_of'
+                       ORDER BY link.created_at
+                       LIMIT 1
+                   ) AS source_document_id
             FROM wiki_pages
-            WHERE workspace_id = %s AND id = ANY(%s) AND status = 'active'
+            WHERE workspace_id = %s AND id = ANY(%s)
             """,
             (workspace_id, page_ids),
         ).fetchall() if page_ids else []
@@ -207,11 +278,103 @@ def apply_restored_wiki_state(
             conn.execute(
                 """
                 UPDATE wiki_pages
-                SET markdown_uri = %s, status = 'active', updated_at = now()
+                SET markdown_uri = %s,
+                    title = COALESCE(%s, title),
+                    summary = COALESCE(%s, summary),
+                    status = 'active',
+                    updated_at = now()
                 WHERE id = %s AND workspace_id = %s
                 """,
-                (storage_uri(str(page["markdown_key"])), page["page_id"], workspace_id),
+                (
+                    storage_uri(str(page["markdown_key"])),
+                    page.get("title"),
+                    page.get("summary"),
+                    page["page_id"],
+                    workspace_id,
+                ),
             )
+
+            source_document_ids = page.get("source_document_ids")
+            if source_document_ids is not None:
+                conn.execute(
+                    """
+                    DELETE FROM document_wiki_links
+                    WHERE wiki_page_id = %s
+                      AND relation_type = 'extracted_concept'
+                    """,
+                    (page["page_id"],),
+                )
+                for document_id in dict.fromkeys(
+                    str(item) for item in source_document_ids if item
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO document_wiki_links (
+                            document_id, wiki_page_id, relation_type,
+                            confidence, workspace_id, created_at
+                        )
+                        VALUES (%s, %s, 'extracted_concept', NULL, %s, now())
+                        ON CONFLICT (document_id, relation_type, wiki_page_id)
+                        DO UPDATE SET workspace_id = EXCLUDED.workspace_id
+                        """,
+                        (document_id, page["page_id"], workspace_id),
+                    )
+
+            old_vectors = conn.execute(
+                """
+                SELECT DISTINCT embedding_vector_id
+                FROM wiki_embedding_units
+                WHERE page_id = %s
+                """,
+                (page["page_id"],),
+            ).fetchall()
+            conn.execute(
+                "DELETE FROM wiki_embedding_units WHERE page_id = %s",
+                (page["page_id"],),
+            )
+            markdown = read_text_object(storage_uri(str(page["markdown_key"])))
+            source_document_id = next(
+                (str(item) for item in (source_document_ids or []) if item),
+                None,
+            )
+            if (
+                source_document_id is None
+                and by_id[str(page["page_id"])]["page_type"] != "concept"
+            ):
+                restored_source_document_id = page.get("source_document_id")
+                source_document_id = (
+                    restored_source_document_id
+                    or by_id[str(page["page_id"])].get("source_document_id")
+                )
+                if restored_source_document_id:
+                    _upsert_document_wiki_link(
+                        conn,
+                        str(source_document_id),
+                        str(page["page_id"]),
+                        "source_of",
+                        1.0,
+                        workspace_id,
+                    )
+            if source_document_id:
+                _persist_embedding_units(
+                    conn,
+                    str(page["page_id"]),
+                    source_document_id,
+                    markdown,
+                )
+            vector_ids = [str(row["embedding_vector_id"]) for row in old_vectors]
+            if vector_ids:
+                conn.execute(
+                    """
+                    DELETE FROM wiki_embedding_vectors vector
+                    WHERE vector.id = ANY(%s)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM wiki_embedding_units unit
+                          WHERE unit.embedding_vector_id = vector.id
+                      )
+                    """,
+                    (vector_ids,),
+                )
 
         if replace_links and page_ids:
             conn.execute(
@@ -221,21 +384,9 @@ def apply_restored_wiki_state(
 
         def resolve(reference: str, user_id: str) -> str | None:
             known = by_ref.get(reference)
-            if known is not None and str(known["user_id"]) == user_id:
-                return str(known["id"])
-            page_type, separator, slug = reference.partition(":")
-            if not separator:
+            if known is None or str(known["user_id"]) != user_id:
                 return None
-            row = conn.execute(
-                """
-                SELECT id
-                FROM wiki_pages
-                WHERE workspace_id = %s AND user_id = %s
-                  AND page_type = %s AND slug = %s AND status = 'active'
-                """,
-                (workspace_id, user_id, page_type, slug),
-            ).fetchone()
-            return str(row["id"]) if row else None
+            return str(known["id"])
 
         for link in link_changes.get("removed_links", []):
             source = by_ref.get(str(link.get("source")))
@@ -266,11 +417,7 @@ def apply_restored_wiki_state(
                     link.get("confidence"),
                     workspace_id,
                 )
-    for user_id in user_ids:
-        try:
-            invalidate_concept_index(user_id, workspace_id)
-        except Exception:
-            logger.warning("concept index cache invalidation failed", exc_info=True)
+    return user_ids
 
 
 REQUIRED_TABLES = (

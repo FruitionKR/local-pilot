@@ -87,7 +87,10 @@ class RestoreExecuteServiceTest {
         ArgumentCaptor<Object> command = ArgumentCaptor.forClass(Object.class);
         verify(outboxWriter).enqueue(eq(response.runId()), eq("ai.maintenance.command"),
                 eq(WORKSPACE), command.capture());
-        assertThat((RestoreExecuteService.RestoreCommand) command.getValue())
+        RestoreExecuteService.RestoreCommand restoreCommand =
+                (RestoreExecuteService.RestoreCommand) command.getValue();
+        assertThat(restoreCommand.sourcePage().documentId()).isEqualTo("doc_A");
+        assertThat(restoreCommand)
                 .extracting(RestoreExecuteService.RestoreCommand::expectedContributions)
                 .isEqualTo(Map.of("wp_S_A", List.of("op_a1:1:1")));
     }

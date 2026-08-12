@@ -28,6 +28,9 @@ class RebuiltConceptPage:
     markdown: str
     operation_ids: tuple[str, ...]
     supported_links: tuple[dict[str, Any], ...]
+    title: str
+    summary: str
+    source_document_ids: tuple[str, ...]
 
 
 def load_concept_contributions(
@@ -110,11 +113,21 @@ def rebuild_concept_page(
     if len(pages) != 1:
         raise ConceptContributionError("concept rebuild must produce exactly one page")
 
+    concept = normalized["concept_ledger"][0]
+    source_document_ids = _authoritative_document_ids(contribution_json)
+
     return RebuiltConceptPage(
         page_id=page_id,
         markdown=str(pages[0]["markdown"]),
         operation_ids=tuple(item.operation_id for item in ordered),
         supported_links=_supported_links(contribution_json),
+        title=str(concept.get("title") or ""),
+        summary=str(
+            concept.get("definition")
+            or concept.get("why_page_worthy")
+            or ""
+        ),
+        source_document_ids=tuple(source_document_ids),
     )
 
 
@@ -149,10 +162,16 @@ def _merge_contributions(
         if isinstance(item, dict)
     )
     document_ids = merged_concept.get("source_document_ids", [])
+    if not document_ids:
+        document_ids = _unique(
+            item.get("source_document_id")
+            for item in evidence_units
+            if item.get("source_document_id")
+        )
     document_id = str(
         document_ids[0]
         if document_ids
-        else contributions[0].get("document_id") or "unknown"
+        else contributions[0].get("document_id") or ""
     )
     return {
         "document": {
@@ -175,6 +194,35 @@ def _supported_links(
     contributions: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], ...]:
     return tuple(replay_supported_links(contributions))
+
+
+def _authoritative_document_ids(
+    contributions: list[dict[str, Any]],
+) -> list[str]:
+    document_ids: list[str] = []
+    for contribution in contributions:
+        if contribution.get("artifact_type") not in (None, "ingest", "document"):
+            continue
+        contribution_document_ids: list[str] = []
+        concept = contribution.get("concept") or {}
+        contribution_document_ids.extend(
+            str(document_id)
+            for document_id in concept.get("source_document_ids", [])
+            if document_id and not str(document_id).startswith("lint:")
+        )
+        contribution_document_ids.extend(
+            str(item["source_document_id"])
+            for item in contribution.get("evidence_units", [])
+            if isinstance(item, dict)
+            and item.get("source_document_id")
+            and not str(item["source_document_id"]).startswith("lint:")
+        )
+        if not contribution_document_ids:
+            document_id = str(contribution.get("document_id") or "")
+            if document_id and not document_id.startswith("lint:"):
+                contribution_document_ids.append(document_id)
+        document_ids.extend(contribution_document_ids)
+    return _unique(document_ids)
 
 
 def _merge_source_key_points(
