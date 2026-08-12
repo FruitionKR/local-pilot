@@ -8,10 +8,16 @@ from app.modules.markdown_edit.domain.entities import GeneratedMarkdownDocument,
 
 
 PROTECTED_EDIT_GOALS = {"cleanup", "style_change", "shorten"}
+TASK_LIST_EDIT_GOALS = {"cleanup", "style_change", "translate", "shorten"}
 PLAIN_TEXT_EDIT_GOALS = {"cleanup", "style_change", "translate", "shorten"}
 PRESERVE_WORDS = ("유지", "보존", "그대로", "preserve", "keep", "unchanged")
-CHANGE_WORDS = ("수정", "변경", "바꿔", "교체", "change", "edit", "replace")
-STRUCTURE_WORDS = ("frontmatter", "이미지", "image", "표", "table", "각주", "footnote", "링크", "link", "code")
+CHANGE_WORDS = ("수정", "변경", "바꿔", "교체", "표시", "change", "edit", "replace")
+STRUCTURE_WORDS = (
+    "frontmatter", "이미지", "image", "표", "table", "각주", "footnote", "링크", "link", "code",
+    "목록", "리스트", "list", "checklist", "체크리스트", "checkbox", "체크박스", "task list",
+)
+TASK_LIST_MARKER_PATTERN = r"(?m)^[ \t]*[-*+][ \t]+\[[ xX]\](?:[ \t]+|[ \t]*\r?$)"
+PROTECTED_TOKEN_PATTERN = r"\{\{FRUITION_PROTECTED_\d{4}\}\}"
 
 
 @dataclass(frozen=True)
@@ -72,11 +78,16 @@ def validate_markdown_create_output(document: GeneratedMarkdownDocument) -> list
 
 
 def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
-    if request.edit_goal not in PROTECTED_EDIT_GOALS or _explicit_structure_change(request.instruction):
+    preserves_structured_markdown = request.edit_goal in PROTECTED_EDIT_GOALS
+    preserves_task_markers = request.edit_goal in TASK_LIST_EDIT_GOALS
+    if (not preserves_structured_markdown and not preserves_task_markers) or _explicit_structure_change(
+        request.instruction
+    ):
         return ProtectedMarkdown(markdown=request.markdown, fragments=())
 
     markdown = request.markdown
     fragments: list[ProtectedFragment] = []
+    used_tokens = set(re.findall(PROTECTED_TOKEN_PATTERN, markdown))
     patterns = (
         ("frontmatter", r"(?s)\A---\r?\n.*?\r?\n---(?=\r?\n|\Z)"),
         ("code_fence", r"(?ms)^(`{3,}|~{3,})[^\n]*\n.*?^\1\s*$"),
@@ -93,11 +104,13 @@ def protect_markdown(request: MarkdownEditRequest) -> ProtectedMarkdown:
         ("link", r"(?<!!)\[[^\]\n]+\]\([^\)\n]+\)"),
         ("footnote_definition", r"(?m)^\[\^[^\]\n]+\]:[^\n]*(?:\r?\n(?: {2,}|\t)[^\n]*)*"),
         ("divider", r"(?m)^(?:---|\*\*\*)$"),
-    )
+    ) if preserves_structured_markdown else ()
+    if preserves_task_markers:
+        patterns += (("task_list_marker", TASK_LIST_MARKER_PATTERN),)
     for kind, pattern in patterns:
         markdown = re.sub(
             pattern,
-            lambda match, kind=kind: _protect_match(kind, match.group(0), fragments),
+            lambda match, kind=kind: _protect_match(kind, match.group(0), fragments, used_tokens),
             markdown,
         )
     return ProtectedMarkdown(markdown=markdown, fragments=tuple(fragments))
@@ -245,8 +258,18 @@ def repair_markdown_output(request: MarkdownEditRequest, replacement: str) -> st
     return repaired
 
 
-def _protect_match(kind: str, markdown: str, fragments: list[ProtectedFragment]) -> str:
-    token = f"{{{{FRUITION_PROTECTED_{len(fragments) + 1:04d}}}}}"
+def _protect_match(
+    kind: str,
+    markdown: str,
+    fragments: list[ProtectedFragment],
+    used_tokens: set[str],
+) -> str:
+    token_number = len(fragments) + 1
+    token = f"{{{{FRUITION_PROTECTED_{token_number:04d}}}}}"
+    while token in used_tokens:
+        token_number += 1
+        token = f"{{{{FRUITION_PROTECTED_{token_number:04d}}}}}"
+    used_tokens.add(token)
     fragments.append(ProtectedFragment(kind=kind, token=token, markdown=markdown))
     return token
 

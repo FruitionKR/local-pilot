@@ -129,6 +129,90 @@ class MarkdownOutputContractTest(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(restored, source)
 
+    def test_reserves_literal_tokens_for_nested_mixed_task_markers(self) -> None:
+        source = (
+            "설명 {{FRUITION_PROTECTED_0001}}\n\n"
+            "- [ ] 열린 작업\n"
+            "  * [x] 완료된 하위 작업\n"
+            "  + [X] 대문자 완료 하위 작업\n"
+            "- [ ] 두 번째 열린 작업"
+        )
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬어줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        protected = protect_markdown(request)
+
+        self.assertEqual(
+            [fragment.token for fragment in protected.fragments],
+            [
+                "{{FRUITION_PROTECTED_0002}}",
+                "{{FRUITION_PROTECTED_0003}}",
+                "{{FRUITION_PROTECTED_0004}}",
+                "{{FRUITION_PROTECTED_0005}}",
+            ],
+        )
+        restored, failures = protected.restore(protected.markdown)
+        self.assertEqual(failures, [])
+        self.assertEqual(restored, source)
+        self.assertNotIn("{{FRUITION_PROTECTED_0002}}", restored)
+        self.assertEqual(restored.count("{{FRUITION_PROTECTED_0001}}"), 1)
+
+    def test_protects_empty_task_markers_with_crlf_in_nested_lists(self) -> None:
+        source = (
+            "설명\r\n"
+            "- [ ]\r\n"
+            "  * [x]\r\n"
+            "  + [X]\r\n"
+            "- [ ]\r\n"
+        )
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬어줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        protected = protect_markdown(request)
+
+        self.assertEqual(len(protected.fragments), 4)
+        restored, failures = protected.restore(protected.markdown)
+        self.assertEqual(failures, [])
+        self.assertEqual(restored, source)
+
+    def test_keeps_lf_task_marker_behavior_unchanged(self) -> None:
+        source = "- [ ]\n  * [x]\n- [X]\n"
+        request = MarkdownEditRequest(
+            instruction="문장만 자연스럽게 다듬어줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        protected = protect_markdown(request)
+
+        self.assertEqual(len(protected.fragments), 3)
+        restored, failures = protected.restore(protected.markdown)
+        self.assertEqual(failures, [])
+        self.assertEqual(restored, source)
+
+    def test_does_not_protect_task_markers_for_explicit_structure_change(self) -> None:
+        source = "- [ ] 열린 작업\n  - [x] 완료된 하위 작업"
+        request = MarkdownEditRequest(
+            instruction="체크박스를 완료 상태로 표시해줘.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="style_change",
+        )
+
+        protected = protect_markdown(request)
+
+        self.assertEqual(protected.markdown, source)
+        self.assertEqual(protected.fragments, ())
+
     def test_reports_missing_protected_token(self) -> None:
         request = MarkdownEditRequest(
             instruction="본문만 다듬고 이미지는 유지해줘.",
