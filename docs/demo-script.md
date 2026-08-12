@@ -95,7 +95,7 @@ pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-e
 docker compose --env-file infra/.env \
   -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
   up -d --build pipeline-api ingest-worker query-task-worker agent-task-worker \
-  maintenance-task-worker edit-event-consumer
+  maintenance-task-worker edit-event-consumer pipeline-agent-worker
 curl http://localhost:8000/health
 ```
 

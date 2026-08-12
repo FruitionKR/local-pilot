@@ -6,7 +6,7 @@ metadata:
   labels:
     app: pipeline-agent-worker
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: pipeline-agent-worker
