@@ -137,7 +137,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
     def test_provider_reasoning_parameters_are_sent_without_claude_thinking(self) -> None:
         cases = (
             ("openai", "gpt-5-nano", {"reasoning_effort": "minimal"}),
-            ("gemini", "gemini-2.5-flash-lite", {"reasoning_effort": "low"}),
+            ("gemini", "gemini-3.1-flash-lite", {"reasoning_effort": "low"}),
             ("claude", "claude-3-5-haiku-20241022", {}),
         )
         for provider, model, expected_profile in cases:
@@ -161,6 +161,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
                 ) as urlopen:
                     client.complete_text("system prompt", "user prompt")
                 body = json.loads(urlopen.call_args.args[0].data)
+                self.assertEqual(body["model"], model)
                 self.assertEqual(
                     {key: body[key] for key in body if key == "reasoning_effort"},
                     expected_profile,

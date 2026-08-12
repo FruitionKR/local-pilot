@@ -59,15 +59,15 @@ def test_api_defaults_validate_and_preserve_request_snapshot() -> None:
         user_id="local-user",
         workspace_id="local-workspace",
         provider="gemini",
-        model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
     )
 
     resolved = resolve_api_defaults(command)
 
     assert resolved.provider == "gemini"
-    assert resolved.model == "gemini-2.5-flash-lite"
+    assert resolved.model == "gemini-3.1-flash-lite"
     assert command.provider == "gemini"
-    assert command.model == "gemini-2.5-flash-lite"
+    assert command.model == "gemini-3.1-flash-lite"
     assert resolve_endpoint(resolved) == (
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     )

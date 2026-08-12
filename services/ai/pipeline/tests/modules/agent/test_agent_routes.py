@@ -203,7 +203,7 @@ class AgentRoutesTest(unittest.TestCase):
         payload = AgentTurnRequestBody(
             message="문서를 정리해줘",
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
         )
         with patch(
             "app.modules.agent.interfaces.http.dependencies.build_handle_agent_turn_use_case",
@@ -213,7 +213,7 @@ class AgentRoutesTest(unittest.TestCase):
 
         build_use_case.assert_called_once_with(
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
         )
 
     def test_agent_turn_accepts_response_preferences(self) -> None:

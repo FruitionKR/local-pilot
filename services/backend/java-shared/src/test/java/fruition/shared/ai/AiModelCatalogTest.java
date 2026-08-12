@@ -13,7 +13,7 @@ class AiModelCatalogTest {
         assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::provider)
                 .containsExactly("openai", "gemini", "claude");
         assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::model)
-                .containsExactly("gpt-5-nano", "gemini-2.5-flash-lite", "claude-3-5-haiku-20241022");
+                .containsExactly("gpt-5-nano", "gemini-3.1-flash-lite", "claude-3-5-haiku-20241022");
     }
 
     @Test
@@ -34,7 +34,7 @@ class AiModelCatalogTest {
                 .isInstanceOf(InvalidAiModelException.class);
         assertThatThrownBy(() -> catalog.resolve("claude", "claude-legacy"))
                 .isInstanceOf(InvalidAiModelException.class);
-        assertThatThrownBy(() -> catalog.resolve("openai", "gemini-2.5-flash-lite"))
+        assertThatThrownBy(() -> catalog.resolve("gemini", "gemini-2.5-flash-lite"))
                 .isInstanceOf(InvalidAiModelException.class);
     }
 }

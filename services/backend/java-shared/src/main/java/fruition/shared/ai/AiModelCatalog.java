@@ -16,7 +16,7 @@ public class AiModelCatalog {
 
     private static final List<AiModel> SUPPORTED_MODELS = List.of(
             new AiModel("openai", "gpt-5-nano", "GPT-5 nano"),
-            new AiModel("gemini", "gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+            new AiModel("gemini", "gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
             new AiModel("claude", "claude-3-5-haiku-20241022", "Claude 3.5 Haiku")
     );
 

@@ -53,7 +53,7 @@ class PipelineSkillRequesterTest {
         requester().author("ws_1", "user_1", new SkillAuthoringRequest(
                 "personal", "meeting-notes", null,
                 "회의록을 작성해줘", "enhance", List.of("doc_1")),
-                new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-2.5-flash-lite"));
+                new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-3.1-flash-lite"));
 
         assertThat(method.get()).isEqualTo("POST");
         assertThat(uri.get()).isEqualTo("/skills/author");
@@ -63,7 +63,7 @@ class PipelineSkillRequesterTest {
                 .contains("\"user_id\":\"user_1\"")
                 .contains("\"reference_document_ids\":[\"doc_1\"]")
                 .contains("\"provider\":\"gemini\"")
-                .contains("\"model\":\"gemini-2.5-flash-lite\"")
+                .contains("\"model\":\"gemini-3.1-flash-lite\"")
                 .doesNotContain("capabilities", "allowed_tools");
     }
 

@@ -151,7 +151,7 @@ class QueryRequestTest(unittest.TestCase):
                     "workspace_id": "ws_target",
                     "question": "질문",
                     "provider": "gemini",
-                    "model": "gemini-2.5-flash-lite",
+                    "model": "gemini-3.1-flash-lite",
                     "allow_web_search": True,
                 },
                 headers={"X-Internal-Token": "test-token"},
@@ -160,7 +160,7 @@ class QueryRequestTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         build_use_case.assert_called_once_with(
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             allow_web_search=True,
         )
         use_case.execute.assert_called_once_with(
@@ -176,7 +176,7 @@ class QueryRequestTest(unittest.TestCase):
             workspace_id="ws_target",
             question="질문",
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             allow_web_search=True,
         )
         with patch(
@@ -187,7 +187,7 @@ class QueryRequestTest(unittest.TestCase):
 
         build_use_case.assert_called_once_with(
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             allow_web_search=True,
         )
 

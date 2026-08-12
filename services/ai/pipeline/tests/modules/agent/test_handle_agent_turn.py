@@ -634,7 +634,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
             AgentTurnRequest(
                 message="분기 문서를 폴더별로 정리해줘",
                 provider="gemini",
-                model="gemini-2.5-flash-lite",
+                model="gemini-3.1-flash-lite",
                 workspace_id="workspace-1",
                 user_id="user-1",
             )
@@ -645,7 +645,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
         self.assertEqual(result.run_status, "queued")
         self.assertEqual(getattr(starter.requests[0], "skill_version_id"), "version-1")
         self.assertEqual(getattr(starter.requests[0], "provider"), "gemini")
-        self.assertEqual(getattr(starter.requests[0], "model"), "gemini-2.5-flash-lite")
+        self.assertEqual(getattr(starter.requests[0], "model"), "gemini-3.1-flash-lite")
         self.assertEqual(editor.requests, [])
 
     def test_mutation_without_scope_fails_before_direct_intent_recheck(self) -> None:

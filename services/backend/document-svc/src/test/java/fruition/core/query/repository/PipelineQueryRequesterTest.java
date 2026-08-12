@@ -59,10 +59,10 @@ class PipelineQueryRequesterTest {
 
     @Test
     void query_sendsAllowWebSearchAsBoolean() {
-        requester().query("ws_abc123", "질문", "gemini", "gemini-2.5-flash-lite", true);
+        requester().query("ws_abc123", "질문", "gemini", "gemini-3.1-flash-lite", true);
 
         assertThat(capturedBody.get())
-                .contains("\"provider\":\"gemini\"", "\"model\":\"gemini-2.5-flash-lite\"")
+                .contains("\"provider\":\"gemini\"", "\"model\":\"gemini-3.1-flash-lite\"")
                 .contains("\"allow_web_search\":true");
     }
 

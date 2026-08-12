@@ -320,7 +320,7 @@ def test_unregistered_agent_failure_is_not_durable() -> None:
     [
         (None, "gpt-5-nano", "provider and model are required"),
         ("openai", "unsupported-model", "Unsupported model"),
-        ("gemini", "gpt-5-nano", "Expected gemini-2.5-flash-lite"),
+        ("gemini", "gpt-5-nano", "Expected gemini-3.1-flash-lite"),
     ],
 )
 def test_invalid_agent_selection_is_terminally_registered(
@@ -508,7 +508,7 @@ def test_agent_command_registers_supplied_run_and_deterministic_job_once() -> No
         "apply_operation_id": "op-1",
         "message": "문서를 정리해줘",
         "provider": "gemini",
-        "model": " gemini-2.5-flash-lite ",
+        "model": " gemini-3.1-flash-lite ",
         "editor_snapshot": {"markdown": "# 제목"},
     }
     connection = MagicMock()
@@ -533,7 +533,7 @@ def test_agent_command_registers_supplied_run_and_deterministic_job_once() -> No
     assert result is None
     run_insert = connection.execute.call_args_list[0]
     assert "provider, model" in run_insert.args[0]
-    assert run_insert.args[1][4:6] == ("gemini", "gemini-2.5-flash-lite")
+    assert run_insert.args[1][4:6] == ("gemini", "gemini-3.1-flash-lite")
     job_insert = connection.execute.call_args_list[1]
     assert job_insert.args[1][0] == f"{command['run_id']}:markdown_turn"
 

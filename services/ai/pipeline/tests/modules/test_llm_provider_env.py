@@ -36,7 +36,7 @@ EXPECTED = {
     "gemini": (
         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
         "GEMINI_API_KEY",
-        "gemini-2.5-flash-lite",
+        "gemini-3.1-flash-lite",
     ),
     "claude": ("https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY", "claude-3-5-haiku-20241022"),
 }
