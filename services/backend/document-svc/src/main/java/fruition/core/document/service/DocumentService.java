@@ -87,6 +87,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -635,6 +636,44 @@ public class DocumentService {
         });
     }
 
+    private byte[] readMinioObject(String objectKey) {
+        try (InputStream inputStream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(storageProps.getBucket())
+                        .object(objectKey)
+                        .build())) {
+            return inputStream.readAllBytes();
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 기존 원본을 읽지 못했습니다.", e);
+        }
+    }
+
+    private void registerMinioRollbackRestore(String objectKey, byte[] previousBytes) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_COMMITTED) {
+                    return;
+                }
+                try (InputStream inputStream = new ByteArrayInputStream(previousBytes)) {
+                    minioClient.putObject(
+                            PutObjectArgs.builder()
+                                    .bucket(storageProps.getBucket())
+                                    .object(objectKey)
+                                    .stream(inputStream, previousBytes.length, -1)
+                                    .contentType("text/markdown")
+                                    .build()
+                    );
+                } catch (Exception e) {
+                    log.error("[MinIO 오브젝트 롤백 복원 실패] objectKey={} error={}", objectKey, e.getMessage(), e);
+                }
+            }
+        });
+    }
+
     /** DB 트랜잭션 커밋 뒤 별도 로컬 작업 큐에 등록한다. */
     private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -737,11 +776,26 @@ public class DocumentService {
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
+        String objectKey = normalizeObjectKey(document.getSourceUri());
+        byte[] previousBytes = readMinioObject(objectKey);
+        Optional<MongoDocumentEditState> currentState = mongoDocumentEditStore.findState(documentId);
+        if (currentState.map(state -> fullContentHash.equals(state.getContentHash())).orElse(false)
+                && fullContentHash.equals(document.getContentHash())
+                && Arrays.equals(previousBytes, bytes)) {
+            return;
+        }
+
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState legacyState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        registerMinioRollbackRestore(objectKey, previousBytes);
+
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(normalizeObjectKey(document.getSourceUri()))
+                            .object(objectKey)
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()
@@ -755,6 +809,14 @@ public class DocumentService {
                 documentId, contentHashPrefix(fullContentHash), bytes.length,
                 deltaMarkdown != null ? deltaMarkdown.length() : 0);
         enqueueIngest(document);
+
+        long baseRevision = currentState
+                .map(MongoDocumentEditState::getRevision)
+                .orElse(document.getCurrentVersion());
+        mongoDocumentEditStore.save(
+                document.getWorkspaceId(), documentId, fullMarkdown, fullContentHash,
+                baseRevision, "chat-export-regenerate:" + fullContentHash,
+                document.getUserId(), document.getCurrentVersion(), legacyState);
     }
 
     /**

@@ -26,6 +26,7 @@ import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
 import fruition.core.document.mongo.MongoDocumentEditSaveResult;
+import fruition.core.document.mongo.MongoDocumentEditState;
 import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
@@ -35,9 +36,11 @@ import fruition.shared.util.StorageProperties;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.authz.WorkspaceNotFoundException;
+import io.minio.GetObjectResponse;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
+import okhttp3.Headers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,13 +49,18 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -503,6 +511,190 @@ class DocumentServiceBlocksTest {
         verify(mongoDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
                 eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
+    }
+
+    @Test
+    @DisplayName("채팅 full 재생성은 기존 본문에 delta를 한 번만 반영하고 원본 메타데이터를 보존한다")
+    void regenerateChatExportDocument_updatesCanonicalMongoProjection() throws Exception {
+        String documentId = "chatdoc_1";
+        String sourceUri = "sources/documents/chatdoc_1/original";
+        String oldMarkdown = "alpha\nbeta\n";
+        String fullMarkdown = "alpha\nbeta\ngamma\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
+                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+        MongoDocumentEditState staleState = new MongoDocumentEditState(
+                documentId, WORKSPACE_ID, oldMarkdown, 2L,
+                legacyState.getContentHash(), USER_ID, Instant.now());
+        AtomicReference<MongoDocumentEditState> currentState = new AtomicReference<>(staleState);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(mongoDocumentEditStore.findState(documentId))
+                .thenAnswer(invocation -> Optional.of(currentState.get()));
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_ingest");
+        when(mongoDocumentEditStore.save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class)))
+                .thenAnswer(invocation -> {
+                    long baseRevision = invocation.getArgument(4);
+                    String markdown = invocation.getArgument(2);
+                    String contentHash = invocation.getArgument(3);
+                    Instant updatedAt = Instant.now();
+                    currentState.set(new MongoDocumentEditState(
+                            documentId, WORKSPACE_ID, markdown, baseRevision + 1,
+                            contentHash, USER_ID, updatedAt));
+                    return new MongoDocumentEditSaveResult(
+                            baseRevision, staleState.getMarkdown(), staleState.getContentHash(),
+                            baseRevision + 1, contentHash, updatedAt, USER_ID, true);
+                });
+
+        documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-hash", "gamma\n");
+
+        DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, documentId);
+
+        assertThat(response.markdown()).isEqualTo(fullMarkdown);
+        assertThat(response.markdown().lines().filter("gamma"::equals).count()).isEqualTo(1);
+        assertThat(response.sourceUri()).isEqualTo(sourceUri);
+        assertThat(response.editRevision()).isEqualTo(3L);
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+    }
+
+    @Test
+    @DisplayName("첫 채팅 full 재생성은 기존 legacy 본문으로 Mongo를 초기화한 뒤 새 원본을 저장한다")
+    void regenerateChatExportDocument_withoutMongoState_preservesLegacyBase() throws Exception {
+        String documentId = "chatdoc_first";
+        String sourceUri = "sources/documents/chatdoc_first/original";
+        String oldMarkdown = "기존 본문\n";
+        String fullMarkdown = "기존 본문\n새 문답\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
+                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
+        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.empty());
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_first");
+
+        documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-first-hash", "새 문답\n");
+
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-first-hash"),
+                eq(1L), eq("chat-export-regenerate:full-first-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+        verify(editStateInitializer).initializeIfNeeded(document);
+        verify(minioClient).getObject(any());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    @DisplayName("같은 full hash 재시도는 MinIO와 operation/outbox를 다시 만들지 않는다")
+    void regenerateChatExportDocument_sameHash_isNoOp() throws Exception {
+        String documentId = "chatdoc_retry";
+        String fullMarkdown = "새 full 본문\n";
+        String sourceUri = "sources/documents/chatdoc_retry/original";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 10,
+                sourceUri, "full-hash", "chat_export");
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new MongoDocumentEditState(
+                documentId, WORKSPACE_ID, "기존 본문\n", 2L, "full-hash", USER_ID, Instant.now())));
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(fullMarkdown.getBytes(StandardCharsets.UTF_8))));
+
+        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+
+        verify(minioClient).getObject(any());
+        verify(minioClient, never()).putObject(any(PutObjectArgs.class));
+        verify(editStateInitializer, never()).initializeIfNeeded(any());
+        verify(ingestOperationStarter, never()).start(anyString(), anyString(), anyString());
+        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+        verify(mongoDocumentEditStore, never()).save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class));
+    }
+
+    @Test
+    @DisplayName("JPA 롤백으로 원복된 재생성은 Mongo hash가 같아도 다시 큐에 등록한다")
+    void regenerateChatExportDocument_retryAfterJpaRollback_regeneratesAndEnqueues() throws Exception {
+        String documentId = "chatdoc_commit_retry";
+        String sourceUri = "sources/documents/chatdoc_commit_retry/original";
+        String oldMarkdown = "기존 본문\n";
+        String fullMarkdown = "재생성 본문\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
+                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new MongoDocumentEditState(
+                documentId, WORKSPACE_ID, fullMarkdown, 2L, "full-hash", USER_ID, Instant.now())));
+        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_retry");
+
+        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+
+        verify(minioClient).getObject(any());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(ingestOperationStarter).start(WORKSPACE_ID, USER_ID, documentId);
+        verify(ingestCommandOutbox).enqueue(
+                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), eq(true),
+                eq("op_retry"), eq(1L), eq("full-hash"));
+        verify(mongoDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+    }
+
+    @Test
+    @DisplayName("MinIO overwrite 뒤 큐 등록 실패 시 기존 object를 복원하고 Mongo 저장을 실행하지 않는다")
+    void regenerateChatExportDocument_queueFailure_restoresOriginalObject() throws Exception {
+        String documentId = "chatdoc_rollback";
+        String sourceUri = "sources/documents/chatdoc_rollback/original";
+        String oldMarkdown = "기존 본문\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
+                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
+        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.empty());
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId))
+                .thenThrow(new RuntimeException("queue failure"));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            assertThatThrownBy(() -> documentService.regenerateChatExportDocument(
+                    documentId, "새 본문\n", "new-hash", "새 본문\n"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("queue failure");
+            TransactionSynchronizationManager.getSynchronizations().forEach(
+                    synchronization -> synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
+        verify(ingestOperationStarter).start(WORKSPACE_ID, USER_ID, documentId);
+        verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
+        verify(mongoDocumentEditStore, never()).save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), anyLong(), any(DocumentEditState.class));
     }
 
     @Test
