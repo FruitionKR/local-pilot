@@ -86,21 +86,25 @@ public class RestoreRebuildApplier {
         recordFailedActions(operation, request);
 
         int changed = (int) operationChangeRepository.countByOperationId(operationId);
+        int changedPages = (int) operationChangeRepository.findByOperationIdOrderByIdAsc(operationId).stream()
+                .filter(change -> change.getResourceType() == ResourceType.wiki_page)
+                .filter(change -> change.getChangeType() == ChangeType.restored
+                        || change.getChangeType() == ChangeType.rebuilt)
+                .map(OperationChange::getResourceId)
+                .distinct()
+                .count();
         OperationStatus status = request.failedPagesOrEmpty().isEmpty() && !request.isFailure()
                 ? OperationStatus.succeeded
                 : OperationStatus.partially_succeeded;
-        String summary = resultSummary(request);
+        String summary = resultSummary(request, changedPages);
         operation.complete(status, summary, changed, payloadHash, now);
         return new OperationResultResponse(operationId, status.name(), changed);
     }
 
     /** llmPipeline 결과의 페이지·링크·실패 수를 조회 화면에서 바로 읽을 수 있게 남긴다. */
-    private String resultSummary(OperationResultRequest request) {
-        if (request.summary() != null && !request.summary().isBlank()) {
-            return request.summary();
-        }
+    private String resultSummary(OperationResultRequest request, int changed) {
         OperationResultRequest.LinkChanges links = request.linkChangesOrEmpty();
-        return "페이지 변경 " + request.changedPages().size() + "건"
+        return "페이지 변경 " + changed + "건"
                 + " · 삭제 " + request.deletedPagesOrEmpty().size() + "건"
                 + " · 링크 제거 " + links.removedLinks().size() + "건"
                 + " · 링크 복원 " + links.restoredLinks().size() + "건"

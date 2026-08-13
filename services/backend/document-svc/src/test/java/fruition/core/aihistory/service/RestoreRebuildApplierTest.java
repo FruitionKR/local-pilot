@@ -133,12 +133,47 @@ class RestoreRebuildApplierTest {
     }
 
     @Test
-    @DisplayName("페이지 실패가 없어도 failed_actions가 있으면 부분 성공이고 링크 변경 수를 요약한다")
-    void marksPartialWhenActionFailedAndSummarizesLinkChanges() {
-        OperationLog operation = givenOperation(manifest(PageRestorePlan.delete("C9")));
+    @DisplayName("source page 변경을 포함한 최종 변경 수로 재조립 summary를 확정한다")
+    void summarizesSourcePageAndRebuiltPageChanges() {
+        OperationLog operation = givenOperation(manifest(
+                PageRestorePlan.restore("S_A", 2L, "op_a1", 1),
+                PageRestorePlan.rebuild(PAGE_ID, keptOf(2))));
+        givenPreviousRevision(4, "sha256:old");
+        when(operationChangeRepository.countByOperationId(OPERATION_ID)).thenReturn(3L);
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID)).thenReturn(List.of(
+                change(ResourceType.wiki_page, "S_A", ChangeType.restored),
+                change(ResourceType.wiki_page, PAGE_ID, ChangeType.delegated),
+                change(ResourceType.wiki_page, PAGE_ID, ChangeType.rebuilt)));
+
+        OperationResultRequest request = new OperationResultRequest(
+                OPERATION_ID, "restore", "succeeded", WORKSPACE_ID, USER_ID, "doc_A",
+                "페이지 변경 1건", List.of(new OperationResultRequest.ChangedPage(
+                        PAGE_ID, "concept", "wiki/ws_1/pages/C3/ops/" + OPERATION_ID + ".md",
+                        null, "sha256:new", null)), List.of());
+
+        applier.apply(OPERATION_ID, request, List.of(rebuilt("sha256:new")), "hash", NOW);
+
+        assertThat(operation.getSummary()).isEqualTo("페이지 변경 2건 · 삭제 0건 · 링크 제거 0건 · 링크 복원 0건 · 실패 0건");
+        assertThat(operation.getChangedResourceCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("페이지가 아닌 변경은 페이지 요약에 포함하지 않고 전체 변경 수에는 포함한다")
+    void excludesUnrelatedChangesFromPageSummary() {
+        OperationLog operation = givenOperation(manifest(
+                PageRestorePlan.rebuild(PAGE_ID, keptOf(2)), PageRestorePlan.delete("C9")));
+        when(operationChangeRepository.countByOperationId(OPERATION_ID)).thenReturn(6L);
+        when(operationChangeRepository.findByOperationIdOrderByIdAsc(OPERATION_ID)).thenReturn(List.of(
+                change(ResourceType.wiki_page, PAGE_ID, ChangeType.delegated),
+                change(ResourceType.wiki_page, PAGE_ID, ChangeType.rebuild_failed),
+                change(ResourceType.wiki_page, "C9", ChangeType.deleted),
+                change(ResourceType.relation_link, "C3|C9|related", ChangeType.link_removed),
+                change(ResourceType.relation_link, "C3|C4|supports", ChangeType.link_restored),
+                change(ResourceType.action, "op_lint_1", ChangeType.action_failed)));
         OperationResultRequest request = new OperationResultRequest(
                 OPERATION_ID, "lint_restore", "partially_succeeded", WORKSPACE_ID, USER_ID, "doc_A",
-                null, List.of(), List.of(), List.of("C9"),
+                null, List.of(),
+                List.of(new OperationResultRequest.FailedPage(PAGE_ID, "contribution_missing")), List.of("C9"),
                 new OperationResultRequest.LinkChanges(
                         List.of(new OperationResultRequest.Link("C3", "C9", "related")),
                         List.of(new OperationResultRequest.Link("C3", "C4", "supports"))),
@@ -148,7 +183,8 @@ class RestoreRebuildApplierTest {
 
         assertThat(operation.getStatus()).isEqualTo(OperationStatus.partially_succeeded);
         assertThat(operation.getSummary()).isEqualTo(
-                "페이지 변경 0건 · 삭제 1건 · 링크 제거 1건 · 링크 복원 1건 · 실패 1건");
+                "페이지 변경 0건 · 삭제 1건 · 링크 제거 1건 · 링크 복원 1건 · 실패 2건");
+        assertThat(operation.getChangedResourceCount()).isEqualTo(6);
     }
 
     @Test
@@ -363,6 +399,11 @@ class RestoreRebuildApplierTest {
     private RestoreRebuildApplier.RebuiltPage rebuilt(String contentHash) {
         return new RestoreRebuildApplier.RebuiltPage(
                 PAGE_ID, "wiki/ws_1/pages/C3/ops/" + OPERATION_ID + ".md", "# 다시 만든 C3", contentHash);
+    }
+
+    private OperationChange change(ResourceType resourceType, String resourceId, ChangeType changeType) {
+        return new OperationChange(OPERATION_ID, resourceType, resourceId,
+                null, null, changeType, null, null, null);
     }
 
     private OperationResultRequest request() {
