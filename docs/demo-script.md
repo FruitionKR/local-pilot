@@ -35,10 +35,13 @@ cp infra/.env.example infra/.env
 Java 21이 기본이 아니면 경로 지정.
 
 ```sh
-export JAVA_HOME_21=/path/to/jdk-21
+export JAVA_HOME=/path/to/jdk-21
+export JAVA_HOME_21="$JAVA_HOME"
 ```
 
-pipeline 테스트를 로컬에서 실행하려면 가상환경을 만들고 requirements를 설치합니다.
+`JAVA_HOME_21`은 프로젝트 구동 스크립트가 사용하고, `JAVA_HOME`은 직접 실행한 Gradle wrapper가 사용한다.
+
+pipeline 테스트를 로컬에서 처음 실행할 때만 가상환경을 만들고 requirements를 설치합니다.
 
 ```sh
 python3 -m venv services/ai/pipeline/.venv
@@ -46,6 +49,9 @@ services/ai/pipeline/.venv/bin/python -m pip install -r services/ai/pipeline/req
 cd services/ai/pipeline
 .venv/bin/python -m pytest -q --ignore=tests/modules/document_restoration
 ```
+
+이미 `services/ai/pipeline/.venv`가 있고 requirements가 바뀌지 않았다면 기존 interpreter를
+그대로 사용한다. 재검증마다 가상환경을 다시 만들거나 의존성을 다시 설치하지 않는다.
 
 `document_restoration` 테스트까지 실행하려면 추가로 `requirements-document-restoration.txt`를 설치합니다.
 
@@ -88,7 +94,7 @@ curl http://localhost:8081/actuator/health   # access-svc  {"status":"UP"}
 PDF→Markdown 변환기(markitdown, :8010).
 
 ```sh
-docker compose -f infra/docker-compose.converter.yml up -d --build
+docker compose -f infra/docker-compose.converter.yml up -d
 curl http://localhost:8010/health
 ```
 
@@ -97,12 +103,13 @@ pipeline-api(:8000)와 워커(ingest/query/agent/maintenance task worker, edit-e
 ```sh
 docker compose --env-file infra/.env \
   -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
-  up -d --build pipeline-api ingest-worker query-task-worker agent-task-worker \
+  up -d pipeline-api ingest-worker query-task-worker agent-task-worker \
   maintenance-task-worker edit-event-consumer pipeline-agent-worker
 curl http://localhost:8000/health
 ```
 
-pipeline-api만 필요하면 `./scripts/ai-up.sh` 사용 가능.
+pipeline-api를 처음 빌드하거나 관련 코드·의존성이 바뀐 경우에만 `./scripts/ai-up.sh`를 사용한다.
+기존 image를 재사용할 때는 위 compose 명령에서 `pipeline-api`만 `up -d`한다.
 
 ### 안정적 통합 재검증 규칙
 
@@ -111,7 +118,15 @@ pipeline-api만 필요하면 `./scripts/ai-up.sh` 사용 가능.
 - 격리된 통합 재검증 wave마다 아직 존재하지 않는 consumer group을 하나만 만들고 `latest`를 한 번 적용한다. wave 안에서는 같은 group을 모든 lane이 재사용하며 lane마다 group을 새로 만들거나 offset을 초기화하지 않는다.
 - 재검증 전후에 HEAD, health, 프로세스 cwd, Tool flags, 재시작 횟수, partition별 log-end와 lag를 기록하고 고정한다. 각 lane 전후에는 동일한 고정 preflight를 실행하고, 기준선과 달라진 값은 테스트 결과와 별도의 drift로 분류한다.
 - 변경되지 않은 서비스·의존성은 재시작·재빌드·재설치하지 않는다. backend-only 변경이면 기존 AI image를 유지한다. worker를 내릴 때도 runtime 자체를 중지하지 않는다.
+- AI image를 빌드하기 전 `docker system df`, `uname -m`, `docker info --format '{{.Architecture}}'`로 저장공간과 host/Docker 아키텍처를 확인한다. 공간 부족이나 host/image 아키텍처 불일치는 코드 결함과 분리하고, 대상이 확인된 미사용 build cache·image만 정리한다. 실행 중인 container와 공용 volume은 정리하지 않는다.
+- 로컬 CPU 재검증에 불필요한 GPU/CUDA 산출물이 설치되기 시작하면 반복 설치하지 말고 requirements, base image, host/image 아키텍처가 맞는지 먼저 확인한다.
 - 재검증 중 Kafka, DB, volume을 reset하지 않는다.
+- 재검증 요청 중 상태를 바꾸는 public API에는 첫 요청부터 255자 이하의 짧은 `Idempotency-Key`를 넣는다.
+- 여러 단계의 재검증 harness는 `#!/usr/bin/env bash`를 선언하고 Bash로 실행한다. zsh 일회성 명령에서는 읽기 전용 변수 `status`를 쓰지 않고 `http_status` 또는 `state`를 사용한다.
+- curl 증거를 `{status, body}`로 감쌌다면 HTTP 코드는 `.status`, 비동기 업무 상태는 `.body.status`로 판정한다. operation log 목록은 응답의 `.logs` 배열을 읽는다.
+- Bash에서 JSON 기본값을 `${arg:-{}}`처럼 중괄호가 겹치는 매개변수 확장으로 만들지 않는다. 빈 값은 별도 문장으로 `'{}'`를 대입하고, 요청 전 `jq -e .`로 payload를 검증한다.
+- 이전 단계가 성공한 fixture, 응답, 비동기 checkpoint는 그대로 이어서 사용하고 lane의 모든 검증이 끝난 뒤 한 번만 정리한다. harness 오류만 고친 경우 ingest·서비스 기동·의존성 설치부터 다시 시작하지 않는다.
+- fixture 정리는 public API로 수행한다. 문서 삭제 요청에는 직전 조회에서 확인한 현재 `base_version`을 넣고, 이미 정리된 fixture 때문에 앞 단계 전체를 다시 실행하지 않는다.
 
 통합 재검증용 backend를 처음 띄우는 runner 터미널에서 group을 한 번만 지정한다. 이미
 backend가 실행 중이면 `back-up.sh`가 그대로 반환하므로, 실행 중간에 group을 바꾸지 않는다.
@@ -121,7 +136,8 @@ export AI_TASK_RESULT_CONSUMER_GROUP="document-svc-ai-task-result-$(git rev-pars
 ./scripts/back-up.sh
 ```
 
-AI image를 처음 만들거나 AI 코드·의존성이 바뀐 경우에만 위의 `up -d --build`를 사용한다.
+AI image를 처음 만들거나 AI 코드·의존성이 바뀐 경우에만 위 compose 명령의 `up -d`에
+`--build`를 추가한다.
 기존 image로 재검증할 때는 `--build` 없이 `up -d`를 사용한다.
 
 ### 2-3-1. 기존 AI 데이터 maintenance cutover
