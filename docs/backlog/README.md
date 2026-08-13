@@ -7,6 +7,10 @@
 
 아래 목록의 `docs/spec/…`, `docs/issue/…`, `docs/changelog/…`, `docs/msa/…` 경로는 2026-08-07 이관으로 전부 이 디렉터리 내부(`spec/`, `issue/`, `changelog/`, `msa/`) 경로로 읽는다.
 
+## 진행 예정 계획
+
+- `mongodb-to-postgresql-migration-plan.md` — 문서 본문·revision·write receipt·edit outbox를 PostgreSQL 단일 transaction으로 통합하고 MongoDB를 제거하는 검증·이관 계획.
+
 ## 2026-08-10 검토 기록
 
 - `ai-async-pr1-pr4-review-consensus.md` — PR #156~#159 누적 통합 리뷰. merge 전 필수 13건, 판단 보류·추가 합의 3건, 최종 배포 전 Agent DB 이전 조건 1건.
