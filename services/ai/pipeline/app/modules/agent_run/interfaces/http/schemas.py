@@ -41,6 +41,48 @@ class AgentToolExecuteAuthorizationRequest(AgentToolReadAuthorizationRequest):
     arguments: dict[str, object]
 
 
+class AgentArtifactRequest(BaseModel):
+    run_id: str = Field(..., min_length=1)
+    workspace_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+
+
+class AgentArtifactRegisterRequest(AgentArtifactRequest):
+    artifact_id: str = Field(..., min_length=1)
+    content_hash: str = Field(..., min_length=71, max_length=71)
+    purpose: str = Field(..., min_length=1)
+    document_id: str | None = None
+    base_version: int | None = Field(default=None, ge=1)
+    target: dict[str, object] | None = None
+    markdown: str = Field(..., min_length=0, max_length=5_242_880)
+
+
+class AgentArtifactResolveRequest(AgentArtifactRequest):
+    artifact_id: str = Field(..., min_length=1)
+    content_hash: str = Field(..., min_length=71, max_length=71)
+    purpose: str = Field(..., min_length=1)
+    document_id: str | None = None
+    base_version: int | None = Field(default=None, ge=1)
+    target: dict[str, object] | None = None
+
+
+class AgentArtifactListRequest(AgentArtifactRequest):
+    pass
+
+
+class AgentArtifactResponse(BaseModel):
+    id: str
+    content_hash: str
+    purpose: str
+    document_id: str | None = None
+    base_version: int | None = None
+    target: dict[str, object] | None = None
+
+
+class AgentArtifactResolveResponse(AgentArtifactResponse):
+    markdown: str
+
+
 class AgentPlanOperationResponse(BaseModel):
     id: str
     sequence: int

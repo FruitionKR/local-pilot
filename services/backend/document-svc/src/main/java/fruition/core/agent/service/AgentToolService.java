@@ -4,18 +4,24 @@ import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.agent.dto.AgentToolExecuteRequest;
 import fruition.core.agent.dto.AgentToolReadRequest;
 import fruition.core.agent.repository.PipelineAgentToolAuthorizationClient;
+import fruition.core.agent.repository.PipelineAgentArtifactClient;
+import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
 import fruition.core.document.dto.DocumentPositionRequest;
+import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.dto.DocumentRenameRequest;
 import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.FolderCreateRequest;
 import fruition.core.document.dto.FolderPositionRequest;
 import fruition.core.document.dto.FolderRenameRequest;
 import fruition.core.document.exception.DocumentNotFoundException;
+import fruition.core.document.exception.HierarchyItemNotFoundException;
+import fruition.core.document.exception.DocumentWriteForbiddenException;
 import fruition.core.document.mongo.MongoDocumentEditState;
 import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.DocumentRepository;
+import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.service.DocumentPlacementService;
 import fruition.core.document.service.DocumentService;
 import fruition.core.document.service.FolderService;
@@ -37,43 +43,62 @@ public class AgentToolService {
             "list_root_items", Set.of(),
             "list_folder_children", Set.of("folder_id"),
             "get_document_metadata", Set.of("document_id"),
-            "get_document_content", Set.of("document_id"));
+            "get_document_content", Set.of("document_id"),
+            "search_hierarchy", Set.of("query"),
+            "get_breadcrumb", Set.of("folder_id", "document_id"));
     private static final Map<String, Set<String>> EXECUTE_TOOL_ARGUMENTS = Map.of(
             "create_folder", Set.of("name", "parent_folder_id"),
             "rename_folder", Set.of("folder_id", "name", "base_version"),
             "move_folder", Set.of("folder_id", "parent_folder_id", "position", "base_version"),
             "move_document", Set.of("document_id", "folder_id", "position", "base_version"),
-            "rename_document", Set.of("document_id", "display_name", "base_version"));
+            "rename_document", Set.of("document_id", "display_name", "base_version"),
+            "create_document", Set.of("display_name", "folder_id", "content_artifact_id", "content_hash"),
+            "apply_document_edit", Set.of(
+                    "document_id", "base_version", "target", "content_artifact_id", "content_hash"));
 
     private final PipelineAgentToolAuthorizationClient authorizationClient;
+    private final PipelineAgentArtifactClient artifactClient;
+    private final AgentRunCommandRepository runCommandRepository;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final FolderService folderService;
     private final DocumentService documentService;
     private final DocumentPlacementService documentPlacementService;
     private final DocumentRepository documentRepository;
+    private final FolderRepository folderRepository;
     private final MongoDocumentEditStore mongoDocumentEditStore;
     private final IdempotencyService idempotencyService;
 
     public AgentToolService(
             PipelineAgentToolAuthorizationClient authorizationClient,
+            PipelineAgentArtifactClient artifactClient,
+            AgentRunCommandRepository runCommandRepository,
             WorkspaceAccessGuard workspaceAccessGuard,
             FolderService folderService,
             DocumentService documentService,
             DocumentPlacementService documentPlacementService,
             DocumentRepository documentRepository,
+            FolderRepository folderRepository,
             MongoDocumentEditStore mongoDocumentEditStore,
             IdempotencyService idempotencyService) {
         this.authorizationClient = authorizationClient;
+        this.artifactClient = artifactClient;
+        this.runCommandRepository = runCommandRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.folderService = folderService;
         this.documentService = documentService;
         this.documentPlacementService = documentPlacementService;
         this.documentRepository = documentRepository;
+        this.folderRepository = folderRepository;
         this.mongoDocumentEditStore = mongoDocumentEditStore;
         this.idempotencyService = idempotencyService;
     }
 
     public Object read(String toolName, AgentToolReadRequest request) {
+        if ("list_agent_run_artifacts".equals(toolName)) {
+            requireArguments(request.arguments(), Set.of());
+            authorizationClient.authorizeRead(request);
+            return Map.of("items", artifactClient.list(request));
+        }
         requireToolArguments(READ_TOOL_ARGUMENTS, toolName, request.arguments());
         authorizationClient.authorizeRead(request);
         return switch (toolName) {
@@ -82,6 +107,9 @@ public class AgentToolService {
                     request.workspaceId(), request.userId(), uuid(request.arguments(), "folder_id"));
             case "get_document_metadata" -> documentMetadata(request);
             case "get_document_content" -> documentContent(request);
+            case "search_hierarchy" -> folderService.search(
+                    request.workspaceId(), request.userId(), text(request.arguments(), "query"));
+            case "get_breadcrumb" -> breadcrumb(request);
             default -> throw badRequest("지원하지 않는 read Tool입니다.");
         };
     }
@@ -108,8 +136,81 @@ public class AgentToolService {
                             nullableUuid(arguments, "folder_id"), nullableInteger(arguments, "position"),
                             positiveLong(arguments, "base_version")));
             case "rename_document" -> renameDocument(request);
+            case "create_document" -> createDocument(request);
+            case "apply_document_edit" -> applyDocumentEdit(request);
             default -> throw badRequest("지원하지 않는 mutation Tool입니다.");
         };
+    }
+
+    private Object createDocument(AgentToolExecuteRequest request) {
+        JsonNode arguments = request.arguments();
+        authorizeCreateResource(request, nullableUuid(arguments, "folder_id"));
+        PipelineAgentArtifactClient.ResolvedArtifact artifact =
+                artifactClient.resolve(request, "create_document", arguments);
+        requireResolvedArtifact(artifact, arguments, "create_document");
+        return documentService.createMarkdown(
+                request.workspaceId(), request.userId(), request.idempotencyKey(),
+                new MarkdownDocumentCreateRequest(
+                        text(arguments, "display_name"), artifact.markdown(),
+                        nullableUuid(arguments, "folder_id")));
+    }
+
+    private Object applyDocumentEdit(AgentToolExecuteRequest request) {
+        JsonNode arguments = request.arguments();
+        String documentId = text(arguments, "document_id");
+        long baseVersion = positiveLong(arguments, "base_version");
+        JsonNode target = arguments.get("target");
+        if (!target.isObject() || target.size() != 3
+                || !target.has("type") || !target.has("start_line") || !target.has("end_line")) {
+            throw badRequest("target 값이 올바르지 않습니다.");
+        }
+        requireOwnedDocument(request.workspaceId(), request.userId(), documentId);
+        PipelineAgentArtifactClient.ResolvedArtifact artifact =
+                artifactClient.resolve(request, "apply_document_edit", arguments);
+        requireResolvedArtifact(artifact, arguments, "apply_document_edit");
+        if (!documentId.equals(artifact.documentId())
+                || artifact.baseVersion() == null || artifact.baseVersion() != baseVersion
+                || !target.equals(artifact.target())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "승인된 Agent 문서 편집 대상과 일치하지 않습니다.");
+        }
+        runCommandRepository.prepareToolApply(
+                "agent-tool:" + request.runId() + ":" + request.operationId(),
+                request.workspaceId(), request.userId(), documentId, baseVersion,
+                request.operationId(), artifact.markdown());
+        return documentService.saveContent(
+                request.workspaceId(), request.userId(), documentId, artifact.markdown(),
+                baseVersion, request.idempotencyKey(), "agent", request.operationId());
+    }
+
+    private void authorizeCreateResource(AgentToolExecuteRequest request, UUID folderId) {
+        workspaceAccessGuard.requireMember(request.workspaceId(), request.userId());
+        if (folderId != null) {
+            folderRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(folderId, request.workspaceId())
+                    .orElseThrow(() -> new HierarchyItemNotFoundException("대상 폴더를 찾을 수 없습니다."));
+        }
+    }
+
+    private Document requireOwnedDocument(String workspaceId, String userId, String documentId) {
+        Document document = requireDocument(workspaceId, userId, documentId);
+        if (!userId.equals(document.getUserId())) {
+            throw new DocumentWriteForbiddenException("문서 소유자만 변경할 수 있습니다.");
+        }
+        return document;
+    }
+
+    private static void requireResolvedArtifact(
+            PipelineAgentArtifactClient.ResolvedArtifact artifact,
+            JsonNode arguments,
+            String purpose) {
+        if (artifact == null
+                || !text(arguments, "content_artifact_id").equals(artifact.id())
+                || !text(arguments, "content_hash").equals(artifact.contentHash())
+                || !purpose.equals(artifact.purpose())
+                || artifact.markdown() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Agent artifact가 승인된 operation과 일치하지 않습니다.");
+        }
     }
 
     private Map<String, Object> documentMetadata(AgentToolReadRequest request) {
@@ -133,6 +234,16 @@ public class AgentToolService {
                 "markdown", state.getMarkdown(),
                 "content_hash", state.getContentHash(),
                 "edit_revision", state.getRevision());
+    }
+
+    private Object breadcrumb(AgentToolReadRequest request) {
+        JsonNode arguments = request.arguments();
+        UUID folderId = nullableUuid(arguments, "folder_id");
+        String documentId = nullableText(arguments, "document_id");
+        if ((folderId == null) == (documentId == null)) {
+            throw badRequest("folder_id 또는 document_id 중 하나만 지정해야 합니다.");
+        }
+        return folderService.breadcrumb(request.workspaceId(), request.userId(), folderId, documentId);
     }
 
     private Document requireDocument(String workspaceId, String userId, String documentId) {
@@ -187,6 +298,11 @@ public class AgentToolService {
             throw badRequest(field + " 값이 올바르지 않습니다.");
         }
         return value.textValue();
+    }
+
+    private static String nullableText(JsonNode arguments, String field) {
+        JsonNode value = arguments.get(field);
+        return value.isNull() ? null : text(arguments, field);
     }
 
     private static UUID uuid(JsonNode arguments, String field) {

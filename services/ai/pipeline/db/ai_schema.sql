@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_runs_workspace_status
 CREATE TABLE IF NOT EXISTS wiki_pages (
     id varchar(255) PRIMARY KEY,
     page_type varchar(255) NOT NULL CHECK (page_type IN ('source', 'concept')),
-    title varchar(255) NOT NULL,
+    title text NOT NULL,
     slug varchar(255) NOT NULL,
     summary text,
     markdown_uri varchar(255),
@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
 
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_workspace
     ON wiki_pages (workspace_id, status, updated_at DESC);
+
+ALTER TABLE wiki_pages ALTER COLUMN title TYPE text;
 
 CREATE TABLE IF NOT EXISTS document_wiki_links (
     document_id varchar(255) NOT NULL,
@@ -350,12 +352,16 @@ CREATE TABLE IF NOT EXISTS agent_run_artifacts (
     user_id text NOT NULL,
     content_hash text NOT NULL,
     purpose text NOT NULL,
+    object_key text,
     document_id text,
     base_version bigint,
     target jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz
 );
+
+ALTER TABLE agent_run_artifacts
+    ADD COLUMN IF NOT EXISTS object_key text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_personal_command
     ON skills (owner_user_id, command) WHERE scope_type = 'personal';

@@ -127,6 +127,11 @@ class FakeWebSearch:
         return self.results
 
 
+class FailingWebSearch:
+    def search(self, query: str) -> list[WebSearchResult]:
+        raise RuntimeError("provider detail must not reach the query result")
+
+
 class FakeQueryEvaluator:
     def __init__(self, evaluation: QueryEvaluation | list[QueryEvaluation]) -> None:
         self.evaluations = evaluation if isinstance(evaluation, list) else [evaluation]
@@ -813,6 +818,10 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.evidence_snippets[0].source_block_ids, ["web"])
         self.assertIn("external knowledge", result.evidence_snippets[0].text)
         self.assertIn("[1]", result.answer.content)
+        self.assertTrue(result.web_search.requested)
+        self.assertTrue(result.web_search.executed)
+        self.assertEqual(result.web_search.result_count, 1)
+        self.assertIsNone(result.web_search.error_code)
 
     def test_does_not_call_web_search_when_request_disallows_it(self) -> None:
         web_search = FakeWebSearch([])
@@ -835,6 +844,60 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(web_search.queries, [])
         self.assertNotEqual(result.retrieval_summary.stop_reason, "web_search_fallback")
         self.assertTrue(result.answer.content.startswith("The provided evidence"))
+        self.assertFalse(result.web_search.requested)
+        self.assertFalse(result.web_search.executed)
+        self.assertEqual(result.web_search.result_count, 0)
+        self.assertIsNone(result.web_search.error_code)
+
+    def test_does_not_report_web_search_for_sufficient_internal_answer_without_adapter(self) -> None:
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([source_page("source:seed", "Seed Source")], []),
+            embedding_search=ScoreSearch({"Seed Source": 0.95}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("Seed Source가 뭐야?", workspace_id="ws_test", allow_web_search=True)
+
+        self.assertFalse(result.web_search.requested)
+        self.assertFalse(result.web_search.executed)
+        self.assertEqual(result.web_search.result_count, 0)
+        self.assertIsNone(result.web_search.error_code)
+
+    def test_reports_unavailable_when_low_relevance_requires_web_search_without_adapter(self) -> None:
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([source_page("source:seed", "Seed Source")], []),
+            embedding_search=ScoreSearch({"Seed Source": 0.10}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("외부 정보가 뭐야?", workspace_id="ws_test", allow_web_search=True)
+
+        self.assertTrue(result.web_search.requested)
+        self.assertFalse(result.web_search.executed)
+        self.assertEqual(result.web_search.result_count, 0)
+        self.assertEqual(result.web_search.error_code, "web_search_unavailable")
+
+    def test_web_search_failure_is_correlated_to_internal_result(self) -> None:
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository([source_page("source:seed", "Seed Source")], []),
+            embedding_search=ScoreSearch({"Seed Source": 0.10}),
+            text_search=EmptyTextSearch(),
+            answer_generator=RecordingAnswerGenerator(),
+            web_search=FailingWebSearch(),
+            min_internal_relevance_score=0.50,
+        )
+
+        result = use_case.execute("RAG가 뭐야?", workspace_id="ws_test")
+
+        self.assertTrue(result.web_search.requested)
+        self.assertTrue(result.web_search.executed)
+        self.assertEqual(result.web_search.result_count, 0)
+        self.assertEqual(result.web_search.error_code, "web_search_failed")
+        self.assertNotIn("provider detail must not reach", result.answer.content)
 
     def test_query_evaluator_reviews_generated_answer_and_can_keep_internal_answer_when_seed_score_is_low(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

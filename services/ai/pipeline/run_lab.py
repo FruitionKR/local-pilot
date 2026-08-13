@@ -1311,7 +1311,6 @@ def run_pipeline(
         "out": str(out),
         "mode": args.mode,
         "operation_id": args.operation_id,
-        "result_callback_url": args.result_callback_url,
         "selection_mode": getattr(args, "selection_mode", None),
         "user_id": args.user_id,
         "workspace_id": args.workspace_id,

@@ -80,7 +80,7 @@ class QueryRunControllerTest {
 
     @Test
     void getRun_completedRun_returnsResult() throws Exception {
-        QueryResponse result = new QueryResponse(null, null, null, null, null, null);
+        QueryResponse result = new QueryResponse(null, null, null, null, null, null, true, true, 2, null);
         QueryRun run = pendingRun()
                 .running()
                 .completed(result, Instant.parse("2026-06-20T10:00:05Z"));
@@ -90,7 +90,10 @@ class QueryRunControllerTest {
                         .header("Authorization", bearerToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.request_id").value("query_abc123"))
-                .andExpect(jsonPath("$.status").value("completed"));
+                .andExpect(jsonPath("$.status").value("completed"))
+                .andExpect(jsonPath("$.result.web_search_requested").value(true))
+                .andExpect(jsonPath("$.result.web_search_executed").value(true))
+                .andExpect(jsonPath("$.result.result_count").value(2));
 
         verify(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
     }

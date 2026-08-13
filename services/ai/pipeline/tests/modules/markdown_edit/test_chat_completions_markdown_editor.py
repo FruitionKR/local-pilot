@@ -64,12 +64,12 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         with patch.dict("os.environ", {"GEMINI_API_KEY": "gemini-key"}, clear=True):
             editor = build_markdown_editor(
                 provider="gemini",
-                model="gemini-2.5-flash-lite",
+                model="gemini-3.1-flash-lite",
             )
 
         client = editor._client  # type: ignore[attr-defined]
         self.assertEqual(client.provider, "gemini")
-        self.assertEqual(client.config.model, "gemini-2.5-flash-lite")
+        self.assertEqual(client.config.model, "gemini-3.1-flash-lite")
         self.assertEqual(client.config.api_key, "gemini-key")
 
     def test_preserves_trailing_newline_for_unchanged_result(self) -> None:
@@ -432,6 +432,86 @@ class ChatCompletionsMarkdownEditorTest(unittest.TestCase):
         self.assertEqual(payload["read_only_context"]["after"], "마지막 문장입니다.")
         self.assertEqual(result.edit.replacement_markdown, "선택한 문장입니다.")
         self.assertEqual(result.edit.target, request.target)
+
+    def test_preserves_task_markers_for_structure_preserving_edits(self) -> None:
+        markdown = "- [ ] Open item\n- [x] Done item"
+        target = MarkdownEditTarget(type="whole_document", start_line=1, end_line=2)
+        for edit_goal, instruction in (
+            ("cleanup", "문장을 자연스럽게 다듬어줘."),
+            ("style_change", "문체를 자연스럽게 바꿔줘."),
+            ("translate", "영어로 번역해줘."),
+            ("shorten", "문장을 짧게 줄여줘."),
+        ):
+            with self.subTest(edit_goal=edit_goal):
+                if edit_goal == "shorten":
+                    client = SequenceJsonClient(
+                        [
+                            response("- Open\n- Done", actual_target={
+                                "type": "whole_document",
+                                "start_line": 1,
+                                "end_line": 2,
+                            }),
+                            response(
+                                "{{FRUITION_PROTECTED_0001}}Open\n"
+                                "{{FRUITION_PROTECTED_0002}}Done",
+                                actual_target={
+                                    "type": "whole_document",
+                                    "start_line": 1,
+                                    "end_line": 2,
+                                },
+                            ),
+                        ]
+                    )
+                else:
+                    client = SequenceJsonClient(
+                        [
+                            {
+                                "summary": "수정했습니다.",
+                                "edits": [
+                                    {"id": "text-0001", "replacement": "Open"},
+                                    {"id": "text-0002", "replacement": "Done"},
+                                ],
+                            }
+                        ]
+                    )
+                editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+                result = editor.generate_edit(
+                    MarkdownEditRequest(
+                        instruction=instruction,
+                        markdown=markdown,
+                        target=target,
+                        edit_goal=edit_goal,
+                    )
+                )
+
+                self.assertEqual(result.edit.replacement_markdown, "- [ ] Open\n- [x] Done")
+                self.assertEqual(len(client.calls), 2 if edit_goal == "shorten" else 1)
+
+    def test_allows_explicit_task_marker_change(self) -> None:
+        client = SequenceJsonClient(
+            [
+                response(
+                    "- [x] Open item\n- [x] Done item",
+                    actual_target={
+                        "type": "whole_document",
+                        "start_line": 1,
+                        "end_line": 2,
+                    },
+                )
+            ]
+        )
+        editor = ChatCompletionsMarkdownEditor(client, "system")  # type: ignore[arg-type]
+
+        result = editor.generate_edit(
+            MarkdownEditRequest(
+                instruction="체크박스를 완료 상태로 표시해줘.",
+                markdown="- [ ] Open item\n- [x] Done item",
+                target=MarkdownEditTarget(type="whole_document", start_line=1, end_line=2),
+                edit_goal="style_change",
+            )
+        )
+
+        self.assertEqual(result.edit.replacement_markdown, "- [x] Open item\n- [x] Done item")
 
     def test_retries_source_range_when_summary_is_missing(self) -> None:
         client = SequenceJsonClient(

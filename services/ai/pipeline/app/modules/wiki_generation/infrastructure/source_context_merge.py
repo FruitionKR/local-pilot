@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from app.modules.wiki_generation.domain.entities import SourceBlock
@@ -229,11 +230,11 @@ def _merge_categories(existing: list[Any], incoming: list[dict[str, Any]]) -> li
         for item in existing
         if isinstance(item, dict) or str(item or "").strip()
     ]
-    return _merge_by_text(existing_items, incoming, "name")
+    return _merge_semantic_items(existing_items, incoming, "name")
 
 
 def _merge_observations(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _merge_by_text(existing, incoming, "summary")
+    return _merge_semantic_items(existing, incoming, "summary")
 
 
 def _merge_evidence(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -251,6 +252,64 @@ def _merge_by_text(existing: list[dict[str, Any]], incoming: list[dict[str, Any]
         seen.add(key)
         merged.append(copy.deepcopy(item))
     return merged
+
+
+def _merge_semantic_items(
+    existing: list[dict[str, Any]],
+    incoming: list[dict[str, Any]],
+    field: str,
+) -> list[dict[str, Any]]:
+    merged = []
+    by_semantic_key: dict[str, dict[str, Any]] = {}
+    for item in [*existing, *incoming]:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get(field) or item.get("title") or item.get("name") or "").strip()
+        if field == "summary":
+            semantic_payload = {
+                key: value
+                for key, value in item.items()
+                if key
+                not in {
+                    "anchor_reference_ids",
+                    "anchor_block_ids",
+                    "evidence_block_ids",
+                    "observation_id",
+                    "source_document_id",
+                }
+            }
+            semantic_payload["type"] = semantic_payload.get("type") or "source_claim"
+            semantic_payload["title"] = semantic_payload.get("title") or ""
+            semantic_payload["query_text"] = semantic_payload.get("query_text")
+            semantic_payload["summary"] = semantic_payload.get("summary") or ""
+            semantic_payload["claims"] = semantic_payload.get("claims") or []
+            semantic_payload["related_concept_hints"] = semantic_payload.get("related_concept_hints") or []
+            key = json.dumps(semantic_payload, ensure_ascii=False, sort_keys=True)
+        else:
+            key = value
+        if not key:
+            continue
+        if key in by_semantic_key:
+            target = by_semantic_key[key]
+            refs = unique_keep_order(_item_refs(target) + _item_refs(item))
+            if refs:
+                target["anchor_reference_ids"] = refs
+            continue
+        copied = copy.deepcopy(item)
+        refs = _item_refs(copied)
+        if refs:
+            copied["anchor_reference_ids"] = refs
+        by_semantic_key[key] = copied
+        merged.append(copied)
+    return merged
+
+
+def _item_refs(item: dict[str, Any]) -> list[str]:
+    return unique_keep_order(
+        ref
+        for field in ("anchor_reference_ids", "anchor_block_ids", "evidence_block_ids")
+        for ref in item.get(field, []) or []
+    )
 
 
 def _merge_term_items(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], title_field: str) -> list[dict[str, Any]]:

@@ -72,18 +72,14 @@ class WikiEmbeddingJobPort(Protocol):
 
 
 class WikiPageRestorePort(Protocol):
-    def apply_current_state(
+    def apply_current_state_and_cleanup(
         self,
+        operation_id: str,
         workspace_id: str,
         changed_pages: list[dict[str, Any]],
         link_changes: dict[str, list[dict[str, Any]]],
         replace_links: bool,
-    ) -> None: ...
-
-    def cleanup_deleted_pages(
-        self,
-        workspace_id: str,
-        page_ids: list[str],
+        deleted_page_ids: list[str],
     ) -> None: ...
 
     def rebuild_page(

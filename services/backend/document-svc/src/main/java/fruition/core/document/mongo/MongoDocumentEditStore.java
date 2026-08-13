@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.Objects;
 import java.util.Optional;
 
 @Component
@@ -62,6 +63,22 @@ public class MongoDocumentEditStore {
             long initialRevision,
             DocumentEditState legacyState
     ) {
+        return save(workspaceId, documentId, markdown, contentHash, baseRevision, revisionWriteId,
+                actorUserId, initialRevision, legacyState, null);
+    }
+
+    public MongoDocumentEditSaveResult save(
+            String workspaceId,
+            String documentId,
+            String markdown,
+            String contentHash,
+            long baseRevision,
+            String revisionWriteId,
+            String actorUserId,
+            long initialRevision,
+            DocumentEditState legacyState,
+            String applyOperationId
+    ) {
         RuntimeException lastTransientError = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             try {
@@ -74,7 +91,8 @@ public class MongoDocumentEditStore {
                         revisionWriteId,
                         actorUserId,
                         initialRevision,
-                        legacyState
+                        legacyState,
+                        applyOperationId
                 ));
             } catch (RuntimeException exception) {
                 if (!isTransientTransactionError(exception)) {
@@ -102,7 +120,8 @@ public class MongoDocumentEditStore {
             String revisionWriteId,
             String actorUserId,
             long initialRevision,
-            DocumentEditState legacyState
+            DocumentEditState legacyState,
+            String applyOperationId
     ) {
         String requestHash = requestHash(baseRevision, contentHash);
         MongoDocumentEditWrite existing = mongoTemplate.findById(
@@ -110,7 +129,8 @@ public class MongoDocumentEditStore {
                 MongoDocumentEditWrite.class
         );
         if (existing != null) {
-            if (!existing.getRequestHash().equals(requestHash)) {
+            if (!Objects.equals(existing.getApplyOperationId(), applyOperationId)
+                    || !existing.getRequestHash().equals(requestHash)) {
                 throw new IdempotencyConflictException(
                         "같은 revision_write_id를 다른 저장 요청에 사용할 수 없습니다.");
             }
@@ -189,6 +209,7 @@ public class MongoDocumentEditStore {
                 resultRevision,
                 contentHash,
                 requestHash,
+                applyOperationId,
                 actorUserId,
                 changed,
                 updatedAt,

@@ -130,7 +130,34 @@ class OperationQueryControllerTest {
                 .andExpect(jsonPath("$.changes[0].change_type").value("updated"))
                 .andExpect(jsonPath("$.changes[0].hunks").isArray())
                 // 값이 없으면 응답에서 생략한다.
-                .andExpect(jsonPath("$.changes[0].diff_too_large").doesNotExist());
+                .andExpect(jsonPath("$.changes[0].diff_too_large").doesNotExist())
+                .andExpect(jsonPath("$.restore").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("복구 상세는 계획·결과 요약과 변경 리소스를 함께 직렬화한다")
+    void detailIncludesSanitizedRestoreSummary() throws Exception {
+        OperationLogDetailResponse.RestoreSummary restore =
+                new OperationLogDetailResponse.RestoreSummary(
+                        new OperationLogDetailResponse.RestorePlanSummary(
+                                1, 0, 1,
+                                List.of(new OperationLogDetailResponse.PlanPage(
+                                        "wp_delete", "delete", 0))),
+                        new OperationLogDetailResponse.RestoreResult(1, 0, 0, 0, 1, 0));
+        when(queryService.detail(WORKSPACE_ID, USER_ID, OPERATION_ID))
+                .thenReturn(new OperationLogDetailResponse(OPERATION_ID, "restore", "rebuilding",
+                        "doc_A", "복구 중", 2, "op_a1", NOW, null,
+                        List.of(new OperationLogDetailResponse.Change(1L, "wiki_page", "wp_delete",
+                                3L, null, "deleted", null, null, null, null, null)), restore));
+
+        mockMvc.perform(get(BASE + "/" + OPERATION_ID).header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.restore.plan.delete_count").value(1))
+                .andExpect(jsonPath("$.restore.plan.pages[0].page_id").value("wp_delete"))
+                .andExpect(jsonPath("$.restore.result.deleted_count").value(1))
+                .andExpect(jsonPath("$.restore.result.removed_link_count").value(1))
+                .andExpect(jsonPath("$.restore.plan.callbackUrl").doesNotExist())
+                .andExpect(jsonPath("$.restore.previewToken").doesNotExist());
     }
 
     @Test

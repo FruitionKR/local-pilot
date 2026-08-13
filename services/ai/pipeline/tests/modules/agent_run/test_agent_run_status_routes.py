@@ -10,8 +10,12 @@ from app.modules.agent_run.interfaces.http.dependencies import get_agent_run_rep
 from app.modules.agent_run.interfaces.http.routes import (
     authorize_agent_tool_execute,
     get_markdown_agent_run,
+    list_agent_artifacts,
+    resolve_agent_artifact,
 )
 from app.modules.agent_run.interfaces.http.schemas import (
+    AgentArtifactListRequest,
+    AgentArtifactResolveRequest,
     AgentToolExecuteAuthorizationRequest,
 )
 
@@ -39,6 +43,29 @@ class ScopedRepository:
 
     def authorize_tool_execute(self, **values) -> bool:
         return values["arguments"] == {"document_id": "document-1"}
+
+    def list_artifacts(self, workspace_id: str, user_id: str, run_id: str):
+        if (workspace_id, user_id, run_id) != ("workspace-1", "user-1", "run-1"):
+            return []
+        return [{"id": "artifact-1", "content_hash": "sha256:" + "a" * 64, "purpose": "create_document"}]
+
+    def resolve_artifact(self, **values):
+        if (values["workspace_id"], values["user_id"], values["run_id"]) != (
+            "workspace-1", "user-1", "run-1"
+        ):
+            return None
+        if values["content_hash"] != "sha256:" + "a" * 64:
+            raise ValueError("Agent artifact metadata does not match the approved operation.")
+        if values["purpose"] != "create_document" or any(
+            values[field] is not None for field in ("document_id", "base_version", "target")
+        ):
+            raise ValueError("Agent artifact metadata does not match the approved operation.")
+        return {
+            "id": "artifact-1",
+            "content_hash": "sha256:" + "a" * 64,
+            "purpose": "create_document",
+            "markdown": "# 문서\n",
+        }
 
 
 def test_internal_status_lookup_is_scoped_to_workspace_and_user() -> None:
@@ -71,6 +98,76 @@ def test_execute_authorization_rejects_argument_mismatch() -> None:
     with pytest.raises(HTTPException) as raised:
         authorize_agent_tool_execute(payload, ScopedRepository())
 
+    assert raised.value.status_code == 409
+
+
+def test_artifact_list_and_resolve_are_scoped() -> None:
+    repository = ScopedRepository()
+    listed = list_agent_artifacts(
+        AgentArtifactListRequest(run_id="run-1", workspace_id="workspace-1", user_id="user-1"),
+        repository,
+    )
+    assert listed[0]["id"] == "artifact-1"
+
+    resolved = resolve_agent_artifact(
+        AgentArtifactResolveRequest(
+            run_id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            artifact_id="artifact-1",
+            content_hash="sha256:" + "a" * 64,
+            purpose="create_document",
+        ),
+        repository,
+    )
+    assert resolved["markdown"] == "# 문서\n"
+
+    with pytest.raises(HTTPException) as raised:
+        resolve_agent_artifact(
+            AgentArtifactResolveRequest(
+                run_id="run-1",
+                workspace_id="workspace-2",
+                user_id="user-1",
+                artifact_id="artifact-1",
+                content_hash="sha256:" + "a" * 64,
+                purpose="create_document",
+            ),
+            repository,
+        )
+    assert raised.value.status_code == 404
+
+
+def test_artifact_resolve_rejects_hash_or_purpose_mismatch() -> None:
+    repository = ScopedRepository()
+    with pytest.raises(HTTPException) as raised:
+        resolve_agent_artifact(
+            AgentArtifactResolveRequest(
+                run_id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                artifact_id="artifact-1",
+                content_hash="sha256:" + "b" * 64,
+                purpose="create_document",
+            ),
+            repository,
+        )
+    assert raised.value.status_code == 409
+
+    with pytest.raises(HTTPException) as raised:
+        resolve_agent_artifact(
+            AgentArtifactResolveRequest(
+                run_id="run-1",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                artifact_id="artifact-1",
+                content_hash="sha256:" + "a" * 64,
+                purpose="apply_document_edit",
+                document_id="document-1",
+                base_version=2,
+                target={"type": "whole_document", "start_line": 1, "end_line": 2},
+            ),
+            repository,
+        )
     assert raised.value.status_code == 409
 
 

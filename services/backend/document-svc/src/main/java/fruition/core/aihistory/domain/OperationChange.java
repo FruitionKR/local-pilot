@@ -32,7 +32,7 @@ public class OperationChange {
     @Column(name = "resource_type", nullable = false, length = 20)
     private ResourceType resourceType;
 
-    /** 다형 참조라 FK가 없다. 대상이 삭제돼도 이 기록은 남는다. */
+    /** 다형 참조라 FK가 없다. 대상이 삭제돼도 이 기록은 남는다. action이면 복구 조치 식별자다. */
     @Column(name = "resource_id", nullable = false)
     private String resourceId;
 

@@ -1,5 +1,6 @@
 package fruition.core.aihistory.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.OperationLog;
 import fruition.core.aihistory.domain.OperationStatus;
@@ -36,15 +37,18 @@ public class OperationQueryService {
     private final OperationChangeRepository operationChangeRepository;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ChangeDiffLoader diffLoader;
+    private final ObjectMapper objectMapper;
 
     public OperationQueryService(OperationLogRepository operationLogRepository,
                                  OperationChangeRepository operationChangeRepository,
                                  WorkspaceAccessGuard workspaceAccessGuard,
-                                 ChangeDiffLoader diffLoader) {
+                                 ChangeDiffLoader diffLoader,
+                                 ObjectMapper objectMapper) {
         this.operationLogRepository = operationLogRepository;
         this.operationChangeRepository = operationChangeRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.diffLoader = diffLoader;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -80,7 +84,7 @@ public class OperationQueryService {
         for (int i = 0; i < found.size(); i++) {
             changes.add(OperationLogDetailResponse.Change.from(found.get(i), diffs.get(i)));
         }
-        return OperationLogDetailResponse.from(log, changes);
+        return OperationLogDetailResponse.from(log, changes, objectMapper);
     }
 
     private void verifyMember(String workspaceId, String userId) {

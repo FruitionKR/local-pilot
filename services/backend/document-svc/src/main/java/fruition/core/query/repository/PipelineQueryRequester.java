@@ -12,6 +12,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.util.List;
+
 @Component
 public class PipelineQueryRequester {
 
@@ -38,7 +40,12 @@ public class PipelineQueryRequester {
 
     public PipelineQueryResponse query(String workspaceId, String question, String provider, String model,
                                        boolean webSearchEnabled) {
-        return executeQuery(new QueryPayload(workspaceId, question, provider, model, webSearchEnabled));
+        return query(workspaceId, question, provider, model, webSearchEnabled, List.of());
+    }
+
+    public PipelineQueryResponse query(String workspaceId, String question, String provider, String model,
+                                       boolean webSearchEnabled, List<RecentMessage> recentMessages) {
+        return executeQuery(new QueryPayload(workspaceId, question, provider, model, webSearchEnabled, recentMessages));
     }
 
     private PipelineQueryResponse executeQuery(QueryPayload payload) {
@@ -78,5 +85,8 @@ public class PipelineQueryRequester {
             @JsonProperty("question") String question,
             String provider,
             String model,
-            @JsonProperty("allow_web_search") boolean webSearchEnabled) {}
+            @JsonProperty("allow_web_search") boolean webSearchEnabled,
+            @JsonProperty("recent_messages") List<RecentMessage> recentMessages) {}
+
+    public record RecentMessage(String role, String content) {}
 }

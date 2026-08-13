@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,11 +60,37 @@ class PipelineQueryRequesterTest {
 
     @Test
     void query_sendsAllowWebSearchAsBoolean() {
-        requester().query("ws_abc123", "질문", "gemini", "gemini-2.5-flash-lite", true);
+        requester().query("ws_abc123", "질문", "gemini", "gemini-3.1-flash-lite", true);
 
         assertThat(capturedBody.get())
-                .contains("\"provider\":\"gemini\"", "\"model\":\"gemini-2.5-flash-lite\"")
+                .contains("\"provider\":\"gemini\"", "\"model\":\"gemini-3.1-flash-lite\"")
                 .contains("\"allow_web_search\":true");
+    }
+
+    @Test
+    void query_sendsRecentMessagesInChronologicalOrder() {
+        requester().query("ws_abc123", "후속 질문", "openai", "gpt-5-nano", false,
+                List.of(new PipelineQueryRequester.RecentMessage("user", "이전 질문"),
+                        new PipelineQueryRequester.RecentMessage("assistant", "이전 답변")));
+
+        assertThat(capturedBody.get())
+                .contains("\"recent_messages\":[{\"role\":\"user\",\"content\":\"이전 질문\"},"
+                        + "{\"role\":\"assistant\",\"content\":\"이전 답변\"}]");
+    }
+
+    @Test
+    void query_serializes4000CharRecentMessagesWithoutExceedingSchemaLimit() {
+        String userContent = "u".repeat(4000);
+        String assistantContent = "a".repeat(4000);
+
+        requester().query("ws_abc123", "후속 질문", "openai", "gpt-5-nano", false,
+                List.of(new PipelineQueryRequester.RecentMessage("user", userContent),
+                        new PipelineQueryRequester.RecentMessage("assistant", assistantContent)));
+
+        assertThat(capturedBody.get())
+                .contains("\"content\":\"" + userContent + "\"")
+                .contains("\"content\":\"" + assistantContent + "\"")
+                .doesNotContain("u".repeat(4001), "a".repeat(4001));
     }
 
     private static String minimalPipelineResponseJson() {

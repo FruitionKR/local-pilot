@@ -44,9 +44,9 @@ class WorkspaceAiModelServiceTest {
         when(workspaceRepository.findById("ws_1")).thenReturn(Optional.of(workspace));
 
         var response = service.updateInternal("ws_1", new WorkspaceAiModelRequest(
-                new WorkspaceAiModelRequest.AiModelSelection("claude", "claude-3-5-haiku-20241022")));
+                new WorkspaceAiModelRequest.AiModelSelection("claude", "claude-haiku-4-5-20251001")));
 
         assertThat(response.ingestLint().provider()).isEqualTo("claude");
-        assertThat(response.ingestLint().model()).isEqualTo("claude-3-5-haiku-20241022");
+        assertThat(response.ingestLint().model()).isEqualTo("claude-haiku-4-5-20251001");
     }
 }

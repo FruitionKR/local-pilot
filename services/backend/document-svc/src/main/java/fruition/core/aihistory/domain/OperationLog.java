@@ -15,7 +15,8 @@ import java.time.Instant;
  * AI 작업 1회의 기록. 작업 유형과 무관하게 이 테이블 한 곳에 모인다.
  *
  * <p>ingest는 llmPipeline 호출 <b>전에</b> {@link OperationStatus#processing}으로 먼저 커밋하고,
- * 콜백을 받아 확정한다. 문서 AI 편집은 동기라 저장과 같은 트랜잭션에서 한 번에 기록한다.
+ * 콜백을 받아 확정한다. 문서 AI 편집은 Mongo receipt 저장 전 {@link OperationStatus#applying}으로
+ * 예약하고, receipt 재생 후 PostgreSQL에서 확정한다.
  */
 @Entity
 @Table(name = "ai_operation_logs")
@@ -57,6 +58,10 @@ public class OperationLog {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "restore_manifest")
     private String restoreManifest;
+
+    /** 같은 미리보기 토큰의 복구 실행을 DB에서 한 번만 선점하기 위한 지문. */
+    @Column(name = "restore_token_hash", length = 64)
+    private String restoreTokenHash;
 
     /** 완료 콜백 payload의 정규화 해시. 같은 payload 재전송과 다른 payload를 가른다. */
     @Column(name = "payload_hash", length = 64)
@@ -114,6 +119,14 @@ public class OperationLog {
         return log;
     }
 
+    /** 문서 AI 적용의 Mongo 저장 전 pending 감사 상태를 만든다. */
+    public static OperationLog applyingDocumentEdit(String operationId, String workspaceId,
+                                                    String userId, String documentId,
+                                                    Instant createdAt) {
+        return new OperationLog(operationId, workspaceId, userId, OperationType.document_edit,
+                documentId, OperationStatus.applying, createdAt);
+    }
+
     /** 결과를 확정한다. {@code changedResourceCount}는 실제로 만든 변경내역 수다. */
     public void complete(OperationStatus status, String summary, int changedResourceCount,
                          String payloadHash, Instant completedAt) {
@@ -147,6 +160,7 @@ public class OperationLog {
     public int getChangedResourceCount() { return changedResourceCount; }
     public String getRestoredFrom() { return restoredFrom; }
     public String getRestoreManifest() { return restoreManifest; }
+    public String getRestoreTokenHash() { return restoreTokenHash; }
     public String getPayloadHash() { return payloadHash; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getCompletedAt() { return completedAt; }

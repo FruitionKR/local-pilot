@@ -21,7 +21,8 @@ x-ai-task-worker: &ai-task-worker
     QUERY_WEB_SEARCH_MAX_RESULTS: ${QUERY_WEB_SEARCH_MAX_RESULTS:-5}
     QUERY_WEB_SEARCH_TIMEOUT_SECONDS: ${QUERY_WEB_SEARCH_TIMEOUT_SECONDS:-10}
     QUERY_MIN_INTERNAL_RELEVANCE_SCORE: ${QUERY_MIN_INTERNAL_RELEVANCE_SCORE:-0.0}
-    AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+    AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-true}
+    AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
     INTERNAL_CALLBACK_TOKEN: ${INTERNAL_CALLBACK_TOKEN:-local-internal-callback}
     S3_ENDPOINT: http://minio:9000
     S3_BUCKET: ${S3_BUCKET:-fruition-storage}
@@ -63,7 +64,7 @@ services:
       QUERY_WEB_SEARCH_MAX_RESULTS: ${QUERY_WEB_SEARCH_MAX_RESULTS:-5}
       QUERY_WEB_SEARCH_TIMEOUT_SECONDS: ${QUERY_WEB_SEARCH_TIMEOUT_SECONDS:-10}
       QUERY_MIN_INTERNAL_RELEVANCE_SCORE: ${QUERY_MIN_INTERNAL_RELEVANCE_SCORE:-0.0}
-      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-true}
       SKILL_API_ENABLED: ${SKILL_API_ENABLED:-true}
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
       INTERNAL_CALLBACK_TOKEN: ${INTERNAL_CALLBACK_TOKEN:-local-internal-callback}
@@ -167,7 +168,6 @@ services:
       context: ../services/ai/pipeline
     container_name: fruition-pipeline-agent-worker-dev
     restart: unless-stopped
-    profiles: ["agent-skills"]
     command: ["python", "agent_worker.py"]
     environment:
       AI_DATABASE_URL: postgresql://${AI_DB_RUNTIME_USER:-ai_runtime}:${AI_DB_RUNTIME_PASSWORD:-ai_runtime_dev_password}@postgresql:5432/${AI_DB_NAME:-ai_db}
@@ -176,7 +176,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AGENT_BACKEND_URL: http://host.docker.internal:8080
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
-      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-false}
+      AGENT_SKILLS_ENABLED: ${AGENT_SKILLS_ENABLED:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

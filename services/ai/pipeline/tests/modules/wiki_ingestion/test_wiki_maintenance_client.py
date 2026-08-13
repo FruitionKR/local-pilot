@@ -14,7 +14,7 @@ def test_claude_lint_client_uses_messages_endpoint_and_provider(
             user_id="user-1",
             workspace_id="workspace-1",
             provider="claude",
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5-20251001",
         )
     )
 

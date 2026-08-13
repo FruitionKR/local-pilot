@@ -83,7 +83,7 @@ def test_emit_excludes_private_llm_fields_from_callback_payload(tmp_path: Path) 
             "클라이언트를 준비했습니다.",
             {
                 "provider": "gemini",
-                "model": "gemini-2.5-flash-lite",
+                "model": "gemini-3.1-flash-lite",
                 "count": 3,
                 "password": "top-password",
                 "baseURL": "https://top-base.example",
@@ -111,7 +111,7 @@ def test_emit_excludes_private_llm_fields_from_callback_payload(tmp_path: Path) 
 
     assert event["data"] == {
         "provider": "gemini",
-        "model": "gemini-2.5-flash-lite",
+        "model": "gemini-3.1-flash-lite",
         "count": "3",
         "metadata": "{'ordinary': {'value': 'keep'}}",
     }

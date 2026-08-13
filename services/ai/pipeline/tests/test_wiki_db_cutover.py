@@ -66,6 +66,17 @@ def test_cutover_includes_agent_skill_and_checkpoint_tables() -> None:
     )
 
 
+def test_agent_artifact_cutover_snapshot_keeps_v25_source_without_object_key() -> None:
+    artifact_table = next(table for table in cutover.TABLES if table.name == "agent_run_artifacts")
+
+    assert "object_key" in artifact_table.columns
+    assert artifact_table.source_columns == (
+        "id", "run_id", "workspace_id", "user_id", "content_hash", "purpose",
+        "document_id", "base_version", "target", "created_at", "expires_at",
+    )
+    assert "object_key" not in artifact_table.source_columns
+
+
 def test_cutover_rejects_active_agent_runs() -> None:
     result = Mock()
     result.fetchone.return_value = (1,)

@@ -21,14 +21,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class QueryService {
 
     private static final Logger log = LoggerFactory.getLogger(QueryService.class);
     private static final String REFERENCE_TYPE_SOURCE_BLOCK = "source_block";
+    private static final int MAX_RECENT_MESSAGE_CONTENT_LENGTH = 4000;
 
     private final PipelineQueryRequester pipelineQueryClient;
     private final ChatMessageRepository chatMessageRepository;
@@ -84,7 +88,8 @@ public class QueryService {
                 UUID.randomUUID().toString(),
                 "chat_user_" + UUID.randomUUID(),
                 "chat_assistant_" + UUID.randomUUID(),
-                createdAt
+                createdAt,
+                recentMessages(sessionId)
         );
         log.info("[질의 메시지 ID 생성] requestId={} pairId={} userMessageId={} assistantMessageId={}",
                 requestId, context.pairId(), context.userMessageId(), context.assistantMessageId());
@@ -100,6 +105,29 @@ public class QueryService {
         log.info("[질의 메시지 선저장 commit 완료] requestId={} pairId={} userStatus=completed assistantStatus=pending",
                 requestId, context.pairId());
         return context;
+    }
+
+    private List<PipelineQueryRequester.RecentMessage> recentMessages(String sessionId) {
+        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        Set<String> completePairIds = messages.stream()
+                .collect(Collectors.groupingBy(ChatMessage::getPairId))
+                .entrySet().stream()
+                .filter(pair -> pair.getValue().size() == 2)
+                .filter(pair -> pair.getValue().stream().allMatch(message -> "completed".equals(message.getStatus())))
+                .filter(pair -> pair.getValue().stream().filter(message -> "user".equals(message.getRole())).count() == 1)
+                .filter(pair -> pair.getValue().stream().filter(message -> "assistant".equals(message.getRole())).count() == 1)
+                .map(java.util.Map.Entry::getKey)
+                .collect(Collectors.toSet());
+        List<PipelineQueryRequester.RecentMessage> completedMessages = messages.stream()
+                .filter(message -> completePairIds.contains(message.getPairId()))
+                .sorted(Comparator.comparing(ChatMessage::getCreatedAt)
+                        .thenComparing(ChatMessage::getPairId)
+                        .thenComparingInt(message -> "user".equals(message.getRole()) ? 0 : 1))
+                .map(message -> new PipelineQueryRequester.RecentMessage(message.getRole(),
+                        message.getContent().substring(0,
+                                Math.min(message.getContent().length(), MAX_RECENT_MESSAGE_CONTENT_LENGTH))))
+                .toList();
+        return completedMessages.subList(Math.max(0, completedMessages.size() - 6), completedMessages.size());
     }
 
     private QueryResponse querySynchronously(String workspaceId,
@@ -121,8 +149,10 @@ public class QueryService {
         try {
             log.info("[질의 파이프라인 호출 시작] sessionId={}", sessionId);
             PipelineQueryResponse pipelineResponse = webSearchEnabled
-                    ? pipelineQueryClient.query(workspaceId, question, provider, model, true)
-                    : pipelineQueryClient.query(workspaceId, question, provider, model);
+                    ? pipelineQueryClient.query(workspaceId, question, provider, model, true,
+                    messageContext.recentMessages())
+                    : pipelineQueryClient.query(workspaceId, question, provider, model, false,
+                    messageContext.recentMessages());
             log.info("[질의 파이프라인 응답 수신] answerLength={} relatedPageCount={} evidenceCount={} traversalPathCount={}",
                     pipelineResponse.answer() != null ? pipelineResponse.answer().length() : 0,
                     pipelineResponse.relatedPages() != null ? pipelineResponse.relatedPages().size() : 0,
@@ -191,7 +221,9 @@ public class QueryService {
                 new QueryResponse.MessageSummary(messageContext.assistantMessageId(), "assistant",
                         pipelineResponse.answer(), "completed", assistantMessage.getCreatedAt()),
                 pipelineResponse.relatedPages(), pipelineResponse.evidenceSnippets(),
-                pipelineResponse.graphContext(), pipelineResponse.traversalPaths());
+                pipelineResponse.graphContext(), pipelineResponse.traversalPaths(),
+                pipelineResponse.webSearchRequested(), pipelineResponse.webSearchExecuted(),
+                pipelineResponse.resultCount(), pipelineResponse.errorCode());
     }
 
     private void markAssistantFailed(String requestId,
@@ -237,7 +269,8 @@ public class QueryService {
 
         List<ChatMessageReference> refs = new ArrayList<>();
         for (PipelineQueryResponse.EvidenceSnippet snippet : pipelineResponse.evidenceSnippets()) {
-            if (snippet.sourceDocumentId() == null || snippet.text() == null || snippet.text().isBlank()) {
+            if (snippet.sourceDocumentId() == null || snippet.sourceDocumentId().startsWith("web:")
+                    || snippet.text() == null || snippet.text().isBlank()) {
                 continue;
             }
             refs.add(new ChatMessageReference(
@@ -262,6 +295,13 @@ public class QueryService {
             String pairId,
             String userMessageId,
             String assistantMessageId,
-            Instant createdAt
-    ) {}
+            Instant createdAt,
+            @com.fasterxml.jackson.annotation.JsonProperty("recent_messages")
+            List<PipelineQueryRequester.RecentMessage> recentMessages
+    ) {
+        public QueryMessageContext(String pairId, String userMessageId, String assistantMessageId,
+                                   Instant createdAt) {
+            this(pairId, userMessageId, assistantMessageId, createdAt, List.of());
+        }
+    }
 }

@@ -17,6 +17,7 @@ class Table:
     name: str
     columns: tuple[str, ...]
     key: tuple[str, ...]
+    source_columns: tuple[str, ...] | None = None
 
 
 TABLES = (
@@ -37,7 +38,12 @@ TABLES = (
     Table("agent_approvals", ("id", "run_id", "plan_id", "plan_version", "operation_hash", "user_id", "decision", "created_at"), ("id",)),
     Table("agent_jobs", ("id", "run_id", "job_type", "status", "attempt_count", "available_at", "lease_owner", "lease_token", "leased_until", "heartbeat_at", "created_at", "updated_at"), ("id",)),
     Table("agent_tool_executions", ("id", "run_id", "plan_id", "operation_id", "tool_name", "idempotency_key", "attempt", "status", "response_metadata", "error_code", "finished_at"), ("id",)),
-    Table("agent_run_artifacts", ("id", "run_id", "workspace_id", "user_id", "content_hash", "purpose", "document_id", "base_version", "target", "created_at", "expires_at"), ("id",)),
+    Table(
+        "agent_run_artifacts",
+        ("id", "run_id", "workspace_id", "user_id", "content_hash", "purpose", "object_key", "document_id", "base_version", "target", "created_at", "expires_at"),
+        ("id",),
+        ("id", "run_id", "workspace_id", "user_id", "content_hash", "purpose", "document_id", "base_version", "target", "created_at", "expires_at"),
+    ),
     Table("checkpoint_migrations", ("v",), ("v",)),
     Table("checkpoints", ("thread_id", "checkpoint_ns", "checkpoint_id", "parent_checkpoint_id", "type", "checkpoint", "metadata"), ("thread_id", "checkpoint_ns", "checkpoint_id")),
     Table("checkpoint_blobs", ("thread_id", "checkpoint_ns", "channel", "version", "type", "blob"), ("thread_id", "checkpoint_ns", "channel", "version")),
@@ -74,15 +80,20 @@ def _identifiers(values: tuple[str, ...]) -> sql.Composed:
     return sql.SQL(", ").join(sql.Identifier(value) for value in values)
 
 
-def _stats(conn: psycopg.Connection, table: Table) -> dict[str, str | int]:
+def _stats(
+    conn: psycopg.Connection,
+    table: Table,
+    columns: tuple[str, ...] | None = None,
+) -> dict[str, str | int]:
     digest = hashlib.sha256()
+    columns = columns or table.source_columns or table.columns
     query = sql.SQL(
         "SELECT jsonb_build_array({keys})::text, "
         "md5(jsonb_build_array({columns})::text) "
         "FROM {table} ORDER BY {keys}"
     ).format(
         keys=_identifiers(table.key),
-        columns=_identifiers(table.columns),
+        columns=_identifiers(columns),
         table=sql.Identifier(table.name),
     )
     count = 0
@@ -98,7 +109,8 @@ def _stats(conn: psycopg.Connection, table: Table) -> dict[str, str | int]:
 
 
 def _copy_table(source: psycopg.Connection, target: psycopg.Connection, table: Table) -> None:
-    columns = _identifiers(table.columns)
+    source_columns = table.source_columns or table.columns
+    columns = _identifiers(source_columns)
     export = sql.SQL("COPY (SELECT {columns} FROM {table} ORDER BY {keys}) TO STDOUT (FORMAT BINARY)").format(
         columns=columns,
         table=sql.Identifier(table.name),

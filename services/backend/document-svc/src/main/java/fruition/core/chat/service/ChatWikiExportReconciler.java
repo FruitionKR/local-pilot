@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * </ul>
  * 모두 멱등하게 동작한다.
  *
- * session_id와 pair_id는 source_block 텍스트의 {@code [session_id:pair_id]} prefix에서 파싱한다(별도 저장 없음).
+ * session_id와 pair_id는 source_block block_id의 {@code session_id:pair_id} provenance에서 파싱한다(별도 저장 없음).
  *
  * NOTE: 현재 파이프라인은 append 미구현이라 full 재-export마다 새 page가 생긴다(source page 누적은 파이프라인 후속작업).
  */
@@ -45,8 +45,8 @@ public class ChatWikiExportReconciler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatWikiExportReconciler.class);
 
-    /** source_block 텍스트의 {@code [session_id:pair_id]} prefix. group(1)=session_id, group(2)=pair_id. */
-    private static final Pattern PAIR_REF = Pattern.compile("\\[([^:\\]]+):([^\\]]+)\\]");
+    /** source_block block_id의 {@code session_id:pair_id} provenance. group(1)=session_id, group(2)=pair_id. */
+    private static final Pattern PAIR_REF = Pattern.compile("(?U)^([^:\\s]+):([^:\\s]+)$");
 
     private final DocumentRepository documentRepository;
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
@@ -72,23 +72,26 @@ public class ChatWikiExportReconciler {
         for (Document document : documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed)) {
             String mode = document.getSelectionMode();
 
-            // source_blocks의 [session_id:pair_id]에서 세션과 문답을 파싱
-            String sessionId = null;
+            // source_blocks의 block_id에 보존된 session_id:pair_id provenance에서 세션과 문답을 파싱
+            Set<String> sessionIds = new LinkedHashSet<>();
             Set<String> pairIds = new LinkedHashSet<>();
             var wikiContext = pipelineWikiStateRequester.documentContext(
                     document.getWorkspaceId(), document.getId());
             for (var block : wikiContext.sourceBlocks()) {
-                Matcher matcher = PAIR_REF.matcher(block.text());
-                if (matcher.find()) {
-                    if (sessionId == null) {
-                        sessionId = matcher.group(1);
-                    }
-                    pairIds.add(matcher.group(2));
+                if (block.blockId() == null) {
+                    continue;
                 }
+                Matcher matcher = PAIR_REF.matcher(block.blockId());
+                if (!matcher.matches()) {
+                    continue;
+                }
+                sessionIds.add(matcher.group(1));
+                pairIds.add(matcher.group(2));
             }
-            if (sessionId == null) {
-                continue; // 아직 source_blocks 없거나 prefix 없음
+            if (sessionIds.size() != 1) {
+                continue; // 유효 provenance가 없거나 여러 세션이 섞여 있으면 재시도
             }
+            String sessionId = sessionIds.iterator().next();
 
             String wikiPageId = wikiContext.pages().stream()
                     .filter(page -> "source_of".equals(page.relationType()))
@@ -101,17 +104,22 @@ public class ChatWikiExportReconciler {
 
             if ("full".equals(mode)) {
                 boolean linked = linkSession(sessionId, wikiPageId);
-                int marked = markIngestedPairs(sessionId, pairIds, wikiPageId);
-                if (linked || marked > 0) {
-                    log.info("[chat-wiki][reconcile] full session={} page={} 신규연결={} 편입마킹={}건 (document={})",
-                            sessionId, wikiPageId, linked, marked, document.getId());
+                if (!linked) {
+                    continue;
                 }
+                if (!markIngestedPairs(sessionId, pairIds, wikiPageId)) {
+                    continue; // 세션·모든 pair 마커가 준비될 때까지 reconciled_at을 남기지 않고 재시도
+                }
+                log.info("[chat-wiki][reconcile] full session={} page={} 세션연결·편입마킹 완료 (document={})",
+                        sessionId, wikiPageId, document.getId());
             } else if ("partial".equals(mode)) {
-                int added = recordPartialPairs(document.getWorkspaceId(), sessionId, pairIds, wikiPageId, document.getId());
-                if (added > 0) {
-                    log.info("[chat-wiki][reconcile] partial session={} page={} 발췌기록={}건 (document={})",
-                            sessionId, wikiPageId, added, document.getId());
+                if (!recordPartialPairs(document.getWorkspaceId(), sessionId, pairIds, wikiPageId, document.getId())) {
+                    continue; // 모든 pair 멤버십이 준비될 때까지 재시도
                 }
+                log.info("[chat-wiki][reconcile] partial session={} page={} 발췌기록 완료 (document={})",
+                        sessionId, wikiPageId, document.getId());
+            } else {
+                continue;
             }
 
             // 후처리 완료 → reconciled_at 세팅(다음 tick 조회에서 제외). source_blocks/page 미생성이면 위에서 continue돼 여기 도달 안 함.
@@ -120,11 +128,14 @@ public class ChatWikiExportReconciler {
         }
     }
 
-    /** 세션을 source page에 연결한다. 아직 미연결인 세션만 연결한다(멱등, 다중 full 문서에도 무한 재기록/flip 방지). 새로 연결했으면 true. */
+    /** 세션을 source page에 연결하고, 이미 같은 page면 성공으로 간주한다(멱등·재시도 가능). */
     private boolean linkSession(String sessionId, String wikiPageId) {
         return chatSessionRepository.findById(sessionId).map(session -> {
+            if (wikiPageId.equals(session.getWikiPageId())) {
+                return true;
+            }
             if (session.getWikiPageId() != null) {
-                return false; // 이미 연결됨 → 재연결하지 않음
+                return false; // 다른 source page로는 재연결하지 않음
             }
             session.linkWikiPage(wikiPageId);
             chatSessionRepository.save(session);
@@ -132,35 +143,53 @@ public class ChatWikiExportReconciler {
         }).orElse(false);
     }
 
-    /** partial 발췌 문답을 chat_partial_wiki에 기록한다(멱등: 이 문서로 이미 기록했으면 skip). 새로 기록한 행 수를 반환. */
-    private int recordPartialPairs(String workspaceId, String sessionId, Set<String> pairIds, String wikiPageId, String documentId) {
-        if (pairIds.isEmpty() || chatPartialWikiRepository.existsByDocumentId(documentId)) {
-            return 0;
+    /** partial 발췌 문답을 pair별로 기록한다(멱등·부분 실패 후 재시도 가능). */
+    private boolean recordPartialPairs(String workspaceId, String sessionId, Set<String> pairIds, String wikiPageId, String documentId) {
+        if (pairIds.isEmpty()) {
+            return false;
         }
         Instant now = Instant.now();
-        int added = 0;
         for (String pairId : pairIds) {
+            if (chatPartialWikiRepository.existsByDocumentIdAndPairId(documentId, pairId)) {
+                continue;
+            }
             String id = "cpw_" + UUID.randomUUID().toString().replace("-", "");
             chatPartialWikiRepository.save(new ChatPartialWiki(id, workspaceId, sessionId, pairId, wikiPageId, documentId, now));
-            added++;
         }
-        return added;
+        return true;
     }
 
-    /** 편입된 문답을 세션 위키에 편입됨으로 마킹한다(멱등: 아직 null인 것만). 새로 마킹한 메시지 수를 반환. */
-    private int markIngestedPairs(String sessionId, Set<String> pairIds, String wikiPageId) {
+    /** 모든 기대 pair가 조회되고 같은 source page로 마킹된 경우에만 성공한다(멱등·재시도 가능). */
+    private boolean markIngestedPairs(String sessionId, Set<String> pairIds, String wikiPageId) {
         if (pairIds.isEmpty()) {
-            return 0;
+            return false;
         }
         List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdAndPairIdIn(sessionId, pairIds);
-        int marked = 0;
+        Set<String> foundPairIds = new LinkedHashSet<>();
+        for (ChatMessage message : messages) {
+            foundPairIds.add(message.getPairId());
+        }
+        if (!foundPairIds.containsAll(pairIds)) {
+            return false;
+        }
+        if (messages.stream()
+                .anyMatch(message -> message.getWikiPageId() != null
+                        && !wikiPageId.equals(message.getWikiPageId()))) {
+            return false;
+        }
+
+        boolean changed = false;
         for (ChatMessage message : messages) {
             if (message.getWikiPageId() == null) {
                 message.markIngested(wikiPageId);
-                marked++;
+                changed = true;
             }
         }
-        chatMessageRepository.saveAll(messages);
-        return marked;
+        if (changed) {
+            chatMessageRepository.saveAll(messages);
+        }
+        return messages.stream()
+                .filter(message -> pairIds.contains(message.getPairId()))
+                .allMatch(message -> wikiPageId.equals(message.getWikiPageId()));
     }
 }

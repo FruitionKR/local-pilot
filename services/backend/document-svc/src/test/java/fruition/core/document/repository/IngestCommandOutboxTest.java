@@ -25,7 +25,7 @@ class IngestCommandOutboxTest {
     void enqueue_serializesProviderAndModelAtOutboxBoundary() {
         ObjectMapper objectMapper = new ObjectMapper();
         when(workspaceAiModelClient.get("ws_1"))
-                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-2.5-flash-lite"));
+                .thenReturn(new WorkspaceAiModelClient.AiModelSelection("gemini", "gemini-3.1-flash-lite"));
         AiCommandOutboxWriter writer = spy(new AiCommandOutboxWriter(outboxRepository, objectMapper));
         IngestCommandOutbox outbox = new IngestCommandOutbox(
                 writer,
@@ -41,6 +41,6 @@ class IngestCommandOutboxTest {
         verify(outboxRepository).save(saved.capture());
         assertThat(saved.getValue().getPayload())
                 .contains("\"kind\":\"chat_wiki\"", "\"provider\":\"gemini\"",
-                        "\"model\":\"gemini-2.5-flash-lite\"");
+                        "\"model\":\"gemini-3.1-flash-lite\"");
     }
 }

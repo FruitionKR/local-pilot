@@ -17,6 +17,7 @@ from app.core.llm_env import resolve_llm_selection
 from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
+from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
 from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_repository as database
@@ -74,6 +75,13 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
         user_id=str(command["user_id"]),
+        conversation_context=ConversationContext(
+            recent_messages=tuple(
+                ConversationMessage(role=message["role"], content=message["content"])
+                for message in command.get("recent_messages", [])
+            )
+        ) if command.get("recent_messages") else None,
+        allow_web_search=command["allow_web_search"],
     )
     return query_to_response(result).model_dump(mode="json")
 
@@ -93,10 +101,16 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             "message": command["message"],
             "provider": command.get("provider"),
             "model": command.get("model"),
+            "skill_mode": command.get("skill_mode", "auto"),
+            "skill_id": command.get("skill_id"),
             "workspace_id": command["workspace_id"],
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
             "active_markdown_context": command["editor_snapshot"],
+            "skill_draft_sources": command.get("skill_draft_sources", []),
+            "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
+            "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),
+            "skill_scope_type": command.get("skill_scope_type"),
         })
         result = agent_to_response(
             build_handle_agent_turn_use_case(

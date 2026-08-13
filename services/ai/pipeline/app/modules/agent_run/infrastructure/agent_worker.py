@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_EXECUTION_STEPS = 40
 _GRAPH_RECURSION_LIMIT = 64
+_MAX_FAILURE_DETAIL_LENGTH = 256
 _TERMINAL_RUN_STATUSES = frozenset(
     {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"}
 )
@@ -45,6 +46,8 @@ _READ_TOOL_ARGUMENTS = {
     "list_folder_children": frozenset({"folder_id"}),
     "get_document_metadata": frozenset({"document_id"}),
     "get_document_content": frozenset({"document_id"}),
+    "search_hierarchy": frozenset({"query"}),
+    "get_breadcrumb": frozenset({"folder_id", "document_id"}),
 }
 
 
@@ -90,8 +93,14 @@ class AgentWorker:
             self._run_job(job)
             self._repository.complete(job)
         except Exception as exc:
-            logger.exception("Agent job 처리 실패: job_id=%s job_type=%s", job.id, job.job_type)
-            self._repository.fail(job, type(exc).__name__)
+            logger.error(
+                "Agent job 처리 실패: job_id=%s job_type=%s type=%s detail=%s",
+                job.id,
+                job.job_type,
+                type(exc).__name__,
+                _failure_detail(exc),
+            )
+            self._repository.fail(job, _failure_detail(exc))
         finally:
             stop_heartbeat.set()
             heartbeat.join(timeout=1)
@@ -608,7 +617,7 @@ class AgentWorker:
                 and not isinstance(expected_version, bool)
                 and isinstance(expected_hash, str)
                 and bool(expected_hash)
-                and current.get("current_version") == expected_version
+                and current.get("edit_revision") == expected_version
                 and current.get("content_hash") == expected_hash
             )
         if operation.target_type == "document" and operation.tool_name == "rename_document":
@@ -660,11 +669,26 @@ class AgentWorker:
             raise ValueError("Agent selected a read tool that is not allowed.")
         if arguments is None or set(arguments) != _READ_TOOL_ARGUMENTS[tool_name]:
             raise ValueError("Agent read arguments do not match the tool contract.")
-        if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
-            raise ValueError("Agent read arguments must contain non-empty ids.")
-        # document_id/folder_id 값이 승인된 plan이나 이전 tool 응답으로 실제 확인된 id인지 대조한다.
+        if tool_name == "search_hierarchy":
+            if not isinstance(arguments["query"], str) or not arguments["query"].strip():
+                raise ValueError("Agent read arguments must contain a non-empty query.")
+            return tool_name, arguments
+        if tool_name == "get_breadcrumb":
+            folder_id = arguments["folder_id"]
+            document_id = arguments["document_id"]
+            if (folder_id is None) == (document_id is None):
+                raise ValueError("Agent breadcrumb requires exactly one target.")
+            target_id = folder_id if folder_id is not None else document_id
+            if not isinstance(target_id, str) or not target_id.strip():
+                raise ValueError("Agent breadcrumb target must be a non-empty id.")
+            targets = (target_id,)
+        else:
+            if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
+                raise ValueError("Agent read arguments must contain non-empty ids.")
+            targets = arguments.values()
+        # id 값이 승인된 plan이나 이전 tool 응답으로 실제 확인된 id인지 대조한다.
         # (문서 본문 등 신뢰할 수 없는 observations 텍스트만으로는 임의 id를 읽을 수 없다.)
-        if any(value not in known_ids for value in arguments.values()):
+        if any(value not in known_ids for value in targets):
             raise ValueError("Agent read target id is not part of the known workspace state.")
         return tool_name, arguments
 
@@ -674,6 +698,22 @@ def _route_job_event(state: AgentRunGraphState) -> str:
     if event not in {"planning", "execution", "verification"}:
         raise ValueError("Unsupported Agent graph event.")
     return event
+
+
+def _failure_detail(exc: Exception) -> str:
+    if type(exc) is ValueError and _is_internal_value_error(exc):
+        detail = " ".join(str(exc).split())
+        if detail:
+            return f"ValueError: {detail}"[:_MAX_FAILURE_DETAIL_LENGTH]
+    return type(exc).__name__
+
+
+def _is_internal_value_error(exc: ValueError) -> bool:
+    traceback = exc.__traceback__
+    while traceback is not None and traceback.tb_next is not None:
+        traceback = traceback.tb_next
+    module = traceback.tb_frame.f_globals.get("__name__", "") if traceback else ""
+    return module.startswith("app.modules.agent_run.")
 
 
 def _route_user_decision(state: AgentRunGraphState) -> str:
@@ -712,10 +752,11 @@ def _extract_observed_ids(value: object) -> set[str]:
         item_id = value.get("id")
         if isinstance(item_id, str) and item_id.strip():
             ids.add(item_id)
-        items = value.get("items")
-        if isinstance(items, list):
-            for item in items:
-                ids.update(_extract_observed_ids(item))
+        for key in ("items", "results"):
+            items = value.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    ids.update(_extract_observed_ids(item))
     return ids
 
 

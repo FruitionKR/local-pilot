@@ -75,6 +75,40 @@ class MarkdownSourceRangeTest(unittest.TestCase):
         self.assertNotIn("smoke test", {segment.text for segment in plan.segments})
         self.assertIn("smoke test", plan.masked_markdown)
 
+    def test_locks_empty_crlf_task_markers_in_nested_lists(self) -> None:
+        source = "Intro\r\n- [ ]\r\n  * [x]\r\n- [X]\r\nOutro\r\n"
+        request = MarkdownEditRequest(
+            instruction="Polish the sentences.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+
+        plan = build_source_range_plan(request)
+
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual([segment.text for segment in plan.segments], ["Intro", "Outro"])
+        self.assertEqual(
+            plan.masked_markdown,
+            "{{FRUITION_TEXT_0001}}\r\n- [ ]\r\n  * [x]\r\n- [X]\r\n{{FRUITION_TEXT_0002}}\r\n",
+        )
+
+    def test_keeps_lf_task_markers_locked(self) -> None:
+        source = "Intro\n- [ ]\n  * [x]\n- [X]\nOutro\n"
+        request = MarkdownEditRequest(
+            instruction="Polish the sentences.",
+            markdown=source,
+            target=TARGET,
+            edit_goal="cleanup",
+        )
+
+        plan = build_source_range_plan(request)
+
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual([segment.text for segment in plan.segments], ["Intro", "Outro"])
+
     def test_rejects_unknown_or_duplicate_segment_ids(self) -> None:
         request = MarkdownEditRequest(
             instruction="문장을 자연스럽게 다듬어줘.",

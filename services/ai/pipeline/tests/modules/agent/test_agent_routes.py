@@ -203,7 +203,7 @@ class AgentRoutesTest(unittest.TestCase):
         payload = AgentTurnRequestBody(
             message="문서를 정리해줘",
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
         )
         with patch(
             "app.modules.agent.interfaces.http.dependencies.build_handle_agent_turn_use_case",
@@ -213,7 +213,7 @@ class AgentRoutesTest(unittest.TestCase):
 
         build_use_case.assert_called_once_with(
             provider="gemini",
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
         )
 
     def test_agent_turn_accepts_response_preferences(self) -> None:
@@ -277,6 +277,20 @@ class AgentRoutesTest(unittest.TestCase):
             with self.subTest(payload=list(payload)):
                 with self.assertRaises(ValidationError):
                     AgentTurnRequestBody.model_validate(payload)
+
+    def test_agent_turn_validates_skill_mode_and_id_combinations(self) -> None:
+        for skill_mode, skill_id in (("auto", None), ("explicit", "skill-1"), ("off", None)):
+            with self.subTest(skill_mode=skill_mode):
+                request = AgentTurnRequestBody(
+                    message="정리해줘",
+                    skill_mode=skill_mode,
+                    skill_id=skill_id,
+                )
+                self.assertEqual(request.skill_mode, skill_mode)
+                self.assertEqual(request.skill_id, skill_id)
+
+        with self.assertRaises(ValidationError):
+            AgentTurnRequestBody(message="정리해줘", skill_mode="auto", skill_id="skill-1")
 
     def test_agent_turn_returns_queued_run(self) -> None:
         response = handle_agent_turn(

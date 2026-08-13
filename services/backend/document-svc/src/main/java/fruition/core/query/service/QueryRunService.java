@@ -53,7 +53,7 @@ public class QueryRunService {
                 : queryService.prepareMessages(sessionId, question, run.requestId(), provider, model);
         outboxWriter.enqueue(run.requestId(), commandTopic, sessionId,
                 new QueryCommand(run.requestId(), "query", workspaceId, userId, sessionId,
-                        question, provider, model, webSearchEnabled, messageContext));
+                        question, provider, model, webSearchEnabled, messageContext.recentMessages(), messageContext));
         log.info("[질의 command 등록 완료] requestId={}", run.requestId());
         return run;
     }
@@ -68,6 +68,7 @@ public class QueryRunService {
             String provider,
             String model,
             @JsonProperty("allow_web_search") boolean webSearchEnabled,
+            @JsonProperty("recent_messages") java.util.List<fruition.core.query.repository.PipelineQueryRequester.RecentMessage> recentMessages,
             @JsonProperty("message_context") QueryService.QueryMessageContext messageContext
     ) {}
 }

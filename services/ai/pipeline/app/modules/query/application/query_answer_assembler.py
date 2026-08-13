@@ -30,9 +30,6 @@ class QueryAnswerAssembler:
         answer: GeneratedAnswer,
         evidence_snippets: list[EvidenceSnippet],
     ) -> tuple[GeneratedAnswer, list[EvidenceSnippet]]:
-        if not evidence_snippets:
-            return answer, evidence_snippets
-
         snippets_by_rank = {snippet.rank: snippet for snippet in evidence_snippets}
         old_to_new_rank: dict[int, int] = {}
 
@@ -44,9 +41,12 @@ class QueryAnswerAssembler:
         def replace_marker(match: re.Match[str]) -> str:
             ranks = [int(value) for value in re.findall(r"\d+", match.group(1))]
             remapped = [
-                str(next_rank(rank)) if rank in snippets_by_rank else str(rank)
+                str(next_rank(rank))
                 for rank in ranks
+                if rank in snippets_by_rank
             ]
+            if not remapped:
+                return ""
             return f"[{', '.join(remapped)}]"
 
         content = re.sub(r"\[((?:\d+)(?:\s*,\s*\d+)*)\]", replace_marker, answer.content)
@@ -56,5 +56,5 @@ class QueryAnswerAssembler:
             if old_rank in snippets_by_rank
         ]
         if not used_snippets:
-            return answer, []
+            return GeneratedAnswer(content=content), []
         return GeneratedAnswer(content=content), used_snippets

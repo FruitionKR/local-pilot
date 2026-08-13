@@ -12,7 +12,11 @@ public record QueryResponse(
         @JsonProperty("related_pages") List<PipelineQueryResponse.RelatedPage> relatedPages,
         @JsonProperty("evidence_snippets") List<PipelineQueryResponse.EvidenceSnippet> evidenceSnippets,
         @JsonProperty("graph_context") PipelineQueryResponse.GraphContext graphContext,
-        @JsonProperty("traversal_paths") List<PipelineQueryResponse.TraversalPath> traversalPaths
+        @JsonProperty("traversal_paths") List<PipelineQueryResponse.TraversalPath> traversalPaths,
+        @JsonProperty("web_search_requested") boolean webSearchRequested,
+        @JsonProperty("web_search_executed") boolean webSearchExecuted,
+        @JsonProperty("result_count") int resultCount,
+        @JsonProperty("error_code") String errorCode
 ) {
     public record MessageSummary(
             String id,

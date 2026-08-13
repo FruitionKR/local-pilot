@@ -161,6 +161,19 @@ class MongoDocumentEditStoreIntegrationTest {
     }
 
     @Test
+    void save_rejectsAgentReplayOfManualReceipt() {
+        DocumentEditState legacy = legacyState();
+        store.save("ws_1", "doc_1", "# 변경\n", "new-hash", 1,
+                "write_1", "user_1", 1, legacy);
+
+        assertThatThrownBy(() -> store.save(
+                "ws_1", "doc_1", "# 변경\n", "new-hash", 1,
+                "write_1", "user_1", 1, legacy, "op_agent_1"))
+                .isInstanceOf(IdempotencyConflictException.class);
+        assertThat(mongoTemplate.count(new Query(), MongoDocumentEditOutboxEvent.class)).isEqualTo(1);
+    }
+
+    @Test
     void save_rejectsStaleBaseRevision() {
         DocumentEditState legacy = legacyState();
         store.save("ws_1", "doc_1", "# 변경\n", "new-hash", 1,

@@ -61,7 +61,8 @@ class RestoreWikiPagesUseCase:
             failed_pages=failed_pages,
             deleted_pages=deleted_pages,
         )
-        self._page_restore.apply_current_state(
+        self._page_restore.apply_current_state_and_cleanup(
+            command.operation_id,
             command.workspace_id,
             changed_pages,
             {
@@ -73,12 +74,8 @@ class RestoreWikiPagesUseCase:
                 ],
             },
             True,
+            deleted_pages,
         )
-        if deleted_pages:
-            self._page_restore.cleanup_deleted_pages(
-                command.workspace_id,
-                deleted_pages,
-            )
         self._start_embeddings(command.operation_id, changed_pages)
         return result
 
@@ -132,17 +129,14 @@ class RestoreWikiPagesUseCase:
             link_changes=link_changes,
             failed_actions=failed_actions,
         )
-        self._page_restore.apply_current_state(
+        self._page_restore.apply_current_state_and_cleanup(
+            command.operation_id,
             command.workspace_id,
             changed_pages,
             link_changes,
             False,
+            list(command.deleted_pages),
         )
-        if command.deleted_pages:
-            self._page_restore.cleanup_deleted_pages(
-                command.workspace_id,
-                list(command.deleted_pages),
-            )
         self._start_embeddings(command.operation_id, changed_pages)
         return result
 

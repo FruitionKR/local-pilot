@@ -22,6 +22,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
+
 /** Kafka result event를 core DB에 멱등 반영한다. */
 @Service
 public class AiTaskResultApplier {
@@ -157,22 +159,127 @@ public class AiTaskResultApplier {
 
         int updated;
         if ("succeeded".equals(text(event, "status"))) {
-            updated = jdbcTemplate.update("""
-                    UPDATE agent_apply_projections
-                    SET status = 'ready', result = CAST(? AS jsonb), error_code = NULL, updated_at = now()
-                    WHERE run_id = ? AND status = 'queued'
-                    """, required(event, "payload").toString(), runId);
+            JsonNode request = event.get("request");
+            JsonNode payload = event.get("payload");
+            String errorCode = null;
+            if (request == null || !request.isObject()) {
+                errorCode = "agent_result_invalid_request";
+            } else if (payload == null || !payload.isObject()) {
+                errorCode = "agent_result_invalid_payload";
+            } else if (!isMarkdownAction(payload) && !isAutonomousAction(payload)) {
+                errorCode = "agent_result_unsupported_action";
+            } else if (isMarkdownAction(payload) && expectedMarkdown(event) == null) {
+                errorCode = "agent_result_missing_canonical_markdown";
+            }
+            if (errorCode != null) {
+                updated = markAgentFailed(runId, errorCode);
+            } else {
+                AgentProjection projection = loadAgentProjection(runId);
+                errorCode = agentRequestIdentityError(request, projection);
+                updated = errorCode == null
+                        ? jdbcTemplate.update("""
+                                UPDATE agent_apply_projections
+                                SET status = 'ready', result = CAST(? AS jsonb), ready_markdown = ?,
+                                    error_code = NULL, updated_at = now()
+                                WHERE run_id = ? AND status = 'queued'
+                                """, payload.toString(), expectedMarkdown(event), runId)
+                        : markAgentFailed(runId, errorCode);
+            }
         } else {
-            updated = jdbcTemplate.update("""
-                    UPDATE agent_apply_projections
-                    SET status = 'failed', error_code = ?, updated_at = now()
-                    WHERE run_id = ? AND status = 'queued'
-                    """, event.path("error").asText("agent_turn_failed"), runId);
+            String error = event.path("error").asText(null);
+            updated = markAgentFailed(runId, error == null || error.isBlank() ? "agent_turn_failed" : error);
         }
         if (updated != 1) {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
     }
+
+    public static String expectedMarkdown(JsonNode event) {
+        JsonNode request = event == null ? null : event.get("request");
+        JsonNode payload = event == null ? null : event.get("payload");
+        if (request == null || !request.isObject() || payload == null || !payload.isObject()) return null;
+        if ("markdown_create".equals(payload.path("action").asText())) {
+            return payload.path("generated_markdown").path("markdown").asText(null);
+        }
+        if (!"markdown_edit".equals(payload.path("action").asText())) return null;
+        String source = request.path("editor_snapshot").path("markdown").asText(null);
+        JsonNode edit = payload.path("edit");
+        int start = edit.path("actual_target").path("start_line").asInt(0);
+        int end = edit.path("actual_target").path("end_line").asInt(0);
+        String replacement = edit.path("replacement_markdown").asText(null);
+        String operation = edit.path("operation").asText(null);
+        if (source == null || replacement == null || start < 1 || end < start || operation == null) return null;
+        java.util.List<String> lines = new java.util.ArrayList<>(java.util.List.of(source.split("\\n", -1)));
+        java.util.List<String> replacementLines = java.util.List.of(replacement.split("\\n", -1));
+        if (end > lines.size()) return null;
+        if ("replace".equals(operation)) {
+            lines.subList(start - 1, end).clear();
+            lines.addAll(start - 1, replacementLines);
+        } else if ("insert_after".equals(operation)) {
+            lines.addAll(end, replacementLines);
+        } else {
+            return null;
+        }
+        return String.join("\n", lines);
+    }
+
+    private static boolean isMarkdownAction(JsonNode payload) {
+        String action = payload.path("action").asText();
+        return "markdown_create".equals(action) || "markdown_edit".equals(action);
+    }
+
+    private static boolean isAutonomousAction(JsonNode payload) {
+        String action = payload.path("action").asText();
+        return "folder_organize".equals(action) || "workspace_workflow".equals(action);
+    }
+
+    private int markAgentFailed(String runId, String errorCode) {
+        return jdbcTemplate.update("""
+                UPDATE agent_apply_projections
+                SET status = 'failed', error_code = ?, updated_at = now()
+                WHERE run_id = ? AND status = 'queued'
+                """, errorCode, runId);
+    }
+
+    private AgentProjection loadAgentProjection(String runId) {
+        return jdbcTemplate.query("""
+                SELECT workspace_id, user_id, document_id, base_version, apply_operation_id
+                FROM agent_apply_projections
+                WHERE run_id = ?
+                FOR UPDATE
+                """, resultSet -> resultSet.next() ? new AgentProjection(
+                resultSet.getString("workspace_id"),
+                resultSet.getString("user_id"),
+                resultSet.getString("document_id"),
+                resultSet.getLong("base_version"),
+                resultSet.getString("apply_operation_id")) : null, runId);
+    }
+
+    private String agentRequestIdentityError(JsonNode request, AgentProjection projection) {
+        if (projection == null
+                || !Objects.equals(textOrNull(request, "workspace_id"), projection.workspaceId())
+                || !Objects.equals(textOrNull(request, "user_id"), projection.userId())
+                || !Objects.equals(textOrNull(request, "document_id"), projection.documentId())
+                || !request.path("base_version").isNumber()
+                || request.path("base_version").asLong() != projection.baseVersion()
+                || !Objects.equals(textOrNull(request, "apply_operation_id"), projection.applyOperationId())) {
+            return "agent_result_request_mismatch";
+        }
+        return null;
+    }
+
+    private String textOrNull(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? null : value.asText();
+    }
+
+    static record AgentProjection(
+            String workspaceId,
+            String userId,
+            String documentId,
+            long baseVersion,
+            String applyOperationId
+    ) {}
 
     private RestoreExecuteService.RestoreManifest readRestoreManifest(OperationLog operation) {
         try {
@@ -237,7 +344,8 @@ public class AiTaskResultApplier {
                 new QueryResponse.MessageSummary(context.assistantMessageId(), "assistant",
                         result.answer(), "completed", context.createdAt()),
                 result.relatedPages(), result.evidenceSnippets(), result.graphContext(),
-                result.traversalPaths());
+                result.traversalPaths(), result.webSearchRequested(), result.webSearchExecuted(),
+                result.resultCount(), result.errorCode());
     }
 
     private JsonNode required(JsonNode node, String field) {

@@ -67,7 +67,7 @@ def persist_wiki_outputs(
             "source",
             document_id,
         )
-    _persist_source_blocks(conn, document_id, manifest)
+    source_blocks = _persist_source_blocks(conn, document_id, manifest)
     source_page_id = _persist_source_page(
         conn,
         document_id,
@@ -76,6 +76,7 @@ def persist_wiki_outputs(
         user_id,
         workspace_id,
         page_id=source_page_id,
+        source_blocks=source_blocks,
     )
     lock_concept_persistence(conn, user_id, workspace_id)
     if operation_id:
@@ -208,6 +209,7 @@ def _persist_source_page(
     workspace_id: str,
     *,
     page_id: str | None = None,
+    source_blocks: list[dict[str, str]] | None = None,
 ) -> str:
     source_page_id = page_id or resolve_or_create_wiki_page_id(
         conn,
@@ -247,7 +249,7 @@ def _persist_source_page(
         1.0,
         workspace_id,
     )
-    persist_embedding_units(conn, source_page_id, document_id, source_markdown)
+    persist_embedding_units(conn, source_page_id, document_id, source_markdown, source_blocks)
     return source_page_id
 
 
@@ -378,23 +380,27 @@ def _persist_source_blocks(
     conn: psycopg.Connection,
     document_id: str,
     manifest: dict[str, Any],
-) -> None:
+) -> list[dict[str, str]]:
     blocks = manifest.get("source_blocks")
     if blocks is None:
-        return
+        return []
     if isinstance(blocks, str):
         path = Path(blocks)
         if not path.exists():
-            return
+            return []
         blocks = json.loads(path.read_text(encoding="utf-8"))
     if blocks is None:
-        return
-    conn.execute("DELETE FROM source_blocks WHERE document_id = %s", (document_id,))
+        return []
+    normalized_blocks: dict[str, dict[str, str]] = {}
     for block in blocks:
         block_id = block.get("block_id")
-        text = block.get("text") or ""
-        if not block_id:
-            continue
+        if block_id:
+            normalized_blocks[str(block_id)] = {
+                "block_id": str(block_id),
+                "text": str(block.get("text") or ""),
+            }
+    conn.execute("DELETE FROM source_blocks WHERE document_id = %s", (document_id,))
+    for block in normalized_blocks.values():
         conn.execute(
             """
             INSERT INTO source_blocks (document_id, block_id, text)
@@ -402,8 +408,9 @@ def _persist_source_blocks(
             ON CONFLICT (document_id, block_id) DO UPDATE SET
                 text = EXCLUDED.text
             """,
-            (document_id, block_id, text),
+            (document_id, block["block_id"], block["text"]),
         )
+    return list(normalized_blocks.values())
 
 
 def _persist_meaning_cluster_artifacts(

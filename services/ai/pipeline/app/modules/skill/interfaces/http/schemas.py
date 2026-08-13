@@ -77,6 +77,7 @@ class SkillAuthoringResponse(BaseModel):
     name: str | None = None
     description: str | None = None
     skill_markdown: str | None = None
+    instructions_markdown: str | None = None
     issues: list[dict[str, object]] = Field(default_factory=list)
 
     @classmethod
@@ -97,6 +98,7 @@ class SkillAuthoringResponse(BaseModel):
                     proposal.description,
                     proposal.instructions_markdown,
                 ),
+                instructions_markdown=proposal.instructions_markdown,
                 issues=[issue.__dict__ for issue in result.issues],
             )
         if result.skill is None:
@@ -116,6 +118,7 @@ class SkillAuthoringResponse(BaseModel):
             name=version.name,
             description=version.description,
             skill_markdown=_skill_markdown(version.name, version.description, version.instructions_markdown),
+            instructions_markdown=version.instructions_markdown,
         )
 
 

@@ -1,3 +1,10 @@
+buildscript {
+	repositories { mavenCentral() }
+	dependencies {
+		classpath 'org.flywaydb:flyway-database-postgresql:11.7.2'
+	}
+}
+
 // 멀티 프로젝트 공통 설정. 앱별 의존은 각 모듈 build.gradle에 둔다.
 plugins {
 	id 'org.springframework.boot' version '3.5.14' apply false

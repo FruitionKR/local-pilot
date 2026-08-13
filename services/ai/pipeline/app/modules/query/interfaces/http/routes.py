@@ -29,6 +29,7 @@ def answer_query(
             "workspace_id": payload.workspace_id,
             "user_id": payload.user_id,
             "conversation_context": _conversation_context(payload),
+            "allow_web_search": payload.allow_web_search,
         }
         if payload.output_language is not None:
             execute_kwargs["output_language"] = payload.output_language
@@ -133,4 +134,8 @@ def _to_response(result: QueryAnswer) -> QueryResponse:
             )
             for path in result.traversal_paths
         ],
+        web_search_requested=result.web_search.requested,
+        web_search_executed=result.web_search.executed,
+        result_count=result.web_search.result_count,
+        error_code=result.web_search.error_code,
     )

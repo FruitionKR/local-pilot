@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -194,5 +195,129 @@ class ChatWikiExportServiceTest {
 
         assertThat(s.getWikiExportDocumentId()).isEqualTo("chatdoc_full"); // partial이 덮어쓰지 않음
         verify(chatSessionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("같은 안정 hash여도 partial과 full은 mode별 정식 문서를 만든다")
+    void partialAndFullWithSameHashUseSeparateDocuments() {
+        ChatSession s = session();
+        List<ChatMessage> messages = List.of(
+                msg(s, "u1", "p1", "user", "질문1", "completed"),
+                msg(s, "a1", "p1", "assistant", "답변1", "completed")
+        );
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(messages);
+        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> new DocumentService.ExportDocumentResult(
+                        "chatdoc_" + invocation.<String>getArgument(5), false));
+
+        ChatWikiExportResponse partial = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
+        ChatWikiExportResponse full = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        assertThat(partial.exportDocumentId()).isEqualTo("chatdoc_partial");
+        assertThat(full.exportDocumentId()).isEqualTo("chatdoc_full");
+        ArgumentCaptor<String> hashes = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> modes = ArgumentCaptor.forClass(String.class);
+        verify(documentService, times(2)).createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), hashes.capture(), modes.capture());
+        assertThat(hashes.getAllValues()).hasSize(2).containsOnly(hashes.getAllValues().get(0));
+        assertThat(modes.getAllValues()).containsExactly("partial", "full");
+    }
+
+    @Test
+    @DisplayName("동일 mode replay는 기존 문서를 재사용한다")
+    void sameModeReplayReusesExistingDocument() {
+        ChatSession s = session();
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("full")))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", false))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", true));
+
+        ChatWikiExportResponse first = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+        ChatWikiExportResponse replay = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        assertThat(first).isEqualTo(new ChatWikiExportResponse("chatdoc_full", "processing"));
+        assertThat(replay).isEqualTo(new ChatWikiExportResponse("chatdoc_full", "skipped"));
+        verify(documentService, times(2)).createChatExportDocument(
+                eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full"));
+    }
+
+    @Test
+    @DisplayName("partial 이후 full 재생성은 세션의 정식 full 문서를 delta 대상으로 유지한다")
+    void partialThenFullRegenerationKeepsFullDocumentTarget() {
+        ChatSession s = session();
+        s.linkWikiPage("wiki_page_x");
+        s.assignWikiExportDocument("chatdoc_full");
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("partial")))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
+
+        ChatWikiExportResponse partial = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
+        ChatWikiExportResponse full = service.export(
+                WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        assertThat(partial.exportDocumentId()).isEqualTo("chatdoc_partial");
+        assertThat(full.exportDocumentId()).isEqualTo("chatdoc_full");
+        verify(documentService).regenerateChatExportDocument(
+                eq("chatdoc_full"), anyString(), anyString(), anyString());
+        verify(documentService, never()).createChatExportDocument(
+                any(), any(), any(), any(), any(), eq("full"));
+    }
+
+    @Test
+    @DisplayName("partial A+C 후 full A/B/C를 편입하면 다음 full은 새 E만 delta로 보낸다")
+    void partialThenFullUsesPersistedMessageMarkersForEOnlyDelta() {
+        ChatSession s = session();
+        ChatMessage a = msg(s, "u_a", "a", "user", "질문A", "completed");
+        ChatMessage aAnswer = msg(s, "a_a", "a", "assistant", "답변A", "completed");
+        ChatMessage b = msg(s, "u_b", "b", "user", "질문B", "completed");
+        ChatMessage bAnswer = msg(s, "a_b", "b", "assistant", "답변B", "completed");
+        ChatMessage c = msg(s, "u_c", "c", "user", "질문C", "completed");
+        ChatMessage cAnswer = msg(s, "a_c", "c", "assistant", "답변C", "completed");
+        List<ChatMessage> firstFull = List.of(a, aAnswer, b, bAnswer, c, cAnswer);
+
+        when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION))
+                .thenReturn(firstFull)
+                .thenReturn(firstFull);
+        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("partial")))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
+        when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("full")))
+                .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", false));
+
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("a", "c")));
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        ArgumentCaptor<String> createdMarkdown = ArgumentCaptor.forClass(String.class);
+        verify(documentService, times(2)).createChatExportDocument(
+                eq(WS), eq(USER), anyString(), createdMarkdown.capture(), anyString(), anyString());
+        assertThat(createdMarkdown.getAllValues().get(0)).contains("[session_1:a]", "[session_1:c]")
+                .doesNotContain("[session_1:b]");
+        assertThat(createdMarkdown.getAllValues().get(1)).contains("[session_1:a]", "[session_1:b]", "[session_1:c]")
+                .doesNotContain("[session_1:e]");
+
+        firstFull.forEach(message -> message.markIngested("wiki_1"));
+        s.linkWikiPage("wiki_1");
+
+        ChatMessage e = msg(s, "u_e", "e", "user", "질문E", "completed");
+        ChatMessage eAnswer = msg(s, "a_e", "e", "assistant", "답변E", "completed");
+        List<ChatMessage> afterNewPair = List.of(a, aAnswer, b, bAnswer, c, cAnswer, e, eAnswer);
+        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(afterNewPair);
+
+        ArgumentCaptor<String> delta = ArgumentCaptor.forClass(String.class);
+        service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
+
+        verify(documentService).regenerateChatExportDocument(eq("chatdoc_full"), anyString(), anyString(), delta.capture());
+        assertThat(delta.getValue()).contains("[session_1:e]Q : 질문E\nA : 답변E")
+                .doesNotContain("[session_1:a]")
+                .doesNotContain("[session_1:b]")
+                .doesNotContain("[session_1:c]");
     }
 }

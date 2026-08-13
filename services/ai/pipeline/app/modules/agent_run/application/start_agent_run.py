@@ -1,8 +1,9 @@
+import hashlib
 from uuid import uuid4
 
 from app.core.llm_env import resolve_llm_selection
 from app.modules.agent_run.application.ports import AgentRunRepositoryPort, AgentRunStarterPort
-from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunRequest
+from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunArtifact, StartAgentRunRequest
 
 
 class StartAgentRunUseCase(AgentRunStarterPort):
@@ -27,5 +28,14 @@ class StartAgentRunUseCase(AgentRunStarterPort):
             provider=provider,
             model=model,
         )
-        saved = self._repository.create_with_planning_job(run, str(uuid4()))
+        artifact = None
+        if request.creation_markdown is not None:
+            artifact = StartAgentRunArtifact(
+                id=str(uuid4()),
+                content_hash=(
+                    f"sha256:{hashlib.sha256(request.creation_markdown.encode('utf-8')).hexdigest()}"
+                ),
+                markdown=request.creation_markdown,
+            )
+        saved = self._repository.create_with_planning_job(run, str(uuid4()), artifact)
         return saved.id, saved.status

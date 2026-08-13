@@ -48,6 +48,7 @@ public class SkillController {
                 @StringToClassMapItem(key = "scope_type", value = String.class),
                 @StringToClassMapItem(key = "name", value = String.class),
                 @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "instructions_markdown", value = String.class),
                 @StringToClassMapItem(key = "skill_markdown", value = String.class),
                 @StringToClassMapItem(key = "issues", value = java.util.List.class)
             }))),
@@ -85,6 +86,7 @@ public class SkillController {
                 @StringToClassMapItem(key = "scope_type", value = String.class),
                 @StringToClassMapItem(key = "name", value = String.class),
                 @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "instructions_markdown", value = String.class),
                 @StringToClassMapItem(key = "skill_markdown", value = String.class),
                 @StringToClassMapItem(key = "issues", value = java.util.List.class)
             }))),
@@ -164,6 +166,7 @@ public class SkillController {
                 @StringToClassMapItem(key = "scope_type", value = String.class),
                 @StringToClassMapItem(key = "name", value = String.class),
                 @StringToClassMapItem(key = "description", value = String.class),
+                @StringToClassMapItem(key = "instructions_markdown", value = String.class),
                 @StringToClassMapItem(key = "skill_markdown", value = String.class),
                 @StringToClassMapItem(key = "issues", value = java.util.List.class)
             }))),

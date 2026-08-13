@@ -28,6 +28,14 @@ class StartAgentRunRequest:
     skill_version_id: str | None = None
     provider: str | None = None
     model: str | None = None
+    creation_markdown: str | None = None
+
+
+@dataclass(frozen=True)
+class StartAgentRunArtifact:
+    id: str
+    content_hash: str
+    markdown: str
 
 
 @dataclass(frozen=True)

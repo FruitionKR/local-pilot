@@ -1,5 +1,8 @@
 from contextlib import nullcontext
 from unittest.mock import Mock, patch
+
+import pytest
+
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
@@ -90,8 +93,16 @@ def test_restore_updates_current_markdown_and_links(monkeypatch) -> None:
                     "page_type": "concept",
                     "slug": "c3",
                     "user_id": "user-1",
-                }
+                },
+                {
+                    "id": "page-target",
+                    "page_type": "concept",
+                    "slug": "target",
+                    "user_id": "user-1",
+                },
             ]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
         elif normalized.startswith("SELECT id FROM wiki_pages"):
             cursor.fetchone.return_value = {"id": "page-target"}
         return cursor
@@ -100,6 +111,12 @@ def test_restore_updates_current_markdown_and_links(monkeypatch) -> None:
     changed = [{
         "page_id": "page-c3",
         "markdown_key": "wiki/ws-1/pages/page-c3/ops/restore-1.md",
+        "title": "Restored C3",
+        "summary": "Restored summary",
+        "source_document_ids": ["doc-A"],
+    }, {
+        "page_id": "page-target",
+        "markdown_key": "wiki/ws-1/pages/page-target/ops/restore-1.md",
     }]
     links = {"removed_links": [], "restored_links": [{
         "source": "concept:c3",
@@ -110,6 +127,8 @@ def test_restore_updates_current_markdown_and_links(monkeypatch) -> None:
     with (
         patch.object(database, "connect", return_value=connection),
         patch.object(database, "invalidate_concept_index") as invalidate,
+        patch.object(database, "read_text_object", return_value="# Restored C3\n"),
+        patch.object(database, "_persist_embedding_units") as persist_units,
     ):
         database.apply_restored_wiki_state("ws-1", changed, links, True)
 
@@ -117,9 +136,344 @@ def test_restore_updates_current_markdown_and_links(monkeypatch) -> None:
     markdown_call = next(call for call in calls if "SET markdown_uri" in str(call.args[0]))
     assert markdown_call.args[1] == (
         "s3://wiki-bucket/wiki/ws-1/pages/page-c3/ops/restore-1.md",
+        "Restored C3",
+        "Restored summary",
         "page-c3",
         "ws-1",
     )
+    assert any("DELETE FROM document_wiki_links" in str(call.args[0]) for call in calls)
+    assert any("INSERT INTO document_wiki_links" in str(call.args[0]) for call in calls)
+    persist_units.assert_called_once_with(
+        connection,
+        "page-c3",
+        "doc-A",
+        "# Restored C3\n",
+    )
     assert any("DELETE FROM wiki_page_links WHERE from_page_id" in str(call.args[0]) for call in calls)
     assert any("INSERT INTO wiki_page_links" in str(call.args[0]) for call in calls)
+    invalidate.assert_called_once_with("user-1", "ws-1")
+
+
+def test_restore_reactivates_deleted_page_without_linking_unrelated_deleted_page(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            cursor.fetchall.return_value = [{
+                "id": "page-restored",
+                "page_type": "concept",
+                "slug": "restored",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        elif normalized.startswith("SELECT id FROM wiki_pages"):
+            cursor.fetchone.return_value = None
+        elif normalized.startswith("SELECT id, user_id FROM wiki_pages"):
+            cursor.fetchall.return_value = [{
+                "id": "page-deleted",
+                "user_id": "user-1",
+            }]
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "concept_write_lock", return_value=nullcontext()),
+        patch.object(database, "read_text_object", return_value="# Restored\n"),
+        patch.object(database, "invalidate_concept_index"),
+    ):
+        database.apply_restored_wiki_state_and_cleanup(
+            "restore-1",
+            "ws-1",
+            [{
+                "page_id": "page-restored",
+                "markdown_key": "wiki/ws-1/pages/page-restored/ops/restore-1.md",
+            }],
+            {
+                "removed_links": [],
+                "restored_links": [{
+                    "source": "concept:restored",
+                    "target": "concept:deleted",
+                    "relation": "related_to",
+                }],
+            },
+            True,
+            ["page-deleted"],
+        )
+
+    calls = connection.execute.call_args_list
+    assert any(
+        "status = 'active'" in str(call.args[0])
+        and call.args[1][-2:] == ("page-restored", "ws-1")
+        for call in calls
+    )
+    assert any("status = 'deleted'" in str(call.args[0]) for call in calls)
+    assert not any("SELECT id FROM wiki_pages" in str(call.args[0]) for call in calls)
+    assert not any("INSERT INTO wiki_page_links" in str(call.args[0]) for call in calls)
+
+
+def test_restore_after_delete_and_rename_skips_stale_slug_link(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            cursor.fetchall.return_value = [{
+                "id": "page-renamed",
+                "page_type": "concept",
+                "slug": "renamed",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        elif normalized.startswith("SELECT id, user_id FROM wiki_pages"):
+            cursor.fetchall.return_value = [{
+                "id": "page-deleted",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT id FROM wiki_pages"):
+            cursor.fetchone.return_value = {"id": "stale-page"}
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "concept_write_lock", return_value=nullcontext()),
+        patch.object(database, "read_text_object", return_value="# Renamed\n"),
+        patch.object(database, "invalidate_concept_index"),
+    ):
+        database.apply_restored_wiki_state_and_cleanup(
+            "restore-1",
+            "ws-1",
+            [{
+                "page_id": "page-renamed",
+                "markdown_key": "wiki/ws-1/pages/page-renamed/ops/restore-1.md",
+            }],
+            {
+                "removed_links": [],
+                "restored_links": [{
+                    "source": "concept:renamed",
+                    "target": "concept:deleted-name",
+                    "relation": "related_to",
+                }],
+            },
+            True,
+            ["page-deleted"],
+        )
+
+    calls = connection.execute.call_args_list
+    assert not any("SELECT id FROM wiki_pages" in str(call.args[0]) for call in calls)
+    assert not any("INSERT INTO wiki_page_links" in str(call.args[0]) for call in calls)
+
+
+def test_restore_source_recreates_source_link_and_embedding_provenance_after_cleanup(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            cursor.fetchall.return_value = [{
+                "id": "page-source",
+                "page_type": "source",
+                "slug": "renamed-source",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        return cursor
+
+    connection.execute.side_effect = execute
+    persist_units = Mock()
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "read_text_object", return_value="# Source\n"),
+        patch.object(database, "_persist_embedding_units", persist_units),
+    ):
+        database.apply_restored_wiki_state(
+            "ws-1",
+            [{
+                "page_id": "page-source",
+                "markdown_key": "wiki/ws-1/pages/page-source/ops/restore-1.md",
+                "source_document_id": "doc-stable",
+            }],
+            {"removed_links": [], "restored_links": []},
+            True,
+        )
+
+    persist_units.assert_called_once_with(
+        connection,
+        "page-source",
+        "doc-stable",
+        "# Source\n",
+    )
+    source_link_call = next(
+        call
+        for call in connection.execute.call_args_list
+        if "relation_type, confidence, workspace_id" in str(call.args[0])
+    )
+    assert source_link_call.args[1] == (
+        "doc-stable",
+        "page-source",
+        "source_of",
+        1.0,
+        "ws-1",
+    )
+    page_query = connection.execute.call_args_list[0].args[0]
+    assert "relation_type = 'source_of'" in page_query
+
+
+def test_restore_legacy_concept_skips_document_bound_embeddings(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            cursor.fetchall.return_value = [{
+                "id": "page-c3",
+                "page_type": "concept",
+                "slug": "c3",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        return cursor
+
+    connection.execute.side_effect = execute
+    persist_units = Mock()
+
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "read_text_object", return_value="# Restored C3\n"),
+        patch.object(database, "_persist_embedding_units", persist_units),
+    ):
+        database.apply_restored_wiki_state(
+            "ws-1",
+            [{
+                "page_id": "page-c3",
+                "markdown_key": "wiki/ws-1/pages/page-c3/ops/restore-1.md",
+            }],
+            {"removed_links": [], "restored_links": []},
+            True,
+        )
+
+    persist_units.assert_not_called()
+
+
+def test_restore_state_and_cleanup_share_lock_and_rollback(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, page_type, slug, user_id"):
+            cursor.fetchall.return_value = [{
+                "id": "page-c3",
+                "page_type": "source",
+                "slug": "renamed-source",
+                "user_id": "user-1",
+            }]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        elif normalized.startswith("SELECT id, user_id FROM wiki_pages"):
+            cursor.fetchall.return_value = [{"id": "page-deleted"}]
+        elif normalized.startswith("UPDATE wiki_pages SET status = 'deleted'"):
+            raise RuntimeError("cleanup failed")
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "concept_write_lock", return_value=nullcontext()) as lock,
+        patch.object(database, "read_text_object", return_value="# Restored C3\n"),
+        patch.object(database, "_persist_embedding_units"),
+        patch.object(database, "invalidate_concept_index") as invalidate,
+    ):
+        with pytest.raises(RuntimeError, match="cleanup failed"):
+            database.apply_restored_wiki_state_and_cleanup(
+                "restore-1",
+                "ws-1",
+                [{
+                    "page_id": "page-c3",
+                    "markdown_key": "wiki/ws-1/pages/page-c3/ops/restore-1.md",
+                    "source_document_id": "doc-A",
+                }],
+                {"removed_links": [], "restored_links": []},
+                True,
+                ["page-deleted"],
+            )
+
+    lock.assert_called_once_with("ws-1", "restore-1")
+    assert connection.__enter__.call_count == 1
+    assert connection.__exit__.call_args.args[0] is RuntimeError
+    assert any(
+        call.args[1] == (
+            "doc-A",
+            "page-c3",
+            "source_of",
+            1.0,
+            "ws-1",
+        )
+        for call in connection.execute.call_args_list
+        if "relation_type, confidence, workspace_id" in str(call.args[0])
+    )
+    invalidate.assert_not_called()
+
+
+def test_delete_only_restore_invalidates_deleted_page_owner(monkeypatch) -> None:
+    monkeypatch.setenv("S3_BUCKET", "wiki-bucket")
+    connection = Mock()
+    connection.__enter__ = Mock(return_value=connection)
+    connection.__exit__ = Mock(return_value=False)
+
+    def execute(query, params=None):
+        cursor = Mock()
+        normalized = " ".join(str(query).split())
+        if normalized.startswith("SELECT id, user_id FROM wiki_pages"):
+            cursor.fetchall.return_value = [
+                {"id": "page-deleted", "user_id": "user-1"}
+            ]
+        elif normalized.startswith("SELECT DISTINCT embedding_vector_id"):
+            cursor.fetchall.return_value = []
+        return cursor
+
+    connection.execute.side_effect = execute
+    with (
+        patch.object(database, "connect", return_value=connection),
+        patch.object(database, "concept_write_lock", return_value=nullcontext()),
+        patch.object(database, "invalidate_concept_index") as invalidate,
+    ):
+        database.apply_restored_wiki_state_and_cleanup(
+            "restore-1",
+            "ws-1",
+            [],
+            {"removed_links": [], "restored_links": []},
+            False,
+            ["page-deleted"],
+        )
+
     invalidate.assert_called_once_with("user-1", "ws-1")

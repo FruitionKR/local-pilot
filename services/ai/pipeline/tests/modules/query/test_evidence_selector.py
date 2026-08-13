@@ -1,7 +1,8 @@
 import unittest
 
+from app.modules.query.application.build_query_context import BuildQueryContextUseCase
 from app.modules.query.application.evidence_selector import EvidenceSelector
-from app.modules.query.domain.entities import RetrievedPage, WikiPage
+from app.modules.query.domain.entities import GraphContext, RetrievedPage, WikiPage
 
 
 class EmptySearch:
@@ -20,6 +21,29 @@ class QueryContainsSearch:
 
 
 class EvidenceSelectorTest(unittest.TestCase):
+    def test_keeps_selected_source_title_and_content_in_answer_context(self) -> None:
+        source_title = "Exact Source Title"
+        source_content = "Exact source content must remain available"
+        page = WikiPage(
+            id="source:exact",
+            page_type="source",
+            title=source_title,
+            slug="exact-source",
+            summary="Source summary",
+            markdown=f"---\ndocument_id: doc_exact\n---\n\n{source_content}. [B0001]",
+        )
+
+        context = BuildQueryContextUseCase().execute(
+            question="source content",
+            related_pages=[RetrievedPage(page=page, score=0.9, role="seed_source")],
+            graph_context=GraphContext(),
+            traversal_paths=[],
+        )
+
+        self.assertEqual(context.evidence_snippets[0].text, f"{source_content}.")
+        self.assertIn(source_title, context.answer_context)
+        self.assertIn(source_content, context.answer_context)
+
     def test_selects_only_text_with_source_block_refs(self) -> None:
         page = WikiPage(
             id="source:seed",

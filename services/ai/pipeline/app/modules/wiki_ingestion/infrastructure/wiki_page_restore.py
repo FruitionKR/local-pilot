@@ -18,6 +18,10 @@ from app.modules.wiki_ingestion.infrastructure.concept_contribution_rebuild impo
     load_concept_contributions,
     rebuild_concept_page,
 )
+from app.modules.wiki_ingestion.infrastructure.wiki_persistence_payload import (
+    markdown_title,
+)
+from app.modules.wiki_ingestion.infrastructure.markdown_sections import markdown_section
 
 
 class ObjectStorageWikiPageRestore(WikiPageRestorePort):
@@ -25,37 +29,39 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
         self,
         read_text: Callable[[str], str],
         write_text: Callable[[str, str, str], str],
-        cleanup_deleted_pages: Callable[[str, list[str]], None],
-        apply_current_state: Callable[
-            [str, list[dict[str, Any]], dict[str, list[dict[str, Any]]], bool],
+        apply_current_state_and_cleanup: Callable[
+            [
+                str,
+                str,
+                list[dict[str, Any]],
+                dict[str, list[dict[str, Any]]],
+                bool,
+                list[str],
+            ],
             None,
         ],
     ) -> None:
         self._read_text = read_text
         self._write_text = write_text
-        self._cleanup_deleted_pages = cleanup_deleted_pages
-        self._apply_current_state = apply_current_state
+        self._apply_current_state_and_cleanup = apply_current_state_and_cleanup
 
-    def apply_current_state(
+    def apply_current_state_and_cleanup(
         self,
+        operation_id: str,
         workspace_id: str,
         changed_pages: list[dict[str, Any]],
         link_changes: dict[str, list[dict[str, Any]]],
         replace_links: bool,
+        deleted_page_ids: list[str],
     ) -> None:
-        self._apply_current_state(
+        self._apply_current_state_and_cleanup(
+            operation_id,
             workspace_id,
             changed_pages,
             link_changes,
             replace_links,
+            deleted_page_ids,
         )
-
-    def cleanup_deleted_pages(
-        self,
-        workspace_id: str,
-        page_ids: list[str],
-    ) -> None:
-        self._cleanup_deleted_pages(workspace_id, page_ids)
 
     def rebuild_page(
         self,
@@ -102,6 +108,9 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
             "markdown_key": markdown_key,
             "content_hash": f"sha256:{digest}",
             "supported_links": list(rebuilt.supported_links),
+            "title": rebuilt.title,
+            "summary": rebuilt.summary,
+            "source_document_ids": list(rebuilt.source_document_ids),
         }
 
     def restore_source_page(
@@ -136,6 +145,9 @@ class ObjectStorageWikiPageRestore(WikiPageRestorePort):
             "page_type": "source",
             "markdown_key": target_key,
             "content_hash": f"sha256:{digest}",
+            "title": markdown_title(markdown),
+            "summary": markdown_section(markdown, "Summary"),
+            "source_document_id": source_page.document_id,
         }
 
     def calculate_lint_action_changes(

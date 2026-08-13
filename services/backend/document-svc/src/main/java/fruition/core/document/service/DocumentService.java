@@ -64,6 +64,7 @@ import fruition.core.document.exception.HierarchyItemNotFoundException;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.aihistory.service.IngestOperationStarter;
 import fruition.core.aihistory.service.OperationRecorder;
+import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.wiki.repository.PipelineWikiStateRequester;
 import fruition.core.authz.WorkspaceAccessGuard;
 import io.minio.GetObjectArgs;
@@ -86,6 +87,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -634,6 +636,44 @@ public class DocumentService {
         });
     }
 
+    private byte[] readMinioObject(String objectKey) {
+        try (InputStream inputStream = minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(storageProps.getBucket())
+                        .object(objectKey)
+                        .build())) {
+            return inputStream.readAllBytes();
+        } catch (Exception e) {
+            throw new DocumentUploadException("채팅 export 기존 원본을 읽지 못했습니다.", e);
+        }
+    }
+
+    private void registerMinioRollbackRestore(String objectKey, byte[] previousBytes) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == TransactionSynchronization.STATUS_COMMITTED) {
+                    return;
+                }
+                try (InputStream inputStream = new ByteArrayInputStream(previousBytes)) {
+                    minioClient.putObject(
+                            PutObjectArgs.builder()
+                                    .bucket(storageProps.getBucket())
+                                    .object(objectKey)
+                                    .stream(inputStream, previousBytes.length, -1)
+                                    .contentType("text/markdown")
+                                    .build()
+                    );
+                } catch (Exception e) {
+                    log.error("[MinIO 오브젝트 롤백 복원 실패] objectKey={} error={}", objectKey, e.getMessage(), e);
+                }
+            }
+        });
+    }
+
     /** DB 트랜잭션 커밋 뒤 별도 로컬 작업 큐에 등록한다. */
     private void enqueueAfterCommit(String queueLabel, String documentId, Runnable enqueue) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -672,7 +712,8 @@ public class DocumentService {
         if (selectionMode == null || selectionMode.isBlank()) {
             throw new IllegalArgumentException("채팅 export 문서는 selection_mode가 필요합니다.");
         }
-        Optional<Document> existing = documentRepository.findByWorkspaceIdAndContentHash(workspaceId, contentHash);
+        Optional<Document> existing = documentRepository.findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                workspaceId, "chat_export", contentHash, selectionMode);
         if (existing.isPresent()) {
             return new ExportDocumentResult(existing.get().getId(), true);
         }
@@ -680,6 +721,24 @@ public class DocumentService {
         String documentId = "chatdoc_" + UUID.randomUUID().toString().replace("-", "");
         String objectPath = "sources/documents/" + documentId + "/original";
         byte[] bytes = markdown.getBytes(StandardCharsets.UTF_8);
+
+        Document candidate = new Document(
+                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
+                objectPath, contentHash, "chat_export");
+        candidate.assignSelectionMode(selectionMode);
+        if (documentRepository.reserveChatExport(
+                candidate.getId(), candidate.getWorkspaceId(), candidate.getUserId(),
+                candidate.getFilename(), candidate.getDisplayName(), candidate.getNormalizedFilename(),
+                candidate.getMimeType(), candidate.getByteSize(), candidate.getStatus().name(),
+                candidate.getSourceUri(), candidate.getContentHash(), candidate.getCurrentContentHash(),
+                candidate.getCurrentVersion(), candidate.getDocumentRole().name(), candidate.getSortOrder(),
+                candidate.getUploadedAt(), candidate.getUpdatedAt(), selectionMode) == 0) {
+            Document canonical = documentRepository
+                    .findByWorkspaceIdAndOriginAndContentHashAndSelectionModeAndDeletedAtIsNull(
+                            workspaceId, "chat_export", contentHash, selectionMode)
+                    .orElseThrow(() -> new IllegalStateException("chat export canonical 문서를 찾을 수 없습니다."));
+            return new ExportDocumentResult(canonical.getId(), true);
+        }
 
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
@@ -695,11 +754,8 @@ public class DocumentService {
         }
         registerMinioRollbackCleanup(objectPath);
 
-        Document document = new Document(
-                documentId, workspaceId, userId, filename, "text/markdown", bytes.length,
-                objectPath, contentHash, "chat_export");
-        document.assignSelectionMode(selectionMode);
-        documentRepository.save(document);
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new IllegalStateException("예약한 chat export 문서를 찾을 수 없습니다."));
         log.info("[채팅 export 문서 DB 저장 완료] documentId={} workspaceId={} userId={} filename={} selectionMode={} status={} sourceUri={}",
                 document.getId(), document.getWorkspaceId(), document.getUserId(), document.getFilename(),
                 document.getSelectionMode(), document.getStatus(), document.getSourceUri());
@@ -720,11 +776,26 @@ public class DocumentService {
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
+        String objectKey = normalizeObjectKey(document.getSourceUri());
+        byte[] previousBytes = readMinioObject(objectKey);
+        Optional<MongoDocumentEditState> currentState = mongoDocumentEditStore.findState(documentId);
+        if (currentState.map(state -> fullContentHash.equals(state.getContentHash())).orElse(false)
+                && fullContentHash.equals(document.getContentHash())
+                && Arrays.equals(previousBytes, bytes)) {
+            return;
+        }
+
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState legacyState = editStateRepository.findById(documentId)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
+        registerMinioRollbackRestore(objectKey, previousBytes);
+
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(storageProps.getBucket())
-                            .object(normalizeObjectKey(document.getSourceUri()))
+                            .object(objectKey)
                             .stream(inputStream, bytes.length, -1)
                             .contentType("text/markdown")
                             .build()
@@ -738,6 +809,14 @@ public class DocumentService {
                 documentId, contentHashPrefix(fullContentHash), bytes.length,
                 deltaMarkdown != null ? deltaMarkdown.length() : 0);
         enqueueIngest(document);
+
+        long baseRevision = currentState
+                .map(MongoDocumentEditState::getRevision)
+                .orElse(document.getCurrentVersion());
+        mongoDocumentEditStore.save(
+                document.getWorkspaceId(), documentId, fullMarkdown, fullContentHash,
+                baseRevision, "chat-export-regenerate:" + fullContentHash,
+                document.getUserId(), document.getCurrentVersion(), legacyState);
     }
 
     /**
@@ -1123,6 +1202,21 @@ public class DocumentService {
             String source,
             String applyOperationId
     ) {
+        return saveContent(workspaceId, userId, documentId, markdown, baseRevision, revisionWriteId,
+                source, applyOperationId, false);
+    }
+
+    private DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseRevision,
+            String revisionWriteId,
+            String source,
+            String applyOperationId,
+            boolean applyOperationClaimed
+    ) {
         verifyWorkspaceOwnership(workspaceId, userId);
         if (baseRevision == null || baseRevision < 1) {
             throw new InvalidMarkdownContentException("base_revision은 1 이상이어야 합니다.");
@@ -1137,28 +1231,29 @@ public class DocumentService {
         }
         editLockService.requireWritable(documentId, userId);
 
+        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+        boolean hasApplyOperation = applyOperationId != null && !applyOperationId.isBlank();
+        if (!applyOperationClaimed) {
+            claimApplyOperation(workspaceId, userId, documentId, revisionWriteId,
+                    baseRevision, content.markdown(), applyOperationId);
+        }
         editStateInitializer.initializeIfNeeded(document);
         DocumentEditState legacyState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new InvalidMarkdownContentException(
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
         MongoDocumentEditSaveResult result;
         try {
-            result = mongoDocumentEditStore.save(
-                    workspaceId,
-                    documentId,
-                    content.markdown(),
-                    content.contentHash(),
-                    baseRevision,
-                    revisionWriteId,
-                    userId,
-                    document.getCurrentVersion(),
-                    legacyState
-            );
+            result = hasApplyOperation
+                    ? mongoDocumentEditStore.save(
+                            workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
+                            revisionWriteId, userId, document.getCurrentVersion(), legacyState, applyOperationId)
+                    : mongoDocumentEditStore.save(
+                            workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
+                            revisionWriteId, userId, document.getCurrentVersion(), legacyState);
         } catch (DocumentVersionConflictException conflict) {
-            // 적용 표 소비와 conflict 감사 기록은 같은 PostgreSQL 트랜잭션으로 남긴다.
+            // 적용 표는 저장 전에 이미 소비했으므로 conflict 감사에서 다시 소비하지 않는다.
             transactionTemplate.execute(status -> {
-                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
+                if (hasApplyOperation) {
                     operationRecorder.recordConflict(
                             applyOperationId, workspaceId, userId, documentId, Instant.now());
                 }
@@ -1166,7 +1261,31 @@ public class DocumentService {
             });
             throw conflict;
         }
-        projectContentVersions(documentId, content.markdown(), result);
+        if (hasApplyOperation) {
+            transactionTemplate.execute(status -> {
+                projectContentVersions(documentId, content.markdown(), result);
+                if (result.changed()) {
+                    int linked = contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
+                    if (linked == 1) {
+                        operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
+                                result.baseRevision(), result.revision(), result.baseMarkdown(),
+                                content.markdown(), result.updatedAt());
+                    } else if (!contentVersionRepository.findById(
+                            new DocumentContentVersionId(documentId, result.revision()))
+                            .map(version -> applyOperationId.equals(version.getOperationId()))
+                            .orElse(false)) {
+                        throw new IllegalStateException(
+                                "문서 버전에 Agent 적용 작업을 연결하지 못했습니다: operationId=" + applyOperationId);
+                    }
+                } else {
+                    operationRecorder.completeDocumentEditNoChange(
+                            applyOperationId, workspaceId, userId, documentId, result.updatedAt());
+                }
+                return null;
+            });
+        } else {
+            projectContentVersions(documentId, content.markdown(), result);
+        }
         if (result.changed()) {
             // 재ingest 필요 판단용 projection: 목록 API가 PG만으로 현재 편집본 해시를 비교할 수 있게 한다.
             documentRepository.updateCurrentContentHash(documentId, result.contentHash(), result.updatedAt());
@@ -1174,19 +1293,6 @@ public class DocumentService {
             // 그러지 않으면 본문에서 지운 이미지가 참조된 상태로 남아 정리 대상이 되지 않는다.
             assetReferenceSynchronizer.synchronize(
                     documentId, workspaceId, assetReferenceParser.parse(content.markdown()));
-        }
-
-        // Backend가 발급한 적용 표가 확인될 때만 AI 작업으로 기록한다.
-        if (result.changed()) {
-            transactionTemplate.execute(status -> {
-                if (applyOperationStore.consume(applyOperationId, userId, documentId)) {
-                    operationRecorder.recordDocumentEdit(applyOperationId, workspaceId, userId, documentId,
-                            result.baseRevision(), result.revision(), result.baseMarkdown(),
-                            content.markdown(), result.updatedAt());
-                    contentVersionRepository.linkOperation(documentId, result.revision(), applyOperationId);
-                }
-                return null;
-            });
         }
 
         return new DocumentContentSaveResponse(
@@ -1203,6 +1309,23 @@ public class DocumentService {
             throw new InvalidIdempotencyKeyException(
                     "revision_write_id는 1자 이상 255자 이하여야 합니다.");
         }
+    }
+
+    void claimApplyOperation(String workspaceId, String userId, String documentId, String revisionWriteId,
+                             Long baseRevision, String markdown, String applyOperationId) {
+        if (applyOperationId == null || applyOperationId.isBlank()) {
+            return;
+        }
+        transactionTemplate.execute(status -> {
+            if (!applyOperationStore.consume(applyOperationId, userId, documentId, revisionWriteId,
+                    baseRevision, markdown)) {
+                throw new InvalidAgentTurnRequestException(
+                        "유효하지 않거나 이미 사용된 Agent 적용 표입니다.");
+            }
+            operationRecorder.prepareDocumentEdit(
+                    applyOperationId, workspaceId, userId, documentId, Instant.now());
+            return null;
+        });
     }
 
     /**
@@ -1288,7 +1411,7 @@ public class DocumentService {
         DocumentContentSaveResponse saved;
         try {
             saved = saveContent(workspaceId, userId, documentId, content.markdown(),
-                    baseVersion, revisionWriteId, null, applyOperationId);
+                    baseVersion, revisionWriteId, null, applyOperationId, true);
         } catch (RuntimeException exception) {
             transactionTemplate.execute(status -> {
                 assetRepository.deleteAllInBatch(assets);

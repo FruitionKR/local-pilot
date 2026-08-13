@@ -194,12 +194,12 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "claude-key"}, clear=True):
             generator = build_skill_authoring_generator(
                 provider="claude",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
             )
 
         client = generator._client  # type: ignore[attr-defined]
         self.assertEqual(client.provider, "claude")
-        self.assertEqual(client.config.model, "claude-3-5-haiku-20241022")
+        self.assertEqual(client.config.model, "claude-haiku-4-5-20251001")
         self.assertEqual(client.config.api_key, "claude-key")
 
     def build_use_case(
@@ -236,6 +236,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertNotIn("allowed_tools", response)
         self.assertEqual(response["name"], "concise-document-writer")
         self.assertEqual(response["description"], "요청한 내용을 간결한 문서로 작성합니다.")
+        self.assertEqual(response["instructions_markdown"], "# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.")
         self.assertIn("# 작성 절차", response["skill_markdown"])
 
     def test_has_no_direct_create_route_that_bypasses_authoring_review(self) -> None:
@@ -247,8 +248,21 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
 
         self.assertEqual(direct_create, [])
 
-    def test_completed_run_draft_cannot_expand_reviewed_permissions(self) -> None:
-        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+    def test_completed_run_draft_preserves_permissions_when_intents_disagree(self) -> None:
+        use_case, repository = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=intent_result(),
+                verification=intent_result(
+                    skill_kind="document-edit",
+                    allowed_tools=[
+                        "list_root_items",
+                        "list_folder_children",
+                        "apply_document_edit",
+                    ],
+                ),
+            )
+        )
         draft = SkillDraftProposal(
             name="project-document-organizer",
             description="프로젝트 문서를 정리합니다.",
@@ -258,14 +272,16 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             source_run_ids=("run-1",),
         )
 
-        with self.assertRaisesRegex(ValueError, "must not expand"):
-            use_case.review_draft(
-                workspace_id="workspace-1",
-                user_id="user-1",
-                scope_type="personal",
-                draft=draft,
-            )
+        result = use_case.review_draft(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            draft=draft,
+        )
 
+        self.assertEqual(result.status, "proposal_ready")
+        self.assertEqual(result.proposal.capabilities, draft.capabilities)  # type: ignore[union-attr]
+        self.assertEqual(result.proposal.allowed_tools, draft.allowed_tools)  # type: ignore[union-attr]
         self.assertEqual(repository.skills, {})
 
     def test_completed_run_draft_returns_hidden_permissions_after_review(self) -> None:

@@ -10,7 +10,7 @@
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - `Idempotency-Key`가 적용된 API는 1~255자 키를 사용한다. 실행 선점 lease는 15분이고, 완료 응답은 완료 시점부터 24시간 유지한다. 같은 사용자·endpoint·키의 같은 요청이 완료되면 저장된 응답을 재생하고, 다른 payload는 409 `IDEMPOTENCY_CONFLICT`, lease 내 처리 중인 동시 요청은 409 `IDEMPOTENCY_IN_PROGRESS`로 거절한다. 실행이 실패하거나 lease가 만료되면 같은 키로 재시도할 수 있다.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
-- LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `minimal`, `gemini`/`gemini-2.5-flash-lite`는 `low`, `claude`/`claude-3-5-haiku-20241022`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
+- LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `minimal`, `gemini`/`gemini-3.1-flash-lite`는 `low`, `claude`/`claude-haiku-4-5-20251001`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
 - provider별 base URL은 `openai=https://api.openai.com/v1`, `gemini=https://generativelanguage.googleapis.com/v1beta/openai`, `claude=https://api.anthropic.com/v1`로 고정한다.
 - Ingest·Lint·Skill author/publish/update는 workspace AI 모델 설정의 `provider`·`model` snapshot, Query·Markdown Agent·Agent 경로는 사용자/API 요청 또는 chat/request 설정의 snapshot을 사용한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 전달하며 env override는 없다. API key는 ai-svc secret env의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`에서만 읽고 provider별 고정 base URL을 사용한다.
 - API key는 backend 요청·Kafka command/event·application log에 포함하지 않는다. 기존 AI 작업 로그의 조회/결과 API는 LLM 설정을 받지 않는다. 실제 provider 호출 전에는 선택 provider key가 필요하지만 mock 통합 테스트에는 key가 필요 없다.
@@ -49,7 +49,7 @@
 ## Query
 
 - 동기 `POST /api/workspaces/{workspace_id}/chat/sessions/{session_id}/query`와 비동기 `POST .../query/runs` 요청은 `question`(blank 불가), 함께 생략하거나 함께 전달하는 선택적 `provider`·`model`, 필수 boolean `allow_web_search`를 받는다. 누락/blank/잘못된 모델 조합은 400 `INVALID_REQUEST`다.
-- `allow_web_search`는 해당 질의에만 적용되며 실행 당시 값은 채팅 메시지와 Query run에 snapshot으로 저장된다.
+- `allow_web_search`는 해당 질의에만 적용되며 실행 당시 값은 채팅 메시지와 Query run에 snapshot으로 저장된다. 동기 응답과 비동기 run의 `result`에는 `web_search_requested`, `web_search_executed`, `result_count`, `error_code`가 포함된다. `error_code`는 `web_search_unavailable` 또는 `web_search_failed` 중 하나이며, 웹 검색 결과 URL·인증 토큰은 포함하지 않는다.
 
 ## 문서
 
@@ -114,20 +114,34 @@
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/agent/turn` | Markdown Agent turn 등록(202). 응답 `requestId`, `apply_operation_id`, `status=queued` |
-| GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI run 생성 전만 core queued projection을 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
+| GET | `/agent/turn/{run_id}` | 조회 직전에 현재 workspace 멤버십을 확인한 뒤 scope가 포함된 AI 내부 상태 API를 호출해 `queued`/`executing`/`completed`/`failed` 반환. AI 내부 상태 API가 404이면 core projection의 `queued`/`ready`/`failed` 상태와 `result`/`error`를 그대로 반환한다. 비멤버·unknown run은 404, 잘못된 run ID 형식은 400 |
+| GET | `/agent/runs/{run_id}` | 현재 workspace 멤버십을 확인한 뒤 자율 AgentRun의 계획·상태를 조회한다. AI AgentRun API에는 Backend가 service token과 path의 workspace·JWT 사용자 scope를 주입한다 |
+| POST | `/agent/runs/{run_id}/approve` | `plan_version`, `operation_hash`로 현재 계획을 승인한다. workspace·user scope는 요청 본문에 받지 않고 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/reject` | 현재 계획을 거절한다. workspace·user scope는 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/cancel` | AgentRun을 취소한다. workspace·user scope는 Backend가 주입한다 |
+| POST | `/agent/runs/{run_id}/revise` | `instruction`으로 새 계획을 요청한다. workspace·user scope는 요청 본문에 받지 않고 Backend가 주입한다 |
 
-`POST /agent/turn` 요청은 `documentId`, `baseVersion`(0 이상), `message`, `editorSnapshot`(필수 Markdown 및 선택 target)을 받으며 `provider`·`model`은 함께 생략하거나 함께 전달한다. `conversationContext`는 선택이며, 잘못된 문서 형식/target은 400, version 충돌은 409, 편집 lock은 423이다.
+AgentRun lifecycle API가 AI에서 404를 받으면 `AGENT_RUN_NOT_FOUND`(404)를, 그 외 4xx를 받으면 원문을 노출하지 않고 `AGENT_REQUEST_REJECTED`(AI 응답 status 유지)를 반환한다. AI 5xx·timeout·unavailable은 `AGENT_PIPELINE_UNAVAILABLE`(503)로 반환한다.
+
+`POST /agent/turn` 요청은 `documentId`, `baseVersion`(0 이상), `message`, `editorSnapshot`(필수 Markdown 및 선택 target)을 받으며 `provider`·`model`은 함께 생략하거나 함께 전달한다. `skill_mode`는 `auto`·`explicit`·`off` 중 하나이며 생략 시 `auto`다. `skill_id`는 nullable이고, `explicit`에서는 nonblank ID를 필수로 보내며 `off`에서는 보내지 않는다(`auto`에서는 생략하거나 null). `conversationContext`는 선택이며, `conversationContext.pendingSkillProposal`은 `scope_type`, `name`, `description`, `instructions_markdown` 전체 필드로 구성된 미게시 제안이다(`published` 필드/상태는 포함하지 않음). 같은 제안의 승인·보안 재검토·재생성·제목/범위 변경 같은 후속 turn에도 이 제안을 전달해 다회차로 처리한다. `skill_draft_sources`는 `{run_id}` selector만 받으며, document-svc가 같은 workspace/user의 완료된 autonomous AgentRun과 성공 operation을 ai-svc에서 다시 읽어 canonical 요약을 Kafka command에 넣는다. 잘못된 문서 형식/target은 400, version 충돌은 409, 편집 lock은 423이다.
+
+AI 편집 적용 저장은 Backend가 발급한 `apply_operation_id`와 요청의 `revision_write_id`를 정확한 pair로 claim한다. 최초 claim은 projection의 `base_version`과 canonical `ready_markdown`이 요청과 일치할 때만 한 번 소비되고, 동일 pair 재시도는 기존 소비를 재사용하며 다른 pair는 거절한다. 결과가 유효하지 않거나 canonical Markdown을 만들 수 없으면 projection은 `failed`가 된다.
+
+`folder_organize`·`workspace_workflow` 결과는 canonical Markdown 없이도 AgentRun projection에 반영한다. 이 결과는 Markdown 적용 대상이 아니므로 `ready_markdown`을 만들지 않으며, 기존 `markdown_create`·`markdown_edit` 결과의 canonical Markdown 검증은 그대로 적용한다.
 
 Agent Tool P0 내부 계약:
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 `list_root_items`, `list_folder_children`, `get_document_metadata`, `get_document_content`를 호출. document-svc가 workspace 멤버십·문서 scope와 MongoDB canonical 본문을 확인 |
-| POST | `/internal/agent/tools/execute/{tool_name}` | `create_folder`, `rename_folder`, `move_folder`, `move_document`, `rename_document`만 허용. ai_db의 승인된 현재 operation·인자와 정확히 일치해야 document-svc가 멱등 실행 |
+| POST | `/internal/agent/tools/read/{tool_name}` | ai-svc worker가 `X-Agent-Service-Token`으로 document-svc의 read Tool을 호출. 필수 arguments는 `list_root_items`=없음, `list_folder_children`=`folder_id`, `search_hierarchy`=`query`, `get_document_metadata`=`document_id`, `get_document_content`=`document_id`, `get_breadcrumb`=`folder_id`와 `document_id`(두 키 필수, 정확히 하나만 non-null)다. `list_agent_run_artifacts`는 worker planning만 사용하는 내부 helper다. document-svc가 workspace 멤버십·문서 scope를 확인하고 canonical 본문은 MongoDB에서 읽는다 |
+| POST | `/internal/agent/tools/execute/{tool_name}` | `create_folder`, `rename_folder`, `move_folder`, `move_document`, `rename_document`, `create_document`, `apply_document_edit`를 허용한다. ai_db의 승인된 현재 operation·인자와 정확히 일치해야 document-svc가 멱등 실행하며, 문서 생성·편집은 승인된 artifact의 hash·목적·문서/버전/target을 ai-svc에서 다시 검증한 Markdown만 사용한다 |
+| POST | `/internal/agent/runs/artifacts/register` | ai-svc가 run/workspace/user에 결합된 Markdown artifact를 기존 object storage에 저장하고 hash·purpose·target 메타데이터를 ai_db에 기록한다. `X-Internal-Token` 전용이며 입력 artifact는 이 등록을 선행해야 한다 |
+| POST | `/internal/agent/runs/artifacts/list` | worker planning이 같은 run actor scope의 artifact 메타데이터만 조회한다. 본문·object key는 반환하지 않는다 |
+| POST | `/internal/agent/runs/artifacts/resolve` | document-svc가 승인 operation과 일치하는 artifact id/hash/purpose/document/base/target을 전달하면 ai-svc가 scope·metadata·object storage hash를 재검증하고 Markdown을 반환한다. 본문은 `X-Internal-Token` 전용 응답이다 |
 | POST | `/internal/agent/runs/tool-authorizations/read` | document-svc가 `X-Internal-Token`으로 ai-svc에 run/workspace/user scope 조회 인가 요청 |
 | POST | `/internal/agent/runs/tool-authorizations/execute` | document-svc가 ai-svc에 plan version·operation hash·tool·선행 operation 결과를 포함한 승인 인자 일치 인가 요청 |
 
-Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 `apply_operation_id`를 operation/version audit와 같은 core 트랜잭션에서 한 번만 소비한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
+Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_operation_id`, instruction/editor snapshot을 포함한다. 동일 `run_id` 재전달은 전체 envelope hash가 같을 때만 기존 결과를 재사용한다. 생성된 편집안은 문서를 바꾸지 않으며, 유효한 성공 result event가 projection을 ready로 만든 뒤 사용자가 저장할 때 PostgreSQL apply operation row를 projection의 `base_version`·canonical `ready_markdown`과 대조해 `operation_id`+`revision_write_id` exact pair로 claim하고 `document_edit/applying` pending 감사 상태를 먼저 기록한다. 이후 MongoDB 본문 receipt를 저장하고 PostgreSQL version link/audit를 확정하며, 중간 실패 시 같은 `revision_write_id` 재시도가 receipt를 재생해 pending 감사를 완료한다. 유효하지 않은 result event는 `failed`로 기록한다. 기존 `/skills/*`·`/agent/runs/*`의 `X-Agent-Service-Token` 계약과 Spring용 `/internal/agent/runs/**`의 `X-Internal-Token` 계약을 유지한다.
 
 ## Skill
 
@@ -145,7 +159,7 @@ Kafka command에는 `run_id`, workspace/user/document, `base_version`, `apply_op
 
 참조 문서는 ai-svc가 `POST /internal/agent/skill-authoring/references/read`를 호출해 scope와 role을 확인한다. document-svc는 service token, workspace 멤버십과 활성 문서를 검증하고, EDITABLE은 workspace가 일치하는 MongoDB canonical Markdown을 반환한다. ORIGINAL은 role만 반환하며 ai-svc가 소유한 ai_db `source_blocks`를 `block_id` 순으로 조립한다. Skill author/publish/update public API body는 `provider`, `model`을 받지 않으며, backend가 workspace AI 설정을 snapshot해 ai-svc 내부 payload에 `provider`·`model`만 전달한다(key·base URL은 전달하지 않는다). Agent 경유 Skill LLM 호출은 Agent의 chat/request snapshot을 사용한다.
 
-ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skills/draft-from-runs/preview`와 `/agent/runs/*`는 `AGENT_SKILLS_ENABLED`(기본 `false`)로 독립 제어한다. EDITABLE 참조 Markdown은 문서당 30,000자까지 허용하며 초과 시 413 `REFERENCE_DOCUMENT_TOO_LARGE`를 반환한다. ai-svc가 거부한 일반 Skill 4xx는 상태를 유지하고 `{ "error": { "code": "SKILL_REQUEST_REJECTED", "message": "..." } }` envelope로 정규화한다.
+ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skills/draft-from-runs/preview`와 `/agent/runs/*`는 `AGENT_SKILLS_ENABLED`(기본 `false`)로 독립 제어한다. 배포 환경 설정은 Agent와 Skill route를 함께 활성화하도록 `AGENT_SKILLS_ENABLED=true`, `SKILL_API_ENABLED=true`를 주입한다. EDITABLE 참조 Markdown은 문서당 30,000자까지 허용하며 초과 시 413 `REFERENCE_DOCUMENT_TOO_LARGE`를 반환한다. ai-svc가 거부한 일반 Skill 4xx는 상태를 유지하고 `{ "error": { "code": "SKILL_REQUEST_REJECTED", "message": "..." } }` envelope로 정규화한다.
 
 ## 채팅
 
@@ -157,7 +171,7 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | GET | `/chat/sessions` | 본인 세션 목록(최근 메시지 순) |
 | DELETE | `/chat/sessions/{id}` | 세션 삭제(204). 메시지·참조는 FK CASCADE |
 | GET | `/chat/sessions/{id}/messages` | 메시지 기록. references·related_pages·wiki 편입 정보 포함 |
-| POST | `/chat/sessions/{id}/wiki` | wiki export(202). `selection_mode`=`full`\|`partial`(+`pair_ids`), 응답 `status`=`processing`\|`skipped`(content_hash 중복). 완료는 3초 주기 폴링 reconciler가 반영 |
+| POST | `/chat/sessions/{id}/wiki` | wiki export(202). `selection_mode`=`full`\|`partial`(+`pair_ids`), 응답 `status`=`processing`\|`skipped`. 같은 workspace의 `chat_export`는 `(workspace_id, content_hash, selection_mode)` 조합으로 dedup하며, 완료는 3초 주기 폴링 reconciler가 반영 |
 | POST | `/chat/sessions/{id}/wiki/preview` | 직렬화·마스킹된 Markdown 미리보기(text/plain, 저장 없음) |
 
 원문: docs/backlog/spec/api/chat.md
@@ -209,10 +223,33 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 | GET | `.../wiki/maintenance/runs/{run_id}` | lint run 상태와 `manifest.task_result` 조회 |
 | GET | `.../wiki/maintenance/status` | `needs_lint`(마지막 lint 이후 위키 페이지 변경 여부), `last_lint_at`, `last_wiki_change_at` |
 | GET | `.../ai-operation-logs` | 작업 목록. `type`/`status`/`cursor`(ISO-8601)/`size`(기본 20, 최대 100) 커서 페이징 |
-| GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`) |
+| GET | `.../ai-operation-logs/{op}` | 상세 + `changes[]`(hunks는 조회 시 계산, 항목별 `diff_too_large`). restore 작업에는 검증 가능한 계획·결과 요약을 `restore`로 추가 |
 | GET | `.../ai-operation-logs/{op}/restore-preview` | 복구 미리보기. 페이지별 `delete`/`restore`/`rebuild` 판정 + `preview_token` |
-| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI가 현재 본문·링크·embedding을 갱신한 뒤 core 감사 상태를 원자 반영 |
+| POST | `.../ai-operation-logs/{op}/restore` | 되돌리기 실행(202). `preview_token` 필수, 대상 변경 시 409 `RESTORE_PREVIEW_STALE`, 같은 토큰 재실행은 기존 요청을 만들지 않고 400 `INVALID_RESTORE_REQUEST`; 승인한 contribution manifest와 command outbox를 먼저 저장하고 AI가 현재 본문·링크·embedding을 갱신한 뒤 core 감사 상태를 원자 반영 |
 
-AI 내부 FastAPI 요청은 Pydantic schema 검증을 따른다. Query는 `workspace_id`, `question`, `provider`, `model`, `allow_web_search`가 필수이고 `recent_messages`는 최대 6개, `output_language`는 `ko|en|document`, `response_length`는 `concise|balanced|detailed`다. Pipeline ingest/reingest/chat-wiki는 `document_id`, `provider`, `model`이 필수이며 `selection_mode`는 `full|partial`, Lint는 `provider`, `model`이 필수이고 write(`dry_run=false`)에는 `operation_id`가 필수다. Agent·Skill 내부 요청도 provider/model pair를 필수로 검증하며 schema 오류는 422다.
+복구 상세의 `restore`는 복구 작업에만 포함되며, `plan`에는 고정된 페이지별 `delete`/`restore`/`rebuild` 조치와 조치별 개수가, `result`에는 `changes[]`에서 집계한 페이지·링크·실패 효과 개수가 담긴다. `failed_actions`는 `changes[]`에 `resource_type=action`, `change_type=action_failed`로 저장하며 안정적인 action/resource ID와 공개된 실패 코드만 노출한다. 실제 page/resource ID와 효과는 기존 `changes[]`가 기준이므로 결과에 다시 복제하지 않는다. 비복구 작업은 기존 응답과 같이 `restore` 필드를 생략하며, 내부 callback URL·preview token·provider payload/error·기여 object key와 원본 `restore_manifest`는 반환하지 않는다.
+
+```json
+{
+  "restore": {
+    "plan": {
+      "delete_count": 1,
+      "restore_count": 1,
+      "rebuild_count": 1,
+      "pages": [{"page_id": "wp_C3", "action": "rebuild", "contribution_count": 2}]
+    },
+    "result": {
+      "deleted_count": 1,
+      "restored_count": 1,
+      "rebuilt_count": 0,
+      "failed_count": 1,
+      "removed_link_count": 2,
+      "restored_link_count": 1
+    }
+  }
+}
+```
+
+AI 내부 FastAPI 요청은 Pydantic schema 검증을 따른다. Query는 `workspace_id`, `question`, `provider`, `model`, `allow_web_search`가 필수이고 `recent_messages`는 최대 6개이며 각 content는 최대 4,000자, `output_language`는 `ko|en|document`, `response_length`는 `concise|balanced|detailed`다. Pipeline ingest/reingest/chat-wiki는 `document_id`, `provider`, `model`이 필수이며 `selection_mode`는 `full|partial`, Lint는 `provider`, `model`이 필수이고 write(`dry_run=false`)에는 `operation_id`가 필수다. Agent·Skill 내부 요청도 provider/model pair를 필수로 검증하며 schema 오류는 422다.
 
 원문: docs/backlog/spec/api/ai-operation-log.md

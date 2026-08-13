@@ -82,6 +82,14 @@ class WebSearchResult:
     score: float = 1.0
 
 
+@dataclass
+class WebSearchTelemetry:
+    requested: bool = False
+    executed: bool = False
+    result_count: int = 0
+    error_code: str | None = None
+
+
 @dataclass(frozen=True)
 class RetrievedPage:
     page: WikiPage
@@ -184,3 +192,4 @@ class QueryAnswer:
     traversal_paths: list[TraversalPath]
     retrieval_summary: RetrievalSummary
     updated_conversation_summary: str | None = None
+    web_search: WebSearchTelemetry = field(default_factory=WebSearchTelemetry)

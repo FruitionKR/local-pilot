@@ -25,8 +25,8 @@ class LlmEnvTest(unittest.TestCase):
             SUPPORTED_LLM_MODELS,
             {
                 "openai": "gpt-5-nano",
-                "gemini": "gemini-2.5-flash-lite",
-                "claude": "claude-3-5-haiku-20241022",
+                "gemini": "gemini-3.1-flash-lite",
+                "claude": "claude-haiku-4-5-20251001",
             },
         )
         for provider, model in SUPPORTED_LLM_MODELS.items():
@@ -76,10 +76,10 @@ class LlmEnvTest(unittest.TestCase):
     def test_reasoning_profile_is_provider_specific(self) -> None:
         self.assertEqual(inference_profile("openai", "gpt-5-nano"), {"reasoning_effort": "minimal"})
         self.assertEqual(
-            inference_profile("gemini", "gemini-2.5-flash-lite"),
+            inference_profile("gemini", "gemini-3.1-flash-lite"),
             {"reasoning_effort": "low"},
         )
-        self.assertEqual(inference_profile("claude", "claude-3-5-haiku-20241022"), {})
+        self.assertEqual(inference_profile("claude", "claude-haiku-4-5-20251001"), {})
 
     def test_resolves_numeric_env_values(self) -> None:
         with patch.dict(

@@ -7,8 +7,8 @@ import java.util.List;
 
 public interface ChatPartialWikiRepository extends JpaRepository<ChatPartialWiki, String> {
 
-    /** 멱등 가드: 이 export 문서로 이미 partial 멤버십을 기록했는지. */
-    boolean existsByDocumentId(String documentId);
+    /** 부분 실패 후에도 export 문서의 pair별 멤버십을 이어서 기록할 수 있는지 확인한다. */
+    boolean existsByDocumentIdAndPairId(String documentId, String pairId);
 
     /** 방향1(세션→문답): 세션에서 partial 위키에 편입된 문답 멤버십. */
     List<ChatPartialWiki> findAllBySessionId(String sessionId);

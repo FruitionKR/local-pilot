@@ -1,3 +1,4 @@
+from copy import deepcopy
 import tempfile
 import unittest
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from app.modules.wiki_generation.infrastructure.chat_source_accumulation import 
     apply_chat_source_accumulation_result,
     build_chat_source_accumulation_payload,
 )
+from app.modules.wiki_generation.infrastructure.assemble import SourcePageAssembler
 from run_lab import (
     PipelineLog,
     PipelinePrompts,
@@ -431,7 +433,7 @@ class WikiGenerationPipelineTest(unittest.TestCase):
         self.assertIn("다듬은 정의", concept_pages[0]["markdown"])
         self.assertIn("다듬은 핵심", concept_pages[0]["markdown"])
 
-    def test_apply_source_accumulation_result_replaces_source_sections_with_validated_refs(self) -> None:
+    def test_apply_source_accumulation_result_accumulates_source_sections_with_validated_refs(self) -> None:
         normalized = {
             "warnings": [],
             "observations": [{"summary": "기존 observation", "anchor_reference_ids": ["B0001"]}],
@@ -467,9 +469,141 @@ class WikiGenerationPipelineTest(unittest.TestCase):
         self.assertEqual(result["source_accumulation_polish"]["summary"]["text"], "전체 요약")
         self.assertEqual(result["source_accumulation_polish"]["summary"]["anchor_reference_ids"], ["B0001"])
         self.assertEqual(result["source_accumulation_polish"]["key_points"]["items"][0]["anchor_reference_ids"], ["B0001", "B0002"])
-        self.assertEqual(result["observations"][0]["summary"], "기존과 신규 observation을 합친다.")
-        self.assertEqual(result["categories"], [{"name": "운영"}])
+        self.assertEqual([item["summary"] for item in result["observations"]], ["기존 observation", "기존과 신규 observation을 합친다."])
+        self.assertEqual([item["name"] for item in result["categories"]], ["기존", "운영"])
         self.assertEqual(result["warnings"], ["source_accumulation.summary: unknown accumulation anchor_block_id B9999"])
+
+    def test_apply_source_accumulation_result_keeps_lossy_delta_in_rendered_source_page(self) -> None:
+        normalized = {
+            "document": {"document_id": "chat-doc", "title": "Chat", "source_path": "chat.md"},
+            "semantic_notes": [
+                {
+                    "semantic_summary": "기존 요약",
+                    "key_points": [{"text": "기존 핵심", "anchor_reference_ids": ["B0001"]}],
+                },
+                {
+                    "semantic_summary": "신규 요약",
+                    "key_points": [{"text": "신규 핵심", "anchor_reference_ids": ["B0002"]}],
+                },
+            ],
+            "observations": [{"summary": "기존 관찰", "anchor_reference_ids": ["B0001"]}],
+            "categories": [{"name": "기존 분류"}],
+            "concept_ledger": [],
+            "section_candidates": [],
+            "mentions": [],
+            "evidence_units": [],
+            "warnings": [],
+        }
+        raw = {
+            "revised_source": {
+                "summary": {"text": "신규 요약", "anchor_block_ids": ["B0002"]},
+                "key_points": [{"text": "신규 핵심", "anchor_block_ids": ["B0002"]}],
+                "observations": [{"title": "신규 질문", "summary": "신규 관찰", "anchor_block_ids": ["B0002"]}],
+                "categories": [{"name": "신규 분류"}],
+            }
+        }
+
+        result = apply_chat_source_accumulation_result(
+            normalized,
+            raw,
+            [FakeBlock(block_id="B0001", text="기존"), FakeBlock(block_id="B0002", text="신규")],
+        )
+        page = SourcePageAssembler().build(
+            result,
+            polish=result["source_accumulation_polish"],
+        )
+
+        for marker in ["기존 요약", "신규 요약", "기존 핵심", "신규 핵심", "기존 관찰", "신규 관찰", "신규 질문", "기존 분류", "신규 분류"]:
+            self.assertIn(marker, page["markdown"])
+        self.assertEqual([item["summary"] for item in result["observations"]].count("기존 관찰"), 1)
+        self.assertEqual([item["name"] for item in result["categories"]].count("기존 분류"), 1)
+
+    def test_apply_source_accumulation_result_deduplicates_exact_semantic_payloads(self) -> None:
+        normalized = {
+            "warnings": [],
+            "semantic_notes": [{"key_points": [{"text": "C++", "anchor_reference_ids": ["B0001"]}]}],
+            "observations": [
+                {
+                    "type": "qa_episode",
+                    "title": "같은 제목",
+                    "query_text": "같은 질문",
+                    "summary": "같은 요약",
+                    "claims": ["같은 주장"],
+                    "related_concept_hints": ["같은 개념"],
+                    "anchor_reference_ids": ["B0001"],
+                    "evidence_block_ids": ["B0001"],
+                }
+            ],
+            "categories": [{"name": "C++", "anchor_reference_ids": ["B0001"]}],
+        }
+        raw = {
+            "revised_source": {
+                "key_points": [
+                    {"text": "C++", "anchor_block_ids": ["B0002"]},
+                    {"text": "C", "anchor_block_ids": ["B0002"]},
+                ],
+                "observations": [
+                    {
+                        "type": "qa_episode",
+                        "title": "같은 제목",
+                        "query_text": "같은 질문",
+                        "summary": "같은 요약",
+                        "claims": ["같은 주장"],
+                        "related_concept_hints": ["같은 개념"],
+                        "anchor_block_ids": ["B0002"],
+                    },
+                    {
+                        "type": "qa_episode",
+                        "title": "다른 제목",
+                        "query_text": "같은 질문",
+                        "summary": "같은 요약",
+                        "claims": ["같은 주장"],
+                        "related_concept_hints": ["같은 개념"],
+                        "anchor_block_ids": ["B0002"],
+                    },
+                    {
+                        "type": "qa_episode",
+                        "title": "같은 제목",
+                        "query_text": "다른 질문",
+                        "summary": "같은 요약",
+                        "claims": ["같은 주장"],
+                        "related_concept_hints": ["같은 개념"],
+                        "anchor_block_ids": ["B0002"],
+                    },
+                    {
+                        "type": "qa_episode",
+                        "title": "같은 제목",
+                        "query_text": "같은 질문",
+                        "summary": "같은 요약",
+                        "claims": ["다른 주장"],
+                        "related_concept_hints": ["같은 개념"],
+                        "anchor_block_ids": ["B0002"],
+                    },
+                ],
+                "categories": [{"name": "C++"}, {"name": "C"}],
+            }
+        }
+
+        result = apply_chat_source_accumulation_result(
+            normalized,
+            raw,
+            [FakeBlock(block_id="B0001", text="기존"), FakeBlock(block_id="B0002", text="신규")],
+        )
+
+        self.assertEqual([item["text"] for item in result["source_accumulation_polish"]["key_points"]["items"]], ["C++", "C"])
+        self.assertEqual([item["name"] for item in result["categories"]], ["C++", "C"])
+        self.assertEqual(len(result["observations"]), 4)
+        self.assertEqual(result["observations"][0]["anchor_reference_ids"], ["B0001", "B0002"])
+
+        snapshot = deepcopy(result)
+        self.assertEqual(
+            apply_chat_source_accumulation_result(
+                result,
+                raw,
+                [FakeBlock(block_id="B0001", text="기존"), FakeBlock(block_id="B0002", text="신규")],
+            ),
+            snapshot,
+        )
 
 
 if __name__ == "__main__":

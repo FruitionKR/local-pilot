@@ -46,6 +46,7 @@ from app.modules.query.domain.entities import (
     ResponseLength,
     RetrievedPage,
     TraversalPath,
+    WebSearchTelemetry,
     WikiPage,
     WikiPageLink,
 )
@@ -198,6 +199,7 @@ class AnswerQueryUseCase:
     ) -> QueryAnswer:
         event_publisher = event_publisher or self._event_publisher
         query = Question(question)
+        web_search_telemetry = WebSearchTelemetry()
         self._publish(event_publisher, "query_started", "질의 처리를 시작했습니다.", {"question": query.normalized})
         contextual_question = contextualize_question(query.normalized, conversation_context)
         if contextual_question != query.normalized:
@@ -230,12 +232,14 @@ class AnswerQueryUseCase:
                 candidates.concept_scores,
             )
         ):
+            self._mark_web_search_requested(web_search_telemetry)
             fallback_answer = self._answer_from_web_search(
                 query.normalized,
                 query_rewrite,
                 event_publisher,
                 output_language,
                 response_length,
+                web_search_telemetry,
             )
             if fallback_answer is not None:
                 return fallback_answer
@@ -260,16 +264,19 @@ class AnswerQueryUseCase:
         )
         if query_evaluation is not None:
             if web_search_allowed and query_evaluation.route == "web_fallback":
+                self._mark_web_search_requested(web_search_telemetry)
                 fallback_answer = self._answer_from_web_search(
                     query.normalized,
                     self._query_rewrite_for_web(query_rewrite, query_evaluation),
                     event_publisher,
                     output_language,
                     response_length,
+                    web_search_telemetry,
                 )
                 if fallback_answer is not None:
                     return fallback_answer
             if web_search_allowed and query_evaluation.route == "internal_web_augmented":
+                self._mark_web_search_requested(web_search_telemetry)
                 augmented_answer = self._answer_from_internal_web_augmented(
                     question=query.normalized,
                     query_rewrite=self._query_rewrite_for_web(query_rewrite, query_evaluation),
@@ -278,6 +285,7 @@ class AnswerQueryUseCase:
                     traversal_paths=internal_context.traversal_paths,
                     stop_reason="internal_web_augmented",
                     event_publisher=event_publisher,
+                    web_search_telemetry=web_search_telemetry,
                 )
                 if augmented_answer is not None:
                     return augmented_answer
@@ -309,6 +317,7 @@ class AnswerQueryUseCase:
             graph_context=internal_context.graph_context,
             traversal_paths=internal_context.traversal_paths,
             retrieval_summary=summary,
+            web_search=web_search_telemetry,
         )
 
     def _build_internal_query_context(
@@ -650,10 +659,15 @@ class AnswerQueryUseCase:
         )
 
     def _should_use_web_fallback(self, source_scores: dict[str, float], concept_scores: dict[str, float]) -> bool:
-        if self._web_search is None or self._min_internal_relevance_score <= 0:
+        if self._min_internal_relevance_score <= 0:
             return False
         best_score = max([*source_scores.values(), *concept_scores.values(), 0.0])
         return best_score < self._min_internal_relevance_score
+
+    def _mark_web_search_requested(self, telemetry: WebSearchTelemetry) -> None:
+        telemetry.requested = True
+        if self._web_search is None:
+            telemetry.error_code = "web_search_unavailable"
 
     def _answer_from_web_search(
         self,
@@ -662,6 +676,7 @@ class AnswerQueryUseCase:
         event_publisher: QueryEventPublisherPort | None,
         output_language: OutputLanguage | None,
         response_length: ResponseLength | None,
+        web_search_telemetry: WebSearchTelemetry,
     ) -> QueryAnswer | None:
         if self._query_web_answer_builder is None:
             return None
@@ -671,6 +686,7 @@ class AnswerQueryUseCase:
             event_publisher=event_publisher,
             output_language=output_language,
             response_length=response_length,
+            web_search_telemetry=web_search_telemetry,
         )
 
     def _answer_from_internal_web_augmented(
@@ -682,6 +698,7 @@ class AnswerQueryUseCase:
         traversal_paths: list[TraversalPath],
         stop_reason: str,
         event_publisher: QueryEventPublisherPort | None,
+        web_search_telemetry: WebSearchTelemetry,
     ) -> QueryAnswer | None:
         if self._query_web_answer_builder is None:
             return None
@@ -693,6 +710,7 @@ class AnswerQueryUseCase:
             traversal_paths=traversal_paths,
             stop_reason=stop_reason,
             event_publisher=event_publisher,
+            web_search_telemetry=web_search_telemetry,
         )
 
     def _top_id(self, scores: dict[str, float]) -> str | None:

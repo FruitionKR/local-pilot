@@ -4,6 +4,7 @@ from app.modules.agent_run.domain.entities import (
     AgentJob,
     AgentRun,
     AgentRunContext,
+    StartAgentRunArtifact,
     ContentArtifactReference,
     StartAgentRunRequest,
 )
@@ -19,7 +20,12 @@ class ToolGatewayError(RuntimeError):
 
 
 class AgentRunRepositoryPort(Protocol):
-    def create_with_planning_job(self, run: AgentRun, job_id: str) -> AgentRun:
+    def create_with_planning_job(
+        self,
+        run: AgentRun,
+        job_id: str,
+        artifact: StartAgentRunArtifact | None = None,
+    ) -> AgentRun:
         ...
 
     def get_for_user(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun | None:
@@ -90,6 +96,40 @@ class AgentToolAuthorizationRepositoryPort(Protocol):
         tool_name: str,
         arguments: dict[str, object],
     ) -> bool:
+        ...
+
+    def register_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+        markdown: str,
+    ) -> dict[str, object]:
+        ...
+
+    def list_artifacts(self, workspace_id: str, user_id: str, run_id: str) -> list[dict[str, object]]:
+        ...
+
+    def resolve_artifact(
+        self,
+        *,
+        run_id: str,
+        workspace_id: str,
+        user_id: str,
+        artifact_id: str,
+        content_hash: str,
+        purpose: str,
+        document_id: str | None,
+        base_version: int | None,
+        target: dict[str, object] | None,
+    ) -> dict[str, object] | None:
         ...
 
 

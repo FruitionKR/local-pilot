@@ -9,5 +9,7 @@ package fruition.core.aihistory.domain;
 public enum ResourceType {
     document,
     wiki_page,
-    relation_link
+    relation_link,
+    /** 특정 문서·페이지가 아닌 복구 조치 자체. */
+    action
 }

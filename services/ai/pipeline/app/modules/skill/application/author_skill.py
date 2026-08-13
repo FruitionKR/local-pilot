@@ -64,6 +64,8 @@ class AuthorSkillUseCase:
         name: str | None = None,
         description: str | None = None,
         authoring_mode: SkillAuthoringMode = "enhance",
+        preserved_capabilities: tuple[SkillCapability, ...] | None = None,
+        preserved_allowed_tools: tuple[SkillTool, ...] | None = None,
     ) -> SkillAuthoringResult:
         instruction = instruction.strip()
         max_instruction_chars = (
@@ -116,20 +118,28 @@ class AuthorSkillUseCase:
                 reference_issues,
             )
 
-        intent = _verified_intent(
-            self._generator,
-            instruction,
-            references,
-            description,
-        )
-        if intent is None:
-            if allow_clarification:
-                return SkillAuthoringResult(
-                    status="clarification_required",
-                    question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
-                )
-            raise ValueError("Skill request could not be classified consistently.")
-        capability, reference_mode, allowed_tools = intent
+        if preserved_capabilities is None:
+            intent = _verified_intent(
+                self._generator,
+                instruction,
+                references,
+                description,
+            )
+            if intent is None:
+                if allow_clarification:
+                    return SkillAuthoringResult(
+                        status="clarification_required",
+                        question="이 Skill이 수행할 작업이 문서 작성, 문서 수정, 폴더 정리, 템플릿 중 무엇인지 알려 주세요.",
+                    )
+                raise ValueError("Skill request could not be classified consistently.")
+            capability, reference_mode, allowed_tools = intent
+            capabilities: tuple[SkillCapability, ...] = (capability,)
+        else:
+            reference_mode = "none"
+            allowed_tools = preserved_allowed_tools or ()
+            capabilities = preserved_capabilities
+            if not capabilities or any(capability not in CAPABILITY_TOOLS for capability in capabilities):
+                raise ValueError("Skill draft contains an unsupported capability.")
         candidate = self._generator.generate(
             instruction,
             references,
@@ -169,6 +179,7 @@ class AuthorSkillUseCase:
                     )
                 raise ValueError("Skill request could not be classified consistently.")
             capability, reference_mode, allowed_tools = intent
+            capabilities = (capability,)
             candidate = self._generator.generate(
                 instruction,
                 references,
@@ -214,7 +225,7 @@ class AuthorSkillUseCase:
                 raise ValueError("Reference document has no reusable Markdown structure.")
         elif authoring_mode == "regenerate":
             fixed_template = extract_fixed_reference_template(instruction)
-        if fixed_template is not None and capability != "template":
+        if fixed_template is not None and "template" not in capabilities:
             raise ValueError("Fixed templates require the template skill kind.")
         instructions = (
             build_reference_template_instructions(fixed_template)
@@ -227,7 +238,6 @@ class AuthorSkillUseCase:
             raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_LINES} lines.")
         if len(instructions) > MAX_INSTRUCTIONS_CHARS:
             raise ValueError(f"Skill instructions support at most {MAX_INSTRUCTIONS_CHARS} characters.")
-        capabilities: tuple[SkillCapability, ...] = (capability,)
         validate_allowed_tools(capabilities, allowed_tools)
         output_issues = (
             _tag_issues(inspect_skill_instructions(resolved_name), "name")
@@ -365,6 +375,8 @@ class AuthorSkillUseCase:
             reference_document_ids=(),
             allow_clarification=False,
             authoring_mode="preserve",
+            preserved_capabilities=draft.capabilities,
+            preserved_allowed_tools=draft.allowed_tools,
         )
         proposal = reviewed.proposal
         if reviewed.status == "proposal_ready" and proposal is not None and (

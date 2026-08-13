@@ -45,7 +45,7 @@ def test_ingest_restore_route_preserves_source_and_contribution_order() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3", "A4", "A5"],
             workspace_id="ws-1",
-            source_page={"page_id": "S1"},
+            source_page={"page_id": "S1", "document_id": "doc-source"},
             rebuild_pages=[
                 {
                     "page_id": "C3",
@@ -63,6 +63,7 @@ def test_ingest_restore_route_preserves_source_and_contribution_order() -> None:
     assert result["operation_type"] == "ingest_restore"
     assert command.restore_to_operation_id == "A2"
     assert command.cancel_operation_ids == ("A3", "A4", "A5")
+    assert command.source_page.document_id == "doc-source"
     assert [
         item.operation_id for item in command.rebuild_pages[0].keep_contributions
     ] == ["A2", "L"]
@@ -95,7 +96,7 @@ def test_operation_restore_rejects_cancelled_operation_as_active_input() -> None
             "restore_to_operation_id": "A2",
             "cancel_operation_ids": ["A3", "A4", "A5"],
             "workspace_id": "ws-1",
-            "source_page": {"page_id": "S1"},
+            "source_page": {"page_id": "S1", "document_id": "doc-source"},
             "rebuild_pages": [
                 {
                     "page_id": "C3",
@@ -153,7 +154,7 @@ def test_operation_restore_rejects_deleted_page_as_rebuild_target() -> None:
             **common,
             "restore_to_operation_id": "A2",
             "cancel_operation_ids": ["A3"],
-            "source_page": {"page_id": "S1"},
+            "source_page": {"page_id": "S1", "document_id": "doc-source"},
         }),
         (LintOperationRestoreIn, {
             **common,
@@ -177,7 +178,7 @@ def test_ingest_restore_rejects_restored_source_as_deleted() -> None:
             workspace_id="ws-1",
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3"],
-            source_page={"page_id": "S1"},
+            source_page={"page_id": "S1", "document_id": "doc-source"},
             rebuild_pages=[],
             deleted_pages=["S1"],
         )
@@ -195,7 +196,7 @@ def test_ingest_restore_rejects_source_as_rebuild_target() -> None:
                 workspace_id="ws-1",
                 restore_to_operation_id=restore_to_operation_id,
                 cancel_operation_ids=["A3"],
-                source_page={"page_id": "C3"},
+                source_page={"page_id": "C3", "document_id": "doc-source"},
                 rebuild_pages=[
                     {"page_id": "C3", "keep_contributions": []}
                 ],
@@ -213,7 +214,7 @@ def test_ingest_restore_allows_restore_point_contribution() -> None:
         restore_to_operation_id="A2",
         cancel_operation_ids=["A3", "A4", "A5"],
         workspace_id="ws-1",
-        source_page={"page_id": "S1"},
+        source_page={"page_id": "S1", "document_id": "doc-source"},
         rebuild_pages=[
             {
                 "page_id": "C3",
@@ -235,7 +236,7 @@ def test_ingest_restore_rejects_invalid_cancel_range() -> None:
                 restore_to_operation_id="A2",
                 cancel_operation_ids=cancel_operation_ids,
                 workspace_id="ws-1",
-                source_page={"page_id": "S1"},
+                source_page={"page_id": "S1", "document_id": "doc-source"},
                 rebuild_pages=[],
             )
         except ValueError as exc:
@@ -251,7 +252,7 @@ def test_ingest_restore_requires_new_restore_operation_id() -> None:
             restore_to_operation_id="A2",
             cancel_operation_ids=["A3"],
             workspace_id="ws-1",
-            source_page={"page_id": "S1"},
+            source_page={"page_id": "S1", "document_id": "doc-source"},
             rebuild_pages=[],
         )
     except ValueError as exc:

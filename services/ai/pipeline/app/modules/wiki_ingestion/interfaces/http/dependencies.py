@@ -22,8 +22,7 @@ from app.modules.wiki_ingestion.infrastructure.pipeline_run_adapters import (
     RunLabPipelineRunner,
 )
 from app.modules.wiki_ingestion.infrastructure.postgres_wiki_ingestion_repository import (
-    apply_restored_wiki_state,
-    cleanup_deleted_wiki_pages,
+    apply_restored_wiki_state_and_cleanup,
 )
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     read_text_object,
@@ -63,8 +62,7 @@ def get_restore_wiki_pages_use_case() -> RestoreWikiPagesUseCase:
         ObjectStorageWikiPageRestore(
             read_text_object,
             write_text_object,
-            cleanup_deleted_wiki_pages,
-            apply_restored_wiki_state,
+            apply_restored_wiki_state_and_cleanup,
         ),
         SynchronousWikiEmbeddingJob(logger),
     )

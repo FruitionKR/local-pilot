@@ -36,7 +36,7 @@ QUERY_EVALUATOR_MODE=llm
 QUERY_EVALUATOR_MAX_ATTEMPTS=2
 ```
 
-LLM 호출은 `openai/gpt-5-nano`(기본, reasoning `minimal`), `gemini/gemini-2.5-flash-lite`(reasoning `low`), `claude/claude-3-5-haiku-20241022`(extended thinking 없음)만 지원합니다. provider/model은 API·DB·Kafka payload에서 선택하며 env override는 없습니다. base URL은 provider별로 고정하고 key는 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 선택 provider의 값만 사용합니다. live provider 호출에는 key가 필요하지만 mock 통합 테스트에는 필요하지 않습니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
+LLM 호출은 `openai/gpt-5-nano`(기본, reasoning `minimal`), `gemini/gemini-3.1-flash-lite`(reasoning `low`), `claude/claude-haiku-4-5-20251001`(extended thinking 없음)만 지원합니다. provider/model은 API·DB·Kafka payload에서 선택하며 env override는 없습니다. base URL은 provider별로 고정하고 key는 `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 중 선택 provider의 값만 사용합니다. live provider 호출에는 key가 필요하지만 mock 통합 테스트에는 필요하지 않습니다. 실제 비밀값은 `infra/.env`에만 두고 커밋하지 않습니다.
 
 LangSmith Cloud region은 계정을 만든 URL과 맞아야 합니다.
 

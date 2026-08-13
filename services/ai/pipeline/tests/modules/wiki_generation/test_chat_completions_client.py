@@ -73,7 +73,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -101,7 +101,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -120,7 +120,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 json_mode=True,
                 provider="claude",
             )
@@ -137,8 +137,8 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
     def test_provider_reasoning_parameters_are_sent_without_claude_thinking(self) -> None:
         cases = (
             ("openai", "gpt-5-nano", {"reasoning_effort": "minimal"}),
-            ("gemini", "gemini-2.5-flash-lite", {"reasoning_effort": "low"}),
-            ("claude", "claude-3-5-haiku-20241022", {}),
+            ("gemini", "gemini-3.1-flash-lite", {"reasoning_effort": "low"}),
+            ("claude", "claude-haiku-4-5-20251001", {}),
         )
         for provider, model, expected_profile in cases:
             with self.subTest(provider=provider):
@@ -161,6 +161,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
                 ) as urlopen:
                     client.complete_text("system prompt", "user prompt")
                 body = json.loads(urlopen.call_args.args[0].data)
+                self.assertEqual(body["model"], model)
                 self.assertEqual(
                     {key: body[key] for key in body if key == "reasoning_effort"},
                     expected_profile,

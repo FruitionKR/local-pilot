@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -46,7 +47,9 @@ class QueryRunServiceTest {
         when(queryService.prepareMessages("session_abc123", "질문", "query_abc123",
                 "openai", "gpt-5-nano"))
                 .thenReturn(new QueryService.QueryMessageContext(
-                        "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt()));
+                        "pair_abc123", "chat_user_abc123", "chat_assistant_abc123", pending.createdAt(),
+                        List.of(new fruition.core.query.repository.PipelineQueryRequester.RecentMessage("user", "이전 질문"),
+                                new fruition.core.query.repository.PipelineQueryRequester.RecentMessage("assistant", "이전 답변"))));
 
         QueryRun returned = service.start("ws_abc123", "user_abc123", "session_abc123", "질문");
 
@@ -57,8 +60,13 @@ class QueryRunServiceTest {
                 eq("session_abc123"), command.capture());
         ArgumentCaptor<AiCommandOutbox> outbox = ArgumentCaptor.forClass(AiCommandOutbox.class);
         verify(outboxRepository).save(outbox.capture());
+        assertThat(command.getValue().recentMessages()).extracting(
+                fruition.core.query.repository.PipelineQueryRequester.RecentMessage::content)
+                .containsExactly("이전 질문", "이전 답변");
         assertThat(outbox.getValue().getPayload())
                 .contains("\"provider\":\"openai\"", "\"model\":\"gpt-5-nano\"",
+                        "\"recent_messages\":[{\"role\":\"user\",\"content\":\"이전 질문\"},"
+                                + "{\"role\":\"assistant\",\"content\":\"이전 답변\"}]",
                         "\"allow_web_search\":false");
     }
 

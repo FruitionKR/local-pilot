@@ -103,13 +103,12 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     }
 
     @ExceptionHandler(PipelineAgentException.class)
-    public ResponseEntity<?> handlePipelineAgent(PipelineAgentException e) {
-        if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+    public ResponseEntity<ErrorResponse> handlePipelineAgent(PipelineAgentException e) {
+        if (e.getHttpStatus() >= 400 && e.getHttpStatus() < 500) {
             return ResponseEntity.status(e.getHttpStatus())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(e.getResponseBody());
+                    .body(ErrorResponse.of("AGENT_REQUEST_REJECTED", e.getMessage()));
         }
-        return ResponseEntity.status(e.getHttpStatus())
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ErrorResponse.of("AGENT_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
 

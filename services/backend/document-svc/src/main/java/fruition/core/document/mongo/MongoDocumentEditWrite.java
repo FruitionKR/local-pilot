@@ -20,6 +20,7 @@ public class MongoDocumentEditWrite {
     private long resultRevision;
     private String requestContentHash;
     private String requestHash;
+    private String applyOperationId;
     private String actorUserId;
     private boolean changed;
     private Instant resultUpdatedAt;
@@ -36,6 +37,7 @@ public class MongoDocumentEditWrite {
             long resultRevision,
             String requestContentHash,
             String requestHash,
+            String applyOperationId,
             String actorUserId,
             boolean changed,
             Instant resultUpdatedAt,
@@ -50,6 +52,7 @@ public class MongoDocumentEditWrite {
         this.resultRevision = resultRevision;
         this.requestContentHash = requestContentHash;
         this.requestHash = requestHash;
+        this.applyOperationId = applyOperationId;
         this.actorUserId = actorUserId;
         this.changed = changed;
         this.resultUpdatedAt = resultUpdatedAt;
@@ -69,6 +72,7 @@ public class MongoDocumentEditWrite {
     public long getResultRevision() { return resultRevision; }
     public String getRequestContentHash() { return requestContentHash; }
     public String getRequestHash() { return requestHash; }
+    public String getApplyOperationId() { return applyOperationId; }
     public String getActorUserId() { return actorUserId; }
     public boolean isChanged() { return changed; }
     public Instant getResultUpdatedAt() { return resultUpdatedAt; }

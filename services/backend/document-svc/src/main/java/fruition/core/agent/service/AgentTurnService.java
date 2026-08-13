@@ -1,7 +1,10 @@
 package fruition.core.agent.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import fruition.core.agent.dto.AgentTurnRequest;
 import fruition.core.agent.dto.AgentTurnResponse;
+import fruition.core.agent.dto.AgentRunApproveRequest;
+import fruition.core.agent.dto.AgentRunReviseRequest;
 import fruition.core.agent.exception.AgentRunNotFoundException;
 import fruition.core.agent.exception.InvalidAgentTurnRequestException;
 import fruition.core.agent.repository.AgentRunCommandRepository;
@@ -18,6 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -26,6 +32,8 @@ import java.util.regex.Pattern;
 public class AgentTurnService {
 
     private static final Set<String> TARGET_TYPES = Set.of("selection", "current_section", "whole_document");
+    private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
+    private static final int MAX_SKILL_DRAFT_SOURCES = 3;
     private static final Pattern RUN_ID_PATTERN = Pattern.compile("agent_[0-9a-f]{32}");
 
     private final DocumentService documentService;
@@ -74,6 +82,8 @@ public class AgentTurnService {
         }
         validateTarget(request.editorSnapshot());
         AiModelCatalog.AiModel selectedModel = aiModelCatalog.resolve(request.provider(), request.model());
+        List<CanonicalSkillDraftSource> skillDraftSources = canonicalSkillDraftSources(
+                workspaceId, userId, request.skillDraftSources());
 
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
@@ -83,8 +93,11 @@ public class AgentTurnService {
         outboxWriter.enqueue(runId, commandTopic, request.documentId(),
                 new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
-                        selectedModel.provider(), selectedModel.model(),
+                        selectedModel.provider(), selectedModel.model(), request.skillMode(), request.skillId(),
                         CommandConversationContext.from(request.conversationContext()),
+                        skillDraftSources,
+                        request.skillDraftUserDirectives(), request.skillDraftExcludedLiterals(),
+                        request.skillScopeType(),
                         CommandEditorSnapshot.from(request.editorSnapshot())));
         return new AgentTurnResponse(
                 request.documentId(),
@@ -105,23 +118,55 @@ public class AgentTurnService {
         var aiRun = statusRequester.find(workspaceId, userId, runId);
         if (aiRun.isPresent()) {
             var run = aiRun.get();
-            if ("completed".equals(run.status()) || "failed".equals(run.status())) {
-                var projection = runRepository.find(workspaceId, userId, runId)
-                        .orElseThrow(() -> new AgentRunNotFoundException(runId));
-                if ("queued".equals(projection.status())) {
-                    return new AgentTurnResponse(projection.documentId(), projection.baseVersion(),
-                            projection.runId(), projection.applyOperationId(), projection.status(),
-                            projection.result(), projection.error());
+            if ("completed".equals(run.status())) {
+                var projection = runRepository.find(workspaceId, userId, runId);
+                if (projection.isPresent()) {
+                    var core = projection.get();
+                    return new AgentTurnResponse(core.documentId(), core.baseVersion(), core.runId(),
+                            core.applyOperationId(), publicStatus(core.status()),
+                            core.result(), core.error());
                 }
             }
             return new AgentTurnResponse(run.documentId(), run.baseVersion(), run.id(),
                     run.applyOperationId(), run.status(), run.result(), run.errorCode());
         }
-        var queued = runRepository.find(workspaceId, userId, runId)
-                .filter(projection -> "queued".equals(projection.status()))
+        var projection = runRepository.find(workspaceId, userId, runId)
                 .orElseThrow(() -> new AgentRunNotFoundException(runId));
-        return new AgentTurnResponse(queued.documentId(), queued.baseVersion(), queued.runId(),
-                queued.applyOperationId(), queued.status(), queued.result(), queued.error());
+        return new AgentTurnResponse(projection.documentId(), projection.baseVersion(), projection.runId(),
+                projection.applyOperationId(), publicStatus(projection.status()),
+                projection.result(), projection.error());
+    }
+
+    public JsonNode getRun(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.getAutonomousRun(workspaceId, userId, runId);
+    }
+
+    public JsonNode approve(String workspaceId, String userId, String runId,
+                            AgentRunApproveRequest request) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.approve(workspaceId, userId, runId,
+                request.planVersion(), request.operationHash());
+    }
+
+    public JsonNode reject(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.reject(workspaceId, userId, runId);
+    }
+
+    public JsonNode cancel(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.cancel(workspaceId, userId, runId);
+    }
+
+    public JsonNode revise(String workspaceId, String userId, String runId,
+                           AgentRunReviseRequest request) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        return statusRequester.revise(workspaceId, userId, runId, request.instruction());
+    }
+
+    private String publicStatus(String status) {
+        return "ready".equals(status) || "consumed".equals(status) ? "completed" : status;
     }
 
     private boolean isMarkdown(DocumentDetailResponse document) {
@@ -141,6 +186,57 @@ public class AgentTurnService {
         }
     }
 
+    private List<CanonicalSkillDraftSource> canonicalSkillDraftSources(
+            String workspaceId, String userId, List<AgentTurnRequest.SkillDraftSourceSelector> requestedSources) {
+        if (requestedSources == null || requestedSources.isEmpty()) return List.of();
+        if (requestedSources.size() > MAX_SKILL_DRAFT_SOURCES) {
+            throw new InvalidAgentTurnRequestException("Skill draft source는 최대 3개까지 선택할 수 있습니다.");
+        }
+        Set<String> seenRunIds = new HashSet<>();
+        List<CanonicalSkillDraftSource> sources = new ArrayList<>();
+        for (AgentTurnRequest.SkillDraftSourceSelector requested : requestedSources) {
+            if (requested == null || !seenRunIds.add(requested.runId())) {
+                throw new InvalidAgentTurnRequestException("Skill draft AgentRun 선택이 올바르지 않습니다.");
+            }
+            var run = statusRequester.findAutonomous(workspaceId, userId, requested.runId())
+                    .orElseThrow(() -> new InvalidAgentTurnRequestException(
+                            "접근 가능한 Skill draft AgentRun을 찾을 수 없습니다."));
+            if (!requested.runId().equals(run.id()) || !AUTONOMOUS_ACTIONS.contains(run.action())) {
+                throw new InvalidAgentTurnRequestException("Skill draft AgentRun 선택이 올바르지 않습니다.");
+            }
+            if (!"completed".equals(run.status())) {
+                throw new InvalidAgentTurnRequestException("완료된 AgentRun만 Skill draft에 사용할 수 있습니다.");
+            }
+            sources.add(canonicalSkillDraftSource(run));
+        }
+        return List.copyOf(sources);
+    }
+
+    private CanonicalSkillDraftSource canonicalSkillDraftSource(
+            PipelineAgentRunStatusRequester.AutonomousRun run) {
+        if (run.requestSummary() == null || run.requestSummary().isBlank()
+                || run.plan() == null || run.plan().summary() == null || run.plan().summary().isBlank()) {
+            throw new InvalidAgentTurnRequestException("Skill draft canonical source가 올바르지 않습니다.");
+        }
+        List<CanonicalSkillDraftOperation> operations = new ArrayList<>();
+        if (run.plan().operations() != null) {
+            for (var operation : run.plan().operations()) {
+                if (operation == null || !"succeeded".equals(operation.status())) continue;
+                if (operation.toolName() == null || operation.toolName().isBlank()
+                        || operation.reason() == null || operation.reason().isBlank()) {
+                    throw new InvalidAgentTurnRequestException("Skill draft operation 결과가 올바르지 않습니다.");
+                }
+                operations.add(new CanonicalSkillDraftOperation(
+                        operation.toolName().trim(), operation.reason().trim()));
+            }
+        }
+        if (operations.isEmpty()) {
+            throw new InvalidAgentTurnRequestException("성공한 operation이 있는 AgentRun만 Skill draft에 사용할 수 있습니다.");
+        }
+        return new CanonicalSkillDraftSource(run.id(), "completed", run.requestSummary().trim(),
+                run.plan().summary().trim(), List.copyOf(operations));
+    }
+
     record AgentCommand(
             @com.fasterxml.jackson.annotation.JsonProperty("run_id") String runId,
             String kind,
@@ -152,17 +248,52 @@ public class AgentTurnService {
             String message,
             String provider,
             String model,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_mode") String skillMode,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_id") String skillId,
             @com.fasterxml.jackson.annotation.JsonProperty("conversation_context") CommandConversationContext conversationContext,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_draft_sources") List<CanonicalSkillDraftSource> skillDraftSources,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_draft_user_directives") List<String> skillDraftUserDirectives,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_draft_excluded_literals") List<String> skillDraftExcludedLiterals,
+            @com.fasterxml.jackson.annotation.JsonProperty("skill_scope_type") String skillScopeType,
             @com.fasterxml.jackson.annotation.JsonProperty("editor_snapshot") CommandEditorSnapshot editorSnapshot
+    ) {}
+
+    record CanonicalSkillDraftSource(
+            @com.fasterxml.jackson.annotation.JsonProperty("run_id") String runId,
+            String status,
+            @com.fasterxml.jackson.annotation.JsonProperty("request_summary") String requestSummary,
+            @com.fasterxml.jackson.annotation.JsonProperty("plan_summary") String planSummary,
+            @com.fasterxml.jackson.annotation.JsonProperty("successful_operations")
+            List<CanonicalSkillDraftOperation> successfulOperations
+    ) {}
+
+    record CanonicalSkillDraftOperation(
+            @com.fasterxml.jackson.annotation.JsonProperty("tool_name") String toolName,
+            String reason
     ) {}
 
     record CommandConversationContext(
             @com.fasterxml.jackson.annotation.JsonProperty("recent_conversation_summary") String recentConversationSummary,
-            @com.fasterxml.jackson.annotation.JsonProperty("reference_context") java.util.Map<String, Object> referenceContext
+            @com.fasterxml.jackson.annotation.JsonProperty("reference_context") java.util.Map<String, Object> referenceContext,
+            @com.fasterxml.jackson.annotation.JsonProperty("pending_skill_proposal") CommandPendingSkillProposal pendingSkillProposal
     ) {
         static CommandConversationContext from(AgentTurnRequest.ConversationContext context) {
             return context == null ? null
-                    : new CommandConversationContext(context.recentConversationSummary(), context.referenceContext());
+                    : new CommandConversationContext(context.recentConversationSummary(), context.referenceContext(),
+                    CommandPendingSkillProposal.from(context.pendingSkillProposal()));
+        }
+    }
+
+    record CommandPendingSkillProposal(
+            @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,
+            String name,
+            String description,
+            @com.fasterxml.jackson.annotation.JsonProperty("instructions_markdown") String instructionsMarkdown
+    ) {
+        static CommandPendingSkillProposal from(AgentTurnRequest.ConversationContext.PendingSkillProposal proposal) {
+            return proposal == null ? null
+                    : new CommandPendingSkillProposal(proposal.scopeType(), proposal.name(), proposal.description(),
+                    proposal.instructionsMarkdown());
         }
     }
 

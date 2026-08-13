@@ -241,6 +241,23 @@ class HandleAgentTurnUseCase:
                 if selected_skill is not None and selected_skill.enabled_version is not None
                 else None
             )
+            creation_markdown = None
+            if route.action == "workspace_workflow" and route.edit_goal == "create_from_chat":
+                creation_markdown = self._markdown_create_use_case.execute(
+                    MarkdownCreateRequest(
+                        instruction=request.message,
+                        workspace_id=request.workspace_id,
+                        user_id=request.user_id,
+                        conversation_summary=_conversation_context_text(request),
+                        reference_context=(
+                            request.conversation_context.reference_context
+                            if request.conversation_context
+                            else {}
+                        ),
+                        skill_instructions=_skill_instructions(selected_skill),
+                        output_language=request.output_language,
+                    )
+                ).document.markdown
             run_id, run_status = self._agent_run_starter.start(
                 StartAgentRunRequest(
                     workspace_id=request.workspace_id,
@@ -250,6 +267,7 @@ class HandleAgentTurnUseCase:
                     model=request.model,
                     action=route.action,
                     skill_version_id=skill_version_id,
+                    creation_markdown=creation_markdown,
                 )
             )
             return AgentTurnResult(

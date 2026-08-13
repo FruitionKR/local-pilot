@@ -8,6 +8,7 @@ from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 from app.modules.markdown_edit.domain.entities import MarkdownEditRequest, MarkdownEditTarget
+from app.modules.markdown_edit.domain.markdown_output_contract import TASK_LIST_MARKER_PATTERN
 from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
 
 
@@ -35,6 +36,9 @@ STRUCTURE_TARGET_WORDS = (
     "math",
     "mermaid",
     "회의록",
+    "checkbox",
+    "체크박스",
+    "task list",
 )
 LOCKED_BLOCK_TYPES = {"code_block", "fence", "html_block", "hr", "table_open"}
 BOUNDARY_BLOCK_TYPES = {"code_block", "fence", "html_block", "table_open"}
@@ -289,6 +293,7 @@ def _locked_inline_ranges(markdown: str, translate: bool) -> tuple[tuple[int, in
         r"`+[^`\n]+`+",
         r"<[^>\n]+>",
         r"(?s)\$\$.*?\$\$",
+        TASK_LIST_MARKER_PATTERN,
     )
     for pattern in patterns:
         ranges.extend(match.span() for match in re.finditer(pattern, markdown))

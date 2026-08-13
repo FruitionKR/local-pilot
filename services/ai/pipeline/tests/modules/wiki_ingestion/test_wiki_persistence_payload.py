@@ -128,6 +128,42 @@ class WikiPersistencePayloadTest(unittest.TestCase):
 
         self.assertIsNone(context)
 
+    def test_latest_source_page_context_slugifies_document_id(self) -> None:
+        document_id = "chatdoc_1ce10f8ddc0a4c778c2637b32d13061b"
+        params: tuple[str, str, str] | None = None
+
+        class FakeConn:
+            def execute(self, _query: str, query_params: tuple[str, str, str]) -> "FakeConn":
+                nonlocal params
+                params = query_params
+                return self
+
+            def fetchone(self) -> dict[str, str]:
+                return {"markdown_uri": "s3://source.md"}
+
+            def __enter__(self) -> "FakeConn":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        original_artifact = repository.latest_source_extraction_artifact
+        original_connect = repository.connect
+        original_read = repository._read_optional_text_object
+        try:
+            repository.latest_source_extraction_artifact = lambda _document_id: {"document_id": document_id}  # type: ignore[assignment]
+            repository.connect = lambda: FakeConn()  # type: ignore[assignment]
+            repository._read_optional_text_object = lambda _uri: "# Source"  # type: ignore[assignment]
+
+            context = repository.latest_source_page_context(document_id, "user-1", "workspace-1")
+        finally:
+            repository.latest_source_extraction_artifact = original_artifact  # type: ignore[assignment]
+            repository.connect = original_connect  # type: ignore[assignment]
+            repository._read_optional_text_object = original_read  # type: ignore[assignment]
+
+        self.assertEqual(params, ("chatdoc-1ce10f8ddc0a4c778c2637b32d13061b", "user-1", "workspace-1"))
+        self.assertEqual(context, {"artifact": {"document_id": document_id}, "source_markdown": "# Source"})
+
     def setUp(self) -> None:
         import tempfile
 
