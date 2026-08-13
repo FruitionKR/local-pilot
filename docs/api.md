@@ -250,6 +250,6 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 }
 ```
 
-AI 내부 FastAPI 요청은 Pydantic schema 검증을 따른다. Query는 `workspace_id`, `question`, `provider`, `model`, `allow_web_search`가 필수이고 `recent_messages`는 최대 6개, `output_language`는 `ko|en|document`, `response_length`는 `concise|balanced|detailed`다. Pipeline ingest/reingest/chat-wiki는 `document_id`, `provider`, `model`이 필수이며 `selection_mode`는 `full|partial`, Lint는 `provider`, `model`이 필수이고 write(`dry_run=false`)에는 `operation_id`가 필수다. Agent·Skill 내부 요청도 provider/model pair를 필수로 검증하며 schema 오류는 422다.
+AI 내부 FastAPI 요청은 Pydantic schema 검증을 따른다. Query는 `workspace_id`, `question`, `provider`, `model`, `allow_web_search`가 필수이고 `recent_messages`는 최대 6개이며 각 content는 최대 4,000자, `output_language`는 `ko|en|document`, `response_length`는 `concise|balanced|detailed`다. Pipeline ingest/reingest/chat-wiki는 `document_id`, `provider`, `model`이 필수이며 `selection_mode`는 `full|partial`, Lint는 `provider`, `model`이 필수이고 write(`dry_run=false`)에는 `operation_id`가 필수다. Agent·Skill 내부 요청도 provider/model pair를 필수로 검증하며 schema 오류는 422다.
 
 원문: docs/backlog/spec/api/ai-operation-log.md

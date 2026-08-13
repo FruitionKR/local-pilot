@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.infrastructure.in_memory_wiki_repository import InMemoryWikiRepository
 from app.workers import task_worker
 from tests.modules.query.test_answer_query import (
@@ -74,6 +75,10 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         "provider": "openai",
         "model": "  gpt-5-nano  ",
         "allow_web_search": allow_web_search,
+        "recent_messages": [
+            {"role": "user", "content": "이전 질문"},
+            {"role": "assistant", "content": "이전 답변"},
+        ],
         "api_key": "command-secret",
         "api_base_url": "https://command.example/v1",
         "tavily_api_key": "command-tavily-secret",
@@ -100,6 +105,12 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         "질문",
         workspace_id="workspace-1",
         user_id="user-1",
+        conversation_context=ConversationContext(
+            recent_messages=(
+                ConversationMessage(role="user", content="이전 질문"),
+                ConversationMessage(role="assistant", content="이전 답변"),
+            )
+        ),
         allow_web_search=allow_web_search,
     )
     assert result == {"answer": "ok"}
