@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
  * </ul>
  * 모두 멱등하게 동작한다.
  *
- * session_id와 pair_id는 source_block 텍스트의 {@code [session_id:pair_id]} prefix에서 파싱한다(별도 저장 없음).
+ * session_id와 pair_id는 source_block block_id의 {@code session_id:pair_id} provenance에서 파싱한다(별도 저장 없음).
  *
  * NOTE: 현재 파이프라인은 append 미구현이라 full 재-export마다 새 page가 생긴다(source page 누적은 파이프라인 후속작업).
  */
@@ -45,8 +45,8 @@ public class ChatWikiExportReconciler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatWikiExportReconciler.class);
 
-    /** source_block 텍스트의 {@code [session_id:pair_id]} prefix. group(1)=session_id, group(2)=pair_id. */
-    private static final Pattern PAIR_REF = Pattern.compile("\\[([^:\\]]+):([^\\]]+)\\]");
+    /** source_block block_id의 {@code session_id:pair_id} provenance. group(1)=session_id, group(2)=pair_id. */
+    private static final Pattern PAIR_REF = Pattern.compile("(?U)^([^:\\s]+):([^:\\s]+)$");
 
     private final DocumentRepository documentRepository;
     private final PipelineWikiStateRequester pipelineWikiStateRequester;
@@ -72,23 +72,26 @@ public class ChatWikiExportReconciler {
         for (Document document : documentRepository.findAllByOriginAndStatusAndReconciledAtIsNull("chat_export", DocumentStatus.completed)) {
             String mode = document.getSelectionMode();
 
-            // source_blocks의 [session_id:pair_id]에서 세션과 문답을 파싱
-            String sessionId = null;
+            // source_blocks의 block_id에 보존된 session_id:pair_id provenance에서 세션과 문답을 파싱
+            Set<String> sessionIds = new LinkedHashSet<>();
             Set<String> pairIds = new LinkedHashSet<>();
             var wikiContext = pipelineWikiStateRequester.documentContext(
                     document.getWorkspaceId(), document.getId());
             for (var block : wikiContext.sourceBlocks()) {
-                Matcher matcher = PAIR_REF.matcher(block.text());
-                if (matcher.find()) {
-                    if (sessionId == null) {
-                        sessionId = matcher.group(1);
-                    }
-                    pairIds.add(matcher.group(2));
+                if (block.blockId() == null) {
+                    continue;
                 }
+                Matcher matcher = PAIR_REF.matcher(block.blockId());
+                if (!matcher.matches()) {
+                    continue;
+                }
+                sessionIds.add(matcher.group(1));
+                pairIds.add(matcher.group(2));
             }
-            if (sessionId == null) {
-                continue; // 아직 source_blocks 없거나 prefix 없음
+            if (sessionIds.size() != 1) {
+                continue; // 유효 provenance가 없거나 여러 세션이 섞여 있으면 재시도
             }
+            String sessionId = sessionIds.iterator().next();
 
             String wikiPageId = wikiContext.pages().stream()
                     .filter(page -> "source_of".equals(page.relationType()))
