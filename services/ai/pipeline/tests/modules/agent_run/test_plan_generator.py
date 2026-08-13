@@ -237,6 +237,61 @@ class PlanGeneratorTest(unittest.TestCase):
                 allowed_tools=("apply_document_edit",),
             )
 
+    def test_accepts_registered_create_artifact_with_strict_plan(self) -> None:
+        client = CapturingClient()
+        client.complete_json = lambda _system_prompt, _user_prompt: {
+            "summary": "등록된 문서 artifact를 저장합니다.",
+            "operations": [
+                {
+                    "tool_name": "create_document",
+                    "target_type": "document",
+                    "target_id": None,
+                    "base_version": None,
+                    "source_parent_id": None,
+                    "destination_parent_id": "folder-1",
+                    "arguments": {
+                        "display_name": "새 문서.md",
+                        "folder_id": "folder-1",
+                        "content_artifact_id": "artifact-create",
+                        "content_hash": "sha256:create",
+                    },
+                    "reason": "등록된 생성 artifact를 저장합니다.",
+                    "depends_on": [],
+                },
+            ],
+        }  # type: ignore[method-assign]
+        generator = ChatCompletionsPlanGenerator(client, "system")  # type: ignore[arg-type]
+
+        plan = generator.generate(
+            run_id="run-1",
+            plan_id="plan-1",
+            version=1,
+            instruction="문서를 저장해줘",
+            hierarchy=[{"id": "folder-1", "type": "folder", "current_version": 1}],
+            skill_instructions=None,
+            allowed_tools=("create_document",),
+            content_artifacts=(
+                ContentArtifactReference(
+                    id="artifact-create",
+                    content_hash="sha256:create",
+                    purpose="create_document",
+                ),
+            ),
+        )
+
+        operation = plan.operations[0]
+        self.assertEqual(operation.tool_name, "create_document")
+        self.assertIsNone(operation.target_id)
+        self.assertIsNone(operation.base_version)
+        self.assertEqual(
+            set(operation.arguments),
+            {"display_name", "folder_id", "content_artifact_id", "content_hash"},
+        )
+        self.assertEqual(operation.arguments["folder_id"], "folder-1")
+        self.assertEqual(operation.destination_parent_id, "folder-1")
+        self.assertEqual(operation.arguments["content_artifact_id"], "artifact-create")
+        self.assertEqual(operation.arguments["content_hash"], "sha256:create")
+
 
 if __name__ == "__main__":
     unittest.main()
