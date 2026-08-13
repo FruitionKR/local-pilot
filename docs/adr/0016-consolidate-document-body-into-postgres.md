@@ -34,7 +34,8 @@ database·volume이나 PostgreSQL table의 실제 삭제는 이 ADR의 범위가
 - `document_content_versions`: 실제 변경된 편집 본문의 전후 snapshot과 `operation_id` 연결.
 - `document_assets`, `document_asset_references`: 저장 요청의 자산 row와 문서 본문 내 자산 참조.
 - `agent_apply_projections`, `ai_operation_logs`, `ai_operation_changes`: 유효한 Agent 적용
-  표의 소비와 적용 감사 기록.
+  표의 소비와 적용 감사 기록. `ai_operation_logs.document_restore_blocked`는 fresh cutover
+  이전 `document_edit` 감사 행의 복구를 막는 값이다.
 - `document_edit_outbox`: 편집 이벤트 전용 outbox. 기존 `ai_command_outbox`와 합치지 않는다.
 
 ### 2. PostgreSQL schema와 fresh cutover
@@ -47,13 +48,18 @@ V39는 다음을 적용한다.
 - `document_edit_outbox`에 `event_id`, `document_id`, `workspace_id`, `revision`,
   `content_hash`, `event_type`, `schema_version`, `created_at`, `published`, `published_at`을
   만들고 `(created_at, event_id)` pending index를 둔다.
+- `ai_operation_logs.document_restore_blocked boolean NOT NULL DEFAULT false`를 추가하고,
+  migration 당시 존재하는 `document_edit` 행만 `true`로 표시한다. 새 작업과 `ingest`·`lint`
+  감사 행은 `false`로 유지해 Wiki 복구와 감사 로그 조회를 보존한다.
 - migration은 `document_edit_states`와 `document_content_versions` 중 하나라도 비어 있지 않으면 중단한다.
 
 따라서 cutover는 기존 Mongo state·write receipt·outbox를 PostgreSQL로 이관하는 절차가 아니라,
 기존 Mongo 편집 데이터와 PostgreSQL `document_edit_states`·`document_content_versions`를 폐기한
-fresh PostgreSQL 상태에서 시작하는 절차다. runtime fallback, dual write,
-호환 계층은 두지 않는다. MongoDB 참조 제거와 운영 리소스의 실제 삭제는 이 결정의 후속 운영
-범위이며, 이 ADR은 특정 database·volume 삭제 명령을 정의하지 않는다.
+fresh PostgreSQL 상태에서 시작하는 절차다. 따라서 migration 당시 남아 있는 `document_edit`
+감사 행은 보존하되 revision 세대가 달라 복구하지 않으며, preview와 execute가 공통 validator로
+이를 차단한다. 새 작업은 `false`로 기록되고 Wiki `ingest`·`lint` 복구는 계속 허용한다. runtime
+fallback, dual write, 호환 계층은 두지 않는다. MongoDB 참조 제거와 운영 리소스의 실제 삭제는 이
+결정의 후속 운영 범위이며, 이 ADR은 특정 database·volume 삭제 명령을 정의하지 않는다.
 
 ### 3. 하나의 PostgreSQL transaction으로 편집 단위를 기록
 
@@ -127,8 +133,9 @@ publisher를 위한 claim/lease나 `FOR UPDATE SKIP LOCKED`는 이번 결정에 
 - HTTP 응답과 `document.edit.event` topic·key·JSON schema는 바뀌지 않는다. 발행은 계속
   at-least-once이며 AI consumer의 revision 비교가 중복을 흡수한다.
 - 새 배포는 MongoDB 편집 상태와 기존 PostgreSQL `document_edit_states`·`document_content_versions`를
-  import하지 않으므로 기존 편집 이력·receipt·pending outbox는 보존되지 않는다. MongoDB는 비교
-  oracle일 뿐 runtime dependency가 아니다.
+  import하지 않으므로 기존 편집 이력·receipt·pending outbox는 보존되지 않는다. 기존 PostgreSQL
+  `ai_operation_logs` 감사 행은 보존하지만 migration 이전 `document_edit` 복구는 차단한다.
+  MongoDB는 비교 oracle일 뿐 runtime dependency가 아니다.
 - object storage와 PostgreSQL은 서로 다른 시스템이므로 실패·무변경 object cleanup 책임이
   남는다. outbox 중복, 현재 1 replica 전제와 그 운영 비용도 수용한다.
 - receipt TTL, content version 보존 기간, TOAST/fillfactor/autovacuum 조정과 다중 publisher

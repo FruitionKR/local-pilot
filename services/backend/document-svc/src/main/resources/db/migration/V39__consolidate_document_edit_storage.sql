@@ -8,6 +8,13 @@ BEGIN
 END
 $$;
 
+ALTER TABLE ai_operation_logs
+    ADD COLUMN document_restore_blocked boolean NOT NULL DEFAULT false;
+
+UPDATE ai_operation_logs
+SET document_restore_blocked = true
+WHERE operation_type = 'document_edit';
+
 ALTER TABLE document_edit_states
     ADD COLUMN revision bigint NOT NULL
         CONSTRAINT document_edit_states_revision_positive CHECK (revision > 0);

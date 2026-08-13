@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +63,18 @@ class RestoreTargetValidatorTest {
     void rejectsRestoreOfRestore() {
         assertThatThrownBy(() -> validator.requireRestorable(target(OperationType.restore)))
                 .isInstanceOf(InvalidRestoreRequestException.class);
+    }
+
+    @Test
+    @DisplayName("fresh cutover 이전 document_edit는 복구하지 않는다")
+    void rejectsDocumentEditBlockedByFreshCutover() {
+        OperationLog blocked = mock(OperationLog.class);
+        when(blocked.isDocumentRestoreBlocked()).thenReturn(true);
+        when(blocked.getOperationType()).thenReturn(OperationType.document_edit);
+
+        assertThatThrownBy(() -> validator.requireRestorable(blocked))
+                .isInstanceOf(InvalidRestoreRequestException.class)
+                .hasMessageContaining("fresh cutover");
     }
 
     @Test

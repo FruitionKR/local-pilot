@@ -720,6 +720,70 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
+    void v39BlocksOnlyExistingDocumentEditRestore() throws Exception {
+        String databaseName = "v39_restore_guard_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(
+                postgresContainer.getJdbcUrl(), postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = admin.createStatement()) {
+            statement.execute("CREATE DATABASE " + databaseName);
+        }
+
+        String databaseUrl = "jdbc:postgresql://" + postgresContainer.getHost() + ":"
+                + postgresContainer.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT) + "/" + databaseName;
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .target(MigrationVersion.fromVersion("38"))
+                .load()
+                .migrate();
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(v34DocumentInsert("doc_v39_restore_guard", null));
+            statement.executeUpdate("""
+                    INSERT INTO ai_operation_logs(
+                        operation_id, workspace_id, user_id, operation_type, target_document_id,
+                        status, changed_resource_count, created_at
+                    ) VALUES
+                        ('op_v39_old_edit', 'ws_v39', 'user_v39', 'document_edit', 'doc_v39_restore_guard', 'succeeded', 1, now()),
+                        ('op_v39_old_ingest', 'ws_v39', 'user_v39', 'ingest', NULL, 'succeeded', 1, now())
+                    """);
+        }
+
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .load()
+                .migrate();
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT INTO ai_operation_logs(
+                        operation_id, workspace_id, user_id, operation_type, target_document_id,
+                        status, changed_resource_count, created_at
+                    ) VALUES ('op_v39_new_edit', 'ws_v39', 'user_v39', 'document_edit',
+                              'doc_v39_restore_guard', 'succeeded', 1, now())
+                    """);
+            try (ResultSet rows = statement.executeQuery("""
+                    SELECT operation_id, document_restore_blocked
+                    FROM ai_operation_logs
+                    WHERE operation_id IN ('op_v39_old_edit', 'op_v39_old_ingest', 'op_v39_new_edit')
+                    ORDER BY operation_id
+                    """)) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("operation_id")).isEqualTo("op_v39_new_edit");
+                assertThat(rows.getBoolean("document_restore_blocked")).isFalse();
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("operation_id")).isEqualTo("op_v39_old_edit");
+                assertThat(rows.getBoolean("document_restore_blocked")).isTrue();
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("operation_id")).isEqualTo("op_v39_old_ingest");
+                assertThat(rows.getBoolean("document_restore_blocked")).isFalse();
+                assertThat(rows.next()).isFalse();
+            }
+        }
+    }
+
+    @Test
     void v39RefusesNonEmptyEditStateTableBeforeCutover() throws Exception {
         String databaseName = "v39_guard_" + UUID.randomUUID().toString().replace("-", "");
         try (Connection admin = DriverManager.getConnection(

@@ -121,6 +121,11 @@ metadata 작업을 건너뛴다. 최초 transaction이 원자적이므로 replay
 - `event_type`, `schema_version`, `created_at`
 - `published`, `published_at`
 
+기존 `ai_operation_logs` 감사 행은 보존한다. 다만 fresh cutover로 편집 revision 세대가 바뀌므로
+V39는 `document_restore_blocked boolean NOT NULL DEFAULT false`를 추가하고 migration 당시의
+`document_edit` 행만 `true`로 표시한다. preview와 execute는 공통 `RestoreTargetValidator`에서
+이 값을 확인해 해당 문서 편집 복구를 차단하며, 새 작업과 `ingest`·`lint` 복구는 유지한다.
+
 기존 `ai_command_outbox`를 범용 테이블로 바꾸지 않는다. topic이 다른 두 queue를 합치면 장애 시
 서로를 막을 수 있고, Mongo 제거에 필요하지 않은 변경 범위가 늘어난다.
 
@@ -381,7 +386,7 @@ git diff --check
 ## 6. 최종 검증 실행 기록
 
 - JDK 21 순차 실행: `./gradlew :document-svc:test --no-daemon --rerun-tasks` — XML 결과
-  110 suites, 685 tests, failures 0, errors 0, skipped 0.
+  110 suites, 687 tests, failures 0, errors 0, skipped 0.
 - `PostgresDocumentEditStoreIntegrationTest`: 10 passed. fresh Testcontainers PostgreSQL과
   Flyway V39에서 결정적 concurrency/replay/rollback 검증을 포함한다.
 - dev Compose config pass; merged dev+pipeline+converter+deploy Compose config pass.
