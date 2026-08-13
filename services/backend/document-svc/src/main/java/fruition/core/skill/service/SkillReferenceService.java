@@ -6,6 +6,7 @@ import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.skill.dto.SkillReferenceReadResponse;
 import fruition.core.skill.exception.SkillReferenceDocumentTooLargeException;
 import org.springframework.stereotype.Service;
@@ -18,15 +19,18 @@ public class SkillReferenceService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final DocumentRepository documentRepository;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentEditStateInitializer editStateInitializer;
 
     public SkillReferenceService(
             WorkspaceAccessGuard workspaceAccessGuard,
             DocumentRepository documentRepository,
-            DocumentEditStateRepository editStateRepository
+            DocumentEditStateRepository editStateRepository,
+            DocumentEditStateInitializer editStateInitializer
     ) {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.documentRepository = documentRepository;
         this.editStateRepository = editStateRepository;
+        this.editStateInitializer = editStateInitializer;
     }
 
     public SkillReferenceReadResponse read(
@@ -38,6 +42,7 @@ public class SkillReferenceService {
         if (document.getDocumentRole() == DocumentRole.ORIGINAL) {
             return new SkillReferenceReadResponse(DocumentRole.ORIGINAL.name(), null);
         }
+        editStateInitializer.initializeIfNeeded(document);
         String markdown = editStateRepository.findById(document.getId())
                 .map(DocumentEditState::getMarkdown)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));

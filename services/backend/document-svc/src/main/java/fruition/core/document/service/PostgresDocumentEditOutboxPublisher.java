@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.sql.Timestamp;
@@ -16,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class PostgresDocumentEditOutboxPublisher {
 
+    private static final Logger log = LoggerFactory.getLogger(PostgresDocumentEditOutboxPublisher.class);
     private static final int BATCH_SIZE = 100;
     private static final long SEND_TIMEOUT_SECONDS = 10;
 
@@ -53,6 +56,7 @@ public class PostgresDocumentEditOutboxPublisher {
                     rs.getString("workspace_id"), rs.getLong("revision"),
                     rs.getString("content_hash"), rs.getTimestamp("created_at").toInstant()), BATCH_SIZE);
         } catch (Exception exception) {
+            log.error("[문서 편집 outbox pending 조회 실패] eventId=unknown documentId=unknown", exception);
             return;
         }
         for (Event event : events) {
@@ -67,8 +71,12 @@ public class PostgresDocumentEditOutboxPublisher {
                         """, Timestamp.from(Instant.now()), event.eventId());
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
+                log.error("[문서 편집 event 발행 중단] eventId={} documentId={}",
+                        event.eventId(), event.documentId(), exception);
                 return;
             } catch (Exception exception) {
+                log.error("[문서 편집 event 발행 또는 published 표시 실패] eventId={} documentId={}",
+                        event.eventId(), event.documentId(), exception);
                 return;
             }
         }

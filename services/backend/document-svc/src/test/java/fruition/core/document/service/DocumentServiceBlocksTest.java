@@ -7,6 +7,7 @@ import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentBlocksResponse;
 import fruition.core.document.dto.DocumentContentSaveResponse;
 import fruition.core.document.dto.DocumentContentDiffResponse;
+import fruition.core.document.dto.DocumentContentVersionListResponse;
 import fruition.core.document.dto.DocumentDetailResponse;
 import fruition.core.document.dto.DocumentDuplicateResponse;
 import fruition.core.document.dto.DocumentListResponse;
@@ -46,6 +47,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -74,6 +76,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
@@ -296,20 +299,32 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("편집 가능 문서의 PostgreSQL 편집 상태가 없으면 버전 목록을 거절한다")
-    void listContentVersions_withoutPostgresState_throws() {
+    @DisplayName("편집 가능 문서의 PostgreSQL 편집 상태가 없으면 초기화 후 버전 목록을 반환한다")
+    void listContentVersions_withoutPostgresState_initializesBeforeReading() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_versions_missing_state", WORKSPACE_ID, USER_ID, "노트.md", "text/markdown", 10,
                 "sources/documents/doc_versions_missing_state/original", "source-hash");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
                 document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
-        when(postgresDocumentEditStore.findState(document.getId())).thenReturn(Optional.empty());
+        AtomicReference<Optional<DocumentEditState>> state = new AtomicReference<>(Optional.empty());
+        doAnswer(invocation -> {
+            state.set(Optional.of(new DocumentEditState(
+                    document.getId(), "# 노트", "edit-hash", 2)));
+            return null;
+        }).when(editStateInitializer).initializeIfNeeded(document);
+        when(postgresDocumentEditStore.findState(document.getId())).thenAnswer(invocation -> state.get());
+        when(contentVersionRepository.findSummaries(document.getId())).thenReturn(List.of());
 
-        assertThatThrownBy(() -> documentService.listContentVersions(
-                WORKSPACE_ID, USER_ID, document.getId()))
-                .isInstanceOf(InvalidMarkdownContentException.class);
-        verify(contentVersionRepository, never()).findSummaries(document.getId());
+        DocumentContentVersionListResponse response = documentService.listContentVersions(
+                WORKSPACE_ID, USER_ID, document.getId());
+
+        InOrder order = inOrder(editStateInitializer, postgresDocumentEditStore);
+        order.verify(editStateInitializer).initializeIfNeeded(document);
+        order.verify(postgresDocumentEditStore).findState(document.getId());
+        assertThat(response.documentId()).isEqualTo(document.getId());
+        assertThat(response.currentVersion()).isEqualTo(2);
+        assertThat(response.versions()).isEmpty();
     }
 
     @Test
@@ -334,6 +349,59 @@ class DocumentServiceBlocksTest {
         assertThat(response.documents().get(0).fileType()).isEqualTo("md");
         assertThat(response.documents().get(1).editable()).isFalse();
         assertThat(response.documents().get(1).fileType()).isEqualTo("pdf");
+    }
+
+    @Test
+    @DisplayName("기존 Markdown 문서는 PostgreSQL 상태가 없어도 목록에서 편집 가능으로 표시한다")
+    void findAll_legacyMarkdownWithoutPostgresState_remainsEditable() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_legacy_markdown", WORKSPACE_ID, USER_ID, "기존 노트.md", "text/markdown", 10,
+                "sources/documents/doc_legacy_markdown/original", "source-hash");
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(document));
+        when(editStateRepository.findAllById(List.of(document.getId()))).thenReturn(List.of());
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::editable)
+                .isEqualTo(true);
+        verify(editStateInitializer, never()).initializeIfNeeded(any(Document.class));
+    }
+
+    @Test
+    @DisplayName("편집 상태가 있으면 source_uri가 blank여도 목록에서 편집 가능으로 표시한다")
+    void findAll_withEditStateAndBlankSourceUri_remainsEditable() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_state_blank_source", WORKSPACE_ID, USER_ID, "상태가 있는 노트.md", "text/markdown", 10,
+                "   ", "source-hash");
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(document));
+        when(editStateRepository.findAllById(List.of(document.getId()))).thenReturn(List.of(
+                new DocumentEditState(document.getId(), "# 본문", "edit-hash", 1)));
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::editable)
+                .isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("편집 상태가 없고 source_uri가 blank면 목록에서 편집 불가로 표시한다")
+    void findAll_withoutEditStateAndBlankSourceUri_isNotEditable() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_no_state_blank_source", WORKSPACE_ID, USER_ID, "상태가 없는 노트.md", "text/markdown", 10,
+                "   ", "source-hash");
+        when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(document));
+        when(editStateRepository.findAllById(List.of(document.getId()))).thenReturn(List.of());
+
+        DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
+
+        assertThat(response.documents()).singleElement()
+                .extracting(DocumentListResponse.DocumentItem::editable)
+                .isEqualTo(false);
     }
 
     @Test

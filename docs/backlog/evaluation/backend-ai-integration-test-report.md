@@ -1,9 +1,9 @@
 # Backend–AI 정밀 통합 테스트 최종 보고서
 
-판정 기준일: 2026-08-12 (Asia/Seoul)  
-기준 계획: `docs/backlog/evaluation/backend-ai-integration-test-plan.md` §25  
-근거 우선순위: 각 lane의 최신 watcher/final artifact > 이전 중간 상태.  
-최종 결론: **자동 테스트는 통과했으나 E2E acceptance는 통과하지 못했다.**  
+판정 기준일: 2026-08-12 (Asia/Seoul)
+기준 계획: `docs/backlog/evaluation/backend-ai-integration-test-plan.md` §25
+근거 우선순위: 각 lane의 최신 watcher/final artifact > 이전 중간 상태.
+최종 결론: **자동 테스트는 통과했으나 E2E acceptance는 통과하지 못했다.**
 
 ## 1. 테스트 요약
 

@@ -1163,9 +1163,12 @@ public class DocumentService {
     }
 
     private boolean isEditable(Document document, boolean hasEditState) {
+        boolean canInitializeEditState = isMarkdown(document)
+                && document.getSourceUri() != null
+                && !document.getSourceUri().isBlank();
         return document.getDeletedAt() == null
                 && document.getDocumentRole() == DocumentRole.EDITABLE
-                && hasEditState
+                && (hasEditState || canInitializeEditState)
                 && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
     }
 
@@ -1541,10 +1544,11 @@ public class DocumentService {
     }
 
     /** 콘텐츠 버전 이력 목록(메타데이터만, 최신 버전 순). */
-    @Transactional(readOnly = true)
+    @Transactional
     public DocumentContentVersionListResponse listContentVersions(
             String workspaceId, String userId, String documentId) {
-        loadEditableForVersion(workspaceId, userId, documentId);
+        Document document = loadEditableForVersion(workspaceId, userId, documentId);
+        editStateInitializer.initializeIfNeeded(document);
         long editRevision = postgresDocumentEditStore.findState(documentId)
                 .map(DocumentEditState::getRevision)
                 .orElseThrow(() -> new InvalidMarkdownContentException(

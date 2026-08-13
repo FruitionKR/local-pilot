@@ -8,6 +8,7 @@ import fruition.core.agent.repository.PipelineAgentArtifactClient;
 import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentPositionRequest;
 import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.dto.DocumentRenameRequest;
@@ -18,11 +19,13 @@ import fruition.core.document.dto.FolderRenameRequest;
 import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.exception.HierarchyItemNotFoundException;
 import fruition.core.document.exception.DocumentWriteForbiddenException;
+import fruition.core.document.exception.InvalidMarkdownContentException;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.service.DocumentPlacementService;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.document.service.DocumentService;
 import fruition.core.document.service.FolderService;
 import fruition.shared.idempotency.IdempotencyService;
@@ -67,6 +70,7 @@ public class AgentToolService {
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentEditStateInitializer editStateInitializer;
     private final IdempotencyService idempotencyService;
     private final TransactionTemplate transactionTemplate;
 
@@ -81,6 +85,7 @@ public class AgentToolService {
             DocumentRepository documentRepository,
             FolderRepository folderRepository,
             DocumentEditStateRepository editStateRepository,
+            DocumentEditStateInitializer editStateInitializer,
             IdempotencyService idempotencyService,
             TransactionTemplate transactionTemplate) {
         this.authorizationClient = authorizationClient;
@@ -93,6 +98,7 @@ public class AgentToolService {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.editStateRepository = editStateRepository;
+        this.editStateInitializer = editStateInitializer;
         this.idempotencyService = idempotencyService;
         this.transactionTemplate = transactionTemplate;
     }
@@ -246,7 +252,11 @@ public class AgentToolService {
 
     private Map<String, Object> documentContent(AgentToolReadRequest request) {
         String documentId = text(request.arguments(), "document_id");
-        requireDocument(request.workspaceId(), request.userId(), documentId);
+        Document document = requireDocument(request.workspaceId(), request.userId(), documentId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 본문을 조회할 수 있습니다.");
+        }
+        editStateInitializer.initializeIfNeeded(document);
         DocumentEditState state = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.CONFLICT, "문서의 PostgreSQL 편집 상태를 찾을 수 없습니다."));

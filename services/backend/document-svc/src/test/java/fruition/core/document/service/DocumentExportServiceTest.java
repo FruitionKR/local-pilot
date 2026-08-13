@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.InputStream;
@@ -32,7 +32,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,10 +48,12 @@ class DocumentExportServiceTest {
 
     @Mock DocumentRepository documentRepository;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock DocumentAssetReferenceRepository referenceRepository;
     @Mock DocumentAssetRepository assetRepository;
     @Mock DocumentAssetObjectStorage objectStorage;
+    @Mock TransactionTemplate transactionTemplate;
 
     DocumentExportService exportService;
 
@@ -56,9 +61,12 @@ class DocumentExportServiceTest {
     void setUp() {
         exportService = new DocumentExportService(
                 documentRepository, editStateRepository,
+                editStateInitializer,
                 workspaceAccessGuard,
                 referenceRepository, assetRepository, objectStorage,
-                new TransactionTemplate(org.mockito.Mockito.mock(PlatformTransactionManager.class)));
+                transactionTemplate);
+        doAnswer(invocation -> ((TransactionCallback<?>) invocation.getArgument(0)).doInTransaction(null))
+                .when(transactionTemplate).execute(any());
     }
 
     @Test
@@ -85,6 +93,13 @@ class DocumentExportServiceTest {
                 .isEqualTo("# 최신 회의 결과\n한글 본문");
         assertThat(document.getCurrentVersion()).isEqualTo(versionBefore);
         assertThat(document.getUpdatedAt()).isEqualTo(updatedAtBefore);
+        var order = inOrder(workspaceAccessGuard, documentRepository, editStateInitializer, transactionTemplate);
+        order.verify(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        order.verify(documentRepository).findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID);
+        order.verify(editStateInitializer).initializeIfNeeded(document);
+        order.verify(transactionTemplate).execute(any());
+        verify(editStateInitializer).initializeIfNeeded(document);
         verify(documentRepository, never()).save(document);
         verify(editStateRepository, never()).save(editState);
     }
@@ -220,6 +235,7 @@ class DocumentExportServiceTest {
         assertThatThrownBy(() ->
                 exportService.exportMarkdown(WORKSPACE_ID, USER_ID, original.getId()))
                 .isInstanceOf(DocumentNotFoundException.class);
+        verify(editStateInitializer, never()).initializeIfNeeded(original);
 
         Document editable = new Document(
                 "doc_no_state", WORKSPACE_ID, USER_ID, "문서.md",

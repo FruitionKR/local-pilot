@@ -36,6 +36,7 @@ public class DocumentEditStateInitializer {
     public void initializeIfNeeded(Document document) {
         if (document.getDocumentRole() != DocumentRole.EDITABLE
                 || document.getSourceUri() == null
+                || document.getSourceUri().isBlank()
                 || editStateRepository.existsById(document.getId())) {
             return;
         }

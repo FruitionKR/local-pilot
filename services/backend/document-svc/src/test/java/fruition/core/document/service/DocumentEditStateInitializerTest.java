@@ -90,4 +90,26 @@ class DocumentEditStateInitializerTest {
         );
         verify(minioClient, never()).getObject(any());
     }
+
+    @Test
+    void editableDocumentWithBlankSourceUri_doesNotReadOriginalStorage() throws Exception {
+        Document document = new Document(
+                "doc_blank_source",
+                "ws_1",
+                "user_1",
+                "빈 경로.md",
+                "text/markdown",
+                100,
+                "   ",
+                "legacy-hash"
+        );
+
+        new DocumentEditStateInitializer(editStateRepository, minioClient, storageProperties)
+                .initializeIfNeeded(document);
+
+        verify(minioClient, never()).getObject(any());
+        verify(editStateRepository, never()).existsById(anyString());
+        verify(editStateRepository, never()).insertIfAbsent(
+                anyString(), anyString(), anyString(), eq(1L), any(), any());
+    }
 }

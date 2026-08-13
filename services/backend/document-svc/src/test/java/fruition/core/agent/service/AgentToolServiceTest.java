@@ -8,16 +8,19 @@ import fruition.core.agent.repository.PipelineAgentArtifactClient;
 import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.BreadcrumbResponse;
 import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.FolderPositionRequest;
 import fruition.core.document.dto.FolderResponse;
 import fruition.core.document.exception.DocumentNotFoundException;
+import fruition.core.document.exception.InvalidMarkdownContentException;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.service.DocumentPlacementService;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.document.service.DocumentService;
 import fruition.core.document.service.FolderService;
 import fruition.shared.idempotency.IdempotencyService;
@@ -44,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -67,6 +71,7 @@ class AgentToolServiceTest {
     @Mock DocumentRepository documentRepository;
     @Mock FolderRepository folderRepository;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock IdempotencyService idempotencyService;
     @Mock TransactionTemplate transactionTemplate;
 
@@ -86,6 +91,7 @@ class AgentToolServiceTest {
                 documentRepository,
                 folderRepository,
                 editStateRepository,
+                editStateInitializer,
                 idempotencyService,
                 transactionTemplate);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
@@ -102,6 +108,7 @@ class AgentToolServiceTest {
     @Test
     void read_returnsPostgresMarkdownAndEditRevisionAfterAuthorization() throws Exception {
         Document document = org.mockito.Mockito.mock(Document.class);
+        when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("document-1", "workspace-1"))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById("document-1")).thenReturn(Optional.of(
@@ -117,10 +124,29 @@ class AgentToolServiceTest {
         assertThat(content.get("content_hash")).isEqualTo("sha256:abc");
         assertThat(content.get("edit_revision")).isEqualTo(7L);
         assertThat(content.containsKey("current_version")).isFalse();
-        InOrder order = inOrder(authorizationClient, workspaceAccessGuard, editStateRepository);
+        InOrder order = inOrder(authorizationClient, workspaceAccessGuard,
+                editStateInitializer, editStateRepository);
         order.verify(authorizationClient).authorizeRead(request);
         order.verify(workspaceAccessGuard).requireMember("workspace-1", "user-1");
+        order.verify(editStateInitializer).initializeIfNeeded(document);
         order.verify(editStateRepository).findById("document-1");
+    }
+
+    @Test
+    void read_rejectsOriginalDocumentBeforeCanonicalStateAccess() throws Exception {
+        Document document = org.mockito.Mockito.mock(Document.class);
+        when(document.getDocumentRole()).thenReturn(DocumentRole.ORIGINAL);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("document-1", "workspace-1"))
+                .thenReturn(Optional.of(document));
+        AgentToolReadRequest request = new AgentToolReadRequest(
+                "run-1", "workspace-1", "user-1",
+                objectMapper.readTree("{\"document_id\":\"document-1\"}"));
+
+        assertThatThrownBy(() -> service.read("get_document_content", request))
+                .isInstanceOf(InvalidMarkdownContentException.class);
+
+        verify(editStateInitializer, never()).initializeIfNeeded(any());
+        verify(editStateRepository, never()).findById(anyString());
     }
 
     @Test

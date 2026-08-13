@@ -8,6 +8,7 @@ import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.skill.exception.SkillReferenceDocumentTooLargeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,12 +30,14 @@ class SkillReferenceServiceTest {
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock DocumentRepository documentRepository;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock Document document;
     private SkillReferenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new SkillReferenceService(workspaceAccessGuard, documentRepository, editStateRepository);
+        service = new SkillReferenceService(
+                workspaceAccessGuard, documentRepository, editStateRepository, editStateInitializer);
     }
 
     @Test
@@ -50,6 +53,9 @@ class SkillReferenceServiceTest {
 
         assertThat(response.documentRole()).isEqualTo("EDITABLE");
         assertThat(response.markdown()).isEqualTo("# 최신 본문");
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(editStateInitializer, editStateRepository);
+        order.verify(editStateInitializer).initializeIfNeeded(document);
+        order.verify(editStateRepository).findById("doc_1");
     }
 
     @Test
@@ -75,7 +81,7 @@ class SkillReferenceServiceTest {
 
         assertThat(response.documentRole()).isEqualTo("ORIGINAL");
         assertThat(response.markdown()).isNull();
-        verifyNoInteractions(editStateRepository);
+        verifyNoInteractions(editStateInitializer, editStateRepository);
     }
 
     @Test
