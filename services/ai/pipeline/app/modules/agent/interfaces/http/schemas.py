@@ -98,6 +98,16 @@ class AgentTurnRequestBody(BaseModel):
     skill_reference_document_ids: list[str] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
+    def validate_skill_selection(self) -> Self:
+        if self.skill_mode == "auto" and self.skill_id is not None:
+            raise ValueError("skill_id must be omitted or null when skill_mode is auto")
+        if self.skill_mode == "explicit" and (self.skill_id is None or not self.skill_id.strip()):
+            raise ValueError("skill_id is required when skill_mode is explicit")
+        if self.skill_mode == "off" and self.skill_id is not None:
+            raise ValueError("skill_id must be omitted or null when skill_mode is off")
+        return self
+
+    @model_validator(mode="after")
     def validate_untrusted_input(self) -> Self:
         resolve_llm_selection(self.provider, self.model)
         validate_untrusted_payload(self.model_dump(mode="json"))

@@ -85,6 +85,8 @@ class AgentTurnServiceTest {
                 org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
         assertThat(command.getValue().provider()).isEqualTo("openai");
         assertThat(command.getValue().model()).isEqualTo("gpt-5-nano");
+        assertThat(command.getValue().skillMode()).isEqualTo("auto");
+        assertThat(command.getValue().skillId()).isNull();
         assertThat(command.getValue().conversationContext().pendingSkillProposal().scopeType()).isEqualTo("personal");
         assertThat(command.getValue().conversationContext().pendingSkillProposal().name()).isEqualTo("meeting-notes");
         assertThat(command.getValue().conversationContext().pendingSkillProposal().description())
@@ -94,6 +96,55 @@ class AgentTurnServiceTest {
         assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(command.getValue()))
                 .contains("\"pending_skill_proposal\":{\"scope_type\":\"personal\"")
                 .contains("\"instructions_markdown\":\"# 정확한 원문 지침\"");
+    }
+
+    @Test
+    void turn_explicitSkillSelectionPropagatesToCommandJson() throws Exception {
+        AgentTurnRequest request = new ObjectMapper().readValue("""
+                {
+                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "provider":"openai","model":"gpt-5-nano",
+                  "skill_mode":"explicit","skill_id":"skill-1",
+                  "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
+                }
+                """, AgentTurnRequest.class);
+        when(documentService.findById("ws_1", "user_1", "doc_1"))
+                .thenReturn(document("note.md", "text/markdown", 7));
+        when(applyOperationStore.newOperationId()).thenReturn("op_apply_1");
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
+                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+        assertThat(command.getValue().skillMode()).isEqualTo("explicit");
+        assertThat(command.getValue().skillId()).isEqualTo("skill-1");
+        assertThat(new ObjectMapper().writeValueAsString(command.getValue()))
+                .contains("\"skill_mode\":\"explicit\"")
+                .contains("\"skill_id\":\"skill-1\"");
+    }
+
+    @Test
+    void turn_offSkillSelectionPropagatesNullSkillId() throws Exception {
+        AgentTurnRequest request = new ObjectMapper().readValue("""
+                {
+                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "provider":"openai","model":"gpt-5-nano",
+                  "skill_mode":"off",
+                  "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
+                }
+                """, AgentTurnRequest.class);
+        when(documentService.findById("ws_1", "user_1", "doc_1"))
+                .thenReturn(document("note.md", "text/markdown", 7));
+        when(applyOperationStore.newOperationId()).thenReturn("op_apply_1");
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
+                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+        assertThat(command.getValue().skillMode()).isEqualTo("off");
+        assertThat(command.getValue().skillId()).isNull();
     }
 
     @Test

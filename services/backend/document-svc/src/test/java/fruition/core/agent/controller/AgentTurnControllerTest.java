@@ -21,6 +21,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.mockito.ArgumentCaptor;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -69,6 +70,55 @@ class AgentTurnControllerTest {
                 .andExpect(jsonPath("$.documentId").value("doc_1"))
                 .andExpect(jsonPath("$.baseVersion").value(4))
                 .andExpect(jsonPath("$.status").value("queued"));
+
+        ArgumentCaptor<AgentTurnRequest> captured = ArgumentCaptor.forClass(AgentTurnRequest.class);
+        verify(agentTurnService).turn(eq(WORKSPACE_ID), eq(USER_ID), captured.capture());
+        org.assertj.core.api.Assertions.assertThat(captured.getValue().skillMode()).isEqualTo("auto");
+        org.assertj.core.api.Assertions.assertThat(captured.getValue().skillId()).isNull();
+    }
+
+    @Test
+    void turn_explicitSkillFieldsReachService() throws Exception {
+        when(agentTurnService.turn(eq(WORKSPACE_ID), eq(USER_ID), any(AgentTurnRequest.class)))
+                .thenReturn(new AgentTurnResponse("doc_1", 4, "agent_request_1", "op_apply_1", "queued", null, null));
+
+        mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/turn")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "documentId":"doc_1","baseVersion":4,"message":"문서를 점검해줘",
+                                  "skill_mode":"explicit","skill_id":"skill-1",
+                                  "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
+                                }
+                                """))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<AgentTurnRequest> captured = ArgumentCaptor.forClass(AgentTurnRequest.class);
+        verify(agentTurnService).turn(eq(WORKSPACE_ID), eq(USER_ID), captured.capture());
+        org.assertj.core.api.Assertions.assertThat(captured.getValue().skillMode()).isEqualTo("explicit");
+        org.assertj.core.api.Assertions.assertThat(captured.getValue().skillId()).isEqualTo("skill-1");
+    }
+
+    @Test
+    void turn_rejectsInvalidSkillSelectionCombination() throws Exception {
+        String token = "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com");
+        for (String skillFields : new String[]{
+                "\"skill_mode\":\"explicit\"",
+                "\"skill_mode\":\"off\",\"skill_id\":\"skill-1\"",
+                "\"skill_mode\":\"unknown\"",
+                "\"skill_mode\":\"auto\",\"skill_id\":\"skill-1\"",
+                "\"skill_mode\":\"auto\",\"skill_id\":\"   \"",
+                "\"skill_mode\":\"auto\",\"skill_id\":\"" + "x".repeat(129) + "\""
+        }) {
+            mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/turn")
+                            .header("Authorization", token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{" +
+                                    "\"documentId\":\"doc_1\",\"baseVersion\":4,\"message\":\"문서를 점검해줘\"," +
+                                    skillFields + ",\"editorSnapshot\":{\"markdown\":\"# 제목\\n본문\"}}"))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     @Test

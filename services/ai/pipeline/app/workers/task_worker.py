@@ -101,6 +101,8 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             "message": command["message"],
             "provider": command.get("provider"),
             "model": command.get("model"),
+            "skill_mode": command.get("skill_mode", "auto"),
+            "skill_id": command.get("skill_id"),
             "workspace_id": command["workspace_id"],
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),

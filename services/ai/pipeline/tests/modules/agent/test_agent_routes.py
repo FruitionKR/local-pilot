@@ -278,6 +278,20 @@ class AgentRoutesTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     AgentTurnRequestBody.model_validate(payload)
 
+    def test_agent_turn_validates_skill_mode_and_id_combinations(self) -> None:
+        for skill_mode, skill_id in (("auto", None), ("explicit", "skill-1"), ("off", None)):
+            with self.subTest(skill_mode=skill_mode):
+                request = AgentTurnRequestBody(
+                    message="정리해줘",
+                    skill_mode=skill_mode,
+                    skill_id=skill_id,
+                )
+                self.assertEqual(request.skill_mode, skill_mode)
+                self.assertEqual(request.skill_id, skill_id)
+
+        with self.assertRaises(ValidationError):
+            AgentTurnRequestBody(message="정리해줘", skill_mode="auto", skill_id="skill-1")
+
     def test_agent_turn_returns_queued_run(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(message="폴더를 정리해줘"),

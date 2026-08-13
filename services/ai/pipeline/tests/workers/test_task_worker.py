@@ -254,7 +254,13 @@ def test_unknown_command_is_rejected() -> None:
         task_worker._handle({"run_id": "run-1", "kind": "unknown"})
 
 
-def test_agent_command_copies_skill_draft_fields_into_agent_request() -> None:
+@pytest.mark.parametrize(
+    ("skill_mode", "skill_id"),
+    [("auto", None), ("explicit", "skill-1"), ("off", None)],
+)
+def test_agent_command_copies_skill_draft_fields_into_agent_request(
+    skill_mode: str, skill_id: str | None,
+) -> None:
     command = {
         "run_id": "agent_0123456789abcdef0123456789abcdef",
         "kind": "agent",
@@ -266,6 +272,8 @@ def test_agent_command_copies_skill_draft_fields_into_agent_request() -> None:
         "message": "Skill로 만들어줘",
         "provider": "openai",
         "model": "gpt-5-nano",
+        "skill_mode": skill_mode,
+        "skill_id": skill_id,
         "conversation_context": None,
         "editor_snapshot": {"markdown": "# 제목"},
         "skill_draft_sources": [{
@@ -300,6 +308,40 @@ def test_agent_command_copies_skill_draft_fields_into_agent_request() -> None:
     assert request.skill_draft_user_directives == ("일반화해줘",)
     assert request.skill_draft_excluded_literals == ("secret-doc",)
     assert request.skill_scope_type == "team"
+    assert request.skill_mode == skill_mode
+    assert request.skill_id == skill_id
+
+
+def test_agent_command_rejects_auto_skill_id() -> None:
+    command = {
+        "run_id": "agent_0123456789abcdef0123456789abcdef",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "document_id": "document-1",
+        "base_version": 7,
+        "apply_operation_id": "op-1",
+        "message": "정리해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "skill_mode": "auto",
+        "skill_id": "skill-1",
+        "editor_snapshot": {"markdown": "# 제목"},
+    }
+    use_case = MagicMock()
+    connection = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker, "_register_agent_command", return_value=("execute", None)),
+        patch.object(task_worker, "build_handle_agent_turn_use_case", return_value=use_case),
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+        pytest.raises(ValidationError),
+    ):
+        task_worker._handle_agent(command)
+
+    use_case.execute.assert_not_called()
 
 
 def test_maintenance_failure_requires_terminal_run() -> None:
