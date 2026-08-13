@@ -4,6 +4,7 @@ from app.modules.agent_run.domain.entities import (
     AgentJob,
     AgentRun,
     AgentRunContext,
+    StartAgentRunArtifact,
     ContentArtifactReference,
     StartAgentRunRequest,
 )
@@ -19,7 +20,12 @@ class ToolGatewayError(RuntimeError):
 
 
 class AgentRunRepositoryPort(Protocol):
-    def create_with_planning_job(self, run: AgentRun, job_id: str) -> AgentRun:
+    def create_with_planning_job(
+        self,
+        run: AgentRun,
+        job_id: str,
+        artifact: StartAgentRunArtifact | None = None,
+    ) -> AgentRun:
         ...
 
     def get_for_user(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun | None:

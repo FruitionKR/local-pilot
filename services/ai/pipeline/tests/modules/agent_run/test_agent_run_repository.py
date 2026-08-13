@@ -8,6 +8,7 @@ from app.modules.agent_run.infrastructure.postgres_agent_run_repository import (
     _validate_artifact_metadata,
     _validate_content_hash,
 )
+from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunArtifact
 from app.modules.wiki_ingestion.infrastructure import (
     postgres_wiki_ingestion_repository as database,
 )
@@ -296,6 +297,83 @@ class AgentRunRepositoryTest(unittest.TestCase):
                     target=None,
                     markdown="# 문서\n",
                 )
+
+    def test_create_run_writes_creation_artifact_before_planning_job(self) -> None:
+        markdown = "# 문서\n"
+        content_hash = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
+        run = AgentRun(
+            id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            action="workspace_workflow",
+            skill_version_id=None,
+            status="queued",
+            request_summary="문서를 만들어줘",
+        )
+        artifact = StartAgentRunArtifact("artifact-1", content_hash, markdown)
+        connection = MagicMock()
+        run_result = MagicMock()
+        run_result.fetchone.return_value = _run_row(
+            status="queued", error_code=None, current_plan_id=None
+        )
+        connection.execute.side_effect = [run_result, MagicMock(), MagicMock()]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with (
+            patch.object(database, "connect_ai", return_value=connection_context),
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.write_text_object"
+            ) as write_text,
+        ):
+            PostgresAgentRunRepository().create_with_planning_job(run, "job-1", artifact)
+
+        write_text.assert_called_once()
+        self.assertEqual(connection.execute.call_count, 3)
+        self.assertIn("agent_runs", connection.execute.call_args_list[0].args[0])
+        self.assertIn("agent_run_artifacts", connection.execute.call_args_list[1].args[0])
+        self.assertIn("agent_jobs", connection.execute.call_args_list[2].args[0])
+        self.assertEqual(
+            connection.execute.call_args_list[1].args[1][1:4],
+            ("run-1", "workspace-1", "user-1"),
+        )
+        self.assertNotIn(markdown, connection.execute.call_args_list[0].args[0])
+
+    def test_create_run_deletes_creation_object_when_db_insert_fails(self) -> None:
+        markdown = "# 문서\n"
+        content_hash = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
+        run = AgentRun(
+            id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            action="workspace_workflow",
+            skill_version_id=None,
+            status="queued",
+            request_summary="문서를 만들어줘",
+        )
+        artifact = StartAgentRunArtifact("artifact-1", content_hash, markdown)
+        connection = MagicMock()
+        run_result = MagicMock()
+        run_result.fetchone.return_value = _run_row(
+            status="queued", error_code=None, current_plan_id=None
+        )
+        connection.execute.side_effect = [run_result, MagicMock(), RuntimeError("db failure")]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with (
+            patch.object(database, "connect_ai", return_value=connection_context),
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.write_text_object"
+            ) as write_text,
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.delete_object"
+            ) as delete_object,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "db failure"):
+                PostgresAgentRunRepository().create_with_planning_job(run, "job-1", artifact)
+
+        delete_object.assert_called_once_with(write_text.call_args.args[0])
 
 
 def _run_row(

@@ -10,7 +10,7 @@ from app.modules.agent_run.application.ports import (
     AgentApprovalRepositoryPort,
     AgentRunRepositoryPort,
 )
-from app.modules.agent_run.domain.entities import AgentRun
+from app.modules.agent_run.domain.entities import AgentRun, StartAgentRunArtifact
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 from app.modules.wiki_ingestion.infrastructure.object_storage import (
     delete_object,
@@ -23,34 +23,69 @@ from app.modules.wiki_ingestion.infrastructure import (
 
 
 class PostgresAgentRunRepository(AgentRunRepositoryPort, AgentApprovalRepositoryPort):
-    def create_with_planning_job(self, run: AgentRun, job_id: str) -> AgentRun:
-        with database.connect_ai() as conn:
-            row = conn.execute(
-                """
-                INSERT INTO agent_runs (
-                    id, workspace_id, user_id, action, skill_version_id, status, request_summary,
-                    provider, model
-                ) VALUES (%s, %s, %s, %s, %s, 'queued', %s, %s, %s)
-                RETURNING *
-                """,
-                (
-                    run.id,
-                    run.workspace_id,
-                    run.user_id,
-                    run.action,
-                    run.skill_version_id,
-                    run.request_summary,
-                    run.provider,
-                    run.model,
-                ),
-            ).fetchone()
-            conn.execute(
-                """
-                INSERT INTO agent_jobs (id, run_id, job_type, status)
-                VALUES (%s, %s, 'planning', 'queued')
-                """,
-                (job_id, run.id),
-            )
+    def create_with_planning_job(
+        self,
+        run: AgentRun,
+        job_id: str,
+        artifact: StartAgentRunArtifact | None = None,
+    ) -> AgentRun:
+        object_key = _artifact_object_key(run.id, artifact.id) if artifact is not None else ""
+        object_written = False
+        try:
+            with database.connect_ai() as conn:
+                if artifact is not None:
+                    _validate_artifact_metadata("create_document", None, None, None)
+                    _validate_content_hash(artifact.markdown, artifact.content_hash)
+                    write_text_object(object_key, artifact.markdown)
+                    object_written = True
+                row = conn.execute(
+                    """
+                    INSERT INTO agent_runs (
+                        id, workspace_id, user_id, action, skill_version_id, status, request_summary,
+                        provider, model
+                    ) VALUES (%s, %s, %s, %s, %s, 'queued', %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (
+                        run.id,
+                        run.workspace_id,
+                        run.user_id,
+                        run.action,
+                        run.skill_version_id,
+                        run.request_summary,
+                        run.provider,
+                        run.model,
+                    ),
+                ).fetchone()
+                if artifact is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO agent_run_artifacts (
+                            id, run_id, workspace_id, user_id, content_hash, purpose, object_key,
+                            document_id, base_version, target, expires_at
+                        ) VALUES (%s, %s, %s, %s, %s, 'create_document', %s, NULL, NULL, NULL,
+                                  now() + interval '1 day')
+                        """,
+                        (
+                            artifact.id,
+                            run.id,
+                            run.workspace_id,
+                            run.user_id,
+                            artifact.content_hash,
+                            object_key,
+                        ),
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO agent_jobs (id, run_id, job_type, status)
+                    VALUES (%s, %s, 'planning', 'queued')
+                    """,
+                    (job_id, run.id),
+                )
+        except Exception:
+            if object_written:
+                delete_object(object_key)
+            raise
         return _row_to_run(row)
 
     def get_for_user(self, workspace_id: str, user_id: str, run_id: str) -> AgentRun | None:

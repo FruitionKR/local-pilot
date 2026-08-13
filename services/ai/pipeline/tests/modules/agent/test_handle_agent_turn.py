@@ -715,7 +715,59 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.action, "workspace_workflow")
         self.assertEqual(getattr(starter.requests[0], "action"), "workspace_workflow")
+        self.assertIsNone(getattr(starter.requests[0], "creation_markdown"))
         self.assertEqual(editor.requests, [])
+        self.assertEqual(editor.create_requests, [])
+
+    def test_create_from_chat_generates_artifact_markdown_after_direct_intent_check(self) -> None:
+        starter = RecordingAgentRunStarter()
+        editor = RecordingMarkdownEditor(
+            MarkdownEditResult(
+                edit=MarkdownEditOperation(
+                    operation="replace",
+                    target=MarkdownEditTarget(type="selection", start_line=1, end_line=1),
+                    summary="unused",
+                    replacement_markdown="unused",
+                )
+            ),
+            create_result=MarkdownCreateResult(
+                document=GeneratedMarkdownDocument(
+                    title="생성 문서",
+                    summary="요약",
+                    markdown="# 생성 문서\n\n본문",
+                )
+            ),
+        )
+        route = AgentTurnRoute(
+            action="workspace_workflow",
+            confidence=0.95,
+            reason="workspace document request",
+            edit_goal="create_from_chat",
+        )
+        use_case = HandleAgentTurnUseCase(
+            router=SequencedRouter(route, route),
+            query_use_case=FakeQueryUseCase(),  # type: ignore[arg-type]
+            markdown_edit_use_case=GenerateMarkdownEditUseCase(editor),
+            markdown_create_use_case=GenerateMarkdownDocumentUseCase(editor),
+            agent_run_starter=starter,  # type: ignore[arg-type]
+        )
+
+        result = use_case.execute(
+            AgentTurnRequest(
+                message="대화 내용을 문서로 만들어 저장해줘",
+                workspace_id="workspace-1",
+                user_id="user-1",
+                conversation_context=AgentConversationContext(
+                    recent_conversation_summary="문서 생성 논의",
+                    reference_context={"document": "참조"},
+                ),
+            )
+        )
+
+        self.assertEqual(result.action, "workspace_workflow")
+        self.assertEqual(editor.create_requests[0].conversation_summary, "문서 생성 논의")
+        self.assertEqual(editor.create_requests[0].reference_context, {"document": "참조"})
+        self.assertEqual(getattr(starter.requests[0], "creation_markdown"), "# 생성 문서\n\n본문")
 
     def test_indirect_context_cannot_start_mutation_without_direct_intent(self) -> None:
         starter = RecordingAgentRunStarter()
