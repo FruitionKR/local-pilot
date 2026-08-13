@@ -999,7 +999,7 @@ def latest_source_page_context(
             ORDER BY updated_at DESC
             LIMIT 1
             """,
-            (document_id, user_id, workspace_id),
+            (slugify(document_id), user_id, workspace_id),
         ).fetchone()
     if not row:
         return None
