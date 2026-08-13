@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_EXECUTION_STEPS = 40
 _GRAPH_RECURSION_LIMIT = 64
+_MAX_FAILURE_DETAIL_LENGTH = 256
 _TERMINAL_RUN_STATUSES = frozenset(
     {"completed", "partial_failed", "failed", "conflicted", "rejected", "cancelled"}
 )
@@ -92,8 +93,14 @@ class AgentWorker:
             self._run_job(job)
             self._repository.complete(job)
         except Exception as exc:
-            logger.exception("Agent job 처리 실패: job_id=%s job_type=%s", job.id, job.job_type)
-            self._repository.fail(job, type(exc).__name__)
+            logger.error(
+                "Agent job 처리 실패: job_id=%s job_type=%s type=%s detail=%s",
+                job.id,
+                job.job_type,
+                type(exc).__name__,
+                _failure_detail(exc),
+            )
+            self._repository.fail(job, _failure_detail(exc))
         finally:
             stop_heartbeat.set()
             heartbeat.join(timeout=1)
@@ -691,6 +698,22 @@ def _route_job_event(state: AgentRunGraphState) -> str:
     if event not in {"planning", "execution", "verification"}:
         raise ValueError("Unsupported Agent graph event.")
     return event
+
+
+def _failure_detail(exc: Exception) -> str:
+    if type(exc) is ValueError and _is_internal_value_error(exc):
+        detail = " ".join(str(exc).split())
+        if detail:
+            return f"ValueError: {detail}"[:_MAX_FAILURE_DETAIL_LENGTH]
+    return type(exc).__name__
+
+
+def _is_internal_value_error(exc: ValueError) -> bool:
+    traceback = exc.__traceback__
+    while traceback is not None and traceback.tb_next is not None:
+        traceback = traceback.tb_next
+    module = traceback.tb_frame.f_globals.get("__name__", "") if traceback else ""
+    return module.startswith("app.modules.agent_run.")
 
 
 def _route_user_decision(state: AgentRunGraphState) -> str:

@@ -16,6 +16,54 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 
 
 class AgentWorkerTest(unittest.TestCase):
+    def test_process_keeps_internal_value_error_detail_but_hides_external_detail(self) -> None:
+        repository = MagicMock()
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        internal_job = MagicMock(job_type="planning", id="job-1")
+        internal_detail = "  internal\n detail\t" + ("x" * 300)
+        repository.request_clarification.return_value = False
+
+        def raise_internal_value_error(_job: object) -> None:
+            worker._request_execution_clarification("run-1", "error-code", internal_detail, 0)
+
+        worker._run_job = raise_internal_value_error  # type: ignore[method-assign]
+
+        with self.assertLogs("app.modules.agent_run.infrastructure.agent_worker", level="ERROR") as captured:
+            worker.process(internal_job)
+
+        repository.fail.assert_called_once_with(
+            internal_job,
+            f"ValueError: {' '.join(internal_detail.split())}"[:256],
+        )
+        self.assertEqual(len(repository.fail.call_args.args[1]), 256)
+        self.assertIn("job_id=job-1 job_type=planning type=ValueError", captured.output[0])
+        self.assertIn("detail=ValueError: internal detail", captured.output[0])
+
+        class ExternalValueError(ValueError):
+            pass
+
+        for exception_type in (ValueError, ExternalValueError):
+            with self.subTest(exception_type=exception_type.__name__):
+                repository.reset_mock()
+                external_job = MagicMock(job_type="planning", id="job-2")
+
+                def raise_external_value_error(_job: object) -> None:
+                    raise exception_type("https://example.test?token=secret prompt=private")
+
+                worker._run_job = raise_external_value_error  # type: ignore[method-assign]
+                with self.assertLogs("app.modules.agent_run.infrastructure.agent_worker", level="ERROR") as captured:
+                    worker.process(external_job)
+
+                repository.fail.assert_called_once_with(external_job, exception_type.__name__)
+                detail = repository.fail.call_args.args[1]
+                self.assertNotIn("https://example.test", detail)
+                self.assertNotIn("token=secret", detail)
+                self.assertNotIn("prompt=private", detail)
+                log = captured.output[0]
+                self.assertNotIn("https://example.test", log)
+                self.assertNotIn("token=secret", log)
+                self.assertNotIn("prompt=private", log)
+
     def test_skill_instruction_cannot_widen_mutation_tool_allowlist(self) -> None:
         repository = MagicMock()
         repository.load_context.return_value = AgentRunContext(
