@@ -412,7 +412,8 @@ git diff --check
 - [x] Mongo package·의존성·설정·CI·배포 리소스 삭제
 - [x] 정식 ADR 0016과 현행 architecture/data-model/demo 문서 갱신
 - [x] Gradle test, Compose config, Kustomize, fresh PostgreSQL integration, `rg`, `git diff --check` 통과
-- [ ] live HTTP→Kafka→AI E2E는 실행하지 않았으며, 통과했다고 주장하지 않는다.
+- [x] fresh PostgreSQL에서 Markdown 생성→변경 저장→동일 write ID replay→stale revision 409
+  → PostgreSQL outbox→Kafka→AI state 갱신 live E2E 통과
 - [ ] 승인된 정확한 대상에 한해서만 Mongo data/resource 제거 — 미실행; 정확한 공유 대상이
   격리되지 않아 cutover에 필요하지 않으며, 삭제 완료로 간주하지 않는다.
 
