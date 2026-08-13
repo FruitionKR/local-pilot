@@ -119,6 +119,23 @@ def test_persist_source_blocks_clears_existing_rows_for_empty_blocks() -> None:
     assert params == ("doc-1",)
 
 
+def test_persist_source_blocks_returns_raw_blocks_for_source_embedding() -> None:
+    conn = Mock()
+
+    blocks = persistence._persist_source_blocks(
+        conn,
+        "doc-1",
+        {
+            "source_blocks": [
+                {"block_id": "B0001", "text": "raw marker"},
+                {"block_id": "B0001", "text": "replacement marker"},
+            ]
+        },
+    )
+
+    assert blocks == [{"block_id": "B0001", "text": "replacement marker"}]
+
+
 def test_persist_wiki_outputs_keeps_source_and_followup_write_order(
     monkeypatch,
 ) -> None:

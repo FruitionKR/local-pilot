@@ -7,6 +7,7 @@ import psycopg
 from app.modules.wiki_generation.domain.text_utils import slugify
 
 from app.modules.wiki_ingestion.infrastructure.embedding_units import (
+    dedupe_units,
     extract_embedding_units,
     hash_text,
     unit_representation,
@@ -22,10 +23,20 @@ def persist_embedding_units(
     page_id: str,
     document_id: str,
     markdown: str,
+    source_blocks: list[dict[str, str]] | None = None,
 ) -> None:
-    if not markdown:
-        return
-    units = extract_embedding_units(markdown)
+    units = extract_embedding_units(markdown) if markdown else []
+    units.extend(
+        {
+            "unit_type": "source_block",
+            "block_refs": [block["block_id"]],
+            "text": block["text"],
+            "weight": 1.0,
+        }
+        for block in source_blocks or []
+        if block.get("block_id") and block.get("text")
+    )
+    units = dedupe_units(units)
     conn.execute("DELETE FROM wiki_embedding_units WHERE page_id = %s", (page_id,))
     for unit in units:
         representation_text = unit_representation(unit["unit_type"], unit["text"])
