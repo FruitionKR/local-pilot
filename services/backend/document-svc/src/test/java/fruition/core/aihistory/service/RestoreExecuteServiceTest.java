@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -55,6 +56,7 @@ class RestoreExecuteServiceTest {
     @Mock DocumentRestoreApplier documentApplier;
     @Mock AiCommandOutboxWriter outboxWriter;
     @Mock RestoreTargetValidator validator;
+    @Mock PlatformTransactionManager transactionManager;
 
     private RestoreExecuteService service;
 
@@ -62,7 +64,7 @@ class RestoreExecuteServiceTest {
     void setUp() {
         service = new RestoreExecuteService(previewService, scopeResolver, planner,
                 lintRestorePlanner, tokenSigner, lifecycle, documentPlanner, documentApplier,
-                outboxWriter, validator, new ObjectMapper(), "ai.maintenance.command");
+                outboxWriter, validator, new ObjectMapper(), "ai.maintenance.command", transactionManager);
     }
 
     @Test
@@ -183,6 +185,53 @@ class RestoreExecuteServiceTest {
                 .isEqualTo("d131c306d498cf8aa66cbd07b847aa433734eec63cd70b609063b572e9aac140");
         verify(lifecycle).finishDocument(eq("op_restore"), eq(5L), eq(7L), any());
         verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void documentRestore_retriesWholeTransactionForTransientFailure() {
+        OperationLog target = target(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        OperationLog firstRestore = OperationLog.applying(
+                "op_restore_1", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        OperationLog secondRestore = OperationLog.applying(
+                "op_restore_2", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(documentPlanner.plan(target)).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any()))
+                .thenReturn(Optional.of(firstRestore), Optional.of(secondRestore));
+        when(documentApplier.apply(firstRestore, plan))
+                .thenThrow(new IllegalStateException(new org.springframework.dao.DuplicateKeyException("retry")));
+        when(documentApplier.apply(secondRestore, plan)).thenReturn(7L);
+
+        var response = service.execute(WORKSPACE, USER, TARGET, TOKEN);
+
+        assertThat(response.operationId()).isEqualTo("op_restore_2");
+        verify(lifecycle, org.mockito.Mockito.times(2))
+                .start(eq(target), anyString(), anyString(), any());
+        verify(documentApplier, org.mockito.Mockito.times(2)).apply(any(), eq(plan));
+        verify(lifecycle).finishDocument(eq("op_restore_2"), eq(5L), eq(7L), any());
+    }
+
+    @Test
+    void documentRestore_doesNotRetryNonTransientFailure() {
+        OperationLog target = target(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        OperationLog restore = OperationLog.applying(
+                "op_restore", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(documentPlanner.plan(target)).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any())).thenReturn(Optional.of(restore));
+        when(documentApplier.apply(restore, plan)).thenThrow(new IllegalStateException("not transient"));
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("not transient");
+
+        verify(lifecycle).start(eq(target), anyString(), anyString(), any());
+        verify(documentApplier).apply(restore, plan);
+        verify(lifecycle, never()).finishDocument(anyString(), anyLong(), anyLong(), any());
     }
 
     @Test

@@ -88,7 +88,7 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     /**
      * 노트 저장 projection: 현재 편집본 해시를 PG에 반영한다.
-     * 목록 API가 Mongo 조회 없이 content_hash(마지막 ingest 스냅샷)와 비교해 needs_reingest를 판단할 수 있게 한다.
+     * 목록 API가 편집 상태 조회 없이 content_hash(마지막 ingest 스냅샷)와 비교해 needs_reingest를 판단할 수 있게 한다.
      */
     @Transactional
     @Modifying

@@ -55,9 +55,8 @@ import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
-import fruition.core.document.mongo.MongoDocumentEditSaveResult;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.repository.PostgresDocumentEditSaveResult;
+import fruition.core.document.repository.PostgresDocumentEditStore;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.exception.HierarchyItemNotFoundException;
@@ -74,6 +73,9 @@ import io.minio.RemoveObjectArgs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotSerializeTransactionException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
@@ -99,6 +101,8 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentService {
 
+    private static final int MAX_SAVE_ATTEMPTS = 3;
+
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     private static final int STALLED_THRESHOLD_SECONDS = 60;
     private static final String INITIAL_NOTE_FILENAME = "새 노트.md";
@@ -116,7 +120,7 @@ public class DocumentService {
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
-    private final MongoDocumentEditStore mongoDocumentEditStore;
+    private final PostgresDocumentEditStore postgresDocumentEditStore;
     private final DocumentContentVersionRepository contentVersionRepository;
     private final MarkdownDiffService markdownDiffService;
     private final DocumentEditLockService editLockService;
@@ -141,7 +145,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
-                           MongoDocumentEditStore mongoDocumentEditStore,
+                           PostgresDocumentEditStore postgresDocumentEditStore,
                            DocumentContentVersionRepository contentVersionRepository,
                            MarkdownDiffService markdownDiffService,
                            DocumentEditLockService editLockService,
@@ -165,7 +169,7 @@ public class DocumentService {
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
-        this.mongoDocumentEditStore = mongoDocumentEditStore;
+        this.postgresDocumentEditStore = postgresDocumentEditStore;
         this.contentVersionRepository = contentVersionRepository;
         this.markdownDiffService = markdownDiffService;
         this.editLockService = editLockService;
@@ -252,7 +256,7 @@ public class DocumentService {
             documentRepository.save(document);
             if (markdownUpload) {
                 editStateRepository.save(new DocumentEditState(
-                        documentId, markdownContent.markdown(), markdownContent.contentHash()));
+                        documentId, markdownContent.markdown(), markdownContent.contentHash(), 1));
             }
             DocumentUploadResponse response = toUploadResponse(document, markdownUpload);
             saveIdempotencyRecord(userId, endpointScope, idempotencyKey, requestHash, response);
@@ -374,7 +378,7 @@ public class DocumentService {
         );
         documentRepository.save(duplicate);
         editStateRepository.save(new DocumentEditState(
-                duplicateId, content.markdown(), content.contentHash()));
+                duplicateId, content.markdown(), content.contentHash(), 1));
         assetReferenceSynchronizer.copyReferences(documentId, duplicateId);
 
         DocumentDuplicateResponse response = toDuplicateResponse(duplicate);
@@ -443,7 +447,7 @@ public class DocumentService {
         document.place(folderId, sortOrder);
         documentRepository.save(document);
         editStateRepository.save(new DocumentEditState(
-                documentId, content.markdown(), content.contentHash()));
+                documentId, content.markdown(), content.contentHash(), 1));
         return toUploadResponse(document, true);
     }
 
@@ -601,7 +605,7 @@ public class DocumentService {
 
     /**
      * 새로 만드는 Markdown 문서의 원본을 object storage에 저장하고 object key를 돌려준다.
-     * 파이프라인은 Mongo를 읽지 못하고 source_uri로만 본문을 가져가므로,
+     * 파이프라인은 편집 상태를 읽지 않고 source_uri로만 본문을 가져가므로,
      * 문서 행을 만들 때 원본도 같이 만들어야 이후 ingest가 성립한다.
      */
     private String storeMarkdownSource(String documentId, byte[] bytes) {
@@ -778,15 +782,21 @@ public class DocumentService {
         byte[] bytes = fullMarkdown.getBytes(StandardCharsets.UTF_8);
         String objectKey = normalizeObjectKey(document.getSourceUri());
         byte[] previousBytes = readMinioObject(objectKey);
-        Optional<MongoDocumentEditState> currentState = mongoDocumentEditStore.findState(documentId);
+        Optional<DocumentEditState> currentState = postgresDocumentEditStore.findState(documentId);
         if (currentState.map(state -> fullContentHash.equals(state.getContentHash())).orElse(false)
                 && fullContentHash.equals(document.getContentHash())
                 && Arrays.equals(previousBytes, bytes)) {
             return;
         }
 
-        editStateInitializer.initializeIfNeeded(document);
-        DocumentEditState legacyState = editStateRepository.findById(documentId)
+        if (currentState.isEmpty()) {
+            TransactionTemplate initializationTransaction = requiresNewSaveTransactionTemplate();
+            initializationTransaction.execute(status -> {
+                editStateInitializer.initializeIfNeeded(document);
+                return null;
+            });
+        }
+        DocumentEditState editState = postgresDocumentEditStore.findState(documentId)
                 .orElseThrow(() -> new InvalidMarkdownContentException(
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
         registerMinioRollbackRestore(objectKey, previousBytes);
@@ -804,19 +814,21 @@ public class DocumentService {
             throw new DocumentUploadException("채팅 export 재생성 저장 중 오류가 발생했습니다.", e);
         }
 
-        document.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
-        log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
-                documentId, contentHashPrefix(fullContentHash), bytes.length,
-                deltaMarkdown != null ? deltaMarkdown.length() : 0);
-        enqueueIngest(document);
-
-        long baseRevision = currentState
-                .map(MongoDocumentEditState::getRevision)
-                .orElse(document.getCurrentVersion());
-        mongoDocumentEditStore.save(
-                document.getWorkspaceId(), documentId, fullMarkdown, fullContentHash,
-                baseRevision, "chat-export-regenerate:" + fullContentHash,
-                document.getUserId(), document.getCurrentVersion(), legacyState);
+        long baseRevision = editState.getRevision();
+        TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
+        executeWithSaveRetry(() -> saveTransaction.execute(status -> {
+            Document attemptDocument = documentRepository.findById(documentId)
+                    .orElseThrow(() -> new DocumentNotFoundException(documentId));
+            attemptDocument.reopenForChatExportRegeneration(fullContentHash, bytes.length, deltaMarkdown);
+            log.info("[채팅 export 재생성 DB 갱신 완료] documentId={} contentHashPrefix={} byteSize={} deltaMarkdownLength={}",
+                    documentId, contentHashPrefix(fullContentHash), bytes.length,
+                    deltaMarkdown != null ? deltaMarkdown.length() : 0);
+            enqueueIngest(attemptDocument);
+            return postgresDocumentEditStore.save(
+                    attemptDocument.getWorkspaceId(), documentId, fullMarkdown, fullContentHash,
+                    baseRevision, "chat-export-regenerate:" + fullContentHash,
+                    attemptDocument.getUserId(), null);
+        }));
     }
 
     /**
@@ -876,7 +888,7 @@ public class DocumentService {
         );
         documentRepository.save(placeholder);
         editStateRepository.save(new DocumentEditState(
-                placeholderId, content.markdown(), content.contentHash()));
+                placeholderId, content.markdown(), content.contentHash(), 1));
         requestConvertAfterCommit(placeholderId, source.getId());
 
         DocumentUploadResponse response = toUploadResponse(placeholder, true);
@@ -952,34 +964,33 @@ public class DocumentService {
 
     /**
      * 변환 Markdown을 placeholder 문서에 반영한다. 시스템 쓰기라 revision 충돌 우려가 없어 base_revision 1로
-     * 저장하고, write_id({@code convert:<queueId>}) 재시도는 Mongo write receipt가 멱등하게 처리한다.
+     * 저장하고, write_id({@code convert:<queueId>}) 재시도는 PostgreSQL write receipt가 멱등하게 처리한다.
      */
     private void applyConvertedMarkdown(
             long queueId,
             Document placeholder,
             DocumentEditingRules.MarkdownContent content
     ) {
-        DocumentEditState legacyState = editStateRepository.findById(placeholder.getId())
-                .orElseThrow(() -> new DocumentConvertException(
-                        "placeholder 편집 상태를 찾을 수 없습니다: " + placeholder.getId()));
-        MongoDocumentEditSaveResult result = mongoDocumentEditStore.save(
-                placeholder.getWorkspaceId(),
-                placeholder.getId(),
-                content.markdown(),
-                content.contentHash(),
-                1L,
-                "convert:" + queueId,
-                placeholder.getUserId(),
-                placeholder.getCurrentVersion(),
-                legacyState
-        );
-        projectContentVersions(placeholder.getId(), content.markdown(), result);
-        Instant now = Instant.now();
-        transactionTemplate.execute(status -> {
-            documentRepository.findByIdInActiveWorkspace(placeholder.getId()).ifPresent(doc ->
-                    doc.completeConvert(content.contentHash(), content.bytes().length, now));
+        TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
+        executeWithSaveRetry(() -> saveTransaction.execute(status -> {
+            PostgresDocumentEditSaveResult result = postgresDocumentEditStore.save(
+                    placeholder.getWorkspaceId(),
+                    placeholder.getId(),
+                    content.markdown(),
+                    content.contentHash(),
+                    1L,
+                    "convert:" + queueId,
+                    placeholder.getUserId(),
+                    null
+            );
+            if (!result.replayed()) {
+                projectContentVersions(placeholder.getId(), content.markdown(), result);
+                Instant now = Instant.now();
+                documentRepository.findByIdInActiveWorkspace(placeholder.getId()).ifPresent(doc ->
+                        doc.completeConvert(content.contentHash(), content.bytes().length, now));
+            }
             return null;
-        });
+        }));
     }
 
     String enqueueIngest(Document document) {
@@ -1089,8 +1100,13 @@ public class DocumentService {
         Document doc = documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
         editStateInitializer.initializeIfNeeded(doc);
-        Optional<DocumentEditState> editState = editStateRepository.findById(documentId);
-        Optional<MongoDocumentEditState> mongoEditState = mongoDocumentEditStore.findState(documentId);
+        Optional<DocumentEditState> editState = postgresDocumentEditStore.findState(documentId);
+        long editRevision = editState.map(DocumentEditState::getRevision).orElseGet(() -> {
+            if (doc.getDocumentRole() == DocumentRole.EDITABLE) {
+                throw new InvalidMarkdownContentException("현재 Markdown 편집 상태를 찾을 수 없습니다.");
+            }
+            return doc.getCurrentVersion();
+        });
 
         List<DocumentWikiPageRef> wikiPages = pipelineWikiStateRequester
                 .documentContext(workspaceId, documentId).pages().stream()
@@ -1116,14 +1132,12 @@ public class DocumentService {
                 doc.getDisplayName(),
                 fileTypeOf(doc),
                 doc.getDocumentRole(),
-                isEditable(doc, mongoEditState.isPresent() || editState.isPresent()),
+                isEditable(doc, editState.isPresent()),
                 doc.getCurrentVersion(),
-                mongoEditState.map(MongoDocumentEditState::getRevision).orElse(doc.getCurrentVersion()),
+                editRevision,
                 doc.getSourceDocumentId(),
-                mongoEditState.map(MongoDocumentEditState::getUpdatedAt)
-                        .orElse(doc.getUpdatedAt()),
-                mongoEditState.map(MongoDocumentEditState::getMarkdown)
-                        .orElseGet(() -> editState.map(DocumentEditState::getMarkdown).orElse(null)),
+                editState.map(DocumentEditState::getUpdatedAt).orElse(doc.getUpdatedAt()),
+                editState.map(DocumentEditState::getMarkdown).orElse(null),
                 editLockService.getStatus(doc.getId())
         );
     }
@@ -1186,8 +1200,8 @@ public class DocumentService {
     }
 
     /**
-     * 본문 저장은 MongoDB store가 한 transaction으로 처리한다(state·write receipt·outbox).
-     * PostgreSQL에는 version read model(document_content_versions)만 projection한다.
+     * 본문 저장은 PostgreSQL store가 한 transaction으로 처리한다(state·write receipt·outbox).
+     * PostgreSQL version read model(document_content_versions)도 같은 transaction에 projection한다.
      *
      * @param applyOperationId Agent turn에서 발급한 적용 표. 검증에 성공하면 AI 작업 로그를 남긴다.
      *                         {@code source} 문자열은 클라이언트가 임의로 넣을 수 있어 신뢰하지 않는다.
@@ -1207,6 +1221,54 @@ public class DocumentService {
     }
 
     private DocumentContentSaveResponse saveContent(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseRevision,
+            String revisionWriteId,
+            String source,
+            String applyOperationId,
+            boolean applyOperationClaimed
+    ) {
+        TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
+        try {
+            return executeWithSaveRetry(() -> saveTransaction.execute(status -> saveContentInTransaction(
+                    workspaceId, userId, documentId, markdown, baseRevision, revisionWriteId,
+                    source, applyOperationId, applyOperationClaimed)));
+        } catch (DocumentVersionConflictException conflict) {
+            if (applyOperationId != null && !applyOperationId.isBlank()) {
+                recordConflictInIndependentTransaction(
+                        workspaceId, userId, documentId, markdown, baseRevision,
+                        revisionWriteId, applyOperationId);
+            }
+            throw conflict;
+        }
+    }
+
+    /**
+     * 복구처럼 본문 저장과 추가 변경내역을 한 작업으로 묶어야 하는 호출자를 위한 저장 진입점이다.
+     * 호출자는 이미 실제 PostgreSQL transaction을 소유해야 하며, transient 재시도는 그 소유 단위에서
+     * 수행해야 한다.
+     */
+    public DocumentContentSaveResponse saveContentInCurrentTransaction(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseRevision,
+            String revisionWriteId,
+            String source
+    ) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("현재 PostgreSQL transaction 안에서 호출해야 합니다.");
+        }
+        return saveContentInTransaction(
+                workspaceId, userId, documentId, markdown, baseRevision, revisionWriteId,
+                source, null, false);
+    }
+
+    private DocumentContentSaveResponse saveContentInTransaction(
             String workspaceId,
             String userId,
             String documentId,
@@ -1238,28 +1300,17 @@ public class DocumentService {
                     baseRevision, content.markdown(), applyOperationId);
         }
         editStateInitializer.initializeIfNeeded(document);
-        DocumentEditState legacyState = editStateRepository.findById(documentId)
-                .orElseThrow(() -> new InvalidMarkdownContentException(
-                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        MongoDocumentEditSaveResult result;
-        try {
-            result = hasApplyOperation
-                    ? mongoDocumentEditStore.save(
+        PostgresDocumentEditSaveResult result;
+        result = hasApplyOperation
+                    ? postgresDocumentEditStore.save(
                             workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
-                            revisionWriteId, userId, document.getCurrentVersion(), legacyState, applyOperationId)
-                    : mongoDocumentEditStore.save(
+                            revisionWriteId, userId, applyOperationId)
+                    : postgresDocumentEditStore.save(
                             workspaceId, documentId, content.markdown(), content.contentHash(), baseRevision,
-                            revisionWriteId, userId, document.getCurrentVersion(), legacyState);
-        } catch (DocumentVersionConflictException conflict) {
-            // 적용 표는 저장 전에 이미 소비했으므로 conflict 감사에서 다시 소비하지 않는다.
-            transactionTemplate.execute(status -> {
-                if (hasApplyOperation) {
-                    operationRecorder.recordConflict(
-                            applyOperationId, workspaceId, userId, documentId, Instant.now());
-                }
-                return null;
-            });
-            throw conflict;
+                            revisionWriteId, userId, null);
+        if (result.replayed()) {
+            return new DocumentContentSaveResponse(
+                    documentId, result.revision(), result.contentHash(), result.updatedAt(), result.changed());
         }
         if (hasApplyOperation) {
             transactionTemplate.execute(status -> {
@@ -1329,13 +1380,13 @@ public class DocumentService {
     }
 
     /**
-     * Mongo 저장 결과를 PostgreSQL version read model로 projection한다.
-     * commit 뒤 projection이 실패해도 같은 revision_write_id 재시도가 receipt를 replay해 복구한다.
+     * PostgreSQL 편집 상태·write receipt·version/hash read model·감사·outbox와 같은 transaction에서 projection한다.
+     * DB 단계가 실패하면 변경은 함께 rollback되고, object storage 정리는 호출자가 맡는다.
      */
     private void projectContentVersions(
             String documentId,
             String resultMarkdown,
-            MongoDocumentEditSaveResult result
+            PostgresDocumentEditSaveResult result
     ) {
         if (!result.changed()) {
             return;
@@ -1363,7 +1414,7 @@ public class DocumentService {
      *
      * <p>base revision은 여기서 보지 않는다. 재전송된 같은 요청은 base가 이미 지나가 있어
      * 여기서 막으면 저장 계층의 revision_write_id 중복 판정에 닿지 못하고 첫 저장이
-     * 실패로 보인다. revision 판정은 canonical인 Mongo 저장 시점이 담당한다.
+     * 실패로 보인다. revision 판정은 canonical인 PostgreSQL 저장 시점이 담당한다.
      */
     @Transactional(readOnly = true)
     public void validateContentSavePreconditions(String workspaceId, String userId, String documentId) {
@@ -1378,11 +1429,11 @@ public class DocumentService {
     }
 
     /**
-     * 이미지 포함 저장. asset row는 본문보다 먼저 커밋해 참조 무결성을 확보하고
-     * (실패 시 orphan은 cleanup worker가 정리), 본문 저장은 Mongo 기반 saveContent를 재사용한다.
+     * 이미지 포함 저장. PostgreSQL 편집 상태·write receipt·version/hash read model·asset·감사·outbox를
+     * 하나의 transaction으로 기록한다. DB 실패 시 변경은 함께 rollback되고 object storage 정리는 호출자가 맡는다.
      *
      * <p>{@code revisionWriteId}와 asset ID가 모두 요청 내용에서 결정되므로, 같은 요청이
-     * 재전송되면 본문까지 동일해져 Mongo가 첫 저장 결과를 그대로 돌려준다.
+     * 재전송되면 본문까지 동일해져 PostgreSQL receipt가 첫 저장 결과를 그대로 돌려준다.
      */
     public DocumentContentSaveResponse saveContentWithAssets(
             String workspaceId,
@@ -1403,28 +1454,27 @@ public class DocumentService {
                         stored.validated().bytes().length, stored.validated().width(), stored.validated().height(),
                         stored.validated().contentHash(), stored.objectKey(), updatedAt))
                 .toList();
-        transactionTemplate.execute(status -> {
-            assetRepository.saveAll(assets);
-            return null;
-        });
-
         DocumentContentSaveResponse saved;
+        TransactionTemplate saveTransaction = requiresNewSaveTransactionTemplate();
         try {
-            saved = saveContent(workspaceId, userId, documentId, content.markdown(),
-                    baseVersion, revisionWriteId, null, applyOperationId, true);
-        } catch (RuntimeException exception) {
-            transactionTemplate.execute(status -> {
-                assetRepository.deleteAllInBatch(assets);
-                return null;
-            });
-            throw exception;
-        }
-        if (!saved.changed()) {
-            // 본문이 그대로면 새 asset row도 남기지 않는다. object storage 정리는 호출부가 한다.
-            transactionTemplate.execute(status -> {
-                assetRepository.deleteAllInBatch(assets);
-                return null;
-            });
+            saved = executeWithSaveRetry(() -> saveTransaction.execute(status -> {
+                assetRepository.saveAll(assets);
+                DocumentContentSaveResponse value = saveContentInTransaction(
+                        workspaceId, userId, documentId, content.markdown(),
+                        baseVersion, revisionWriteId, null, applyOperationId, false);
+                if (!value.changed()) {
+                    // 본문이 그대로면 새 asset row도 남기지 않는다. object storage 정리는 호출부가 한다.
+                    assetRepository.deleteAllInBatch(assets);
+                }
+                return value;
+            }));
+        } catch (DocumentVersionConflictException conflict) {
+            if (applyOperationId != null && !applyOperationId.isBlank()) {
+                recordConflictInIndependentTransaction(
+                        workspaceId, userId, documentId, content.markdown(), baseVersion,
+                        revisionWriteId, applyOperationId);
+            }
+            throw conflict;
         }
         return new DocumentContentSaveResponse(
                 saved.documentId(), saved.currentVersion(), saved.contentHash(), saved.updatedAt(),
@@ -1436,18 +1486,73 @@ public class DocumentService {
         contentVersionRepository.insertIfAbsent(documentId, version, markdown, contentHash, createdBy, createdAt);
     }
 
+    private <T> T executeWithSaveRetry(java.util.function.Supplier<T> operation) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (RuntimeException exception) {
+                if (attempt >= MAX_SAVE_ATTEMPTS || !isTransientSaveFailure(exception)) {
+                    throw exception;
+                }
+            }
+        }
+    }
+
+    private boolean isTransientSaveFailure(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof DuplicateKeyException
+                    || cause instanceof DeadlockLoserDataAccessException
+                    || cause instanceof CannotSerializeTransactionException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void recordConflictInIndependentTransaction(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String markdown,
+            Long baseRevision,
+            String revisionWriteId,
+            String applyOperationId
+    ) {
+        TransactionTemplate conflictTransaction = requiresNewSaveTransactionTemplate();
+        conflictTransaction.execute(status -> {
+            DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(markdown);
+            if (!applyOperationStore.consume(
+                    applyOperationId, userId, documentId, revisionWriteId,
+                    baseRevision, content.markdown())) {
+                throw new InvalidAgentTurnRequestException(
+                        "유효하지 않거나 이미 사용된 Agent 적용 표입니다.");
+            }
+            operationRecorder.recordConflict(
+                    applyOperationId, workspaceId, userId, documentId, Instant.now());
+            return null;
+        });
+    }
+
+    private TransactionTemplate requiresNewSaveTransactionTemplate() {
+        TransactionTemplate requiresNew =
+                new TransactionTemplate(transactionTemplate.getTransactionManager());
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return requiresNew;
+    }
+
     /** 콘텐츠 버전 이력 목록(메타데이터만, 최신 버전 순). */
     @Transactional(readOnly = true)
     public DocumentContentVersionListResponse listContentVersions(
             String workspaceId, String userId, String documentId) {
-        Document document = loadEditableForVersion(workspaceId, userId, documentId);
+        loadEditableForVersion(workspaceId, userId, documentId);
+        long editRevision = postgresDocumentEditStore.findState(documentId)
+                .map(DocumentEditState::getRevision)
+                .orElseThrow(() -> new InvalidMarkdownContentException(
+                        "현재 Markdown 편집 상태를 찾을 수 없습니다."));
         List<DocumentContentVersionListResponse.Item> items = contentVersionRepository.findSummaries(documentId).stream()
                 .map(s -> new DocumentContentVersionListResponse.Item(
                         s.getVersion(), s.getContentHash(), s.getCreatedBy(), s.getCreatedAt()))
                 .toList();
-        long editRevision = mongoDocumentEditStore.findState(documentId)
-                .map(MongoDocumentEditState::getRevision)
-                .orElse(document.getCurrentVersion());
         return new DocumentContentVersionListResponse(documentId, editRevision, items);
     }
 
@@ -1534,12 +1639,9 @@ public class DocumentService {
         DocumentEditState editState = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new InvalidMarkdownContentException(
                         "현재 Markdown 편집 상태를 찾을 수 없습니다."));
-        // 최신 편집본은 Mongo가 canonical이다. 없으면 legacy PG 상태로 대체한다.
-        Optional<MongoDocumentEditState> mongoEditState = mongoDocumentEditStore.findState(documentId);
-        String currentMarkdown = mongoEditState.map(MongoDocumentEditState::getMarkdown)
-                .orElse(editState.getMarkdown());
-        String currentContentHash = mongoEditState.map(MongoDocumentEditState::getContentHash)
-                .orElse(editState.getContentHash());
+        // 최신 편집본은 PostgreSQL 편집 상태가 canonical이다.
+        String currentMarkdown = editState.getMarkdown();
+        String currentContentHash = editState.getContentHash();
 
         // 원본 경로가 없으면 빈 키로 putObject가 나가 원인을 알기 어려운 500이 된다.
         // 문서 생성 시점에 원본을 만들지 않던 시절의 행이 여기로 들어온다.

@@ -20,8 +20,6 @@ resource "aws_secretsmanager_secret_version" "app" {
     # ai-svc runtime 저장소는 core RDS 인스턴스의 ai_db에 격리한다.
     AI_DATABASE_URL     = "postgresql://ai_runtime:${random_password.db_role["ai_runtime"].result}@${aws_db_instance.core.address}:5432/ai_db"
     AI_DB_MIGRATION_URL = "postgresql://ai_migration:${random_password.db_role["ai_migration"].result}@${aws_db_instance.core.address}:5432/ai_db"
-    # --- MongoDB (문서 편집 상태 원본 — Atlas 연결 문자열로 교체) ---
-    DOCUMENT_MONGODB_URI = "CHANGE_ME_MONGODB_ATLAS_URI"
     # --- 스토리지·인증 ---
     S3_ACCESS_KEY           = aws_iam_access_key.app.id
     S3_SECRET_KEY           = aws_iam_access_key.app.secret

@@ -53,7 +53,7 @@ public class DocumentEditStateInitializer {
             DocumentEditingRules.MarkdownContent content = DocumentEditingRules.markdown(bytes);
             Instant now = Instant.now();
             editStateRepository.insertIfAbsent(
-                    document.getId(), content.markdown(), content.contentHash(), now, now);
+                    document.getId(), content.markdown(), content.contentHash(), 1, now, now);
         } catch (InvalidMarkdownContentException | MarkdownContentTooLargeException exception) {
             throw exception;
         } catch (Exception exception) {

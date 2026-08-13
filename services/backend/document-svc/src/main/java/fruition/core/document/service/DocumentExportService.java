@@ -11,8 +11,6 @@ import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -41,7 +39,6 @@ public class DocumentExportService {
     private final DocumentRepository documentRepository;
     private final DocumentEditStateRepository editStateRepository;
     private final WorkspaceAccessGuard workspaceAccessGuard;
-    private final MongoDocumentEditStore mongoDocumentEditStore;
     private final DocumentAssetReferenceRepository referenceRepository;
     private final DocumentAssetRepository assetRepository;
     private final DocumentAssetObjectStorage objectStorage;
@@ -51,7 +48,6 @@ public class DocumentExportService {
             DocumentRepository documentRepository,
             DocumentEditStateRepository editStateRepository,
             WorkspaceAccessGuard workspaceAccessGuard,
-            MongoDocumentEditStore mongoDocumentEditStore,
             DocumentAssetReferenceRepository referenceRepository,
             DocumentAssetRepository assetRepository,
             DocumentAssetObjectStorage objectStorage,
@@ -60,7 +56,6 @@ public class DocumentExportService {
         this.documentRepository = documentRepository;
         this.editStateRepository = editStateRepository;
         this.workspaceAccessGuard = workspaceAccessGuard;
-        this.mongoDocumentEditStore = mongoDocumentEditStore;
         this.referenceRepository = referenceRepository;
         this.assetRepository = assetRepository;
         this.objectStorage = objectStorage;
@@ -103,12 +98,9 @@ public class DocumentExportService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new DocumentNotFoundException(documentId);
         }
-        // 최신 편집본은 Mongo가 canonical이다. 없으면 legacy PG 상태로 대체한다.
-        String markdown = mongoDocumentEditStore.findState(documentId)
-                .map(MongoDocumentEditState::getMarkdown)
-                .orElseGet(() -> editStateRepository.findById(documentId)
-                        .map(DocumentEditState::getMarkdown)
-                        .orElseThrow(() -> new DocumentNotFoundException(documentId)));
+        String markdown = editStateRepository.findById(documentId)
+                .map(DocumentEditState::getMarkdown)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String baseName = safeDocumentName(document.getDisplayName());
         var references = referenceRepository.findAllByIdDocumentId(documentId);

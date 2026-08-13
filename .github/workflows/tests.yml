@@ -46,7 +46,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 통합 테스트가 Testcontainers로 PostgreSQL·MongoDB를 띄운다. ubuntu 러너의 Docker를 그대로 쓴다.
+      # 통합 테스트가 Testcontainers로 PostgreSQL을 띄운다. ubuntu 러너의 Docker를 그대로 쓴다.
       - name: Run tests
         run: ./gradlew :java-shared:test :access-svc:test :document-svc:test --no-daemon
 

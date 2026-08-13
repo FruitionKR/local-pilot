@@ -1,19 +1,42 @@
 package fruition.core.document.repository;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.TestcontainersConfiguration;
 import fruition.core.document.domain.DocumentRole;
+import fruition.core.document.dto.DocumentContentSaveResponse;
 import fruition.core.document.dto.DocumentDuplicateResponse;
 import fruition.core.document.dto.DocumentExportResult;
 import fruition.core.document.dto.DocumentLifecycleRequest;
+import fruition.core.document.service.DocumentAssetStorageCoordinator;
+import fruition.core.document.service.DocumentAssetValidator;
 import fruition.core.document.service.DocumentExportService;
 import fruition.core.document.service.DocumentService;
+import fruition.core.agent.dto.AgentToolExecuteRequest;
+import fruition.core.agent.repository.PipelineAgentToolAuthorizationClient;
+import fruition.core.agent.service.AgentToolService;
 import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
+import fruition.core.aihistory.domain.OperationLog;
+import fruition.core.aihistory.domain.OperationChange;
+import fruition.core.aihistory.repository.OperationChangeRepository;
+import fruition.core.aihistory.service.DocumentRestoreApplier;
+import fruition.core.aihistory.service.OperationRecorder;
+import fruition.core.aihistory.service.PreviewTokenSigner;
+import fruition.core.aihistory.service.RestoreExecuteService;
+import fruition.core.aihistory.domain.ChangeType;
+import fruition.core.aihistory.domain.ResourceType;
+import fruition.core.aihistory.dto.DocumentRestorePlan;
+import fruition.core.aihistory.repository.OperationLogRepository;
+import fruition.core.document.dto.DocumentRenameResponse;
+import fruition.shared.idempotency.IdempotencyService;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -37,13 +60,26 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class DocumentEditingSchemaIntegrationTest {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -61,6 +97,15 @@ class DocumentEditingSchemaIntegrationTest {
     DocumentService documentService;
 
     @Autowired
+    AgentToolService agentToolService;
+
+    @MockBean
+    PipelineAgentToolAuthorizationClient agentToolAuthorizationClient;
+
+    @SpyBean
+    IdempotencyService idempotencyService;
+
+    @Autowired
     DocumentExportService documentExportService;
 
     @Autowired
@@ -72,8 +117,469 @@ class DocumentEditingSchemaIntegrationTest {
     @Autowired
     AgentApplyOperationStore agentApplyOperationStore;
 
+    @SpyBean
+    OperationRecorder operationRecorder;
+
+    @SpyBean
+    OperationChangeRepository operationChangeRepository;
+
+    @SpyBean
+    DocumentRestoreApplier documentRestoreApplier;
+
+    @Autowired
+    RestoreExecuteService restoreExecuteService;
+
+    @Autowired
+    PreviewTokenSigner previewTokenSigner;
+
+    @Autowired
+    OperationLogRepository operationLogRepository;
+
     @Autowired
     PlatformTransactionManager transactionManager;
+
+    @BeforeEach
+    void resetSpies() {
+        reset(operationRecorder, operationChangeRepository);
+        reset(documentRestoreApplier);
+        reset(idempotencyService);
+    }
+
+    @Test
+    void agentRenameSuccessReplaysTheCompletedReceipt() throws Exception {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_agent_rename_ok_" + suffix;
+        String workspaceId = "ws_agent_rename_ok_" + suffix;
+        String documentId = "doc_agent_rename_ok_" + suffix;
+        String idempotencyKey = "idem_agent_rename_ok_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "기존.md", "hash", "EDITABLE");
+
+        AgentToolExecuteRequest request = agentRenameRequest(
+                workspaceId, userId, documentId, idempotencyKey, "새 이름");
+        DocumentRenameResponse first = (DocumentRenameResponse) agentToolService.execute(
+                "rename_document", request);
+
+        assertThat(first.filename()).isEqualTo("새 이름.md");
+        assertThat(first.displayName()).isEqualTo("새 이름");
+        assertThat(first.currentVersion()).isEqualTo(2L);
+        assertThat(agentToolService.execute("rename_document", request)).isEqualTo(first);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT filename FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo("새 이름.md");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT display_name FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo("새 이름");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_version FROM documents WHERE id = ?", Long.class, documentId))
+                .isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM idempotency_records WHERE user_id = ? "
+                        + "AND endpoint_scope = ? AND idempotency_key = ? AND status = 'COMPLETED'",
+                Integer.class, userId,
+                "POST:/internal/agent/tools/execute/rename_document", idempotencyKey))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void agentRenameRollsBackDocumentAndReceiptWhenCompletionSaveFails() throws Exception {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_agent_rename_fail_" + suffix;
+        String workspaceId = "ws_agent_rename_fail_" + suffix;
+        String documentId = "doc_agent_rename_fail_" + suffix;
+        String idempotencyKey = "idem_agent_rename_fail_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "기존.md", "hash", "EDITABLE");
+
+        doThrow(new IllegalStateException("late idempotency save failure"))
+                .when(idempotencyService).save(
+                        eq(userId),
+                        eq("POST:/internal/agent/tools/execute/rename_document"),
+                        eq(idempotencyKey),
+                        anyString(),
+                        eq(200),
+                        eq(documentId),
+                        any(DocumentRenameResponse.class));
+
+        assertThatThrownBy(() -> agentToolService.execute(
+                "rename_document", agentRenameRequest(
+                        workspaceId, userId, documentId, idempotencyKey, "새 이름")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("late idempotency save failure");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT filename FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo("기존.md");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT display_name FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo("기존");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_version FROM documents WHERE id = ?", Long.class, documentId))
+                .isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM idempotency_records WHERE user_id = ? "
+                        + "AND endpoint_scope = ? AND idempotency_key = ?",
+                Integer.class, userId,
+                "POST:/internal/agent/tools/execute/rename_document", idempotencyKey))
+                .isZero();
+    }
+
+    @Test
+    void saveContentRequiresNewTransactionSurvivesOuterRollback() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_sync_off_" + suffix;
+        String workspaceId = "ws_sync_off_" + suffix;
+        String documentId = "doc_sync_off_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "old-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '기존', 'old-hash', 1, now(), now())
+                """, documentId);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            documentService.saveContent(workspaceId, userId, documentId,
+                    "변경", 1L, "write-sync-off-" + suffix, "manual");
+            status.setRollbackOnly();
+        });
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(2L);
+    }
+
+    @Test
+    void restoreRollsBackBodyAndReceiptWhenOperationChangeFailsLate() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_restore_fail_" + suffix;
+        String workspaceId = "ws_restore_fail_" + suffix;
+        String documentId = "doc_restore_fail_" + suffix;
+        String restoreOperationId = "op_restore_fail_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "current-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '현재 본문', 'current-hash', 1, now(), now())
+                """, documentId);
+        jdbcTemplate.update("""
+                INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_by, created_at)
+                VALUES (?, 1, '복원 본문', 'restore-hash', ?, now())
+                """, documentId, userId);
+        doThrow(new IllegalStateException("late operation change failure"))
+                .when(operationChangeRepository).save(any());
+
+        OperationLog restore = OperationLog.applying(
+                restoreOperationId, workspaceId, userId, documentId, null, "{}", Instant.now());
+        assertThatThrownBy(() -> documentRestoreApplier.apply(
+                restore, new fruition.core.aihistory.dto.DocumentRestorePlan(documentId, 1, 1)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("late operation change failure");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT markdown FROM document_edit_states WHERE document_id = ?", String.class, documentId))
+                .isEqualTo("현재 본문");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_writes WHERE document_id = ?", Integer.class, documentId))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE document_id = ?", Integer.class, documentId))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_content_versions WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void restoreSuccessWritesOneOperationChangeAndOneReceipt() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_restore_ok_" + suffix;
+        String workspaceId = "ws_restore_ok_" + suffix;
+        String documentId = "doc_restore_ok_" + suffix;
+        String restoreOperationId = "op_restore_ok_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "current-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '현재 본문', 'current-hash', 1, now(), now())
+                """, documentId);
+        jdbcTemplate.update("""
+                INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_by, created_at)
+                VALUES (?, 1, '복원 본문', 'restore-hash', ?, now())
+                """, documentId, userId);
+        jdbcTemplate.update("""
+                INSERT INTO ai_operation_logs(
+                    operation_id, workspace_id, user_id, operation_type, target_document_id,
+                    status, changed_resource_count, created_at
+                ) VALUES (?, ?, ?, 'restore', ?, 'applying', 0, now())
+                """, restoreOperationId, workspaceId, userId, documentId);
+
+        OperationLog restore = OperationLog.applying(
+                restoreOperationId, workspaceId, userId, documentId, null, "{}", Instant.now());
+        long version = documentRestoreApplier.apply(
+                restore, new fruition.core.aihistory.dto.DocumentRestorePlan(documentId, 1, 1));
+
+        assertThat(version).isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_writes WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_changes WHERE operation_id = ?", Integer.class, restoreOperationId))
+                .isEqualTo(1);
+        verify(operationChangeRepository, times(1)).save(any());
+    }
+
+    @Test
+    void documentRestoreRetriesClaimAndApplyAsOneTransaction() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_restore_retry_" + suffix;
+        String workspaceId = "ws_restore_retry_" + suffix;
+        String documentId = "doc_restore_retry_" + suffix;
+        String targetOperationId = "op_restore_target_" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "current-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                UPDATE documents
+                SET current_version = 2, current_content_hash = 'current-hash'
+                WHERE id = ?
+                """, documentId);
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '현재 본문', 'current-hash', 2, now(), now())
+                """, documentId);
+        jdbcTemplate.update("""
+                INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_by, created_at)
+                VALUES (?, 1, '복원 본문', 'restore-hash', ?, now()),
+                       (?, 2, '현재 본문', 'current-hash', ?, now())
+                """, documentId, userId, documentId, userId);
+        OperationLog target = OperationLog.completed(
+                targetOperationId, workspaceId, userId, fruition.core.aihistory.domain.OperationType.document_edit,
+                documentId, "편집", 1, Instant.now());
+        operationLogRepository.save(target);
+        operationChangeRepository.save(new OperationChange(
+                targetOperationId, ResourceType.document, documentId, 1L, 2L,
+                ChangeType.updated, "편집", null, null));
+
+        DocumentRestorePlan plan = new DocumentRestorePlan(documentId, 2, 1);
+        String previewToken = previewTokenSigner.sign(targetOperationId, plan);
+        AtomicBoolean injectTransientFailure = new AtomicBoolean(true);
+        AtomicInteger applyInvocations = new AtomicInteger();
+        doAnswer(invocation -> {
+            Object applied = invocation.callRealMethod();
+            applyInvocations.incrementAndGet();
+            if (injectTransientFailure.getAndSet(false)) {
+                throw new org.springframework.dao.DuplicateKeyException("injected restore failure");
+            }
+            return applied;
+        }).when(documentRestoreApplier).apply(any(), any());
+
+        var response = restoreExecuteService.execute(workspaceId, userId, targetOperationId, previewToken);
+
+        assertThat(response.status()).isEqualTo("succeeded");
+        assertThat(applyInvocations).hasValue(2);
+        verify(documentRestoreApplier, times(2)).apply(any(), any());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_logs WHERE restored_from = ?",
+                Integer.class, targetOperationId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_logs WHERE restored_from = ? AND status = 'succeeded'",
+                Integer.class, targetOperationId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_logs WHERE restored_from = ? "
+                        + "AND status IN ('applying', 'failed')",
+                Integer.class, targetOperationId)).isZero();
+        String restoreOperationId = jdbcTemplate.queryForObject(
+                "SELECT operation_id FROM ai_operation_logs WHERE restored_from = ? AND status = 'succeeded'",
+                String.class, targetOperationId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_changes WHERE operation_id = ? AND change_type = 'restored'",
+                Integer.class, restoreOperationId)).isEqualTo(1);
+        Map<String, Object> restoredChange = jdbcTemplate.queryForMap("""
+                SELECT resource_type, resource_id, before_revision, after_revision, change_type
+                FROM ai_operation_changes
+                WHERE operation_id = ? AND change_type = 'restored'
+                """, restoreOperationId);
+        assertThat(restoredChange)
+                .containsEntry("resource_type", "document")
+                .containsEntry("resource_id", documentId)
+                .containsEntry("before_revision", 2L)
+                .containsEntry("after_revision", 3L)
+                .containsEntry("change_type", "restored");
+        String restoredHash = jdbcTemplate.queryForObject(
+                "SELECT content_hash FROM document_edit_states WHERE document_id = ?",
+                String.class, documentId);
+        assertThat(restoredHash).matches("[0-9a-f]{64}");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT markdown FROM document_edit_states WHERE document_id = ?", String.class, documentId))
+                .isEqualTo("복원 본문");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(3L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_version FROM documents WHERE id = ?", Long.class, documentId))
+                .isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_content_hash FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo(restoredHash);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_writes WHERE document_id = ? "
+                        + "AND revision_write_id = ?", Integer.class, documentId,
+                "op-restore:" + restoreOperationId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE document_id = ? AND revision = 3",
+                Integer.class, documentId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_content_versions WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT markdown FROM document_content_versions
+                WHERE document_id = ? AND version = 3
+                """, String.class, documentId)).isEqualTo("복원 본문");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT content_hash FROM document_content_versions
+                WHERE document_id = ? AND version = 3
+                """, String.class, documentId)).isEqualTo(restoredHash);
+    }
+
+    @Test
+    void saveWithAssetsFromOuterTransactionRetriesFreshAndCommitsExactlyOnce() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_tx_" + suffix;
+        String workspaceId = "ws_tx_" + suffix;
+        String documentId = "doc_tx_" + suffix;
+        String operationId = "op_tx_" + suffix;
+        String writeId = "write_tx_" + suffix;
+        UUID assetId = UUID.randomUUID();
+        String markdown = "![이미지](/api/workspaces/" + workspaceId + "/assets/"
+                + assetId + "/content)\n변경";
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "old-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '기존', 'old-hash', 1, now(), now())
+                """, documentId);
+        agentRunCommandRepository.prepareToolApply(
+                "agent-tool-" + suffix, workspaceId, userId, documentId, 1,
+                operationId, markdown);
+
+        byte[] bytes = {1, 2, 3, 4};
+        DocumentAssetValidator.ValidatedAsset validated = new DocumentAssetValidator.ValidatedAsset(
+                "diagram.png", "image/png", bytes, 1, 1, "a".repeat(64));
+        DocumentAssetStorageCoordinator.StoredAsset stored =
+                new DocumentAssetStorageCoordinator.StoredAsset(
+                        assetId, "assets/" + assetId, validated);
+        AtomicBoolean injectTransientFailure = new AtomicBoolean(true);
+        AtomicInteger recordDocumentEditInvocations = new AtomicInteger();
+        doAnswer(invocation -> {
+            recordDocumentEditInvocations.incrementAndGet();
+            if (injectTransientFailure.getAndSet(false)) {
+                throw new org.springframework.dao.DuplicateKeyException("injected transient failure");
+            }
+            return invocation.callRealMethod();
+        }).when(operationRecorder).recordDocumentEdit(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyLong(),
+                anyString(), anyString(), any(Instant.class));
+
+        DocumentContentSaveResponse response = new TransactionTemplate(transactionManager)
+                .execute(status -> documentService.saveContentWithAssets(
+                        workspaceId, userId, documentId, markdown, 1,
+                        writeId, Map.of(UUID.randomUUID(), stored), operationId));
+
+        assertThat(response.changed()).isTrue();
+        assertThat(recordDocumentEditInvocations).hasValue(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_content_hash FROM documents WHERE id = ?", String.class, documentId))
+                .isEqualTo(response.contentHash());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_writes WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_content_versions WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_assets WHERE id = ?", Integer.class, assetId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_asset_references WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM agent_apply_projections WHERE apply_operation_id = ?", String.class, operationId))
+                .isEqualTo("consumed");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_logs WHERE operation_id = ? AND status = 'succeeded'",
+                Integer.class, operationId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ai_operation_changes WHERE operation_id = ?", Integer.class, operationId))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE document_id = ?", Integer.class, documentId))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void conflictAuditAndTokenCommitIndependentlyWhenOuterTransactionRollsBack() {
+        String suffix = UUID.randomUUID().toString().replace("-", "");
+        String userId = "user_conflict_" + suffix;
+        String workspaceId = "ws_conflict_" + suffix;
+        String documentId = "doc_conflict_" + suffix;
+        String operationId = "op_conflict_" + suffix;
+        String writeId = "write_conflict_" + suffix;
+        String markerKey = "outer-marker-" + suffix;
+        insertWorkspaceMember(userId, workspaceId);
+        insertDocument(documentId, workspaceId, userId, "문서.md", "old-hash", "EDITABLE");
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '기존', 'old-hash', 1, now(), now())
+                """, documentId);
+        agentRunCommandRepository.prepareToolApply(
+                "agent-tool-conflict-" + suffix, workspaceId, userId, documentId, 2,
+                operationId, "충돌 본문");
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            jdbcTemplate.update("""
+                    INSERT INTO idempotency_records(
+                        id, user_id, endpoint_scope, idempotency_key, request_hash,
+                        status, claim_token, response_status, created_at, expires_at
+                    ) VALUES (?, ?, 'outer-test', ?, ?, 'IN_PROGRESS', ?, NULL, now(), now() + interval '1 day')
+                    """, UUID.randomUUID(), userId, markerKey, "marker-hash", UUID.randomUUID());
+            assertThatThrownBy(() -> documentService.saveContent(
+                    workspaceId, userId, documentId, "충돌 본문", 2L,
+                    writeId, "agent", operationId))
+                    .isInstanceOf(fruition.core.document.exception.DocumentVersionConflictException.class);
+            status.setRollbackOnly();
+        });
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM idempotency_records WHERE idempotency_key = ?", Integer.class, markerKey))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM agent_apply_projections WHERE apply_operation_id = ?", String.class, operationId))
+                .isEqualTo("consumed");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM ai_operation_logs WHERE operation_id = ?", String.class, operationId))
+                .isEqualTo("conflict");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT revision FROM document_edit_states WHERE document_id = ?", Long.class, documentId))
+                .isEqualTo(1L);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_writes WHERE document_id = ?", Integer.class, documentId))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE document_id = ?", Integer.class, documentId))
+                .isZero();
+    }
 
     @Test
     void agentReservationAndOutboxRollbackTogether() {
@@ -152,6 +658,100 @@ class DocumentEditingSchemaIntegrationTest {
     }
 
     @Test
+    void v39EditStorageConstraintsAndPendingIndexArePresent() {
+        String suffix = UUID.randomUUID().toString();
+        String documentId = "doc_v39_" + suffix;
+        String workspaceId = "ws_v39_" + suffix;
+        String userId = "user_v39_" + suffix;
+        insertDocument(documentId, workspaceId, userId, "v39.md", "hash-v39", "EDITABLE");
+        String invalidDocumentId = "doc_v39_invalid_" + suffix;
+        insertDocument(invalidDocumentId, workspaceId, userId, "invalid.md", "hash-invalid", "EDITABLE");
+
+        jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '본문', 'hash-v39', 1, now(), now())
+                """, documentId);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '잘못된 revision', 'hash-v39', 0, now(), now())
+                """, invalidDocumentId)).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO document_edit_writes(
+                    document_id, revision_write_id, request_hash, result_revision,
+                    result_content_hash, result_updated_at, actor_user_id, changed, created_at
+                ) VALUES (?, 'write-v39-invalid-revision', ?, 0, ?, now(), ?, true, now())
+                """, documentId, "a".repeat(64), "b".repeat(64), userId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO document_edit_outbox(
+                    event_id, document_id, workspace_id, revision, content_hash,
+                    event_type, schema_version, created_at, published
+                ) VALUES ('event-v39-invalid-revision', ?, ?, 0, ?, 'document.edit.saved.v1', 1, now(), false)
+                """, documentId, workspaceId, "b".repeat(64)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO document_edit_writes(
+                    document_id, revision_write_id, request_hash, result_revision,
+                    result_content_hash, result_updated_at, actor_user_id, changed, created_at
+                ) VALUES (?, 'write-v39', ?, 1, ?, now(), ?, true, now())
+                """, "doc_v39_missing_" + suffix, "a".repeat(64), "b".repeat(64), userId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO document_edit_outbox(
+                    event_id, document_id, workspace_id, revision, content_hash,
+                    event_type, schema_version, created_at, published
+                ) VALUES (?, ?, ?, 1, ?, 'document.edit.saved.v1', 1, now(), false)
+                """, "event-v39-missing-" + suffix, "doc_v39_missing_" + suffix, workspaceId, "b".repeat(64)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT indexname FROM pg_indexes WHERE indexname = 'idx_document_edit_outbox_pending'",
+                String.class)).isEqualTo("idx_document_edit_outbox_pending");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT conname FROM pg_constraint WHERE conname = 'document_edit_states_revision_positive'",
+                String.class)).isEqualTo("document_edit_states_revision_positive");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT conname FROM pg_constraint WHERE conname = 'fk_document_edit_writes_document'",
+                String.class)).isEqualTo("fk_document_edit_writes_document");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT conname FROM pg_constraint WHERE conname = 'fk_document_edit_outbox_document'",
+                String.class)).isEqualTo("fk_document_edit_outbox_document");
+    }
+
+    @Test
+    void v39RefusesNonEmptyEditStateTableBeforeCutover() throws Exception {
+        String databaseName = "v39_guard_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(
+                postgresContainer.getJdbcUrl(), postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = admin.createStatement()) {
+            statement.execute("CREATE DATABASE " + databaseName);
+        }
+
+        String databaseUrl = "jdbc:postgresql://" + postgresContainer.getHost() + ":"
+                + postgresContainer.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT) + "/" + databaseName;
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .target(MigrationVersion.fromVersion("38"))
+                .load()
+                .migrate();
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(v34DocumentInsert("doc_v39_guard", null));
+            statement.executeUpdate("""
+                    INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
+                    VALUES ('doc_v39_guard', '기존 본문', 'guard-hash', now(), now())
+                    """);
+        }
+
+        assertThatThrownBy(() -> Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .load()
+                .migrate()).isInstanceOf(Exception.class);
+    }
+
+    @Test
     void v34SoftDeletesDuplicateAndPreservesReferencesAndChildren() throws Exception {
         String databaseName = "v34_" + UUID.randomUUID().toString().replace("-", "");
         try (Connection admin = DriverManager.getConnection(
@@ -173,9 +773,6 @@ class DocumentEditingSchemaIntegrationTest {
              Statement statement = connection.createStatement()) {
             statement.executeUpdate(v34DocumentInsert("doc_v34_canonical", null));
             statement.executeUpdate(v34DocumentInsert("doc_v34_duplicate", "doc_v34_canonical"));
-            statement.executeUpdate("INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at) "
-                    + "VALUES ('doc_v34_canonical', 'canonical', 'hash-v34', now(), now()), "
-                    + "('doc_v34_duplicate', 'duplicate', 'hash-v34', now(), now())");
             statement.executeUpdate("INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_at) "
                     + "VALUES ('doc_v34_canonical', 1, 'canonical', 'hash-v34', now()), "
                     + "('doc_v34_duplicate', 1, 'duplicate', 'hash-v34', now())");
@@ -202,7 +799,7 @@ class DocumentEditingSchemaIntegrationTest {
             }
             try (ResultSet count = statement.executeQuery("SELECT count(*) FROM document_edit_states")) {
                 count.next();
-                assertThat(count.getInt(1)).isEqualTo(2);
+                assertThat(count.getInt(1)).isZero();
             }
             try (ResultSet count = statement.executeQuery("SELECT count(*) FROM document_content_versions")) {
                 count.next();
@@ -361,8 +958,8 @@ class DocumentEditingSchemaIntegrationTest {
         insertDocument(sourceId, workspaceId, userId, "보고서.md", "source-hash", "EDITABLE");
         jdbcTemplate.update(
                 """
-                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-                VALUES (?, '# 최신 본문', ?, now(), now())
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '# 최신 본문', ?, 1, now(), now())
                 """,
                 sourceId,
                 "a".repeat(64)
@@ -412,8 +1009,8 @@ class DocumentEditingSchemaIntegrationTest {
         insertDocument(documentId, workspaceId, userId, "문서.md", "original-hash", "EDITABLE");
         jdbcTemplate.update(
                 """
-                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-                VALUES (?, '# 보존 본문', ?, now(), now())
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '# 보존 본문', ?, 1, now(), now())
                 """,
                 documentId,
                 "b".repeat(64)
@@ -482,8 +1079,8 @@ class DocumentEditingSchemaIntegrationTest {
         insertDocument(documentId, workspaceId, userId, "회의 결과.md", "original-hash", "EDITABLE");
         jdbcTemplate.update(
                 """
-                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-                VALUES (?, '# 최신 회의 결과\n한글 본문', ?, now(), now())
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, '# 최신 회의 결과\n한글 본문', ?, 1, now(), now())
                 """,
                 documentId,
                 "b".repeat(64)
@@ -695,8 +1292,8 @@ class DocumentEditingSchemaIntegrationTest {
 
         jdbcTemplate.update(
                 """
-                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-                VALUES (?, ?, ?, now(), now())
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, ?, ?, 1, now(), now())
                 """,
                 documentId,
                 "# 제목",
@@ -704,8 +1301,8 @@ class DocumentEditingSchemaIntegrationTest {
         );
         assertThatThrownBy(() -> jdbcTemplate.update(
                 """
-                INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-                VALUES (?, ?, ?, now(), now())
+                INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+                VALUES (?, ?, ?, 1, now(), now())
                 """,
                 documentId,
                 "# 중복",
@@ -886,6 +1483,21 @@ class DocumentEditingSchemaIntegrationTest {
                         "folderIsNull", true
                 )
         );
+    }
+
+    private AgentToolExecuteRequest agentRenameRequest(
+            String workspaceId,
+            String userId,
+            String documentId,
+            String idempotencyKey,
+            String displayName
+    ) throws Exception {
+        return new AgentToolExecuteRequest(
+                "run-agent-rename", workspaceId, userId, "plan-agent-rename", 1,
+                "a".repeat(64), "operation-agent-rename", idempotencyKey,
+                objectMapper.readTree("""
+                        {"document_id":"%s","display_name":"%s","base_version":1}
+                        """.formatted(documentId, displayName)));
     }
 
     private void insertWorkspaceMember(String userId, String workspaceId) {

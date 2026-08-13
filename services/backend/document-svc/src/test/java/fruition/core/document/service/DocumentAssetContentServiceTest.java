@@ -69,13 +69,11 @@ class DocumentAssetContentServiceTest {
             assertThat(mapping.assetId()).isEqualTo(assetId);
             assertThat(mapping.contentPath()).isEqualTo(expectedPath);
         });
-        verify(documentService).claimApplyOperation(
-                eq("ws_1"), eq("user_1"), eq("doc_1"), anyString(), eq(3L), anyString(), eq("operation_1"));
         verify(storageCoordinator, never()).compensate(any());
     }
 
     @Test
-    void save_invalidApplyOperationId_rejectsBeforeObjectStorage() {
+    void save_invalidApplyOperationId_rejectsAndCompensatesUploadedObjects() {
         UUID attachmentId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("file", "image.png", "image/png", new byte[]{1});
         var parsed = new DocumentAssetSaveRequestParser.ParsedAssetSaveRequest(
@@ -85,17 +83,18 @@ class DocumentAssetContentServiceTest {
         when(assetValidator.validateAll(Map.of(attachmentId, file)))
                 .thenReturn(Map.of(attachmentId, validated));
         doThrow(new InvalidAgentTurnRequestException("유효하지 않은 적용 표입니다."))
-                .when(documentService).claimApplyOperation(
-                        eq("ws_1"), eq("user_1"), eq("doc_1"), any(), eq(3L), anyString(), eq("operation_1"));
+                .when(documentService).saveContentWithAssets(
+                        any(), any(), any(), any(), anyLong(), any(), any(), eq("operation_1"));
 
         assertThatThrownBy(() -> service().save(
                 "ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(),
                 "operation_1"))
                 .isInstanceOf(InvalidAgentTurnRequestException.class);
 
-        verify(storageCoordinator, never()).storeAll(any(), any(), anyLong(), any());
-        verify(documentService, never()).saveContentWithAssets(
-                any(), any(), any(), any(), anyLong(), any(), any(), any());
+        verify(storageCoordinator).storeAll(any(), any(), anyLong(), any());
+        verify(documentService).saveContentWithAssets(
+                any(), any(), any(), any(), anyLong(), any(), any(), eq("operation_1"));
+        verify(storageCoordinator).compensate(any());
     }
 
     @Test
@@ -124,8 +123,8 @@ class DocumentAssetContentServiceTest {
         service.save("ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(), "operation_2");
 
         ArgumentCaptor<String> revisionIds = ArgumentCaptor.forClass(String.class);
-        verify(documentService, times(2)).claimApplyOperation(
-                eq("ws_1"), eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
+        verify(documentService, times(2)).saveContentWithAssets(
+                eq("ws_1"), eq("user_1"), eq("doc_1"), anyString(), eq(3L), revisionIds.capture(), any(), any());
         assertThat(revisionIds.getAllValues().get(0))
                 .isNotEqualTo(revisionIds.getAllValues().get(1))
                 .hasSizeLessThanOrEqualTo(255);
@@ -156,8 +155,8 @@ class DocumentAssetContentServiceTest {
         service.save("ws_1", "user_1", "doc_1", "metadata", new LinkedMultiValueMap<>(), "operation_2");
 
         ArgumentCaptor<String> revisionIds = ArgumentCaptor.forClass(String.class);
-        verify(documentService, times(2)).claimApplyOperation(
-                eq("ws_1"), eq("user_1"), eq("doc_1"), revisionIds.capture(), eq(3L), anyString(), any());
+        verify(documentService, times(2)).saveContentWithAssets(
+                eq("ws_1"), eq("user_1"), eq("doc_1"), anyString(), eq(3L), revisionIds.capture(), any(), any());
         assertThat(revisionIds.getAllValues().get(0))
                 .isNotEqualTo(revisionIds.getAllValues().get(1))
                 .hasSizeLessThanOrEqualTo(255);

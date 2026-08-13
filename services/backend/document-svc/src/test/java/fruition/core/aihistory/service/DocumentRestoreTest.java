@@ -133,8 +133,8 @@ class DocumentRestoreTest {
         @DisplayName("과거 버전을 되살리지 않고 그 내용으로 새 버전을 쌓는다")
         void appendsNewVersionInsteadOfRewinding() {
             givenVersion(5, "# 원래 문단");
-            when(documentService.saveContent(eq(WORKSPACE), eq(USER), eq(DOCUMENT),
-                    eq("# 원래 문단"), eq(6L), eq("op-restore:op_restore_1"), isNull(), isNull()))
+            when(documentService.saveContentInCurrentTransaction(eq(WORKSPACE), eq(USER), eq(DOCUMENT),
+                    eq("# 원래 문단"), eq(6L), eq("op-restore:op_restore_1"), isNull()))
                     .thenReturn(new DocumentContentSaveResponse(
                             DOCUMENT, 7, "sha256:old", NOW, true));
 
@@ -147,7 +147,7 @@ class DocumentRestoreTest {
         @DisplayName("restored 변경내역을 남긴다")
         void recordsRestoredChange() {
             givenVersion(5, "# 원래 문단");
-            when(documentService.saveContent(any(), any(), any(), any(), any(), any(), any(), any()))
+            when(documentService.saveContentInCurrentTransaction(any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(new DocumentContentSaveResponse(DOCUMENT, 7, "sha256:old", NOW, true));
 
             applier.apply(restore(), new DocumentRestorePlan(DOCUMENT, 6, 5));
@@ -165,7 +165,7 @@ class DocumentRestoreTest {
         @DisplayName("내용이 이미 같아 저장이 일어나지 않으면 거절한다")
         void rejectsWhenContentUnchanged() {
             givenVersion(5, "# 원래 문단");
-            when(documentService.saveContent(any(), any(), any(), any(), any(), any(), any(), any()))
+            when(documentService.saveContentInCurrentTransaction(any(), any(), any(), any(), any(), any(), any()))
                     .thenReturn(new DocumentContentSaveResponse(DOCUMENT, 6, "sha256:same", NOW, false));
 
             assertThatThrownBy(() ->

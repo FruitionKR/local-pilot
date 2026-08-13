@@ -12,14 +12,15 @@ public interface DocumentEditStateRepository extends JpaRepository<DocumentEditS
 
     @Modifying
     @Query(value = """
-            INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
-            VALUES (:documentId, :markdown, :contentHash, :createdAt, :updatedAt)
+            INSERT INTO document_edit_states(document_id, markdown, content_hash, revision, created_at, updated_at)
+            VALUES (:documentId, :markdown, :contentHash, :revision, :createdAt, :updatedAt)
             ON CONFLICT (document_id) DO NOTHING
             """, nativeQuery = true)
     int insertIfAbsent(
             @Param("documentId") String documentId,
             @Param("markdown") String markdown,
             @Param("contentHash") String contentHash,
+            @Param("revision") long revision,
             @Param("createdAt") Instant createdAt,
             @Param("updatedAt") Instant updatedAt
     );

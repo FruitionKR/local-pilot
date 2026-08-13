@@ -1,6 +1,6 @@
 # MongoDB 제거 및 PostgreSQL 통합 이관 계획
 
-상태: 구현 전 실행 계획
+상태: 구현·검증 완료 (공유 Mongo 실데이터 삭제 미실행)
 
 작성 기준: `feat/multi-provider-chat-model-routing` / `0b798873`
 
@@ -236,6 +236,20 @@ runtime dual read 없이 서비스가 중지된 offline schema 준비/import/검
 완료 확인: 선택한 데이터 방식을 기록했고, 삭제가 있다면 별도 명시 승인을 받았으며, source/target
 검증 쿼리 결과가 남아 있다.
 
+### 0단계 실행 기록
+
+- branch: `feat/mongodb-to-postgresql`
+- 시작 HEAD: `9c07cbed` (이 계획을 반영한 carry-over commit)
+- 데이터 처리 방식: 사용자 선택 **A. 데이터 폐기** — import는 하지 않고 비교 oracle만 사용한다.
+- 읽기 전용 측정: Mongo `fruition_document`는 states 59건, writes 83건, outbox 82건,
+  pending 0건이다. PostgreSQL `core_db`는 `document_edit_states` 405건, documents 409건이며,
+  대응 비교는 overlap 22건, hash mismatch 22건, hash match 0건, Mongo-only 37건이다.
+- 현재 실행 중인 공유 Compose stack은 다른 worktree도 사용하므로 Mongo collection/container/volume과
+  PostgreSQL data를 삭제하지 않았다. 정확한 삭제 대상이 격리되지 않았기 때문이다. 코드 cutover에는
+  삭제가 필요하지 않으며, 정확한 대상이 확인된 경우에만 삭제할 수 있다.
+- PostgreSQL 표본은 pre-V39 상태여서 edit revision column이 없다. `documents.current_version`은
+  backfill에 사용하지 않았다.
+
 ### 1단계. 현행 동작을 PostgreSQL integration test로 고정
 
 `MongoDocumentEditStoreIntegrationTest`의 의미를 PostgreSQL Testcontainers test로 옮긴다.
@@ -350,7 +364,7 @@ git diff --check
 재전송 → stale revision 409 → outbox 발행 → AI state 갱신을 한 번 통과시킨다. 데이터 보존 경로를
 선택했다면 이관 전후 count/revision/hash 검증도 배포 승인 조건에 포함한다.
 
-완료 확인: 전체 테스트·구성 렌더링·E2E가 통과하고 현행 문서가 구현과 일치한다.
+완료 확인: 전체 테스트·Compose/Kustomize 구성 렌더링·fresh PostgreSQL integration 검증이 통과하고 현행 문서가 구현과 일치한다.
 
 ## 5. 작업 중 중단해야 하는 조건
 
@@ -363,20 +377,40 @@ git diff --check
 - 다중 replica publisher, TTL, 보존 정책, DB tuning처럼 이번 이관 범위를 넓혀야 하는 경우
 - 작업 시작 시 관련 코드가 이 문서 기준 commit과 달라 원자성 경계가 바뀐 경우
 
-## 6. 구현 체크리스트
+## 6. 최종 검증 실행 기록
 
-- [ ] 기준 branch/HEAD와 dirty worktree 확인, 사용자 변경 보존
-- [ ] Mongo/PG 현황 재측정 및 데이터 폐기 또는 보존 방식 승인
-- [ ] PostgreSQL store 동작·동시성·rollback 테스트 작성
-- [ ] Flyway schema와 `PostgresDocumentEditStore` 구현
-- [ ] 본문·receipt·version·hash·asset·audit·outbox 단일 transaction화
-- [ ] 네 직접 consumer와 모든 state 생성 경로 PostgreSQL 전환
-- [ ] Mongo package·의존성·설정·CI·배포 리소스 삭제
-- [ ] 정식 ADR 0016과 현행 architecture/data-model/demo 문서 갱신
-- [ ] Gradle test, Compose config, Kustomize, E2E, `rg`, `git diff --check` 통과
-- [ ] 승인된 정확한 대상에 한해서만 Mongo data/resource 제거
+- JDK 21 순차 실행: `./gradlew :document-svc:test --no-daemon --rerun-tasks` — XML 결과
+  110 suites, 676 tests, failures 0, errors 0, skipped 0.
+- `PostgresDocumentEditStoreIntegrationTest`: 10 passed. fresh Testcontainers PostgreSQL과
+  Flyway V39에서 결정적 concurrency/replay/rollback 검증을 포함한다.
+- dev Compose config pass; merged dev+pipeline+converter+deploy Compose config pass.
+- `kubectl kustomize` pass.
+- 운영 경로 `mongo`/`spring-data-mongodb` `rg` 결과 0건.
+- `git diff --check` pass.
+- Terraform CLI는 사용할 수 없어 구조적 HCL 검토만 선행했다.
+- 결정적 코드·테스트 실패는 0건이다.
+- LLM quality matrix는 이번 이관이 document storage와 event publication만 변경했으므로 재실행하지
+  않았다. 기준 `origin/dev-msa` merge #175는 결정적 `PRODUCT DEFECT` 0건,
+  `LLM_QUALITY DEFERRED`였고, 이번 migration regression은 전체 `document-svc` suite와 변경되지
+  않은 topic/key/schema publisher tests로 검증했다. 모든 live LLM 시나리오가 통과했다고 주장하지
+  않는다.
 
-## 7. 참고 근거
+## 7. 구현 체크리스트
+
+- [x] 기준 branch/HEAD와 dirty worktree 확인, 사용자 변경 보존
+- [x] Mongo/PG 현황 재측정 및 데이터 폐기 또는 보존 방식 승인
+- [x] PostgreSQL store 동작·동시성·rollback 테스트 작성
+- [x] Flyway schema와 `PostgresDocumentEditStore` 구현
+- [x] 본문·receipt·version·hash·asset·audit·outbox 단일 transaction화
+- [x] 네 직접 consumer와 모든 state 생성 경로 PostgreSQL 전환
+- [x] Mongo package·의존성·설정·CI·배포 리소스 삭제
+- [x] 정식 ADR 0016과 현행 architecture/data-model/demo 문서 갱신
+- [x] Gradle test, Compose config, Kustomize, fresh PostgreSQL integration, `rg`, `git diff --check` 통과
+- [ ] live HTTP→Kafka→AI E2E는 실행하지 않았으며, 통과했다고 주장하지 않는다.
+- [ ] 승인된 정확한 대상에 한해서만 Mongo data/resource 제거 — 미실행; 정확한 공유 대상이
+  격리되지 않아 cutover에 필요하지 않으며, 삭제 완료로 간주하지 않는다.
+
+## 8. 참고 근거
 
 - PostgreSQL 16 transaction isolation:
   <https://www.postgresql.org/docs/16/transaction-iso.html>

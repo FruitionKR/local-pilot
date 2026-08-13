@@ -21,13 +21,13 @@ import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.exception.DocumentUploadException;
 import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.exception.DocumentWriteForbiddenException;
+import fruition.core.document.exception.InvalidMarkdownContentException;
 import fruition.shared.idempotency.IdempotencyConflictException;
 import fruition.shared.idempotency.IdempotencyInProgressException;
 import fruition.shared.idempotency.InvalidIdempotencyKeyException;
 import fruition.core.document.exception.MarkdownContentTooLargeException;
-import fruition.core.document.mongo.MongoDocumentEditSaveResult;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.repository.PostgresDocumentEditSaveResult;
+import fruition.core.document.repository.PostgresDocumentEditStore;
 import fruition.core.document.repository.IngestCommandOutbox;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.shared.idempotency.IdempotencyService;
@@ -48,10 +48,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -70,6 +73,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
@@ -100,7 +104,7 @@ class DocumentServiceBlocksTest {
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
-    @Mock MongoDocumentEditStore mongoDocumentEditStore;
+    @Mock PostgresDocumentEditStore postgresDocumentEditStore;
     @Mock fruition.core.document.repository.DocumentContentVersionRepository contentVersionRepository;
     @Mock MarkdownDiffService markdownDiffService;
     @Mock fruition.core.document.service.DocumentEditLockService editLockService;
@@ -112,6 +116,7 @@ class DocumentServiceBlocksTest {
     @Mock fruition.core.aihistory.service.IngestOperationStarter ingestOperationStarter;
     @Mock fruition.core.aihistory.service.AgentApplyOperationStore applyOperationStore;
 
+    PlatformTransactionManager transactionManager;
     DocumentService documentService;
 
     @BeforeEach
@@ -120,7 +125,7 @@ class DocumentServiceBlocksTest {
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandOutbox, pipelineWikiStateRequester,
                 convertQueueRepository, converterClient, transactionTemplate,
-                editStateInitializer, editStateRepository, mongoDocumentEditStore,
+                editStateInitializer, editStateRepository, postgresDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyService,
                 assetReferenceSynchronizer,
@@ -140,39 +145,30 @@ class DocumentServiceBlocksTest {
         lenient().doCallRealMethod().when(idempotencyService).requestHash(any(String[].class));
         lenient().when(idempotencyService.currentExecutionId()).thenReturn(Optional.empty());
         // 기본 저장 결과: base revision + 1로 변경 성공. 필요한 테스트는 개별로 다시 stub한다.
-        lenient().when(mongoDocumentEditStore.save(
+        lenient().when(postgresDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class)))
+                anyString(), any()))
                 .thenAnswer(invocation -> {
-                    DocumentEditState base = invocation.getArgument(8);
-                    return new MongoDocumentEditSaveResult(
-                            invocation.getArgument(4),
+                    String documentId = invocation.getArgument(1);
+                    long baseRevision = invocation.getArgument(4);
+                    DocumentEditState base = editStateRepository.findById(documentId)
+                            .orElse(new DocumentEditState(documentId, "", "", baseRevision));
+                    return new PostgresDocumentEditSaveResult(
+                            baseRevision,
                             base.getMarkdown(),
                             base.getContentHash(),
-                            invocation.<Long>getArgument(4) + 1,
+                            baseRevision + 1,
                             invocation.getArgument(3),
                             Instant.now(),
                             invocation.getArgument(6),
-                            true);
-                });
-        lenient().when(mongoDocumentEditStore.save(
-                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class), anyString()))
-                .thenAnswer(invocation -> {
-                    DocumentEditState base = invocation.getArgument(8);
-                    return new MongoDocumentEditSaveResult(
-                            invocation.getArgument(4),
-                            base.getMarkdown(),
-                            base.getContentHash(),
-                            invocation.<Long>getArgument(4) + 1,
-                            invocation.getArgument(3),
-                            Instant.now(),
-                            invocation.getArgument(6),
-                            true);
+                            true, false);
                 });
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
                 invocation.<org.springframework.transaction.support.TransactionCallback<Object>>getArgument(0)
                         .doInTransaction(null));
+        transactionManager = mock(PlatformTransactionManager.class);
+        lenient().when(transactionTemplate.getTransactionManager()).thenReturn(transactionManager);
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
     }
 
     private void stubOwnedWorkspace() {
@@ -237,7 +233,7 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("상세 조회는 metadata current_version과 Mongo edit_revision을 분리한다")
+    @DisplayName("상세 조회는 metadata current_version과 edit_revision을 분리한다")
     void findById_separatesMetadataVersionAndEditRevision() {
         stubOwnedWorkspace();
         Document document = new Document(
@@ -252,20 +248,68 @@ class DocumentServiceBlocksTest {
         );
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_lazy", WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById("doc_lazy"))
-                .thenReturn(Optional.of(new DocumentEditState("doc_lazy", "# 제목", "edit-hash")));
-        when(mongoDocumentEditStore.findState("doc_lazy"))
-                .thenReturn(Optional.of(new fruition.core.document.mongo.MongoDocumentEditState(
-                        "doc_lazy", WORKSPACE_ID, "# Mongo 본문", 7, "mongo-hash", USER_ID, Instant.now())));
+        when(postgresDocumentEditStore.findState("doc_lazy"))
+                .thenReturn(Optional.of(new DocumentEditState(
+                        "doc_lazy", "# 본문", "edit-hash", 7)));
 
         DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, "doc_lazy");
 
         verify(editStateInitializer).initializeIfNeeded(document);
-        assertThat(response.markdown()).isEqualTo("# Mongo 본문");
+        assertThat(response.markdown()).isEqualTo("# 본문");
         assertThat(response.currentVersion()).isEqualTo(1);
         assertThat(response.editRevision()).isEqualTo(7);
         assertThat(response.editable()).isTrue();
         assertThat(response.documentRole()).isEqualTo(DocumentRole.EDITABLE);
+    }
+
+    @Test
+    @DisplayName("편집 가능 문서의 PostgreSQL 편집 상태가 없으면 상세 조회를 거절한다")
+    void findById_editableWithoutPostgresState_throws() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_missing_edit_state", WORKSPACE_ID, USER_ID, "노트.md", "text/markdown", 10,
+                "sources/documents/doc_missing_edit_state/original", "source-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.findState(document.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.findById(WORKSPACE_ID, USER_ID, document.getId()))
+                .isInstanceOf(InvalidMarkdownContentException.class);
+        verify(editStateInitializer).initializeIfNeeded(document);
+    }
+
+    @Test
+    @DisplayName("원본 문서는 편집 상태가 없어도 current_version을 edit_revision으로 유지한다")
+    void findById_nonEditableWithoutPostgresState_preservesCurrentVersion() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_source_without_edit_state", WORKSPACE_ID, USER_ID, "자료.pdf", "application/pdf", 10,
+                "sources/documents/doc_source_without_edit_state/original", "source-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.findState(document.getId())).thenReturn(Optional.empty());
+
+        DocumentDetailResponse response = documentService.findById(WORKSPACE_ID, USER_ID, document.getId());
+
+        assertThat(response.editRevision()).isEqualTo(document.getCurrentVersion());
+        assertThat(response.editable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("편집 가능 문서의 PostgreSQL 편집 상태가 없으면 버전 목록을 거절한다")
+    void listContentVersions_withoutPostgresState_throws() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_versions_missing_state", WORKSPACE_ID, USER_ID, "노트.md", "text/markdown", 10,
+                "sources/documents/doc_versions_missing_state/original", "source-hash");
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.findState(document.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> documentService.listContentVersions(
+                WORKSPACE_ID, USER_ID, document.getId()))
+                .isInstanceOf(InvalidMarkdownContentException.class);
+        verify(contentVersionRepository, never()).findSummaries(document.getId());
     }
 
     @Test
@@ -278,7 +322,7 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_source/original", "source-hash");
         when(documentRepository.findVisibleByWorkspaceId(WORKSPACE_ID)).thenReturn(List.of(page, source));
         when(editStateRepository.findAllById(List.of("doc_page", "doc_source")))
-                .thenReturn(List.of(new DocumentEditState("doc_page", "# 노트", "edit-hash")));
+                .thenReturn(List.of(new DocumentEditState("doc_page", "# 노트", "edit-hash", 1)));
 
         DocumentListResponse response = documentService.findAll(WORKSPACE_ID, USER_ID, null);
 
@@ -495,7 +539,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -505,17 +549,17 @@ class DocumentServiceBlocksTest {
 
         assertThat(response.changed()).isTrue();
         assertThat(response.currentVersion()).isEqualTo(2);
-        // PostgreSQL legacy 상태는 더 이상 갱신하지 않는다 — canonical은 Mongo다.
+        // JPA 편집 상태는 더 이상 갱신하지 않는다 — canonical은 PostgreSQL이다.
         assertThat(editState.getMarkdown()).isEqualTo("old");
         assertThat(document.getContentHash()).isEqualTo("original-hash");
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
+                eq(1L), eq("write_1"), eq(USER_ID), isNull());
     }
 
     @Test
     @DisplayName("채팅 full 재생성은 기존 본문에 delta를 한 번만 반영하고 원본 메타데이터를 보존한다")
-    void regenerateChatExportDocument_updatesCanonicalMongoProjection() throws Exception {
+    void regenerateChatExportDocument_updatesCanonicalPostgresProjection() throws Exception {
         String documentId = "chatdoc_1";
         String sourceUri = "sources/documents/chatdoc_1/original";
         String oldMarkdown = "alpha\nbeta\n";
@@ -523,35 +567,32 @@ class DocumentServiceBlocksTest {
         Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
                 oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
         DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
-                DocumentEditingRules.markdown(oldMarkdown).contentHash());
-        MongoDocumentEditState staleState = new MongoDocumentEditState(
-                documentId, WORKSPACE_ID, oldMarkdown, 2L,
-                legacyState.getContentHash(), USER_ID, Instant.now());
-        AtomicReference<MongoDocumentEditState> currentState = new AtomicReference<>(staleState);
+                DocumentEditingRules.markdown(oldMarkdown).contentHash(), 1);
+        DocumentEditState staleState = new DocumentEditState(
+                documentId, oldMarkdown, legacyState.getContentHash(), 2L);
+        AtomicReference<DocumentEditState> currentState = new AtomicReference<>(staleState);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
-        when(mongoDocumentEditStore.findState(documentId))
+        when(postgresDocumentEditStore.findState(documentId))
                 .thenAnswer(invocation -> Optional.of(currentState.get()));
         when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_ingest");
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class)))
+                anyString(), any()))
                 .thenAnswer(invocation -> {
                     long baseRevision = invocation.getArgument(4);
                     String markdown = invocation.getArgument(2);
                     String contentHash = invocation.getArgument(3);
                     Instant updatedAt = Instant.now();
-                    currentState.set(new MongoDocumentEditState(
-                            documentId, WORKSPACE_ID, markdown, baseRevision + 1,
-                            contentHash, USER_ID, updatedAt));
-                    return new MongoDocumentEditSaveResult(
+                    currentState.set(new DocumentEditState(
+                            documentId, markdown, contentHash, baseRevision + 1));
+                    return new PostgresDocumentEditSaveResult(
                             baseRevision, staleState.getMarkdown(), staleState.getContentHash(),
-                            baseRevision + 1, contentHash, updatedAt, USER_ID, true);
+                            baseRevision + 1, contentHash, updatedAt, USER_ID, true, false);
                 });
 
         documentService.regenerateChatExportDocument(
@@ -563,14 +604,14 @@ class DocumentServiceBlocksTest {
         assertThat(response.markdown().lines().filter("gamma"::equals).count()).isEqualTo(1);
         assertThat(response.sourceUri()).isEqualTo(sourceUri);
         assertThat(response.editRevision()).isEqualTo(3L);
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
-                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull());
     }
 
     @Test
-    @DisplayName("첫 채팅 full 재생성은 기존 legacy 본문으로 Mongo를 초기화한 뒤 새 원본을 저장한다")
-    void regenerateChatExportDocument_withoutMongoState_preservesLegacyBase() throws Exception {
+    @DisplayName("첫 채팅 full 재생성은 기존 legacy 본문으로 편집 상태를 초기화한 뒤 새 원본을 저장한다")
+    void regenerateChatExportDocument_withoutEditState_preservesLegacyBase() throws Exception {
         String documentId = "chatdoc_first";
         String sourceUri = "sources/documents/chatdoc_first/original";
         String oldMarkdown = "기존 본문\n";
@@ -578,10 +619,10 @@ class DocumentServiceBlocksTest {
         Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
                 oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
         DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
-                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+                DocumentEditingRules.markdown(oldMarkdown).contentHash(), 1);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
-        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.empty());
+        when(postgresDocumentEditStore.findState(documentId))
+                .thenReturn(Optional.empty(), Optional.of(legacyState));
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
@@ -590,9 +631,9 @@ class DocumentServiceBlocksTest {
         documentService.regenerateChatExportDocument(
                 documentId, fullMarkdown, "full-first-hash", "새 문답\n");
 
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-first-hash"),
-                eq(1L), eq("chat-export-regenerate:full-first-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+                eq(1L), eq("chat-export-regenerate:full-first-hash"), eq(USER_ID), isNull());
         verify(editStateInitializer).initializeIfNeeded(document);
         verify(minioClient).getObject(any());
         verify(minioClient).putObject(any(PutObjectArgs.class));
@@ -607,8 +648,8 @@ class DocumentServiceBlocksTest {
         Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown", 10,
                 sourceUri, "full-hash", "chat_export");
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new MongoDocumentEditState(
-                documentId, WORKSPACE_ID, "기존 본문\n", 2L, "full-hash", USER_ID, Instant.now())));
+        when(postgresDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new DocumentEditState(
+                documentId, "기존 본문\n", "full-hash", 2L)));
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(fullMarkdown.getBytes(StandardCharsets.UTF_8))));
@@ -620,13 +661,13 @@ class DocumentServiceBlocksTest {
         verify(editStateInitializer, never()).initializeIfNeeded(any());
         verify(ingestOperationStarter, never()).start(anyString(), anyString(), anyString());
         verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
-        verify(mongoDocumentEditStore, never()).save(
+        verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class));
+                anyString(), any());
     }
 
     @Test
-    @DisplayName("JPA 롤백으로 원복된 재생성은 Mongo hash가 같아도 다시 큐에 등록한다")
+    @DisplayName("JPA 롤백으로 원복된 재생성은 편집 상태 hash가 같아도 다시 큐에 등록한다")
     void regenerateChatExportDocument_retryAfterJpaRollback_regeneratesAndEnqueues() throws Exception {
         String documentId = "chatdoc_commit_retry";
         String sourceUri = "sources/documents/chatdoc_commit_retry/original";
@@ -635,11 +676,10 @@ class DocumentServiceBlocksTest {
         Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
                 oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
         DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
-                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+                DocumentEditingRules.markdown(oldMarkdown).contentHash(), 1);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new MongoDocumentEditState(
-                documentId, WORKSPACE_ID, fullMarkdown, 2L, "full-hash", USER_ID, Instant.now())));
-        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
+        when(postgresDocumentEditStore.findState(documentId)).thenReturn(Optional.of(new DocumentEditState(
+                documentId, fullMarkdown, "full-hash", 2L)));
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
@@ -653,13 +693,83 @@ class DocumentServiceBlocksTest {
         verify(ingestCommandOutbox).enqueue(
                 anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), eq(true),
                 eq("op_retry"), eq(1L), eq("full-hash"));
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
-                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), eq(1L), eq(legacyState));
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull());
     }
 
     @Test
-    @DisplayName("MinIO overwrite 뒤 큐 등록 실패 시 기존 object를 복원하고 Mongo 저장을 실행하지 않는다")
+    @DisplayName("채팅 export 재생성은 일시적 저장 오류에서 MinIO 없이 전체 DB 단위를 재시도한다")
+    void regenerateChatExportDocument_retriesWholeDatabaseUnitOnTransientStoreFailure() throws Exception {
+        String documentId = "chatdoc_store_retry";
+        String sourceUri = "sources/documents/chatdoc_store_retry/original";
+        String oldMarkdown = "기존 본문\n";
+        String fullMarkdown = "재생성 본문\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState editState = new DocumentEditState(documentId, oldMarkdown, "old-edit-hash", 2L);
+        PostgresDocumentEditSaveResult result = new PostgresDocumentEditSaveResult(
+                2L, oldMarkdown, editState.getContentHash(), 3L, "full-hash", Instant.now(), USER_ID, true, false);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.findState(documentId)).thenReturn(Optional.of(editState));
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(ingestOperationStarter.start(WORKSPACE_ID, USER_ID, documentId)).thenReturn("op_retry");
+        when(postgresDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull()))
+                .thenThrow(new DuplicateKeyException("transient unique race"))
+                .thenReturn(result);
+
+        documentService.regenerateChatExportDocument(documentId, fullMarkdown, "full-hash", "delta\n");
+
+        verify(transactionManager, times(2)).getTransaction(any());
+        verify(transactionManager).rollback(any());
+        verify(transactionManager).commit(any());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+        verify(postgresDocumentEditStore, times(2)).save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull());
+        verify(ingestCommandOutbox, times(2)).enqueue(
+                anyString(), eq(documentId), eq(USER_ID), eq(WORKSPACE_ID), any(), any(), eq(true),
+                eq("op_retry"), anyLong(), eq("full-hash"));
+    }
+
+    @Test
+    @DisplayName("채팅 export 재생성의 CAS 충돌은 재시도하지 않는다")
+    void regenerateChatExportDocument_doesNotRetryCasConflict() throws Exception {
+        String documentId = "chatdoc_cas_conflict";
+        String sourceUri = "sources/documents/chatdoc_cas_conflict/original";
+        String oldMarkdown = "기존 본문\n";
+        String fullMarkdown = "재생성 본문\n";
+        Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
+                oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
+        DocumentEditState editState = new DocumentEditState(documentId, oldMarkdown, "old-edit-hash", 2L);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.findState(documentId)).thenReturn(Optional.of(editState));
+        when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
+                Headers.of(), "test-bucket", "us-east-1", sourceUri,
+                new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
+        when(postgresDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull()))
+                .thenThrow(new DocumentVersionConflictException("CAS conflict"));
+
+        assertThatThrownBy(() -> documentService.regenerateChatExportDocument(
+                documentId, fullMarkdown, "full-hash", "delta\n"))
+                .isInstanceOf(DocumentVersionConflictException.class);
+
+        verify(transactionManager).getTransaction(any());
+        verify(postgresDocumentEditStore).save(
+                eq(WORKSPACE_ID), eq(documentId), eq(fullMarkdown), eq("full-hash"),
+                eq(2L), eq("chat-export-regenerate:full-hash"), eq(USER_ID), isNull());
+        verify(postgresDocumentEditStore, times(1)).save(anyString(), anyString(), anyString(), anyString(),
+                anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("MinIO overwrite 뒤 큐 등록 실패 시 기존 object를 복원하고 편집 상태 저장을 실행하지 않는다")
     void regenerateChatExportDocument_queueFailure_restoresOriginalObject() throws Exception {
         String documentId = "chatdoc_rollback";
         String sourceUri = "sources/documents/chatdoc_rollback/original";
@@ -667,10 +777,10 @@ class DocumentServiceBlocksTest {
         Document document = new Document(documentId, WORKSPACE_ID, USER_ID, "대화.md", "text/markdown",
                 oldMarkdown.length(), sourceUri, "old-hash", "chat_export");
         DocumentEditState legacyState = new DocumentEditState(documentId, oldMarkdown,
-                DocumentEditingRules.markdown(oldMarkdown).contentHash());
+                DocumentEditingRules.markdown(oldMarkdown).contentHash(), 1);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(document));
-        when(editStateRepository.findById(documentId)).thenReturn(Optional.of(legacyState));
-        when(mongoDocumentEditStore.findState(documentId)).thenReturn(Optional.empty());
+        when(postgresDocumentEditStore.findState(documentId))
+                .thenReturn(Optional.empty(), Optional.of(legacyState));
         when(minioClient.getObject(any())).thenReturn(new GetObjectResponse(
                 Headers.of(), "test-bucket", "us-east-1", sourceUri,
                 new ByteArrayInputStream(oldMarkdown.getBytes(StandardCharsets.UTF_8))));
@@ -692,9 +802,9 @@ class DocumentServiceBlocksTest {
         verify(minioClient, times(2)).putObject(any(PutObjectArgs.class));
         verify(ingestOperationStarter).start(WORKSPACE_ID, USER_ID, documentId);
         verify(ingestCommandOutbox, never()).enqueue(any(), any(), any(), any(), any(), any(), anyBoolean(), any(), anyLong(), any());
-        verify(mongoDocumentEditStore, never()).save(
+        verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class));
+                anyString(), any());
     }
 
     @Test
@@ -707,7 +817,7 @@ class DocumentServiceBlocksTest {
         UUID retainedAssetId = UUID.randomUUID();
         String retained = "![](/api/workspaces/" + WORKSPACE_ID + "/assets/" + retainedAssetId + "/content)\n";
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -728,7 +838,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -737,9 +847,9 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", "agent");
 
         assertThat(response.changed()).isTrue();
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState));
+                eq(1L), eq("write_1"), eq(USER_ID), isNull());
         verify(contentVersionRepository).insertIfAbsent(
                 eq(document.getId()), eq(1L), eq("old"), eq(editState.getContentHash()), eq(USER_ID), any());
         verify(contentVersionRepository).insertIfAbsent(
@@ -765,13 +875,13 @@ class DocumentServiceBlocksTest {
 
         verify(applyOperationStore).consume("op-invalid", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(editStateInitializer, never()).initializeIfNeeded(any(Document.class));
-        verifyNoInteractions(mongoDocumentEditStore, contentVersionRepository,
+        verifyNoInteractions(postgresDocumentEditStore, contentVersionRepository,
                 assetReferenceSynchronizer, operationRecorder);
     }
 
     @Test
     @DisplayName("pending 감사 예약 실패는 본문과 버전을 저장하지 않는다")
-    void saveContent_pendingAuditFailure_rejectsBeforeMongoWrite() {
+    void saveContent_pendingAuditFailure_rejectsBeforeEditStateWrite() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
@@ -790,9 +900,9 @@ class DocumentServiceBlocksTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("pending 감사 실패");
 
-        verify(mongoDocumentEditStore, never()).save(
+        verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class));
+                anyString(), any());
         verify(contentVersionRepository, never()).insertIfAbsent(
                 anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
@@ -805,7 +915,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -817,11 +927,11 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
                 "write-agent", "agent", "op-agent");
 
-        org.mockito.InOrder order = inOrder(applyOperationStore, mongoDocumentEditStore);
+        org.mockito.InOrder order = inOrder(applyOperationStore, postgresDocumentEditStore);
         order.verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
-        order.verify(mongoDocumentEditStore).save(
+        order.verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write-agent"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent"));
+                eq(1L), eq("write-agent"), eq(USER_ID), eq("op-agent"));
         verify(applyOperationStore).consume("op-agent", USER_ID, document.getId(), "write-agent", 1L, "# 변경\n");
         verify(operationRecorder).recordDocumentEdit(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()),
@@ -837,22 +947,21 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
-        MongoDocumentEditSaveResult manualResult = new MongoDocumentEditSaveResult(
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
+        PostgresDocumentEditSaveResult manualResult = new PostgresDocumentEditSaveResult(
                 1, "old", editState.getContentHash(), 2,
-                DocumentEditingRules.markdown("# 변경\n").contentHash(), Instant.now(), USER_ID, true);
+                DocumentEditingRules.markdown("# 변경\n").contentHash(), Instant.now(), USER_ID, true, false);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write-reused"), eq(USER_ID), eq(1L), eq(editState)))
+                eq(1L), eq("write-reused"), eq(USER_ID), isNull()))
                 .thenReturn(manualResult);
         when(applyOperationStore.consume("op-reused", USER_ID, document.getId(), "write-reused", 1L, "# 변경\n"))
                 .thenReturn(true);
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), anyString(),
-                eq(1L), eq("write-reused"), eq(USER_ID), eq(1L), eq(editState), eq("op-reused")))
+                eq(1L), eq("write-reused"), eq(USER_ID), eq("op-reused")))
                 .thenThrow(new IdempotencyConflictException("같은 revision_write_id를 다른 저장 요청에 사용할 수 없습니다."));
 
         documentService.saveContent(
@@ -877,7 +986,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -911,7 +1020,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -947,13 +1056,12 @@ class DocumentServiceBlocksTest {
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "hash");
-        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash");
+        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash", 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
-                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent")))
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq("op-agent")))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
         when(applyOperationStore.consume("op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new"))
                 .thenReturn(true);
@@ -963,15 +1071,15 @@ class DocumentServiceBlocksTest {
                 "write-agent-conflict", "agent", "op-agent"))
                 .isInstanceOf(DocumentVersionConflictException.class);
 
-        org.mockito.InOrder order = inOrder(applyOperationStore, mongoDocumentEditStore, operationRecorder);
+        org.mockito.InOrder order = inOrder(applyOperationStore, postgresDocumentEditStore, operationRecorder);
         order.verify(applyOperationStore).consume(
                 "op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new");
-        order.verify(mongoDocumentEditStore).save(
+        order.verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
-                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq(1L), eq(editState), eq("op-agent"));
+                eq(2L), eq("write-agent-conflict"), eq(USER_ID), eq("op-agent"));
         verify(operationRecorder).recordConflict(
                 eq("op-agent"), eq(WORKSPACE_ID), eq(USER_ID), eq(document.getId()), any());
-        verify(applyOperationStore, times(1)).consume(
+        verify(applyOperationStore, times(2)).consume(
                 "op-agent", USER_ID, document.getId(), "write-agent-conflict", 2L, "new");
     }
 
@@ -983,7 +1091,7 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -1006,17 +1114,16 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "original-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash());
+                document.getId(), "old", DocumentEditingRules.markdown("old").contentHash(), 1);
         String resultHash = DocumentEditingRules.markdown("# 변경\n").contentHash();
         Instant updatedAt = Instant.parse("2026-08-07T00:00:00Z");
-        MongoDocumentEditSaveResult replayResult = new MongoDocumentEditSaveResult(
-                1, "old", editState.getContentHash(), 2, resultHash, updatedAt, USER_ID, true);
+        PostgresDocumentEditSaveResult replayResult = new PostgresDocumentEditSaveResult(
+                1, "old", editState.getContentHash(), 2, resultHash, updatedAt, USER_ID, true, false);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(mongoDocumentEditStore.save(
-                WORKSPACE_ID, document.getId(), "# 변경\n", resultHash,
-                1L, "write_1", USER_ID, 1L, editState))
+        when(postgresDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), eq(resultHash),
+                eq(1L), eq("write_1"), eq(USER_ID), isNull()))
                 .thenReturn(replayResult);
         when(contentVersionRepository.insertIfAbsent(
                 document.getId(), 1L, "old", editState.getContentHash(), USER_ID, updatedAt))
@@ -1035,9 +1142,9 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", null);
 
         assertThat(recovered.currentVersion()).isEqualTo(2);
-        verify(mongoDocumentEditStore, times(2)).save(
-                WORKSPACE_ID, document.getId(), "# 변경\n", resultHash,
-                1L, "write_1", USER_ID, 1L, editState);
+        verify(postgresDocumentEditStore, times(2)).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), eq(resultHash),
+                eq(1L), eq("write_1"), eq(USER_ID), isNull());
         verify(contentVersionRepository, times(2)).insertIfAbsent(
                 document.getId(), 1L, "old", editState.getContentHash(), USER_ID, updatedAt);
         verify(contentVersionRepository, times(2)).insertIfAbsent(
@@ -1045,17 +1152,52 @@ class DocumentServiceBlocksTest {
     }
 
     @Test
-    @DisplayName("버전 복원은 대상 본문을 새 Mongo revision으로 적용한다")
-    void restoreContentVersion_appliesTargetThroughMongoStore() {
+    @DisplayName("일시적 unique 오류는 metadata를 포함한 전체 저장 transaction을 재시도한다")
+    void saveContent_retriesWholeTransactionOnTransientUniqueFailure() {
+        stubOwnedWorkspace();
+        Document document = new Document(
+                "doc_retry", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
+                "sources/documents/doc_retry/original", "original-hash");
+        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash", 1);
+        String resultHash = DocumentEditingRules.markdown("# 변경\n").contentHash();
+        Instant updatedAt = Instant.parse("2026-08-14T00:00:00Z");
+        PostgresDocumentEditSaveResult result = new PostgresDocumentEditSaveResult(
+                1, "old", editState.getContentHash(), 2, resultHash, updatedAt, USER_ID, true, false);
+        when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
+                .thenReturn(Optional.of(document));
+        when(postgresDocumentEditStore.save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), eq(resultHash),
+                eq(1L), eq("write-retry-transient"), eq(USER_ID), isNull()))
+                .thenReturn(result, result);
+        when(contentVersionRepository.insertIfAbsent(
+                document.getId(), 1L, "old", editState.getContentHash(), USER_ID, updatedAt))
+                .thenThrow(new DuplicateKeyException("transient unique race"))
+                .thenReturn(1);
+
+        DocumentContentSaveResponse response = documentService.saveContent(
+                WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L,
+                "write-retry-transient", null);
+
+        assertThat(response.changed()).isTrue();
+        verify(postgresDocumentEditStore, times(2)).save(
+                eq(WORKSPACE_ID), eq(document.getId()), eq("# 변경\n"), eq(resultHash),
+                eq(1L), eq("write-retry-transient"), eq(USER_ID), isNull());
+        verify(contentVersionRepository).insertIfAbsent(
+                document.getId(), 2L, "# 변경\n", resultHash, USER_ID, updatedAt);
+        verify(documentRepository).updateCurrentContentHash(document.getId(), resultHash, updatedAt);
+    }
+
+    @Test
+    @DisplayName("버전 복원은 대상 본문을 새 edit revision으로 적용한다")
+    void restoreContentVersion_appliesTargetThroughEditStateStore() {
         stubOwnedWorkspace();
         Document document = new Document(
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown", 4,
                 "sources/documents/doc_edit/original", "current-hash");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "current", DocumentEditingRules.markdown("current").contentHash());
+                document.getId(), "current", DocumentEditingRules.markdown("current").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
         when(contentVersionRepository.findById(
                 new fruition.core.document.domain.DocumentContentVersionId(document.getId(), 5L)))
                 .thenReturn(Optional.of(new fruition.core.document.domain.DocumentContentVersion(
@@ -1065,9 +1207,9 @@ class DocumentServiceBlocksTest {
                 WORKSPACE_ID, USER_ID, document.getId(), 5L, 1L);
 
         assertThat(response.currentVersion()).isEqualTo(2);
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("# 예전\n"), anyString(),
-                eq(1L), eq("restore:5:1"), eq(USER_ID), eq(1L), eq(editState));
+                eq(1L), eq("restore:5:1"), eq(USER_ID), isNull());
     }
 
     @Test
@@ -1111,7 +1253,7 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_edit/original", "old-hash");
         document.updateStatus(fruition.core.document.domain.DocumentStatus.completed, null, java.time.Instant.now(), null);
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "# 편집본\n", DocumentEditingRules.markdown("# 편집본\n").contentHash());
+                document.getId(), "# 편집본\n", DocumentEditingRules.markdown("# 편집본\n").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdForUpdate(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
         when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
@@ -1148,10 +1290,10 @@ class DocumentServiceBlocksTest {
         assertThatThrownBy(() -> documentService.saveContent(
                 WORKSPACE_ID, USER_ID, document.getId(), "# 변경\n", 1L, "write_1", "agent"))
                 .isInstanceOf(fruition.core.document.exception.DocumentLockedException.class);
-        // 잠금 차단은 Mongo 저장·스냅샷 이전에 일어난다
-        verify(mongoDocumentEditStore, never()).save(
+        // 잠금 차단은 편집 상태 저장·스냅샷 이전에 일어난다
+        verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class));
+                anyString(), any());
         verify(contentVersionRepository, never()).insertIfAbsent(
                 anyString(), anyLong(), anyString(), anyString(), anyString(), any());
     }
@@ -1166,15 +1308,14 @@ class DocumentServiceBlocksTest {
                 "doc_edit", WORKSPACE_ID, USER_ID, "문서.md", "text/markdown",
                 markdown.getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
                 "sources/documents/doc_edit/original", hash);
-        DocumentEditState editState = new DocumentEditState(document.getId(), markdown, hash);
+        DocumentEditState editState = new DocumentEditState(document.getId(), markdown, hash, 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq(markdown), eq(hash),
-                eq(1L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState)))
-                .thenReturn(new MongoDocumentEditSaveResult(
-                        1, markdown, hash, 1, hash, editState.getUpdatedAt(), USER_ID, false));
+                eq(1L), eq("write_1"), eq(USER_ID), isNull()))
+                .thenReturn(new PostgresDocumentEditSaveResult(
+                        1, markdown, hash, 1, hash, editState.getUpdatedAt(), USER_ID, false, false));
 
         DocumentContentSaveResponse response = documentService.saveContent(
                 WORKSPACE_ID, USER_ID, document.getId(), markdown, 1L, "write_1", null);
@@ -1195,11 +1336,10 @@ class DocumentServiceBlocksTest {
                 "sources/documents/doc_edit/original", "hash");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(document.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(document));
-        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash");
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
-        when(mongoDocumentEditStore.save(
+        DocumentEditState editState = new DocumentEditState(document.getId(), "old", "old-hash", 1);
+        when(postgresDocumentEditStore.save(
                 eq(WORKSPACE_ID), eq(document.getId()), eq("new"), anyString(),
-                eq(2L), eq("write_1"), eq(USER_ID), eq(1L), eq(editState)))
+                eq(2L), eq("write_1"), eq(USER_ID), isNull()))
                 .thenThrow(new DocumentVersionConflictException("충돌"));
 
         assertThatThrownBy(() -> documentService.saveContent(
@@ -1220,12 +1360,12 @@ class DocumentServiceBlocksTest {
                 "doc_owned_by_other", WORKSPACE_ID, USER_ID, "공유 문서.md",
                 "text/markdown", 10, null, null, "direct");
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "# 공유 본문", "edit-hash");
+                document.getId(), "# 공유 본문", "edit-hash", 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(
                 document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
         when(documentRepository.findByIdAndWorkspaceIdForUpdate(
                 document.getId(), WORKSPACE_ID)).thenReturn(Optional.of(document));
-        when(editStateRepository.findById(document.getId())).thenReturn(Optional.of(editState));
+        when(postgresDocumentEditStore.findState(document.getId())).thenReturn(Optional.of(editState));
 
         DocumentDetailResponse detail =
                 documentService.findById(WORKSPACE_ID, memberId, document.getId());
@@ -1316,7 +1456,7 @@ class DocumentServiceBlocksTest {
                 "text/markdown", 10, null, null, "duplicate");
         existingCopy.initializeDuplicate("doc_source", folderId, "old-hash", 10, 3);
         DocumentEditState sourceEditState = new DocumentEditState(
-                source.getId(), "# 최신 본문\n", DocumentEditingRules.markdown("# 최신 본문\n").contentHash());
+                source.getId(), "# 최신 본문\n", DocumentEditingRules.markdown("# 최신 본문\n").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
         when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, folderId))
@@ -1353,7 +1493,7 @@ class DocumentServiceBlocksTest {
                 "doc_source", WORKSPACE_ID, USER_ID, "보고서.md", "text/markdown", 10,
                 null, null, "direct");
         DocumentEditState sourceEditState = new DocumentEditState(
-                source.getId(), "# 본문\n", DocumentEditingRules.markdown("# 본문\n").contentHash());
+                source.getId(), "# 본문\n", DocumentEditingRules.markdown("# 본문\n").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(source.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(source));
         when(documentRepository.findSiblingPagesForUpdate(WORKSPACE_ID, null))
@@ -1387,9 +1527,9 @@ class DocumentServiceBlocksTest {
                 "doc_second", WORKSPACE_ID, USER_ID, "둘째 문서.md", "text/markdown", 10,
                 null, null, "direct");
         DocumentEditState firstState = new DocumentEditState(
-                firstSource.getId(), "# 첫 문서", DocumentEditingRules.markdown("# 첫 문서").contentHash());
+                firstSource.getId(), "# 첫 문서", DocumentEditingRules.markdown("# 첫 문서").contentHash(), 1);
         DocumentEditState secondState = new DocumentEditState(
-                secondSource.getId(), "# 둘째 문서", DocumentEditingRules.markdown("# 둘째 문서").contentHash());
+                secondSource.getId(), "# 둘째 문서", DocumentEditingRules.markdown("# 둘째 문서").contentHash(), 1);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(firstSource.getId(), WORKSPACE_ID))
                 .thenReturn(Optional.of(firstSource));
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(secondSource.getId(), WORKSPACE_ID))

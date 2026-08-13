@@ -13,8 +13,8 @@ import fruition.core.document.dto.DocumentRenameResponse;
 import fruition.core.document.dto.FolderPositionRequest;
 import fruition.core.document.dto.FolderResponse;
 import fruition.core.document.exception.DocumentNotFoundException;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.domain.DocumentEditState;
+import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.service.DocumentPlacementService;
@@ -27,6 +27,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -34,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +47,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -59,8 +66,9 @@ class AgentToolServiceTest {
     @Mock DocumentPlacementService documentPlacementService;
     @Mock DocumentRepository documentRepository;
     @Mock FolderRepository folderRepository;
-    @Mock MongoDocumentEditStore mongoDocumentEditStore;
+    @Mock DocumentEditStateRepository editStateRepository;
     @Mock IdempotencyService idempotencyService;
+    @Mock TransactionTemplate transactionTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private AgentToolService service;
@@ -77,18 +85,27 @@ class AgentToolServiceTest {
                 documentPlacementService,
                 documentRepository,
                 folderRepository,
-                mongoDocumentEditStore,
-                idempotencyService);
+                editStateRepository,
+                idempotencyService,
+                transactionTemplate);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        org.mockito.Mockito.lenient().when(transactionTemplate.getTransactionManager()).thenReturn(transactionManager);
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            Consumer<TransactionStatus> callback = invocation.getArgument(0);
+            callback.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+        org.mockito.Mockito.lenient().when(transactionTemplate.execute(any(TransactionCallback.class)))
+                .thenAnswer(invocation -> ((TransactionCallback<?>) invocation.getArgument(0)).doInTransaction(null));
     }
 
     @Test
-    void read_returnsCanonicalMongoMarkdownAndEditRevisionAfterAuthorization() throws Exception {
+    void read_returnsPostgresMarkdownAndEditRevisionAfterAuthorization() throws Exception {
         Document document = org.mockito.Mockito.mock(Document.class);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("document-1", "workspace-1"))
                 .thenReturn(Optional.of(document));
-        when(mongoDocumentEditStore.findState("document-1")).thenReturn(Optional.of(
-                new MongoDocumentEditState(
-                        "document-1", "workspace-1", "# canonical", 7, "sha256:abc", "user-1", Instant.now())));
+        when(editStateRepository.findById("document-1")).thenReturn(Optional.of(
+                new DocumentEditState("document-1", "# canonical", "sha256:abc", 7)));
         AgentToolReadRequest request = new AgentToolReadRequest(
                 "run-1", "workspace-1", "user-1",
                 objectMapper.readTree("{\"document_id\":\"document-1\"}"));
@@ -100,10 +117,10 @@ class AgentToolServiceTest {
         assertThat(content.get("content_hash")).isEqualTo("sha256:abc");
         assertThat(content.get("edit_revision")).isEqualTo(7L);
         assertThat(content.containsKey("current_version")).isFalse();
-        InOrder order = inOrder(authorizationClient, workspaceAccessGuard, mongoDocumentEditStore);
+        InOrder order = inOrder(authorizationClient, workspaceAccessGuard, editStateRepository);
         order.verify(authorizationClient).authorizeRead(request);
         order.verify(workspaceAccessGuard).requireMember("workspace-1", "user-1");
-        order.verify(mongoDocumentEditStore).findState("document-1");
+        order.verify(editStateRepository).findById("document-1");
     }
 
     @Test
@@ -334,6 +351,7 @@ class AgentToolServiceTest {
                 .thenReturn(expected);
 
         assertThat(service.execute("apply_document_edit", request)).isSameAs(expected);
+        verify(transactionTemplate, never()).execute(any(TransactionCallback.class));
 
         InOrder order = inOrder(
                 authorizationClient, workspaceAccessGuard, documentRepository,
@@ -439,6 +457,7 @@ class AgentToolServiceTest {
         Object result = service.execute("rename_document", request);
 
         assertThat(result).isSameAs(replay);
+        verify(transactionTemplate).execute(any(TransactionCallback.class));
         verify(idempotencyService).validateKey("idem-1");
         verify(documentService, never()).rename(any(), any(), any(), any());
         verify(idempotencyService, never()).save(any(), any(), any(), any(), anyInt(), any(), any());

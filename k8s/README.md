@@ -11,7 +11,6 @@
 | `base/namespace.yaml` | `fruition` namespace |
 | `base/configmap.yaml` / `base/secret.yaml` | 공통 env (비밀은 Secret) |
 | `base/postgres.yaml` / `base/redis.yaml` / `base/minio.yaml` | 상태 계층 (single replica + PVC, minio 버킷 init Job 포함). postgres는 admin 계정으로 기동 후 init ConfigMap 스크립트가 access_db/core_db/ai_db와 runtime/migration 계정을 생성 |
-| `base/mongodb.yaml` | MongoDB 7.0 single-node replica set(rs0) + PVC (문서 편집 상태 원본, `DOCUMENT_MONGODB_URI`) |
 | `base/document-svc.yaml` | Spring Boot :8080 (기능 경로·flyway migration 소유), probe `/actuator/health`, Service NodePort 30080 |
 | `base/access-svc.yaml` | Spring Boot :8081 (인증·OAuth·워크스페이스 CRUD), probe `/actuator/health`, Service NodePort 30081 |
 | `base/pipeline-api.yaml` | FastAPI :8000, probe `/health`, ClusterIP + `pipeline-runs` PVC |
@@ -64,7 +63,7 @@ kind load docker-image --name fruition \
 
 # 6. 앱 배포
 kubectl apply -f k8s/base/configmap.yaml -f k8s/base/secret.yaml
-kubectl apply -f k8s/base/postgres.yaml -f k8s/base/mongodb.yaml \
+kubectl apply -f k8s/base/postgres.yaml \
   -f k8s/base/redis.yaml -f k8s/base/minio.yaml
 kubectl apply -f k8s/base/document-svc.yaml -f k8s/base/access-svc.yaml \
   -f k8s/base/pipeline-api.yaml -f k8s/base/ingest-worker.yaml \
@@ -102,7 +101,7 @@ kubectl -n fruition get scaledobject
 
 ## 참고·한계
 
-- DB 접속 env는 서비스별 분리 계약을 따른다: access-svc는 `ACCESS_DB_*`, document-svc는 `CORE_DB_*`(+ `DOCUMENT_MONGODB_URI`), pipeline·ingest-worker는 `AI_DATABASE_URL`(ai_runtime@ai_db)을 쓴다. 이름류는 configmap, 비밀번호는 secret에 있다.
+- DB 접속 env는 서비스별 분리 계약을 따른다: access-svc는 `ACCESS_DB_*`, document-svc는 `CORE_DB_*`, pipeline·ingest-worker는 `AI_DATABASE_URL`(ai_runtime@ai_db)을 쓴다. 이름류는 configmap, 비밀번호는 secret에 있다.
 - `secret.yaml`은 compose dev 기본값과 동일한 로컬 개발용 값이다. 실제 LLM 호출은 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY` 중 해당 키를 덮어써야 한다(모델·base URL은 API/DB snapshot과 provider 고정값을 사용). 운영에서는 Secret 관리 도구로 대체할 것.
 - `pipeline-runs` PVC는 RWO라 단일 노드에서만 pipeline-api·ingest-worker 공유가 가능하다. 멀티 노드 전환 시 S3 기반 아티팩트 저장으로 이전 필요.
 - postgres·minio·kafka는 single replica 구성 — 로컬 검증용이며 EKS 전환 시 관리형(RDS/S3/MSK 또는 Strimzi HA)으로 대체한다.

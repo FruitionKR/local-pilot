@@ -21,8 +21,6 @@ dependencies {
 	implementation project(':java-shared')
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	// 문서 편집 상태(markdown 본문·revision·write-id·outbox) canonical store
-	implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	implementation 'io.minio:minio:8.5.7'
@@ -44,7 +42,6 @@ dependencies {
 	testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:junit-jupiter'
 	testImplementation 'org.testcontainers:postgresql'
-	testImplementation 'org.testcontainers:mongodb'
 	testImplementation 'org.testcontainers:minio'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

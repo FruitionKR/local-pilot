@@ -7,7 +7,6 @@ import fruition.core.aihistory.repository.OperationLogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
@@ -16,7 +15,7 @@ import java.util.Base64;
 import java.util.Optional;
 
 /**
- * 복구 작업의 시작과 종료를 각각 별도 트랜잭션으로 커밋한다.
+ * 복구 작업의 시작과 종료를 호출자가 소유한 트랜잭션에서 기록한다.
  *
  * <p>{@link RestoreExecuteService}와 분리한 이유는 자기 호출로는 {@code @Transactional}이
  * 걸리지 않기 때문이다.
@@ -40,10 +39,10 @@ public class RestoreOperationLifecycle {
     }
 
     /**
-     * 복구 작업을 {@code applying}으로 먼저 커밋한다. 반영 중 실패해도 그 상태로 남아
-     * 같은 미리보기 토큰의 재실행은 중복 요청으로 거절된다.
+     * 복구 작업을 {@code applying}으로 기록한다. 문서 복구에서는 본문 저장과 같은 트랜잭션에
+     * 포함되어 반영 중 실패하면 claim도 함께 롤백된다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public Optional<OperationLog> start(OperationLog target, String manifestJson,
                                         String restoreTokenHash, Instant now) {
         String operationId = "op_" + randomSuffix();
@@ -82,8 +81,8 @@ public class RestoreOperationLifecycle {
         });
     }
 
-    /** 문서 되돌리기는 재작성이 없어 반영이 끝나면 그 자리에서 확정된다. */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /** 문서 되돌리기는 재작성이 없어 본문 저장과 같은 트랜잭션에서 확정한다. */
+    @Transactional
     public void finishDocument(String restoreOperationId, long toVersion, long newVersion, Instant now) {
         operationLogRepository.findById(restoreOperationId).ifPresent(restore ->
                 restore.complete(OperationStatus.succeeded,

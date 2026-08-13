@@ -8,9 +8,8 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | 저장소 | 소유 서비스 | 용도 |
 |---|---|---|
 | **access_db** (PostgreSQL) | access-svc | 사용자·OAuth·refresh token·워크스페이스·멤버 (자체 Flyway) |
-| **core_db** (PostgreSQL) | document-svc | 문서 metadata·폴더·채팅·operation·Wiki revision/기여 이력·Agent 적용 projection |
+| **core_db** (PostgreSQL) | document-svc | 문서 metadata·폴더·채팅·operation·본문·편집 revision·write receipt·content version·asset/reference·Agent 적용 projection·감사·편집 outbox |
 | **ai_db** (PostgreSQL) | ai-svc | Wiki 현재 상태·pipeline run·embedding·schema·문서 파생물 stale 추적·Agent·Skill·checkpoint (`ai_schema.sql`) |
-| **MongoDB** | document-svc | 문서 본문·편집 revision·write-id·edit outbox — 단일 트랜잭션 후 outbox → Kafka `document.edit.event` |
 | **Redis** | access-svc / document-svc / ai-svc | 권한 projection·OAuth 교환 코드 / query run·SSE / user+workspace Concept index·ingest short lock |
 | **S3/MinIO** | document-svc | 문서 원본·snapshot, Wiki markdown 본문 |
 
@@ -35,6 +34,9 @@ MSA 전환 후 데이터 소유·저장소 구조 압축본.
 | 테이블 | 소유 | 용도 | 핵심 컬럼/관계 |
 |---|---|---|---|
 | documents | document-svc | 원본 문서 업로드·처리 상태 | `status`, `content_hash`(일반 문서는 동일 값 허용), `pipeline_run_id`, `origin`(upload/chat_export). `chat_export`만 `(workspace_id, content_hash, selection_mode)` partial unique |
+| document_edit_states | document-svc | canonical 최신 Markdown과 편집 CAS 상태 | PK/FK `document_id` → `documents(id)`(삭제 cascade), `markdown`, `content_hash`, `revision bigint > 0`, `created_at`, `updated_at`. `revision`이 HTTP 편집 version·동시 저장 CAS·event 순서 기준이며 `documents.current_version`은 lifecycle metadata다 |
+| document_edit_writes | document-svc | `revision_write_id` 멱등 replay receipt | PK `(document_id, revision_write_id)`, FK document(삭제 cascade), `request_hash`, `result_revision > 0`, `result_content_hash`, `result_updated_at`, `actor_user_id`, `changed`, `created_at`. 같은 request hash는 replay하고 다른 payload는 conflict |
+| document_edit_outbox | document-svc | 편집 이벤트 transactional outbox | PK `event_id`, FK document(삭제 cascade), `workspace_id`, `revision > 0`, `content_hash`, `event_type=document.edit.saved.v1`, `schema_version > 0`, `created_at`, `published`, `published_at`. pending index `(created_at,event_id)`로 순서 발행하며 at-least-once |
 | ai_command_outbox | document-svc | AI command의 transactional outbox | `run_id` UK, Kafka topic·key·payload |
 | ai_operation_logs | document-svc | 문서·Wiki AI 작업 및 복구 감사 로그 | 복구는 `restore_token_hash`(미리보기 토큰 SHA-256)와 `(restored_from, restore_token_hash)` partial unique로 동일 실행을 DB에서 1회만 선점 |
 | ai_task_result_receipts | document-svc | `ai.task.event` 멱등 반영 영수증 | `event_id` PK, `run_id`, `task_kind` |
@@ -72,13 +74,7 @@ Concept 본문 persistence는 ingest와 lint `materialize=true`가 같은 `(user
 
 LLM provider/model은 workspace 설정 또는 chat/request에서 snapshot되어 command와 실행에 전달된다. API key는 DB·Kafka payload·log에 저장하지 않고 ai-svc secret env에서만 읽으며, 기존 AI 작업 로그 조회/결과 경로에는 LLM 설정 컬럼이 없다.
 
-### MongoDB (document-svc)
-
-| 컬렉션 | 용도 |
-|---|---|
-| document_edit_states | 문서 편집 본문 원본 |
-| document_edit_writes | 편집 revision·write-id |
-| document_edit_outbox | Kafka `document.edit.event` 발행용 outbox (at-least-once, 문서별 순서 보존) |
+문서 편집 저장은 document-svc가 소유한 `core_db` PostgreSQL transaction에서 본문·편집 상태·write receipt·content version·asset/reference·Agent 적용 감사·`document_edit_outbox`를 함께 commit 또는 rollback한다. V39는 빈 편집 상태에서 시작하는 fresh cutover이며 기존 편집 데이터 import, fallback, dual-write를 사용하지 않는다. 결정 근거: [adr/0016](adr/0016-consolidate-document-body-into-postgres.md). S3/MinIO object upload는 transaction 밖이므로 실패·무변경 저장 시 업로드 호출자가 object를 정리한다. outbox publisher는 `created_at,event_id` 순으로 처리하고 첫 실패에서 cycle을 중단하며 현재 1 replica 전제를 둔다.
 
 ## 3. 핵심 관계
 

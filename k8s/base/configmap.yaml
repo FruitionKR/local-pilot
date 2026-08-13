@@ -22,8 +22,6 @@ data:
   AI_DB_NAME: "ai_db"
   AI_DB_RUNTIME_USER: "ai_runtime"
   AI_DB_MIGRATION_USER: "ai_migration"
-  # 문서 편집 상태 원본 (single-node replica set)
-  DOCUMENT_MONGODB_URI: "mongodb://mongodb:27017/fruition_document?replicaSet=rs0&directConnection=true"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
   KAFKA_BOOTSTRAP_SERVERS: "kafka-kafka-bootstrap:9092"
