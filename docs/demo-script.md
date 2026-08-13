@@ -18,6 +18,9 @@
 
 환경변수는 `infra/.env`에서 관리. 없으면 예시에서 복사.
 
+구동·재검증 명령에서 `infra/.env`를 shell source하지 않는다. `scripts/*.sh`의
+`--env-file` 경로와 Gradle `bootRun`의 dotenv 경로를 사용한다.
+
 ```sh
 cp infra/.env.example infra/.env
 ```
@@ -101,21 +104,40 @@ curl http://localhost:8000/health
 
 pipeline-api만 필요하면 `./scripts/ai-up.sh` 사용 가능.
 
+### 안정적 통합 재검증 규칙
+
+- 백엔드는 `./scripts/back-up.sh` 또는 위의 Gradle 명령으로 전용 장기 runner 터미널에서 실행한다. 일회성 테스트 agent가 runner를 소유하거나 종료하지 않는다.
+- 결과 topic은 표준 이름을 사용하고 publisher와 consumer의 topic 설정이 일치하는지 먼저 확인한다.
+- 격리된 통합 재검증 wave마다 아직 존재하지 않는 consumer group을 하나만 만들고 `latest`를 한 번 적용한다. wave 안에서는 같은 group을 모든 lane이 재사용하며 lane마다 group을 새로 만들거나 offset을 초기화하지 않는다.
+- 재검증 전후에 HEAD, health, 프로세스 cwd, Tool flags, 재시작 횟수, partition별 log-end와 lag를 기록하고 고정한다. 각 lane 전후에는 동일한 고정 preflight를 실행하고, 기준선과 달라진 값은 테스트 결과와 별도의 drift로 분류한다.
+- 변경되지 않은 서비스·의존성은 재시작·재빌드·재설치하지 않는다. backend-only 변경이면 기존 AI image를 유지한다. worker를 내릴 때도 runtime 자체를 중지하지 않는다.
+- 재검증 중 Kafka, DB, volume을 reset하지 않는다.
+
+통합 재검증용 backend를 처음 띄우는 runner 터미널에서 group을 한 번만 지정한다. 이미
+backend가 실행 중이면 `back-up.sh`가 그대로 반환하므로, 실행 중간에 group을 바꾸지 않는다.
+
+```sh
+export AI_TASK_RESULT_CONSUMER_GROUP="document-svc-ai-task-result-$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)"
+./scripts/back-up.sh
+```
+
+AI image를 처음 만들거나 AI 코드·의존성이 바뀐 경우에만 위의 `up -d --build`를 사용한다.
+기존 image로 재검증할 때는 `--build` 없이 `up -d`를 사용한다.
+
 ### 2-3-1. 기존 AI 데이터 maintenance cutover
 
 신규 빈 환경에는 필요 없다. 기존 `core_db`의 Wiki·Agent·Skill·checkpoint를 옮길 때는 먼저 외부 요청을 차단하고 `pipeline-api`를 내려 lint/restore/reingest/Agent mutation을 막는다. Wiki와 Agent 실행이 모두 terminal 상태가 된 뒤 관련 worker를 내린다.
 
 ```sh
-set -a
-. infra/.env
-set +a
 docker compose --env-file infra/.env \
   -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
   stop pipeline-api agent-task-worker pipeline-agent-worker
-psql "$CORE_DB_MIGRATION_URL" -Atc \
-  "select count(*) from pipeline_runs where status not in ('succeeded','failed','notify_pending')"
-psql "$CORE_DB_MIGRATION_URL" -Atc \
-  "select count(*) from agent_runs where status not in ('completed','partial_failed','failed','conflicted','rejected','cancelled')"
+docker compose --env-file infra/.env -f infra/docker-compose.dev.yml \
+  exec -T postgresql sh -c \
+  'PGPASSWORD="$CORE_DB_MIGRATION_PASSWORD" exec psql -U "$CORE_DB_MIGRATION_USER" -d "$CORE_DB_NAME" -At' <<'SQL'
+select count(*) from pipeline_runs where status not in ('succeeded','failed','notify_pending');
+select count(*) from agent_runs where status not in ('completed','partial_failed','failed','conflicted','rejected','cancelled');
+SQL
 docker compose --env-file infra/.env \
   -f infra/docker-compose.dev.yml -f infra/docker-compose.pipeline.yml \
   stop ingest-worker
