@@ -9,6 +9,7 @@ from app.modules.wiki_generation.infrastructure.assemble import (
     SourcePageAssembler,
 )
 from app.modules.wiki_generation.infrastructure.normalize import SemanticNormalizer
+from app.modules.wiki_generation.infrastructure.source_context_merge import source_page_context_normalized
 
 
 def test_source_extraction_artifact_uses_embedding_friendly_terms(tmp_path: Path) -> None:
@@ -177,6 +178,37 @@ def test_source_extraction_artifact_uses_polished_key_points_when_available() ->
     assert page["source_extraction_artifact"]["key_points"] == [
         {"text": "평가 후 핵심", "evidence_block_ids": ["B0001", "B0002"]}
     ]
+
+
+def test_source_extraction_artifact_round_trips_category_display_names() -> None:
+    normalized = {
+        "document": {"document_id": "doc_categories", "title": "Categories", "source_path": "categories.md"},
+        "semantic_notes": [],
+        "concept_ledger": [],
+        "section_candidates": [],
+        "mentions": [],
+        "categories": [{"name": " C++ "}, {"term": "C"}, {"name": "C++"}],
+        "observations": [],
+        "evidence_units": [],
+    }
+
+    page = SourcePageAssembler().build(normalized)
+    artifact = page["source_extraction_artifact"]
+    assert artifact["categories"] == ["C++", "C"]
+
+    restored = source_page_context_normalized(
+        {
+            **normalized,
+            "categories": [],
+        },
+        artifact,
+    )
+    restored_page = SourcePageAssembler().build(restored)
+
+    assert [item["name"] for item in restored["categories"]] == ["C++", "C"]
+    assert "- C++" in restored_page["markdown"]
+    assert "- C\n" in restored_page["markdown"]
+    assert restored_page["source_extraction_artifact"]["categories"] == ["C++", "C"]
 
 
 def test_generated_concept_page_assembler_keeps_assemble_import_contract() -> None:

@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from app.modules.wiki_generation.infrastructure.source_context_merge import (
     active_source_artifact,
     apply_same_source_core_context,
@@ -263,6 +265,76 @@ def test_source_page_context_normalized_keeps_new_core_not_in_existing_source_ar
     result = source_page_context_normalized(normalized, source_artifact)
 
     assert [item["slug"] for item in result["concept_ledger"]] == ["new-core"]
+
+
+def test_source_page_context_normalized_preserves_category_and_observation_semantics() -> None:
+    normalized = {
+        "categories": [
+            {"name": "C++", "anchor_reference_ids": ["B0002"]},
+            {"name": "C", "anchor_reference_ids": ["B0003"]},
+        ],
+        "observations": [
+            {
+                "type": "qa_episode",
+                "title": "같은 제목",
+                "query_text": "같은 질문",
+                "summary": "같은 요약",
+                "claims": ["같은 주장"],
+                "related_concept_hints": ["같은 개념"],
+                "anchor_reference_ids": ["B0002"],
+            },
+            {
+                "type": "qa_episode",
+                "title": "다른 제목",
+                "query_text": "같은 질문",
+                "summary": "같은 요약",
+                "claims": ["같은 주장"],
+                "related_concept_hints": ["같은 개념"],
+                "anchor_reference_ids": ["B0003"],
+            },
+        ],
+    }
+    source_artifact = {
+        "categories": [{"name": "C++", "evidence_block_ids": ["B0001"]}],
+        "observations": [
+            {
+                "observation_id": "O001",
+                "type": "qa_episode",
+                "title": "같은 제목",
+                "query_text": "같은 질문",
+                "summary": "같은 요약",
+                "claims": ["같은 주장"],
+                "related_concept_hints": ["같은 개념"],
+                "evidence_block_ids": ["B0001"],
+            }
+        ],
+    }
+
+    result = source_page_context_normalized(normalized, source_artifact)
+
+    assert [item["name"] for item in result["categories"]] == ["C++", "C"]
+    assert result["categories"][0]["anchor_reference_ids"] == ["B0001", "B0002"]
+    assert len(result["observations"]) == 2
+    assert result["observations"][0]["anchor_reference_ids"] == ["B0001", "B0002"]
+    assert result["observations"][1]["title"] == "다른 제목"
+
+
+def test_source_page_context_normalized_is_stable_and_does_not_alias_inputs() -> None:
+    normalized = {
+        "categories": [{"name": "C++", "anchor_reference_ids": ["B0002"]}],
+        "observations": [{"summary": "관찰", "anchor_reference_ids": ["B0002"]}],
+    }
+    source_artifact = {
+        "categories": ["C++"],
+        "observations": [{"summary": "관찰", "anchor_reference_ids": ["B0001"]}],
+    }
+
+    result = source_page_context_normalized(normalized, source_artifact)
+    snapshot = deepcopy(result)
+    result["categories"][0]["anchor_reference_ids"].append("mutated")
+    assert normalized["categories"][0]["anchor_reference_ids"] == ["B0002"]
+    assert source_artifact["observations"][0]["anchor_reference_ids"] == ["B0001"]
+    assert source_page_context_normalized(normalized, source_artifact) == snapshot
 
 
 def test_source_context_blocks_exposes_existing_artifact_refs_for_source_polish() -> None:

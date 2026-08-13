@@ -158,8 +158,11 @@ def _source_extraction_artifact(
     core_concepts = [_term_record({**concept, "term": concept.get("title")}) for concept in normalized.get("concept_ledger", [])]
     section_candidates = [_term_record(item) for item in normalized.get("section_candidates", [])]
     mentions = [_term_record(item) for item in normalized.get("mentions", [])]
-    categories = [item.get("slug") or slugify(str(item.get("name") or item.get("term") or "")) for item in normalized.get("categories", [])]
-    categories = unique_keep_order([category for category in categories if category and category != "untitled"])
+    categories = unique_keep_order(
+        str(item.get("name") or item.get("term") or "").strip()
+        for item in normalized.get("categories", [])
+        if isinstance(item, dict) and str(item.get("name") or item.get("term") or "").strip()
+    )
     return {
         "schema_version": "source-extraction.v1",
         "document_id": doc.get("document_id"),
