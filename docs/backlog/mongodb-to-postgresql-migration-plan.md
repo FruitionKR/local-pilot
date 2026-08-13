@@ -215,8 +215,9 @@ schema migration, 실제 데이터 import/삭제, source/target 대조는 다른
 
 **A. 데이터 폐기**
 
-- 적용 환경의 Mongo와 stale PostgreSQL edit state를 폐기해도 되는지 정확한 DB·volume 단위로
-  승인을 받는다.
+- 적용 환경의 MongoDB 편집 collection(`document_edit_states`, `document_edit_writes`,
+  `document_edit_outbox`)과 기존 PostgreSQL `document_edit_states`,
+  `document_content_versions`를 폐기해도 되는지 정확한 DB·table/collection·volume 단위로 승인을 받는다.
 - broad `docker compose down -v`, workspace 전체 삭제, 불명확한 volume 삭제는 하지 않는다.
 - 승인된 대상만 초기화하고 fresh database에서 migration을 적용한다.
 
@@ -380,7 +381,7 @@ git diff --check
 ## 6. 최종 검증 실행 기록
 
 - JDK 21 순차 실행: `./gradlew :document-svc:test --no-daemon --rerun-tasks` — XML 결과
-  110 suites, 684 tests, failures 0, errors 0, skipped 0.
+  110 suites, 685 tests, failures 0, errors 0, skipped 0.
 - `PostgresDocumentEditStoreIntegrationTest`: 10 passed. fresh Testcontainers PostgreSQL과
   Flyway V39에서 결정적 concurrency/replay/rollback 검증을 포함한다.
 - dev Compose config pass; merged dev+pipeline+converter+deploy Compose config pass.

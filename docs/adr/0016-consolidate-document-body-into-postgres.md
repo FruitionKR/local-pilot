@@ -12,10 +12,11 @@
 기록은 `core_db` PostgreSQL에 있었다. 따라서 MongoDB 저장 성공과 PostgreSQL 저장·감사·이벤트
 기록을 하나의 commit 경계로 묶을 수 없었고, 한 저장 요청에서 부분 commit이 발생할 수 있었다.
 
-이번 cutover에서는 기존 MongoDB 데이터를 import하지 않고 새 PostgreSQL 편집 상태로 시작한다.
-이는 기존 편집 데이터를 폐기해도 된다는 명시적 제품 결정에 따른다. MongoDB는 cutover 전후
-대조를 위한 비교 oracle로만 취급하며 장래에 삭제할 수 있지만, 특정 MongoDB database나
-volume의 삭제는 이 ADR의 범위가 아니다.
+이번 cutover에서는 기존 MongoDB 편집 데이터와 PostgreSQL `document_edit_states`,
+`document_content_versions`를 import하지 않고 새 PostgreSQL 편집 상태로 시작한다. 이는 해당
+MongoDB collection과 PostgreSQL table을 폐기해도 된다는 명시적 제품 결정 및 대상별 승인에 따른다.
+MongoDB는 cutover 전후 대조를 위한 비교 oracle로만 취급하며 장래에 삭제할 수 있지만, 특정 MongoDB
+database·volume이나 PostgreSQL table의 실제 삭제는 이 ADR의 범위가 아니다.
 
 ## 결정
 
@@ -46,10 +47,11 @@ V39는 다음을 적용한다.
 - `document_edit_outbox`에 `event_id`, `document_id`, `workspace_id`, `revision`,
   `content_hash`, `event_type`, `schema_version`, `created_at`, `published`, `published_at`을
   만들고 `(created_at, event_id)` pending index를 둔다.
-- migration은 `document_edit_states`가 비어 있지 않으면 중단한다.
+- migration은 `document_edit_states`와 `document_content_versions` 중 하나라도 비어 있지 않으면 중단한다.
 
 따라서 cutover는 기존 Mongo state·write receipt·outbox를 PostgreSQL로 이관하는 절차가 아니라,
-기존 편집 상태를 폐기한 fresh PostgreSQL 상태에서 시작하는 절차다. runtime fallback, dual write,
+기존 Mongo 편집 데이터와 PostgreSQL `document_edit_states`·`document_content_versions`를 폐기한
+fresh PostgreSQL 상태에서 시작하는 절차다. runtime fallback, dual write,
 호환 계층은 두지 않는다. MongoDB 참조 제거와 운영 리소스의 실제 삭제는 이 결정의 후속 운영
 범위이며, 이 ADR은 특정 database·volume 삭제 명령을 정의하지 않는다.
 
@@ -124,8 +126,9 @@ publisher를 위한 claim/lease나 `FOR UPDATE SKIP LOCKED`는 이번 결정에 
   `document_edit_outbox`가 하나의 `core_db` PostgreSQL transaction 경계를 공유한다.
 - HTTP 응답과 `document.edit.event` topic·key·JSON schema는 바뀌지 않는다. 발행은 계속
   at-least-once이며 AI consumer의 revision 비교가 중복을 흡수한다.
-- 새 배포는 MongoDB 편집 상태를 import하지 않으므로 기존 편집 이력·receipt·pending outbox는
-  보존되지 않는다. MongoDB는 비교 oracle일 뿐 runtime dependency가 아니다.
+- 새 배포는 MongoDB 편집 상태와 기존 PostgreSQL `document_edit_states`·`document_content_versions`를
+  import하지 않으므로 기존 편집 이력·receipt·pending outbox는 보존되지 않는다. MongoDB는 비교
+  oracle일 뿐 runtime dependency가 아니다.
 - object storage와 PostgreSQL은 서로 다른 시스템이므로 실패·무변경 object cleanup 책임이
   남는다. outbox 중복, 현재 1 replica 전제와 그 운영 비용도 수용한다.
 - receipt TTL, content version 보존 기간, TOAST/fillfactor/autovacuum 조정과 다중 publisher

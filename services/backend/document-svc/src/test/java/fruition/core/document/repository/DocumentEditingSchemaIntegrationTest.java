@@ -697,13 +697,16 @@ class DocumentEditingSchemaIntegrationTest {
                 ) VALUES (?, 'write-v39', ?, 1, ?, now(), ?, true, now())
                 """, "doc_v39_missing_" + suffix, "a".repeat(64), "b".repeat(64), userId))
                 .isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> jdbcTemplate.update("""
+        jdbcTemplate.update("""
                 INSERT INTO document_edit_outbox(
                     event_id, document_id, workspace_id, revision, content_hash,
                     event_type, schema_version, created_at, published
                 ) VALUES (?, ?, ?, 1, ?, 'document.edit.saved.v1', 1, now(), false)
-                """, "event-v39-missing-" + suffix, "doc_v39_missing_" + suffix, workspaceId, "b".repeat(64)))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                """, "event-v39-pending-" + suffix, documentId, workspaceId, "b".repeat(64));
+        jdbcTemplate.update("DELETE FROM documents WHERE id = ?", documentId);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM document_edit_outbox WHERE event_id = ? AND document_id = ? AND published = false",
+                Integer.class, "event-v39-pending-" + suffix, documentId)).isEqualTo(1);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT indexname FROM pg_indexes WHERE indexname = 'idx_document_edit_outbox_pending'",
@@ -714,9 +717,6 @@ class DocumentEditingSchemaIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT conname FROM pg_constraint WHERE conname = 'fk_document_edit_writes_document'",
                 String.class)).isEqualTo("fk_document_edit_writes_document");
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT conname FROM pg_constraint WHERE conname = 'fk_document_edit_outbox_document'",
-                String.class)).isEqualTo("fk_document_edit_outbox_document");
     }
 
     @Test
@@ -742,6 +742,38 @@ class DocumentEditingSchemaIntegrationTest {
             statement.executeUpdate("""
                     INSERT INTO document_edit_states(document_id, markdown, content_hash, created_at, updated_at)
                     VALUES ('doc_v39_guard', '기존 본문', 'guard-hash', now(), now())
+                    """);
+        }
+
+        assertThatThrownBy(() -> Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .load()
+                .migrate()).isInstanceOf(Exception.class);
+    }
+
+    @Test
+    void v39RefusesNonEmptyContentVersionsTableBeforeCutover() throws Exception {
+        String databaseName = "v39_content_versions_guard_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection admin = DriverManager.getConnection(
+                postgresContainer.getJdbcUrl(), postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = admin.createStatement()) {
+            statement.execute("CREATE DATABASE " + databaseName);
+        }
+
+        String databaseUrl = "jdbc:postgresql://" + postgresContainer.getHost() + ":"
+                + postgresContainer.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT) + "/" + databaseName;
+        Flyway.configure()
+                .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .target(MigrationVersion.fromVersion("38"))
+                .load()
+                .migrate();
+        try (Connection connection = DriverManager.getConnection(
+                databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(v34DocumentInsert("doc_v39_content_versions_guard", null));
+            statement.executeUpdate("""
+                    INSERT INTO document_content_versions(document_id, version, markdown, content_hash, created_at)
+                    VALUES ('doc_v39_content_versions_guard', 1, '기존 본문', 'guard-hash', now())
                     """);
         }
 
@@ -780,6 +812,7 @@ class DocumentEditingSchemaIntegrationTest {
 
         Flyway.configure()
                 .dataSource(databaseUrl, postgresContainer.getUsername(), postgresContainer.getPassword())
+                .target(MigrationVersion.fromVersion("38"))
                 .load()
                 .migrate();
 

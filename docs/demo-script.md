@@ -208,7 +208,7 @@ smoke test가 실패하면 worker를 재개하지 않는다. 구버전 이미지
 services/ai/pipeline/.venv/bin/python services/ai/pipeline/wiki_db_cutover.py rollback-core-permissions
 ```
 
-문서 편집 저장소는 V39가 비어 있는 `document_edit_states`에 편집 revision을 초기화하는 fresh PostgreSQL cutover다. 기존 편집 상태·write receipt·pending edit event를 import하거나 dual-write하지 않으며, 초기화된 편집 상태의 본문·revision·receipt·content version·asset/reference·적용 감사·outbox를 하나의 core DB transaction으로 기록한다. 결정 근거: [adr/0016](adr/0016-consolidate-document-body-into-postgres.md).
+문서 편집 저장소는 V39가 비어 있는 `document_edit_states`와 `document_content_versions`에 편집 revision을 초기화하는 fresh PostgreSQL cutover다. 기존 Mongo 편집 데이터와 두 PostgreSQL table의 폐기는 대상별 승인 후 수행하며, 기존 편집 상태·write receipt·pending edit event를 import하거나 dual-write하지 않는다. 초기화된 편집 상태의 본문·revision·receipt·content version·asset/reference·적용 감사·outbox를 하나의 core DB transaction으로 기록한다. 결정 근거: [adr/0016](adr/0016-consolidate-document-body-into-postgres.md).
 
 ### 2-4. 프론트엔드 (:3000)
 

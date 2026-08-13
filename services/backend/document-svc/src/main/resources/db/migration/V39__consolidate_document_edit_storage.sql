@@ -1,8 +1,9 @@
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM document_edit_states) THEN
+    IF EXISTS (SELECT 1 FROM document_edit_states)
+        OR EXISTS (SELECT 1 FROM document_content_versions) THEN
         RAISE EXCEPTION
-            'V39 requires an empty document_edit_states table; export and reload existing edit state before cutover';
+            'V39 requires empty document_edit_states and document_content_versions tables; verify the exact database and table targets, obtain approval, clear both tables, and rerun the migration';
     END IF;
 END
 $$;
@@ -42,9 +43,7 @@ CREATE TABLE document_edit_outbox (
     CONSTRAINT document_edit_outbox_revision_positive CHECK (revision > 0),
     CONSTRAINT document_edit_outbox_schema_version_positive CHECK (schema_version > 0),
     CONSTRAINT document_edit_outbox_event_type_check CHECK (event_type = 'document.edit.saved.v1'),
-    CONSTRAINT document_edit_outbox_content_hash_nonempty CHECK (char_length(content_hash) > 0),
-    CONSTRAINT fk_document_edit_outbox_document
-        FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+    CONSTRAINT document_edit_outbox_content_hash_nonempty CHECK (char_length(content_hash) > 0)
 );
 
 CREATE INDEX idx_document_edit_outbox_pending
