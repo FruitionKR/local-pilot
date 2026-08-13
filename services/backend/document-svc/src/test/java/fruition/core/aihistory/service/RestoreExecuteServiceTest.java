@@ -9,6 +9,7 @@ import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
 import fruition.core.aihistory.exception.OperationNotFoundException;
 import fruition.core.aihistory.exception.RestorePreviewStaleException;
+import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.wiki.domain.WikiPageContribution;
 import org.junit.jupiter.api.BeforeEach;
@@ -185,6 +186,26 @@ class RestoreExecuteServiceTest {
                 .isEqualTo("d131c306d498cf8aa66cbd07b847aa433734eec63cd70b609063b572e9aac140");
         verify(lifecycle).finishDocument(eq("op_restore"), eq(5L), eq(7L), any());
         verify(outboxWriter, never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void documentRestore_mapsConcurrentEditToStalePreview() {
+        OperationLog target = target(OperationType.document_edit);
+        DocumentRestorePlan plan = new DocumentRestorePlan("doc_A", 6, 5);
+        OperationLog restore = OperationLog.applying(
+                "op_restore", WORKSPACE, USER, "doc_A", TARGET, "{}", T);
+        when(previewService.loadOperation(WORKSPACE, USER, TARGET)).thenReturn(target);
+        when(documentPlanner.plan(target)).thenReturn(plan);
+        when(tokenSigner.matches(TOKEN, TARGET, plan)).thenReturn(true);
+        when(lifecycle.start(eq(target), anyString(), anyString(), any())).thenReturn(Optional.of(restore));
+        when(documentApplier.apply(restore, plan))
+                .thenThrow(new DocumentVersionConflictException("동시 편집"));
+
+        assertThatThrownBy(() -> service.execute(WORKSPACE, USER, TARGET, TOKEN))
+                .isInstanceOf(RestorePreviewStaleException.class);
+
+        verify(documentApplier).apply(restore, plan);
+        verify(lifecycle, never()).finishDocument(anyString(), anyLong(), anyLong(), any());
     }
 
     @Test

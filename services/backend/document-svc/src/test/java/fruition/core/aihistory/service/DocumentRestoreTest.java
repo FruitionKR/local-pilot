@@ -11,10 +11,14 @@ import fruition.core.aihistory.repository.OperationChangeRepository;
 import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentContentVersion;
 import fruition.core.document.domain.DocumentContentVersionId;
+import fruition.core.document.domain.DocumentEditState;
+import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentContentSaveResponse;
+import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentContentVersionRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.service.DocumentService;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -54,6 +58,8 @@ class DocumentRestoreTest {
 
     @Mock OperationChangeRepository operationChangeRepository;
     @Mock DocumentRepository documentRepository;
+    @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentContentVersionRepository contentVersionRepository;
     @Mock DocumentService documentService;
 
@@ -62,7 +68,8 @@ class DocumentRestoreTest {
 
     @BeforeEach
     void setUp() {
-        planner = new DocumentRestorePlanner(operationChangeRepository, documentRepository);
+        planner = new DocumentRestorePlanner(operationChangeRepository, documentRepository,
+                editStateInitializer, editStateRepository);
         applier = new DocumentRestoreApplier(
                 documentService, contentVersionRepository, operationChangeRepository);
     }
@@ -86,11 +93,31 @@ class DocumentRestoreTest {
         @Test
         @DisplayName("from_version은 대상 작업이 만든 버전이 아니라 지금 버전이다")
         void fromVersionIsCurrentNotOperationResult() {
-            // 그 작업 이후 사용자가 두 번 더 저장했다.
+            // lifecycle current_version과 편집 revision은 서로 다른 값이다.
             givenChange(5L, 6L);
-            givenDocumentAtVersion(8);
+            givenDocument(99, 8);
 
             assertThat(planner.plan(target()).fromVersion()).isEqualTo(8);
+        }
+
+        @Test
+        @DisplayName("lifecycle current_version과 편집 revision을 분리해 계획과 CAS에 사용한다")
+        void usesEditRevisionForPlanAndApplyCas() {
+            givenChange(5L, 6L);
+            givenDocument(99, 8);
+            DocumentRestorePlan plan = planner.plan(target());
+            givenVersion(5, "# 원래 문단");
+            when(documentService.saveContentInCurrentTransaction(eq(WORKSPACE), eq(USER), eq(DOCUMENT),
+                    eq("# 원래 문단"), eq(8L), eq("op-restore:op_restore_1"), isNull()))
+                    .thenReturn(new DocumentContentSaveResponse(DOCUMENT, 9, "sha256:old", NOW, true));
+
+            applier.apply(restore(), plan);
+
+            verify(documentService).saveContentInCurrentTransaction(eq(WORKSPACE), eq(USER), eq(DOCUMENT),
+                    eq("# 원래 문단"), eq(8L), eq("op-restore:op_restore_1"), isNull());
+            ArgumentCaptor<OperationChange> captor = ArgumentCaptor.forClass(OperationChange.class);
+            verify(operationChangeRepository).save(captor.capture());
+            assertThat(captor.getValue().getBeforeRevision()).isEqualTo(8L);
         }
 
         @Test
@@ -104,10 +131,23 @@ class DocumentRestoreTest {
         }
 
         @Test
+        @DisplayName("편집 상태 초기화 후에도 canonical 상태가 없으면 명시적으로 거절한다")
+        void rejectsWhenCanonicalEditStateIsMissing() {
+            givenChange(5L, 6L);
+            givenDocument(99, 8);
+            when(editStateRepository.findById(DOCUMENT)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> planner.plan(target()))
+                    .isInstanceOf(InvalidRestoreRequestException.class)
+                    .hasMessageContaining("현재 Markdown 편집 상태를 찾을 수 없습니다");
+            verify(editStateInitializer).initializeIfNeeded(any(Document.class));
+        }
+
+        @Test
         @DisplayName("이미 그 버전이면 거절한다")
         void rejectsWhenAlreadyAtTargetVersion() {
             givenChange(5L, 6L);
-            givenDocumentAtVersion(5);
+            givenDocument(99, 5);
 
             assertThatThrownBy(() -> planner.plan(target()))
                     .isInstanceOf(InvalidRestoreRequestException.class);
@@ -208,10 +248,18 @@ class DocumentRestoreTest {
     }
 
     private void givenDocumentAtVersion(long version) {
+        givenDocument(version, version);
+    }
+
+    private void givenDocument(long lifecycleVersion, long editRevision) {
         Document document = mock(Document.class);
-        when(document.getCurrentVersion()).thenReturn(version);
+        when(document.getCurrentVersion()).thenReturn(lifecycleVersion);
+        when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
+        when(document.getSourceUri()).thenReturn("sources/documents/" + DOCUMENT + "/original");
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull(DOCUMENT, WORKSPACE))
                 .thenReturn(Optional.of(document));
+        when(editStateRepository.findById(DOCUMENT)).thenReturn(Optional.of(
+                new DocumentEditState(DOCUMENT, "# 현재 문단", "sha256:current", editRevision)));
     }
 
     private void givenVersion(long version, String markdown) {

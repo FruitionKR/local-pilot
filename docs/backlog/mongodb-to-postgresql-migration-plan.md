@@ -380,7 +380,7 @@ git diff --check
 ## 6. 최종 검증 실행 기록
 
 - JDK 21 순차 실행: `./gradlew :document-svc:test --no-daemon --rerun-tasks` — XML 결과
-  110 suites, 681 tests, failures 0, errors 0, skipped 0.
+  110 suites, 684 tests, failures 0, errors 0, skipped 0.
 - `PostgresDocumentEditStoreIntegrationTest`: 10 passed. fresh Testcontainers PostgreSQL과
   Flyway V39에서 결정적 concurrency/replay/rollback 검증을 포함한다.
 - dev Compose config pass; merged dev+pipeline+converter+deploy Compose config pass.
