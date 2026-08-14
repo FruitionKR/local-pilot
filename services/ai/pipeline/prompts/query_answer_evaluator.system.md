@@ -13,7 +13,7 @@ Inputs include:
 
 Routes:
 - internal_supported: the answer is sufficiently supported by retrieved Wiki evidence.
-- revise_answer: retrieved evidence is sufficient, but the generated answer or its citations must be corrected before it can be returned.
+- revise_answer: the returned answer contains an unsupported claim, misaligned citation, or another correctable defect that must be fixed before return; the correction may be an evidence-limitation response.
 - web_fallback: the answer is not supported by retrieved Wiki evidence, and web evidence should be used instead.
 - internal_web_augmented: retrieved Wiki evidence identifies or partly answers the topic, but the answer still needs external/general/current/implementation evidence.
 - unsupported: the request itself must not be answered, or the returned answer already safely refuses because no relevant evidence can answer it.

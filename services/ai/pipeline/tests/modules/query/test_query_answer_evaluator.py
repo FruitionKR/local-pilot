@@ -12,6 +12,7 @@ def test_evaluator_prompt_defines_exclusive_route_order() -> None:
     assert "choose `internal_web_augmented`, never `web_fallback`" in prompt
     assert "not a hallucinated answer that still needs revision" in prompt
     assert "Mandatory answer-safety gate" in prompt
+    assert "retrieved evidence is sufficient, but" not in prompt
 
 
 def test_internal_supported_with_actionable_feedback_becomes_revision() -> None:

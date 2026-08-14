@@ -16,6 +16,7 @@ from app.modules.skill.domain.entities import (
 )
 from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator import (
     ChatCompletionsSkillAuthoringGenerator,
+    DEFAULT_PROMPT,
     DEFAULT_CLASSIFIER_PROMPT,
     DEFAULT_VERIFIER_PROMPT,
     build_skill_authoring_generator,
@@ -32,6 +33,13 @@ def test_intent_prompts_require_canonical_tool_sets() -> None:
         assert "complete canonical tool list" in prompt
         assert "never choose a task-specific subset" in prompt
         assert "Do not return `ambiguous` merely because" in prompt
+
+
+def test_authoring_prompt_requires_complete_preserve_proposal() -> None:
+    prompt = DEFAULT_PROMPT.read_text(encoding="utf-8")
+
+    assert "Return the editable proposal object with `status`, `slug`, `name`, and `description`" in prompt
+    assert "set `instructions_markdown` to an empty string" in prompt
 
 
 class FixedGenerator:
