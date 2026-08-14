@@ -16,7 +16,19 @@ Routes:
 - revise_answer: retrieved evidence is sufficient, but the generated answer or its citations must be corrected before it can be returned.
 - web_fallback: the answer is not supported by retrieved Wiki evidence, and web evidence should be used instead.
 - internal_web_augmented: retrieved Wiki evidence identifies or partly answers the topic, but the answer still needs external/general/current/implementation evidence.
-- unsupported: no relevant internal evidence can safely answer any part of the question, or the request itself should not be answered.
+- unsupported: the request itself must not be answered, or the returned answer already safely refuses because no relevant evidence can answer it.
+
+Mandatory answer-safety gate: if the returned answer asserts a material factual claim that the cited evidence does not support, choose `revise_answer`. Never choose `unsupported` for that returned answer merely because the question lacks relevant evidence; `unsupported` applies after the answer already refuses or states the limitation safely.
+
+Choose the first matching route in this exact order. Later rules must not override an earlier match:
+1. `unsupported`: the request is unsafe, private, asks for secrets, or otherwise must not be answered.
+2. `revise_answer`: the returned answer makes any material factual claim that its cited internal evidence does not support. This check applies even when no substantive answer can be produced; revision may remove the claim and state that internal evidence does not answer the question.
+3. `internal_supported`: internal evidence supports the answer and its citations as returned.
+4. `internal_web_augmented`: internal evidence identifies or partly supports the subject, required external/current/implementation information is absent, and web search is available. This remains the route when the returned answer correctly discloses that the internal documents lack the requested external detail.
+5. `web_fallback`: no internal evidence supports the core answer, the question asks for searchable public information, and web search is available.
+6. `unsupported`: no internal evidence supports a useful answer and web search is unavailable or inappropriate.
+
+Required boundary example: if internal evidence identifies a product or project but contains no Kubernetes deployment instructions, and the user asks how to deploy that product to Kubernetes with web search available, choose `internal_web_augmented`, never `web_fallback`. The internal evidence anchors the subject; web evidence supplies only the missing deployment method.
 
 Metrics:
 - evidence_relevance: 0-1. Do the used evidence snippets match the question?
@@ -28,6 +40,7 @@ Rules:
 - Prefer internal_supported when the answer directly answers the question and the cited Wiki evidence supports it.
 - For internal_supported, feedback must be empty. Put optional, non-blocking suggestions in warnings.
 - Choose revise_answer when the answer can be corrected using the same retrieved evidence. Set actionable feedback that the answer generator can apply on retry.
+- Choose revise_answer, not unsupported, when the generated answer asserts a factual claim and cites an internal snippet that does not support it. Apply route-order step 2 before deciding whether the question itself is answerable. Tell the generator to remove the claim and state that the internal documents do not provide the answer. `unsupported` describes an already safe refusal or an unanswerable request, not a hallucinated answer that still needs revision.
 - Prefer internal_supported when retrieved Wiki evidence includes both an aggregate/workflow statement and item-level snippets that cover the requested parts.
 - Choose internal_web_augmented only when the answer needs a required external, current, implementation, deployment, or general-knowledge detail that is absent from retrieved Wiki evidence.
 - Choose internal_web_augmented, not web_fallback, when retrieved Wiki evidence identifies the user's subject and the missing part is how to use, deploy, operate, compare, or implement it with an external platform, tool, framework, or runtime.
@@ -39,6 +52,7 @@ Rules:
 - Choose unsupported when neither retrieved evidence nor appropriate web search can safely answer, such as private personal data, secrets, unsafe requests, or questions whose answer should not be searched.
 - Do not request web search merely because web results might add more detail.
 - Penalize citation_evidence_alignment when a sentence cites evidence that does not support the sentence.
+- Required citation example: question `DB 백업 정책은?`, evidence `전체 테스트 364개가 통과했다`, answer `DB는 매일 백업됩니다. [1]` -> `revise_answer`, because the returned claim and citation must be removed before the answer is safe to return.
 - Penalize evidence_relevance when the used evidence is adjacent but does not answer the user's requested facet.
 - For internal_web_augmented, set web_query to the missing external facet. Include the external platform/tool/method and the requested action. Include the retrieved subject only when it is needed to make the search specific.
 - For web_fallback, set web_query to the user's core external question.

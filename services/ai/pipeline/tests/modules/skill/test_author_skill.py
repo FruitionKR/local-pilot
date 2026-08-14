@@ -16,12 +16,24 @@ from app.modules.skill.domain.entities import (
 )
 from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator import (
     ChatCompletionsSkillAuthoringGenerator,
+    DEFAULT_CLASSIFIER_PROMPT,
+    DEFAULT_VERIFIER_PROMPT,
     build_skill_authoring_generator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
 from app.modules.skill.interfaces.http.dependencies import get_author_skill_use_case
 from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 from app.modules.skill.interfaces.http.routes import router as skill_router
+
+
+def test_intent_prompts_require_canonical_tool_sets() -> None:
+    for prompt_path in (DEFAULT_CLASSIFIER_PROMPT, DEFAULT_VERIFIER_PROMPT):
+        prompt = prompt_path.read_text(encoding="utf-8")
+        assert "complete canonical tool list" in prompt
+        assert "never choose a task-specific subset" in prompt
+    assert "Do not return `ambiguous` merely because" in DEFAULT_VERIFIER_PROMPT.read_text(
+        encoding="utf-8"
+    )
 
 
 class FixedGenerator:
