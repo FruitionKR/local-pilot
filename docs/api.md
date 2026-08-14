@@ -10,7 +10,7 @@
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
 - `Idempotency-Key`가 적용된 API는 1~255자 키를 사용한다. 실행 선점 lease는 15분이고, 완료 응답은 완료 시점부터 24시간 유지한다. 같은 사용자·endpoint·키의 같은 요청이 완료되면 저장된 응답을 재생하고, 다른 payload는 409 `IDEMPOTENCY_CONFLICT`, lease 내 처리 중인 동시 요청은 409 `IDEMPOTENCY_IN_PROGRESS`로 거절한다. 실행이 실패하거나 lease가 만료되면 같은 키로 재시도할 수 있다.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
-- LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `minimal`, `gemini`/`gemini-3.1-flash-lite`는 `low`, `claude`/`claude-haiku-4-5-20251001`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
+- LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `medium`, `gemini`/`gemini-3.1-flash-lite`는 `low`, `claude`/`claude-sonnet-5`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
 - provider별 base URL은 `openai=https://api.openai.com/v1`, `gemini=https://generativelanguage.googleapis.com/v1beta/openai`, `claude=https://api.anthropic.com/v1`로 고정한다.
 - Ingest·Lint·Skill author/publish/update는 workspace AI 모델 설정의 `provider`·`model` snapshot, Query·Markdown Agent·Agent 경로는 사용자/API 요청 또는 chat/request 설정의 snapshot을 사용한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 전달하며 env override는 없다. API key는 ai-svc secret env의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`에서만 읽고 provider별 고정 base URL을 사용한다.
 - API key는 backend 요청·Kafka command/event·application log에 포함하지 않는다. 기존 AI 작업 로그의 조회/결과 API는 LLM 설정을 받지 않는다. 실제 provider 호출 전에는 선택 provider key가 필요하지만 mock 통합 테스트에는 key가 필요 없다.

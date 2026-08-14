@@ -31,9 +31,7 @@ def test_intent_prompts_require_canonical_tool_sets() -> None:
         prompt = prompt_path.read_text(encoding="utf-8")
         assert "complete canonical tool list" in prompt
         assert "never choose a task-specific subset" in prompt
-    assert "Do not return `ambiguous` merely because" in DEFAULT_VERIFIER_PROMPT.read_text(
-        encoding="utf-8"
-    )
+        assert "Do not return `ambiguous` merely because" in prompt
 
 
 class FixedGenerator:
@@ -206,12 +204,12 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "claude-key"}, clear=True):
             generator = build_skill_authoring_generator(
                 provider="claude",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-5",
             )
 
         client = generator._client  # type: ignore[attr-defined]
         self.assertEqual(client.provider, "claude")
-        self.assertEqual(client.config.model, "claude-haiku-4-5-20251001")
+        self.assertEqual(client.config.model, "claude-sonnet-5")
         self.assertEqual(client.config.api_key, "claude-key")
 
     def build_use_case(
