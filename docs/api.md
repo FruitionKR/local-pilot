@@ -72,8 +72,8 @@
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -165,8 +165,8 @@ curl -X POST '/api/auth/email-verifications' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -255,12 +255,6 @@ curl -X POST '/api/auth/email-verifications/<value>/confirm' \
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -339,12 +333,6 @@ refresh token을 폐기합니다.
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -405,7 +393,7 @@ access token으로 인증된 사용자의 프로필을 반환합니다.
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "display_name": "표시 이름",
   "email": "user@example.com",
   "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
@@ -422,12 +410,6 @@ access token으로 인증된 사용자의 프로필을 반환합니다.
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -451,7 +433,7 @@ curl -X GET '/api/auth/me' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "display_name": "표시 이름",
   "email": "user@example.com",
   "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
@@ -514,12 +496,6 @@ OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -602,8 +578,8 @@ verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 �
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -689,12 +665,6 @@ refresh token을 검증하고 access/refresh token을 새로 발급합니다. �
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -768,7 +738,7 @@ curl -X POST '/api/auth/refresh' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "display_name": "표시 이름",
   "email": "user@example.com",
   "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
@@ -788,8 +758,8 @@ curl -X POST '/api/auth/refresh' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -816,7 +786,7 @@ curl -X POST '/api/auth/signup' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "display_name": "표시 이름",
   "email": "user@example.com",
   "id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
@@ -860,10 +830,10 @@ curl -X POST '/api/auth/signup' \
 {
   "workspaces": [
     {
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "ws_9d47a0e9a6324341b47562553b75f92a",
       "name": "내 워크스페이스",
-      "updated_at": "2026-08-13 04:25:24 UTC"
+      "updated_at": "2026-08-13T04:25:24.371948Z"
     }
   ]
 }
@@ -893,10 +863,10 @@ curl -X GET '/api/workspaces' \
 {
   "workspaces": [
     {
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "ws_9d47a0e9a6324341b47562553b75f92a",
       "name": "내 워크스페이스",
-      "updated_at": "2026-08-13 04:25:24 UTC"
+      "updated_at": "2026-08-13T04:25:24.371948Z"
     }
   ]
 }
@@ -941,10 +911,10 @@ curl -X GET '/api/workspaces' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a",
   "name": "내 워크스페이스",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -960,8 +930,8 @@ curl -X GET '/api/workspaces' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -989,10 +959,10 @@ curl -X POST '/api/workspaces' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a",
   "name": "내 워크스페이스",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -1031,7 +1001,7 @@ curl -X POST '/api/workspaces' \
 {
   "workspaces": [
     {
-      "deleted_at": "2026-08-13 04:25:24 UTC",
+      "deleted_at": "2026-08-13T04:25:24.371948Z",
       "deleted_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "id": "ws_9d47a0e9a6324341b47562553b75f92a",
       "name": "내 워크스페이스"
@@ -1064,7 +1034,7 @@ curl -X GET '/api/workspaces/trash' \
 {
   "workspaces": [
     {
-      "deleted_at": "2026-08-13 04:25:24 UTC",
+      "deleted_at": "2026-08-13T04:25:24.371948Z",
       "deleted_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "id": "ws_9d47a0e9a6324341b47562553b75f92a",
       "name": "내 워크스페이스"
@@ -1114,10 +1084,10 @@ curl -X GET '/api/workspaces/trash' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a",
   "name": "내 워크스페이스",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -1131,12 +1101,6 @@ curl -X GET '/api/workspaces/trash' \
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -1163,10 +1127,10 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a",
   "name": "내 워크스페이스",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -1207,7 +1171,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 ```json
 {
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
@@ -1226,8 +1190,8 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -1256,7 +1220,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 ```json
 {
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
@@ -1298,7 +1262,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 ```json
 {
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
@@ -1317,8 +1281,8 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -1347,7 +1311,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore' \
 ```json
 {
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "ws_9d47a0e9a6324341b47562553b75f92a"
 }
 ```
@@ -1760,12 +1724,6 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -1863,8 +1821,8 @@ ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있�
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -1946,7 +1904,7 @@ curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settin
     {
       "changed_resource_count": 3,
       "completed_at": "2026-08-14T10:00:00Z",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
       "operation_type": "ingest",
       "restored_from": "string",
@@ -1969,12 +1927,6 @@ curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settin
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -2003,7 +1955,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
     {
       "changed_resource_count": 3,
       "completed_at": "2026-08-14T10:00:00Z",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
       "operation_type": "ingest",
       "restored_from": "string",
@@ -2063,21 +2015,38 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
       "deletions": 4,
       "diff_too_large": true,
       "hunks": [
-        null
+        {
+          "lines": [
+            {
+              "content": "string",
+              "new_line": 10,
+              "old_line": 10,
+              "type": "string"
+            }
+          ],
+          "new_lines": 5,
+          "new_start": 10,
+          "old_lines": 3,
+          "old_start": 10
+        }
       ],
       "id": 1,
       "resource_id": "string"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "operation_type": "ingest",
   "restore": {
     "plan": {
       "delete_count": 1,
       "pages": [
-        null
+        {
+          "action": "rebuild",
+          "contribution_count": 2,
+          "page_id": "string"
+        }
       ],
       "rebuild_count": 3,
       "restore_count": 2
@@ -2107,12 +2076,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -2148,21 +2111,38 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
       "deletions": 4,
       "diff_too_large": true,
       "hunks": [
-        null
+        {
+          "lines": [
+            {
+              "content": "string",
+              "new_line": 10,
+              "old_line": 10,
+              "type": "string"
+            }
+          ],
+          "new_lines": 5,
+          "new_start": 10,
+          "old_lines": 3,
+          "old_start": 10
+        }
       ],
       "id": 1,
       "resource_id": "string"
     }
   ],
   "completed_at": "2026-08-14T10:00:00Z",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "operation_id": "op_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "operation_type": "ingest",
   "restore": {
     "plan": {
       "delete_count": 1,
       "pages": [
-        null
+        {
+          "action": "rebuild",
+          "contribution_count": 2,
+          "page_id": "string"
+        }
       ],
       "rebuild_count": 3,
       "restore_count": 2
@@ -2249,8 +2229,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -2357,12 +2337,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-l
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -2853,8 +2827,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<va
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -2955,8 +2929,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -3033,9 +3007,9 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<val
 {
   "sessions": [
     {
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-      "last_message_at": "2026-08-13 04:25:24 UTC",
+      "last_message_at": "2026-08-13T04:25:24.371948Z",
       "title": "검색 인덱싱 질문"
     }
   ]
@@ -3052,12 +3026,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<val
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3084,9 +3052,9 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' 
 {
   "sessions": [
     {
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-      "last_message_at": "2026-08-13 04:25:24 UTC",
+      "last_message_at": "2026-08-13T04:25:24.371948Z",
       "title": "검색 인덱싱 질문"
     }
   ]
@@ -3134,9 +3102,9 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' 
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "last_message_at": "2026-08-13 04:25:24 UTC",
+  "last_message_at": "2026-08-13T04:25:24.371948Z",
   "title": "검색 인덱싱 질문"
 }
 ```
@@ -3152,12 +3120,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' 
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3184,9 +3146,9 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions'
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "session_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "last_message_at": "2026-08-13 04:25:24 UTC",
+  "last_message_at": "2026-08-13T04:25:24.371948Z",
   "title": "검색 인덱싱 질문"
 }
 ```
@@ -3235,12 +3197,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions'
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3307,20 +3263,44 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/session
   "messages": [
     {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "error_message": "string",
       "id": "string",
       "model": "gpt-5-nano",
       "pair_id": "string",
       "partial_wiki_page_ids": [
-        null
+        "string"
       ],
       "provider": "openai",
       "references": [
-        null
+        {
+          "id": 1,
+          "rank": 0,
+          "reference_type": "string",
+          "source_block_ids": [
+            "string"
+          ],
+          "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+          "source_refs": [
+            {
+              "source_block_id": "string",
+              "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+            }
+          ],
+          "text": "string"
+        }
       ],
       "related_pages": [
-        null
+        {
+          "depth": 1,
+          "page_type": "Concept",
+          "rank": 0,
+          "relevance_score": 0.87,
+          "role": "string",
+          "slug": "search-indexing",
+          "title": "검색 인덱싱",
+          "wiki_page_id": "string"
+        }
       ]
     }
   ]
@@ -3337,12 +3317,6 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/session
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3370,20 +3344,44 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<
   "messages": [
     {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "error_message": "string",
       "id": "string",
       "model": "gpt-5-nano",
       "pair_id": "string",
       "partial_wiki_page_ids": [
-        null
+        "string"
       ],
       "provider": "openai",
       "references": [
-        null
+        {
+          "id": 1,
+          "rank": 0,
+          "reference_type": "string",
+          "source_block_ids": [
+            "string"
+          ],
+          "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+          "source_refs": [
+            {
+              "source_block_id": "string",
+              "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+            }
+          ],
+          "text": "string"
+        }
       ],
       "related_pages": [
-        null
+        {
+          "depth": 1,
+          "page_type": "Concept",
+          "rank": 0,
+          "relevance_score": 0.87,
+          "role": "string",
+          "slug": "search-indexing",
+          "title": "검색 인덱싱",
+          "wiki_page_id": "string"
+        }
       ]
     }
   ]
@@ -3643,7 +3641,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets/55555555
 
 ```json
 {
-  "expires_at": "2026-08-13 04:25:24 UTC",
+  "expires_at": "2026-08-13T04:25:24.371948Z",
   "holder_display_name": "표시 이름",
   "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
 }
@@ -3661,12 +3659,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets/55555555
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3691,7 +3683,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 
 ```json
 {
-  "expires_at": "2026-08-13 04:25:24 UTC",
+  "expires_at": "2026-08-13T04:25:24.371948Z",
   "holder_display_name": "표시 이름",
   "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
 }
@@ -3793,7 +3785,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 
 ```json
 {
-  "expires_at": "2026-08-13 04:25:24 UTC",
+  "expires_at": "2026-08-13T04:25:24.371948Z",
   "holder_display_name": "표시 이름",
   "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
 }
@@ -3809,12 +3801,6 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -3839,7 +3825,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 
 ```json
 {
-  "expires_at": "2026-08-13 04:25:24 UTC",
+  "expires_at": "2026-08-13T04:25:24.371948Z",
   "holder_display_name": "표시 이름",
   "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
 }
@@ -3911,12 +3897,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -4010,7 +3990,7 @@ PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 �
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4030,8 +4010,8 @@ PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 �
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4069,7 +4049,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?fold
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4126,7 +4106,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?fold
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4145,8 +4125,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?fold
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4185,7 +4165,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/mark
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4228,7 +4208,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/mark
     {
       "current_version": 3,
       "delete_operation_id": "55555555-5555-5555-5555-555555555555",
-      "deleted_at": "2026-08-13 04:25:24 UTC",
+      "deleted_at": "2026-08-13T04:25:24.371948Z",
       "deleted_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "display_name": "설계문서",
       "document_role": "EDITABLE",
@@ -4250,12 +4230,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/mark
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -4284,7 +4258,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash
     {
       "current_version": 3,
       "delete_operation_id": "55555555-5555-5555-5555-555555555555",
-      "deleted_at": "2026-08-13 04:25:24 UTC",
+      "deleted_at": "2026-08-13T04:25:24.371948Z",
       "deleted_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "display_name": "설계문서",
       "document_role": "EDITABLE",
@@ -4337,7 +4311,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash
   "display_name": "설계문서",
   "document_role": "EDITABLE",
   "edit_lock": {
-    "expires_at": "2026-08-13 04:25:24 UTC",
+    "expires_at": "2026-08-13T04:25:24.371948Z",
     "holder_display_name": "표시 이름",
     "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
   },
@@ -4360,12 +4334,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -4395,7 +4363,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "display_name": "설계문서",
   "document_role": "EDITABLE",
   "edit_lock": {
-    "expires_at": "2026-08-13 04:25:24 UTC",
+    "expires_at": "2026-08-13T04:25:24.371948Z",
     "holder_display_name": "표시 이름",
     "holder_user_id": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081"
   },
@@ -4452,7 +4420,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 {
   "current_version": 2,
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "sort_order": 1024
 }
@@ -4473,8 +4441,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4506,7 +4474,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 {
   "current_version": 2,
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "sort_order": 1024
 }
@@ -4568,12 +4536,6 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -4667,7 +4629,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "current_version": 4,
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4688,8 +4650,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4734,7 +4696,7 @@ curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "current_version": 4,
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4784,7 +4746,7 @@ PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4802,8 +4764,8 @@ PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4840,7 +4802,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
   "mime_type": "application/pdf",
   "source_uri": "string",
   "status": "uploaded",
-  "uploaded_at": "2026-08-13 04:25:24 UTC"
+  "uploaded_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -4889,7 +4851,12 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
   "hunks": [
     {
       "lines": [
-        null
+        {
+          "content": "string",
+          "new_line": 10,
+          "old_line": 10,
+          "type": "string"
+        }
       ],
       "new_lines": 5,
       "new_start": 10,
@@ -4915,8 +4882,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -4950,7 +4917,12 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "hunks": [
     {
       "lines": [
-        null
+        {
+          "content": "string",
+          "new_line": 10,
+          "old_line": 10,
+          "type": "string"
+        }
       ],
       "new_lines": 5,
       "new_start": 10,
@@ -5026,8 +4998,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5115,12 +5087,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -5204,8 +5170,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5286,12 +5252,6 @@ MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 �
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -5384,8 +5344,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5470,7 +5430,7 @@ Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목�
   "display_name": "이름 바꾼 회의록",
   "filename": "회의록.md",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -5489,8 +5449,8 @@ Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목�
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5524,7 +5484,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<va
   "display_name": "이름 바꾼 회의록",
   "filename": "회의록.md",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -5573,7 +5533,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<va
 {
   "current_version": 2,
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "sort_order": 1024
 }
@@ -5594,8 +5554,8 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<va
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5627,7 +5587,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 {
   "current_version": 2,
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "sort_order": 1024
 }
@@ -5674,7 +5634,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
   "versions": [
     {
       "content_hash": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "created_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "version": 3
     }
@@ -5695,8 +5655,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5728,7 +5688,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "versions": [
     {
       "content_hash": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "created_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
       "version": 3
     }
@@ -5774,7 +5734,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 ```json
 {
   "content_hash": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "created_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
@@ -5792,12 +5752,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -5823,7 +5777,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 ```json
 {
   "content_hash": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "created_by": "user_3f1c8a6b52d7411e9c04ab5d2e7f6081",
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
@@ -5886,7 +5840,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
   "current_version": 4,
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -5905,8 +5859,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -5947,7 +5901,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
   "current_version": 4,
   "document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "markdown": "string",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -5996,13 +5950,13 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6020,8 +5974,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6051,13 +6005,13 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6105,13 +6059,13 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6129,8 +6083,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6160,13 +6114,13 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6216,7 +6170,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
   "current_version": 2,
   "delete_operation_id": "55555555-5555-5555-5555-555555555555",
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2"
 }
 ```
@@ -6236,8 +6190,8 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6270,7 +6224,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555
   "current_version": 2,
   "delete_operation_id": "55555555-5555-5555-5555-555555555555",
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2"
 }
 ```
@@ -6334,12 +6288,6 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -6422,13 +6370,13 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555555
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6446,8 +6394,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555555
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6477,13 +6425,13 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "current_version": 1,
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2",
   "name": "설계",
   "parent_folder_id": "55555555-5555-5555-5555-555555555555",
   "sort_order": 1024,
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -6533,7 +6481,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
   "current_version": 2,
   "delete_operation_id": "55555555-5555-5555-5555-555555555555",
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2"
 }
 ```
@@ -6552,8 +6500,8 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6586,7 +6534,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/555555
   "current_version": 2,
   "delete_operation_id": "55555555-5555-5555-5555-555555555555",
   "deleted": true,
-  "deleted_at": "2026-08-13 04:25:24 UTC",
+  "deleted_at": "2026-08-13T04:25:24.371948Z",
   "id": "8d4f1e6c-3b0a-497d-25e4-f831b9f4c7e2"
 }
 ```
@@ -6631,7 +6579,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/555555
   "items": [
     {
       "children": [
-        null
+        {
+        }
       ],
       "current_version": 1,
       "has_children": true,
@@ -6654,12 +6603,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/555555
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -6687,7 +6630,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/document-tree' 
   "items": [
     {
       "children": [
-        null
+        {
+        }
       ],
       "current_version": 1,
       "has_children": true,
@@ -6758,12 +6702,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/document-tree' 
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -6861,8 +6799,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6938,7 +6876,11 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/brea
   "results": [
     {
       "breadcrumb": [
-        null
+        {
+          "id": "string",
+          "name": "설계",
+          "type": "folder"
+        }
       ],
       "id": "string",
       "name": "회의록",
@@ -6961,8 +6903,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/brea
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -6992,7 +6934,11 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
   "results": [
     {
       "breadcrumb": [
-        null
+        {
+          "id": "string",
+          "name": "설계",
+          "type": "folder"
+        }
       ],
       "id": "string",
       "name": "회의록",
@@ -7051,7 +6997,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
 {
   "assistant_message": {
     "content": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "id": "string",
     "role": "assistant",
     "status": "completed"
@@ -7061,11 +7007,14 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
     {
       "rank": 0,
       "source_block_ids": [
-        null
+        "string"
       ],
       "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
       "source_refs": [
-        null
+        {
+          "source_block_id": "string",
+          "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+        }
       ],
       "text": "string"
     }
@@ -7073,22 +7022,22 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
   "graph_context": {
     "edges": [
       {
-        "from_page_id": null,
-        "link_type": null,
-        "role": null,
-        "score": null,
-        "to_page_id": null
+        "from_page_id": "string",
+        "link_type": "related",
+        "role": "string",
+        "score": 0.72,
+        "to_page_id": "string"
       }
     ],
     "nodes": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 1,
+        "id": "string",
+        "page_type": "Concept",
+        "relevance_score": 0.87,
+        "role": "string",
+        "slug": "search-indexing",
+        "title": "검색 인덱싱"
       }
     ]
   },
@@ -7107,10 +7056,16 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
   "traversal_paths": [
     {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "related",
+          "role": "string",
+          "score": 0.72,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        "string"
       ],
       "path_id": "string",
       "role": "string",
@@ -7121,7 +7076,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
   ],
   "user_message": {
     "content": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "id": "string",
     "role": "assistant",
     "status": "completed"
@@ -7147,8 +7102,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -7179,7 +7134,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
 {
   "assistant_message": {
     "content": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "id": "string",
     "role": "assistant",
     "status": "completed"
@@ -7189,11 +7144,14 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
     {
       "rank": 0,
       "source_block_ids": [
-        null
+        "string"
       ],
       "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
       "source_refs": [
-        null
+        {
+          "source_block_id": "string",
+          "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+        }
       ],
       "text": "string"
     }
@@ -7201,22 +7159,22 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
   "graph_context": {
     "edges": [
       {
-        "from_page_id": null,
-        "link_type": null,
-        "role": null,
-        "score": null,
-        "to_page_id": null
+        "from_page_id": "string",
+        "link_type": "related",
+        "role": "string",
+        "score": 0.72,
+        "to_page_id": "string"
       }
     ],
     "nodes": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 1,
+        "id": "string",
+        "page_type": "Concept",
+        "relevance_score": 0.87,
+        "role": "string",
+        "slug": "search-indexing",
+        "title": "검색 인덱싱"
       }
     ]
   },
@@ -7235,10 +7193,16 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
   "traversal_paths": [
     {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "related",
+          "role": "string",
+          "score": 0.72,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        "string"
       ],
       "path_id": "string",
       "role": "string",
@@ -7249,7 +7213,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
   ],
   "user_message": {
     "content": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "id": "string",
     "role": "assistant",
     "status": "completed"
@@ -7322,8 +7286,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -7401,7 +7365,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
   "result": {
     "assistant_message": {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "string",
       "role": "assistant",
       "status": "completed"
@@ -7409,47 +7373,78 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
     "error_code": "web_search_unavailable",
     "evidence_snippets": [
       {
-        "rank": null,
-        "source_block_ids": null,
-        "source_document_id": null,
-        "source_refs": null,
-        "text": null
+        "rank": 0,
+        "source_block_ids": [
+          "string"
+        ],
+        "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+        "source_refs": [
+          {
+            "source_block_id": "string",
+            "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+          }
+        ],
+        "text": "string"
       }
     ],
     "graph_context": {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "related",
+          "role": "string",
+          "score": 0.72,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        {
+          "depth": 1,
+          "id": "string",
+          "page_type": "Concept",
+          "relevance_score": 0.87,
+          "role": "string",
+          "slug": "search-indexing",
+          "title": "검색 인덱싱"
+        }
       ]
     },
     "related_pages": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 1,
+        "id": "string",
+        "page_type": "Concept",
+        "relevance_score": 0.87,
+        "role": "string",
+        "slug": "search-indexing",
+        "title": "검색 인덱싱"
       }
     ],
     "result_count": 5,
     "traversal_paths": [
       {
-        "edges": null,
-        "nodes": null,
-        "path_id": null,
-        "role": null,
-        "score": null,
-        "stop_reason": null,
-        "used_for_answer": null
+        "edges": [
+          {
+            "from_page_id": "string",
+            "link_type": "related",
+            "role": "string",
+            "score": 0.72,
+            "to_page_id": "string"
+          }
+        ],
+        "nodes": [
+          "string"
+        ],
+        "path_id": "string",
+        "role": "string",
+        "score": 0.72,
+        "stop_reason": "string",
+        "used_for_answer": true
       }
     ],
     "user_message": {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "string",
       "role": "assistant",
       "status": "completed"
@@ -7472,12 +7467,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -7508,7 +7497,7 @@ curl -X GET '/api/query/runs/<value>' \
   "result": {
     "assistant_message": {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "string",
       "role": "assistant",
       "status": "completed"
@@ -7516,47 +7505,78 @@ curl -X GET '/api/query/runs/<value>' \
     "error_code": "web_search_unavailable",
     "evidence_snippets": [
       {
-        "rank": null,
-        "source_block_ids": null,
-        "source_document_id": null,
-        "source_refs": null,
-        "text": null
+        "rank": 0,
+        "source_block_ids": [
+          "string"
+        ],
+        "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+        "source_refs": [
+          {
+            "source_block_id": "string",
+            "source_document_id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
+          }
+        ],
+        "text": "string"
       }
     ],
     "graph_context": {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "related",
+          "role": "string",
+          "score": 0.72,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        {
+          "depth": 1,
+          "id": "string",
+          "page_type": "Concept",
+          "relevance_score": 0.87,
+          "role": "string",
+          "slug": "search-indexing",
+          "title": "검색 인덱싱"
+        }
       ]
     },
     "related_pages": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 1,
+        "id": "string",
+        "page_type": "Concept",
+        "relevance_score": 0.87,
+        "role": "string",
+        "slug": "search-indexing",
+        "title": "검색 인덱싱"
       }
     ],
     "result_count": 5,
     "traversal_paths": [
       {
-        "edges": null,
-        "nodes": null,
-        "path_id": null,
-        "role": null,
-        "score": null,
-        "stop_reason": null,
-        "used_for_answer": null
+        "edges": [
+          {
+            "from_page_id": "string",
+            "link_type": "related",
+            "role": "string",
+            "score": 0.72,
+            "to_page_id": "string"
+          }
+        ],
+        "nodes": [
+          "string"
+        ],
+        "path_id": "string",
+        "role": "string",
+        "score": 0.72,
+        "stop_reason": "string",
+        "used_for_answer": true
       }
     ],
     "user_message": {
       "content": "string",
-      "created_at": "2026-08-13 04:25:24 UTC",
+      "created_at": "2026-08-13T04:25:24.371948Z",
       "id": "string",
       "role": "assistant",
       "status": "completed"
@@ -7616,12 +7636,6 @@ string
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -7686,27 +7700,37 @@ string
 [
   {
     "enabled_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "meeting-notes",
+      "status": "published",
+      "version": 3
     },
     "id": "string",
     "latest_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "meeting-notes",
+      "status": "published",
+      "version": 3
     },
     "owner_user_id": "string",
     "scope_type": "personal",
@@ -7730,12 +7754,6 @@ string
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -7762,27 +7780,37 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills' \
 [
   {
     "enabled_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "meeting-notes",
+      "status": "published",
+      "version": 3
     },
     "id": "string",
     "latest_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "meeting-notes",
+      "status": "published",
+      "version": 3
     },
     "owner_user_id": "string",
     "scope_type": "personal",
@@ -7872,8 +7900,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills' \
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -7990,8 +8018,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author'
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -8071,10 +8099,10 @@ Skill의 현재 정의와 실행 설정을 반환합니다.
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8088,10 +8116,10 @@ Skill의 현재 정의와 실행 설정을 반환합니다.
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8123,12 +8151,6 @@ Skill의 현재 정의와 실행 설정을 반환합니다.
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -8155,10 +8177,10 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>'
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8172,10 +8194,10 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>'
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8269,8 +8291,8 @@ Skill의 정의를 수정합니다.
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -8350,10 +8372,10 @@ Skill을 Agent 실행 대상에서 제외합니다.
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8367,10 +8389,10 @@ Skill을 Agent 실행 대상에서 제외합니다.
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8402,12 +8424,6 @@ Skill을 Agent 실행 대상에서 제외합니다.
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -8434,10 +8450,10 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8451,10 +8467,10 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8511,10 +8527,10 @@ Skill을 Agent 실행 대상에 포함합니다.
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8528,10 +8544,10 @@ Skill을 Agent 실행 대상에 포함합니다.
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8563,12 +8579,6 @@ Skill을 Agent 실행 대상에 포함합니다.
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -8595,10 +8605,10 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8612,10 +8622,10 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -8686,8 +8696,8 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
       "page_type": "Concept",
       "slug": "search-indexing",
       "source_document": {
-        "filename": null,
-        "id": null
+        "filename": "설계문서.pdf",
+        "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
       },
       "status": "published",
       "summary": "string",
@@ -8707,12 +8717,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -8752,8 +8756,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph' \
       "page_type": "Concept",
       "slug": "search-indexing",
       "source_document": {
-        "filename": null,
-        "id": null
+        "filename": "설계문서.pdf",
+        "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
       },
       "status": "published",
       "summary": "string",
@@ -8799,7 +8803,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph' \
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "string",
   "markdown": "string",
   "markdown_uri": "string",
@@ -8841,12 +8845,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph' \
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -8871,7 +8869,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<val
 
 ```json
 {
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "id": "string",
   "markdown": "string",
   "markdown_uri": "string",
@@ -8946,7 +8944,12 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<val
   "hunks": [
     {
       "lines": [
-        null
+        {
+          "content": "string",
+          "new_line": 10,
+          "old_line": 10,
+          "type": "string"
+        }
       ],
       "new_lines": 5,
       "new_start": 10,
@@ -8970,12 +8973,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<val
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -9006,7 +9003,12 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<val
   "hunks": [
     {
       "lines": [
-        null
+        {
+          "content": "string",
+          "new_line": 10,
+          "old_line": 10,
+          "type": "string"
+        }
       ],
       "new_lines": 5,
       "new_start": 10,
@@ -9069,7 +9071,7 @@ Wiki 페이지 제목을 변경합니다. update_slug=true이면 slug도 재생�
   "slug": "search-indexing",
   "slug_updated": false,
   "title": "검색 인덱싱",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -9087,8 +9089,8 @@ Wiki 페이지 제목을 변경합니다. update_slug=true이면 slug도 재생�
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -9124,7 +9126,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<v
   "slug": "search-indexing",
   "slug_updated": false,
   "title": "검색 인덱싱",
-  "updated_at": "2026-08-13 04:25:24 UTC"
+  "updated_at": "2026-08-13T04:25:24.371948Z"
 }
 ```
 
@@ -9192,8 +9194,8 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<v
     "code": "INVALID_REQUEST",
     "details": [
       {
-        "field": null,
-        "reason": null
+        "field": "email",
+        "reason": "email은 필수입니다."
       }
     ],
     "message": "요청 형식이 올바르지 않습니다."
@@ -9277,12 +9279,6 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenan
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -9345,8 +9341,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 
 ```json
 {
-  "last_lint_at": "2026-08-13 04:25:24 UTC",
-  "last_wiki_change_at": "2026-08-13 04:25:24 UTC",
+  "last_lint_at": "2026-08-13T04:25:24.371948Z",
+  "last_wiki_change_at": "2026-08-13T04:25:24.371948Z",
   "needs_lint": true
 }
 ```
@@ -9361,12 +9357,6 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 {
   "error": {
     "code": "INVALID_REQUEST",
-    "details": [
-      {
-        "field": null,
-        "reason": null
-      }
-    ],
     "message": "요청 형식이 올바르지 않습니다."
   }
 }
@@ -9391,8 +9381,8 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 
 ```json
 {
-  "last_lint_at": "2026-08-13 04:25:24 UTC",
-  "last_wiki_change_at": "2026-08-13 04:25:24 UTC",
+  "last_lint_at": "2026-08-13T04:25:24.371948Z",
+  "last_wiki_change_at": "2026-08-13T04:25:24.371948Z",
   "needs_lint": true
 }
 ```
@@ -9435,7 +9425,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 ```json
 {
   "activated_at": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "fragments": {
     "concept_markdown": "string",
     "edit_markdown": "string",
@@ -9494,7 +9484,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/act
 ```json
 {
   "activated_at": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "fragments": {
     "concept_markdown": "string",
     "edit_markdown": "string",
@@ -9565,7 +9555,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/act
 {
   "wiki_schema": {
     "activated_at": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "fragments": {
       "concept_markdown": "string",
       "edit_markdown": "string",
@@ -9578,11 +9568,11 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/act
     "id": "string",
     "issues": [
       {
-        "category": null,
-        "reason": null,
-        "section": null,
-        "severity": null,
-        "text": null
+        "category": "string",
+        "reason": "string",
+        "section": "string",
+        "severity": "unclear",
+        "text": "string"
       }
     ],
     "name": "설계 문서 스키마",
@@ -9630,7 +9620,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/dr
 {
   "wiki_schema": {
     "activated_at": "string",
-    "created_at": "2026-08-13 04:25:24 UTC",
+    "created_at": "2026-08-13T04:25:24.371948Z",
     "fragments": {
       "concept_markdown": "string",
       "edit_markdown": "string",
@@ -9643,11 +9633,11 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/dr
     "id": "string",
     "issues": [
       {
-        "category": null,
-        "reason": null,
-        "section": null,
-        "severity": null,
-        "text": null
+        "category": "string",
+        "reason": "string",
+        "section": "string",
+        "severity": "unclear",
+        "text": "string"
       }
     ],
     "name": "설계 문서 스키마",
@@ -9815,7 +9805,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/pr
 ```json
 {
   "activated_at": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "fragments": {
     "concept_markdown": "string",
     "edit_markdown": "string",
@@ -9874,7 +9864,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/<v
 ```json
 {
   "activated_at": "string",
-  "created_at": "2026-08-13 04:25:24 UTC",
+  "created_at": "2026-08-13T04:25:24.371948Z",
   "fragments": {
     "concept_markdown": "string",
     "edit_markdown": "string",
@@ -10396,7 +10386,10 @@ Handle Agent Turn
     "pending_skill_proposal": null,
     "recent_conversation_summary": null,
     "recent_messages": [
-      null
+      {
+        "content": "string",
+        "role": "string"
+      }
     ],
     "reference_context": null
   },
@@ -10424,18 +10417,75 @@ Handle Agent Turn
     "answer": "string",
     "error_code": null,
     "evidence_snippets": [
-      null
+      {
+        "rank": 0,
+        "source_block_ids": [
+          "string"
+        ],
+        "source_document_id": "string",
+        "source_refs": [
+          {
+            "source_block_id": "string",
+            "source_document_id": "string"
+          }
+        ],
+        "text": "string"
+      }
     ],
     "graph_context": {
-      "edges": null,
-      "nodes": null
+      "edges": [
+        {
+          "from_page_id": "string",
+          "link_type": "string",
+          "role": "string",
+          "score": 0.0,
+          "to_page_id": "string"
+        }
+      ],
+      "nodes": [
+        {
+          "depth": 0,
+          "id": "string",
+          "page_type": "string",
+          "relevance_score": 0.0,
+          "role": "string",
+          "slug": "string",
+          "title": "string"
+        }
+      ]
     },
     "related_pages": [
-      null
+      {
+        "depth": 0,
+        "id": "string",
+        "page_type": "string",
+        "relevance_score": 0.0,
+        "role": "string",
+        "slug": "string",
+        "title": "string"
+      }
     ],
     "result_count": 1,
     "traversal_paths": [
-      null
+      {
+        "edges": [
+          {
+            "from_page_id": "string",
+            "link_type": "string",
+            "role": "string",
+            "score": 0.0,
+            "to_page_id": "string"
+          }
+        ],
+        "nodes": [
+          "string"
+        ],
+        "path_id": "string",
+        "role": "string",
+        "score": 0.0,
+        "stop_reason": "string",
+        "used_for_answer": false
+      }
     ],
     "updated_conversation_summary": null,
     "web_search_executed": true,
@@ -10443,17 +10493,17 @@ Handle Agent Turn
   },
   "edit": {
     "actual_target": {
-      "end_line": null,
-      "start_line": null,
-      "type": null
+      "end_line": 0,
+      "start_line": 0,
+      "type": "string"
     },
     "changed": true,
     "operation": "replace",
     "replacement_markdown": "string",
     "requested_target": {
-      "end_line": null,
-      "start_line": null,
-      "type": null
+      "end_line": 0,
+      "start_line": 0,
+      "type": "string"
     },
     "scope_expanded": true,
     "summary": "string"
@@ -10480,7 +10530,8 @@ Handle Agent Turn
     "description": null,
     "instructions_markdown": null,
     "issues": [
-      null
+      {
+      }
     ],
     "name": null,
     "question": null,
@@ -10493,7 +10544,7 @@ Handle Agent Turn
   "skill_candidates": [
     {
       "capabilities": [
-        null
+        "string"
       ],
       "description": "string",
       "id": "string",
@@ -10519,7 +10570,7 @@ Handle Agent Turn
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -10554,18 +10605,75 @@ curl -X POST '/agent/turn' \
     "answer": "string",
     "error_code": null,
     "evidence_snippets": [
-      null
+      {
+        "rank": 0,
+        "source_block_ids": [
+          "string"
+        ],
+        "source_document_id": "string",
+        "source_refs": [
+          {
+            "source_block_id": "string",
+            "source_document_id": "string"
+          }
+        ],
+        "text": "string"
+      }
     ],
     "graph_context": {
-      "edges": null,
-      "nodes": null
+      "edges": [
+        {
+          "from_page_id": "string",
+          "link_type": "string",
+          "role": "string",
+          "score": 0.0,
+          "to_page_id": "string"
+        }
+      ],
+      "nodes": [
+        {
+          "depth": 0,
+          "id": "string",
+          "page_type": "string",
+          "relevance_score": 0.0,
+          "role": "string",
+          "slug": "string",
+          "title": "string"
+        }
+      ]
     },
     "related_pages": [
-      null
+      {
+        "depth": 0,
+        "id": "string",
+        "page_type": "string",
+        "relevance_score": 0.0,
+        "role": "string",
+        "slug": "string",
+        "title": "string"
+      }
     ],
     "result_count": 1,
     "traversal_paths": [
-      null
+      {
+        "edges": [
+          {
+            "from_page_id": "string",
+            "link_type": "string",
+            "role": "string",
+            "score": 0.0,
+            "to_page_id": "string"
+          }
+        ],
+        "nodes": [
+          "string"
+        ],
+        "path_id": "string",
+        "role": "string",
+        "score": 0.0,
+        "stop_reason": "string",
+        "used_for_answer": false
+      }
     ],
     "updated_conversation_summary": null,
     "web_search_executed": true,
@@ -10573,17 +10681,17 @@ curl -X POST '/agent/turn' \
   },
   "edit": {
     "actual_target": {
-      "end_line": null,
-      "start_line": null,
-      "type": null
+      "end_line": 0,
+      "start_line": 0,
+      "type": "string"
     },
     "changed": true,
     "operation": "replace",
     "replacement_markdown": "string",
     "requested_target": {
-      "end_line": null,
-      "start_line": null,
-      "type": null
+      "end_line": 0,
+      "start_line": 0,
+      "type": "string"
     },
     "scope_expanded": true,
     "summary": "string"
@@ -10610,7 +10718,8 @@ curl -X POST '/agent/turn' \
     "description": null,
     "instructions_markdown": null,
     "issues": [
-      null
+      {
+      }
     ],
     "name": null,
     "question": null,
@@ -10623,7 +10732,7 @@ curl -X POST '/agent/turn' \
   "skill_candidates": [
     {
       "capabilities": [
-        null
+        "string"
       ],
       "description": "string",
       "id": "string",
@@ -10706,7 +10815,7 @@ List Agent Artifacts
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -10824,7 +10933,7 @@ Register Agent Artifact
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -10940,7 +11049,7 @@ Resolve Agent Artifact
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11044,7 +11153,7 @@ Authorize Agent Tool Execute
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11133,7 +11242,7 @@ Authorize Agent Tool Read
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11230,7 +11339,7 @@ Get Markdown Agent Run
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11345,7 +11454,7 @@ Run Chat Wiki Endpoint
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11458,7 +11567,7 @@ Run Reingest Pipeline Endpoint
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11571,7 +11680,7 @@ Run Pipeline Endpoint
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11664,7 +11773,7 @@ Get Pipeline Run
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11748,7 +11857,7 @@ string
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11833,7 +11942,7 @@ Get Document Wiki Context
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11918,7 +12027,7 @@ Get Wiki Graph
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -11989,7 +12098,10 @@ Restore Ingest Operation
   "rebuild_pages": [
     {
       "keep_contributions": [
-        null
+        {
+          "document_id": "string",
+          "operation_id": "string"
+        }
       ],
       "page_id": "string"
     }
@@ -12028,7 +12140,7 @@ Restore Ingest Operation
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12098,7 +12210,10 @@ Restore Lint Operation
   "rebuild_pages": [
     {
       "keep_contributions": [
-        null
+        {
+          "document_id": "string",
+          "operation_id": "string"
+        }
       ],
       "page_id": "string"
     }
@@ -12133,7 +12248,7 @@ Restore Lint Operation
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12263,7 +12378,7 @@ Lint Wiki Workspace
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12392,7 +12507,7 @@ Lookup Wiki Pages
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12482,7 +12597,7 @@ Get Wiki Page
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12576,7 +12691,7 @@ Rename Wiki Page
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12664,7 +12779,7 @@ Delete Document Wiki Data
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12749,7 +12864,7 @@ Get Last Wiki Updated
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12844,11 +12959,14 @@ Answer Query
     {
       "rank": 1,
       "source_block_ids": [
-        null
+        "string"
       ],
       "source_document_id": "string",
       "source_refs": [
-        null
+        {
+          "source_block_id": "string",
+          "source_document_id": "string"
+        }
       ],
       "text": "string"
     }
@@ -12856,22 +12974,22 @@ Answer Query
   "graph_context": {
     "edges": [
       {
-        "from_page_id": null,
-        "link_type": null,
-        "role": null,
-        "score": null,
-        "to_page_id": null
+        "from_page_id": "string",
+        "link_type": "string",
+        "role": "string",
+        "score": 0.0,
+        "to_page_id": "string"
       }
     ],
     "nodes": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 0,
+        "id": "string",
+        "page_type": "string",
+        "relevance_score": 0.0,
+        "role": "string",
+        "slug": "string",
+        "title": "string"
       }
     ]
   },
@@ -12890,10 +13008,16 @@ Answer Query
   "traversal_paths": [
     {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "string",
+          "role": "string",
+          "score": 0.0,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        "string"
       ],
       "path_id": "string",
       "role": "string",
@@ -12923,7 +13047,7 @@ Answer Query
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -12959,11 +13083,14 @@ curl -X POST '/query' \
     {
       "rank": 1,
       "source_block_ids": [
-        null
+        "string"
       ],
       "source_document_id": "string",
       "source_refs": [
-        null
+        {
+          "source_block_id": "string",
+          "source_document_id": "string"
+        }
       ],
       "text": "string"
     }
@@ -12971,22 +13098,22 @@ curl -X POST '/query' \
   "graph_context": {
     "edges": [
       {
-        "from_page_id": null,
-        "link_type": null,
-        "role": null,
-        "score": null,
-        "to_page_id": null
+        "from_page_id": "string",
+        "link_type": "string",
+        "role": "string",
+        "score": 0.0,
+        "to_page_id": "string"
       }
     ],
     "nodes": [
       {
-        "depth": null,
-        "id": null,
-        "page_type": null,
-        "relevance_score": null,
-        "role": null,
-        "slug": null,
-        "title": null
+        "depth": 0,
+        "id": "string",
+        "page_type": "string",
+        "relevance_score": 0.0,
+        "role": "string",
+        "slug": "string",
+        "title": "string"
       }
     ]
   },
@@ -13005,10 +13132,16 @@ curl -X POST '/query' \
   "traversal_paths": [
     {
       "edges": [
-        null
+        {
+          "from_page_id": "string",
+          "link_type": "string",
+          "role": "string",
+          "score": 0.0,
+          "to_page_id": "string"
+        }
       ],
       "nodes": [
-        null
+        "string"
       ],
       "path_id": "string",
       "role": "string",
@@ -13064,27 +13197,37 @@ List Skills
 [
   {
     "enabled_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "string",
+      "status": "string",
+      "version": 0
     },
     "id": "string",
     "latest_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "string",
+      "status": "string",
+      "version": 0
     },
     "owner_user_id": "string",
     "scope_type": "string",
@@ -13110,7 +13253,7 @@ List Skills
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13140,27 +13283,37 @@ curl -X GET '/skills?workspace_id=<value>&user_id=<value>' \
 [
   {
     "enabled_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "string",
+      "status": "string",
+      "version": 0
     },
     "id": "string",
     "latest_version": {
-      "allowed_tools": null,
-      "capabilities": null,
-      "description": null,
-      "id": null,
-      "instructions_markdown": null,
-      "lint_result": null,
-      "name": null,
-      "status": null,
-      "version": null
+      "allowed_tools": [
+        "string"
+      ],
+      "capabilities": [
+        "string"
+      ],
+      "description": "string",
+      "id": "string",
+      "instructions_markdown": "string",
+      "lint_result": {
+      },
+      "name": "string",
+      "status": "string",
+      "version": 0
     },
     "owner_user_id": "string",
     "scope_type": "string",
@@ -13254,7 +13407,7 @@ Author Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13379,7 +13532,7 @@ Publish Authored Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13496,7 +13649,7 @@ Preview Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13572,10 +13725,10 @@ Get Skill
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13589,10 +13742,10 @@ Get Skill
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13626,7 +13779,7 @@ Get Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13656,10 +13809,10 @@ curl -X GET '/skills/<value>?workspace_id=<value>&user_id=<value>' \
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13673,10 +13826,10 @@ curl -X GET '/skills/<value>?workspace_id=<value>&user_id=<value>' \
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13774,7 +13927,7 @@ Update Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13865,10 +14018,10 @@ Disable Skill
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13882,10 +14035,10 @@ Disable Skill
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13919,7 +14072,7 @@ Disable Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -13951,10 +14104,10 @@ curl -X POST '/skills/<value>/disable' \
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -13968,10 +14121,10 @@ curl -X POST '/skills/<value>/disable' \
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -14035,10 +14188,10 @@ Enable Skill
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -14052,10 +14205,10 @@ Enable Skill
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -14089,7 +14242,7 @@ Enable Skill
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -14121,10 +14274,10 @@ curl -X POST '/skills/<value>/enable' \
 {
   "enabled_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -14138,10 +14291,10 @@ curl -X POST '/skills/<value>/enable' \
   "id": "string",
   "latest_version": {
     "allowed_tools": [
-      null
+      "string"
     ],
     "capabilities": [
-      null
+      "string"
     ],
     "description": "string",
     "id": "string",
@@ -14213,11 +14366,11 @@ Get Active Wiki Schema
   "id": "string",
   "issues": [
     {
-      "category": null,
-      "reason": null,
-      "section": null,
-      "severity": null,
-      "text": null
+      "category": "string",
+      "reason": "string",
+      "section": "string",
+      "severity": "string",
+      "text": "string"
     }
   ],
   "name": "string",
@@ -14242,7 +14395,7 @@ Get Active Wiki Schema
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -14284,11 +14437,11 @@ curl -X GET '/wiki-schema/active?workspace_id=<value>&user_id=<value>' \
   "id": "string",
   "issues": [
     {
-      "category": null,
-      "reason": null,
-      "section": null,
-      "severity": null,
-      "text": null
+      "category": "string",
+      "reason": "string",
+      "section": "string",
+      "severity": "string",
+      "text": "string"
     }
   ],
   "name": "string",
@@ -14357,11 +14510,11 @@ Create Wiki Schema Draft
     "id": "string",
     "issues": [
       {
-        "category": null,
-        "reason": null,
-        "section": null,
-        "severity": null,
-        "text": null
+        "category": "string",
+        "reason": "string",
+        "section": "string",
+        "severity": "string",
+        "text": "string"
       }
     ],
     "name": "string",
@@ -14387,7 +14540,7 @@ Create Wiki Schema Draft
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -14432,11 +14585,11 @@ curl -X POST '/wiki-schema/drafts' \
     "id": "string",
     "issues": [
       {
-        "category": null,
-        "reason": null,
-        "section": null,
-        "severity": null,
-        "text": null
+        "category": "string",
+        "reason": "string",
+        "section": "string",
+        "severity": "string",
+        "text": "string"
       }
     ],
     "name": "string",
@@ -14525,7 +14678,7 @@ Preview Wiki Schema
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -14656,7 +14809,7 @@ Activate Wiki Schema
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"
@@ -14768,7 +14921,7 @@ Get Document
       "input": {
       },
       "loc": [
-        null
+        "string"
       ],
       "msg": "string",
       "type": "string"

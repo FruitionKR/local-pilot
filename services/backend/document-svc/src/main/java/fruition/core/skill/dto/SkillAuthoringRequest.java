@@ -39,7 +39,7 @@ public record SkillAuthoringRequest(
 
         @JsonProperty("reference_document_ids")
         @Size(max = 3)
-        @Schema(description = "작성에 참고할 문서 ID 목록(최대 3개)", maxLength = 3)
+        @Schema(description = "작성에 참고할 문서 ID 목록(최대 3개)")
         List<@NotBlank String> referenceDocumentIds
 ) {
     public SkillAuthoringRequest {

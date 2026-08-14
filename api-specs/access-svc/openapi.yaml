@@ -554,8 +554,9 @@ paths:
       - internal-workspace-ai-model-controller
 components:
   schemas:
-    AiModelSelection:
+    AiModelSelectionRequest:
       type: object
+      description: 설정할 provider와 model 조합. 활성 catalog에 있는 짝만 허용된다.
       properties:
         model:
           type: string
@@ -824,7 +825,7 @@ components:
       description: 워크스페이스 AI 모델 설정 변경 요청. OWNER만 호출할 수 있다.
       properties:
         ingest_lint:
-          $ref: "#/components/schemas/AiModelSelection"
+          $ref: "#/components/schemas/AiModelSelectionRequest"
           description: ingest·lint 작업에 쓸 provider/model 조합
       required:
       - ingest_lint

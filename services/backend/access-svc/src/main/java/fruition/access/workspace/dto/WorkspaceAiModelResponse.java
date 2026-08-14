@@ -15,6 +15,8 @@ public record WorkspaceAiModelResponse(
                 workspace.getIngestLintProvider(), workspace.getIngestLintModel()));
     }
 
+    // WorkspaceAiModelRequest의 동명 record와 겹치지 않도록 스키마 이름을 분리한다.
+    @Schema(name = "AiModelSelectionResponse", description = "현재 설정된 provider와 model 조합")
     public record AiModelSelection(
             @Schema(description = "LLM provider", allowableValues = {"openai", "gemini", "claude"},
                     example = "openai")

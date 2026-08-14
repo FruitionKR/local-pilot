@@ -5968,7 +5968,6 @@ components:
             type: string
             minLength: 1
           maxItems: 3
-          maxLength: 3
           minItems: 0
         scope_type:
           type: string
