@@ -9,6 +9,7 @@ ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
 PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
+LOGS_DIR="$ROOT_DIR/logs"
 
 DOCUMENT_PID=""
 ACCESS_PID=""
@@ -192,11 +193,14 @@ start_backend() {
   local java21_home="$1"
 
   # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
+  # tee로 갈라 터미널에도 보여주고 logs/에도 남긴다. 호스트 프로세스는 docker logs로
+  # 받을 수 없어서, 시작 시점에 파일로 갈라두지 않으면 종료와 함께 로그가 사라진다.
   log "document-svc를 시작합니다. Java 21: $java21_home"
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/document-svc.log"
   ) &
   DOCUMENT_PID="$!"
 
@@ -206,7 +210,8 @@ start_backend() {
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/access-svc.log"
   ) &
   ACCESS_PID="$!"
 
@@ -225,7 +230,7 @@ start_frontend() {
   log "프론트엔드를 시작합니다."
   (
     cd "$FRONTEND_DIR"
-    npm run dev
+    npm run dev 2>&1 | tee -a "$LOGS_DIR/frontend.log"
   ) &
   FRONTEND_PID="$!"
 
@@ -238,6 +243,7 @@ main() {
   need_cmd curl
   ensure_env_file
   ensure_docker
+  mkdir -p "$LOGS_DIR"
 
   local java21_home
   java21_home="$(find_java21_home)" || fail "Java 21을 찾지 못했습니다. JAVA_HOME_21을 지정하거나 JDK 21을 설치하세요."
@@ -246,6 +252,9 @@ main() {
   start_backend "$java21_home"
   start_pipeline
   start_frontend
+
+  # 워커 컨테이너 로그 수집. 실패해도 개발 서버 기동은 막지 않는다.
+  "$ROOT_DIR/scripts/logs-up.sh" start || log "워커 로그 수집을 시작하지 못했습니다. scripts/logs-up.sh로 따로 실행하세요."
 
   cat <<'INFO'
 
@@ -256,6 +265,7 @@ main() {
   - Pipeline:     http://localhost:8000
   - Swagger:      http://localhost:8080/swagger-ui.html
   - MinIO:        http://localhost:9001
+  - 로그:         logs/ (workers.log, document-svc.log, access-svc.log, frontend.log)
 
 [dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
 INFO
