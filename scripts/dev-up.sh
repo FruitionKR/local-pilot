@@ -254,7 +254,9 @@ main() {
   - Document-svc: http://localhost:8080
   - Access-svc:   http://localhost:8081
   - Pipeline:     http://localhost:8000
-  - Swagger:      http://localhost:8080/swagger-ui.html
+  - Swagger:      http://localhost:8080/swagger-ui.html (document-svc)
+                  http://localhost:8081/swagger-ui.html (access-svc)
+                  통합 열람은 ./scripts/swagger-up.sh 후 http://localhost:8090
   - MinIO:        http://localhost:9001
 
 [dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.

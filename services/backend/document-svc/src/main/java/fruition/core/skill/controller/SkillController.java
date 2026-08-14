@@ -239,32 +239,49 @@ public class SkillController {
         return ResponseEntity.ok(skillService.setEnabled(workspaceId, userId, skillId, false));
     }
 
-    @Schema(name = "SkillResponse", requiredProperties = {"id", "workspace_id", "scope_type", "owner_user_id", "slug", "status", "enabled_version", "latest_version"})
+    @Schema(name = "SkillResponse", description = "Skill 하나. 게시된 버전(enabled_version)과 가장 최근 버전(latest_version)이 다를 수 있다.",
+            requiredProperties = {"id", "workspace_id", "scope_type", "owner_user_id", "slug", "status", "enabled_version", "latest_version"})
     private static final class SkillResponseSchema {
+        @Schema(description = "Skill ID")
         public String id;
-        @Schema(nullable = true)
+        @Schema(description = "team 범위일 때의 워크스페이스 ID. personal이면 null이다.", nullable = true)
         public String workspace_id;
+        @Schema(description = "공개 범위", allowableValues = {"personal", "team"}, example = "personal")
         public String scope_type;
-        @Schema(nullable = true)
+        @Schema(description = "personal 범위일 때의 소유자 사용자 ID. team이면 null이다.", nullable = true)
         public String owner_user_id;
+        @Schema(description = "URL·참조에 쓰는 식별자", example = "meeting-notes")
         public String slug;
+        @Schema(description = "Skill 상태", example = "published")
         public String status;
-        @Schema(allOf = SkillVersionResponseSchema.class, nullable = true)
+        @Schema(description = "현재 활성화된 버전. 없으면 null이다.",
+                allOf = SkillVersionResponseSchema.class, nullable = true)
         public Object enabled_version;
-        @Schema(allOf = SkillVersionResponseSchema.class, nullable = true)
+        @Schema(description = "가장 최근에 만들어진 버전. 없으면 null이다.",
+                allOf = SkillVersionResponseSchema.class, nullable = true)
         public Object latest_version;
     }
 
-    @Schema(name = "SkillVersionResponse", requiredProperties = {"id", "version", "name", "description", "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status"})
+    @Schema(name = "SkillVersionResponse", description = "Skill의 특정 버전 내용",
+            requiredProperties = {"id", "version", "name", "description", "instructions_markdown", "capabilities", "allowed_tools", "lint_result", "status"})
     private static final class SkillVersionResponseSchema {
+        @Schema(description = "버전 ID")
         public String id;
+        @Schema(description = "버전 번호. 게시할 때마다 1씩 올라간다.", example = "3")
         public int version;
+        @Schema(description = "Skill 이름", example = "meeting-notes")
         public String name;
+        @Schema(description = "Skill 설명")
         public String description;
+        @Schema(description = "Skill 지침 Markdown")
         public String instructions_markdown;
+        @Schema(description = "이 Skill이 수행할 수 있는 기능 목록")
         public java.util.List<String> capabilities;
+        @Schema(description = "이 Skill이 쓸 수 있는 도구 목록")
         public java.util.List<String> allowed_tools;
+        @Schema(description = "게시 전 점검 결과. 항목별 통과 여부가 담긴다.")
         public java.util.Map<String, Object> lint_result;
+        @Schema(description = "버전 상태", example = "published")
         public String status;
     }
 }

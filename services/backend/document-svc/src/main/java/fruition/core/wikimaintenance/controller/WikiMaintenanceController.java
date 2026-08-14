@@ -83,11 +83,14 @@ public class WikiMaintenanceController {
         return ResponseEntity.ok(wikiMaintenanceService.run(workspaceId, userId, runId));
     }
 
-    @Schema(name = "WikiLintResponse", requiredProperties = {"run_id", "operation_id", "status"})
+    @Schema(name = "WikiLintResponse", description = "lint 실행 접수 결과. 실제 점검은 비동기로 진행된다.",
+            requiredProperties = {"run_id", "operation_id", "status"})
     private static final class WikiLintResponseSchema {
+        @Schema(description = "이번 점검을 처리하는 run ID")
         public String run_id;
-        @Schema(nullable = true)
+        @Schema(description = "이 점검이 만든 AI 작업 ID. dry_run이면 null이다.", nullable = true)
         public String operation_id;
+        @Schema(description = "접수 직후 상태", example = "queued")
         public String status;
     }
 }

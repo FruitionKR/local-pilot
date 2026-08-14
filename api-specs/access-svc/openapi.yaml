@@ -1,0 +1,931 @@
+openapi: 3.1.0
+info:
+  contact:
+    email: wonbb3313@gmail.com
+    name: Fruition
+  description: Fruition PoC 백엔드 API
+  title: Fruition API
+  version: 0.0.1
+security:
+- bearerAuth: []
+tags:
+- description: 회원가입 및 인증 API
+  name: Auth
+- description: 워크스페이스 CRUD API
+  name: Workspaces
+paths:
+  /api/auth/email-verifications:
+    post:
+      description: 회원가입/비밀번호 재설정을 위한 인증번호를 발급합니다.
+      operationId: requestEmailVerification
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationRequest"
+        required: true
+      responses:
+        "202":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/EmailVerificationResponse"
+          description: 인증번호 발급
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이미 가입된 이메일(purpose=signup)
+        "429":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 재요청 제한 초과
+      summary: 이메일 인증번호 발급
+      tags:
+      - Auth
+  /api/auth/email-verifications/{verification_id}/confirm:
+    post:
+      description: 인증번호를 검증하고 1회용 verification_token을 발급합니다.
+      operationId: confirmEmailVerification
+      parameters:
+      - in: path
+        name: verification_id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerificationConfirmRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VerificationConfirmResponse"
+          description: 검증 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증번호 불일치·만료·시도 초과
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증 요청을 찾을 수 없음
+      summary: 이메일 인증번호 검증
+      tags:
+      - Auth
+  /api/auth/login:
+    post:
+      description: 이메일/비밀번호를 검증하고 access/refresh token을 발급합니다.
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: 로그인 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이메일 또는 비밀번호 불일치
+      summary: 로그인
+      tags:
+      - Auth
+  /api/auth/logout:
+    post:
+      description: refresh token을 폐기합니다.
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "204":
+          description: 로그아웃 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 유효하지 않거나 만료된 refresh token
+      summary: 로그아웃
+      tags:
+      - Auth
+  /api/auth/me:
+    get:
+      description: access token으로 인증된 사용자의 프로필을 반환합니다.
+      operationId: me
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+          description: 조회 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 인증되지 않음
+      summary: 내 정보 조회
+      tags:
+      - Auth
+  /api/auth/oauth/exchange:
+    post:
+      description: OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 교환합니다.
+      operationId: exchangeOAuthCode
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthExchangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: 교환 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 유효하지 않거나 만료된 code
+      summary: OAuth code 교환
+      tags:
+      - Auth
+  /api/auth/password-reset:
+    post:
+      description: verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 세션을 폐기합니다.
+      operationId: resetPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+        required: true
+      responses:
+        "204":
+          description: 재설정 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청 또는 유효하지 않은 토큰
+      summary: 비밀번호 재설정
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      description: refresh token을 검증하고 access/refresh token을 새로 발급합니다. 기존 refresh token은 폐기됩니다.
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+          description: 재발급 성공
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 유효하지 않거나 만료된 refresh token
+      summary: 토큰 재발급
+      tags:
+      - Auth
+  /api/auth/signup:
+    post:
+      description: 이메일/비밀번호로 신규 사용자를 생성합니다.
+      operationId: signup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SignupResponse"
+          description: 회원가입 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 이미 가입된 이메일
+      summary: 회원가입
+      tags:
+      - Auth
+  /api/workspaces:
+    get:
+      description: 로그인한 사용자가 소유한 워크스페이스 목록을 반환합니다.
+      operationId: list
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceListResponse"
+          description: 조회 성공
+      summary: 워크스페이스 목록 조회
+      tags:
+      - Workspaces
+    post:
+      description: 로그인한 사용자 소유의 워크스페이스를 생성합니다.
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceCreateRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: 생성 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 요청
+      summary: 워크스페이스 생성
+      tags:
+      - Workspaces
+  /api/workspaces/trash:
+    get:
+      description: 소유자가 삭제한 워크스페이스를 반환합니다.
+      operationId: trash
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceTrashResponse"
+          description: OK
+      summary: 삭제 워크스페이스 목록
+      tags:
+      - Workspaces
+  /api/workspaces/{workspace_id}:
+    delete:
+      description: 소유한 워크스페이스를 하위 데이터 변경 없이 소프트 삭제합니다.
+      operationId: delete
+      parameters:
+      - description: 워크스페이스 ID
+        example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - example: 550e8400-e29b-41d4-a716-446655440000
+        in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceLifecycleResponse"
+          description: 삭제 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 Idempotency-Key
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 워크스페이스를 찾을 수 없음
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Idempotency-Key 충돌
+      summary: 워크스페이스 삭제
+      tags:
+      - Workspaces
+    patch:
+      description: 로그인한 사용자가 소유한 워크스페이스의 이름을 변경합니다.
+      operationId: rename
+      parameters:
+      - description: 워크스페이스 ID
+        example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceRenameRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceResponse"
+          description: 변경 성공
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 워크스페이스를 찾을 수 없음
+      summary: 워크스페이스 이름 변경
+      tags:
+      - Workspaces
+  /api/workspaces/{workspace_id}/restore:
+    post:
+      description: 소프트 삭제한 워크스페이스와 기존 하위 데이터의 접근을 복구합니다.
+      operationId: restore
+      parameters:
+      - example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - example: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+        in: header
+        name: Idempotency-Key
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceLifecycleResponse"
+          description: 복구 성공
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 잘못된 Idempotency-Key
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 삭제 workspace 또는 소유권을 찾을 수 없음
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Idempotency-Key 충돌
+      summary: 워크스페이스 복구
+      tags:
+      - Workspaces
+  /internal/authz/workspaces/{workspace_id}/users/{user_id}:
+    get:
+      operationId: role
+      parameters:
+      - example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+          description: OK
+      tags:
+      - internal-authz-controller
+  /internal/users/{user_id}:
+    get:
+      operationId: user
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+          description: OK
+      tags:
+      - internal-authz-controller
+  /internal/workspaces/{workspace_id}/ai-model-settings:
+    get:
+      operationId: get
+      parameters:
+      - example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+          description: OK
+      tags:
+      - internal-workspace-ai-model-controller
+    put:
+      operationId: update
+      parameters:
+      - example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - in: header
+        name: X-Internal-Token
+        required: false
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceAiModelRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: object
+          description: OK
+      tags:
+      - internal-workspace-ai-model-controller
+components:
+  schemas:
+    AiModelSelection:
+      type: object
+      properties:
+        model:
+          type: string
+          description: provider와 짝이 맞는 모델명
+          example: gpt-5-nano
+          minLength: 1
+        provider:
+          type: string
+          description: LLM provider. 활성 model catalog에 있는 조합만 허용된다.
+          enum:
+          - openai
+          - gemini
+          - claude
+          example: openai
+          minLength: 1
+      required:
+      - model
+      - provider
+    EmailVerificationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: 인증번호를 받을 이메일
+          example: user@example.com
+          minLength: 1
+        purpose:
+          type: string
+          description: 인증 목적. signup은 이미 가입된 이메일이면 409로 거절된다.
+          enum:
+          - signup
+          - password_reset
+          example: signup
+          minLength: 1
+          pattern: signup|password_reset
+      required:
+      - email
+      - purpose
+    EmailVerificationResponse:
+      type: object
+      properties:
+        expires_in:
+          type: integer
+          format: int64
+          description: 인증번호 유효 시간(초)
+          example: 300
+        retry_after:
+          type: integer
+          format: int64
+          description: 재발송이 가능해지기까지 남은 시간(초). 429의 Retry-After 헤더와는 다른 값이다.
+          example: 60
+        verification_id:
+          type: string
+          description: 발급된 인증 요청 ID. confirm 호출 시 경로에 넣는다.
+          example: ev_3f1c8a6b52d7411e9c04ab5d2e7f6081
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 분기 기준으로 쓰는 값. message가 아니라 이 값으로 분기한다.
+          example: INVALID_REQUEST
+        details:
+          type: array
+          description: 검증 실패(400 INVALID_REQUEST)일 때만 존재한다. 값이 없으면 키 자체가 빠지므로 null 체크가 아니라 존재 여부로 확인한다.
+          items:
+            $ref: "#/components/schemas/FieldError"
+        message:
+          type: string
+          description: 사용자에게 그대로 보여도 되는 한국어 문구
+          example: 요청 형식이 올바르지 않습니다.
+    ErrorResponse:
+      type: object
+      description: 모든 API가 공유하는 에러 응답 형식. 인증 단계에서 거부되는 401·403도 같은 형태다.
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+          description: 에러 상세
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+          description: 문제가 된 요청 필드명
+          example: email
+        reason:
+          type: string
+          description: 그 필드의 위반 사유
+          example: email은 필수입니다.
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          default: user@example.com
+          description: 가입한 이메일
+          example: user@example.com
+          minLength: 1
+        password:
+          type: string
+          default: stringst
+          description: 비밀번호. 계정 없음·비밀번호 불일치·OAuth 전용 계정이 모두 같은 401로 응답된다.
+          example: stringst
+          minLength: 1
+      required:
+      - email
+      - password
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: "API 호출에 쓰는 JWT. Authorization: Bearer <access_token>으로 보낸다. payload의 sub(사용자 ID)·email·exp(만료 Unix seconds)를 갱신 타이밍 계산에 쓸 수 있다."
+        expires_in:
+          type: integer
+          format: int64
+          description: access_token 유효 시간(초)
+          example: 900
+        refresh_token:
+          type: string
+          description: 재발급용 opaque 토큰. refresh 호출마다 rotation되어 이전 토큰은 폐기된다.
+          example: EXAMPLE-refresh-token-not-a-real-value-0000
+        token_type:
+          type: string
+          description: 인증 스킴. 항상 Bearer다.
+          example: Bearer
+    MeResponse:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: 가입 시각(ISO-8601 UTC)
+          example: 2026-08-13T04:25:24.371948Z
+        display_name:
+          type: string
+          description: 화면에 보여줄 이름
+          example: 표시 이름
+        email:
+          type: string
+          description: 가입 이메일
+          example: user@example.com
+        id:
+          type: string
+          description: 사용자 ID
+          example: user_3f1c8a6b52d7411e9c04ab5d2e7f6081
+    OAuthExchangeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: OAuth 로그인 성공 후 redirect로 받은 1회용 교환 코드(TTL 60초)
+          minLength: 1
+      required:
+      - code
+    PasswordResetRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: 비밀번호를 재설정할 계정 이메일
+          example: user@example.com
+          minLength: 1
+        new_password:
+          type: string
+          description: 새 비밀번호(8~72자). 성공하면 해당 사용자의 refresh token이 전부 폐기된다.
+          example: password1234
+          maxLength: 72
+          minLength: 8
+        verification_token:
+          type: string
+          description: purpose=password_reset로 받은 1회용 토큰
+          example: EXAMPLE-verification-token-not-real-0000000
+          minLength: 1
+      required:
+      - email
+      - new_password
+      - verification_token
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: 로그인 때 받은 refresh token. 재발급에 성공하면 폐기되고 새 토큰으로 교체된다.
+          example: EXAMPLE-refresh-token-not-a-real-value-0000
+          minLength: 1
+      required:
+      - refresh_token
+    SignupRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          description: 표시명(50자 이하). 생략하면 이메일의 @ 앞부분이 표시명이 된다.
+          example: 표시 이름
+          maxLength: 50
+          minLength: 0
+        email:
+          type: string
+          format: email
+          description: 가입할 이메일. 이미 가입된 이메일이면 토큰 유효성과 무관하게 409 DUPLICATE_EMAIL이 먼저 나온다.
+          example: user@example.com
+          minLength: 1
+        password:
+          type: string
+          description: 비밀번호(8~72자)
+          example: password1234
+          maxLength: 72
+          minLength: 8
+        verification_token:
+          type: string
+          description: 인증번호 검증으로 받은 1회용 토큰
+          example: EXAMPLE-verification-token-not-real-0000000
+          minLength: 1
+      required:
+      - email
+      - password
+      - verification_token
+    SignupResponse:
+      type: object
+      description: 가입 결과. 토큰은 담기지 않으므로 로그인 상태로 만들려면 POST /api/auth/login을 이어서 호출한다.
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: 가입 시각(ISO-8601 UTC)
+          example: 2026-08-13T04:25:24.371948Z
+        display_name:
+          type: string
+          description: 화면에 보여줄 이름
+          example: 표시 이름
+        email:
+          type: string
+          description: 가입 이메일
+          example: user@example.com
+        id:
+          type: string
+          description: 생성된 사용자 ID
+          example: user_3f1c8a6b52d7411e9c04ab5d2e7f6081
+    VerificationConfirmRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 메일로 받은 인증번호. 오입력 5회에서 잠기며 잔여 횟수는 응답에 담기지 않는다.
+          example: '042173'
+          minLength: 1
+      required:
+      - code
+    VerificationConfirmResponse:
+      type: object
+      properties:
+        expires_in:
+          type: integer
+          format: int64
+          description: verification_token 유효 시간(초)
+          example: 600
+        verification_token:
+          type: string
+          description: 1회용 토큰. signup 또는 password-reset 요청에 그대로 실어 보낸다.
+          example: EXAMPLE-verification-token-not-real-0000000
+    WorkspaceAiModelRequest:
+      type: object
+      description: 워크스페이스 AI 모델 설정 변경 요청. OWNER만 호출할 수 있다.
+      properties:
+        ingest_lint:
+          $ref: "#/components/schemas/AiModelSelection"
+          description: ingest·lint 작업에 쓸 provider/model 조합
+      required:
+      - ingest_lint
+    WorkspaceCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 워크스페이스 이름(255자 이하)
+          example: 내 워크스페이스
+          maxLength: 255
+          minLength: 0
+      required:
+      - name
+    WorkspaceLifecycleResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+          description: 삭제(휴지통) 상태인지 여부. 복구하면 false가 된다.
+          example: true
+        deleted_at:
+          type: string
+          format: date-time
+          description: 삭제된 시각(ISO-8601 UTC). 복구된 경우 null이다.
+          example: 2026-08-13T04:25:24.371948Z
+        id:
+          type: string
+          description: 대상 워크스페이스 ID
+          example: ws_9d47a0e9a6324341b47562553b75f92a
+    WorkspaceListResponse:
+      type: object
+      properties:
+        workspaces:
+          type: array
+          description: 내가 활성 멤버인 워크스페이스 목록
+          items:
+            $ref: "#/components/schemas/WorkspaceResponse"
+    WorkspaceRenameRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 새 워크스페이스 이름(255자 이하)
+          example: 이름 바꾼 워크스페이스
+          maxLength: 255
+          minLength: 0
+      required:
+      - name
+    WorkspaceResponse:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: 생성 시각(ISO-8601 UTC)
+          example: 2026-08-13T04:25:24.371948Z
+        id:
+          type: string
+          description: 워크스페이스 ID. 이후 대부분의 API 경로에 들어간다.
+          example: ws_9d47a0e9a6324341b47562553b75f92a
+        name:
+          type: string
+          description: 워크스페이스 이름
+          example: 내 워크스페이스
+        updated_at:
+          type: string
+          format: date-time
+          description: 마지막 변경 시각(ISO-8601 UTC)
+          example: 2026-08-13T04:25:24.371948Z
+    WorkspaceTrashItem:
+      type: object
+      properties:
+        deleted_at:
+          type: string
+          format: date-time
+          description: 삭제된 시각(ISO-8601 UTC)
+          example: 2026-08-13T04:25:24.371948Z
+        deleted_by:
+          type: string
+          description: 삭제한 사용자 ID
+          example: user_3f1c8a6b52d7411e9c04ab5d2e7f6081
+        id:
+          type: string
+          description: 워크스페이스 ID
+          example: ws_9d47a0e9a6324341b47562553b75f92a
+        name:
+          type: string
+          description: 워크스페이스 이름
+          example: 내 워크스페이스
+    WorkspaceTrashResponse:
+      type: object
+      properties:
+        workspaces:
+          type: array
+          description: 삭제되어 휴지통에 있는 워크스페이스 목록
+          items:
+            $ref: "#/components/schemas/WorkspaceTrashItem"
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      name: bearerAuth
+      scheme: bearer
+      type: http

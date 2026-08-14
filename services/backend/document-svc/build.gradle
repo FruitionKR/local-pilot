@@ -39,6 +39,8 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// api-specs/document-svc/openapi.yaml 스냅샷 생성·비교
+	testImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
 	testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:junit-jupiter'
 	testImplementation 'org.testcontainers:postgresql'
@@ -93,6 +95,10 @@ tasks.named('test') {
 	// Testcontainers postgres에는 migration 전용 계정이 없다 — 컨테이너 기본 계정으로 Flyway를 돌린다.
 	environment('CORE_DB_MIGRATION_USER', 'test')
 	environment('CORE_DB_MIGRATION_PASSWORD', 'test')
+	// OpenAPI 스냅샷 위치. rootDir은 services/backend이므로 두 단계 위가 저장소 루트다.
+	systemProperty 'openapi.snapshot.path', file("$rootDir/../../api-specs/document-svc/openapi.yaml").absolutePath
+	// Gradle은 -D를 테스트 JVM으로 자동 전달하지 않는다 — 갱신 플래그를 명시적으로 넘긴다.
+	systemProperty 'updateOpenApiSnapshot', System.getProperty('updateOpenApiSnapshot') ?: 'false'
 }
 
 tasks.named('bootRun') {

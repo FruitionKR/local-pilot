@@ -2,6 +2,8 @@
 
 `docs/backlog/spec/api/` 7개 스펙 문서의 압축본. 상세 계약(요청/응답 JSON, 흐름, 정합성 규칙)은 각 원문 참조.
 
+기계가 읽는 계약은 `api-specs/<service>/openapi.yaml`이다. 코드에서 생성해 커밋하며, 스냅샷 테스트가 코드와의 일치를 강제한다. 한 화면에서 보려면 `./scripts/swagger-up.sh`(:8090).
+
 ## 공통
 
 - 서비스 라우팅: `/api/auth/*`·`/api/workspaces` → access-svc(:8081), 그 외 → document-svc(:8080).

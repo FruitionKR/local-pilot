@@ -23,6 +23,8 @@ dependencies {
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// api-specs/access-svc/openapi.yaml 스냅샷 생성·비교
+	testImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
 	testImplementation 'org.testcontainers:junit-jupiter'
 	testImplementation 'org.testcontainers:postgresql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -32,6 +34,10 @@ tasks.named('test') {
 	useJUnitPlatform()
 	// 운영 기본값을 두지 않는 설정이라 테스트에서만 고정값을 준다.
 	environment('INTERNAL_CALLBACK_TOKEN', 'test-internal-callback')
+	// OpenAPI 스냅샷 위치. rootDir은 services/backend이므로 두 단계 위가 저장소 루트다.
+	systemProperty 'openapi.snapshot.path', file("$rootDir/../../api-specs/access-svc/openapi.yaml").absolutePath
+	// Gradle은 -D를 테스트 JVM으로 자동 전달하지 않는다 — 갱신 플래그를 명시적으로 넘긴다.
+	systemProperty 'updateOpenApiSnapshot', System.getProperty('updateOpenApiSnapshot') ?: 'false'
 }
 
 tasks.named('bootRun') {
