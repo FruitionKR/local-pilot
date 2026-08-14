@@ -11,8 +11,6 @@ import fruition.core.document.repository.DocumentAssetRepository;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -40,8 +38,8 @@ public class DocumentExportService {
 
     private final DocumentRepository documentRepository;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentEditStateInitializer editStateInitializer;
     private final WorkspaceAccessGuard workspaceAccessGuard;
-    private final MongoDocumentEditStore mongoDocumentEditStore;
     private final DocumentAssetReferenceRepository referenceRepository;
     private final DocumentAssetRepository assetRepository;
     private final DocumentAssetObjectStorage objectStorage;
@@ -50,8 +48,8 @@ public class DocumentExportService {
     public DocumentExportService(
             DocumentRepository documentRepository,
             DocumentEditStateRepository editStateRepository,
+            DocumentEditStateInitializer editStateInitializer,
             WorkspaceAccessGuard workspaceAccessGuard,
-            MongoDocumentEditStore mongoDocumentEditStore,
             DocumentAssetReferenceRepository referenceRepository,
             DocumentAssetRepository assetRepository,
             DocumentAssetObjectStorage objectStorage,
@@ -59,8 +57,8 @@ public class DocumentExportService {
     ) {
         this.documentRepository = documentRepository;
         this.editStateRepository = editStateRepository;
+        this.editStateInitializer = editStateInitializer;
         this.workspaceAccessGuard = workspaceAccessGuard;
-        this.mongoDocumentEditStore = mongoDocumentEditStore;
         this.referenceRepository = referenceRepository;
         this.assetRepository = assetRepository;
         this.objectStorage = objectStorage;
@@ -68,7 +66,8 @@ public class DocumentExportService {
     }
 
     /**
-     * DB 조회는 짧은 트랜잭션에서 끝내고 object storage 다운로드와 ZIP 생성은 트랜잭션 밖에서 한다.
+     * 권한과 문서 편집 가능 여부를 확인하고 편집 상태를 초기화한 뒤, asset/state 스냅샷 DB 조회만
+     * 짧은 트랜잭션에서 끝낸다. object storage 다운로드와 ZIP 생성은 트랜잭션 밖에서 한다.
      * 최대 100MB를 내려받는 동안 DB 커넥션을 붙잡지 않기 위해서다.
      */
     public DocumentExportResult exportMarkdown(
@@ -76,8 +75,10 @@ public class DocumentExportService {
             String userId,
             String documentId
     ) {
+        Document document = loadEditableDocument(workspaceId, userId, documentId);
+        editStateInitializer.initializeIfNeeded(document);
         ExportSource source = transactionTemplate.execute(
-                status -> loadSource(workspaceId, userId, documentId));
+                status -> loadSourceSnapshot(workspaceId, documentId, safeDocumentName(document.getDisplayName())));
 
         if (source.assets().isEmpty()) {
             return DocumentExportResult.markdown(
@@ -95,7 +96,7 @@ public class DocumentExportService {
                 rewrittenMarkdown, source.assets(), entryNames);
     }
 
-    private ExportSource loadSource(String workspaceId, String userId, String documentId) {
+    private Document loadEditableDocument(String workspaceId, String userId, String documentId) {
         workspaceAccessGuard.requireMember(workspaceId, userId);
         Document document = documentRepository
                 .findByIdAndWorkspaceIdAndDeletedAtIsNull(documentId, workspaceId)
@@ -103,14 +104,14 @@ public class DocumentExportService {
         if (document.getDocumentRole() != DocumentRole.EDITABLE) {
             throw new DocumentNotFoundException(documentId);
         }
-        // 최신 편집본은 Mongo가 canonical이다. 없으면 legacy PG 상태로 대체한다.
-        String markdown = mongoDocumentEditStore.findState(documentId)
-                .map(MongoDocumentEditState::getMarkdown)
-                .orElseGet(() -> editStateRepository.findById(documentId)
-                        .map(DocumentEditState::getMarkdown)
-                        .orElseThrow(() -> new DocumentNotFoundException(documentId)));
+        return document;
+    }
 
-        String baseName = safeDocumentName(document.getDisplayName());
+    private ExportSource loadSourceSnapshot(String workspaceId, String documentId, String baseName) {
+        String markdown = editStateRepository.findById(documentId)
+                .map(DocumentEditState::getMarkdown)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
         var references = referenceRepository.findAllByIdDocumentId(documentId);
         if (references.isEmpty()) {
             return new ExportSource(baseName, markdown, List.of());

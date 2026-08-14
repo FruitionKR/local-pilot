@@ -37,7 +37,7 @@ public class OperationRecorder {
         this.lineCounter = lineCounter;
     }
 
-    /** Mongo 저장 전에 적용 작업을 pending 감사 상태로 예약한다. */
+    /** 본문 저장 전에 적용 작업을 pending 감사 상태로 예약한다. */
     public void prepareDocumentEdit(String operationId, String workspaceId, String userId,
                                     String documentId, Instant now) {
         Optional<OperationLog> existing = operationLogRepository.findById(operationId);

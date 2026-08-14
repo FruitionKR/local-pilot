@@ -21,6 +21,9 @@ public class DocumentEditState {
     @Column(name = "content_hash", nullable = false, length = 64)
     private String contentHash;
 
+    @Column(nullable = false)
+    private long revision;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -29,23 +32,35 @@ public class DocumentEditState {
 
     protected DocumentEditState() {}
 
-    public DocumentEditState(String documentId, String markdown, String contentHash) {
+    public DocumentEditState(String documentId, String markdown, String contentHash, long revision) {
+        this(documentId, markdown, contentHash, revision, Instant.now(), Instant.now());
+    }
+
+    public DocumentEditState(String documentId, String markdown, String contentHash,
+                             long revision, Instant createdAt, Instant updatedAt) {
         this.documentId = documentId;
         this.markdown = markdown;
         this.contentHash = contentHash;
-        this.createdAt = Instant.now();
-        this.updatedAt = this.createdAt;
+        this.revision = revision;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
+    public void update(String markdown, String contentHash, long revision, Instant updatedAt) {
+        this.markdown = markdown;
+        this.contentHash = contentHash;
+        this.revision = revision;
+        this.updatedAt = updatedAt;
     }
 
     public void update(String markdown, String contentHash, Instant updatedAt) {
-        this.markdown = markdown;
-        this.contentHash = contentHash;
-        this.updatedAt = updatedAt;
+        update(markdown, contentHash, revision, updatedAt);
     }
 
     public String getDocumentId() { return documentId; }
     public String getMarkdown() { return markdown; }
     public String getContentHash() { return contentHash; }
+    public long getRevision() { return revision; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

@@ -58,6 +58,7 @@ class DocumentEditStateInitializerTest {
                 eq(document.getId()),
                 eq("# 기존 문서\n"),
                 eq("3350cfe0c286a74ff91ff31b8e2bd6488c52b1076327376429c56c0e39319c61"),
+                eq(1L),
                 any(),
                 any()
         );
@@ -83,9 +84,32 @@ class DocumentEditStateInitializerTest {
                 anyString(),
                 anyString(),
                 anyString(),
+                eq(1L),
                 any(),
                 any()
         );
         verify(minioClient, never()).getObject(any());
+    }
+
+    @Test
+    void editableDocumentWithBlankSourceUri_doesNotReadOriginalStorage() throws Exception {
+        Document document = new Document(
+                "doc_blank_source",
+                "ws_1",
+                "user_1",
+                "빈 경로.md",
+                "text/markdown",
+                100,
+                "   ",
+                "legacy-hash"
+        );
+
+        new DocumentEditStateInitializer(editStateRepository, minioClient, storageProperties)
+                .initializeIfNeeded(document);
+
+        verify(minioClient, never()).getObject(any());
+        verify(editStateRepository, never()).existsById(anyString());
+        verify(editStateRepository, never()).insertIfAbsent(
+                anyString(), anyString(), anyString(), eq(1L), any(), any());
     }
 }

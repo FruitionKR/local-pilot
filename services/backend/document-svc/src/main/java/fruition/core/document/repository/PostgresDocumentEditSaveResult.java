@@ -1,8 +1,8 @@
-package fruition.core.document.mongo;
+package fruition.core.document.repository;
 
 import java.time.Instant;
 
-public record MongoDocumentEditSaveResult(
+public record PostgresDocumentEditSaveResult(
         long baseRevision,
         String baseMarkdown,
         String baseContentHash,
@@ -10,6 +10,7 @@ public record MongoDocumentEditSaveResult(
         String contentHash,
         Instant updatedAt,
         String actorUserId,
-        boolean changed
+        boolean changed,
+        boolean replayed
 ) {
 }

@@ -7,7 +7,7 @@ type DocumentDetailContentResponse = {
   id: string;
   markdown?: string | null;
   current_version: number;
-  /** 본문 편집 revision — 저장 시 base_revision 기준값 (MongoDB 이전 후 current_version과 분리) */
+  /** 본문 편집 revision — 저장 시 base_revision 기준값 (current_version과 분리) */
   edit_revision?: number;
   updated_at: string;
 };

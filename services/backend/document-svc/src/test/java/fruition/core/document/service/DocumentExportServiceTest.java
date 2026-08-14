@@ -4,7 +4,6 @@ import fruition.core.document.domain.Document;
 import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.dto.DocumentExportResult;
 import fruition.core.document.exception.DocumentNotFoundException;
-import fruition.core.document.mongo.MongoDocumentEditStore;
 import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
@@ -18,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.InputStream;
@@ -33,7 +32,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,11 +48,12 @@ class DocumentExportServiceTest {
 
     @Mock DocumentRepository documentRepository;
     @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
-    @Mock MongoDocumentEditStore mongoDocumentEditStore;
     @Mock DocumentAssetReferenceRepository referenceRepository;
     @Mock DocumentAssetRepository assetRepository;
     @Mock DocumentAssetObjectStorage objectStorage;
+    @Mock TransactionTemplate transactionTemplate;
 
     DocumentExportService exportService;
 
@@ -58,9 +61,12 @@ class DocumentExportServiceTest {
     void setUp() {
         exportService = new DocumentExportService(
                 documentRepository, editStateRepository,
-                workspaceAccessGuard, mongoDocumentEditStore,
+                editStateInitializer,
+                workspaceAccessGuard,
                 referenceRepository, assetRepository, objectStorage,
-                new TransactionTemplate(org.mockito.Mockito.mock(PlatformTransactionManager.class)));
+                transactionTemplate);
+        doAnswer(invocation -> ((TransactionCallback<?>) invocation.getArgument(0)).doInTransaction(null))
+                .when(transactionTemplate).execute(any());
     }
 
     @Test
@@ -70,7 +76,7 @@ class DocumentExportServiceTest {
                 "text/markdown", 10, null, null, "direct");
         document.initializeDirectMarkdown("hash", 10, 3);
         DocumentEditState editState = new DocumentEditState(
-                document.getId(), "# 최신 회의 결과\n한글 본문", "hash");
+                document.getId(), "# 최신 회의 결과\n한글 본문", "hash", 1);
         long versionBefore = document.getCurrentVersion();
         var updatedAtBefore = document.getUpdatedAt();
         doNothing().when(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
@@ -87,6 +93,13 @@ class DocumentExportServiceTest {
                 .isEqualTo("# 최신 회의 결과\n한글 본문");
         assertThat(document.getCurrentVersion()).isEqualTo(versionBefore);
         assertThat(document.getUpdatedAt()).isEqualTo(updatedAtBefore);
+        var order = inOrder(workspaceAccessGuard, documentRepository, editStateInitializer, transactionTemplate);
+        order.verify(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+        order.verify(documentRepository).findByIdAndWorkspaceIdAndDeletedAtIsNull(
+                document.getId(), WORKSPACE_ID);
+        order.verify(editStateInitializer).initializeIfNeeded(document);
+        order.verify(transactionTemplate).execute(any());
+        verify(editStateInitializer).initializeIfNeeded(document);
         verify(documentRepository, never()).save(document);
         verify(editStateRepository, never()).save(editState);
     }
@@ -101,7 +114,7 @@ class DocumentExportServiceTest {
                 ![둘째](/api/workspaces/%s/assets/%s/content)
                 ![외부](https://example.com/image.png)
                 """.formatted(WORKSPACE_ID, firstId, WORKSPACE_ID, secondId);
-        stubDocument(document, new DocumentEditState(document.getId(), markdown, "hash"));
+        stubDocument(document, new DocumentEditState(document.getId(), markdown, "hash", 1));
         when(referenceRepository.findAllByIdDocumentId(document.getId())).thenReturn(List.of(
                 new DocumentAssetReference(document.getId(), firstId, java.time.Instant.now()),
                 new DocumentAssetReference(document.getId(), secondId, java.time.Instant.now())));
@@ -131,7 +144,7 @@ class DocumentExportServiceTest {
     void exportMarkdown_missingAssetFailsBeforeReadingStorage() {
         Document document = editableDocument("doc_missing", "누락 문서");
         UUID assetId = UUID.randomUUID();
-        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash"));
+        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash", 1));
         when(referenceRepository.findAllByIdDocumentId(document.getId())).thenReturn(List.of(
                 new DocumentAssetReference(document.getId(), assetId, java.time.Instant.now())));
         when(assetRepository.findAllByIdInAndWorkspaceId(List.of(assetId), WORKSPACE_ID))
@@ -145,7 +158,7 @@ class DocumentExportServiceTest {
     @Test
     void exportMarkdown_moreThanHundredAssetsFailsBeforeAssetLookup() {
         Document document = editableDocument("doc_many", "대량 문서");
-        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash"));
+        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash", 1));
         List<DocumentAssetReference> references = java.util.stream.IntStream.range(0, 101)
                 .mapToObj(index -> new DocumentAssetReference(
                         document.getId(), UUID.randomUUID(), java.time.Instant.now()))
@@ -163,7 +176,7 @@ class DocumentExportServiceTest {
     void exportMarkdown_moreThanHundredMegabytesFailsBeforeReadingStorage() {
         Document document = editableDocument("doc_large", "대용량 문서");
         UUID assetId = UUID.randomUUID();
-        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash"));
+        stubDocument(document, new DocumentEditState(document.getId(), "본문", "hash", 1));
         when(referenceRepository.findAllByIdDocumentId(document.getId())).thenReturn(List.of(
                 new DocumentAssetReference(document.getId(), assetId, java.time.Instant.now())));
         when(assetRepository.findAllByIdInAndWorkspaceId(List.of(assetId), WORKSPACE_ID))
@@ -222,6 +235,7 @@ class DocumentExportServiceTest {
         assertThatThrownBy(() ->
                 exportService.exportMarkdown(WORKSPACE_ID, USER_ID, original.getId()))
                 .isInstanceOf(DocumentNotFoundException.class);
+        verify(editStateInitializer, never()).initializeIfNeeded(original);
 
         Document editable = new Document(
                 "doc_no_state", WORKSPACE_ID, USER_ID, "문서.md",

@@ -10,11 +10,18 @@ import fruition.core.aihistory.dto.RestoreExecuteResponse;
 import fruition.core.aihistory.dto.RestorePlan;
 import fruition.core.aihistory.exception.InvalidRestoreRequestException;
 import fruition.core.aihistory.exception.RestorePreviewStaleException;
+import fruition.core.document.exception.DocumentVersionConflictException;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.wiki.domain.WikiPageContribution;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotSerializeTransactionException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -34,6 +41,8 @@ import java.util.Set;
 @Service
 public class RestoreExecuteService {
 
+    private static final int MAX_DOCUMENT_RESTORE_ATTEMPTS = 3;
+
     private final RestorePreviewService previewService;
     private final RestoreScopeResolver scopeResolver;
     private final RestorePlanner planner;
@@ -46,6 +55,7 @@ public class RestoreExecuteService {
     private final RestoreTargetValidator validator;
     private final ObjectMapper objectMapper;
     private final String commandTopic;
+    private final PlatformTransactionManager transactionManager;
 
     public RestoreExecuteService(RestorePreviewService previewService,
                                  RestoreScopeResolver scopeResolver,
@@ -58,7 +68,8 @@ public class RestoreExecuteService {
                                  AiCommandOutboxWriter outboxWriter,
                                  RestoreTargetValidator validator,
                                  ObjectMapper objectMapper,
-                                 @Value("${app.maintenance.command-topic}") String commandTopic) {
+                                 @Value("${app.maintenance.command-topic}") String commandTopic,
+                                 PlatformTransactionManager transactionManager) {
         this.previewService = previewService;
         this.scopeResolver = scopeResolver;
         this.planner = planner;
@@ -71,6 +82,7 @@ public class RestoreExecuteService {
         this.validator = validator;
         this.objectMapper = objectMapper;
         this.commandTopic = commandTopic;
+        this.transactionManager = transactionManager;
     }
 
     @Transactional
@@ -131,16 +143,47 @@ public class RestoreExecuteService {
             throw new RestorePreviewStaleException();
         }
 
-        Instant now = Instant.now();
-        OperationLog restore = lifecycle.start(
-                        target, manifestJson(plan), restoreTokenHash, now)
-                .orElseThrow(() -> new InvalidRestoreRequestException(
-                        "같은 미리보기 토큰으로 복구가 이미 접수되었습니다."));
-        long newVersion = documentApplier.apply(restore, plan);
-        lifecycle.finishDocument(restore.getOperationId(), plan.toVersion(), newVersion, now);
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        try {
+            return executeWithDocumentRestoreRetry(() -> transaction.execute(status -> {
+                Instant now = Instant.now();
+                OperationLog restore = lifecycle.start(
+                                target, manifestJson(plan), restoreTokenHash, now)
+                        .orElseThrow(() -> new InvalidRestoreRequestException(
+                                "같은 미리보기 토큰으로 복구가 이미 접수되었습니다."));
+                long newVersion = documentApplier.apply(restore, plan);
+                lifecycle.finishDocument(restore.getOperationId(), plan.toVersion(), newVersion, now);
 
-        return RestoreExecuteResponse.forDocument(
-                restore.getOperationId(), target.getOperationId());
+                return RestoreExecuteResponse.forDocument(
+                        restore.getOperationId(), target.getOperationId());
+            }));
+        } catch (DocumentVersionConflictException exception) {
+            throw new RestorePreviewStaleException();
+        }
+    }
+
+    private <T> T executeWithDocumentRestoreRetry(java.util.function.Supplier<T> operation) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (RuntimeException exception) {
+                if (attempt >= MAX_DOCUMENT_RESTORE_ATTEMPTS || !isTransientDocumentRestoreFailure(exception)) {
+                    throw exception;
+                }
+            }
+        }
+    }
+
+    private boolean isTransientDocumentRestoreFailure(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof DuplicateKeyException
+                    || cause instanceof DeadlockLoserDataAccessException
+                    || cause instanceof CannotSerializeTransactionException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private RestoreCommand restoreCommand(String runId, OperationLog restore, OperationLog target,

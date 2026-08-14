@@ -3,11 +3,12 @@ package fruition.core.skill.service;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.authz.WorkspaceNotFoundException;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentEditState;
 import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.exception.DocumentNotFoundException;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.skill.exception.SkillReferenceDocumentTooLargeException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,31 +29,33 @@ class SkillReferenceServiceTest {
 
     @Mock WorkspaceAccessGuard workspaceAccessGuard;
     @Mock DocumentRepository documentRepository;
-    @Mock MongoDocumentEditStore mongoDocumentEditStore;
+    @Mock DocumentEditStateRepository editStateRepository;
+    @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock Document document;
-    @Mock MongoDocumentEditState editState;
-
     private SkillReferenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new SkillReferenceService(workspaceAccessGuard, documentRepository, mongoDocumentEditStore);
+        service = new SkillReferenceService(
+                workspaceAccessGuard, documentRepository, editStateRepository, editStateInitializer);
     }
 
     @Test
-    void read_returnsLatestMongoCanonicalMarkdownWithinScope() {
+    void read_returnsLatestPostgresMarkdown() {
         when(document.getId()).thenReturn("doc_1");
         when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1", "ws_1"))
                 .thenReturn(Optional.of(document));
-        when(editState.getWorkspaceId()).thenReturn("ws_1");
-        when(editState.getMarkdown()).thenReturn("# 최신 본문");
-        when(mongoDocumentEditStore.findState("doc_1")).thenReturn(Optional.of(editState));
+        when(editStateRepository.findById("doc_1"))
+                .thenReturn(Optional.of(new DocumentEditState("doc_1", "# 최신 본문", "hash", 1)));
 
         var response = service.read("ws_1", "user_1", "doc_1");
 
         assertThat(response.documentRole()).isEqualTo("EDITABLE");
         assertThat(response.markdown()).isEqualTo("# 최신 본문");
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(editStateInitializer, editStateRepository);
+        order.verify(editStateInitializer).initializeIfNeeded(document);
+        order.verify(editStateRepository).findById("doc_1");
     }
 
     @Test
@@ -61,9 +64,8 @@ class SkillReferenceServiceTest {
         when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1", "ws_1"))
                 .thenReturn(Optional.of(document));
-        when(editState.getWorkspaceId()).thenReturn("ws_1");
-        when(editState.getMarkdown()).thenReturn("가".repeat(30001));
-        when(mongoDocumentEditStore.findState("doc_1")).thenReturn(Optional.of(editState));
+        when(editStateRepository.findById("doc_1"))
+                .thenReturn(Optional.of(new DocumentEditState("doc_1", "가".repeat(30001), "hash", 1)));
 
         assertThatThrownBy(() -> service.read("ws_1", "user_1", "doc_1"))
                 .isInstanceOf(SkillReferenceDocumentTooLargeException.class);
@@ -79,17 +81,16 @@ class SkillReferenceServiceTest {
 
         assertThat(response.documentRole()).isEqualTo("ORIGINAL");
         assertThat(response.markdown()).isNull();
-        verifyNoInteractions(mongoDocumentEditStore);
+        verifyNoInteractions(editStateInitializer, editStateRepository);
     }
 
     @Test
-    void read_rejectsMongoStateFromDifferentWorkspace() {
+    void read_usesDocumentWorkspaceBoundaryBeforeStateLookup() {
         when(document.getId()).thenReturn("doc_1");
         when(document.getDocumentRole()).thenReturn(DocumentRole.EDITABLE);
         when(documentRepository.findByIdAndWorkspaceIdAndDeletedAtIsNull("doc_1", "ws_1"))
                 .thenReturn(Optional.of(document));
-        when(editState.getWorkspaceId()).thenReturn("ws_2");
-        when(mongoDocumentEditStore.findState("doc_1")).thenReturn(Optional.of(editState));
+        when(editStateRepository.findById("doc_1")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.read("ws_1", "user_1", "doc_1"))
                 .isInstanceOf(DocumentNotFoundException.class);
@@ -102,6 +103,6 @@ class SkillReferenceServiceTest {
 
         assertThatThrownBy(() -> service.read("ws_1", "user_2", "doc_1"))
                 .isInstanceOf(WorkspaceNotFoundException.class);
-        verifyNoInteractions(documentRepository, mongoDocumentEditStore);
+        verifyNoInteractions(documentRepository, editStateRepository);
     }
 }

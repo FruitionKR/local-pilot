@@ -113,7 +113,7 @@ spec:
   partitions: 12
   replicas: 1
 ---
-# 문서 편집 outbox 이벤트 (key=document_id, MongoDB outbox publisher가 발행)
+# 문서 편집 outbox 이벤트 (key=document_id)
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:

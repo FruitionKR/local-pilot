@@ -33,7 +33,6 @@ apply 후 수동 단계:
    runtime/migration 계정을 만든다. 비밀번호는 Secrets Manager `fruition/app`의
    `*_DB_*_PASSWORD` 값과 동일하게 넣을 것 (access 인스턴스는 access_db만,
    core 인스턴스는 core_db·ai_db만 실제 사용 — 나머지는 무해).
-   MongoDB는 Atlas 클러스터 생성 후 `DOCUMENT_MONGODB_URI` 교체.
 1. **Secrets Manager 값 채우기** — `fruition/app`의 `JWT_SECRET`, `INTERNAL_CALLBACK_TOKEN`,
    `AGENT_INTERNAL_TOKEN`, 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY` (live 호출 시 필요).
 2. **ACM 인증서** — `api.<도메인>`, `access.<도메인>` 포함 인증서 발급, ARN을 overlay ingress에 기입.

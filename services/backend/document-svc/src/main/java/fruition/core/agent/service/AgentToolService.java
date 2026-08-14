@@ -8,6 +8,7 @@ import fruition.core.agent.repository.PipelineAgentArtifactClient;
 import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.authz.WorkspaceAccessGuard;
 import fruition.core.document.domain.Document;
+import fruition.core.document.domain.DocumentRole;
 import fruition.core.document.dto.DocumentPositionRequest;
 import fruition.core.document.dto.MarkdownDocumentCreateRequest;
 import fruition.core.document.dto.DocumentRenameRequest;
@@ -18,17 +19,20 @@ import fruition.core.document.dto.FolderRenameRequest;
 import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.exception.HierarchyItemNotFoundException;
 import fruition.core.document.exception.DocumentWriteForbiddenException;
-import fruition.core.document.mongo.MongoDocumentEditState;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.exception.InvalidMarkdownContentException;
+import fruition.core.document.domain.DocumentEditState;
+import fruition.core.document.repository.DocumentEditStateRepository;
 import fruition.core.document.repository.DocumentRepository;
 import fruition.core.document.repository.FolderRepository;
 import fruition.core.document.service.DocumentPlacementService;
+import fruition.core.document.service.DocumentEditStateInitializer;
 import fruition.core.document.service.DocumentService;
 import fruition.core.document.service.FolderService;
 import fruition.shared.idempotency.IdempotencyService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
@@ -65,8 +69,10 @@ public class AgentToolService {
     private final DocumentPlacementService documentPlacementService;
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
-    private final MongoDocumentEditStore mongoDocumentEditStore;
+    private final DocumentEditStateRepository editStateRepository;
+    private final DocumentEditStateInitializer editStateInitializer;
     private final IdempotencyService idempotencyService;
+    private final TransactionTemplate transactionTemplate;
 
     public AgentToolService(
             PipelineAgentToolAuthorizationClient authorizationClient,
@@ -78,8 +84,10 @@ public class AgentToolService {
             DocumentPlacementService documentPlacementService,
             DocumentRepository documentRepository,
             FolderRepository folderRepository,
-            MongoDocumentEditStore mongoDocumentEditStore,
-            IdempotencyService idempotencyService) {
+            DocumentEditStateRepository editStateRepository,
+            DocumentEditStateInitializer editStateInitializer,
+            IdempotencyService idempotencyService,
+            TransactionTemplate transactionTemplate) {
         this.authorizationClient = authorizationClient;
         this.artifactClient = artifactClient;
         this.runCommandRepository = runCommandRepository;
@@ -89,8 +97,10 @@ public class AgentToolService {
         this.documentPlacementService = documentPlacementService;
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
-        this.mongoDocumentEditStore = mongoDocumentEditStore;
+        this.editStateRepository = editStateRepository;
+        this.editStateInitializer = editStateInitializer;
         this.idempotencyService = idempotencyService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     public Object read(String toolName, AgentToolReadRequest request) {
@@ -114,8 +124,14 @@ public class AgentToolService {
         };
     }
 
-    @Transactional
     public Object execute(String toolName, AgentToolExecuteRequest request) {
+        if ("apply_document_edit".equals(toolName)) {
+            return dispatchExecute(toolName, request);
+        }
+        return transactionTemplate.execute(status -> dispatchExecute(toolName, request));
+    }
+
+    private Object dispatchExecute(String toolName, AgentToolExecuteRequest request) {
         requireToolArguments(EXECUTE_TOOL_ARGUMENTS, toolName, request.arguments());
         authorizationClient.authorizeExecute(toolName, request);
         JsonNode arguments = request.arguments();
@@ -174,13 +190,25 @@ public class AgentToolService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "승인된 Agent 문서 편집 대상과 일치하지 않습니다.");
         }
-        runCommandRepository.prepareToolApply(
-                "agent-tool:" + request.runId() + ":" + request.operationId(),
-                request.workspaceId(), request.userId(), documentId, baseVersion,
-                request.operationId(), artifact.markdown());
+        prepareToolApply(request, documentId, baseVersion, artifact.markdown());
         return documentService.saveContent(
                 request.workspaceId(), request.userId(), documentId, artifact.markdown(),
                 baseVersion, request.idempotencyKey(), "agent", request.operationId());
+    }
+
+    private void prepareToolApply(
+            AgentToolExecuteRequest request,
+            String documentId,
+            long baseVersion,
+            String markdown
+    ) {
+        Runnable prepare = () -> runCommandRepository.prepareToolApply(
+                "agent-tool:" + request.runId() + ":" + request.operationId(),
+                request.workspaceId(), request.userId(), documentId, baseVersion,
+                request.operationId(), markdown);
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionTemplate.getTransactionManager());
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        requiresNew.executeWithoutResult(status -> prepare.run());
     }
 
     private void authorizeCreateResource(AgentToolExecuteRequest request, UUID folderId) {
@@ -224,11 +252,14 @@ public class AgentToolService {
 
     private Map<String, Object> documentContent(AgentToolReadRequest request) {
         String documentId = text(request.arguments(), "document_id");
-        requireDocument(request.workspaceId(), request.userId(), documentId);
-        MongoDocumentEditState state = mongoDocumentEditStore.findState(documentId)
-                .filter(value -> request.workspaceId().equals(value.getWorkspaceId()))
+        Document document = requireDocument(request.workspaceId(), request.userId(), documentId);
+        if (document.getDocumentRole() != DocumentRole.EDITABLE) {
+            throw new InvalidMarkdownContentException("편집 가능한 Markdown 문서만 본문을 조회할 수 있습니다.");
+        }
+        editStateInitializer.initializeIfNeeded(document);
+        DocumentEditState state = editStateRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.CONFLICT, "문서의 canonical Mongo 편집 상태를 찾을 수 없습니다."));
+                        HttpStatus.CONFLICT, "문서의 PostgreSQL 편집 상태를 찾을 수 없습니다."));
         return Map.of(
                 "id", state.getDocumentId(),
                 "markdown", state.getMarkdown(),

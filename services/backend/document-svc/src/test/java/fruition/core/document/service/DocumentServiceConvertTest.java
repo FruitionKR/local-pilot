@@ -10,8 +10,8 @@ import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.exception.DocumentConvertException;
 import fruition.core.document.exception.DocumentNotFoundException;
 import fruition.core.document.exception.InvalidDocumentConvertRequestException;
-import fruition.core.document.mongo.MongoDocumentEditSaveResult;
-import fruition.core.document.mongo.MongoDocumentEditStore;
+import fruition.core.document.repository.PostgresDocumentEditSaveResult;
+import fruition.core.document.repository.PostgresDocumentEditStore;
 import fruition.core.document.repository.ConverterClient;
 import fruition.core.document.repository.DocumentConvertQueueRepository;
 import fruition.core.document.repository.DocumentContentVersionRepository;
@@ -34,6 +34,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mockito;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -44,6 +47,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,10 +55,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,7 +83,7 @@ class DocumentServiceConvertTest {
     @Mock TransactionTemplate transactionTemplate;
     @Mock DocumentEditStateInitializer editStateInitializer;
     @Mock DocumentEditStateRepository editStateRepository;
-    @Mock MongoDocumentEditStore mongoDocumentEditStore;
+    @Mock PostgresDocumentEditStore postgresDocumentEditStore;
     @Mock DocumentContentVersionRepository contentVersionRepository;
     @Mock MarkdownDiffService markdownDiffService;
     @Mock DocumentEditLockService editLockService;
@@ -97,7 +103,7 @@ class DocumentServiceConvertTest {
                 workspaceAccessGuard, minioClient, storageProps,
                 ingestCommandOutbox, pipelineWikiStateRequester,
                 convertQueueRepository, converterClient, transactionTemplate,
-                editStateInitializer, editStateRepository, mongoDocumentEditStore,
+                editStateInitializer, editStateRepository, postgresDocumentEditStore,
                 contentVersionRepository, markdownDiffService,
                 editLockService, idempotencyService,
                 assetReferenceSynchronizer,
@@ -111,6 +117,9 @@ class DocumentServiceConvertTest {
         // 단위 테스트에서는 transactionTemplate이 콜백을 그대로 실행하게 한다.
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation ->
                 invocation.<TransactionCallback<Object>>getArgument(0).doInTransaction(null));
+        PlatformTransactionManager transactionManager = Mockito.mock(PlatformTransactionManager.class);
+        lenient().when(transactionTemplate.getTransactionManager()).thenReturn(transactionManager);
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(Mockito.mock(TransactionStatus.class));
         lenient().when(idempotencyService.replay(
                 anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(Optional.empty());
@@ -243,7 +252,7 @@ class DocumentServiceConvertTest {
     }
 
     @Test
-    @DisplayName("변환 성공 시 Mongo edit store에 convert write_id로 저장하고 문서를 completed로 반영한다")
+    @DisplayName("변환 성공 시 edit store에 convert write_id로 저장하고 문서를 completed로 반영한다")
     void doConvert_success_appliesMarkdownAndCompletes() throws Exception {
         Document placeholder = placeholderDocument();
         Document source = sourcePdf();
@@ -256,14 +265,14 @@ class DocumentServiceConvertTest {
                 Headers.of(), "fruition-storage", "us-east-1",
                 source.getSourceUri(), new ByteArrayInputStream(pdfBytes)));
         when(converterClient.convertPdf("보고서.pdf", pdfBytes)).thenReturn("# 변환된 본문\n");
-        when(editStateRepository.findById("doc_placeholder")).thenReturn(Optional.of(
-                new DocumentEditState("doc_placeholder", "PDF 변환 중...\n", "placeholder-hash")));
-        when(mongoDocumentEditStore.save(
+        when(postgresDocumentEditStore.save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class)))
+                anyString(), any()))
                 .thenAnswer(invocation -> {
-                    DocumentEditState base = invocation.getArgument(8);
-                    return new MongoDocumentEditSaveResult(
+                    String documentId = invocation.getArgument(1);
+                    long baseRevision = invocation.getArgument(4);
+                    DocumentEditState base = new DocumentEditState(documentId, "", "", baseRevision);
+                    return new PostgresDocumentEditSaveResult(
                             invocation.getArgument(4),
                             base.getMarkdown(),
                             base.getContentHash(),
@@ -271,14 +280,14 @@ class DocumentServiceConvertTest {
                             invocation.getArgument(3),
                             Instant.now(),
                             invocation.getArgument(6),
-                            true);
+                            true, false);
                 });
 
         documentService.doConvert(7L, "doc_placeholder", SOURCE_DOCUMENT_ID);
 
-        verify(mongoDocumentEditStore).save(
+        verify(postgresDocumentEditStore).save(
                 eq(WORKSPACE_ID), eq("doc_placeholder"), eq("# 변환된 본문\n"), anyString(),
-                eq(1L), eq("convert:7"), eq(USER_ID), anyLong(), any(DocumentEditState.class));
+                eq(1L), eq("convert:7"), eq(USER_ID), isNull());
         // base(1)와 result(2) 두 버전이 read model로 projection된다.
         verify(contentVersionRepository).insertIfAbsent(
                 eq("doc_placeholder"), eq(1L), anyString(), anyString(), eq(USER_ID), any());
@@ -288,6 +297,44 @@ class DocumentServiceConvertTest {
         assertThat(placeholder.getProcessedAt()).isNotNull();
         assertThat(placeholder.getByteSize())
                 .isEqualTo("# 변환된 본문\n".getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    @Test
+    @DisplayName("변환 replay는 완료 metadata와 version projection을 다시 쓰지 않는다")
+    void doConvert_replayDoesNotRewriteMetadata() throws Exception {
+        Document placeholder = placeholderDocument();
+        Document source = sourcePdf();
+        byte[] pdfBytes = "%PDF-1.4".getBytes(StandardCharsets.US_ASCII);
+        String markdown = "# 변환된 본문\n";
+        String hash = DocumentEditingRules.markdown(markdown).contentHash();
+        when(documentRepository.findByIdInActiveWorkspace("doc_placeholder")).thenReturn(Optional.of(placeholder));
+        when(documentRepository.findById(SOURCE_DOCUMENT_ID)).thenReturn(Optional.of(source));
+        when(storageProps.getBucket()).thenReturn("fruition-storage");
+        when(minioClient.getObject(any())).thenAnswer(invocation -> new GetObjectResponse(
+                Headers.of(), "fruition-storage", "us-east-1", source.getSourceUri(),
+                new ByteArrayInputStream(pdfBytes)));
+        when(converterClient.convertPdf("보고서.pdf", pdfBytes)).thenReturn(markdown);
+        Instant updatedAt = Instant.parse("2026-08-14T00:00:00Z");
+        PostgresDocumentEditSaveResult first = new PostgresDocumentEditSaveResult(
+                1, "", "", 2, hash, updatedAt, USER_ID, true, false);
+        PostgresDocumentEditSaveResult replay = new PostgresDocumentEditSaveResult(
+                1, null, null, 2, hash, updatedAt, USER_ID, true, true);
+        AtomicInteger saveCalls = new AtomicInteger();
+        when(postgresDocumentEditStore.save(
+                anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString(), any())).thenAnswer(invocation ->
+                saveCalls.getAndIncrement() == 0 ? first : replay);
+
+        documentService.doConvert(7L, "doc_placeholder", SOURCE_DOCUMENT_ID);
+        DocumentMetadata completed = metadata(placeholder);
+        verify(contentVersionRepository, times(2)).insertIfAbsent(
+                eq("doc_placeholder"), anyLong(), anyString(), anyString(), eq(USER_ID), any());
+
+        documentService.doConvert(7L, "doc_placeholder", SOURCE_DOCUMENT_ID);
+
+        assertThat(metadata(placeholder)).isEqualTo(completed);
+        verify(contentVersionRepository, times(2)).insertIfAbsent(
+                eq("doc_placeholder"), anyLong(), anyString(), anyString(), eq(USER_ID), any());
     }
 
     @Test
@@ -309,9 +356,9 @@ class DocumentServiceConvertTest {
 
         assertThat(placeholder.getStatus()).isEqualTo(DocumentStatus.failed);
         assertThat(placeholder.getErrorMessage()).contains("status=422");
-        verify(mongoDocumentEditStore, never()).save(
+        verify(postgresDocumentEditStore, never()).save(
                 anyString(), anyString(), anyString(), anyString(), anyLong(), anyString(),
-                anyString(), anyLong(), any(DocumentEditState.class));
+                anyString(), any());
     }
 
     @Test
@@ -334,4 +381,22 @@ class DocumentServiceConvertTest {
         placeholder.initializeConvertPlaceholder(SOURCE_DOCUMENT_ID, null, "placeholder-hash", 15L, 0L);
         return placeholder;
     }
+
+    private DocumentMetadata metadata(Document document) {
+        return new DocumentMetadata(
+                document.getProcessedAt(), document.getUpdatedAt(), document.getErrorMessage(),
+                document.getByteSize(), document.getContentHash(), document.getCurrentContentHash(),
+                document.getStatus(), document.getCurrentVersion());
+    }
+
+    private record DocumentMetadata(
+            Instant processedAt,
+            Instant updatedAt,
+            String error,
+            long byteSize,
+            String contentHash,
+            String currentContentHash,
+            DocumentStatus status,
+            long currentVersion
+    ) {}
 }

@@ -29,7 +29,8 @@ import java.util.Set;
 /**
  * 복구 미리보기. 무엇이 삭제·복원·재작성되는지 계산해 보여주고 실행에 쓸 토큰을 발급한다.
  *
- * <p>본문을 읽지 않는다. 기여 명단만으로 끝나므로 저장소 접근이 없다.
+ * <p>Wiki 복구는 본문을 읽지 않고 기여 명단만으로 끝난다. 문서 편집 복구는 canonical 편집
+ * 상태의 revision을 확인하고, 필요한 경우 기존 원본에서 편집 상태를 초기화한다.
  */
 @Service
 public class RestorePreviewService {
@@ -70,12 +71,12 @@ public class RestorePreviewService {
      * <p>실행과 <b>같은 검증</b>을 거친다. 여기서 통과한 것이 실행에서 거절되면 사용자가 확인
      * 화면을 다 보고 나서 실패한다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public RestorePreviewResponse preview(String workspaceId, String userId, String operationId) {
         OperationLog target = loadOperation(workspaceId, userId, operationId);
         validator.requireRestorable(target);
 
-        // 문서 편집은 되돌릴 버전이 변경내역에 이미 적혀 있어 계산할 것이 없다.
+        // 문서 편집은 되돌릴 편집 revision이 변경내역에 이미 적혀 있어 계산할 것이 없다.
         if (target.getOperationType() == OperationType.document_edit) {
             DocumentRestorePlan plan = documentPlanner.plan(target);
             return RestorePreviewResponse.from(operationId, plan, tokenSigner.sign(operationId, plan));

@@ -15,8 +15,8 @@ import java.time.Instant;
  * AI 작업 1회의 기록. 작업 유형과 무관하게 이 테이블 한 곳에 모인다.
  *
  * <p>ingest는 llmPipeline 호출 <b>전에</b> {@link OperationStatus#processing}으로 먼저 커밋하고,
- * 콜백을 받아 확정한다. 문서 AI 편집은 Mongo receipt 저장 전 {@link OperationStatus#applying}으로
- * 예약하고, receipt 재생 후 PostgreSQL에서 확정한다.
+ * 콜백을 받아 확정한다. 문서 AI 편집은 본문 저장 전 {@link OperationStatus#applying}으로
+ * 예약하고, 저장 후 PostgreSQL에서 확정한다.
  */
 @Entity
 @Table(name = "ai_operation_logs")
@@ -66,6 +66,10 @@ public class OperationLog {
     /** 완료 콜백 payload의 정규화 해시. 같은 payload 재전송과 다른 payload를 가른다. */
     @Column(name = "payload_hash", length = 64)
     private String payloadHash;
+
+    /** V39 이전 document_edit는 fresh cutover 후 revision 세대가 달라 복구할 수 없다. */
+    @Column(name = "document_restore_blocked", nullable = false)
+    private boolean documentRestoreBlocked;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -119,7 +123,7 @@ public class OperationLog {
         return log;
     }
 
-    /** 문서 AI 적용의 Mongo 저장 전 pending 감사 상태를 만든다. */
+    /** 문서 AI 적용의 본문 저장 전 pending 감사 상태를 만든다. */
     public static OperationLog applyingDocumentEdit(String operationId, String workspaceId,
                                                     String userId, String documentId,
                                                     Instant createdAt) {
@@ -162,6 +166,7 @@ public class OperationLog {
     public String getRestoreManifest() { return restoreManifest; }
     public String getRestoreTokenHash() { return restoreTokenHash; }
     public String getPayloadHash() { return payloadHash; }
+    public boolean isDocumentRestoreBlocked() { return documentRestoreBlocked; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getCompletedAt() { return completedAt; }
 }

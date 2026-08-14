@@ -31,6 +31,10 @@ public class RestoreTargetValidator {
      * 되돌리기를 무르려면 그 결과를 다시 되돌리는 것이 아니라 원하는 시점을 새로 지목해야 한다.
      */
     public void requireRestorable(OperationLog target) {
+        if (target.isDocumentRestoreBlocked()) {
+            throw new InvalidRestoreRequestException(
+                    "fresh cutover 이전 문서 편집 작업은 복구할 수 없습니다.");
+        }
         OperationType type = target.getOperationType();
         if (type != OperationType.document_edit && type != OperationType.ingest
                 && type != OperationType.lint) {

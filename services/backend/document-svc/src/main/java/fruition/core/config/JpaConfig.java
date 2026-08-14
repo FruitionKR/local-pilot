@@ -18,11 +18,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 @EnableJpaRepositories(basePackages = {"fruition.core", "fruition.shared.idempotency"})
 public class JpaConfig {
 
-    /**
-     * mongoTransactionManager 빈이 등록되면 Boot이 JPA transactionManager 자동 구성을
-     * 건너뛰므로(@ConditionalOnMissingBean) 직접 정의한다. @Transactional과 TransactionTemplate의
-     * 기본 대상은 PostgreSQL이어야 하므로 @Primary로 둔다.
-     */
+    /** @Transactional과 TransactionTemplate의 기본 대상을 PostgreSQL로 둔다. */
     @Bean
     @Primary
     PlatformTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {

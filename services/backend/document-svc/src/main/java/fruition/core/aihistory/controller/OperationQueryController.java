@@ -87,7 +87,7 @@ public class OperationQueryController {
     @Operation(summary = "복구 미리보기",
             description = "이 작업을 되돌리면 무엇이 삭제·복원·재작성되는지 계산합니다. "
                     + "지목한 작업과 그 이후 같은 문서의 작업을 전부 걷어내며, 그 과정에서 만들어진 페이지는 삭제됩니다. "
-                    + "본문을 읽지 않으며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다.")
+                    + "문서 편집 복구는 canonical 편집 revision을 확인하며, 응답의 preview_token은 복구 실행에 그대로 전달해야 합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "계산 성공"),
             @ApiResponse(responseCode = "404", description = "작업 또는 워크스페이스를 찾을 수 없음",
@@ -102,13 +102,16 @@ public class OperationQueryController {
     }
 
     @Operation(summary = "이 작업 되돌리기",
-            description = "미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. "
+            description = "복구 대상에 따라 처리 방식이 다릅니다. 문서 편집 복구는 즉시 완료되어 200을 반환하고, "
+                    + "Wiki 복구는 queued 상태로 등록되어 202를 반환합니다. "
+                    + "미리보기와 같은 계산을 다시 하고 Wiki에 반영합니다. "
                     + "받치는 기여가 남지 않은 페이지는 삭제하고, 되돌릴 버전이 그대로 있는 페이지는 그 내용으로 복원하며, "
                     + "남은 조각을 합쳐야 하는 페이지는 llmPipeline에 재작성을 맡깁니다. "
                     + "재작성이 있으면 status가 rebuilding으로 돌아오며 결과는 로그 상세로 확인합니다. "
                     + "ingest 되돌리기는 Wiki만 되돌리고 원문 문서는 건드리지 않습니다.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "복구 반영 완료"),
+            @ApiResponse(responseCode = "200", description = "문서 편집 복구 즉시 완료"),
+            @ApiResponse(responseCode = "202", description = "Wiki 복구 queued 등록"),
             @ApiResponse(responseCode = "400", description = "되돌릴 수 없는 작업이거나 대상이 없음",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "작업 또는 워크스페이스를 찾을 수 없음",

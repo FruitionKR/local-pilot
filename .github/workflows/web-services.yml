@@ -34,7 +34,7 @@ jobs:
         # 전체는 -d로 띄우고, --wait는 장기 실행 서비스에만 건다.
         run: |
           docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d
-          docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d --wait --wait-timeout 120 postgresql mongodb kafka redis minio
+          docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d --wait --wait-timeout 120 postgresql kafka redis minio
 
       - name: Check init container results
         run: |
