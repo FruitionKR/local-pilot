@@ -9,11 +9,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(MockitoExtension.class)
 class AiTaskResultConsumerTest {
@@ -82,5 +84,17 @@ class AiTaskResultConsumerTest {
                 "Wiki 데이터를 불러왔습니다.",
                 java.util.Map.of("page_count", 3));
         verifyNoInteractions(applier, queryRunStore);
+    }
+
+    @Test
+    void consumeSetsFlowIdDuringProcessingAndClearsItAfterward() throws Exception {
+        org.mockito.Mockito.doAnswer(invocation -> {
+            assertThat(MDC.get("flowId")).isEqualTo("run-1");
+            return null;
+        }).when(applier).applyIngest(org.mockito.ArgumentMatchers.any());
+
+        consumer.consume("{\"kind\":\"ingest\",\"run_id\":\"run-1\"}");
+
+        assertThat(MDC.get("flowId")).isNull();
     }
 }

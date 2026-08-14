@@ -5,6 +5,8 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -20,6 +22,8 @@ import java.util.List;
 @Component
 public class AuthzProjectionStore {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthzProjectionStore.class);
+
     private static final String KEY_PREFIX = "authz:role:";
     private static final Duration TTL = Duration.ofSeconds(300);
     private static final int SCAN_COUNT = 100;
@@ -32,10 +36,13 @@ public class AuthzProjectionStore {
 
     public void put(String workspaceId, String userId, WorkspaceRole role) {
         redisTemplate.opsForValue().set(key(workspaceId, userId), role.name(), TTL);
+        log.debug("[인가 projection 저장] workspaceId={} userId={} role={} ttlSeconds={}",
+                workspaceId, userId, role, TTL.toSeconds());
     }
 
     public void evict(String workspaceId, String userId) {
         redisTemplate.delete(key(workspaceId, userId));
+        log.debug("[인가 projection 삭제] workspaceId={} userId={}", workspaceId, userId);
     }
 
     /** 워크스페이스 삭제·복구처럼 멤버 전원의 판정이 바뀌는 경우 workspace 단위로 무효화한다. */
@@ -50,6 +57,7 @@ public class AuthzProjectionStore {
         if (!keys.isEmpty()) {
             redisTemplate.delete(keys);
         }
+        log.debug("[인가 projection workspace 삭제] workspaceId={} deletedCount={}", workspaceId, keys.size());
     }
 
     private String key(String workspaceId, String userId) {

@@ -132,6 +132,8 @@ public class QueryEventBroker implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         StoredEvent event = parse(new String(message.getBody(), StandardCharsets.UTF_8));
         List<Subscriber> list = subscribers.get(event.requestId());
+        log.debug("[질의 Redis pub/sub 수신] requestId={} sequence={} event={} localSubscribers={}",
+                event.requestId(), event.sequence(), event.name(), list != null ? list.size() : 0);
         if (list == null) {
             return;
         }
@@ -160,6 +162,8 @@ public class QueryEventBroker implements MessageListener {
         redisTemplate.opsForList().trim(key, -MAX_BUFFERED_EVENTS, -1);
         redisTemplate.expire(key, EVENT_TTL);
         redisTemplate.convertAndSend(CHANNEL, json);
+        log.debug("[질의 Redis 이벤트 저장·발행 완료] requestId={} sequence={} event={}",
+                event.requestId(), event.sequence(), event.name());
     }
 
     private String serialize(StoredEvent event) {
