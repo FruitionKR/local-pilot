@@ -71,14 +71,17 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     public ResponseEntity<?> handlePipelineSkill(PipelineSkillException e) {
         if (e.getHttpStatus() == HttpStatus.PAYLOAD_TOO_LARGE.value()
                 && e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            logHandled(e, e.getHttpStatus(), "SKILL_PAYLOAD_TOO_LARGE");
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(e.getResponseBody());
         }
         if (e.getHttpStatus() >= 400 && e.getHttpStatus() < 500) {
+            logHandled(e, e.getHttpStatus(), "SKILL_REQUEST_REJECTED");
             return ResponseEntity.status(e.getHttpStatus())
                     .body(ErrorResponse.of("SKILL_REQUEST_REJECTED", e.getMessage()));
         }
+        logHandled(e, e.getHttpStatus(), "SKILL_AI_UNAVAILABLE");
         return ResponseEntity.status(e.getHttpStatus())
                 .body(ErrorResponse.of("SKILL_AI_UNAVAILABLE", e.getMessage()));
     }
@@ -87,12 +90,14 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     public ResponseEntity<ErrorResponse> handleSkillReferenceDocumentTooLarge(
             SkillReferenceDocumentTooLargeException e
     ) {
+        logHandled(e, HttpStatus.PAYLOAD_TOO_LARGE, "REFERENCE_DOCUMENT_TOO_LARGE");
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("REFERENCE_DOCUMENT_TOO_LARGE", e.getMessage()));
     }
 
     @ExceptionHandler(PipelineWikiPageException.class)
     public ResponseEntity<?> handlePipelineWikiPage(PipelineWikiPageException e) {
+        logHandled(e, e.getHttpStatus(), "WIKI_PAGE_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
@@ -105,26 +110,31 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     @ExceptionHandler(PipelineAgentException.class)
     public ResponseEntity<ErrorResponse> handlePipelineAgent(PipelineAgentException e) {
         if (e.getHttpStatus() >= 400 && e.getHttpStatus() < 500) {
+            logHandled(e, e.getHttpStatus(), "AGENT_REQUEST_REJECTED");
             return ResponseEntity.status(e.getHttpStatus())
                     .body(ErrorResponse.of("AGENT_REQUEST_REJECTED", e.getMessage()));
         }
+        logHandled(e, HttpStatus.SERVICE_UNAVAILABLE, "AGENT_PIPELINE_UNAVAILABLE");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ErrorResponse.of("AGENT_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
 
     @ExceptionHandler(InvalidAgentTurnRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidAgentTurnRequest(InvalidAgentTurnRequestException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_REQUEST");
         return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_REQUEST", e.getMessage()));
     }
 
     @ExceptionHandler(AgentRunNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleAgentRunNotFound(AgentRunNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "AGENT_RUN_NOT_FOUND");
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("AGENT_RUN_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(PipelineWikiSchemaException.class)
     public ResponseEntity<?> handlePipelineWikiSchema(PipelineWikiSchemaException e) {
+        logHandled(e, e.getHttpStatus(), "WIKI_SCHEMA_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
@@ -136,6 +146,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(PipelineWikiMaintenanceException.class)
     public ResponseEntity<?> handlePipelineWikiMaintenance(PipelineWikiMaintenanceException e) {
+        logHandled(e, e.getHttpStatus(), "WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
@@ -148,6 +159,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     /** multipart 한도를 넘으면 Spring이 요청을 읽기 전에 막는다. 크기 문제임을 413으로 구분해 알린다. */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        logHandled(e, HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE");
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("PAYLOAD_TOO_LARGE", "요청 크기가 허용 한도를 초과했습니다."));
@@ -156,6 +168,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentNotFound(DocumentNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "DOCUMENT_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_NOT_FOUND", "문서를 찾을 수 없습니다."));
@@ -163,18 +176,21 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentAssetNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentAssetNotFound(DocumentAssetNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "DOCUMENT_ASSET_NOT_FOUND");
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_ASSET_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentAssetExportException.class)
     public ResponseEntity<ErrorResponse> handleDocumentAssetExport(DocumentAssetExportException e) {
+        logHandled(e, HttpStatus.UNPROCESSABLE_ENTITY, "DOCUMENT_ASSET_EXPORT_FAILED");
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ErrorResponse.of("DOCUMENT_ASSET_EXPORT_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentWriteForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleDocumentWriteForbidden(DocumentWriteForbiddenException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "DOCUMENT_WRITE_FORBIDDEN");
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("DOCUMENT_WRITE_FORBIDDEN", e.getMessage()));
@@ -182,6 +198,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentVersionConflictException.class)
     public ResponseEntity<ErrorResponse> handleDocumentVersionConflict(DocumentVersionConflictException e) {
+        logHandled(e, HttpStatus.CONFLICT, "DOCUMENT_VERSION_CONFLICT");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_VERSION_CONFLICT", e.getMessage()));
@@ -189,6 +206,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentAlreadyProcessingException.class)
     public ResponseEntity<ErrorResponse> handleDocumentAlreadyProcessing(DocumentAlreadyProcessingException e) {
+        logHandled(e, HttpStatus.CONFLICT, "DOCUMENT_ALREADY_PROCESSING");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_ALREADY_PROCESSING", e.getMessage()));
@@ -196,6 +214,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentContentVersionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentContentVersionNotFound(DocumentContentVersionNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "DOCUMENT_CONTENT_VERSION_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_CONTENT_VERSION_NOT_FOUND", "문서 콘텐츠 버전을 찾을 수 없습니다."));
@@ -203,6 +222,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentLockedException.class)
     public ResponseEntity<ErrorResponse> handleDocumentLocked(DocumentLockedException e) {
+        logHandled(e, HttpStatus.LOCKED, "DOCUMENT_EDIT_LOCKED");
         return ResponseEntity
                 .status(HttpStatus.LOCKED)
                 .body(ErrorResponse.of("DOCUMENT_EDIT_LOCKED", e.getMessage()));
@@ -210,6 +230,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(EditLockLostException.class)
     public ResponseEntity<ErrorResponse> handleEditLockLost(EditLockLostException e) {
+        logHandled(e, HttpStatus.CONFLICT, "EDIT_LOCK_LOST");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("EDIT_LOCK_LOST", e.getMessage()));
@@ -217,6 +238,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentOriginalNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleDocumentOriginalNotFound(DocumentOriginalNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "DOCUMENT_ORIGINAL_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("DOCUMENT_ORIGINAL_NOT_FOUND", e.getMessage()));
@@ -224,6 +246,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidDocumentFilenameException.class)
     public ResponseEntity<ErrorResponse> handleInvalidDocumentFilename(InvalidDocumentFilenameException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT_FILENAME");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_FILENAME", e.getMessage()));
@@ -231,6 +254,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidDocumentVersionException.class)
     public ResponseEntity<ErrorResponse> handleInvalidDocumentVersion(InvalidDocumentVersionException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT_VERSION");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_VERSION", e.getMessage()));
@@ -238,6 +262,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidDocumentConvertRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidDocumentConvertRequest(InvalidDocumentConvertRequestException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT_CONVERT_REQUEST");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_DOCUMENT_CONVERT_REQUEST", e.getMessage()));
@@ -245,6 +270,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidMarkdownContentException.class)
     public ResponseEntity<ErrorResponse> handleInvalidMarkdownContent(InvalidMarkdownContentException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_MARKDOWN_CONTENT");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_MARKDOWN_CONTENT", e.getMessage()));
@@ -252,29 +278,34 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidDocumentAssetException.class)
     public ResponseEntity<ErrorResponse> handleInvalidDocumentAsset(InvalidDocumentAssetException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_DOCUMENT_ASSET");
         return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_DOCUMENT_ASSET", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentAssetTooLargeException.class)
     public ResponseEntity<ErrorResponse> handleDocumentAssetTooLarge(DocumentAssetTooLargeException e) {
+        logHandled(e, HttpStatus.PAYLOAD_TOO_LARGE, "DOCUMENT_ASSET_TOO_LARGE");
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("DOCUMENT_ASSET_TOO_LARGE", e.getMessage()));
     }
 
     @ExceptionHandler(UnsupportedDocumentAssetException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedDocumentAsset(UnsupportedDocumentAssetException e) {
+        logHandled(e, HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_DOCUMENT_ASSET");
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .body(ErrorResponse.of("UNSUPPORTED_DOCUMENT_ASSET", e.getMessage()));
     }
 
     @ExceptionHandler(DocumentAssetStorageException.class)
     public ResponseEntity<ErrorResponse> handleDocumentAssetStorage(DocumentAssetStorageException e) {
+        logHandled(e, HttpStatus.INTERNAL_SERVER_ERROR, "DOCUMENT_ASSET_STORAGE_FAILED");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of("DOCUMENT_ASSET_STORAGE_FAILED", e.getMessage()));
     }
 
     @ExceptionHandler(MarkdownContentTooLargeException.class)
     public ResponseEntity<ErrorResponse> handleMarkdownContentTooLarge(MarkdownContentTooLargeException e) {
+        logHandled(e, HttpStatus.PAYLOAD_TOO_LARGE, "MARKDOWN_CONTENT_TOO_LARGE");
         return ResponseEntity
                 .status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(ErrorResponse.of("MARKDOWN_CONTENT_TOO_LARGE", e.getMessage()));
@@ -282,6 +313,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(MarkdownDiffTooLargeException.class)
     public ResponseEntity<ErrorResponse> handleMarkdownDiffTooLarge(MarkdownDiffTooLargeException e) {
+        logHandled(e, HttpStatus.UNPROCESSABLE_ENTITY, "MARKDOWN_DIFF_TOO_LARGE");
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ErrorResponse.of("MARKDOWN_DIFF_TOO_LARGE", e.getMessage()));
@@ -289,6 +321,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidHierarchyRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidHierarchyRequest(InvalidHierarchyRequestException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_HIERARCHY_REQUEST");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_HIERARCHY_REQUEST", e.getMessage()));
@@ -296,6 +329,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(HierarchyItemNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleHierarchyItemNotFound(HierarchyItemNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "HIERARCHY_ITEM_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("HIERARCHY_ITEM_NOT_FOUND", e.getMessage()));
@@ -303,6 +337,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(HierarchyVersionConflictException.class)
     public ResponseEntity<ErrorResponse> handleHierarchyVersionConflict(HierarchyVersionConflictException e) {
+        logHandled(e, HttpStatus.CONFLICT, "HIERARCHY_VERSION_CONFLICT");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("HIERARCHY_VERSION_CONFLICT", e.getMessage()));
@@ -310,6 +345,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(HierarchyCycleException.class)
     public ResponseEntity<ErrorResponse> handleHierarchyCycle(HierarchyCycleException e) {
+        logHandled(e, HttpStatus.CONFLICT, "HIERARCHY_CYCLE");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("HIERARCHY_CYCLE", e.getMessage()));
@@ -317,6 +353,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(HierarchyWriteForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleHierarchyWriteForbidden(HierarchyWriteForbiddenException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "HIERARCHY_WRITE_FORBIDDEN");
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("HIERARCHY_WRITE_FORBIDDEN", e.getMessage()));
@@ -324,6 +361,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(EmptyChatWikiExportException.class)
     public ResponseEntity<ErrorResponse> handleEmptyChatWikiExport(EmptyChatWikiExportException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "EMPTY_CHAT_WIKI_EXPORT");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("EMPTY_CHAT_WIKI_EXPORT", e.getMessage()));
@@ -331,6 +369,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidChatWikiExportRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidChatWikiExportRequest(InvalidChatWikiExportRequestException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_CHAT_WIKI_EXPORT_REQUEST");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_CHAT_WIKI_EXPORT_REQUEST", e.getMessage()));
@@ -338,6 +377,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(WikiPageNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleWikiPageNotFound(WikiPageNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WIKI_PAGE_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WIKI_PAGE_NOT_FOUND", "Wiki 페이지를 찾을 수 없습니다."));
@@ -345,6 +385,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidWikiPageTitleException.class)
     public ResponseEntity<ErrorResponse> handleInvalidWikiPageTitle(InvalidWikiPageTitleException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_WIKI_PAGE_TITLE");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_WIKI_PAGE_TITLE", e.getMessage()));
@@ -352,6 +393,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(WikiPageSlugConflictException.class)
     public ResponseEntity<ErrorResponse> handleWikiPageSlugConflict(WikiPageSlugConflictException e) {
+        logHandled(e, HttpStatus.CONFLICT, "WIKI_PAGE_SLUG_CONFLICT");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("WIKI_PAGE_SLUG_CONFLICT", e.getMessage()));
@@ -359,6 +401,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DuplicateDocumentException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateDocument(DuplicateDocumentException e) {
+        logHandled(e, HttpStatus.CONFLICT, "DOCUMENT_ALREADY_EXISTS");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("DOCUMENT_ALREADY_EXISTS", e.getMessage()));
@@ -366,6 +409,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(DocumentUploadException.class)
     public ResponseEntity<ErrorResponse> handleDocumentUpload(DocumentUploadException e) {
+        logHandled(e, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR");
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of("INTERNAL_SERVER_ERROR", "서버 처리 중 오류가 발생했습니다."));
@@ -373,6 +417,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(PipelineQueryException.class)
     public ResponseEntity<ErrorResponse> handlePipelineQuery(PipelineQueryException e) {
+        logHandled(e, e.getHttpStatus(), e.getErrorCode());
         return ResponseEntity
                 .status(e.getHttpStatus())
                 .body(ErrorResponse.of(e.getErrorCode(), e.getMessage()));
@@ -380,6 +425,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(QueryRunNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleQueryRunNotFound(QueryRunNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "QUERY_RUN_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("QUERY_RUN_NOT_FOUND", e.getMessage()));
@@ -388,6 +434,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     // core(문서 서비스) 소유 guard가 던지는 예외. access의 동명 예외와 동일하게 404로 매핑한다.
     @ExceptionHandler(WorkspaceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleWorkspaceNotFound(WorkspaceNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WORKSPACE_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WORKSPACE_NOT_FOUND", e.getMessage()));
@@ -395,6 +442,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(WorkspaceAiModelForbiddenException.class)
     public ResponseEntity<ErrorResponse> handleWorkspaceAiModelForbidden(WorkspaceAiModelForbiddenException e) {
+        logHandled(e, HttpStatus.FORBIDDEN, "WORKSPACE_AI_MODEL_FORBIDDEN");
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of("WORKSPACE_AI_MODEL_FORBIDDEN", e.getMessage()));
@@ -402,6 +450,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(OperationNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleOperationNotFound(OperationNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "AI_OPERATION_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("AI_OPERATION_NOT_FOUND", "AI 작업 로그를 찾을 수 없습니다."));
@@ -409,6 +458,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidRestoreRequestException.class)
     public ResponseEntity<ErrorResponse> handleInvalidRestoreRequest(InvalidRestoreRequestException e) {
+        logHandled(e, HttpStatus.BAD_REQUEST, "INVALID_RESTORE_REQUEST");
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of("INVALID_RESTORE_REQUEST", e.getMessage()));
@@ -416,6 +466,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(WikiPageVersionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleWikiPageVersionNotFound(WikiPageVersionNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "WIKI_PAGE_VERSION_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("WIKI_PAGE_VERSION_NOT_FOUND", "Wiki 페이지 버전을 찾을 수 없습니다."));
@@ -423,6 +474,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(InvalidCallbackTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCallbackToken(InvalidCallbackTokenException e) {
+        logHandled(e, HttpStatus.UNAUTHORIZED, "INVALID_CALLBACK_TOKEN");
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(ErrorResponse.of("INVALID_CALLBACK_TOKEN", e.getMessage()));
@@ -431,6 +483,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
     /** 다시 쓰고 재전송하면 성공할 수 있는 실패라 422로 알린다. */
     @ExceptionHandler(InvalidCallbackPayloadException.class)
     public ResponseEntity<ErrorResponse> handleInvalidCallbackPayload(InvalidCallbackPayloadException e) {
+        logHandled(e, HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_CALLBACK_PAYLOAD");
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ErrorResponse.of("INVALID_CALLBACK_PAYLOAD", e.getMessage()));
@@ -438,6 +491,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(OperationPayloadConflictException.class)
     public ResponseEntity<ErrorResponse> handleOperationPayloadConflict(OperationPayloadConflictException e) {
+        logHandled(e, HttpStatus.CONFLICT, "AI_OPERATION_PAYLOAD_CONFLICT");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("AI_OPERATION_PAYLOAD_CONFLICT", e.getMessage()));
@@ -445,6 +499,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(WikiObjectReadException.class)
     public ResponseEntity<ErrorResponse> handleWikiObjectRead(WikiObjectReadException e) {
+        logHandled(e, HttpStatus.INTERNAL_SERVER_ERROR, "WIKI_OBJECT_READ_FAILED");
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of("WIKI_OBJECT_READ_FAILED", e.getMessage()));
@@ -452,6 +507,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(RestorePreviewStaleException.class)
     public ResponseEntity<ErrorResponse> handleRestorePreviewStale(RestorePreviewStaleException e) {
+        logHandled(e, HttpStatus.CONFLICT, "RESTORE_PREVIEW_STALE");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("RESTORE_PREVIEW_STALE", e.getMessage()));
@@ -459,6 +515,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(ChatSessionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleChatSessionNotFound(ChatSessionNotFoundException e) {
+        logHandled(e, HttpStatus.NOT_FOUND, "CHAT_SESSION_NOT_FOUND");
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ErrorResponse.of("CHAT_SESSION_NOT_FOUND", e.getMessage()));
@@ -466,6 +523,7 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(ChatSessionLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleChatSessionLimitExceeded(ChatSessionLimitExceededException e) {
+        logHandled(e, HttpStatus.CONFLICT, "CHAT_SESSION_LIMIT_EXCEEDED");
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
                 .body(ErrorResponse.of("CHAT_SESSION_LIMIT_EXCEEDED", e.getMessage()));

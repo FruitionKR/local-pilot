@@ -87,6 +87,8 @@ public class QueryController {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableQueryRequest(HttpMessageNotReadableException e) {
+        log.warn("[예외] type={} code=INVALID_REQUEST status=400 message={}",
+                e.getClass().getSimpleName(), e.getMessage());
         return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_REQUEST", "요청 형식이 올바르지 않습니다."));
     }
 

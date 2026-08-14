@@ -8,6 +8,7 @@
 - 인증: `Authorization: Bearer <access JWT(HS256, 기본 900s)>`. refresh는 opaque 토큰(DB에 sha256 해시만 저장, rotation).
 - 사용자 API는 authenticated다. health·OpenAPI만 permitAll이다. `/internal/**`는 원칙적으로 `X-Internal-Token`을 검증하고, Agent worker가 document-svc의 Tool을 호출하는 `/internal/agent/tools/**`와 Skill 참조 read는 `X-Agent-Service-Token`을 검증한다.
 - 에러 envelope: `{ "error": { "code", "message", "details" } }`. 검증 실패는 400 `INVALID_REQUEST` + field details. 예외→코드 전체 매핑은 원문 참조.
+- Java 서비스(access-svc·document-svc)는 개별 매핑이 없는 예외도 `ErrorResponse`로 응답한다. Spring이 상태 코드를 담아 던진 예외(없는 경로의 `404` 등)는 그 상태를 유지하며 `REQUEST_FAILED`, 그 밖의 예상치 못한 예외는 `500 INTERNAL_ERROR`를 쓴다.
 - `Idempotency-Key`가 적용된 API는 1~255자 키를 사용한다. 실행 선점 lease는 15분이고, 완료 응답은 완료 시점부터 24시간 유지한다. 같은 사용자·endpoint·키의 같은 요청이 완료되면 저장된 응답을 재생하고, 다른 payload는 409 `IDEMPOTENCY_CONFLICT`, lease 내 처리 중인 동시 요청은 409 `IDEMPOTENCY_IN_PROGRESS`로 거절한다. 실행이 실패하거나 lease가 만료되면 같은 키로 재시도할 수 있다.
 - ID 형식: `user_`/`doc_`/`session_`/`query_`/`agent_`/`op_` + UUID/난수.
 - LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `minimal`, `gemini`/`gemini-3.1-flash-lite`는 `low`, `claude`/`claude-haiku-4-5-20251001`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
