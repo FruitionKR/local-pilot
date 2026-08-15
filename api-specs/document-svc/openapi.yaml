@@ -3776,7 +3776,7 @@ components:
       - workspace_id
     AgentTurnRequest:
       type: object
-      description: Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. apply_operation_id를 뺀 필드 이름은 camelCase다.
+      description: Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. skill_* 필드는 snake_case이고 나머지는 camelCase다.
       properties:
         baseVersion:
           type: integer
@@ -4027,7 +4027,7 @@ components:
           type: array
           description: 문서·block 쌍으로 표현한 근거 위치 목록
           items:
-            $ref: "#/components/schemas/SourceRef"
+            $ref: "#/components/schemas/ChatSourceRef"
         text:
           type: string
           description: 근거 구절 원문
@@ -4174,6 +4174,17 @@ components:
           type: string
           description: 세션 제목
           example: 검색 인덱싱 질문
+    ChatSourceRef:
+      type: object
+      description: 근거가 가리키는 문서·block 쌍. 한 근거가 여러 문서를 참조할 수 있어 쌍으로 표현한다.
+      properties:
+        source_block_id:
+          type: string
+          description: 문서 안에서 근거가 있는 block ID
+        source_document_id:
+          type: string
+          description: 근거가 있는 문서 ID
+          example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
     ChatWikiExportRequest:
       type: object
       description: 채팅 내용을 Wiki 페이지로 내보내는 요청
@@ -5079,7 +5090,7 @@ components:
           type: array
           description: 문서·block 쌍으로 표현한 전체 근거 위치. 여러 문서를 걸칠 수 있다.
           items:
-            $ref: "#/components/schemas/SourceRef"
+            $ref: "#/components/schemas/QuerySourceRef"
         text:
           type: string
           description: 근거 구절 원문
@@ -5704,6 +5715,17 @@ components:
           type: boolean
           description: 이 질의에 웹 검색이 허용됐는지(실행 시점 snapshot)
           example: false
+    QuerySourceRef:
+      type: object
+      description: 근거가 가리키는 문서·block 쌍. 한 근거가 여러 문서를 참조할 수 있어 쌍으로 표현한다.
+      properties:
+        source_block_id:
+          type: string
+          description: 문서 안에서 근거가 있는 block ID
+        source_document_id:
+          type: string
+          description: 근거가 있는 문서 ID
+          example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
     RelatedPage:
       type: object
       description: 답변 근거가 된 Wiki 페이지
@@ -6178,17 +6200,6 @@ components:
         id:
           type: string
           description: 문서 ID
-          example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
-    SourceRef:
-      type: object
-      description: 근거가 가리키는 문서·block 쌍. 한 근거가 여러 문서를 참조할 수 있어 쌍으로 표현한다.
-      properties:
-        source_block_id:
-          type: string
-          description: 문서 안에서 근거가 있는 block ID
-        source_document_id:
-          type: string
-          description: 근거가 있는 문서 ID
           example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
     Target:
       type: object

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Schema(description = "Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. "
-        + "apply_operation_id를 뺀 필드 이름은 camelCase다.")
+        + "skill_* 필드는 snake_case이고 나머지는 camelCase다.")
 public record AgentTurnRequest(
         @NotBlank
         @Schema(description = "편집 대상 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")

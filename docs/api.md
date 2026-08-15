@@ -7,6 +7,18 @@
 - 공통 오류 형식은 서비스에 따라 `ErrorResponse` 또는 FastAPI validation 응답을 사용한다.
 - 각 API는 동일한 10개 항목을 유지한다. 해당 사항이 없더라도 항목을 생략하지 않는다.
 
+## curl 예시 실행
+
+아래 예시는 서비스별 base URL 변수를 쓴다. 붙여넣기 전에 로컬 기준으로 한 번 정의한다.
+
+```sh
+export ACCESS=http://localhost:8081    # access-svc: /api/auth/*, /api/workspaces
+export DOCUMENT=http://localhost:8080  # document-svc: 그 외 사용자 API
+export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
+```
+
+프론트엔드는 `/api/*` 경로 기반 rewrite로 두 backend에 나눠 보낸다(`services/frontend/next.config.mjs`). `/api/auth/*`와 `/api/workspaces`·`/api/workspaces/{id}`는 access-svc, 그 외 `/api/**`는 document-svc가 받는다.
+
 ## 서비스 목차
 
 1. [access-svc](#access-svc)
@@ -93,7 +105,7 @@
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/email-verifications' \
+curl -X POST "$ACCESS/api/auth/email-verifications" \
   -H 'Content-Type: application/json' \
   --data '{"email":"user@example.com","purpose":"signup"}'
 ```
@@ -186,7 +198,7 @@ curl -X POST '/api/auth/email-verifications' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/email-verifications/<value>/confirm' \
+curl -X POST "$ACCESS/api/auth/email-verifications/<value>/confirm" \
   -H 'Content-Type: application/json' \
   --data '{"code":"042173"}'
 ```
@@ -272,7 +284,7 @@ curl -X POST '/api/auth/email-verifications/<value>/confirm' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/login' \
+curl -X POST "$ACCESS/api/auth/login" \
   -H 'Content-Type: application/json' \
   --data '{"email":"user@example.com","password":"stringst"}'
 ```
@@ -350,7 +362,7 @@ refresh token을 폐기합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/logout' \
+curl -X POST "$ACCESS/api/auth/logout" \
   -H 'Content-Type: application/json' \
   --data '{"refresh_token":"EXAMPLE-refresh-token-not-a-real-value-0000"}'
 ```
@@ -427,7 +439,7 @@ access token으로 인증된 사용자의 프로필을 반환합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/auth/me' \
+curl -X GET "$ACCESS/api/auth/me" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -513,7 +525,7 @@ OAuth 로그인 성공 후 발급된 1회용 code를 access/refresh token으로 
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/oauth/exchange' \
+curl -X POST "$ACCESS/api/auth/oauth/exchange" \
   -H 'Content-Type: application/json' \
   --data '{"code":"<value>"}'
 ```
@@ -599,7 +611,7 @@ verification_token으로 본인 확인 후 비밀번호를 변경하고 기존 �
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/password-reset' \
+curl -X POST "$ACCESS/api/auth/password-reset" \
   -H 'Content-Type: application/json' \
   --data '{"email":"user@example.com","new_password":"password1234","verification_token":"EXAMPLE-verification-token-not-real-0000000"}'
 ```
@@ -682,7 +694,7 @@ refresh token을 검증하고 access/refresh token을 새로 발급합니다. �
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/refresh' \
+curl -X POST "$ACCESS/api/auth/refresh" \
   -H 'Content-Type: application/json' \
   --data '{"refresh_token":"EXAMPLE-refresh-token-not-a-real-value-0000"}'
 ```
@@ -779,7 +791,7 @@ curl -X POST '/api/auth/refresh' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/auth/signup' \
+curl -X POST "$ACCESS/api/auth/signup" \
   -H 'Content-Type: application/json' \
   --data '{"display_name":"표시 이름","email":"user@example.com","password":"password1234","verification_token":"EXAMPLE-verification-token-not-real-0000000"}'
 ```
@@ -855,7 +867,7 @@ curl -X POST '/api/auth/signup' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces' \
+curl -X GET "$ACCESS/api/workspaces" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -951,7 +963,7 @@ curl -X GET '/api/workspaces' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces' \
+curl -X POST "$ACCESS/api/workspaces" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"name":"내 워크스페이스"}'
@@ -1026,7 +1038,7 @@ curl -X POST '/api/workspaces' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/trash' \
+curl -X GET "$ACCESS/api/workspaces/trash" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -1119,7 +1131,7 @@ curl -X GET '/api/workspaces/trash' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
+curl -X PATCH "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"name":"이름 바꾼 워크스페이스"}'
@@ -1212,7 +1224,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
+curl -X DELETE "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>'
 ```
@@ -1303,7 +1315,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore' \
+curl -X POST "$ACCESS/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>'
 ```
@@ -1375,7 +1387,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/restore' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/users/<value>' \
+curl -X GET "$ACCESS/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/users/<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -1440,7 +1452,7 @@ curl -X GET '/internal/authz/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/user
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/internal/users/<value>' \
+curl -X GET "$ACCESS/internal/users/<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -1507,7 +1519,7 @@ curl -X GET '/internal/users/<value>' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings' \
+curl -X GET "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -1581,7 +1593,7 @@ curl -X GET '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-s
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PUT '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings' \
+curl -X PUT "$ACCESS/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"ingest_lint":{"model":"gpt-5-nano","provider":"openai"}}'
@@ -1656,7 +1668,7 @@ curl -X PUT '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-s
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/ai-models' \
+curl -X GET "$DOCUMENT/api/ai-models" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -1743,7 +1755,7 @@ ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -1844,7 +1856,7 @@ ingest·lint에 쓸 provider/model을 바꿉니다. OWNER만 호출할 수 있�
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings' \
+curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settings" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"ingest_lint":{"model":"gpt-5-nano","provider":"openai"}}'
@@ -1945,7 +1957,7 @@ curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-model-settin
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs?type=<value>&status=<value>&cursor=<value>&size=1' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs?type=<value>&status=<value>&cursor=<value>&size=1" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2094,7 +2106,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2251,7 +2263,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>/restore' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>/restore" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"preview_token":"<value>"}'
@@ -2355,7 +2367,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-l
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>/restore-preview' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-logs/<value>/restore-preview" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2440,7 +2452,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/ai-operation-lo
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2512,7 +2524,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/approve' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/approve" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"operation_hash":"<value>","plan_version":1}'
@@ -2579,7 +2591,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<va
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/cancel' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/cancel" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2644,7 +2656,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<va
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/reject' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/reject" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -2715,7 +2727,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<va
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/revise' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<value>/revise" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"instruction":"표를 목록으로 바꿔줘"}'
@@ -2849,7 +2861,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/runs/<va
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"baseVersion":3,"conversationContext":{"pendingSkillProposal":{"description":"<value>","instructions_markdown":"<value>","name":"<value>","scope_type":"<value>"},"recentConversationSummary":"<value>","referenceContext":{}},"documentId":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","editorSnapshot":{"markdown":"<value>","target":{"endLine":24,"startLine":10,"type":"selection"}},"message":"이 문단을 표로 정리해줘","model":"gpt-5-nano","provider":"openai","skill_draft_excluded_literals":["<value>"],"skill_draft_sources":[{"run_id":"<value>"}],"skill_draft_user_directives":["<value>"]}'
@@ -2951,7 +2963,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3044,7 +3056,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3138,7 +3150,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' 
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"title":"검색 인덱싱 질문"}'
@@ -3215,7 +3227,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions'
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>' \
+curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3335,7 +3347,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/session
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/messages' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/messages" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3455,7 +3467,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/wiki' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/wiki" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"pair_ids":["<value>"],"selection_mode":"full"}'
@@ -3523,7 +3535,7 @@ string
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/wiki/preview' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/wiki/preview" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3595,7 +3607,7 @@ string
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets/55555555-5555-5555-5555-555555555555/content' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets/55555555-5555-5555-5555-555555555555/content" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3677,7 +3689,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/assets/55555555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3740,7 +3752,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock' \
+curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3819,7 +3831,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock/heartbeat' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/edit-lock/heartbeat" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -3915,7 +3927,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?query=<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?query=<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -4032,7 +4044,7 @@ PDF 또는 Markdown 파일을 업로드합니다. Markdown은 편집 상태와 �
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?folder_id=55555555-5555-5555-5555-555555555555' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?folder_id=55555555-5555-5555-5555-555555555555" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -F 'file=@<file>'
@@ -4147,7 +4159,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents?fold
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/markdown' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/markdown" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -4248,7 +4260,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/mark
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -4352,7 +4364,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/trash
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -4463,7 +4475,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>' \
+curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -4554,7 +4566,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<v
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/blocks' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/blocks" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -4672,7 +4684,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PUT '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/content' \
+curl -X PUT "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/content" \
   -H 'Authorization: Bearer <access_token>' \
   -F 'apply_operation_id=<value>' \
   -F 'base_revision=<value>' \
@@ -4786,7 +4798,7 @@ PDF 원본 문서를 Markdown 문서로 변환합니다. 변환 결과를 담을
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/convert-markdown' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/convert-markdown" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>'
 ```
@@ -4904,7 +4916,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/diff?from_version=1&to_version=1' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/diff?from_version=1&to_version=1" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5020,7 +5032,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/duplicate' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/duplicate" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>'
 ```
@@ -5105,7 +5117,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/export' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/export" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5192,7 +5204,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/ingest' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/ingest" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5270,7 +5282,7 @@ MinIO에 저장된 원본 파일을 스트리밍합니다. PDF는 inline, 그 �
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/original' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/original" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5366,7 +5378,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/position' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/position" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -5471,7 +5483,7 @@ Notion의 page title처럼 표시 이름만 변경하며 본문과 Wiki 제목�
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/rename' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/rename" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"base_version":1,"display_name":"이름 바꾼 회의록"}'
@@ -5576,7 +5588,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<va
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/restore' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/restore" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -5677,7 +5689,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5770,7 +5782,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions/1' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions/1" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -5881,7 +5893,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<valu
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions/1/restore' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<value>/versions/1/restore" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"base_version":4}'
@@ -5996,7 +6008,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/documents/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -6105,7 +6117,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -6212,7 +6224,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555' \
+curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -6306,7 +6318,7 @@ curl -X DELETE '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/children' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/children" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -6416,7 +6428,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/5555555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/position' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/position" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -6522,7 +6534,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/restore' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/55555555-5555-5555-5555-555555555555/restore" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Idempotency-Key: <value>' \
   -H 'Content-Type: application/json' \
@@ -6621,7 +6633,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folders/555555
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/document-tree' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/document-tree" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -6720,7 +6732,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/document-tree' 
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -6821,7 +6833,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/breadcrumb?folder_id=55555555-5555-5555-5555-555555555555&document_id=<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/breadcrumb?folder_id=55555555-5555-5555-5555-555555555555&document_id=<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -6925,7 +6937,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/brea
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/search?query=<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/search?query=<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -7124,7 +7136,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/navigation/sear
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/query' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/query" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"allow_web_search":false,"model":"gpt-5-nano","provider":"openai","question":"검색 인덱싱은 어떻게 동작하나요?"}'
@@ -7308,7 +7320,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/query/runs' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/<value>/query/runs" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"allow_web_search":false,"model":"gpt-5-nano","provider":"openai","question":"검색 인덱싱은 어떻게 동작하나요?"}'
@@ -7484,7 +7496,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/sessions/
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/query/runs/<value>' \
+curl -X GET "$DOCUMENT/api/query/runs/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -7653,7 +7665,7 @@ string
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/query/runs/<value>/events' \
+curl -X GET "$DOCUMENT/api/query/runs/<value>/events" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -7772,7 +7784,7 @@ string
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -7922,7 +7934,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"authoring_mode":"enhance","description":"<value>","instruction":"<value>","name":"meeting-notes","reference_document_ids":["<value>"],"scope_type":"personal"}'
@@ -8040,7 +8052,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author'
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author/publish' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author/publish" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"description":"<value>","instructions_markdown":"<value>","name":"meeting-notes","scope_type":"personal"}'
@@ -8169,7 +8181,7 @@ Skill의 현재 정의와 실행 설정을 반환합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -8313,7 +8325,7 @@ Skill의 정의를 수정합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"description":"<value>","instructions_markdown":"<value>","name":"meeting-notes"}'
@@ -8442,7 +8454,7 @@ Skill을 Agent 실행 대상에서 제외합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>/disable' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>/disable" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -8597,7 +8609,7 @@ Skill을 Agent 실행 대상에 포함합니다.
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>/enable' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>/enable" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -8735,7 +8747,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/<value>
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -8863,7 +8875,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/graph' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -8991,7 +9003,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<val
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>/diff?from=1&to=1' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>/diff?from=1&to=1" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -9111,7 +9123,7 @@ Wiki 페이지 제목을 변경합니다. update_slug=true이면 slug도 재생�
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>/rename' \
+curl -X PATCH "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<value>/rename" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"title":"검색 인덱싱","update_slug":false}'
@@ -9216,7 +9228,7 @@ curl -X PATCH '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/pages/<v
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/lint' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/lint" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"dry_run":true,"materialize_promotions":false}'
@@ -9297,7 +9309,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenan
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/runs/<value>' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/runs/<value>" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -9375,7 +9387,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/status' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenance/status" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -9477,7 +9489,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki/maintenanc
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/active' \
+curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/active" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -9610,7 +9622,7 @@ curl -X GET '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/act
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/drafts' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/drafts" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"name":"설계 문서 스키마","rawMarkdown":"# 설계\n\n## 구성요소"}'
@@ -9738,7 +9750,7 @@ Schema 규칙을 저장하지 않고 적용해 예상 Wiki 구조를 반환합�
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/preview' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/preview" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   --data '{"rawMarkdown":"# 설계\n\n## 구성요소"}'
@@ -9857,7 +9869,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/pr
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/<value>/activate' \
+curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/<value>/activate" \
   -H 'Authorization: Bearer <access_token>'
 ```
 
@@ -9963,7 +9975,7 @@ curl -X POST '/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/wiki-schema/<v
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/tools/execute/<value>' \
+curl -X POST "$DOCUMENT/internal/agent/tools/execute/<value>" \
   -H 'Content-Type: application/json' \
   --data '{"arguments":{},"idempotency_key":"<value>","operation_hash":"<value>","operation_id":"<value>","plan_id":"<value>","plan_version":1,"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
@@ -10038,7 +10050,7 @@ curl -X POST '/internal/agent/tools/execute/<value>' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/tools/read/<value>' \
+curl -X POST "$DOCUMENT/internal/agent/tools/read/<value>" \
   -H 'Content-Type: application/json' \
   --data '{"arguments":{},"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
@@ -10106,7 +10118,7 @@ curl -X POST '/internal/agent/tools/read/<value>' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/internal/documents/<value>/pipeline-source' \
+curl -X GET "$DOCUMENT/internal/documents/<value>/pipeline-source" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -10177,7 +10189,7 @@ curl -X GET '/internal/documents/<value>/pipeline-source' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/initial-note' \
+curl -X POST "$DOCUMENT/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/initial-note" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"user_id":"<value>"}'
@@ -10254,7 +10266,7 @@ curl -X POST '/internal/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/initial-n
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/wiki/contributions' \
+curl -X POST "$DOCUMENT/internal/wiki/contributions" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"page_ids":["<value>"],"workspace_id":"<value>"}'
@@ -10330,7 +10342,7 @@ curl -X POST '/internal/wiki/contributions' \
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/skill-authoring/references/read' \
+curl -X POST "$DOCUMENT/internal/agent/skill-authoring/references/read" \
   -H 'Content-Type: application/json' \
   --data '{"document_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
 ```
@@ -10592,7 +10604,7 @@ Handle Agent Turn
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/agent/turn' \
+curl -X POST "$PIPELINE/agent/turn" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"active_markdown_context":{"markdown":"<value>","target":null},"allow_web_search":true,"conversation_context":{"pending_skill_proposal":null,"recent_conversation_summary":null,"recent_messages":[null],"reference_context":null},"message":"<value>","model":"<value>","output_language":"ko","provider":"<value>","response_length":"concise","skill_authoring_mode":"preserve","skill_draft_excluded_literals":["<value>"]}'
@@ -10837,7 +10849,7 @@ List Agent Artifacts
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/runs/artifacts/list' \
+curl -X POST "$PIPELINE/internal/agent/runs/artifacts/list" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
@@ -10955,7 +10967,7 @@ Register Agent Artifact
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/runs/artifacts/register' \
+curl -X POST "$PIPELINE/internal/agent/runs/artifacts/register" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"artifact_id":"<value>","base_version":1.0,"content_hash":"<value>","document_id":"<value>","markdown":"<value>","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
@@ -11071,7 +11083,7 @@ Resolve Agent Artifact
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/runs/artifacts/resolve' \
+curl -X POST "$PIPELINE/internal/agent/runs/artifacts/resolve" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"artifact_id":"<value>","base_version":1.0,"content_hash":"<value>","document_id":"<value>","purpose":"<value>","run_id":"<value>","target":{},"user_id":"<value>","workspace_id":"<value>"}'
@@ -11175,7 +11187,7 @@ Authorize Agent Tool Execute
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/runs/tool-authorizations/execute' \
+curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/execute" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"arguments":{},"operation_hash":"<value>","operation_id":"<value>","plan_id":"<value>","plan_version":1.0,"run_id":"<value>","tool_name":"<value>","user_id":"<value>","workspace_id":"<value>"}'
@@ -11264,7 +11276,7 @@ Authorize Agent Tool Read
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/internal/agent/runs/tool-authorizations/read' \
+curl -X POST "$PIPELINE/internal/agent/runs/tool-authorizations/read" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"run_id":"<value>","user_id":"<value>","workspace_id":"<value>"}'
@@ -11361,7 +11373,7 @@ Get Markdown Agent Run
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/internal/agent/runs/<value>?workspace_id=<value>&user_id=<value>' \
+curl -X GET "$PIPELINE/internal/agent/runs/<value>?workspace_id=<value>&user_id=<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -11476,7 +11488,7 @@ Run Chat Wiki Endpoint
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/chat-wiki/runs' \
+curl -X POST "$PIPELINE/chat-wiki/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"chat_append_system_prompt":"prompts/chat_semantic_append.system.md","chat_system_prompt":"prompts/chat_semantic_extraction.system.md","concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>"}'
@@ -11589,7 +11601,7 @@ Run Reingest Pipeline Endpoint
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/pipeline/reingest-runs' \
+curl -X POST "$PIPELINE/pipeline/reingest-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_markdown":"<value>","input_name":"<value>","log_callback_url":"<value>","max_eval_attempts":1,"max_packet_chars":1}'
@@ -11702,7 +11714,7 @@ Run Pipeline Endpoint
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/pipeline/runs' \
+curl -X POST "$PIPELINE/pipeline/runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"concept_page_mode":"auto","concept_resolution_system_prompt":"prompts/concept_resolution.system.md","concept_system_prompt":"prompts/concept_page_generation.system.md","document_id":"<value>","existing_wiki_dir":"<value>","input_name":"<value>","log_callback_url":"<value>","max_eval_attempts":1,"max_packet_chars":1,"mode":"api"}'
@@ -11795,7 +11807,7 @@ Get Pipeline Run
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/pipeline/runs/<value>' \
+curl -X GET "$PIPELINE/pipeline/runs/<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -11879,7 +11891,7 @@ string
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/pipeline/runs/<value>/logs' \
+curl -X GET "$PIPELINE/pipeline/runs/<value>/logs" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -11964,7 +11976,7 @@ Get Document Wiki Context
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/wiki/documents/<value>/context?workspace_id=<value>' \
+curl -X GET "$PIPELINE/wiki/documents/<value>/context?workspace_id=<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -12049,7 +12061,7 @@ Get Wiki Graph
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/wiki/graph?workspace_id=<value>' \
+curl -X GET "$PIPELINE/wiki/graph?workspace_id=<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -12162,7 +12174,7 @@ Restore Ingest Operation
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki/ingest-restore-runs' \
+curl -X POST "$PIPELINE/wiki/ingest-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"cancel_operation_ids":["<value>"],"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"restore_to_operation_id":"<value>","source_page":{"document_id":"<value>","page_id":"<value>"},"workspace_id":"<value>"}'
@@ -12270,7 +12282,7 @@ Restore Lint Operation
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki/lint-restore-runs' \
+curl -X POST "$PIPELINE/wiki/lint-restore-runs" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"deleted_pages":["<value>"],"operation_id":"<value>","rebuild_pages":[{"keep_contributions":[null],"page_id":"<value>"}],"target_operation_id":"<value>","workspace_id":"<value>"}'
@@ -12400,7 +12412,7 @@ Lint Wiki Workspace
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki/maintenance/lint' \
+curl -X POST "$PIPELINE/wiki/maintenance/lint" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"dry_run":true,"materialize_promotions":true,"model":"<value>","operation_id":"<value>","provider":"openai","user_id":"local-user","workspace_id":"local-workspace"}'
@@ -12529,7 +12541,7 @@ Lookup Wiki Pages
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki/pages/lookup' \
+curl -X POST "$PIPELINE/wiki/pages/lookup" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"page_ids":["<value>"],"workspace_id":"<value>"}'
@@ -12619,7 +12631,7 @@ Get Wiki Page
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/wiki/pages/<value>?workspace_id=<value>' \
+curl -X GET "$PIPELINE/wiki/pages/<value>?workspace_id=<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -12713,7 +12725,7 @@ Rename Wiki Page
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/wiki/pages/<value>/rename' \
+curl -X PATCH "$PIPELINE/wiki/pages/<value>/rename" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"title":"<value>","update_slug":true,"user_id":"<value>","workspace_id":"<value>"}'
@@ -12801,7 +12813,7 @@ Delete Document Wiki Data
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X DELETE '/wiki/workspaces/<value>/documents/<value>' \
+curl -X DELETE "$PIPELINE/wiki/workspaces/<value>/documents/<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -12886,7 +12898,7 @@ Get Last Wiki Updated
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/wiki/workspaces/<value>/last-updated' \
+curl -X GET "$PIPELINE/wiki/workspaces/<value>/last-updated" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -13069,7 +13081,7 @@ Answer Query
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/query' \
+curl -X POST "$PIPELINE/query" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"allow_web_search":true,"model":"<value>","output_language":"ko","provider":"<value>","question":"<value>","recent_conversation_summary":"<value>","recent_messages":[{"content":"<value>","role":"user"}],"reference_context":{},"response_length":"concise","user_id":"<value>"}'
@@ -13275,7 +13287,7 @@ List Skills
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/skills?workspace_id=<value>&user_id=<value>' \
+curl -X GET "$PIPELINE/skills?workspace_id=<value>&user_id=<value>" \
   -H 'X-Agent-Service-Token: <value>'
 ```
 
@@ -13429,7 +13441,7 @@ Author Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/skills/author' \
+curl -X POST "$PIPELINE/skills/author" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"authoring_mode":"preserve","description":"<value>","instruction":"<value>","model":"<value>","name":"<value>","provider":"<value>","reference_document_ids":["<value>"],"scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
@@ -13554,7 +13566,7 @@ Publish Authored Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/skills/author/publish' \
+curl -X POST "$PIPELINE/skills/author/publish" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
@@ -13671,7 +13683,7 @@ Preview Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/skills/preview' \
+curl -X POST "$PIPELINE/skills/preview" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","name":"<value>","user_id":"<value>"}'
@@ -13801,7 +13813,7 @@ Get Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/skills/<value>?workspace_id=<value>&user_id=<value>' \
+curl -X GET "$PIPELINE/skills/<value>?workspace_id=<value>&user_id=<value>" \
   -H 'X-Agent-Service-Token: <value>'
 ```
 
@@ -13949,7 +13961,7 @@ Update Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X PATCH '/skills/<value>' \
+curl -X PATCH "$PIPELINE/skills/<value>" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","user_id":"<value>","workspace_id":"<value>"}'
@@ -14094,7 +14106,7 @@ Disable Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/skills/<value>/disable' \
+curl -X POST "$PIPELINE/skills/<value>/disable" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"user_id":"<value>","workspace_id":"<value>"}'
@@ -14264,7 +14276,7 @@ Enable Skill
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/skills/<value>/enable' \
+curl -X POST "$PIPELINE/skills/<value>/enable" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"user_id":"<value>","workspace_id":"<value>"}'
@@ -14417,7 +14429,7 @@ Get Active Wiki Schema
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/wiki-schema/active?workspace_id=<value>&user_id=<value>' \
+curl -X GET "$PIPELINE/wiki-schema/active?workspace_id=<value>&user_id=<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -14562,7 +14574,7 @@ Create Wiki Schema Draft
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki-schema/drafts' \
+curl -X POST "$PIPELINE/wiki-schema/drafts" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"name":"default","raw_markdown":"<value>","user_id":"<value>","workspace_id":"<value>"}'
@@ -14700,7 +14712,7 @@ Preview Wiki Schema
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki-schema/preview' \
+curl -X POST "$PIPELINE/wiki-schema/preview" \
   -H 'X-Internal-Token: <value>' \
   -H 'Content-Type: application/json' \
   --data '{"raw_markdown":"<value>"}'
@@ -14831,7 +14843,7 @@ Activate Wiki Schema
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X POST '/wiki-schema/<value>/activate' \
+curl -X POST "$PIPELINE/wiki-schema/<value>/activate" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -14943,7 +14955,7 @@ Get Document
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/documents/<value>' \
+curl -X GET "$PIPELINE/documents/<value>" \
   -H 'X-Internal-Token: <value>'
 ```
 
@@ -15004,7 +15016,7 @@ Health
 #### 9. 예시 요청/응답
 
 ```bash
-curl -X GET '/health'
+curl -X GET "$PIPELINE/health"
 ```
 
 ```json

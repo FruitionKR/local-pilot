@@ -12,8 +12,9 @@ public record WorkspaceAiModelRequest(
         @Schema(description = "ingest·lint 작업에 쓸 provider/model 조합")
         AiModelSelection ingestLint) {
 
-    // WorkspaceAiModelResponse의 동명 record와 단순 이름이 겹쳐 명세에서 한쪽이 덮인다. 요청은
-    // 필수 제약이 있고 응답은 없으므로 합쳐지면 계약이 틀어진다 — 스키마 이름을 분리한다.
+    // WorkspaceAiModelResponse에 동명 record가 있다. 지금은 그 응답 타입이 ResponseEntity<?>로 지워져
+    // 명세에 실리지 않아 실제로 겹치지는 않지만, 응답 타입을 좁히는 순간 단순 이름이 같아 한쪽이 덮인다.
+    // 요청은 필수 제약이 있고 응답은 없으므로 합쳐지면 계약이 틀어진다 — 미리 이름을 분리해 둔다.
     @Schema(name = "AiModelSelectionRequest",
             description = "설정할 provider와 model 조합. 활성 catalog에 있는 짝만 허용된다.")
     public record AiModelSelection(

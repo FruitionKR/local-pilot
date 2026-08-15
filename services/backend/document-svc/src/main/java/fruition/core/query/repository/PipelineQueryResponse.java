@@ -90,7 +90,9 @@ public record PipelineQueryResponse(
             String text
     ) {}
 
-    @Schema(description = "근거가 가리키는 문서·block 쌍. 한 근거가 여러 문서를 참조할 수 있어 쌍으로 표현한다.")
+    // fruition.core.chat.domain.SourceRef와 이름이 같아 명세가 합쳐지는 것을 막는다.
+    @Schema(name = "QuerySourceRef",
+            description = "근거가 가리키는 문서·block 쌍. 한 근거가 여러 문서를 참조할 수 있어 쌍으로 표현한다.")
     public record SourceRef(
             @JsonProperty("source_document_id")
             @Schema(description = "근거가 있는 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")

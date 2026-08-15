@@ -96,6 +96,9 @@ tasks.named('test') {
 	environment('CORE_DB_MIGRATION_USER', 'test')
 	environment('CORE_DB_MIGRATION_PASSWORD', 'test')
 	// OpenAPI 스냅샷 위치. rootDir은 services/backend이므로 두 단계 위가 저장소 루트다.
+	// 스냅샷 파일을 input으로 선언한다. systemProperty는 경로 문자열이라, 이것이 없으면
+	// api-specs/document-svc/openapi.yaml을 손으로 고쳐도 태스크가 UP-TO-DATE로 판정돼 비교가 다시 돌지 않는다.
+	inputs.file(file("$rootDir/../../api-specs/document-svc/openapi.yaml")).withPropertyName('openApiSnapshot')
 	systemProperty 'openapi.snapshot.path', file("$rootDir/../../api-specs/document-svc/openapi.yaml").absolutePath
 	// Gradle은 -D를 테스트 JVM으로 자동 전달하지 않는다 — 갱신 플래그를 명시적으로 넘긴다.
 	systemProperty 'updateOpenApiSnapshot', System.getProperty('updateOpenApiSnapshot') ?: 'false'
