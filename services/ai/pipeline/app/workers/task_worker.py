@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import signal
+from itertools import count
 from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -17,6 +18,7 @@ from app.core.llm_env import resolve_llm_selection
 from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
+from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
@@ -53,7 +55,10 @@ def _required(command: dict[str, Any], *fields: str) -> None:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
-def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
+def _handle_query(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
     _required(
         command,
         "run_id",
@@ -71,6 +76,7 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
         provider=str(command["provider"]).strip(),
         model=str(command["model"]).strip(),
         allow_web_search=command["allow_web_search"],
+        event_publisher=event_publisher,
     ).execute(
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
@@ -373,6 +379,61 @@ def _event(command: dict[str, Any], status: str, payload: Any = None, error: str
     }
 
 
+def _progress_event(
+    command: dict[str, Any],
+    *,
+    sequence: int,
+    stage: str,
+    message: str,
+    data: dict[str, object] | None,
+) -> dict[str, Any]:
+    event = _event(
+        command,
+        "progress",
+        payload={"stage": stage, "message": message, "data": data or {}},
+    )
+    event["event_id"] = f"query:{event['run_id']}:progress:{sequence}:{stage}"
+    return event
+
+
+class KafkaQueryEventPublisher(QueryEventPublisherPort):
+    """동기 query pipeline의 진행 이벤트를 worker event loop의 Kafka producer로 전달한다."""
+
+    def __init__(
+        self,
+        producer: AIOKafkaProducer,
+        loop: asyncio.AbstractEventLoop,
+        command: dict[str, Any],
+    ) -> None:
+        self._producer = producer
+        self._loop = loop
+        self._command = command
+        self._sequences = count(1)
+
+    def publish(
+        self,
+        stage: str,
+        message: str,
+        data: dict[str, object] | None = None,
+    ) -> None:
+        event = _progress_event(
+            self._command,
+            sequence=next(self._sequences),
+            stage=stage,
+            message=message,
+            data=data,
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            self._producer.send_and_wait(
+                RESULT_TOPIC,
+                event,
+                key=event["run_id"].encode("utf-8"),
+            ),
+            self._loop,
+        )
+        future.result()
+
+
 def _failure_is_durable(command: dict[str, Any]) -> bool:
     kind = str(command.get("kind") or "")
     run_id = str(command.get("run_id") or "")
@@ -425,7 +486,15 @@ async def consume() -> None:
                 for message in messages:
                     command = message.value
                     try:
-                        result = await asyncio.to_thread(_handle, command)
+                        if command.get("kind") == "query":
+                            event_publisher = KafkaQueryEventPublisher(producer, loop, command)
+                            result = await asyncio.to_thread(
+                                _handle_query,
+                                command,
+                                event_publisher,
+                            )
+                        else:
+                            result = await asyncio.to_thread(_handle, command)
                         event = _event(command, "succeeded", payload=result)
                     except Exception as exc:
                         logger.exception("[AI command 실패] kind=%s run_id=%s", command.get("kind"), command.get("run_id"))

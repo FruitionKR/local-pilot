@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,5 +57,30 @@ class AiTaskResultConsumerTest {
 
         verify(queryEventBroker).complete("query-1");
         verify(queryEventBroker, never()).fail("query-1", "late failure");
+    }
+
+    @Test
+    void queryProgressPublishesSseLogWithoutApplyingTerminalResult() throws Exception {
+        consumer.consume("""
+                {
+                  "event_id":"query:query-1:progress:1:wiki_loaded",
+                  "kind":"query",
+                  "run_id":"query-1",
+                  "status":"progress",
+                  "payload":{
+                    "stage":"wiki_loaded",
+                    "message":"Wiki 데이터를 불러왔습니다.",
+                    "data":{"page_count":3}
+                  }
+                }
+                """);
+
+        verify(queryEventBroker).publish(
+                "query-1",
+                "query:query-1:progress:1:wiki_loaded",
+                "wiki_loaded",
+                "Wiki 데이터를 불러왔습니다.",
+                java.util.Map.of("page_count", 3));
+        verifyNoInteractions(applier, queryRunStore);
     }
 }

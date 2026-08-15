@@ -68,6 +68,7 @@ class QueryEventBrokerTest {
     // convertAndSend는 실제 Redis처럼 발행 인스턴스의 onMessage로 되돌아온다(loop-back).
     private final Map<String, List<String>> redisLists = new HashMap<>();
     private final Map<String, AtomicLong> redisCounters = new HashMap<>();
+    private final Set<String> redisValues = new java.util.HashSet<>();
     private final List<String> broadcastMessages = new ArrayList<>();
 
     private final Clock clock = Clock.fixed(Instant.parse("2026-06-20T10:00:00Z"), ZoneOffset.UTC);
@@ -87,6 +88,8 @@ class QueryEventBrokerTest {
         when(valueOperations.increment(anyString())).thenAnswer(invocation ->
                 redisCounters.computeIfAbsent(invocation.getArgument(0), key -> new AtomicLong())
                         .incrementAndGet());
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                .thenAnswer(invocation -> redisValues.add(invocation.getArgument(0)));
         when(listOperations.rightPush(anyString(), anyString())).thenAnswer(invocation -> {
             List<String> list = redisLists.computeIfAbsent(invocation.getArgument(0), key -> new ArrayList<>());
             list.add(invocation.getArgument(1));
@@ -110,7 +113,7 @@ class QueryEventBrokerTest {
     void publish_afterSubscribe_deliversPayloadWithSequenceAndTimestampViaPubSub() throws Exception {
         SseEmitter emitter = broker.subscribe("query_abc123");
 
-        broker.publish("query_abc123", "query_started", "질의 처리를 시작했습니다.", Map.of("question", "테스트"));
+        broker.publish("query_abc123", "event-1", "query_started", "질의 처리를 시작했습니다.", Map.of("question", "테스트"));
 
         List<Map<String, Object>> payloads = capturedPayloads(emitter);
         assertThat(payloads).hasSize(1);
@@ -126,8 +129,8 @@ class QueryEventBrokerTest {
     void publish_multipleEvents_incrementsSequencePerRun() throws Exception {
         SseEmitter emitter = broker.subscribe("query_abc123");
 
-        broker.publish("query_abc123", "query_started", "시작", null);
-        broker.publish("query_abc123", "retrieval_scored", "점수 계산", null);
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
+        broker.publish("query_abc123", "event-2", "retrieval_scored", "점수 계산", null);
 
         List<Map<String, Object>> payloads = capturedPayloads(emitter);
         assertThat(payloads).hasSize(2);
@@ -136,7 +139,7 @@ class QueryEventBrokerTest {
 
     @Test
     void publish_beforeSubscribe_isStoredInRedisAndReplayedOnLateSubscribe() throws Exception {
-        broker.publish("query_abc123", "query_started", "시작", null);
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
 
         SseEmitter lateEmitter = broker.subscribe("query_abc123");
 
@@ -145,7 +148,7 @@ class QueryEventBrokerTest {
 
     @Test
     void publish_storesEventJsonInRedisListAndBroadcasts() {
-        broker.publish("query_abc123", "query_started", "시작", null);
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
 
         List<String> stored = redisLists.get("query:events:query_abc123");
         assertThat(stored).hasSize(1);
@@ -156,7 +159,7 @@ class QueryEventBrokerTest {
     @Test
     void deliver_duplicateEventFromReplayAndBroadcast_isSuppressedBySequence() throws Exception {
         SseEmitter emitter = broker.subscribe("query_abc123");
-        broker.publish("query_abc123", "query_started", "시작", null);
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
 
         // pub/sub 방송이 중복 도착해도 sequence가 뒤로 가지 않으면 다시 전달하지 않는다.
         String storedJson = redisLists.get("query:events:query_abc123").get(0);
@@ -164,6 +167,17 @@ class QueryEventBrokerTest {
                 storedJson.getBytes(StandardCharsets.UTF_8)), null);
 
         assertThat(capturedPayloads(emitter)).hasSize(1);
+    }
+
+    @Test
+    void publish_duplicateSourceEvent_isSuppressedBeforeStorage() throws Exception {
+        SseEmitter emitter = broker.subscribe("query_abc123");
+
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
+        broker.publish("query_abc123", "event-1", "query_started", "시작", null);
+
+        assertThat(capturedPayloads(emitter)).hasSize(1);
+        assertThat(redisLists.get("query:events:query_abc123")).hasSize(1);
     }
 
     @Test
