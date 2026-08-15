@@ -5,7 +5,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 
-@Schema(description = "모든 API가 공유하는 에러 응답 형식. 인증 단계에서 거부되는 401·403도 같은 형태다.")
+@Schema(description = "컨트롤러까지 도달한 요청이 실패했을 때 모든 API가 공유하는 에러 응답 형식. "
+        + "인증 필터가 막는 401은 HttpStatusEntryPoint가 상태 코드만 내보내므로 이 본문이 없다.")
 public record ErrorResponse(
         @Schema(description = "에러 상세")
         ErrorDetail error) {

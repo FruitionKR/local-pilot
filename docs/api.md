@@ -416,16 +416,9 @@ access token으로 인증된 사용자의 프로필을 반환합니다.
 
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
-| `401` | 인증되지 않음 | `ErrorResponse` |
+| `401` | 인증되지 않음 | 없음(본문 없이 상태 코드만) |
 
-```json
-{
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "요청 형식이 올바르지 않습니다."
-  }
-}
-```
+인증 필터가 막는 401은 `HttpStatusEntryPoint`가 상태 코드만 내보내므로 본문이 없다. `error.code`로 분기할 수 없으니 상태 코드로 판정한다. 로그인 실패처럼 컨트롤러까지 도달한 뒤 발생하는 401은 `ErrorResponse`를 반환한다.
 
 #### 7. Pagination / filtering
 
