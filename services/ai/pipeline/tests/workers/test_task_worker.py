@@ -117,6 +117,33 @@ def test_kafka_query_event_publisher_sends_progress_immediately() -> None:
     asyncio.run(run_test())
 
 
+def test_kafka_query_event_publisher_gives_up_when_broker_does_not_answer() -> None:
+    """진행 이벤트 하나가 답변 생성 스레드를 무기한 붙잡으면 안 된다."""
+
+    async def run_test() -> None:
+        started = asyncio.Event()
+
+        async def never_answers(*args: object, **kwargs: object) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        producer = MagicMock()
+        producer.send_and_wait = never_answers
+        publisher = task_worker.KafkaQueryEventPublisher(
+            producer,
+            asyncio.get_running_loop(),
+            {"run_id": "run-1", "kind": "query"},
+        )
+        publisher.SEND_TIMEOUT_SECONDS = 0.05
+
+        with pytest.raises(TimeoutError):
+            await asyncio.to_thread(publisher.publish, "wiki_loaded", "Wiki 데이터를 불러왔습니다.")
+
+        assert started.is_set()
+
+    asyncio.run(run_test())
+
+
 @pytest.mark.parametrize("allow_web_search", [False, True])
 def test_query_command_passes_runtime_model_and_web_search_flag(
     allow_web_search: bool,

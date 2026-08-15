@@ -362,10 +362,18 @@ def _handle(command: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unsupported AI command kind: {kind}")
 
 
-def _event(command: dict[str, Any], status: str, payload: Any = None, error: str | None = None) -> dict[str, Any]:
+def _event(
+    command: dict[str, Any],
+    status: str,
+    payload: Any = None,
+    error: str | None = None,
+    *,
+    with_request: bool = True,
+) -> dict[str, Any]:
+    """`with_request=False`는 소비 측이 원본 command를 보지 않는 이벤트에 쓴다."""
     run_id = str(command.get("run_id") or "")
     kind = str(command.get("kind") or "unknown")
-    return {
+    event: dict[str, Any] = {
         "event_id": f"{kind}:{run_id}:{status}",
         "run_id": run_id,
         "kind": kind,
@@ -373,10 +381,12 @@ def _event(command: dict[str, Any], status: str, payload: Any = None, error: str
         "workspace_id": command.get("workspace_id"),
         "user_id": command.get("user_id"),
         "operation_id": command.get("operation_id"),
-        "request": without_top_level_secrets(command),
-        "payload": payload,
-        "error": error,
     }
+    if with_request:
+        event["request"] = without_top_level_secrets(command)
+    event["payload"] = payload
+    event["error"] = error
+    return event
 
 
 def _progress_event(
@@ -387,15 +397,15 @@ def _progress_event(
     message: str,
     data: dict[str, object] | None,
 ) -> dict[str, Any]:
+    # 소비 측은 진행 이벤트에서 run_id·event_id·status·payload만 읽는다.
+    # command 전체(질문·대화 이력)를 단계마다 다시 실어 보내지 않는다.
     event = _event(
         command,
         "progress",
         payload={"stage": stage, "message": message, "data": data or {}},
+        with_request=False,
     )
     event["event_id"] = f"query:{event['run_id']}:progress:{sequence}:{stage}"
-    # 소비 측은 진행 이벤트에서 run_id·event_id·status·payload만 읽는다.
-    # command 전체(질문·대화 이력)를 단계마다 다시 실어 보내지 않는다.
-    del event["request"]
     return event
 
 
