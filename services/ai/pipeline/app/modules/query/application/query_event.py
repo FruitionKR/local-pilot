@@ -1,4 +1,8 @@
+import logging
+
 from app.modules.query.application.ports import QueryEventPublisherPort
+
+logger = logging.getLogger(__name__)
 
 
 def publish_query_event(
@@ -11,5 +15,6 @@ def publish_query_event(
         return
     try:
         event_publisher.publish(stage, message, data)
-    except Exception:
-        return
+    except Exception as exc:
+        # 진행 이벤트는 유실을 허용하지만, 조용히 사라지면 발행이 계속 실패해도 알 수 없다.
+        logger.warning("[질의 진행 이벤트 발행 실패] stage=%s errorType=%s", stage, type(exc).__name__)
