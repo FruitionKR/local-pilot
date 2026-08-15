@@ -242,7 +242,7 @@ tail -f logs/*.log                      # 흐름 실시간 확인
 grep -iE "error|exception" logs/*.log   # 에러만 확인
 ```
 
-워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. `workers.log`가 100MB를 넘으면 `workers.log.1`로 밀고 새로 쌓는다.
+워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. 수집을 시작할 때 `workers.log`가 100MB를 넘었으면 `workers.log.1`로 밀고 새로 쌓는다(수집 중에는 회전하지 않는다).
 
 ## 3. 데모 시나리오
 
