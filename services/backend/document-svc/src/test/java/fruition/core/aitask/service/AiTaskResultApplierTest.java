@@ -167,10 +167,10 @@ class AiTaskResultApplierTest {
     }
 
     @Test
-    void invalidSuccessfulAgentResultFailsProjectionAndKeepsReceipt() throws Exception {
+    void unknownSuccessfulAgentActionFailsProjectionAndKeepsReceipt() throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"event_id":"agent:run-2:succeeded","run_id":"run-2","kind":"agent",
-                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                 "status":"succeeded","request":{},"payload":{"action":"unknown_action"}}
                 """);
         when(jdbcTemplate.update(any(String.class), eq("agent:run-2:succeeded"), eq("run-2"), any()))
                 .thenReturn(1);
@@ -181,6 +181,29 @@ class AiTaskResultApplierTest {
 
         verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq("agent_result_unsupported_action"), eq("run-2"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"chat_answer", "clarify", "reject"})
+    void nonMutatingAgentResultBecomesReadyWithoutCanonicalMarkdown(String action) throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-non-mutating:succeeded","run_id":"run-non-mutating","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1"},
+                 "payload":{"action":"%s","message":"응답"}}
+                """.formatted(action));
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-non-mutating:succeeded"),
+                eq("run-non-mutating"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-non-mutating")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"),
+                eq(event.get("payload").toString()), isNull(), eq("run-non-mutating"))).thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(jdbcTemplate).update(contains("SET status = 'ready'"),
+                eq(event.get("payload").toString()), isNull(), eq("run-non-mutating"));
+        verify(jdbcTemplate, never()).update(contains("SET status = 'failed'"), any(), any());
     }
 
     @Test
@@ -217,7 +240,7 @@ class AiTaskResultApplierTest {
     }
 
     @Test
-    void unsupportedResultCannotProduceCanonicalMarkdown() throws Exception {
+    void nonMarkdownResultDoesNotProduceCanonicalMarkdown() throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"request":{},"payload":{"action":"chat_answer"}}
                 """);
