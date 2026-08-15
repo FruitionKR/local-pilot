@@ -40,6 +40,19 @@ class HttpRequestLoggingFilterTest {
     }
 
     @Test
+    void healthCheckIsSkipped() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/health");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<String> observed = new AtomicReference<>("설정되지 않음");
+
+        filter.doFilter(request, response, (ignoredRequest, ignoredResponse) ->
+                observed.set(MDC.get("requestId")));
+
+        assertThat(observed.get()).isNull();
+        assertThat(response.getHeader(HttpRequestLoggingFilter.REQUEST_ID_HEADER)).isNull();
+    }
+
+    @Test
     void invalidRequestIdIsReplaced() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/documents");
         request.addHeader(HttpRequestLoggingFilter.REQUEST_ID_HEADER, "invalid request id");

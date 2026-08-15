@@ -25,6 +25,13 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(HttpRequestLoggingFilter.class);
     private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
+    private static final String HEALTH_PATH = "/actuator/health";
+
+    /** 헬스 체크는 주기적으로 반복되고 진단 가치가 없어, 요청 로그를 채우지 않도록 건너뛴다. */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return HEALTH_PATH.equals(request.getRequestURI());
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
