@@ -1,6 +1,7 @@
 package fruition.core.config;
 
 import fruition.core.agent.security.AgentServiceTokenFilter;
+import fruition.shared.logging.HttpRequestLoggingFilter;
 import fruition.shared.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -44,6 +45,8 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(corsAllowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        // 요청 추적 ID는 브라우저 클라이언트가 읽어야 서버 로그와 대조할 수 있다.
+        configuration.setExposedHeaders(List.of(HttpRequestLoggingFilter.REQUEST_ID_HEADER));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", configuration);
