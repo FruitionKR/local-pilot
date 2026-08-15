@@ -3,6 +3,7 @@ from typing import TypedDict
 
 from app.modules.query.application.ports import QueryEvaluatorPort, QueryEventPublisherPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
+from app.modules.query.application.query_event import publish_query_event
 from app.modules.query.domain.entities import EvidenceSnippet, GeneratedAnswer, QueryContext, QueryEvaluation
 
 
@@ -81,7 +82,7 @@ def generate_answer_step(
     context = query_context_with_evaluator_feedback(query_context, state.get("evaluation"), attempt)
     answer, evidence_snippets = query_answer_assembler.generate_supported_answer(context)
     evaluated_context = replace(context, evidence_snippets=evidence_snippets)
-    publish(
+    publish_query_event(
         event_publisher,
         "answer_generated",
         "답변 생성을 완료했습니다.",
@@ -117,9 +118,11 @@ def evaluate_answer_step(
             web_search_available=web_search_available,
         )
     except Exception as exc:
-        publish(event_publisher, "query_evaluation_failed", "Query evaluator 실행에 실패했습니다.", {"error": str(exc)})
+        publish_query_event(
+            event_publisher, "query_evaluation_failed", "Query evaluator 실행에 실패했습니다.", {"error": str(exc)}
+        )
         return {**state, "evaluation": None}
-    publish(
+    publish_query_event(
         event_publisher,
         "query_evaluated",
         "검색 근거와 질문의 정합성을 평가했습니다.",
@@ -176,13 +179,3 @@ def query_context_with_evaluator_feedback(
         f"- feedback: {evaluation.feedback}\n"
     )
     return replace(query_context, answer_context=query_context.answer_context + feedback_block)
-
-
-def publish(
-    event_publisher: QueryEventPublisherPort | None,
-    stage: str,
-    message: str,
-    data: dict[str, object] | None = None,
-) -> None:
-    if event_publisher is not None:
-        event_publisher.publish(stage, message, data)

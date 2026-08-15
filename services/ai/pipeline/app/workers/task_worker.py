@@ -393,11 +393,18 @@ def _progress_event(
         payload={"stage": stage, "message": message, "data": data or {}},
     )
     event["event_id"] = f"query:{event['run_id']}:progress:{sequence}:{stage}"
+    # 소비 측은 진행 이벤트에서 run_id·event_id·status·payload만 읽는다.
+    # command 전체(질문·대화 이력)를 단계마다 다시 실어 보내지 않는다.
+    del event["request"]
     return event
 
 
 class KafkaQueryEventPublisher(QueryEventPublisherPort):
     """동기 query pipeline의 진행 이벤트를 worker event loop의 Kafka producer로 전달한다."""
+
+    # 진행 이벤트는 유실을 허용한다. Kafka가 응답하지 않을 때 답변 생성 스레드를
+    # 무기한 붙잡지 않도록 제한을 둔다. 호출자(publish_query_event)가 예외를 삼킨다.
+    SEND_TIMEOUT_SECONDS = 5
 
     def __init__(
         self,
@@ -431,7 +438,11 @@ class KafkaQueryEventPublisher(QueryEventPublisherPort):
             ),
             self._loop,
         )
-        future.result()
+        try:
+            future.result(self.SEND_TIMEOUT_SECONDS)
+        except TimeoutError:
+            future.cancel()
+            raise
 
 
 def _failure_is_durable(command: dict[str, Any]) -> bool:

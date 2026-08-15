@@ -86,6 +86,28 @@ class AiTaskResultConsumerTest {
         verifyNoInteractions(applier, queryRunStore);
     }
 
+    /**
+     * error handler가 무한 재시도라, 진행 이벤트 중계 실패를 올리면 그 파티션의 최종 결과까지 막힌다.
+     * 진행 이벤트는 유실을 허용하고 삼킨다.
+     */
+    @Test
+    void queryProgressRelayFailureDoesNotStopTheConsumer() throws Exception {
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("질의 진행 이벤트 ID는 필수입니다."))
+                .when(queryEventBroker).publish(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        consumer.consume("""
+                {"kind":"query","run_id":"query-1","status":"progress",
+                 "payload":{"stage":"wiki_loaded","message":"불러왔습니다.","data":{}}}
+                """);
+
+        verifyNoInteractions(applier, queryRunStore);
+    }
+
     @Test
     void consumeSetsFlowIdDuringProcessingAndClearsItAfterward() throws Exception {
         org.mockito.Mockito.doAnswer(invocation -> {

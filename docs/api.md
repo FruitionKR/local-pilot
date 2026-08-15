@@ -181,11 +181,13 @@ ai-svc의 Skill 관리·작성 API는 `SKILL_API_ENABLED`(기본 `true`), `/skil
 
 질의 생성과 run 조회·SSE는 인증 후 세션/workspace 소유권을 확인한다. run과 SSE replay buffer는 Redis에 저장하며 종료 후 TTL은 10분이다. 비동기 API는 pending chat pair와 command outbox를 원자 저장하고 Kafka worker 결과를 받아 assistant·참조·관련 페이지를 반영한다.
 
+`query.log` payload는 `request_id`, `sequence`, `received_at`, `stage`, `message`, `data`다. AI worker가 단계마다 발행하는 진행 이벤트를 document-svc가 중계한 것이며, 화면 피드백 용도라 유실을 허용한다(중계 실패는 로그만 남기고 최종 결과 처리를 막지 않는다). 같은 `event_id`가 재전송되면 Redis 선점으로 한 번만 전달한다.
+
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `.../chat/sessions/{id}/query` | 동기 질의(200). 요청 `question`, 선택 `provider`+`model`(함께 생략 시 `openai`+`gpt-5-nano`). 응답: user/assistant 메시지, `related_pages`, `evidence_snippets`, `graph_context`, `traversal_paths`. 파이프라인 오류 502/503 |
 | POST | `.../chat/sessions/{id}/query/runs` | 비동기 질의 시작(202). 동일한 모델 선택 규칙 적용. 응답 `request_id`, `status=pending` |
-| GET | `/api/query/runs/{requestId}/events` | **SSE** 완료 구독. 이벤트 `query.completed`/`query.failed`, buffer 200건 재생 |
+| GET | `/api/query/runs/{requestId}/events` | **SSE** 진행·완료 구독. 이벤트 `query.log`(진행 단계)와 `query.completed`/`query.failed`, buffer 200건 재생 |
 | GET | `/api/query/runs/{requestId}` | run 상태 **폴링**(`pending`/`running`/`completed`/`failed`, `provider`, `model`, 완료 시 `result`) |
 
 원문: docs/backlog/spec/api/query.md

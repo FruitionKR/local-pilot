@@ -68,15 +68,7 @@ public class AiTaskResultConsumer {
             }
             // 진행 이벤트는 SSE로만 중계하고 최종 결과 적용 경로를 타지 않는다.
             if ("progress".equals(event.path("status").asText())) {
-                JsonNode payload = event.path("payload");
-                queryEventBroker.publish(
-                        event.path("run_id").asText(),
-                        event.path("event_id").asText(),
-                        payload.path("stage").asText(),
-                        payload.path("message").asText(),
-                        objectMapper.convertValue(
-                                payload.path("data"),
-                                new TypeReference<Map<String, Object>>() {}));
+                relayQueryProgress(event, flowId);
                 return;
             }
             var projection = applier.applyQuery(event);
@@ -98,8 +90,29 @@ public class AiTaskResultConsumer {
         }
     }
 
+    /**
+     * 진행 이벤트는 화면 피드백용이라 유실을 허용한다. 여기서 예외를 올리면 error handler가
+     * 같은 record를 무한 재시도하며 그 파티션의 최종 결과까지 막으므로 로그만 남기고 넘어간다.
+     */
+    private void relayQueryProgress(JsonNode event, String flowId) {
+        JsonNode payload = event.path("payload");
+        try {
+            queryEventBroker.publish(
+                    event.path("run_id").asText(),
+                    event.path("event_id").asText(),
+                    payload.path("stage").asText(),
+                    payload.path("message").asText(),
+                    objectMapper.convertValue(
+                            payload.path("data"),
+                            new TypeReference<Map<String, Object>>() {}));
+        } catch (Exception e) {
+            log.warn("[질의 진행 이벤트 중계 실패] flowId={} eventId={} errorType={} error={}",
+                    flowId, event.path("event_id").asText(), e.getClass().getSimpleName(), e.getMessage());
+        }
+    }
+
     private String resolveFlowId(JsonNode event) {
-        for (String field : new String[]{"run_id", "request_id", "operation_id", "document_id"}) {
+        for (String field : new String[]{"run_id", "operation_id"}) {
             if (event.hasNonNull(field) && !event.path(field).asText().isBlank()) {
                 return event.path(field).asText();
             }

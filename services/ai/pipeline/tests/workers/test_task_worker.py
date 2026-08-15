@@ -80,6 +80,8 @@ def test_progress_event_uses_stable_sequence_id() -> None:
 
     assert event["event_id"] == "query:run-1:progress:2:context_built"
     assert event["status"] == "progress"
+    # 소비 측이 읽지 않는 command 원본을 단계마다 반복 전송하지 않는다.
+    assert "request" not in event
     assert event["payload"] == {
         "stage": "context_built",
         "message": "답변 컨텍스트를 구성했습니다.",

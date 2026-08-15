@@ -36,7 +36,41 @@ class FakeQueryEvaluator:
         return self.evaluations[index]
 
 
+class FailingEventPublisher:
+    def publish(self, stage: str, message: str, data: dict[str, object] | None = None) -> None:
+        raise RuntimeError("progress publish failed")
+
+
 class QueryEvaluatorGraphTest(unittest.TestCase):
+    def test_progress_publish_failure_does_not_fail_the_run(self) -> None:
+        """진행 이벤트는 화면 피드백용이라, 발행이 실패해도 답변은 그대로 나와야 한다."""
+        answer_generator = SequencedAnswerGenerator(["내부 답변입니다."])
+        query_evaluator = FakeQueryEvaluator([QueryEvaluation(route="internal_supported")])
+        graph = LangGraphQueryEvaluatorGraph(
+            query_answer_assembler=QueryAnswerAssembler(answer_generator),
+            query_evaluator=query_evaluator,
+            web_search_available=False,
+            max_attempts=1,
+        )
+        context = QueryContext(
+            question="질문",
+            graph_context=GraphContext(),
+            traversal_paths=[],
+            related_pages=[],
+            evidence_snippets=[],
+            answer_context="질문",
+        )
+
+        answer, _, _, evaluation = graph.run(
+            question="질문",
+            query_context=context,
+            stop_reason="no_relevant_seed",
+            event_publisher=FailingEventPublisher(),
+        )
+
+        self.assertEqual(answer.content, "내부 답변입니다.")
+        self.assertEqual(evaluation.route if evaluation else None, "internal_supported")
+
     def test_request_can_disable_web_fallback_for_evaluator(self) -> None:
         answer_generator = SequencedAnswerGenerator(["내부 답변입니다."])
         query_evaluator = FakeQueryEvaluator([QueryEvaluation(route="internal_supported")])
