@@ -67,11 +67,18 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 @RestControllerAdvice
 public class CoreExceptionHandler extends BaseExceptionHandler {
 
+    /**
+     * pipeline 응답을 그대로 중계하는 분기에 쓴다. 이 경우 클라이언트가 받는 code는
+     * pipeline이 만든 것이라 우리 {@code ErrorResponse} code가 없다. 여기에 우리 code를 적으면
+     * 사용자가 알려준 code로 로그를 찾을 때 엉뚱한 줄이 걸린다.
+     */
+    private static final String PIPELINE_RELAYED = "PIPELINE_RESPONSE_RELAYED";
+
     @ExceptionHandler(PipelineSkillException.class)
     public ResponseEntity<?> handlePipelineSkill(PipelineSkillException e) {
         if (e.getHttpStatus() == HttpStatus.PAYLOAD_TOO_LARGE.value()
                 && e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
-            logHandled(e, e.getHttpStatus(), "SKILL_PAYLOAD_TOO_LARGE");
+            logHandled(e, e.getHttpStatus(), PIPELINE_RELAYED);
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(e.getResponseBody());
@@ -97,12 +104,13 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(PipelineWikiPageException.class)
     public ResponseEntity<?> handlePipelineWikiPage(PipelineWikiPageException e) {
-        logHandled(e, e.getHttpStatus(), "WIKI_PAGE_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            logHandled(e, e.getHttpStatus(), PIPELINE_RELAYED);
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(e.getResponseBody());
         }
+        logHandled(e, e.getHttpStatus(), "WIKI_PAGE_PIPELINE_UNAVAILABLE");
         return ResponseEntity.status(e.getHttpStatus())
                 .body(ErrorResponse.of("WIKI_PAGE_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
@@ -134,24 +142,26 @@ public class CoreExceptionHandler extends BaseExceptionHandler {
 
     @ExceptionHandler(PipelineWikiSchemaException.class)
     public ResponseEntity<?> handlePipelineWikiSchema(PipelineWikiSchemaException e) {
-        logHandled(e, e.getHttpStatus(), "WIKI_SCHEMA_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            logHandled(e, e.getHttpStatus(), PIPELINE_RELAYED);
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(e.getResponseBody());
         }
+        logHandled(e, e.getHttpStatus(), "WIKI_SCHEMA_PIPELINE_UNAVAILABLE");
         return ResponseEntity.status(e.getHttpStatus())
                 .body(ErrorResponse.of("WIKI_SCHEMA_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
 
     @ExceptionHandler(PipelineWikiMaintenanceException.class)
     public ResponseEntity<?> handlePipelineWikiMaintenance(PipelineWikiMaintenanceException e) {
-        logHandled(e, e.getHttpStatus(), "WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE");
         if (e.getResponseBody() != null && !e.getResponseBody().isBlank()) {
+            logHandled(e, e.getHttpStatus(), PIPELINE_RELAYED);
             return ResponseEntity.status(e.getHttpStatus())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(e.getResponseBody());
         }
+        logHandled(e, e.getHttpStatus(), "WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE");
         return ResponseEntity.status(e.getHttpStatus())
                 .body(ErrorResponse.of("WIKI_MAINTENANCE_PIPELINE_UNAVAILABLE", e.getMessage()));
     }
