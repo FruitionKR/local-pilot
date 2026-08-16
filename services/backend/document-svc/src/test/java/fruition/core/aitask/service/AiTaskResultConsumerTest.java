@@ -11,6 +11,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -131,6 +133,47 @@ class AiTaskResultConsumerTest {
                 "Wiki 데이터를 불러왔습니다.",
                 java.util.Map.of());
         verifyNoInteractions(applier, queryRunStore);
+    }
+
+    /**
+     * Agent turn을 구독한 화면도 끝을 알아야 한다. 종료 이벤트가 없으면 emitter 타임아웃까지 매달린다.
+     */
+    @Test
+    void agentTerminalEventCompletesTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(true);
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                """);
+
+        verify(queryEventBroker).complete("agent-1");
+    }
+
+    @Test
+    void agentFailureEventFailsTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(true);
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:failed","kind":"agent","run_id":"agent-1",
+                 "status":"failed","error":"모델 호출 실패"}
+                """);
+
+        verify(queryEventBroker).fail("agent-1", "모델 호출 실패");
+    }
+
+    /** 재전송이면 이미 끝난 스트림이다. 다시 발행하면 늦게 구독한 화면이 완료를 두 번 본다. */
+    @Test
+    void replayedAgentTerminalEventDoesNotPublishSseAgain() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(false);
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                """);
+
+        verify(queryEventBroker, never()).complete(anyString());
+        verify(queryEventBroker, never()).fail(anyString(), anyString());
     }
 
     @Test

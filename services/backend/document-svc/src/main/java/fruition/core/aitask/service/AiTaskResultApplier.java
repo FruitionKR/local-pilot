@@ -160,15 +160,19 @@ public class AiTaskResultApplier {
                 event.path("error").asText(null));
     }
 
+    /**
+     * @return 이 이벤트로 처음 반영했으면 true. 재전송이면 false다.
+     *         호출부는 이 값으로 SSE 종료 이벤트를 한 번만 내보낸다.
+     */
     @Transactional
-    public void applyAgent(JsonNode event) {
+    public boolean applyAgent(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
                 VALUES (?, ?, 'agent', CAST(? AS jsonb))
                 ON CONFLICT (run_id, task_kind) WHERE task_kind = 'agent' DO NOTHING
-                """, eventId, runId, event.toString()) == 0) return;
+                """, eventId, runId, event.toString()) == 0) return false;
 
         int updated;
         if ("succeeded".equals(text(event, "status"))) {
@@ -209,6 +213,7 @@ public class AiTaskResultApplier {
         chatTurnRecorder.recordContextSummary(
                 textOrNull(event.path("request"), "session_id"),
                 event.path("payload").path("updated_conversation_summary").asText(null));
+        return true;
     }
 
     /**
