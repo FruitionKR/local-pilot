@@ -3,7 +3,10 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FRONTEND_DIR="$ROOT_DIR/services/frontend"
+RUNTIME_DIR="$ROOT_DIR/.runtime"
 FRONTEND_PID=""
+
+source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 log() {
   printf '[front-up] %s\n' "$*"
@@ -22,6 +25,13 @@ cleanup() {
   if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
     kill "$FRONTEND_PID" >/dev/null 2>&1 || true
   fi
+  runtime_unregister "frontend"
+}
+
+shutdown() {
+  trap - INT TERM EXIT
+  cleanup
+  exit 0
 }
 
 wait_for_frontend() {
@@ -43,9 +53,16 @@ main() {
   need_cmd node
   need_cmd npm
 
-  if curl -fsS "http://localhost:3000" >/dev/null 2>&1; then
-    log "프론트엔드가 이미 실행 중입니다: http://localhost:3000"
-    return
+  if runtime_is_running "frontend" "front-up.sh"; then
+    if curl -fsS "http://localhost:3000" >/dev/null 2>&1; then
+      log "이 프로젝트가 관리하는 프론트엔드가 이미 실행 중입니다: http://localhost:3000"
+      return
+    fi
+    fail "관리 중인 프론트엔드 supervisor는 실행 중이지만 3000 포트에서 응답하지 않습니다."
+  fi
+
+  if runtime_port_in_use 3000; then
+    fail "3000 포트를 다른 프로세스가 사용 중입니다. 해당 프로세스를 먼저 종료하세요."
   fi
 
   if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
@@ -53,7 +70,9 @@ main() {
     (cd "$FRONTEND_DIR" && npm install)
   fi
 
-  trap cleanup INT TERM EXIT
+  runtime_register "frontend" "front-up.sh" || fail "프론트엔드 supervisor 상태를 등록하지 못했습니다."
+  trap shutdown INT TERM
+  trap cleanup EXIT
 
   log "프론트엔드를 시작합니다."
   (

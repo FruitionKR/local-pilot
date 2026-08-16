@@ -9,10 +9,13 @@ ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
 PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
+LOGS_DIR="$ROOT_DIR/logs"
 
 DOCUMENT_PID=""
 ACCESS_PID=""
 FRONTEND_PID=""
+
+source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 log() {
   printf '[dev-up] %s\n' "$*"
@@ -24,7 +27,7 @@ fail() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/demo-script.md의 요구사항을 확인하세요."
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/script.md의 요구사항을 확인하세요."
 }
 
 cleanup() {
@@ -37,9 +40,17 @@ cleanup() {
   if [[ -n "${DOCUMENT_PID:-}" ]] && kill -0 "$DOCUMENT_PID" >/dev/null 2>&1; then
     kill "$DOCUMENT_PID" >/dev/null 2>&1 || true
   fi
+  runtime_unregister "dev"
 }
 
-trap cleanup INT TERM EXIT
+shutdown() {
+  trap - INT TERM EXIT
+  cleanup
+  exit 0
+}
+
+trap shutdown INT TERM
+trap cleanup EXIT
 
 ensure_env_file() {
   if [[ -f "$ENV_FILE" ]]; then
@@ -130,11 +141,15 @@ wait_for_url() {
   local url="$1"
   local label="$2"
   local attempts="${3:-60}"
+  local pid="${4:-}"
 
   for _ in $(seq 1 "$attempts"); do
     if curl -fsS "$url" >/dev/null 2>&1; then
       log "$label 응답 확인: $url"
       return 0
+    fi
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" >/dev/null 2>&1; then
+      fail "$label 프로세스가 시작 중 종료되었습니다."
     fi
     sleep 1
   done
@@ -184,7 +199,8 @@ start_infra() {
 start_pipeline() {
   log "Pipeline API를 시작합니다."
   cleanup_stale_pipeline_orphans
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api ingest-worker query-task-worker agent-task-worker maintenance-task-worker edit-event-consumer pipeline-agent-worker
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" build pipeline-api
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --no-build pipeline-api ingest-worker query-task-worker agent-task-worker maintenance-task-worker edit-event-consumer pipeline-agent-worker
   wait_for_url "http://localhost:8000/health" "Pipeline API" 120
 }
 
@@ -192,25 +208,29 @@ start_backend() {
   local java21_home="$1"
 
   # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
+  # tee로 갈라 터미널에도 보여주고 logs/에도 남긴다. 호스트 프로세스는 docker logs로
+  # 받을 수 없어서, 시작 시점에 파일로 갈라두지 않으면 종료와 함께 로그가 사라진다.
   log "document-svc를 시작합니다. Java 21: $java21_home"
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/document-svc.log"
   ) &
   DOCUMENT_PID="$!"
 
-  wait_for_url "http://localhost:8080/actuator/health" "document-svc"
+  wait_for_url "http://localhost:8080/actuator/health" "document-svc" 60 "$DOCUMENT_PID"
 
   log "access-svc를 시작합니다. Java 21: $java21_home"
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/access-svc.log"
   ) &
   ACCESS_PID="$!"
 
-  wait_for_url "http://localhost:8081/actuator/health" "access-svc"
+  wait_for_url "http://localhost:8081/actuator/health" "access-svc" 60 "$ACCESS_PID"
 }
 
 start_frontend() {
@@ -225,11 +245,21 @@ start_frontend() {
   log "프론트엔드를 시작합니다."
   (
     cd "$FRONTEND_DIR"
-    npm run dev
+    npm run dev 2>&1 | tee -a "$LOGS_DIR/frontend.log"
   ) &
   FRONTEND_PID="$!"
 
-  wait_for_url "http://localhost:3000" "프론트엔드"
+  wait_for_url "http://localhost:3000" "프론트엔드" 60 "$FRONTEND_PID"
+}
+
+ensure_ports_available() {
+  local port
+
+  for port in 3000 8000 8080 8081; do
+    if runtime_port_in_use "$port"; then
+      fail "다른 실행 환경이 이미 포트를 사용 중입니다: $port. 해당 환경을 먼저 종료하세요."
+    fi
+  done
 }
 
 main() {
@@ -238,14 +268,26 @@ main() {
   need_cmd curl
   ensure_env_file
   ensure_docker
+  mkdir -p "$LOGS_DIR"
+
+  if runtime_is_running "dev" "dev-up.sh"; then
+    log "이 프로젝트의 통합 개발 환경이 이미 실행 중입니다."
+    return
+  fi
+  ensure_ports_available
 
   local java21_home
   java21_home="$(find_java21_home)" || fail "Java 21을 찾지 못했습니다. JAVA_HOME_21을 지정하거나 JDK 21을 설치하세요."
+
+  runtime_register "dev" "dev-up.sh" || fail "통합 개발 환경 supervisor 상태를 등록하지 못했습니다."
 
   start_infra
   start_backend "$java21_home"
   start_pipeline
   start_frontend
+
+  # 워커 컨테이너 로그 수집. 실패해도 개발 서버 기동은 막지 않는다.
+  "$ROOT_DIR/scripts/logs-up.sh" start || log "워커 로그 수집을 시작하지 못했습니다. scripts/logs-up.sh로 따로 실행하세요."
 
   cat <<'INFO'
 
@@ -254,8 +296,11 @@ main() {
   - Document-svc: http://localhost:8080
   - Access-svc:   http://localhost:8081
   - Pipeline:     http://localhost:8000
-  - Swagger:      http://localhost:8080/swagger-ui.html
+  - Swagger:      http://localhost:8080/swagger-ui.html (document-svc)
+                  http://localhost:8081/swagger-ui.html (access-svc)
+                  통합 열람은 ./scripts/swagger-up.sh 후 http://localhost:8090
   - MinIO:        http://localhost:9001
+  - 로그:         logs/ (workers.log, document-svc.log, access-svc.log, frontend.log)
 
 [dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
 INFO

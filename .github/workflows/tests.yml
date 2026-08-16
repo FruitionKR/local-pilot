@@ -8,6 +8,8 @@ on:
       - 'services/backend/java-shared/**'
       - 'services/frontend/**'
       - 'services/ai/pipeline/**'
+      # 명세만 손으로 고친 PR도 스냅샷 비교가 돌아야 drift가 걸린다.
+      - 'api-specs/**'
       - '.github/workflows/tests.yml'
   push:
     branches:
@@ -19,6 +21,8 @@ on:
       - 'services/backend/java-shared/**'
       - 'services/frontend/**'
       - 'services/ai/pipeline/**'
+      # 명세만 손으로 고친 PR도 스냅샷 비교가 돌아야 drift가 걸린다.
+      - 'api-specs/**'
       - '.github/workflows/tests.yml'
 
 concurrency:

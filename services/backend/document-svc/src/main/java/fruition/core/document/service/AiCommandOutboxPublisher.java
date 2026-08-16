@@ -4,6 +4,7 @@ import fruition.core.document.domain.AiCommandOutbox;
 import fruition.core.document.repository.AiCommandOutboxRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -37,18 +38,27 @@ public class AiCommandOutboxPublisher {
             return;
         }
         for (AiCommandOutbox event : events) {
+            MDC.put("flowId", event.getRunId());
             try {
-                kafkaTemplate.send(event.getTopic(), event.getMessageKey(), event.getPayload())
+                log.debug("[AI command 발행 시작] topic={} messageKey={} runId={}",
+                        event.getTopic(), event.getMessageKey(), event.getRunId());
+                var result = kafkaTemplate.send(event.getTopic(), event.getMessageKey(), event.getPayload())
                         .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 repository.deleteById(event.getId());
-                log.info("[AI command 발행 완료] topic={} runId={}", event.getTopic(), event.getRunId());
+                int partition = result != null ? result.getRecordMetadata().partition() : -1;
+                long offset = result != null ? result.getRecordMetadata().offset() : -1;
+                log.info("[AI command 발행 완료] topic={} messageKey={} runId={} partition={} offset={}",
+                        event.getTopic(), event.getMessageKey(), event.getRunId(), partition, offset);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             } catch (Exception e) {
-                log.warn("[AI command 발행 실패] topic={} runId={} error={}",
-                        event.getTopic(), event.getRunId(), e.getMessage());
+                log.warn("[AI command 발행 실패] topic={} messageKey={} runId={} retryable=true errorType={} error={}",
+                        event.getTopic(), event.getMessageKey(), event.getRunId(),
+                        e.getClass().getSimpleName(), e.getMessage());
                 return;
+            } finally {
+                MDC.remove("flowId");
             }
         }
     }

@@ -252,6 +252,12 @@ ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS command_envelope_hash varchar(64
 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS provider text;
 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS model text;
 
+UPDATE agent_runs
+SET model = 'claude-sonnet-5', updated_at = now()
+WHERE provider = 'claude'
+  AND model = 'claude-haiku-4-5-20251001'
+  AND status NOT IN ('completed', 'partial_failed', 'failed', 'conflicted', 'rejected', 'cancelled');
+
 CREATE TABLE IF NOT EXISTS skill_version_sources (
     id text PRIMARY KEY,
     skill_version_id text NOT NULL REFERENCES skill_versions(id) ON DELETE CASCADE,

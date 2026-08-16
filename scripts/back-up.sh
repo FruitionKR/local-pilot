@@ -6,9 +6,12 @@ INFRA_DIR="$ROOT_DIR/infra"
 SERVICES_DIR="$ROOT_DIR/services/backend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
-COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
+COMPOSE_FILE="$INFRA_DIR/compose.infra.yml"
+RUNTIME_DIR="$ROOT_DIR/.runtime"
 DOCUMENT_PID=""
 ACCESS_PID=""
+
+source "$ROOT_DIR/scripts/lib/runtime.sh"
 
 log() {
   printf '[back-up] %s\n' "$*"
@@ -20,7 +23,7 @@ fail() {
 }
 
 need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/demo-script.md의 요구사항을 확인하세요."
+  command -v "$1" >/dev/null 2>&1 || fail "'$1' 명령을 찾을 수 없습니다. docs/script.md의 요구사항을 확인하세요."
 }
 
 cleanup() {
@@ -30,6 +33,13 @@ cleanup() {
   if [[ -n "${DOCUMENT_PID:-}" ]] && kill -0 "$DOCUMENT_PID" >/dev/null 2>&1; then
     kill "$DOCUMENT_PID" >/dev/null 2>&1 || true
   fi
+  runtime_unregister "backend"
+}
+
+shutdown() {
+  trap - INT TERM EXIT
+  cleanup
+  exit 0
 }
 
 ensure_env_file() {
@@ -155,10 +165,17 @@ main() {
   ensure_env_file
   ensure_docker
 
-  if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
-    && curl -fsS "http://localhost:8081/actuator/health" >/dev/null 2>&1; then
-    log "백엔드가 이미 실행 중입니다: document-svc http://localhost:8080, access-svc http://localhost:8081"
-    return
+  if runtime_is_running "backend" "back-up.sh"; then
+    if curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
+      && curl -fsS "http://localhost:8081/actuator/health" >/dev/null 2>&1; then
+      log "이 프로젝트가 관리하는 백엔드가 이미 실행 중입니다."
+      return
+    fi
+    fail "관리 중인 백엔드 supervisor는 실행 중이지만 서비스 health check가 실패했습니다."
+  fi
+
+  if runtime_port_in_use 8080 || runtime_port_in_use 8081; then
+    fail "8080 또는 8081 포트를 다른 프로세스가 사용 중입니다. 해당 프로세스를 먼저 종료하세요."
   fi
 
   local java21_home
@@ -168,7 +185,9 @@ main() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
   wait_for_postgres
 
-  trap cleanup INT TERM EXIT
+  runtime_register "backend" "back-up.sh" || fail "백엔드 supervisor 상태를 등록하지 못했습니다."
+  trap shutdown INT TERM
+  trap cleanup EXIT
 
   # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
   log "document-svc를 시작합니다. Java 21: $java21_home"

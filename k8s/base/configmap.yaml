@@ -1,4 +1,4 @@
-# 비밀이 아닌 공통 환경변수. infra/docker-compose.deploy.yml·pipeline.yml의
+# 비밀이 아닌 공통 환경변수. infra/compose.containerized.yml·compose.ai.yml의
 # environment 블록을 그대로 옮기고 호스트명만 k8s Service DNS로 바꿨다.
 # document-svc·access-svc·pipeline-api·ingest-worker가 envFrom으로 공유한다(서로 무해한 여분 키 포함).
 apiVersion: v1

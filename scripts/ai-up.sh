@@ -5,8 +5,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFRA_DIR="$ROOT_DIR/infra"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
-COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
-PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
+COMPOSE_FILE="$INFRA_DIR/compose.infra.yml"
+PIPELINE_COMPOSE_FILE="$INFRA_DIR/compose.ai.yml"
+PIPELINE_SERVICES=(
+  pipeline-api
+  ingest-worker
+  query-task-worker
+  agent-task-worker
+  maintenance-task-worker
+  edit-event-consumer
+  pipeline-agent-worker
+)
 
 log() {
   printf '[ai-up] %s\n' "$*"
@@ -98,17 +107,14 @@ main() {
   ensure_env_file
   ensure_docker
 
-  if curl -fsS "http://localhost:8000/health" >/dev/null 2>&1; then
-    log "Pipeline API가 이미 실행 중입니다: http://localhost:8000"
-    return
-  fi
-
   curl -fsS "http://localhost:8080/actuator/health" >/dev/null 2>&1 \
     || fail "backend가 실행 중이어야 합니다. scripts/back-up.sh를 먼저 실행하세요."
 
   cleanup_stale_pipeline_orphans
-  log "Pipeline API를 시작합니다."
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --build pipeline-api
+  log "Pipeline 이미지를 한 번 빌드합니다."
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" build pipeline-api
+  log "Pipeline API와 워커를 시작합니다."
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$PIPELINE_COMPOSE_FILE" up -d --no-build "${PIPELINE_SERVICES[@]}"
   wait_for_pipeline
 }
 

@@ -1,4 +1,18 @@
-from app.modules.query.infrastructure.query_answer_evaluator import _normalize_evaluation
+from app.modules.query.infrastructure.query_answer_evaluator import (
+    DEFAULT_QUERY_EVALUATOR_PROMPT,
+    _normalize_evaluation,
+)
+
+
+def test_evaluator_prompt_defines_exclusive_route_order() -> None:
+    prompt = DEFAULT_QUERY_EVALUATOR_PROMPT.read_text(encoding="utf-8")
+
+    assert "Choose the first matching route in this exact order" in prompt
+    assert "This check applies even when no substantive answer can be produced" in prompt
+    assert "choose `internal_web_augmented`, never `web_fallback`" in prompt
+    assert "not a hallucinated answer that still needs revision" in prompt
+    assert "Mandatory answer-safety gate" in prompt
+    assert "retrieved evidence is sufficient, but" not in prompt
 
 
 def test_internal_supported_with_actionable_feedback_becomes_revision() -> None:

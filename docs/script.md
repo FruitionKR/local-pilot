@@ -259,6 +259,24 @@ npm run dev
 
 확인: `curl -I http://localhost:3000` 후 브라우저에서 `http://localhost:3000` 접속.
 
+### 3-5. 로그 확인
+
+`dev-up.sh`는 로그를 `logs/`에 남긴다. 컨테이너 로그는 `dev-down.sh`로 컨테이너를 지우면 함께 사라지므로, 재기동 뒤에도 이전 에러를 보려면 이 파일을 본다. `logs/`는 gitignore 대상이다.
+
+```
+logs/workers.log        워커 6개 + pipeline-api (서비스명 접두어로 구분)
+logs/document-svc.log   backend
+logs/access-svc.log     backend
+logs/frontend.log       frontend
+```
+
+```sh
+tail -f logs/*.log                      # 흐름 실시간 확인
+grep -iE "error|exception" logs/*.log   # 에러만 확인
+```
+
+워커 로그 수집만 따로 제어하려면 `./scripts/logs-up.sh [start|stop|status]`를 쓴다. 수집을 시작할 때 `workers.log`가 100MB를 넘었으면 `workers.log.1`로 밀고 새로 쌓는다(수집 중에는 회전하지 않는다).
+
 ## 4. 데모 시나리오
 
 1. 로그인 — `http://localhost:3000` 접속, 이메일 가입/로그인. 인증 코드는 `infra/.env`의 `AUTH_EMAIL_DEV_FIXED_CODE` 값 입력. (OAuth 키 설정 시 소셜 로그인도 가능)

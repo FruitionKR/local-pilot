@@ -21,9 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -83,11 +81,6 @@ public class QueryController {
         QueryResponse response = queryService.query(workspaceId, sessionId, request.question(),
                 selected.provider(), selected.model(), request.allowWebSearch());
         return ResponseEntity.ok(response);
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleUnreadableQueryRequest(HttpMessageNotReadableException e) {
-        return ResponseEntity.badRequest().body(ErrorResponse.of("INVALID_REQUEST", "요청 형식이 올바르지 않습니다."));
     }
 
     @Operation(

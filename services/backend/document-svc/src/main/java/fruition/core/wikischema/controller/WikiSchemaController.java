@@ -109,58 +109,91 @@ public class WikiSchemaController {
         return ResponseEntity.ok(wikiSchemaService.getActive(workspaceId, userId));
     }
 
-    @Schema(name = "WikiSchemaPreviewResponse", requiredProperties = {"fragments", "issues", "preview_markdown", "has_blocked_issues"})
+    @Schema(name = "WikiSchemaPreviewResponse", description = "저장하지 않고 스키마 해석 결과만 보여주는 응답",
+            requiredProperties = {"fragments", "issues", "preview_markdown", "has_blocked_issues"})
     private static final class WikiSchemaPreviewResponseSchema {
+        @Schema(description = "용도별로 쪼갠 스키마 조각")
         public WikiSchemaFragmentsSchema fragments;
+        @Schema(description = "해석 중 발견한 문제 목록")
         public java.util.List<WikiSchemaIssueSchema> issues;
+        @Schema(description = "해석 결과를 사람이 읽도록 정리한 Markdown")
         public String preview_markdown;
+        @Schema(description = "활성화를 막는 blocked 문제가 있는지 여부", example = "false")
         public boolean has_blocked_issues;
     }
 
-    @Schema(name = "WikiSchemaDraftResponse", requiredProperties = "wiki_schema")
+    @Schema(name = "WikiSchemaDraftResponse", description = "초안 생성 결과",
+            requiredProperties = "wiki_schema")
     private static final class WikiSchemaDraftResponseSchema {
+        @Schema(description = "생성된 스키마 초안")
         public WikiSchemaResponseSchema wiki_schema;
     }
 
-    @Schema(name = "WikiSchemaResponse", requiredProperties = {"id", "workspace_id", "user_id", "name", "raw_markdown", "fragments", "issues", "preview_markdown", "has_blocked_issues", "status", "schema_version"})
+    @Schema(name = "WikiSchemaResponse", description = "Wiki 스키마 하나. 활성화되면 Wiki 생성·질의에 쓰인다.",
+            requiredProperties = {"id", "workspace_id", "user_id", "name", "raw_markdown", "fragments", "issues", "preview_markdown", "has_blocked_issues", "status", "schema_version"})
     private static final class WikiSchemaResponseSchema {
+        @Schema(description = "스키마 ID")
         public String id;
+        @Schema(description = "이 스키마가 속한 워크스페이스 ID", example = "ws_9d47a0e9a6324341b47562553b75f92a")
         public String workspace_id;
+        @Schema(description = "초안을 만든 사용자 ID", example = "user_3f1c8a6b52d7411e9c04ab5d2e7f6081")
         public String user_id;
+        @Schema(description = "스키마 이름", example = "설계 문서 스키마")
         public String name;
+        @Schema(description = "입력으로 준 원본 Markdown")
         public String raw_markdown;
+        @Schema(description = "용도별로 쪼갠 스키마 조각")
         public WikiSchemaFragmentsSchema fragments;
+        @Schema(description = "해석 중 발견한 문제 목록")
         public java.util.List<WikiSchemaIssueSchema> issues;
+        @Schema(description = "해석 결과를 사람이 읽도록 정리한 Markdown")
         public String preview_markdown;
+        @Schema(description = "활성화를 막는 blocked 문제가 있는지 여부", example = "false")
         public boolean has_blocked_issues;
+        @Schema(description = "스키마 상태", example = "draft")
         public String status;
+        @Schema(description = "스키마 형식 버전", example = "v1")
         public String schema_version;
-        @Schema(nullable = true)
+        @Schema(description = "생성 시각(ISO-8601 UTC)", nullable = true,
+                example = "2026-08-13T04:25:24.371948Z")
         public String created_at;
-        @Schema(nullable = true)
+        @Schema(description = "마지막 변경 시각(ISO-8601 UTC)", nullable = true,
+                example = "2026-08-13T04:25:24.371948Z")
         public String updated_at;
-        @Schema(nullable = true)
+        @Schema(description = "활성화된 시각(ISO-8601 UTC). 활성화 전이면 null이다.", nullable = true)
         public String activated_at;
     }
 
-    @Schema(name = "WikiSchemaFragmentsResponse", requiredProperties = {"global_markdown", "query_markdown", "ingest_markdown", "edit_markdown", "concept_markdown", "template_markdown"})
+    @Schema(name = "WikiSchemaFragmentsResponse", description = "스키마를 쓰이는 곳별로 쪼갠 조각. 각 조각이 해당 단계의 프롬프트에 들어간다.",
+            requiredProperties = {"global_markdown", "query_markdown", "ingest_markdown", "edit_markdown", "concept_markdown", "template_markdown"})
     private static final class WikiSchemaFragmentsSchema {
+        @Schema(description = "모든 단계에 공통으로 들어가는 규칙")
         public String global_markdown;
+        @Schema(description = "질의 단계에만 적용되는 규칙")
         public String query_markdown;
+        @Schema(description = "문서 ingest 단계에만 적용되는 규칙")
         public String ingest_markdown;
+        @Schema(description = "편집 단계에만 적용되는 규칙")
         public String edit_markdown;
+        @Schema(description = "Concept 페이지 작성 규칙")
         public String concept_markdown;
+        @Schema(description = "페이지 템플릿 정의")
         public String template_markdown;
     }
 
-    @Schema(name = "WikiSchemaIssueResponse", requiredProperties = {"severity", "category", "text", "reason"})
+    @Schema(name = "WikiSchemaIssueResponse", description = "스키마 해석 중 발견한 문제 하나",
+            requiredProperties = {"severity", "category", "text", "reason"})
     private static final class WikiSchemaIssueSchema {
-        @Schema(allowableValues = {"blocked", "unclear"})
+        @Schema(description = "심각도. blocked면 활성화할 수 없고 unclear는 경고다.",
+                allowableValues = {"blocked", "unclear"}, example = "unclear")
         public String severity;
+        @Schema(description = "문제 분류")
         public String category;
+        @Schema(description = "문제가 된 원문 구절")
         public String text;
+        @Schema(description = "왜 문제인지에 대한 설명")
         public String reason;
-        @Schema(nullable = true)
+        @Schema(description = "문제가 발견된 섹션 이름. 특정할 수 없으면 null이다.", nullable = true)
         public String section;
     }
 }

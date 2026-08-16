@@ -23,10 +23,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
+import java.util.Set;
 
 /** Kafka result event를 core DB에 멱등 반영한다. */
 @Service
 public class AiTaskResultApplier {
+
+    private static final Set<String> MARKDOWN_ACTIONS = Set.of("markdown_create", "markdown_edit");
+    private static final Set<String> NON_MUTATING_ACTIONS = Set.of("chat_answer", "clarify", "reject");
+    private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -166,7 +171,7 @@ public class AiTaskResultApplier {
                 errorCode = "agent_result_invalid_request";
             } else if (payload == null || !payload.isObject()) {
                 errorCode = "agent_result_invalid_payload";
-            } else if (!isMarkdownAction(payload) && !isAutonomousAction(payload)) {
+            } else if (!isSupportedAction(payload)) {
                 errorCode = "agent_result_unsupported_action";
             } else if (isMarkdownAction(payload) && expectedMarkdown(event) == null) {
                 errorCode = "agent_result_missing_canonical_markdown";
@@ -224,13 +229,14 @@ public class AiTaskResultApplier {
     }
 
     private static boolean isMarkdownAction(JsonNode payload) {
-        String action = payload.path("action").asText();
-        return "markdown_create".equals(action) || "markdown_edit".equals(action);
+        return MARKDOWN_ACTIONS.contains(payload.path("action").asText());
     }
 
-    private static boolean isAutonomousAction(JsonNode payload) {
+    private static boolean isSupportedAction(JsonNode payload) {
         String action = payload.path("action").asText();
-        return "folder_organize".equals(action) || "workspace_workflow".equals(action);
+        return MARKDOWN_ACTIONS.contains(action)
+                || NON_MUTATING_ACTIONS.contains(action)
+                || AUTONOMOUS_ACTIONS.contains(action);
     }
 
     private int markAgentFailed(String runId, String errorCode) {

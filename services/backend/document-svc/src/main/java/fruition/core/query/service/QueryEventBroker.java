@@ -37,6 +37,7 @@ public class QueryEventBroker implements MessageListener {
     private static final int MAX_BUFFERED_EVENTS = 200;
     private static final String EVENTS_KEY_PREFIX = "query:events:";
     private static final String SEQUENCE_KEY_PREFIX = "query:events-seq:";
+    private static final String SOURCE_EVENT_KEY_PREFIX = "query:source-event:";
     private static final Duration EVENT_TTL = Duration.ofMinutes(30);
     private static final String EVENT_COMPLETED = "query.completed";
     private static final String EVENT_FAILED = "query.failed";
@@ -80,7 +81,15 @@ public class QueryEventBroker implements MessageListener {
         return emitter;
     }
 
-    public void publish(String requestId, String stage, String message, Map<String, Object> data) {
+    public void publish(String requestId,
+                        String sourceEventId,
+                        String stage,
+                        String message,
+                        Map<String, Object> data) {
+        if (!claimSourceEvent(sourceEventId)) {
+            log.info("[질의 SSE 중복 이벤트 생략] requestId={} sourceEventId={}", requestId, sourceEventId);
+            return;
+        }
         long sequence = nextSequence(requestId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("request_id", requestId);
@@ -92,6 +101,17 @@ public class QueryEventBroker implements MessageListener {
         storeAndBroadcast(new StoredEvent(requestId, sequence, "query.log", payload));
         log.info("[질의 SSE 이벤트 발행] requestId={} sequence={} event=query.log stage={} dataKeys={}",
                 requestId, sequence, stage, data != null ? data.keySet() : List.of());
+    }
+
+    private boolean claimSourceEvent(String sourceEventId) {
+        if (sourceEventId == null || sourceEventId.isBlank()) {
+            throw new IllegalArgumentException("질의 진행 이벤트 ID는 필수입니다.");
+        }
+        Boolean claimed = redisTemplate.opsForValue().setIfAbsent(
+                SOURCE_EVENT_KEY_PREFIX + sourceEventId,
+                "1",
+                EVENT_TTL);
+        return Boolean.TRUE.equals(claimed);
     }
 
     public void complete(String requestId) {
@@ -112,6 +132,8 @@ public class QueryEventBroker implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         StoredEvent event = parse(new String(message.getBody(), StandardCharsets.UTF_8));
         List<Subscriber> list = subscribers.get(event.requestId());
+        log.debug("[질의 Redis pub/sub 수신] requestId={} sequence={} event={} localSubscribers={}",
+                event.requestId(), event.sequence(), event.name(), list != null ? list.size() : 0);
         if (list == null) {
             return;
         }
@@ -140,6 +162,8 @@ public class QueryEventBroker implements MessageListener {
         redisTemplate.opsForList().trim(key, -MAX_BUFFERED_EVENTS, -1);
         redisTemplate.expire(key, EVENT_TTL);
         redisTemplate.convertAndSend(CHANNEL, json);
+        log.debug("[질의 Redis 이벤트 저장·발행 완료] requestId={} sequence={} event={}",
+                event.requestId(), event.sequence(), event.name());
     }
 
     private String serialize(StoredEvent event) {
