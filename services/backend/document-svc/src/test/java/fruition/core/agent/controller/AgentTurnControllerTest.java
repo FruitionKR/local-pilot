@@ -52,7 +52,7 @@ class AgentTurnControllerTest {
         AgentTurnRequest request = request();
         AgentTurnResponse response = new AgentTurnResponse(
                 "doc_1",
-                4,
+                4L,
                 "agent_request_1",
                 "op_apply_1",
                 "queued",
@@ -80,7 +80,7 @@ class AgentTurnControllerTest {
     @Test
     void turn_explicitSkillFieldsReachService() throws Exception {
         when(agentTurnService.turn(eq(WORKSPACE_ID), eq(USER_ID), any(AgentTurnRequest.class)))
-                .thenReturn(new AgentTurnResponse("doc_1", 4, "agent_request_1", "op_apply_1", "queued", null, null));
+                .thenReturn(new AgentTurnResponse("doc_1", 4L, "agent_request_1", "op_apply_1", "queued", null, null));
 
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/turn")
                         .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))

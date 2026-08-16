@@ -3776,12 +3776,12 @@ components:
       - workspace_id
     AgentTurnRequest:
       type: object
-      description: Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. skill_* 필드는 snake_case이고 나머지는 camelCase다.
+      description: "Agent turn 요청. 접수되면 202로 돌아오고 결과는 비동기로 만들어진다. 문서를 열지 않은 상태에서도 보낼 수 있으며, 그때는 편집 대신 답변·되물음만 나온다. skill_* 필드는 snake_case이고 나머지는 camelCase다."
       properties:
         baseVersion:
           type: integer
           format: int64
-          description: 편집 기준으로 삼을 문서 버전
+          description: 편집 기준으로 삼을 문서 버전. documentId와 함께 생략한다.
           example: 3
           minimum: 0
         conversationContext:
@@ -3789,12 +3789,11 @@ components:
           description: 이전 대화 맥락. 있으면 편집 판단에 함께 쓴다.
         documentId:
           type: string
-          description: 편집 대상 문서 ID
+          description: 편집 대상 문서 ID. 문서를 열지 않았으면 생략한다. 생략하면 baseVersion·editorSnapshot도 함께 생략해야 한다.
           example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
-          minLength: 1
         editorSnapshot:
           $ref: "#/components/schemas/EditorSnapshot"
-          description: 편집 시작 시점의 에디터 상태
+          description: 편집 시작 시점의 에디터 상태. documentId와 함께 생략한다.
         message:
           type: string
           description: 사용자 지시문
@@ -3848,9 +3847,6 @@ components:
           type: string
           description: Skill을 적용할 범위 종류
       required:
-      - baseVersion
-      - documentId
-      - editorSnapshot
       - message
     AgentTurnResponse:
       type: object
@@ -3858,15 +3854,15 @@ components:
       properties:
         apply_operation_id:
           type: string
-          description: 편집안을 적용할 때 저장 요청에 apply_operation_id로 실어야 하는 값. 서버가 발급한 값이라야 AI 작업 로그가 남는다.
+          description: 편집안을 적용할 때 저장 요청에 apply_operation_id로 실어야 하는 값. 서버가 발급한 값이라야 AI 작업 로그가 남는다. 문서를 열지 않은 턴은 null이다.
         baseVersion:
           type: integer
           format: int64
-          description: 이 턴이 기준으로 삼은 문서 버전
+          description: 이 턴이 기준으로 삼은 문서 버전. 문서를 열지 않은 턴은 null이다.
           example: 3
         documentId:
           type: string
-          description: 대상 문서 ID
+          description: 대상 문서 ID. 문서를 열지 않은 턴은 null이다.
           example: doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
         error:
           type: string

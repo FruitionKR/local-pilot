@@ -257,7 +257,7 @@ public class AiTaskResultApplier {
                 resultSet.getString("workspace_id"),
                 resultSet.getString("user_id"),
                 resultSet.getString("document_id"),
-                resultSet.getLong("base_version"),
+                resultSet.getObject("base_version", Long.class),
                 resultSet.getString("apply_operation_id")) : null, runId);
     }
 
@@ -266,9 +266,8 @@ public class AiTaskResultApplier {
                 || !Objects.equals(textOrNull(request, "workspace_id"), projection.workspaceId())
                 || !Objects.equals(textOrNull(request, "user_id"), projection.userId())
                 || !Objects.equals(textOrNull(request, "document_id"), projection.documentId())
-                || !request.path("base_version").isNumber()
-                || request.path("base_version").asLong() != projection.baseVersion()
-                || !Objects.equals(textOrNull(request, "apply_operation_id"), projection.applyOperationId())) {
+                || !Objects.equals(textOrNull(request, "apply_operation_id"), projection.applyOperationId())
+                || !Objects.equals(longOrNull(request, "base_version"), projection.baseVersion())) {
             return "agent_result_request_mismatch";
         }
         return null;
@@ -279,11 +278,17 @@ public class AiTaskResultApplier {
         return value == null || value.isNull() ? null : value.asText();
     }
 
+    /** 문서를 열지 않은 턴은 base_version이 없다. 숫자가 아니면 null로 본다. */
+    private static Long longOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isNumber() ? value.asLong() : null;
+    }
+
     static record AgentProjection(
             String workspaceId,
             String userId,
             String documentId,
-            long baseVersion,
+            Long baseVersion,
             String applyOperationId
     ) {}
 

@@ -93,10 +93,9 @@ def _handle_query(
 
 
 def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
-    _required(
-        command, "run_id", "workspace_id", "user_id", "document_id",
-        "base_version", "apply_operation_id", "message", "editor_snapshot",
-    )
+    # 문서를 열지 않은 턴은 편집 대상이 없어 document_id·base_version·apply_operation_id·
+    # editor_snapshot이 오지 않는다. 이때 AI는 chat_answer·clarify·reject만 낸다.
+    _required(command, "run_id", "workspace_id", "user_id", "message")
     run_id = str(command["run_id"])
     state, replay = _register_agent_command(command)
     if state == "completed":
@@ -112,7 +111,7 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             "workspace_id": command["workspace_id"],
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
-            "active_markdown_context": command["editor_snapshot"],
+            "active_markdown_context": command.get("editor_snapshot"),
             "skill_draft_sources": command.get("skill_draft_sources", []),
             "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
             "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),

@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,6 +97,49 @@ class AgentTurnServiceTest {
         assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(command.getValue()))
                 .contains("\"pending_skill_proposal\":{\"scope_type\":\"personal\"")
                 .contains("\"instructions_markdown\":\"# 정확한 원문 지침\"");
+    }
+
+    @Test
+    void turn_withoutDocumentSkipsEditPreconditionsAndApplyTable() {
+        // 문서를 열지 않은 턴은 적용할 대상이 없다. 문서 조회·편집 잠금·버전 검사를 하지 않고,
+        // 되돌려받을 표(apply_operation_id)도 만들지 않는다.
+        var request = new AgentTurnRequest(null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        var response = service.turn("ws_1", "user_1", request);
+
+        assertThat(response.status()).isEqualTo("queued");
+        assertThat(response.documentId()).isNull();
+        assertThat(response.baseVersion()).isNull();
+        assertThat(response.applyOperationId()).isNull();
+        verify(workspaceAccessGuard).requireMember("ws_1", "user_1");
+        verifyNoInteractions(documentService, editLockService, applyOperationStore);
+        verify(runRepository).create(anyString(), org.mockito.ArgumentMatchers.eq("ws_1"),
+                org.mockito.ArgumentMatchers.eq("user_1"), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull());
+    }
+
+    @Test
+    void turn_withoutDocumentKeysOutboxByRunInsteadOfDocument() {
+        var request = new AgentTurnRequest(null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        var response = service.turn("ws_1", "user_1", request);
+
+        // 같은 문서의 순서를 지킬 필요가 없으니 run 단위로 나눈다. key가 null이면 파티션이 무작위가 된다.
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
+                org.mockito.ArgumentMatchers.eq(response.requestId()), command.capture());
+        assertThat(command.getValue().documentId()).isNull();
+        assertThat(command.getValue().baseVersion()).isNull();
+        assertThat(command.getValue().editorSnapshot()).isNull();
+    }
+
+    @Test
+    void request_rejectsPartialDocumentContext() {
+        // 셋 중 하나만 오면 적용 경로가 반쯤 성립해 뒤에서 터진다. 생성 시점에 막는다.
+        assertThatThrownBy(() -> new AgentTurnRequest("doc_1", null, "수정해줘", "openai", "gpt-5-nano", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("provided together or omitted together");
     }
 
     @Test

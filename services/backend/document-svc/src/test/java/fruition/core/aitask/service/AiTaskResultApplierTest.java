@@ -110,7 +110,7 @@ class AiTaskResultApplierTest {
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq(event.get("payload").toString()), eq("new"), eq("run-1"))).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-1")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
 
         applier.applyAgent(event);
         applier.applyAgent(event);
@@ -133,7 +133,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-mismatch:succeeded"),
                 eq("run-mismatch"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-mismatch")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'failed'"),
                 eq("agent_result_request_mismatch"), eq("run-mismatch"))).thenReturn(1);
 
@@ -155,7 +155,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-autonomous:succeeded"),
                 eq("run-autonomous"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-autonomous")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'ready'"),
                 eq(event.get("payload").toString()), isNull(), eq("run-autonomous"))).thenReturn(1);
 
@@ -195,7 +195,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-non-mutating:succeeded"),
                 eq("run-non-mutating"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-non-mutating")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'ready'"),
                 eq(event.get("payload").toString()), isNull(), eq("run-non-mutating"))).thenReturn(1);
 

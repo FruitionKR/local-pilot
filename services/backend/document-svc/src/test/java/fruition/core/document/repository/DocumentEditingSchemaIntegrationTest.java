@@ -586,7 +586,7 @@ class DocumentEditingSchemaIntegrationTest {
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
 
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            agentRunCommandRepository.create(runId, "ws-1", "user-1", "doc-1", 1, "op-1");
+            agentRunCommandRepository.create(runId, "ws-1", "user-1", "doc-1", 1L, "op-1");
             aiCommandOutboxWriter.enqueue(runId, "ai.agent.command", "doc-1", Map.of("run_id", runId));
             throw new IllegalStateException("rollback");
         })).isInstanceOf(IllegalStateException.class);

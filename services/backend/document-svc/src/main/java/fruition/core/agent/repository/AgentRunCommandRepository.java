@@ -21,7 +21,7 @@ public class AgentRunCommandRepository {
     }
 
     public void create(String runId, String workspaceId, String userId, String documentId,
-                       long baseVersion, String applyOperationId) {
+                       Long baseVersion, String applyOperationId) {
         jdbcTemplate.update("""
                 INSERT INTO agent_apply_projections (
                     run_id, workspace_id, user_id, document_id, base_version,

@@ -14,15 +14,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-@Schema(description = "Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. "
+@Schema(description = "Agent turn 요청. 접수되면 202로 돌아오고 결과는 비동기로 만들어진다. "
+        + "문서를 열지 않은 상태에서도 보낼 수 있으며, 그때는 편집 대신 답변·되물음만 나온다. "
         + "skill_* 필드는 snake_case이고 나머지는 camelCase다.")
 public record AgentTurnRequest(
-        @NotBlank
-        @Schema(description = "편집 대상 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
+        @Schema(description = "편집 대상 문서 ID. 문서를 열지 않았으면 생략한다. "
+                + "생략하면 baseVersion·editorSnapshot도 함께 생략해야 한다.",
+                example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83", nullable = true)
         String documentId,
 
-        @NotNull @Min(0)
-        @Schema(description = "편집 기준으로 삼을 문서 버전", minimum = "0", example = "3")
+        @Min(0)
+        @Schema(description = "편집 기준으로 삼을 문서 버전. documentId와 함께 생략한다.",
+                minimum = "0", example = "3", nullable = true)
         Long baseVersion,
 
         @NotBlank
@@ -64,12 +67,17 @@ public record AgentTurnRequest(
         @Schema(description = "Skill을 적용할 범위 종류")
         String skillScopeType,
 
-        @NotNull @Valid
-        @Schema(description = "편집 시작 시점의 에디터 상태")
+        @Valid
+        @Schema(description = "편집 시작 시점의 에디터 상태. documentId와 함께 생략한다.", nullable = true)
         EditorSnapshot editorSnapshot
 ) {
     private static final int MAX_SKILL_ID_LENGTH = 128;
     private static final Set<String> SKILL_MODES = Set.of("auto", "explicit", "off");
+
+    /** 편집 대상이 정해진 요청인지. 셋은 함께 있거나 함께 없다. */
+    public boolean hasDocumentContext() {
+        return documentId != null && !documentId.isBlank();
+    }
 
     public AgentTurnRequest(String documentId, Long baseVersion, String message, String provider, String model,
                             ConversationContext conversationContext, EditorSnapshot editorSnapshot) {
@@ -90,6 +98,12 @@ public record AgentTurnRequest(
     }
 
     public AgentTurnRequest {
+        // 문서 셋은 함께 있거나 함께 없다. 하나만 오면 적용 경로가 반쯤 성립해 뒤에서 NPE로 터진다.
+        boolean hasDocumentId = documentId != null && !documentId.isBlank();
+        if (hasDocumentId != (baseVersion != null) || hasDocumentId != (editorSnapshot != null)) {
+            throw new IllegalArgumentException(
+                    "documentId, baseVersion, editorSnapshot must be provided together or omitted together");
+        }
         skillMode = skillMode == null ? "auto" : skillMode;
         if (!SKILL_MODES.contains(skillMode)) {
             throw new IllegalArgumentException("skill_mode must be auto, explicit, or off");

@@ -68,29 +68,38 @@ public class AgentTurnService {
 
     @Transactional
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
-        DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
-        if (!isMarkdown(document)) {
-            throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
+        // 문서를 열지 않은 턴은 적용할 대상이 없어 편집 전제 검사를 하지 않는다.
+        // AI는 이 경우 chat_answer·clarify·reject만 낼 수 있다.
+        if (request.hasDocumentContext()) {
+            DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
+            if (!isMarkdown(document)) {
+                throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
+            }
+            // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
+            editLockService.requireWritable(request.documentId(), userId);
+            // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
+            // 본문 편집 기준 version은 edit_revision이다(없으면 current_version과 같다).
+            if (document.editRevision() != request.baseVersion()) {
+                throw new DocumentVersionConflictException(
+                        "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
+            }
+            validateTarget(request.editorSnapshot());
+        } else {
+            workspaceAccessGuard.requireMember(workspaceId, userId);
         }
-        // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
-        editLockService.requireWritable(request.documentId(), userId);
-        // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
-        // 본문 편집 기준 version은 edit_revision이다(없으면 current_version과 같다).
-        if (document.editRevision() != request.baseVersion()) {
-            throw new DocumentVersionConflictException(
-                    "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
-        }
-        validateTarget(request.editorSnapshot());
         AiModelCatalog.AiModel selectedModel = aiModelCatalog.resolve(request.provider(), request.model());
         List<CanonicalSkillDraftSource> skillDraftSources = canonicalSkillDraftSources(
                 workspaceId, userId, request.skillDraftSources());
 
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
-        String applyOperationId = applyOperationStore.newOperationId();
+        // 적용할 문서가 없으면 표도 만들지 않는다.
+        String applyOperationId = request.hasDocumentContext() ? applyOperationStore.newOperationId() : null;
         runRepository.create(runId, workspaceId, userId, request.documentId(),
                 request.baseVersion(), applyOperationId);
-        outboxWriter.enqueue(runId, commandTopic, request.documentId(),
+        // 같은 문서의 턴 순서를 유지하려고 documentId를 key로 쓴다. 문서가 없으면 run 단위로 둔다.
+        String messageKey = request.hasDocumentContext() ? request.documentId() : runId;
+        outboxWriter.enqueue(runId, commandTopic, messageKey,
                 new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
                         selectedModel.provider(), selectedModel.model(), request.skillMode(), request.skillId(),
@@ -243,7 +252,7 @@ public class AgentTurnService {
             @com.fasterxml.jackson.annotation.JsonProperty("workspace_id") String workspaceId,
             @com.fasterxml.jackson.annotation.JsonProperty("user_id") String userId,
             @com.fasterxml.jackson.annotation.JsonProperty("document_id") String documentId,
-            @com.fasterxml.jackson.annotation.JsonProperty("base_version") long baseVersion,
+            @com.fasterxml.jackson.annotation.JsonProperty("base_version") Long baseVersion,
             @com.fasterxml.jackson.annotation.JsonProperty("apply_operation_id") String applyOperationId,
             String message,
             String provider,
@@ -299,6 +308,10 @@ public class AgentTurnService {
 
     record CommandEditorSnapshot(String markdown, CommandTarget target) {
         static CommandEditorSnapshot from(AgentTurnRequest.EditorSnapshot snapshot) {
+            // 문서를 열지 않은 턴은 snapshot이 없다.
+            if (snapshot == null) {
+                return null;
+            }
             return new CommandEditorSnapshot(snapshot.markdown(), CommandTarget.from(snapshot.target()));
         }
     }
