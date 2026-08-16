@@ -140,7 +140,7 @@ class AiTaskResultConsumerTest {
      */
     @Test
     void agentTerminalEventCompletesTheSseStream() throws Exception {
-        when(applier.applyAgent(any())).thenReturn(true);
+        when(applier.applyAgent(any())).thenReturn(new AiTaskResultApplier.AgentApplyResult(true, null));
 
         consumer.consume("""
                 {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
@@ -152,7 +152,8 @@ class AiTaskResultConsumerTest {
 
     @Test
     void agentFailureEventFailsTheSseStream() throws Exception {
-        when(applier.applyAgent(any())).thenReturn(true);
+        when(applier.applyAgent(any())).thenReturn(
+                new AiTaskResultApplier.AgentApplyResult(true, "모델 호출 실패"));
 
         consumer.consume("""
                 {"event_id":"agent:agent-1:failed","kind":"agent","run_id":"agent-1",
@@ -162,10 +163,24 @@ class AiTaskResultConsumerTest {
         verify(queryEventBroker).fail("agent-1", "모델 호출 실패");
     }
 
+    @Test
+    void internallyRejectedAgentSuccessFailsTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(
+                new AiTaskResultApplier.AgentApplyResult(true, "agent_result_invalid_payload"));
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":null}
+                """);
+
+        verify(queryEventBroker).fail("agent-1", "agent_result_invalid_payload");
+        verify(queryEventBroker, never()).complete(anyString());
+    }
+
     /** 재전송이면 이미 끝난 스트림이다. 다시 발행하면 늦게 구독한 화면이 완료를 두 번 본다. */
     @Test
     void replayedAgentTerminalEventDoesNotPublishSseAgain() throws Exception {
-        when(applier.applyAgent(any())).thenReturn(false);
+        when(applier.applyAgent(any())).thenReturn(new AiTaskResultApplier.AgentApplyResult(false, null));
 
         consumer.consume("""
                 {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",

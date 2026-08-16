@@ -252,10 +252,30 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq("agent_result_unsupported_action"), eq("run-2"))).thenReturn(1);
 
-        applier.applyAgent(event);
+        var result = applier.applyAgent(event);
 
         verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq("agent_result_unsupported_action"), eq("run-2"));
+        assertThat(result.error()).isEqualTo("agent_result_unsupported_action");
+    }
+
+    @Test
+    void internallyRejectedAgentSuccessFailsTheChatMessage() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-invalid:succeeded","run_id":"run-invalid","kind":"agent",
+                 "status":"succeeded","request":{"message_context":{"assistant_message_id":"chat_assistant_1"}},
+                 "payload":{"action":"unknown_action"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-invalid:succeeded"),
+                eq("run-invalid"), any())).thenReturn(1);
+        when(jdbcTemplate.update(contains("SET status = 'failed'"),
+                eq("agent_result_unsupported_action"), eq("run-invalid"))).thenReturn(1);
+
+        var result = applier.applyAgent(event);
+
+        assertThat(result.error()).isEqualTo("agent_result_unsupported_action");
+        verify(chatTurnRecorder).markFailed("chat_assistant_1", "agent_result_unsupported_action");
+        verify(chatTurnRecorder, never()).completeAgentTurn(anyString(), any(), any());
     }
 
     @org.junit.jupiter.params.ParameterizedTest

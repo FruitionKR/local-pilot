@@ -66,12 +66,12 @@ public class AiTaskResultConsumer {
             }
             if ("agent".equals(kind)) {
                 // 질의와 같은 규칙이다. 최초 반영일 때만 종료 이벤트를 내 재전송으로 두 번 끝나지 않게 한다.
-                if (applier.applyAgent(event)) {
-                    if ("succeeded".equals(event.path("status").asText())) {
+                var result = applier.applyAgent(event);
+                if (result.applied()) {
+                    if (result.error() == null) {
                         queryEventBroker.complete(flowId);
                     } else {
-                        queryEventBroker.fail(flowId,
-                                event.path("error").asText("Agent 처리 중 오류가 발생했습니다."));
+                        queryEventBroker.fail(flowId, result.error());
                     }
                 }
                 return;

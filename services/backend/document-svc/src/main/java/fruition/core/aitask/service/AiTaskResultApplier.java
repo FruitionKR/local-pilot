@@ -162,24 +162,24 @@ public class AiTaskResultApplier {
     }
 
     /**
-     * @return 이 이벤트로 처음 반영했으면 true. 재전송이면 false다.
-     *         호출부는 이 값으로 SSE 종료 이벤트를 한 번만 내보낸다.
+     * @return 최초 반영 여부와 실제 projection 반영 오류. 호출부는 이 결과로 SSE를 한 번만 종료한다.
      */
     @Transactional
-    public boolean applyAgent(JsonNode event) {
+    public AgentApplyResult applyAgent(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
                 VALUES (?, ?, 'agent', CAST(? AS jsonb))
                 ON CONFLICT (run_id, task_kind) WHERE task_kind = 'agent' DO NOTHING
-                """, eventId, runId, event.toString()) == 0) return false;
+                """, eventId, runId, event.toString()) == 0) return new AgentApplyResult(false, null);
 
         int updated;
+        String errorCode;
         if ("succeeded".equals(text(event, "status"))) {
             JsonNode request = event.get("request");
             JsonNode payload = event.get("payload");
-            String errorCode = null;
+            errorCode = null;
             if (request == null || !request.isObject()) {
                 errorCode = "agent_result_invalid_request";
             } else if (payload == null || !payload.isObject()) {
@@ -205,42 +205,44 @@ public class AiTaskResultApplier {
             }
         } else {
             String error = event.path("error").asText(null);
-            updated = markAgentFailed(runId, error == null || error.isBlank() ? "agent_turn_failed" : error);
+            errorCode = error == null || error.isBlank() ? "agent_turn_failed" : error;
+            updated = markAgentFailed(runId, errorCode);
         }
         if (updated != 1) {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
-        recordAgentChatMessage(event);
+        recordAgentChatMessage(event, errorCode);
         chatTurnRecorder.recordContextSummary(
                 textOrNull(event.path("request"), "session_id"),
                 event.path("payload").path("updated_conversation_summary").asText(null));
-        return true;
+        return new AgentApplyResult(true, errorCode);
     }
 
     /**
      * Agent 결과를 채팅 말풍선에 채운다. 세션 없이 만들어진 예전 run은 message_context가 없어 건너뛴다.
      * 채팅 기록 실패가 적용 표를 되돌리면 안 되므로 여기서 삼킨다 — 이 시점에 projection은 이미 확정됐다.
      */
-    private void recordAgentChatMessage(JsonNode event) {
+    private void recordAgentChatMessage(JsonNode event, String errorCode) {
         JsonNode context = event.path("request").path("message_context");
         String assistantMessageId = textOrNull(context, "assistant_message_id");
         if (assistantMessageId == null) {
             return;
         }
         try {
-            if ("succeeded".equals(text(event, "status"))) {
+            if (errorCode == null) {
                 JsonNode payload = event.path("payload");
                 chatTurnRecorder.completeAgentTurn(assistantMessageId,
                         payload.path("action").asText(null), agentMessageContent(payload));
             } else {
-                chatTurnRecorder.markFailed(assistantMessageId,
-                        event.path("error").asText("Agent 처리 중 오류가 발생했습니다."));
+                chatTurnRecorder.markFailed(assistantMessageId, errorCode);
             }
         } catch (RuntimeException e) {
             log.warn("[Agent 채팅 기록 실패] runId={} assistantMessageId={} errorType={}",
                     text(event, "run_id"), assistantMessageId, e.getClass().getSimpleName());
         }
     }
+
+    public record AgentApplyResult(boolean applied, String error) {}
 
     /** 갈래별 기본 말풍선 문구. 편집 결과 본문은 미리보기에서 보므로 여기서는 무엇을 했는지만 알린다. */
     private static final Map<String, String> ACTION_FALLBACK_MESSAGE = Map.of(
