@@ -73,7 +73,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-5",
                 json_mode=True,
                 provider="claude",
             )
@@ -101,7 +101,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-5",
                 json_mode=True,
                 provider="claude",
             )
@@ -120,7 +120,7 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
             ChatClientConfig(
                 endpoint="https://api.anthropic.com/v1/messages",
                 api_key="secret",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-5",
                 json_mode=True,
                 provider="claude",
             )
@@ -136,9 +136,9 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
 
     def test_provider_reasoning_parameters_are_sent_without_claude_thinking(self) -> None:
         cases = (
-            ("openai", "gpt-5-nano", {"reasoning_effort": "minimal"}),
+            ("openai", "gpt-5-nano", {"reasoning_effort": "medium"}),
             ("gemini", "gemini-3.1-flash-lite", {"reasoning_effort": "low"}),
-            ("claude", "claude-haiku-4-5-20251001", {}),
+            ("claude", "claude-sonnet-5", {}),
         )
         for provider, model, expected_profile in cases:
             with self.subTest(provider=provider):

@@ -38,7 +38,7 @@ EXPECTED = {
         "GEMINI_API_KEY",
         "gemini-3.1-flash-lite",
     ),
-    "claude": ("https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001"),
+    "claude": ("https://api.anthropic.com/v1/messages", "ANTHROPIC_API_KEY", "claude-sonnet-5"),
 }
 
 

@@ -9,7 +9,7 @@ SUPPORTED_LLM_PROVIDERS = ("openai", "gemini", "claude")
 SUPPORTED_LLM_MODELS = {
     "openai": "gpt-5-nano",
     "gemini": "gemini-3.1-flash-lite",
-    "claude": "claude-haiku-4-5-20251001",
+    "claude": "claude-sonnet-5",
 }
 _PROVIDER_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -66,7 +66,7 @@ def provider_api_key_env(provider: str | None = None) -> str:
 def inference_profile(provider: str, model: str) -> dict[str, str]:
     resolved_provider, resolved_model = resolve_llm_selection(provider, model)
     if resolved_provider == "openai":
-        return {"reasoning_effort": "minimal"}
+        return {"reasoning_effort": "medium"}
     if resolved_provider == "gemini":
         return {"reasoning_effort": "low"}
     return {}

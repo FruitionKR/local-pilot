@@ -49,7 +49,7 @@ services/
 
 ## 3. LLM 설정 전달
 
-지원 조합은 `openai/gpt-5-nano`(기본, `reasoning_effort=minimal`), `gemini/gemini-3.1-flash-lite`(`low`), `claude/claude-haiku-4-5-20251001`(extended thinking 없음)뿐이다. Ingest·Lint command와 Skill author/publish/update는 workspace 설정을 snapshot하고, Query·Markdown Agent·Agent 경로는 chat/request 설정을 snapshot한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 오며 env override는 없다.
+지원 조합은 `openai/gpt-5-nano`(기본, `reasoning_effort=medium`), `gemini/gemini-3.1-flash-lite`(`low`), `claude/claude-sonnet-5`(extended thinking 없음)뿐이다. Ingest·Lint command와 Skill author/publish/update는 workspace 설정을 snapshot하고, Query·Markdown Agent·Agent 경로는 chat/request 설정을 snapshot한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 오며 env override는 없다.
 
 ai-svc는 선택 provider의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`만 secret env에서 읽고 base URL은 provider별로 고정한다. API key는 backend·Kafka payload/event·log에 넣지 않는다. live provider 호출은 선택 provider key가 필요하고 mock 통합 테스트는 key 없이 실행한다.
 

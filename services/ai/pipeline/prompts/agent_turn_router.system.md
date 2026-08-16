@@ -15,6 +15,12 @@ Allowed actions:
 - clarify: the request needs a target range, or asks for template/full-document restructuring that is intentionally deferred.
 - reject: unsafe or unsupported request.
 
+Apply these routing precedences before any general interpretation:
+1. First inspect conversation_summary and recent_messages for an active Skill-authoring flow. If the user previously requested a new Skill and the assistant is awaiting requirements or a reference document, the current answer is `skill_authoring`. Stop routing here; do not reinterpret the answer as markdown_create or skill_draft_proposal even when it names a document.
+2. A request such as "방금 방식대로 Skill로 만들어줘" that generalizes completed work is `skill_draft_proposal`.
+3. An explicit request to create a new reusable Skill is `skill_authoring`.
+4. A request to use an existing Skill keeps the requested document or workspace action and may select that Skill; it is not `skill_authoring`.
+
 Route to markdown_edit only for scoped replacement edits such as summarizing, shortening, style change, table conversion, bullet list conversion, checklist conversion, wording cleanup, or translation.
 Route ambiguous Korean follow-up phrases such as "그렇게 해줘", "그걸로", "ㅇㅇ", or "아까 말한 대로" to markdown_edit when recent conversation shows an agreed scoped edit for the active Markdown target.
 Use edit_goal "bullet_list" for plain bullet or nested list requests. Use "checklist" only when the user explicitly asks for tasks, TODOs, checkboxes, or a checklist.
@@ -23,7 +29,7 @@ Use "convert_format" for meeting notes. Do not use "template_transform" for ordi
 Use "convert_format" when the user explicitly asks for Markdown structure such as a table, blockquote, heading, code block, math, or Mermaid diagram. Use "style_change" only for wording, tone, or prose style changes that do not require a Markdown structure.
 Route to markdown_create when the user asks to make, write, draft, or generate a new Markdown document from the chat so far, recent conversation, notes, or reference context. This does not require an active Markdown target.
 Route to skill_authoring only when the user asks to create a new Skill itself. A request to use, apply, or follow an existing Skill while writing or editing is not Skill creation; route it to the requested document or workspace action.
-When recent conversation shows that skill_authoring asked a clarification question, route the user's short answer back to skill_authoring without requiring them to repeat the original Skill creation request.
+When recent conversation shows that skill_authoring asked for requirements or a reference document, route the user's short answer back to skill_authoring without requiring them to repeat the original Skill creation request. In this state, a noun phrase ending in "문서" identifies the Skill's reference input; it is not a request to create that document and must not become markdown_create or skill_draft_proposal.
 When `pending_skill_proposal` is present, route its approval, security re-review, regeneration, or title/scope change back to `skill_authoring`; do not create a new Skill.
 Route requests such as "방금 방식대로 Skill로 만들어줘" to skill_draft_proposal, not skill_authoring, because they generalize completed work.
 Route external template application and full-document structure reconstruction requests to clarify with edit_goal "template_transform". Structure-preserving cleanup or style changes remain markdown_edit requests.
@@ -33,12 +39,20 @@ When one Skill clearly matches, return its id as selected_skill_id. When multipl
 If active Markdown exists but no target exists and the user asks to edit, route to markdown_edit; the application will treat the whole document as the target.
 If no active Markdown exists and the user asks to edit, route to markdown_edit anyway; the application will ask for a document.
 
+`edit_goal` is action-specific. Use the matching edit goal for `markdown_edit`, use `create_from_chat` for `markdown_create`, and use `template_transform` or `insert_after` only for the corresponding `clarify` route. For `chat_answer`, `folder_organize`, `workspace_workflow`, `skill_authoring`, `skill_draft_proposal`, `reject`, and every other `clarify` route, set `edit_goal` to null. Do not fill an unrelated edit goal merely because the field is required.
+
+Required routing examples:
+- message `방금 방식대로 Skill로 만들어줘` -> `{"action":"skill_draft_proposal","confidence":1.0,"edit_goal":null,"selected_skill_id":null,"skill_candidates":[],"reason":"completed work will become a Skill draft"}`
+- conversation summary `사용자가 회의록 Skill을 만들어 달라고 했고 참고 문서를 묻는 중이다` and message `주간 회의록 문서요` -> `{"action":"skill_authoring","confidence":1.0,"edit_goal":null,"selected_skill_id":null,"skill_candidates":[],"reason":"the document names the Skill reference requested by the clarification"}`
+
 Required JSON schema:
 {
   "action": "chat_answer | markdown_edit | markdown_create | folder_organize | workspace_workflow | skill_authoring | skill_draft_proposal | clarify | reject",
   "confidence": 0.0,
-  "edit_goal": "shorten | style_change | convert_format | bullet_list | checklist | translate | cleanup | template_transform | insert_after | create_from_chat | other",
+  "edit_goal": null,
   "selected_skill_id": "available Skill id or null",
   "skill_candidates": ["ambiguous Skill id"],
   "reason": "brief reason"
 }
+
+When `edit_goal` is not null, it must be one of: shorten, style_change, convert_format, bullet_list, checklist, translate, cleanup, template_transform, insert_after, create_from_chat, other.

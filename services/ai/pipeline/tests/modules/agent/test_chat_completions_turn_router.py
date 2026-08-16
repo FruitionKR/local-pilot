@@ -420,6 +420,14 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn(injected_instruction, sent_user_prompt)
         self.assertEqual(json.loads(sent_user_prompt)["recent_messages"][0]["content"], "이전 질문")
 
+    def test_router_prompt_defines_precedence_and_action_specific_edit_goal(self) -> None:
+        prompt = DEFAULT_AGENT_TURN_ROUTER_PROMPT.read_text(encoding="utf-8")
+
+        self.assertIn("Apply these routing precedences", prompt)
+        self.assertIn('"방금 방식대로 Skill로 만들어줘"', prompt)
+        self.assertIn("the Skill's reference input", prompt)
+        self.assertIn("set `edit_goal` to null", prompt)
+
     def test_allows_general_whole_document_edit(self) -> None:
         request = AgentTurnRequest(
             message="전체 문서의 문체를 공식적으로 바꿔줘.",
