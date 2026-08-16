@@ -108,6 +108,31 @@ class AiTaskResultConsumerTest {
         verifyNoInteractions(applier, queryRunStore);
     }
 
+    /**
+     * Agent turn도 AI가 chat_answer로 판정하면 질의와 같은 단계를 낸다. kind 분기가 먼저 걸리면
+     * 이 이벤트가 applyAgent로 들어가 최종 결과로 오인되고 run이 깨진다.
+     */
+    @Test
+    void agentProgressIsRelayedInsteadOfAppliedAsResult() throws Exception {
+        consumer.consume("""
+                {
+                  "event_id":"query:agent-1:progress:1:wiki_loaded",
+                  "kind":"agent",
+                  "run_id":"agent-1",
+                  "status":"progress",
+                  "payload":{"stage":"wiki_loaded","message":"Wiki 데이터를 불러왔습니다.","data":{}}
+                }
+                """);
+
+        verify(queryEventBroker).publish(
+                "agent-1",
+                "query:agent-1:progress:1:wiki_loaded",
+                "wiki_loaded",
+                "Wiki 데이터를 불러왔습니다.",
+                java.util.Map.of());
+        verifyNoInteractions(applier, queryRunStore);
+    }
+
     @Test
     void consumeSetsFlowIdDuringProcessingAndClearsItAfterward() throws Exception {
         org.mockito.Mockito.doAnswer(invocation -> {

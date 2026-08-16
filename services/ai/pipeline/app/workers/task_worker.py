@@ -92,7 +92,10 @@ def _handle_query(
     return query_to_response(result).model_dump(mode="json")
 
 
-def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
+def _handle_agent(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
     # 문서를 열지 않은 턴은 편집 대상이 없어 document_id·base_version·apply_operation_id·
     # editor_snapshot이 오지 않는다. 이때 AI는 chat_answer·clarify·reject만 낸다.
     _required(command, "run_id", "workspace_id", "user_id", "message")
@@ -121,6 +124,7 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             build_handle_agent_turn_use_case(
                 provider=payload.provider,
                 model=payload.model,
+                event_publisher=event_publisher,
             ).execute(payload.to_domain())
         ).model_dump(mode="json")
     except Exception:
@@ -348,12 +352,15 @@ def _handle_restore(command: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
-def _handle(command: dict[str, Any]) -> dict[str, Any]:
+def _handle(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
     kind = str(command.get("kind") or "")
     if kind == "query":
-        return _handle_query(command)
+        return _handle_query(command, event_publisher)
     if kind == "agent":
-        return _handle_agent(command)
+        return _handle_agent(command, event_publisher)
     if kind == "lint":
         return _handle_lint(command)
     if kind in {"restore_ingest", "restore_lint"}:
@@ -506,13 +513,10 @@ async def consume() -> None:
                 for message in messages:
                     command = message.value
                     try:
-                        if command.get("kind") == "query":
+                        # agent도 질의 갈래(chat_answer)로 갈리면 같은 진행 이벤트를 낸다.
+                        if command.get("kind") in {"query", "agent"}:
                             event_publisher = KafkaQueryEventPublisher(producer, loop, command)
-                            result = await asyncio.to_thread(
-                                _handle_query,
-                                command,
-                                event_publisher,
-                            )
+                            result = await asyncio.to_thread(_handle, command, event_publisher)
                         else:
                             result = await asyncio.to_thread(_handle, command)
                         event = _event(command, "succeeded", payload=result)

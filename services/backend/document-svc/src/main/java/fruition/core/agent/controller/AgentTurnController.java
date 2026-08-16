@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -31,9 +32,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentTurnController {
 
     private final AgentTurnService agentTurnService;
+    private final fruition.core.query.service.QueryEventBroker runEventBroker;
 
-    public AgentTurnController(AgentTurnService agentTurnService) {
+    public AgentTurnController(AgentTurnService agentTurnService,
+                               fruition.core.query.service.QueryEventBroker runEventBroker) {
         this.agentTurnService = agentTurnService;
+        this.runEventBroker = runEventBroker;
     }
 
     @Operation(summary = "Agent turn 실행", description = "사용자 요청을 비동기 Agent 실행 대기열에 등록합니다.")
@@ -113,6 +117,26 @@ public class AgentTurnController {
             @AuthenticationPrincipal String userId,
             @PathVariable("run_id") String runId) {
         return ResponseEntity.ok(agentTurnService.cancel(workspaceId, userId, runId));
+    }
+
+    @Operation(summary = "Agent turn 진행 이벤트 구독",
+            description = "Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. "
+                    + "AI가 질의로 판정한 턴만 단계 이벤트를 내며, 편집·Skill 갈래는 완료 이벤트만 옵니다.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "SSE 구독 시작",
+            content = @Content(mediaType = "text/event-stream", schema = @Schema(type = "string"))),
+        @ApiResponse(responseCode = "404", description = "실행 또는 워크스페이스를 찾을 수 없음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/turn/{run_id}/events")
+    public SseEmitter subscribeTurnEvents(
+            @PathVariable("workspace_id") String workspaceId,
+            @AuthenticationPrincipal String userId,
+            @Parameter(description = "구독할 Agent 실행 ID", required = true)
+            @PathVariable("run_id") String runId) {
+        // 남의 run을 구독하지 못하게 조회와 같은 소유권 검사를 먼저 통과시킨다.
+        agentTurnService.get(workspaceId, userId, runId);
+        return runEventBroker.subscribe(runId);
     }
 
     @Operation(summary = "AgentRun 계획 수정", description = "현재 AgentRun에 새 계획을 요청합니다.")

@@ -359,6 +359,40 @@ paths:
       summary: Agent turn 결과 조회
       tags:
       - Agent
+  /api/workspaces/{workspace_id}/agent/turn/{run_id}/events:
+    get:
+      description: "Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다. AI가 질의로 판정한 턴만 단계 이벤트를 내며, 편집·Skill 갈래는 완료 이벤트만 옵니다."
+      operationId: subscribeTurnEvents
+      parameters:
+      - example: ws_9d47a0e9a6324341b47562553b75f92a
+        in: path
+        name: workspace_id
+        required: true
+        schema:
+          type: string
+          default: ws_9d47a0e9a6324341b47562553b75f92a
+      - description: 구독할 Agent 실행 ID
+        in: path
+        name: run_id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          description: SSE 구독 시작
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: 실행 또는 워크스페이스를 찾을 수 없음
+      summary: Agent turn 진행 이벤트 구독
+      tags:
+      - Agent
   /api/workspaces/{workspace_id}/ai-model-settings:
     get:
       description: ingest·lint 작업에 쓰는 provider/model 설정을 반환합니다. OWNER와 MEMBER 모두 조회할 수 있습니다.

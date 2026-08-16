@@ -7,6 +7,7 @@ from app.modules.agent_run.infrastructure.postgres_agent_run_repository import P
 from app.modules.markdown_edit.application.generate_markdown_document import GenerateMarkdownDocumentUseCase
 from app.modules.markdown_edit.application.generate_markdown_edit import GenerateMarkdownEditUseCase
 from app.modules.markdown_edit.infrastructure.chat_completions_markdown_editor import build_markdown_editor
+from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.interfaces.http.dependencies import (
     build_answer_query_use_case,
     build_query_conversation_summarizer,
@@ -20,15 +21,23 @@ from app.modules.skill.interfaces.http.dependencies import (
 )
 
 
-def build_handle_agent_turn_use_case(*, provider: str, model: str) -> HandleAgentTurnUseCase:
+def build_handle_agent_turn_use_case(
+    *,
+    provider: str,
+    model: str,
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> HandleAgentTurnUseCase:
+    """`event_publisher`는 질의 갈래에만 전달한다. markdown·skill 갈래는 진행 이벤트를 내지 않는다."""
     markdown_editor = build_markdown_editor(provider=provider, model=model)
-    query_use_case = build_answer_query_use_case(provider=provider, model=model)
+    query_use_case = build_answer_query_use_case(
+        provider=provider, model=model, event_publisher=event_publisher
+    )
     feature_enabled = os.environ.get("AGENT_SKILLS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
     return HandleAgentTurnUseCase(
         router=build_agent_turn_router(provider=provider, model=model),
         query_use_case=query_use_case,
         web_search_query_use_case_factory=lambda: build_answer_query_use_case(
-            provider=provider, model=model, allow_web_search=True
+            provider=provider, model=model, allow_web_search=True, event_publisher=event_publisher
         ),
         markdown_edit_use_case=GenerateMarkdownEditUseCase(markdown_editor),
         markdown_create_use_case=GenerateMarkdownDocumentUseCase(markdown_editor),

@@ -46,6 +46,7 @@ class AgentTurnControllerTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean AgentTurnService agentTurnService;
+    @MockBean fruition.core.query.service.QueryEventBroker runEventBroker;
 
     @Test
     void turn_authenticatedRequestReturnsPipelineResult() throws Exception {
