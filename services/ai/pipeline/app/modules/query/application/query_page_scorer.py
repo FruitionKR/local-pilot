@@ -21,10 +21,15 @@ class QueryPageScorer:
         self._focus_concept_threshold = focus_concept_threshold
 
     def score_pages(self, query_rewrite: QueryRewrite, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
-        query = query_rewrite.retrieval_query
+        embedding_query = query_rewrite.original_question
+        text_query = query_rewrite.retrieval_query
         representations = [self._representation(page) for page in pages]
-        embedding_scores = self._embedding_search.score(query, representations)
-        text_scores = self._text_search.score(query, representations)
+        embedding_scores = self._embedding_search.score(embedding_query, representations)
+        text_scores = (
+            self._text_search.score(text_query, representations)
+            if embedding_weight < 1.0
+            else [0.0 for _ in representations]
+        )
         base_scores = {
             page.id: self._final_retrieval_score(
                 hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight),
@@ -33,7 +38,12 @@ class QueryPageScorer:
             for page, embedding_score, text_score in zip(pages, embedding_scores, text_scores)
         }
         if pages and all(page.is_source for page in pages):
-            structure_scores = self._score_source_structures(query, pages, embedding_weight)
+            structure_scores = self._score_source_structures(
+                embedding_query,
+                text_query,
+                pages,
+                embedding_weight,
+            )
             return {
                 page.id: min(1.0, base_scores.get(page.id, 0.0) + structure_scores.get(page.id, 0.0))
                 for page in pages
@@ -69,7 +79,13 @@ class QueryPageScorer:
         ]
         return direct_matches[: self._concept_candidate_limit]
 
-    def _score_source_structures(self, query: str, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
+    def _score_source_structures(
+        self,
+        embedding_query: str,
+        text_query: str,
+        pages: list[WikiPage],
+        embedding_weight: float,
+    ) -> dict[str, float]:
         weighted_representations: list[tuple[str, str, float]] = []
         for page in pages:
             for representation, weight in self._source_structure_representations(page):
@@ -78,8 +94,12 @@ class QueryPageScorer:
             return {}
 
         documents = [item[1] for item in weighted_representations]
-        embedding_scores = self._embedding_search.score(query, documents)
-        text_scores = self._text_search.score(query, documents)
+        embedding_scores = self._embedding_search.score(embedding_query, documents)
+        text_scores = (
+            self._text_search.score(text_query, documents)
+            if embedding_weight < 1.0
+            else [0.0 for _ in documents]
+        )
         scores: dict[str, float] = {}
         for (page_id, _, weight), embedding_score, text_score in zip(weighted_representations, embedding_scores, text_scores):
             score = hybrid_score(embedding_score, text_score, embedding_weight=embedding_weight) * weight

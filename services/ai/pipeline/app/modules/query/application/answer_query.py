@@ -502,7 +502,7 @@ class AnswerQueryUseCase:
             self._source_candidate_limit * self._candidate_pool_multiplier,
             self._concept_candidate_limit * self._candidate_pool_multiplier,
             semantic_query=(
-                self._embedding_search.embed_query(query_rewrite.retrieval_query)
+                self._embedding_search.embed_query(query_rewrite.original_question)
                 if isinstance(self._embedding_search, SemanticQueryEmbeddingPort)
                 else None
             ),
@@ -569,12 +569,12 @@ class AnswerQueryUseCase:
         source_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_source],
-            embedding_weight=0.6,
+            embedding_weight=1.0,
         )
         concept_scores = self._query_page_scorer.score_pages(
             query_rewrite,
             [page for page in pages if page.is_concept],
-            embedding_weight=0.6,
+            embedding_weight=1.0,
         )
         self._publish(
             event_publisher,
