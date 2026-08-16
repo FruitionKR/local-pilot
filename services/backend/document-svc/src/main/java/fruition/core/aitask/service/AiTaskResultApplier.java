@@ -258,9 +258,6 @@ public class AiTaskResultApplier {
 
     /** 화면·SSE로 나갈 문구. 내부 코드가 그대로 사용자에게 보이지 않게 한다. */
     public static String describeAgentError(String errorCode) {
-        if (errorCode == null || errorCode.isBlank()) {
-            return AGENT_ERROR_MESSAGE.get("agent_turn_failed");
-        }
         return AGENT_ERROR_MESSAGE.getOrDefault(errorCode, errorCode);
     }
 
