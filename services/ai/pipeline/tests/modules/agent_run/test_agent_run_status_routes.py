@@ -82,6 +82,31 @@ def test_internal_status_lookup_is_scoped_to_workspace_and_user() -> None:
     assert raised.value.status_code == 404
 
 
+class DocumentlessRepository(ScopedRepository):
+    """문서를 열지 않은 턴. 편집 대상이 없어 셋 다 비어 있다."""
+
+    def get_markdown_turn_status(self, workspace_id: str, user_id: str, run_id: str):
+        return {
+            "id": run_id,
+            "document_id": None,
+            "base_version": None,
+            "apply_operation_id": None,
+            "status": "completed",
+            "result": {"action": "chat_answer"},
+            "error_code": None,
+        }
+
+
+def test_internal_status_lookup_allows_run_without_document() -> None:
+    response = get_markdown_agent_run(
+        "run-1", "workspace-1", "user-1", DocumentlessRepository()
+    )
+
+    assert response.id == "run-1"
+    assert (response.document_id, response.base_version, response.apply_operation_id) == (None, None, None)
+    assert response.status == "completed"
+
+
 def test_execute_authorization_rejects_argument_mismatch() -> None:
     payload = AgentToolExecuteAuthorizationRequest(
         run_id="run-1",

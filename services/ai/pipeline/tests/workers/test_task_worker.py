@@ -594,6 +594,45 @@ def test_invalid_agent_selection_is_terminally_registered(
         assert task_worker._failure_is_durable(command) is True
 
 
+def test_agent_command_without_document_registers_run_with_null_targets() -> None:
+    """문서를 열지 않은 턴은 편집 대상이 없다. 컬럼이 nullable이라 그대로 비워 넣는다."""
+    command = {
+        "run_id": "agent_no_document",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "message": "아까 그거 다시 설명해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    connection = MagicMock()
+    inserted = MagicMock()
+    inserted.fetchone.return_value = {"id": command["run_id"]}
+    locked = MagicMock()
+    locked.fetchone.return_value = {
+        "status": "queued",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    def execute(query: str, *args: object) -> MagicMock:
+        if "INSERT INTO agent_runs" in query:
+            return inserted
+        if "FOR UPDATE" in query:
+            return locked
+        return MagicMock()
+
+    connection.execute.side_effect = execute
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with patch.object(task_worker.database, "connect_ai", return_value=context):
+        state, replay = task_worker._register_agent_command(command)
+
+    assert (state, replay) == ("execute", None)
+    insert_params = connection.execute.call_args_list[0].args[1]
+    assert insert_params[-4:-1] == (None, None, None)
+
+
 def test_replayed_invalid_agent_selection_reuses_failed_run_without_new_job() -> None:
     command = {
         "run_id": "agent_invalid_replay",

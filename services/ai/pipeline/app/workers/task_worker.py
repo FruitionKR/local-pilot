@@ -55,6 +55,14 @@ def _required(command: dict[str, Any], *fields: str) -> None:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
+def _text_or_none(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
+def _int_or_none(value: Any) -> int | None:
+    return None if value is None else int(value)
+
+
 def _conversation_context(command: dict[str, Any]) -> ConversationContext | None:
     """대화 맥락은 두 겹이다. 요약은 이전 턴까지의 누적본이고 최근 메시지는 그 위에 얹는 원문이다.
 
@@ -210,9 +218,10 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
                 str(command["message"])[:1000],
                 provider,
                 model,
-                str(command["document_id"]),
-                int(command["base_version"]),
-                str(command["apply_operation_id"]),
+                # 문서를 열지 않은 턴은 셋 다 없다. 컬럼은 nullable이라 그대로 비워 둔다.
+                _text_or_none(command.get("document_id")),
+                _int_or_none(command.get("base_version")),
+                _text_or_none(command.get("apply_operation_id")),
                 envelope_hash,
             ),
         ).fetchone()

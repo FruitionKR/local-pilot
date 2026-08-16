@@ -130,10 +130,11 @@ public class PipelineAgentRunStatusRequester {
         }
     }
 
+    /** 문서를 열지 않은 턴은 documentId·baseVersion·applyOperationId가 모두 null이다. */
     public record RunStatus(
             String id,
             @JsonProperty("document_id") String documentId,
-            @JsonProperty("base_version") long baseVersion,
+            @JsonProperty("base_version") Long baseVersion,
             @JsonProperty("apply_operation_id") String applyOperationId,
             String status,
             JsonNode result,

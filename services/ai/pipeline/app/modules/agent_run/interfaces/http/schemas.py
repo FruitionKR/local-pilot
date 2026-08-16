@@ -11,9 +11,10 @@ class AgentRunActorRequest(BaseModel):
 
 class MarkdownAgentRunStatusResponse(BaseModel):
     id: str
-    document_id: str
-    base_version: int
-    apply_operation_id: str
+    # 문서를 열지 않은 턴은 편집 대상이 없어 셋 다 비어 온다. 셋은 함께 있거나 함께 없다.
+    document_id: str | None = None
+    base_version: int | None = None
+    apply_operation_id: str | None = None
     status: str
     result: dict[str, object] | None
     error_code: str | None
