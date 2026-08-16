@@ -396,6 +396,36 @@ def test_agent_command_copies_skill_draft_fields_into_agent_request(
     assert request.skill_id == skill_id
 
 
+def test_agent_command_passes_web_search_flag_to_request_body() -> None:
+    """질의 갈래로 판정됐을 때 웹 검색을 켤 수 있어야 한다. command에서 body까지 끊기면 안 된다."""
+    command = {
+        "run_id": "agent_0123456789abcdef0123456789abcdef",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "message": "최신 소식 알려줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": True,
+    }
+    use_case = MagicMock()
+    response = MagicMock()
+    response.model_dump.return_value = {"ok": True}
+    connection = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker, "_register_agent_command", return_value=("execute", None)),
+        patch.object(task_worker, "build_handle_agent_turn_use_case", return_value=use_case),
+        patch.object(task_worker, "agent_to_response", return_value=response),
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+    ):
+        task_worker._handle_agent(command)
+
+    assert use_case.execute.call_args.args[0].allow_web_search is True
+
+
 def test_agent_command_rejects_auto_skill_id() -> None:
     command = {
         "run_id": "agent_0123456789abcdef0123456789abcdef",

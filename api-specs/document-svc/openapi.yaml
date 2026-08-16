@@ -3812,6 +3812,9 @@ components:
       type: object
       description: "Agent turn 요청. 접수되면 202로 돌아오고 결과는 비동기로 만들어진다. 문서를 열지 않은 상태에서도 보낼 수 있으며, 그때는 편집 대신 답변·되물음만 나온다. skill_* 필드는 snake_case이고 나머지는 camelCase다."
       properties:
+        allow_web_search:
+          type: boolean
+          description: AI가 질의로 판정했을 때 웹 검색을 허용할지. 생략하면 내부 문서만 사용한다. 편집·Skill 갈래에는 영향이 없다.
         baseVersion:
           type: integer
           format: int64

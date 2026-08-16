@@ -44,6 +44,11 @@ public record AgentTurnRequest(
         @Schema(description = "모델명. provider와 짝을 이뤄야 한다.", example = "gpt-5-nano")
         String model,
 
+        @JsonProperty("allow_web_search")
+        @Schema(description = "AI가 질의로 판정했을 때 웹 검색을 허용할지. 생략하면 내부 문서만 사용한다. "
+                + "편집·Skill 갈래에는 영향이 없다.", nullable = true)
+        Boolean allowWebSearch,
+
         @JsonProperty("skill_mode") @Pattern(regexp = "auto|explicit|off")
         @Schema(description = "Skill 적용 방식. explicit이면 skill_id가 필수이고, auto·off이면 skill_id를 넣을 수 없다.",
                 allowableValues = {"auto", "explicit", "off"}, defaultValue = "auto", example = "auto")
@@ -87,7 +92,7 @@ public record AgentTurnRequest(
     public AgentTurnRequest(String sessionId, String documentId, Long baseVersion, String message,
                             String provider, String model,
                             ConversationContext conversationContext, EditorSnapshot editorSnapshot) {
-        this(sessionId, documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, null, "auto", null, conversationContext,
                 List.of(), List.of(), List.of(), null, editorSnapshot);
     }
 
@@ -99,7 +104,7 @@ public record AgentTurnRequest(
                             List<String> skillDraftExcludedLiterals,
                             String skillScopeType,
                             EditorSnapshot editorSnapshot) {
-        this(sessionId, documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, null, "auto", null, conversationContext,
                 skillDraftSources, skillDraftUserDirectives, skillDraftExcludedLiterals, skillScopeType,
                 editorSnapshot);
     }

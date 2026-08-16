@@ -109,6 +109,8 @@ def _handle_agent(
             "message": command["message"],
             "provider": command.get("provider"),
             "model": command.get("model"),
+            # AI가 질의로 판정했을 때만 쓰인다. 편집·Skill 갈래는 무시한다.
+            "allow_web_search": command.get("allow_web_search"),
             "skill_mode": command.get("skill_mode", "auto"),
             "skill_id": command.get("skill_id"),
             "workspace_id": command["workspace_id"],

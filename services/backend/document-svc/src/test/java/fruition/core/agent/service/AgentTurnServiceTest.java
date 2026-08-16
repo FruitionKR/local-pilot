@@ -122,6 +122,33 @@ class AgentTurnServiceTest {
     }
 
     @Test
+    void turn_carriesWebSearchFlagIntoCommand() {
+        // 질의 엔드포인트가 받던 옵션이다. 한 입력창으로 합치면 이 경로로만 들어오므로 끊기면 안 된다.
+        var request = new AgentTurnRequest("session_1", null, null, "최신 소식 알려줘", "openai", "gpt-5-nano",
+                true, "auto", null, null, java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        assertThat(command.getValue().allowWebSearch()).isTrue();
+    }
+
+    @Test
+    void turn_omitsWebSearchFlagWhenNotRequested() {
+        var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        assertThat(command.getValue().allowWebSearch()).isNull();
+    }
+
+    @Test
     void turn_savesPendingChatPairAndCarriesMessageContextInCommand() {
         // 결과가 왔을 때 어느 말풍선을 채울지 알아야 하므로 ID를 command에 실어 되받는다.
         var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
