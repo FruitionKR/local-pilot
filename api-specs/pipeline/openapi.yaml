@@ -887,14 +887,20 @@ components:
     MarkdownAgentRunStatusResponse:
       properties:
         apply_operation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Apply Operation Id
-          type: string
         base_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
           title: Base Version
-          type: integer
         document_id:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Document Id
-          type: string
         error_code:
           anyOf:
           - type: string
@@ -914,9 +920,6 @@ components:
           type: string
       required:
       - id
-      - document_id
-      - base_version
-      - apply_operation_id
       - status
       - result
       - error_code
