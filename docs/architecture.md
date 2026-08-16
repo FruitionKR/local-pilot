@@ -98,7 +98,7 @@ ingest Kafka key는 `document_id`라 같은 문서의 순서는 유지하면서 
 
 - 매니페스트: `k8s/base` + `k8s/overlays/aws` (ingress·external-secrets·KEDA)
 - IaC: `infra/terraform` (EKS·RDS·ElastiCache·S3·ECR·OIDC·Secrets·budgets) — apply는 AWS 계정 준비 후
-- 실제 배포 단위 검증은 `docker-compose.dev.yml` + `docker-compose.pipeline.yml` + `docker-compose.converter.yml` + `docker-compose.deploy.yml`을 함께 구성한다. document-svc가 `core_db` Flyway를 먼저 적용한 뒤 access-svc와 pipeline API/worker를 기동하며, AI 저장소 maintenance cutover는 [demo-script.md](demo-script.md) 절차를 따른다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
+- 실제 배포 단위 검증은 `compose.infra.yml` + `compose.ai.yml` + `compose.converter.yml` + `compose.containerized.yml`을 함께 구성한다. document-svc가 `core_db` Flyway를 먼저 적용한 뒤 access-svc와 pipeline API/worker를 기동하며, AI 저장소 maintenance cutover는 [script.md](script.md) 절차를 따른다. `JWT_SECRET`·`INTERNAL_CALLBACK_TOKEN`은 두 앱 동일 값 필수.
 - ALB 경로 규칙 = next.config rewrite 동일 (§1 라우팅)
 
 ## 8. 남은 결합 지점 (트리거 대기 — 분할 미비 아님)

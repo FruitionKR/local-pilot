@@ -84,9 +84,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 8. 문서 관리
 
-**Keep only `docs/{architecture,api,data-model,demo-script}.md` and `docs/adr/` as current docs. Archive everything else to `docs/backlog/`. Do not create dated issue or changelog docs.**
+**Keep only `docs/README.md`, `docs/{architecture,api,data-model,script}.md`, and `docs/adr/` as current docs. Archive everything else to `docs/backlog/`. Do not create dated issue or changelog docs.**
 
-- 현행 문서는 4개만 유지한다: `docs/architecture.md`(서비스 경계·통신·인가·배포), `docs/api.md`(API 계약 요약), `docs/data-model.md`(저장소·테이블 소유권), `docs/demo-script.md`(구동·데모 절차).
+- 현행 문서는 인덱스와 4개 본문만 유지한다: `docs/README.md`(문서 안내), `docs/architecture.md`(서비스 경계·통신·인가·배포), `docs/api.md`(API 계약 요약), `docs/data-model.md`(저장소·테이블 소유권), `docs/script.md`(구동 스크립트·데모 절차).
 - 문서화할 만큼 중요한 아키텍처 결정은 `docs/adr/NNNN-<kebab-제목>.md`로 기록한다. 형식: 맥락 → 결정 → 대안과 기각 사유 → 결과.
 - 코드 변경으로 현행 문서 내용이 실제와 달라지면, 해당 문서를 같은 커밋에서 갱신한다.
 - 유효하지 않게 됐거나 역사 기록용이 된 문서는 `docs/backlog/`로 이관하고 `docs/backlog/README.md` 목록을 갱신한다.

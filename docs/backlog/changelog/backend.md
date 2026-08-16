@@ -2486,7 +2486,7 @@ pipeline 요청 실패, 장시간 무응답 상태를 구분할 방법이 없어
 - `query/exception/QueryRunNotFoundException` + `GlobalExceptionHandler` 404 핸들러 추가
 - `QueryService.query()`, `PipelineQueryRequester.query()` — `requestId`/`logCallbackUrl` overload 추가. 기존 메서드는 새 overload에 위임만 하므로 **기존 `POST /api/query` 동기 경로는 요청/응답/저장 로직 100% 동일하게 유지**
 - `application.properties`/`infra/.env.example` — `app.callback.base-url`/`CALLBACK_BASE_URL` 추가. backend가 docker-compose 서비스가 아니라 호스트에서 직접 실행되는 구조라 기본값을 `http://host.docker.internal:8080`으로 설정
-- `infra/docker-compose.pipeline.yml` — `pipeline-api`에 `extra_hosts: host.docker.internal:host-gateway` 추가 (Docker Desktop 외 환경 호환)
+- `infra/compose.ai.yml` — `pipeline-api`에 `extra_hosts: host.docker.internal:host-gateway` 추가 (Docker Desktop 외 환경 호환)
 - `query/config/QueryAsyncConfig` — `Clock`, 전용 `queryRunExecutor`(`ThreadPoolTaskExecutor`) bean 추가, `BackendApplication`에 `@EnableScheduling` 추가
 - `docs/spec/backend-query-events-api.md`, `docs/backlog/issue-2026-06-20.md` 추가
 

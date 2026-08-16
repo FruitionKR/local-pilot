@@ -189,7 +189,7 @@
 - 변경 대상:
   - 신규 llmPipeline worker entrypoint
   - agent_jobs repository
-  - infra/docker-compose.pipeline.yml
+  - infra/compose.ai.yml
 - 작업:
   - planning, execution, verification job
   - PostgreSQL lease와 heartbeat
@@ -297,7 +297,7 @@
 
 - 관련 요구사항: REQ-007, REQ-008, REQ-009
 - 변경 대상:
-  - infra/docker-compose.pipeline.yml
+  - infra/compose.ai.yml
   - 환경변수 예시
   - AgentRun 정리 job
   - 운영 로그

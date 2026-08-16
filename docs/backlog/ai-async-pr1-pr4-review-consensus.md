@@ -105,7 +105,7 @@
 
 #### 13. Cutover rollback에서 두 runtime role의 권한을 복구한다
 
-- 근거: `wiki_db_cutover.py:196,220`, `docs/demo-script.md:132`
+- 근거: `wiki_db_cutover.py:196,220`, `docs/script.md`
 - 문제: write lock은 `core_runtime`과 `ai_runtime` 모두에서 DML을 회수하지만 rollback은 `ai_runtime`만 복구한다. 구버전 Spring으로 되돌리면 Wiki write가 권한 오류로 실패한다.
 - 합의: rollback이 두 role의 cutover 이전 table·sequence 권한을 명시적으로 복구하고 두 role 모두 실제 write 검증을 수행한다.
 - 제외: 범용 ACL snapshot framework는 만들지 않는다.

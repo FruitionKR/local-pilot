@@ -2,8 +2,8 @@
 
 이 디렉터리는 현재 구현 기준과 다르거나, 구현 전 설계 단계에서 작성된 이전 자료, 그리고 운영이 끝난 날짜별 이슈·changelog를 보관한다.
 
-현행 기준 문서는 `docs/` 최상위 4개와 ADR이다:
-`architecture.md` · `api.md` · `data-model.md` · `demo-script.md` · `adr/`
+현행 기준 문서는 `docs/README.md`, 최상위 본문 4개와 ADR이다:
+`README.md` · `architecture.md` · `api.md` · `data-model.md` · `script.md` · `adr/`
 
 아래 목록의 `docs/spec/…`, `docs/issue/…`, `docs/changelog/…`, `docs/msa/…` 경로는 2026-08-07 이관으로 전부 이 디렉터리 내부(`spec/`, `issue/`, `changelog/`, `msa/`) 경로로 읽는다.
 
@@ -27,7 +27,7 @@
 - `design/`, `evaluation/`, `llm-wiki/` — 설계 초안·LLM 평가 리포트·파이프라인 흐름 문서
 - `Fruition_AWS_MSA_Architecture.md` — MSA 전환 목표 문서 (달성분은 `docs/architecture.md`에 반영)
 - `Fruition_MVP_Architecture.md`, `Fruition_MVP_Erd.md` (→ `docs/data-model.md`로 압축), `Fruition_MVP_API_Contract.md`(최신판, 동명 구판 덮어씀), `Fruition_User_Story.md`, `fruition_역할별_날짜형_마일스톤.md 19-24-05-163.md`
-- `local-runbook.md` (→ `docs/demo-script.md`로 압축), `pdf-to-markdown-guide.md`, `python_convention.md`, `backend-llmpipeline-integration.md`(최신판 덮어씀), `development.md`(최신판 덮어씀)
+- `local-runbook.md` (→ `docs/script.md`로 압축), `pdf-to-markdown-guide.md`, `python_convention.md`, `backend-llmpipeline-integration.md`(최신판 덮어씀), `development.md`(최신판 덮어씀)
 - `skills/claude/sdd-interviewer/`, `skills/codex/sdd-interviewer/` — `docs/spec/sdd` 아래에 SDD를 작성하던 스킬. spec 이관과 함께 운영 종료 (`.claude/skills/`·`.codex/skills/`에서 이동)
 
 ## 보관 문서 (2026-08-07 이전 이관분)
