@@ -5,6 +5,7 @@
 - 전체 operation 수: 138
 - 인증 기본값: 사용자 API는 Bearer access token, 내부 API는 서비스 토큰을 사용한다.
 - 공통 오류 형식은 서비스에 따라 `ErrorResponse` 또는 FastAPI validation 응답을 사용한다.
+- AI에게 넘기는 대화 맥락은 서버가 세션에서 읽어 조립한다. 클라이언트는 어떤 문답을 쓸지만 `selected_pair_ids`로 고르고, 비우면 세션의 최근 완결 문답을 쓴다. 이 세션에 속하지 않은 ID는 무시한다.
 - Java 서비스(access-svc·document-svc)는 개별 매핑이 없는 예외도 `ErrorResponse`로 응답한다. Spring이 상태 코드를 담아 던진 예외(없는 경로의 `404` 등)는 그 상태를 유지하며 `REQUEST_FAILED`, 그 밖의 예상치 못한 예외는 `500 INTERNAL_ERROR`를 쓴다.
 - 각 API는 동일한 10개 항목을 유지한다. 해당 사항이 없더라도 항목을 생략하지 않는다.
 

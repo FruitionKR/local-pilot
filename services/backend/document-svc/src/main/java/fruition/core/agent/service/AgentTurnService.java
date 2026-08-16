@@ -11,6 +11,7 @@ import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.agent.repository.PipelineAgentRunStatusRequester;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.chat.service.ChatConversationReader;
 import fruition.core.chat.service.ChatSessionService;
 import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.document.repository.AiCommandOutboxWriter;
@@ -47,6 +48,7 @@ public class AgentTurnService {
     private final AgentApplyOperationStore applyOperationStore;
     private final AiModelCatalog aiModelCatalog;
     private final ChatSessionService chatSessionService;
+    private final ChatConversationReader chatConversationReader;
     private final ChatTurnRecorder chatTurnRecorder;
     private final String commandTopic;
 
@@ -59,6 +61,7 @@ public class AgentTurnService {
                             AgentApplyOperationStore applyOperationStore,
                             AiModelCatalog aiModelCatalog,
                             ChatSessionService chatSessionService,
+                            ChatConversationReader chatConversationReader,
                             ChatTurnRecorder chatTurnRecorder,
                             @Value("${app.agent.command-topic}") String commandTopic) {
         this.documentService = documentService;
@@ -70,6 +73,7 @@ public class AgentTurnService {
         this.applyOperationStore = applyOperationStore;
         this.aiModelCatalog = aiModelCatalog;
         this.chatSessionService = chatSessionService;
+        this.chatConversationReader = chatConversationReader;
         this.chatTurnRecorder = chatTurnRecorder;
         this.commandTopic = commandTopic;
     }
@@ -123,7 +127,8 @@ public class AgentTurnService {
                         request.baseVersion(), applyOperationId, request.message(),
                         selectedModel.provider(), selectedModel.model(), request.allowWebSearch(),
                         request.skillMode(), request.skillId(),
-                        CommandConversationContext.from(request.conversationContext()),
+                        CommandConversationContext.from(request.conversationContext(),
+                                chatConversationReader.read(request.sessionId(), selectedPairIds(request))),
                         skillDraftSources,
                         request.skillDraftUserDirectives(), request.skillDraftExcludedLiterals(),
                         request.skillScopeType(),
@@ -137,6 +142,13 @@ public class AgentTurnService {
                 null,
                 null
         );
+    }
+
+    private static List<String> selectedPairIds(AgentTurnRequest request) {
+        if (request.conversationContext() == null || request.conversationContext().selectedPairIds() == null) {
+            return List.of();
+        }
+        return request.conversationContext().selectedPairIds();
     }
 
     public AgentTurnResponse get(String workspaceId, String userId, String runId) {
@@ -313,15 +325,24 @@ public class AgentTurnService {
 
     record CommandConversationContext(
             @com.fasterxml.jackson.annotation.JsonProperty("recent_conversation_summary") String recentConversationSummary,
+            @com.fasterxml.jackson.annotation.JsonProperty("recent_messages") List<CommandConversationMessage> recentMessages,
             @com.fasterxml.jackson.annotation.JsonProperty("reference_context") java.util.Map<String, Object> referenceContext,
             @com.fasterxml.jackson.annotation.JsonProperty("pending_skill_proposal") CommandPendingSkillProposal pendingSkillProposal
     ) {
-        static CommandConversationContext from(AgentTurnRequest.ConversationContext context) {
-            return context == null ? null
-                    : new CommandConversationContext(context.recentConversationSummary(), context.referenceContext(),
-                    CommandPendingSkillProposal.from(context.pendingSkillProposal()));
+        /** 대화 내용은 서버가 읽은 것을 쓰고, 참조·Skill 제안은 클라이언트 상태를 그대로 옮긴다. */
+        static CommandConversationContext from(AgentTurnRequest.ConversationContext context,
+                                               ChatConversationReader.Conversation conversation) {
+            return new CommandConversationContext(
+                    conversation.summary(),
+                    conversation.recentMessages().stream()
+                            .map(message -> new CommandConversationMessage(message.role(), message.content()))
+                            .toList(),
+                    context == null ? null : context.referenceContext(),
+                    context == null ? null : CommandPendingSkillProposal.from(context.pendingSkillProposal()));
         }
     }
+
+    record CommandConversationMessage(String role, String content) {}
 
     record CommandPendingSkillProposal(
             @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,

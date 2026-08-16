@@ -138,10 +138,12 @@ public record AgentTurnRequest(
         skillDraftExcludedLiterals = skillDraftExcludedLiterals == null ? List.of() : List.copyOf(skillDraftExcludedLiterals);
     }
 
-    @Schema(description = "이전 대화 맥락")
+    @Schema(description = "이전 대화 맥락. 대화 내용 자체는 서버가 세션에서 읽어 조립한다.")
     public record ConversationContext(
-            @Schema(description = "최근 대화 요약")
-            String recentConversationSummary,
+            @JsonProperty("selected_pair_ids")
+            @Schema(description = "맥락으로 쓸 문답(pair) ID 목록. 비우면 세션의 최근 완결 문답을 쓴다. "
+                    + "이 세션에 속하지 않은 ID는 무시한다.")
+            List<String> selectedPairIds,
 
             @Schema(description = "참조 문맥. 키·값 형태의 자유 구조다.")
             Map<String, Object> referenceContext,

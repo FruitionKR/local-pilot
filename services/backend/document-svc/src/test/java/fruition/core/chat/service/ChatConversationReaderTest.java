@@ -1,0 +1,103 @@
+package fruition.core.chat.service;
+
+import fruition.core.chat.domain.ChatMessage;
+import fruition.core.chat.domain.ChatSession;
+import fruition.core.chat.repository.ChatMessageRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class ChatConversationReaderTest {
+
+    private final ChatMessageRepository repository = mock(ChatMessageRepository.class);
+    private final ChatConversationReader reader = new ChatConversationReader(repository);
+    private final ChatSession session = mock(ChatSession.class);
+
+    private ChatMessage message(String pairId, String role, String content, String status, int secondsOffset) {
+        return new ChatMessage(role + "_" + pairId, session, pairId, role, content, status,
+                Instant.parse("2026-08-16T00:00:00Z").plusSeconds(secondsOffset), null);
+    }
+
+    private void given(ChatMessage... messages) {
+        when(repository.findAllBySession_IdOrderByCreatedAtAsc(anyString())).thenReturn(List.of(messages));
+    }
+
+    @Test
+    @DisplayName("선택이 비면 세션의 최근 완결 문답을 쓴다")
+    void emptySelectionUsesRecentCompletedPairs() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "첫 답변", "completed", 1));
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::content)
+                .containsExactly("첫 질문", "첫 답변");
+        assertThat(conversation.summary()).isEqualTo("사용자: 첫 질문\n어시스턴트: 첫 답변");
+    }
+
+    @Test
+    @DisplayName("선택한 문답만 담는다")
+    void selectionNarrowsToChosenPairs() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "첫 답변", "completed", 1),
+                message("p2", "user", "둘째 질문", "completed", 2),
+                message("p2", "assistant", "둘째 답변", "completed", 3));
+
+        var conversation = reader.read("session_1", List.of("p2"));
+
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::content)
+                .containsExactly("둘째 질문", "둘째 답변");
+    }
+
+    /** ID를 받는 순간 생기는 위험이다. 세션에서 읽은 목록과 교집합만 남겨 구조적으로 막는다. */
+    @Test
+    @DisplayName("이 세션에 없는 pair ID는 무시한다")
+    void foreignPairIdIsIgnored() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "첫 답변", "completed", 1));
+
+        var conversation = reader.read("session_1", List.of("남의_pair"));
+
+        assertThat(conversation.recentMessages()).isEmpty();
+        assertThat(conversation.summary()).isNull();
+    }
+
+    @Test
+    @DisplayName("완결되지 않은 문답은 맥락에서 뺀다")
+    void pendingPairIsExcluded() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "", "pending", 1),
+                message("p2", "user", "둘째 질문", "completed", 2),
+                message("p2", "assistant", "둘째 답변", "completed", 3));
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::content)
+                .containsExactly("둘째 질문", "둘째 답변");
+    }
+
+    @Test
+    @DisplayName("구조화 메시지는 pipeline 상한인 6개까지만 보낸다")
+    void recentMessagesAreCappedAtSix() {
+        ChatMessage[] messages = new ChatMessage[8];
+        for (int i = 0; i < 4; i++) {
+            messages[i * 2] = message("p" + i, "user", "질문" + i, "completed", i * 2);
+            messages[i * 2 + 1] = message("p" + i, "assistant", "답변" + i, "completed", i * 2 + 1);
+        }
+        given(messages);
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.recentMessages()).hasSize(6);
+        assertThat(conversation.recentMessages().get(0).content()).isEqualTo("질문1");
+        // 요약은 잘리지 않은 전체 대화를 담는다. 상한은 글자 수로만 건다.
+        assertThat(conversation.summary()).contains("질문0");
+    }
+}

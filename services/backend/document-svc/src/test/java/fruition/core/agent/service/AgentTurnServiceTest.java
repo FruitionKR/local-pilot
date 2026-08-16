@@ -52,6 +52,7 @@ class AgentTurnServiceTest {
     @Mock AiCommandOutboxWriter outboxWriter;
     @Mock AgentApplyOperationStore applyOperationStore;
     @Mock fruition.core.chat.service.ChatSessionService chatSessionService;
+    @Mock fruition.core.chat.service.ChatConversationReader chatConversationReader;
     @Mock fruition.core.chat.service.ChatTurnRecorder chatTurnRecorder;
     private final AiModelCatalog aiModelCatalog = new AiModelCatalog("openai,gemini,claude");
 
@@ -59,16 +60,21 @@ class AgentTurnServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 대화 조립은 ChatConversationReaderTest 가 검증한다. 여기서는 빈 맥락으로 둔다.
+        org.mockito.Mockito.lenient()
+                .when(chatConversationReader.read(anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
+                        java.util.List.of(), null));
         service = new AgentTurnService(documentService, editLockService, workspaceAccessGuard, runRepository,
                 statusRequester, outboxWriter, applyOperationStore, aiModelCatalog,
-                chatSessionService, chatTurnRecorder, "ai.agent.command");
+                chatSessionService, chatConversationReader, chatTurnRecorder, "ai.agent.command");
     }
 
     @Test
     void turn_validRequestQueuesDurableRun() throws Exception {
         AgentTurnRequest request = request("whole_document", 1, 2,
                 new AgentTurnRequest.ConversationContext(
-                        "선택한 대화 요약",
+                        java.util.List.of("pair_1"),
                         Map.of("source", "selected"),
                         new AgentTurnRequest.ConversationContext.PendingSkillProposal(
                                 "personal", "meeting-notes", "회의록을 작성합니다.", "# 정확한 원문 지침")));
@@ -119,6 +125,30 @@ class AgentTurnServiceTest {
         verify(runRepository).create(anyString(), org.mockito.ArgumentMatchers.eq("ws_1"),
                 org.mockito.ArgumentMatchers.eq("user_1"), org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull());
+    }
+
+    @Test
+    void turn_buildsConversationContextOnServerFromSelectedPairs() {
+        // 대화 내용은 클라이언트가 만든 문자열이 아니라 서버가 세션에서 읽은 값이어야 한다.
+        org.mockito.Mockito.when(chatConversationReader.read("session_1", java.util.List.of("pair_9")))
+                .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
+                        java.util.List.of(new fruition.core.chat.service.ChatConversationReader.Message(
+                                "user", "이전 질문")),
+                        "사용자: 이전 질문"));
+        var request = new AgentTurnRequest("session_1", null, null, "이어서 해줘", "openai", "gpt-5-nano",
+                null, "auto", null,
+                new AgentTurnRequest.ConversationContext(java.util.List.of("pair_9"), null, null),
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        var context = command.getValue().conversationContext();
+        assertThat(context.recentConversationSummary()).isEqualTo("사용자: 이전 질문");
+        assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::content)
+                .containsExactly("이전 질문");
     }
 
     @Test
@@ -202,7 +232,7 @@ class AgentTurnServiceTest {
     void turn_explicitSkillSelectionPropagatesToCommandJson() throws Exception {
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_mode":"explicit","skill_id":"skill-1",
                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
@@ -228,7 +258,7 @@ class AgentTurnServiceTest {
     void turn_offSkillSelectionPropagatesNullSkillId() throws Exception {
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_mode":"off",
                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
@@ -252,7 +282,7 @@ class AgentTurnServiceTest {
         String sourceRunId = "agent_0123456789abcdef0123456789abcdef";
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"이 작업을 Skill로 만들어줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"이 작업을 Skill로 만들어줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_draft_sources":[{"run_id":"%s","status":"completed",
                     "request_summary":"조작된 요청","plan_summary":"조작된 계획",
