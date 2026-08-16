@@ -2,9 +2,12 @@ package fruition.core.chat.service;
 
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.repository.ChatMessageRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +29,11 @@ public class ChatConversationReader {
 
     /** pipeline이 받는 상한과 같다. 더 보내도 잘린다. */
     private static final int MAX_RECENT_MESSAGES = 6;
+    /**
+     * 최근 구간에서 읽어 올 메시지 수. 실제로 쓰는 건 6개지만, 완결되지 않았거나 내용이 빈 문답이
+     * 섞여 있어 여유를 둔다. 세션 전체를 훑지 않게 하려는 상한이라 넉넉해도 된다.
+     */
+    private static final int RECENT_MESSAGE_WINDOW = 40;
     private static final int MAX_MESSAGE_CONTENT_LENGTH = 2000;
 
     private final ChatMessageRepository chatMessageRepository;
@@ -42,16 +50,11 @@ public class ChatConversationReader {
      */
     @Transactional(readOnly = true)
     public Conversation read(String sessionId, List<String> selectedPairIds) {
-        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
-        Set<String> usablePairIds = completePairIds(messages);
-        if (selectedPairIds != null && !selectedPairIds.isEmpty()) {
-            // 세션에서 읽은 쌍과 교집합만 남긴다. 다른 세션 ID는 여기서 사라진다.
-            usablePairIds = usablePairIds.stream()
-                    .filter(selectedPairIds::contains)
-                    .collect(Collectors.toSet());
-        }
-
-        Set<String> included = usablePairIds;
+        // 고른 문답이 있으면 그것만, 없으면 최근 구간만 읽는다. 어느 쪽도 세션 전체를 훑지 않는다.
+        List<ChatMessage> messages = selectedPairIds == null || selectedPairIds.isEmpty()
+                ? recentMessages(sessionId)
+                : chatMessageRepository.findByPairIdsInTurnOrder(sessionId, selectedPairIds);
+        Set<String> included = completePairIds(messages);
         // 순서는 리포지터리가 보장한다. 걸러내도 순서는 유지된다.
         List<ChatMessage> ordered = messages.stream()
                 .filter(message -> included.contains(message.getPairId()))
@@ -62,6 +65,15 @@ public class ChatConversationReader {
                 recent.stream().map(message -> new Message(message.getRole(), truncate(message.getContent()))).toList(),
                 // 요약은 서버가 만들지 않는다. pipeline이 갱신해 세션에 쌓아 둔 것을 그대로 넘긴다.
                 chatSessionService.contextSummary(sessionId));
+    }
+
+    /** 최근 구간을 대화 순서로 되돌려 읽는다. 상한에 걸려 반쪽만 들어온 문답은 뒤에서 걸러진다. */
+    private List<ChatMessage> recentMessages(String sessionId) {
+        List<ChatMessage> reversed = chatMessageRepository.findRecentBySessionId(
+                sessionId, PageRequest.of(0, RECENT_MESSAGE_WINDOW));
+        List<ChatMessage> ordered = new ArrayList<>(reversed);
+        Collections.reverse(ordered);
+        return ordered;
     }
 
     /**

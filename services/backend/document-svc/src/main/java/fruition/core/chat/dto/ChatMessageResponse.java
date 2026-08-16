@@ -63,5 +63,20 @@ public record ChatMessageResponse(
         @JsonProperty("web_search_enabled")
         @Schema(description = "이 질의에 웹 검색이 허용됐는지. 실행 당시 값이 snapshot으로 남는다.",
                 example = "false")
-        Boolean webSearchEnabled
+        Boolean webSearchEnabled,
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @JsonProperty("run_id")
+        @Schema(description = "Agent turn이 만든 메시지의 run ID. 승인 상태와 미리보기 본문을 이 run에서 읽는다. "
+                + "질의 메시지는 키가 빠진다.",
+                example = "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
+        String runId,
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @Schema(description = "AI가 고른 갈래. 화면이 이 값으로 편집 미리보기와 일반 답변을 나눈다. "
+                + "질의 메시지는 키가 빠진다.",
+                allowableValues = {"chat_answer", "markdown_edit", "markdown_create", "clarify", "reject",
+                        "folder_organize", "workspace_workflow", "skill_authoring", "skill_draft_proposal"},
+                example = "markdown_edit")
+        String action
 ) {}

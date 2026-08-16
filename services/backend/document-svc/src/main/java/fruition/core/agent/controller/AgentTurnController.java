@@ -134,8 +134,8 @@ public class AgentTurnController {
             @AuthenticationPrincipal String userId,
             @Parameter(description = "구독할 Agent 실행 ID", required = true)
             @PathVariable("run_id") String runId) {
-        // 남의 run을 구독하지 못하게 조회와 같은 소유권 검사를 먼저 통과시킨다.
-        agentTurnService.get(workspaceId, userId, runId);
+        // 남의 run을 구독하지 못하게 소유권을 먼저 확인한다. 결과 조회와 달리 pipeline을 부르지 않는다.
+        agentTurnService.verifyRunAccess(workspaceId, userId, runId);
         return runEventBroker.subscribe(runId);
     }
 

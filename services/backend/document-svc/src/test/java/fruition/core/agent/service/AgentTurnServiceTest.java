@@ -92,7 +92,7 @@ class AgentTurnServiceTest {
         ArgumentCaptor<AgentTurnService.AgentCommand> command =
                 ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().provider()).isEqualTo("openai");
         assertThat(command.getValue().model()).isEqualTo("gpt-5-nano");
         assertThat(command.getValue().skillMode()).isEqualTo("auto");
@@ -205,16 +205,16 @@ class AgentTurnServiceTest {
     }
 
     @Test
-    void turn_withoutDocumentKeysOutboxByRunInsteadOfDocument() {
+    void turn_withoutDocumentStillKeysOutboxBySession() {
         var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
 
-        var response = service.turn("ws_1", "user_1", request);
+        service.turn("ws_1", "user_1", request);
 
-        // 같은 문서의 순서를 지킬 필요가 없으니 run 단위로 나눈다. key가 null이면 파티션이 무작위가 된다.
+        // 문서 유무와 무관하게 세션이 key다. 한 세션의 턴은 보낸 순서대로 처리돼야 한다.
         ArgumentCaptor<AgentTurnService.AgentCommand> command =
                 ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq(response.requestId()), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().documentId()).isNull();
         assertThat(command.getValue().baseVersion()).isNull();
         assertThat(command.getValue().editorSnapshot()).isNull();
@@ -246,7 +246,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().skillMode()).isEqualTo("explicit");
         assertThat(command.getValue().skillId()).isEqualTo("skill-1");
         assertThat(new ObjectMapper().writeValueAsString(command.getValue()))
@@ -272,7 +272,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().skillMode()).isEqualTo("off");
         assertThat(command.getValue().skillId()).isNull();
     }
@@ -307,7 +307,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         var source = command.getValue().skillDraftSources().getFirst();
         assertThat(source.status()).isEqualTo("completed");
         assertThat(source.requestSummary()).isEqualTo("정식 요청");

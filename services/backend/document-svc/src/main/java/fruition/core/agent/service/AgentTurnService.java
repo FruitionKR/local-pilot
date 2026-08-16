@@ -119,9 +119,9 @@ public class AgentTurnService {
         chatTurnRecorder.createPendingAgentPair(request.sessionId(), messageContext.pairId(),
                 messageContext.userMessageId(), messageContext.assistantMessageId(), request.message(),
                 java.time.Instant.now(), selectedModel.provider(), selectedModel.model(), runId);
-        // 같은 문서의 턴 순서를 유지하려고 documentId를 key로 쓴다. 문서가 없으면 run 단위로 둔다.
-        String messageKey = request.hasDocumentContext() ? request.documentId() : runId;
-        outboxWriter.enqueue(runId, commandTopic, messageKey,
+        // 질의와 같이 sessionId를 key로 쓴다. 두 갈래가 같은 세션에 쌓이고 세션 단위 누적 요약을
+        // 함께 갱신하므로, 한 세션의 턴은 같은 파티션에서 보낸 순서대로 처리돼야 한다.
+        outboxWriter.enqueue(runId, commandTopic, request.sessionId(),
                 new AgentCommand(runId, "agent", workspaceId, userId, request.sessionId(), messageContext,
                         request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
@@ -149,6 +149,19 @@ public class AgentTurnService {
             return List.of();
         }
         return request.conversationContext().selectedPairIds();
+    }
+
+    /**
+     * 이 run을 볼 자격이 있는지만 확인한다. 진행 이벤트 구독은 pipeline 없이도 흘려보낼 수 있으므로
+     * 결과 조회와 달리 외부 호출을 하지 않는다 — pipeline이 잠깐 멈춰도 구독은 열려야 한다.
+     */
+    public void verifyRunAccess(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        if (!RUN_ID_PATTERN.matcher(runId).matches()) {
+            throw new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다.");
+        }
+        runRepository.find(workspaceId, userId, runId)
+                .orElseThrow(() -> new AgentRunNotFoundException(runId));
     }
 
     public AgentTurnResponse get(String workspaceId, String userId, String runId) {

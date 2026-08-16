@@ -4111,6 +4111,20 @@ components:
       type: object
       description: 채팅 메시지 한 건. 질문(user)과 답변(assistant)이 pair_id로 묶인다.
       properties:
+        action:
+          type: string
+          description: AI가 고른 갈래. 화면이 이 값으로 편집 미리보기와 일반 답변을 나눈다. 질의 메시지는 키가 빠진다.
+          enum:
+          - chat_answer
+          - markdown_edit
+          - markdown_create
+          - clarify
+          - reject
+          - folder_organize
+          - workspace_workflow
+          - skill_authoring
+          - skill_draft_proposal
+          example: markdown_edit
         content:
           type: string
           description: 메시지 본문
@@ -4158,6 +4172,10 @@ components:
           - user
           - assistant
           example: assistant
+        run_id:
+          type: string
+          description: Agent turn이 만든 메시지의 run ID. 승인 상태와 미리보기 본문을 이 run에서 읽는다. 질의 메시지는 키가 빠진다.
+          example: agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83
         status:
           type: string
           description: 처리 상태. 비동기 질의는 완료 전 pending 상태로 먼저 나타난다.

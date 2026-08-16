@@ -6,11 +6,18 @@ import fruition.core.chat.repository.ChatMessageRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.data.domain.Pageable;
+
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -26,8 +33,23 @@ class ChatConversationReaderTest {
                 Instant.parse("2026-08-16T00:00:00Z").plusSeconds(secondsOffset), null);
     }
 
+    /**
+     * 리포지터리는 대화 순서로 돌려준다. 최근 구간은 역순 조회라 뒤에서 잘라 뒤집은 결과를,
+     * 선택 조회는 고른 pair만 순서대로 돌려주는 것을 흉내낸다.
+     */
     private void given(ChatMessage... messages) {
-        when(repository.findAllBySessionIdInTurnOrder(anyString())).thenReturn(List.of(messages));
+        List<ChatMessage> ordered = List.of(messages);
+        when(repository.findRecentBySessionId(anyString(), any())).thenAnswer(invocation -> {
+            int limit = invocation.getArgument(1, Pageable.class).getPageSize();
+            List<ChatMessage> recent = ordered.subList(Math.max(0, ordered.size() - limit), ordered.size());
+            List<ChatMessage> reversed = new ArrayList<>(recent);
+            Collections.reverse(reversed);
+            return reversed;
+        });
+        lenient().when(repository.findByPairIdsInTurnOrder(anyString(), any())).thenAnswer(invocation -> {
+            Collection<String> pairIds = invocation.getArgument(1);
+            return ordered.stream().filter(message -> pairIds.contains(message.getPairId())).toList();
+        });
     }
 
     @Test
