@@ -1,6 +1,7 @@
 package fruition.core.authz;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -47,5 +48,13 @@ public class WorkspaceAiModelClient {
             @JsonProperty("ingest_lint") AiModelSelection ingestLint) {}
     public record WorkspaceAiModelRequest(
             @JsonProperty("ingest_lint") AiModelSelection ingestLint) {}
-    public record AiModelSelection(String provider, String model) {}
+    // WorkspaceAiModelSettingsController의 동명 record와 겹치지 않도록 스키마 이름을 분리한다.
+    @Schema(name = "AiModelSelectionResponse", description = "현재 설정된 provider와 model 조합")
+    public record AiModelSelection(
+            @Schema(description = "LLM provider", allowableValues = {"openai", "gemini", "claude"},
+                    example = "openai")
+            String provider,
+
+            @Schema(description = "모델명", example = "gpt-5-nano")
+            String model) {}
 }

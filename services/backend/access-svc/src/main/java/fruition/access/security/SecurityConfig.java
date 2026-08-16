@@ -79,7 +79,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/me", "/api/auth/me/**").authenticated()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // "/swagger-ui/**"는 "/swagger-ui.html"을 매칭하지 않는다 — 진입 URL을 따로 연다.
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // core(문서 서비스)가 호출하는 내부 조회: 컨트롤러에서 X-Internal-Token을 검증한다
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())

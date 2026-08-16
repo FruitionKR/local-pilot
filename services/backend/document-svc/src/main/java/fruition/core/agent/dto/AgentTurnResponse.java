@@ -2,6 +2,7 @@ package fruition.core.agent.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 이 엔드포인트는 나머지 필드를 camelCase로 주고받는다.
@@ -12,12 +13,29 @@ import com.fasterxml.jackson.databind.JsonNode;
  * @param applyOperationId 이 편집안을 적용할 때 저장 요청에 실어야 하는 표.
  *                         Backend가 발급한 값이라야 AI 작업 로그가 남는다.
  */
+@Schema(description = "Markdown Agent 편집 턴 결과. apply_operation_id를 뺀 나머지 필드는 camelCase다.")
 public record AgentTurnResponse(
+        @Schema(description = "대상 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
         String documentId,
+
+        @Schema(description = "이 턴이 기준으로 삼은 문서 버전", example = "3")
         long baseVersion,
+
+        @Schema(description = "이 턴의 run ID. 상태 조회에 쓴다.",
+                example = "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
         String requestId,
-        @JsonProperty("apply_operation_id") String applyOperationId,
+
+        @JsonProperty("apply_operation_id")
+        @Schema(description = "편집안을 적용할 때 저장 요청에 apply_operation_id로 실어야 하는 값. "
+                + "서버가 발급한 값이라야 AI 작업 로그가 남는다.")
+        String applyOperationId,
+
+        @Schema(description = "턴 처리 상태", example = "completed")
         String status,
+
+        @Schema(description = "완료된 턴의 편집 제안 결과")
         JsonNode result,
+
+        @Schema(description = "실패 사유. 성공이면 null이다.")
         String error
 ) {}
