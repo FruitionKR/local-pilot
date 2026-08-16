@@ -11,6 +11,6 @@ public record LoginRequest(
 
         @NotBlank(message = "password는 필수입니다.")
         @Schema(description = "비밀번호. 계정 없음·비밀번호 불일치·OAuth 전용 계정이 모두 같은 401로 응답된다.",
-                example = "stringst", defaultValue = "stringst")
+                example = "password1234", defaultValue = "password1234")
         String password
 ) {}
