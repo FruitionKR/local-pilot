@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
 import fruition.core.chat.domain.ChatMessageRelatedPage;
@@ -47,7 +48,7 @@ class QueryServiceTest {
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
-    @Mock QueryMessageRecorder queryMessageRecorder;
+    @Mock ChatTurnRecorder chatTurnRecorder;
 
     QueryService queryService;
 
@@ -55,7 +56,7 @@ class QueryServiceTest {
     void setUp() {
         queryService = new QueryService(
                 pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository,
-                chatSessionRepository, queryMessageRecorder);
+                chatSessionRepository, chatTurnRecorder);
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(chatMessageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
@@ -91,7 +92,7 @@ class QueryServiceTest {
         assertThat(result.relatedPages().get(0).depth()).isEqualTo(0);
         assertThat(result.relatedPages().get(1).role()).isEqualTo("focus_concept");
 
-        verify(queryMessageRecorder).createPendingPair(
+        verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
                 eq("openai"), eq("gpt-5-nano"));
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
@@ -195,10 +196,10 @@ class QueryServiceTest {
         assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?"))
                 .isInstanceOf(PipelineQueryException.class);
 
-        verify(queryMessageRecorder).createPendingPair(
+        verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
                 eq("openai"), eq("gpt-5-nano"));
-        verify(queryMessageRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
+        verify(chatTurnRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
     }
 
     @Test
@@ -210,7 +211,7 @@ class QueryServiceTest {
         assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "질문"))
                 .isInstanceOf(IllegalStateException.class);
 
-        verify(queryMessageRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
+        verify(chatTurnRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
     }
 
     @Test
@@ -251,9 +252,9 @@ class QueryServiceTest {
         assertThat(history.getValue()).extracting(PipelineQueryRequester.RecentMessage::content)
                 .containsExactly("질문2", "답변2", "질문3", "답변3", "질문4", "답변4");
 
-        InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, queryMessageRecorder);
+        InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, chatTurnRecorder);
         order.verify(chatMessageRepository).findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID);
-        order.verify(queryMessageRecorder).createPendingPair(
+        order.verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("새 질문"), any(),
                 eq("openai"), eq("gpt-5-nano"));
     }

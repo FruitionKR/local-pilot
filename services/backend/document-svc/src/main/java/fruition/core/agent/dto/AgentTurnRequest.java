@@ -18,6 +18,11 @@ import java.util.Set;
         + "문서를 열지 않은 상태에서도 보낼 수 있으며, 그때는 편집 대신 답변·되물음만 나온다. "
         + "skill_* 필드는 snake_case이고 나머지는 camelCase다.")
 public record AgentTurnRequest(
+        @JsonProperty("session_id") @NotBlank
+        @Schema(description = "이 턴을 남길 채팅 세션 ID. 질의와 Agent 요청이 한 세션에 함께 쌓인다.",
+                example = "session_0ff8564ea24047cd8144d3f48badfe3f")
+        String sessionId,
+
         @Schema(description = "편집 대상 문서 ID. 문서를 열지 않았으면 생략한다. "
                 + "생략하면 baseVersion·editorSnapshot도 함께 생략해야 한다.",
                 example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83", nullable = true)
@@ -79,20 +84,22 @@ public record AgentTurnRequest(
         return documentId != null && !documentId.isBlank();
     }
 
-    public AgentTurnRequest(String documentId, Long baseVersion, String message, String provider, String model,
+    public AgentTurnRequest(String sessionId, String documentId, Long baseVersion, String message,
+                            String provider, String model,
                             ConversationContext conversationContext, EditorSnapshot editorSnapshot) {
-        this(documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
                 List.of(), List.of(), List.of(), null, editorSnapshot);
     }
 
-    public AgentTurnRequest(String documentId, Long baseVersion, String message, String provider, String model,
+    public AgentTurnRequest(String sessionId, String documentId, Long baseVersion, String message,
+                            String provider, String model,
                             ConversationContext conversationContext,
                             List<SkillDraftSourceSelector> skillDraftSources,
                             List<String> skillDraftUserDirectives,
                             List<String> skillDraftExcludedLiterals,
                             String skillScopeType,
                             EditorSnapshot editorSnapshot) {
-        this(documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
                 skillDraftSources, skillDraftUserDirectives, skillDraftExcludedLiterals, skillScopeType,
                 editorSnapshot);
     }

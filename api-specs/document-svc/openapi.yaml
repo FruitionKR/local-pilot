@@ -3811,6 +3811,11 @@ components:
           - gemini
           - claude
           example: openai
+        session_id:
+          type: string
+          description: 이 턴을 남길 채팅 세션 ID. 질의와 Agent 요청이 한 세션에 함께 쌓인다.
+          example: session_0ff8564ea24047cd8144d3f48badfe3f
+          minLength: 1
         skill_draft_excluded_literals:
           type: array
           description: Skill 초안에서 빼야 하는 리터럴 목록
@@ -3848,6 +3853,7 @@ components:
           description: Skill을 적용할 범위 종류
       required:
       - message
+      - session_id
     AgentTurnResponse:
       type: object
       description: Markdown Agent 편집 턴 결과. apply_operation_id를 뺀 나머지 필드는 camelCase다.

@@ -1,6 +1,9 @@
 package fruition.core.aitask.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.chat.service.ChatTurnRecorder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.repository.PipelineQueryResponse;
@@ -33,6 +36,9 @@ public class AiTaskResultApplier {
     private static final Set<String> NON_MUTATING_ACTIONS = Set.of("chat_answer", "clarify", "reject");
     private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
 
+    private static final Logger log = LoggerFactory.getLogger(AiTaskResultApplier.class);
+
+    private final ChatTurnRecorder chatTurnRecorder;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final QueryService queryService;
@@ -52,7 +58,9 @@ public class AiTaskResultApplier {
                                OperationLogRepository operationLogRepository,
                                RestoreApplier restoreApplier,
                                RestoreOperationLifecycle restoreLifecycle,
-                               DocumentService documentService) {
+                               DocumentService documentService,
+                               ChatTurnRecorder chatTurnRecorder) {
+        this.chatTurnRecorder = chatTurnRecorder;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.queryService = queryService;
@@ -197,6 +205,42 @@ public class AiTaskResultApplier {
         if (updated != 1) {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
+        recordAgentChatMessage(event);
+    }
+
+    /**
+     * Agent 결과를 채팅 말풍선에 채운다. 세션 없이 만들어진 예전 run은 message_context가 없어 건너뛴다.
+     * 채팅 기록 실패가 적용 표를 되돌리면 안 되므로 여기서 삼킨다 — 이 시점에 projection은 이미 확정됐다.
+     */
+    private void recordAgentChatMessage(JsonNode event) {
+        JsonNode context = event.path("request").path("message_context");
+        String assistantMessageId = textOrNull(context, "assistant_message_id");
+        if (assistantMessageId == null) {
+            return;
+        }
+        try {
+            if ("succeeded".equals(text(event, "status"))) {
+                JsonNode payload = event.path("payload");
+                chatTurnRecorder.completeAgentTurn(assistantMessageId,
+                        payload.path("action").asText(null), agentMessageContent(payload));
+            } else {
+                chatTurnRecorder.markFailed(assistantMessageId,
+                        event.path("error").asText("Agent 처리 중 오류가 발생했습니다."));
+            }
+        } catch (RuntimeException e) {
+            log.warn("[Agent 채팅 기록 실패] runId={} assistantMessageId={} errorType={}",
+                    text(event, "run_id"), assistantMessageId, e.getClass().getSimpleName());
+        }
+    }
+
+    /** 말풍선에 보일 본문. chat_answer는 답변, 나머지는 AI가 붙인 설명이다. */
+    private static String agentMessageContent(JsonNode payload) {
+        String answer = payload.path("chat").path("answer").asText(null);
+        if (answer != null && !answer.isBlank()) {
+            return answer;
+        }
+        String message = payload.path("message").asText(null);
+        return message == null ? "" : message;
     }
 
     public static String expectedMarkdown(JsonNode event) {

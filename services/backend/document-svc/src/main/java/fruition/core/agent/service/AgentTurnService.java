@@ -11,6 +11,8 @@ import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.agent.repository.PipelineAgentRunStatusRequester;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.chat.service.ChatSessionService;
+import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.dto.DocumentDetailResponse;
 import fruition.core.document.exception.DocumentVersionConflictException;
@@ -44,6 +46,8 @@ public class AgentTurnService {
     private final AiCommandOutboxWriter outboxWriter;
     private final AgentApplyOperationStore applyOperationStore;
     private final AiModelCatalog aiModelCatalog;
+    private final ChatSessionService chatSessionService;
+    private final ChatTurnRecorder chatTurnRecorder;
     private final String commandTopic;
 
     public AgentTurnService(DocumentService documentService,
@@ -54,6 +58,8 @@ public class AgentTurnService {
                             AiCommandOutboxWriter outboxWriter,
                             AgentApplyOperationStore applyOperationStore,
                             AiModelCatalog aiModelCatalog,
+                            ChatSessionService chatSessionService,
+                            ChatTurnRecorder chatTurnRecorder,
                             @Value("${app.agent.command-topic}") String commandTopic) {
         this.documentService = documentService;
         this.editLockService = editLockService;
@@ -63,11 +69,14 @@ public class AgentTurnService {
         this.outboxWriter = outboxWriter;
         this.applyOperationStore = applyOperationStore;
         this.aiModelCatalog = aiModelCatalog;
+        this.chatSessionService = chatSessionService;
+        this.chatTurnRecorder = chatTurnRecorder;
         this.commandTopic = commandTopic;
     }
 
     @Transactional
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
+        chatSessionService.verifyOwnedSession(workspaceId, userId, request.sessionId());
         // 문서를 열지 않은 턴은 적용할 대상이 없어 편집 전제 검사를 하지 않는다.
         // AI는 이 경우 chat_answer·clarify·reject만 낼 수 있다.
         if (request.hasDocumentContext()) {
@@ -97,10 +106,20 @@ public class AgentTurnService {
         String applyOperationId = request.hasDocumentContext() ? applyOperationStore.newOperationId() : null;
         runRepository.create(runId, workspaceId, userId, request.documentId(),
                 request.baseVersion(), applyOperationId);
+        // 질의와 같은 방식으로 말풍선을 먼저 만들고 결과가 오면 채운다. command와 같은 트랜잭션이라
+        // 발행에 실패하면 메시지도 남지 않는다.
+        AgentMessageContext messageContext = new AgentMessageContext(
+                UUID.randomUUID().toString(),
+                "chat_user_" + UUID.randomUUID(),
+                "chat_assistant_" + UUID.randomUUID());
+        chatTurnRecorder.createPendingAgentPair(request.sessionId(), messageContext.pairId(),
+                messageContext.userMessageId(), messageContext.assistantMessageId(), request.message(),
+                java.time.Instant.now(), selectedModel.provider(), selectedModel.model(), runId);
         // 같은 문서의 턴 순서를 유지하려고 documentId를 key로 쓴다. 문서가 없으면 run 단위로 둔다.
         String messageKey = request.hasDocumentContext() ? request.documentId() : runId;
         outboxWriter.enqueue(runId, commandTopic, messageKey,
-                new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
+                new AgentCommand(runId, "agent", workspaceId, userId, request.sessionId(), messageContext,
+                        request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
                         selectedModel.provider(), selectedModel.model(), request.skillMode(), request.skillId(),
                         CommandConversationContext.from(request.conversationContext()),
@@ -246,11 +265,20 @@ public class AgentTurnService {
                 run.plan().summary().trim(), List.copyOf(operations));
     }
 
+    /** 결과가 왔을 때 어느 말풍선을 채울지 알기 위해 command와 함께 실어 되받는다. */
+    record AgentMessageContext(
+            @com.fasterxml.jackson.annotation.JsonProperty("pair_id") String pairId,
+            @com.fasterxml.jackson.annotation.JsonProperty("user_message_id") String userMessageId,
+            @com.fasterxml.jackson.annotation.JsonProperty("assistant_message_id") String assistantMessageId
+    ) {}
+
     record AgentCommand(
             @com.fasterxml.jackson.annotation.JsonProperty("run_id") String runId,
             String kind,
             @com.fasterxml.jackson.annotation.JsonProperty("workspace_id") String workspaceId,
             @com.fasterxml.jackson.annotation.JsonProperty("user_id") String userId,
+            @com.fasterxml.jackson.annotation.JsonProperty("session_id") String sessionId,
+            @com.fasterxml.jackson.annotation.JsonProperty("message_context") AgentMessageContext messageContext,
             @com.fasterxml.jackson.annotation.JsonProperty("document_id") String documentId,
             @com.fasterxml.jackson.annotation.JsonProperty("base_version") Long baseVersion,
             @com.fasterxml.jackson.annotation.JsonProperty("apply_operation_id") String applyOperationId,

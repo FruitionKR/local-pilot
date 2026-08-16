@@ -51,6 +51,7 @@ class AiTaskResultApplierTest {
     @Mock RestoreApplier restoreApplier;
     @Mock RestoreOperationLifecycle restoreLifecycle;
     @Mock DocumentService documentService;
+    @Mock fruition.core.chat.service.ChatTurnRecorder chatTurnRecorder;
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private AiTaskResultApplier applier;
@@ -59,7 +60,7 @@ class AiTaskResultApplierTest {
     void setUp() {
         applier = new AiTaskResultApplier(jdbcTemplate, objectMapper, queryService,
                 operationIngestService, lintOperationStarter, wikiMaintenanceService,
-                operationLogRepository, restoreApplier, restoreLifecycle, documentService);
+                operationLogRepository, restoreApplier, restoreLifecycle, documentService, chatTurnRecorder);
     }
 
     @Test

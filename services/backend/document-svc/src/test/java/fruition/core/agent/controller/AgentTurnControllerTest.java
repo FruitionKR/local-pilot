@@ -87,7 +87,7 @@ class AgentTurnControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "documentId":"doc_1","baseVersion":4,"message":"문서를 점검해줘",
+                                  "session_id":"session_1","documentId":"doc_1","baseVersion":4,"message":"문서를 점검해줘",
                                   "skill_mode":"explicit","skill_id":"skill-1",
                                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
                                 }
@@ -247,7 +247,7 @@ class AgentTurnControllerTest {
     }
 
     private AgentTurnRequest request() {
-        return new AgentTurnRequest(
+        return new AgentTurnRequest("session_1", 
                 "doc_1",
                 4L,
                 "문서를 점검해줘",

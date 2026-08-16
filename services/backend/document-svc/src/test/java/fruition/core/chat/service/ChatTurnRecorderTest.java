@@ -1,4 +1,4 @@
-package fruition.core.query.service;
+package fruition.core.chat.service;
 
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatSession;
@@ -22,16 +22,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class QueryMessageRecorderTest {
+class ChatTurnRecorderTest {
 
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
 
-    private QueryMessageRecorder recorder;
+    private ChatTurnRecorder recorder;
 
     @BeforeEach
     void setUp() {
-        recorder = new QueryMessageRecorder(chatMessageRepository, chatSessionRepository);
+        recorder = new ChatTurnRecorder(chatMessageRepository, chatSessionRepository);
     }
 
     @Test
@@ -76,11 +76,11 @@ class QueryMessageRecorderTest {
 
     @Test
     void methods_joinCommandTransaction() throws NoSuchMethodException {
-        Transactional createTransaction = QueryMessageRecorder.class
+        Transactional createTransaction = ChatTurnRecorder.class
                 .getMethod("createPendingPair", String.class, String.class, String.class, String.class,
                         String.class, Instant.class)
                 .getAnnotation(Transactional.class);
-        Transactional failTransaction = QueryMessageRecorder.class
+        Transactional failTransaction = ChatTurnRecorder.class
                 .getMethod("markFailed", String.class, String.class)
                 .getAnnotation(Transactional.class);
 
