@@ -21,7 +21,11 @@ class QueryPageScorer:
         self._focus_concept_threshold = focus_concept_threshold
 
     def score_pages(self, query_rewrite: QueryRewrite, pages: list[WikiPage], embedding_weight: float) -> dict[str, float]:
-        embedding_query = query_rewrite.original_question
+        embedding_query = (
+            query_rewrite.retrieval_query
+            if self._embedding_search is self._text_search
+            else query_rewrite.original_question
+        )
         text_query = query_rewrite.retrieval_query
         representations = [self._representation(page) for page in pages]
         embedding_scores = self._embedding_search.score(embedding_query, representations)

@@ -734,6 +734,21 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         )
         self.assertEqual(repository.candidate_calls[0][1], "self attention token")
 
+    def test_uses_rewritten_query_for_text_only_page_scoring(self) -> None:
+        pages = [source_page("source:attention", "Self Attention")]
+        text_search = RecordingScoreSearch({"Self Attention": 0.95})
+        use_case = AnswerQueryUseCase(
+            wiki_repository=InMemoryWikiRepository(pages, []),
+            embedding_search=text_search,
+            text_search=text_search,
+            answer_generator=RecordingAnswerGenerator(),
+            query_rewriter=FixedQueryRewriter("self attention token"),
+        )
+
+        use_case.execute("토큰끼리 서로 보는 구조가 뭐야?", workspace_id="ws_test")
+
+        self.assertEqual(set(text_search.queries), {"self attention token"})
+
     def test_uses_conversation_context_to_resolve_follow_up_question_for_retrieval(self) -> None:
         pages = [
             source_page("source:wiki", "LLM Wiki Source"),
@@ -910,6 +925,30 @@ class AnswerQueryUseCaseTest(unittest.TestCase):
         self.assertEqual(result.web_search.result_count, 0)
         self.assertEqual(result.web_search.error_code, "web_search_failed")
         self.assertNotIn("provider detail must not reach", result.answer.content)
+
+    def test_evaluator_web_route_returns_limitation_when_web_search_has_no_answer(self) -> None:
+        for route in ("web_fallback", "internal_web_augmented"):
+            for web_search in (FailingWebSearch(), FakeWebSearch([])):
+                with self.subTest(route=route, web_search=type(web_search).__name__):
+                    use_case = AnswerQueryUseCase(
+                        wiki_repository=InMemoryWikiRepository([source_page("source:wiki", "Wiki Source")], []),
+                        embedding_search=ScoreSearch({"Wiki Source": 0.95}),
+                        text_search=EmptyTextSearch(),
+                        answer_generator=RecordingAnswerGenerator("근거 없이 만든 외부 사실입니다. [1]"),
+                        query_evaluator=FakeQueryEvaluator(
+                            QueryEvaluation(
+                                route=route,
+                                evidence_relevance=0.0,
+                                web_query="외부 사실",
+                            )
+                        ),
+                        web_search=web_search,
+                    )
+
+                    result = use_case.execute("외부 사실을 알려줘.", workspace_id="ws_test")
+
+                    self.assertNotIn("근거 없이 만든 외부 사실", result.answer.content)
+                    self.assertTrue(result.web_search.executed)
 
     def test_query_evaluator_reviews_generated_answer_and_can_keep_internal_answer_when_seed_score_is_low(self) -> None:
         pages = [source_page("source:wiki", "LLM Wiki Source")]

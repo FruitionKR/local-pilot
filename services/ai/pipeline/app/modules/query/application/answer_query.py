@@ -275,6 +275,7 @@ class AnswerQueryUseCase:
                 )
                 if fallback_answer is not None:
                     return fallback_answer
+                query_evaluation = replace(query_evaluation, route="unsupported")
             if web_search_allowed and query_evaluation.route == "internal_web_augmented":
                 self._mark_web_search_requested(web_search_telemetry)
                 augmented_answer = self._answer_from_internal_web_augmented(
@@ -289,6 +290,7 @@ class AnswerQueryUseCase:
                 )
                 if augmented_answer is not None:
                     return augmented_answer
+                query_evaluation = replace(query_evaluation, route="unsupported")
         answer, evidence_snippets, stop_reason = self._apply_evaluation_route(
             query_evaluation,
             answer,
