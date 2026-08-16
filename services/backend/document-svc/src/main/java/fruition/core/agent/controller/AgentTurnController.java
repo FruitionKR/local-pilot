@@ -125,6 +125,8 @@ public class AgentTurnController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "SSE 구독 시작",
             content = @Content(mediaType = "text/event-stream", schema = @Schema(type = "string"))),
+        @ApiResponse(responseCode = "400", description = "Agent run ID 형식이 올바르지 않음",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
         @ApiResponse(responseCode = "404", description = "실행 또는 워크스페이스를 찾을 수 없음",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })

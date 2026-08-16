@@ -384,6 +384,12 @@ paths:
               schema:
                 type: string
           description: SSE 구독 시작
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+          description: Agent run ID 형식이 올바르지 않음
         "404":
           content:
             '*/*':
