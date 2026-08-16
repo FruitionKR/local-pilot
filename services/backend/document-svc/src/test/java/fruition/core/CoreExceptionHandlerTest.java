@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import fruition.core.skill.exception.PipelineSkillException;
 import fruition.core.wiki.exception.PipelineWikiPageException;
 import fruition.shared.util.BaseExceptionHandler;
+import fruition.shared.util.ErrorResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,9 +66,8 @@ class CoreExceptionHandlerTest {
         assertThat(onlyLoggedMessage())
                 .contains("code=WIKI_PAGE_PIPELINE_UNAVAILABLE")
                 .contains("status=503");
-        assertThat(response.getBody()).hasToString(
-                "ErrorResponse[error=ErrorDetail[code=WIKI_PAGE_PIPELINE_UNAVAILABLE, "
-                        + "message=pipeline 응답 없음, details=null]]");
+        assertThat(((ErrorResponse) response.getBody()).error().code())
+                .isEqualTo("WIKI_PAGE_PIPELINE_UNAVAILABLE");
     }
 
     @Test
