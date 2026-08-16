@@ -116,7 +116,7 @@ public class ChatSessionController {
             @PathVariable("session_id") String sessionId) {
         chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
 
-        var messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        var messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         List<String> messageIds = messages.stream().map(m -> m.getId()).toList();
 
         // N+1 방지: 메시지 ID 목록으로 references와 related_pages를 한 번에 조회한다.

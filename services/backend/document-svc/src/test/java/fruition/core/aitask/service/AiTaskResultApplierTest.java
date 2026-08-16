@@ -16,6 +16,7 @@ import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -167,6 +168,34 @@ class AiTaskResultApplierTest {
         applier.applyQuery(objectMapper.readTree(canonical));
 
         verify(chatTurnRecorder, never()).recordContextSummary(anyString(), anyString());
+    }
+
+    /**
+     * 편집·생성 갈래는 chat.answer도 message도 없이 온다. 빈 말풍선을 남기면 화면에 아무것도
+     * 안 뜨고, 다음 턴의 대화 맥락에 실려 pipeline이 요청 전체를 거부한다.
+     */
+    @Test
+    void markdownCreateResultGetsNonEmptyChatMessage() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-create:succeeded","run_id":"run-create","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_1"}},
+                 "payload":{"action":"markdown_create","generated_markdown":{"markdown":"# 제목"}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-create:succeeded"),
+                eq("run-create"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-create")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-create")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(chatTurnRecorder).completeAgentTurn(eq("chat_assistant_1"), eq("markdown_create"),
+                content.capture());
+        assertThat(content.getValue()).isNotBlank();
     }
 
     @Test

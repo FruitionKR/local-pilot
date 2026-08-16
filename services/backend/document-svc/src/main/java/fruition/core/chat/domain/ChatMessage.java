@@ -104,9 +104,14 @@ public class ChatMessage {
         this.errorMessage = null;
     }
 
+    /** error_message는 varchar(255)다. pipeline 오류는 그보다 길 수 있어 잘라 담는다. */
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 255;
+
     public void fail(String errorMessage) {
         this.status = "failed";
-        this.errorMessage = errorMessage;
+        this.errorMessage = errorMessage == null || errorMessage.length() <= MAX_ERROR_MESSAGE_LENGTH
+                ? errorMessage
+                : errorMessage.substring(0, MAX_ERROR_MESSAGE_LENGTH);
     }
 
     public String getId() { return id; }

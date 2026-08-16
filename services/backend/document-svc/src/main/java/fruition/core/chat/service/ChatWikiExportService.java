@@ -60,7 +60,7 @@ public class ChatWikiExportService {
     /** 세션 전체를 Wiki page화용 Markdown으로 직렬화하고 비밀값을 마스킹해 반환한다. (저장/파이프라인 호출 없음) */
     public String previewMarkdown(String workspaceId, String userId, String sessionId) {
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
-        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         return buildMaskedMarkdown(session, messages);
     }
 
@@ -70,7 +70,7 @@ public class ChatWikiExportService {
                                          ChatWikiExportRequest request) {
         validate(request);
         ChatSession session = chatSessionService.verifyOwnedSession(workspaceId, userId, sessionId);
-        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         List<ChatMessage> selected = selectMessages(messages, request);
 
         String markdown = buildMaskedMarkdown(session, selected);

@@ -81,7 +81,7 @@ class ChatWikiExportServiceTest {
     void fullExportsAllPairs() {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         ArgumentCaptor<String> markdown = stubDocumentCreation();
 
         ChatWikiExportResponse response = service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));
@@ -97,7 +97,7 @@ class ChatWikiExportServiceTest {
     void partialExportsSelectedPairsOnly() {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         ArgumentCaptor<String> markdown = stubDocumentCreation();
 
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("partial", List.of("p1")));
@@ -110,7 +110,7 @@ class ChatWikiExportServiceTest {
     void skippedResultMapsToSkippedStatus() {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_existing", true));
 
@@ -141,7 +141,7 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
         // user만 completed, assistant는 failed → 완전한 문답 없음
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(List.of(
                 msg(s, "u1", "p1", "user", "질문", "completed"),
                 msg(s, "a1", "p1", "assistant", "", "failed")
         ));
@@ -165,7 +165,7 @@ class ChatWikiExportServiceTest {
         ChatMessage a2 = msg(s, "a2", "p2", "assistant", "답변2", "completed");
 
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION))
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION))
                 .thenReturn(List.of(u1, a1, u2, a2));
 
         ArgumentCaptor<String> full = ArgumentCaptor.forClass(String.class);
@@ -187,7 +187,7 @@ class ChatWikiExportServiceTest {
         ChatSession s = session();
         s.assignWikiExportDocument("chatdoc_full");   // 기존 full export 문서
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
 
@@ -206,7 +206,7 @@ class ChatWikiExportServiceTest {
                 msg(s, "a1", "p1", "assistant", "답변1", "completed")
         );
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(messages);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(messages);
         when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), anyString()))
                 .thenAnswer(invocation -> new DocumentService.ExportDocumentResult(
                         "chatdoc_" + invocation.<String>getArgument(5), false));
@@ -231,7 +231,7 @@ class ChatWikiExportServiceTest {
     void sameModeReplayReusesExistingDocument() {
         ChatSession s = session();
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("full")))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", false))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_full", true));
@@ -254,7 +254,7 @@ class ChatWikiExportServiceTest {
         s.linkWikiPage("wiki_page_x");
         s.assignWikiExportDocument("chatdoc_full");
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(twoCompletedPairs(s));
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(twoCompletedPairs(s));
         when(documentService.createChatExportDocument(any(), any(), any(), any(), any(), eq("partial")))
                 .thenReturn(new DocumentService.ExportDocumentResult("chatdoc_partial", false));
 
@@ -284,7 +284,7 @@ class ChatWikiExportServiceTest {
         List<ChatMessage> firstFull = List.of(a, aAnswer, b, bAnswer, c, cAnswer);
 
         when(chatSessionService.verifyOwnedSession(WS, USER, SESSION)).thenReturn(s);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION))
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION))
                 .thenReturn(firstFull)
                 .thenReturn(firstFull);
         when(documentService.createChatExportDocument(eq(WS), eq(USER), anyString(), anyString(), anyString(), eq("partial")))
@@ -309,7 +309,7 @@ class ChatWikiExportServiceTest {
         ChatMessage e = msg(s, "u_e", "e", "user", "질문E", "completed");
         ChatMessage eAnswer = msg(s, "a_e", "e", "assistant", "답변E", "completed");
         List<ChatMessage> afterNewPair = List.of(a, aAnswer, b, bAnswer, c, cAnswer, e, eAnswer);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION)).thenReturn(afterNewPair);
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION)).thenReturn(afterNewPair);
 
         ArgumentCaptor<String> delta = ArgumentCaptor.forClass(String.class);
         service.export(WS, USER, SESSION, new ChatWikiExportRequest("full", null));

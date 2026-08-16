@@ -27,7 +27,7 @@ class ChatConversationReaderTest {
     }
 
     private void given(ChatMessage... messages) {
-        when(repository.findAllBySession_IdOrderByCreatedAtAsc(anyString())).thenReturn(List.of(messages));
+        when(repository.findAllBySessionIdInTurnOrder(anyString())).thenReturn(List.of(messages));
     }
 
     @Test
@@ -97,6 +97,21 @@ class ChatConversationReaderTest {
     void pendingPairIsExcluded() {
         given(message("p1", "user", "첫 질문", "completed", 0),
                 message("p1", "assistant", "", "pending", 1),
+                message("p2", "user", "둘째 질문", "completed", 2),
+                message("p2", "assistant", "둘째 답변", "completed", 3));
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::content)
+                .containsExactly("둘째 질문", "둘째 답변");
+    }
+
+    /** pipeline은 메시지 내용이 1자 이상이라야 받는다. 빈 내용이 섞이면 요청 전체가 거부된다. */
+    @Test
+    @DisplayName("내용이 빈 메시지가 있는 문답은 맥락에서 뺀다")
+    void pairWithEmptyContentIsExcluded() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "", "completed", 1),
                 message("p2", "user", "둘째 질문", "completed", 2),
                 message("p2", "assistant", "둘째 답변", "completed", 3));
 

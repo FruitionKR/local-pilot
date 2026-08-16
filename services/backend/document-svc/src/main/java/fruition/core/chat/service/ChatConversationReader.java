@@ -5,7 +5,6 @@ import fruition.core.chat.repository.ChatMessageRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,7 +42,7 @@ public class ChatConversationReader {
      */
     @Transactional(readOnly = true)
     public Conversation read(String sessionId, List<String> selectedPairIds) {
-        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         Set<String> usablePairIds = completePairIds(messages);
         if (selectedPairIds != null && !selectedPairIds.isEmpty()) {
             // 세션에서 읽은 쌍과 교집합만 남긴다. 다른 세션 ID는 여기서 사라진다.
@@ -53,11 +52,9 @@ public class ChatConversationReader {
         }
 
         Set<String> included = usablePairIds;
+        // 순서는 리포지터리가 보장한다. 걸러내도 순서는 유지된다.
         List<ChatMessage> ordered = messages.stream()
                 .filter(message -> included.contains(message.getPairId()))
-                .sorted(Comparator.comparing(ChatMessage::getCreatedAt)
-                        .thenComparing(ChatMessage::getPairId)
-                        .thenComparingInt(message -> "user".equals(message.getRole()) ? 0 : 1))
                 .toList();
         List<ChatMessage> recent = ordered.subList(Math.max(0, ordered.size() - MAX_RECENT_MESSAGES), ordered.size());
 
@@ -67,13 +64,20 @@ public class ChatConversationReader {
                 chatSessionService.contextSummary(sessionId));
     }
 
-    /** user·assistant가 하나씩이고 둘 다 완료된 문답만 맥락으로 쓴다. */
+    /**
+     * user·assistant가 하나씩이고 둘 다 완료된 문답만 맥락으로 쓴다.
+     *
+     * <p>내용이 빈 메시지가 하나라도 있으면 그 문답은 통째로 뺀다. pipeline은 메시지 내용이
+     * 1자 이상이라야 받고, 빈 내용이 섞이면 요청 전체를 거부한다.
+     */
     private static Set<String> completePairIds(List<ChatMessage> messages) {
         return messages.stream()
                 .collect(Collectors.groupingBy(ChatMessage::getPairId))
                 .entrySet().stream()
                 .filter(pair -> pair.getValue().size() == 2)
                 .filter(pair -> pair.getValue().stream().allMatch(message -> "completed".equals(message.getStatus())))
+                .filter(pair -> pair.getValue().stream()
+                        .noneMatch(message -> message.getContent() == null || message.getContent().isBlank()))
                 .filter(pair -> pair.getValue().stream().filter(message -> "user".equals(message.getRole())).count() == 1)
                 .filter(pair -> pair.getValue().stream().filter(message -> "assistant".equals(message.getRole())).count() == 1)
                 .map(Map.Entry::getKey)

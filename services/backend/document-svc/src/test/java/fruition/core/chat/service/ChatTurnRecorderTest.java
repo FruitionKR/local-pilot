@@ -76,6 +76,19 @@ class ChatTurnRecorderTest {
         verify(chatMessageRepository).save(assistant);
     }
 
+    /** error_message는 varchar(255)다. 넘치면 커밋 시점에 터져 결과 반영 트랜잭션까지 되돌린다. */
+    @Test
+    void markFailed_truncatesErrorToColumnLength() {
+        ChatSession session = new ChatSession("session_abc123", "ws_abc123", "user_abc123", null);
+        ChatMessage assistant = new ChatMessage(
+                "chat_assistant_abc123", session, "pair_abc123", "assistant", "", "pending", Instant.now(), null);
+        when(chatMessageRepository.findById("chat_assistant_abc123")).thenReturn(Optional.of(assistant));
+
+        recorder.markFailed("chat_assistant_abc123", "오".repeat(400));
+
+        assertThat(assistant.getErrorMessage()).hasSize(255);
+    }
+
     @Test
     void recordContextSummary_storesSummaryWithTimestamp() {
         ChatSession session = new ChatSession("session_abc123", "ws_abc123", "user_abc123", null);

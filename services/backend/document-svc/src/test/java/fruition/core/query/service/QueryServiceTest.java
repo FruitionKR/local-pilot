@@ -227,7 +227,7 @@ class QueryServiceTest {
     @DisplayName("새 pair 저장 전에 같은 세션의 완료된 최근 6개 메시지만 시간순으로 전달한다")
     void query_forwardsRecentCompletedMessagesBeforeCreatingPendingPair() {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "old_user", "pair_old", "user", "오래된 질문", "completed", 1),
                 message(session, "old_assistant", "pair_old", "assistant", "오래된 답변", "completed", 2),
                 message(session, "pending_user", "pair_pending", "user", "진행 중인 질문", "completed", 3),
@@ -253,7 +253,7 @@ class QueryServiceTest {
                 .containsExactly("질문2", "답변2", "질문3", "답변3", "질문4", "답변4");
 
         InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, chatTurnRecorder);
-        order.verify(chatMessageRepository).findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID);
+        order.verify(chatMessageRepository).findAllBySessionIdInTurnOrder(SESSION_ID);
         order.verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("새 질문"), any(),
                 eq("openai"), eq("gpt-5-nano"));
@@ -264,7 +264,7 @@ class QueryServiceTest {
     void prepareMessages_ordersSameTimestampPairsByPairIdThenRole() {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
         java.time.Instant createdAt = java.time.Instant.parse("2026-06-20T10:00:00Z");
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "assistant_pair_b", "pair_b", "assistant", "답변B", "completed", createdAt),
                 message(session, "user_pair_a", "pair_a", "user", "질문A", "completed", createdAt),
                 message(session, "assistant_pair_a", "pair_a", "assistant", "답변A", "completed", createdAt),
@@ -285,7 +285,7 @@ class QueryServiceTest {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
         String longUserContent = "u".repeat(4001);
         String longAssistantContent = "a".repeat(4001);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "user_long", "pair_long", "user", longUserContent, "completed", 1),
                 message(session, "assistant_long", "pair_long", "assistant", longAssistantContent, "completed", 2)
         ));

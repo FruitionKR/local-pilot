@@ -109,7 +109,7 @@ public class QueryService {
     }
 
     private List<PipelineQueryRequester.RecentMessage> recentMessages(String sessionId) {
-        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         Set<String> completePairIds = messages.stream()
                 .collect(Collectors.groupingBy(ChatMessage::getPairId))
                 .entrySet().stream()

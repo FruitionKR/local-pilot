@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -241,14 +242,32 @@ public class AiTaskResultApplier {
         }
     }
 
-    /** 말풍선에 보일 본문. chat_answer는 답변, 나머지는 AI가 붙인 설명이다. */
+    /** 갈래별 기본 말풍선 문구. 편집 결과 본문은 미리보기에서 보므로 여기서는 무엇을 했는지만 알린다. */
+    private static final Map<String, String> ACTION_FALLBACK_MESSAGE = Map.of(
+            "markdown_create", "문서 초안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "markdown_edit", "편집안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "folder_organize", "폴더 정리 계획을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "workspace_workflow", "작업 계획을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "skill_authoring", "Skill 초안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "skill_draft_proposal", "Skill 제안을 만들었습니다. 미리보기에서 확인해 주세요.");
+
+    /**
+     * 말풍선에 보일 본문. chat_answer는 답변, 나머지는 AI가 붙인 설명이다.
+     *
+     * <p>빈 문자열은 돌려주지 않는다. 빈 말풍선은 화면에서 아무것도 아니고,
+     * 다음 턴의 대화 맥락에 실리면 pipeline이 요청 전체를 거부한다.
+     */
     private static String agentMessageContent(JsonNode payload) {
         String answer = payload.path("chat").path("answer").asText(null);
         if (answer != null && !answer.isBlank()) {
             return answer;
         }
         String message = payload.path("message").asText(null);
-        return message == null ? "" : message;
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return ACTION_FALLBACK_MESSAGE.getOrDefault(payload.path("action").asText(),
+                "요청을 처리했습니다.");
     }
 
     public static String expectedMarkdown(JsonNode event) {
