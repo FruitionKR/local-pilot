@@ -24,6 +24,7 @@ import java.util.Optional;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -117,6 +118,27 @@ class QueryRunControllerTest {
                 .andExpect(request().asyncStarted());
 
         verify(workspaceAccessGuard).requireMember(WORKSPACE_ID, USER_ID);
+    }
+
+    /**
+     * SSE는 완료 시 async 디스패치로 돌아온다. Spring Security 6은 기본적으로 모든 dispatch type을
+     * 인가 필터에 태우는데, 그 시점에는 SecurityContext가 이미 비워져 있어 Access Denied가 난다.
+     * 응답은 이미 커밋된 뒤라 오류를 내보내지도 못하고, 프론트는 완료 이벤트를 마무리하지 못한다.
+     */
+    @Test
+    void subscribe_asyncDispatchAfterCompletion_isNotDeniedBySecurity() throws Exception {
+        SseEmitter emitter = new SseEmitter(0L);
+        when(queryRunStore.find("query_abc123")).thenReturn(Optional.of(pendingRun()));
+        when(queryEventBroker.subscribe("query_abc123")).thenReturn(emitter);
+
+        var result = mockMvc.perform(get("/api/query/runs/query_abc123/events")
+                        .header("Authorization", bearerToken()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        emitter.complete();
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk());
     }
 
 }
