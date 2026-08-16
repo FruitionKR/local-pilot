@@ -27,14 +27,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate Compose config
-        run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml config
+        run: docker compose --env-file infra/.env.example -f infra/compose.infra.yml config
 
       - name: Start web service dependencies
         # one-shot init 컨테이너(minio-init·kafka-init)는 exit(0)여도 --wait가 실패로 처리하므로
         # 전체는 -d로 띄우고, --wait는 장기 실행 서비스에만 건다.
         run: |
-          docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d
-          docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml up -d --wait --wait-timeout 120 postgresql kafka redis minio
+          docker compose --env-file infra/.env.example -f infra/compose.infra.yml up -d
+          docker compose --env-file infra/.env.example -f infra/compose.infra.yml up -d --wait --wait-timeout 120 postgresql kafka redis minio
 
       - name: Check init container results
         run: |
@@ -46,4 +46,4 @@ jobs:
 
       - name: Stop web service dependencies
         if: always()
-        run: docker compose --env-file infra/.env.example -f infra/docker-compose.dev.yml down -v
+        run: docker compose --env-file infra/.env.example -f infra/compose.infra.yml down -v

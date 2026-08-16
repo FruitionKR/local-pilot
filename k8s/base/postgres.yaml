@@ -1,4 +1,4 @@
-# dev compose(infra/docker-compose.dev.yml)와 동일하게 admin 계정으로 기동하고,
+# dev compose(infra/compose.infra.yml)와 동일하게 admin 계정으로 기동하고,
 # infra/postgres/init-db-isolation.sh와 같은 스크립트로 access/core/ai 3개 DB와
 # runtime/migration 계정을 최초 기동 시 생성한다.
 apiVersion: v1

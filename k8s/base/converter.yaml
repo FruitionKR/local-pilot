@@ -1,4 +1,4 @@
-# markitdown 변환기 (infra/docker-compose.converter.yml 대응).
+# markitdown 변환기 (infra/compose.converter.yml 대응).
 # compose와 동일하게 read-only rootfs + 권한 축소, /tmp만 쓰기 허용.
 apiVersion: apps/v1
 kind: Deployment
