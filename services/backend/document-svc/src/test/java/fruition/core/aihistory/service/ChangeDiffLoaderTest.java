@@ -4,6 +4,7 @@ import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.ResourceType;
 import fruition.core.document.domain.DocumentContentVersion;
+import fruition.core.document.dto.DocumentContentDiffResponse;
 import fruition.core.document.exception.MarkdownDiffTooLargeException;
 import fruition.core.document.repository.DocumentContentVersionRepository;
 import fruition.core.document.service.MarkdownDiffService;
@@ -76,14 +77,22 @@ class ChangeDiffLoaderTest {
     }
 
     @Test
-    @DisplayName("새로 만든 리소스는 비교할 짝이 없어 변경분을 담지 않는다")
-    void skipsWhenCreated() {
+    @DisplayName("새로 만든 리소스는 빈 본문과 비교해 전체 내용을 추가로 표시한다")
+    void showsAllContentWhenCreated() {
+        givenWikiVersion("wp_C3", 1, "# 제목\n첫 줄");
+
         ChangeDiffLoader.Diff diff = loadOne(
                 change(ResourceType.wiki_page, "wp_C3", null, 1L, ChangeType.created));
 
-        assertThat(diff.hunks()).isNull();
+        assertThat(diff.hunks()).hasSize(1);
+        assertThat(diff.hunks().get(0).lines())
+                .extracting(DocumentContentDiffResponse.Line::type,
+                        DocumentContentDiffResponse.Line::content)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(DocumentContentDiffResponse.Type.ADD, "# 제목"),
+                        org.assertj.core.groups.Tuple.tuple(DocumentContentDiffResponse.Type.ADD, "첫 줄"));
         assertThat(diff.tooLarge()).isFalse();
-        verify(wikiVersionRepository, never()).findAllById(any());
+        verify(wikiVersionRepository, times(1)).findAllById(any());
     }
 
     @Test

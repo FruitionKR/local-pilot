@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import signal
+from itertools import count
 from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -17,6 +18,7 @@ from app.core.llm_env import resolve_llm_selection
 from app.modules.agent.interfaces.http.dependencies import build_handle_agent_turn_use_case
 from app.modules.agent.interfaces.http.routes import _to_response as agent_to_response
 from app.modules.agent.interfaces.http.schemas import AgentTurnRequestBody
+from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.domain.entities import ConversationContext, ConversationMessage
 from app.modules.query.interfaces.http.dependencies import build_answer_query_use_case
 from app.modules.query.interfaces.http.routes import _to_response as query_to_response
@@ -53,7 +55,10 @@ def _required(command: dict[str, Any], *fields: str) -> None:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
-def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
+def _handle_query(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
     _required(
         command,
         "run_id",
@@ -71,6 +76,7 @@ def _handle_query(command: dict[str, Any]) -> dict[str, Any]:
         provider=str(command["provider"]).strip(),
         model=str(command["model"]).strip(),
         allow_web_search=command["allow_web_search"],
+        event_publisher=event_publisher,
     ).execute(
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
@@ -356,10 +362,18 @@ def _handle(command: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unsupported AI command kind: {kind}")
 
 
-def _event(command: dict[str, Any], status: str, payload: Any = None, error: str | None = None) -> dict[str, Any]:
+def _event(
+    command: dict[str, Any],
+    status: str,
+    payload: Any = None,
+    error: str | None = None,
+    *,
+    with_request: bool = True,
+) -> dict[str, Any]:
+    """`with_request=False`는 소비 측이 원본 command를 보지 않는 이벤트에 쓴다."""
     run_id = str(command.get("run_id") or "")
     kind = str(command.get("kind") or "unknown")
-    return {
+    event: dict[str, Any] = {
         "event_id": f"{kind}:{run_id}:{status}",
         "run_id": run_id,
         "kind": kind,
@@ -367,10 +381,78 @@ def _event(command: dict[str, Any], status: str, payload: Any = None, error: str
         "workspace_id": command.get("workspace_id"),
         "user_id": command.get("user_id"),
         "operation_id": command.get("operation_id"),
-        "request": without_top_level_secrets(command),
-        "payload": payload,
-        "error": error,
     }
+    if with_request:
+        event["request"] = without_top_level_secrets(command)
+    event["payload"] = payload
+    event["error"] = error
+    return event
+
+
+def _progress_event(
+    command: dict[str, Any],
+    *,
+    sequence: int,
+    stage: str,
+    message: str,
+    data: dict[str, object] | None,
+) -> dict[str, Any]:
+    # 소비 측은 진행 이벤트에서 run_id·event_id·status·payload만 읽는다.
+    # command 전체(질문·대화 이력)를 단계마다 다시 실어 보내지 않는다.
+    event = _event(
+        command,
+        "progress",
+        payload={"stage": stage, "message": message, "data": data or {}},
+        with_request=False,
+    )
+    event["event_id"] = f"query:{event['run_id']}:progress:{sequence}:{stage}"
+    return event
+
+
+class KafkaQueryEventPublisher(QueryEventPublisherPort):
+    """동기 query pipeline의 진행 이벤트를 worker event loop의 Kafka producer로 전달한다."""
+
+    # 진행 이벤트는 유실을 허용한다. Kafka가 응답하지 않을 때 답변 생성 스레드를
+    # 무기한 붙잡지 않도록 제한을 둔다. 호출자(publish_query_event)가 예외를 삼킨다.
+    SEND_TIMEOUT_SECONDS = 5
+
+    def __init__(
+        self,
+        producer: AIOKafkaProducer,
+        loop: asyncio.AbstractEventLoop,
+        command: dict[str, Any],
+    ) -> None:
+        self._producer = producer
+        self._loop = loop
+        self._command = command
+        self._sequences = count(1)
+
+    def publish(
+        self,
+        stage: str,
+        message: str,
+        data: dict[str, object] | None = None,
+    ) -> None:
+        event = _progress_event(
+            self._command,
+            sequence=next(self._sequences),
+            stage=stage,
+            message=message,
+            data=data,
+        )
+        future = asyncio.run_coroutine_threadsafe(
+            self._producer.send_and_wait(
+                RESULT_TOPIC,
+                event,
+                key=event["run_id"].encode("utf-8"),
+            ),
+            self._loop,
+        )
+        try:
+            future.result(self.SEND_TIMEOUT_SECONDS)
+        except TimeoutError:
+            future.cancel()
+            raise
 
 
 def _failure_is_durable(command: dict[str, Any]) -> bool:
@@ -425,7 +507,15 @@ async def consume() -> None:
                 for message in messages:
                     command = message.value
                     try:
-                        result = await asyncio.to_thread(_handle, command)
+                        if command.get("kind") == "query":
+                            event_publisher = KafkaQueryEventPublisher(producer, loop, command)
+                            result = await asyncio.to_thread(
+                                _handle_query,
+                                command,
+                                event_publisher,
+                            )
+                        else:
+                            result = await asyncio.to_thread(_handle, command)
                         event = _event(command, "succeeded", payload=result)
                     except Exception as exc:
                         logger.exception("[AI command 실패] kind=%s run_id=%s", command.get("kind"), command.get("run_id"))

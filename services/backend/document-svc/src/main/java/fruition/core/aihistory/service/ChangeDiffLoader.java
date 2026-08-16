@@ -1,5 +1,6 @@
 package fruition.core.aihistory.service;
 
+import fruition.core.aihistory.domain.ChangeType;
 import fruition.core.aihistory.domain.OperationChange;
 import fruition.core.aihistory.domain.ResourceType;
 import fruition.core.document.domain.DocumentContentVersion;
@@ -66,13 +67,15 @@ public class ChangeDiffLoader {
     private Diff diff(OperationChange change,
                       Map<WikiPageVersionId, String> wikiMarkdown,
                       Map<DocumentContentVersionId, String> documentMarkdown) {
-        if (!comparable(change)) {
+        if (!diffable(change)) {
             return Diff.none();
         }
-        long before = change.getBeforeRevision();
+        long before = change.getBeforeRevision() == null ? 0L : change.getBeforeRevision();
         long after = change.getAfterRevision();
 
-        String beforeMarkdown = markdown(change, before, wikiMarkdown, documentMarkdown);
+        String beforeMarkdown = change.getChangeType() == ChangeType.created
+                ? ""
+                : markdown(change, before, wikiMarkdown, documentMarkdown);
         String afterMarkdown = markdown(change, after, wikiMarkdown, documentMarkdown);
         if (beforeMarkdown == null || afterMarkdown == null) {
             return Diff.none();
@@ -102,8 +105,10 @@ public class ChangeDiffLoader {
     private Map<WikiPageVersionId, String> loadWikiMarkdown(List<OperationChange> changes) {
         List<WikiPageVersionId> ids = new ArrayList<>();
         for (OperationChange change : changes) {
-            if (comparable(change) && change.getResourceType() == ResourceType.wiki_page) {
-                ids.add(new WikiPageVersionId(change.getResourceId(), change.getBeforeRevision()));
+            if (diffable(change) && change.getResourceType() == ResourceType.wiki_page) {
+                if (change.getBeforeRevision() != null) {
+                    ids.add(new WikiPageVersionId(change.getResourceId(), change.getBeforeRevision()));
+                }
                 ids.add(new WikiPageVersionId(change.getResourceId(), change.getAfterRevision()));
             }
         }
@@ -120,8 +125,10 @@ public class ChangeDiffLoader {
     private Map<DocumentContentVersionId, String> loadDocumentMarkdown(List<OperationChange> changes) {
         List<DocumentContentVersionId> ids = new ArrayList<>();
         for (OperationChange change : changes) {
-            if (comparable(change) && change.getResourceType() == ResourceType.document) {
-                ids.add(new DocumentContentVersionId(change.getResourceId(), change.getBeforeRevision()));
+            if (diffable(change) && change.getResourceType() == ResourceType.document) {
+                if (change.getBeforeRevision() != null) {
+                    ids.add(new DocumentContentVersionId(change.getResourceId(), change.getBeforeRevision()));
+                }
                 ids.add(new DocumentContentVersionId(change.getResourceId(), change.getAfterRevision()));
             }
         }
@@ -135,9 +142,10 @@ public class ChangeDiffLoader {
         return markdown;
     }
 
-    /** 생성·삭제·위임·재작성실패는 비교할 짝이 없다. */
-    private boolean comparable(OperationChange change) {
-        return change.getBeforeRevision() != null && change.getAfterRevision() != null;
+    /** 생성은 빈 본문과 비교하고, 그 외 변경은 전후 revision이 모두 있을 때 비교한다. */
+    private boolean diffable(OperationChange change) {
+        return change.getAfterRevision() != null
+                && (change.getBeforeRevision() != null || change.getChangeType() == ChangeType.created);
     }
 
     /**

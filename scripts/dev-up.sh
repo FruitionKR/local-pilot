@@ -7,9 +7,9 @@ SERVICES_DIR="$ROOT_DIR/services/backend"
 FRONTEND_DIR="$ROOT_DIR/services/frontend"
 ENV_FILE="$INFRA_DIR/.env"
 ENV_EXAMPLE="$INFRA_DIR/.env.example"
-COMPOSE_FILE="$INFRA_DIR/compose.infra.yml"
-PIPELINE_COMPOSE_FILE="$INFRA_DIR/compose.ai.yml"
-RUNTIME_DIR="$ROOT_DIR/.runtime"
+COMPOSE_FILE="$INFRA_DIR/docker-compose.dev.yml"
+PIPELINE_COMPOSE_FILE="$INFRA_DIR/docker-compose.pipeline.yml"
+LOGS_DIR="$ROOT_DIR/logs"
 
 DOCUMENT_PID=""
 ACCESS_PID=""
@@ -208,11 +208,14 @@ start_backend() {
   local java21_home="$1"
 
   # flyway migration은 document-svc가 소유하므로 document-svc를 먼저 띄운다.
+  # tee로 갈라 터미널에도 보여주고 logs/에도 남긴다. 호스트 프로세스는 docker logs로
+  # 받을 수 없어서, 시작 시점에 파일로 갈라두지 않으면 종료와 함께 로그가 사라진다.
   log "document-svc를 시작합니다. Java 21: $java21_home"
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :document-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/document-svc.log"
   ) &
   DOCUMENT_PID="$!"
 
@@ -222,7 +225,8 @@ start_backend() {
   (
     cd "$SERVICES_DIR"
     SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}" \
-      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home"
+      ./gradlew :access-svc:bootRun -Porg.gradle.java.installations.paths="$java21_home" \
+      2>&1 | tee -a "$LOGS_DIR/access-svc.log"
   ) &
   ACCESS_PID="$!"
 
@@ -241,7 +245,7 @@ start_frontend() {
   log "프론트엔드를 시작합니다."
   (
     cd "$FRONTEND_DIR"
-    npm run dev
+    npm run dev 2>&1 | tee -a "$LOGS_DIR/frontend.log"
   ) &
   FRONTEND_PID="$!"
 
@@ -264,6 +268,7 @@ main() {
   need_cmd curl
   ensure_env_file
   ensure_docker
+  mkdir -p "$LOGS_DIR"
 
   if runtime_is_running "dev" "dev-up.sh"; then
     log "이 프로젝트의 통합 개발 환경이 이미 실행 중입니다."
@@ -281,6 +286,9 @@ main() {
   start_pipeline
   start_frontend
 
+  # 워커 컨테이너 로그 수집. 실패해도 개발 서버 기동은 막지 않는다.
+  "$ROOT_DIR/scripts/logs-up.sh" start || log "워커 로그 수집을 시작하지 못했습니다. scripts/logs-up.sh로 따로 실행하세요."
+
   cat <<'INFO'
 
 [dev-up] 로컬 개발 서버가 실행 중입니다.
@@ -292,6 +300,7 @@ main() {
                   http://localhost:8081/swagger-ui.html (access-svc)
                   통합 열람은 ./scripts/swagger-up.sh 후 http://localhost:8090
   - MinIO:        http://localhost:9001
+  - 로그:         logs/ (workers.log, document-svc.log, access-svc.log, frontend.log)
 
 [dev-up] 종료하려면 Ctrl-C를 누르세요. PostgreSQL/MinIO/pipeline 컨테이너는 유지됩니다.
 INFO

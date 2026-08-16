@@ -96,7 +96,9 @@ main() {
   need_cmd docker
 
   configure_docker_host
-  stop_managed_processes
+  # 컨테이너를 지우기 전에 수집을 멈춘다. 쌓인 logs/는 지우지 않는다.
+  "$ROOT_DIR/scripts/logs-up.sh" stop || true
+  stop_port_processes
   down_infra
   if docker info >/dev/null 2>&1; then
     remove_project_orphan_volumes

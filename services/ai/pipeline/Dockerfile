@@ -1,6 +1,7 @@
+# Debian 13(trixie). ort-sys가 받아오는 프리빌트 ONNX Runtime이 GLIBCXX_3.4.31을 요구하는데
+# Debian 12(bookworm)의 libstdc++는 3.4.30까지만 제공해 링크가 실패한다.
+# 런타임 이미지도 같은 이유로 trixie여야 한다. 둘은 함께 움직인다.
 FROM rust:1.88.0-slim-trixie AS heron-builder
-
-ENV RUSTFLAGS="-C link-arg=-lstdc++"
 
 WORKDIR /build/heron-special-regions
 
@@ -23,6 +24,7 @@ FROM node:20-slim AS anydoc
 
 RUN npm install --global @firecrawl/anydoc@0.1.7
 
+# heron-builder가 만든 raw-special-regions가 GLIBCXX_3.4.31을 요구하므로 trixie를 쓴다.
 FROM python:3.12-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1

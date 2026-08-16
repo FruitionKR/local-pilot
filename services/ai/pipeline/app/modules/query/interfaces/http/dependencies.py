@@ -1,6 +1,7 @@
 import os
 
 from app.modules.query.application.answer_query import AnswerQueryUseCase
+from app.modules.query.application.ports import QueryEventPublisherPort
 from app.modules.query.application.query_answer_assembler import QueryAnswerAssembler
 from app.modules.query.infrastructure.bm25_searcher import Bm25Searcher
 from app.modules.query.infrastructure.minio_wiki_markdown_reader import MinioWikiMarkdownReader
@@ -23,6 +24,7 @@ def build_answer_query_use_case(
     provider: str | None = None,
     model: str | None = None,
     allow_web_search: bool = False,
+    event_publisher: QueryEventPublisherPort | None = None,
 ) -> AnswerQueryUseCase:
     text_search = Bm25Searcher()
     answer_generator = build_query_chat_answer_generator(provider=provider, model=model)
@@ -37,7 +39,7 @@ def build_answer_query_use_case(
     return AnswerQueryUseCase(
         wiki_repository=PostgresWikiRepository(),
         markdown_reader=MinioWikiMarkdownReader(),
-        event_publisher=NoOpQueryEventPublisher(),
+        event_publisher=event_publisher or NoOpQueryEventPublisher(),
         embedding_search=_build_embedding_search(text_search),
         text_search=text_search,
         answer_generator=answer_generator,

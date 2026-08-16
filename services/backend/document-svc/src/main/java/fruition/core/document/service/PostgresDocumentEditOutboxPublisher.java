@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.time.Instant;
 import java.sql.Timestamp;
@@ -60,15 +61,22 @@ public class PostgresDocumentEditOutboxPublisher {
             return;
         }
         for (Event event : events) {
+            MDC.put("flowId", event.eventId());
             try {
+                log.debug("[문서 편집 event 발행 시작] topic={} eventId={} documentId={} revision={}",
+                        eventTopic, event.eventId(), event.documentId(), event.revision());
                 String payload = objectMapper.writeValueAsString(event);
-                kafkaTemplate.send(eventTopic, event.documentId(), payload)
+                var result = kafkaTemplate.send(eventTopic, event.documentId(), payload)
                         .get(SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 jdbcTemplate.update("""
                         UPDATE document_edit_outbox
                         SET published = true, published_at = ?
                         WHERE event_id = ? AND published = false
                         """, Timestamp.from(Instant.now()), event.eventId());
+                int partition = result != null ? result.getRecordMetadata().partition() : -1;
+                long offset = result != null ? result.getRecordMetadata().offset() : -1;
+                log.info("[문서 편집 event 발행 완료] topic={} eventId={} documentId={} revision={} partition={} offset={}",
+                        eventTopic, event.eventId(), event.documentId(), event.revision(), partition, offset);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 log.error("[문서 편집 event 발행 중단] eventId={} documentId={}",
@@ -78,6 +86,8 @@ public class PostgresDocumentEditOutboxPublisher {
                 log.error("[문서 편집 event 발행 또는 published 표시 실패] eventId={} documentId={}",
                         event.eventId(), event.documentId(), exception);
                 return;
+            } finally {
+                MDC.remove("flowId");
             }
         }
     }

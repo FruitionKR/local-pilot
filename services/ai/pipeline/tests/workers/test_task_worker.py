@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock, call, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from pydantic import ValidationError
@@ -61,6 +62,88 @@ def test_event_uses_common_command_envelope() -> None:
     assert event["payload"] == {"answer": "ok"}
 
 
+def test_progress_event_uses_stable_sequence_id() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+    }
+
+    event = task_worker._progress_event(
+        command,
+        sequence=2,
+        stage="context_built",
+        message="답변 컨텍스트를 구성했습니다.",
+        data={"evidence_count": 3},
+    )
+
+    assert event["event_id"] == "query:run-1:progress:2:context_built"
+    assert event["status"] == "progress"
+    # 소비 측이 읽지 않는 command 원본을 단계마다 반복 전송하지 않는다.
+    assert "request" not in event
+    assert event["payload"] == {
+        "stage": "context_built",
+        "message": "답변 컨텍스트를 구성했습니다.",
+        "data": {"evidence_count": 3},
+    }
+
+
+def test_kafka_query_event_publisher_sends_progress_immediately() -> None:
+    async def run_test() -> None:
+        producer = MagicMock()
+        producer.send_and_wait = AsyncMock()
+        command = {"run_id": "run-1", "kind": "query"}
+        publisher = task_worker.KafkaQueryEventPublisher(
+            producer,
+            asyncio.get_running_loop(),
+            command,
+        )
+
+        await asyncio.to_thread(
+            publisher.publish,
+            "wiki_loaded",
+            "Wiki 데이터를 불러왔습니다.",
+            {"page_count": 3},
+        )
+
+        producer.send_and_wait.assert_awaited_once()
+        topic, event = producer.send_and_wait.await_args.args
+        assert topic == task_worker.RESULT_TOPIC
+        assert event["event_id"] == "query:run-1:progress:1:wiki_loaded"
+        assert event["payload"]["stage"] == "wiki_loaded"
+        assert producer.send_and_wait.await_args.kwargs["key"] == b"run-1"
+
+    asyncio.run(run_test())
+
+
+def test_kafka_query_event_publisher_gives_up_when_broker_does_not_answer() -> None:
+    """진행 이벤트 하나가 답변 생성 스레드를 무기한 붙잡으면 안 된다."""
+
+    async def run_test() -> None:
+        started = asyncio.Event()
+
+        async def never_answers(*args: object, **kwargs: object) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        producer = MagicMock()
+        producer.send_and_wait = never_answers
+        publisher = task_worker.KafkaQueryEventPublisher(
+            producer,
+            asyncio.get_running_loop(),
+            {"run_id": "run-1", "kind": "query"},
+        )
+        publisher.SEND_TIMEOUT_SECONDS = 0.05
+
+        with pytest.raises(TimeoutError):
+            await asyncio.to_thread(publisher.publish, "wiki_loaded", "Wiki 데이터를 불러왔습니다.")
+
+        assert started.is_set()
+
+    asyncio.run(run_test())
+
+
 @pytest.mark.parametrize("allow_web_search", [False, True])
 def test_query_command_passes_runtime_model_and_web_search_flag(
     allow_web_search: bool,
@@ -100,6 +183,7 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
         provider="openai",
         model="gpt-5-nano",
         allow_web_search=allow_web_search,
+        event_publisher=None,
     )
     use_case.execute.assert_called_once_with(
         "질문",

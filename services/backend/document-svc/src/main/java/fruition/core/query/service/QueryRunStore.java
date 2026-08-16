@@ -59,8 +59,10 @@ public class QueryRunStore {
     }
 
     public Optional<QueryRun> find(String requestId) {
-        return Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + requestId))
+        Optional<QueryRun> run = Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + requestId))
                 .map(this::deserialize);
+        log.debug("[질의 run 조회] requestId={} result={}", requestId, run.isPresent() ? "hit" : "miss");
+        return run;
     }
 
     public void markRunning(String requestId) {
@@ -100,6 +102,8 @@ public class QueryRunStore {
 
     private void write(QueryRun run, Duration ttl) {
         redisTemplate.opsForValue().set(KEY_PREFIX + run.requestId(), serialize(run), ttl);
+        log.debug("[질의 run Redis 저장 완료] requestId={} status={} ttlSeconds={}",
+                run.requestId(), run.status(), ttl.toSeconds());
     }
 
     private String serialize(QueryRun run) {

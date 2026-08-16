@@ -5,6 +5,7 @@
 - 전체 operation 수: 138
 - 인증 기본값: 사용자 API는 Bearer access token, 내부 API는 서비스 토큰을 사용한다.
 - 공통 오류 형식은 서비스에 따라 `ErrorResponse` 또는 FastAPI validation 응답을 사용한다.
+- Java 서비스(access-svc·document-svc)는 개별 매핑이 없는 예외도 `ErrorResponse`로 응답한다. Spring이 상태 코드를 담아 던진 예외(없는 경로의 `404` 등)는 그 상태를 유지하며 `REQUEST_FAILED`, 그 밖의 예상치 못한 예외는 `500 INTERNAL_ERROR`를 쓴다.
 - 각 API는 동일한 10개 항목을 유지한다. 해당 사항이 없더라도 항목을 생략하지 않는다.
 
 - 서비스 라우팅: `/api/auth/*`·`/api/workspaces` → access-svc(:8081), 그 외 → document-svc(:8080).
@@ -7642,6 +7643,18 @@ curl -X GET "$DOCUMENT/api/query/runs/<value>" \
 ```json
 string
 ```
+
+전달하는 이벤트는 세 가지다.
+
+| event | 의미 | payload |
+|---|---|---|
+| `query.log` | AI worker가 단계마다 발행한 진행 상황을 중계 | `request_id`, `sequence`, `received_at`, `stage`, `message`, `data` |
+| `query.completed` | 최종 결과 반영 완료 | `request_id`, `status` |
+| `query.failed` | 실패 확정 | `request_id`, `status`, `error` |
+
+- 구독 시점 이전 이벤트는 Redis buffer에서 최대 200건까지 재생한다. `sequence`가 뒤로 가는 이벤트는 전달하지 않는다.
+- `query.log`는 화면 피드백 용도라 유실을 허용한다. 중계가 실패해도 로그만 남기고 최종 결과 처리를 막지 않는다.
+- 같은 진행 이벤트가 재전송돼도 `event_id`를 Redis에서 선점해 한 번만 전달한다.
 
 #### 6. Error response
 
