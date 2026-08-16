@@ -1,4 +1,6 @@
-FROM rust:1.88.0-slim AS heron-builder
+FROM rust:1.88.0-slim-trixie AS heron-builder
+
+ENV RUSTFLAGS="-C link-arg=-lstdc++"
 
 WORKDIR /build/heron-special-regions
 
@@ -6,6 +8,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         clang \
         cmake \
+        g++ \
         git \
         libssl-dev \
         pkg-config \
@@ -20,7 +23,7 @@ FROM node:20-slim AS anydoc
 
 RUN npm install --global @firecrawl/anydoc@0.1.7
 
-FROM python:3.12-slim
+FROM python:3.12-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -35,10 +38,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY --from=heron-builder /build/heron-special-regions/target/release/raw-special-regions /usr/local/bin/raw-special-regions
 COPY --from=anydoc /usr/local/bin/node /usr/local/bin/node
