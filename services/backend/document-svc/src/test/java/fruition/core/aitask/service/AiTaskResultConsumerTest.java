@@ -11,6 +11,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -106,6 +108,88 @@ class AiTaskResultConsumerTest {
                 """);
 
         verifyNoInteractions(applier, queryRunStore);
+    }
+
+    /**
+     * Agent turn도 AI가 chat_answer로 판정하면 질의와 같은 단계를 낸다. kind 분기가 먼저 걸리면
+     * 이 이벤트가 applyAgent로 들어가 최종 결과로 오인되고 run이 깨진다.
+     */
+    @Test
+    void agentProgressIsRelayedInsteadOfAppliedAsResult() throws Exception {
+        consumer.consume("""
+                {
+                  "event_id":"query:agent-1:progress:1:wiki_loaded",
+                  "kind":"agent",
+                  "run_id":"agent-1",
+                  "status":"progress",
+                  "payload":{"stage":"wiki_loaded","message":"Wiki 데이터를 불러왔습니다.","data":{}}
+                }
+                """);
+
+        verify(queryEventBroker).publish(
+                "agent-1",
+                "query:agent-1:progress:1:wiki_loaded",
+                "wiki_loaded",
+                "Wiki 데이터를 불러왔습니다.",
+                java.util.Map.of());
+        verifyNoInteractions(applier, queryRunStore);
+    }
+
+    /**
+     * Agent turn을 구독한 화면도 끝을 알아야 한다. 종료 이벤트가 없으면 emitter 타임아웃까지 매달린다.
+     */
+    @Test
+    void agentTerminalEventCompletesTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(new AiTaskResultApplier.AgentApplyResult(true, null));
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                """);
+
+        verify(queryEventBroker).complete("agent-1");
+    }
+
+    @Test
+    void agentFailureEventFailsTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(
+                new AiTaskResultApplier.AgentApplyResult(true, "모델 호출 실패"));
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:failed","kind":"agent","run_id":"agent-1",
+                 "status":"failed","error":"모델 호출 실패"}
+                """);
+
+        verify(queryEventBroker).fail("agent-1", "모델 호출 실패");
+    }
+
+    @Test
+    void internallyRejectedAgentSuccessFailsTheSseStream() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(
+                new AiTaskResultApplier.AgentApplyResult(true, "agent_result_invalid_payload"));
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":null}
+                """);
+
+        // 내부 코드가 아니라 사용자에게 보일 문구가 나가야 한다.
+        verify(queryEventBroker).fail("agent-1", "Agent 결과 형식이 올바르지 않습니다.");
+        verify(queryEventBroker, never()).complete(anyString());
+    }
+
+    /** 재전송이면 이미 끝난 스트림이다. 다시 발행하면 늦게 구독한 화면이 완료를 두 번 본다. */
+    @Test
+    void replayedAgentTerminalEventDoesNotPublishSseAgain() throws Exception {
+        when(applier.applyAgent(any())).thenReturn(new AiTaskResultApplier.AgentApplyResult(false, null));
+
+        consumer.consume("""
+                {"event_id":"agent:agent-1:succeeded","kind":"agent","run_id":"agent-1",
+                 "status":"succeeded","request":{},"payload":{"action":"chat_answer"}}
+                """);
+
+        verify(queryEventBroker, never()).complete(anyString());
+        verify(queryEventBroker, never()).fail(anyString(), anyString());
     }
 
     @Test

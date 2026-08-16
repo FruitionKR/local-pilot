@@ -3,6 +3,7 @@ package fruition.core.config;
 import fruition.core.agent.security.AgentServiceTokenFilter;
 import fruition.shared.logging.HttpRequestLoggingFilter;
 import fruition.shared.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,6 +64,10 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 // deny-by-default: 공개 경로만 명시하고 나머지는 전부 인증을 요구한다.
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 완료는 async 디스패치로 돌아오는데 그 시점엔 SecurityContext가 비어 있다.
+                        // 인가를 다시 걸면 Access Denied가 나고, 응답이 이미 커밋된 뒤라 오류도 못 내보낸다.
+                        // 최초 요청에서 이미 인가를 통과한 같은 요청의 연장이다.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // "/swagger-ui/**"는 "/swagger-ui.html"을 매칭하지 않는다 — 진입 URL을 따로 연다.
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

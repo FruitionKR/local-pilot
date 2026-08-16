@@ -46,6 +46,12 @@ public class AiTaskResultConsumer {
         long startedAt = System.nanoTime();
         log.info("[AI task 결과 소비 시작] kind={} flowId={}", kind, flowId);
         try {
+            // 진행 이벤트는 종류와 무관하게 중계만 한다. kind 분기보다 먼저 걸러야 한다 —
+            // 뒤에 두면 agent 진행 이벤트가 applyAgent로 들어가 최종 결과로 오인된다.
+            if ("progress".equals(event.path("status").asText())) {
+                relayRunProgress(event, flowId);
+                return;
+            }
             if ("ingest".equals(kind)) {
                 applier.applyIngest(event);
                 return;
@@ -59,16 +65,19 @@ public class AiTaskResultConsumer {
                 return;
             }
             if ("agent".equals(kind)) {
-                applier.applyAgent(event);
+                // 질의와 같은 규칙이다. 최초 반영일 때만 종료 이벤트를 내 재전송으로 두 번 끝나지 않게 한다.
+                var result = applier.applyAgent(event);
+                if (result.applied()) {
+                    if (result.error() == null) {
+                        queryEventBroker.complete(flowId);
+                    } else {
+                        queryEventBroker.fail(flowId, AiTaskResultApplier.describeAgentError(result.error()));
+                    }
+                }
                 return;
             }
             if (!"query".equals(kind)) {
                 log.warn("[AI task 결과 소비 생략] kind={} flowId={} reason=unsupported_kind", kind, flowId);
-                return;
-            }
-            // 진행 이벤트는 SSE로만 중계하고 최종 결과 적용 경로를 타지 않는다.
-            if ("progress".equals(event.path("status").asText())) {
-                relayQueryProgress(event, flowId);
                 return;
             }
             var projection = applier.applyQuery(event);
@@ -93,8 +102,10 @@ public class AiTaskResultConsumer {
     /**
      * 진행 이벤트는 화면 피드백용이라 유실을 허용한다. 여기서 예외를 올리면 error handler가
      * 같은 record를 무한 재시도하며 그 파티션의 최종 결과까지 막으므로 로그만 남기고 넘어간다.
+     *
+     * <p>run 종류를 가리지 않는다. Agent turn도 AI가 chat_answer로 판정하면 질의와 같은 단계를 낸다.
      */
-    private void relayQueryProgress(JsonNode event, String flowId) {
+    private void relayRunProgress(JsonNode event, String flowId) {
         JsonNode payload = event.path("payload");
         try {
             queryEventBroker.publish(

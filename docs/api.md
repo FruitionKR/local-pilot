@@ -2,9 +2,10 @@
 
 이 문서는 Fruition의 공개 API와 서비스 간 내부 API를 사람 기준으로 설명한다. 기계가 읽는 원본 계약은 `api-specs/<service>/openapi.yaml`이며, 충돌할 경우 실행 코드와 생성된 OpenAPI를 우선한다.
 
-- 전체 operation 수: 138
+- 전체 operation 수: 139
 - 인증 기본값: 사용자 API는 Bearer access token, 내부 API는 서비스 토큰을 사용한다.
 - 공통 오류 형식은 서비스에 따라 `ErrorResponse` 또는 FastAPI validation 응답을 사용한다.
+- AI에게 넘기는 대화 맥락은 서버가 세션에서 읽어 조립한다. 클라이언트는 어떤 문답을 쓸지만 `selected_pair_ids`로 고르고, 비우면 세션의 최근 완결 문답을 쓴다. 이 세션에 속하지 않은 ID는 무시한다.
 - Java 서비스(access-svc·document-svc)는 개별 매핑이 없는 예외도 `ErrorResponse`로 응답한다. Spring이 상태 코드를 담아 던진 예외(없는 경로의 `404` 등)는 그 상태를 유지하며 `REQUEST_FAILED`, 그 밖의 예상치 못한 예외는 `500 INTERNAL_ERROR`를 쓴다.
 - 각 API는 동일한 10개 항목을 유지한다. 해당 사항이 없더라도 항목을 생략하지 않는다.
 
@@ -2759,6 +2760,14 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 
 사용자 요청을 비동기 Agent 실행 대기열에 등록합니다.
 
+질의와 편집을 나누지 않고 이 입구 하나로 받는다. 무엇을 할지는 AI가 정하며, 질의로 판정하면
+근거와 함께 답하고 편집으로 판정하면 편집안을 만든다. 어느 쪽이든 `session_id`가 가리키는
+채팅 세션에 문답으로 남는다.
+
+문서를 열지 않은 상태에서도 보낼 수 있다. 그때는 `documentId`·`baseVersion`·`editorSnapshot`을
+모두 생략하며, 적용할 대상이 없어 AI는 답변·되물음만 낸다. 셋은 함께 있거나 함께 없어야 하고
+하나만 오면 `400`이다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -2769,6 +2778,13 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 | 위치 | 이름 | 타입 | 필수 | 설명 |
 |---|---|---|---|---|
 | path | `workspace_id` | `string` | 예 | - |
+| body | `session_id` | `string` | 예 | 이 턴을 남길 채팅 세션 ID |
+| body | `message` | `string` | 예 | 사용자 지시문 |
+| body | `documentId` | `string` | 아니오 | 편집 대상 문서. 생략하면 `baseVersion`·`editorSnapshot`도 함께 생략한다 |
+| body | `baseVersion` | `integer` | 아니오 | 편집 기준 문서 버전 |
+| body | `editorSnapshot` | `object` | 아니오 | 편집 시작 시점의 에디터 상태 |
+| body | `allow_web_search` | `boolean` | 아니오 | AI가 질의로 판정했을 때 웹 검색을 허용할지. 편집·Skill 갈래에는 영향이 없다 |
+| body | `conversationContext.selected_pair_ids` | `string[]` | 아니오 | 맥락으로 쓸 문답 ID(최대 20개). 비우면 세션의 최근 완결 문답을 쓴다 |
 
 - Content-Type: `application/json` (`AgentTurnRequest`)
 
@@ -2782,9 +2798,11 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
       "name": "string",
       "scope_type": "string"
     },
-    "recentConversationSummary": "string",
     "referenceContext": {
-    }
+    },
+    "selected_pair_ids": [
+      "string"
+    ]
   },
   "documentId": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
   "editorSnapshot": {
@@ -2795,9 +2813,11 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
       "type": "selection"
     }
   },
+  "allow_web_search": false,
   "message": "이 문단을 표로 정리해줘",
   "model": "gpt-5-nano",
   "provider": "openai",
+  "session_id": "session_0ff8564ea24047cd8144d3f48badfe3f",
   "skill_draft_excluded_literals": [
     "string"
   ],
@@ -2990,6 +3010,98 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/
 
 - 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
 - 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: getTurn`)
+
+### GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events
+
+#### 1. Method + Path
+
+`GET /api/workspaces/{workspace_id}/agent/turn/{run_id}/events`
+
+#### 2. 목적
+
+Agent turn의 진행 상황과 최종 결과를 Server-Sent Events로 전달합니다.
+
+AI가 질의로 판정한 턴만 단계 이벤트를 낸다. 편집·Skill 갈래는 완료 이벤트만 온다. 클라이언트는
+어느 갈래인지 미리 알 필요 없이 접수 응답의 `requestId`로 구독하면 된다.
+
+#### 3. Auth 필요 여부
+
+- 필요
+- `Authorization: Bearer <access_token>`을 검증한다.
+
+#### 4. Request body
+
+| 위치 | 이름 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| path | `workspace_id` | `string` | 예 | - |
+| path | `run_id` | `string` | 예 | 구독할 Agent 실행 ID |
+
+- Body: 없음
+
+#### 5. Response body
+
+- HTTP `200`: SSE 구독 시작
+- Content-Type: `text/event-stream`
+
+```json
+string
+```
+
+전달하는 이벤트는 질의 SSE와 같은 세 가지다. 두 갈래가 같은 broker를 쓰므로 이름도 같다.
+
+| event | 의미 | payload |
+|---|---|---|
+| `query.log` | AI worker가 단계마다 발행한 진행 상황을 중계 | `request_id`, `sequence`, `received_at`, `stage`, `message`, `data` |
+| `query.completed` | 최종 결과 반영 완료 | `request_id`, `status` |
+| `query.failed` | 실패 확정 | `request_id`, `status`, `error` |
+
+- 구독 시점 이전 이벤트는 Redis buffer에서 최대 200건까지 재생한다.
+- 종료 이벤트는 최초 반영에서 한 번만 낸다. 결과가 재전송돼도 두 번 끝나지 않는다.
+- `query.failed`의 `error`는 사용자에게 보일 문장이다. 내부 오류 코드는 로그와 `ai_task_result_receipts`에만 남는다.
+
+#### 6. Error response
+
+| HTTP 상태 | 설명 | 응답 스키마 |
+|---|---|---|
+| `400` | Agent run ID 형식이 올바르지 않음 | `ErrorResponse` |
+| `404` | 실행 또는 워크스페이스를 찾을 수 없음 | `ErrorResponse` |
+
+```json
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다."
+  }
+}
+```
+
+#### 7. Pagination / filtering
+
+- 페이지네이션: 지원하지 않음
+- 필터링: 지원하지 않음
+
+#### 8. 권한 규칙
+
+- 인증된 사용자만 호출할 수 있다.
+- path의 `workspace_id`에 대한 활성 멤버십과 해당 run의 소유를 검증한다.
+- 자격 검증은 적용 표(`agent_apply_projections`)만으로 한다. 결과 조회와 달리 pipeline을 부르지 않아, pipeline이 멈춰 있어도 버퍼에 쌓인 이벤트를 구독할 수 있다.
+
+#### 9. 예시 요청/응답
+
+```bash
+curl -N -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn/<value>/events" \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Accept: text/event-stream'
+```
+
+```json
+string
+```
+
+#### 10. 구현 파일
+
+- 진입점: `services/backend/document-svc/src/main/java/fruition/core/agent/controller/AgentTurnController.java`
+- 기계 판독 계약: `api-specs/document-svc/openapi.yaml` (`operationId: subscribeTurnEvents`)
 
 ## Chat Sessions
 
@@ -3276,10 +3388,15 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/cha
 - HTTP `200`: 조회 성공
 - Content-Type: `*/*` (`ChatMessagesResponse`)
 
+Agent turn이 만든 메시지는 `run_id`와 `action`이 함께 온다. 질의 메시지는 두 키가 빠진다.
+화면은 `action`으로 편집 미리보기와 일반 답변을 나누고, 승인 상태와 미리보기 본문은 `run_id`가
+가리키는 run에서 읽는다.
+
 ```json
 {
   "messages": [
     {
+      "action": "markdown_edit",
       "content": "string",
       "created_at": "2026-08-13T04:25:24.371948Z",
       "error_message": "string",
@@ -3319,7 +3436,8 @@ curl -X DELETE "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/cha
           "title": "검색 인덱싱",
           "wiki_page_id": "string"
         }
-      ]
+      ],
+      "run_id": "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
     }
   ]
 }
@@ -3361,6 +3479,7 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
 {
   "messages": [
     {
+      "action": "markdown_edit",
       "content": "string",
       "created_at": "2026-08-13T04:25:24.371948Z",
       "error_message": "string",
@@ -3400,7 +3519,8 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/chat/s
           "title": "검색 인덱싱",
           "wiki_page_id": "string"
         }
-      ]
+      ],
+      "run_id": "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83"
     }
   ]
 }

@@ -37,6 +37,19 @@ public class ChatSessionService {
                 .orElseThrow(() -> new ChatSessionNotFoundException(sessionId));
     }
 
+    /**
+     * pipeline이 턴마다 갱신해 세션에 쌓아 둔 누적 대화 요약.
+     * 최근 메시지 몇 개로는 담기지 않는 앞쪽 맥락을 이어주므로 AI 요청마다 함께 보낸다.
+     * 대화가 짧아 아직 요약이 없으면 null이다.
+     */
+    @Transactional(readOnly = true)
+    public String contextSummary(String sessionId) {
+        return chatSessionRepository.findById(sessionId)
+                .map(ChatSession::getContextSummary)
+                .filter(summary -> !summary.isBlank())
+                .orElse(null);
+    }
+
     @Transactional
     public ChatSessionResponse create(String workspaceId, String userId, ChatSessionCreateRequest request) {
         verifyWorkspaceOwnership(workspaceId, userId);

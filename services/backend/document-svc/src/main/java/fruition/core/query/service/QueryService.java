@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
 import fruition.core.chat.domain.ChatMessageRelatedPage;
@@ -39,20 +40,20 @@ public class QueryService {
     private final ChatMessageReferenceRepository referenceRepository;
     private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final ChatSessionRepository chatSessionRepository;
-    private final QueryMessageRecorder queryMessageRecorder;
+    private final ChatTurnRecorder chatTurnRecorder;
 
     public QueryService(PipelineQueryRequester pipelineQueryClient,
                         ChatMessageRepository chatMessageRepository,
                         ChatMessageReferenceRepository referenceRepository,
                         ChatMessageRelatedPageRepository relatedPageRepository,
                         ChatSessionRepository chatSessionRepository,
-                        QueryMessageRecorder queryMessageRecorder) {
+                        ChatTurnRecorder chatTurnRecorder) {
         this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
         this.referenceRepository = referenceRepository;
         this.relatedPageRepository = relatedPageRepository;
         this.chatSessionRepository = chatSessionRepository;
-        this.queryMessageRecorder = queryMessageRecorder;
+        this.chatTurnRecorder = chatTurnRecorder;
     }
 
     public QueryResponse query(String workspaceId, String sessionId, String question) {
@@ -94,11 +95,11 @@ public class QueryService {
         log.info("[질의 메시지 ID 생성] requestId={} pairId={} userMessageId={} assistantMessageId={}",
                 requestId, context.pairId(), context.userMessageId(), context.assistantMessageId());
         if (webSearchEnabled) {
-            queryMessageRecorder.createPendingPair(
+            chatTurnRecorder.createPendingPair(
                     sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question,
                     createdAt, provider, model, true);
         } else {
-            queryMessageRecorder.createPendingPair(
+            chatTurnRecorder.createPendingPair(
                     sessionId, context.pairId(), context.userMessageId(), context.assistantMessageId(), question,
                     createdAt, provider, model);
         }
@@ -108,7 +109,7 @@ public class QueryService {
     }
 
     private List<PipelineQueryRequester.RecentMessage> recentMessages(String sessionId) {
-        List<ChatMessage> messages = chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(sessionId);
+        List<ChatMessage> messages = chatMessageRepository.findAllBySessionIdInTurnOrder(sessionId);
         Set<String> completePairIds = messages.stream()
                 .collect(Collectors.groupingBy(ChatMessage::getPairId))
                 .entrySet().stream()
@@ -190,7 +191,7 @@ public class QueryService {
 
     @Transactional
     public void failAsync(String requestId, QueryMessageContext messageContext, String errorMessage) {
-        queryMessageRecorder.markFailed(messageContext.assistantMessageId(), errorMessage);
+        chatTurnRecorder.markFailed(messageContext.assistantMessageId(), errorMessage);
         log.warn("[질의 Kafka 실패 반영] requestId={} assistantMessageId={} error={}",
                 requestId, messageContext.assistantMessageId(), errorMessage);
     }
@@ -232,7 +233,7 @@ public class QueryService {
                                      String errorMessage,
                                      Exception originalException) {
         try {
-            queryMessageRecorder.markFailed(assistantMessageId, errorMessage);
+            chatTurnRecorder.markFailed(assistantMessageId, errorMessage);
             log.info("[질의 assistant 실패 상태 commit 완료] requestId={} pairId={} assistantMessageId={}",
                     requestId, pairId, assistantMessageId);
         } catch (Exception recordException) {

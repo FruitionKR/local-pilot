@@ -15,11 +15,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
  */
 @Schema(description = "Markdown Agent 편집 턴 결과. apply_operation_id를 뺀 나머지 필드는 camelCase다.")
 public record AgentTurnResponse(
-        @Schema(description = "대상 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
+        @Schema(description = "대상 문서 ID. 문서를 열지 않은 턴은 null이다.",
+                example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83", nullable = true)
         String documentId,
 
-        @Schema(description = "이 턴이 기준으로 삼은 문서 버전", example = "3")
-        long baseVersion,
+        @Schema(description = "이 턴이 기준으로 삼은 문서 버전. 문서를 열지 않은 턴은 null이다.",
+                example = "3", nullable = true)
+        Long baseVersion,
 
         @Schema(description = "이 턴의 run ID. 상태 조회에 쓴다.",
                 example = "agent_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
@@ -27,7 +29,8 @@ public record AgentTurnResponse(
 
         @JsonProperty("apply_operation_id")
         @Schema(description = "편집안을 적용할 때 저장 요청에 apply_operation_id로 실어야 하는 값. "
-                + "서버가 발급한 값이라야 AI 작업 로그가 남는다.")
+                + "서버가 발급한 값이라야 AI 작업 로그가 남는다. 문서를 열지 않은 턴은 null이다.",
+                nullable = true)
         String applyOperationId,
 
         @Schema(description = "턴 처리 상태", example = "completed")

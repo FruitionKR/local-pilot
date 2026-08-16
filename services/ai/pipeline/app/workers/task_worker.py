@@ -55,6 +55,33 @@ def _required(command: dict[str, Any], *fields: str) -> None:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
+def _text_or_none(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
+def _int_or_none(value: Any) -> int | None:
+    return None if value is None else int(value)
+
+
+def _conversation_context(command: dict[str, Any]) -> ConversationContext | None:
+    """대화 맥락은 두 겹이다. 요약은 이전 턴까지의 누적본이고 최근 메시지는 그 위에 얹는 원문이다.
+
+    요약을 함께 넘겨야 이번 턴 요약이 앞 내용을 이어받는다. 빠뜨리면 매 턴 최근 메시지만으로
+    요약이 새로 쓰여 앞쪽 대화가 사라진다.
+    """
+    summary = command.get("recent_conversation_summary")
+    messages = command.get("recent_messages") or []
+    if not summary and not messages:
+        return None
+    return ConversationContext(
+        recent_conversation_summary=summary,
+        recent_messages=tuple(
+            ConversationMessage(role=message["role"], content=message["content"])
+            for message in messages
+        ),
+    )
+
+
 def _handle_query(
     command: dict[str, Any],
     event_publisher: QueryEventPublisherPort | None = None,
@@ -81,22 +108,19 @@ def _handle_query(
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
         user_id=str(command["user_id"]),
-        conversation_context=ConversationContext(
-            recent_messages=tuple(
-                ConversationMessage(role=message["role"], content=message["content"])
-                for message in command.get("recent_messages", [])
-            )
-        ) if command.get("recent_messages") else None,
+        conversation_context=_conversation_context(command),
         allow_web_search=command["allow_web_search"],
     )
     return query_to_response(result).model_dump(mode="json")
 
 
-def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
-    _required(
-        command, "run_id", "workspace_id", "user_id", "document_id",
-        "base_version", "apply_operation_id", "message", "editor_snapshot",
-    )
+def _handle_agent(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
+    # 문서를 열지 않은 턴은 편집 대상이 없어 document_id·base_version·apply_operation_id·
+    # editor_snapshot이 오지 않는다. 이때 AI는 chat_answer·clarify·reject만 낸다.
+    _required(command, "run_id", "workspace_id", "user_id", "message")
     run_id = str(command["run_id"])
     state, replay = _register_agent_command(command)
     if state == "completed":
@@ -107,12 +131,14 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             "message": command["message"],
             "provider": command.get("provider"),
             "model": command.get("model"),
+            # AI가 질의로 판정했을 때만 쓰인다. 편집·Skill 갈래는 무시한다.
+            "allow_web_search": command.get("allow_web_search"),
             "skill_mode": command.get("skill_mode", "auto"),
             "skill_id": command.get("skill_id"),
             "workspace_id": command["workspace_id"],
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
-            "active_markdown_context": command["editor_snapshot"],
+            "active_markdown_context": command.get("editor_snapshot"),
             "skill_draft_sources": command.get("skill_draft_sources", []),
             "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
             "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),
@@ -122,6 +148,7 @@ def _handle_agent(command: dict[str, Any]) -> dict[str, Any]:
             build_handle_agent_turn_use_case(
                 provider=payload.provider,
                 model=payload.model,
+                event_publisher=event_publisher,
             ).execute(payload.to_domain())
         ).model_dump(mode="json")
     except Exception:
@@ -191,9 +218,10 @@ def _register_agent_command(command: dict[str, Any]) -> tuple[str, dict[str, Any
                 str(command["message"])[:1000],
                 provider,
                 model,
-                str(command["document_id"]),
-                int(command["base_version"]),
-                str(command["apply_operation_id"]),
+                # 문서를 열지 않은 턴은 셋 다 없다. 컬럼은 nullable이라 그대로 비워 둔다.
+                _text_or_none(command.get("document_id")),
+                _int_or_none(command.get("base_version")),
+                _text_or_none(command.get("apply_operation_id")),
                 envelope_hash,
             ),
         ).fetchone()
@@ -349,12 +377,15 @@ def _handle_restore(command: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
-def _handle(command: dict[str, Any]) -> dict[str, Any]:
+def _handle(
+    command: dict[str, Any],
+    event_publisher: QueryEventPublisherPort | None = None,
+) -> dict[str, Any]:
     kind = str(command.get("kind") or "")
     if kind == "query":
-        return _handle_query(command)
+        return _handle_query(command, event_publisher)
     if kind == "agent":
-        return _handle_agent(command)
+        return _handle_agent(command, event_publisher)
     if kind == "lint":
         return _handle_lint(command)
     if kind in {"restore_ingest", "restore_lint"}:
@@ -507,13 +538,10 @@ async def consume() -> None:
                 for message in messages:
                     command = message.value
                     try:
-                        if command.get("kind") == "query":
+                        # agent도 질의 갈래(chat_answer)로 갈리면 같은 진행 이벤트를 낸다.
+                        if command.get("kind") in {"query", "agent"}:
                             event_publisher = KafkaQueryEventPublisher(producer, loop, command)
-                            result = await asyncio.to_thread(
-                                _handle_query,
-                                command,
-                                event_publisher,
-                            )
+                            result = await asyncio.to_thread(_handle, command, event_publisher)
                         else:
                             result = await asyncio.to_thread(_handle, command)
                         event = _event(command, "succeeded", payload=result)

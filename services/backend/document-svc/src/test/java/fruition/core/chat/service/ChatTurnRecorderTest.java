@@ -1,4 +1,4 @@
-package fruition.core.query.service;
+package fruition.core.chat.service;
 
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatSession;
@@ -18,20 +18,22 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class QueryMessageRecorderTest {
+class ChatTurnRecorderTest {
 
     @Mock ChatMessageRepository chatMessageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
 
-    private QueryMessageRecorder recorder;
+    private ChatTurnRecorder recorder;
 
     @BeforeEach
     void setUp() {
-        recorder = new QueryMessageRecorder(chatMessageRepository, chatSessionRepository);
+        recorder = new ChatTurnRecorder(chatMessageRepository, chatSessionRepository);
     }
 
     @Test
@@ -74,13 +76,47 @@ class QueryMessageRecorderTest {
         verify(chatMessageRepository).save(assistant);
     }
 
+    /** error_message는 varchar(255)다. 넘치면 커밋 시점에 터져 결과 반영 트랜잭션까지 되돌린다. */
+    @Test
+    void markFailed_truncatesErrorToColumnLength() {
+        ChatSession session = new ChatSession("session_abc123", "ws_abc123", "user_abc123", null);
+        ChatMessage assistant = new ChatMessage(
+                "chat_assistant_abc123", session, "pair_abc123", "assistant", "", "pending", Instant.now(), null);
+        when(chatMessageRepository.findById("chat_assistant_abc123")).thenReturn(Optional.of(assistant));
+
+        recorder.markFailed("chat_assistant_abc123", "오".repeat(400));
+
+        assertThat(assistant.getErrorMessage()).hasSize(255);
+    }
+
+    @Test
+    void recordContextSummary_storesSummaryWithTimestamp() {
+        ChatSession session = new ChatSession("session_abc123", "ws_abc123", "user_abc123", null);
+        when(chatSessionRepository.findById("session_abc123")).thenReturn(Optional.of(session));
+
+        recorder.recordContextSummary("session_abc123", "지금까지 인덱싱을 다뤘다.");
+
+        assertThat(session.getContextSummary()).isEqualTo("지금까지 인덱싱을 다뤘다.");
+        assertThat(session.getContextSummaryUpdatedAt()).isNotNull();
+        verify(chatSessionRepository).save(session);
+    }
+
+    /** 대화가 짧으면 pipeline이 요약을 만들지 않는다. 그때 기존 요약을 지우면 맥락이 뒤로 물러난다. */
+    @Test
+    void recordContextSummary_keepsPreviousSummaryWhenNothingArrives() {
+        recorder.recordContextSummary("session_abc123", null);
+        recorder.recordContextSummary("session_abc123", "  ");
+
+        verify(chatSessionRepository, never()).save(any());
+    }
+
     @Test
     void methods_joinCommandTransaction() throws NoSuchMethodException {
-        Transactional createTransaction = QueryMessageRecorder.class
+        Transactional createTransaction = ChatTurnRecorder.class
                 .getMethod("createPendingPair", String.class, String.class, String.class, String.class,
                         String.class, Instant.class)
                 .getAnnotation(Transactional.class);
-        Transactional failTransaction = QueryMessageRecorder.class
+        Transactional failTransaction = ChatTurnRecorder.class
                 .getMethod("markFailed", String.class, String.class)
                 .getAnnotation(Transactional.class);
 

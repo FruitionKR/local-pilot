@@ -14,15 +14,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-@Schema(description = "Markdown Agent 편집 요청. 접수되면 202로 돌아오고 실제 편집안은 비동기로 만들어진다. "
+@Schema(description = "Agent turn 요청. 접수되면 202로 돌아오고 결과는 비동기로 만들어진다. "
+        + "문서를 열지 않은 상태에서도 보낼 수 있으며, 그때는 편집 대신 답변·되물음만 나온다. "
         + "skill_* 필드는 snake_case이고 나머지는 camelCase다.")
 public record AgentTurnRequest(
-        @NotBlank
-        @Schema(description = "편집 대상 문서 ID", example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83")
+        @JsonProperty("session_id") @NotBlank
+        @Schema(description = "이 턴을 남길 채팅 세션 ID. 질의와 Agent 요청이 한 세션에 함께 쌓인다.",
+                example = "session_0ff8564ea24047cd8144d3f48badfe3f")
+        String sessionId,
+
+        @Schema(description = "편집 대상 문서 ID. 문서를 열지 않았으면 생략한다. "
+                + "생략하면 baseVersion·editorSnapshot도 함께 생략해야 한다.",
+                example = "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83", nullable = true)
         String documentId,
 
-        @NotNull @Min(0)
-        @Schema(description = "편집 기준으로 삼을 문서 버전", minimum = "0", example = "3")
+        @Min(0)
+        @Schema(description = "편집 기준으로 삼을 문서 버전. documentId와 함께 생략한다.",
+                minimum = "0", example = "3", nullable = true)
         Long baseVersion,
 
         @NotBlank
@@ -36,6 +44,11 @@ public record AgentTurnRequest(
         @Schema(description = "모델명. provider와 짝을 이뤄야 한다.", example = "gpt-5-nano")
         String model,
 
+        @JsonProperty("allow_web_search")
+        @Schema(description = "AI가 질의로 판정했을 때 웹 검색을 허용할지. 생략하면 내부 문서만 사용한다. "
+                + "편집·Skill 갈래에는 영향이 없다.", nullable = true)
+        Boolean allowWebSearch,
+
         @JsonProperty("skill_mode") @Pattern(regexp = "auto|explicit|off")
         @Schema(description = "Skill 적용 방식. explicit이면 skill_id가 필수이고, auto·off이면 skill_id를 넣을 수 없다.",
                 allowableValues = {"auto", "explicit", "off"}, defaultValue = "auto", example = "auto")
@@ -45,6 +58,7 @@ public record AgentTurnRequest(
         @Schema(description = "explicit 모드에서 적용할 Skill ID(128자 이하)", maxLength = 128)
         String skillId,
 
+        @Valid
         @Schema(description = "이전 대화 맥락. 있으면 편집 판단에 함께 쓴다.")
         ConversationContext conversationContext,
 
@@ -64,32 +78,50 @@ public record AgentTurnRequest(
         @Schema(description = "Skill을 적용할 범위 종류")
         String skillScopeType,
 
-        @NotNull @Valid
-        @Schema(description = "편집 시작 시점의 에디터 상태")
+        @Valid
+        @Schema(description = "편집 시작 시점의 에디터 상태. documentId와 함께 생략한다.", nullable = true)
         EditorSnapshot editorSnapshot
 ) {
     private static final int MAX_SKILL_ID_LENGTH = 128;
+    /**
+     * 고른 문답 ID 개수 상한. 이 목록은 조회의 IN 절로 그대로 들어가 클라이언트가 SQL 크기를 정하게 된다.
+     * 서버가 최근 구간에서 읽어 오는 양(문답 20개)과 같은 선까지만 받는다.
+     */
+    private static final int MAX_SELECTED_PAIR_IDS = 20;
     private static final Set<String> SKILL_MODES = Set.of("auto", "explicit", "off");
 
-    public AgentTurnRequest(String documentId, Long baseVersion, String message, String provider, String model,
+    /** 편집 대상이 정해진 요청인지. 셋은 함께 있거나 함께 없다. */
+    public boolean hasDocumentContext() {
+        return documentId != null && !documentId.isBlank();
+    }
+
+    public AgentTurnRequest(String sessionId, String documentId, Long baseVersion, String message,
+                            String provider, String model,
                             ConversationContext conversationContext, EditorSnapshot editorSnapshot) {
-        this(documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, null, "auto", null, conversationContext,
                 List.of(), List.of(), List.of(), null, editorSnapshot);
     }
 
-    public AgentTurnRequest(String documentId, Long baseVersion, String message, String provider, String model,
+    public AgentTurnRequest(String sessionId, String documentId, Long baseVersion, String message,
+                            String provider, String model,
                             ConversationContext conversationContext,
                             List<SkillDraftSourceSelector> skillDraftSources,
                             List<String> skillDraftUserDirectives,
                             List<String> skillDraftExcludedLiterals,
                             String skillScopeType,
                             EditorSnapshot editorSnapshot) {
-        this(documentId, baseVersion, message, provider, model, "auto", null, conversationContext,
+        this(sessionId, documentId, baseVersion, message, provider, model, null, "auto", null, conversationContext,
                 skillDraftSources, skillDraftUserDirectives, skillDraftExcludedLiterals, skillScopeType,
                 editorSnapshot);
     }
 
     public AgentTurnRequest {
+        // 문서 셋은 함께 있거나 함께 없다. 하나만 오면 적용 경로가 반쯤 성립해 뒤에서 NPE로 터진다.
+        boolean hasDocumentId = documentId != null && !documentId.isBlank();
+        if (hasDocumentId != (baseVersion != null) || hasDocumentId != (editorSnapshot != null)) {
+            throw new IllegalArgumentException(
+                    "documentId, baseVersion, editorSnapshot must be provided together or omitted together");
+        }
         skillMode = skillMode == null ? "auto" : skillMode;
         if (!SKILL_MODES.contains(skillMode)) {
             throw new IllegalArgumentException("skill_mode must be auto, explicit, or off");
@@ -112,10 +144,12 @@ public record AgentTurnRequest(
         skillDraftExcludedLiterals = skillDraftExcludedLiterals == null ? List.of() : List.copyOf(skillDraftExcludedLiterals);
     }
 
-    @Schema(description = "이전 대화 맥락")
+    @Schema(description = "이전 대화 맥락. 대화 내용 자체는 서버가 세션에서 읽어 조립한다.")
     public record ConversationContext(
-            @Schema(description = "최근 대화 요약")
-            String recentConversationSummary,
+            @JsonProperty("selected_pair_ids") @Size(max = MAX_SELECTED_PAIR_IDS)
+            @Schema(description = "맥락으로 쓸 문답(pair) ID 목록. 비우면 세션의 최근 완결 문답을 쓴다. "
+                    + "이 세션에 속하지 않은 ID는 무시한다.")
+            List<String> selectedPairIds,
 
             @Schema(description = "참조 문맥. 키·값 형태의 자유 구조다.")
             Map<String, Object> referenceContext,

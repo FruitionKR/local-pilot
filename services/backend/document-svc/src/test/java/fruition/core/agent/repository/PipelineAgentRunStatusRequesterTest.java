@@ -90,6 +90,32 @@ class PipelineAgentRunStatusRequesterTest {
         server.stop(0);
     }
 
+    /**
+     * 문서를 열지 않은 턴은 편집 대상 셋이 모두 null로 온다. baseVersion이 원시 타입이면
+     * 여기서 역직렬화가 깨져 run은 성공했는데 조회만 실패한다.
+     */
+    @Test
+    void findReadsRunWithoutDocumentTarget() throws IOException {
+        server.createContext("/internal/agent/runs", exchange -> {
+            byte[] response = """
+                    {"id":"run-1","document_id":null,"base_version":null,"apply_operation_id":null,
+                     "status":"completed","result":{"action":"chat_answer"},"error_code":null}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+
+        var run = requester().find("ws-1", "user-1", "run-1").orElseThrow();
+
+        assertThat(run.id()).isEqualTo("run-1");
+        assertThat(run.documentId()).isNull();
+        assertThat(run.baseVersion()).isNull();
+        assertThat(run.applyOperationId()).isNull();
+        assertThat(run.status()).isEqualTo("completed");
+    }
+
     @Test
     void findAutonomousReadsScopedCanonicalAgentRunWithAgentToken() {
         var run = requester().findAutonomous("ws-1", "user-1", "run-1").orElseThrow();

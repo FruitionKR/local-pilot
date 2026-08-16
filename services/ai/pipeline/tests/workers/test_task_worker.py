@@ -200,6 +200,60 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
     assert result == {"answer": "ok"}
 
 
+def test_query_command_passes_accumulated_conversation_summary() -> None:
+    """요약을 넘겨야 이번 턴 요약이 앞 내용을 이어받는다. 빠뜨리면 매 턴 새로 쓰여 앞쪽이 사라진다."""
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "질문",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": False,
+        "recent_conversation_summary": "지금까지 검색 인덱싱을 다뤘다.",
+        "recent_messages": [{"role": "user", "content": "이전 질문"}],
+    }
+    use_case = MagicMock()
+
+    with (
+        patch.object(task_worker, "build_answer_query_use_case", return_value=use_case),
+        patch.object(task_worker, "query_to_response") as to_response,
+    ):
+        to_response.return_value.model_dump.return_value = {"answer": "ok"}
+        task_worker._handle_query(command)
+
+    assert use_case.execute.call_args.kwargs["conversation_context"] == ConversationContext(
+        recent_conversation_summary="지금까지 검색 인덱싱을 다뤘다.",
+        recent_messages=(ConversationMessage(role="user", content="이전 질문"),),
+    )
+
+
+def test_query_command_omits_conversation_context_without_history() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "첫 질문",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": False,
+    }
+    use_case = MagicMock()
+
+    with (
+        patch.object(task_worker, "build_answer_query_use_case", return_value=use_case),
+        patch.object(task_worker, "query_to_response") as to_response,
+    ):
+        to_response.return_value.model_dump.return_value = {"answer": "ok"}
+        task_worker._handle_query(command)
+
+    assert use_case.execute.call_args.kwargs["conversation_context"] is None
+
+
 @pytest.mark.parametrize(
     ("allow_web_search", "expected_telemetry"),
     [
@@ -396,6 +450,36 @@ def test_agent_command_copies_skill_draft_fields_into_agent_request(
     assert request.skill_id == skill_id
 
 
+def test_agent_command_passes_web_search_flag_to_request_body() -> None:
+    """질의 갈래로 판정됐을 때 웹 검색을 켤 수 있어야 한다. command에서 body까지 끊기면 안 된다."""
+    command = {
+        "run_id": "agent_0123456789abcdef0123456789abcdef",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "message": "최신 소식 알려줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": True,
+    }
+    use_case = MagicMock()
+    response = MagicMock()
+    response.model_dump.return_value = {"ok": True}
+    connection = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with (
+        patch.object(task_worker, "_register_agent_command", return_value=("execute", None)),
+        patch.object(task_worker, "build_handle_agent_turn_use_case", return_value=use_case),
+        patch.object(task_worker, "agent_to_response", return_value=response),
+        patch.object(task_worker.database, "connect_ai", return_value=context),
+    ):
+        task_worker._handle_agent(command)
+
+    assert use_case.execute.call_args.args[0].allow_web_search is True
+
+
 def test_agent_command_rejects_auto_skill_id() -> None:
     command = {
         "run_id": "agent_0123456789abcdef0123456789abcdef",
@@ -508,6 +592,45 @@ def test_invalid_agent_selection_is_terminally_registered(
     durability_context.__enter__.return_value = durability_connection
     with patch.object(task_worker.database, "connect_ai", return_value=durability_context):
         assert task_worker._failure_is_durable(command) is True
+
+
+def test_agent_command_without_document_registers_run_with_null_targets() -> None:
+    """문서를 열지 않은 턴은 편집 대상이 없다. 컬럼이 nullable이라 그대로 비워 넣는다."""
+    command = {
+        "run_id": "agent_no_document",
+        "kind": "agent",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "message": "아까 그거 다시 설명해줘",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+    }
+    connection = MagicMock()
+    inserted = MagicMock()
+    inserted.fetchone.return_value = {"id": command["run_id"]}
+    locked = MagicMock()
+    locked.fetchone.return_value = {
+        "status": "queued",
+        "result": None,
+        "command_envelope_hash": task_worker._agent_command_hash(command),
+    }
+    def execute(query: str, *args: object) -> MagicMock:
+        if "INSERT INTO agent_runs" in query:
+            return inserted
+        if "FOR UPDATE" in query:
+            return locked
+        return MagicMock()
+
+    connection.execute.side_effect = execute
+    context = MagicMock()
+    context.__enter__.return_value = connection
+
+    with patch.object(task_worker.database, "connect_ai", return_value=context):
+        state, replay = task_worker._register_agent_command(command)
+
+    assert (state, replay) == ("execute", None)
+    insert_params = connection.execute.call_args_list[0].args[1]
+    assert insert_params[-4:-1] == (None, None, None)
 
 
 def test_replayed_invalid_agent_selection_reuses_failed_run_without_new_job() -> None:

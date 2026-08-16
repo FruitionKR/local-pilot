@@ -51,6 +51,15 @@ public class ChatSession {
         this.lastMessageAt = now;
     }
 
+    /**
+     * pipeline이 턴마다 갱신해 돌려준 누적 대화 요약을 남긴다.
+     * 다음 턴은 원문 대신 이 요약을 맥락으로 읽어, 대화가 길어져도 앞부분이 잘리지 않는다.
+     */
+    public void updateContextSummary(String summary, Instant now) {
+        this.contextSummary = summary;
+        this.contextSummaryUpdatedAt = now;
+    }
+
     /** Wiki page화 export 문서 id를 기록한다. 완료 콜백에서 이 세션을 역조회하는 데 쓴다. */
     public void assignWikiExportDocument(String documentId) {
         this.wikiExportDocumentId = documentId;

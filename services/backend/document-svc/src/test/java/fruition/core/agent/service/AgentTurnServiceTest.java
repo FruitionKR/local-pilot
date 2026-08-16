@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,21 +51,30 @@ class AgentTurnServiceTest {
     @Mock PipelineAgentRunStatusRequester statusRequester;
     @Mock AiCommandOutboxWriter outboxWriter;
     @Mock AgentApplyOperationStore applyOperationStore;
+    @Mock fruition.core.chat.service.ChatSessionService chatSessionService;
+    @Mock fruition.core.chat.service.ChatConversationReader chatConversationReader;
+    @Mock fruition.core.chat.service.ChatTurnRecorder chatTurnRecorder;
     private final AiModelCatalog aiModelCatalog = new AiModelCatalog("openai,gemini,claude");
 
     private AgentTurnService service;
 
     @BeforeEach
     void setUp() {
+        // 대화 조립은 ChatConversationReaderTest 가 검증한다. 여기서는 빈 맥락으로 둔다.
+        org.mockito.Mockito.lenient()
+                .when(chatConversationReader.read(anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
+                        java.util.List.of(), null));
         service = new AgentTurnService(documentService, editLockService, workspaceAccessGuard, runRepository,
-                statusRequester, outboxWriter, applyOperationStore, aiModelCatalog, "ai.agent.command");
+                statusRequester, outboxWriter, applyOperationStore, aiModelCatalog,
+                chatSessionService, chatConversationReader, chatTurnRecorder, "ai.agent.command");
     }
 
     @Test
     void turn_validRequestQueuesDurableRun() throws Exception {
         AgentTurnRequest request = request("whole_document", 1, 2,
                 new AgentTurnRequest.ConversationContext(
-                        "선택한 대화 요약",
+                        java.util.List.of("pair_1"),
                         Map.of("source", "selected"),
                         new AgentTurnRequest.ConversationContext.PendingSkillProposal(
                                 "personal", "meeting-notes", "회의록을 작성합니다.", "# 정확한 원문 지침")));
@@ -82,7 +92,7 @@ class AgentTurnServiceTest {
         ArgumentCaptor<AgentTurnService.AgentCommand> command =
                 ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().provider()).isEqualTo("openai");
         assertThat(command.getValue().model()).isEqualTo("gpt-5-nano");
         assertThat(command.getValue().skillMode()).isEqualTo("auto");
@@ -99,10 +109,130 @@ class AgentTurnServiceTest {
     }
 
     @Test
+    void turn_withoutDocumentSkipsEditPreconditionsAndApplyTable() {
+        // 문서를 열지 않은 턴은 적용할 대상이 없다. 문서 조회·편집 잠금·버전 검사를 하지 않고,
+        // 되돌려받을 표(apply_operation_id)도 만들지 않는다.
+        var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        var response = service.turn("ws_1", "user_1", request);
+
+        assertThat(response.status()).isEqualTo("queued");
+        assertThat(response.documentId()).isNull();
+        assertThat(response.baseVersion()).isNull();
+        assertThat(response.applyOperationId()).isNull();
+        verify(workspaceAccessGuard).requireMember("ws_1", "user_1");
+        verifyNoInteractions(documentService, editLockService, applyOperationStore);
+        verify(runRepository).create(anyString(), org.mockito.ArgumentMatchers.eq("ws_1"),
+                org.mockito.ArgumentMatchers.eq("user_1"), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull());
+    }
+
+    @Test
+    void turn_buildsConversationContextOnServerFromSelectedPairs() {
+        // 대화 내용은 클라이언트가 만든 문자열이 아니라 서버가 세션에서 읽은 값이어야 한다.
+        org.mockito.Mockito.when(chatConversationReader.read("session_1", java.util.List.of("pair_9")))
+                .thenReturn(new fruition.core.chat.service.ChatConversationReader.Conversation(
+                        java.util.List.of(new fruition.core.chat.service.ChatConversationReader.Message(
+                                "user", "이전 질문")),
+                        "사용자: 이전 질문"));
+        var request = new AgentTurnRequest("session_1", null, null, "이어서 해줘", "openai", "gpt-5-nano",
+                null, "auto", null,
+                new AgentTurnRequest.ConversationContext(java.util.List.of("pair_9"), null, null),
+                java.util.List.of(), java.util.List.of(), java.util.List.of(), null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        var context = command.getValue().conversationContext();
+        assertThat(context.recentConversationSummary()).isEqualTo("사용자: 이전 질문");
+        assertThat(context.recentMessages()).extracting(AgentTurnService.CommandConversationMessage::content)
+                .containsExactly("이전 질문");
+    }
+
+    @Test
+    void turn_carriesWebSearchFlagIntoCommand() {
+        // 질의 엔드포인트가 받던 옵션이다. 한 입력창으로 합치면 이 경로로만 들어오므로 끊기면 안 된다.
+        var request = new AgentTurnRequest("session_1", null, null, "최신 소식 알려줘", "openai", "gpt-5-nano",
+                true, "auto", null, null, java.util.List.of(), java.util.List.of(), java.util.List.of(),
+                null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        assertThat(command.getValue().allowWebSearch()).isTrue();
+    }
+
+    @Test
+    void turn_omitsWebSearchFlagWhenNotRequested() {
+        var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        assertThat(command.getValue().allowWebSearch()).isNull();
+    }
+
+    @Test
+    void turn_savesPendingChatPairAndCarriesMessageContextInCommand() {
+        // 결과가 왔을 때 어느 말풍선을 채울지 알아야 하므로 ID를 command에 실어 되받는다.
+        var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        var response = service.turn("ws_1", "user_1", request);
+
+        verify(chatSessionService).verifyOwnedSession("ws_1", "user_1", "session_1");
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), anyString(), anyString(), command.capture());
+        var context = command.getValue().messageContext();
+        assertThat(command.getValue().sessionId()).isEqualTo("session_1");
+        assertThat(context.assistantMessageId()).startsWith("chat_assistant_");
+        verify(chatTurnRecorder).createPendingAgentPair(
+                org.mockito.ArgumentMatchers.eq("session_1"),
+                org.mockito.ArgumentMatchers.eq(context.pairId()),
+                org.mockito.ArgumentMatchers.eq(context.userMessageId()),
+                org.mockito.ArgumentMatchers.eq(context.assistantMessageId()),
+                org.mockito.ArgumentMatchers.eq("RAG가 뭐야?"),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("openai"),
+                org.mockito.ArgumentMatchers.eq("gpt-5-nano"),
+                org.mockito.ArgumentMatchers.eq(response.requestId()));
+    }
+
+    @Test
+    void turn_withoutDocumentStillKeysOutboxBySession() {
+        var request = new AgentTurnRequest("session_1", null, null, "RAG가 뭐야?", "openai", "gpt-5-nano", null, null);
+
+        service.turn("ws_1", "user_1", request);
+
+        // 문서 유무와 무관하게 세션이 key다. 한 세션의 턴은 보낸 순서대로 처리돼야 한다.
+        ArgumentCaptor<AgentTurnService.AgentCommand> command =
+                ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
+        verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
+        assertThat(command.getValue().documentId()).isNull();
+        assertThat(command.getValue().baseVersion()).isNull();
+        assertThat(command.getValue().editorSnapshot()).isNull();
+    }
+
+    @Test
+    void request_rejectsPartialDocumentContext() {
+        // 셋 중 하나만 오면 적용 경로가 반쯤 성립해 뒤에서 터진다. 생성 시점에 막는다.
+        assertThatThrownBy(() -> new AgentTurnRequest("session_1", "doc_1", null, "수정해줘", "openai", "gpt-5-nano", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("provided together or omitted together");
+    }
+
+    @Test
     void turn_explicitSkillSelectionPropagatesToCommandJson() throws Exception {
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_mode":"explicit","skill_id":"skill-1",
                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
@@ -116,7 +246,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().skillMode()).isEqualTo("explicit");
         assertThat(command.getValue().skillId()).isEqualTo("skill-1");
         assertThat(new ObjectMapper().writeValueAsString(command.getValue()))
@@ -128,7 +258,7 @@ class AgentTurnServiceTest {
     void turn_offSkillSelectionPropagatesNullSkillId() throws Exception {
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"문서를 점검해줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_mode":"off",
                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
@@ -142,7 +272,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         assertThat(command.getValue().skillMode()).isEqualTo("off");
         assertThat(command.getValue().skillId()).isNull();
     }
@@ -152,7 +282,7 @@ class AgentTurnServiceTest {
         String sourceRunId = "agent_0123456789abcdef0123456789abcdef";
         AgentTurnRequest request = new ObjectMapper().readValue("""
                 {
-                  "documentId":"doc_1","baseVersion":7,"message":"이 작업을 Skill로 만들어줘",
+                  "session_id":"session_1","documentId":"doc_1","baseVersion":7,"message":"이 작업을 Skill로 만들어줘",
                   "provider":"openai","model":"gpt-5-nano",
                   "skill_draft_sources":[{"run_id":"%s","status":"completed",
                     "request_summary":"조작된 요청","plan_summary":"조작된 계획",
@@ -177,7 +307,7 @@ class AgentTurnServiceTest {
 
         ArgumentCaptor<AgentTurnService.AgentCommand> command = ArgumentCaptor.forClass(AgentTurnService.AgentCommand.class);
         verify(outboxWriter).enqueue(anyString(), org.mockito.ArgumentMatchers.eq("ai.agent.command"),
-                org.mockito.ArgumentMatchers.eq("doc_1"), command.capture());
+                org.mockito.ArgumentMatchers.eq("session_1"), command.capture());
         var source = command.getValue().skillDraftSources().getFirst();
         assertThat(source.status()).isEqualTo("completed");
         assertThat(source.requestSummary()).isEqualTo("정식 요청");
@@ -250,7 +380,7 @@ class AgentTurnServiceTest {
                 new AgentTurnRequest.SkillDraftSourceSelector("agent_1123456789abcdef0123456789abcdef"),
                 new AgentTurnRequest.SkillDraftSourceSelector("agent_2123456789abcdef0123456789abcdef"),
                 new AgentTurnRequest.SkillDraftSourceSelector("agent_3123456789abcdef0123456789abcdef"));
-        var request = new AgentTurnRequest("doc_1", 7L, "이 작업을 Skill로 만들어줘", "openai", "gpt-5-nano",
+        var request = new AgentTurnRequest("session_1", "doc_1", 7L, "이 작업을 Skill로 만들어줘", "openai", "gpt-5-nano",
                 null, sources, List.of(), List.of(), "team",
                 new AgentTurnRequest.EditorSnapshot("# 제목\n본문",
                         new AgentTurnRequest.Target("whole_document", 1, 2)));
@@ -488,13 +618,13 @@ class AgentTurnServiceTest {
 
     private AgentTurnRequest request(String type, int startLine, int endLine,
                                      AgentTurnRequest.ConversationContext conversationContext) {
-        return new AgentTurnRequest("doc_1", 7L, "문서를 점검해줘", "openai", "gpt-5-nano", conversationContext,
+        return new AgentTurnRequest("session_1", "doc_1", 7L, "문서를 점검해줘", "openai", "gpt-5-nano", conversationContext,
                 new AgentTurnRequest.EditorSnapshot("# 제목\n본문",
                         new AgentTurnRequest.Target(type, startLine, endLine)));
     }
 
     private AgentTurnRequest skillDraftRequest(String sourceRunId) {
-        return new AgentTurnRequest(
+        return new AgentTurnRequest("session_1", 
                 "doc_1", 7L, "이 작업을 Skill로 만들어줘", "openai", "gpt-5-nano", null,
                 List.of(new AgentTurnRequest.SkillDraftSourceSelector(sourceRunId)),
                 List.of("일반화해줘"), List.of("secret-doc"), "team",
@@ -517,5 +647,21 @@ class AgentTurnServiceTest {
                 null, null, null, filename.substring(0, filename.lastIndexOf('.')),
                 filename.substring(filename.lastIndexOf('.') + 1), null, false, currentVersion,
                 currentVersion, null, Instant.now(), null, null);
+    }
+
+    /** 고른 문답 ID는 조회의 IN 절로 그대로 들어간다. 클라이언트가 SQL 크기를 정하지 못하게 막는다. */
+    @Test
+    void request_rejectsTooManySelectedPairIds() {
+        java.util.List<String> tooMany = java.util.stream.IntStream.rangeClosed(0, 20)
+                .mapToObj(index -> "pair_" + index)
+                .toList();
+        var request = new AgentTurnRequest("session_1", null, null, "정리해줘", "openai", "gpt-5-nano",
+                new AgentTurnRequest.ConversationContext(tooMany, null, null), null);
+
+        var violations = jakarta.validation.Validation.buildDefaultValidatorFactory()
+                .getValidator().validate(request);
+
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("conversationContext.selectedPairIds");
     }
 }

@@ -16,6 +16,7 @@ import fruition.core.wikimaintenance.service.WikiMaintenanceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -51,6 +52,7 @@ class AiTaskResultApplierTest {
     @Mock RestoreApplier restoreApplier;
     @Mock RestoreOperationLifecycle restoreLifecycle;
     @Mock DocumentService documentService;
+    @Mock fruition.core.chat.service.ChatTurnRecorder chatTurnRecorder;
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private AiTaskResultApplier applier;
@@ -59,7 +61,7 @@ class AiTaskResultApplierTest {
     void setUp() {
         applier = new AiTaskResultApplier(jdbcTemplate, objectMapper, queryService,
                 operationIngestService, lintOperationStarter, wikiMaintenanceService,
-                operationLogRepository, restoreApplier, restoreLifecycle, documentService);
+                operationLogRepository, restoreApplier, restoreLifecycle, documentService, chatTurnRecorder);
     }
 
     @Test
@@ -110,7 +112,7 @@ class AiTaskResultApplierTest {
                 org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq(event.get("payload").toString()), eq("new"), eq("run-1"))).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-1")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
 
         applier.applyAgent(event);
         applier.applyAgent(event);
@@ -133,7 +135,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-mismatch:succeeded"),
                 eq("run-mismatch"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-mismatch")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'failed'"),
                 eq("agent_result_request_mismatch"), eq("run-mismatch"))).thenReturn(1);
 
@@ -142,6 +144,79 @@ class AiTaskResultApplierTest {
         verify(jdbcTemplate).update(contains("SET status = 'failed'"),
                 eq("agent_result_request_mismatch"), eq("run-mismatch"));
         verify(jdbcTemplate, never()).update(contains("SET status = 'ready'"), any(), any(), any());
+    }
+
+    /** pipeline이 갱신한 누적 요약은 세션에 쌓여야 다음 턴이 맥락으로 이어 쓴다. */
+    @Test
+    void querySuccessStoresUpdatedConversationSummary() throws Exception {
+        JsonNode event = objectMapper.readTree(eventWithSummary("이제까지 인덱싱을 다뤘다."));
+        when(jdbcTemplate.update(any(String.class), any(), any(), any())).thenReturn(1);
+
+        applier.applyQuery(event);
+
+        verify(chatTurnRecorder).recordContextSummary("session-1", "이제까지 인덱싱을 다뤘다.");
+    }
+
+    /** 같은 결과가 다시 오면 요약도 다시 쓰지 않는다. 최초 처리에서만 세션을 건드린다. */
+    @Test
+    void queryDuplicateDoesNotRestoreConversationSummary() throws Exception {
+        String canonical = eventWithSummary("이제까지 인덱싱을 다뤘다.");
+        when(jdbcTemplate.update(any(String.class), any(), any(), any())).thenReturn(0);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(String.class), eq("query-1")))
+                .thenReturn(canonical);
+
+        applier.applyQuery(objectMapper.readTree(canonical));
+
+        verify(chatTurnRecorder, never()).recordContextSummary(anyString(), anyString());
+    }
+
+    /**
+     * 편집·생성 갈래는 chat.answer도 message도 없이 온다. 빈 말풍선을 남기면 화면에 아무것도
+     * 안 뜨고, 다음 턴의 대화 맥락에 실려 pipeline이 요청 전체를 거부한다.
+     */
+    @Test
+    void markdownCreateResultGetsNonEmptyChatMessage() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-create:succeeded","run_id":"run-create","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "document_id":"doc-1","base_version":1,"apply_operation_id":"op-1",
+                 "message_context":{"assistant_message_id":"chat_assistant_1"}},
+                 "payload":{"action":"markdown_create","generated_markdown":{"markdown":"# 제목"}}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-create:succeeded"),
+                eq("run-create"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-create")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-create")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(chatTurnRecorder).completeAgentTurn(eq("chat_assistant_1"), eq("markdown_create"),
+                content.capture());
+        assertThat(content.getValue()).isNotBlank();
+    }
+
+    @Test
+    void agentSuccessStoresUpdatedConversationSummary() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-summary:succeeded","run_id":"run-summary","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "session_id":"session-1","document_id":"doc-1","base_version":1,"apply_operation_id":"op-1"},
+                 "payload":{"action":"workspace_workflow","run_id":"run-inner","run_status":"queued",
+                 "updated_conversation_summary":"편집 요청까지 반영한 요약"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-summary:succeeded"),
+                eq("run-summary"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-summary")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-summary")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(chatTurnRecorder).recordContextSummary("session-1", "편집 요청까지 반영한 요약");
     }
 
     @Test
@@ -155,7 +230,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-autonomous:succeeded"),
                 eq("run-autonomous"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-autonomous")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'ready'"),
                 eq(event.get("payload").toString()), isNull(), eq("run-autonomous"))).thenReturn(1);
 
@@ -177,10 +252,31 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq("agent_result_unsupported_action"), eq("run-2"))).thenReturn(1);
 
-        applier.applyAgent(event);
+        var result = applier.applyAgent(event);
 
         verify(jdbcTemplate).update(org.mockito.ArgumentMatchers.contains("UPDATE agent_apply_projections"),
                 eq("agent_result_unsupported_action"), eq("run-2"));
+        assertThat(result.error()).isEqualTo("agent_result_unsupported_action");
+    }
+
+    @Test
+    void internallyRejectedAgentSuccessFailsTheChatMessage() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-invalid:succeeded","run_id":"run-invalid","kind":"agent",
+                 "status":"succeeded","request":{"message_context":{"assistant_message_id":"chat_assistant_1"}},
+                 "payload":{"action":"unknown_action"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-invalid:succeeded"),
+                eq("run-invalid"), any())).thenReturn(1);
+        when(jdbcTemplate.update(contains("SET status = 'failed'"),
+                eq("agent_result_unsupported_action"), eq("run-invalid"))).thenReturn(1);
+
+        var result = applier.applyAgent(event);
+
+        assertThat(result.error()).isEqualTo("agent_result_unsupported_action");
+        // 말풍선에는 코드 대신 문장이 남아야 한다.
+        verify(chatTurnRecorder).markFailed("chat_assistant_1", "지원하지 않는 Agent 처리 결과입니다.");
+        verify(chatTurnRecorder, never()).completeAgentTurn(anyString(), any(), any());
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -195,7 +291,7 @@ class AiTaskResultApplierTest {
         when(jdbcTemplate.update(any(String.class), eq("agent:run-non-mutating:succeeded"),
                 eq("run-non-mutating"), any())).thenReturn(1);
         when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-non-mutating")))
-                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1, "op-1"));
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
         when(jdbcTemplate.update(contains("SET status = 'ready'"),
                 eq(event.get("payload").toString()), isNull(), eq("run-non-mutating"))).thenReturn(1);
 
@@ -321,6 +417,14 @@ class AiTaskResultApplierTest {
         return """
                 {"plan":{"pages":[]},"excluded_operation_ids":[],"expected_contributions":{}}
                 """;
+    }
+
+    private String eventWithSummary(String summary) throws Exception {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(event("event-1", "succeeded", "answer", null));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root.get("payload"))
+                .put("updated_conversation_summary", summary);
+        return root.toString();
     }
 
     private String event(String eventId, String status, String answer, String error) {

@@ -11,6 +11,9 @@ import fruition.core.agent.repository.AgentRunCommandRepository;
 import fruition.core.agent.repository.PipelineAgentRunStatusRequester;
 import fruition.core.aihistory.service.AgentApplyOperationStore;
 import fruition.core.authz.WorkspaceAccessGuard;
+import fruition.core.chat.service.ChatConversationReader;
+import fruition.core.chat.service.ChatSessionService;
+import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.document.repository.AiCommandOutboxWriter;
 import fruition.core.document.dto.DocumentDetailResponse;
 import fruition.core.document.exception.DocumentVersionConflictException;
@@ -44,6 +47,9 @@ public class AgentTurnService {
     private final AiCommandOutboxWriter outboxWriter;
     private final AgentApplyOperationStore applyOperationStore;
     private final AiModelCatalog aiModelCatalog;
+    private final ChatSessionService chatSessionService;
+    private final ChatConversationReader chatConversationReader;
+    private final ChatTurnRecorder chatTurnRecorder;
     private final String commandTopic;
 
     public AgentTurnService(DocumentService documentService,
@@ -54,6 +60,9 @@ public class AgentTurnService {
                             AiCommandOutboxWriter outboxWriter,
                             AgentApplyOperationStore applyOperationStore,
                             AiModelCatalog aiModelCatalog,
+                            ChatSessionService chatSessionService,
+                            ChatConversationReader chatConversationReader,
+                            ChatTurnRecorder chatTurnRecorder,
                             @Value("${app.agent.command-topic}") String commandTopic) {
         this.documentService = documentService;
         this.editLockService = editLockService;
@@ -63,38 +72,63 @@ public class AgentTurnService {
         this.outboxWriter = outboxWriter;
         this.applyOperationStore = applyOperationStore;
         this.aiModelCatalog = aiModelCatalog;
+        this.chatSessionService = chatSessionService;
+        this.chatConversationReader = chatConversationReader;
+        this.chatTurnRecorder = chatTurnRecorder;
         this.commandTopic = commandTopic;
     }
 
     @Transactional
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
-        DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
-        if (!isMarkdown(document)) {
-            throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
+        chatSessionService.verifyOwnedSession(workspaceId, userId, request.sessionId());
+        // 문서를 열지 않은 턴은 적용할 대상이 없어 편집 전제 검사를 하지 않는다.
+        // AI는 이 경우 chat_answer·clarify·reject만 낼 수 있다.
+        if (request.hasDocumentContext()) {
+            DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
+            if (!isMarkdown(document)) {
+                throw new InvalidAgentTurnRequestException("Markdown 문서만 Agent 편집을 요청할 수 있습니다.");
+            }
+            // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
+            editLockService.requireWritable(request.documentId(), userId);
+            // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
+            // 본문 편집 기준 version은 edit_revision이다(없으면 current_version과 같다).
+            if (document.editRevision() != request.baseVersion()) {
+                throw new DocumentVersionConflictException(
+                        "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
+            }
+            validateTarget(request.editorSnapshot());
+        } else {
+            workspaceAccessGuard.requireMember(workspaceId, userId);
         }
-        // 다른 사용자가 편집 중이면 pipeline 호출 전에 423으로 거절한다.
-        editLockService.requireWritable(request.documentId(), userId);
-        // 오래된 snapshot(baseVersion)이면 pipeline 호출 전에 충돌로 거절해 LLM 낭비를 막는다.
-        // 본문 편집 기준 version은 edit_revision이다(없으면 current_version과 같다).
-        if (document.editRevision() != request.baseVersion()) {
-            throw new DocumentVersionConflictException(
-                    "문서가 이미 변경되어 오래된 버전으로 편집을 요청할 수 없습니다.");
-        }
-        validateTarget(request.editorSnapshot());
         AiModelCatalog.AiModel selectedModel = aiModelCatalog.resolve(request.provider(), request.model());
         List<CanonicalSkillDraftSource> skillDraftSources = canonicalSkillDraftSources(
                 workspaceId, userId, request.skillDraftSources());
 
         String runId = "agent_" + UUID.randomUUID().toString().replace("-", "");
         // 편집안을 적용할 때 되돌려받을 표. source=agent 문자열 대신 이 값으로 AI 작업 여부를 가린다.
-        String applyOperationId = applyOperationStore.newOperationId();
+        // 적용할 문서가 없으면 표도 만들지 않는다.
+        String applyOperationId = request.hasDocumentContext() ? applyOperationStore.newOperationId() : null;
         runRepository.create(runId, workspaceId, userId, request.documentId(),
                 request.baseVersion(), applyOperationId);
-        outboxWriter.enqueue(runId, commandTopic, request.documentId(),
-                new AgentCommand(runId, "agent", workspaceId, userId, request.documentId(),
+        // 질의와 같은 방식으로 말풍선을 먼저 만들고 결과가 오면 채운다. command와 같은 트랜잭션이라
+        // 발행에 실패하면 메시지도 남지 않는다.
+        AgentMessageContext messageContext = new AgentMessageContext(
+                UUID.randomUUID().toString(),
+                "chat_user_" + UUID.randomUUID(),
+                "chat_assistant_" + UUID.randomUUID());
+        chatTurnRecorder.createPendingAgentPair(request.sessionId(), messageContext.pairId(),
+                messageContext.userMessageId(), messageContext.assistantMessageId(), request.message(),
+                java.time.Instant.now(), selectedModel.provider(), selectedModel.model(), runId);
+        // 질의와 같이 sessionId를 key로 쓴다. 두 갈래가 같은 세션에 쌓이고 세션 단위 누적 요약을
+        // 함께 갱신하므로, 한 세션의 턴은 같은 파티션에서 보낸 순서대로 처리돼야 한다.
+        outboxWriter.enqueue(runId, commandTopic, request.sessionId(),
+                new AgentCommand(runId, "agent", workspaceId, userId, request.sessionId(), messageContext,
+                        request.documentId(),
                         request.baseVersion(), applyOperationId, request.message(),
-                        selectedModel.provider(), selectedModel.model(), request.skillMode(), request.skillId(),
-                        CommandConversationContext.from(request.conversationContext()),
+                        selectedModel.provider(), selectedModel.model(), request.allowWebSearch(),
+                        request.skillMode(), request.skillId(),
+                        CommandConversationContext.from(request.conversationContext(),
+                                chatConversationReader.read(request.sessionId(), selectedPairIds(request))),
                         skillDraftSources,
                         request.skillDraftUserDirectives(), request.skillDraftExcludedLiterals(),
                         request.skillScopeType(),
@@ -108,6 +142,26 @@ public class AgentTurnService {
                 null,
                 null
         );
+    }
+
+    private static List<String> selectedPairIds(AgentTurnRequest request) {
+        if (request.conversationContext() == null || request.conversationContext().selectedPairIds() == null) {
+            return List.of();
+        }
+        return request.conversationContext().selectedPairIds();
+    }
+
+    /**
+     * 이 run을 볼 자격이 있는지만 확인한다. 진행 이벤트 구독은 pipeline 없이도 흘려보낼 수 있으므로
+     * 결과 조회와 달리 외부 호출을 하지 않는다 — pipeline이 잠깐 멈춰도 구독은 열려야 한다.
+     */
+    public void verifyRunAccess(String workspaceId, String userId, String runId) {
+        workspaceAccessGuard.requireMember(workspaceId, userId);
+        if (!RUN_ID_PATTERN.matcher(runId).matches()) {
+            throw new InvalidAgentTurnRequestException("Agent run ID 형식이 올바르지 않습니다.");
+        }
+        runRepository.find(workspaceId, userId, runId)
+                .orElseThrow(() -> new AgentRunNotFoundException(runId));
     }
 
     public AgentTurnResponse get(String workspaceId, String userId, String runId) {
@@ -237,17 +291,27 @@ public class AgentTurnService {
                 run.plan().summary().trim(), List.copyOf(operations));
     }
 
+    /** 결과가 왔을 때 어느 말풍선을 채울지 알기 위해 command와 함께 실어 되받는다. */
+    record AgentMessageContext(
+            @com.fasterxml.jackson.annotation.JsonProperty("pair_id") String pairId,
+            @com.fasterxml.jackson.annotation.JsonProperty("user_message_id") String userMessageId,
+            @com.fasterxml.jackson.annotation.JsonProperty("assistant_message_id") String assistantMessageId
+    ) {}
+
     record AgentCommand(
             @com.fasterxml.jackson.annotation.JsonProperty("run_id") String runId,
             String kind,
             @com.fasterxml.jackson.annotation.JsonProperty("workspace_id") String workspaceId,
             @com.fasterxml.jackson.annotation.JsonProperty("user_id") String userId,
+            @com.fasterxml.jackson.annotation.JsonProperty("session_id") String sessionId,
+            @com.fasterxml.jackson.annotation.JsonProperty("message_context") AgentMessageContext messageContext,
             @com.fasterxml.jackson.annotation.JsonProperty("document_id") String documentId,
-            @com.fasterxml.jackson.annotation.JsonProperty("base_version") long baseVersion,
+            @com.fasterxml.jackson.annotation.JsonProperty("base_version") Long baseVersion,
             @com.fasterxml.jackson.annotation.JsonProperty("apply_operation_id") String applyOperationId,
             String message,
             String provider,
             String model,
+            @com.fasterxml.jackson.annotation.JsonProperty("allow_web_search") Boolean allowWebSearch,
             @com.fasterxml.jackson.annotation.JsonProperty("skill_mode") String skillMode,
             @com.fasterxml.jackson.annotation.JsonProperty("skill_id") String skillId,
             @com.fasterxml.jackson.annotation.JsonProperty("conversation_context") CommandConversationContext conversationContext,
@@ -274,15 +338,24 @@ public class AgentTurnService {
 
     record CommandConversationContext(
             @com.fasterxml.jackson.annotation.JsonProperty("recent_conversation_summary") String recentConversationSummary,
+            @com.fasterxml.jackson.annotation.JsonProperty("recent_messages") List<CommandConversationMessage> recentMessages,
             @com.fasterxml.jackson.annotation.JsonProperty("reference_context") java.util.Map<String, Object> referenceContext,
             @com.fasterxml.jackson.annotation.JsonProperty("pending_skill_proposal") CommandPendingSkillProposal pendingSkillProposal
     ) {
-        static CommandConversationContext from(AgentTurnRequest.ConversationContext context) {
-            return context == null ? null
-                    : new CommandConversationContext(context.recentConversationSummary(), context.referenceContext(),
-                    CommandPendingSkillProposal.from(context.pendingSkillProposal()));
+        /** 대화 내용은 서버가 읽은 것을 쓰고, 참조·Skill 제안은 클라이언트 상태를 그대로 옮긴다. */
+        static CommandConversationContext from(AgentTurnRequest.ConversationContext context,
+                                               ChatConversationReader.Conversation conversation) {
+            return new CommandConversationContext(
+                    conversation.summary(),
+                    conversation.recentMessages().stream()
+                            .map(message -> new CommandConversationMessage(message.role(), message.content()))
+                            .toList(),
+                    context == null ? null : context.referenceContext(),
+                    context == null ? null : CommandPendingSkillProposal.from(context.pendingSkillProposal()));
         }
     }
+
+    record CommandConversationMessage(String role, String content) {}
 
     record CommandPendingSkillProposal(
             @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,
@@ -299,6 +372,10 @@ public class AgentTurnService {
 
     record CommandEditorSnapshot(String markdown, CommandTarget target) {
         static CommandEditorSnapshot from(AgentTurnRequest.EditorSnapshot snapshot) {
+            // 문서를 열지 않은 턴은 snapshot이 없다.
+            if (snapshot == null) {
+                return null;
+            }
             return new CommandEditorSnapshot(snapshot.markdown(), CommandTarget.from(snapshot.target()));
         }
     }

@@ -1,6 +1,9 @@
 package fruition.core.aitask.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import fruition.core.chat.service.ChatTurnRecorder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fruition.core.query.dto.QueryResponse;
 import fruition.core.query.repository.PipelineQueryResponse;
@@ -22,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -33,6 +37,9 @@ public class AiTaskResultApplier {
     private static final Set<String> NON_MUTATING_ACTIONS = Set.of("chat_answer", "clarify", "reject");
     private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
 
+    private static final Logger log = LoggerFactory.getLogger(AiTaskResultApplier.class);
+
+    private final ChatTurnRecorder chatTurnRecorder;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final QueryService queryService;
@@ -52,7 +59,9 @@ public class AiTaskResultApplier {
                                OperationLogRepository operationLogRepository,
                                RestoreApplier restoreApplier,
                                RestoreOperationLifecycle restoreLifecycle,
-                               DocumentService documentService) {
+                               DocumentService documentService,
+                               ChatTurnRecorder chatTurnRecorder) {
+        this.chatTurnRecorder = chatTurnRecorder;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.queryService = queryService;
@@ -152,21 +161,25 @@ public class AiTaskResultApplier {
                 event.path("error").asText(null));
     }
 
+    /**
+     * @return 최초 반영 여부와 실제 projection 반영 오류. 호출부는 이 결과로 SSE를 한 번만 종료한다.
+     */
     @Transactional
-    public void applyAgent(JsonNode event) {
+    public AgentApplyResult applyAgent(JsonNode event) {
         String eventId = text(event, "event_id");
         String runId = text(event, "run_id");
         if (jdbcTemplate.update("""
                 INSERT INTO ai_task_result_receipts (event_id, run_id, task_kind, event_payload)
                 VALUES (?, ?, 'agent', CAST(? AS jsonb))
                 ON CONFLICT (run_id, task_kind) WHERE task_kind = 'agent' DO NOTHING
-                """, eventId, runId, event.toString()) == 0) return;
+                """, eventId, runId, event.toString()) == 0) return new AgentApplyResult(false, null);
 
         int updated;
+        String errorCode;
         if ("succeeded".equals(text(event, "status"))) {
             JsonNode request = event.get("request");
             JsonNode payload = event.get("payload");
-            String errorCode = null;
+            errorCode = null;
             if (request == null || !request.isObject()) {
                 errorCode = "agent_result_invalid_request";
             } else if (payload == null || !payload.isObject()) {
@@ -192,11 +205,88 @@ public class AiTaskResultApplier {
             }
         } else {
             String error = event.path("error").asText(null);
-            updated = markAgentFailed(runId, error == null || error.isBlank() ? "agent_turn_failed" : error);
+            errorCode = error == null || error.isBlank() ? "agent_turn_failed" : error;
+            updated = markAgentFailed(runId, errorCode);
         }
         if (updated != 1) {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
+        recordAgentChatMessage(event, errorCode);
+        chatTurnRecorder.recordContextSummary(
+                textOrNull(event.path("request"), "session_id"),
+                event.path("payload").path("updated_conversation_summary").asText(null));
+        return new AgentApplyResult(true, errorCode);
+    }
+
+    /**
+     * Agent 결과를 채팅 말풍선에 채운다. 세션 없이 만들어진 예전 run은 message_context가 없어 건너뛴다.
+     * 채팅 기록 실패가 적용 표를 되돌리면 안 되므로 여기서 삼킨다 — 이 시점에 projection은 이미 확정됐다.
+     */
+    private void recordAgentChatMessage(JsonNode event, String errorCode) {
+        JsonNode context = event.path("request").path("message_context");
+        String assistantMessageId = textOrNull(context, "assistant_message_id");
+        if (assistantMessageId == null) {
+            return;
+        }
+        try {
+            if (errorCode == null) {
+                JsonNode payload = event.path("payload");
+                chatTurnRecorder.completeAgentTurn(assistantMessageId,
+                        payload.path("action").asText(null), agentMessageContent(payload));
+            } else {
+                chatTurnRecorder.markFailed(assistantMessageId, describeAgentError(errorCode));
+            }
+        } catch (RuntimeException e) {
+            log.warn("[Agent 채팅 기록 실패] runId={} assistantMessageId={} errorType={}",
+                    text(event, "run_id"), assistantMessageId, e.getClass().getSimpleName());
+        }
+    }
+
+    public record AgentApplyResult(boolean applied, String error) {}
+
+    /**
+     * 내부 오류 코드에 대응하는 사용자 문구. 코드는 판정과 로그에 쓰고, 화면에는 이 문장을 보낸다.
+     * 여기 없는 값은 pipeline이 준 사유 문장이라 그대로 내보낸다.
+     */
+    private static final Map<String, String> AGENT_ERROR_MESSAGE = Map.of(
+            "agent_turn_failed", "Agent 처리 중 오류가 발생했습니다.",
+            "agent_result_invalid_request", "Agent 결과의 요청 정보가 올바르지 않습니다.",
+            "agent_result_invalid_payload", "Agent 결과 형식이 올바르지 않습니다.",
+            "agent_result_unsupported_action", "지원하지 않는 Agent 처리 결과입니다.",
+            "agent_result_missing_canonical_markdown", "편집안 본문이 비어 있어 적용할 수 없습니다.",
+            "agent_result_request_mismatch", "요청과 결과가 달라 적용할 수 없습니다.");
+
+    /** 화면·SSE로 나갈 문구. 내부 코드가 그대로 사용자에게 보이지 않게 한다. */
+    public static String describeAgentError(String errorCode) {
+        return AGENT_ERROR_MESSAGE.getOrDefault(errorCode, errorCode);
+    }
+
+    /** 갈래별 기본 말풍선 문구. 편집 결과 본문은 미리보기에서 보므로 여기서는 무엇을 했는지만 알린다. */
+    private static final Map<String, String> ACTION_FALLBACK_MESSAGE = Map.of(
+            "markdown_create", "문서 초안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "markdown_edit", "편집안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "folder_organize", "폴더 정리 계획을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "workspace_workflow", "작업 계획을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "skill_authoring", "Skill 초안을 만들었습니다. 미리보기에서 확인해 주세요.",
+            "skill_draft_proposal", "Skill 제안을 만들었습니다. 미리보기에서 확인해 주세요.");
+
+    /**
+     * 말풍선에 보일 본문. chat_answer는 답변, 나머지는 AI가 붙인 설명이다.
+     *
+     * <p>빈 문자열은 돌려주지 않는다. 빈 말풍선은 화면에서 아무것도 아니고,
+     * 다음 턴의 대화 맥락에 실리면 pipeline이 요청 전체를 거부한다.
+     */
+    private static String agentMessageContent(JsonNode payload) {
+        String answer = payload.path("chat").path("answer").asText(null);
+        if (answer != null && !answer.isBlank()) {
+            return answer;
+        }
+        String message = payload.path("message").asText(null);
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return ACTION_FALLBACK_MESSAGE.getOrDefault(payload.path("action").asText(),
+                "요청을 처리했습니다.");
     }
 
     public static String expectedMarkdown(JsonNode event) {
@@ -257,7 +347,7 @@ public class AiTaskResultApplier {
                 resultSet.getString("workspace_id"),
                 resultSet.getString("user_id"),
                 resultSet.getString("document_id"),
-                resultSet.getLong("base_version"),
+                resultSet.getObject("base_version", Long.class),
                 resultSet.getString("apply_operation_id")) : null, runId);
     }
 
@@ -266,9 +356,8 @@ public class AiTaskResultApplier {
                 || !Objects.equals(textOrNull(request, "workspace_id"), projection.workspaceId())
                 || !Objects.equals(textOrNull(request, "user_id"), projection.userId())
                 || !Objects.equals(textOrNull(request, "document_id"), projection.documentId())
-                || !request.path("base_version").isNumber()
-                || request.path("base_version").asLong() != projection.baseVersion()
-                || !Objects.equals(textOrNull(request, "apply_operation_id"), projection.applyOperationId())) {
+                || !Objects.equals(textOrNull(request, "apply_operation_id"), projection.applyOperationId())
+                || !Objects.equals(longOrNull(request, "base_version"), projection.baseVersion())) {
             return "agent_result_request_mismatch";
         }
         return null;
@@ -279,11 +368,17 @@ public class AiTaskResultApplier {
         return value == null || value.isNull() ? null : value.asText();
     }
 
+    /** 문서를 열지 않은 턴은 base_version이 없다. 숫자가 아니면 null로 본다. */
+    private static Long longOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isNumber() ? value.asLong() : null;
+    }
+
     static record AgentProjection(
             String workspaceId,
             String userId,
             String documentId,
-            long baseVersion,
+            Long baseVersion,
             String applyOperationId
     ) {}
 
@@ -318,6 +413,9 @@ public class AiTaskResultApplier {
             QueryResponse response = first
                     ? queryService.completeAsync(sessionId, question, runId, context, result)
                     : responseFrom(question, context, result);
+            if (first) {
+                chatTurnRecorder.recordContextSummary(sessionId, result.updatedConversationSummary());
+            }
             return new QueryProjection(runId, response, null);
         }
 

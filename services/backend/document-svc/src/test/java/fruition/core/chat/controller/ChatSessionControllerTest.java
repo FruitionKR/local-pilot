@@ -125,7 +125,7 @@ class ChatSessionControllerTest {
     void getMessages_ownedSession_returnsMessagesInOrder() throws Exception {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, USER_ID, null);
         when(chatSessionService.verifyOwnedSession(WORKSPACE_ID, USER_ID, SESSION_ID)).thenReturn(session);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 new ChatMessage("chat_user_1", session, "pair_1", "user", "질문", "completed", Instant.now(), null),
                 new ChatMessage("chat_assistant_1", session, "pair_1", "assistant", "답변", "completed", Instant.now(), null)
         ));

@@ -48,6 +48,14 @@ public class ChatMessage {
     @Column(name = "web_search_enabled")
     private Boolean webSearchEnabled;
 
+    /** Agent turn이 만든 메시지의 run ID. 승인 상태와 미리보기 본문은 이 run에서 읽는다. */
+    @Column(name = "run_id")
+    private String runId;
+
+    /** AI가 고른 갈래. 화면이 무엇을 그릴지 판단한다. 결과가 와야 정해지므로 선저장 시점에는 비어 있다. */
+    @Column(name = "action")
+    private String action;
+
     protected ChatMessage() {}
 
     public ChatMessage(String id, ChatSession session, String pairId, String role, String content,
@@ -78,6 +86,15 @@ public class ChatMessage {
         this.webSearchEnabled = webSearchEnabled;
     }
 
+    /** Agent turn 요청 시점에 어느 run이 이 메시지를 채울지 새겨 둔다. */
+    public void assignAgentRun(String runId) { this.runId = runId; }
+
+    /** 결과가 도착해 AI가 고른 갈래가 정해졌을 때 기록한다. */
+    public void completeAgentTurn(String action, String content) {
+        this.action = action;
+        complete(content);
+    }
+
     /** 이 메시지(문답)가 세션 위키 source page에 편입됐음을 기록한다. */
     public void markIngested(String wikiPageId) { this.wikiPageId = wikiPageId; }
 
@@ -87,9 +104,14 @@ public class ChatMessage {
         this.errorMessage = null;
     }
 
+    /** error_message는 varchar(255)다. pipeline 오류는 그보다 길 수 있어 잘라 담는다. */
+    private static final int MAX_ERROR_MESSAGE_LENGTH = 255;
+
     public void fail(String errorMessage) {
         this.status = "failed";
-        this.errorMessage = errorMessage;
+        this.errorMessage = errorMessage == null || errorMessage.length() <= MAX_ERROR_MESSAGE_LENGTH
+                ? errorMessage
+                : errorMessage.substring(0, MAX_ERROR_MESSAGE_LENGTH);
     }
 
     public String getId() { return id; }
@@ -98,6 +120,8 @@ public class ChatMessage {
     public String getPairId() { return pairId; }
     public String getRole() { return role; }
     public String getContent() { return content; }
+    public String getRunId() { return runId; }
+    public String getAction() { return action; }
     public String getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public String getErrorMessage() { return errorMessage; }

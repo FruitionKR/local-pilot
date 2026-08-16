@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
 import fruition.core.chat.domain.ChatMessageRelatedPage;
@@ -47,7 +48,7 @@ class QueryServiceTest {
     @Mock ChatMessageReferenceRepository referenceRepository;
     @Mock ChatMessageRelatedPageRepository relatedPageRepository;
     @Mock ChatSessionRepository chatSessionRepository;
-    @Mock QueryMessageRecorder queryMessageRecorder;
+    @Mock ChatTurnRecorder chatTurnRecorder;
 
     QueryService queryService;
 
@@ -55,7 +56,7 @@ class QueryServiceTest {
     void setUp() {
         queryService = new QueryService(
                 pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository,
-                chatSessionRepository, queryMessageRecorder);
+                chatSessionRepository, chatTurnRecorder);
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(chatMessageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
@@ -91,7 +92,7 @@ class QueryServiceTest {
         assertThat(result.relatedPages().get(0).depth()).isEqualTo(0);
         assertThat(result.relatedPages().get(1).role()).isEqualTo("focus_concept");
 
-        verify(queryMessageRecorder).createPendingPair(
+        verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
                 eq("openai"), eq("gpt-5-nano"));
         ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
@@ -195,10 +196,10 @@ class QueryServiceTest {
         assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "Self-Attention이 뭐야?"))
                 .isInstanceOf(PipelineQueryException.class);
 
-        verify(queryMessageRecorder).createPendingPair(
+        verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("Self-Attention이 뭐야?"), any(),
                 eq("openai"), eq("gpt-5-nano"));
-        verify(queryMessageRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
+        verify(chatTurnRecorder).markFailed(anyString(), eq("{\"error\": \"service unavailable\"}"));
     }
 
     @Test
@@ -210,7 +211,7 @@ class QueryServiceTest {
         assertThatThrownBy(() -> queryService.query(WORKSPACE_ID, SESSION_ID, "질문"))
                 .isInstanceOf(IllegalStateException.class);
 
-        verify(queryMessageRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
+        verify(chatTurnRecorder).markFailed(anyString(), eq("질의 처리 중 오류가 발생했습니다."));
     }
 
     @Test
@@ -226,7 +227,7 @@ class QueryServiceTest {
     @DisplayName("새 pair 저장 전에 같은 세션의 완료된 최근 6개 메시지만 시간순으로 전달한다")
     void query_forwardsRecentCompletedMessagesBeforeCreatingPendingPair() {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "old_user", "pair_old", "user", "오래된 질문", "completed", 1),
                 message(session, "old_assistant", "pair_old", "assistant", "오래된 답변", "completed", 2),
                 message(session, "pending_user", "pair_pending", "user", "진행 중인 질문", "completed", 3),
@@ -251,9 +252,9 @@ class QueryServiceTest {
         assertThat(history.getValue()).extracting(PipelineQueryRequester.RecentMessage::content)
                 .containsExactly("질문2", "답변2", "질문3", "답변3", "질문4", "답변4");
 
-        InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, queryMessageRecorder);
-        order.verify(chatMessageRepository).findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID);
-        order.verify(queryMessageRecorder).createPendingPair(
+        InOrder order = org.mockito.Mockito.inOrder(chatMessageRepository, chatTurnRecorder);
+        order.verify(chatMessageRepository).findAllBySessionIdInTurnOrder(SESSION_ID);
+        order.verify(chatTurnRecorder).createPendingPair(
                 eq(SESSION_ID), anyString(), anyString(), anyString(), eq("새 질문"), any(),
                 eq("openai"), eq("gpt-5-nano"));
     }
@@ -263,7 +264,7 @@ class QueryServiceTest {
     void prepareMessages_ordersSameTimestampPairsByPairIdThenRole() {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
         java.time.Instant createdAt = java.time.Instant.parse("2026-06-20T10:00:00Z");
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "assistant_pair_b", "pair_b", "assistant", "답변B", "completed", createdAt),
                 message(session, "user_pair_a", "pair_a", "user", "질문A", "completed", createdAt),
                 message(session, "assistant_pair_a", "pair_a", "assistant", "답변A", "completed", createdAt),
@@ -284,7 +285,7 @@ class QueryServiceTest {
         ChatSession session = new ChatSession(SESSION_ID, WORKSPACE_ID, "user_1f9a74af", null);
         String longUserContent = "u".repeat(4001);
         String longAssistantContent = "a".repeat(4001);
-        when(chatMessageRepository.findAllBySession_IdOrderByCreatedAtAsc(SESSION_ID)).thenReturn(List.of(
+        when(chatMessageRepository.findAllBySessionIdInTurnOrder(SESSION_ID)).thenReturn(List.of(
                 message(session, "user_long", "pair_long", "user", longUserContent, "completed", 1),
                 message(session, "assistant_long", "pair_long", "assistant", longAssistantContent, "completed", 2)
         ));
@@ -346,12 +347,12 @@ class QueryServiceTest {
 
         return new PipelineQueryResponse(
                 "Index.md는 위키 내 모든 페이지를 카테고리별로 정리한 카탈로그 파일 역할을 합니다. [1]",
-                relatedPages, evidenceSnippets, graphContext, List.of(traversalPath),
+                null, relatedPages, evidenceSnippets, graphContext, List.of(traversalPath),
                 false, false, 0, null
         );
     }
 
     private PipelineQueryResponse responseWithEvidence(List<PipelineQueryResponse.EvidenceSnippet> evidence) {
-        return new PipelineQueryResponse("답변", List.of(), evidence, null, List.of(), false, false, 0, null);
+        return new PipelineQueryResponse("답변", null, List.of(), evidence, null, List.of(), false, false, 0, null);
     }
 }

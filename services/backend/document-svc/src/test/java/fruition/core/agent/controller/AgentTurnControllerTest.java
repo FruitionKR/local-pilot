@@ -46,13 +46,14 @@ class AgentTurnControllerTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired JwtTokenProvider jwtTokenProvider;
     @MockBean AgentTurnService agentTurnService;
+    @MockBean fruition.core.query.service.QueryEventBroker runEventBroker;
 
     @Test
     void turn_authenticatedRequestReturnsPipelineResult() throws Exception {
         AgentTurnRequest request = request();
         AgentTurnResponse response = new AgentTurnResponse(
                 "doc_1",
-                4,
+                4L,
                 "agent_request_1",
                 "op_apply_1",
                 "queued",
@@ -80,14 +81,14 @@ class AgentTurnControllerTest {
     @Test
     void turn_explicitSkillFieldsReachService() throws Exception {
         when(agentTurnService.turn(eq(WORKSPACE_ID), eq(USER_ID), any(AgentTurnRequest.class)))
-                .thenReturn(new AgentTurnResponse("doc_1", 4, "agent_request_1", "op_apply_1", "queued", null, null));
+                .thenReturn(new AgentTurnResponse("doc_1", 4L, "agent_request_1", "op_apply_1", "queued", null, null));
 
         mockMvc.perform(post("/api/workspaces/" + WORKSPACE_ID + "/agent/turn")
                         .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "documentId":"doc_1","baseVersion":4,"message":"문서를 점검해줘",
+                                  "session_id":"session_1","documentId":"doc_1","baseVersion":4,"message":"문서를 점검해줘",
                                   "skill_mode":"explicit","skill_id":"skill-1",
                                   "editorSnapshot":{"markdown":"# 제목\\n본문","target":{"type":"whole_document","startLine":1,"endLine":2}}
                                 }
@@ -247,7 +248,7 @@ class AgentTurnControllerTest {
     }
 
     private AgentTurnRequest request() {
-        return new AgentTurnRequest(
+        return new AgentTurnRequest("session_1", 
                 "doc_1",
                 4L,
                 "문서를 점검해줘",
@@ -258,5 +259,24 @@ class AgentTurnControllerTest {
                         "# 제목\n본문",
                         new AgentTurnRequest.Target("whole_document", 1, 2))
         );
+    }
+
+    /**
+     * 진행 이벤트는 Redis 버퍼에 이미 쌓여 있어 pipeline 없이도 흘려보낼 수 있다. 구독 입구가
+     * 결과 조회(get)를 부르면 pipeline이 잠깐 멈춘 동안 소유권과 무관하게 구독까지 막힌다.
+     */
+    @Test
+    void subscribeTurnEvents_checksAccessWithoutCallingPipeline() throws Exception {
+        when(runEventBroker.subscribe("agent_request_1"))
+                .thenReturn(new org.springframework.web.servlet.mvc.method.annotation.SseEmitter());
+
+        mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/agent/turn/agent_request_1/events")
+                        .header("Authorization", "Bearer " + jwtTokenProvider.generateAccessToken(USER_ID, "test@example.com")))
+                .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(agentTurnService).verifyRunAccess(WORKSPACE_ID, USER_ID, "agent_request_1");
+        org.mockito.Mockito.verify(agentTurnService, org.mockito.Mockito.never())
+                .get(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString());
     }
 }
