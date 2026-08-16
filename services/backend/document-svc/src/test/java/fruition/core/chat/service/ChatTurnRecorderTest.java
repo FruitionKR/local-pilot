@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,6 +74,27 @@ class ChatTurnRecorderTest {
         assertThat(assistant.getStatus()).isEqualTo("failed");
         assertThat(assistant.getErrorMessage()).isEqualTo("pipeline 실패");
         verify(chatMessageRepository).save(assistant);
+    }
+
+    @Test
+    void recordContextSummary_storesSummaryWithTimestamp() {
+        ChatSession session = new ChatSession("session_abc123", "ws_abc123", "user_abc123", null);
+        when(chatSessionRepository.findById("session_abc123")).thenReturn(Optional.of(session));
+
+        recorder.recordContextSummary("session_abc123", "지금까지 인덱싱을 다뤘다.");
+
+        assertThat(session.getContextSummary()).isEqualTo("지금까지 인덱싱을 다뤘다.");
+        assertThat(session.getContextSummaryUpdatedAt()).isNotNull();
+        verify(chatSessionRepository).save(session);
+    }
+
+    /** 대화가 짧으면 pipeline이 요약을 만들지 않는다. 그때 기존 요약을 지우면 맥락이 뒤로 물러난다. */
+    @Test
+    void recordContextSummary_keepsPreviousSummaryWhenNothingArrives() {
+        recorder.recordContextSummary("session_abc123", null);
+        recorder.recordContextSummary("session_abc123", "  ");
+
+        verify(chatSessionRepository, never()).save(any());
     }
 
     @Test

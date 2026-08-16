@@ -97,6 +97,24 @@ public class ChatTurnRecorder {
         chatSessionRepository.save(session);
     }
 
+    /**
+     * pipeline이 갱신해 돌려준 누적 대화 요약을 세션에 남긴다. 다음 턴이 이 요약을 맥락으로 읽는다.
+     *
+     * <p>대화가 짧으면 pipeline이 요약을 만들지 않아 비어 온다. 그때는 기존 요약을 지우지 않는다.
+     * 세션 없이 만들어진 예전 run은 sessionId가 비어 온다.
+     */
+    @Transactional
+    public void recordContextSummary(String sessionId, String summary) {
+        if (sessionId == null || sessionId.isBlank() || summary == null || summary.isBlank()) {
+            return;
+        }
+        // 세션이 지워진 뒤 결과가 도착할 수 있다. 요약은 부수 정보라 없으면 넘긴다.
+        chatSessionRepository.findById(sessionId).ifPresent(session -> {
+            session.updateContextSummary(summary, Instant.now());
+            chatSessionRepository.save(session);
+        });
+    }
+
     /** Agent 결과가 도착했을 때 AI가 고른 갈래와 본문을 채운다. */
     @Transactional
     public void completeAgentTurn(String assistantMessageId, String action, String content) {

@@ -206,6 +206,9 @@ public class AiTaskResultApplier {
             throw new IllegalStateException("Agent 적용 projection을 갱신하지 못했습니다: " + runId);
         }
         recordAgentChatMessage(event);
+        chatTurnRecorder.recordContextSummary(
+                textOrNull(event.path("request"), "session_id"),
+                event.path("payload").path("updated_conversation_summary").asText(null));
     }
 
     /**
@@ -367,6 +370,9 @@ public class AiTaskResultApplier {
             QueryResponse response = first
                     ? queryService.completeAsync(sessionId, question, runId, context, result)
                     : responseFrom(question, context, result);
+            if (first) {
+                chatTurnRecorder.recordContextSummary(sessionId, result.updatedConversationSummary());
+            }
             return new QueryProjection(runId, response, null);
         }
 

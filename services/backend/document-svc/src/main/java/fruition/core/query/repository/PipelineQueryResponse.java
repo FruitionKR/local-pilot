@@ -9,6 +9,11 @@ public record PipelineQueryResponse(
         @Schema(description = "질문에 대한 답변 본문")
         String answer,
 
+        @JsonProperty("updated_conversation_summary")
+        @Schema(description = "이번 턴까지 반영해 pipeline이 갱신한 누적 대화 요약. "
+                + "대화가 짧으면 null이다.", nullable = true)
+        String updatedConversationSummary,
+
         @JsonProperty("related_pages")
         @Schema(description = "답변 근거가 된 Wiki 페이지 목록")
         List<RelatedPage> relatedPages,

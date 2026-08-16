@@ -14,7 +14,10 @@ import java.util.stream.Collectors;
 /**
  * AI에게 넘길 대화 맥락을 세션에서 읽어 조립한다.
  *
- * <p>어떤 문답을 쓸지는 사용자가 화면에서 고르지만, 어떤 형식으로 pipeline에 넘길지는 서버가 정한다.
+ * <p>맥락은 두 겹이다. 요약은 pipeline이 턴마다 갱신해 세션에 쌓아 둔 누적본이고,
+ * 최근 메시지는 그 위에 얹는 원문이다. 요약이 앞쪽 대화를 붙들고 있어 대화가 길어져도 맥락이 끊기지 않는다.
+ *
+ * <p>어떤 문답을 원문으로 쓸지는 사용자가 화면에서 고르지만, 어떤 형식으로 pipeline에 넘길지는 서버가 정한다.
  * 클라이언트가 만든 문자열을 그대로 실어 보내면 내용이 실제 대화와 다를 수 있고 형식도 갈린다.
  *
  * <p>선택한 pair는 항상 세션 안에서만 찾는다. 남의 세션 pair ID를 넣어도 조회되지 않는다.
@@ -24,15 +27,15 @@ public class ChatConversationReader {
 
     /** pipeline이 받는 상한과 같다. 더 보내도 잘린다. */
     private static final int MAX_RECENT_MESSAGES = 6;
-    /** 요약 상한. 넘치면 오래된 앞쪽을 버려 최근 맥락을 남긴다. */
-    private static final int MAX_SUMMARY_CHARS = 4000;
     private static final int MAX_MESSAGE_CONTENT_LENGTH = 2000;
-    private static final Map<String, String> ROLE_LABEL = Map.of("user", "사용자", "assistant", "어시스턴트");
 
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatSessionService chatSessionService;
 
-    public ChatConversationReader(ChatMessageRepository chatMessageRepository) {
+    public ChatConversationReader(ChatMessageRepository chatMessageRepository,
+                                  ChatSessionService chatSessionService) {
         this.chatMessageRepository = chatMessageRepository;
+        this.chatSessionService = chatSessionService;
     }
 
     /**
@@ -60,7 +63,8 @@ public class ChatConversationReader {
 
         return new Conversation(
                 recent.stream().map(message -> new Message(message.getRole(), truncate(message.getContent()))).toList(),
-                summarize(ordered));
+                // 요약은 서버가 만들지 않는다. pipeline이 갱신해 세션에 쌓아 둔 것을 그대로 넘긴다.
+                chatSessionService.contextSummary(sessionId));
     }
 
     /** user·assistant가 하나씩이고 둘 다 완료된 문답만 맥락으로 쓴다. */
@@ -74,19 +78,6 @@ public class ChatConversationReader {
                 .filter(pair -> pair.getValue().stream().filter(message -> "assistant".equals(message.getRole())).count() == 1)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toSet());
-    }
-
-    private static String summarize(List<ChatMessage> ordered) {
-        if (ordered.isEmpty()) {
-            return null;
-        }
-        String summary = ordered.stream()
-                .map(message -> ROLE_LABEL.getOrDefault(message.getRole(), message.getRole())
-                        + ": " + message.getContent())
-                .collect(Collectors.joining("\n"));
-        return summary.length() <= MAX_SUMMARY_CHARS
-                ? summary
-                : summary.substring(summary.length() - MAX_SUMMARY_CHARS);
     }
 
     private static String truncate(String content) {

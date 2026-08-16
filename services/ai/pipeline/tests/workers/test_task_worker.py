@@ -200,6 +200,60 @@ def test_query_command_passes_runtime_model_and_web_search_flag(
     assert result == {"answer": "ok"}
 
 
+def test_query_command_passes_accumulated_conversation_summary() -> None:
+    """요약을 넘겨야 이번 턴 요약이 앞 내용을 이어받는다. 빠뜨리면 매 턴 새로 쓰여 앞쪽이 사라진다."""
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "질문",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": False,
+        "recent_conversation_summary": "지금까지 검색 인덱싱을 다뤘다.",
+        "recent_messages": [{"role": "user", "content": "이전 질문"}],
+    }
+    use_case = MagicMock()
+
+    with (
+        patch.object(task_worker, "build_answer_query_use_case", return_value=use_case),
+        patch.object(task_worker, "query_to_response") as to_response,
+    ):
+        to_response.return_value.model_dump.return_value = {"answer": "ok"}
+        task_worker._handle_query(command)
+
+    assert use_case.execute.call_args.kwargs["conversation_context"] == ConversationContext(
+        recent_conversation_summary="지금까지 검색 인덱싱을 다뤘다.",
+        recent_messages=(ConversationMessage(role="user", content="이전 질문"),),
+    )
+
+
+def test_query_command_omits_conversation_context_without_history() -> None:
+    command = {
+        "run_id": "run-1",
+        "kind": "query",
+        "workspace_id": "workspace-1",
+        "user_id": "user-1",
+        "session_id": "session-1",
+        "question": "첫 질문",
+        "provider": "openai",
+        "model": "gpt-5-nano",
+        "allow_web_search": False,
+    }
+    use_case = MagicMock()
+
+    with (
+        patch.object(task_worker, "build_answer_query_use_case", return_value=use_case),
+        patch.object(task_worker, "query_to_response") as to_response,
+    ):
+        to_response.return_value.model_dump.return_value = {"answer": "ok"}
+        task_worker._handle_query(command)
+
+    assert use_case.execute.call_args.kwargs["conversation_context"] is None
+
+
 @pytest.mark.parametrize(
     ("allow_web_search", "expected_telemetry"),
     [

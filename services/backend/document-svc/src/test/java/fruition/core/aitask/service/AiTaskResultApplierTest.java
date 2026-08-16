@@ -145,6 +145,51 @@ class AiTaskResultApplierTest {
         verify(jdbcTemplate, never()).update(contains("SET status = 'ready'"), any(), any(), any());
     }
 
+    /** pipeline이 갱신한 누적 요약은 세션에 쌓여야 다음 턴이 맥락으로 이어 쓴다. */
+    @Test
+    void querySuccessStoresUpdatedConversationSummary() throws Exception {
+        JsonNode event = objectMapper.readTree(eventWithSummary("이제까지 인덱싱을 다뤘다."));
+        when(jdbcTemplate.update(any(String.class), any(), any(), any())).thenReturn(1);
+
+        applier.applyQuery(event);
+
+        verify(chatTurnRecorder).recordContextSummary("session-1", "이제까지 인덱싱을 다뤘다.");
+    }
+
+    /** 같은 결과가 다시 오면 요약도 다시 쓰지 않는다. 최초 처리에서만 세션을 건드린다. */
+    @Test
+    void queryDuplicateDoesNotRestoreConversationSummary() throws Exception {
+        String canonical = eventWithSummary("이제까지 인덱싱을 다뤘다.");
+        when(jdbcTemplate.update(any(String.class), any(), any(), any())).thenReturn(0);
+        when(jdbcTemplate.queryForObject(any(String.class), eq(String.class), eq("query-1")))
+                .thenReturn(canonical);
+
+        applier.applyQuery(objectMapper.readTree(canonical));
+
+        verify(chatTurnRecorder, never()).recordContextSummary(anyString(), anyString());
+    }
+
+    @Test
+    void agentSuccessStoresUpdatedConversationSummary() throws Exception {
+        JsonNode event = objectMapper.readTree("""
+                {"event_id":"agent:run-summary:succeeded","run_id":"run-summary","kind":"agent",
+                 "status":"succeeded","request":{"workspace_id":"ws-1","user_id":"user-1",
+                 "session_id":"session-1","document_id":"doc-1","base_version":1,"apply_operation_id":"op-1"},
+                 "payload":{"action":"workspace_workflow","run_id":"run-inner","run_status":"queued",
+                 "updated_conversation_summary":"편집 요청까지 반영한 요약"}}
+                """);
+        when(jdbcTemplate.update(any(String.class), eq("agent:run-summary:succeeded"),
+                eq("run-summary"), any())).thenReturn(1);
+        when(jdbcTemplate.query(contains("FOR UPDATE"), any(ResultSetExtractor.class), eq("run-summary")))
+                .thenReturn(new AiTaskResultApplier.AgentProjection("ws-1", "user-1", "doc-1", 1L, "op-1"));
+        when(jdbcTemplate.update(contains("SET status = 'ready'"), any(), any(), eq("run-summary")))
+                .thenReturn(1);
+
+        applier.applyAgent(event);
+
+        verify(chatTurnRecorder).recordContextSummary("session-1", "편집 요청까지 반영한 요약");
+    }
+
     @Test
     void autonomousAgentResultBecomesReadyWithoutCanonicalMarkdown() throws Exception {
         JsonNode event = objectMapper.readTree("""
@@ -322,6 +367,14 @@ class AiTaskResultApplierTest {
         return """
                 {"plan":{"pages":[]},"excluded_operation_ids":[],"expected_contributions":{}}
                 """;
+    }
+
+    private String eventWithSummary(String summary) throws Exception {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(event("event-1", "succeeded", "answer", null));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root.get("payload"))
+                .put("updated_conversation_summary", summary);
+        return root.toString();
     }
 
     private String event(String eventId, String status, String answer, String error) {

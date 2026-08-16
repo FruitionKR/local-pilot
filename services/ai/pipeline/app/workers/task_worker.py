@@ -55,6 +55,25 @@ def _required(command: dict[str, Any], *fields: str) -> None:
         raise ValueError(f"AI command requires: {', '.join(missing)}")
 
 
+def _conversation_context(command: dict[str, Any]) -> ConversationContext | None:
+    """대화 맥락은 두 겹이다. 요약은 이전 턴까지의 누적본이고 최근 메시지는 그 위에 얹는 원문이다.
+
+    요약을 함께 넘겨야 이번 턴 요약이 앞 내용을 이어받는다. 빠뜨리면 매 턴 최근 메시지만으로
+    요약이 새로 쓰여 앞쪽 대화가 사라진다.
+    """
+    summary = command.get("recent_conversation_summary")
+    messages = command.get("recent_messages") or []
+    if not summary and not messages:
+        return None
+    return ConversationContext(
+        recent_conversation_summary=summary,
+        recent_messages=tuple(
+            ConversationMessage(role=message["role"], content=message["content"])
+            for message in messages
+        ),
+    )
+
+
 def _handle_query(
     command: dict[str, Any],
     event_publisher: QueryEventPublisherPort | None = None,
@@ -81,12 +100,7 @@ def _handle_query(
         str(command["question"]),
         workspace_id=str(command["workspace_id"]),
         user_id=str(command["user_id"]),
-        conversation_context=ConversationContext(
-            recent_messages=tuple(
-                ConversationMessage(role=message["role"], content=message["content"])
-                for message in command.get("recent_messages", [])
-            )
-        ) if command.get("recent_messages") else None,
+        conversation_context=_conversation_context(command),
         allow_web_search=command["allow_web_search"],
     )
     return query_to_response(result).model_dump(mode="json")

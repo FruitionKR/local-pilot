@@ -17,7 +17,8 @@ import static org.mockito.Mockito.when;
 class ChatConversationReaderTest {
 
     private final ChatMessageRepository repository = mock(ChatMessageRepository.class);
-    private final ChatConversationReader reader = new ChatConversationReader(repository);
+    private final ChatSessionService chatSessionService = mock(ChatSessionService.class);
+    private final ChatConversationReader reader = new ChatConversationReader(repository, chatSessionService);
     private final ChatSession session = mock(ChatSession.class);
 
     private ChatMessage message(String pairId, String role, String content, String status, int secondsOffset) {
@@ -39,7 +40,30 @@ class ChatConversationReaderTest {
 
         assertThat(conversation.recentMessages()).extracting(ChatConversationReader.Message::content)
                 .containsExactly("첫 질문", "첫 답변");
-        assertThat(conversation.summary()).isEqualTo("사용자: 첫 질문\n어시스턴트: 첫 답변");
+    }
+
+    /** 요약은 서버가 원문을 이어붙여 만들지 않는다. pipeline이 갱신해 둔 세션의 누적 요약을 쓴다. */
+    @Test
+    @DisplayName("요약은 세션에 쌓인 누적 요약을 그대로 넘긴다")
+    void summaryComesFromSession() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "첫 답변", "completed", 1));
+        when(chatSessionService.contextSummary("session_1")).thenReturn("지금까지 검색 인덱싱을 다뤘다.");
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.summary()).isEqualTo("지금까지 검색 인덱싱을 다뤘다.");
+    }
+
+    @Test
+    @DisplayName("누적 요약이 아직 없으면 요약을 넘기지 않는다")
+    void summaryIsNullBeforePipelineBuildsOne() {
+        given(message("p1", "user", "첫 질문", "completed", 0),
+                message("p1", "assistant", "첫 답변", "completed", 1));
+
+        var conversation = reader.read("session_1", List.of());
+
+        assertThat(conversation.summary()).isNull();
     }
 
     @Test
@@ -66,7 +90,6 @@ class ChatConversationReaderTest {
         var conversation = reader.read("session_1", List.of("남의_pair"));
 
         assertThat(conversation.recentMessages()).isEmpty();
-        assertThat(conversation.summary()).isNull();
     }
 
     @Test
@@ -97,7 +120,5 @@ class ChatConversationReaderTest {
 
         assertThat(conversation.recentMessages()).hasSize(6);
         assertThat(conversation.recentMessages().get(0).content()).isEqualTo("질문1");
-        // 요약은 잘리지 않은 전체 대화를 담는다. 상한은 글자 수로만 건다.
-        assertThat(conversation.summary()).contains("질문0");
     }
 }
