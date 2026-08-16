@@ -1,6 +1,7 @@
+x-pipeline-image: &pipeline-image fruition-pipeline-dev:local
+
 x-ai-task-worker: &ai-task-worker
-  build:
-    context: ../services/ai/pipeline
+  image: *pipeline-image
   restart: unless-stopped
   command: ["python", "-m", "app.workers.task_worker"]
   environment: &ai-task-environment
@@ -31,6 +32,8 @@ x-ai-task-worker: &ai-task-worker
   extra_hosts:
     - "host.docker.internal:host-gateway"
   depends_on:
+    pipeline-api:
+      condition: service_healthy
     postgresql:
       condition: service_healthy
     kafka:
@@ -40,6 +43,7 @@ x-ai-task-worker: &ai-task-worker
 
 services:
   pipeline-api:
+    image: *pipeline-image
     build:
       context: ../services/ai/pipeline
     container_name: fruition-pipeline-api-dev
@@ -75,6 +79,12 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-fruition_dev_secret}
     ports:
       - "127.0.0.1:${PIPELINE_API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     volumes:
       - pipeline-runs:/app/runs
     extra_hosts:
@@ -83,8 +93,7 @@ services:
       postgresql:
         condition: service_healthy
   ingest-worker:
-    build:
-      context: ../services/ai/pipeline
+    image: *pipeline-image
     container_name: fruition-ingest-worker-dev
     restart: unless-stopped
     command: ["python", "-m", "app.workers.ingest_worker"]
@@ -115,6 +124,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      pipeline-api:
+        condition: service_healthy
       postgresql:
         condition: service_healthy
       kafka:
@@ -147,8 +158,7 @@ services:
       AI_COMMAND_CONSUMER_GROUP: maintenance-task-worker
 
   edit-event-consumer:
-    build:
-      context: ../services/ai/pipeline
+    image: *pipeline-image
     container_name: fruition-edit-event-consumer-dev
     restart: unless-stopped
     command: ["python", "-m", "app.workers.edit_event_consumer"]
@@ -158,14 +168,15 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       DOCUMENT_EDIT_EVENT_TOPIC: ${DOCUMENT_EDIT_EVENT_TOPIC:-document.edit.event}
     depends_on:
+      pipeline-api:
+        condition: service_healthy
       postgresql:
         condition: service_healthy
       kafka:
         condition: service_healthy
 
   pipeline-agent-worker:
-    build:
-      context: ../services/ai/pipeline
+    image: *pipeline-image
     container_name: fruition-pipeline-agent-worker-dev
     restart: unless-stopped
     command: ["python", "agent_worker.py"]
@@ -180,6 +191,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      pipeline-api:
+        condition: service_healthy
       postgresql:
         condition: service_healthy
     healthcheck:

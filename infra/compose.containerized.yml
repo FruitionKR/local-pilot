@@ -1,8 +1,8 @@
 # 배포 단위(인스턴스) 검증용 compose.
 # document-svc·access-svc까지 컨테이너로 올려 AWS 배포와 같은 "이미지 단위 실행"을 로컬에서 재현한다.
 # 사용: docker compose --env-file .env \
-#        -f docker-compose.dev.yml -f docker-compose.pipeline.yml \
-#        -f docker-compose.converter.yml -f docker-compose.deploy.yml up -d --build
+#        -f compose.infra.yml -f compose.ai.yml \
+#        -f compose.converter.yml -f compose.containerized.yml up -d --build
 # 다중 인스턴스 검증: 위 명령에 --scale document-svc=2 추가 (ports 충돌 시 published 포트 제거 후 LB 경유).
 name: fruition-mvp-dev
 
@@ -100,7 +100,7 @@ services:
       WIKI_SCHEMA_ENDPOINT: http://pipeline-api:8000/wiki-schema
       WIKI_PAGE_ENDPOINT: http://pipeline-api:8000/wiki/pages
       WIKI_STATE_ENDPOINT: http://pipeline-api:8000/wiki
-      # PDF → Markdown 변환기(docker-compose.converter.yml의 markitdown) — 컨테이너 네트워크 경유
+      # PDF → Markdown 변환기(compose.converter.yml의 markitdown) — 컨테이너 네트워크 경유
       CONVERTER_ENDPOINT: http://markitdown:8000
       AGENT_INTERNAL_TOKEN: ${AGENT_INTERNAL_TOKEN:-local-agent-internal}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}

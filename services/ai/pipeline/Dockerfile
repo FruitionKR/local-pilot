@@ -9,6 +9,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         clang \
         cmake \
+        g++ \
         git \
         libssl-dev \
         pkg-config \
@@ -39,10 +40,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY --from=heron-builder /build/heron-special-regions/target/release/raw-special-regions /usr/local/bin/raw-special-regions
 COPY --from=anydoc /usr/local/bin/node /usr/local/bin/node

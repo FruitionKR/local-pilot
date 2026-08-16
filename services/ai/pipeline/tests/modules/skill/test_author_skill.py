@@ -16,12 +16,30 @@ from app.modules.skill.domain.entities import (
 )
 from app.modules.skill.infrastructure.chat_completions_skill_authoring_generator import (
     ChatCompletionsSkillAuthoringGenerator,
+    DEFAULT_PROMPT,
+    DEFAULT_CLASSIFIER_PROMPT,
+    DEFAULT_VERIFIER_PROMPT,
     build_skill_authoring_generator,
 )
 from app.modules.skill.infrastructure.backend_skill_reference_reader import BackendSkillReferenceReader
 from app.modules.skill.interfaces.http.dependencies import get_author_skill_use_case
 from app.modules.skill.interfaces.http.schemas import SkillAuthoringResponse
 from app.modules.skill.interfaces.http.routes import router as skill_router
+
+
+def test_intent_prompts_require_canonical_tool_sets() -> None:
+    for prompt_path in (DEFAULT_CLASSIFIER_PROMPT, DEFAULT_VERIFIER_PROMPT):
+        prompt = prompt_path.read_text(encoding="utf-8")
+        assert "complete canonical tool list" in prompt
+        assert "never choose a task-specific subset" in prompt
+        assert "Do not return `ambiguous` merely because" in prompt
+
+
+def test_authoring_prompt_requires_complete_preserve_proposal() -> None:
+    prompt = DEFAULT_PROMPT.read_text(encoding="utf-8")
+
+    assert "Return the editable proposal object with `status`, `slug`, `name`, and `description`" in prompt
+    assert "set `instructions_markdown` to an empty string" in prompt
 
 
 class FixedGenerator:
@@ -194,12 +212,12 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "claude-key"}, clear=True):
             generator = build_skill_authoring_generator(
                 provider="claude",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-5",
             )
 
         client = generator._client  # type: ignore[attr-defined]
         self.assertEqual(client.provider, "claude")
-        self.assertEqual(client.config.model, "claude-haiku-4-5-20251001")
+        self.assertEqual(client.config.model, "claude-sonnet-5")
         self.assertEqual(client.config.api_key, "claude-key")
 
     def build_use_case(

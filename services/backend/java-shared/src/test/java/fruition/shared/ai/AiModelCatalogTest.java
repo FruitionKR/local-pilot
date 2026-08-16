@@ -13,7 +13,7 @@ class AiModelCatalogTest {
         assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::provider)
                 .containsExactly("openai", "gemini", "claude");
         assertThat(catalog.enabledModels()).extracting(AiModelCatalog.AiModel::model)
-                .containsExactly("gpt-5-nano", "gemini-3.1-flash-lite", "claude-haiku-4-5-20251001");
+                .containsExactly("gpt-5-nano", "gemini-3.1-flash-lite", "claude-sonnet-5");
     }
 
     @Test

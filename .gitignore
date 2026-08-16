@@ -20,6 +20,7 @@ __pycache__/
 **/.venv*/
 venv/
 .tmp
+.runtime/
 
 # macOS Finder metadata
 .DS_Store

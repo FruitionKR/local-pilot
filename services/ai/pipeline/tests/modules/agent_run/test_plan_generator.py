@@ -125,6 +125,7 @@ class PlanGeneratorTest(unittest.TestCase):
             "every key required by the selected backend tool, including nullable keys with explicit null",
             prompt,
         )
+        self.assertIn("Operation sequence numbers are 1-based", prompt)
         self.assertIn("For create_folder and create_document, target_id and base_version must both be null.", prompt)
 
     def test_rejects_more_than_twenty_operations(self) -> None:
