@@ -61,7 +61,8 @@ public class SecurityConfig {
                 // deny-by-default: 공개 경로만 명시하고 나머지는 전부 인증을 요구한다.
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // "/swagger-ui/**"는 "/swagger-ui.html"을 매칭하지 않는다 — 진입 URL을 따로 연다.
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // access(인증 서비스)가 호출하는 내부 API: 컨트롤러에서 X-Internal-Token을 검증한다
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())

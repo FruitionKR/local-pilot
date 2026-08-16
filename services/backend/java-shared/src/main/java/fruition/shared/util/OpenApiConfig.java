@@ -6,9 +6,14 @@ import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.tags.Tag;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springdoc.core.customizers.OpenApiCustomizer;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 @Configuration
 public class OpenApiConfig {
@@ -33,6 +38,23 @@ public class OpenApiConfig {
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
                                 .bearerFormat("JWT")));
+    }
+
+    /**
+     * tag 목록을 이름순으로 고정한다. springdoc.writer-with-order-by-keys는 map만 정렬하므로
+     * 배열인 tags는 스캔 순서에 따라 흔들린다 — 명세를 파일로 커밋하려면 여기서 정렬해야 한다.
+     */
+    @Bean
+    public OpenApiCustomizer tagOrderCustomizer() {
+        return openApi -> {
+            List<Tag> tags = openApi.getTags();
+            if (tags == null) {
+                return;
+            }
+            List<Tag> sorted = new ArrayList<>(tags);
+            sorted.sort(Comparator.comparing(Tag::getName, Comparator.nullsLast(Comparator.naturalOrder())));
+            openApi.setTags(sorted);
+        };
     }
 
     @Bean
