@@ -18,14 +18,14 @@ Routes:
 - internal_web_augmented: retrieved Wiki evidence identifies or partly answers the topic, but the answer still needs external/general/current/implementation evidence.
 - unsupported: the request itself must not be answered, or the returned answer already safely refuses because no relevant evidence can answer it.
 
-Mandatory answer-safety gate: if the returned answer asserts a material factual claim that the cited evidence does not support, choose `revise_answer`. Never choose `unsupported` for that returned answer merely because the question lacks relevant evidence; `unsupported` applies after the answer already refuses or states the limitation safely.
+Mandatory answer-safety gate: if the returned answer asserts a material factual claim that the cited evidence does not support, it must not be returned unchanged. When a web route below applies, that route replaces the answer with one grounded in web evidence; otherwise choose `revise_answer`. A limitation statement that the retrieved Wiki evidence does not contain the requested answer is a routing observation, not a material factual claim.
 
 Choose the first matching route in this exact order. Later rules must not override an earlier match:
 1. `unsupported`: the request is unsafe, private, asks for secrets, or otherwise must not be answered.
-2. `revise_answer`: the returned answer makes any material factual claim that its cited internal evidence does not support. This check applies even when no substantive answer can be produced; revision may remove the claim and state that internal evidence does not answer the question.
-3. `internal_supported`: internal evidence supports the answer and its citations as returned.
-4. `internal_web_augmented`: internal evidence identifies or partly supports the subject, required external/current/implementation information is absent, and web search is available. This remains the route when the returned answer correctly discloses that the internal documents lack the requested external detail.
-5. `web_fallback`: no internal evidence supports the core answer, the question asks for searchable public information, and web search is available.
+2. `web_fallback`: no internal evidence supports the core answer, the question asks for searchable public information, and web search is available. The current internal answer will be replaced, so do not route it through `revise_answer` first.
+3. `internal_web_augmented`: internal evidence identifies or partly supports the subject, required external/current/implementation information is absent, and web search is available. This remains the route when the returned answer correctly discloses that the internal documents lack the requested external detail.
+4. `revise_answer`: neither web route applies, and the returned answer makes a material factual claim that its cited internal evidence does not support or has another correctable defect.
+5. `internal_supported`: internal evidence supports the answer and its citations as returned.
 6. `unsupported`: no internal evidence supports a useful answer and web search is unavailable or inappropriate.
 
 Required boundary example: if internal evidence identifies a product or project but contains no Kubernetes deployment instructions, and the user asks how to deploy that product to Kubernetes with web search available, choose `internal_web_augmented`, never `web_fallback`. The internal evidence anchors the subject; web evidence supplies only the missing deployment method.
@@ -40,7 +40,7 @@ Rules:
 - Prefer internal_supported when the answer directly answers the question and the cited Wiki evidence supports it.
 - For internal_supported, feedback must be empty. Put optional, non-blocking suggestions in warnings.
 - Choose revise_answer when the answer can be corrected using the same retrieved evidence. Set actionable feedback that the answer generator can apply on retry.
-- Choose revise_answer, not unsupported, when the generated answer asserts a factual claim and cites an internal snippet that does not support it. Apply route-order step 2 before deciding whether the question itself is answerable. Tell the generator to remove the claim and state that the internal documents do not provide the answer. `unsupported` describes an already safe refusal or an unanswerable request, not a hallucinated answer that still needs revision.
+- Choose revise_answer, not unsupported, when the generated answer asserts a factual claim and cites an internal snippet that does not support it and neither web route applies. Tell the generator to remove the claim and state that the internal documents do not provide the answer. If the answer already contains only that limitation, continue to the unsupported rule instead of revising it again. `unsupported` describes an already safe refusal or an unanswerable request, not a hallucinated answer that still needs revision.
 - Prefer internal_supported when retrieved Wiki evidence includes both an aggregate/workflow statement and item-level snippets that cover the requested parts.
 - Choose internal_web_augmented only when the answer needs a required external, current, implementation, deployment, or general-knowledge detail that is absent from retrieved Wiki evidence.
 - Choose internal_web_augmented, not web_fallback, when retrieved Wiki evidence identifies the user's subject and the missing part is how to use, deploy, operate, compare, or implement it with an external platform, tool, framework, or runtime.
