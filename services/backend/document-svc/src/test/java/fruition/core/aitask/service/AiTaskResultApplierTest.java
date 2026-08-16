@@ -274,7 +274,8 @@ class AiTaskResultApplierTest {
         var result = applier.applyAgent(event);
 
         assertThat(result.error()).isEqualTo("agent_result_unsupported_action");
-        verify(chatTurnRecorder).markFailed("chat_assistant_1", "agent_result_unsupported_action");
+        // 말풍선에는 코드 대신 문장이 남아야 한다.
+        verify(chatTurnRecorder).markFailed("chat_assistant_1", "지원하지 않는 Agent 처리 결과입니다.");
         verify(chatTurnRecorder, never()).completeAgentTurn(anyString(), any(), any());
     }
 

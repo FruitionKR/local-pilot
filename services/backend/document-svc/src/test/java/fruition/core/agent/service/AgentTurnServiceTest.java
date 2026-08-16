@@ -648,4 +648,20 @@ class AgentTurnServiceTest {
                 filename.substring(filename.lastIndexOf('.') + 1), null, false, currentVersion,
                 currentVersion, null, Instant.now(), null, null);
     }
+
+    /** 고른 문답 ID는 조회의 IN 절로 그대로 들어간다. 클라이언트가 SQL 크기를 정하지 못하게 막는다. */
+    @Test
+    void request_rejectsTooManySelectedPairIds() {
+        java.util.List<String> tooMany = java.util.stream.IntStream.rangeClosed(0, 20)
+                .mapToObj(index -> "pair_" + index)
+                .toList();
+        var request = new AgentTurnRequest("session_1", null, null, "정리해줘", "openai", "gpt-5-nano",
+                new AgentTurnRequest.ConversationContext(tooMany, null, null), null);
+
+        var violations = jakarta.validation.Validation.buildDefaultValidatorFactory()
+                .getValidator().validate(request);
+
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("conversationContext.selectedPairIds");
+    }
 }

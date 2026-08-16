@@ -71,7 +71,7 @@ public class AiTaskResultConsumer {
                     if (result.error() == null) {
                         queryEventBroker.complete(flowId);
                     } else {
-                        queryEventBroker.fail(flowId, result.error());
+                        queryEventBroker.fail(flowId, AiTaskResultApplier.describeAgentError(result.error()));
                     }
                 }
                 return;

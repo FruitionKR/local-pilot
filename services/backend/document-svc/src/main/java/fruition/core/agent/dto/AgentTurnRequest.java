@@ -58,6 +58,7 @@ public record AgentTurnRequest(
         @Schema(description = "explicit 모드에서 적용할 Skill ID(128자 이하)", maxLength = 128)
         String skillId,
 
+        @Valid
         @Schema(description = "이전 대화 맥락. 있으면 편집 판단에 함께 쓴다.")
         ConversationContext conversationContext,
 
@@ -82,6 +83,11 @@ public record AgentTurnRequest(
         EditorSnapshot editorSnapshot
 ) {
     private static final int MAX_SKILL_ID_LENGTH = 128;
+    /**
+     * 고른 문답 ID 개수 상한. 이 목록은 조회의 IN 절로 그대로 들어가 클라이언트가 SQL 크기를 정하게 된다.
+     * 서버가 최근 구간에서 읽어 오는 양(문답 20개)과 같은 선까지만 받는다.
+     */
+    static final int MAX_SELECTED_PAIR_IDS = 20;
     private static final Set<String> SKILL_MODES = Set.of("auto", "explicit", "off");
 
     /** 편집 대상이 정해진 요청인지. 셋은 함께 있거나 함께 없다. */
@@ -140,8 +146,8 @@ public record AgentTurnRequest(
 
     @Schema(description = "이전 대화 맥락. 대화 내용 자체는 서버가 세션에서 읽어 조립한다.")
     public record ConversationContext(
-            @JsonProperty("selected_pair_ids")
-            @Schema(description = "맥락으로 쓸 문답(pair) ID 목록. 비우면 세션의 최근 완결 문답을 쓴다. "
+            @JsonProperty("selected_pair_ids") @Size(max = MAX_SELECTED_PAIR_IDS)
+            @Schema(description = "맥락으로 쓸 문답(pair) ID 목록(최대 20개). 비우면 세션의 최근 완결 문답을 쓴다. "
                     + "이 세션에 속하지 않은 ID는 무시한다.")
             List<String> selectedPairIds,
 

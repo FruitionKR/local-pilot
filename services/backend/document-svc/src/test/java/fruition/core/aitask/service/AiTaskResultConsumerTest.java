@@ -173,7 +173,8 @@ class AiTaskResultConsumerTest {
                  "status":"succeeded","request":{},"payload":null}
                 """);
 
-        verify(queryEventBroker).fail("agent-1", "agent_result_invalid_payload");
+        // 내부 코드가 아니라 사용자에게 보일 문구가 나가야 한다.
+        verify(queryEventBroker).fail("agent-1", "Agent 결과 형식이 올바르지 않습니다.");
         verify(queryEventBroker, never()).complete(anyString());
     }
 
