@@ -27,28 +27,29 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
     private static final Pattern VALID_REQUEST_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
     private static final String HEALTH_PATH = "/actuator/health";
 
-    /** 헬스 체크는 주기적으로 반복되고 진단 가치가 없어, 요청 로그를 채우지 않도록 건너뛴다. */
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        return HEALTH_PATH.equals(request.getRequestURI());
-    }
-
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        // 헬스 체크는 주기적으로 반복되고 진단 가치가 없어 로그를 남기지 않는다. 필터 자체는
+        // 건너뛰지 않는다 — 안쪽 필터가 채운 MDC를 여기서 치우므로, 건너뛰면 값이 스레드에 남는다.
+        boolean logged = !HEALTH_PATH.equals(request.getRequestURI());
         String requestId = resolveRequestId(request.getHeader(REQUEST_ID_HEADER));
         long startedAt = System.nanoTime();
         MDC.put("requestId", requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
-        log.info("[HTTP 요청 시작] method={} uri={}", request.getMethod(), request.getRequestURI());
+        if (logged) {
+            log.info("[HTTP 요청 시작] method={} uri={}", request.getMethod(), request.getRequestURI());
+        }
         try {
             filterChain.doFilter(request, response);
         } finally {
-            long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
-            log.info("[HTTP 요청 완료] method={} uri={} status={} elapsedMs={}",
-                    request.getMethod(), request.getRequestURI(), response.getStatus(), elapsedMs);
+            if (logged) {
+                long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
+                log.info("[HTTP 요청 완료] method={} uri={} status={} elapsedMs={}",
+                        request.getMethod(), request.getRequestURI(), response.getStatus(), elapsedMs);
+            }
+            // 요청 MDC 범위는 가장 바깥인 이 필터가 닫는다. userId는 JwtAuthenticationFilter가 채운다.
             MDC.remove("userId");
-            MDC.remove("flowId");
             MDC.remove("requestId");
         }
     }
