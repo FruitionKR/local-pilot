@@ -15,6 +15,7 @@ import fruition.access.user.dto.SignupResponse;
 import fruition.access.user.dto.VerificationConfirmRequest;
 import fruition.access.user.dto.VerificationConfirmResponse;
 import fruition.access.user.service.AuthService;
+import fruition.access.user.service.EmailAvailabilityRateLimiter;
 import fruition.access.user.service.EmailVerificationService;
 import fruition.access.user.service.UserService;
 import fruition.shared.util.ErrorResponse;
@@ -25,6 +26,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -42,12 +44,15 @@ public class AuthController {
 
     private final UserService userService;
     private final AuthService authService;
+    private final EmailAvailabilityRateLimiter emailAvailabilityRateLimiter;
     private final EmailVerificationService emailVerificationService;
 
     public AuthController(UserService userService, AuthService authService,
+                          EmailAvailabilityRateLimiter emailAvailabilityRateLimiter,
                           EmailVerificationService emailVerificationService) {
         this.userService = userService;
         this.authService = authService;
+        this.emailAvailabilityRateLimiter = emailAvailabilityRateLimiter;
         this.emailVerificationService = emailVerificationService;
     }
 
@@ -56,11 +61,15 @@ public class AuthController {
         @ApiResponse(responseCode = "200", description = "가입 가능 여부",
             content = @Content(schema = @Schema(implementation = EmailAvailabilityResponse.class))),
         @ApiResponse(responseCode = "400", description = "잘못된 요청",
+            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+        @ApiResponse(responseCode = "429", description = "요청 횟수 제한 초과",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @PostMapping("/email-availability")
     public ResponseEntity<EmailAvailabilityResponse> checkEmailAvailability(
-            @Valid @RequestBody EmailAvailabilityRequest request) {
+            @Valid @RequestBody EmailAvailabilityRequest request,
+            HttpServletRequest servletRequest) {
+        emailAvailabilityRateLimiter.check(request.email(), servletRequest.getRemoteAddr());
         return ResponseEntity.ok(userService.checkEmailAvailability(request));
     }
 

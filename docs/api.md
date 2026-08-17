@@ -86,6 +86,7 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 | HTTP 상태 | 설명 | 응답 스키마 |
 |---|---|---|
 | `400` | 잘못된 이메일 형식 | `ErrorResponse` |
+| `429` | IP 또는 이메일 기준 요청 횟수 제한 초과 | `ErrorResponse` |
 
 #### 7. Pagination / filtering
 
@@ -96,6 +97,7 @@ export PIPELINE=http://localhost:8000  # ai-svc pipeline: 내부 전용
 
 - 공개 API이므로 별도의 사용자 권한 검증이 없다.
 - 기존 인증번호 요청 API도 가입 이메일 중복을 `409`로 노출하므로 동일한 공개 범위를 유지한다.
+- 계정 열거 비용을 제한하기 위해 Redis에서 IP당 30회/분, 이메일당 5회/분으로 호출을 제한한다.
 
 #### 9. 예시 요청/응답
 
