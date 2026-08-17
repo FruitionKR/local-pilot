@@ -292,7 +292,18 @@ class AuthorSkillUseCase:
         name: str,
         description: str,
         instructions_markdown: str,
+        expected_capabilities: tuple[SkillCapability, ...],
+        expected_allowed_tools: tuple[SkillTool, ...],
     ) -> SkillAuthoringResult:
+        if not expected_capabilities or any(
+            capability not in CAPABILITY_TOOLS for capability in expected_capabilities
+        ):
+            raise ValueError("Published Skill contains an unsupported capability.")
+        if len(set(expected_capabilities)) != len(expected_capabilities) or len(
+            set(expected_allowed_tools)
+        ) != len(expected_allowed_tools):
+            raise ValueError("Published Skill permissions must not contain duplicates.")
+        validate_allowed_tools(expected_capabilities, expected_allowed_tools)
         reviewed = self.execute(
             workspace_id=workspace_id,
             user_id=user_id,
@@ -306,7 +317,17 @@ class AuthorSkillUseCase:
         )
         if reviewed.status != "proposal_ready" or reviewed.proposal is None:
             return reviewed
-        proposal = reviewed.proposal
+        reviewed_proposal = reviewed.proposal
+        if (
+            set(reviewed_proposal.capabilities) != set(expected_capabilities)
+            or not set(expected_allowed_tools).issubset(reviewed_proposal.allowed_tools)
+        ):
+            raise ValueError("Skill permissions changed during final review. Review the draft again.")
+        proposal = replace(
+            reviewed_proposal,
+            capabilities=expected_capabilities,
+            allowed_tools=expected_allowed_tools,
+        )
         skill = self._skill_manager.create_published(
             workspace_id=workspace_id,
             user_id=user_id,

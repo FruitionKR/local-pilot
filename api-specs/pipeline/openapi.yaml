@@ -1017,6 +1017,37 @@ components:
       type: object
     PendingSkillProposalRequest:
       properties:
+        allowed_tools:
+          items:
+            enum:
+            - list_root_items
+            - list_folder_children
+            - search_hierarchy
+            - get_breadcrumb
+            - get_document_metadata
+            - get_document_content
+            - create_folder
+            - rename_folder
+            - move_folder
+            - move_document
+            - rename_document
+            - create_document
+            - apply_document_edit
+            type: string
+          minItems: 1
+          title: Allowed Tools
+          type: array
+        capabilities:
+          items:
+            enum:
+            - document-create
+            - document-edit
+            - folder-organize
+            - template
+            type: string
+          minItems: 1
+          title: Capabilities
+          type: array
         description:
           maxLength: 500
           minLength: 1
@@ -1044,6 +1075,8 @@ components:
       - name
       - description
       - instructions_markdown
+      - capabilities
+      - allowed_tools
       title: PendingSkillProposalRequest
       type: object
     PipelineRunIn:
@@ -1222,6 +1255,37 @@ components:
     PublishAuthoredSkillRequest:
       additionalProperties: false
       properties:
+        allowed_tools:
+          items:
+            enum:
+            - list_root_items
+            - list_folder_children
+            - search_hierarchy
+            - get_breadcrumb
+            - get_document_metadata
+            - get_document_content
+            - create_folder
+            - rename_folder
+            - move_folder
+            - move_document
+            - rename_document
+            - create_document
+            - apply_document_edit
+            type: string
+          minItems: 1
+          title: Allowed Tools
+          type: array
+        capabilities:
+          items:
+            enum:
+            - document-create
+            - document-edit
+            - folder-organize
+            - template
+            type: string
+          minItems: 1
+          title: Capabilities
+          type: array
         description:
           maxLength: 500
           minLength: 1
@@ -1269,6 +1333,8 @@ components:
       - name
       - description
       - instructions_markdown
+      - capabilities
+      - allowed_tools
       title: PublishAuthoredSkillRequest
       type: object
     QueryRequest:
@@ -1747,6 +1813,35 @@ components:
       type: object
     SkillAuthoringResponse:
       properties:
+        allowed_tools:
+          items:
+            enum:
+            - list_root_items
+            - list_folder_children
+            - search_hierarchy
+            - get_breadcrumb
+            - get_document_metadata
+            - get_document_content
+            - create_folder
+            - rename_folder
+            - move_folder
+            - move_document
+            - rename_document
+            - create_document
+            - apply_document_edit
+            type: string
+          title: Allowed Tools
+          type: array
+        capabilities:
+          items:
+            enum:
+            - document-create
+            - document-edit
+            - folder-organize
+            - template
+            type: string
+          title: Capabilities
+          type: array
         description:
           anyOf:
           - type: string

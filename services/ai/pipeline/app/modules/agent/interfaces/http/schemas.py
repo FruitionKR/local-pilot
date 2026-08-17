@@ -13,8 +13,10 @@ from app.modules.agent.domain.entities import (
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import ConversationMessageRequest, QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
+    CapabilityValue,
     SkillAuthoringResponse,
     SkillDraftSourceRunRequest,
+    ToolValue,
 )
 
 
@@ -50,6 +52,8 @@ class PendingSkillProposalRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     description: str = Field(..., min_length=1, max_length=500)
     instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+    capabilities: list[CapabilityValue] = Field(..., min_length=1)
+    allowed_tools: list[ToolValue] = Field(..., min_length=1)
 
     def to_domain(self) -> PendingSkillProposal:
         return PendingSkillProposal(
@@ -57,6 +61,8 @@ class PendingSkillProposalRequest(BaseModel):
             name=self.name,
             description=self.description,
             instructions_markdown=self.instructions_markdown,
+            capabilities=tuple(self.capabilities),
+            allowed_tools=tuple(self.allowed_tools),
         )
 
 

@@ -32,13 +32,31 @@ def with_llm_security_boundary(system_prompt: str) -> str:
     return f"{system_prompt.rstrip()}\n\n{LLM_SECURITY_BOUNDARY}"
 
 
-def redact_numeric_personal_data(value: str) -> str:
+def redact_numeric_personal_data(
+    value: str,
+    *,
+    trusted_identifiers: tuple[str, ...] = (),
+) -> str:
     """전화번호/주민등록번호/카드번호/계좌번호 등 숫자 패턴 개인정보만 마스킹한다.
     이름, 주소, 이메일 등 숫자가 아닌 개인정보나 문서 본문 자체는 이 함수의 대상이 아니며,
     observations로 전달되는 문서 본문은 별도 필터링 없이 LLM 요청/로그에 그대로 포함된다."""
     redacted = value
+    protected: list[tuple[str, str]] = []
+    identifiers = sorted(
+        (identifier for identifier in dict.fromkeys(trusted_identifiers) if identifier),
+        key=len,
+        reverse=True,
+    )
+    for index, identifier in enumerate(identifiers):
+        placeholder = f"\0TRUSTED_IDENTIFIER_{index}\0"
+        while placeholder in redacted:
+            placeholder += "\0"
+        redacted = redacted.replace(identifier, placeholder)
+        protected.append((placeholder, identifier))
     for pattern in _NUMERIC_PERSONAL_DATA_PATTERNS:
         redacted = pattern.sub("[NUMERIC_PERSONAL_DATA]", redacted)
+    for placeholder, identifier in protected:
+        redacted = redacted.replace(placeholder, identifier)
     return redacted
 
 

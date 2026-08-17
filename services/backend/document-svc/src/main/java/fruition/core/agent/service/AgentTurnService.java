@@ -361,12 +361,14 @@ public class AgentTurnService {
             @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,
             String name,
             String description,
-            @com.fasterxml.jackson.annotation.JsonProperty("instructions_markdown") String instructionsMarkdown
+            @com.fasterxml.jackson.annotation.JsonProperty("instructions_markdown") String instructionsMarkdown,
+            java.util.List<String> capabilities,
+            @com.fasterxml.jackson.annotation.JsonProperty("allowed_tools") java.util.List<String> allowedTools
     ) {
         static CommandPendingSkillProposal from(AgentTurnRequest.ConversationContext.PendingSkillProposal proposal) {
             return proposal == null ? null
                     : new CommandPendingSkillProposal(proposal.scopeType(), proposal.name(), proposal.description(),
-                    proposal.instructionsMarkdown());
+                    proposal.instructionsMarkdown(), proposal.capabilities(), proposal.allowedTools());
         }
     }
 

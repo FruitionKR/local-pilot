@@ -69,6 +69,8 @@ def publish_authored_skill(
             name=payload.name,
             description=payload.description,
             instructions_markdown=payload.instructions_markdown,
+            expected_capabilities=tuple(payload.capabilities),
+            expected_allowed_tools=tuple(payload.allowed_tools),
         )
         return SkillAuthoringResponse.from_domain(result)
     except ValueError as exc:

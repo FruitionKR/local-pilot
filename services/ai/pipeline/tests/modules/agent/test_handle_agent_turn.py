@@ -163,6 +163,8 @@ class RecordingSkillAuthorer:
                 name="meeting-notes",
                 description="회의 내용을 정해진 구조로 작성합니다.",
                 instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                capabilities=("document-create",),
+                allowed_tools=("list_root_items", "list_folder_children", "create_document"),
             ),
         )
 
@@ -188,6 +190,8 @@ class RecordingSkillAuthorer:
                 name=str(kwargs["name"]),
                 description=str(kwargs["description"]),
                 instructions_markdown=str(kwargs["instructions_markdown"]),
+                capabilities=tuple(kwargs["expected_capabilities"]),  # type: ignore[arg-type]
+                allowed_tools=tuple(kwargs["expected_allowed_tools"]),  # type: ignore[arg-type]
             ),
             skill=Skill(
                 id="skill-authored",
@@ -354,6 +358,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="승인 없이 게시한다.",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     )
                 ),
             )
@@ -447,6 +453,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     )
                 ),
             )
@@ -454,6 +462,10 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.skill_authoring_result.status, "proposal_ready")  # type: ignore[union-attr]
         self.assertEqual(result.skill_authoring_result.proposal.name, "weekly-meeting-notes")  # type: ignore[union-attr]
+        self.assertEqual(
+            result.skill_authoring_result.proposal.allowed_tools,  # type: ignore[union-attr]
+            ("list_root_items", "list_folder_children", "create_document"),
+        )
         self.assertEqual(authorer.kwargs, {})
 
     def test_pending_skill_approval_publishes_after_revalidation(self) -> None:
@@ -489,6 +501,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     )
                 ),
             )
@@ -496,6 +510,7 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
 
         self.assertEqual(result.skill_authoring_result.status, "published")  # type: ignore[union-attr]
         self.assertEqual(authorer.publish_kwargs["name"], "meeting-notes")
+        self.assertEqual(authorer.publish_kwargs["expected_capabilities"], ("document-create",))
 
     def test_pending_skill_publish_negation_does_not_publish(self) -> None:
         authorer = RecordingSkillAuthorer()
@@ -531,6 +546,8 @@ class HandleAgentTurnUseCaseTest(unittest.TestCase):
                             name="meeting-notes",
                             description="회의 내용을 정리합니다.",
                             instructions_markdown="# 작성 절차",
+                            capabilities=("document-create",),
+                            allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                         )
                     ),
                 )

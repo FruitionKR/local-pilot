@@ -8,10 +8,12 @@ from app.modules.markdown_edit.domain.entities import (
 )
 from app.modules.query.domain.entities import ConversationMessage, OutputLanguage, QueryAnswer, ResponseLength
 from app.modules.skill.domain.entities import (
-    SkillAuthoringResult,
     SkillAuthoringMode,
+    SkillAuthoringResult,
+    SkillCapability,
     SkillDraftSourceRun,
     SkillScopeType,
+    SkillTool,
 )
 
 
@@ -50,6 +52,8 @@ class PendingSkillProposal:
     name: str
     description: str
     instructions_markdown: str
+    capabilities: tuple[SkillCapability, ...]
+    allowed_tools: tuple[SkillTool, ...]
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,8 @@ def test_intent_prompts_require_canonical_tool_sets() -> None:
         assert "Do not return `ambiguous` merely because" in prompt
         assert "Classify the reusable action that the finished Skill will perform" in prompt
         assert '"고객에게 이메일을 자동 발송하는 규칙을 만들어줘" -> `unsupported`' in prompt
+        assert "A workspace document entry's display name or filename" in prompt
+        assert "A Markdown H1 or title inside the document body" in prompt
         assert 'never the string `"null"`' in prompt
 
 
@@ -238,7 +240,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             repository,
         )
 
-    def test_returns_unpersisted_proposal_and_hides_internal_permissions(self) -> None:
+    def test_returns_unpersisted_proposal_with_reviewed_permissions(self) -> None:
         use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
 
         result = use_case.execute(
@@ -253,8 +255,11 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(result.status, "proposal_ready")
         self.assertIsNone(result.skill)
         self.assertEqual(repository.skills, {})
-        self.assertNotIn("capabilities", response)
-        self.assertNotIn("allowed_tools", response)
+        self.assertEqual(response["capabilities"], ["document-create"])
+        self.assertEqual(
+            response["allowed_tools"],
+            ["create_document", "list_folder_children", "list_root_items"],
+        )
         self.assertEqual(response["name"], "concise-document-writer")
         self.assertEqual(response["description"], "요청한 내용을 간결한 문서로 작성합니다.")
         self.assertEqual(response["instructions_markdown"], "# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.")
@@ -305,7 +310,7 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         self.assertEqual(result.proposal.allowed_tools, draft.allowed_tools)  # type: ignore[union-attr]
         self.assertEqual(repository.skills, {})
 
-    def test_completed_run_draft_returns_hidden_permissions_after_review(self) -> None:
+    def test_completed_run_draft_returns_reviewed_permissions(self) -> None:
         use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
         draft = SkillDraftProposal(
             name="concise-document-writer",
@@ -325,8 +330,11 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
         response = SkillAuthoringResponse.from_domain(result).model_dump()
 
         self.assertEqual(result.status, "proposal_ready")
-        self.assertNotIn("capabilities", response)
-        self.assertNotIn("allowed_tools", response)
+        self.assertEqual(response["capabilities"], ["document-create"])
+        self.assertEqual(
+            response["allowed_tools"],
+            ["list_root_items", "list_folder_children", "create_document"],
+        )
         self.assertEqual(repository.skills, {})
 
     def test_reference_template_uses_extracted_structure_instead_of_llm_instructions(self) -> None:
@@ -651,12 +659,46 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             name="concise-document-writer",
             description="요청한 내용을 간결한 문서로 작성합니다.",
             instructions_markdown="# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.",
+            expected_capabilities=("document-create",),
+            expected_allowed_tools=("create_document", "list_folder_children", "list_root_items"),
         )
 
         self.assertEqual(result.status, "published")
         self.assertEqual(result.skill.status, "enabled")  # type: ignore[union-attr]
         self.assertEqual(result.skill.enabled_version.status, "published")  # type: ignore[union-attr]
         self.assertEqual(len(repository.skills), 1)
+
+    def test_final_publish_keeps_reviewed_tool_subset(self) -> None:
+        use_case, _ = self.build_use_case(
+            FixedGenerator(
+                draft_result(),
+                intent=intent_result(
+                    allowed_tools=[
+                        "list_root_items",
+                        "list_folder_children",
+                        "get_document_metadata",
+                        "get_document_content",
+                        "create_document",
+                    ]
+                ),
+            )
+        )
+
+        result = use_case.publish(
+            workspace_id="workspace-1",
+            user_id="user-1",
+            scope_type="personal",
+            name="concise-document-writer",
+            description="요청한 내용을 간결한 문서로 작성합니다.",
+            instructions_markdown="# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.",
+            expected_capabilities=("document-create",),
+            expected_allowed_tools=("list_root_items", "list_folder_children", "create_document"),
+        )
+
+        self.assertEqual(
+            result.skill.enabled_version.allowed_tools,  # type: ignore[union-attr]
+            ("list_root_items", "list_folder_children", "create_document"),
+        )
 
     def test_final_publish_rejects_personal_data_without_storage(self) -> None:
         use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
@@ -668,10 +710,41 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             name="concise-document-writer",
             description="요청한 내용을 간결한 문서로 작성합니다.",
             instructions_markdown="결과를 user@example.com으로 보낸다.",
+            expected_capabilities=("document-create",),
+            expected_allowed_tools=("create_document", "list_folder_children", "list_root_items"),
         )
 
         self.assertEqual(result.status, "blocked")
         self.assertEqual(result.issues[0].category, "personal_email")
+        self.assertEqual(repository.skills, {})
+
+    def test_final_publish_rejects_permission_drift_without_storage(self) -> None:
+        use_case, repository = self.build_use_case(FixedGenerator(draft_result()))
+
+        with self.assertRaisesRegex(ValueError, "permissions changed during final review"):
+            use_case.publish(
+                workspace_id="workspace-1",
+                user_id="user-1",
+                scope_type="personal",
+                name="rename-display-name",
+                description="문서 트리의 표시 이름을 변경합니다.",
+                instructions_markdown="문서 본문은 유지하고 표시 이름만 변경한다.",
+                expected_capabilities=("folder-organize",),
+                expected_allowed_tools=(
+                    "create_folder",
+                    "get_breadcrumb",
+                    "get_document_content",
+                    "get_document_metadata",
+                    "list_folder_children",
+                    "list_root_items",
+                    "move_document",
+                    "move_folder",
+                    "rename_document",
+                    "rename_folder",
+                    "search_hierarchy",
+                ),
+            )
+
         self.assertEqual(repository.skills, {})
 
     def test_rejects_prompt_injection_in_reference_before_generation(self) -> None:
@@ -1018,6 +1091,8 @@ class AuthorSkillUseCaseTest(unittest.TestCase):
             name="concise-document-writer",
             description="요청한 내용을 간결한 문서로 작성합니다.",
             instructions_markdown="# 작성 절차\n\n- 핵심 내용을 먼저 정리한다.",
+            expected_capabilities=("document-create",),
+            expected_allowed_tools=("create_document", "list_folder_children", "list_root_items"),
         )
 
         result = use_case.update(

@@ -41,3 +41,17 @@ def test_redacts_numeric_personal_data_without_redacting_dates_or_versions() -> 
     assert redacted.count("[NUMERIC_PERSONAL_DATA]") == 4
     assert "2026-08-04" in redacted
     assert "version 1234" in redacted
+
+
+def test_preserves_only_explicitly_trusted_identifier() -> None:
+    document_id = "doc_5d1d66f111584257813657ddae1a4eea"
+    value = f"target {document_id}, 카드 4111 1111 1111 1111"
+
+    redacted = redact_numeric_personal_data(
+        value,
+        trusted_identifiers=(document_id,),
+    )
+
+    assert document_id in redacted
+    assert "4111 1111 1111 1111" not in redacted
+    assert "[NUMERIC_PERSONAL_DATA]" in redacted

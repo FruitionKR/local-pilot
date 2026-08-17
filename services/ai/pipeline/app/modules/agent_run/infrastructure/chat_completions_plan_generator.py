@@ -71,9 +71,22 @@ class ChatCompletionsPlanGenerator:
             ],
         }
         validate_untrusted_payload(payload)
+        trusted_identifiers = [plan_id]
+        for item in hierarchy:
+            for key in ("id", "parent_id"):
+                identifier = item.get(key)
+                if isinstance(identifier, str) and identifier:
+                    trusted_identifiers.append(identifier)
+        for artifact in content_artifacts:
+            trusted_identifiers.extend(
+                identifier
+                for identifier in (artifact.id, artifact.content_hash, artifact.document_id)
+                if identifier
+            )
         value = self._client.complete_json(
             self._system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
+            trusted_identifiers=tuple(dict.fromkeys(trusted_identifiers)),
         )
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
         if any(operation.tool_name not in allowed_plan_tools for operation in plan.operations):

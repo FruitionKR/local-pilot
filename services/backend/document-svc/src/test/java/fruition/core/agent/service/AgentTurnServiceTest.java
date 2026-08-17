@@ -77,7 +77,9 @@ class AgentTurnServiceTest {
                         java.util.List.of("pair_1"),
                         Map.of("source", "selected"),
                         new AgentTurnRequest.ConversationContext.PendingSkillProposal(
-                                "personal", "meeting-notes", "회의록을 작성합니다.", "# 정확한 원문 지침")));
+                                "personal", "meeting-notes", "회의록을 작성합니다.", "# 정확한 원문 지침",
+                                java.util.List.of("document-create"),
+                                java.util.List.of("list_root_items", "list_folder_children", "create_document"))));
         when(documentService.findById("ws_1", "user_1", "doc_1"))
                 .thenReturn(document("note.md", "text/markdown", 7));
         when(applyOperationStore.newOperationId()).thenReturn("op_apply_1");
@@ -103,6 +105,10 @@ class AgentTurnServiceTest {
                 .isEqualTo("회의록을 작성합니다.");
         assertThat(command.getValue().conversationContext().pendingSkillProposal().instructionsMarkdown())
                 .isEqualTo("# 정확한 원문 지침");
+        assertThat(command.getValue().conversationContext().pendingSkillProposal().capabilities())
+                .containsExactly("document-create");
+        assertThat(command.getValue().conversationContext().pendingSkillProposal().allowedTools())
+                .containsExactly("list_root_items", "list_folder_children", "create_document");
         assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(command.getValue()))
                 .contains("\"pending_skill_proposal\":{\"scope_type\":\"personal\"")
                 .contains("\"instructions_markdown\":\"# 정확한 원문 지침\"");
@@ -405,7 +411,9 @@ class AgentTurnServiceTest {
                       "scope_type": "personal",
                       "name": "meeting-notes",
                       "description": "회의록을 작성합니다.",
-                      "instructions_markdown": "# 정확한 원문 지침"
+                      "instructions_markdown": "# 정확한 원문 지침",
+                      "capabilities": ["document-create"],
+                      "allowed_tools": ["list_root_items", "list_folder_children", "create_document"]
                     }
                   },
                   "editorSnapshot": {"markdown": "# 제목\\n본문"}
@@ -417,6 +425,8 @@ class AgentTurnServiceTest {
         assertThat(request.conversationContext().pendingSkillProposal().scopeType()).isEqualTo("personal");
         assertThat(request.conversationContext().pendingSkillProposal().instructionsMarkdown())
                 .isEqualTo("# 정확한 원문 지침");
+        assertThat(request.conversationContext().pendingSkillProposal().capabilities())
+                .containsExactly("document-create");
     }
 
     @Test

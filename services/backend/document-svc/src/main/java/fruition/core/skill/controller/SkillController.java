@@ -50,6 +50,8 @@ public class SkillController {
                 @StringToClassMapItem(key = "description", value = String.class),
                 @StringToClassMapItem(key = "instructions_markdown", value = String.class),
                 @StringToClassMapItem(key = "skill_markdown", value = String.class),
+                @StringToClassMapItem(key = "capabilities", value = java.util.List.class),
+                @StringToClassMapItem(key = "allowed_tools", value = java.util.List.class),
                 @StringToClassMapItem(key = "issues", value = java.util.List.class)
             }))),
         @ApiResponse(responseCode = "400", description = "잘못된 요청",
@@ -88,6 +90,8 @@ public class SkillController {
                 @StringToClassMapItem(key = "description", value = String.class),
                 @StringToClassMapItem(key = "instructions_markdown", value = String.class),
                 @StringToClassMapItem(key = "skill_markdown", value = String.class),
+                @StringToClassMapItem(key = "capabilities", value = java.util.List.class),
+                @StringToClassMapItem(key = "allowed_tools", value = java.util.List.class),
                 @StringToClassMapItem(key = "issues", value = java.util.List.class)
             }))),
         @ApiResponse(responseCode = "400", description = "잘못된 Skill 정의",

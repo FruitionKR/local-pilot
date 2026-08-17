@@ -18,6 +18,7 @@
 - LLM은 다음 세 조합만 지원한다. 기본값은 `openai`/`gpt-5-nano`이며 reasoning effort는 `medium`, `gemini`/`gemini-3.1-flash-lite`는 `low`, `claude`/`claude-sonnet-5`는 extended thinking을 사용하지 않는다. `provider`와 `model`은 항상 함께 생략하거나 함께 전달해야 하며, 다른 조합은 요청 검증 오류다.
 - provider별 base URL은 `openai=https://api.openai.com/v1`, `gemini=https://generativelanguage.googleapis.com/v1beta/openai`, `claude=https://api.anthropic.com/v1`로 고정한다.
 - Ingest·Lint·Skill author/publish/update는 workspace AI 모델 설정의 `provider`·`model` snapshot, Query·Markdown Agent·Agent 경로는 사용자/API 요청 또는 chat/request 설정의 snapshot을 사용한다. provider/model은 사용자 설정·API·DB·Kafka payload에서 전달하며 env override는 없다. API key는 ai-svc secret env의 `OPENAI_API_KEY`·`GEMINI_API_KEY`·`ANTHROPIC_API_KEY`에서만 읽고 provider별 고정 base URL을 사용한다.
+- Skill author 응답의 `capabilities`·`allowed_tools`는 사용자가 검토한 초안 권한이며 publish 요청에 그대로 전달한다. publish는 지침을 다시 보안 검사·분류하고 capability가 달라지거나 Tool 권한이 확대되면 저장하지 않는다.
 - API key는 backend 요청·Kafka command/event·application log에 포함하지 않는다. 기존 AI 작업 로그의 조회/결과 API는 LLM 설정을 받지 않는다. 실제 provider 호출 전에는 선택 provider key가 필요하지만 mock 통합 테스트에는 key가 필요 없다.
 - `allow_web_search`가 `true`일 때만 Tavily adapter를 구성하고 web route를 허용한다. `false`이면 내부 문서가 뒷받침하는 범위만 답하고 부족한 범위를 명시하며, 내부 근거가 전혀 없을 때만 unsupported로 처리한다.
 - 원문: docs/backlog/spec/api/00-common.md
@@ -2798,6 +2799,12 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
   "baseVersion": 3,
   "conversationContext": {
     "pendingSkillProposal": {
+      "allowed_tools": [
+        "list_root_items"
+      ],
+      "capabilities": [
+        "document-create"
+      ],
       "description": "string",
       "instructions_markdown": "string",
       "name": "string",
@@ -2895,7 +2902,7 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent
 curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/agent/turn" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  --data '{"baseVersion":3,"conversationContext":{"pendingSkillProposal":{"description":"<value>","instructions_markdown":"<value>","name":"<value>","scope_type":"<value>"},"recentConversationSummary":"<value>","referenceContext":{}},"documentId":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","editorSnapshot":{"markdown":"<value>","target":{"endLine":24,"startLine":10,"type":"selection"}},"message":"이 문단을 표로 정리해줘","model":"gpt-5-nano","provider":"openai","skill_draft_excluded_literals":["<value>"],"skill_draft_sources":[{"run_id":"<value>"}],"skill_draft_user_directives":["<value>"]}'
+  --data '{"baseVersion":3,"conversationContext":{"pendingSkillProposal":{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","name":"<value>","scope_type":"<value>"},"recentConversationSummary":"<value>","referenceContext":{}},"documentId":"doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83","editorSnapshot":{"markdown":"<value>","target":{"endLine":24,"startLine":10,"type":"selection"}},"message":"이 문단을 표로 정리해줘","model":"gpt-5-nano","provider":"openai","skill_draft_excluded_literals":["<value>"],"skill_draft_sources":[{"run_id":"<value>"}],"skill_draft_user_directives":["<value>"]}'
 ```
 
 ```json
@@ -8024,6 +8031,12 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": "string",
@@ -8085,6 +8098,12 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": "string",
@@ -8128,6 +8147,12 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "name": "meeting-notes",
@@ -8142,6 +8167,12 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": "string",
@@ -8198,11 +8229,17 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skill
 curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/skills/author/publish" \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  --data '{"description":"<value>","instructions_markdown":"<value>","name":"meeting-notes","scope_type":"personal"}'
+  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","name":"meeting-notes","scope_type":"personal"}'
 ```
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": "string",
@@ -10689,6 +10726,8 @@ Handle Agent Turn
   "run_id": "string",
   "run_status": "string",
   "skill_authoring": {
+    "allowed_tools": [],
+    "capabilities": [],
     "description": null,
     "instructions_markdown": null,
     "issues": [
@@ -10877,6 +10916,8 @@ curl -X POST "$PIPELINE/agent/turn" \
   "run_id": "string",
   "run_status": "string",
   "skill_authoring": {
+    "allowed_tools": [],
+    "capabilities": [],
     "description": null,
     "instructions_markdown": null,
     "issues": [
@@ -13538,6 +13579,12 @@ Author Skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": [
@@ -13599,6 +13646,12 @@ curl -X POST "$PIPELINE/skills/author" \
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": [
@@ -13645,6 +13698,12 @@ Publish Authored Skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "model": "string",
@@ -13663,6 +13722,12 @@ Publish Authored Skill
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": [
@@ -13719,11 +13784,17 @@ Publish Authored Skill
 curl -X POST "$PIPELINE/skills/author/publish" \
   -H 'X-Agent-Service-Token: <value>' \
   -H 'Content-Type: application/json' \
-  --data '{"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
+  --data '{"allowed_tools":["list_root_items"],"capabilities":["document-create"],"description":"<value>","instructions_markdown":"<value>","model":"<value>","name":"<value>","provider":"<value>","scope_type":"personal","user_id":"<value>","workspace_id":"<value>"}'
 ```
 
 ```json
 {
+  "allowed_tools": [
+    "list_root_items"
+  ],
+  "capabilities": [
+    "document-create"
+  ],
   "description": "string",
   "instructions_markdown": "string",
   "issues": [

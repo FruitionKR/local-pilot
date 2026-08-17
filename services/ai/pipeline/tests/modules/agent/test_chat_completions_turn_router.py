@@ -163,6 +163,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="# 작성 절차",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     ),
                 ),
             )
@@ -181,6 +183,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="# 작성 절차",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     )
                 ),
             )
@@ -198,6 +202,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                         name="meeting-notes",
                         description="회의 내용을 정리합니다.",
                         instructions_markdown="# 작성 절차",
+                        capabilities=("document-create",),
+                        allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                     )
                 ),
             )
@@ -212,6 +218,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
                 name="meeting-notes",
                 description="회의 내용을 정리합니다.",
                 instructions_markdown="# 작성 절차",
+                capabilities=("document-create",),
+                allowed_tools=("list_root_items", "list_folder_children", "create_document"),
             )
         )
 

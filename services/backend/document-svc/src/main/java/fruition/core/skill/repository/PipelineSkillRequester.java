@@ -45,7 +45,8 @@ public class PipelineSkillRequester {
     public JsonNode publish(String workspaceId, String userId, SkillPublishRequest request,
                             WorkspaceAiModelClient.AiModelSelection aiModel) {
         return post("/author/publish", new PublishPayload(workspaceId, userId, request.scopeType(), request.name(),
-                request.description(), request.instructionsMarkdown(), aiModel.provider(), aiModel.model()));
+                request.description(), request.instructionsMarkdown(), request.capabilities(), request.allowedTools(),
+                aiModel.provider(), aiModel.model()));
     }
 
     public JsonNode list(String workspaceId, String userId) {
@@ -146,6 +147,8 @@ public class PipelineSkillRequester {
             String name,
             String description,
             @JsonProperty("instructions_markdown") String instructionsMarkdown,
+            java.util.List<String> capabilities,
+            @JsonProperty("allowed_tools") java.util.List<String> allowedTools,
             String provider,
             String model) {}
 

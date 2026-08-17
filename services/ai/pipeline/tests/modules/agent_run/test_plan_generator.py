@@ -12,9 +12,17 @@ from app.modules.agent_run.domain.entities import ContentArtifactReference
 class CapturingClient:
     def __init__(self) -> None:
         self.payload: dict[str, object] = {}
+        self.trusted_identifiers: tuple[str, ...] = ()
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> dict[str, object]:
         self.payload = json.loads(user_prompt)
+        self.trusted_identifiers = trusted_identifiers
         return {
             "summary": "문서를 이동합니다.",
             "operations": [
@@ -81,6 +89,10 @@ class PlanGeneratorTest(unittest.TestCase):
         )
 
         self.assertEqual(client.payload["allowed_tools"], ["move_document"])
+        self.assertEqual(
+            set(client.trusted_identifiers),
+            {"plan-1", "folder-1", "document-1"},
+        )
 
     def test_normalizes_plan_with_stable_operation_ids(self) -> None:
         plan = normalize_plan_candidate(
@@ -153,8 +165,14 @@ class PlanGeneratorTest(unittest.TestCase):
     def test_accepts_document_edit_artifact_contract(self) -> None:
         client = CapturingClient()
 
-        def complete_json(system_prompt: str, user_prompt: str) -> dict[str, object]:
+        def complete_json(
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            trusted_identifiers: tuple[str, ...] = (),
+        ) -> dict[str, object]:
             client.payload = json.loads(user_prompt)
+            client.trusted_identifiers = trusted_identifiers
             return {
                 "summary": "문서 본문을 반영합니다.",
                 "operations": [
@@ -219,6 +237,10 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertEqual(plan.operations[0].tool_name, "apply_document_edit")
         self.assertEqual(client.payload["allowed_tools"], ["apply_document_edit"])
         self.assertEqual(client.payload["content_artifacts"][0]["id"], "artifact-1")  # type: ignore[index]
+        self.assertEqual(
+            set(client.trusted_identifiers),
+            {"plan-1", "folder-1", "document-1", "artifact-1", "sha256:abc"},
+        )
 
         with self.assertRaisesRegex(ValueError, "trusted context"):
             generator.generate(
@@ -240,7 +262,7 @@ class PlanGeneratorTest(unittest.TestCase):
 
     def test_accepts_registered_create_artifact_with_strict_plan(self) -> None:
         client = CapturingClient()
-        client.complete_json = lambda _system_prompt, _user_prompt: {
+        client.complete_json = lambda _system_prompt, _user_prompt, **_kwargs: {
             "summary": "등록된 문서 artifact를 저장합니다.",
             "operations": [
                 {
@@ -295,7 +317,7 @@ class PlanGeneratorTest(unittest.TestCase):
 
     def test_edit_artifact_rejects_unrelated_mutation_plan(self) -> None:
         client = CapturingClient()
-        client.complete_json = lambda _system_prompt, _user_prompt: {
+        client.complete_json = lambda _system_prompt, _user_prompt, **_kwargs: {
             "summary": "요청과 무관한 문서 이동 계획",
             "operations": [
                 {

@@ -115,6 +115,33 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
         self.assertNotIn("010-1234-5678", body["messages"][0]["content"])
         self.assertIn("[NUMERIC_PERSONAL_DATA]", body["messages"][0]["content"])
 
+    def test_preserves_trusted_identifier_in_request_and_response(self) -> None:
+        document_id = "doc_5d1d66f111584257813657ddae1a4eea"
+        client = ChatCompletionsJsonClient(
+            ChatClientConfig(
+                endpoint="https://api.anthropic.com/v1/messages",
+                api_key="secret",
+                model="claude-sonnet-5",
+                json_mode=True,
+                provider="claude",
+            )
+        )
+
+        with patch(
+            "urllib.request.urlopen",
+            return_value=_Response(document_id, provider="claude"),
+        ) as urlopen:
+            result = client.complete_json(
+                "system prompt",
+                f"target {document_id}, 카드 4111 1111 1111 1111",
+                trusted_identifiers=(document_id,),
+            )
+
+        body = json.loads(urlopen.call_args.args[0].data)
+        self.assertIn(document_id, body["messages"][0]["content"])
+        self.assertNotIn("4111 1111 1111 1111", body["messages"][0]["content"])
+        self.assertEqual(result, {"result": document_id})
+
     def test_redacts_numeric_personal_data_in_response(self) -> None:
         client = ChatCompletionsJsonClient(
             ChatClientConfig(

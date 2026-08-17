@@ -2680,6 +2680,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  allowed_tools:
+                    type: string
+                  capabilities:
+                    type: string
                   description:
                     type: string
                   instructions_markdown:
@@ -2775,6 +2779,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  allowed_tools:
+                    type: string
+                  capabilities:
+                    type: string
                   description:
                     type: string
                   instructions_markdown:
@@ -5633,6 +5641,20 @@ components:
       type: object
       description: 사용자 확인 대기 중인 Skill 제안
       properties:
+        allowed_tools:
+          type: array
+          description: 검토된 Tool 허용 목록
+          items:
+            type: string
+          maxItems: 2147483647
+          minItems: 1
+        capabilities:
+          type: array
+          description: 검토된 Skill capability
+          items:
+            type: string
+          maxItems: 2147483647
+          minItems: 1
         description:
           type: string
           description: 제안된 Skill 설명
@@ -5645,6 +5667,9 @@ components:
         scope_type:
           type: string
           description: 제안된 Skill의 적용 범위 종류
+      required:
+      - allowed_tools
+      - capabilities
     PlanPage:
       type: object
       description: 계획 상의 페이지 하나
@@ -6084,6 +6109,20 @@ components:
       type: object
       description: Skill 게시 요청. 게시하면 새 버전이 만들어진다.
       properties:
+        allowed_tools:
+          type: array
+          description: 사용자가 승인한 초안의 Tool 허용 목록
+          items:
+            type: string
+          maxItems: 2147483647
+          minItems: 1
+        capabilities:
+          type: array
+          description: 사용자가 승인한 초안의 capability
+          items:
+            type: string
+          maxItems: 2147483647
+          minItems: 1
         description:
           type: string
           description: Skill 설명(500자 이하)
@@ -6110,6 +6149,8 @@ components:
           minLength: 1
           pattern: personal|team
       required:
+      - allowed_tools
+      - capabilities
       - description
       - instructions_markdown
       - name

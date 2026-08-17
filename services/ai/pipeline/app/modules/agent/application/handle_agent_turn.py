@@ -411,6 +411,8 @@ class HandleAgentTurnUseCase:
                 name=proposal.name,
                 description=proposal.description,
                 instructions_markdown=proposal.instructions_markdown,
+                expected_capabilities=proposal.capabilities,
+                expected_allowed_tools=proposal.allowed_tools,
             )
         if SECURITY_REVIEW_PATTERN.search(request.message):
             return self._skill_authorer.execute(
@@ -450,6 +452,8 @@ class HandleAgentTurnUseCase:
                     name=name,
                     description=proposal.description,
                     instructions_markdown=proposal.instructions_markdown,
+                    capabilities=proposal.capabilities,
+                    allowed_tools=proposal.allowed_tools,
                 ),
             )
         scope_type = _scope_from_text(request.message)
@@ -463,6 +467,8 @@ class HandleAgentTurnUseCase:
                     name=proposal.name,
                     description=proposal.description,
                     instructions_markdown=proposal.instructions_markdown,
+                    capabilities=proposal.capabilities,
+                    allowed_tools=proposal.allowed_tools,
                 ),
             )
         raise ValueError("현재 제안은 게시, 재생성, 보안 재검토, 커맨드·범위 변경을 지원합니다.")

@@ -178,6 +178,8 @@ class AuthoredSkillUseCase:
                     name="meeting-notes",
                     description="회의 내용을 정리합니다.",
                     instructions_markdown="# 작성 절차\n\n- 결정 사항을 구분한다.",
+                    capabilities=("document-create",),
+                    allowed_tools=("list_root_items", "list_folder_children", "create_document"),
                 ),
             ),
         )
@@ -228,7 +230,7 @@ class AgentRoutesTest(unittest.TestCase):
         self.assertEqual(request.response_length, "concise")
         self.assertFalse(request.allow_web_search)
 
-    def test_agent_turn_returns_authored_skill_markdown_without_permissions(self) -> None:
+    def test_agent_turn_returns_authored_skill_markdown_with_reviewed_permissions(self) -> None:
         response = handle_agent_turn(
             AgentTurnRequestBody(
                 message="회의록 스킬을 만들어줘",
@@ -241,8 +243,11 @@ class AgentRoutesTest(unittest.TestCase):
         body = response.model_dump()
         self.assertEqual(body["action"], "skill_authoring")
         self.assertIn("# 작성 절차", body["skill_authoring"]["skill_markdown"])
-        self.assertNotIn("capabilities", body["skill_authoring"])
-        self.assertNotIn("allowed_tools", body["skill_authoring"])
+        self.assertEqual(body["skill_authoring"]["capabilities"], ["document-create"])
+        self.assertEqual(
+            body["skill_authoring"]["allowed_tools"],
+            ["list_root_items", "list_folder_children", "create_document"],
+        )
 
     def test_agent_turn_rejects_oversized_or_obfuscated_input(self) -> None:
         deeply_nested_reference: dict[str, object] = {"value": "document"}
