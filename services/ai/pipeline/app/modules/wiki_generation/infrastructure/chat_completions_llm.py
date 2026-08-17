@@ -191,18 +191,18 @@ class ChatCompletionsJsonClient:
             )
             error = f"{prefix}: {detail}"
             self._write_prompt_log(request_log, error=error)
-            raise RuntimeError(error) from exc
+            raise RuntimeError(error) from None
 
         try:
             content = redact_numeric_personal_data(
                 response.text,
                 trusted_identifiers=trusted_identifiers,
             )
-        except Exception as exc:
+        except Exception:
             detail = redact_numeric_personal_data(str(response))
             error = f"Unexpected chat-completions response: {detail}"
             self._write_prompt_log(request_log, error=error)
-            raise RuntimeError(error) from exc
+            raise RuntimeError(error) from None
         self._write_prompt_log(request_log, content=content)
         return content
 

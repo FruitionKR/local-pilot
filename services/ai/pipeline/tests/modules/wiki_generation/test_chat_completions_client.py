@@ -238,6 +238,8 @@ class ChatCompletionsJsonClientTest(unittest.TestCase):
 
         self.assertNotIn("010-1234-5678", str(raised.exception))
         self.assertIn("[NUMERIC_PERSONAL_DATA]", str(raised.exception))
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertTrue(raised.exception.__suppress_context__)
 
     def test_langsmith_trace_contains_only_sanitized_wrapper_result(self) -> None:
         model = _Model(AIMessage(content="결과 010-1234-5678"))
