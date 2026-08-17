@@ -66,12 +66,11 @@ class QueryServiceTest {
                 chatSessionRepository, chatTurnRecorder,
                 new ChatEvidenceRecorder(chatMessageRepository, referenceRepository, relatedPageRepository,
                         documentRepository));
-        // 기본은 근거가 가리키는 문서가 모두 있는 상황이다. 없는 경우는 별도 테스트에서 만든다.
+        // 기본은 근거가 가리키는 문서가 모두 이 워크스페이스에 있는 상황이다. 어긋나는 경우는 별도 테스트에서 만든다.
         lenient().when(documentRepository.findAllById(any())).thenAnswer(invocation -> {
+            Iterable<?> documentIds = invocation.getArgument(0);
             List<Document> found = new ArrayList<>();
-            for (String documentId : (Iterable<String>) invocation.getArgument(0)) {
-                found.add(documentWithId(documentId));
-            }
+            documentIds.forEach(documentId -> found.add(documentInWorkspace(String.valueOf(documentId), WORKSPACE_ID)));
             return found;
         });
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
@@ -196,7 +195,8 @@ class QueryServiceTest {
                         new PipelineQueryResponse.SourceRef("doc_deleted99", "B0002")), "사라진 문서")
         );
         // 삭제된 문서는 조회에서 빠진다. when()으로 다시 스텁하면 setUp의 answer가 먼저 불리므로 doReturn을 쓴다.
-        doReturn(List.of(documentWithId(DOCUMENT_ID))).when(documentRepository).findAllById(any());
+        doReturn(List.of(documentInWorkspace(DOCUMENT_ID, WORKSPACE_ID)))
+                .when(documentRepository).findAllById(any());
         PipelineQueryResponse response = responseWithEvidence(evidence);
         when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
                 eq(true), anyList()))
@@ -213,10 +213,85 @@ class QueryServiceTest {
         assertThat(refCaptor.getValue().get(0).getDocumentId()).isEqualTo(DOCUMENT_ID);
     }
 
-    private static Document documentWithId(String documentId) {
+    private static Document documentInWorkspace(String documentId, String workspaceId) {
         Document document = org.mockito.Mockito.mock(Document.class);
         lenient().when(document.getId()).thenReturn(documentId);
+        lenient().when(document.getWorkspaceId()).thenReturn(workspaceId);
         return document;
+    }
+
+    /**
+     * 근거가 다른 워크스페이스 문서를 가리키면 화면에서 열리지 않는 근거가 되고, 그 문서 제목이
+     * 근거 목록으로 새어 나간다. 대화가 속한 워크스페이스의 문서만 남긴다.
+     */
+    @Test
+    @DisplayName("근거가 다른 워크스페이스 문서를 가리키면 저장하지 않는다")
+    void query_evidenceFromOtherWorkspace_isSkipped() {
+        List<PipelineQueryResponse.EvidenceSnippet> evidence = List.of(
+                new PipelineQueryResponse.EvidenceSnippet(
+                        1, DOCUMENT_ID, List.of("B0001"), List.of(
+                        new PipelineQueryResponse.SourceRef(DOCUMENT_ID, "B0001")), "남의 워크스페이스 문서")
+        );
+        doReturn(List.of(documentInWorkspace(DOCUMENT_ID, "ws_other999")))
+                .when(documentRepository).findAllById(any());
+        PipelineQueryResponse response = responseWithEvidence(evidence);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageReference>> refCaptor = ArgumentCaptor.forClass(List.class);
+        verify(referenceRepository).saveAll(refCaptor.capture());
+        assertThat(refCaptor.getValue()).isEmpty();
+    }
+
+    /**
+     * pipeline 쪽 제목 컬럼은 text라 길이 상한이 없는데 여기 컬럼은 varchar(255)다. 그대로 넣으면
+     * flush에서 터져 답변까지 되돌아가고 컨슈머가 같은 메시지를 계속 재시도한다.
+     */
+    @Test
+    @DisplayName("관련 페이지 제목이 컬럼 길이를 넘으면 잘라서 저장한다")
+    void query_longRelatedPageTitle_isTruncated() {
+        String longTitle = "제".repeat(400);
+        PipelineQueryResponse response = new PipelineQueryResponse(
+                "답변", null,
+                List.of(new PipelineQueryResponse.RelatedPage(
+                        "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
+                List.of(), null, List.of(), false, false, 0, null);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(pageCaptor.capture());
+        assertThat(pageCaptor.getValue().get(0).getTitle()).hasSize(255);
+    }
+
+    /** 경계에 서로게이트 쌍이 걸리면 반쪽만 남아 UTF-8 인코딩이 불가능한 문자열이 된다. */
+    @Test
+    @DisplayName("자르는 경계가 서로게이트 쌍 한가운데면 한 글자 덜 남긴다")
+    void query_titleTruncationDoesNotSplitSurrogatePair() {
+        // 254자 뒤에 emoji(서로게이트 쌍)를 두어 255번째 char가 high surrogate가 되게 한다.
+        String longTitle = "제".repeat(254) + "😀".repeat(10);
+        PipelineQueryResponse response = new PipelineQueryResponse(
+                "답변", null,
+                List.of(new PipelineQueryResponse.RelatedPage(
+                        "wiki_1", "concept", longTitle, "slug", 0.9, "seed_source", 0)),
+                List.of(), null, List.of(), false, false, 0, null);
+        when(pipelineQueryRequester.query(eq(WORKSPACE_ID), eq("질문"), eq("openai"), eq("gpt-5-nano"),
+                eq(true), anyList()))
+                .thenReturn(response);
+
+        queryService.query(WORKSPACE_ID, SESSION_ID, "질문", "openai", "gpt-5-nano", true);
+
+        ArgumentCaptor<List<ChatMessageRelatedPage>> pageCaptor = ArgumentCaptor.forClass(List.class);
+        verify(relatedPageRepository).saveAll(pageCaptor.capture());
+        String saved = pageCaptor.getValue().get(0).getTitle();
+        assertThat(saved).hasSize(254);
+        assertThat(Character.isHighSurrogate(saved.charAt(saved.length() - 1))).isFalse();
     }
 
     @Test
