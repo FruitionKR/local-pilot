@@ -427,6 +427,8 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
         self.assertIn('"방금 방식대로 Skill로 만들어줘"', prompt)
         self.assertIn("the Skill's reference input", prompt)
         self.assertIn("set `edit_goal` to null", prompt)
+        self.assertIn("concrete personal data", prompt)
+        self.assertIn("Do not create a mutation plan", prompt)
 
     def test_allows_general_whole_document_edit(self) -> None:
         request = AgentTurnRequest(

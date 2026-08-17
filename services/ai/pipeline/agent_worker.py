@@ -8,7 +8,6 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
 from app.modules.agent_run.infrastructure.backend_tool_gateway import build_backend_tool_gateway
-from app.modules.agent_run.infrastructure.chat_completions_execution_decider import build_execution_decider
 from app.modules.agent_run.infrastructure.chat_completions_plan_generator import build_plan_generator
 from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
 from app.modules.agent_run.infrastructure.postgres_agent_run_repository import PostgresAgentRunRepository
@@ -79,10 +78,6 @@ def main() -> None:
                     run_repository=run_repository,
                     tool_gateway=tool_gateway,
                     plan_generator=build_plan_generator(
-                        provider=context.run.provider,
-                        model=context.run.model,
-                    ),
-                    execution_decider=build_execution_decider(
                         provider=context.run.provider,
                         model=context.run.model,
                     ),

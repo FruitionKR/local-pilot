@@ -210,6 +210,20 @@ class HandleAgentTurnUseCase:
         if route.action in {"folder_organize", "workspace_workflow"}:
             if self._agent_run_starter is None or not request.workspace_id or not request.user_id:
                 raise AgentConfigurationError("Workspace workflow requires workspace_id and user_id.")
+            if inspect_skill_instructions(request.message):
+                return AgentTurnResult(
+                    action="reject",
+                    route=replace(
+                        route,
+                        action="reject",
+                        confidence=1.0,
+                        reason="unsafe mutation request",
+                        edit_goal=None,
+                        selected_skill_id=None,
+                        skill_candidates=(),
+                    ),
+                    message="보안상 위험한 지시나 민감정보를 Workspace에 추가하는 요청은 처리할 수 없습니다.",
+                )
             direct_route = self._router.route(
                 replace(
                     request,

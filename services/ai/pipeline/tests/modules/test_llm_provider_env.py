@@ -6,9 +6,6 @@ from app.modules.agent.infrastructure.chat_completions_turn_router import (
     _endpoint as agent_endpoint,
     build_agent_turn_router,
 )
-from app.modules.agent_run.infrastructure.chat_completions_execution_decider import (
-    build_execution_decider,
-)
 from app.modules.agent_run.infrastructure.chat_completions_plan_generator import (
     build_plan_generator,
 )
@@ -105,29 +102,25 @@ def test_missing_provider_api_key_is_rejected(
 
 
 @pytest.mark.parametrize("provider", EXPECTED)
-@pytest.mark.parametrize("builder", (build_execution_decider, build_plan_generator))
-def test_agent_llm_paths_use_request_provider_and_model(
+def test_agent_plan_llm_uses_request_provider_and_model(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
-    builder,
 ) -> None:
     _, key_env, model = EXPECTED[provider]
     monkeypatch.setenv(key_env, "provider-key")
-    client = builder(provider=provider, model=model)._client  # type: ignore[attr-defined]
+    client = build_plan_generator(provider=provider, model=model)._client  # type: ignore[attr-defined]
 
     assert client.provider == provider
     assert client.config.model == model
     assert client.config.endpoint == EXPECTED[provider][0]
 
 
-@pytest.mark.parametrize("builder", (build_execution_decider, build_plan_generator))
-def test_agent_llm_paths_reject_unsupported_provider_or_model(
+def test_agent_plan_llm_rejects_unsupported_provider_or_model(
     monkeypatch: pytest.MonkeyPatch,
-    builder,
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
     with pytest.raises(ValueError, match="Unsupported provider"):
-        builder(provider="upstage", model="solar-pro2")
+        build_plan_generator(provider="upstage", model="solar-pro2")
     with pytest.raises(ValueError, match="Unsupported model"):
-        builder(provider="openai", model="unsupported-model")
+        build_plan_generator(provider="openai", model="unsupported-model")

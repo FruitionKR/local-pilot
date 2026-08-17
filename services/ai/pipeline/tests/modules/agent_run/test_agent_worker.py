@@ -5,10 +5,8 @@ from unittest.mock import MagicMock, patch
 import agent_worker
 from langgraph.channels import UntrackedValue
 from app.modules.agent_run.infrastructure.agent_worker import AgentWorker
-from app.modules.agent_run.infrastructure.agent_worker import _known_ids
 from app.modules.agent_run.infrastructure.agent_worker import _resolve_operation_references
 from app.modules.agent_run.domain.entities import AgentRun, AgentRunContext
-from app.modules.agent_run.domain.execution import AgentExecutionDecision
 from app.modules.agent_run.domain.plan import AgentPlan, AgentPlanOperation
 from app.modules.agent_run.application.ports import ToolGatewayError
 from app.modules.agent_run.infrastructure.postgres_agent_job_repository import PostgresAgentJobRepository
@@ -18,7 +16,7 @@ from app.modules.wiki_ingestion.infrastructure import postgres_wiki_ingestion_re
 class AgentWorkerTest(unittest.TestCase):
     def test_process_keeps_internal_value_error_detail_but_hides_external_detail(self) -> None:
         repository = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
         internal_job = MagicMock(job_type="planning", id="job-1")
         internal_detail = "  internal\n detail\t" + ("x" * 300)
         repository.request_clarification.return_value = False
@@ -89,7 +87,6 @@ class AgentWorkerTest(unittest.TestCase):
             run_repository,
             MagicMock(),
             plan_generator,
-            MagicMock(),
         )
 
         with (
@@ -118,13 +115,11 @@ class AgentWorkerTest(unittest.TestCase):
             status="awaiting_approval",
         )
         tool_gateway = MagicMock()
-        decider = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
 
         with self.assertRaisesRegex(ValueError, "approved"):
             worker._execute(MagicMock(run_id="run-1"))
 
-        decider.decide.assert_not_called()
         tool_gateway.execute.assert_not_called()
 
     def test_workspace_workflow_loads_trusted_artifacts_from_tool_gateway(self) -> None:
@@ -143,7 +138,7 @@ class AgentWorkerTest(unittest.TestCase):
                 }
             ]
         }
-        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
         context = AgentRunContext(
             run=AgentRun(
                 id="run-1",
@@ -183,7 +178,7 @@ class AgentWorkerTest(unittest.TestCase):
                 }
             ]
         }
-        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
         context = AgentRunContext(
             run=AgentRun(
                 id="run-1",
@@ -206,7 +201,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository.reserve_tool_call.return_value = True
         gateway = MagicMock()
         gateway.read.return_value = {"edit_revision": 2, "content_hash": "sha256:abc"}
-        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
         context = AgentRunContext(
             run=AgentRun(
                 id="run-1",
@@ -236,7 +231,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
         gateway = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock())
         operation = replace(_approved_plan().operations[0], tool_name="apply_document_edit")
         response = {"id": "document-1", "current_version": 2, "content_hash": "sha256:abc"}
 
@@ -251,77 +246,6 @@ class AgentWorkerTest(unittest.TestCase):
                     worker._verify_operation(_executing_context(), operation, response),
                     expected,
                 )
-
-    def test_search_and_breadcrumb_reads_use_gateway_with_contract_arguments(self) -> None:
-        repository = MagicMock()
-        repository.reserve_tool_call.return_value = True
-        gateway = MagicMock()
-        gateway.read.side_effect = [{"results": []}, {"path": []}]
-        worker = AgentWorker(repository, MagicMock(), gateway, MagicMock(), MagicMock())
-        context = _executing_context()
-
-        self.assertEqual(
-            worker._validate_read_decision(
-                "search_hierarchy", {"query": "보고서"}, ("search_hierarchy",), set()
-            ),
-            ("search_hierarchy", {"query": "보고서"}),
-        )
-        self.assertEqual(
-            worker._read_tool(context, "search_hierarchy", {"query": "보고서"}),
-            {"results": []},
-        )
-        self.assertEqual(
-            worker._read_tool(
-                context,
-                "get_breadcrumb",
-                {"folder_id": "folder-1", "document_id": None},
-            ),
-            {"path": []},
-        )
-        self.assertEqual(gateway.read.call_args_list[0].kwargs["arguments"], {"query": "보고서"})
-        self.assertEqual(
-            gateway.read.call_args_list[1].kwargs["arguments"],
-            {"folder_id": "folder-1", "document_id": None},
-        )
-
-    def test_breadcrumb_requires_one_known_target_and_search_skips_known_id_check(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-
-        with self.assertRaisesRegex(ValueError, "exactly one"):
-            worker._validate_read_decision(
-                "get_breadcrumb",
-                {"folder_id": None, "document_id": None},
-                ("get_breadcrumb",),
-                set(),
-            )
-        with self.assertRaisesRegex(ValueError, "known workspace state"):
-            worker._validate_read_decision(
-                "get_breadcrumb",
-                {"folder_id": "folder-1", "document_id": None},
-                ("get_breadcrumb",),
-                set(),
-            )
-        with self.assertRaisesRegex(ValueError, "non-empty query"):
-            worker._validate_read_decision(
-                "search_hierarchy", {"query": "  "}, ("search_hierarchy",), set()
-            )
-
-    def test_search_result_id_is_available_for_follow_up_read(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-        known_ids = _known_ids(
-            _approved_plan(),
-            [{"result": {"results": [{"id": "document-2", "name": "보고서"}]}}],
-        )
-
-        self.assertEqual(
-            worker._validate_read_decision(
-                "get_document_metadata",
-                {"document_id": "document-2"},
-                ("get_document_metadata",),
-                known_ids,
-            ),
-            ("get_document_metadata", {"document_id": "document-2"}),
-        )
 
     def test_resolves_approved_dependency_output_without_changing_other_arguments(self) -> None:
         arguments = {
@@ -427,7 +351,6 @@ class AgentWorkerTest(unittest.TestCase):
         for failure in (
             "load_context",
             "plan_generator",
-            "execution_decider",
             "agent_worker",
             "missing_provider",
             "missing_model",
@@ -441,7 +364,6 @@ class AgentWorkerTest(unittest.TestCase):
                 context.run.model = None if failure == "missing_model" else "gpt-5-nano"
                 repository.load_context.return_value = context
                 plan_generator = MagicMock()
-                execution_decider = MagicMock()
                 worker = MagicMock()
                 connection_context = MagicMock()
                 connection_context.__enter__.return_value = MagicMock()
@@ -453,11 +375,6 @@ class AgentWorkerTest(unittest.TestCase):
                     patch.object(agent_worker, "PostgresSaver"),
                     patch.object(agent_worker, "build_backend_tool_gateway"),
                     patch.object(agent_worker, "build_plan_generator", return_value=plan_generator) as plan_builder,
-                    patch.object(
-                        agent_worker,
-                        "build_execution_decider",
-                        return_value=execution_decider,
-                    ) as execution_builder,
                     patch.object(agent_worker, "AgentWorker", return_value=worker) as worker_factory,
                     patch.object(agent_worker, "_cleanup_expired_runs_if_due", return_value=0),
                     patch.object(agent_worker.time, "monotonic", return_value=1),
@@ -467,8 +384,6 @@ class AgentWorkerTest(unittest.TestCase):
                         repository.load_context.side_effect = RuntimeError("context unavailable")
                     elif failure == "plan_generator":
                         plan_builder.side_effect = RuntimeError("missing API key")
-                    elif failure == "execution_decider":
-                        execution_builder.side_effect = RuntimeError("missing API key")
                     elif failure == "agent_worker":
                         worker_factory.side_effect = RuntimeError("worker setup failed")
 
@@ -499,7 +414,6 @@ class AgentWorkerTest(unittest.TestCase):
             patch.object(agent_worker, "PostgresSaver"),
             patch.object(agent_worker, "build_backend_tool_gateway"),
             patch.object(agent_worker, "build_plan_generator"),
-            patch.object(agent_worker, "build_execution_decider"),
             patch.object(agent_worker, "AgentWorker", return_value=worker),
             patch.object(agent_worker, "_cleanup_expired_runs_if_due", return_value=0),
             patch.object(agent_worker.time, "monotonic", return_value=1),
@@ -512,7 +426,7 @@ class AgentWorkerTest(unittest.TestCase):
 
     def test_selected_skill_with_empty_allowed_tools_cannot_read_hierarchy(self) -> None:
         repository = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
         context = AgentRunContext(
             run=AgentRun(
                 id="run-1",
@@ -557,7 +471,7 @@ class AgentWorkerTest(unittest.TestCase):
         gateway.read.return_value = {"items": []}
         plan_generator = MagicMock()
         plan_generator.generate.return_value = plan
-        worker = AgentWorker(repository, run_repository, gateway, plan_generator, MagicMock())
+        worker = AgentWorker(repository, run_repository, gateway, plan_generator)
 
         worker._run_job(MagicMock(run_id="run-1", job_type="planning"))
 
@@ -575,7 +489,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository = MagicMock()
         repository.load_context.return_value = _executing_context()
         repository.request_clarification.return_value = True
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
 
         result = worker._execute_step_node(
             {
@@ -608,7 +522,7 @@ class AgentWorkerTest(unittest.TestCase):
         revised_plan = replace(first_plan, id="plan-2", version=2, operation_hash="revised-hash")
         plan_generator = MagicMock()
         plan_generator.generate.side_effect = [first_plan, revised_plan]
-        worker = AgentWorker(repository, run_repository, gateway, plan_generator, MagicMock())
+        worker = AgentWorker(repository, run_repository, gateway, plan_generator)
         planning_job = MagicMock(run_id="run-1", job_type="planning")
 
         worker._run_job(planning_job)
@@ -632,7 +546,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository.load_context.return_value = context
         run_repository = MagicMock()
         plan_generator = MagicMock()
-        worker = AgentWorker(repository, run_repository, MagicMock(), plan_generator, MagicMock())
+        worker = AgentWorker(repository, run_repository, MagicMock(), plan_generator)
 
         worker._plan_node({"run_id": "run-1"})
 
@@ -650,7 +564,7 @@ class AgentWorkerTest(unittest.TestCase):
                 error_code="react_step_limit_exceeded",
             ),
         )
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
 
         result = worker._execute_step_node({"run_id": "run-1", "steps": 40})
 
@@ -666,7 +580,7 @@ class AgentWorkerTest(unittest.TestCase):
                     _executing_context(),
                     run=replace(_executing_context().run, status=status),
                 )
-                worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+                worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
                 graph = MagicMock()
                 graph.get_state.return_value = MagicMock(
                     tasks=(MagicMock(interrupts=(object(),)),),
@@ -686,7 +600,7 @@ class AgentWorkerTest(unittest.TestCase):
                     _executing_context(),
                     run=replace(_executing_context().run, status=status),
                 )
-                worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+                worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
                 graph = MagicMock()
                 graph.get_state.return_value = MagicMock(tasks=(), next=("wait_for_user",))
                 worker._graph = graph
@@ -701,7 +615,7 @@ class AgentWorkerTest(unittest.TestCase):
             _executing_context(),
             run=replace(_executing_context().run, status="completed"),
         )
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
         graph = MagicMock()
         graph.get_state.return_value = MagicMock(
             tasks=(),
@@ -720,7 +634,7 @@ class AgentWorkerTest(unittest.TestCase):
             _executing_context(),
             run=replace(_executing_context().run, status="completed"),
         )
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
 
         worker._verify_run("run-1")
 
@@ -728,7 +642,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository.finish_run_from_operations.assert_not_called()
 
     def test_graph_retries_from_pending_checkpoint(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock())
         graph = MagicMock()
         graph.get_state.return_value = MagicMock(tasks=(), next=("execute_step",))
         worker._graph = graph
@@ -745,7 +659,7 @@ class AgentWorkerTest(unittest.TestCase):
         self.assertEqual(graph.invoke.call_args.kwargs["durability"], "sync")
 
     def test_graph_does_not_resume_wait_node_before_approval_interrupt_exists(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock())
         graph = MagicMock()
         graph.get_state.return_value = MagicMock(tasks=(), next=("wait_for_user",))
         worker._graph = graph
@@ -756,7 +670,7 @@ class AgentWorkerTest(unittest.TestCase):
         graph.invoke.assert_not_called()
 
     def test_graph_rejects_unknown_job_before_resuming_checkpoint(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock())
         graph = MagicMock()
         graph.get_state.return_value = MagicMock(tasks=(), next=("execute_step",))
         worker._graph = graph
@@ -768,11 +682,11 @@ class AgentWorkerTest(unittest.TestCase):
         graph.invoke.assert_not_called()
 
     def test_graph_never_checkpoints_raw_observations(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
+        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock())
 
         self.assertIsInstance(worker._graph.channels["observations"], UntrackedValue)
 
-    def test_react_executor_uses_stored_approved_operation_arguments(self) -> None:
+    def test_executor_uses_stored_approved_operation_arguments(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
         repository.remaining_tool_calls.return_value = 1
@@ -789,13 +703,7 @@ class AgentWorkerTest(unittest.TestCase):
         tool_gateway = MagicMock()
         tool_gateway.read.return_value = {"items": []}
         tool_gateway.execute.return_value = {"id": "document-1", "folder_id": "folder-1"}
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="execute_operation",
-            operation_id="plan-1-op-1",
-            arguments={"document_id": "unapproved-document"},
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
 
         worker._execute(MagicMock(run_id="run-1"))
 
@@ -808,12 +716,39 @@ class AgentWorkerTest(unittest.TestCase):
                 "base_version": 3,
             },
         )
-        self.assertEqual(decider.decide.call_args.kwargs["allowed_read_tools"], ())
-        decider.decide.assert_called_once()
         repository.mark_run_status.assert_called_once_with("run-1", ("executing",), "verifying")
         repository.finish_run_from_operations.assert_called_once_with("run-1")
 
-    def test_react_executor_finishes_without_an_additional_llm_decision(self) -> None:
+    def test_executor_runs_first_ready_operation_by_sequence(self) -> None:
+        repository = MagicMock()
+        repository.remaining_tool_calls.return_value = 2
+        repository.reserve_tool_call.return_value = True
+        repository.mark_operation.return_value = True
+        context = _executing_context()
+        first = _approved_plan().operations[0]
+        second = replace(first, id="plan-1-op-2", sequence=2)
+        plan = replace(_approved_plan(), operations=(first, second))
+        repository.load_context.return_value = context
+        repository.load_current_plan.return_value = plan
+        repository.load_operation_results.return_value = {}
+        tool_gateway = MagicMock()
+        tool_gateway.execute.return_value = {"id": "document-1", "folder_id": "folder-1"}
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
+
+        result = worker._execute_step_node(
+            {
+                "run_id": "run-1",
+                "plan_id": plan.id,
+                "plan_version": plan.version,
+                "operation_hash": plan.operation_hash,
+                "steps": 0,
+            }
+        )
+
+        self.assertEqual(result["outcome"], "continue")
+        self.assertEqual(tool_gateway.execute.call_args.kwargs["operation_id"], first.id)
+
+    def test_executor_finishes_when_no_operation_remains(self) -> None:
         repository = MagicMock()
         context = _executing_context()
         plan = _approved_plan()
@@ -826,84 +761,14 @@ class AgentWorkerTest(unittest.TestCase):
         repository.load_operation_results.return_value = {
             "plan-1-op-1": {"id": "document-1", "folder_id": "folder-1"}
         }
-        decider = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), decider)
+        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock())
 
         worker._execute(MagicMock(run_id="run-1"))
 
-        decider.decide.assert_not_called()
         repository.mark_run_status.assert_called_once_with("run-1", ("executing",), "verifying")
         repository.finish_run_from_operations.assert_called_once_with("run-1")
 
-    def test_react_executor_rejects_read_tool_outside_skill_allowlist(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-
-        with self.assertRaisesRegex(ValueError, "not allowed"):
-            worker._validate_read_decision(
-                "get_document_metadata",
-                {"document_id": "document-1"},
-                ("list_root_items",),
-                {"document-1"},
-            )
-
-    def test_react_executor_rejects_read_target_id_outside_known_workspace_state(self) -> None:
-        worker = AgentWorker(MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock())
-
-        with self.assertRaisesRegex(ValueError, "known workspace state"):
-            worker._validate_read_decision(
-                "get_document_metadata",
-                {"document_id": "attacker-injected-document"},
-                ("get_document_metadata",),
-                {"document-1"},
-            )
-
-    def test_react_executor_does_not_execute_unapproved_operation_id(self) -> None:
-        repository = MagicMock()
-        repository.reserve_tool_call.return_value = True
-        repository.remaining_tool_calls.return_value = 40
-        context = _executing_context()
-        plan = _approved_plan()
-        repository.load_context.return_value = context
-        repository.load_current_plan.side_effect = [plan, plan]
-        repository.load_operation_results.return_value = {}
-        tool_gateway = MagicMock()
-        tool_gateway.read.return_value = {"items": []}
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="execute_operation",
-            operation_id="unapproved-operation",
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
-
-        with self.assertRaisesRegex(ValueError, "not ready"):
-            worker._execute(MagicMock(run_id="run-1"))
-
-        tool_gateway.execute.assert_not_called()
-
-    def test_react_executor_rejects_read_decision_targeting_unknown_id(self) -> None:
-        repository = MagicMock()
-        repository.reserve_tool_call.return_value = True
-        repository.remaining_tool_calls.return_value = 40
-        context = _executing_context()
-        plan = _approved_plan()
-        repository.load_context.return_value = context
-        repository.load_current_plan.side_effect = [plan, plan]
-        repository.load_operation_results.return_value = {}
-        tool_gateway = MagicMock()
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="read",
-            tool_name="get_document_content",
-            arguments={"document_id": "attacker-injected-document"},
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
-
-        with self.assertRaisesRegex(ValueError, "known workspace state"):
-            worker._execute(MagicMock(run_id="run-1"))
-
-        tool_gateway.read.assert_not_called()
-
-    def test_react_executor_requests_clarification_when_budget_runs_out_mid_retry(self) -> None:
+    def test_executor_requests_clarification_when_budget_runs_out_mid_retry(self) -> None:
         repository = MagicMock()
         repository.remaining_tool_calls.return_value = 40
         repository.mark_operation.return_value = True
@@ -916,12 +781,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository.load_operation_results.return_value = {}
         tool_gateway = MagicMock()
         tool_gateway.execute.side_effect = ToolGatewayError(503, True)
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="execute_operation",
-            operation_id="plan-1-op-1",
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
 
         worker._execute(MagicMock(run_id="run-1"))
 
@@ -933,35 +793,7 @@ class AgentWorkerTest(unittest.TestCase):
         repository.mark_operation.assert_any_call("plan-1-op-1", ("running",), "pending")
         repository.enqueue_verification.assert_not_called()
 
-    def test_react_executor_stops_for_new_plan_without_running_mutation(self) -> None:
-        repository = MagicMock()
-        repository.reserve_tool_call.return_value = True
-        repository.remaining_tool_calls.return_value = 40
-        repository.request_clarification.return_value = True
-        context = _executing_context()
-        plan = _approved_plan()
-        repository.load_context.return_value = context
-        repository.load_current_plan.side_effect = [plan, plan]
-        repository.load_operation_results.return_value = {}
-        tool_gateway = MagicMock()
-        tool_gateway.read.return_value = {"items": []}
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="request_replan",
-            reason="state_changed",
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
-
-        worker._execute(MagicMock(run_id="run-1"))
-
-        repository.request_clarification.assert_called_once_with(
-            "run-1",
-            "react_replan_state_changed",
-        )
-        tool_gateway.execute.assert_not_called()
-        repository.finish_run_from_operations.assert_not_called()
-
-    def test_react_executor_does_not_start_mutation_cancelled_during_decision(self) -> None:
+    def test_executor_does_not_start_mutation_cancelled_before_operation(self) -> None:
         repository = MagicMock()
         repository.reserve_tool_call.return_value = True
         repository.remaining_tool_calls.return_value = 40
@@ -972,20 +804,14 @@ class AgentWorkerTest(unittest.TestCase):
         repository.load_current_plan.side_effect = [plan, plan]
         repository.load_operation_results.return_value = {}
         tool_gateway = MagicMock()
-        tool_gateway.read.return_value = {"items": []}
-        decider = MagicMock()
-        decider.decide.return_value = AgentExecutionDecision(
-            action="execute_operation",
-            operation_id="plan-1-op-1",
-        )
-        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock(), decider)
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
 
         worker._execute(MagicMock(run_id="run-1"))
 
         tool_gateway.execute.assert_not_called()
         repository.finish_run_from_operations.assert_not_called()
 
-    def test_react_executor_requests_clarification_when_mutation_budget_is_insufficient(self) -> None:
+    def test_executor_requests_clarification_when_mutation_budget_is_insufficient(self) -> None:
         repository = MagicMock()
         repository.remaining_tool_calls.return_value = 0
         repository.request_clarification.return_value = True
@@ -994,8 +820,8 @@ class AgentWorkerTest(unittest.TestCase):
         repository.load_context.return_value = context
         repository.load_current_plan.side_effect = [plan, plan]
         repository.load_operation_results.return_value = {}
-        decider = MagicMock()
-        worker = AgentWorker(repository, MagicMock(), MagicMock(), MagicMock(), decider)
+        tool_gateway = MagicMock()
+        worker = AgentWorker(repository, MagicMock(), tool_gateway, MagicMock())
 
         worker._execute(MagicMock(run_id="run-1"))
 
@@ -1003,7 +829,7 @@ class AgentWorkerTest(unittest.TestCase):
             "run-1",
             "react_tool_budget_insufficient",
         )
-        decider.decide.assert_not_called()
+        tool_gateway.execute.assert_not_called()
 
     def test_repository_reports_remaining_tool_calls(self) -> None:
         connection = MagicMock()
@@ -1028,13 +854,13 @@ class AgentWorkerTest(unittest.TestCase):
         with patch.object(database, "connect_ai", return_value=connection_context):
             updated = PostgresAgentJobRepository().request_clarification(
                 "run-1",
-                "react_replan_state_changed",
+                "react_tool_budget_insufficient",
             )
 
         self.assertTrue(updated)
         query, parameters = connection.execute.call_args.args
         self.assertIn("error_code = %s", query)
-        self.assertEqual(parameters, ("react_replan_state_changed", "run-1"))
+        self.assertEqual(parameters, ("react_tool_budget_insufficient", "run-1"))
 
     def test_terminal_run_status_is_not_overwritten_when_job_fails(self) -> None:
         connection = MagicMock()

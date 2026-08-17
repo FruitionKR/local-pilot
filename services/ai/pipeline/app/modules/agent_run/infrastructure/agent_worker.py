@@ -14,7 +14,6 @@ from langsmith import tracing_context
 
 from app.modules.agent_run.application.ports import (
     AgentJobRepositoryPort,
-    AgentExecutionDeciderPort,
     AgentPlanGeneratorPort,
     AgentPlanRepositoryPort,
     AgentToolGatewayPort,
@@ -41,16 +40,6 @@ class _ToolBudgetExhausted(Exception):
     execute 단계가 이를 잡아 request_clarification 경로로 처리한다."""
 
 
-_READ_TOOL_ARGUMENTS = {
-    "list_root_items": frozenset(),
-    "list_folder_children": frozenset({"folder_id"}),
-    "get_document_metadata": frozenset({"document_id"}),
-    "get_document_content": frozenset({"document_id"}),
-    "search_hierarchy": frozenset({"query"}),
-    "get_breadcrumb": frozenset({"folder_id", "document_id"}),
-}
-
-
 class AgentRunGraphState(TypedDict, total=False):
     run_id: str
     event: str
@@ -58,7 +47,6 @@ class AgentRunGraphState(TypedDict, total=False):
     plan_version: int
     operation_hash: str
     observations: Annotated[list[dict[str, object]], UntrackedValue(list)]
-    allowed_read_tools: list[str]
     steps: int
     outcome: str
     error_code: str
@@ -71,14 +59,12 @@ class AgentWorker:
         run_repository: AgentPlanRepositoryPort,
         tool_gateway: AgentToolGatewayPort,
         plan_generator: AgentPlanGeneratorPort,
-        execution_decider: AgentExecutionDeciderPort,
         checkpointer: BaseCheckpointSaver[str] | None = None,
     ) -> None:
         self._repository = repository
         self._run_repository = run_repository
         self._tool_gateway = tool_gateway
         self._plan_generator = plan_generator
-        self._execution_decider = execution_decider
         self._graph = self._build_graph().compile(checkpointer=checkpointer or InMemorySaver())
 
     def process(self, job: AgentJob) -> None:
@@ -220,7 +206,6 @@ class AgentWorker:
                 {"action": "execute_operation", "operation_id": operation_id, "result": result}
                 for operation_id, result in results.items()
             ],
-            "allowed_read_tools": list(self._allowed_read_tools(context)),
             "steps": 0,
             "outcome": "continue",
         }
@@ -407,8 +392,6 @@ class AgentWorker:
                 "AgentRun cannot request Tool budget clarification.",
                 steps,
             )
-        configured_read_tools = tuple(state.get("allowed_read_tools", []))
-        allowed_read_tools = configured_read_tools if remaining_tool_calls > len(remaining) else ()
         ready = tuple(
             operation
             for operation in remaining.values()
@@ -417,66 +400,28 @@ class AgentWorker:
         if remaining and not ready:
             raise ValueError("Agent plan dependency graph cannot make progress.")
 
-        decision = self._execution_decider.decide(
-            instruction=context.run.request_summary,
-            plan=plan,
-            ready_operations=ready,
-            observations=tuple(observations),
-            allowed_read_tools=allowed_read_tools,
-        )
-        if decision.action == "read":
-            latest_context = self._active_execution_context(run_id)
-            if latest_context is None:
-                return {"outcome": "finished", "steps": steps + 1}
-            known_ids = _known_ids(plan, observations)
-            tool_name, arguments = self._validate_read_decision(
-                decision.tool_name,
-                decision.arguments,
-                allowed_read_tools,
-                known_ids,
-            )
-            observations.append(
-                {
-                    "action": "read",
-                    "tool_name": tool_name,
-                    "arguments": arguments,
-                    "result": self._read_tool(latest_context, tool_name, arguments),
-                }
-            )
-            return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
-        if decision.action == "execute_operation":
-            latest_context = self._active_execution_context(run_id)
-            if latest_context is None:
-                return {"outcome": "finished", "steps": steps + 1}
-            operation = next((item for item in ready if item.id == decision.operation_id), None)
-            if operation is None:
-                raise ValueError("Agent selected an operation that is not ready.")
-            try:
-                response = self._execute_operation(latest_context, plan, operation, results)
-            except _ToolBudgetExhausted:
-                return self._request_execution_clarification(
-                    run_id,
-                    "react_tool_budget_insufficient",
-                    "AgentRun cannot request Tool budget clarification.",
-                    steps,
-                )
-            observation: dict[str, object] = {
-                "action": "execute_operation",
-                "operation_id": operation.id,
-                "status": "succeeded" if response is not None else "failed",
-            }
-            if response is not None:
-                observation["result"] = response
-            observations.append(observation)
-            return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
-        if decision.action == "request_replan":
+        latest_context = self._active_execution_context(run_id)
+        if latest_context is None:
+            return {"outcome": "finished", "steps": steps + 1}
+        operation = min(ready, key=lambda item: item.sequence)
+        try:
+            response = self._execute_operation(latest_context, plan, operation, results)
+        except _ToolBudgetExhausted:
             return self._request_execution_clarification(
                 run_id,
-                f"react_replan_{decision.reason}",
-                "AgentRun cannot request a new plan.",
+                "react_tool_budget_insufficient",
+                "AgentRun cannot request Tool budget clarification.",
                 steps,
             )
-        raise ValueError("Unsupported Agent execution action.")
+        observation: dict[str, object] = {
+            "action": "execute_operation",
+            "operation_id": operation.id,
+            "status": "succeeded" if response is not None else "failed",
+        }
+        if response is not None:
+            observation["result"] = response
+        observations.append(observation)
+        return {"observations": observations, "steps": steps + 1, "outcome": "continue"}
 
     def _active_execution_context(self, run_id: str) -> AgentRunContext | None:
         context = self._repository.load_context(run_id)
@@ -653,46 +598,6 @@ class AgentWorker:
             arguments=arguments,
         )
 
-    def _allowed_read_tools(self, context: AgentRunContext) -> tuple[str, ...]:
-        if context.run.skill_version_id is None:
-            return tuple(_READ_TOOL_ARGUMENTS)
-        return tuple(tool_name for tool_name in _READ_TOOL_ARGUMENTS if tool_name in context.allowed_tools)
-
-    def _validate_read_decision(
-        self,
-        tool_name: str | None,
-        arguments: dict[str, object] | None,
-        allowed_read_tools: tuple[str, ...],
-        known_ids: set[str],
-    ) -> tuple[str, dict[str, object]]:
-        if tool_name not in allowed_read_tools or tool_name not in _READ_TOOL_ARGUMENTS:
-            raise ValueError("Agent selected a read tool that is not allowed.")
-        if arguments is None or set(arguments) != _READ_TOOL_ARGUMENTS[tool_name]:
-            raise ValueError("Agent read arguments do not match the tool contract.")
-        if tool_name == "search_hierarchy":
-            if not isinstance(arguments["query"], str) or not arguments["query"].strip():
-                raise ValueError("Agent read arguments must contain a non-empty query.")
-            return tool_name, arguments
-        if tool_name == "get_breadcrumb":
-            folder_id = arguments["folder_id"]
-            document_id = arguments["document_id"]
-            if (folder_id is None) == (document_id is None):
-                raise ValueError("Agent breadcrumb requires exactly one target.")
-            target_id = folder_id if folder_id is not None else document_id
-            if not isinstance(target_id, str) or not target_id.strip():
-                raise ValueError("Agent breadcrumb target must be a non-empty id.")
-            targets = (target_id,)
-        else:
-            if any(not isinstance(value, str) or not value.strip() for value in arguments.values()):
-                raise ValueError("Agent read arguments must contain non-empty ids.")
-            targets = arguments.values()
-        # id 값이 승인된 plan이나 이전 tool 응답으로 실제 확인된 id인지 대조한다.
-        # (문서 본문 등 신뢰할 수 없는 observations 텍스트만으로는 임의 id를 읽을 수 없다.)
-        if any(value not in known_ids for value in targets):
-            raise ValueError("Agent read target id is not part of the known workspace state.")
-        return tool_name, arguments
-
-
 def _route_job_event(state: AgentRunGraphState) -> str:
     event = state.get("event")
     if event not in {"planning", "execution", "verification"}:
@@ -728,36 +633,6 @@ def _route_execution(state: AgentRunGraphState) -> str:
     if outcome not in {"continue", "verify", "wait_for_user", "finished"}:
         raise ValueError("Unsupported Agent execution outcome.")
     return outcome
-
-
-def _known_ids(plan: AgentPlan, observations: list[dict[str, object]]) -> set[str]:
-    """read 대상 id 검증에 쓸 known id 집합을 만든다.
-    승인된 plan의 operation id들과, 지금까지 실제 backend 응답(observations)에
-    등장한 id만 포함한다. LLM이 관찰 텍스트로부터 지어낸 id는 포함되지 않는다."""
-    known: set[str] = set()
-    for operation in plan.operations:
-        known.update(
-            value
-            for value in (operation.target_id, operation.source_parent_id, operation.destination_parent_id)
-            if value is not None
-        )
-    for observation in observations:
-        known.update(_extract_observed_ids(observation.get("result")))
-    return known
-
-
-def _extract_observed_ids(value: object) -> set[str]:
-    ids: set[str] = set()
-    if isinstance(value, dict):
-        item_id = value.get("id")
-        if isinstance(item_id, str) and item_id.strip():
-            ids.add(item_id)
-        for key in ("items", "results"):
-            items = value.get(key)
-            if isinstance(items, list):
-                for item in items:
-                    ids.update(_extract_observed_ids(item))
-    return ids
 
 
 def _resolve_operation_references(

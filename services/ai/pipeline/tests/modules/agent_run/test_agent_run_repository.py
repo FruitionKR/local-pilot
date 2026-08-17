@@ -98,7 +98,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
         locked_result = MagicMock()
         locked_result.fetchone.return_value = _run_row(
             status="clarification_required",
-            error_code="react_replan_state_changed",
+            error_code="react_step_limit_exceeded",
             current_plan_id="plan-1",
         )
         supersede_result = MagicMock()
