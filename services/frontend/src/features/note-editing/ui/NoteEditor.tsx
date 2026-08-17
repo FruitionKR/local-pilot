@@ -54,7 +54,7 @@ export function NoteEditor({
   sourceMode: boolean;
   onMarkdownEditContextChange?: (context: ActiveMarkdownEditContext | null) => void;
   onSaveStatusChange?: (status: NoteSaveStatus, errorMessage: string | null) => void;
-  /** 부모(저장 버튼)가 즉시 저장을 호출할 수 있게 저장 함수를 등록한다. */
+  /** 부모가 Cmd/Ctrl+S로 즉시 저장할 수 있게 저장 함수를 등록한다. */
   onRegisterSave?: (save: () => Promise<boolean>) => void;
 }) {
   const { preferences } = useUserPreferences();

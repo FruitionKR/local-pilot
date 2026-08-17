@@ -30,6 +30,7 @@ export function useNoteAutosave({
   const versionRef = useRef(initialVersion);
   const revisionRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduledSaveRef = useRef<PendingNoteSave | null>(null);
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef<PendingNoteSave | null>(null);
   const conflictRef = useRef(false);
@@ -37,10 +38,23 @@ export function useNoteAutosave({
   const agentRetryApplyOperationIdRef = useRef<string | undefined>(undefined);
   const agentRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentRetryAttemptsRef = useRef(0);
+  const mountedRef = useRef(true);
+  const flushSaveRef = useRef<(candidate: PendingNoteSave) => Promise<boolean>>(async () => false);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      if (agentRetryTimerRef.current) clearTimeout(agentRetryTimerRef.current);
+      agentRetryTimerRef.current = null;
+
+      // 디바운스 대기 중 다른 문서로 이동해도 마지막 편집분을 잃지 않도록 즉시 저장한다.
+      const scheduled = scheduledSaveRef.current;
+      scheduledSaveRef.current = null;
+      if (scheduled && !conflictRef.current) void flushSaveRef.current(scheduled);
+    };
   }, []);
 
   function cancelAgentRetry() {
@@ -52,6 +66,7 @@ export function useNoteAutosave({
     candidate: PendingNoteSave,
     recovered: { pending: PendingNoteSave | null; retryRequired: boolean }
   ) {
+    if (!mountedRef.current) return;
     const plan = planAgentRetryAfterFailure(
       recovered,
       agentRetryAttemptsRef.current,
@@ -81,8 +96,10 @@ export function useNoteAutosave({
     }
 
     saveInFlightRef.current = true;
-    setStatus("saving");
-    setErrorMessage(null);
+    if (mountedRef.current) {
+      setStatus("saving");
+      setErrorMessage(null);
+    }
     try {
       if (saveCandidate.source === "agent") {
         agentRetryApplyOperationIdRef.current = saveCandidate.applyOperationId;
@@ -95,20 +112,22 @@ export function useNoteAutosave({
         saveCandidate.applyOperationId
       );
       versionRef.current = saved.content_version;
-      setContentVersion(saved.content_version);
+      if (mountedRef.current) setContentVersion(saved.content_version);
       if (saveCandidate.source === "agent") {
         agentRetryApplyOperationIdRef.current = undefined;
         agentRetryRequiredRef.current = false;
         agentRetryAttemptsRef.current = 0;
         cancelAgentRetry();
       }
-      setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
+      if (mountedRef.current) {
+        setStatus(saveCandidate.revision === revisionRef.current ? "saved" : "dirty");
+      }
       return true;
     } catch (error) {
       if (error instanceof NoteContentConflictError) {
         conflictRef.current = true;
         cancelAgentRetry();
-        setStatus("conflict");
+        if (mountedRef.current) setStatus("conflict");
       } else {
         if (saveCandidate.source === "agent") {
           const recovery = recoverPendingNoteSaveAfterAgentFailure(pendingSaveRef.current);
@@ -116,9 +135,11 @@ export function useNoteAutosave({
           agentRetryRequiredRef.current = recovery.retryRequired;
           scheduleAgentRetry(saveCandidate, recovery);
         }
-        setStatus("error");
+        if (mountedRef.current) setStatus("error");
       }
-      setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
+      if (mountedRef.current) {
+        setErrorMessage(error instanceof Error ? error.message : "노트를 저장하지 못했습니다.");
+      }
       return false;
     } finally {
       saveInFlightRef.current = false;
@@ -127,6 +148,7 @@ export function useNoteAutosave({
       if (pending && !conflictRef.current) void flushSave(pending);
     }
   }
+  flushSaveRef.current = flushSave;
 
   function queueSave(body: string, source?: "agent", applyOperationId?: string) {
     if (conflictRef.current) return;
@@ -147,16 +169,20 @@ export function useNoteAutosave({
     if (timerRef.current) clearTimeout(timerRef.current);
     if (source === "agent") {
       timerRef.current = null;
+      scheduledSaveRef.current = null;
       void flushSave(candidate);
       return;
     }
+    scheduledSaveRef.current = candidate;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      void flushSave(candidate);
+      const scheduled = scheduledSaveRef.current;
+      scheduledSaveRef.current = null;
+      if (scheduled) void flushSave(scheduled);
     }, AUTOSAVE_DELAY_MS);
   }
 
-  /** 디바운스를 건너뛰고 즉시 저장한다 (Cmd/Ctrl+S, 저장 버튼). 성공 여부를 반환한다. */
+  /** 디바운스를 건너뛰고 즉시 저장한다 (Cmd/Ctrl+S). 성공 여부를 반환한다. */
   function saveNow(body: string): Promise<boolean> {
     if (conflictRef.current) return Promise.resolve(false);
     cancelAgentRetry();
@@ -164,6 +190,7 @@ export function useNoteAutosave({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    scheduledSaveRef.current = null;
     revisionRef.current += 1;
     const saveSource = agentRetryRequiredRef.current ? ("agent" as const) : undefined;
     const candidate = {
