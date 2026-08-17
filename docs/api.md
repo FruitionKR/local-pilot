@@ -6694,6 +6694,12 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
 
 모든 폴더를 펼친 상태의 활성 폴더·문서 계층을 한 번에 반환합니다.
 
+문서 항목에는 목록 조회(`GET /documents`)가 주는 것과 같은 메타데이터가 `document`에 담겨 온다.
+화면이 계층과 문서 상태를 함께 쓰므로 두 번 부르지 않아도 된다. 두 응답은 같은 변환 규칙을 쓰므로
+같은 문서가 화면마다 다르게 보이지 않는다.
+
+폴더 항목에는 `document` 키가 없다.
+
 #### 3. Auth 필요 여부
 
 - 필요
@@ -6726,10 +6732,27 @@ curl -X POST "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/folde
       "name": "설계",
       "sort_order": 1024,
       "type": "folder"
+    },
+    {
+      "current_version": 3,
+      "document": {
+        "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+        "status": "completed",
+        "document_role": "EDITABLE",
+        "needs_reingest": false
+      },
+      "has_children": false,
+      "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+      "name": "note.md",
+      "sort_order": 1024,
+      "type": "document"
     }
   ]
 }
 ```
+
+- `document`는 `DocumentItem` 전체를 담는다. 위 예시는 지면상 일부만 보였다. 전체 필드는
+  `GET /api/workspaces/{workspace_id}/documents` 항목과 같다.
 
 #### 6. Error response
 
@@ -6777,6 +6800,20 @@ curl -X GET "$DOCUMENT/api/workspaces/ws_9d47a0e9a6324341b47562553b75f92a/docume
       "name": "설계",
       "sort_order": 1024,
       "type": "folder"
+    },
+    {
+      "current_version": 3,
+      "document": {
+        "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+        "status": "completed",
+        "document_role": "EDITABLE",
+        "needs_reingest": false
+      },
+      "has_children": false,
+      "id": "doc_1b9f4c7e2a8d4f1e6c3b0a97d25e4f83",
+      "name": "note.md",
+      "sort_order": 1024,
+      "type": "document"
     }
   ]
 }

@@ -4,6 +4,7 @@ import fruition.TestcontainersConfiguration;
 import fruition.core.document.dto.DocumentPositionRequest;
 import fruition.core.document.dto.DocumentPositionResponse;
 import fruition.core.document.dto.BreadcrumbResponse;
+import fruition.core.document.dto.DocumentListResponse;
 import fruition.core.document.dto.DocumentTreeResponse;
 import fruition.core.document.dto.DocumentUploadResponse;
 import fruition.core.document.dto.FolderChildrenResponse;
@@ -150,6 +151,41 @@ class FolderServiceIntegrationTest {
         assertThat(parentItem.children().get(0).children())
                 .extracting(DocumentTreeResponse.Item::id)
                 .containsExactly("doc_child");
+    }
+
+    /**
+     * 화면은 계층과 문서 상태를 함께 쓴다. 트리가 상태를 주지 않으면 목록 조회를 또 불러
+     * 합쳐야 하고, 두 응답의 규칙이 갈리면 같은 문서가 화면마다 다르게 보인다.
+     */
+    @Test
+    void tree_carriesSameDocumentMetadataAsListResponse() {
+        insertDocumentInFolder("doc_meta", "메타.md", "EDITABLE", null, 0);
+
+        DocumentTreeResponse tree = folderService.tree(workspaceId, userId);
+        DocumentListResponse list = documentService.findAll(workspaceId, userId, null);
+
+        DocumentTreeResponse.Item item = tree.items().stream()
+                .filter(candidate -> "doc_meta".equals(candidate.id()))
+                .findFirst().orElseThrow();
+        DocumentListResponse.DocumentItem fromList = list.documents().stream()
+                .filter(candidate -> "doc_meta".equals(candidate.id()))
+                .findFirst().orElseThrow();
+
+        assertThat(item.document()).isEqualTo(fromList);
+    }
+
+    /** 폴더에는 문서 메타가 없다. 키 자체가 빠져야 화면이 종류를 헷갈리지 않는다. */
+    @Test
+    void tree_folderItemHasNoDocumentMetadata() {
+        FolderResponse folder = folderService.create(workspaceId, userId, "k_meta",
+                new FolderCreateRequest("폴더", null));
+
+        DocumentTreeResponse tree = folderService.tree(workspaceId, userId);
+
+        DocumentTreeResponse.Item item = tree.items().stream()
+                .filter(candidate -> folder.id().toString().equals(candidate.id()))
+                .findFirst().orElseThrow();
+        assertThat(item.document()).isNull();
     }
 
     @Test

@@ -40,7 +40,7 @@ class DocumentTreeControllerTest {
                                 "자료",
                                 0,
                                 2,
-                                List.of(DocumentTreeResponse.Item.document("doc_1", "메모", 0, 3))))));
+                                List.of(DocumentTreeResponse.Item.document("doc_1", "메모", 0, 3, null))))));
 
         mockMvc.perform(get("/api/workspaces/" + WORKSPACE_ID + "/document-tree")
                         .header("Authorization",

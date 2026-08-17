@@ -120,6 +120,7 @@ public class DocumentService {
     private final TransactionTemplate transactionTemplate;
     private final DocumentEditStateInitializer editStateInitializer;
     private final DocumentEditStateRepository editStateRepository;
+    private final DocumentItemAssembler documentItemAssembler;
     private final PostgresDocumentEditStore postgresDocumentEditStore;
     private final DocumentContentVersionRepository contentVersionRepository;
     private final MarkdownDiffService markdownDiffService;
@@ -145,6 +146,7 @@ public class DocumentService {
                            TransactionTemplate transactionTemplate,
                            DocumentEditStateInitializer editStateInitializer,
                            DocumentEditStateRepository editStateRepository,
+                           DocumentItemAssembler documentItemAssembler,
                            PostgresDocumentEditStore postgresDocumentEditStore,
                            DocumentContentVersionRepository contentVersionRepository,
                            MarkdownDiffService markdownDiffService,
@@ -169,6 +171,7 @@ public class DocumentService {
         this.transactionTemplate = transactionTemplate;
         this.editStateInitializer = editStateInitializer;
         this.editStateRepository = editStateRepository;
+        this.documentItemAssembler = documentItemAssembler;
         this.postgresDocumentEditStore = postgresDocumentEditStore;
         this.contentVersionRepository = contentVersionRepository;
         this.markdownDiffService = markdownDiffService;
@@ -1043,39 +1046,8 @@ public class DocumentService {
         List<Document> documents = query == null || query.isBlank()
                 ? documentRepository.findVisibleByWorkspaceId(workspaceId)
                 : documentRepository.searchVisibleByWorkspaceId(workspaceId, query.trim());
-        Set<String> editableDocumentIds = editStateRepository.findAllById(
-                        documents.stream().map(Document::getId).toList()).stream()
-                .map(DocumentEditState::getDocumentId)
-                .collect(Collectors.toSet());
 
-        List<DocumentListResponse.DocumentItem> items = documents.stream()
-                .map(doc -> new DocumentListResponse.DocumentItem(
-                        doc.getId(),
-                        doc.getFilename(),
-                        doc.getMimeType(),
-                        doc.getByteSize(),
-                        doc.getStatus(),
-                        doc.getSourceUri(),
-                        doc.getExtractedTextUri(),
-                        doc.getUploadedAt(),
-                        doc.getProcessedAt(),
-                        doc.getErrorMessage(),
-                        doc.getPipelineRunId(),
-                        resolveProcessingState(doc),
-                        doc.getProcessingStage(),
-                        areaOf(doc),
-                        itemKindOf(doc),
-                        doc.getDisplayName(),
-                        fileTypeOf(doc),
-                        doc.getDocumentRole(),
-                        isEditable(doc, editableDocumentIds.contains(doc.getId())),
-                        doc.getCurrentVersion(),
-                        doc.getSourceDocumentId(),
-                        doc.getUpdatedAt(),
-                        needsReingest(doc)
-                ))
-                .toList();
-        return new DocumentListResponse(items);
+        return new DocumentListResponse(documentItemAssembler.assemble(documents));
     }
 
     @Transactional(readOnly = true)
@@ -1127,12 +1099,12 @@ public class DocumentService {
                 doc.getErrorMessage(),
                 wikiPages,
                 doc.getPipelineRunId(),
-                resolveProcessingState(doc),
+                DocumentItemAssembler.resolveProcessingState(doc),
                 doc.getProcessingStage(),
                 doc.getDisplayName(),
-                fileTypeOf(doc),
+                DocumentItemAssembler.fileTypeOf(doc),
                 doc.getDocumentRole(),
-                isEditable(doc, editState.isPresent()),
+                DocumentItemAssembler.isEditable(doc, editState.isPresent()),
                 doc.getCurrentVersion(),
                 editRevision,
                 doc.getSourceDocumentId(),
@@ -1160,34 +1132,6 @@ public class DocumentService {
                 && document.getCurrentContentHash() != null
                 && document.getContentHash() != null
                 && !document.getCurrentContentHash().equals(document.getContentHash());
-    }
-
-    private boolean isEditable(Document document, boolean hasEditState) {
-        boolean canInitializeEditState = isMarkdown(document)
-                && document.getSourceUri() != null
-                && !document.getSourceUri().isBlank();
-        return document.getDeletedAt() == null
-                && document.getDocumentRole() == DocumentRole.EDITABLE
-                && (hasEditState || canInitializeEditState)
-                && (isMarkdown(document) || document.getStatus() == DocumentStatus.completed);
-    }
-
-    private boolean isMarkdown(Document document) {
-        String mimeType = document.getMimeType();
-        String filename = document.getFilename().toLowerCase(java.util.Locale.ROOT);
-        return "text/markdown".equals(mimeType)
-                || "text/x-markdown".equals(mimeType)
-                || filename.endsWith(".md")
-                || filename.endsWith(".markdown");
-    }
-
-    private String fileTypeOf(Document document) {
-        int extensionIndex = document.getFilename().lastIndexOf('.');
-        if (extensionIndex >= 0 && extensionIndex < document.getFilename().length() - 1) {
-            return document.getFilename().substring(extensionIndex + 1)
-                    .toLowerCase(java.util.Locale.ROOT);
-        }
-        return document.getMimeType();
     }
 
     public DocumentContentSaveResponse saveContent(
