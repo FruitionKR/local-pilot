@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatEvidenceRecorder;
 import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
@@ -41,19 +42,22 @@ public class QueryService {
     private final ChatMessageRelatedPageRepository relatedPageRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatTurnRecorder chatTurnRecorder;
+    private final ChatEvidenceRecorder chatEvidenceRecorder;
 
     public QueryService(PipelineQueryRequester pipelineQueryClient,
                         ChatMessageRepository chatMessageRepository,
                         ChatMessageReferenceRepository referenceRepository,
                         ChatMessageRelatedPageRepository relatedPageRepository,
                         ChatSessionRepository chatSessionRepository,
-                        ChatTurnRecorder chatTurnRecorder) {
+                        ChatTurnRecorder chatTurnRecorder,
+                        ChatEvidenceRecorder chatEvidenceRecorder) {
         this.pipelineQueryClient = pipelineQueryClient;
         this.chatMessageRepository = chatMessageRepository;
         this.referenceRepository = referenceRepository;
         this.relatedPageRepository = relatedPageRepository;
         this.chatSessionRepository = chatSessionRepository;
         this.chatTurnRecorder = chatTurnRecorder;
+        this.chatEvidenceRecorder = chatEvidenceRecorder;
     }
 
     public QueryResponse query(String workspaceId, String sessionId, String question) {
@@ -208,13 +212,9 @@ public class QueryService {
         assistantMessage.complete(pipelineResponse.answer());
         chatMessageRepository.save(assistantMessage);
 
-        List<ChatMessageReference> references = buildReferences(assistantMessage, pipelineResponse);
-        List<ChatMessageRelatedPage> relatedPages = buildRelatedPages(assistantMessage, pipelineResponse);
-        referenceRepository.saveAll(references);
-        relatedPageRepository.saveAll(relatedPages);
+        chatEvidenceRecorder.record(assistantMessage, pipelineResponse);
         touchSessionLastMessageAt(session);
-        log.info("[질의 결과 저장 완료] requestId={} pairId={} referenceCount={} relatedPageCount={}",
-                requestId, messageContext.pairId(), references.size(), relatedPages.size());
+        log.info("[질의 결과 저장 완료] requestId={} pairId={}", requestId, messageContext.pairId());
 
         return new QueryResponse(
                 new QueryResponse.MessageSummary(messageContext.userMessageId(), "user", question,
@@ -248,49 +248,8 @@ public class QueryService {
         chatSessionRepository.save(session);
     }
 
-    private List<ChatMessageRelatedPage> buildRelatedPages(ChatMessage assistantMessage,
-                                                              PipelineQueryResponse pipelineResponse) {
-        if (pipelineResponse.relatedPages() == null) return List.of();
 
-        List<ChatMessageRelatedPage> pages = new ArrayList<>();
-        List<PipelineQueryResponse.RelatedPage> relatedPages = pipelineResponse.relatedPages();
-        for (int i = 0; i < relatedPages.size(); i++) {
-            PipelineQueryResponse.RelatedPage rp = relatedPages.get(i);
-            pages.add(new ChatMessageRelatedPage(
-                    assistantMessage, rp.id(), rp.pageType(), rp.title(), rp.slug(),
-                    rp.relevanceScore(), rp.role(), rp.depth(), i + 1
-            ));
-        }
-        return pages;
-    }
 
-    private List<ChatMessageReference> buildReferences(ChatMessage assistantMessage,
-                                                        PipelineQueryResponse pipelineResponse) {
-        if (pipelineResponse.evidenceSnippets() == null) return List.of();
-
-        List<ChatMessageReference> refs = new ArrayList<>();
-        for (PipelineQueryResponse.EvidenceSnippet snippet : pipelineResponse.evidenceSnippets()) {
-            if (snippet.sourceDocumentId() == null || snippet.sourceDocumentId().startsWith("web:")
-                    || snippet.text() == null || snippet.text().isBlank()) {
-                continue;
-            }
-            refs.add(new ChatMessageReference(
-                    assistantMessage, REFERENCE_TYPE_SOURCE_BLOCK,
-                    snippet.sourceDocumentId(), snippet.rank(),
-                    snippet.sourceBlockIds(), snippet.text(),
-                    toDomainSourceRefs(snippet.sourceRefs())
-            ));
-        }
-
-        return refs;
-    }
-
-    private List<SourceRef> toDomainSourceRefs(List<PipelineQueryResponse.SourceRef> sourceRefs) {
-        if (sourceRefs == null) return null;
-        return sourceRefs.stream()
-                .map(r -> new SourceRef(r.sourceDocumentId(), r.sourceBlockId()))
-                .toList();
-    }
 
     public record QueryMessageContext(
             String pairId,

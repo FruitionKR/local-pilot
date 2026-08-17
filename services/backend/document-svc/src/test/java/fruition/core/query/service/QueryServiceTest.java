@@ -1,5 +1,6 @@
 package fruition.core.query.service;
 
+import fruition.core.chat.service.ChatEvidenceRecorder;
 import fruition.core.chat.service.ChatTurnRecorder;
 import fruition.core.chat.domain.ChatMessage;
 import fruition.core.chat.domain.ChatMessageReference;
@@ -54,9 +55,11 @@ class QueryServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 근거 저장은 recorder 로 옮겼지만 규칙은 그대로다. 실제 구현을 물려 기존 검증을 유지한다.
         queryService = new QueryService(
                 pipelineQueryRequester, chatMessageRepository, referenceRepository, relatedPageRepository,
-                chatSessionRepository, chatTurnRecorder);
+                chatSessionRepository, chatTurnRecorder,
+                new ChatEvidenceRecorder(chatMessageRepository, referenceRepository, relatedPageRepository));
         lenient().when(chatMessageRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
         lenient().when(chatMessageRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         lenient().when(referenceRepository.saveAll(anyList())).thenAnswer(i -> i.getArgument(0));
