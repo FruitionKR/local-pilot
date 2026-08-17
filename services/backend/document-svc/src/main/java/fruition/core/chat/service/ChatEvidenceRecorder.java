@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -115,12 +115,15 @@ public class ChatEvidenceRecorder {
                 .toList();
         if (usable.isEmpty()) return List.of();
 
-        Set<String> citableDocumentIds = citableDocumentIds(usable, assistantMessage.getSession().getWorkspaceId());
+        String workspaceId = assistantMessage.getSession().getWorkspaceId();
+        Map<String, Document> documentsById = documentsById(usable);
         List<ChatMessageReference> refs = new ArrayList<>();
         for (PipelineQueryResponse.EvidenceSnippet snippet : usable) {
-            if (!citableDocumentIds.contains(snippet.sourceDocumentId())) {
-                log.warn("[답변 근거 제외] messageId={} rank={} reason=이 워크스페이스의 문서가 아님 documentId={}",
-                        assistantMessage.getId(), snippet.rank(), snippet.sourceDocumentId());
+            Document document = documentsById.get(snippet.sourceDocumentId());
+            if (document == null || !document.getWorkspaceId().equals(workspaceId)) {
+                log.warn("[답변 근거 제외] messageId={} rank={} documentId={} reason={}",
+                        assistantMessage.getId(), snippet.rank(), snippet.sourceDocumentId(),
+                        document == null ? "문서를 찾을 수 없음" : "다른 워크스페이스의 문서");
                 continue;
             }
             refs.add(new ChatMessageReference(
@@ -133,22 +136,14 @@ public class ChatEvidenceRecorder {
         return refs;
     }
 
-    /**
-     * 근거로 남길 수 있는 문서 ID. 근거 개수만큼 조회하면 N+1이 되므로 ID를 모아 한 번에 확인한다.
-     *
-     * <p>이 대화가 속한 워크스페이스의 문서만 통과시킨다. 남의 워크스페이스 문서 ID가 섞여 들어오면
-     * 화면에서 열리지 않는 근거가 되고, 문서 제목이 근거 목록으로 새어 나간다.
-     */
-    private Set<String> citableDocumentIds(List<PipelineQueryResponse.EvidenceSnippet> snippets,
-                                           String workspaceId) {
+    /** 근거 개수만큼 조회하면 N+1이 되므로 문서 ID를 모아 한 번에 읽는다. */
+    private Map<String, Document> documentsById(List<PipelineQueryResponse.EvidenceSnippet> snippets) {
         List<String> documentIds = snippets.stream()
                 .map(PipelineQueryResponse.EvidenceSnippet::sourceDocumentId)
                 .distinct()
                 .toList();
         return documentRepository.findAllById(documentIds).stream()
-                .filter(document -> document.getWorkspaceId().equals(workspaceId))
-                .map(Document::getId)
-                .collect(Collectors.toSet());
+                .collect(Collectors.toMap(Document::getId, document -> document));
     }
 
     private List<SourceRef> toDomainSourceRefs(List<PipelineQueryResponse.SourceRef> sourceRefs) {
