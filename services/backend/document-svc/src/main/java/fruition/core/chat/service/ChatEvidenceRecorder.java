@@ -111,10 +111,11 @@ public class ChatEvidenceRecorder {
     /**
      * 웹 검색 근거는 우리 문서가 아니라 저장하지 않는다. 화면에는 응답으로만 보인다.
      *
-     * <p>document_id에는 documents FK가 걸려 있다. 없는 문서를 가리키는 근거를 그대로 넣으면
-     * flush에서 터지는데, 이 저장은 결과 반영 트랜잭션 안에서 일어나므로 답변까지 함께 되돌아가고
-     * 컨슈머가 같은 메시지를 계속 재시도한다. 근거는 답변에 딸린 정보라 여기서 걸러 낸다.
-     * 워크스페이스가 다른 문서도 같은 자리에서 뺀다.
+     * <p>우리 문서를 가리키는 근거도 그냥 넣지 않고 {@link #exclusionReason}으로 한 번 거른다.
+     * 걸러야 하는 이유는 두 가지다. document_id에 걸린 documents FK를 어기면 flush에서 터지는데,
+     * 이 저장은 결과 반영 트랜잭션 안에서 일어나므로 답변까지 함께 되돌아가고 컨슈머가 같은 메시지를
+     * 계속 재시도한다. 그리고 근거는 답변에 딸린 정보라 못 쓸 근거 때문에 답변을 잃을 이유가 없다.
+     * 무엇을 거를지는 {@link #exclusionReason}에만 적는다.
      */
     private List<ChatMessageReference> buildReferences(ChatMessage assistantMessage,
                                                        PipelineQueryResponse pipelineResponse) {
@@ -149,10 +150,16 @@ public class ChatEvidenceRecorder {
     }
 
     /**
-     * 근거로 남길 수 없는 이유. 남길 수 있으면 null.
+     * 근거로 남길 수 없는 이유. 남길 수 있으면 null. 규칙을 늘릴 자리는 여기 한 곳이다.
      *
-     * <p>기준은 "화면에서 그 문서를 열 수 있는가"다. 열 수 없는 문서를 가리키는 근거는 눌러도
-     * 아무 일이 없고, 남의 워크스페이스 문서라면 제목이 근거 목록으로 새어 나간다.
+     * <p>기준은 "이 대화를 보는 사람이 그 문서를 열 수 있는가"다. 열 수 없는 문서를 가리키는 근거는
+     * 눌러도 아무 일이 없고, 남의 워크스페이스 문서라면 제목이 근거 목록으로 새어 나간다.
+     *
+     * <ul>
+     *   <li>없는 문서 — FK를 어겨 저장 자체가 실패한다.
+     *   <li>다른 워크스페이스 — 열 수도 없고 제목이 새어 나간다.
+     *   <li>삭제된 문서 — 화면에서 열 수 없다.
+     * </ul>
      */
     private static String exclusionReason(Document document, String workspaceId) {
         if (document == null) return "문서를 찾을 수 없음";
