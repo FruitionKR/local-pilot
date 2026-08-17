@@ -34,7 +34,8 @@ import java.util.Set;
 public class AiTaskResultApplier {
 
     private static final Set<String> MARKDOWN_ACTIONS = Set.of("markdown_create", "markdown_edit");
-    private static final Set<String> NON_MUTATING_ACTIONS = Set.of("chat_answer", "clarify", "reject");
+    private static final Set<String> NON_MUTATING_ACTIONS = Set.of(
+            "chat_answer", "clarify", "reject", "skill_authoring", "skill_draft_proposal");
     private static final Set<String> AUTONOMOUS_ACTIONS = Set.of("folder_organize", "workspace_workflow");
 
     private static final Logger log = LoggerFactory.getLogger(AiTaskResultApplier.class);

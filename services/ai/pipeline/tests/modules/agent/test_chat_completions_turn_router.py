@@ -235,6 +235,19 @@ class ChatCompletionsTurnRouterTest(unittest.TestCase):
 
         self.assertEqual(route.action, "skill_authoring")
 
+    def test_accepts_skill_creation_with_scope_before_slug(self) -> None:
+        client = SequenceJsonClient([route_response("skill_authoring")])
+        router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]
+
+        route = router.route(
+            AgentTurnRequest(
+                message="현재 팀 Skill로 meeting-bullet-organizer를 만들어줘"
+            )
+        )
+
+        self.assertEqual(route.action, "skill_authoring")
+        self.assertEqual(len(client.calls), 1)
+
     def test_does_not_misroute_existing_skill_usage_as_authoring(self) -> None:
         client = SequenceJsonClient([route_response("markdown_create")])
         router = ChatCompletionsTurnRouter(client, "system")  # type: ignore[arg-type]

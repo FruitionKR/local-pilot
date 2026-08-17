@@ -31,6 +31,7 @@ INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append",
 NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
+    r"(?:스킬|skill)로\s+[a-z0-9][a-z0-9-]{0,62}(?:을|를)?\s*(?:만들어|생성해|정의해|작성해)|"
     r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
     re.IGNORECASE,
 )
