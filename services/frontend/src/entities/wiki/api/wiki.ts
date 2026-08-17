@@ -1,5 +1,6 @@
 import { apiFetch, parseJsonOrThrow, parseErrorResponse, getWorkspaceId, ERROR_MESSAGES } from "@/shared/api/client";
 import { getSessionContext } from "@/entities/chat/api/chat";
+import type { AiModelSelection } from "@/entities/ai";
 import type { BackendData, QueryResponse, WikiGraphResponse, WikiPageDetailResponse } from "@/entities/wiki/model/wiki";
 import type { DocumentListResponse } from "@/entities/document/model/document";
 
@@ -56,6 +57,7 @@ function parseSseFrame(raw: string): { event: string; data: unknown } | null {
  */
 export async function runQueryStream(
   question: string,
+  selection: AiModelSelection,
   handlers: { onStage: (event: QueryStageEvent) => void }
 ): Promise<QueryResponse> {
   const { workspaceId, sessionId } = await getSessionContext();
@@ -65,7 +67,14 @@ export async function runQueryStream(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question })
+      // provider/model은 백엔드 카탈로그 검증 대상이라 쌍으로 보내야 한다.
+      // allow_web_search는 @NotNull 필수 필드이며, 웹 검색 토글 UI가 없으므로 안전 기본값 false를 명시한다.
+      body: JSON.stringify({
+        question,
+        provider: selection.provider,
+        model: selection.model,
+        allow_web_search: false
+      })
     }
   );
   const created = await parseJsonOrThrow<{ request_id: string; status: string }>(createResponse, ERROR_MESSAGES.queryFailed);

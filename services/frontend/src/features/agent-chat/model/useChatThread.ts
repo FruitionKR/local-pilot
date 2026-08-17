@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchChatMessages, setActiveChatSession, getSessionContext } from "@/entities/chat/api/chat";
 import { useUserPreferences } from "@/entities/user";
+import type { AiModelSelection } from "@/entities/ai";
 import { runQueryStream, type QueryStageEvent } from "@/entities/wiki/api/wiki";
 import { publishNotice } from "@/features/document-notifications";
 import { getErrorMessage } from "@/shared/lib/errors";
@@ -118,7 +119,7 @@ export function useChatThread(activeSessionId?: string | null) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId]);
 
-  async function submitQuery(question: string) {
+  async function submitQuery(question: string, selection: AiModelSelection) {
     if (!question || isLoading) return;
 
     setQueryErrorMessage(null);
@@ -134,7 +135,7 @@ export function useChatThread(activeSessionId?: string | null) {
     let queryRelatedPages: QueryRelatedPageResponse[] = [];
     const shortQuestion = question.length > 30 ? `${question.slice(0, 30)}…` : question;
     try {
-      const queryResponse = await runQueryStream(question, {
+      const queryResponse = await runQueryStream(question, selection, {
         onStage: (event) => setQueryStages((current) => [...current, event])
       });
       querySucceeded = true;
