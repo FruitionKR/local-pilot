@@ -81,12 +81,24 @@ class ChatCompletionsJsonClient:
             encoding="utf-8",
         )
 
-    def complete_text(self, system_prompt: str, user_prompt: str) -> str:
+    def complete_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> str:
         body: JsonDict = {
             "model": self.config.model,
             "messages": [
                 {"role": "system", "content": with_llm_security_boundary(system_prompt)},
-                {"role": "user", "content": redact_numeric_personal_data(user_prompt)},
+                {
+                    "role": "user",
+                    "content": redact_numeric_personal_data(
+                        user_prompt,
+                        trusted_identifiers=trusted_identifiers,
+                    ),
+                },
             ],
         }
         body.update(inference_profile(self.provider, self.config.model))
@@ -95,11 +107,15 @@ class ChatCompletionsJsonClient:
         if self.config.json_mode:
             body["response_format"] = {"type": "json_object"}
 
-        return self._complete_text_with_optional_trace(body)
+        return self._complete_text_with_optional_trace(body, trusted_identifiers)
 
-    def _complete_text_with_optional_trace(self, body: JsonDict) -> str:
+    def _complete_text_with_optional_trace(
+        self,
+        body: JsonDict,
+        trusted_identifiers: tuple[str, ...],
+    ) -> str:
         if traceable is None or not langsmith_tracing_enabled():
-            return self._send_chat_completion(body)
+            return self._send_chat_completion(body, trusted_identifiers)
         traced = traceable(
             name=f"{self.provider}_chat_completions",
             run_type="llm",
@@ -109,9 +125,13 @@ class ChatCompletionsJsonClient:
                 "json_mode": self.config.json_mode,
             },
         )(self._send_chat_completion)
-        return traced(body)
+        return traced(body, trusted_identifiers)
 
-    def _send_chat_completion(self, body: JsonDict) -> str:
+    def _send_chat_completion(
+        self,
+        body: JsonDict,
+        trusted_identifiers: tuple[str, ...],
+    ) -> str:
         request_body = (
             self._anthropic_request_body(body)
             if self.provider == "claude"
@@ -137,7 +157,10 @@ class ChatCompletionsJsonClient:
             raise RuntimeError(f"LLM API transport or response error: {e}") from e
 
         try:
-            content = redact_numeric_personal_data(self._response_content(payload))
+            content = redact_numeric_personal_data(
+                self._response_content(payload),
+                trusted_identifiers=trusted_identifiers,
+            )
         except Exception as e:
             detail = redact_numeric_personal_data(str(payload))
             self._write_prompt_log(body, error=f"Unexpected chat-completions response: {detail}")
@@ -190,8 +213,20 @@ class ChatCompletionsJsonClient:
             if block.get("type") == "text"
         )
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> JsonDict:
-        return parse_json_object(self.complete_text(system_prompt, user_prompt))
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> JsonDict:
+        return parse_json_object(
+            self.complete_text(
+                system_prompt,
+                user_prompt,
+                trusted_identifiers=trusted_identifiers,
+            )
+        )
 
 
 class GenericChatCompletionsExtractor:

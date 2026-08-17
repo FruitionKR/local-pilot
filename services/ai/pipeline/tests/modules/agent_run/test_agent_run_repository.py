@@ -98,7 +98,7 @@ class AgentRunRepositoryTest(unittest.TestCase):
         locked_result = MagicMock()
         locked_result.fetchone.return_value = _run_row(
             status="clarification_required",
-            error_code="react_replan_state_changed",
+            error_code="react_step_limit_exceeded",
             current_plan_id="plan-1",
         )
         supersede_result = MagicMock()
@@ -374,6 +374,50 @@ class AgentRunRepositoryTest(unittest.TestCase):
                 PostgresAgentRunRepository().create_with_planning_job(run, "job-1", artifact)
 
         delete_object.assert_called_once_with(write_text.call_args.args[0])
+
+    def test_create_run_persists_edit_artifact_metadata(self) -> None:
+        markdown = "# 문서\n\n수정 결과"
+        content_hash = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
+        target = {"type": "selection", "start_line": 3, "end_line": 3}
+        run = AgentRun(
+            id="run-1",
+            workspace_id="workspace-1",
+            user_id="user-1",
+            action="workspace_workflow",
+            skill_version_id=None,
+            status="queued",
+            request_summary="문서를 수정해줘",
+        )
+        artifact = StartAgentRunArtifact(
+            "artifact-1",
+            content_hash,
+            markdown,
+            purpose="apply_document_edit",
+            document_id="document-1",
+            base_version=3,
+            target=target,
+        )
+        connection = MagicMock()
+        run_result = MagicMock()
+        run_result.fetchone.return_value = _run_row(
+            status="queued", error_code=None, current_plan_id=None
+        )
+        connection.execute.side_effect = [run_result, MagicMock(), MagicMock()]
+        connection_context = MagicMock()
+        connection_context.__enter__.return_value = connection
+
+        with (
+            patch.object(database, "connect_ai", return_value=connection_context),
+            patch(
+                "app.modules.agent_run.infrastructure.postgres_agent_run_repository.write_text_object"
+            ),
+        ):
+            PostgresAgentRunRepository().create_with_planning_job(run, "job-1", artifact)
+
+        parameters = connection.execute.call_args_list[1].args[1]
+        self.assertEqual(parameters[5], "apply_document_edit")
+        self.assertEqual(parameters[7:9], ("document-1", 3))
+        self.assertEqual(parameters[9].obj, target)
 
 
 def _run_row(

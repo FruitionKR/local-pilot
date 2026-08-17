@@ -154,6 +154,7 @@ public record AgentTurnRequest(
             @Schema(description = "참조 문맥. 키·값 형태의 자유 구조다.")
             Map<String, Object> referenceContext,
 
+            @Valid
             @Schema(description = "사용자 확인을 기다리는 Skill 제안")
             PendingSkillProposal pendingSkillProposal
     ) {
@@ -171,7 +172,18 @@ public record AgentTurnRequest(
 
                 @JsonProperty("instructions_markdown")
                 @Schema(description = "제안된 Skill의 지침 Markdown")
-                String instructionsMarkdown
+                String instructionsMarkdown,
+
+                @NotNull
+                @Size(min = 1)
+                @Schema(description = "검토된 Skill capability")
+                List<String> capabilities,
+
+                @JsonProperty("allowed_tools")
+                @NotNull
+                @Size(min = 1)
+                @Schema(description = "검토된 Tool 허용 목록")
+                List<String> allowedTools
         ) {}
     }
 

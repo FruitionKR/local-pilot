@@ -3,8 +3,11 @@ package fruition.core.skill.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.util.List;
 
 @Schema(description = "Skill 게시 요청. 게시하면 새 버전이 만들어진다.")
 public record SkillPublishRequest(
@@ -29,5 +32,16 @@ public record SkillPublishRequest(
         @NotBlank
         @Size(max = 30000)
         @Schema(description = "Skill 지침 Markdown(30000자 이하)", maxLength = 30000)
-        String instructionsMarkdown
+        String instructionsMarkdown,
+
+        @NotNull
+        @Size(min = 1)
+        @Schema(description = "사용자가 승인한 초안의 capability")
+        List<String> capabilities,
+
+        @JsonProperty("allowed_tools")
+        @NotNull
+        @Size(min = 1)
+        @Schema(description = "사용자가 승인한 초안의 Tool 허용 목록")
+        List<String> allowedTools
 ) {}

@@ -13,8 +13,10 @@ from app.modules.agent.domain.entities import (
 from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
 from app.modules.query.interfaces.http.schemas import ConversationMessageRequest, QueryResponse
 from app.modules.skill.interfaces.http.schemas import (
+    CapabilityValue,
     SkillAuthoringResponse,
     SkillDraftSourceRunRequest,
+    ToolValue,
 )
 
 
@@ -50,6 +52,8 @@ class PendingSkillProposalRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     description: str = Field(..., min_length=1, max_length=500)
     instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+    capabilities: list[CapabilityValue] = Field(..., min_length=1)
+    allowed_tools: list[ToolValue] = Field(..., min_length=1)
 
     def to_domain(self) -> PendingSkillProposal:
         return PendingSkillProposal(
@@ -57,6 +61,8 @@ class PendingSkillProposalRequest(BaseModel):
             name=self.name,
             description=self.description,
             instructions_markdown=self.instructions_markdown,
+            capabilities=tuple(self.capabilities),
+            allowed_tools=tuple(self.allowed_tools),
         )
 
 
@@ -88,6 +94,8 @@ class AgentTurnRequestBody(BaseModel):
     allow_web_search: bool | None = None
     conversation_context: AgentConversationContextRequest | None = None
     active_markdown_context: ActiveMarkdownContextRequest | None = None
+    document_id: str | None = Field(default=None, min_length=1)
+    base_version: int | None = Field(default=None, ge=0)
     skill_mode: Literal["auto", "explicit", "off"] = "auto"
     skill_id: str | None = Field(default=None, min_length=1)
     skill_draft_sources: list[SkillDraftSourceRunRequest] = Field(default_factory=list)
@@ -125,6 +133,8 @@ class AgentTurnRequestBody(BaseModel):
             allow_web_search=self.allow_web_search,
             conversation_context=self.conversation_context.to_domain() if self.conversation_context else None,
             active_markdown_context=self.active_markdown_context.to_domain() if self.active_markdown_context else None,
+            document_id=self.document_id,
+            base_version=self.base_version,
             skill_mode=self.skill_mode,
             skill_id=self.skill_id,
             skill_draft_sources=tuple(source.to_domain() for source in self.skill_draft_sources),
@@ -139,6 +149,7 @@ class AgentTurnRequestBody(BaseModel):
 class AgentTurnRouteResponse(BaseModel):
     action: Literal[
         "chat_answer",
+        "conversation_reply",
         "markdown_edit",
         "markdown_create",
         "folder_organize",
@@ -188,6 +199,7 @@ class GeneratedMarkdownResponse(BaseModel):
 class AgentTurnResponse(BaseModel):
     action: Literal[
         "chat_answer",
+        "conversation_reply",
         "markdown_edit",
         "markdown_create",
         "folder_organize",

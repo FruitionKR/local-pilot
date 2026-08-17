@@ -64,6 +64,7 @@ class QueryRewrite:
 class ConversationMessage:
     role: ConversationRole
     content: str
+    action: str | None = None
 
 
 @dataclass(frozen=True)

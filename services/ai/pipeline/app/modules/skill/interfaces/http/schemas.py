@@ -78,6 +78,8 @@ class SkillAuthoringResponse(BaseModel):
     description: str | None = None
     skill_markdown: str | None = None
     instructions_markdown: str | None = None
+    capabilities: list[CapabilityValue] = Field(default_factory=list)
+    allowed_tools: list[ToolValue] = Field(default_factory=list)
     issues: list[dict[str, object]] = Field(default_factory=list)
 
     @classmethod
@@ -99,6 +101,8 @@ class SkillAuthoringResponse(BaseModel):
                     proposal.instructions_markdown,
                 ),
                 instructions_markdown=proposal.instructions_markdown,
+                capabilities=list(proposal.capabilities),
+                allowed_tools=list(proposal.allowed_tools),
                 issues=[issue.__dict__ for issue in result.issues],
             )
         if result.skill is None:
@@ -119,6 +123,8 @@ class SkillAuthoringResponse(BaseModel):
             description=version.description,
             skill_markdown=_skill_markdown(version.name, version.description, version.instructions_markdown),
             instructions_markdown=version.instructions_markdown,
+            capabilities=list(version.capabilities),
+            allowed_tools=list(version.allowed_tools),
         )
 
 
@@ -131,6 +137,8 @@ class PublishAuthoredSkillRequest(SkillLlmRequest):
     name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     description: str = Field(..., min_length=1, max_length=500)
     instructions_markdown: str = Field(..., min_length=1, max_length=30_000)
+    capabilities: list[CapabilityValue] = Field(..., min_length=1)
+    allowed_tools: list[ToolValue] = Field(..., min_length=1)
 
 
 class UpdateSkillRequest(SkillLlmRequest):

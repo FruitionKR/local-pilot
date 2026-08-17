@@ -8,15 +8,18 @@ from app.modules.markdown_edit.domain.entities import (
 )
 from app.modules.query.domain.entities import ConversationMessage, OutputLanguage, QueryAnswer, ResponseLength
 from app.modules.skill.domain.entities import (
-    SkillAuthoringResult,
     SkillAuthoringMode,
+    SkillAuthoringResult,
+    SkillCapability,
     SkillDraftSourceRun,
     SkillScopeType,
+    SkillTool,
 )
 
 
 AgentAction = Literal[
     "chat_answer",
+    "conversation_reply",
     "markdown_edit",
     "markdown_create",
     "folder_organize",
@@ -50,6 +53,8 @@ class PendingSkillProposal:
     name: str
     description: str
     instructions_markdown: str
+    capabilities: tuple[SkillCapability, ...]
+    allowed_tools: tuple[SkillTool, ...]
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,8 @@ class AgentTurnRequest:
     user_id: str | None = None
     conversation_context: AgentConversationContext | None = None
     active_markdown_context: ActiveMarkdownContext | None = None
+    document_id: str | None = None
+    base_version: int | None = None
     skill_mode: SkillMode = "auto"
     skill_id: str | None = None
     available_skills: tuple[SkillCandidate, ...] = ()

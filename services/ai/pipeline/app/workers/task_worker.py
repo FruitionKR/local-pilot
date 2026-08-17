@@ -119,7 +119,7 @@ def _handle_agent(
     event_publisher: QueryEventPublisherPort | None = None,
 ) -> dict[str, Any]:
     # 문서를 열지 않은 턴은 편집 대상이 없어 document_id·base_version·apply_operation_id·
-    # editor_snapshot이 오지 않는다. 이때 AI는 chat_answer·clarify·reject만 낸다.
+    # editor_snapshot이 오지 않는다. 이때 AI는 chat_answer·conversation_reply·clarify·reject만 낸다.
     _required(command, "run_id", "workspace_id", "user_id", "message")
     run_id = str(command["run_id"])
     state, replay = _register_agent_command(command)
@@ -139,6 +139,8 @@ def _handle_agent(
             "user_id": command["user_id"],
             "conversation_context": command.get("conversation_context"),
             "active_markdown_context": command.get("editor_snapshot"),
+            "document_id": command.get("document_id"),
+            "base_version": command.get("base_version"),
             "skill_draft_sources": command.get("skill_draft_sources", []),
             "skill_draft_user_directives": command.get("skill_draft_user_directives", []),
             "skill_draft_excluded_literals": command.get("skill_draft_excluded_literals", []),

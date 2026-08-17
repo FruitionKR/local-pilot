@@ -53,7 +53,9 @@ class SkillServiceTest {
 
     @Test
     void publish_andUpdate_forwardWorkspaceModelSnapshot() {
-        var publish = new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차");
+        var publish = new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차",
+                List.of("document-create"),
+                List.of("list_root_items", "list_folder_children", "create_document"));
         var update = new SkillUpdateRequest("meeting-notes", "회의록 수정", "# 수정 절차");
 
         service.publish("ws_1", "user_1", publish);

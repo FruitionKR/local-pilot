@@ -49,6 +49,9 @@ class ChatCompletionsPlanGenerator:
             if allowed_tools is None
             else ALLOWED_PLAN_TOOLS.intersection(allowed_tools)
         )
+        artifact_tools = {artifact.purpose for artifact in content_artifacts}
+        if artifact_tools:
+            allowed_plan_tools = allowed_plan_tools.intersection(artifact_tools)
         payload = {
             "plan_id": plan_id,
             "instruction": instruction,
@@ -68,11 +71,26 @@ class ChatCompletionsPlanGenerator:
             ],
         }
         validate_untrusted_payload(payload)
+        trusted_identifiers = [plan_id]
+        for item in hierarchy:
+            for key in ("id", "parent_id"):
+                identifier = item.get(key)
+                if isinstance(identifier, str) and identifier:
+                    trusted_identifiers.append(identifier)
+        for artifact in content_artifacts:
+            trusted_identifiers.extend(
+                identifier
+                for identifier in (artifact.id, artifact.content_hash, artifact.document_id)
+                if identifier
+            )
         value = self._client.complete_json(
             self._system_prompt,
             json.dumps(payload, ensure_ascii=False, indent=2),
+            trusted_identifiers=tuple(dict.fromkeys(trusted_identifiers)),
         )
         plan = normalize_plan_candidate(run_id, plan_id, version, value)
+        if any(operation.tool_name not in allowed_plan_tools for operation in plan.operations):
+            raise ValueError("Agent plan contains a tool outside the trusted mutation scope.")
         _validate_plan_against_hierarchy(plan, hierarchy, content_artifacts)
         return plan
 
@@ -207,7 +225,10 @@ def _validate_plan_against_hierarchy(
             item = items.get(operation.target_id or "")
             if item is None or item.get("type") != operation.target_type:
                 raise ValueError("Agent plan target must exist in the hierarchy snapshot.")
-            if item.get("current_version") != operation.base_version:
+            if (
+                operation.tool_name != "apply_document_edit"
+                and item.get("current_version") != operation.base_version
+            ):
                 raise ValueError("Agent plan base_version must match the hierarchy snapshot.")
             id_key = "folder_id" if operation.target_type == "folder" else "document_id"
             if operation.arguments.get(id_key) != operation.target_id:

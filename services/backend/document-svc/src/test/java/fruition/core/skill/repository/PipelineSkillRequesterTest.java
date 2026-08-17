@@ -70,7 +70,9 @@ class PipelineSkillRequesterTest {
     @Test
     void publish_usesWorkspaceModelSnapshot() {
         requester().publish("ws_1", "user_1",
-                new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차"),
+                new SkillPublishRequest("team", "meeting-notes", "회의록 작성", "# 작성 절차",
+                        List.of("document-create"),
+                        List.of("list_root_items", "list_folder_children", "create_document")),
                 new WorkspaceAiModelClient.AiModelSelection("claude", "claude-sonnet-5"));
 
         assertThat(method.get()).isEqualTo("POST");
@@ -78,6 +80,8 @@ class PipelineSkillRequesterTest {
         assertThat(body.get())
                 .contains("\"provider\":\"claude\"")
                 .contains("\"model\":\"claude-sonnet-5\"")
+                .contains("\"capabilities\":[\"document-create\"]")
+                .contains("\"allowed_tools\":[\"list_root_items\",\"list_folder_children\",\"create_document\"]")
                 .doesNotContain("api_key", "base_url");
     }
 

@@ -448,6 +448,8 @@ def test_agent_command_copies_skill_draft_fields_into_agent_request(
     assert request.skill_scope_type == "team"
     assert request.skill_mode == skill_mode
     assert request.skill_id == skill_id
+    assert request.document_id == "document-1"
+    assert request.base_version == 7
 
 
 def test_agent_command_passes_web_search_flag_to_request_body() -> None:

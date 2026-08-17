@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ INSERT_AFTER_ACTION_MARKERS = ("추가", "삽입", "붙여", "insert", "append",
 NEW_SKILL_REQUEST_PATTERN = re.compile(
     r"(?:스킬|skill)(?:을|를)?\s*(?:(?:하나|새로|새로운|신규로|직접)\s*){0,2}"
     r"(?:만들어|생성해|정의해|작성해)|"
+    r"(?:스킬|skill)로\s+[a-z0-9][a-z0-9-]{0,62}(?:을|를)?\s*(?:만들어|생성해|정의해|작성해)|"
     r"(?:create|make|define|write)\s+(?:a\s+)?(?:new\s+)?skill\b",
     re.IGNORECASE,
 )
@@ -55,8 +57,53 @@ PENDING_SKILL_FOLLOWUP_PATTERN = re.compile(
     r"(?:개인|팀)(?:\s*(?:스킬|skill))?(?:로|으로)?\s*(?:해|바꿔|변경|수정)",
     re.IGNORECASE,
 )
+DOCUMENT_DISPLAY_NAME_PATTERN = re.compile(
+    r"(?:문서\s*트리|display_name|표시\s*이름|문서(?:\s*파일)?(?:의)?\s*이름).{0,80}"
+    r"(?:바꿔|변경|수정|rename)",
+    re.IGNORECASE,
+)
+PERSISTENT_EDIT_PATTERN = re.compile(
+    r"(?:워크스페이스.{0,20}(?:저장|반영)|영구.{0,20}(?:적용|반영|저장)|"
+    r"(?:저장|반영)(?:해|해줘|해주세요)|승인\s*(?:후|뒤)|"
+    r"(?:persist|save|apply).{0,30}(?:workspace|approval|permanent))",
+    re.IGNORECASE,
+)
+WORKSPACE_MUTATION_PATTERN = re.compile(
+    r"(?:저장|반영|적용|생성|작성|수정|변경|이동|삭제|복사)(?:해|해줘|해주세요)|"
+    r"(?:만들어|바꿔|옮겨)(?:줘|주세요)|"
+    r"\b(?:save|apply|create|write|edit|rename|move|delete|copy)\b",
+    re.IGNORECASE,
+)
+CONVERSATION_REFINEMENT_PATTERN = re.compile(
+    r"(?:형식|말투|길이|이모지|제목|문구).{0,40}(?:만들어|바꿔|변경|수정|써줘|해줘)|"
+    r"(?:format|tone|length|emoji|title|wording).{0,40}(?:make|change|revise|write)|"
+    r"how\s+do\s+i\s+make.{0,60}\bwork|"
+    r"what\s+process\s+should\s+i\s+use\s+to",
+    re.IGNORECASE,
+)
+GROUNDED_RETRIEVAL_PATTERN = re.compile(
+    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b)).{0,40}"
+    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b))|"
+    r"(?:기준|근거|찾아|검색|조회|(?a:\b(?:search|find|retrieve|ground)\b)).{0,40}"
+    r"(?:내부\s*문서|워크스페이스|위키|(?a:\b(?:wiki|workspace|document)\b))",
+    re.IGNORECASE,
+)
+TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
+    r"(?:위키|워크스페이스|(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)).{0,40}"
+    r"(?:어떤\s*단계로.{0,20}(?:동작|작동|진행|처리)|"
+    r"어떻게.{0,20}(?:동작|작동))"
+    r"(?:해|하나요|합니까|돼|되나요|됩니까)(?:\?+)?$|"
+    r"how\s+(?:does|do)\s+(?:the\s+)?"
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b).{0,30}\bwork(?:\?+)?$|"
+    r"what\s+are\s+the\s+stages\s+of\s+(?:the\s+)?"
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\?+)?$|"
+    r"what\s+is\s+the\s+process\s+(?:of|for)\s+(?:the\s+)?"
+    r"(?a:\b(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)\b)(?:\s+\w+){0,3}(?:\?+)?$",
+    re.IGNORECASE,
+)
 ALLOWED_ACTIONS = {
     "chat_answer",
+    "conversation_reply",
     "markdown_edit",
     "markdown_create",
     "folder_organize",
@@ -88,7 +135,11 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ),
             "recent_messages": (
                 [
-                    {"role": message.role, "content": message.content}
+                    {
+                        "role": message.role,
+                        "content": message.content,
+                        "action": message.action,
+                    }
                     for message in request.conversation_context.recent_messages
                 ]
                 if request.conversation_context
@@ -136,6 +187,9 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             ],
         }
         route, failures = self._complete_route(payload)
+        route = _promote_persistent_edit(route, request)
+        route = _promote_grounded_query(route, request)
+        failures.extend(_route_failures(route, request))
         failures.extend(_skill_authoring_failures(route, request))
         if not failures:
             return route
@@ -146,6 +200,9 @@ class ChatCompletionsTurnRouter(AgentTurnRouterPort):
             "retry_instruction": "Correct every contract failure and return the required route JSON object again.",
         }
         retried_route, retry_failures = self._complete_route(retry_payload)
+        retried_route = _promote_persistent_edit(retried_route, request)
+        retried_route = _promote_grounded_query(retried_route, request)
+        retry_failures.extend(_route_failures(retried_route, request))
         retry_failures.extend(_skill_authoring_failures(retried_route, request))
         if retry_failures:
             raise AgentTurnRouteContractError(retry_failures)
@@ -207,6 +264,16 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
             reason="explicit approval for pending Skill proposal",
         )
     requests_new_skill = _requests_new_skill(lowered)
+    if (
+        not requests_new_skill
+        and DOCUMENT_DISPLAY_NAME_PATTERN.search(request.message)
+        and not re.search(r"(?:h1|heading|본문)", request.message, re.IGNORECASE)
+    ):
+        return AgentTurnRoute(
+            action="folder_organize",
+            confidence=1.0,
+            reason="document display name change",
+        )
     has_template_skill = any("template" in skill.capabilities for skill in request.available_skills)
     if (
         not requests_new_skill
@@ -233,8 +300,76 @@ def _local_guard(request: AgentTurnRequest) -> AgentTurnRoute | None:
     return None
 
 
+def _promote_persistent_edit(
+    route: AgentTurnRoute,
+    request: AgentTurnRequest,
+) -> AgentTurnRoute:
+    if route.action not in {"markdown_edit", "workspace_workflow"}:
+        return route
+    if PERSISTENT_EDIT_PATTERN.search(request.message) is None:
+        return route
+    return replace(
+        route,
+        action="workspace_workflow",
+        edit_goal=route.edit_goal or "other",
+    )
+
+
+def _promote_grounded_query(
+    route: AgentTurnRoute,
+    request: AgentTurnRequest,
+) -> AgentTurnRoute:
+    if request.active_markdown_context is not None or not _requests_grounded_retrieval(request.message):
+        return route
+    if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
+        return route
+    if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:
+        return route
+    return replace(
+        route,
+        action="chat_answer",
+        edit_goal=None,
+        selected_skill_id=None,
+        skill_candidates=(),
+    )
+
+
 def _requests_new_skill(message: str) -> bool:
     return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
+
+
+def _requests_grounded_retrieval(message: str) -> bool:
+    return bool(
+        GROUNDED_RETRIEVAL_PATTERN.search(message)
+        or TECHNICAL_PROCESS_QUESTION_PATTERN.search(message)
+    )
+
+
+def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
+    if (
+        route.action == "clarify"
+        and route.edit_goal is None
+        and not route.skill_candidates
+    ):
+        return [
+            "clarify requires a supported Markdown target reason or ambiguous Skill candidates; "
+            "use conversation_reply when a conversational task needs more user context"
+        ]
+    if (
+        route.action == "chat_answer"
+        and CONVERSATION_REFINEMENT_PATTERN.search(request.message)
+        and not _requests_grounded_retrieval(request.message)
+    ):
+        expected_action = (
+            "markdown_edit"
+            if request.active_markdown_context and request.active_markdown_context.markdown.strip()
+            else "conversation_reply"
+        )
+        return [
+            "a format or wording refinement must use "
+            f"{expected_action} unless the current message explicitly requests grounded retrieval"
+        ]
+    return []
 
 
 def _skill_authoring_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:

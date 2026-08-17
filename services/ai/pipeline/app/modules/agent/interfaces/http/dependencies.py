@@ -1,6 +1,9 @@
 import os
 
 from app.modules.agent.application.handle_agent_turn import HandleAgentTurnUseCase
+from app.modules.agent.infrastructure.chat_completions_conversation_replier import (
+    build_conversation_replier,
+)
 from app.modules.agent.infrastructure.chat_completions_turn_router import build_agent_turn_router
 from app.modules.agent_run.application.start_agent_run import StartAgentRunUseCase
 from app.modules.agent_run.infrastructure.postgres_agent_run_repository import PostgresAgentRunRepository
@@ -50,6 +53,9 @@ def build_handle_agent_turn_use_case(
             else None
         ),
         conversation_summarizer=build_query_conversation_summarizer(
+            provider=provider, model=model
+        ),
+        conversation_replier=build_conversation_replier(
             provider=provider, model=model
         ),
     )

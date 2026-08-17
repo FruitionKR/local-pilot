@@ -9,9 +9,10 @@ from app.modules.query.domain.entities import ConversationMessage
 class ConversationMessageRequest(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=4000)
+    action: str | None = Field(default=None, max_length=64)
 
     def to_domain(self) -> ConversationMessage:
-        return ConversationMessage(role=self.role, content=self.content)
+        return ConversationMessage(role=self.role, content=self.content, action=self.action)
 
 
 class QueryRequest(BaseModel):

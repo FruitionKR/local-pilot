@@ -280,7 +280,9 @@ class AiTaskResultApplierTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"chat_answer", "clarify", "reject"})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "chat_answer", "conversation_reply", "clarify", "reject", "skill_authoring", "skill_draft_proposal"
+    })
     void nonMutatingAgentResultBecomesReadyWithoutCanonicalMarkdown(String action) throws Exception {
         JsonNode event = objectMapper.readTree("""
                 {"event_id":"agent:run-non-mutating:succeeded","run_id":"run-non-mutating","kind":"agent",

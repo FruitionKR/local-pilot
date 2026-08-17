@@ -82,7 +82,7 @@ public class AgentTurnService {
     public AgentTurnResponse turn(String workspaceId, String userId, AgentTurnRequest request) {
         chatSessionService.verifyOwnedSession(workspaceId, userId, request.sessionId());
         // 문서를 열지 않은 턴은 적용할 대상이 없어 편집 전제 검사를 하지 않는다.
-        // AI는 이 경우 chat_answer·clarify·reject만 낼 수 있다.
+        // AI는 이 경우 chat_answer·conversation_reply·clarify·reject만 낼 수 있다.
         if (request.hasDocumentContext()) {
             DocumentDetailResponse document = documentService.findById(workspaceId, userId, request.documentId());
             if (!isMarkdown(document)) {
@@ -348,25 +348,28 @@ public class AgentTurnService {
             return new CommandConversationContext(
                     conversation.summary(),
                     conversation.recentMessages().stream()
-                            .map(message -> new CommandConversationMessage(message.role(), message.content()))
+                            .map(message -> new CommandConversationMessage(
+                                    message.role(), message.content(), message.action()))
                             .toList(),
                     context == null ? null : context.referenceContext(),
                     context == null ? null : CommandPendingSkillProposal.from(context.pendingSkillProposal()));
         }
     }
 
-    record CommandConversationMessage(String role, String content) {}
+    record CommandConversationMessage(String role, String content, String action) {}
 
     record CommandPendingSkillProposal(
             @com.fasterxml.jackson.annotation.JsonProperty("scope_type") String scopeType,
             String name,
             String description,
-            @com.fasterxml.jackson.annotation.JsonProperty("instructions_markdown") String instructionsMarkdown
+            @com.fasterxml.jackson.annotation.JsonProperty("instructions_markdown") String instructionsMarkdown,
+            java.util.List<String> capabilities,
+            @com.fasterxml.jackson.annotation.JsonProperty("allowed_tools") java.util.List<String> allowedTools
     ) {
         static CommandPendingSkillProposal from(AgentTurnRequest.ConversationContext.PendingSkillProposal proposal) {
             return proposal == null ? null
                     : new CommandPendingSkillProposal(proposal.scopeType(), proposal.name(), proposal.description(),
-                    proposal.instructionsMarkdown());
+                    proposal.instructionsMarkdown(), proposal.capabilities(), proposal.allowedTools());
         }
     }
 

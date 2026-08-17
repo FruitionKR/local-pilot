@@ -20,6 +20,15 @@ AgentRunStatus = Literal[
 
 
 @dataclass(frozen=True)
+class StartAgentRunContent:
+    markdown: str
+    purpose: Literal["create_document", "apply_document_edit"] = "create_document"
+    document_id: str | None = None
+    base_version: int | None = None
+    target: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class StartAgentRunRequest:
     workspace_id: str
     user_id: str
@@ -28,7 +37,7 @@ class StartAgentRunRequest:
     skill_version_id: str | None = None
     provider: str | None = None
     model: str | None = None
-    creation_markdown: str | None = None
+    content: StartAgentRunContent | None = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +45,10 @@ class StartAgentRunArtifact:
     id: str
     content_hash: str
     markdown: str
+    purpose: Literal["create_document", "apply_document_edit"] = "create_document"
+    document_id: str | None = None
+    base_version: int | None = None
+    target: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)

@@ -1,12 +1,30 @@
 import unittest
 
-from app.modules.markdown_edit.domain.entities import MarkdownEditTarget
-from app.modules.markdown_edit.domain.markdown_target_scope import build_markdown_target_scope
-from app.modules.markdown_edit.domain.markdown_target_scope import MarkdownTargetBoundaryError
+from app.modules.markdown_edit.domain.entities import MarkdownEditOperation, MarkdownEditTarget
+from app.modules.markdown_edit.domain.markdown_target_scope import (
+    MarkdownTargetBoundaryError,
+    apply_markdown_edit,
+    build_markdown_target_scope,
+)
 from app.modules.markdown_edit.infrastructure.markdown_source_range import validate_markdown_target_boundary
 
 
 class MarkdownTargetScopeTest(unittest.TestCase):
+    def test_applies_replace_and_insert_after_to_full_markdown(self) -> None:
+        target = MarkdownEditTarget(type="current_section", start_line=2, end_line=2)
+
+        replaced = apply_markdown_edit(
+            "# 제목\n기존\n마지막",
+            MarkdownEditOperation("replace", target, "replace", "변경"),
+        )
+        inserted = apply_markdown_edit(
+            "# 제목\n기존\n마지막",
+            MarkdownEditOperation("insert_after", target, "insert", "추가"),
+        )
+
+        self.assertEqual(replaced, "# 제목\n변경\n마지막")
+        self.assertEqual(inserted, "# 제목\n기존\n추가\n마지막")
+
     def test_slices_selection_and_limits_read_only_context(self) -> None:
         markdown = "\n".join(f"line {line}" for line in range(1, 11))
         target = MarkdownEditTarget(type="selection", start_line=5, end_line=6)

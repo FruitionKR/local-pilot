@@ -12,9 +12,17 @@ from app.modules.agent_run.domain.entities import ContentArtifactReference
 class CapturingClient:
     def __init__(self) -> None:
         self.payload: dict[str, object] = {}
+        self.trusted_identifiers: tuple[str, ...] = ()
 
-    def complete_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        trusted_identifiers: tuple[str, ...] = (),
+    ) -> dict[str, object]:
         self.payload = json.loads(user_prompt)
+        self.trusted_identifiers = trusted_identifiers
         return {
             "summary": "문서를 이동합니다.",
             "operations": [
@@ -81,6 +89,10 @@ class PlanGeneratorTest(unittest.TestCase):
         )
 
         self.assertEqual(client.payload["allowed_tools"], ["move_document"])
+        self.assertEqual(
+            set(client.trusted_identifiers),
+            {"plan-1", "folder-1", "document-1"},
+        )
 
     def test_normalizes_plan_with_stable_operation_ids(self) -> None:
         plan = normalize_plan_candidate(
@@ -153,8 +165,14 @@ class PlanGeneratorTest(unittest.TestCase):
     def test_accepts_document_edit_artifact_contract(self) -> None:
         client = CapturingClient()
 
-        def complete_json(system_prompt: str, user_prompt: str) -> dict[str, object]:
+        def complete_json(
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            trusted_identifiers: tuple[str, ...] = (),
+        ) -> dict[str, object]:
             client.payload = json.loads(user_prompt)
+            client.trusted_identifiers = trusted_identifiers
             return {
                 "summary": "문서 본문을 반영합니다.",
                 "operations": [
@@ -194,12 +212,12 @@ class PlanGeneratorTest(unittest.TestCase):
                 {
                     "id": "document-1",
                     "type": "document",
-                    "current_version": 3,
+                    "current_version": 2,
                     "parent_id": "folder-1",
                 }
             ],
             skill_instructions=None,
-            allowed_tools=("apply_document_edit",),
+            allowed_tools=None,
             content_artifacts=(
                 ContentArtifactReference(
                     id="artifact-1",
@@ -219,6 +237,10 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertEqual(plan.operations[0].tool_name, "apply_document_edit")
         self.assertEqual(client.payload["allowed_tools"], ["apply_document_edit"])
         self.assertEqual(client.payload["content_artifacts"][0]["id"], "artifact-1")  # type: ignore[index]
+        self.assertEqual(
+            set(client.trusted_identifiers),
+            {"plan-1", "folder-1", "document-1", "artifact-1", "sha256:abc"},
+        )
 
         with self.assertRaisesRegex(ValueError, "trusted context"):
             generator.generate(
@@ -240,7 +262,7 @@ class PlanGeneratorTest(unittest.TestCase):
 
     def test_accepts_registered_create_artifact_with_strict_plan(self) -> None:
         client = CapturingClient()
-        client.complete_json = lambda _system_prompt, _user_prompt: {
+        client.complete_json = lambda _system_prompt, _user_prompt, **_kwargs: {
             "summary": "등록된 문서 artifact를 저장합니다.",
             "operations": [
                 {
@@ -292,6 +314,60 @@ class PlanGeneratorTest(unittest.TestCase):
         self.assertEqual(operation.destination_parent_id, "folder-1")
         self.assertEqual(operation.arguments["content_artifact_id"], "artifact-create")
         self.assertEqual(operation.arguments["content_hash"], "sha256:create")
+
+    def test_edit_artifact_rejects_unrelated_mutation_plan(self) -> None:
+        client = CapturingClient()
+        client.complete_json = lambda _system_prompt, _user_prompt, **_kwargs: {
+            "summary": "요청과 무관한 문서 이동 계획",
+            "operations": [
+                {
+                    "tool_name": "move_document",
+                    "target_type": "document",
+                    "target_id": "document-1",
+                    "base_version": 3,
+                    "source_parent_id": "folder-1",
+                    "destination_parent_id": "folder-2",
+                    "arguments": {
+                        "document_id": "document-1",
+                        "folder_id": "folder-2",
+                        "position": 0,
+                        "base_version": 3,
+                    },
+                    "reason": "잘못 생성된 이동 작업",
+                    "depends_on": [],
+                }
+            ],
+        }  # type: ignore[method-assign]
+        generator = ChatCompletionsPlanGenerator(client, "system")  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(ValueError, "trusted mutation scope"):
+            generator.generate(
+                run_id="run-1",
+                plan_id="plan-1",
+                version=1,
+                instruction="현재 문서를 수정해서 저장해줘",
+                hierarchy=[
+                    {
+                        "id": "document-1",
+                        "type": "document",
+                        "current_version": 3,
+                        "parent_id": "folder-1",
+                    },
+                    {"id": "folder-2", "type": "folder", "current_version": 1},
+                ],
+                skill_instructions=None,
+                allowed_tools=None,
+                content_artifacts=(
+                    ContentArtifactReference(
+                        id="artifact-1",
+                        content_hash="sha256:abc",
+                        purpose="apply_document_edit",
+                        document_id="document-1",
+                        base_version=3,
+                        target={"type": "selection", "start_line": 3, "end_line": 3},
+                    ),
+                ),
+            )
 
 
 if __name__ == "__main__":
