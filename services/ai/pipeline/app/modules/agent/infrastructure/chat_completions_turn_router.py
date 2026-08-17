@@ -68,18 +68,37 @@ PERSISTENT_EDIT_PATTERN = re.compile(
     r"(?:persist|save|apply).{0,30}(?:workspace|approval|permanent))",
     re.IGNORECASE,
 )
+WORKSPACE_MUTATION_PATTERN = re.compile(
+    r"(?:저장|반영|적용|생성|작성|수정|변경|이동|삭제|복사)(?:해|해줘|해주세요)|"
+    r"(?:만들어|바꿔|옮겨)(?:줘|주세요)|"
+    r"\b(?:save|apply|create|write|edit|rename|move|delete|copy)\b",
+    re.IGNORECASE,
+)
 CONVERSATION_REFINEMENT_PATTERN = re.compile(
     r"(?:형식|말투|길이|이모지|제목|문구).{0,40}(?:만들어|바꿔|변경|수정|써줘|해줘)|"
-    r"(?:format|tone|length|emoji|title|wording).{0,40}(?:make|change|revise|write)",
+    r"(?:format|tone|length|emoji|title|wording).{0,40}(?:make|change|revise|write)|"
+    r"how\s+do\s+i\s+make.{0,60}\bwork|"
+    r"what\s+process\s+should\s+i\s+use\s+to",
     re.IGNORECASE,
 )
 GROUNDED_RETRIEVAL_PATTERN = re.compile(
     r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document).{0,40}"
     r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground)|"
-    r"어떤\s*단계로.{0,30}(?:동작|작동|진행|처리)|"
-    r"어떻게.{0,30}(?:동작|작동)|"
-    r"how\s+(?:does|do).{0,40}\bwork|"
-    r"what\s+(?:are|is).{0,40}\b(?:stages?|process)",
+    r"(?:기준|근거|찾아|검색|조회|search|find|retrieve|ground).{0,40}"
+    r"(?:내부\s*문서|워크스페이스|위키|wiki|workspace|document)",
+    re.IGNORECASE,
+)
+TECHNICAL_PROCESS_QUESTION_PATTERN = re.compile(
+    r"(?:위키|wiki|워크스페이스|workspace|ingest|pipeline|query|lint|agent|skill).{0,40}"
+    r"(?:어떤\s*단계로.{0,20}(?:동작|작동|진행|처리)|"
+    r"어떻게.{0,20}(?:동작|작동))"
+    r"(?:해|하나요|합니까|돼|되나요|됩니까)(?:\?+)?$|"
+    r"how\s+(?:does|do)\s+(?:the\s+)?"
+    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill).{0,30}\bwork(?:\?+)?$|"
+    r"what\s+are\s+the\s+stages\s+of\s+(?:the\s+)?"
+    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)(?:\?+)?$|"
+    r"what\s+is\s+the\s+process\s+(?:of|for)\s+(?:the\s+)?"
+    r"(?:wiki|workspace|ingest|pipeline|query|lint|agent|skill)(?:\s+\w+){0,3}(?:\?+)?$",
     re.IGNORECASE,
 )
 ALLOWED_ACTIONS = {
@@ -300,11 +319,11 @@ def _promote_grounded_query(
     route: AgentTurnRoute,
     request: AgentTurnRequest,
 ) -> AgentTurnRoute:
-    if (
-        route.action not in {"conversation_reply", "clarify"}
-        or request.active_markdown_context is not None
-        or GROUNDED_RETRIEVAL_PATTERN.search(request.message) is None
-    ):
+    if request.active_markdown_context is not None or not _requests_grounded_retrieval(request.message):
+        return route
+    if route.action == "workspace_workflow" and WORKSPACE_MUTATION_PATTERN.search(request.message):
+        return route
+    if route.action not in {"conversation_reply", "clarify", "workspace_workflow"}:
         return route
     return replace(
         route,
@@ -319,6 +338,13 @@ def _requests_new_skill(message: str) -> bool:
     return NEW_SKILL_REQUEST_PATTERN.search(message) is not None
 
 
+def _requests_grounded_retrieval(message: str) -> bool:
+    return bool(
+        GROUNDED_RETRIEVAL_PATTERN.search(message)
+        or TECHNICAL_PROCESS_QUESTION_PATTERN.search(message)
+    )
+
+
 def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[str]:
     if (
         route.action == "clarify"
@@ -329,26 +355,13 @@ def _route_failures(route: AgentTurnRoute, request: AgentTurnRequest) -> list[st
             "clarify requires a supported Markdown target reason or ambiguous Skill candidates; "
             "use conversation_reply when a conversational task needs more user context"
         ]
-    previous_assistant_action = next(
-        (
-            message.action
-            for message in reversed(
-                request.conversation_context.recent_messages
-                if request.conversation_context
-                else ()
-            )
-            if message.role == "assistant"
-        ),
-        None,
-    )
     if (
         route.action == "chat_answer"
-        and previous_assistant_action == "conversation_reply"
         and CONVERSATION_REFINEMENT_PATTERN.search(request.message)
-        and not GROUNDED_RETRIEVAL_PATTERN.search(request.message)
+        and not _requests_grounded_retrieval(request.message)
     ):
         return [
-            "a conversational format or wording refinement after conversation_reply must remain "
+            "a conversational format or wording refinement must use "
             "conversation_reply unless the current message explicitly requests grounded retrieval"
         ]
     return []
